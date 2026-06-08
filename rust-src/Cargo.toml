@@ -37,7 +37,7 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 
 # Orchestration
 bitvec = "1"
-extism = "3"
+extism = "1"
 async-openai = "0.28"
 
 # Parsing

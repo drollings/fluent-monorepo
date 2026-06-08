@@ -1,0 +1,550 @@
+use std::path::Path;
+use std::sync::Mutex;
+
+use guidance_common::error::DbError;
+use guidance_common::types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
+use rusqlite::params;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum LibraryError {
+    #[error("SQLite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("database error: {0}")]
+    Db(#[from] DbError),
+    #[error("node not found: {0}")]
+    NodeNotFound(String),
+    #[error("duplicate node: {0}")]
+    DuplicateNode(String),
+}
+
+pub struct Library {
+    conn: Mutex<rusqlite::Connection>,
+}
+
+impl Library {
+    pub fn open(path: &Path) -> Result<Self, LibraryError> {
+        let conn = rusqlite::Connection::open(path)?;
+        let lib = Self {
+            conn: Mutex::new(conn),
+        };
+        lib.init_schema()?;
+        Ok(lib)
+    }
+
+    pub fn open_in_memory() -> Result<Self, LibraryError> {
+        let conn = rusqlite::Connection::open_in_memory()?;
+        let lib = Self {
+            conn: Mutex::new(conn),
+        };
+        lib.init_schema()?;
+        Ok(lib)
+    }
+
+    pub fn init_schema(&self) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS context_nodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                source TEXT NOT NULL DEFAULT '',
+                lod TEXT NOT NULL DEFAULT '[]',
+                embedding BLOB,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS edges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_node_id INTEGER NOT NULL,
+                target_node_id INTEGER NOT NULL,
+                edge_type TEXT NOT NULL DEFAULT 'depends',
+                weight REAL NOT NULL DEFAULT 1.0,
+                FOREIGN KEY (source_node_id) REFERENCES context_nodes(id),
+                FOREIGN KEY (target_node_id) REFERENCES context_nodes(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS wasm_tools (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                path TEXT NOT NULL,
+                capabilities TEXT NOT NULL DEFAULT '[]'
+            );
+
+            CREATE TABLE IF NOT EXISTS targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                bit_index INTEGER NOT NULL,
+                depends BLOB,
+                provides BLOB,
+                essential INTEGER NOT NULL DEFAULT 0,
+                command TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS embedding_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query_hash TEXT NOT NULL UNIQUE,
+                query_text TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_node_id);
+            CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_node_id);
+            CREATE INDEX IF NOT EXISTS idx_nodes_name ON context_nodes(name);
+            ",
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_node(&self, node: &ContextNode) -> Result<NodeId, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let lod_json = serde_json::to_string(&node.lod).unwrap_or_default();
+        let embedding_blob = node.embedding.as_ref().map(|v| vec_to_blob(v));
+
+        conn.execute(
+            "INSERT INTO context_nodes (name, source, lod, embedding) VALUES (?1, ?2, ?3, ?4)",
+            params![node.name.as_str(), node.source, lod_json, embedding_blob],
+        )?;
+
+        Ok(NodeId::from_int(conn.last_insert_rowid()))
+    }
+
+    pub fn find_node_by_name(&self, name: &str) -> Result<Option<NodeId>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id FROM context_nodes WHERE name = ?1")?;
+        let result = stmt
+            .query_row(params![name], |row| {
+                let id: i64 = row.get(0)?;
+                Ok(NodeId::from_int(id))
+            })
+            .ok();
+        Ok(result)
+    }
+
+    pub fn get_node(&self, node_id: NodeId) -> Result<Option<ContextNode>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT id, name, source, lod, embedding FROM context_nodes WHERE id = ?1")?;
+        let result = stmt
+            .query_row(params![node_id.as_int()], |row| {
+                let id: i64 = row.get(0)?;
+                let name: String = row.get(1)?;
+                let source: String = row.get(2)?;
+                let lod_json: String = row.get(3)?;
+                let embedding_blob: Option<Vec<u8>> = row.get(4)?;
+                let lod: Vec<String> = serde_json::from_str(&lod_json).unwrap_or_default();
+                let embedding = embedding_blob.and_then(|b| blob_to_vec(&b));
+                Ok(ContextNode {
+                    id: Some(NodeId::from_int(id)),
+                    name: name.as_str().into(),
+                    source,
+                    lod,
+                    embedding,
+                })
+            })
+            .ok();
+        Ok(result)
+    }
+
+    pub fn knn_search(&self, query_vec: &[f32], k: usize) -> Result<Vec<KnnHit>, LibraryError> {
+        if query_vec.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, embedding FROM context_nodes WHERE embedding IS NOT NULL",
+        )?;
+
+        let mut results: Vec<KnnHit> = Vec::new();
+
+        let rows = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let name: String = row.get(1)?;
+            let blob: Vec<u8> = row.get(2)?;
+            Ok((id, name, blob))
+        })?;
+
+        for row_result in rows {
+            let (id, name, blob) = row_result?;
+            if let Some(emb) = blob_to_vec(&blob) {
+                if emb.len() != query_vec.len() {
+                    continue;
+                }
+                let distance = cosine_distance(query_vec, &emb);
+                results.push(KnnHit {
+                    node_id: NodeId::from_int(id),
+                    distance,
+                    name: name.as_str().into(),
+                });
+            }
+        }
+
+        results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(k);
+        Ok(results)
+    }
+
+    pub fn traverse_from(
+        &self,
+        node_id: NodeId,
+        max_depth: u8,
+    ) -> Result<Vec<GraphNode>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "WITH RECURSIVE
+                traverse(id, name, depth) AS (
+                    SELECT n.id, n.name, 0
+                    FROM context_nodes n
+                    WHERE n.id = ?1
+                    UNION ALL
+                    SELECT n.id, n.name, t.depth + 1
+                    FROM traverse t
+                    JOIN edges e ON e.source_node_id = t.id
+                    JOIN context_nodes n ON n.id = e.target_node_id
+                    WHERE t.depth < ?2
+                )
+            SELECT DISTINCT id, name, depth FROM traverse ORDER BY depth, name",
+        )?;
+
+        let results = stmt
+            .query_map(params![node_id.as_int(), max_depth], |row| {
+                let id: i64 = row.get(0)?;
+                let name: String = row.get(1)?;
+                let depth: u32 = row.get(2)?;
+                Ok(GraphNode {
+                    node_id: NodeId::from_int(id),
+                    name: name.as_str().into(),
+                    depth,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(results)
+    }
+
+    pub fn insert_edge(
+        &self,
+        source: NodeId,
+        target: NodeId,
+        edge_type: &str,
+        weight: f64,
+    ) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO edges (source_node_id, target_node_id, edge_type, weight) VALUES (?1, ?2, ?3, ?4)",
+            params![source.as_int(), target.as_int(), edge_type, weight],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_wasm_tool(&self, tool: &WasmTool) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let caps_json = serde_json::to_string(&tool.capabilities).unwrap_or_default();
+        conn.execute(
+            "INSERT INTO wasm_tools (name, path, capabilities) VALUES (?1, ?2, ?3)",
+            params![tool.name.as_str(), tool.path, caps_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn find_wasm_tools_by_capability(&self, capability: &str) -> Result<Vec<WasmTool>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT name, path, capabilities FROM wasm_tools")?;
+
+        let results = stmt
+            .query_map([], |row| {
+                let name: String = row.get(0)?;
+                let path: String = row.get(1)?;
+                let caps_json: String = row.get(2)?;
+                let capabilities: Vec<String> = serde_json::from_str(&caps_json).unwrap_or_default();
+                Ok((name, path, capabilities))
+            })?
+            .filter_map(|r| {
+                r.ok().and_then(|(name, path, caps)| {
+                    if caps.iter().any(|c| c == capability) {
+                        Some(WasmTool {
+                            name: name.as_str().into(),
+                            path,
+                            capabilities: caps.into_iter().map(|c| c.as_str().into()).collect(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        Ok(results)
+    }
+
+    pub fn cache_embedding(
+        &self,
+        query_hash: &str,
+        query_text: &str,
+        embedding: &[f32],
+    ) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let blob = vec_to_blob(embedding);
+        conn.execute(
+            "INSERT OR REPLACE INTO embedding_cache (query_hash, query_text, embedding) VALUES (?1, ?2, ?3)",
+            params![query_hash, query_text, blob],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_cached_embedding(&self, query_hash: &str) -> Result<Option<Vec<f32>>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT embedding FROM embedding_cache WHERE query_hash = ?1",
+                params![query_hash],
+                |row| {
+                    let blob: Vec<u8> = row.get(0)?;
+                    Ok(blob_to_vec(&blob))
+                },
+            )
+            .ok()
+            .flatten();
+        Ok(result)
+    }
+
+    pub fn node_count(&self) -> Result<i64, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM context_nodes", [], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    pub fn edge_count(&self) -> Result<i64, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))?;
+        Ok(count)
+    }
+}
+
+fn vec_to_blob(v: &[f32]) -> Vec<u8> {
+    v.iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect()
+}
+
+fn blob_to_vec(b: &[u8]) -> Option<Vec<f32>> {
+    if b.len() % 4 != 0 {
+        return None;
+    }
+    let chunks: Vec<[u8; 4]> = b
+        .chunks_exact(4)
+        .map(|c| {
+            let mut arr = [0u8; 4];
+            arr.copy_from_slice(c);
+            arr
+        })
+        .collect();
+    Some(chunks.iter().map(|c| f32::from_le_bytes(*c)).collect())
+}
+
+fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum();
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < f32::EPSILON {
+        1.0
+    } else {
+        1.0 - (dot / denom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_empty_embeddings(count: usize, dims: usize) -> Vec<(String, Vec<f32>)> {
+        (0..count)
+            .map(|i| {
+                let mut v = Vec::with_capacity(dims);
+                for j in 0..dims {
+                    v.push(((i * dims + j) as f32) / (count * dims) as f32);
+                }
+                (format!("node_{i}"), v)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_init_schema() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+        assert!(lib.node_count().is_ok());
+    }
+
+    #[test]
+    fn test_insert_and_get_node() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+        let node = ContextNode {
+            id: None,
+            name: "test_node".into(),
+            source: "full_source_text".into(),
+            lod: vec!["summary".into(), "brief".into()],
+            embedding: None,
+        };
+        let node_id = lib.insert_node(&node).expect("insert");
+        assert!(node_id.as_int() > 0);
+
+        let found = lib
+            .find_node_by_name("test_node")
+            .expect("find")
+            .expect("should exist");
+        assert_eq!(found.as_int(), node_id.as_int());
+    }
+
+    #[test]
+    fn test_get_node_roundtrip() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+        let emb: Vec<f32> = vec![0.1, 0.2, 0.3];
+        let node = ContextNode {
+            id: None,
+            name: "roundtrip_node".into(),
+            source: "source_text".into(),
+            lod: vec!["full".into(), "summary".into(), "brief".into()],
+            embedding: Some(emb.clone()),
+        };
+        let node_id = lib.insert_node(&node).expect("insert");
+
+        let gotten = lib
+            .get_node(node_id)
+            .expect("get")
+            .expect("should exist");
+        assert_eq!(gotten.name.as_str(), "roundtrip_node");
+        assert_eq!(gotten.source, "source_text");
+        assert_eq!(gotten.lod.len(), 3);
+        if let Some(got_emb) = &gotten.embedding {
+            assert!((got_emb[0] - 0.1).abs() < 1e-6);
+        } else {
+            panic!("embedding should exist");
+        }
+    }
+
+    #[test]
+    fn test_knn_search() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+        let items = make_empty_embeddings(10, 4);
+
+        for (name, emb) in &items {
+            let node = ContextNode {
+                id: None,
+                name: name.as_str().into(),
+                source: "source".into(),
+                lod: vec![],
+                embedding: Some(emb.clone()),
+            };
+            lib.insert_node(&node).expect("insert");
+        }
+
+        let query: Vec<f32> = vec![0.0, 0.1, 0.2, 0.3];
+        let hits = lib.knn_search(&query, 3).expect("knn search");
+        assert_eq!(hits.len(), 3);
+        assert!(hits[0].distance <= hits[1].distance);
+    }
+
+    #[test]
+    fn test_traverse_from() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+
+        let root = ContextNode {
+            id: None,
+            name: "root".into(),
+            source: "root".into(),
+            lod: vec![],
+            embedding: None,
+        };
+        let root_id = lib.insert_node(&root).expect("insert");
+
+        let child = ContextNode {
+            id: None,
+            name: "child".into(),
+            source: "child".into(),
+            lod: vec![],
+            embedding: None,
+        };
+        let child_id = lib.insert_node(&child).expect("insert");
+
+        let grandchild = ContextNode {
+            id: None,
+            name: "grandchild".into(),
+            source: "grandchild".into(),
+            lod: vec![],
+            embedding: None,
+        };
+        let grandchild_id = lib.insert_node(&grandchild).expect("insert");
+
+        lib.insert_edge(root_id, child_id, "depends", 1.0).expect("edge");
+        lib.insert_edge(child_id, grandchild_id, "depends", 1.0)
+            .expect("edge");
+
+        let nodes = lib.traverse_from(root_id, 2).expect("traverse");
+        assert_eq!(nodes.len(), 3);
+    }
+
+    #[test]
+    fn test_insert_wasm_tool() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+        let tool = WasmTool {
+            name: "tokenizer".into(),
+            path: "/bin/tokenizer.wasm".into(),
+            capabilities: vec!["tokenize".into(), "split".into()],
+        };
+        lib.insert_wasm_tool(&tool).expect("insert");
+
+        let found = lib
+            .find_wasm_tools_by_capability("tokenize")
+            .expect("find");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name.as_str(), "tokenizer");
+
+        let not_found = lib
+            .find_wasm_tools_by_capability("embed")
+            .expect("find");
+        assert!(not_found.is_empty());
+    }
+
+    #[test]
+    fn test_embedding_cache() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+        let emb: Vec<f32> = vec![0.5, 0.5, 0.5];
+        lib.cache_embedding("hash123", "test query", &emb)
+            .expect("cache");
+
+        let cached = lib
+            .get_cached_embedding("hash123")
+            .expect("get cached");
+        assert!(cached.is_some());
+        let cached = cached.unwrap();
+        assert!((cached[0] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_blob_roundtrip() {
+        let original: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
+        let blob = vec_to_blob(&original);
+        let restored = blob_to_vec(&blob).expect("should decode");
+        assert_eq!(original.len(), restored.len());
+        for (a, b) in original.iter().zip(restored.iter()) {
+            assert!((a - b).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_cosine_distance_identical() {
+        let a: Vec<f32> = vec![1.0, 0.0, 0.0];
+        let b: Vec<f32> = vec![1.0, 0.0, 0.0];
+        let d = cosine_distance(&a, &b);
+        assert!((d - 0.0).abs() < 1e-6, "identical vectors should have distance 0");
+    }
+
+    #[test]
+    fn test_cosine_distance_orthogonal() {
+        let a: Vec<f32> = vec![1.0, 0.0];
+        let b: Vec<f32> = vec![0.0, 1.0];
+        let d = cosine_distance(&a, &b);
+        assert!((d - 1.0).abs() < 1e-6, "orthogonal vectors should have distance 1");
+    }
+}

@@ -18,3 +18,4 @@ tokio = { workspace = true }
 regex = { workspace = true }
 ureq = { workspace = true }
 dashmap = { workspace = true }
+extism = { workspace = true }

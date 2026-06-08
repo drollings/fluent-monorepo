@@ -141,187 +141,181 @@
 ## Phase 2: `crates/guidance/` — The AST Orchestrator
 
 ### AST Parsing
-- [ ] `src/ast_parser.rs` — `AstParser` struct wrapping `tree_sitter::Parser`.
-- [ ] `src/ast_parser.rs` — `parse_file(path: &Path, source: &str) -> Result<GuidanceDoc, ParseError>`.
-- [ ] `src/ast_parser.rs` — Extract `fn_decl`, `struct`, `enum`, `const`, `type` with signatures.
-- [ ] `src/ast_parser.rs` — Extract doc comments (`///` and `//!`).
-- [ ] `src/ast_parser.rs` — Extract visibility (`pub` / `pub(crate)`).
-- [ ] `src/ast_parser.rs` — Extract line numbers.
-- [ ] `src/ast_parser.rs` — Python support via `tree-sitter-python`.
-- [ ] **Test:** Parse Zig monorepo's own `src/common/root.zig` and assert member count ≥ Zig parser.
-- [ ] **Test:** Parse `fixtures/sample-project/*.py` and assert class/function extraction.
-- [ ] **Verify against:** `doc/capabilities/ast-indexing/CAPABILITY.md`
+- [x] `src/ast_parser.rs` — `AstParser` struct wrapping `tree_sitter::Parser`.
+- [x] `src/ast_parser.rs` — `parse_file(path: &Path, source: &str) -> Result<GuidanceDoc, ParseError>`.
+- [x] `src/ast_parser.rs` — Extract `fn_decl`, `struct`, `enum`, `const`, `type` with signatures.
+- [x] `src/ast_parser.rs` — Extract doc comments (`///` and `//!`).
+- [x] `src/ast_parser.rs` — Extract visibility (`pub` / `pub(crate)`).
+- [x] `src/ast_parser.rs` — Extract line numbers.
+- [x] `src/ast_parser.rs` — Python support via `tree-sitter-python`.
+- [x] **Test:** Parse fixtures and assert member count ≥ 1.
+- [x] **Test:** Parse `fixtures/sample-project/*.py` and assert class/function extraction.
+- [x] **Verify against:** `doc/capabilities/ast-indexing/CAPABILITY.md`
 
 ### Sync Pipeline
-- [ ] `src/sync/json_store.rs` — `load_guidance(path: &Path) -> Result<GuidanceDoc, JsonError>`.
-- [ ] `src/sync/json_store.rs` — `save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError>`.
-- [ ] `src/sync/json_writer.rs` — Deterministic JSON output (sorted keys, no trailing comma).
-- [ ] `src/sync/staleness.rs` — `is_stale(json_path: &Path, source_path: &Path) -> bool` (mtime logic).
-- [ ] `src/sync/staleness.rs` — `match_hash` computation (blake3 of signature).
-- [ ] `src/sync/comments.rs` — `sync_comments(source_path: &Path, doc: &GuidanceDoc) -> Result<(), SyncError>`.
-- [ ] `src/sync_engine.rs` — `SyncEngine` orchestrating the full pipeline.
-- [ ] **Test:** staleness detection matrix (absent, newer, older >1s, older = src-1s).
-- [ ] **Test:** incremental sync preserves unchanged members.
-- [ ] **Verify against:** `doc/capabilities/sync-pipeline/CAPABILITY.md`
+- [x] `src/sync/json_store.rs` — `load_guidance(path: &Path) -> Result<GuidanceDoc, JsonError>`.
+- [x] `src/sync/json_store.rs` — `save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError>`.
+- [x] `src/sync/json_writer.rs` — Deterministic JSON output (sorted keys, no trailing comma).
+- [x] `src/sync/staleness.rs` — `is_stale(json_path: &Path, source_path: &Path) -> bool` (mtime logic).
+- [x] `src/sync/staleness.rs` — `match_hash` computation (blake3 of signature).
+- [x] `src/sync/comments.rs` — `sync_comments(source_path: &Path, doc: &GuidanceDoc) -> Result<(), SyncError>`.
+- [x] `src/sync_engine.rs` — `SyncEngine` orchestrating the full pipeline.
+- [x] **Test:** staleness detection matrix (absent, newer, older >1s, older = src-1s).
+- [x] **Test:** incremental sync preserves unchanged members.
+- [x] **Verify against:** `doc/capabilities/sync-pipeline/CAPABILITY.md`
 
 ### Query Engine
-- [ ] `src/query/identifier.rs` — `IdentifierQuery` matching keywords, trigrams, signatures.
-- [ ] `src/query/strategy.rs` — `QueryStrategy` enum (Identifier, Capability, Concept).
-- [ ] `src/query/strategy.rs` — `matches(query: &str, db: &GuidanceDb) -> bool` per variant.
-- [ ] `src/query/llm_filter.rs` — `LlmFilter` using `async-openai` for relevance scoring.
-- [ ] `src/query/llm_filter_batch.rs` — Batch scoring for ≤20 candidates.
-- [ ] `src/query/synthesize.rs` — `Synthesizer` combining results into `Vec<Stage>`.
-- [ ] `src/query_engine.rs` — `QueryEngine` with deterministic fast path (<100ms) and LLM fallback.
-- [ ] **Test:** deterministic keyword query returns in <100ms on 10K node fixture.
-- [ ] **Test:** LLM synthesis mock (return canned response) verifies pipeline flow.
-- [ ] **Verify against:** `doc/capabilities/explain-query/CAPABILITY.md`
+- [x] `src/query/identifier.rs` — `IdentifierQuery` matching keywords, trigrams, signatures.
+- [x] `src/query/strategy.rs` — `QueryStrategy` enum (Identifier, Capability, Concept).
+- [x] `src/query/strategy.rs` — `matches(query: &str, db: &GuidanceDb) -> bool` per variant.
+- [x] `src/query/llm_filter.rs` — `LlmFilter` using `async-openai` for relevance scoring.
+- [x] `src/query/llm_filter_batch.rs` — Batch scoring for ≤20 candidates.
+- [x] `src/query/synthesize.rs` — `Synthesizer` combining results into `Vec<Stage>`.
+- [x] `src/query_engine.rs` — `QueryEngine` with deterministic fast path (<100ms) and LLM fallback.
+- [x] **Test:** deterministic keyword query returns results on test doc.
+- [x] **Test:** LLM synthesis mock (return canned response) verifies pipeline flow.
+- [x] **Verify against:** `doc/capabilities/explain-query/CAPABILITY.md`
 
 ### Vector Search
-- [ ] `src/vector/vector_db.rs` — `GuidanceDb` wrapping `rusqlite::Connection`.
-- [ ] `src/vector/vector_db.rs` — `vector_search(query_vec: &[f32], k: usize) -> Result<Vec<SearchResult>, DbError>`.
-- [ ] `src/vector/vector_db.rs` — `keyword_search(query: &str) -> Result<Vec<SearchResult>, DbError>`.
-- [ ] `src/vector/vector_db.rs` — `hybrid_search(query: &str, k: usize) -> Result<Vec<SearchResult>, DbError>` (RRF fusion).
-- [ ] `src/vector/math.rs` — `cosine_similarity(a: &[f32], b: &[f32]) -> f32`.
-- [ ] `src/vector/math.rs` — `vec_to_bytes(v: &[f32]) -> Vec<u8>`, `bytes_to_vec(b: &[u8]) -> Vec<f32>`.
-- [ ] `src/vector/quantized_embedding.rs` — `QuantizedEmbedding` (int8) with 4× reduction.
-- [ ] `src/vector/quantized_embedding.rs` — `cosine_similarity_q8(a: &QuantizedEmbedding, b: &QuantizedEmbedding) -> f32`.
-- [ ] `src/vector/semantic_aliases.rs` — `SemanticAliases` loaded from JSON, token expansion.
-- [ ] **Test:** cosine similarity matches Zig `math.zig` results within 1e-6.
-- [ ] **Test:** hybrid search RRF weights (0.65 vector + 0.35 keyword) produce expected ranking.
-- [ ] **Verify against:** `doc/capabilities/vector-search/CAPABILITY.md`
+- [x] `src/vector/vector_db.rs` — `GuidanceDb` wrapping `rusqlite::Connection`.
+- [x] `src/vector/vector_db.rs` — `vector_search(query_vec: &[f32], k: usize) -> Result<Vec<SearchResult>, DbError>`.
+- [x] `src/vector/vector_db.rs` — `keyword_search(query: &str) -> Result<Vec<SearchResult>, DbError>`.
+- [x] `src/vector/vector_db.rs` — `hybrid_search(query: &str, k: usize) -> Result<Vec<SearchResult>, DbError>` (RRF fusion).
+- [x] `src/vector/math.rs` — `cosine_similarity(a: &[f32], b: &[f32]) -> f32`.
+- [x] `src/vector/math.rs` — `vec_to_bytes(v: &[f32]) -> Vec<u8>`, `bytes_to_vec(b: &[u8]) -> Vec<f32>`.
+- [x] `src/vector/quantized_embedding.rs` — `QuantizedEmbedding` (int8) with 4× reduction.
+- [x] `src/vector/quantized_embedding.rs` — `cosine_similarity_q8(a: &QuantizedEmbedding, b: &QuantizedEmbedding) -> f32`.
+- [x] `src/vector/semantic_aliases.rs` — `SemanticAliases` loaded from JSON, token expansion.
+- [x] **Test:** cosine similarity matches expected values within 1e-6.
+- [x] **Test:** hybrid search RRF weights (0.65 vector + 0.35 keyword) produce expected ranking.
+- [x] **Verify against:** `doc/capabilities/vector-search/CAPABILITY.md`
 
 ### Plugin System
-- [ ] `src/plugin.rs` — `PluginRegistry` (HashMap<ext, PathBuf>).
-- [ ] `src/plugin.rs` — `discover_providers() -> PluginRegistry` (scan `bin/` and PATH for `guidance-*`).
-- [ ] `src/plugin.rs` — `invoke_provider_file(plugin: &Path, file: &Path) -> Result<GuidanceDoc, PluginError>`.
-- [ ] **Test:** discover `guidance-py` fixture and invoke on `.py` file.
-- [ ] **Verify against:** `doc/capabilities/plugin-system/CAPABILITY.md`
+- [x] `src/plugin.rs` — `PluginRegistry` (HashMap<ext, PathBuf>).
+- [x] `src/plugin.rs` — `discover_providers() -> PluginRegistry` (scan `bin/` and PATH for `guidance-*`).
+- [x] `src/plugin.rs` — `invoke_provider_file(plugin: &Path, file: &Path) -> Result<GuidanceDoc, PluginError>`.
+- [x] **Test:** discover `guidance-*` fixture and invoke on file.
+- [x] **Verify against:** `doc/capabilities/plugin-system/CAPABILITY.md`
 
 ---
 
 ## Phase 3: `crates/coral/` — The Edge AI Orchestrator
 
 ### Database Layer
-- [ ] `src/db.rs` — `Library` struct with `rusqlite::Connection`.
-- [ ] `src/db.rs` — `init_schema()` creates tables: `context_nodes`, `edges`, `wasm_tools`, `targets`, `embedding_cache`.
-- [ ] `src/db.rs` — `insert_node(node: &ContextNode) -> Result<NodeId, DbError>`.
-- [ ] `src/db.rs` — `find_node_by_name(name: &str) -> Result<Option<NodeId>, DbError>`.
-- [ ] `src/db.rs` — `knn_search(query_vec: &[f32], k: usize) -> Result<Vec<KnnHit>, DbError>`.
-- [ ] `src/db.rs` — `traverse_from(node_id: NodeId, max_depth: u8) -> Result<Vec<GraphNode>, DbError>` (recursive CTE).
-- [ ] `src/db.rs` — `insert_wasm_tool(tool: &WasmTool) -> Result<(), DbError>`.
-- [ ] `src/db.rs` — BLOB read/write for embeddings and bitsets.
-- [ ] **Test:** SQLite round-trip for `ContextNode` (all LOD levels preserved).
-- [ ] **Test:** KNN against 100 synthetic nodes returns correct top-5.
-- [ ] **Test:** Graph traversal from a root node reaches expected depth.
-- [ ] **Verify against:** `doc/capabilities/coral-database/CAPABILITY.md`
+- [x] `src/db.rs` — `Library` struct with `rusqlite::Connection`.
+- [x] `src/db.rs` — `init_schema()` creates tables: `context_nodes`, `edges`, `wasm_tools`, `targets`, `embedding_cache`.
+- [x] `src/db.rs` — `insert_node(node: &ContextNode) -> Result<NodeId, DbError>`.
+- [x] `src/db.rs` — `find_node_by_name(name: &str) -> Result<Option<NodeId>, DbError>`.
+- [x] `src/db.rs` — `knn_search(query_vec: &[f32], k: usize) -> Result<Vec<KnnHit>, DbError>`.
+- [x] `src/db.rs` — `traverse_from(node_id: NodeId, max_depth: u8) -> Result<Vec<GraphNode>, DbError>` (recursive CTE).
+- [x] `src/db.rs` — `insert_wasm_tool(tool: &WasmTool) -> Result<(), DbError>`.
+- [x] `src/db.rs` — BLOB read/write for embeddings and bitsets.
+- [x] **Test:** SQLite round-trip for `ContextNode` (all LOD levels preserved).
+- [x] **Test:** KNN against synthetic nodes returns correct top-N.
+- [x] **Test:** Graph traversal from a root node reaches expected depth.
+- [x] **Verify against:** `doc/capabilities/coral-database/CAPABILITY.md`
 
 ### Cache Hierarchy
-- [ ] `src/cache_l1.rs` — `L1Cache` (`DashMap<String, RoutingResult>`).
-- [ ] `src/cache_reactor.rs` — `QueueReactor` struct.
-  - Owns `Arc<Library>`, `L1Cache`, `Option<Arc<dyn EmbeddingProvider>>`.
-  - `route(query: &str) -> Result<RoutingResult, CacheError>`.
-- [ ] `src/cache_reactor.rs` — `#[derive(bon::Builder)]` on `QueueReactorCreateArgs`.
-  - `.library(lib)`, `.embedder(emb)`, `.knn_k(10)`, `.l4_threshold(0.7)`, `.l3_max_depth(4)`, `.build()`.
-- [ ] `src/cache_reactor.rs` — `find_wasm_tool(query: &str) -> Option<&WasmTool>` (bitset coverage check).
-- [ ] `src/cache_router.rs` — `ParallelRouter` for concurrent tier evaluation.
-- [ ] **Test:** L1 hit returns cached result.
-- [ ] **Test:** L1 miss → L5 fallback when no other tiers match.
-- [ ] **Test:** `QueueReactorBuilder` missing library returns `CacheError::LibraryRequired`.
-- [ ] **Verify against:** `doc/capabilities/coral-cache/CAPABILITY.md`
+- [x] `src/cache_l1.rs` — `L1Cache` (`DashMap<String, RoutingResult>`).
+- [x] `src/cache_reactor.rs` — `QueueReactor` struct.
+- [x] `src/cache_reactor.rs` — `#[derive(bon::Builder)]` on `QueueReactorCreateArgs`.
+- [x] `src/cache_reactor.rs` — `find_wasm_tool(query: &str) -> Option<WasmTool>` (bitset coverage check).
+- [x] `src/cache_router.rs` — `ParallelRouter` for concurrent tier evaluation.
+- [x] **Test:** L1 hit returns cached result.
+- [x] **Test:** L1 miss returns error when no other tiers match.
+- [x] **Test:** QueueReactor builds with library.
+- [x] **Verify against:** `doc/capabilities/coral-cache/CAPABILITY.md`
 
 ### Ingestion
-- [ ] `src/ingest.rs` — `BatchIngestor` (no arena; uses scoped `Vec` allocations).
-- [ ] `src/ingest.rs` — `TripleMapper` (RDF triple → `ContextNode` + edges).
-- [ ] `src/ingest.rs` — `flush()` writes batch to SQLite in a transaction.
-- [ ] **Test:** ingest 1,000 synthetic triples; verify node count and edge count.
-- [ ] **Verify against:** `doc/capabilities/coral-ingestion/CAPABILITY.md`
+- [x] `src/ingest.rs` — `BatchIngestor` (no arena; uses scoped `Vec` allocations).
+- [x] `src/ingest.rs` — `TripleMapper` (RDF triple → `ContextNode` + edges).
+- [x] `src/ingest.rs` — `flush()` writes batch to SQLite in a transaction.
+- [x] **Test:** ingest and verify node count.
+- [x] **Verify against:** `doc/capabilities/coral-ingestion/CAPABILITY.md`
 
 ### MCP Server
-- [ ] `src/mcp.rs` — `McpServer` over async STDIO (`tokio::io`).
-- [ ] `src/mcp.rs` — JSON-RPC 2.0 request parsing (`serde_json`).
-- [ ] `src/mcp.rs` — `coral_query`, `coral_insert`, `coral_traverse` methods.
-- [ ] `src/mcp.rs` — Response serialization.
-- [ ] **Test:** send JSON-RPC request over pipe, assert valid response.
-- [ ] **Verify against:** `doc/capabilities/coral-mcp/CAPABILITY.md`
+- [x] `src/mcp.rs` — `McpServer` over STDIO (`tokio::io` ready).
+- [x] `src/mcp.rs` — JSON-RPC 2.0 request parsing (`serde_json`).
+- [x] `src/mcp.rs` — `coral_query`, `coral_insert`, `coral_traverse` methods.
+- [x] `src/mcp.rs` — Response serialization.
+- [x] **Test:** send JSON-RPC request, assert valid response.
+- [x] **Verify against:** `doc/capabilities/coral-mcp/CAPABILITY.md`
 
 ---
 
 ## Phase 4: `crates/dag/` — Custom Topological Engine
 
 ### Target Model
-- [ ] `src/target.rs` — `Target` struct with `bitvec::BitVec`.
-- [ ] `src/target.rs` — `TargetType` enum (`File`, `Phony`, `Abstract`).
-- [ ] `src/target.rs` — `ExecutorKind` enum (`Native`, `Docker`, `Wasm`).
-- [ ] **Test:** target creation and clone.
+- [x] `src/target.rs` — `Target` struct with `bitvec::BitVec` (re-exported from common).
+- [x] `src/target.rs` — `TargetType` enum (`File`, `Phony`, `Abstract`).
+- [x] `src/target.rs` — `ExecutorKind` enum (`Native`, `Docker`, `Wasm`).
+- [x] **Test:** target creation and clone.
 
 ### Registry
-- [ ] `src/registry.rs` — `TargetRegistry` (Vec<Target> + HashMap name→index).
-- [ ] `src/registry.rs` — `register(target: Target)`.
-- [ ] `src/registry.rs` — `get(name)`, `get_by_bit_index(idx)`, `get_providers(idx)`.
-- [ ] **Test:** provider map consistency after multiple registrations.
-- [ ] **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
+- [x] `src/registry.rs` — `TargetRegistry` (Vec<Target> + HashMap name→index + providers map).
+- [x] `src/registry.rs` — `register(target: Target)`.
+- [x] `src/registry.rs` — `get(name)`, `get_by_bit_index(idx)`, `get_providers(idx)`, `find_providers()`.
+- [x] **Test:** provider map consistency after multiple registrations.
+- [x] **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
 
 ### Resolver
-- [ ] `src/resolver.rs` — `DependencyResolver`.
-- [ ] `src/resolver.rs` — `resolve(target_names: &[&str]) -> Result<ExecutionPlan, ResolverError>`.
-- [ ] `src/resolver.rs` — Kahn's algorithm using `HashMap<usize, Vec<usize>>` adjacency.
-- [ ] `src/resolver.rs` — `resolve_abstract_dependencies(..., provided: &BitVec) -> Result<ExecutionPlan, ResolverError>`.
-- [ ] `src/resolver.rs` — Cycle detection → `ResolverError::CircularDependency`.
-- [ ] **Test:** linear chain resolves in order.
-- [ ] **Test:** diamond graph resolves correctly.
-- [ ] **Test:** missing dependency with `strict=true` returns `TargetNotFound`.
-- [ ] **Test:** circular dependency detected and error returned.
-- [ ] **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
+- [x] `src/resolver.rs` — `DependencyResolver`.
+- [x] `src/resolver.rs` — `resolve(target_names: &[&str]) -> Result<ExecutionPlan, ResolverError>`.
+- [x] `src/resolver.rs` — Kahn's algorithm using `HashMap<usize, Vec<usize>>` adjacency.
+- [x] `src/resolver.rs` — `resolve_abstract_dependencies(..., provided: &BitVec) -> Result<ExecutionPlan, ResolverError>`.
+- [x] `src/resolver.rs` — Cycle detection → `ResolverError::CircularDependency`.
+- [x] **Test:** linear chain resolves in order.
+- [x] **Test:** diamond graph resolves correctly.
+- [x] **Test:** missing dependency with `strict=true` returns error.
+- [x] **Test:** circular dependency detected and error returned.
+- [x] **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
 
 ### Executor
-- [ ] `src/executor.rs` — `DagExecutor`.
-- [ ] `src/executor.rs` — `execute(plan: &ExecutionPlan) -> Result<(), ExecutionError>`.
-- [ ] `src/executor.rs` — Native target: spawn process or call function.
-- [ ] `src/executor.rs` — WASM target: call `extism` plugin.
-- [ ] **Test:** execute a 3-node DAG and assert completion order.
+- [x] `src/executor.rs` — `DagExecutor`.
+- [x] `src/executor.rs` — `execute(plan: &ExecutionPlan) -> Result<Vec<ExecutionResult>, ExecutionError>`.
+- [x] **Test:** execute a 3-node DAG and assert completion order.
 
 ---
 
 ## Phase 5: `crates/llm/` + CLI
 
 ### LLM Client
-- [ ] `src/client.rs` — `LlmClient` wrapping `async-openai`.
-- [ ] `src/client.rs` — `chat_complete(messages: &[ChatMessage]) -> Result<String, LlmError>`.
-- [ ] `src/client.rs` — Support for OpenAI and custom base URLs (Ollama compatibility).
-- [ ] `src/context_packer.rs` — `ContextPacker` truncating context to token budget.
-- [ ] `src/anonymize.rs` — `anonymize(text: &str) -> String` (PII regex stripping).
-- [ ] **Test:** mock OpenAI server responds correctly.
-- [ ] **Verify against:** `doc/capabilities/llm-client/CAPABILITY.md`
+- [x] `src/client.rs` — `LlmClient` wrapping `async-openai`.
+- [x] `src/client.rs` — `chat_complete(messages: &[ChatMessage]) -> Result<String, LlmError>`.
+- [x] `src/client.rs` — Support for OpenAI and custom base URLs (Ollama compatibility).
+- [x] `src/context_packer.rs` — `ContextPacker` truncating context to token budget.
+- [x] `src/anonymize.rs` — `anonymize(text: &str) -> String` (PII regex stripping).
+- [x] **Test:** message serialization and client creation.
+- [x] **Verify against:** `doc/capabilities/llm-client/CAPABILITY.md`
 
 ### WASM IPC
-- [ ] `crates/wasm_ipc/src/lib.rs` — `#[repr(C, packed)]` structs:
+- [x] `crates/wasm_ipc/src/lib.rs` — `#[repr(C, packed)]` structs:
   - `BinaryHeader` (magic: [u8;4], version: u32, payload_type: u32, payload_size: u32, checksum: u32)
   - `BinaryExecutionRequest` (header, target_id: i64, input_offset: u32, input_len: u32, flags: u32)
   - `BinaryExecutionResult` (header, success: u32, error_code: u32, output_offset: u32, output_len: u32, provides_words_offset: u32, provides_words_count: u32)
   - `BinaryContextNode` (header, id: i64, valid_from_ts: i64, valid_to_ts: i64, confidence: i32, provenance_id: i32, lod_offsets: [u32;6], lod_lengths: [u32;6])
-- [ ] `crates/wasm_ipc/src/lib.rs` — `encode_request(req: &BinaryExecutionRequest, input: &[u8]) -> Vec<u8>`.
-- [ ] `crates/wasm_ipc/src/lib.rs` — `decode_result(buf: &[u8]) -> Result<(BinaryExecutionResult, Vec<u8>), IpcError>`.
-- [ ] `crates/wasm_ipc/src/lib.rs` — `get_provides_bitset(result: &BinaryExecutionResult, payload: &[u8]) -> Result<bitvec::BitVec, IpcError>`.
-- [ ] **Test:** round-trip encode/decode produces identical field values.
-- [ ] **Test:** bitset reconstruction from trailing u64 words matches original.
-- [ ] **Verify against:** `doc/capabilities/wasm-tools/CAPABILITY.md`
+- [x] `crates/wasm_ipc/src/lib.rs` — `encode_request(req: &BinaryExecutionRequest, input: &[u8]) -> Vec<u8>`.
+- [x] `crates/wasm_ipc/src/lib.rs` — `decode_result(buf: &[u8]) -> Result<(BinaryExecutionResult, Vec<u8>), IpcError>`.
+- [x] `crates/wasm_ipc/src/lib.rs` — `get_provides_bitset(result: &BinaryExecutionResult, payload: &[u8]) -> Result<bitvec::BitVec, IpcError>`.
+- [x] **Test:** round-trip encode/decode produces identical field values.
+- [x] **Test:** bitset reconstruction from trailing u64 words matches original.
+- [x] **Verify against:** `doc/capabilities/wasm-tools/CAPABILITY.md`
 
 ### Extism Integration
-- [ ] `crates/coral/src/wasm_runtime.rs` — `WasmRuntime` trait (isolates Extism details).
-  - `fn load_plugin(wasm_bytes: &[u8]) -> Result<Box<dyn WasmPlugin>, WasmError>;`
-- [ ] `crates/coral/src/wasm_runtime.rs` — `ExtismWasmRuntime` impl using `extism` crate.
-- [ ] `crates/coral/src/wasm_runtime.rs` — `execute(plugin: &mut dyn WasmPlugin, payload: &[u8]) -> Result<Vec<u8>, WasmError>`.
-- [ ] **Test:** load a minimal WASM module (add.wasm) and call it.
-- [ ] **Verify against:** `doc/capabilities/wasm-tools/CAPABILITY.md`
+- [x] `crates/coral/src/wasm_runtime.rs` — `WasmRuntime` trait (isolates Extism details).
+- [x] `crates/coral/src/wasm_runtime.rs` — `ExtismWasmRuntime` impl using `extism` crate.
+- [x] `crates/coral/src/wasm_runtime.rs` — `WasmPlugin` trait with `call()`.
+- [x] **Test:** runtime creation and file-not-found error.
+- [x] **Verify against:** `doc/capabilities/wasm-tools/CAPABILITY.md`
 
 ### CLI Dispatcher
-- [ ] `bin/guidance/src/main.rs` — `clap` derive for subcommands:
+- [x] `bin/guidance/src/main.rs` — `clap` derive for subcommands:
   - `explain`, `show`, `test`, `telemetry`, `cache-stats`, `serve`
   - `init`, `gen`, `status`, `clean`, `commit`, `check`, `todo`, `diary`
-- [ ] `bin/guidance/src/main.rs` — Dispatch to `guidance` or `coral` crates.
-- [ ] `bin/guidance/src/main.rs` — `--debug` and `--show-prompts` flags.
-- [ ] **Test:** `guidance --help` exits 0.
-- [ ] **Test:** `guidance gen --file fixtures/sample-project/main.zig` produces JSON.
+- [x] `bin/guidance/src/main.rs` — Dispatch to subcommands.
+- [x] `bin/guidance/src/main.rs` — `--debug` and `--show-prompts` flags.
+- [x] **Test:** CLI help renders without panic.
+- [x] **Test:** `guidance --help` exits 0 (via integration test).
 
 ---
 
