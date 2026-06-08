@@ -1,39 +1,371 @@
+use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
+
 pub const LOD_COUNT: usize = 6;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// ── Typed ID handles ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub i64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub i64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TargetId(pub i64);
 
 impl NodeId {
-    pub fn from_int(i: i64) -> Self {
-        Self(i)
-    }
-    pub fn as_int(self) -> i64 {
-        self.0
-    }
+    pub fn from_int(i: i64) -> Self { Self(i) }
+    pub fn as_int(self) -> i64 { self.0 }
 }
 
 impl SessionId {
-    pub fn from_int(i: i64) -> Self {
-        Self(i)
-    }
-    pub fn as_int(self) -> i64 {
-        self.0
-    }
+    pub fn from_int(i: i64) -> Self { Self(i) }
+    pub fn as_int(self) -> i64 { self.0 }
 }
 
 impl TargetId {
-    pub fn from_int(i: i64) -> Self {
-        Self(i)
+    pub fn from_int(i: i64) -> Self { Self(i) }
+    pub fn as_int(self) -> i64 { self.0 }
+}
+
+// ── FileType ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileType {
+    Source,
+    Markdown,
+    Config,
+    Data,
+    Pdf,
+    Audio,
+    Unknown,
+}
+
+impl FileType {
+    pub fn from_extension(ext: &str) -> Self {
+        let known_source = [
+            ".zig", ".zon", ".py", ".rs", ".go", ".ts", ".tsx",
+            ".js", ".jsx", ".c", ".cpp", ".h", ".hpp", ".lua",
+            ".rb", ".java", ".swift", ".kt",
+        ];
+        let known_markdown = [".md", ".markdown", ".mdx"];
+        let known_config = [".json", ".toml", ".yaml", ".yml", ".ini", ".env", ".cfg", ".conf"];
+
+        let ext = ext.to_lowercase();
+        if known_source.iter().any(|e| ext == *e) { return Self::Source; }
+        if known_markdown.iter().any(|e| ext == *e) { return Self::Markdown; }
+        if known_config.iter().any(|e| ext == *e) { return Self::Config; }
+        Self::Unknown
     }
-    pub fn as_int(self) -> i64 {
-        self.0
+
+    pub fn to_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Markdown => "markdown",
+            Self::Config => "config",
+            Self::Data => "data",
+            Self::Pdf => "pdf",
+            Self::Audio => "audio",
+            Self::Unknown => "unknown",
+        }
     }
+}
+
+// ── MemberType ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemberType {
+    #[default]
+    FnDecl,
+    FnPrivate,
+    Struct,
+    Enum,
+    Union,
+    EnumField,
+    TestDecl,
+    ComptimeBlock,
+    Method,
+    MethodPrivate,
+}
+
+// ── EdgeType ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeType {
+    Depends,
+    Provides,
+    Imports,
+    Exports,
+    Calls,
+    CalledBy,
+    Extends,
+    Implements,
+}
+
+// ── StageKind ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StageKind {
+    Prose,
+    Code,
+    Metadata,
+    Insight,
+    SkillDoc,
+    CapabilityDoc,
+    NotFound,
+}
+
+// ── Param ───────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Param {
+    #[serde(default)]
+    pub name: SmolStr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_name: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<SmolStr>,
+}
+
+// ── Member ──────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Member {
+    #[serde(default)]
+    pub type_name: MemberType,
+    #[serde(default)]
+    pub name: SmolStr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_hash: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<SmolStr>,
+    #[serde(default)]
+    pub params: Vec<Param>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returns: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<SmolStr>,
+    #[serde(default)]
+    pub tags: Vec<SmolStr>,
+    #[serde(default)]
+    pub is_pub: bool,
+    #[serde(default)]
+    pub members: Vec<Member>,
+    #[serde(default)]
+    pub equivalents: Vec<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default)]
+    pub comment_generated: bool,
+}
+
+// ── Skill ───────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Skill {
+    #[serde(default)]
+    pub ref_path: SmolStr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<SmolStr>,
+}
+
+// ── Meta ────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Meta {
+    #[serde(default)]
+    pub module: SmolStr,
+    #[serde(default)]
+    pub source: SmolStr,
+    #[serde(default = "default_language")]
+    pub language: SmolStr,
+}
+
+fn default_language() -> SmolStr { SmolStr::new("zig") }
+
+// ── CapabilityEval ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CapabilityEval {
+    #[serde(default)]
+    pub capability_name: SmolStr,
+    #[serde(default)]
+    pub confidence: f32,
+    #[serde(default)]
+    pub evaluated_at_hash: SmolStr,
+}
+
+// ── GuidanceDoc ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GuidanceDoc {
+    #[serde(default)]
+    pub meta: Meta,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<SmolStr>,
+    #[serde(default)]
+    pub keywords: Vec<SmolStr>,
+    #[serde(default)]
+    pub skills: Vec<Skill>,
+    #[serde(default)]
+    pub capabilities: Vec<SmolStr>,
+    #[serde(default)]
+    pub hashtags: Vec<SmolStr>,
+    #[serde(default)]
+    pub used_by: Vec<SmolStr>,
+    #[serde(default)]
+    pub members: Vec<Member>,
+    #[serde(default)]
+    pub equivalents: Vec<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_eval: Option<CapabilityEval>,
+}
+
+// ── ContextNode ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextNode {
+    pub id: Option<NodeId>,
+    pub name: SmolStr,
+    pub source: String,
+    #[serde(default)]
+    pub lod: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
+}
+
+// ── KnnHit ──────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnnHit {
+    pub node_id: NodeId,
+    pub distance: f32,
+    pub name: SmolStr,
+}
+
+// ── GraphNode ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphNode {
+    pub node_id: NodeId,
+    pub name: SmolStr,
+    pub depth: u32,
+}
+
+// ── Stage ───────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Stage {
+    pub kind: StageKind,
+    pub content: String,
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+// ── QueryResult ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryResult {
+    pub query: String,
+    pub stages: Vec<Stage>,
+}
+
+// ── SyncResult ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncResult {
+    pub filepath: String,
+    pub members_added: usize,
+    pub members_updated: usize,
+    pub members_removed: usize,
+    pub has_changes: bool,
+    pub comments_generated: bool,
+    pub source_modified: bool,
+}
+
+// ── FileMatch ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileMatch {
+    pub filename: SmolStr,
+    pub filepath: SmolStr,
+    #[serde(default)]
+    pub description: SmolStr,
+    #[serde(default)]
+    pub line_context: SmolStr,
+}
+
+// ── ASTAnalysis ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ASTAnalysis {
+    pub filepath: SmolStr,
+    #[serde(default)]
+    pub functions: Vec<Member>,
+    #[serde(default)]
+    pub classes: Vec<Member>,
+    #[serde(default)]
+    pub imports: Vec<SmolStr>,
+    #[serde(default)]
+    pub patterns_detected: Vec<SmolStr>,
+    #[serde(default)]
+    pub token_count: usize,
+    #[serde(default)]
+    pub signature_preview: SmolStr,
+}
+
+// ── GuidanceInfo ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuidanceInfo {
+    pub path: SmolStr,
+    #[serde(default)]
+    pub comment: SmolStr,
+    #[serde(default)]
+    pub functions: Vec<Member>,
+    #[serde(default)]
+    pub classes: Vec<Member>,
+    #[serde(default)]
+    pub skills: Vec<SmolStr>,
+    #[serde(default)]
+    pub tags: Vec<SmolStr>,
+}
+
+// ── TargetType ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetType {
+    File,
+    Phony,
+    Abstract,
+}
+
+// ── ExecutorKind ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutorKind {
+    Native,
+    Docker,
+    Wasm,
+}
+
+// ── WasmTool ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WasmTool {
+    pub name: SmolStr,
+    pub path: String,
+    pub capabilities: Vec<SmolStr>,
 }
 
 #[cfg(test)]
@@ -66,5 +398,128 @@ mod tests {
         takes_node(NodeId::from_int(1));
         takes_session(SessionId::from_int(1));
         takes_target(TargetId::from_int(1));
+    }
+
+    #[test]
+    fn file_type_from_extension() {
+        assert_eq!(FileType::from_extension(".zig"), FileType::Source);
+        assert_eq!(FileType::from_extension(".md"), FileType::Markdown);
+        assert_eq!(FileType::from_extension(".json"), FileType::Config);
+        assert_eq!(FileType::from_extension(".xyz"), FileType::Unknown);
+    }
+
+    #[test]
+    fn file_type_to_str() {
+        assert_eq!(FileType::Source.to_str(), "source");
+        assert_eq!(FileType::Markdown.to_str(), "markdown");
+    }
+
+    #[test]
+    fn member_serde_roundtrip() {
+        let m = Member {
+            type_name: MemberType::FnDecl,
+            name: SmolStr::new("foo"),
+            match_hash: None,
+            signature: Some(SmolStr::new("fn foo()")),
+            params: vec![],
+            returns: None,
+            comment: Some(SmolStr::new("test function")),
+            tags: vec![SmolStr::new("public")],
+            is_pub: true,
+            members: vec![],
+            equivalents: vec![],
+            line: Some(10),
+            comment_generated: false,
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        let m2: Member = serde_json::from_str(&json).unwrap();
+        assert_eq!(m.name, m2.name);
+        assert_eq!(m.is_pub, m2.is_pub);
+    }
+
+    #[test]
+    fn guidance_doc_serde_roundtrip() {
+        let doc = GuidanceDoc {
+            meta: Meta {
+                module: SmolStr::new("test"),
+                source: SmolStr::new("test.zig"),
+                language: SmolStr::new("zig"),
+            },
+            comment: Some(SmolStr::new("module comment")),
+            detail: None,
+            keywords: vec![SmolStr::new("api")],
+            skills: vec![],
+            capabilities: vec![],
+            hashtags: vec![],
+            used_by: vec![],
+            members: vec![],
+            equivalents: vec![],
+            capability_eval: None,
+        };
+        let json = serde_json::to_string(&doc).unwrap();
+        let doc2: GuidanceDoc = serde_json::from_str(&json).unwrap();
+        assert_eq!(doc.meta.module, doc2.meta.module);
+        assert_eq!(doc.comment, doc2.comment);
+    }
+
+    #[test]
+    fn knn_hit_creation() {
+        let hit = KnnHit {
+            node_id: NodeId::from_int(1),
+            distance: 0.95,
+            name: SmolStr::new("test"),
+        };
+        assert_eq!(hit.node_id.as_int(), 1);
+    }
+
+    #[test]
+    fn stage_kind_serde() {
+        let kinds = [StageKind::Prose, StageKind::Code, StageKind::NotFound];
+        for kind in &kinds {
+            let json = serde_json::to_string(kind).unwrap();
+            let k2: StageKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(*kind, k2);
+        }
+    }
+
+    #[test]
+    fn target_type_serde() {
+        let t = TargetType::File;
+        let json = serde_json::to_string(&t).unwrap();
+        assert_eq!(json, "\"file\"");
+        let t2: TargetType = serde_json::from_str(&json).unwrap();
+        assert_eq!(t, t2);
+    }
+
+    #[test]
+    fn executor_kind_serde() {
+        let e = ExecutorKind::Wasm;
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(json, "\"wasm\"");
+    }
+
+    #[test]
+    fn context_node_defaults() {
+        let node = ContextNode {
+            id: None,
+            name: SmolStr::new("root"),
+            source: "full text".into(),
+            lod: vec![],
+            embedding: None,
+        };
+        assert!(node.lod.is_empty());
+        assert!(node.embedding.is_none());
+    }
+
+    #[test]
+    fn wasm_tool_serde() {
+        let tool = WasmTool {
+            name: SmolStr::new("tokenizer"),
+            path: "/usr/local/bin/guidance-tokenizer.wasm".into(),
+            capabilities: vec![SmolStr::new("tokenize")],
+        };
+        let json = serde_json::to_string(&tool).unwrap();
+        let t2: WasmTool = serde_json::from_str(&json).unwrap();
+        assert_eq!(tool.name, t2.name);
     }
 }

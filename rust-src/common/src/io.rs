@@ -100,4 +100,23 @@ mod tests {
         let result = resolve_path("/base/dir/file.txt", "sub/file.rs");
         assert_eq!(result, "/base/dir/sub/file.rs");
     }
+
+    #[test]
+    fn resolve_path_relative_base() {
+        let result = resolve_path("relative/base/file.txt", "sub/file.rs");
+        assert!(result.ends_with("sub/file.rs"));
+    }
+
+    #[test]
+    fn strip_path_prefix_basic() {
+        assert_eq!(strip_path_prefix("/a/b/c", "/a/b"), "c");
+        assert_eq!(strip_path_prefix("/a/b/c", "/x"), "/a/b/c");
+        assert_eq!(strip_path_prefix("/a/b/c", "/a/b/c"), "");
+    }
+
+    #[test]
+    fn read_file_alloc_err_missing() {
+        let result = read_file_alloc_err("/nonexistent/path/file.txt");
+        assert!(result.is_err());
+    }
 }

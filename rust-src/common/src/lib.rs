@@ -23,6 +23,7 @@ pub mod csr_graph;
 pub mod drift;
 pub mod embeddings;
 pub mod entity;
+pub mod error;
 pub mod error_context;
 pub mod file_lock;
 pub mod format;
@@ -30,10 +31,12 @@ pub mod freq_table;
 pub mod frozen_snapshot;
 pub mod hash;
 pub mod index_header;
+pub mod interner;
 pub mod io;
 pub mod metrics;
 pub mod pattern;
 pub mod query_cache;
+pub mod registry;
 pub mod shell;
 pub mod shell_parser;
 pub mod source;
@@ -50,7 +53,7 @@ pub mod wrapper;
 #[allow(deprecated)]
 pub use builder_error::{BuilderError, Phase};
 pub use constants::*;
-pub use content_node::ContentNode;
+pub use content_node::{generate_lod_slices, ContentNode};
 pub use csr_graph::CsrGraph;
 pub use drift::BitSetDrift;
 pub use embeddings::{
@@ -84,6 +87,13 @@ pub use string::{
     trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
 };
 pub use terminal::{get_terminal_height, get_terminal_width, is_terminal, Color, ProgressBar};
-pub use types::{NodeId, SessionId, TargetId};
+pub use types::{
+    ASTAnalysis, CapabilityEval, ContextNode, EdgeType, ExecutorKind, FileMatch, FileType,
+    GraphNode, GuidanceDoc, GuidanceInfo, KnnHit, Member, MemberType, Meta, NodeId, Param,
+    QueryResult, SessionId, Skill, Stage, StageKind, SyncResult, TargetId, TargetType, WasmTool,
+};
 pub use url::{is_local_host, is_private_ip, validate_https_or_local_http, UrlError};
 pub use wrapper::{retry_call, wrap_if, Pipeline, RetryResult, WrapperKind};
+pub use error::{RegistryError, EmbedError, IoError, ResolverError, DbError, CacheError};
+pub use interner::CapabilityRegistry;
+pub use registry::{Target, TargetRegistry};

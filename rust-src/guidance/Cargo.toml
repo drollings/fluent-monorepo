@@ -1,0 +1,28 @@
+[package]
+name = "guidance-guidance"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-common = { path = "../common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+smol_str = { workspace = true }
+internment = { workspace = true }
+bitvec = { workspace = true }
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bon = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-zig = { workspace = true }
+tree-sitter-python = { workspace = true }
+rusqlite = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+notify = { workspace = true }
+regex = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+httpmock = { workspace = true }

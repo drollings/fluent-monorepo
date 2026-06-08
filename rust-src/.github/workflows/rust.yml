@@ -1,0 +1,25 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["rust-src/**"]
+  pull_request:
+    paths: ["rust-src/**"]
+
+defaults:
+  run:
+    working-directory: rust-src
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo doc --workspace --no-deps

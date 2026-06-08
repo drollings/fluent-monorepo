@@ -1,0 +1,19 @@
+[package]
+name = "guidance"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-common = { path = "../../common" }
+guidance-guidance = { path = "../../guidance" }
+guidance-coral = { path = "../../coral" }
+guidance-dag = { path = "../../dag" }
+guidance-llm = { path = "../../llm" }
+guidance-wasm-ipc = { path = "../../wasm_ipc" }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+bon = { workspace = true }
+thiserror = { workspace = true }

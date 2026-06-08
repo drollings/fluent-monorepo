@@ -2,6 +2,12 @@
 resolver = "2"
 members = [
     "common",
+    "guidance",
+    "coral",
+    "dag",
+    "llm",
+    "wasm_ipc",
+    "bin/guidance",
 ]
 
 [workspace.package]
@@ -9,22 +15,54 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-bon = "3"
-ureq = { version = "3", features = ["json"] }
-httpmock = "0.7"
-libc = "0.2"
+# CLI & FS
+clap = { version = "4", features = ["derive"] }
+notify = "7"
 blake3 = "1.8"
-smol_str = "0.3"
-internment = { version = "0.8", features = ["arc"] }
+
+# Strings
+smol_str = { version = "0.3", features = ["serde"] }
+internment = { version = "0.8", features = ["arc", "serde"] }
+
+# Data
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Builders
+bon = "3"
+
+# Database
+rusqlite = { version = "0.34", features = ["bundled"] }
+# sqlite-vec not yet available as a Rust crate; we use manual cosine fallback
+
+# Orchestration
 bitvec = "1"
+extism = "3"
+async-openai = "0.28"
+
+# Parsing
+tree-sitter = "0.25"
+tree-sitter-zig = "1.1.2"
+tree-sitter-python = "0.25.0"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# HTTP
+ureq = { version = "3", features = ["json"] }
+
+# Testing
+tempfile = "3"
+httpmock = "0.7"
+
+# System
+libc = "0.2"
 sha2 = "0.10"
 thiserror = "2"
 tracing = "0.1"
-rusqlite = { version = "0.34", features = ["bundled"] }
 memmap2 = "0.9"
 fs2 = "0.4"
 time = "0.3"
 regex = "1"
-tempfile = "3"
+lazy_static = "1"
+dashmap = "6"

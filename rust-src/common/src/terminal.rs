@@ -223,4 +223,42 @@ mod tests {
         assert!(pb.is_finished());
     }
 
+    #[test]
+    fn all_color_codes() {
+        assert_eq!(Color::Reset.code(), "\x1b[0m");
+        assert_eq!(Color::Black.code(), "\x1b[30m");
+        assert_eq!(Color::Red.code(), "\x1b[31m");
+        assert_eq!(Color::Green.code(), "\x1b[32m");
+        assert_eq!(Color::Yellow.code(), "\x1b[33m");
+        assert_eq!(Color::Blue.code(), "\x1b[34m");
+        assert_eq!(Color::Magenta.code(), "\x1b[35m");
+        assert_eq!(Color::Cyan.code(), "\x1b[36m");
+        assert_eq!(Color::White.code(), "\x1b[37m");
+        assert_eq!(Color::BrightBlack.code(), "\x1b[90m");
+        assert_eq!(Color::BrightRed.code(), "\x1b[91m");
+        assert_eq!(Color::BrightGreen.code(), "\x1b[92m");
+        assert_eq!(Color::BrightYellow.code(), "\x1b[93m");
+        assert_eq!(Color::BrightBlue.code(), "\x1b[94m");
+        assert_eq!(Color::BrightMagenta.code(), "\x1b[95m");
+        assert_eq!(Color::BrightCyan.code(), "\x1b[96m");
+        assert_eq!(Color::BrightWhite.code(), "\x1b[97m");
+    }
+
+    #[test]
+    fn progress_bar_render_states() {
+        let pb = ProgressBar::new("test", 100);
+        let rendered = pb.render();
+        assert!(rendered.starts_with("test ["));
+        assert!(rendered.contains("0/100"));
+
+        let pb = ProgressBar::new("test", 0);
+        let rendered = pb.render();
+        assert!(rendered.contains("0/0"));
+
+        let mut pb = ProgressBar::new("test", 100);
+        pb.set(100);
+        let rendered = pb.render();
+        assert!(rendered.contains("100/100"));
+    }
+
 }

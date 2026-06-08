@@ -1,0 +1,9 @@
+[package]
+name = "guidance-wasm-ipc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bitvec = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }

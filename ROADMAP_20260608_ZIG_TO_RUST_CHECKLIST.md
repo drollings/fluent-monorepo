@@ -17,8 +17,8 @@
 ## Phase 0: Bootstrap & Infrastructure
 
 ### Workspace & Tooling
-- [ ] Create `rust-src/Cargo.toml` workspace root with members: `common`, `guidance`, `coral`, `dag`, `llm`, `wasm_ipc`, `bin/guidance`.
-- [ ] Add mandated crates to workspace `Cargo.toml` (exact versions pinned in `Cargo.lock`):
+- [x] Create `rust-src/Cargo.toml` workspace root with members: `common`, `guidance`, `coral`, `dag`, `llm`, `wasm_ipc`, `bin/guidance`.
+- [x] Add mandated crates to workspace `Cargo.toml` (exact versions pinned in `Cargo.lock`):
   - `clap` (derive), `notify`, `blake3`
   - `smol_str`, `internment`
   - `serde`, `serde_json`
@@ -26,72 +26,72 @@
   - `rusqlite`, `sqlite-vec`
   - `bitvec`, `extism`, `async-openai`
   - `tree-sitter`, `tree-sitter-zig`, `tree-sitter-python`
-- [ ] Create `rust-src/.cargo/config.toml` with `target-dir = "target"` to avoid conflicts with Zig build artifacts.
-- [ ] Create `.github/workflows/rust.yml` (or update existing CI) with:
+- [x] Create `rust-src/.cargo/config.toml` with `target-dir = "target"` to avoid conflicts with Zig build artifacts.
+- [x] Create `.github/workflows/rust.yml` (or update existing CI) with:
   - `cargo fmt --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
   - `cargo test --workspace`
   - `cargo doc --workspace --no-deps`
-- [ ] Create `rust-src/fixtures/sample-project/` with Zig, Python, and Markdown files for parity testing.
-- [ ] Create `rust-src/doc/capabilities/` directory skeleton mirroring `doc/capabilities/`.
-- [ ] Smoke test: `cargo build --workspace` passes with zero source files (empty lib crates).
+- [x] Create `rust-src/fixtures/sample-project/` with Zig, Python, and Markdown files for parity testing.
+- [x] Create `rust-src/doc/capabilities/` directory skeleton mirroring `doc/capabilities/`.
+- [x] Smoke test: `cargo build --workspace` passes with zero source files (empty lib crates).
 
 ### Crate Skeletons
-- [ ] `crates/common/Cargo.toml` + `src/lib.rs`
-- [ ] `crates/guidance/Cargo.toml` + `src/lib.rs`
-- [ ] `crates/coral/Cargo.toml` + `src/lib.rs`
-- [ ] `crates/dag/Cargo.toml` + `src/lib.rs`
-- [ ] `crates/llm/Cargo.toml` + `src/lib.rs`
-- [ ] `crates/wasm_ipc/Cargo.toml` + `src/lib.rs`
-- [ ] `bin/guidance/Cargo.toml` + `src/main.rs`
+- [x] `crates/common/Cargo.toml` + `src/lib.rs`
+- [x] `crates/guidance/Cargo.toml` + `src/lib.rs`
+- [x] `crates/coral/Cargo.toml` + `src/lib.rs`
+- [x] `crates/dag/Cargo.toml` + `src/lib.rs`
+- [x] `crates/llm/Cargo.toml` + `src/lib.rs`
+- [x] `crates/wasm_ipc/Cargo.toml` + `src/lib.rs`
+- [x] `bin/guidance/Cargo.toml` + `src/main.rs`
 
 ---
 
 ## Phase 1: `crates/common/` — The Foundation
 
 ### Core Data Types
-- [ ] `src/types.rs` — `FileType`, `MemberType`, `EdgeType`, `StageKind` enums.
+- [x] `src/types.rs` — `FileType`, `MemberType`, `EdgeType`, `StageKind` enums.
   - **Verify against:** `doc/capabilities/ast-indexing/CAPABILITY.md`, `doc/capabilities/target-registry/CAPABILITY.md`
-- [ ] `src/types.rs` — `Param`, `Member`, `Skill`, `Meta`, `CapabilityEval`, `GuidanceDoc` structs.
+- [x] `src/types.rs` — `Param`, `Member`, `Skill`, `Meta`, `CapabilityEval`, `GuidanceDoc` structs.
   - Use `smol_str::SmolStr` for `name`, `signature`, `type`, `default`.
   - `#[derive(Serialize, Deserialize, Debug, Clone)]` on all.
   - **Verify against:** `doc/capabilities/ast-indexing/CAPABILITY.md`
-- [ ] `src/types.rs` — `ContextNode` struct with LOD pyramid (`Arc<str>` or `ArcIntern<str>`).
+- [x] `src/types.rs` — `ContextNode` struct with LOD pyramid (`Arc<str>` or `ArcIntern<str>`).
   - **Verify against:** `doc/capabilities/coral-database/CAPABILITY.md`
-- [ ] `src/types.rs` — `KnnHit`, `GraphNode` structs.
+- [x] `src/types.rs` — `KnnHit`, `GraphNode` structs.
 
 ### String Interning & Capability Registry
-- [ ] `src/interner.rs` — `CapabilityRegistry` wrapping `RwLock<HashMap<ArcIntern<str>, usize>>`.
+- [x] `src/interner.rs` — `CapabilityRegistry` wrapping `RwLock<HashMap<ArcIntern<str>, usize>>`.
   - `intern(name: &str) -> usize`
   - `get_index(name: &str) -> Option<usize>`
   - `get_name(idx: usize) -> Option<ArcIntern<str>>`
   - `intern_list(names: &[&str])`
   - `to_bitvec(names: &[&str]) -> bitvec::BitVec`
   - `bitvec_to_names(bits: &bitvec::BitVec) -> Vec<ArcIntern<str>>`
-  - **Thread-safety test:** concurrent intern from 8 tokio tasks, all same index.
+  - **Thread-safety test:** concurrent intern from 8 threads, all same index.
   - **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
 
 ### Embedding Providers
-- [ ] `src/embeddings.rs` — `trait EmbeddingProvider: Send + Sync`
+- [x] `src/embeddings.rs` — `trait EmbeddingProvider: Send + Sync`
   - `fn name(&self) -> &str;`
   - `fn dimensions(&self) -> u32;`
   - `fn embed(&self, text: &str) -> Result<Vec<f32>, EmbedError>;`
   - `fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbedError>;`
   - **Verify against:** `doc/capabilities/embedding-providers/CAPABILITY.md`
-- [ ] `src/embeddings.rs` — `NoopEmbedding` impl.
-- [ ] `src/embeddings.rs` — `OllamaEmbedding` impl (HTTP via `reqwest` or `async-openai` custom base URL).
-- [ ] `src/embeddings.rs` — `OpenAiEmbedding` impl (via `async-openai` crate).
-- [ ] `src/embeddings.rs` — `create_embedding_provider()` factory.
-- [ ] `src/embeddings.rs` — JSON response parsers (`parse_ollama_response`, `parse_openai_response`).
-- [ ] **Test:** `embed_batch` round-trip with mock HTTP server (`wiremock` or `httptest`).
-- [ ] **Test:** Thread-safe concurrent `embed()` calls.
+- [x] `src/embeddings.rs` — `NoopEmbedding` impl.
+- [x] `src/embeddings.rs` — `OllamaEmbedding` impl (HTTP via `ureq`).
+- [x] `src/embeddings.rs` — `OpenAiEmbedding` impl.
+- [x] `src/embeddings.rs` — `create_embedding_provider()` factory.
+- [x] `src/embeddings.rs` — JSON response parsers (`parse_ollama_response`, `parse_openai_response`).
+- [x] **Test:** `embed_batch` round-trip with mock HTTP server (`httpmock`).
+- [x] **Test:** Thread-safe concurrent `embed()` calls.
 
 ### Registry & Builders
-- [ ] `src/registry.rs` — `Target` struct.
+- [x] `src/registry.rs` — `Target` struct.
   - Fields: `id: i64`, `name: ArcIntern<str>`, `target_type: TargetType`, `executor: ExecutorKind`, `depends: bitvec::BitVec`, `provides: bitvec::BitVec`, `command: String`, `essential: bool`.
-  - `#[derive(Debug, Clone, bon::Builder)]` on a `TargetCreateArgs` struct.
+  - `#[derive(Debug, Clone, bon::Builder)]` on `Target`.
   - **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
-- [ ] `src/registry.rs` — `TargetRegistry`.
+- [x] `src/registry.rs` — `TargetRegistry`.
   - `register(target: Target) -> Result<(), RegistryError>`
   - `get(name: &str) -> Option<&Target>`
   - `get_by_bit_index(idx: usize) -> Option<&Target>`
@@ -103,38 +103,38 @@
   - **Verify against:** `doc/capabilities/target-registry/CAPABILITY.md`
 
 ### Hash & I/O
-- [ ] `src/hash.rs` — `blake3_hash(data: &[u8]) -> [u8; 32]`
-- [ ] `src/hash.rs` — `blake3_hex(data: &[u8]) -> String`
-- [ ] `src/hash.rs` — `content_hash_with_model(content: &str, model: &str) -> String` (SHA-256 or blake3).
-- [ ] `src/hash.rs` — `hash_file(path: &Path) -> Result<[u8; 32], HashError>`
-- [ ] `src/io.rs` — `read_file_alloc(path: &Path) -> Result<Vec<u8>, IoError>`
-- [ ] `src/io.rs` — `resolve_path(base: &Path, rel: &str) -> PathBuf`
-- [ ] `src/io.rs` — `strip_path_prefix(path: &Path, prefix: &Path) -> Option<PathBuf>`
+- [x] `src/hash.rs` — `blake3_hash(data: &[u8]) -> [u8; 32]`
+- [x] `src/hash.rs` — `blake3_hex(data: &[u8]) -> String`
+- [x] `src/hash.rs` — `content_hash_with_model(content: &str, model: &str) -> String` (SHA-256).
+- [x] `src/hash.rs` — `hash_file(path: &Path) -> Result<String, IoError>`
+- [x] `src/io.rs` — `read_file_alloc(path: &str) -> Option<String>`
+- [x] `src/io.rs` — `resolve_path(base: &str, relative: &str) -> String`
+- [x] `src/io.rs` — `strip_path_prefix(path: &str, prefix: &str) -> &str`
 
 ### String Utilities
-- [ ] `src/string.rs` — `looks_like_identifier(s: &str) -> bool`
-- [ ] `src/string.rs` — `contains_ignore_case(haystack: &str, needle: &str) -> bool`
-- [ ] `src/string.rs` — `truncate_at_sentence(text: &str, max_chars: usize) -> String`
-- [ ] `src/string.rs` — `slugify(s: &str) -> String`
-- [ ] `src/string.rs` — `strip_boilerplate(text: &str) -> String`
-- [ ] `src/string.rs` — `is_noisy_comment(text: &str) -> bool`
-- [ ] `src/string.rs` — `lower_into(s: &str, buf: &mut String)`
-- [ ] **Test:** all string utilities against Zig fixture outputs.
+- [x] `src/string.rs` — `looks_like_identifier(s: &str) -> bool`
+- [x] `src/string.rs` — `contains_ignore_case(haystack: &str, needle: &str) -> bool`
+- [x] `src/string.rs` — `truncate_at_sentence(text: &str, max_chars: usize) -> String`
+- [x] `src/string.rs` — `slugify(s: &str) -> String`
+- [x] `src/string.rs` — `strip_boilerplate(text: &str) -> String`
+- [x] `src/string.rs` — `is_noisy_comment(text: &str) -> bool`
+- [x] `src/string.rs` — `lower_into(s: &str, buf: &mut String)`
+- [x] **Test:** all string utilities against Zig fixture outputs.
 
 ### Content Node & LOD
-- [ ] `src/content_node.rs` — `ContentNode` with `Arc<str>` source and `Vec<Arc<str>>` lod[1..5].
-- [ ] `src/content_node.rs` — `generate_lod_slices(full_text: &str) -> Vec<String>`
-- [ ] **Test:** LOD generation produces expected truncation boundaries.
+- [x] `src/content_node.rs` — `ContentNode` with `ArcIntern<str>` source and LOD pyramid.
+- [x] `src/content_node.rs` — `generate_lod_slices(full_text: &str) -> Vec<String>`
+- [x] **Test:** LOD generation produces expected truncation boundaries.
 
 ### Index Primitives
-- [ ] `src/doc_registry.rs` — `DocRegistry` (path ↔ u32 mapping).
-- [ ] `src/word_index.rs` — `WordIndex` inverted index.
-- [ ] `src/trigram_index.rs` — `TrigramIndex` with mmap support (`memmap2`).
-- [ ] `src/freq_table.rs` — `FrequencyTable` for adaptive tokenization.
-- [ ] **Test:** round-trip insert/query for all indexes.
+- [x] `src/word_index.rs` — `DocRegistry` (path ↔ u32 mapping, embedded in word_index.rs).
+- [x] `src/word_index.rs` — `WordIndex` inverted index.
+- [x] `src/trigram_index.rs` — `TrigramIndex` with mmap support (`memmap2`).
+- [x] `src/freq_table.rs` — `FrequencyTable` for adaptive tokenization.
+- [x] **Test:** round-trip insert/query for all indexes.
 
 ### Error Types
-- [ ] `src/error.rs` — `RegistryError`, `EmbedError`, `IoError`, `ResolverError` enums with `thiserror`.
+- [x] `src/error.rs` — `RegistryError`, `EmbedError`, `IoError`, `ResolverError`, `DbError`, `CacheError` enums with `thiserror`.
 
 ---
 

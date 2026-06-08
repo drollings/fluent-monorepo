@@ -1,0 +1,15 @@
+[package]
+name = "guidance-llm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-common = { path = "../common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+regex = { workspace = true }
+async-openai = { workspace = true }
+ureq = { workspace = true }

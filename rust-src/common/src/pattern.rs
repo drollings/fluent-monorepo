@@ -167,4 +167,57 @@ mod tests {
     fn detect_template_method_negative() {
         assert!(!detect_template_method("pub fn process() void {}"));
     }
+
+    #[test]
+    fn detect_state_persistence_positive() {
+        assert!(detect_state_persistence("self.state = .ready"));
+        assert!(detect_state_persistence("state: State"));
+        assert!(detect_state_persistence("state: enum { idle, busy }"));
+    }
+
+    #[test]
+    fn detect_state_persistence_negative() {
+        assert!(!detect_state_persistence("fn process() void {}"));
+    }
+
+    #[test]
+    fn detect_singleton_positive() {
+        assert!(detect_singleton("static _instance: *Self"));
+        assert!(detect_singleton("pub fn get_instance()"));
+        assert!(detect_singleton("fn instance() and instance field"));
+    }
+
+    #[test]
+    fn detect_singleton_negative() {
+        assert!(!detect_singleton("fn process() void {}"));
+    }
+
+    #[test]
+    fn detect_builder_positive() {
+        assert!(detect_builder("builder pattern with fn build("));
+    }
+
+    #[test]
+    fn detect_builder_negative() {
+        assert!(!detect_builder("fn process() void {}"));
+    }
+
+    #[test]
+    fn detect_builder_with_return_self() {
+        assert!(detect_builder("return self;\nreturn self;\nfn build("));
+    }
+
+    #[test]
+    fn detect_adapter_positive() {
+        assert!(detect_adapter("fn adapt(self, input: T)"));
+        assert!(detect_adapter("fn convert(self, input: T)"));
+        assert!(detect_adapter("fn transform(self, input: T)"));
+        assert!(detect_adapter("fn to_string(self)"));
+        assert!(detect_adapter("fn as_bytes(self)"));
+    }
+
+    #[test]
+    fn detect_adapter_negative() {
+        assert!(!detect_adapter("fn process() void {}"));
+    }
 }

@@ -1,0 +1,14 @@
+[package]
+name = "guidance-dag"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-common = { path = "../common" }
+guidance-wasm-ipc = { path = "../wasm_ipc" }
+serde = { workspace = true }
+internment = { workspace = true }
+bitvec = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bon = { workspace = true }

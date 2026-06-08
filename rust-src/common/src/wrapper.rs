@@ -178,4 +178,29 @@ mod tests {
         assert_eq!(WrapperKind::Retry.name(), "Retry");
         assert_eq!(WrapperKind::Check(Box::new(|| true)).name(), "Check");
     }
+
+    #[test]
+    fn check_passes_executes_no_retry() {
+        let called = Arc::new(AtomicUsize::new(0));
+        let c = Arc::clone(&called);
+        let result = Pipeline::call(
+            &[WrapperKind::Check(Box::new(|| true))],
+            move || {
+                c.fetch_add(1, Ordering::SeqCst);
+                Ok::<i32, ()>(42)
+            },
+        );
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn wrapper_kind_debug() {
+        let d = format!("{:?}", WrapperKind::None);
+        assert_eq!(d, "None");
+        let d = format!("{:?}", WrapperKind::Retry);
+        assert_eq!(d, "Retry");
+        let d = format!("{:?}", WrapperKind::Check(Box::new(|| true)));
+        assert_eq!(d, "Check(<fn>)");
+    }
 }

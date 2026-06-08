@@ -518,4 +518,135 @@ mod tests {
         let vec = p.embed("").unwrap();
         assert!(vec.is_empty());
     }
+
+    #[test]
+    fn ollama_embed_with_mock_http() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/api/embed");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
+        });
+        let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
+        let vec = p.embed("hello").unwrap();
+        assert_eq!(vec.len(), 3);
+        assert!((vec[0] - 0.1).abs() < 1e-6);
+        mock.assert();
+    }
+
+    #[test]
+    fn ollama_embed_http_error() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/api/embed");
+            then.status(500)
+                .body("Internal Server Error");
+        });
+        let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
+        let result = p.embed("hello");
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[test]
+    fn ollama_embed_batch_with_mock_http() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/api/embed");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
+        });
+        let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2).unwrap();
+        let batch = p.embed_batch(&["a", "b"]).unwrap();
+        assert_eq!(batch.count, 2);
+        assert_eq!(batch.dims, 2);
+        mock.assert();
+    }
+
+    #[test]
+    fn openai_embed_with_mock_http() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/v1/embeddings")
+                .header("Authorization", "Bearer sk-test");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"data": [{"embedding": [0.1, 0.2, 0.3], "index": 0}]}"#);
+        });
+        let p = OpenAiEmbedding::new(
+            Some("text-embedding-3-small"),
+            Some(&server.url("")),
+            Some("sk-test"),
+            3,
+        ).unwrap();
+        let vec = p.embed("hello").unwrap();
+        assert_eq!(vec.len(), 3);
+        mock.assert();
+    }
+
+    #[test]
+    fn openai_embed_http_error() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/v1/embeddings");
+            then.status(401)
+                .body("Unauthorized");
+        });
+        let p = OpenAiEmbedding::new(
+            None,
+            Some(&server.url("")),
+            Some("sk-bad"),
+            3,
+        ).unwrap();
+        let result = p.embed("hello");
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[test]
+    fn openai_embed_batch_with_mock_http() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/v1/embeddings");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"data": [{"embedding": [0.1, 0.2], "index": 0}, {"embedding": [0.3, 0.4], "index": 1}]}"#);
+        });
+        let p = OpenAiEmbedding::new(
+            None,
+            Some(&server.url("")),
+            Some("sk-test"),
+            2,
+        ).unwrap();
+        let batch = p.embed_batch(&["a", "b"]).unwrap();
+        assert_eq!(batch.count, 2);
+        assert_eq!(batch.dims, 2);
+        mock.assert();
+    }
+
+    #[test]
+    fn parse_ollama_batch_empty() {
+        let json = br#"{"embeddings": []}"#;
+        let batch = parse_ollama_batch_response(json).unwrap();
+        assert_eq!(batch.count, 0);
+        assert_eq!(batch.dims, 0);
+        assert!(batch.flat.is_empty());
+    }
+
+    #[test]
+    fn parse_openai_batch_empty() {
+        let json = br#"{"data": []}"#;
+        let batch = parse_openai_batch_response(json).unwrap();
+        assert_eq!(batch.count, 0);
+        assert_eq!(batch.dims, 0);
+        assert!(batch.flat.is_empty());
+    }
 }
