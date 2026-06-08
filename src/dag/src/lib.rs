@@ -1,3 +1,4 @@
+#![allow(clippy::should_implement_trait, clippy::type_complexity)]
 //! DAG: Directed Acyclic Graph executor for guidance target orchestration.
 //!
 //! ## Modules
@@ -7,15 +8,15 @@
 //! - `middleware` — Middleware chain: `TimingMiddleware`, `RetryMiddleware`
 //! - `adapter` — Runtime `ComponentAdapter` for name/execute/schema override
 //! - `work_unit` — `CommandUnit` implementing `WorkUnit` for CLI command execution
-pub mod target;
-pub mod resolver;
+pub mod adapter;
 pub mod executor;
 pub mod middleware;
-pub mod adapter;
+pub mod resolver;
+pub mod target;
 pub mod work_unit;
 
-pub use target::{ExecutorKind, Target, TargetType};
+pub use executor::{DagExecutor, ExecutionError};
+pub use guidance_common::error::ResolverError;
 pub use guidance_common::registry::TargetRegistry;
 pub use resolver::{DependencyResolver, ExecutionPlan};
-pub use guidance_common::error::ResolverError;
-pub use executor::{DagExecutor, ExecutionError};
+pub use target::{ExecutorKind, Target, TargetType};

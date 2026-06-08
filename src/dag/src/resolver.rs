@@ -56,10 +56,12 @@ impl<'a> DependencyResolver<'a> {
             if needed.contains_key(&bit_idx) {
                 continue;
             }
-            let target = self
-                .registry
-                .get_by_bit_index(bit_idx)
-                .ok_or(ResolverError::TargetNotFound(format!("bit_index {bit_idx}")))?;
+            let target =
+                self.registry
+                    .get_by_bit_index(bit_idx)
+                    .ok_or(ResolverError::TargetNotFound(format!(
+                        "bit_index {bit_idx}"
+                    )))?;
             needed.insert(bit_idx, bit_idx);
 
             for cap_idx in target.depends.iter_ones() {
@@ -83,10 +85,12 @@ impl<'a> DependencyResolver<'a> {
         let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
 
         for &bit_idx in needed.keys() {
-            let target = self
-                .registry
-                .get_by_bit_index(bit_idx)
-                .ok_or(ResolverError::TargetNotFound(format!("bit_index {bit_idx}")))?;
+            let target =
+                self.registry
+                    .get_by_bit_index(bit_idx)
+                    .ok_or(ResolverError::TargetNotFound(format!(
+                        "bit_index {bit_idx}"
+                    )))?;
 
             for cap_idx in target.depends.iter_ones() {
                 let providers = self.registry.get_providers(cap_idx);
@@ -142,7 +146,10 @@ impl<'a> DependencyResolver<'a> {
             })
             .collect();
 
-        Ok(ExecutionPlan { order, target_names })
+        Ok(ExecutionPlan {
+            order,
+            target_names,
+        })
     }
 
     pub fn resolve_abstract_dependencies(

@@ -115,11 +115,7 @@ pub fn doc_to_json(doc: &GuidanceDoc) -> Value {
         obj["skills"] = json!(skills);
     }
     if !doc.capabilities.is_empty() {
-        let caps: Vec<Value> = doc
-            .capabilities
-            .iter()
-            .map(|c| json!(c.as_str()))
-            .collect();
+        let caps: Vec<Value> = doc.capabilities.iter().map(|c| json!(c.as_str())).collect();
         obj["capabilities"] = json!(caps);
     }
     if !doc.hashtags.is_empty() {
@@ -135,11 +131,7 @@ pub fn doc_to_json(doc: &GuidanceDoc) -> Value {
         obj["members"] = json!(members);
     }
     if !doc.equivalents.is_empty() {
-        let eqs: Vec<Value> = doc
-            .equivalents
-            .iter()
-            .map(|e| json!(e.as_str()))
-            .collect();
+        let eqs: Vec<Value> = doc.equivalents.iter().map(|e| json!(e.as_str())).collect();
         obj["equivalents"] = json!(eqs);
     }
     if let Some(ce) = &doc.capability_eval {
@@ -201,8 +193,7 @@ mod tests {
     fn test_json_sorted_keys() {
         let doc = make_test_doc();
         let json_str = doc_to_json_string(&doc);
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json_str).expect("should parse");
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("should parse");
         assert_eq!(parsed["meta"]["module"], "test_module");
         assert_eq!(parsed["meta"]["source"], "src/test.zig");
     }

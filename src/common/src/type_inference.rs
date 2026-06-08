@@ -34,7 +34,9 @@ impl TypeInference {
                         if !child_ancestors[pb] || {
                             let parent_ancestors = ancestors.get(&parent);
                             parent_ancestors.is_some_and(|pa| {
-                                pa.iter().enumerate().any(|(i, b)| *b && !child_ancestors[i])
+                                pa.iter()
+                                    .enumerate()
+                                    .any(|(i, b)| *b && !child_ancestors[i])
                             })
                         } {
                             let mut new_bits = child_ancestors.clone();

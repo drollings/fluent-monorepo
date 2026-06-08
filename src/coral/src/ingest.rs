@@ -89,11 +89,17 @@ impl BatchIngestor {
         Ok(None)
     }
 
-    pub fn add_pending_nodes(&mut self, pending_nodes: Vec<PendingNode>) -> Result<usize, IngestError> {
+    pub fn add_pending_nodes(
+        &mut self,
+        pending_nodes: Vec<PendingNode>,
+    ) -> Result<usize, IngestError> {
         let mut added = 0;
         for pn in pending_nodes {
             if self.config.yago_whitelist_only {
-                let has_whitelisted = pn.types.iter().any(|&type_id| yago::is_whitelisted_hash(type_id));
+                let has_whitelisted = pn
+                    .types
+                    .iter()
+                    .any(|&type_id| yago::is_whitelisted_hash(type_id));
                 if !has_whitelisted {
                     self.stats.triples_filtered += 1;
                     continue;
@@ -132,8 +138,7 @@ impl BatchIngestor {
     /// Ingest triples from an RDF file (Turtle or N-Quads).
     /// Streams through the RDF parser, maps via TripleMapper, and flushes in batches.
     pub fn ingest_file(&mut self, path: &std::path::Path) -> Result<IngestStats, IngestError> {
-        let source = std::fs::read_to_string(path)
-            .map_err(|e| IngestError::Io(e))?;
+        let source = std::fs::read_to_string(path).map_err(IngestError::Io)?;
 
         let mut mapper = guidance_ontology::mapper::TripleMapper::new(
             guidance_ontology::mapper::MappingConfig {
@@ -143,13 +148,13 @@ impl BatchIngestor {
         );
 
         // Try Turtle parser first
-        let mut parser = guidance_rdf::parser::Parser::new(&source);
+        let parser = guidance_rdf::parser::Parser::new(&source);
         let mut triples_processed = 0;
 
-        while let Some(result) = parser.next() {
+        for result in parser {
             match result {
                 Ok(triple) => {
-                    if let Err(_e) = mapper.process_triple(&triple) {
+                    if mapper.process_triple(&triple).is_err() {
                         self.stats.errors_skipped += 1;
                         continue;
                     }
@@ -176,7 +181,7 @@ impl BatchIngestor {
                         predicate: quad.predicate,
                         object: quad.object,
                     };
-                    if let Err(_) = mapper.process_triple(&triple) {
+                    if mapper.process_triple(&triple).is_err() {
                         self.stats.errors_skipped += 1;
                         continue;
                     }
@@ -344,4 +349,3 @@ mod tests {
         assert_eq!(sub.lod.len(), 3);
     }
 }
-

@@ -146,9 +146,7 @@ mod tests {
         let mut handles = Vec::new();
         for _ in 0..8 {
             let r = Arc::clone(&reg);
-            handles.push(thread::spawn(move || {
-                r.intern("hello")
-            }));
+            handles.push(thread::spawn(move || r.intern("hello")));
         }
         for h in handles {
             assert_eq!(h.join().unwrap(), 0);

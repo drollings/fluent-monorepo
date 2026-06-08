@@ -60,9 +60,9 @@ impl QueryCache {
 
     pub fn get(&self, query: &str) -> rusqlite::Result<Option<Entry>> {
         let key = Self::query_key(query);
-        let mut stmt = self
-            .db
-            .prepare("SELECT key, result_json, timestamp, ttl_seconds FROM query_cache WHERE key = ?1")?;
+        let mut stmt = self.db.prepare(
+            "SELECT key, result_json, timestamp, ttl_seconds FROM query_cache WHERE key = ?1",
+        )?;
         let result = stmt.query_row(params![key], |row| {
             Ok(Entry {
                 query: row.get(0)?,
@@ -106,7 +106,9 @@ impl QueryCache {
     }
 
     pub fn stats(&self) -> rusqlite::Result<(usize, u64)> {
-        let count: usize = self.db.query_row("SELECT COUNT(*) FROM query_cache", [], |row| row.get(0))?;
+        let count: usize = self
+            .db
+            .query_row("SELECT COUNT(*) FROM query_cache", [], |row| row.get(0))?;
         Ok((count, self.default_ttl_seconds))
     }
 }

@@ -96,7 +96,11 @@ impl QueryEngine {
         }
     }
 
-    fn walk_and_index_source_files(dir: &Path, prefix: &str, wi: &mut WordIndex) -> std::io::Result<()> {
+    fn walk_and_index_source_files(
+        dir: &Path,
+        prefix: &str,
+        wi: &mut WordIndex,
+    ) -> std::io::Result<()> {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -128,7 +132,10 @@ impl QueryEngine {
         let expanded_query = if let Some(ref aliases) = self.aliases {
             let expansions = aliases.expand_query(query);
             // Use the first expansion (original or first alias set)
-            expansions.into_iter().next().unwrap_or_else(|| query.to_string())
+            expansions
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| query.to_string())
         } else {
             query.to_string()
         };
@@ -142,7 +149,9 @@ impl QueryEngine {
             QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword => {
                 self.explain_capability(&expanded_query, doc)
             }
-            QueryIntent::Conceptual | QueryIntent::HowTo => self.explain_concept(&expanded_query, doc),
+            QueryIntent::Conceptual | QueryIntent::HowTo => {
+                self.explain_concept(&expanded_query, doc)
+            }
             QueryIntent::FilePath => self.explain_file_path(&expanded_query, doc),
             QueryIntent::GeneralSearch => self.explain_general(&expanded_query, doc),
         }
@@ -153,8 +162,10 @@ impl QueryEngine {
         query: &str,
         doc: &GuidanceDoc,
     ) -> Result<Vec<Stage>, QueryEngineError> {
-        let matched_names: Vec<String> =
-            identifier::find_members_by_name(doc, query).into_iter().map(|s| s.to_string()).collect();
+        let matched_names: Vec<String> = identifier::find_members_by_name(doc, query)
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
 
         if !matched_names.is_empty() {
             return Ok(Synthesizer::synthesize(query, doc, &matched_names));
@@ -211,10 +222,10 @@ impl QueryEngine {
                 .map(|c| c.as_str().to_lowercase())
                 .unwrap_or_default();
 
-            if keywords
-                .iter()
-                .any(|k| member_lower.contains(&k.to_lowercase()) || comment_lower.contains(&k.to_lowercase()))
-            {
+            if keywords.iter().any(|k| {
+                member_lower.contains(&k.to_lowercase())
+                    || comment_lower.contains(&k.to_lowercase())
+            }) {
                 matched_names.push(member.name.as_str().to_string());
             }
         }
@@ -305,7 +316,9 @@ impl QueryEngine {
                         doc.members.iter().find_map(|m| {
                             let name_lower = m.name.as_str().to_lowercase();
                             if name_lower.contains(&lower_query)
-                                || m.comment.as_ref().is_some_and(|c| c.as_str().to_lowercase().contains(&lower_query))
+                                || m.comment.as_ref().is_some_and(|c| {
+                                    c.as_str().to_lowercase().contains(&lower_query)
+                                })
                             {
                                 Some(m.name.as_str().to_string())
                             } else {
@@ -345,7 +358,11 @@ impl QueryEngine {
                 _ => "❓",
             };
             out.push_str(&format!("## {kind}\n\n"));
-            out.push_str(&format!("*Source: {}:{}*\n\n", stage.source, stage.line.unwrap_or(0)));
+            out.push_str(&format!(
+                "*Source: {}:{}*\n\n",
+                stage.source,
+                stage.line.unwrap_or(0)
+            ));
             out.push_str(&stage.content);
             out.push_str("\n\n---\n\n");
         }
@@ -387,22 +404,38 @@ impl QueryEngine {
         for (i, stage) in stages.iter().enumerate() {
             let kind_str = format!("{:?}", stage.kind);
             out.push_str(&format!("[{}. {}]\n", i + 1, kind_str));
-            out.push_str(&format!("  Source: {}:{}\n", stage.source, stage.line.unwrap_or(0)));
+            out.push_str(&format!(
+                "  Source: {}:{}\n",
+                stage.source,
+                stage.line.unwrap_or(0)
+            ));
             let preview: String = stage.content.chars().take(120).collect();
-            out.push_str(&format!("  Content ({} chars): {}\n", stage.content.len(), preview));
+            out.push_str(&format!(
+                "  Content ({} chars): {}\n",
+                stage.content.len(),
+                preview
+            ));
         }
         out
     }
 
     /// Explain with no-llm support: when no_llm is set, skip LLM filter phase
     /// and return raw structural stages.
-    pub fn explain_with_mode(&self, query: &str, doc: &GuidanceDoc, format: OutputFormat) -> Result<String, QueryEngineError> {
+    pub fn explain_with_mode(
+        &self,
+        query: &str,
+        doc: &GuidanceDoc,
+        format: OutputFormat,
+    ) -> Result<String, QueryEngineError> {
         if self.no_llm {
             // Skip LLM filter: use keyword matching only
             let intent = strategy::classify_query(query);
             let stages = match intent {
                 QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier => {
-                    let names: Vec<String> = identifier::find_members_by_name(doc, query).iter().map(|s| s.to_string()).collect();
+                    let names: Vec<String> = identifier::find_members_by_name(doc, query)
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
                     if !names.is_empty() {
                         Synthesizer::synthesize(query, doc, &names)
                     } else {
@@ -411,7 +444,9 @@ impl QueryEngine {
                 }
                 _ => {
                     let lower = query.to_lowercase();
-                    let names: Vec<String> = doc.members.iter()
+                    let names: Vec<String> = doc
+                        .members
+                        .iter()
                         .filter(|m| m.name.as_str().to_lowercase().contains(&lower))
                         .map(|m| m.name.as_str().to_string())
                         .collect();
@@ -442,7 +477,9 @@ impl QueryEngine {
             .vector_search(query_vec, k)
             .map_err(|e| QueryEngineError::Db(e.to_string()))?;
 
-        let keyword_results = db.keyword_search(query).map_err(|e| QueryEngineError::Db(e.to_string()))?;
+        let keyword_results = db
+            .keyword_search(query)
+            .map_err(|e| QueryEngineError::Db(e.to_string()))?;
 
         let mut combined: Vec<String> = Vec::new();
         for r in &vector_results {
@@ -580,8 +617,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let src_dir = dir.path().join("src");
         std::fs::create_dir_all(&src_dir).expect("create src dir");
-        std::fs::write(src_dir.join("test.zig"), "pub fn hello_world() void {}")
-            .expect("write");
+        std::fs::write(src_dir.join("test.zig"), "pub fn hello_world() void {}").expect("write");
 
         let mut engine = QueryEngine::new();
         engine.load_word_index(dir.path()).expect("load word index");

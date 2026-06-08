@@ -18,7 +18,12 @@ pub enum RdfError {
     #[error("unexpected EOF")]
     UnexpectedEOF,
     #[error("unexpected token at line {line} col {col}: expected {expected}, got {got}")]
-    UnexpectedToken { line: u32, col: u32, expected: String, got: String },
+    UnexpectedToken {
+        line: u32,
+        col: u32,
+        expected: String,
+        got: String,
+    },
     #[error("invalid prefix declaration")]
     InvalidPrefix,
     #[error("out of memory")]

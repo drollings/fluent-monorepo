@@ -51,9 +51,8 @@ pub fn get_terminal_width() -> usize {
         use std::mem::MaybeUninit;
         use std::os::fd::AsRawFd;
         let mut ws: MaybeUninit<libc::winsize> = MaybeUninit::uninit();
-        let ret = unsafe {
-            libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr())
-        };
+        let ret =
+            unsafe { libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr()) };
         if ret == 0 {
             let ws = unsafe { ws.assume_init() };
             if ws.ws_col > 0 {
@@ -70,9 +69,8 @@ pub fn get_terminal_height() -> usize {
         use std::mem::MaybeUninit;
         use std::os::fd::AsRawFd;
         let mut ws: MaybeUninit<libc::winsize> = MaybeUninit::uninit();
-        let ret = unsafe {
-            libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr())
-        };
+        let ret =
+            unsafe { libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr()) };
         if ret == 0 {
             let ws = unsafe { ws.assume_init() };
             if ws.ws_row > 0 {
@@ -88,7 +86,12 @@ pub fn is_terminal() -> bool {
 }
 
 pub fn confirm(question: &str, default: bool) -> io::Result<bool> {
-    confirm_with(question, default, &mut io::stdin().lock(), &mut io::stdout())
+    confirm_with(
+        question,
+        default,
+        &mut io::stdin().lock(),
+        &mut io::stdout(),
+    )
 }
 
 pub fn confirm_with(
@@ -115,7 +118,12 @@ pub fn confirm_with(
 }
 
 pub fn ask(question: &str, default: &str) -> io::Result<String> {
-    ask_with(question, default, &mut io::stdin().lock(), &mut io::stdout())
+    ask_with(
+        question,
+        default,
+        &mut io::stdin().lock(),
+        &mut io::stdout(),
+    )
 }
 
 pub fn ask_with(
@@ -142,7 +150,12 @@ pub fn ask_with(
 }
 
 pub fn ask_int(question: &str, default: Option<i64>) -> io::Result<i64> {
-    ask_int_with(question, default, &mut io::stdin().lock(), &mut io::stdout())
+    ask_int_with(
+        question,
+        default,
+        &mut io::stdin().lock(),
+        &mut io::stdout(),
+    )
 }
 
 pub fn ask_int_with(
@@ -162,9 +175,12 @@ pub fn ask_int_with(
     reader.read_line(&mut input)?;
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        default.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no input and no default"))
+        default
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no input and no default"))
     } else {
-        trimmed.parse::<i64>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid integer"))
+        trimmed
+            .parse::<i64>()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid integer"))
     }
 }
 

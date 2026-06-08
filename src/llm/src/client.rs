@@ -135,7 +135,10 @@ impl LlmClient {
         self.extract_content(&parsed)
     }
 
-    pub async fn chat_complete_async(&self, messages: Vec<ChatMessage>) -> Result<String, LlmError> {
+    pub async fn chat_complete_async(
+        &self,
+        messages: Vec<ChatMessage>,
+    ) -> Result<String, LlmError> {
         let url = format!("{}/chat/completions", self.api_base);
         let model = self.model.clone();
         let config_think = self.config.think;
@@ -183,7 +186,10 @@ impl LlmClient {
 /// Strips provider: prefix from model reference strings.
 /// e.g. "ollama:embeddinggemma" → "embeddinggemma"
 pub fn model_name(model_ref: &str) -> &str {
-    model_ref.split_once(':').map(|(_, name)| name).unwrap_or(model_ref)
+    model_ref
+        .split_once(':')
+        .map(|(_, name)| name)
+        .unwrap_or(model_ref)
 }
 
 /// Removes think-block tags from LLM output (e.g. `<think>reasoning</think>`).
@@ -227,9 +233,19 @@ pub fn strip_preamble(text: &str) -> &str {
     let first_lower = first_line.to_lowercase();
 
     let preambles = [
-        "let's ", "let me ", "we need to ", "here's ", "here is ",
-        "i'll ", "i will ", "the answer is ", "to answer ", "okay, ",
-        "ok, ", "sure, ", "alright, ",
+        "let's ",
+        "let me ",
+        "we need to ",
+        "here's ",
+        "here is ",
+        "i'll ",
+        "i will ",
+        "the answer is ",
+        "to answer ",
+        "okay, ",
+        "ok, ",
+        "sure, ",
+        "alright, ",
     ];
 
     for &preamble in &preambles {
@@ -244,9 +260,18 @@ pub fn strip_preamble(text: &str) -> &str {
 }
 
 const LLM_PREAMBLE_PATTERNS: &[&str] = &[
-    "here's a", "here is a", "i'll ", "to summarize",
-    "okay,", "ok,", "we need ", "let's think",
-    "let's craft", "let's count", "let me think", "i need to ",
+    "here's a",
+    "here is a",
+    "i'll ",
+    "to summarize",
+    "okay,",
+    "ok,",
+    "we need ",
+    "let's think",
+    "let's craft",
+    "let's count",
+    "let me think",
+    "i need to ",
 ];
 
 /// Returns true if the LLM response appears malformed.
@@ -288,8 +313,12 @@ fn llm_has_dangling_end(body: &str) -> bool {
 
 fn llm_is_generic_self_ref(body: &str) -> bool {
     let patterns = [
-        "this function", "this method", "this class",
-        "this struct", "this type", "this module",
+        "this function",
+        "this method",
+        "this class",
+        "this struct",
+        "this type",
+        "this module",
     ];
     let trimmed = body.trim_end_matches([' ', '\t', '\r', '\n', '.']);
     patterns.iter().any(|&p| trimmed.eq_ignore_ascii_case(p))
@@ -297,8 +326,15 @@ fn llm_is_generic_self_ref(body: &str) -> bool {
 
 fn llm_is_overly_generic(body: &str) -> bool {
     let generics = [
-        "function", "method", "helper", "util", "utility",
-        "handler", "callback", "wrapper", "implementation",
+        "function",
+        "method",
+        "helper",
+        "util",
+        "utility",
+        "handler",
+        "callback",
+        "wrapper",
+        "implementation",
     ];
     let trimmed = body.trim_end_matches([' ', '\t', '\r', '\n', '.']);
     if trimmed.len() > 20 {
@@ -455,17 +491,23 @@ mod tests {
 
     #[test]
     fn test_is_malformed_response_llm_preamble() {
-        assert!(is_malformed_response("here's a function that does something"));
+        assert!(is_malformed_response(
+            "here's a function that does something"
+        ));
     }
 
     #[test]
     fn test_is_malformed_response_valid() {
-        assert!(!is_malformed_response("Computes the SHA-256 hash of the input string."));
+        assert!(!is_malformed_response(
+            "Computes the SHA-256 hash of the input string."
+        ));
     }
 
     #[test]
     fn test_is_malformed_response_valid_long() {
-        assert!(!is_malformed_response("Parses command-line arguments and prints the result."));
+        assert!(!is_malformed_response(
+            "Parses command-line arguments and prints the result."
+        ));
     }
 
     #[test]
@@ -496,7 +538,10 @@ mod tests {
             .think(true)
             .build();
         let client = LlmClient::with_config(config);
-        let messages = vec![ChatMessage { role: "user".into(), content: "hello".into() }];
+        let messages = vec![ChatMessage {
+            role: "user".into(),
+            content: "hello".into(),
+        }];
         let body = client.build_request_body(&messages);
         assert_eq!(body["think"], serde_json::Value::Bool(true));
         assert_eq!(body["model"], "llama3");
@@ -509,7 +554,10 @@ mod tests {
             .model("llama3".into())
             .build();
         let client = LlmClient::with_config(config);
-        let messages = vec![ChatMessage { role: "user".into(), content: "hello".into() }];
+        let messages = vec![ChatMessage {
+            role: "user".into(),
+            content: "hello".into(),
+        }];
         let body = client.build_request_body(&messages);
         assert!(body.get("think").is_none());
     }

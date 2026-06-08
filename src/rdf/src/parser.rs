@@ -172,7 +172,11 @@ impl<'a> Parser<'a> {
                 let pc = self.clone_term(&verb);
                 self.queue.insert(
                     insert_pos,
-                    Triple { subject: sc, predicate: pc, object: obj },
+                    Triple {
+                        subject: sc,
+                        predicate: pc,
+                        object: obj,
+                    },
                 );
 
                 let pk = self.peek_tok()?;
@@ -187,7 +191,10 @@ impl<'a> Parser<'a> {
             if pk.kind == TokenKind::Semicolon {
                 self.consume_tok()?;
                 let pk2 = self.peek_tok()?;
-                if matches!(pk2.kind, TokenKind::Dot | TokenKind::Eof | TokenKind::BlankNodeClose) {
+                if matches!(
+                    pk2.kind,
+                    TokenKind::Dot | TokenKind::Eof | TokenKind::BlankNodeClose
+                ) {
                     break;
                 }
             } else {
@@ -417,7 +424,10 @@ mod tests {
     fn test_parse_prefix_expansion() {
         let trips = parse_triples("@prefix ex: <http://example.org/> .\nex:foo a ex:Thing .");
         assert_eq!(trips[0].subject, Term::Iri("http://example.org/foo".into()));
-        assert_eq!(trips[0].object, Term::Iri("http://example.org/Thing".into()));
+        assert_eq!(
+            trips[0].object,
+            Term::Iri("http://example.org/Thing".into())
+        );
     }
 
     #[test]
@@ -444,7 +454,8 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_subjects() {
-        let trips = parse_triples("<http://a> <http://p> <http://x> .\n<http://b> <http://p> <http://y> .");
+        let trips =
+            parse_triples("<http://a> <http://p> <http://x> .\n<http://b> <http://p> <http://y> .");
         assert_eq!(trips.len(), 2);
         assert_eq!(trips[0].subject, Term::Iri("http://a".into()));
         assert_eq!(trips[1].subject, Term::Iri("http://b".into()));
@@ -464,10 +475,15 @@ mod tests {
 
     #[test]
     fn test_parse_literal_with_datatype() {
-        let trips = parse_triples("<http://s> <http://p> \"42\"^^<http://www.w3.org/2001/XMLSchema#integer> .");
+        let trips = parse_triples(
+            "<http://s> <http://p> \"42\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+        );
         match &trips[0].object {
             Term::Literal(lit) => {
-                assert_eq!(lit.datatype, Some("http://www.w3.org/2001/XMLSchema#integer".into()));
+                assert_eq!(
+                    lit.datatype,
+                    Some("http://www.w3.org/2001/XMLSchema#integer".into())
+                );
                 assert_eq!(lit.value, "42");
             }
             _ => panic!("expected literal"),

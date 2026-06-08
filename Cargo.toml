@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "common",
-    "guidance",
-    "coral",
-    "dag",
-    "llm",
-    "wasm_ipc",
-    "rdf",
-    "ontology",
-    "bin/guidance",
+    "src/common",
+    "src/guidance",
+    "src/coral",
+    "src/dag",
+    "src/llm",
+    "src/wasm_ipc",
+    "src/rdf",
+    "src/ontology",
+    "src/bin/guidance",
 ]
 
 [workspace.package]

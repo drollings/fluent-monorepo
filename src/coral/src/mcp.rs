@@ -244,7 +244,8 @@ mod tests {
     #[test]
     fn test_coral_query_not_found() {
         let server = make_server();
-        let req = r#"{"jsonrpc":"2.0","method":"coral_query","id":1,"params":{"name":"nonexistent"}}"#;
+        let req =
+            r#"{"jsonrpc":"2.0","method":"coral_query","id":1,"params":{"name":"nonexistent"}}"#;
         let response = server.handle_request(req).expect("handle");
         let resp: serde_json::Value = serde_json::from_str(&response).expect("parse");
         assert_eq!(resp["result"]["found"], false);
@@ -259,7 +260,9 @@ mod tests {
         let node_id = resp["result"]["node_id"].as_i64().expect("node_id");
         assert!(node_id > 0);
 
-        let query_req = r#"{"jsonrpc":"2.0","method":"coral_query","id":2,"params":{"name":"test_mcp"}}"#.to_string();
+        let query_req =
+            r#"{"jsonrpc":"2.0","method":"coral_query","id":2,"params":{"name":"test_mcp"}}"#
+                .to_string();
         let query_resp = server.handle_request(&query_req).expect("handle");
         let qr: serde_json::Value = serde_json::from_str(&query_resp).expect("parse");
         assert_eq!(qr["result"]["found"], true);
@@ -273,7 +276,9 @@ mod tests {
         let rv: serde_json::Value = serde_json::from_str(&resp).expect("parse");
         let root_id = rv["result"]["node_id"].as_i64().expect("id");
 
-        let traverse_req = format!(r#"{{"jsonrpc":"2.0","method":"coral_traverse","id":2,"params":{{"node_id":{root_id},"max_depth":3}}}}"#);
+        let traverse_req = format!(
+            r#"{{"jsonrpc":"2.0","method":"coral_traverse","id":2,"params":{{"node_id":{root_id},"max_depth":3}}}}"#
+        );
         let trav_resp = server.handle_request(&traverse_req).expect("handle");
         let tr: serde_json::Value = serde_json::from_str(&trav_resp).expect("parse");
         assert_eq!(tr["result"]["count"].as_i64(), Some(1));
@@ -283,12 +288,16 @@ mod tests {
     fn test_serve_stdio_handles_multiple_lines() {
         let server = make_server();
         // Test that handle_request works for multiple JSON objects
-        let req1 = r#"{"jsonrpc":"2.0","method":"coral_query","id":1,"params":{"name":"nonexistent"}}"#;
+        let req1 =
+            r#"{"jsonrpc":"2.0","method":"coral_query","id":1,"params":{"name":"nonexistent"}}"#;
         let req2 = r#"{"jsonrpc":"2.0","method":"coral_insert","id":2,"params":{"name":"test_stdio","source":"test","lod":[],"embedding":null}}"#;
 
         let resp1 = server.handle_request(req1).expect("handle");
         let r1: JsonRpcResponse = serde_json::from_str(&resp1).expect("parse");
-        assert_eq!(r1.result.as_ref().and_then(|r| r.get("found")), Some(&serde_json::json!(false)));
+        assert_eq!(
+            r1.result.as_ref().and_then(|r| r.get("found")),
+            Some(&serde_json::json!(false))
+        );
 
         let resp2 = server.handle_request(req2).expect("handle");
         let r2: JsonRpcResponse = serde_json::from_str(&resp2).expect("parse");

@@ -9,6 +9,7 @@ const common = @import("common");
 // Primitives
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 fn writeEscaped(writer: anytype, value: []const u8) !void {
     try common.jsonWriteEscaped(writer, value);
 }

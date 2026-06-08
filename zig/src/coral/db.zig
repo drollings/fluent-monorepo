@@ -212,6 +212,7 @@ pub const WasmTool = struct {
 // Timestamp helper
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 fn nowTimestamp() i64 {
     const io = std.Io.Threaded.global_single_threaded.io();
     return @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s));

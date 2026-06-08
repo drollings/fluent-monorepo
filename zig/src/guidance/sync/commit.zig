@@ -675,6 +675,7 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // Public test wrappers
 // =============================================================================
 
+/// // =============================================================================
 pub fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return parseHunkRanges(allocator, chunk);
 }

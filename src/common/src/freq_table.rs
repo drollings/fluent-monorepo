@@ -20,14 +20,30 @@ pub fn default_frequency_table() -> FrequencyTable {
         }
     }
     let common: &[([u8; 2], u16)] = &[
-        (*b"th", 0x0800), (*b"he", 0x0800), (*b"in", 0x0800),
-        (*b"er", 0x0800), (*b"an", 0x0800), (*b"re", 0x0800),
-        (*b"on", 0x0800), (*b"at", 0x0800), (*b"en", 0x0800),
-        (*b"nd", 0x0800), (*b"ti", 0x0800), (*b"es", 0x0800),
-        (*b"or", 0x0800), (*b"te", 0x0800), (*b"of", 0x0800),
-        (*b"ed", 0x0800), (*b"is", 0x0800), (*b"it", 0x0800),
-        (*b"al", 0x0800), (*b"ar", 0x0800), (*b"st", 0x0800),
-        (*b"to", 0x0800), (*b"nt", 0x0800), (*b"ng", 0x0800),
+        (*b"th", 0x0800),
+        (*b"he", 0x0800),
+        (*b"in", 0x0800),
+        (*b"er", 0x0800),
+        (*b"an", 0x0800),
+        (*b"re", 0x0800),
+        (*b"on", 0x0800),
+        (*b"at", 0x0800),
+        (*b"en", 0x0800),
+        (*b"nd", 0x0800),
+        (*b"ti", 0x0800),
+        (*b"es", 0x0800),
+        (*b"or", 0x0800),
+        (*b"te", 0x0800),
+        (*b"of", 0x0800),
+        (*b"ed", 0x0800),
+        (*b"is", 0x0800),
+        (*b"it", 0x0800),
+        (*b"al", 0x0800),
+        (*b"ar", 0x0800),
+        (*b"st", 0x0800),
+        (*b"to", 0x0800),
+        (*b"nt", 0x0800),
+        (*b"ng", 0x0800),
     ];
     for &([a, b], val) in common {
         table[a as usize][b as usize] = val;
@@ -83,7 +99,9 @@ pub fn write_frequency_table(path: &Path, table: &FrequencyTable) -> std::io::Re
 }
 
 pub fn read_frequency_table(path: &Path) -> std::io::Result<Option<FrequencyTable>> {
-    let Ok(mut file) = fs::File::open(path) else { return Ok(None) };
+    let Ok(mut file) = fs::File::open(path) else {
+        return Ok(None);
+    };
     let mut header = [0u8; 8];
     if file.read_exact(&mut header).is_err() {
         return Ok(None);

@@ -26,9 +26,7 @@ fn insert_comments(source: &str, doc: &GuidanceDoc) -> Result<String, SyncError>
     let mut insertions: Vec<(usize, Vec<String>)> = Vec::new();
 
     for member in doc.members.iter() {
-        if let (Some(ref comment_text), Some(line)) =
-            (&member.comment, member.line)
-        {
+        if let (Some(ref comment_text), Some(line)) = (&member.comment, member.line) {
             if comment_text.is_empty() || member.comment_generated {
                 continue;
             }

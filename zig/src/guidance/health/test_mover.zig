@@ -410,6 +410,7 @@ fn assembleTestsFile(
 // Internal: zig fmt runner
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 fn runZigFmt(allocator: std.mem.Allocator, path: []const u8) void {
     _ = std.process.run(allocator, common.io.singleIo(), .{
         .argv = &[_][]const u8{ "zig", "fmt", path },
@@ -450,6 +451,7 @@ pub fn addToTestsZig(
 // Internal: path helpers
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 fn stemOf(path: []const u8) []const u8 {
     if (std.mem.endsWith(u8, path, ".zig")) return path[0 .. path.len - 4];
     return path;

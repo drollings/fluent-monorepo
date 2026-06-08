@@ -27,7 +27,11 @@ impl std::fmt::Debug for WrapperKind {
 }
 
 pub fn wrap_if<T>(condition: bool, if_true: T, if_false: T) -> T {
-    if condition { if_true } else { if_false }
+    if condition {
+        if_true
+    } else {
+        if_false
+    }
 }
 
 pub struct RetryResult<T> {
@@ -35,10 +39,7 @@ pub struct RetryResult<T> {
     pub attempts: usize,
 }
 
-pub fn retry_call<F, T, E>(
-    max_attempts: usize,
-    f: F,
-) -> Result<RetryResult<T>, E>
+pub fn retry_call<F, T, E>(max_attempts: usize, f: F) -> Result<RetryResult<T>, E>
 where
     F: Fn() -> Result<T, E>,
 {
@@ -47,7 +48,12 @@ where
     loop {
         attempts += 1;
         match f() {
-            Ok(v) => return Ok(RetryResult { result: v, attempts }),
+            Ok(v) => {
+                return Ok(RetryResult {
+                    result: v,
+                    attempts,
+                })
+            }
             Err(e) => {
                 if attempts >= max_attempts {
                     return Err(e);
@@ -85,7 +91,7 @@ impl Pipeline {
                     let result = retry_call(3, &f);
                     return result.map(|r| r.result);
                 }
-                WrapperKind::None => {},
+                WrapperKind::None => {}
             }
         }
         f()
@@ -194,7 +200,9 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
                         return Err(e);
                     }
                     #[allow(clippy::cast_lossless)]
-                    std::thread::sleep(std::time::Duration::from_millis(self.backoff_ms * attempts as u64));
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        self.backoff_ms * attempts as u64,
+                    ));
                 }
             }
         }
@@ -261,10 +269,7 @@ mod tests {
 
     #[test]
     fn check_passes_executes() {
-        let result = Pipeline::call(
-            &[WrapperKind::Check(Box::new(|| true))],
-            || Ok::<_, ()>(42),
-        );
+        let result = Pipeline::call(&[WrapperKind::Check(Box::new(|| true))], || Ok::<_, ()>(42));
         assert_eq!(result.unwrap(), 42);
     }
 
@@ -294,13 +299,10 @@ mod tests {
     fn check_passes_executes_no_retry() {
         let called = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&called);
-        let result = Pipeline::call(
-            &[WrapperKind::Check(Box::new(|| true))],
-            move || {
-                c.fetch_add(1, Ordering::SeqCst);
-                Ok::<i32, ()>(42)
-            },
-        );
+        let result = Pipeline::call(&[WrapperKind::Check(Box::new(|| true))], move || {
+            c.fetch_add(1, Ordering::SeqCst);
+            Ok::<i32, ()>(42)
+        });
         assert_eq!(result.unwrap(), 42);
         assert_eq!(called.load(Ordering::SeqCst), 1);
     }
@@ -399,10 +401,7 @@ mod tests {
 
     #[test]
     fn pipeline_all_none_calls_fn() {
-        let result = Pipeline::call(
-            &[WrapperKind::None, WrapperKind::None],
-            || Ok::<_, ()>(42),
-        );
+        let result = Pipeline::call(&[WrapperKind::None, WrapperKind::None], || Ok::<_, ()>(42));
         assert_eq!(result.unwrap(), 42);
     }
 
@@ -419,13 +418,10 @@ mod tests {
     fn pipeline_check_false_without_retry() {
         let called = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&called);
-        let result = Pipeline::call(
-            &[WrapperKind::Check(Box::new(|| false))],
-            move || {
-                c.fetch_add(1, Ordering::SeqCst);
-                Ok::<i32, ()>(42)
-            },
-        );
+        let result = Pipeline::call(&[WrapperKind::Check(Box::new(|| false))], move || {
+            c.fetch_add(1, Ordering::SeqCst);
+            Ok::<i32, ()>(42)
+        });
         assert_eq!(result.unwrap(), 42);
         // Without Retry, Pipeline always calls f() at the end
         assert_eq!(called.load(Ordering::SeqCst), 1);

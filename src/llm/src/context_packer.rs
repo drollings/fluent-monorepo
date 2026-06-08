@@ -81,7 +81,11 @@ mod tests {
     #[test]
     fn test_pack_context() {
         let packer = ContextPacker::new(100);
-        let messages = packer.pack_context("You are a helpful assistant.", "Some context here.", "What is this?");
+        let messages = packer.pack_context(
+            "You are a helpful assistant.",
+            "Some context here.",
+            "What is this?",
+        );
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[1].role, "user");

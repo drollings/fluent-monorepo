@@ -6,7 +6,7 @@
     clippy::module_name_repetitions,
     clippy::cast_possible_truncation,
     clippy::missing_panics_doc,
-    clippy::missing_errors_doc,
+    clippy::missing_errors_doc
 )]
 
 use bitvec::vec::BitVec;
@@ -96,7 +96,8 @@ pub struct BinaryContextNode {
 
 #[allow(dead_code)]
 fn compute_checksum(data: &[u8]) -> u32 {
-    data.iter().fold(0u32, |acc, &b| acc.wrapping_add(u32::from(b)))
+    data.iter()
+        .fold(0u32, |acc, &b| acc.wrapping_add(u32::from(b)))
 }
 
 #[must_use]
@@ -178,10 +179,15 @@ pub fn decode_result(buf: &[u8]) -> Result<(BinaryExecutionResult, Vec<u8>), Ipc
     Ok((result, output))
 }
 
-pub fn get_provides_bitset(result: &BinaryExecutionResult, payload: &[u8]) -> Result<BitVec, IpcError> {
+pub fn get_provides_bitset(
+    result: &BinaryExecutionResult,
+    payload: &[u8],
+) -> Result<BitVec, IpcError> {
     // SAFETY: packed struct fields must be read with read_unaligned
-    let count = unsafe { std::ptr::addr_of!(result.provides_words_count).read_unaligned() } as usize;
-    let offset = unsafe { std::ptr::addr_of!(result.provides_words_offset).read_unaligned() } as usize;
+    let count =
+        unsafe { std::ptr::addr_of!(result.provides_words_count).read_unaligned() } as usize;
+    let offset =
+        unsafe { std::ptr::addr_of!(result.provides_words_offset).read_unaligned() } as usize;
     let mut bits = BitVec::with_capacity(count * 64);
 
     for i in 0..count {
@@ -190,7 +196,9 @@ pub fn get_provides_bitset(result: &BinaryExecutionResult, payload: &[u8]) -> Re
             return Err(IpcError::BufferTooSmall);
         }
         let word = u64::from_le_bytes(
-            payload[start..start + 8].try_into().map_err(|_| IpcError::BufferTooSmall)?
+            payload[start..start + 8]
+                .try_into()
+                .map_err(|_| IpcError::BufferTooSmall)?,
         );
         for bit in 0..64 {
             bits.push((word >> bit) & 1 == 1);
@@ -223,10 +231,10 @@ mod tests {
             input_len: 5,
             flags: 0,
         };
-    let input = b"hello";
-    let encoded = encode_request(&req, input);
-    assert!(encoded.len() >= std::mem::size_of::<BinaryExecutionRequest>());
-    assert!(encoded.windows(input.len()).any(|w| w == input));
+        let input = b"hello";
+        let encoded = encode_request(&req, input);
+        assert!(encoded.len() >= std::mem::size_of::<BinaryExecutionRequest>());
+        assert!(encoded.windows(input.len()).any(|w| w == input));
     }
 
     #[test]
@@ -237,7 +245,7 @@ mod tests {
         buf.extend_from_slice(&(PayloadType::ExecutionResult as u32).to_le_bytes());
         buf.extend_from_slice(&100u32.to_le_bytes()); // payload_size
         buf.extend_from_slice(&0u32.to_le_bytes()); // checksum
-        // result has no target_id field; skip to success
+                                                    // result has no target_id field; skip to success
         buf.extend_from_slice(&1u32.to_le_bytes()); // success
         buf.extend_from_slice(&0u32.to_le_bytes()); // error_code
         let result_size = std::mem::size_of::<BinaryExecutionResult>();
@@ -302,8 +310,14 @@ mod tests {
 
     #[test]
     fn payload_type_conversion() {
-        assert_eq!(PayloadType::try_from(1).unwrap(), PayloadType::ExecutionRequest);
-        assert_eq!(PayloadType::try_from(2).unwrap(), PayloadType::ExecutionResult);
+        assert_eq!(
+            PayloadType::try_from(1).unwrap(),
+            PayloadType::ExecutionRequest
+        );
+        assert_eq!(
+            PayloadType::try_from(2).unwrap(),
+            PayloadType::ExecutionResult
+        );
         assert_eq!(PayloadType::try_from(3).unwrap(), PayloadType::ContextNode);
         assert!(PayloadType::try_from(99).is_err());
     }

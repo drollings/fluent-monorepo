@@ -1,7 +1,7 @@
-pub mod yago;
-pub mod mapper;
 pub mod inference;
+pub mod mapper;
 pub mod migration;
+pub mod yago;
 
 use thiserror::Error;
 

@@ -23,23 +23,12 @@ pub enum SyncEngineError {
     Db(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct GenConfig {
     pub db_sync: bool,
     pub llm_infill: bool,
     pub db_path: Option<PathBuf>,
     pub json_base: Option<PathBuf>,
-}
-
-impl Default for GenConfig {
-    fn default() -> Self {
-        Self {
-            db_sync: false,
-            llm_infill: false,
-            db_path: None,
-            json_base: None,
-        }
-    }
 }
 
 pub struct SyncEngine {
@@ -73,7 +62,10 @@ impl SyncEngine {
             .unwrap_or(source_path);
         let module_name = rel_path
             .to_string_lossy()
-            .strip_suffix(&format!(".{}", rel_path.extension().and_then(|e| e.to_str()).unwrap_or("")))
+            .strip_suffix(&format!(
+                ".{}",
+                rel_path.extension().and_then(|e| e.to_str()).unwrap_or("")
+            ))
             .unwrap_or(&rel_path.to_string_lossy())
             .replace(['/', '\\'], ".");
 
@@ -231,11 +223,7 @@ mod tests {
         std::fs::create_dir(&source_dir).expect("create src");
 
         let zig_file = source_dir.join("test.zig");
-        std::fs::write(
-            &zig_file,
-            "/// A test module\npub fn hello() void {}\n",
-        )
-        .expect("write");
+        std::fs::write(&zig_file, "/// A test module\npub fn hello() void {}\n").expect("write");
 
         let guidance_dir = dir.path().join(".guidance");
         let mut engine = SyncEngine::new(guidance_dir.clone(), source_dir);

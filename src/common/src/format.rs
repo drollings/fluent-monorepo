@@ -167,10 +167,13 @@ impl Table {
         out.push('\n');
         for row in &self.rows {
             for col in &self.columns {
-                let val = row.get(&col.key).map(|v| match v {
-                    serde_json::Value::String(s) => s.clone(),
-                    _ => v.to_string(),
-                }).unwrap_or_default();
+                let val = row
+                    .get(&col.key)
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    })
+                    .unwrap_or_default();
                 let w = col.effective_width();
                 if col.align_left {
                     let _ = write!(out, " {val:<w$}");
@@ -264,16 +267,16 @@ mod tests {
         let s = format_json(&v, 4);
         assert!(s.contains("\"a\""));
         let lines: Vec<&str> = s.lines().collect();
-        let indent_line = lines.iter().find(|l| l.trim_start().starts_with('"')).unwrap();
+        let indent_line = lines
+            .iter()
+            .find(|l| l.trim_start().starts_with('"'))
+            .unwrap();
         assert!(indent_line.starts_with("    "));
     }
 
     #[test]
     fn format_csv_auto_fieldnames() {
-        let rows = serde_json::from_str::<Vec<serde_json::Value>>(
-            r#"[{"x": 1, "y": 2}]"#,
-        )
-        .unwrap();
+        let rows = serde_json::from_str::<Vec<serde_json::Value>>(r#"[{"x": 1, "y": 2}]"#).unwrap();
         let csv = format_csv(&rows, None);
         assert!(csv.starts_with("x,y"));
         assert!(csv.contains("1,2"));
@@ -281,10 +284,9 @@ mod tests {
 
     #[test]
     fn format_csv_null_value() {
-        let rows = serde_json::from_str::<Vec<serde_json::Value>>(
-            r#"[{"name": "Alice", "extra": null}]"#,
-        )
-        .unwrap();
+        let rows =
+            serde_json::from_str::<Vec<serde_json::Value>>(r#"[{"name": "Alice", "extra": null}]"#)
+                .unwrap();
         let csv = format_csv(&rows, Some(&["name", "extra"]));
         assert!(csv.contains("Alice,"));
     }
@@ -305,9 +307,19 @@ mod tests {
 
     #[test]
     fn column_effective_width() {
-        let col = Column { header: "Name".into(), key: "name".into(), width: 0, align_left: true };
+        let col = Column {
+            header: "Name".into(),
+            key: "name".into(),
+            width: 0,
+            align_left: true,
+        };
         assert_eq!(col.effective_width(), 6);
-        let col = Column { header: "Name".into(), key: "name".into(), width: 20, align_left: false };
+        let col = Column {
+            header: "Name".into(),
+            key: "name".into(),
+            width: 20,
+            align_left: false,
+        };
         assert_eq!(col.effective_width(), 20);
     }
 
@@ -319,13 +331,17 @@ mod tests {
 
     #[test]
     fn table_render_with_title() {
-        let columns = vec![
-            Column { header: "Name".into(), key: "name".into(), width: 0, align_left: true },
-        ];
+        let columns = vec![Column {
+            header: "Name".into(),
+            key: "name".into(),
+            width: 0,
+            align_left: true,
+        }];
         let mut table = Table::new(columns, "People");
         let rows = serde_json::from_str::<Vec<serde_json::Value>>(
             r#"[{"name": "Alice"}, {"name": "Bob"}]"#,
-        ).unwrap();
+        )
+        .unwrap();
         table.with_rows(rows);
         let rendered = table.render();
         assert!(rendered.starts_with("People"));

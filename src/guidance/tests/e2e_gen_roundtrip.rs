@@ -1,6 +1,6 @@
-use guidance_guidance::sync_engine::SyncEngine;
-use guidance_guidance::sync::json_store;
 use guidance_common::types::MemberType;
+use guidance_guidance::sync::json_store;
+use guidance_guidance::sync_engine::SyncEngine;
 
 const FIXTURE_ZIG: &str = r#"/// Sample Zig file for AST parsing tests
 const std = @import("std");
@@ -66,7 +66,9 @@ fn e2e_zig_gen_roundtrip() {
     assert_eq!(loaded.meta.module, doc.meta.module);
 
     // Verify staleness
-    assert!(!guidance_guidance::sync::staleness::should_generate(&json_path, &zig_file));
+    assert!(!guidance_guidance::sync::staleness::should_generate(
+        &json_path, &zig_file
+    ));
 }
 
 #[test]
@@ -104,10 +106,10 @@ fn e2e_incremental_sync() {
     std::fs::write(&zig_file, "pub fn alpha() void {}\n").expect("write");
 
     let mut engine = SyncEngine::new(guidance_dir.clone(), source_dir);
-    
+
     // First gen
     assert!(engine.gen_if_stale(&zig_file).expect("gen if stale first"));
-    
+
     // Second gen should not be stale (JSON is newer)
     std::thread::sleep(std::time::Duration::from_millis(1100));
     assert!(!engine.gen_if_stale(&zig_file).expect("gen if stale second"));
@@ -115,13 +117,14 @@ fn e2e_incremental_sync() {
     // Modify source (wait >1s so mtime difference is detectable)
     std::thread::sleep(std::time::Duration::from_secs(2));
     std::fs::write(&zig_file, "pub fn alpha() void {}\npub fn beta() void {}\n").expect("write");
-    
+
     // Third gen should be stale again (source mtime updated)
     std::thread::sleep(std::time::Duration::from_millis(100));
     assert!(engine.gen_if_stale(&zig_file).expect("gen if stale third"));
 
     // Verify both functions are present
-    let doc = engine.load_doc(&zig_file)
+    let doc = engine
+        .load_doc(&zig_file)
         .expect("load doc")
         .expect("should have doc");
     assert_eq!(doc.members.len(), 2);

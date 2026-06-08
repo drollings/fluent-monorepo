@@ -121,7 +121,10 @@ impl Default for ProjectConfig {
 /// Strip provider prefix from model reference.
 /// e.g. "ollama:llama3" -> "llama3", "model" -> "model"
 pub fn model_name(model_ref: &str) -> &str {
-    model_ref.split_once(':').map(|(_, name)| name).unwrap_or(model_ref)
+    model_ref
+        .split_once(':')
+        .map(|(_, name)| name)
+        .unwrap_or(model_ref)
 }
 
 /// Resolve a model reference into (api_url, model_name, is_thinking).
@@ -129,15 +132,19 @@ pub fn resolve_model_url(config: &ProjectConfig) -> (String, String, bool) {
     let model_ref = config.embedding_model.as_deref().unwrap_or("default");
     let is_thinking = config.model_thinking.as_deref() == Some(model_ref);
 
-    let (provider_name, model) = model_ref
-        .split_once(':')
-        .unwrap_or(("default", model_ref));
+    let (provider_name, model) = model_ref.split_once(':').unwrap_or(("default", model_ref));
 
     let url = config
         .providers
         .iter()
         .find(|p| p.name == provider_name)
-        .map(|p| format!("{}/{}", p.base_url.trim_end_matches('/'), p.chat_endpoint.trim_start_matches('/')))
+        .map(|p| {
+            format!(
+                "{}/{}",
+                p.base_url.trim_end_matches('/'),
+                p.chat_endpoint.trim_start_matches('/')
+            )
+        })
         .unwrap_or_default();
 
     (url, model.to_string(), is_thinking)

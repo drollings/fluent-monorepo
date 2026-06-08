@@ -46,13 +46,17 @@ pub fn candidate_entity_words(text: &str) -> Vec<String> {
         if is_entity_word_char(c) {
             current.push(c);
         } else {
-            if current.len() >= 2 && is_capitalized(&current) && !ENTITY_STOPLIST.contains(current.as_str()) {
+            if current.len() >= 2
+                && is_capitalized(&current)
+                && !ENTITY_STOPLIST.contains(current.as_str())
+            {
                 words.push(current.clone());
             }
             current.clear();
         }
     }
-    if current.len() >= 2 && is_capitalized(&current) && !ENTITY_STOPLIST.contains(current.as_str()) {
+    if current.len() >= 2 && is_capitalized(&current) && !ENTITY_STOPLIST.contains(current.as_str())
+    {
         words.push(current);
     }
     words

@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use guidance_common::types::{
-    FileType, GuidanceDoc, Member, MemberType, Meta, Param,
-};
+use guidance_common::types::{FileType, GuidanceDoc, Member, MemberType, Meta, Param};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -45,10 +43,7 @@ impl AstParser {
     }
 
     pub fn parse_file(&mut self, path: &Path, source: &str) -> Result<GuidanceDoc, ParseError> {
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let language = match ext {
             "zig" | "zon" => "zig",
             "py" => "python",
@@ -158,12 +153,8 @@ fn extract_member(
         "enum_declaration" => extract_struct_or_class(node, source, cursor, MemberType::Enum),
         "union_declaration" => extract_struct_or_class(node, source, cursor, MemberType::Union),
         "test_declaration" => extract_test(node, source),
-        "variable_declaration" => {
-            extract_var_decl(node, source, cursor)
-        }
-        "comptime_expression" => {
-            extract_comptime_block(node, source, cursor, language)
-        }
+        "variable_declaration" => extract_var_decl(node, source, cursor),
+        "comptime_expression" => extract_comptime_block(node, source, cursor, language),
         _ => None,
     }
 }
@@ -218,13 +209,31 @@ fn extract_var_decl(
     for child_node in node.children(&mut child) {
         match child_node.kind() {
             "struct_declaration" => {
-                return extract_named_struct_or_class(&child_node, source, name, MemberType::Struct, is_pub);
+                return extract_named_struct_or_class(
+                    &child_node,
+                    source,
+                    name,
+                    MemberType::Struct,
+                    is_pub,
+                );
             }
             "enum_declaration" => {
-                return extract_named_struct_or_class(&child_node, source, name, MemberType::Enum, is_pub);
+                return extract_named_struct_or_class(
+                    &child_node,
+                    source,
+                    name,
+                    MemberType::Enum,
+                    is_pub,
+                );
             }
             "union_declaration" => {
-                return extract_named_struct_or_class(&child_node, source, name, MemberType::Union, is_pub);
+                return extract_named_struct_or_class(
+                    &child_node,
+                    source,
+                    name,
+                    MemberType::Union,
+                    is_pub,
+                );
             }
             _ => {}
         }
@@ -362,7 +371,10 @@ fn extract_zig_return_type(node: &tree_sitter::Node, source: &str) -> Option<Str
     None
 }
 
-fn extract_python_params(node: &tree_sitter::Node, source: &str) -> Option<Vec<(String, Option<String>)>> {
+fn extract_python_params(
+    node: &tree_sitter::Node,
+    source: &str,
+) -> Option<Vec<(String, Option<String>)>> {
     let mut params = Vec::new();
     let parameters = node.child_by_field_name("parameters")?;
     let mut child = parameters.walk();
@@ -388,7 +400,10 @@ fn extract_python_params(node: &tree_sitter::Node, source: &str) -> Option<Vec<(
 
 fn extract_python_return_type(node: &tree_sitter::Node, source: &str) -> Option<String> {
     let return_type = node.child_by_field_name("return_type")?;
-    return_type.utf8_text(source.as_bytes()).ok().map(String::from)
+    return_type
+        .utf8_text(source.as_bytes())
+        .ok()
+        .map(String::from)
 }
 
 fn extract_struct_or_class(
@@ -432,7 +447,8 @@ fn extract_struct_or_class(
 fn extract_body_members(node: &tree_sitter::Node, source: &str) -> Option<Vec<Member>> {
     let mut members = Vec::new();
 
-    let children_iter: Vec<tree_sitter::Node> = if let Some(body) = node.child_by_field_name("body") {
+    let children_iter: Vec<tree_sitter::Node> = if let Some(body) = node.child_by_field_name("body")
+    {
         let mut child = body.walk();
         body.children(&mut child).collect()
     } else {
@@ -480,7 +496,8 @@ fn extract_test(node: &tree_sitter::Node, source: &str) -> Option<Member> {
 
     // Fallback: find string child among direct children
     let mut child = node.walk();
-    let name_node = node.children(&mut child)
+    let name_node = node
+        .children(&mut child)
         .find(|c| c.kind() == "string_literal" || c.kind() == "string")?;
     let raw_name = name_node.utf8_text(source.as_bytes()).ok()?;
     let clean_name = raw_name
@@ -588,7 +605,9 @@ mod tests {
 
     fn test_parse_helper(source: &str, filename: &str) -> GuidanceDoc {
         let mut parser = AstParser::new();
-        parser.parse_file(Path::new(filename), source).expect("should parse")
+        parser
+            .parse_file(Path::new(filename), source)
+            .expect("should parse")
     }
 
     #[test]
@@ -608,7 +627,10 @@ pub const Config = struct {
 
         let doc = test_parse_helper(source, "main.zig");
         assert_eq!(doc.meta.language.as_str(), "zig");
-        assert!(!doc.members.is_empty(), "should have at least one member, got 0");
+        assert!(
+            !doc.members.is_empty(),
+            "should have at least one member, got 0"
+        );
         for m in &doc.members {
             eprintln!("member: name={:?} type={:?}", m.name, m.type_name);
         }
@@ -639,9 +661,15 @@ class MyClass:
 
     #[test]
     fn test_extract_zig_doc_comment() {
-        let doc = test_parse_helper("/// This is a test function\npub fn test_fn() void {}\n", "test.zig");
+        let doc = test_parse_helper(
+            "/// This is a test function\npub fn test_fn() void {}\n",
+            "test.zig",
+        );
         let func = doc.members.first().expect("should have a function");
-        assert_eq!(func.comment.as_ref().map(|c| c.as_str()), Some("This is a test function"));
+        assert_eq!(
+            func.comment.as_ref().map(|c| c.as_str()),
+            Some("This is a test function")
+        );
     }
 
     #[test]

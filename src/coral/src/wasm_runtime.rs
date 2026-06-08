@@ -39,12 +39,8 @@ impl Default for ExtismWasmRuntime {
 
 impl WasmRuntime for ExtismWasmRuntime {
     fn load_plugin(&self, wasm_bytes: &[u8]) -> Result<Box<dyn WasmPlugin>, WasmError> {
-        let plugin = extism::Plugin::new(
-            wasm_bytes,
-            [],
-            true,
-        )
-        .map_err(|e| WasmError::PluginLoad(e.to_string()))?;
+        let plugin = extism::Plugin::new(wasm_bytes, [], true)
+            .map_err(|e| WasmError::PluginLoad(e.to_string()))?;
 
         Ok(Box::new(ExtismPlugin { plugin }))
     }
@@ -71,7 +67,9 @@ impl WasmPlugin for ExtismPlugin {
 
 use std::sync::Mutex;
 
-use guidance_common::traits::{Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
+use guidance_common::traits::{
+    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+};
 use internment::ArcIntern;
 
 pub struct WasmComponent {
@@ -106,7 +104,10 @@ impl WasmComponent {
 
 impl FieldAccess for WasmComponent {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.config.lock().unwrap().insert(name.to_string(), value.to_string());
+        self.config
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), value.to_string());
         Ok(())
     }
 
@@ -158,7 +159,10 @@ impl WorkUnit for WasmComponent {
             .call(&payload)
             .map_err(|e| WorkError::Execution(e.to_string()))?;
         let data: serde_json::Value = serde_json::from_slice(&result).unwrap_or_default();
-        Ok(WorkOutput::ok_with_data(format!("{} executed", self.name), data))
+        Ok(WorkOutput::ok_with_data(
+            format!("{} executed", self.name),
+            data,
+        ))
     }
 }
 
@@ -178,7 +182,12 @@ pub fn decode_wasm_base64(b64: &str) -> Result<Vec<u8>, WasmError> {
             b'/' => 63,
             b'=' => break,
             b'\n' | b'\r' | b' ' | b'\t' => continue,
-            _ => return Err(WasmError::InvalidPayload(format!("invalid base64 char: {}", c as char))),
+            _ => {
+                return Err(WasmError::InvalidPayload(format!(
+                    "invalid base64 char: {}",
+                    c as char
+                )))
+            }
         };
         buf = (buf << 6) | val as u32;
         bits += 6;

@@ -117,17 +117,26 @@ mod tests {
 
     #[test]
     fn test_hash_iri_different() {
-        assert_ne!(hash_iri("http://example.org/foo"), hash_iri("http://example.org/bar"));
+        assert_ne!(
+            hash_iri("http://example.org/foo"),
+            hash_iri("http://example.org/bar")
+        );
     }
 
     #[test]
     fn test_hash_blank_node_deterministic() {
-        assert_eq!(hash_blank_node("scope1", "b1"), hash_blank_node("scope1", "b1"));
+        assert_eq!(
+            hash_blank_node("scope1", "b1"),
+            hash_blank_node("scope1", "b1")
+        );
     }
 
     #[test]
     fn test_hash_blank_node_different_scopes() {
-        assert_ne!(hash_blank_node("scope1", "b1"), hash_blank_node("scope2", "b1"));
+        assert_ne!(
+            hash_blank_node("scope1", "b1"),
+            hash_blank_node("scope2", "b1")
+        );
     }
 
     #[test]

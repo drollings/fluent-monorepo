@@ -29,7 +29,11 @@ impl BatchLlmFilter {
             all_scores.extend(scores);
         }
 
-        all_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_scores.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(all_scores)
     }
@@ -37,8 +41,8 @@ impl BatchLlmFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::llm_filter::NoopLlmFilter;
+    use super::*;
 
     #[test]
     fn test_batch_filter_empty() {

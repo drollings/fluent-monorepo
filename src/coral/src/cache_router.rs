@@ -15,12 +15,7 @@ pub struct ParallelRouter {
 }
 
 impl ParallelRouter {
-    pub fn new(
-        library: Arc<Library>,
-        knn_k: usize,
-        l4_threshold: f32,
-        l3_max_depth: u8,
-    ) -> Self {
+    pub fn new(library: Arc<Library>, knn_k: usize, l4_threshold: f32, l3_max_depth: u8) -> Self {
         Self {
             library,
             knn_k,
@@ -59,7 +54,11 @@ impl ParallelRouter {
         Err(CacheError::CacheMiss)
     }
 
-    pub fn route_with_embedding(&self, query: &str, query_emb: &[f32]) -> Result<RoutingResult, CacheError> {
+    pub fn route_with_embedding(
+        &self,
+        query: &str,
+        query_emb: &[f32],
+    ) -> Result<RoutingResult, CacheError> {
         if !query_emb.is_empty() {
             if let Ok(hits) = self.library.knn_search(query_emb, self.knn_k, None) {
                 if !hits.is_empty() && hits[0].distance < self.l4_threshold {
@@ -74,7 +73,11 @@ impl ParallelRouter {
         Err(CacheError::CacheMiss)
     }
 
-    pub async fn route_async(&self, query: &str, query_emb: Vec<f32>) -> Result<RoutingResult, CacheError> {
+    pub async fn route_async(
+        &self,
+        query: &str,
+        query_emb: Vec<f32>,
+    ) -> Result<RoutingResult, CacheError> {
         let knn_k = self.knn_k;
         let l4_threshold = self.l4_threshold;
         let l3_max_depth = self.l3_max_depth;
@@ -94,30 +97,39 @@ impl ParallelRouter {
             None
         } else {
             let lib2 = Arc::clone(&self.library);
-            Some(tokio::task::spawn_blocking(move || -> Result<Vec<GraphNode>, CacheError> {
-                let node_count = lib2.node_count().map_err(|_| CacheError::CacheMiss)?;
-                if node_count == 0 {
-                    return Ok(Vec::new());
-                }
-                let all_nodes = lib2.get_all_node_ids().map_err(|_| CacheError::CacheMiss)?;
-                let mut seen = HashSet::new();
-                for node_id in all_nodes {
-                    if let Ok(nodes) = lib2.traverse_from(node_id, l3_max_depth) {
-                        for node in &nodes {
-                            seen.insert(node.node_id);
+            Some(tokio::task::spawn_blocking(
+                move || -> Result<Vec<GraphNode>, CacheError> {
+                    let node_count = lib2.node_count().map_err(|_| CacheError::CacheMiss)?;
+                    if node_count == 0 {
+                        return Ok(Vec::new());
+                    }
+                    let all_nodes = lib2.get_all_node_ids().map_err(|_| CacheError::CacheMiss)?;
+                    let mut seen = HashSet::new();
+                    for node_id in all_nodes {
+                        if let Ok(nodes) = lib2.traverse_from(node_id, l3_max_depth) {
+                            for node in &nodes {
+                                seen.insert(node.node_id);
+                            }
                         }
                     }
-                }
-                let result: Vec<_> = seen
-                    .into_iter()
-                    .filter_map(|id| lib2.get_node(id).ok().flatten())
-                    .map(|n| GraphNode { node_id: n.id.unwrap(), name: n.name, depth: 0 })
-                    .collect();
-                Ok(result)
-            }))
+                    let result: Vec<_> = seen
+                        .into_iter()
+                        .filter_map(|id| lib2.get_node(id).ok().flatten())
+                        .map(|n| GraphNode {
+                            node_id: n.id.unwrap(),
+                            name: n.name,
+                            depth: 0,
+                        })
+                        .collect();
+                    Ok(result)
+                },
+            ))
         };
 
-        let knn_result = knn_fut.await.map_err(|_| CacheError::CacheMiss)?.unwrap_or_default();
+        let knn_result = knn_fut
+            .await
+            .map_err(|_| CacheError::CacheMiss)?
+            .unwrap_or_default();
 
         if !knn_result.is_empty() && knn_result[0].distance < l4_threshold {
             return Ok(RoutingResult {
@@ -128,7 +140,10 @@ impl ParallelRouter {
         }
 
         if let Some(trav) = traverse_fut {
-            let traverse_result = trav.await.map_err(|_| CacheError::CacheMiss)?.unwrap_or_default();
+            let traverse_result = trav
+                .await
+                .map_err(|_| CacheError::CacheMiss)?
+                .unwrap_or_default();
             if !traverse_result.is_empty() {
                 return Ok(RoutingResult {
                     query: query_owned,
@@ -146,7 +161,10 @@ impl ParallelRouter {
     }
 
     fn traverse_all(&self, max_depth: u8) -> Result<Vec<GraphNode>, CacheError> {
-        let node_count = self.library.node_count().map_err(|_| CacheError::CacheMiss)?;
+        let node_count = self
+            .library
+            .node_count()
+            .map_err(|_| CacheError::CacheMiss)?;
         if node_count == 0 {
             return Ok(vec![]);
         }
@@ -219,7 +237,11 @@ mod tests {
     #[test]
     fn test_router_keyword_search_hit() {
         let router = make_router();
-        insert_test_node(&router.library, "zig_compiler", "Zig compiler documentation");
+        insert_test_node(
+            &router.library,
+            "zig_compiler",
+            "Zig compiler documentation",
+        );
         let result = router.route("zig");
         assert!(result.is_ok());
         let r = result.unwrap();
@@ -281,4 +303,3 @@ mod tests {
         assert!(result.is_ok());
     }
 }
-

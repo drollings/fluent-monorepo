@@ -23,11 +23,7 @@ impl Header {
         buf.extend_from_slice(git_head_bytes);
     }
 
-    pub fn read(
-        content: &[u8],
-        expected_magic: u32,
-        expected_version: u32,
-    ) -> Option<ReadResult> {
+    pub fn read(content: &[u8], expected_magic: u32, expected_version: u32) -> Option<ReadResult> {
         if content.len() < INDEX_HEADER_SIZE {
             return None;
         }

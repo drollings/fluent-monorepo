@@ -189,6 +189,7 @@ pub const guidanceDbIsUpToDatePub = gen_files_mod.guidanceDbIsUpToDate;
 // gen — delegates to sync/gen_files.zig (M2.1 extraction)
 // =============================================================================
 
+/// // =============================================================================
 pub fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
     return gen_files_mod.cmdGen(allocator, args, syncCapabilitiesIfStale);
 }

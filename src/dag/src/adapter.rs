@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use guidance_common::traits::{Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
+use guidance_common::traits::{
+    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+};
 use internment::ArcIntern;
 
 pub struct ComponentAdapter {
     inner: Arc<dyn WorkUnit>,
     name_override: Option<String>,
-    execute_override: Option<Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>>,
+    execute_override:
+        Option<Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>>,
     field_overrides: Vec<(String, String)>,
 }
 
@@ -33,7 +36,11 @@ impl ComponentAdapter {
         self
     }
 
-    pub fn with_field_override(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_field_override(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         self.field_overrides.push((name.into(), value.into()));
         self
     }
@@ -144,9 +151,8 @@ mod tests {
         let inner = Arc::new(TestUnit {
             name: "inner".into(),
         });
-        let adapter = ComponentAdapter::new(inner).with_execute_override(Arc::new(|_| {
-            Ok(WorkOutput::ok("overridden"))
-        }));
+        let adapter = ComponentAdapter::new(inner)
+            .with_execute_override(Arc::new(|_| Ok(WorkOutput::ok("overridden"))));
         let ctx = WorkContext::default();
         let result = adapter.execute(&ctx).unwrap();
         assert_eq!(result.message, "overridden");
@@ -157,8 +163,7 @@ mod tests {
         let inner = Arc::new(TestUnit {
             name: "inner".into(),
         });
-        let mut adapter = ComponentAdapter::new(inner)
-            .with_field_override("port", "8080");
+        let mut adapter = ComponentAdapter::new(inner).with_field_override("port", "8080");
         assert_eq!(adapter.get_field("port").unwrap(), "8080");
         assert!(adapter.get_field("missing").is_err());
 

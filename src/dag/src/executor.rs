@@ -41,7 +41,10 @@ impl<'a> DagExecutor<'a> {
         }
     }
 
-    pub fn execute(&mut self, plan: &ExecutionPlan) -> Result<Vec<ExecutionResult>, ExecutionError> {
+    pub fn execute(
+        &mut self,
+        plan: &ExecutionPlan,
+    ) -> Result<Vec<ExecutionResult>, ExecutionError> {
         let span = span!(Level::INFO, "dag_execute", size = plan.len());
         let _enter = span.enter();
 
@@ -115,7 +118,9 @@ impl<'a> DagExecutor<'a> {
                 })
             }
             ExecutorKind::Wasm => Err(ExecutionError::WasmNotImplemented(target.name.to_string())),
-            ExecutorKind::Docker => Err(ExecutionError::DockerNotImplemented(target.name.to_string())),
+            ExecutorKind::Docker => Err(ExecutionError::DockerNotImplemented(
+                target.name.to_string(),
+            )),
         }
     }
 

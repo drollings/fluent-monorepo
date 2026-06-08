@@ -126,6 +126,7 @@ pub fn createStageBuilder(allocator: std.mem.Allocator, doc: *const types.Guidan
 // Dispatcher: run a list of builders and collect relevant stages
 // =============================================================================
 
+/// // =============================================================================
 pub fn collectRelevantStages(
     allocator: std.mem.Allocator,
     builders: []const *GuidanceJsonStageBuilderImpl,

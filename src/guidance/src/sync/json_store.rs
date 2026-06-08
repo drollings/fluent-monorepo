@@ -35,7 +35,10 @@ fn parse_param(v: &serde_json::Value) -> Option<Param> {
     Some(Param {
         name: obj.get("name")?.as_str()?.into(),
         type_name: obj.get("type").and_then(|v| v.as_str()).map(SmolStr::from),
-        default: obj.get("default").and_then(|v| v.as_str()).map(SmolStr::from),
+        default: obj
+            .get("default")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
     })
 }
 
@@ -59,29 +62,54 @@ fn parse_member(v: &serde_json::Value) -> Option<Member> {
     let equivalents = obj
         .get("equivalents")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(SmolStr::from).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(SmolStr::from)
+                .collect()
+        })
         .unwrap_or_default();
 
     let tags = obj
         .get("tags")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(SmolStr::from).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(SmolStr::from)
+                .collect()
+        })
         .unwrap_or_default();
 
     Some(Member {
         type_name: member_type,
         name: name.into(),
-        match_hash: obj.get("match_hash").and_then(|v| v.as_str()).map(SmolStr::from),
-        signature: obj.get("signature").and_then(|v| v.as_str()).map(SmolStr::from),
+        match_hash: obj
+            .get("match_hash")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
+        signature: obj
+            .get("signature")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
         params,
-        returns: obj.get("returns").and_then(|v| v.as_str()).map(SmolStr::from),
-        comment: obj.get("comment").and_then(|v| v.as_str()).map(SmolStr::from),
+        returns: obj
+            .get("returns")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
+        comment: obj
+            .get("comment")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
         tags,
         is_pub: obj.get("is_pub").and_then(|v| v.as_bool()).unwrap_or(false),
         members,
         equivalents,
         line: obj.get("line").and_then(|v| v.as_u64()).map(|l| l as u32),
-        comment_generated: obj.get("comment_generated").and_then(|v| v.as_bool()).unwrap_or(false),
+        comment_generated: obj
+            .get("comment_generated")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -106,7 +134,10 @@ fn load_guidance_from_value(v: &serde_json::Value) -> Option<GuidanceDoc> {
                     let so = sv.as_object()?;
                     Some(Skill {
                         ref_path: so.get("ref")?.as_str()?.into(),
-                        context: so.get("context").and_then(|v| v.as_str()).map(SmolStr::from),
+                        context: so
+                            .get("context")
+                            .and_then(|v| v.as_str())
+                            .map(SmolStr::from),
                     })
                 })
                 .collect()
@@ -116,7 +147,12 @@ fn load_guidance_from_value(v: &serde_json::Value) -> Option<GuidanceDoc> {
     let parse_str_vec = |key: &str| -> Vec<SmolStr> {
         root.get(key)
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(SmolStr::from).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(SmolStr::from)
+                    .collect()
+            })
             .unwrap_or_default()
     };
 
@@ -133,10 +169,20 @@ fn load_guidance_from_value(v: &serde_json::Value) -> Option<GuidanceDoc> {
         meta: Meta {
             module: module.into(),
             source: source.into(),
-            language: meta_obj.get("language").and_then(|v| v.as_str()).unwrap_or("zig").into(),
+            language: meta_obj
+                .get("language")
+                .and_then(|v| v.as_str())
+                .unwrap_or("zig")
+                .into(),
         },
-        comment: root.get("comment").and_then(|v| v.as_str()).map(SmolStr::from),
-        detail: root.get("detail").and_then(|v| v.as_str()).map(SmolStr::from),
+        comment: root
+            .get("comment")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
+        detail: root
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .map(SmolStr::from),
         keywords: parse_str_vec("keywords"),
         skills,
         capabilities: parse_str_vec("capabilities"),
@@ -217,9 +263,11 @@ pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
     // Merge members by match_hash
     for new_member in new.members.iter_mut() {
         if let Some(ref new_hash) = new_member.match_hash {
-            if let Some(existing_member) = existing.members.iter().find(|em| {
-                em.match_hash.as_ref() == Some(new_hash)
-            }) {
+            if let Some(existing_member) = existing
+                .members
+                .iter()
+                .find(|em| em.match_hash.as_ref() == Some(new_hash))
+            {
                 merge_member(existing_member, new_member);
             }
         }
@@ -262,7 +310,10 @@ mod tests {
         let existing = make_test_member("foo", "fn foo() void", "abc123", Some("Original comment"));
         let mut new = make_test_member("foo", "fn foo() void", "abc123", None);
         merge_member(&existing, &mut new);
-        assert_eq!(new.comment.as_ref().map(SmolStr::as_str), Some("Original comment"));
+        assert_eq!(
+            new.comment.as_ref().map(SmolStr::as_str),
+            Some("Original comment")
+        );
     }
 
     #[test]
@@ -298,7 +349,12 @@ mod tests {
                 language: "zig".into(),
             },
             comment: Some("Module comment".into()),
-            members: vec![make_test_member("foo", "fn foo() void", "hash1", Some("User comment"))],
+            members: vec![make_test_member(
+                "foo",
+                "fn foo() void",
+                "hash1",
+                Some("User comment"),
+            )],
             ..GuidanceDoc::default()
         };
         save_guidance(&path, &doc1).expect("first save");
@@ -341,7 +397,12 @@ mod tests {
                 source: "src/t.zig".into(),
                 language: "zig".into(),
             },
-            members: vec![make_test_member("old_fn", "fn old_fn() void", "hash_old", Some("Old comment"))],
+            members: vec![make_test_member(
+                "old_fn",
+                "fn old_fn() void",
+                "hash_old",
+                Some("Old comment"),
+            )],
             ..GuidanceDoc::default()
         };
         save_guidance(&path, &doc1).expect("first save");
@@ -353,7 +414,12 @@ mod tests {
                 source: "src/t.zig".into(),
                 language: "zig".into(),
             },
-            members: vec![make_test_member("old_fn", "fn old_fn(x: i32) void", "hash_new", None)],
+            members: vec![make_test_member(
+                "old_fn",
+                "fn old_fn(x: i32) void",
+                "hash_new",
+                None,
+            )],
             ..GuidanceDoc::default()
         };
         save_guidance(&path, &doc2).expect("second save");
@@ -378,7 +444,10 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(json).expect("valid json");
         let doc = load_guidance_from_value(&v).expect("should load");
         assert_eq!(doc.meta.module.as_str(), "test");
-        assert_eq!(doc.comment.as_ref().map(|c| c.as_str()), Some("A test module"));
+        assert_eq!(
+            doc.comment.as_ref().map(|c| c.as_str()),
+            Some("A test module")
+        );
     }
 
     #[test]
@@ -404,7 +473,9 @@ mod tests {
         };
 
         save_guidance(&path, &doc).expect("should save");
-        let loaded = load_guidance(&path).expect("should load").expect("should be Some");
+        let loaded = load_guidance(&path)
+            .expect("should load")
+            .expect("should be Some");
         assert_eq!(loaded.meta.module.as_str(), "roundtrip");
         assert_eq!(loaded.members.len(), 1);
         assert_eq!(loaded.members[0].name.as_str(), "foo");

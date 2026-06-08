@@ -46,7 +46,12 @@ impl PendingNode {
         ContextNode {
             id: Some(NodeId::from_int(self.id)),
             name: lod.get(4).cloned().unwrap_or_default().into(),
-            source: lod.iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" "),
+            source: lod
+                .iter()
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
             lod,
             embedding: None,
             capabilities: None,
@@ -143,7 +148,9 @@ impl TripleMapper {
                 if should_use_lang(lit.lang.as_deref(), &self.config.preferred_lang) {
                     let key = self.term_key(&triple.subject)?;
                     if let Some(node) = self.nodes.get_mut(&key) {
-                        if let Some(c) = check_contradiction(node, subj_id, &pred_iri, 4, &lit.value) {
+                        if let Some(c) =
+                            check_contradiction(node, subj_id, &pred_iri, 4, &lit.value)
+                        {
                             self.contradictions.push(c);
                         }
                         node.lod[4] = lit.value.as_bytes().to_vec();
@@ -155,7 +162,9 @@ impl TripleMapper {
                 if should_use_lang(lit.lang.as_deref(), &self.config.preferred_lang) {
                     let key = self.term_key(&triple.subject)?;
                     if let Some(node) = self.nodes.get_mut(&key) {
-                        if let Some(c) = check_contradiction(node, subj_id, &pred_iri, 0, &lit.value) {
+                        if let Some(c) =
+                            check_contradiction(node, subj_id, &pred_iri, 0, &lit.value)
+                        {
                             self.contradictions.push(c);
                         }
                         node.lod[0] = lit.value.as_bytes().to_vec();
@@ -167,7 +176,9 @@ impl TripleMapper {
                 if should_use_lang(lit.lang.as_deref(), &self.config.preferred_lang) {
                     let key = self.term_key(&triple.subject)?;
                     if let Some(node) = self.nodes.get_mut(&key) {
-                        if let Some(c) = check_contradiction(node, subj_id, &pred_iri, 1, &lit.value) {
+                        if let Some(c) =
+                            check_contradiction(node, subj_id, &pred_iri, 1, &lit.value)
+                        {
                             self.contradictions.push(c);
                         }
                         node.lod[1] = lit.value.as_bytes().to_vec();
@@ -188,9 +199,7 @@ impl TripleMapper {
     }
 
     pub fn drain_nodes(&mut self) -> Vec<PendingNode> {
-        std::mem::take(&mut self.nodes)
-            .into_values()
-            .collect()
+        std::mem::take(&mut self.nodes).into_values().collect()
     }
 
     pub fn drain_edges(&mut self) -> Vec<PendingEdge> {
@@ -238,7 +247,9 @@ impl TripleMapper {
             Term::BlankNode(s) => format!("bnode:{}", s),
             Term::Literal(_) => return Err(MappingError::LiteralAsSubject),
         };
-        self.nodes.entry(key).or_insert_with(|| PendingNode::new(id));
+        self.nodes
+            .entry(key)
+            .or_insert_with(|| PendingNode::new(id));
         Ok(())
     }
 }
@@ -308,9 +319,10 @@ mod tests {
         );
         mapper.process_triple(&triple).unwrap();
         let nodes = mapper.drain_nodes();
-        let node = nodes.iter().find(|n| {
-            !n.lod[4].is_empty()
-        }).expect("node with lod[4]");
+        let node = nodes
+            .iter()
+            .find(|n| !n.lod[4].is_empty())
+            .expect("node with lod[4]");
         assert_eq!(String::from_utf8_lossy(&node.lod[4]), "Alice");
     }
 
@@ -323,7 +335,10 @@ mod tests {
         mapper.process_triple(&triple).unwrap();
         let nodes = mapper.drain_nodes();
         let node = nodes.iter().find(|n| !n.lod[0].is_empty()).unwrap();
-        assert_eq!(String::from_utf8_lossy(&node.lod[0]), "A person named Alice");
+        assert_eq!(
+            String::from_utf8_lossy(&node.lod[0]),
+            "A person named Alice"
+        );
     }
 
     #[test]

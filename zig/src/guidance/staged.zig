@@ -627,6 +627,7 @@ pub fn executeStagedWithAliasesOriginal(
 // Grounding enforcement — no synthesis without source
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 pub fn canSynthesize(stages: []const types.Stage) bool {
     for (stages) |stage| {
         if (stage.kind == .code and stage.content.len > 0) return true;

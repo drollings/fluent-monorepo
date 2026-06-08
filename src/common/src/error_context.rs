@@ -44,10 +44,7 @@ impl ErrorContext {
         }
     }
 
-    pub fn simple(
-        operation: &str,
-        cause: impl std::error::Error + Send + Sync + 'static,
-    ) -> Self {
+    pub fn simple(operation: &str, cause: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::new(operation, None, None, cause)
     }
 }
@@ -176,12 +173,8 @@ mod tests {
 
     #[test]
     fn heap_error_context_chain() {
-        let inner = HeapErrorContext::new(
-            "inner",
-            None,
-            None,
-            std::io::Error::other("inner error"),
-        );
+        let inner =
+            HeapErrorContext::new("inner", None, None, std::io::Error::other("inner error"));
         let outer = inner.chain(std::io::Error::other("outer error"));
         let s = format!("{outer}");
         assert!(s.contains("outer error"));

@@ -227,7 +227,9 @@ pub fn enhance_doc(
 
     // Generate file-level comment if missing
     if doc.comment.is_none() {
-        if let Ok(Some(file_comment)) = enhancer.enhance_file(doc.meta.source.as_str(), source_content) {
+        if let Ok(Some(file_comment)) =
+            enhancer.enhance_file(doc.meta.source.as_str(), source_content)
+        {
             doc.comment = Some(file_comment.into());
             generated += 1;
         }
@@ -270,10 +272,7 @@ mod tests {
     fn test_call_llm_extracts_comment_tag() {
         // Test the XML extraction logic directly
         let response = "<comment>Test comment</comment>";
-        assert!(
-            response.contains("<comment>"),
-            "should have comment tag"
-        );
+        assert!(response.contains("<comment>"), "should have comment tag");
         assert!(
             response.contains("Test comment"),
             "should contain extracted text"

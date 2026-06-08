@@ -34,18 +34,28 @@ impl ContextPacker {
 
     /// Estimate token count from text length.
     pub fn estimate_tokens(text: &str) -> usize {
-        (text.len() + 3) / 4
+        text.len().div_ceil(4)
     }
 
     /// Select the appropriate LOD level based on graph distance.
     /// Closer nodes get more detailed LOD (lower index).
     pub fn select_lod_by_distance(_node: &ContextNode, graph_distance: f64, avg_degree: f64) -> u8 {
         let effective_distance = graph_distance / (1.0 + avg_degree / (avg_degree + 1.0));
-        if effective_distance < 1.0 { return 0; }
-        if effective_distance < 2.0 { return 1; }
-        if effective_distance < 3.0 { return 2; }
-        if effective_distance < 4.0 { return 3; }
-        if effective_distance < 5.0 { return 4; }
+        if effective_distance < 1.0 {
+            return 0;
+        }
+        if effective_distance < 2.0 {
+            return 1;
+        }
+        if effective_distance < 3.0 {
+            return 2;
+        }
+        if effective_distance < 4.0 {
+            return 3;
+        }
+        if effective_distance < 5.0 {
+            return 4;
+        }
         5
     }
 
@@ -67,7 +77,11 @@ impl ContextPacker {
     /// 2. For each node, select LOD by effective distance
     /// 3. FFD bin-pack into token budget
     /// 4. Return packed nodes with selected LOD text
-    pub fn pack(&self, focus_id: NodeId, library: &Library) -> Result<Vec<PackedNode>, PackerError> {
+    pub fn pack(
+        &self,
+        focus_id: NodeId,
+        library: &Library,
+    ) -> Result<Vec<PackedNode>, PackerError> {
         let focus_node = library
             .get_node(focus_id)?
             .ok_or_else(|| PackerError::NodeNotFound("focus node not found".into()))?;
@@ -123,11 +137,7 @@ impl ContextPacker {
     /// First-Fit Decreasing bin-packing into token budget.
     fn ffd_pack(&self, candidates: &[PackedNode]) -> Vec<PackedNode> {
         let mut sorted: Vec<&PackedNode> = candidates.iter().collect();
-        sorted.sort_by(|a, b| {
-            b.text
-                .len()
-                .cmp(&a.text.len())
-        });
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.text.len()));
 
         let mut used_tokens = 0usize;
         let mut packed = Vec::new();
@@ -210,7 +220,8 @@ mod tests {
             capabilities: None,
         };
         let child_id = lib.insert_node(&child).expect("insert");
-        lib.insert_edge(focus_id, child_id, "depends", 1.0).expect("edge");
+        lib.insert_edge(focus_id, child_id, "depends", 1.0)
+            .expect("edge");
 
         let packer = ContextPacker::new(100); // large budget
         let packed = packer.pack(focus_id, &lib).expect("pack");
@@ -226,9 +237,24 @@ mod tests {
     fn test_ffd_pack_respects_order() {
         let packer = ContextPacker::new(10);
         let candidates = vec![
-            PackedNode { id: NodeId(1), lod_level: 0, text: "aaaa".into(), graph_distance: 0.0 },
-            PackedNode { id: NodeId(2), lod_level: 1, text: "bb".into(), graph_distance: 1.0 },
-            PackedNode { id: NodeId(3), lod_level: 2, text: "cc".into(), graph_distance: 2.0 },
+            PackedNode {
+                id: NodeId(1),
+                lod_level: 0,
+                text: "aaaa".into(),
+                graph_distance: 0.0,
+            },
+            PackedNode {
+                id: NodeId(2),
+                lod_level: 1,
+                text: "bb".into(),
+                graph_distance: 1.0,
+            },
+            PackedNode {
+                id: NodeId(3),
+                lod_level: 2,
+                text: "cc".into(),
+                graph_distance: 2.0,
+            },
         ];
         let packed = packer.ffd_pack(&candidates);
         // Budget 10 chars = ~2 tokens per 4 chars = 5 tokens max

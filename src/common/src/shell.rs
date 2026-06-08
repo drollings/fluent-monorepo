@@ -10,11 +10,7 @@ pub fn run_command(argv: &[&str]) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-pub fn add_unique_path(
-    list: &mut Vec<String>,
-    path: &str,
-    project_root: Option<&str>,
-) -> bool {
+pub fn add_unique_path(list: &mut Vec<String>, path: &str, project_root: Option<&str>) -> bool {
     if list.iter().any(|p| p == path) {
         return false;
     }
@@ -74,7 +70,11 @@ mod tests {
     #[test]
     fn add_unique_path_with_project_root_missing() {
         let mut list = Vec::new();
-        assert!(!add_unique_path(&mut list, "nonexistent_path_xyz", Some("/tmp")));
+        assert!(!add_unique_path(
+            &mut list,
+            "nonexistent_path_xyz",
+            Some("/tmp")
+        ));
         assert_eq!(list.len(), 0);
     }
 

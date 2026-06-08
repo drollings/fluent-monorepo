@@ -15,18 +15,30 @@ pub struct SessionId(pub i64);
 pub struct TargetId(pub i64);
 
 impl NodeId {
-    pub fn from_int(i: i64) -> Self { Self(i) }
-    pub fn as_int(self) -> i64 { self.0 }
+    pub fn from_int(i: i64) -> Self {
+        Self(i)
+    }
+    pub fn as_int(self) -> i64 {
+        self.0
+    }
 }
 
 impl SessionId {
-    pub fn from_int(i: i64) -> Self { Self(i) }
-    pub fn as_int(self) -> i64 { self.0 }
+    pub fn from_int(i: i64) -> Self {
+        Self(i)
+    }
+    pub fn as_int(self) -> i64 {
+        self.0
+    }
 }
 
 impl TargetId {
-    pub fn from_int(i: i64) -> Self { Self(i) }
-    pub fn as_int(self) -> i64 { self.0 }
+    pub fn from_int(i: i64) -> Self {
+        Self(i)
+    }
+    pub fn as_int(self) -> i64 {
+        self.0
+    }
 }
 
 // ── FileType ────────────────────────────────────────────────────────────────────
@@ -46,23 +58,36 @@ pub enum FileType {
 impl FileType {
     pub fn from_extension(ext: &str) -> Self {
         let known_source = [
-            ".zig", ".zon", ".py", ".rs", ".go", ".ts", ".tsx",
-            ".js", ".jsx", ".c", ".cpp", ".h", ".hpp", ".lua",
-            ".rb", ".java", ".swift", ".kt",
+            ".zig", ".zon", ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".c", ".cpp", ".h",
+            ".hpp", ".lua", ".rb", ".java", ".swift", ".kt",
         ];
         let known_markdown = [".md", ".markdown", ".mdx"];
-        let known_config = [".json", ".toml", ".yaml", ".yml", ".ini", ".env", ".cfg", ".conf"];
+        let known_config = [
+            ".json", ".toml", ".yaml", ".yml", ".ini", ".env", ".cfg", ".conf",
+        ];
         let known_data = [".csv", ".tsv", ".sqlite", ".db", ".sql", ".parquet"];
         let known_pdf = [".pdf"];
         let known_audio = [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".wma"];
 
         let ext = ext.to_lowercase();
-        if known_source.iter().any(|e| ext == *e) { return Self::Source; }
-        if known_markdown.iter().any(|e| ext == *e) { return Self::Markdown; }
-        if known_config.iter().any(|e| ext == *e) { return Self::Config; }
-        if known_data.iter().any(|e| ext == *e) { return Self::Data; }
-        if known_pdf.iter().any(|e| ext == *e) { return Self::Pdf; }
-        if known_audio.iter().any(|e| ext == *e) { return Self::Audio; }
+        if known_source.iter().any(|e| ext == *e) {
+            return Self::Source;
+        }
+        if known_markdown.iter().any(|e| ext == *e) {
+            return Self::Markdown;
+        }
+        if known_config.iter().any(|e| ext == *e) {
+            return Self::Config;
+        }
+        if known_data.iter().any(|e| ext == *e) {
+            return Self::Data;
+        }
+        if known_pdf.iter().any(|e| ext == *e) {
+            return Self::Pdf;
+        }
+        if known_audio.iter().any(|e| ext == *e) {
+            return Self::Audio;
+        }
         Self::Unknown
     }
 
@@ -192,7 +217,9 @@ pub struct Meta {
     pub language: SmolStr,
 }
 
-fn default_language() -> SmolStr { SmolStr::new("zig") }
+fn default_language() -> SmolStr {
+    SmolStr::new("zig")
+}
 
 // ── CapabilityEval ──────────────────────────────────────────────────────────────
 

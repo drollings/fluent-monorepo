@@ -151,7 +151,10 @@ pub fn hash_batch(paths: &[std::path::PathBuf], algorithm: HashAlgorithm) -> Vec
 }
 
 fn hex_encode(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().concat()
+    data.iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .concat()
 }
 
 #[cfg(test)]

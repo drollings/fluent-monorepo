@@ -54,9 +54,7 @@ const YAGO_PERSON_PROPS: &[&str] = &[
     "http://yago-knowledge.org/resource/hasWikipediaArticle",
 ];
 
-const YAGO_ORG_PROPS: &[&str] = &[
-    "http://yago-knowledge.org/resource/hasWikipediaArticle",
-];
+const YAGO_ORG_PROPS: &[&str] = &["http://yago-knowledge.org/resource/hasWikipediaArticle"];
 
 pub const CLASS_ENTITY: OntologyClass = OntologyClass {
     iri: "http://yago-knowledge.org/resource/Entity",
@@ -167,11 +165,12 @@ pub fn is_whitelisted(iri: &str) -> bool {
 }
 
 pub fn is_whitelisted_hash(hash: i64) -> bool {
-    let whitelist_hashes: std::collections::HashSet<i64> =
-        WHITELIST_IRIS.iter().map(|iri| guidance_rdf::normalize::hash_iri(iri)).collect();
+    let whitelist_hashes: std::collections::HashSet<i64> = WHITELIST_IRIS
+        .iter()
+        .map(|iri| guidance_rdf::normalize::hash_iri(iri))
+        .collect();
     whitelist_hashes.contains(&hash)
 }
-
 
 pub const PROP_LABEL: OntologyProperty = OntologyProperty {
     iri: "http://www.w3.org/2000/01/rdf-schema#label",

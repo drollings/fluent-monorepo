@@ -1,5 +1,5 @@
-pub use guidance_common::types::{ExecutorKind, TargetType};
 pub use guidance_common::registry::Target;
+pub use guidance_common::types::{ExecutorKind, TargetType};
 
 #[cfg(test)]
 mod tests {

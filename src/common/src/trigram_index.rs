@@ -51,11 +51,15 @@ impl TrigramIndex {
 
     pub fn search_bytes(&self, tri_bytes: [u8; 3]) -> &[TrigramHit] {
         let tri = make_trigram(tri_bytes[0], tri_bytes[1], tri_bytes[2]);
-        self.index.get(&tri).map_or(&[] as &[TrigramHit], |v| v.as_slice())
+        self.index
+            .get(&tri)
+            .map_or(&[] as &[TrigramHit], |v| v.as_slice())
     }
 
     pub fn search_trigram(&self, tri: Trigram) -> &[TrigramHit] {
-        self.index.get(&tri).map_or(&[] as &[TrigramHit], |v| v.as_slice())
+        self.index
+            .get(&tri)
+            .map_or(&[] as &[TrigramHit], |v| v.as_slice())
     }
 
     pub fn candidates(&self, query: &str) -> Vec<u32> {
@@ -64,7 +68,10 @@ impl TrigramIndex {
             return Vec::new();
         }
         let first = make_trigram(bytes[0], bytes[1], bytes[2]);
-        let hits = self.index.get(&first).map_or(&[] as &[TrigramHit], |v| v.as_slice());
+        let hits = self
+            .index
+            .get(&first)
+            .map_or(&[] as &[TrigramHit], |v| v.as_slice());
         let mut doc_ids: Vec<u32> = hits.iter().map(|h| h.doc_id).collect();
         doc_ids.sort_unstable();
         doc_ids.dedup();
@@ -113,9 +120,17 @@ impl TrigramIndex {
         }
 
         let mut offset = payload_start;
-        let doc_count = u32::from_le_bytes(data[offset..offset + 4].try_into().map_err(|_| "truncated")?);
+        let doc_count = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| "truncated")?,
+        );
         offset += 4;
-        let entry_count = u32::from_le_bytes(data[offset..offset + 4].try_into().map_err(|_| "truncated")?);
+        let entry_count = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| "truncated")?,
+        );
         offset += 4;
 
         let mut index = HashMap::new();

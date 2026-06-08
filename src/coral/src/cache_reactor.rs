@@ -236,9 +236,7 @@ mod tests {
         };
         lib.insert_node(&node).expect("insert");
 
-        let args = QueueReactorCreateArgs::builder()
-            .library(lib)
-            .build();
+        let args = QueueReactorCreateArgs::builder().library(lib).build();
 
         let reactor = QueueReactor::new(args);
         let result = reactor.route("test_query");
@@ -270,9 +268,7 @@ mod tests {
     #[test]
     fn test_reactor_l4_5_decompose_not_configured() {
         let lib = Arc::new(Library::open_in_memory().expect("db"));
-        let args = QueueReactorCreateArgs::builder()
-            .library(lib)
-            .build();
+        let args = QueueReactorCreateArgs::builder().library(lib).build();
         let reactor = QueueReactor::new(args);
         assert!(reactor.decomposer.is_none());
     }
@@ -297,9 +293,7 @@ mod tests {
     #[test]
     fn test_reactor_l2_wasm_no_tool() {
         let lib = Arc::new(Library::open_in_memory().expect("db"));
-        let args = QueueReactorCreateArgs::builder()
-            .library(lib)
-            .build();
+        let args = QueueReactorCreateArgs::builder().library(lib).build();
         let reactor = QueueReactor::new(args);
         let result = reactor.route_l2_wasm("test").expect("l2 wasm");
         assert!(result.is_none());
@@ -308,9 +302,7 @@ mod tests {
     #[test]
     fn test_reactor_l5_frontier_not_configured() {
         let lib = Arc::new(Library::open_in_memory().expect("db"));
-        let args = QueueReactorCreateArgs::builder()
-            .library(lib)
-            .build();
+        let args = QueueReactorCreateArgs::builder().library(lib).build();
         let reactor = QueueReactor::new(args);
         assert!(reactor.frontier_config.is_none());
     }
@@ -325,4 +317,3 @@ mod tests {
         assert_eq!(CacheTier::L5Frontier.to_string(), "L5");
     }
 }
-

@@ -18,9 +18,9 @@ pub mod sync_engine;
 
 pub mod query {
     pub mod identifier;
-    pub mod strategy;
     pub mod llm_filter;
     pub mod llm_filter_batch;
+    pub mod strategy;
     pub mod synthesize;
 }
 

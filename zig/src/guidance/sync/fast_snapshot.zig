@@ -264,6 +264,7 @@ pub const SnapshotBuilder = struct {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 fn freeFileSnap(allocator: std.mem.Allocator, f: *FileSnap) void {
     allocator.free(f.path);
     for (f.member_hashes) |mh| {

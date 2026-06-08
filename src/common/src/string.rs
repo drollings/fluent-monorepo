@@ -86,13 +86,23 @@ pub fn contains_word(text: &str, word: &str) -> bool {
 
 pub fn first_comment_line(text: &str) -> Option<String> {
     let line = text.lines().next()?;
-    let trimmed = line.trim().trim_start_matches("///").trim().trim_start_matches("//!").trim();
-    if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+    let trimmed = line
+        .trim()
+        .trim_start_matches("///")
+        .trim()
+        .trim_start_matches("//!")
+        .trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 pub fn has_extension(path: &str, ext: &str) -> bool {
     let ext = ext.trim_start_matches('.');
-    path.to_lowercase().ends_with(&format!(".{}", ext.to_lowercase()))
+    path.to_lowercase()
+        .ends_with(&format!(".{}", ext.to_lowercase()))
 }
 
 pub fn is_path_token(s: &str) -> bool {
@@ -101,7 +111,9 @@ pub fn is_path_token(s: &str) -> bool {
 
 pub fn is_test_path(path: &str) -> bool {
     let lower = path.to_lowercase();
-    lower.contains("test") || lower.contains("spec") || lower.ends_with("_test.zig")
+    lower.contains("test")
+        || lower.contains("spec")
+        || lower.ends_with("_test.zig")
         || lower.ends_with("_tests.zig")
 }
 
@@ -171,14 +183,34 @@ pub fn strip_boilerplate(text: &str, prefix: &str) -> String {
 }
 
 const NL_PREFIXES: &[&str] = &[
-    "what is ", "what are ", "what does ", "what's ",
-    "where is ", "where are ", "where does ", "where can i find ",
-    "how does ", "how do ", "how can i ", "how to ",
-    "why is ", "why does ", "why do ",
-    "when is ", "when does ", "when do ",
-    "who is ", "who are ", "who does ",
-    "which is ", "which are ", "which does ",
-    "explain ", "define ", "describe ", "tell me about ",
+    "what is ",
+    "what are ",
+    "what does ",
+    "what's ",
+    "where is ",
+    "where are ",
+    "where does ",
+    "where can i find ",
+    "how does ",
+    "how do ",
+    "how can i ",
+    "how to ",
+    "why is ",
+    "why does ",
+    "why do ",
+    "when is ",
+    "when does ",
+    "when do ",
+    "who is ",
+    "who are ",
+    "who does ",
+    "which is ",
+    "which are ",
+    "which does ",
+    "explain ",
+    "define ",
+    "describe ",
+    "tell me about ",
 ];
 
 pub fn strip_nl_prefix(text: &str) -> String {
@@ -270,7 +302,9 @@ mod tests {
     #[test]
     fn is_noisy_comment_checks() {
         assert!(is_noisy_comment("x"));
-        assert!(is_noisy_comment("@@@@  ####  $$$$  %%%%  ^^^^  &&&&  ****  ((((  ))))"));
+        assert!(is_noisy_comment(
+            "@@@@  ####  $$$$  %%%%  ^^^^  &&&&  ****  ((((  ))))"
+        ));
         assert!(!is_noisy_comment("Cosine similarity for vector search"));
     }
 
@@ -383,19 +417,13 @@ mod tests {
 
     #[test]
     fn skill_name_from_ref_fallback() {
-        assert_eq!(
-            skill_name_from_ref("doc/skills/foo.md"),
-            "foo.md"
-        );
+        assert_eq!(skill_name_from_ref("doc/skills/foo.md"), "foo.md");
     }
 
     #[test]
     fn skill_name_from_ref_edge() {
         assert_eq!(skill_name_from_ref("SKILL.md"), "SKILL.md");
-        assert_eq!(
-            skill_name_from_ref("/a/b/c/SKILL.md"),
-            "c"
-        );
+        assert_eq!(skill_name_from_ref("/a/b/c/SKILL.md"), "c");
     }
 
     #[test]

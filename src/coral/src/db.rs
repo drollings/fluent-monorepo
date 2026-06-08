@@ -169,12 +169,21 @@ impl Library {
         Ok(result)
     }
 
-    pub fn knn_search(&self, query_vec: &[f32], k: usize, capability_filter: Option<&BitVec>) -> Result<Vec<KnnHit>, LibraryError> {
+    pub fn knn_search(
+        &self,
+        query_vec: &[f32],
+        k: usize,
+        capability_filter: Option<&BitVec>,
+    ) -> Result<Vec<KnnHit>, LibraryError> {
         if query_vec.is_empty() {
             return Ok(Vec::new());
         }
         let conn = self.conn.lock().unwrap();
-        let capabilities_col = if capability_filter.is_some() { ", capabilities" } else { "" };
+        let capabilities_col = if capability_filter.is_some() {
+            ", capabilities"
+        } else {
+            ""
+        };
         let sql = format!("SELECT id, name, embedding{capabilities_col} FROM context_nodes WHERE embedding IS NOT NULL");
         let mut stmt = conn.prepare(&sql)?;
 
@@ -195,12 +204,8 @@ impl Library {
         for row_result in rows {
             let (id, name, blob, caps_blob) = row_result?;
             if let Some(filter) = capability_filter {
-                let node_bv = caps_blob.as_deref()
-                    .map(blob_to_bitvec)
-                    .unwrap_or_default();
-                let overlap = node_bv.iter()
-                    .zip(filter.iter())
-                    .any(|(a, b)| *a && *b);
+                let node_bv = caps_blob.as_deref().map(blob_to_bitvec).unwrap_or_default();
+                let overlap = node_bv.iter().zip(filter.iter()).any(|(a, b)| *a && *b);
                 if !overlap {
                     continue;
                 }
@@ -218,7 +223,11 @@ impl Library {
             }
         }
 
-        results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
         Ok(results)
     }
@@ -286,7 +295,10 @@ impl Library {
         Ok(())
     }
 
-    pub fn find_wasm_tools_by_capability(&self, capability: &str) -> Result<Vec<WasmTool>, LibraryError> {
+    pub fn find_wasm_tools_by_capability(
+        &self,
+        capability: &str,
+    ) -> Result<Vec<WasmTool>, LibraryError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT name, path, capabilities FROM wasm_tools")?;
 
@@ -295,7 +307,8 @@ impl Library {
                 let name: String = row.get(0)?;
                 let path: String = row.get(1)?;
                 let caps_json: String = row.get(2)?;
-                let capabilities: Vec<String> = serde_json::from_str(&caps_json).unwrap_or_default();
+                let capabilities: Vec<String> =
+                    serde_json::from_str(&caps_json).unwrap_or_default();
                 Ok((name, path, capabilities))
             })?
             .filter_map(|r| {
@@ -349,7 +362,8 @@ impl Library {
 
     pub fn node_count(&self) -> Result<i64, LibraryError> {
         let conn = self.conn.lock().unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM context_nodes", [], |row| row.get(0))?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM context_nodes", [], |row| row.get(0))?;
         Ok(count)
     }
 
@@ -418,7 +432,11 @@ impl Library {
     }
 
     /// Insert an entity hierarchy relationship (subclass -> superclass)
-    pub fn insert_entity_hierarchy(&self, subclass_iri: &str, superclass_iri: &str) -> Result<(), LibraryError> {
+    pub fn insert_entity_hierarchy(
+        &self,
+        subclass_iri: &str,
+        superclass_iri: &str,
+    ) -> Result<(), LibraryError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO entity_hierarchy (subclass_iri, superclass_iri) VALUES (?1, ?2)",
@@ -477,7 +495,12 @@ impl<'a> HydrationPipeline<'a> {
             if let Ok(hits) = self.library.knn_search(emb, 10, None) {
                 for hit in hits {
                     if hit.node_id != node_id && hit.distance < 0.3 {
-                        let _ = self.library.insert_edge(node_id, hit.node_id, "neighbor_of", hit.distance as f64);
+                        let _ = self.library.insert_edge(
+                            node_id,
+                            hit.node_id,
+                            "neighbor_of",
+                            hit.distance as f64,
+                        );
                     }
                 }
             }
@@ -488,7 +511,8 @@ impl<'a> HydrationPipeline<'a> {
 }
 
 fn blob_to_bitvec(b: &[u8]) -> BitVec {
-    let words: Vec<usize> = b.chunks(size_of::<usize>())
+    let words: Vec<usize> = b
+        .chunks(size_of::<usize>())
         .map(|chunk| {
             let mut arr = [0u8; size_of::<usize>()];
             let len = chunk.len().min(size_of::<usize>());
@@ -500,9 +524,7 @@ fn blob_to_bitvec(b: &[u8]) -> BitVec {
 }
 
 fn vec_to_blob(v: &[f32]) -> Vec<u8> {
-    v.iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect()
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
 fn blob_to_vec(b: &[u8]) -> Option<Vec<f32>> {
@@ -589,10 +611,7 @@ mod tests {
         };
         let node_id = lib.insert_node(&node).expect("insert");
 
-        let gotten = lib
-            .get_node(node_id)
-            .expect("get")
-            .expect("should exist");
+        let gotten = lib.get_node(node_id).expect("get").expect("should exist");
         assert_eq!(gotten.name.as_str(), "roundtrip_node");
         assert_eq!(gotten.source, "source_text");
         assert_eq!(gotten.lod.len(), 3);
@@ -614,9 +633,9 @@ mod tests {
                 name: name.as_str().into(),
                 source: "source".into(),
                 lod: vec![],
-            embedding: Some(emb.clone()),
-            capabilities: None,
-        };
+                embedding: Some(emb.clone()),
+                capabilities: None,
+            };
             lib.insert_node(&node).expect("insert");
         }
 
@@ -660,7 +679,8 @@ mod tests {
         };
         let grandchild_id = lib.insert_node(&grandchild).expect("insert");
 
-        lib.insert_edge(root_id, child_id, "depends", 1.0).expect("edge");
+        lib.insert_edge(root_id, child_id, "depends", 1.0)
+            .expect("edge");
         lib.insert_edge(child_id, grandchild_id, "depends", 1.0)
             .expect("edge");
 
@@ -678,15 +698,11 @@ mod tests {
         };
         lib.insert_wasm_tool(&tool).expect("insert");
 
-        let found = lib
-            .find_wasm_tools_by_capability("tokenize")
-            .expect("find");
+        let found = lib.find_wasm_tools_by_capability("tokenize").expect("find");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name.as_str(), "tokenizer");
 
-        let not_found = lib
-            .find_wasm_tools_by_capability("embed")
-            .expect("find");
+        let not_found = lib.find_wasm_tools_by_capability("embed").expect("find");
         assert!(not_found.is_empty());
     }
 
@@ -697,9 +713,7 @@ mod tests {
         lib.cache_embedding("hash123", "test query", &emb)
             .expect("cache");
 
-        let cached = lib
-            .get_cached_embedding("hash123")
-            .expect("get cached");
+        let cached = lib.get_cached_embedding("hash123").expect("get cached");
         assert!(cached.is_some());
         let cached = cached.unwrap();
         assert!((cached[0] - 0.5).abs() < 1e-6);
@@ -788,7 +802,8 @@ mod tests {
         };
         let node_id = lib.insert_node(&node).expect("insert");
 
-        lib.insert_entity_type(node_id, "http://schema.org/Person").expect("insert type");
+        lib.insert_entity_type(node_id, "http://schema.org/Person")
+            .expect("insert type");
         lib.insert_entity_hierarchy("http://schema.org/Person", "http://schema.org/Thing")
             .expect("insert hierarchy");
 
@@ -845,7 +860,10 @@ mod tests {
         let a: Vec<f32> = vec![1.0, 0.0, 0.0];
         let b: Vec<f32> = vec![1.0, 0.0, 0.0];
         let d = cosine_distance(&a, &b);
-        assert!((d - 0.0).abs() < 1e-6, "identical vectors should have distance 0");
+        assert!(
+            (d - 0.0).abs() < 1e-6,
+            "identical vectors should have distance 0"
+        );
     }
 
     #[test]
@@ -853,7 +871,9 @@ mod tests {
         let a: Vec<f32> = vec![1.0, 0.0];
         let b: Vec<f32> = vec![0.0, 1.0];
         let d = cosine_distance(&a, &b);
-        assert!((d - 1.0).abs() < 1e-6, "orthogonal vectors should have distance 1");
+        assert!(
+            (d - 1.0).abs() < 1e-6,
+            "orthogonal vectors should have distance 1"
+        );
     }
 }
-

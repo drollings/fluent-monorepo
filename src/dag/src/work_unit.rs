@@ -11,10 +11,7 @@ pub struct CommandUnit {
 }
 
 impl CommandUnit {
-    pub fn new(
-        name: impl Into<String>,
-        command: impl Into<String>,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, command: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             command: command.into(),
@@ -49,7 +46,10 @@ impl WorkUnit for CommandUnit {
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if ctx.dry_run {
-            return Ok(WorkOutput::ok(format!("[DRY-RUN] would execute: {}", self.command)));
+            return Ok(WorkOutput::ok(format!(
+                "[DRY-RUN] would execute: {}",
+                self.command
+            )));
         }
 
         if self.command.is_empty() {
@@ -81,7 +81,10 @@ impl WorkUnit for CommandUnit {
             ))
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            Err(WorkError::Execution(format!("{} failed: {stderr}", self.name)))
+            Err(WorkError::Execution(format!(
+                "{} failed: {stderr}",
+                self.name
+            )))
         }
     }
 }

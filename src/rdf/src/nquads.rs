@@ -88,7 +88,11 @@ impl NQuadsParser {
         let pk = lex.next_token()?;
         if pk.kind == TokenKind::LangTag {
             let lang = pk.value[1..].to_string();
-            return Ok(Literal { value: content, lang: Some(lang), datatype: None });
+            return Ok(Literal {
+                value: content,
+                lang: Some(lang),
+                datatype: None,
+            });
         }
         if pk.kind == TokenKind::DatatypeMarker {
             let dt_tok = lex.next_token()?;
@@ -104,9 +108,17 @@ impl NQuadsParser {
                     });
                 }
             };
-            return Ok(Literal { value: content, lang: None, datatype: Some(dt_iri) });
+            return Ok(Literal {
+                value: content,
+                lang: None,
+                datatype: Some(dt_iri),
+            });
         }
-        Ok(Literal { value: content, lang: None, datatype: None })
+        Ok(Literal {
+            value: content,
+            lang: None,
+            datatype: None,
+        })
     }
 
     fn extract_literal_content(raw: &str) -> String {
@@ -195,7 +207,10 @@ mod tests {
         match quad.object {
             Term::Literal(lit) => {
                 assert_eq!(lit.value, "42");
-                assert_eq!(lit.datatype, Some("http://www.w3.org/2001/XMLSchema#integer".into()));
+                assert_eq!(
+                    lit.datatype,
+                    Some("http://www.w3.org/2001/XMLSchema#integer".into())
+                );
             }
             _ => panic!("expected literal"),
         }

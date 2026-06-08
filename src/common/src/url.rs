@@ -12,10 +12,7 @@ pub enum UrlError {
 
 pub fn is_local_host(host: &str) -> bool {
     let h = host.trim().to_lowercase();
-    h == "localhost"
-        || h == "127.0.0.1"
-        || h == "::1"
-        || h.starts_with("127.")
+    h == "localhost" || h == "127.0.0.1" || h == "::1" || h.starts_with("127.")
 }
 
 pub fn is_private_ip(host: &str) -> bool {

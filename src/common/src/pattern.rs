@@ -36,8 +36,7 @@ pub fn detect_singleton(source: &str) -> bool {
     contains_ignore_case(source, "_instance")
         || contains_ignore_case(source, "getInstance")
         || contains_ignore_case(source, "get_instance")
-        || (contains_word(source, "instance")
-            && contains_ignore_case(source, "fn instance("))
+        || (contains_word(source, "instance") && contains_ignore_case(source, "fn instance("))
 }
 
 pub fn detect_builder(source: &str) -> bool {
@@ -57,13 +56,23 @@ pub fn detect_adapter(source: &str) -> bool {
 pub fn detect_observer(source: &str) -> bool {
     contains_any_word(
         source,
-        &["observer", "subscriber", "listener", "publisher", "event_bus", "eventbus"],
+        &[
+            "observer",
+            "subscriber",
+            "listener",
+            "publisher",
+            "event_bus",
+            "eventbus",
+        ],
     )
 }
 
 pub fn detect_decorator(source: &str) -> bool {
     let has_wrapped_field = contains_any(source, &["wrapped", "component", "_inner", "wrappee"]);
-    let has_delegation = contains_any(source, &["self.wrapped.", "self.component.", "self._inner."]);
+    let has_delegation = contains_any(
+        source,
+        &["self.wrapped.", "self.component.", "self._inner."],
+    );
     has_wrapped_field && has_delegation
 }
 

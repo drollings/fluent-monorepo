@@ -393,6 +393,7 @@ pub fn processFiles(
 // Database helpers
 // =============================================================================
 
+/// // =============================================================================
 pub fn databaseHasTables(db_path: []const u8) bool {
     const c = vector_db_mod.sqlite;
     const db_path_z = std.fmt.allocPrintSentinel(std.heap.page_allocator, "{s}", .{db_path}, 0) catch return false;
@@ -1384,6 +1385,7 @@ pub fn collectFilesWithExts(
 // Built-in file/language pipelines
 // =============================================================================
 
+/// // =============================================================================
 pub fn runBuiltinFilePipeline(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,

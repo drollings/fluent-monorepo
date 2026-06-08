@@ -67,7 +67,9 @@ impl TargetRegistry {
     }
 
     pub fn get_by_bit_index(&self, bit_idx: usize) -> Option<&Target> {
-        self.by_bit_index.get(&bit_idx).map(|&idx| &self.targets[idx])
+        self.by_bit_index
+            .get(&bit_idx)
+            .map(|&idx| &self.targets[idx])
     }
 
     pub fn get_providers(&self, capability_bit_index: usize) -> Vec<&Target> {
@@ -219,7 +221,11 @@ mod tests {
     fn essential_and_abstract_targets() {
         let mut reg = TargetRegistry::new();
         for i in 0..3 {
-            let ttype = if i == 0 { TargetType::Abstract } else { TargetType::File };
+            let ttype = if i == 0 {
+                TargetType::Abstract
+            } else {
+                TargetType::File
+            };
             let t = Target::new()
                 .id(i)
                 .name(ArcIntern::from(format!("t{i}")))

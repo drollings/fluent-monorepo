@@ -36,7 +36,12 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        Self { src, pos: 0, line: 1, col: 1 }
+        Self {
+            src,
+            pos: 0,
+            line: 1,
+            col: 1,
+        }
     }
 
     fn skip_whitespace_and_comments(&mut self) {
@@ -82,7 +87,12 @@ impl<'a> Lexer<'a> {
         self.skip_whitespace_and_comments();
 
         if self.pos >= self.src.len() {
-            return Ok(Token { kind: TokenKind::Eof, value: "", line: self.line, col: self.col });
+            return Ok(Token {
+                kind: TokenKind::Eof,
+                value: "",
+                line: self.line,
+                col: self.col,
+            });
         }
 
         let start_line = self.line;
@@ -116,9 +126,7 @@ impl<'a> Lexer<'a> {
                 })
             }
             b'@' => self.lex_at_directive(start_line, start_col),
-            b':' => {
-                self.lex_prefixed_name(start_line, start_col)
-            }
+            b':' => self.lex_prefixed_name(start_line, start_col),
             b'^' if self.src.as_bytes().get(self.pos + 1) == Some(&b'^') => {
                 let start = self.pos;
                 self.advance();
@@ -197,11 +205,12 @@ impl<'a> Lexer<'a> {
                     col: start_col,
                 })
             }
-            b'+' | b'-' | b'0'..=b'9' => {
-                self.lex_numeric_literal(start_line, start_col)
-            }
+            b'+' | b'-' | b'0'..=b'9' => self.lex_numeric_literal(start_line, start_col),
             _ if is_prefix_start_char(c) => self.lex_prefixed_name(start_line, start_col),
-            _ => Err(RdfError::UnexpectedChar { line: start_line, col: start_col }),
+            _ => Err(RdfError::UnexpectedChar {
+                line: start_line,
+                col: start_col,
+            }),
         }
     }
 
@@ -306,7 +315,11 @@ impl<'a> Lexer<'a> {
         Err(RdfError::UnterminatedLiteral)
     }
 
-    fn lex_numeric_literal(&mut self, start_line: u32, start_col: u32) -> Result<Token<'a>, RdfError> {
+    fn lex_numeric_literal(
+        &mut self,
+        start_line: u32,
+        start_col: u32,
+    ) -> Result<Token<'a>, RdfError> {
         let start = self.pos;
         if let Some(c) = self.peek() {
             if c == b'+' || c == b'-' {
@@ -384,14 +397,22 @@ impl<'a> Lexer<'a> {
         let word = &self.src[start..self.pos];
         let is_keyword = matches!(word, "@prefix" | "@base" | "@PREFIX" | "@BASE");
         Ok(Token {
-            kind: if is_keyword { TokenKind::Keyword } else { TokenKind::LangTag },
+            kind: if is_keyword {
+                TokenKind::Keyword
+            } else {
+                TokenKind::LangTag
+            },
             value: word,
             line: start_line,
             col: start_col,
         })
     }
 
-    fn lex_prefixed_name(&mut self, start_line: u32, start_col: u32) -> Result<Token<'a>, RdfError> {
+    fn lex_prefixed_name(
+        &mut self,
+        start_line: u32,
+        start_col: u32,
+    ) -> Result<Token<'a>, RdfError> {
         let start = self.pos;
         while self.pos < self.src.len() && is_prefix_char(self.src.as_bytes()[self.pos]) {
             self.advance();
@@ -405,7 +426,11 @@ impl<'a> Lexer<'a> {
         let word = &self.src[start..self.pos];
         let is_keyword = matches!(word, "PREFIX" | "BASE" | "true" | "false");
         Ok(Token {
-            kind: if is_keyword { TokenKind::Keyword } else { TokenKind::PrefixedName },
+            kind: if is_keyword {
+                TokenKind::Keyword
+            } else {
+                TokenKind::PrefixedName
+            },
             value: word,
             line: start_line,
             col: start_col,
@@ -414,7 +439,10 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_name_end_char(ch: u8) -> bool {
-    matches!(ch, b' ' | b'\t' | b'\n' | b'\r' | b'.' | b';' | b',' | b')' | b']')
+    matches!(
+        ch,
+        b' ' | b'\t' | b'\n' | b'\r' | b'.' | b';' | b',' | b')' | b']'
+    )
 }
 
 fn is_prefix_start_char(ch: u8) -> bool {

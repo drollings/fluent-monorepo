@@ -149,7 +149,11 @@ impl GuidanceDb {
             }
         }
 
-        results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
 
         Ok(results)
@@ -202,16 +206,18 @@ impl GuidanceDb {
 
     pub fn get_node_count(&self) -> Result<i64, VectorDbError> {
         let conn = self.conn.lock().unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM guidance_nodes", [], |row| row.get(0))?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM guidance_nodes", [], |row| row.get(0))?;
         Ok(count)
     }
 
     pub fn get_embedding_count(&self) -> Result<i64, VectorDbError> {
         let conn = self.conn.lock().unwrap();
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM guidance_nodes WHERE embedding IS NOT NULL", [], |row| {
-                row.get(0)
-            })?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM guidance_nodes WHERE embedding IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
         Ok(count)
     }
 
@@ -225,20 +231,20 @@ impl GuidanceDb {
             return Ok(0);
         }
 
-        for entry in std::fs::read_dir(json_dir).map_err(|e| VectorDbError::Sqlite(
-            rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-        ))? {
-            let entry = entry.map_err(|e| VectorDbError::Sqlite(
-                rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-            ))?;
+        for entry in std::fs::read_dir(json_dir).map_err(|e| {
+            VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+        })? {
+            let entry = entry.map_err(|e| {
+                VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+            })?;
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
 
-            let content = std::fs::read_to_string(&path).map_err(|e| VectorDbError::Sqlite(
-                rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-            ))?;
+            let content = std::fs::read_to_string(&path).map_err(|e| {
+                VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+            })?;
             if content.trim().is_empty() {
                 continue;
             }
@@ -300,9 +306,7 @@ pub fn rrf_merge(
 
     for (rank, result) in vector_results.into_iter().enumerate() {
         let score = 1.0 / (k_constant + rank as f64);
-        let entry = rrf_scores
-            .entry(result.id)
-            .or_insert_with(|| (0.0, result));
+        let entry = rrf_scores.entry(result.id).or_insert_with(|| (0.0, result));
         entry.0 += score;
     }
 
@@ -335,7 +339,15 @@ mod tests {
     fn test_insert_and_count() {
         let db = make_db();
         let id = db
-            .insert_node("hello", "src/test.zig", Some("fn hello() void"), Some("Says hello"), "test", "zig", None)
+            .insert_node(
+                "hello",
+                "src/test.zig",
+                Some("fn hello() void"),
+                Some("Says hello"),
+                "test",
+                "zig",
+                None,
+            )
             .expect("insert");
         assert!(id > 0);
         assert_eq!(db.get_node_count().expect("count"), 1);
@@ -344,10 +356,26 @@ mod tests {
     #[test]
     fn test_keyword_search() {
         let db = make_db();
-        db.insert_node("greet", "src/test.zig", Some("fn greet() void"), Some("Greets the user"), "test", "zig", None)
-            .expect("insert");
-        db.insert_node("add", "src/math.zig", Some("fn add() i32"), Some("Adds numbers"), "math", "zig", None)
-            .expect("insert");
+        db.insert_node(
+            "greet",
+            "src/test.zig",
+            Some("fn greet() void"),
+            Some("Greets the user"),
+            "test",
+            "zig",
+            None,
+        )
+        .expect("insert");
+        db.insert_node(
+            "add",
+            "src/math.zig",
+            Some("fn add() i32"),
+            Some("Adds numbers"),
+            "math",
+            "zig",
+            None,
+        )
+        .expect("insert");
 
         let results = db.keyword_search("greet").expect("search");
         assert_eq!(results.len(), 1);
@@ -383,8 +411,16 @@ mod tests {
         let db = make_db();
         let emb = vec![0.1, 0.2, 0.3, 0.4];
 
-        db.insert_node("hello_fn", "src/test.zig", Some("fn hello() void"), Some("Says hello"), "test", "zig", Some(&emb))
-            .expect("insert");
+        db.insert_node(
+            "hello_fn",
+            "src/test.zig",
+            Some("fn hello() void"),
+            Some("Says hello"),
+            "test",
+            "zig",
+            Some(&emb),
+        )
+        .expect("insert");
 
         let results = db
             .hybrid_search("hello", Some(&emb), 5)
@@ -410,12 +446,36 @@ mod tests {
     #[test]
     fn test_rrf_merge_boosts_shared_results() {
         let kw = vec![
-            SearchResult { id: 1, name: "shared".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
-            SearchResult { id: 2, name: "kw_only".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
+            SearchResult {
+                id: 1,
+                name: "shared".into(),
+                source: "a.zig".into(),
+                signature: None,
+                similarity: 0.0,
+            },
+            SearchResult {
+                id: 2,
+                name: "kw_only".into(),
+                source: "a.zig".into(),
+                signature: None,
+                similarity: 0.0,
+            },
         ];
         let vec_results = vec![
-            SearchResult { id: 1, name: "shared".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
-            SearchResult { id: 3, name: "vec_only".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
+            SearchResult {
+                id: 1,
+                name: "shared".into(),
+                source: "a.zig".into(),
+                signature: None,
+                similarity: 0.0,
+            },
+            SearchResult {
+                id: 3,
+                name: "vec_only".into(),
+                source: "a.zig".into(),
+                signature: None,
+                similarity: 0.0,
+            },
         ];
         let merged = rrf_merge(kw, vec_results, 60.0);
         // shared (id=1) should be ranked first since it appears in both lists
@@ -426,12 +486,20 @@ mod tests {
 
     #[test]
     fn test_rrf_merge_deduplicates() {
-        let kw = vec![
-            SearchResult { id: 1, name: "dup".into(), source: "x.zig".into(), signature: None, similarity: 0.0 },
-        ];
-        let vec_results = vec![
-            SearchResult { id: 1, name: "dup".into(), source: "x.zig".into(), signature: None, similarity: 0.0 },
-        ];
+        let kw = vec![SearchResult {
+            id: 1,
+            name: "dup".into(),
+            source: "x.zig".into(),
+            signature: None,
+            similarity: 0.0,
+        }];
+        let vec_results = vec![SearchResult {
+            id: 1,
+            name: "dup".into(),
+            source: "x.zig".into(),
+            signature: None,
+            similarity: 0.0,
+        }];
         let merged = rrf_merge(kw.clone(), vec_results, 60.0);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].name, "dup");

@@ -15,16 +15,9 @@ impl QuantizedEmbedding {
             };
         }
 
-        let max_abs = vec
-            .iter()
-            .map(|v| v.abs())
-            .fold(0.0_f32, f32::max);
+        let max_abs = vec.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
 
-        let scale = if max_abs > 0.0 {
-            127.0 / max_abs
-        } else {
-            1.0
-        };
+        let scale = if max_abs > 0.0 { 127.0 / max_abs } else { 1.0 };
 
         let values: Vec<i8> = vec
             .iter()

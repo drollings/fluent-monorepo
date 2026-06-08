@@ -158,16 +158,14 @@ pub fn discover_provider(workspace: &Path, extension: &str) -> Option<Plugin> {
         });
     }
 
-    which::which(&name)
-        .ok()
-        .map(|path| {
-            let extensions = infer_extensions(&name);
-            Plugin {
-                name,
-                extensions,
-                path,
-            }
-        })
+    which::which(&name).ok().map(|path| {
+        let extensions = infer_extensions(&name);
+        Plugin {
+            name,
+            extensions,
+            path,
+        }
+    })
 }
 
 #[cfg(test)]
@@ -353,7 +351,12 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             PluginError::ExecutionFailed(msg) => {
-                assert!(msg.contains("exit status: 1") || msg.contains("exit code: 1") || msg.contains("exit status: 256"), "got: {msg}");
+                assert!(
+                    msg.contains("exit status: 1")
+                        || msg.contains("exit code: 1")
+                        || msg.contains("exit status: 256"),
+                    "got: {msg}"
+                );
             }
             other => panic!("expected ExecutionFailed, got {other:?}"),
         }
@@ -366,11 +369,7 @@ mod tests {
             extensions: vec!["nonexistent".into()],
             path: PathBuf::from("/tmp/guidance-nonexistent-binary"),
         };
-        let result = invoke_plugin(
-            &plugin,
-            Path::new("/tmp/src.py"),
-            Path::new("/tmp/out"),
-        );
+        let result = invoke_plugin(&plugin, Path::new("/tmp/src.py"), Path::new("/tmp/out"));
         match result {
             Err(PluginError::SubprocessCrashed(_)) => {} // expected
             other => panic!("expected SubprocessCrashed, got {other:?}"),

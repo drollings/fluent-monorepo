@@ -74,10 +74,7 @@ impl FsmEngine {
     /// INTAKE state: tokenize, detect file paths, detect identifiers
     pub fn intake(&mut self, query: &str) -> QueryClass {
         let trimmed = query.trim().to_string();
-        let tokens: Vec<String> = trimmed
-            .split_whitespace()
-            .map(|t| t.to_string())
-            .collect();
+        let tokens: Vec<String> = trimmed.split_whitespace().map(|t| t.to_string()).collect();
 
         let detected_identifiers: Vec<String> = tokens
             .iter()
@@ -137,8 +134,14 @@ impl FsmEngine {
         }
 
         // How-to questions
-        let how_to_words = ["how", "what", "why", "when", "where", "which", "can", "does", "do", "is", "are"];
-        let first_word = qc.tokens.first().map(|s| s.to_lowercase()).unwrap_or_default();
+        let how_to_words = [
+            "how", "what", "why", "when", "where", "which", "can", "does", "do", "is", "are",
+        ];
+        let first_word = qc
+            .tokens
+            .first()
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
         if how_to_words.contains(&first_word.as_str()) {
             result.intent = QueryIntent::HowTo;
             result.domain = "how_to".into();
@@ -251,14 +254,26 @@ mod tests {
     #[test]
     fn test_classify_identifier() {
         assert_eq!(classify_query("helloWorld"), QueryIntent::IdentifierLookup);
-        assert_eq!(classify_query("snake_case_fn"), QueryIntent::IdentifierLookup);
-        assert_eq!(classify_query("PascalCaseType"), QueryIntent::IdentifierLookup);
+        assert_eq!(
+            classify_query("snake_case_fn"),
+            QueryIntent::IdentifierLookup
+        );
+        assert_eq!(
+            classify_query("PascalCaseType"),
+            QueryIntent::IdentifierLookup
+        );
     }
 
     #[test]
     fn test_classify_capability() {
-        assert_eq!(classify_query("target registry"), QueryIntent::CapabilityQuery);
-        assert_eq!(classify_query("ast parsing zig"), QueryIntent::CapabilityQuery);
+        assert_eq!(
+            classify_query("target registry"),
+            QueryIntent::CapabilityQuery
+        );
+        assert_eq!(
+            classify_query("ast parsing zig"),
+            QueryIntent::CapabilityQuery
+        );
     }
 
     #[test]

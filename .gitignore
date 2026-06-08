@@ -28,7 +28,7 @@ doc/Legacy
 .guidance/skills
 bin/guidance-cpp
 data/
-zig/
+zig/zig-*
 
 src/target/
 

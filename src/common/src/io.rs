@@ -25,7 +25,11 @@ pub fn read_file_alloc_err(path: &str) -> Result<String, std::io::Error> {
 pub fn resolve_path(base: &str, relative: &str) -> String {
     if relative == "." {
         let base_path = Path::new(base);
-        return base_path.parent().unwrap_or(base_path).to_string_lossy().to_string();
+        return base_path
+            .parent()
+            .unwrap_or(base_path)
+            .to_string_lossy()
+            .to_string();
     }
     let base_path = Path::new(base);
     if base_path.is_absolute() {
@@ -64,7 +68,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test.txt");
         fs::write(&path, "hello").unwrap();
-        assert_eq!(read_file_alloc(&path.to_string_lossy()), Some("hello".into()));
+        assert_eq!(
+            read_file_alloc(&path.to_string_lossy()),
+            Some("hello".into())
+        );
     }
 
     #[test]

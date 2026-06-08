@@ -18,7 +18,7 @@
     clippy::unreadable_literal,
     clippy::similar_names,
     clippy::single_char_pattern,
-    clippy::byte_char_slices,
+    clippy::byte_char_slices
 )]
 pub mod builder_error;
 pub mod constants;
@@ -67,6 +67,7 @@ pub use embeddings::{
     NoopEmbedding, OllamaEmbedding, OpenAiEmbedding,
 };
 pub use entity::{extract_entities, EntityFreq, EntityType};
+pub use error::{CacheError, DbError, EmbedError, IoError, RegistryError, ResolverError};
 pub use error_context::{ErrorContext, HeapErrorContext};
 pub use file_lock::FileLock;
 pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
@@ -77,13 +78,17 @@ pub use hash::{
     BatchHashResult, HashAlgorithm, HashState,
 };
 pub use index_header::Header as IndexHeader;
-pub use io::{make_path_absolute, read_file_alloc, read_file_alloc_err, resolve_path, strip_path_prefix};
+pub use interner::CapabilityRegistry;
+pub use io::{
+    make_path_absolute, read_file_alloc, read_file_alloc_err, resolve_path, strip_path_prefix,
+};
 pub use metrics::LatencyHistogram;
 pub use pattern::{
     detect_decorator, detect_proxy, detect_ring_buffer, detect_strategy, detect_template_method,
     Pattern, PatternType,
 };
 pub use query_cache::QueryCache;
+pub use registry::{Target, TargetRegistry};
 pub use source::{extract_excerpt, extract_simple_excerpt, NodeType};
 pub use string::{
     contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
@@ -92,14 +97,15 @@ pub use string::{
     trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
 };
 pub use terminal::{get_terminal_height, get_terminal_width, is_terminal, Color, ProgressBar};
+pub use traits::{
+    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+};
 pub use types::{
     ASTAnalysis, CapabilityEval, ContextNode, EdgeType, ExecutorKind, FileMatch, FileType,
     GraphNode, GuidanceDoc, GuidanceInfo, KnnHit, Member, MemberType, Meta, NodeId, Param,
     QueryResult, SessionId, Skill, Stage, StageKind, SyncResult, TargetId, TargetType, WasmTool,
 };
 pub use url::{is_local_host, is_private_ip, validate_https_or_local_http, UrlError};
-pub use wrapper::{retry_call, wrap_if, Instrumented, Pipeline, RetryResult, WithRetry, WrapperKind};
-pub use error::{RegistryError, EmbedError, IoError, ResolverError, DbError, CacheError};
-pub use traits::{Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
-pub use interner::CapabilityRegistry;
-pub use registry::{Target, TargetRegistry};
+pub use wrapper::{
+    retry_call, wrap_if, Instrumented, Pipeline, RetryResult, WithRetry, WrapperKind,
+};

@@ -22,9 +22,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 }
 
 pub fn vec_to_bytes(v: &[f32]) -> Vec<u8> {
-    v.iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect()
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
 pub fn bytes_to_vec(b: &[u8]) -> Vec<f32> {

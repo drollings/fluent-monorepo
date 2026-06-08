@@ -117,6 +117,7 @@ pub fn grepFile(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// // ---------------------------------------------------------------------------
 fn memberTypeFromNodeType(node_type: []const u8) types_mod.MemberType {
     if (std.mem.eql(u8, node_type, "fn_decl")) return .fn_decl;
     if (std.mem.eql(u8, node_type, "fn_private")) return .fn_private;

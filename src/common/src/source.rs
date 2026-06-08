@@ -23,7 +23,10 @@ impl NodeType {
     }
 
     pub fn is_container(self) -> bool {
-        matches!(self, NodeType::StructDecl | NodeType::EnumDecl | NodeType::UnionDecl)
+        matches!(
+            self,
+            NodeType::StructDecl | NodeType::EnumDecl | NodeType::UnionDecl
+        )
     }
 
     pub fn from_string(s: &str) -> Self {
@@ -167,7 +170,8 @@ mod tests {
 
     #[test]
     fn container_with_nested_struct() {
-        let src = "struct Outer {\n    inner: Inner,\n    struct Inner {\n        val: u32,\n    }\n}\n";
+        let src =
+            "struct Outer {\n    inner: Inner,\n    struct Inner {\n        val: u32,\n    }\n}\n";
         let excerpt = extract_excerpt(src, 1, NodeType::StructDecl, 10);
         assert!(excerpt.contains("struct Outer"));
         assert!(excerpt.contains("inner: Inner"));

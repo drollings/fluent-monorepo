@@ -44,12 +44,7 @@ impl LlmFilter {
         let candidate_names: Vec<&str> = doc
             .members
             .iter()
-            .filter_map(|m| {
-                m.signature
-                    .as_ref()
-                    .or(Some(&m.name))
-                    .map(|s| s.as_str())
-            })
+            .filter_map(|m| m.signature.as_ref().or(Some(&m.name)).map(|s| s.as_str()))
             .take(20)
             .collect();
 
@@ -60,7 +55,11 @@ impl LlmFilter {
         let scores = backend.score_relevance(query, &candidate_names)?;
 
         let mut scores = scores;
-        scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scores.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scores.truncate(max_results);
 
         Ok(scores)
@@ -126,9 +125,7 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let results = filter
-            .filter_candidates("hello", &doc, 5)
-            .expect("filter");
+        let results = filter.filter_candidates("hello", &doc, 5).expect("filter");
         assert!(!results.is_empty());
     }
 

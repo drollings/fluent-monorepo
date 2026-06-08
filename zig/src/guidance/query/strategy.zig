@@ -55,6 +55,7 @@ fn queryMatch(
 // Matches predicates (stateless — no ptr needed)
 // =============================================================================
 
+/// // =============================================================================
 fn identifierMatches(query: []const u8, db: *GuidanceDb) bool {
     _ = db;
     return identifier.detectIdentifierPattern(query) != null;
@@ -82,6 +83,7 @@ fn conceptMatches(query: []const u8, db: *GuidanceDb) bool {
 // Query dispatcher
 // =============================================================================
 
+/// // =============================================================================
 pub fn executeQuery(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,

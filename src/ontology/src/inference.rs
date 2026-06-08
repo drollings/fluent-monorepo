@@ -30,9 +30,7 @@ pub struct InferenceEngine {
 
 impl InferenceEngine {
     pub fn new() -> Self {
-        Self {
-            rules: Vec::new(),
-        }
+        Self { rules: Vec::new() }
     }
 
     pub fn add_rule(&mut self, rule: InferenceRule) {
@@ -159,10 +157,7 @@ impl CapabilityInference {
                 Some(s) => s,
                 None => continue,
             };
-            self.hierarchy
-                .entry(child)
-                .or_default()
-                .push(parent);
+            self.hierarchy.entry(child).or_default().push(parent);
         }
         self.inferred_cache.clear();
     }
@@ -201,8 +196,7 @@ impl CapabilityInference {
         let mut visited = HashSet::new();
         self.collect_ancestor_caps(class_iri, &mut merged, &mut visited);
 
-        self.inferred_cache
-            .insert(class_iri.to_string(), merged);
+        self.inferred_cache.insert(class_iri.to_string(), merged);
         &self.inferred_cache[class_iri]
     }
 
@@ -285,14 +279,8 @@ mod tests {
 
         let derived = engine.infer(&[ab, bc]).unwrap();
         assert_eq!(derived.len(), 1);
-        assert_eq!(
-            derived[0].subject,
-            Term::Iri("Scientist".to_string())
-        );
-        assert_eq!(
-            derived[0].object,
-            Term::Iri("Agent".to_string())
-        );
+        assert_eq!(derived[0].subject, Term::Iri("Scientist".to_string()));
+        assert_eq!(derived[0].object, Term::Iri("Agent".to_string()));
     }
 
     #[test]

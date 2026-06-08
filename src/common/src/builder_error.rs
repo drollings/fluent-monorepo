@@ -3,7 +3,9 @@ use std::fmt;
 use crate::constants::MAX_VALUE_LEN;
 
 #[allow(deprecated)]
-#[deprecated(note = "Use bon-generated builders with Result instead. See ZIG_TO_RUST_PRACTICES.md §1.2")]
+#[deprecated(
+    note = "Use bon-generated builders with Result instead. See ZIG_TO_RUST_PRACTICES.md §1.2"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Depends,
@@ -29,7 +31,9 @@ impl fmt::Display for Phase {
 }
 
 #[allow(deprecated)]
-#[deprecated(note = "Use bon-generated builders with Result instead. See ZIG_TO_RUST_PRACTICES.md §1.2")]
+#[deprecated(
+    note = "Use bon-generated builders with Result instead. See ZIG_TO_RUST_PRACTICES.md §1.2"
+)]
 #[derive(Debug, Clone)]
 pub struct BuilderError {
     pub phase: Phase,
@@ -132,8 +136,8 @@ mod tests {
 
     #[test]
     fn chain_appends_parent_message() {
-        let err = BuilderError::new(Phase::Depends, None, None, None, "child")
-            .chain("parent error");
+        let err =
+            BuilderError::new(Phase::Depends, None, None, None, "child").chain("parent error");
         let s = format!("{err}");
         assert!(s.contains("parent error"));
     }

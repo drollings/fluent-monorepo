@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use async_trait::async_trait;
 use crate::hash::content_hash_with_model;
 use crate::url::validate_https_or_local_http;
+use async_trait::async_trait;
 
 type EmbeddingCache = Option<Arc<Mutex<HashMap<String, Vec<f32>>>>>;
 
@@ -98,10 +98,12 @@ pub struct OllamaEmbedding {
 }
 
 impl OllamaEmbedding {
-    pub fn new(model: Option<&str>, base_url: Option<&str>, dims: u32) -> Result<Self, EmbeddingError> {
-        let base_url = base_url
-            .unwrap_or("http://localhost:11434")
-            .to_string();
+    pub fn new(
+        model: Option<&str>,
+        base_url: Option<&str>,
+        dims: u32,
+    ) -> Result<Self, EmbeddingError> {
+        let base_url = base_url.unwrap_or("http://localhost:11434").to_string();
         validate_url(&base_url)?;
         Ok(Self {
             base_url,
@@ -191,7 +193,10 @@ impl EmbeddingProvider for OllamaEmbedding {
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        let inputs: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::Value::String(t.to_string())).collect();
+        let inputs: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
         let body = serde_json::json!({
             "model": self.model,
             "input": inputs,
@@ -217,19 +222,26 @@ impl EmbeddingProvider for OllamaEmbedding {
             "model": self.model.clone(),
             "input": text,
         });
-        let resp_bytes = do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string()).await?;
+        let resp_bytes =
+            do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string())
+                .await?;
         let result = parse_ollama_response(&resp_bytes)?;
         self.cache_store(text, &result);
         Ok(result)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        let inputs: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::Value::String(t.to_string())).collect();
+        let inputs: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
         let body = serde_json::json!({
             "model": self.model.clone(),
             "input": inputs,
         });
-        let resp_bytes = do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string()).await?;
+        let resp_bytes =
+            do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string())
+                .await?;
         let result = parse_ollama_batch_response(&resp_bytes)?;
         for (i, text) in texts.iter().enumerate() {
             let vec = result.vector(i).to_vec();
@@ -254,9 +266,7 @@ impl OpenAiEmbedding {
         api_key: Option<&str>,
         dims: u32,
     ) -> Result<Self, EmbeddingError> {
-        let base_url = base_url
-            .unwrap_or("https://api.openai.com/v1")
-            .to_string();
+        let base_url = base_url.unwrap_or("https://api.openai.com/v1").to_string();
         let api_key = api_key.ok_or(EmbeddingError::NoApiKey)?;
         validate_url(&base_url)?;
         Ok(Self {
@@ -340,19 +350,24 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "model": self.model,
             "input": text,
         });
-        let resp_bytes = do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
+        let resp_bytes =
+            do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
         let result = parse_openai_response(&resp_bytes)?;
         self.cache_store(text, &result);
         Ok(result)
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        let inputs: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::Value::String(t.to_string())).collect();
+        let inputs: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
         let body = serde_json::json!({
             "model": self.model,
             "input": inputs,
         });
-        let resp_bytes = do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
+        let resp_bytes =
+            do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
         let result = parse_openai_batch_response(&resp_bytes)?;
         for (i, text) in texts.iter().enumerate() {
             let vec = result.vector(i).to_vec();
@@ -372,19 +387,32 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "model": self.model.clone(),
             "input": text,
         });
-        let resp_bytes = do_openai_request_async(self.embeddings_url(), self.api_key.clone(), body.to_string()).await?;
+        let resp_bytes = do_openai_request_async(
+            self.embeddings_url(),
+            self.api_key.clone(),
+            body.to_string(),
+        )
+        .await?;
         let result = parse_openai_response(&resp_bytes)?;
         self.cache_store(text, &result);
         Ok(result)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        let inputs: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::Value::String(t.to_string())).collect();
+        let inputs: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
         let body = serde_json::json!({
             "model": self.model.clone(),
             "input": inputs,
         });
-        let resp_bytes = do_openai_request_async(self.embeddings_url(), self.api_key.clone(), body.to_string()).await?;
+        let resp_bytes = do_openai_request_async(
+            self.embeddings_url(),
+            self.api_key.clone(),
+            body.to_string(),
+        )
+        .await?;
         let result = parse_openai_batch_response(&resp_bytes)?;
         for (i, text) in texts.iter().enumerate() {
             let vec = result.vector(i).to_vec();
@@ -394,13 +422,21 @@ impl EmbeddingProvider for OpenAiEmbedding {
     }
 }
 
-async fn do_embed_request_async(base_url: String, path: String, body_str: String) -> Result<Vec<u8>, EmbeddingError> {
+async fn do_embed_request_async(
+    base_url: String,
+    path: String,
+    body_str: String,
+) -> Result<Vec<u8>, EmbeddingError> {
     tokio::task::spawn_blocking(move || do_embed_request(&base_url, &path, &body_str))
         .await
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?
 }
 
-async fn do_openai_request_async(url: String, api_key: String, body_str: String) -> Result<Vec<u8>, EmbeddingError> {
+async fn do_openai_request_async(
+    url: String,
+    api_key: String,
+    body_str: String,
+) -> Result<Vec<u8>, EmbeddingError> {
     tokio::task::spawn_blocking(move || do_openai_request(&url, &api_key, &body_str))
         .await
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?
@@ -408,24 +444,30 @@ async fn do_openai_request_async(url: String, api_key: String, body_str: String)
 
 fn do_embed_request(base_url: &str, path: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {
     let url = format!("{}/{}", base_url.trim_end_matches('/'), path);
-    let body: serde_json::Value = serde_json::from_str(body_str)
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
+    let body: serde_json::Value =
+        serde_json::from_str(body_str).map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     let mut resp = ureq::post(&url)
         .header("Content-Type", "application/json")
         .send_json(&body)
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     if resp.status().as_u16() >= 400 {
         let text = resp.body_mut().read_to_string().unwrap_or_default();
-        return Err(EmbeddingError::RequestFailed(format!("HTTP {}: {}", resp.status(), text)));
+        return Err(EmbeddingError::RequestFailed(format!(
+            "HTTP {}: {}",
+            resp.status(),
+            text
+        )));
     }
-    let bytes = resp.body_mut().read_to_vec()
+    let bytes = resp
+        .body_mut()
+        .read_to_vec()
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     Ok(bytes)
 }
 
 fn do_openai_request(url: &str, api_key: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {
-    let body: serde_json::Value = serde_json::from_str(body_str)
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
+    let body: serde_json::Value =
+        serde_json::from_str(body_str).map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     let mut resp = ureq::post(url)
         .header("Content-Type", "application/json")
         .header("Authorization", &format!("Bearer {api_key}"))
@@ -433,51 +475,74 @@ fn do_openai_request(url: &str, api_key: &str, body_str: &str) -> Result<Vec<u8>
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     if resp.status().as_u16() >= 400 {
         let text = resp.body_mut().read_to_string().unwrap_or_default();
-        return Err(EmbeddingError::RequestFailed(format!("HTTP {}: {}", resp.status(), text)));
+        return Err(EmbeddingError::RequestFailed(format!(
+            "HTTP {}: {}",
+            resp.status(),
+            text
+        )));
     }
-    let bytes = resp.body_mut().read_to_vec()
+    let bytes = resp
+        .body_mut()
+        .read_to_vec()
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     Ok(bytes)
 }
 
 pub fn parse_ollama_response(json: &[u8]) -> Result<Vec<f32>, EmbeddingError> {
-    let v: serde_json::Value = serde_json::from_slice(json)
-        .map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let embeddings = v.get("embeddings")
+    let v: serde_json::Value =
+        serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
+    let embeddings = v
+        .get("embeddings")
         .and_then(|e| e.as_array())
         .ok_or_else(|| EmbeddingError::ParseError("missing embeddings array".into()))?;
-    let first = embeddings.first()
+    let first = embeddings
+        .first()
         .ok_or_else(|| EmbeddingError::ParseError("empty embeddings array".into()))?;
-    let arr = first.as_array()
+    let arr = first
+        .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?;
-    let vec: Vec<f32> = arr.iter()
-        .map(|x| x.as_f64().ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into())))
+    let vec: Vec<f32> = arr
+        .iter()
+        .map(|x| {
+            x.as_f64()
+                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))
+        })
         .collect::<Result<Vec<_>, _>>()?
-        .iter().map(|&x| x as f32)
+        .iter()
+        .map(|&x| x as f32)
         .collect();
     Ok(vec)
 }
 
 pub fn parse_ollama_batch_response(json: &[u8]) -> Result<BatchEmbedding, EmbeddingError> {
-    let v: serde_json::Value = serde_json::from_slice(json)
-        .map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let embeddings = v.get("embeddings")
+    let v: serde_json::Value =
+        serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
+    let embeddings = v
+        .get("embeddings")
         .and_then(|e| e.as_array())
         .ok_or_else(|| EmbeddingError::ParseError("missing embeddings array".into()))?;
     let count = embeddings.len();
     if count == 0 {
-        return Ok(BatchEmbedding { flat: vec![], count: 0, dims: 0 });
+        return Ok(BatchEmbedding {
+            flat: vec![],
+            count: 0,
+            dims: 0,
+        });
     }
-    let dims = embeddings[0].as_array()
+    let dims = embeddings[0]
+        .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?
         .len();
     let mut flat = Vec::with_capacity(count * dims);
     for emb in embeddings {
-        let arr = emb.as_array()
+        let arr = emb
+            .as_array()
             .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?;
         for val in arr {
-            let f = val.as_f64()
-                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))? as f32;
+            let f = val
+                .as_f64()
+                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))?
+                as f32;
             flat.push(f);
         }
     }
@@ -485,44 +550,61 @@ pub fn parse_ollama_batch_response(json: &[u8]) -> Result<BatchEmbedding, Embedd
 }
 
 pub fn parse_openai_response(json: &[u8]) -> Result<Vec<f32>, EmbeddingError> {
-    let v: serde_json::Value = serde_json::from_slice(json)
-        .map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let data = v.get("data")
+    let v: serde_json::Value =
+        serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
+    let data = v
+        .get("data")
         .and_then(|d| d.as_array())
         .ok_or_else(|| EmbeddingError::ParseError("missing data array".into()))?;
-    let first = data.first()
+    let first = data
+        .first()
         .ok_or_else(|| EmbeddingError::ParseError("empty data array".into()))?;
-    let embedding = first.get("embedding")
+    let embedding = first
+        .get("embedding")
         .and_then(|e| e.as_array())
         .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?;
-    let vec: Vec<f32> = embedding.iter()
-        .map(|x| x.as_f64().map(|v| v as f32).ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into())))
+    let vec: Vec<f32> = embedding
+        .iter()
+        .map(|x| {
+            x.as_f64()
+                .map(|v| v as f32)
+                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(vec)
 }
 
 pub fn parse_openai_batch_response(json: &[u8]) -> Result<BatchEmbedding, EmbeddingError> {
-    let v: serde_json::Value = serde_json::from_slice(json)
-        .map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let data = v.get("data")
+    let v: serde_json::Value =
+        serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
+    let data = v
+        .get("data")
         .and_then(|d| d.as_array())
         .ok_or_else(|| EmbeddingError::ParseError("missing data array".into()))?;
     let count = data.len();
     if count == 0 {
-        return Ok(BatchEmbedding { flat: vec![], count: 0, dims: 0 });
+        return Ok(BatchEmbedding {
+            flat: vec![],
+            count: 0,
+            dims: 0,
+        });
     }
-    let dims = data[0].get("embedding")
+    let dims = data[0]
+        .get("embedding")
         .and_then(|e| e.as_array())
         .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?
         .len();
     let mut flat = Vec::with_capacity(count * dims);
     for entry in data {
-        let embedding = entry.get("embedding")
+        let embedding = entry
+            .get("embedding")
             .and_then(|e| e.as_array())
             .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?;
         for val in embedding {
-            let f = val.as_f64()
-                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))? as f32;
+            let f = val
+                .as_f64()
+                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))?
+                as f32;
             flat.push(f);
         }
     }
@@ -543,13 +625,24 @@ pub fn create_embedding_provider(
     match name {
         "none" => Ok(Box::new(NoopEmbedding::new(dims))),
         "ollama" => Ok(Box::new(OllamaEmbedding::new(model, base_url, dims)?)),
-        "openai" => Ok(Box::new(OpenAiEmbedding::new(model, base_url, api_key, dims)?)),
+        "openai" => Ok(Box::new(OpenAiEmbedding::new(
+            model, base_url, api_key, dims,
+        )?)),
         _ => {
             if let Some(ollama_model) = name.strip_prefix("ollama:") {
-                return Ok(Box::new(OllamaEmbedding::new(Some(ollama_model), base_url, dims)?));
+                return Ok(Box::new(OllamaEmbedding::new(
+                    Some(ollama_model),
+                    base_url,
+                    dims,
+                )?));
             }
             if let Some(custom_url) = name.strip_prefix("custom:") {
-                return Ok(Box::new(OpenAiEmbedding::new(model, Some(custom_url), api_key, dims)?));
+                return Ok(Box::new(OpenAiEmbedding::new(
+                    model,
+                    Some(custom_url),
+                    api_key,
+                    dims,
+                )?));
             }
             Err(EmbeddingError::UnknownProvider(name.to_string()))
         }
@@ -678,7 +771,14 @@ mod tests {
 
     #[test]
     fn factory_ollama_prefix() {
-        let p = create_embedding_provider("ollama:llama3", None, Some("http://localhost:11434"), None, 4096).unwrap();
+        let p = create_embedding_provider(
+            "ollama:llama3",
+            None,
+            Some("http://localhost:11434"),
+            None,
+            4096,
+        )
+        .unwrap();
         assert_eq!(p.name(), "ollama");
     }
 
@@ -690,26 +790,48 @@ mod tests {
             None,
             Some("sk-test"),
             768,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(p.name(), "openai");
     }
 
     #[test]
     fn openai_embeddings_url_standard() {
-        let e = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 768).unwrap();
+        let e = OpenAiEmbedding::new(
+            None,
+            Some("https://api.openai.com/v1"),
+            Some("sk-test"),
+            768,
+        )
+        .unwrap();
         assert_eq!(e.embeddings_url(), "https://api.openai.com/v1/embeddings");
     }
 
     #[test]
     fn openai_embeddings_url_already_embeddings() {
-        let e = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1/embeddings"), Some("sk-test"), 768).unwrap();
+        let e = OpenAiEmbedding::new(
+            None,
+            Some("https://api.openai.com/v1/embeddings"),
+            Some("sk-test"),
+            768,
+        )
+        .unwrap();
         assert_eq!(e.embeddings_url(), "https://api.openai.com/v1/embeddings");
     }
 
     #[test]
     fn openai_embeddings_url_custom_path() {
-        let e = OpenAiEmbedding::new(None, Some("https://my-server.com/custom/path"), Some("sk-test"), 768).unwrap();
-        assert_eq!(e.embeddings_url(), "https://my-server.com/custom/path/embeddings");
+        let e = OpenAiEmbedding::new(
+            None,
+            Some("https://my-server.com/custom/path"),
+            Some("sk-test"),
+            768,
+        )
+        .unwrap();
+        assert_eq!(
+            e.embeddings_url(),
+            "https://my-server.com/custom/path/embeddings"
+        );
     }
 
     #[test]
@@ -720,7 +842,10 @@ mod tests {
         let key = p.cache_key("hello");
         let hash = content_hash_with_model("hello", "test");
         let expected_key: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(key, expected_key, "cache key should match content_hash_with_model");
+        assert_eq!(
+            key, expected_key,
+            "cache key should match content_hash_with_model"
+        );
     }
 
     #[test]
@@ -729,7 +854,10 @@ mod tests {
         let key_a = p.cache_key("same text");
         let p2 = OllamaEmbedding::new(Some("model-b"), Some("http://localhost:11434"), 3).unwrap();
         let key_b = p2.cache_key("same text");
-        assert_ne!(key_a, key_b, "different models should have different cache keys");
+        assert_ne!(
+            key_a, key_b,
+            "different models should have different cache keys"
+        );
         assert_eq!(key_a.len(), 32, "16 bytes = 32 hex chars");
     }
 
@@ -753,8 +881,7 @@ mod tests {
     fn ollama_embed_with_mock_http() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST)
-                .path("/api/embed");
+            when.method(httpmock::Method::POST).path("/api/embed");
             then.status(200)
                 .header("Content-Type", "application/json")
                 .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
@@ -770,10 +897,8 @@ mod tests {
     fn ollama_embed_http_error() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST)
-                .path("/api/embed");
-            then.status(500)
-                .body("Internal Server Error");
+            when.method(httpmock::Method::POST).path("/api/embed");
+            then.status(500).body("Internal Server Error");
         });
         let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
         let result = p.embed("hello");
@@ -785,8 +910,7 @@ mod tests {
     fn ollama_embed_batch_with_mock_http() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST)
-                .path("/api/embed");
+            when.method(httpmock::Method::POST).path("/api/embed");
             then.status(200)
                 .header("Content-Type", "application/json")
                 .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
@@ -814,7 +938,8 @@ mod tests {
             Some(&server.url("")),
             Some("sk-test"),
             3,
-        ).unwrap();
+        )
+        .unwrap();
         let vec = p.embed("hello").unwrap();
         assert_eq!(vec.len(), 3);
         mock.assert();
@@ -824,17 +949,10 @@ mod tests {
     fn openai_embed_http_error() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST)
-                .path("/v1/embeddings");
-            then.status(401)
-                .body("Unauthorized");
+            when.method(httpmock::Method::POST).path("/v1/embeddings");
+            then.status(401).body("Unauthorized");
         });
-        let p = OpenAiEmbedding::new(
-            None,
-            Some(&server.url("")),
-            Some("sk-bad"),
-            3,
-        ).unwrap();
+        let p = OpenAiEmbedding::new(None, Some(&server.url("")), Some("sk-bad"), 3).unwrap();
         let result = p.embed("hello");
         assert!(result.is_err());
         mock.assert();
@@ -850,12 +968,7 @@ mod tests {
                 .header("Content-Type", "application/json")
                 .body(r#"{"data": [{"embedding": [0.1, 0.2], "index": 0}, {"embedding": [0.3, 0.4], "index": 1}]}"#);
         });
-        let p = OpenAiEmbedding::new(
-            None,
-            Some(&server.url("")),
-            Some("sk-test"),
-            2,
-        ).unwrap();
+        let p = OpenAiEmbedding::new(None, Some(&server.url("")), Some("sk-test"), 2).unwrap();
         let batch = p.embed_batch(&["a", "b"]).unwrap();
         assert_eq!(batch.count, 2);
         assert_eq!(batch.dims, 2);
@@ -884,8 +997,7 @@ mod tests {
     async fn test_ollama_embed_async_with_mock() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST)
-                .path("/api/embed");
+            when.method(httpmock::Method::POST).path("/api/embed");
             then.status(200)
                 .header("Content-Type", "application/json")
                 .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
@@ -912,7 +1024,8 @@ mod tests {
             Some(&server.url("")),
             Some("sk-test"),
             3,
-        ).unwrap();
+        )
+        .unwrap();
         let vec = p.embed_async("hello").await.unwrap();
         assert_eq!(vec.len(), 3);
         mock.assert();
@@ -932,13 +1045,25 @@ mod tests {
 
     #[test]
     fn openai_embedding_dimensions() {
-        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 1536).unwrap();
+        let p = OpenAiEmbedding::new(
+            None,
+            Some("https://api.openai.com/v1"),
+            Some("sk-test"),
+            1536,
+        )
+        .unwrap();
         assert_eq!(p.dimensions(), 1536);
     }
 
     #[test]
     fn openai_embed_empty_text_returns_empty() {
-        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 768).unwrap();
+        let p = OpenAiEmbedding::new(
+            None,
+            Some("https://api.openai.com/v1"),
+            Some("sk-test"),
+            768,
+        )
+        .unwrap();
         let vec = p.embed("").unwrap();
         assert!(vec.is_empty());
     }
@@ -958,7 +1083,8 @@ mod tests {
 
     #[tokio::test]
     async fn openai_embed_async_empty_text() {
-        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 3).unwrap();
+        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 3)
+            .unwrap();
         let vec = p.embed_async("").await.unwrap();
         assert!(vec.is_empty());
     }
@@ -981,8 +1107,7 @@ mod tests {
     async fn ollama_embed_batch_async_with_mock() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST)
-                .path("/api/embed");
+            when.method(httpmock::Method::POST).path("/api/embed");
             then.status(200)
                 .header("Content-Type", "application/json")
                 .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
@@ -1009,7 +1134,8 @@ mod tests {
             Some(&server.url("")),
             Some("sk-test"),
             2,
-        ).unwrap();
+        )
+        .unwrap();
         let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
         assert_eq!(batch.count, 2);
         assert_eq!(batch.dims, 2);
@@ -1018,7 +1144,13 @@ mod tests {
 
     #[test]
     fn create_provider_ollama_prefix_custom_url() {
-        let result = create_embedding_provider("ollama:llama3", None, Some("http://localhost:11434"), None, 4096);
+        let result = create_embedding_provider(
+            "ollama:llama3",
+            None,
+            Some("http://localhost:11434"),
+            None,
+            4096,
+        );
         assert!(result.is_ok());
     }
 }

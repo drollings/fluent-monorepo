@@ -455,6 +455,7 @@ pub fn freeEvalResult(allocator: std.mem.Allocator, result: EvalResult) void {
 // Internal helpers
 // =============================================================================
 
+/// // =============================================================================
 fn shouldSkipByPath(json_path: []const u8) bool {
     const base = std.fs.path.basename(json_path);
     if (std.mem.indexOf(u8, base, "_tests.zig") != null) return true;
