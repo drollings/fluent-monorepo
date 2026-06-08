@@ -1,0 +1,105 @@
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityType {
+    Person,
+    Project,
+    Location,
+    Uncertain,
+}
+
+#[derive(Debug, Clone)]
+pub struct EntityFreq {
+    pub name: String,
+    pub frequency: usize,
+    pub entity_type: EntityType,
+}
+
+lazy_static::lazy_static! {
+    static ref ENTITY_STOPLIST: std::collections::HashSet<&'static str> = {
+        let mut s = std::collections::HashSet::new();
+        for w in &[
+            "The", "This", "That", "When", "Where", "What", "Why", "Who", "Which", "How",
+            "Then", "There", "Here", "Now", "Just", "Also", "Some", "Such", "Each", "Every",
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+            "January", "February", "March", "April", "May", "June", "July", "August",
+            "September", "October", "November", "December",
+        ] {
+            s.insert(*w);
+        }
+        s
+    };
+}
+
+fn is_capitalized(s: &str) -> bool {
+    s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+}
+
+fn is_entity_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '-' || c == '\'' || c == '.'
+}
+
+pub fn candidate_entity_words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    for c in text.chars() {
+        if is_entity_word_char(c) {
+            current.push(c);
+        } else {
+            if current.len() >= 2 && is_capitalized(&current) && !ENTITY_STOPLIST.contains(current.as_str()) {
+                words.push(current.clone());
+            }
+            current.clear();
+        }
+    }
+    if current.len() >= 2 && is_capitalized(&current) && !ENTITY_STOPLIST.contains(current.as_str()) {
+        words.push(current);
+    }
+    words
+}
+
+pub fn extract_entities(content: &str, min_frequency: usize) -> Vec<EntityFreq> {
+    let mut freq: HashMap<String, usize> = HashMap::new();
+    for word in candidate_entity_words(content) {
+        *freq.entry(word).or_insert(0) += 1;
+    }
+    let mut result: Vec<EntityFreq> = freq
+        .into_iter()
+        .filter(|(_, count)| *count >= min_frequency)
+        .map(|(name, frequency)| EntityFreq {
+            name,
+            frequency,
+            entity_type: EntityType::Uncertain,
+        })
+        .collect();
+    result.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_capitalized_words() {
+        let words = candidate_entity_words("Alice met Bob at Google");
+        assert!(words.contains(&"Alice".to_string()));
+        assert!(words.contains(&"Bob".to_string()));
+        assert!(words.contains(&"Google".to_string()));
+    }
+
+    #[test]
+    fn filters_stoplist() {
+        let words = candidate_entity_words("The quick brown Fox");
+        assert!(!words.contains(&"The".to_string()));
+        assert!(words.contains(&"Fox".to_string()));
+    }
+
+    #[test]
+    fn extract_entities_with_min_frequency() {
+        let text = "Alice and Alice and Bob and Alice";
+        let entities = extract_entities(text, 2);
+        let alice = entities.iter().find(|e| e.name == "Alice").unwrap();
+        assert_eq!(alice.frequency, 3);
+    }
+}

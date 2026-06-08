@@ -29,6 +29,8 @@ doc/Legacy
 bin/guidance-cpp
 data/
 
+rust-src/target/
+
 # =============================================================================
 # Python Virtual Environments & Package Management
 # =============================================================================
