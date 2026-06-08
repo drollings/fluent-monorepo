@@ -49,6 +49,8 @@ __pycache__/
 # C extensions
 *.so
 
+# Compiled object files
+*.o
 
 # =============================================================================
 # Python Distribution & Packaging
