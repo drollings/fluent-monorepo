@@ -18,3 +18,4 @@ tracing = { workspace = true }
 bon = { workspace = true }
 thiserror = { workspace = true }
 tracing-subscriber = "0.3"
+time = { workspace = true, features = ["formatting", "parsing"] }

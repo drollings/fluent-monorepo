@@ -10,6 +10,7 @@
 //! - `vector` — Vector search: `vector_db` (SQLite + cosine), `math`, `quantized_embedding`, `semantic_aliases`
 #![allow(clippy::too_many_arguments)]
 pub mod ast_parser;
+pub mod config;
 pub mod enhancer;
 pub mod plugin;
 pub mod query_engine;

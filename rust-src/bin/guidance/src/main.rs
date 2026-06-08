@@ -2,9 +2,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
+use guidance_coral::ingest::{BatchIngestor, IngestionConfig};
 use guidance_coral::mcp::McpServer;
 use guidance_coral::db::Library;
 use guidance_guidance::sync_engine::SyncEngine;
+use guidance_common::shell::run_command;
+use time::OffsetDateTime;
 
 #[derive(Parser)]
 #[command(name = "guidance", about = "AST-guided vector search & edge AI orchestrator")]
@@ -75,6 +78,20 @@ enum Commands {
     Commit {
         #[arg(default_value = "guidance sync")]
         message: String,
+    },
+    /// Ingest RDF data into the coral database
+    Ingest {
+        /// Path to Turtle or N-Quads file
+        #[arg(short, long)]
+        file: String,
+
+        /// Batch size for flush
+        #[arg(short, long, default_value = "10000")]
+        batch_size: usize,
+
+        /// Skip errors and continue
+        #[arg(long)]
+        skip_errors: bool,
     },
     /// Check for stale files
     Check,
@@ -183,12 +200,53 @@ fn main() {
         }
         Commands::Test => {
             println!("Running tests...");
+            let test_cmds = vec![
+                vec!["cargo".to_string(), "test".to_string(), "--workspace".to_string()],
+            ];
+            let args: Vec<&str> = test_cmds.first().map(|v| v.iter().map(|s| s.as_str()).collect()).unwrap_or_default();
+            let ok = run_command(&args);
+            if !ok {
+                std::process::exit(1);
+            }
         }
         Commands::Telemetry => {
             println!("Telemetry stats:");
+            let db_path = PathBuf::from(".guidance.db");
+            if db_path.exists() {
+                match Library::open(&db_path) {
+                    Ok(lib) => {
+                        match lib.node_count() {
+                            Ok(count) => println!("  Total nodes: {count}"),
+                            Err(_) => println!("  Could not query node count"),
+                        }
+                    }
+                    Err(e) => println!("  Could not open database: {e}"),
+                }
+            } else {
+                println!("  No database found at .guidance.db");
+            }
         }
         Commands::CacheStats => {
             println!("Cache statistics:");
+            let db_path = PathBuf::from(".guidance.db");
+            if db_path.exists() {
+                match Library::open(&db_path) {
+                    Ok(lib) => {
+                        match lib.node_count() {
+                            Ok(count) => println!("  Guidance nodes: {count}"),
+                            Err(_) => println!("  Could not query nodes"),
+                        }
+                        match lib.edge_count() {
+                            Ok(count) => println!("  Edges: {count}"),
+                            Err(_) => println!("  Could not query edges"),
+                        }
+                    }
+                    Err(e) => println!("  Could not open database: {e}"),
+                }
+            } else {
+                println!("  No database found at .guidance.db");
+                println!("  Embedding cache: not available (no database)");
+            }
         }
         Commands::Serve => {
             match Library::open_in_memory() {
@@ -263,9 +321,83 @@ fn main() {
         }
         Commands::Clean => {
             println!("Cleaning generated files...");
+            let db_path = Path::new(".guidance.db");
+            if db_path.exists() {
+                std::fs::remove_file(db_path).unwrap_or_else(|e| {
+                    eprintln!("Warning: could not remove .guidance.db: {e}");
+                });
+                println!("  Removed .guidance.db");
+            }
+            let guidance_src = Path::new(".guidance/src");
+            if guidance_src.exists() {
+                fn remove_json_files(dir: &Path) {
+                    if let Ok(entries) = std::fs::read_dir(dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_dir() {
+                                remove_json_files(&path);
+                            } else if path.extension().map_or(false, |e| e == "json") {
+                                std::fs::remove_file(&path).unwrap_or_else(|e| {
+                                    eprintln!("Warning: could not remove {:?}: {e}", path);
+                                });
+                            }
+                        }
+                    }
+                }
+                remove_json_files(guidance_src);
+                println!("  Removed generated JSON files");
+            }
+            println!("Clean complete.");
+        }
+        Commands::Ingest { file, batch_size, skip_errors: _ } => {
+            let path = std::path::Path::new(file);
+            if !path.exists() {
+                eprintln!("error: file not found: {file}");
+                std::process::exit(1);
+            }
+            match Library::open_in_memory() {
+                Ok(lib) => {
+                    let config = IngestionConfig {
+                        batch_size: *batch_size,
+                        yago_whitelist_only: false,
+                        preferred_lang: "en".to_string(),
+                    };
+                    let mut ingestor = BatchIngestor::with_config(Arc::new(lib), config);
+                    match ingestor.ingest_file(path) {
+                        Ok(stats) => {
+                            println!("Ingestion complete:");
+                            println!("  Triples processed: {}", stats.triples_processed);
+                            println!("  Nodes created: {}", stats.nodes_created);
+                            println!("  Edges created: {}", stats.edges_created);
+                            println!("  Errors skipped: {}", stats.errors_skipped);
+                            println!("  Batches flushed: {}", stats.batches_flushed);
+                            println!("  Triples filtered: {}", stats.triples_filtered);
+                        }
+                        Err(e) => {
+                            eprintln!("ingestion error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to open library: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Commit { message } => {
             println!("Committing with message: {message}");
+            let status = std::process::Command::new("git")
+                .args(["commit", "-m", message])
+                .status()
+                .unwrap_or_else(|e| {
+                    eprintln!("git commit failed: {e}");
+                    std::process::exit(1);
+                });
+            if !status.success() {
+                eprintln!("Commit failed");
+                std::process::exit(1);
+            }
         }
         Commands::Check => {
             // RALPH waterfall: build → test → lint → fmt → gen → structure → db
@@ -359,14 +491,45 @@ fn main() {
             }
         }
         Commands::Todo => {
-            println!("TODO items:");
+            let todo_path = Path::new(".guidance/doc/TODO.md");
+            if todo_path.exists() {
+                match std::fs::read_to_string(todo_path) {
+                    Ok(content) => {
+                        println!("TODO items:\n");
+                        for line in content.lines() {
+                            if line.trim().starts_with("- [") {
+                                println!("  {line}");
+                            }
+                        }
+                    }
+                    Err(e) => println!("Could not read TODO.md: {e}"),
+                }
+            } else {
+                println!("TODO items:\n  No TODO.md found — create .guidance/doc/TODO.md");
+            }
         }
         Commands::Diary { text } => {
-            if text.is_empty() {
-                println!("Diary entry (empty - interactive mode)");
+            let diary_dir = Path::new(".guidance/doc");
+            std::fs::create_dir_all(diary_dir).expect("create .guidance/doc dir");
+            let diary_path = diary_dir.join("DIARY.md");
+            let timestamp = OffsetDateTime::now_utc()
+                .format(&time::format_description::parse("[year]-[month]-[day] [hour]:[minute] UTC")
+                    .unwrap_or(time::format_description::parse("[year]-[month]-[day]").unwrap()))
+                .unwrap_or_else(|_| "unknown date".to_string());
+            let entry = if text.is_empty() {
+                format!("\n## {timestamp}\n\n(empty entry)\n")
             } else {
-                println!("Diary: {text}");
-            }
+                format!("\n## {timestamp}\n\n{text}\n")
+            };
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&diary_path)
+                .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()))
+                .unwrap_or_else(|e| {
+                    eprintln!("Could not write diary: {e}");
+                });
+            println!("Diary entry appended to {:?}", diary_path);
         }
     }
 }

@@ -1,8 +1,10 @@
 use std::mem::size_of;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use bitvec::vec::BitVec;
+use guidance_common::embeddings::EmbeddingProvider;
 use guidance_common::error::DbError;
 use guidance_common::types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
@@ -91,9 +93,24 @@ impl Library {
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS entity_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id INTEGER NOT NULL,
+                type_iri TEXT NOT NULL,
+                FOREIGN KEY (node_id) REFERENCES context_nodes(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS entity_hierarchy (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subclass_iri TEXT NOT NULL,
+                superclass_iri TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_node_id);
             CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_node_id);
             CREATE INDEX IF NOT EXISTS idx_nodes_name ON context_nodes(name);
+            CREATE INDEX IF NOT EXISTS idx_entity_types_node ON entity_types(node_id);
+            CREATE INDEX IF NOT EXISTS idx_entity_types_iri ON entity_types(type_iri);
             ",
         )?;
         Ok(())
@@ -389,6 +406,85 @@ impl Library {
         tx.commit()?;
         Ok(())
     }
+
+    /// Insert an entity type mapping (node_id -> type_iri)
+    pub fn insert_entity_type(&self, node_id: NodeId, type_iri: &str) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO entity_types (node_id, type_iri) VALUES (?1, ?2)",
+            params![node_id.as_int(), type_iri],
+        )?;
+        Ok(())
+    }
+
+    /// Insert an entity hierarchy relationship (subclass -> superclass)
+    pub fn insert_entity_hierarchy(&self, subclass_iri: &str, superclass_iri: &str) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO entity_hierarchy (subclass_iri, superclass_iri) VALUES (?1, ?2)",
+            params![subclass_iri, superclass_iri],
+        )?;
+        Ok(())
+    }
+
+    /// Duck-typing query: checks if a node has a given type_iri (or any of its supertypes)
+    /// via recursive CTE through entity_types + entity_hierarchy tables.
+    pub fn is_a(&self, child_id: NodeId, parent_type_iri: &str) -> Result<bool, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let result: bool = conn.query_row(
+            "WITH RECURSIVE ancestors(type_iri) AS (
+                SELECT type_iri FROM entity_types WHERE node_id = ?1
+                UNION
+                SELECT eh.superclass_iri FROM ancestors a
+                JOIN entity_hierarchy eh ON a.type_iri = eh.subclass_iri
+            )
+            SELECT COUNT(*) > 0 FROM ancestors WHERE type_iri = ?2",
+            params![child_id.as_int(), parent_type_iri],
+            |row| row.get(0),
+        )?;
+        Ok(result)
+    }
+}
+
+/// HydrationPipeline: on node insert, automatically compute embedding
+/// and discover neighbor edges via KNN search.
+pub struct HydrationPipeline<'a> {
+    library: &'a Library,
+    embedder: Arc<dyn EmbeddingProvider>,
+}
+
+impl<'a> HydrationPipeline<'a> {
+    pub fn new(library: &'a Library, embedder: Arc<dyn EmbeddingProvider>) -> Self {
+        Self { library, embedder }
+    }
+
+    /// Insert a node, compute its embedding, and auto-discover neighbors.
+    /// Returns the new node's ID.
+    pub fn insert_and_hydrate(&self, node: &mut ContextNode) -> Result<NodeId, LibraryError> {
+        // 1. Compute embedding from LOD[0] (most detailed text)
+        let text = node.lod.first().map(|s| s.as_str()).unwrap_or("");
+        if !text.is_empty() {
+            if let Ok(emb) = self.embedder.embed(text) {
+                node.embedding = Some(emb);
+            }
+        }
+
+        // 2. Insert node
+        let node_id = self.library.insert_node(node)?;
+
+        // 3. KNN search for auto-discovered neighbors
+        if let Some(ref emb) = node.embedding {
+            if let Ok(hits) = self.library.knn_search(emb, 10, None) {
+                for hit in hits {
+                    if hit.node_id != node_id && hit.distance < 0.3 {
+                        let _ = self.library.insert_edge(node_id, hit.node_id, "neighbor_of", hit.distance as f64);
+                    }
+                }
+            }
+        }
+
+        Ok(node_id)
+    }
 }
 
 fn blob_to_bitvec(b: &[u8]) -> BitVec {
@@ -677,6 +773,71 @@ mod tests {
         for (a, b) in original.iter().zip(restored.iter()) {
             assert!((a - b).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn test_is_a_duck_typing() {
+        let lib = Library::open_in_memory().expect("db");
+        let node = ContextNode {
+            id: None,
+            name: "alice".into(),
+            source: "source".into(),
+            lod: vec![],
+            embedding: None,
+            capabilities: None,
+        };
+        let node_id = lib.insert_node(&node).expect("insert");
+
+        lib.insert_entity_type(node_id, "http://schema.org/Person").expect("insert type");
+        lib.insert_entity_hierarchy("http://schema.org/Person", "http://schema.org/Thing")
+            .expect("insert hierarchy");
+
+        let is_person = lib.is_a(node_id, "http://schema.org/Person").expect("is_a");
+        assert!(is_person, "node should be a Person");
+
+        let is_thing = lib.is_a(node_id, "http://schema.org/Thing").expect("is_a");
+        assert!(is_thing, "node should be a Thing via hierarchy");
+
+        let is_place = lib.is_a(node_id, "http://schema.org/Place").expect("is_a");
+        assert!(!is_place, "node should NOT be a Place");
+    }
+
+    #[test]
+    fn test_hydration_pipeline() {
+        use guidance_common::embeddings::NoopEmbedding;
+        use std::sync::Arc;
+
+        let lib = Library::open_in_memory().expect("db");
+        let embedder = Arc::new(NoopEmbedding::new(4));
+        let pipeline = HydrationPipeline::new(&lib, embedder);
+
+        let mut node = ContextNode {
+            id: None,
+            name: "hydrate_test".into(),
+            source: "test source".into(),
+            lod: vec!["some text to embed".into()],
+            embedding: None,
+            capabilities: None,
+        };
+        let node_id = pipeline.insert_and_hydrate(&mut node).expect("hydrate");
+        assert!(node_id.as_int() > 0, "should get a valid node ID");
+
+        let stored = lib.get_node(node_id).expect("get").expect("should exist");
+        // NoopEmbedding returns empty vec, but node should be stored
+        assert_eq!(stored.name.as_str(), "hydrate_test");
+    }
+
+    #[test]
+    fn test_insert_entity_hierarchy() {
+        let lib = Library::open_in_memory().expect("db");
+        lib.insert_entity_hierarchy("sub", "super").expect("insert");
+        let conn = lib.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM entity_hierarchy WHERE subclass_iri = ?1 AND superclass_iri = ?2",
+            params!["sub", "super"],
+            |row| row.get(0),
+        ).expect("query");
+        assert_eq!(count, 1);
     }
 
     #[test]

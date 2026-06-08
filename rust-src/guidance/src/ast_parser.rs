@@ -161,8 +161,46 @@ fn extract_member(
         "variable_declaration" => {
             extract_var_decl(node, source, cursor)
         }
+        "comptime_expression" => {
+            extract_comptime_block(node, source, cursor, language)
+        }
         _ => None,
     }
+}
+
+fn extract_comptime_block(
+    node: &tree_sitter::Node,
+    source: &str,
+    cursor: &mut tree_sitter::TreeCursor,
+    language: &str,
+) -> Option<Member> {
+    let line = node.start_position().row + 1;
+    // Walk children of the comptime block to find inner declarations
+    let mut child_members = Vec::new();
+    let mut child = node.walk();
+    for child_node in node.children(&mut child) {
+        if let Some(inner) = extract_member(&child_node, source, cursor, language) {
+            child_members.push(inner);
+        }
+    }
+
+    let name = node
+        .child_by_field_name("name")
+        .or_else(|| {
+            // For inline comptime { ... } blocks without name, use first child's name
+            node.children(&mut node.walk())
+                .find_map(|c| c.child_by_field_name("name"))
+        })
+        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+        .unwrap_or("comptime");
+
+    Some(Member {
+        type_name: MemberType::ComptimeBlock,
+        name: name.into(),
+        line: Some(line as u32),
+        members: child_members,
+        ..Member::default()
+    })
 }
 
 fn extract_var_decl(
@@ -424,18 +462,38 @@ fn extract_body_members(node: &tree_sitter::Node, source: &str) -> Option<Vec<Me
 }
 
 fn extract_test(node: &tree_sitter::Node, source: &str) -> Option<Member> {
-    let name_node = node.child_by_field_name("name")?;
+    // Try field name first
+    if let Some(name_node) = node.child_by_field_name("name") {
+        let raw_name = name_node.utf8_text(source.as_bytes()).ok()?;
+        let clean_name = raw_name
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .unwrap_or(raw_name);
+        let line = node.start_position().row + 1;
+        return Some(Member {
+            type_name: MemberType::TestDecl,
+            name: clean_name.into(),
+            line: Some(line as u32),
+            ..Member::default()
+        });
+    }
+
+    // Fallback: find string child among direct children
+    let mut child = node.walk();
+    let name_node = node.children(&mut child)
+        .find(|c| c.kind() == "string_literal" || c.kind() == "string")?;
     let raw_name = name_node.utf8_text(source.as_bytes()).ok()?;
-    let name = raw_name
+    let clean_name = raw_name
         .strip_prefix('"')
         .and_then(|s| s.strip_suffix('"'))
         .unwrap_or(raw_name);
+    // clean_name already set above
 
     let line = node.start_position().row + 1;
 
     Some(Member {
         type_name: MemberType::TestDecl,
-        name: name.into(),
+        name: clean_name.into(),
         line: Some(line as u32),
         ..Member::default()
     })
@@ -600,6 +658,37 @@ class MyClass:
         match result {
             Err(ParseError::UnsupportedLanguage(_)) => {}
             _ => panic!("expected UnsupportedLanguage error"),
+        }
+    }
+
+    #[test]
+    fn test_extract_comptime_block() {
+        let source = r#"const std = @import("std");
+
+pub fn main() void {
+    comptime {
+        const x: u32 = 42;
+        const y: u32 = x + 1;
+    }
+}
+"#;
+        let doc = test_parse_helper(source, "comptime.zig");
+        assert_eq!(doc.meta.language.as_str(), "zig");
+        let main_fn = doc.members.iter().find(|m| m.name == "main");
+        assert!(main_fn.is_some(), "should find main function");
+    }
+
+    #[test]
+    fn test_extract_test_decl() {
+        let source = r#"test "hello test" {
+    try std.testing.expectEqual(1, 1);
+}
+"#;
+        let doc = test_parse_helper(source, "test.zig");
+        let test_decl = doc.members.iter().find(|m| m.name == "hello test");
+        assert!(test_decl.is_some(), "should find test declaration");
+        if let Some(t) = test_decl {
+            assert_eq!(t.type_name, MemberType::TestDecl, "should be TestDecl type");
         }
     }
 

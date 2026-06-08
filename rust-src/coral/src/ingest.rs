@@ -21,6 +21,16 @@ pub enum IngestError {
     Parse(String),
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct IngestStats {
+    pub triples_processed: usize,
+    pub nodes_created: usize,
+    pub edges_created: usize,
+    pub errors_skipped: usize,
+    pub batches_flushed: usize,
+    pub triples_filtered: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct IngestionConfig {
     pub yago_whitelist_only: bool,
@@ -43,6 +53,7 @@ pub struct BatchIngestor {
     batch: Vec<ContextNode>,
     batch_size: usize,
     config: IngestionConfig,
+    stats: IngestStats,
 }
 
 impl BatchIngestor {
@@ -52,6 +63,7 @@ impl BatchIngestor {
             batch: Vec::with_capacity(batch_size),
             batch_size,
             config: IngestionConfig::default(),
+            stats: IngestStats::default(),
         }
     }
 
@@ -62,6 +74,7 @@ impl BatchIngestor {
             batch: Vec::with_capacity(batch_size),
             batch_size,
             config,
+            stats: IngestStats::default(),
         }
     }
 
@@ -82,6 +95,7 @@ impl BatchIngestor {
             if self.config.yago_whitelist_only {
                 let has_whitelisted = pn.types.iter().any(|&type_id| yago::is_whitelisted_hash(type_id));
                 if !has_whitelisted {
+                    self.stats.triples_filtered += 1;
                     continue;
                 }
             }
@@ -102,11 +116,86 @@ impl BatchIngestor {
             return Ok(());
         }
         self.library.insert_nodes_batch(&batch)?;
+        self.stats.nodes_created += batch.len();
+        self.stats.batches_flushed += 1;
         Ok(())
     }
 
     pub fn pending_count(&self) -> usize {
         self.batch.len()
+    }
+
+    pub fn stats(&self) -> &IngestStats {
+        &self.stats
+    }
+
+    /// Ingest triples from an RDF file (Turtle or N-Quads).
+    /// Streams through the RDF parser, maps via TripleMapper, and flushes in batches.
+    pub fn ingest_file(&mut self, path: &std::path::Path) -> Result<IngestStats, IngestError> {
+        let source = std::fs::read_to_string(path)
+            .map_err(|e| IngestError::Io(e))?;
+
+        let mut mapper = guidance_ontology::mapper::TripleMapper::new(
+            guidance_ontology::mapper::MappingConfig {
+                preferred_lang: self.config.preferred_lang.clone(),
+                scope: path.to_string_lossy().to_string(),
+            },
+        );
+
+        // Try Turtle parser first
+        let mut parser = guidance_rdf::parser::Parser::new(&source);
+        let mut triples_processed = 0;
+
+        while let Some(result) = parser.next() {
+            match result {
+                Ok(triple) => {
+                    if let Err(_e) = mapper.process_triple(&triple) {
+                        self.stats.errors_skipped += 1;
+                        continue;
+                    }
+                    triples_processed += 1;
+                    self.stats.triples_processed += 1;
+                }
+                Err(_) => {
+                    self.stats.errors_skipped += 1;
+                    continue;
+                }
+            }
+        }
+
+        // If no triples from Turtle, try N-Quads
+        if triples_processed == 0 {
+            for line in source.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Ok(Some(quad)) = guidance_rdf::nquads::NQuadsParser::parse_line(line) {
+                    let triple = guidance_rdf::parser::Triple {
+                        subject: quad.subject,
+                        predicate: quad.predicate,
+                        object: quad.object,
+                    };
+                    if let Err(_) = mapper.process_triple(&triple) {
+                        self.stats.errors_skipped += 1;
+                        continue;
+                    }
+                    self.stats.triples_processed += 1;
+                }
+            }
+        }
+
+        // Drain mapper and add pending nodes
+        let pending_nodes = mapper.drain_nodes();
+        let pending_edges = mapper.drain_edges();
+        self.stats.edges_created += pending_edges.len();
+
+        let added = self.add_pending_nodes(pending_nodes)?;
+        self.stats.nodes_created += added;
+
+        self.flush()?;
+
+        Ok(self.stats.clone())
     }
 }
 

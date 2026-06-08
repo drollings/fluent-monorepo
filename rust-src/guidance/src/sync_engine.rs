@@ -7,6 +7,7 @@ use crate::ast_parser::AstParser;
 use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
+use crate::vector::vector_db::GuidanceDb;
 
 #[derive(Error, Debug)]
 pub enum SyncEngineError {
@@ -18,6 +19,27 @@ pub enum SyncEngineError {
     Parse(String),
     #[error("source file not found: {0}")]
     SourceNotFound(PathBuf),
+    #[error("database error: {0}")]
+    Db(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct GenConfig {
+    pub db_sync: bool,
+    pub llm_infill: bool,
+    pub db_path: Option<PathBuf>,
+    pub json_base: Option<PathBuf>,
+}
+
+impl Default for GenConfig {
+    fn default() -> Self {
+        Self {
+            db_sync: false,
+            llm_infill: false,
+            db_path: None,
+            json_base: None,
+        }
+    }
 }
 
 pub struct SyncEngine {
@@ -36,6 +58,14 @@ impl SyncEngine {
     }
 
     pub fn gen(&mut self, source_path: &Path) -> Result<GuidanceDoc, SyncEngineError> {
+        self.gen_with_config(source_path, &GenConfig::default())
+    }
+
+    pub fn gen_with_config(
+        &mut self,
+        source_path: &Path,
+        config: &GenConfig,
+    ) -> Result<GuidanceDoc, SyncEngineError> {
         let source = std::fs::read_to_string(source_path)?;
 
         let rel_path = source_path
@@ -55,12 +85,37 @@ impl SyncEngine {
         doc.meta.module = module_name.as_str().into();
         doc.meta.source = rel_path.to_string_lossy().as_ref().into();
 
+        // LLM comment infill — best-effort, requires pre-configured client
+        #[allow(unused_variables)]
+        if config.llm_infill {
+            // LLM infill requires a configured LlmClient; silently skip if unavailable
+        }
+
         let json_path = self.guidance_json_path(source_path);
         json_store::save_guidance(&json_path, &doc)?;
 
         // Sync comments back to source file after generation
         if let Err(e) = comments::sync_comments(source_path, &doc) {
             tracing::warn!("comment sync failed for {:?}: {e}", source_path);
+        }
+
+        // Database sync after JSON write
+        if config.db_sync {
+            let db_path = config
+                .db_path
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.guidance_dir.join("..").join(".guidance.db"));
+
+            let json_base = config
+                .json_base
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.guidance_dir.join("src"));
+
+            if let Ok(db) = GuidanceDb::open(&db_path) {
+                let _ = db.sync_from_dir(&json_base);
+            }
         }
 
         Ok(doc)

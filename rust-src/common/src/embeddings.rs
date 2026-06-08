@@ -1,5 +1,12 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use async_trait::async_trait;
+use crate::hash::content_hash_with_model;
 use crate::url::validate_https_or_local_http;
+
+type EmbeddingCache = Option<Arc<Mutex<HashMap<String, Vec<f32>>>>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
@@ -87,6 +94,7 @@ pub struct OllamaEmbedding {
     base_url: String,
     model: String,
     dims: u32,
+    cache: EmbeddingCache,
 }
 
 impl OllamaEmbedding {
@@ -99,13 +107,63 @@ impl OllamaEmbedding {
             base_url,
             model: model.unwrap_or("nomic-embed-text").to_string(),
             dims,
+            cache: None,
         })
+    }
+
+    /// Enable in-memory embedding cache using content_hash_with_model as key.
+    #[must_use]
+    pub fn with_cache(mut self) -> Self {
+        self.cache = Some(Arc::new(Mutex::new(HashMap::new())));
+        self
+    }
+
+    fn cache_key_bytes(&self, text: &str) -> [u8; 16] {
+        content_hash_with_model(text, &self.model)
+    }
+
+    fn cache_key(&self, text: &str) -> String {
+        let bytes = self.cache_key_bytes(text);
+        let mut key = String::with_capacity(32);
+        for b in bytes {
+            use std::fmt::Write;
+            let _ = write!(key, "{b:02x}");
+        }
+        key
+    }
+
+    fn cache_lookup(&self, text: &str) -> Option<Vec<f32>> {
+        let cache = self.cache.as_ref()?;
+        let key = self.cache_key(text);
+        let map = cache.lock().ok()?;
+        map.get(&key).cloned()
+    }
+
+    fn cache_store(&self, text: &str, embedding: &[f32]) {
+        if let Some(ref cache) = self.cache {
+            let key = self.cache_key(text);
+            if let Ok(mut map) = cache.lock() {
+                map.insert(key, embedding.to_vec());
+            }
+        }
     }
 
     /// Embed without any caching layer (direct API call).
     /// Used by QueueReactor for L4 semantic search.
     pub fn embed_without_cache(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        self.embed(text)
+        self.do_embed(text)
+    }
+
+    fn do_embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": text,
+        });
+        let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
+        parse_ollama_response(&resp_bytes)
     }
 }
 
@@ -123,12 +181,13 @@ impl EmbeddingProvider for OllamaEmbedding {
         if text.is_empty() {
             return Ok(Vec::new());
         }
-        let body = serde_json::json!({
-            "model": self.model,
-            "input": text,
-        });
-        let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
-        parse_ollama_response(&resp_bytes)
+        // Check cache first
+        if let Some(cached) = self.cache_lookup(text) {
+            return Ok(cached);
+        }
+        let result = self.do_embed(text)?;
+        self.cache_store(text, &result);
+        Ok(result)
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -138,19 +197,30 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": inputs,
         });
         let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
-        parse_ollama_batch_response(&resp_bytes)
+        let result = parse_ollama_batch_response(&resp_bytes)?;
+        // Cache individual embeddings
+        for (i, text) in texts.iter().enumerate() {
+            let vec = result.vector(i).to_vec();
+            self.cache_store(text, &vec);
+        }
+        Ok(result)
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         if text.is_empty() {
             return Ok(Vec::new());
         }
+        if let Some(cached) = self.cache_lookup(text) {
+            return Ok(cached);
+        }
         let body = serde_json::json!({
             "model": self.model.clone(),
             "input": text,
         });
         let resp_bytes = do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string()).await?;
-        parse_ollama_response(&resp_bytes)
+        let result = parse_ollama_response(&resp_bytes)?;
+        self.cache_store(text, &result);
+        Ok(result)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -160,7 +230,12 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": inputs,
         });
         let resp_bytes = do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string()).await?;
-        parse_ollama_batch_response(&resp_bytes)
+        let result = parse_ollama_batch_response(&resp_bytes)?;
+        for (i, text) in texts.iter().enumerate() {
+            let vec = result.vector(i).to_vec();
+            self.cache_store(text, &vec);
+        }
+        Ok(result)
     }
 }
 
@@ -169,6 +244,7 @@ pub struct OpenAiEmbedding {
     api_key: String,
     model: String,
     dims: u32,
+    cache: EmbeddingCache,
 }
 
 impl OpenAiEmbedding {
@@ -188,7 +264,45 @@ impl OpenAiEmbedding {
             api_key: api_key.to_string(),
             model: model.unwrap_or("text-embedding-3-small").to_string(),
             dims,
+            cache: None,
         })
+    }
+
+    /// Enable in-memory embedding cache using content_hash_with_model as key.
+    #[must_use]
+    pub fn with_cache(mut self) -> Self {
+        self.cache = Some(Arc::new(Mutex::new(HashMap::new())));
+        self
+    }
+
+    fn cache_key_bytes(&self, text: &str) -> [u8; 16] {
+        content_hash_with_model(text, &self.model)
+    }
+
+    fn cache_key(&self, text: &str) -> String {
+        let bytes = self.cache_key_bytes(text);
+        let mut key = String::with_capacity(32);
+        for b in bytes {
+            use std::fmt::Write;
+            let _ = write!(key, "{b:02x}");
+        }
+        key
+    }
+
+    fn cache_lookup(&self, text: &str) -> Option<Vec<f32>> {
+        let cache = self.cache.as_ref()?;
+        let key = self.cache_key(text);
+        let map = cache.lock().ok()?;
+        map.get(&key).cloned()
+    }
+
+    fn cache_store(&self, text: &str, embedding: &[f32]) {
+        if let Some(ref cache) = self.cache {
+            let key = self.cache_key(text);
+            if let Ok(mut map) = cache.lock() {
+                map.insert(key, embedding.to_vec());
+            }
+        }
     }
 
     fn embeddings_url(&self) -> String {
@@ -219,12 +333,17 @@ impl EmbeddingProvider for OpenAiEmbedding {
         if text.is_empty() {
             return Ok(Vec::new());
         }
+        if let Some(cached) = self.cache_lookup(text) {
+            return Ok(cached);
+        }
         let body = serde_json::json!({
             "model": self.model,
             "input": text,
         });
         let resp_bytes = do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
-        parse_openai_response(&resp_bytes)
+        let result = parse_openai_response(&resp_bytes)?;
+        self.cache_store(text, &result);
+        Ok(result)
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -234,19 +353,29 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "input": inputs,
         });
         let resp_bytes = do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
-        parse_openai_batch_response(&resp_bytes)
+        let result = parse_openai_batch_response(&resp_bytes)?;
+        for (i, text) in texts.iter().enumerate() {
+            let vec = result.vector(i).to_vec();
+            self.cache_store(text, &vec);
+        }
+        Ok(result)
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         if text.is_empty() {
             return Ok(Vec::new());
         }
+        if let Some(cached) = self.cache_lookup(text) {
+            return Ok(cached);
+        }
         let body = serde_json::json!({
             "model": self.model.clone(),
             "input": text,
         });
         let resp_bytes = do_openai_request_async(self.embeddings_url(), self.api_key.clone(), body.to_string()).await?;
-        parse_openai_response(&resp_bytes)
+        let result = parse_openai_response(&resp_bytes)?;
+        self.cache_store(text, &result);
+        Ok(result)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -256,7 +385,12 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "input": inputs,
         });
         let resp_bytes = do_openai_request_async(self.embeddings_url(), self.api_key.clone(), body.to_string()).await?;
-        parse_openai_batch_response(&resp_bytes)
+        let result = parse_openai_batch_response(&resp_bytes)?;
+        for (i, text) in texts.iter().enumerate() {
+            let vec = result.vector(i).to_vec();
+            self.cache_store(text, &vec);
+        }
+        Ok(result)
     }
 }
 
@@ -576,6 +710,27 @@ mod tests {
     fn openai_embeddings_url_custom_path() {
         let e = OpenAiEmbedding::new(None, Some("https://my-server.com/custom/path"), Some("sk-test"), 768).unwrap();
         assert_eq!(e.embeddings_url(), "https://my-server.com/custom/path/embeddings");
+    }
+
+    #[test]
+    fn ollama_embedding_cache_keys_consistent() {
+        use crate::hash::content_hash_with_model;
+        let p = OllamaEmbedding::new(Some("test"), Some("http://localhost:11434"), 3).unwrap();
+        let p = p.with_cache();
+        let key = p.cache_key("hello");
+        let hash = content_hash_with_model("hello", "test");
+        let expected_key: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(key, expected_key, "cache key should match content_hash_with_model");
+    }
+
+    #[test]
+    fn ollama_embedding_cache_key_format() {
+        let p = OllamaEmbedding::new(Some("model-a"), Some("http://localhost:11434"), 3).unwrap();
+        let key_a = p.cache_key("same text");
+        let p2 = OllamaEmbedding::new(Some("model-b"), Some("http://localhost:11434"), 3).unwrap();
+        let key_b = p2.cache_key("same text");
+        assert_ne!(key_a, key_b, "different models should have different cache keys");
+        assert_eq!(key_a.len(), 32, "16 bytes = 32 hex chars");
     }
 
     #[test]
