@@ -41,7 +41,7 @@ pub fn detect_identifier_pattern(query: &str) -> Option<IdentifierPattern> {
     } else if trimmed
         .chars()
         .next()
-        .map_or(false, |c| c.is_ascii_uppercase())
+        .is_some_and(|c| c.is_ascii_uppercase())
         && !trimmed.contains('_')
         && !trimmed.contains('-')
     {

@@ -2,7 +2,12 @@
 //! #[repr(C, packed)] structs for zero-copy IPC.
 
 #![deny(warnings, clippy::all, clippy::pedantic)]
-#![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::cast_possible_truncation,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+)]
 
 use bitvec::vec::BitVec;
 use std::convert::TryInto;
@@ -94,6 +99,7 @@ fn compute_checksum(data: &[u8]) -> u32 {
     data.iter().fold(0u32, |acc, &b| acc.wrapping_add(u32::from(b)))
 }
 
+#[must_use]
 pub fn encode_request(req: &BinaryExecutionRequest, input: &[u8]) -> Vec<u8> {
     let fixed_size = std::mem::size_of::<BinaryExecutionRequest>();
     let mut buf = Vec::with_capacity(fixed_size + input.len());
@@ -135,9 +141,9 @@ pub fn decode_result(buf: &[u8]) -> Result<(BinaryExecutionResult, Vec<u8>), Ipc
     if version != BINARY_SCHEMA_VERSION {
         return Err(IpcError::UnsupportedVersion);
     }
-    let _payload_type = read_u32(&mut offset);
-    let _payload_size = read_u32(&mut offset);
-    let _checksum = read_u32(&mut offset);
+    let payload_type = read_u32(&mut offset);
+    let payload_size = read_u32(&mut offset);
+    let checksum = read_u32(&mut offset);
 
     // result fields follow header (no target_id — that's in the request)
     let success = read_u32(&mut offset);
@@ -157,9 +163,9 @@ pub fn decode_result(buf: &[u8]) -> Result<(BinaryExecutionResult, Vec<u8>), Ipc
         header: BinaryHeader {
             magic,
             version,
-            payload_type: _payload_type,
-            payload_size: _payload_size,
-            checksum: _checksum,
+            payload_type,
+            payload_size,
+            checksum,
         },
         success,
         error_code,
@@ -174,8 +180,8 @@ pub fn decode_result(buf: &[u8]) -> Result<(BinaryExecutionResult, Vec<u8>), Ipc
 
 pub fn get_provides_bitset(result: &BinaryExecutionResult, payload: &[u8]) -> Result<BitVec, IpcError> {
     // SAFETY: packed struct fields must be read with read_unaligned
-    let count = unsafe { std::ptr::addr_of!((*result).provides_words_count).read_unaligned() } as usize;
-    let offset = unsafe { std::ptr::addr_of!((*result).provides_words_offset).read_unaligned() } as usize;
+    let count = unsafe { std::ptr::addr_of!(result.provides_words_count).read_unaligned() } as usize;
+    let offset = unsafe { std::ptr::addr_of!(result.provides_words_offset).read_unaligned() } as usize;
     let mut bits = BitVec::with_capacity(count * 64);
 
     for i in 0..count {

@@ -133,10 +133,10 @@ impl QueryEngine {
                 m.name.as_str().to_lowercase().contains(&lower_query)
                     || m.signature
                         .as_ref()
-                        .map_or(false, |s| s.as_str().to_lowercase().contains(&lower_query))
+                        .is_some_and(|s| s.as_str().to_lowercase().contains(&lower_query))
                     || m.comment
                         .as_ref()
-                        .map_or(false, |c| c.as_str().to_lowercase().contains(&lower_query))
+                        .is_some_and(|c| c.as_str().to_lowercase().contains(&lower_query))
             })
             .map(|m| m.name.as_str().to_string())
             .collect();

@@ -17,13 +17,7 @@ pub fn is_stale(json_path: &Path, source_path: &Path) -> bool {
 
     match source_mtime.duration_since(json_mtime) {
         Ok(dur) => {
-            if dur.as_secs() > 1 || (dur.as_secs() == 1 && dur.subsec_nanos() > 0) {
-                true
-            } else if dur.as_secs() == 0 {
-                false
-            } else {
-                false
-            }
+            dur.as_secs() > 1 || (dur.as_secs() == 1 && dur.subsec_nanos() > 0)
         }
         Err(_) => false,
     }

@@ -14,7 +14,7 @@ impl ContextPacker {
     }
 
     pub fn estimate_tokens(text: &str) -> usize {
-        (text.len() + 3) / 4
+        text.len().div_ceil(4)
     }
 
     pub fn truncate_to_budget(&self, text: &str) -> String {

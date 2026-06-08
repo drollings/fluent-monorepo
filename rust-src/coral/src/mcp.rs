@@ -237,7 +237,7 @@ mod tests {
         let node_id = resp["result"]["node_id"].as_i64().expect("node_id");
         assert!(node_id > 0);
 
-        let query_req = format!(r#"{{"jsonrpc":"2.0","method":"coral_query","id":2,"params":{{"name":"test_mcp"}}}}"#);
+        let query_req = r#"{"jsonrpc":"2.0","method":"coral_query","id":2,"params":{"name":"test_mcp"}}"#.to_string();
         let query_resp = server.handle_request(&query_req).expect("handle");
         let qr: serde_json::Value = serde_json::from_str(&query_resp).expect("parse");
         assert_eq!(qr["result"]["found"], true);

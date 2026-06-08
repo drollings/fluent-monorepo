@@ -44,8 +44,7 @@ impl SyncEngine {
             .to_string_lossy()
             .strip_suffix(&format!(".{}", rel_path.extension().and_then(|e| e.to_str()).unwrap_or("")))
             .unwrap_or(&rel_path.to_string_lossy())
-            .replace('/', ".")
-            .replace('\\', ".");
+            .replace(['/', '\\'], ".");
 
         let mut doc = self
             .ast_parser
@@ -132,7 +131,7 @@ impl SyncEngine {
                 if !path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .map_or(false, |n| n.starts_with('.'))
+                    .is_some_and(|n| n.starts_with('.'))
                 {
                     self.walk_dir(&path, callback)?;
                 }

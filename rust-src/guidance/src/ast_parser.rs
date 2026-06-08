@@ -71,8 +71,7 @@ impl AstParser {
         let _module_name = source_path
             .strip_suffix(&format!(".{ext}"))
             .unwrap_or(&source_path)
-            .replace('/', ".")
-            .replace('\\', ".");
+            .replace(['/', '\\'], ".");
 
         let root = tree.root_node();
         let cursor = &mut tree.walk();

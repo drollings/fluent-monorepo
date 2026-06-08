@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn format_writes_message() {
         let err = BuilderError::new(Phase::Initialization, None, None, None, "hello");
-        let s = format!("{}", err);
+        let s = format!("{err}");
         assert!(s.contains("hello"));
         assert!(s.contains("[initialization]"));
     }
@@ -134,7 +134,7 @@ mod tests {
     fn chain_appends_parent_message() {
         let err = BuilderError::new(Phase::Depends, None, None, None, "child")
             .chain("parent error");
-        let s = format!("{}", err);
+        let s = format!("{err}");
         assert!(s.contains("parent error"));
     }
 
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn null_field_and_constraint_format_correctly() {
         let err = BuilderError::new(Phase::Validation, None, None, None, "ok");
-        let s = format!("{}", err);
+        let s = format!("{err}");
         assert_eq!(s, "[validation]: ok");
     }
 
@@ -167,7 +167,7 @@ mod tests {
     fn value_truncated_to_max_len() {
         let long = "a".repeat(200);
         let err = BuilderError::new(Phase::Registration, None, Some(&long), None, "too long");
-        let s = format!("{}", err);
+        let s = format!("{err}");
         assert!(s.len() < 300);
         assert!(err.value.unwrap().ends_with("..."));
     }

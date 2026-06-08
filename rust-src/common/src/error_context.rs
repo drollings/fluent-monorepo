@@ -156,7 +156,7 @@ mod tests {
             Some("99999"),
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "Overflow"),
         );
-        let s = format!("{}", ctx);
+        let s = format!("{ctx}");
         assert!(s.contains("[parse"));
         assert!(s.contains("port=99999"));
         assert!(s.contains("Overflow"));
@@ -169,7 +169,7 @@ mod tests {
             "connect",
             std::io::Error::new(std::io::ErrorKind::TimedOut, "Timeout"),
         );
-        let s = format!("{}", ctx);
+        let s = format!("{ctx}");
         assert!(s.contains("[connect"));
         assert!(s.contains("Timeout"));
     }
@@ -180,10 +180,10 @@ mod tests {
             "inner",
             None,
             None,
-            std::io::Error::new(std::io::ErrorKind::Other, "inner error"),
+            std::io::Error::other("inner error"),
         );
-        let outer = inner.chain(std::io::Error::new(std::io::ErrorKind::Other, "outer error"));
-        let s = format!("{}", outer);
+        let outer = inner.chain(std::io::Error::other("outer error"));
+        let s = format!("{outer}");
         assert!(s.contains("outer error"));
         assert!(s.contains("inner error"));
     }
@@ -195,9 +195,9 @@ mod tests {
             "test",
             Some("field"),
             Some(&long),
-            std::io::Error::new(std::io::ErrorKind::Other, "err"),
+            std::io::Error::other("err"),
         );
-        let s = format!("{}", ctx);
+        let s = format!("{ctx}");
         assert!(s.len() < 300);
     }
 }

@@ -15,6 +15,10 @@
     clippy::zero_sized_map_values,
     clippy::unnecessary_literal_bound,
     clippy::cast_possible_wrap,
+    clippy::unreadable_literal,
+    clippy::similar_names,
+    clippy::single_char_pattern,
+    clippy::byte_char_slices,
 )]
 pub mod builder_error;
 pub mod constants;

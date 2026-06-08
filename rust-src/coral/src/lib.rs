@@ -1,3 +1,4 @@
+#![allow(clippy::manual_is_multiple_of)]
 pub mod db;
 pub mod cache_l1;
 pub mod cache_reactor;

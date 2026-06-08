@@ -82,7 +82,7 @@ impl<'a> DependencyResolver<'a> {
         let mut in_degree: HashMap<usize, usize> = needed.keys().map(|&k| (k, 0)).collect();
         let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
 
-        for (&bit_idx, _) in &needed {
+        for &bit_idx in needed.keys() {
             let target = self
                 .registry
                 .get_by_bit_index(bit_idx)
