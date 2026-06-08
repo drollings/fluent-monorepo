@@ -51,63 +51,74 @@ pub fn extract_excerpt(
     }
     let end = (start + max_lines).min(lines.len());
 
-    if node_type.is_function() {
-        let mut brace_depth: i32 = 0;
-        let mut found_open = false;
-        let mut result_lines = Vec::new();
-        for i in start..end {
-            let line = lines[i];
-            if line.trim().starts_with("// ---") {
+    let mut brace_depth: i32 = 0;
+    let mut found_open = false;
+    let mut result_lines: Vec<String> = Vec::new();
+
+    let is_function = node_type.is_function();
+    let is_container = node_type.is_container();
+
+    for line in lines.iter().take(end).skip(start) {
+        if line.trim().starts_with("// ---") {
+            continue;
+        }
+
+        let open_count = line.chars().filter(|&c| c == '{').count();
+        let close_count = line.chars().filter(|&c| c == '}').count();
+
+        // For containers, skip inner container bodies
+        if is_container && found_open && brace_depth > 0 {
+            let trimmed = line.trim();
+            if (trimmed.starts_with("struct ")
+                || trimmed.starts_with("enum ")
+                || trimmed.starts_with("union "))
+                && open_count > 0
+            {
+                brace_depth += open_count as i32 - close_count as i32;
                 continue;
             }
-            for ch in line.chars() {
-                match ch {
-                    '{' => {
-                        brace_depth += 1;
-                        found_open = true;
-                    }
-                    '}' => {
-                        brace_depth -= 1;
-                    }
-                    _ => {}
-                }
+        }
+
+        if !found_open {
+            if open_count > 0 {
+                found_open = true;
             }
-            result_lines.push(line);
-            if found_open && brace_depth <= 0 {
+            if is_function && !found_open {
+                continue;
+            }
+        }
+
+        // Stop at next top-level declaration for functions when scope hasn't opened yet
+        if is_function && !found_open {
+            let trimmed = line.trim();
+            if (trimmed.starts_with("pub ")
+                || trimmed.starts_with("fn ")
+                || trimmed.starts_with("const ")
+                || trimmed.starts_with("var ")
+                || trimmed.starts_with("test ")
+                || trimmed.starts_with("///"))
+                && !result_lines.is_empty()
+            {
                 break;
             }
         }
-        result_lines.join("\n")
-    } else if node_type.is_container() {
-        let mut brace_depth: i32 = 0;
-        let mut found_open = false;
-        let mut result_lines = Vec::new();
-        for i in start..end {
-            let line = lines[i];
-            if line.trim().starts_with("// ---") {
-                continue;
-            }
-            for ch in line.chars() {
-                match ch {
-                    '{' => {
-                        brace_depth += 1;
-                        found_open = true;
-                    }
-                    '}' => {
-                        brace_depth -= 1;
-                    }
-                    _ => {}
-                }
-            }
-            result_lines.push(line);
-            if found_open && brace_depth <= 0 {
-                break;
-            }
+
+        brace_depth += open_count as i32 - close_count as i32;
+        result_lines.push(line.to_string());
+
+        if found_open && brace_depth <= 0 {
+            break;
         }
-        result_lines.join("\n")
-    } else {
-        lines[start..end].join("\n")
     }
+
+    while result_lines
+        .last()
+        .is_some_and(|l| l.trim().is_empty() || l.trim().starts_with("//"))
+    {
+        result_lines.pop();
+    }
+
+    result_lines.join("\n")
 }
 
 pub fn extract_simple_excerpt(src: &str, start_line: u32, max_lines: usize) -> String {
@@ -152,5 +163,43 @@ mod tests {
         let excerpt = extract_excerpt(src, 1, NodeType::StructDecl, 10);
         assert!(excerpt.contains("struct Foo"));
         assert!(excerpt.contains("x: i32"));
+    }
+
+    #[test]
+    fn container_with_nested_struct() {
+        let src = "struct Outer {\n    inner: Inner,\n    struct Inner {\n        val: u32,\n    }\n}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::StructDecl, 10);
+        assert!(excerpt.contains("struct Outer"));
+        assert!(excerpt.contains("inner: Inner"));
+    }
+
+    #[test]
+    fn container_with_nested_fn() {
+        let src = "struct Foo {\n    fn bar() void { return; }\n    x: i32,\n}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::StructDecl, 10);
+        assert!(excerpt.contains("struct Foo"));
+        assert!(excerpt.contains("x: i32"));
+    }
+
+    #[test]
+    fn excerpt_with_trailing_blanks() {
+        let src = "fn foo() {\n    return;\n}\n\n\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert_eq!(excerpt.trim_end(), excerpt);
+    }
+
+    #[test]
+    fn excerpt_trailing_comment_pruned() {
+        let src = "fn foo() {\n    return;\n}\n// trailing comment\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(!excerpt.contains("trailing comment"));
+    }
+
+    #[test]
+    fn function_followed_by_another_function() {
+        let src = "fn first() {\n    return 1;\n}\n\nfn second() {\n    return 2;\n}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(excerpt.contains("first"));
+        assert!(!excerpt.contains("second"));
     }
 }

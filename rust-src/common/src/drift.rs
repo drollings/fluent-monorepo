@@ -9,13 +9,11 @@ pub struct BitSetDrift {
 
 impl BitSetDrift {
     pub fn new(interner: HashMap<ArcIntern<str>, usize>) -> Self {
-        let names: Vec<ArcIntern<str>> = interner
-            .iter()
-            .map(|(name, &idx)| {
-                let _ = idx;
-                name.clone()
-            })
-            .collect();
+        let max_idx = interner.values().copied().max().unwrap_or(0);
+        let mut names = vec![ArcIntern::from(""); max_idx + 1];
+        for (name, &idx) in &interner {
+            names[idx] = name.clone();
+        }
         Self { interner, names }
     }
 
@@ -24,7 +22,7 @@ impl BitSetDrift {
         let mut follow_ups = Vec::new();
         for (name, &idx) in &self.interner {
             if idx < missing.len() && missing[idx] {
-                follow_ups.push(format!("Provide {}", name));
+                follow_ups.push(format!("Provide {name}"));
             }
         }
         follow_ups.sort();
@@ -40,10 +38,7 @@ impl BitSetDrift {
     }
 
     pub fn name_for_index(&self, idx: usize) -> Option<&str> {
-        self.interner
-            .iter()
-            .find(|(_, &i)| i == idx)
-            .map(|(name, _)| name.as_ref())
+        self.names.get(idx).map(AsRef::as_ref)
     }
 }
 

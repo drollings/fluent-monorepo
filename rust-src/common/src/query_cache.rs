@@ -11,13 +11,14 @@ pub struct Entry {
     pub ttl_seconds: u64,
 }
 
-pub struct PersistentQueryCache {
+pub struct QueryCache {
     db: Connection,
     default_ttl_seconds: u64,
+    #[allow(dead_code)]
     max_entries: usize,
 }
 
-impl PersistentQueryCache {
+impl QueryCache {
     pub fn new(db_path: &Path, default_ttl_seconds: u64) -> rusqlite::Result<Self> {
         let db = Connection::open(db_path)?;
         db.execute_batch(
@@ -35,9 +36,26 @@ impl PersistentQueryCache {
         })
     }
 
+    pub fn new_in_memory(default_ttl_seconds: u64) -> rusqlite::Result<Self> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS query_cache (
+                key TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                ttl_seconds INTEGER NOT NULL
+            )",
+        )?;
+        Ok(Self {
+            db,
+            default_ttl_seconds,
+            max_entries: 4096,
+        })
+    }
+
     fn query_key(query: &str) -> String {
         let hash = fnv1a64(query.to_lowercase().as_bytes());
-        format!("{:016x}", hash)
+        format!("{hash:016x}")
     }
 
     pub fn get(&self, query: &str) -> rusqlite::Result<Option<Entry>> {
@@ -98,10 +116,10 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn setup() -> (PersistentQueryCache, TempDir) {
+    fn setup() -> (QueryCache, TempDir) {
         let dir = TempDir::new().unwrap();
         let db_path = dir.path().join("cache.db");
-        let cache = PersistentQueryCache::new(&db_path, 3600).unwrap();
+        let cache = QueryCache::new(&db_path, 3600).unwrap();
         (cache, dir)
     }
 

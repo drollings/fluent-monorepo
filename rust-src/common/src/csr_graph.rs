@@ -9,7 +9,7 @@ pub struct SerializedCsr {
     pub node_count: u32,
     pub edge_count: u32,
     pub has_weights: u8,
-    pub _pad: [u8; 3],
+    _pad: [u8; 3],
 }
 
 pub const SERIALIZED_CSR_SIZE: usize = 20;
@@ -62,7 +62,7 @@ impl CsrGraph {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        let has_weights = if self.weights.is_some() { 1u8 } else { 0u8 };
+        let has_weights = u8::from(self.weights.is_some());
         let mut buf = Vec::with_capacity(
             SERIALIZED_CSR_SIZE + self.offsets.len() * 8 + self.targets.len() * 4,
         );

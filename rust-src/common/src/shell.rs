@@ -7,8 +7,7 @@ pub fn run_command(argv: &[&str]) -> bool {
     Command::new(argv[0])
         .args(&argv[1..])
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .is_ok_and(|s| s.success())
 }
 
 pub fn add_unique_path(
@@ -22,9 +21,9 @@ pub fn add_unique_path(
     if let Some(root) = project_root {
         if !root.is_empty() {
             let full_path = if root.ends_with('/') {
-                format!("{}{}", root, path)
+                format!("{root}{path}")
             } else {
-                format!("{}/{}", root, path)
+                format!("{root}/{path}")
             };
             if !std::path::Path::new(&full_path).exists() {
                 return false;

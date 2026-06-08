@@ -1,3 +1,4 @@
+use crate::index_header::Header;
 use std::collections::HashMap;
 
 pub type Trigram = u32;
@@ -9,11 +10,11 @@ pub struct TrigramHit {
 }
 
 pub const MAX_POSTINGS: u16 = 512;
-pub const TRIGRAM_INDEX_MAGIC: u32 = 0x54524947;
+pub const TRIGRAM_INDEX_MAGIC: u32 = 0x5452_4947;
 pub const TRIGRAM_INDEX_VERSION: u32 = 1;
 
 fn make_trigram(a: u8, b: u8, c: u8) -> Trigram {
-    (a as u32) | ((b as u32) << 8) | ((c as u32) << 16)
+    u32::from(a) | (u32::from(b) << 8) | (u32::from(c) << 16)
 }
 
 #[derive(Debug, Clone)]
@@ -50,11 +51,11 @@ impl TrigramIndex {
 
     pub fn search_bytes(&self, tri_bytes: [u8; 3]) -> &[TrigramHit] {
         let tri = make_trigram(tri_bytes[0], tri_bytes[1], tri_bytes[2]);
-        self.index.get(&tri).map(|v| v.as_slice()).unwrap_or(&[])
+        self.index.get(&tri).map_or(&[] as &[TrigramHit], |v| v.as_slice())
     }
 
     pub fn search_trigram(&self, tri: Trigram) -> &[TrigramHit] {
-        self.index.get(&tri).map(|v| v.as_slice()).unwrap_or(&[])
+        self.index.get(&tri).map_or(&[] as &[TrigramHit], |v| v.as_slice())
     }
 
     pub fn candidates(&self, query: &str) -> Vec<u32> {
@@ -63,7 +64,7 @@ impl TrigramIndex {
             return Vec::new();
         }
         let first = make_trigram(bytes[0], bytes[1], bytes[2]);
-        let hits = self.index.get(&first).map(|v| v.as_slice()).unwrap_or(&[]);
+        let hits = self.index.get(&first).map_or(&[] as &[TrigramHit], |v| v.as_slice());
         let mut doc_ids: Vec<u32> = hits.iter().map(|h| h.doc_id).collect();
         doc_ids.sort_unstable();
         doc_ids.dedup();
@@ -72,6 +73,81 @@ impl TrigramIndex {
 
     pub fn search(&self, query: &str) -> Vec<u32> {
         self.candidates(query)
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&self.doc_count.to_le_bytes());
+
+        let entries: Vec<(&Trigram, &Vec<TrigramHit>)> = self.index.iter().collect();
+        let entry_count = entries.len() as u32;
+        payload.extend_from_slice(&entry_count.to_le_bytes());
+
+        for (key, hits) in &entries {
+            payload.extend_from_slice(&key.to_le_bytes());
+            let hit_count = hits.len() as u32;
+            payload.extend_from_slice(&hit_count.to_le_bytes());
+            for hit in *hits {
+                payload.extend_from_slice(&hit.doc_id.to_le_bytes());
+                payload.extend_from_slice(&hit.position.to_le_bytes());
+            }
+        }
+
+        let header = Header {
+            magic: TRIGRAM_INDEX_MAGIC,
+            version: TRIGRAM_INDEX_VERSION,
+            git_head: None,
+        };
+        let mut buf = Vec::new();
+        header.write_to(&mut buf);
+        buf.extend_from_slice(&payload);
+        buf
+    }
+
+    pub fn deserialize(data: &[u8]) -> Result<Self, &'static str> {
+        let read_result = Header::read(data, TRIGRAM_INDEX_MAGIC, TRIGRAM_INDEX_VERSION)
+            .ok_or("invalid header")?;
+        let payload_start = read_result.offset;
+        if data.len() < payload_start + 8 {
+            return Err("truncated data");
+        }
+
+        let mut offset = payload_start;
+        let doc_count = u32::from_le_bytes(data[offset..offset + 4].try_into().map_err(|_| "truncated")?);
+        offset += 4;
+        let entry_count = u32::from_le_bytes(data[offset..offset + 4].try_into().map_err(|_| "truncated")?);
+        offset += 4;
+
+        let mut index = HashMap::new();
+        for _ in 0..entry_count {
+            if offset + 8 > data.len() {
+                return Err("truncated");
+            }
+            let key = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
+            offset += 4;
+            let hit_count = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
+            offset += 4;
+            let mut hits = Vec::with_capacity(hit_count as usize);
+            for _ in 0..hit_count {
+                if offset + 8 > data.len() {
+                    return Err("truncated");
+                }
+                let doc_id = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
+                offset += 4;
+                let position = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
+                offset += 4;
+                hits.push(TrigramHit { doc_id, position });
+            }
+            index.insert(key, hits);
+        }
+
+        Ok(Self { index, doc_count })
+    }
+}
+
+impl Default for TrigramIndex {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -99,5 +175,31 @@ mod tests {
         idx.build_from_content("a.txt", "hello world");
         let docs = idx.candidates("hello");
         assert_eq!(docs.len(), 1);
+    }
+
+    #[test]
+    fn trigram_roundtrip() {
+        let mut idx = TrigramIndex::new();
+        idx.build_from_content("a.txt", "hello world");
+        idx.build_from_content("b.txt", "goodbye world");
+        let data = idx.serialize();
+        let deser = TrigramIndex::deserialize(&data).unwrap();
+        assert_eq!(deser.doc_count, 2);
+        assert!(!deser.search_bytes([b'h', b'e', b'l']).is_empty());
+    }
+
+    #[test]
+    fn trigram_empty_index_roundtrip() {
+        let idx = TrigramIndex::new();
+        let data = idx.serialize();
+        let deser = TrigramIndex::deserialize(&data).unwrap();
+        assert_eq!(deser.doc_count, 0);
+    }
+
+    #[test]
+    fn trigram_deserialize_wrong_magic() {
+        let data = &[0u8; 16];
+        let result = TrigramIndex::deserialize(data);
+        assert!(result.is_err());
     }
 }

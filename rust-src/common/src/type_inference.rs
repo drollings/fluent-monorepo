@@ -33,7 +33,7 @@ impl TypeInference {
                     if let Some(child_ancestors) = ancestors.get(&child) {
                         if !child_ancestors[pb] || {
                             let parent_ancestors = ancestors.get(&parent);
-                            parent_ancestors.map_or(false, |pa| {
+                            parent_ancestors.is_some_and(|pa| {
                                 pa.iter().enumerate().any(|(i, b)| *b && !child_ancestors[i])
                             })
                         } {
@@ -67,7 +67,7 @@ impl TypeInference {
     }
 
     pub fn is_subclass_of(&self, child: i64, parent: i64) -> bool {
-        if let (Some(cb), Some(pb)) = (self.id_to_bit.get(&child), self.id_to_bit.get(&parent)) {
+        if let (Some(_cb), Some(pb)) = (self.id_to_bit.get(&child), self.id_to_bit.get(&parent)) {
             if let Some(child_ancestors) = self.ancestors.get(&child) {
                 return child_ancestors[*pb];
             }

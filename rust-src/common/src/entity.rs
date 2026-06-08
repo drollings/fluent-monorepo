@@ -32,7 +32,7 @@ lazy_static::lazy_static! {
 }
 
 fn is_capitalized(s: &str) -> bool {
-    s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+    s.chars().next().is_some_and(char::is_uppercase)
 }
 
 fn is_entity_word_char(c: char) -> bool {
@@ -72,7 +72,7 @@ pub fn extract_entities(content: &str, min_frequency: usize) -> Vec<EntityFreq> 
             entity_type: EntityType::Uncertain,
         })
         .collect();
-    result.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+    result.sort_by_key(|b| std::cmp::Reverse(b.frequency));
     result
 }
 

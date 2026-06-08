@@ -61,6 +61,30 @@ pub fn detect_observer(source: &str) -> bool {
     )
 }
 
+pub fn detect_decorator(source: &str) -> bool {
+    let has_wrapped_field = contains_any(source, &["wrapped", "component", "_inner", "wrappee"]);
+    let has_delegation = contains_any(source, &["self.wrapped.", "self.component.", "self._inner."]);
+    has_wrapped_field && has_delegation
+}
+
+pub fn detect_proxy(source: &str) -> bool {
+    let has_proxy_field = contains_any(source, &["_real", "_subject", "_target", "_delegate"]);
+    let has_proxy_signal = contains_any(source, &["cache", "lazy", "permission", "access"]);
+    has_proxy_field && has_proxy_signal
+}
+
+pub fn detect_strategy(source: &str) -> bool {
+    let has_strategy_field = contains_any(source, &["strategy", "algorithm"]);
+    let has_executor = contains_any(source, &["fn execute", "fn run", "fn apply"]);
+    has_strategy_field && has_executor
+}
+
+pub fn detect_template_method(source: &str) -> bool {
+    let has_unreachable = source.contains("unreachable");
+    let hook_count = count_occurrences(source, "self._");
+    has_unreachable && hook_count >= 2
+}
+
 fn count_occurrences(s: &str, needle: &str) -> usize {
     s.matches(needle).count()
 }
@@ -98,5 +122,49 @@ mod tests {
     #[test]
     fn detect_observer_negative() {
         assert!(!detect_observer("just processing data"));
+    }
+
+    #[test]
+    fn detect_decorator_positive() {
+        let src = "pub fn wrapped: *Wrapped,\npub fn call(self) void { self.wrapped.call(); }";
+        assert!(detect_decorator(src));
+    }
+
+    #[test]
+    fn detect_decorator_negative() {
+        assert!(!detect_decorator("pub fn process() void {}"));
+    }
+
+    #[test]
+    fn detect_proxy_positive() {
+        let src = "_real: *RealImpl,\ncache: std.AutoHashMap(u64, Result)";
+        assert!(detect_proxy(src));
+    }
+
+    #[test]
+    fn detect_proxy_negative() {
+        assert!(!detect_proxy("pub fn process() void {}"));
+    }
+
+    #[test]
+    fn detect_strategy_positive() {
+        let src = "strategy: Strategy,\npub fn execute(self) void { self.strategy.run(); }";
+        assert!(detect_strategy(src));
+    }
+
+    #[test]
+    fn detect_strategy_negative() {
+        assert!(!detect_strategy("pub fn process() void {}"));
+    }
+
+    #[test]
+    fn detect_template_method_positive() {
+        let src = "fn execute(self) void { _ = self._step1(); _ = self._step2(); unreachable; }";
+        assert!(detect_template_method(src));
+    }
+
+    #[test]
+    fn detect_template_method_negative() {
+        assert!(!detect_template_method("pub fn process() void {}"));
     }
 }

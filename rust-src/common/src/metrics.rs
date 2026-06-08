@@ -99,9 +99,9 @@ mod tests {
         h.observe(1);
         h.observe(10);
         h.observe(100);
-        assert_eq!(h.bucket(0), 1);
-        assert_eq!(h.bucket(4), 1);
-        assert_eq!(h.bucket(7), 1);
+        assert_eq!(h.bucket(0), 1);  // 1ms ≤ 1 → bucket 0
+        assert_eq!(h.bucket(2), 1);  // 10ms ≤ 10 → bucket 2
+        assert_eq!(h.bucket(5), 1);  // 100ms ≤ 100 → bucket 5
     }
 
     #[test]
@@ -132,9 +132,9 @@ mod tests {
         let h = LatencyHistogram::new();
         h.observe(5);
         h.observe(50);
-        assert_eq!(h.bucket(0), 0);
-        assert_eq!(h.bucket(3), 1);
-        assert_eq!(h.bucket(6), 1);
+        assert_eq!(h.bucket(0), 0);  // No value ≤ 1ms
+        assert_eq!(h.bucket(1), 1);  // 5ms ≤ 5 → bucket 1
+        assert_eq!(h.bucket(4), 1);  // 50ms ≤ 50 → bucket 4
     }
 
     #[test]

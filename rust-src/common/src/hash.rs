@@ -1,5 +1,7 @@
 use blake3::Hasher;
 use sha2::{Digest, Sha256, Sha512};
+use std::io::Read;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashAlgorithm {
@@ -11,9 +13,8 @@ pub enum HashAlgorithm {
 impl HashAlgorithm {
     pub fn digest_length(self) -> usize {
         match self {
-            HashAlgorithm::Sha256 => 32,
             HashAlgorithm::Sha512 => 64,
-            HashAlgorithm::Blake3 => 32,
+            HashAlgorithm::Sha256 | HashAlgorithm::Blake3 => 32,
         }
     }
 }
@@ -34,11 +35,11 @@ pub fn blake3_hex(data: &[u8]) -> String {
 }
 
 pub fn fnv1a64(input: &[u8]) -> u64 {
-    const OFFSET: u64 = 14695981039346656037;
-    const PRIME: u64 = 1099511628211;
+    const OFFSET: u64 = 14_695_981_039_346_656_037;
+    const PRIME: u64 = 1_099_511_628_211;
     let mut hash: u64 = OFFSET;
     for &byte in input {
-        hash ^= byte as u64;
+        hash ^= u64::from(byte);
         hash = hash.wrapping_mul(PRIME);
     }
     hash
@@ -56,6 +57,7 @@ pub fn content_hash_with_model(content: &str, model: &str) -> [u8; 16] {
 }
 
 pub struct HashState {
+    #[allow(dead_code)]
     algorithm: HashAlgorithm,
     sha256: Option<Sha256>,
     sha512: Option<Sha512>,
@@ -115,48 +117,41 @@ impl HashState {
     }
 }
 
-pub struct QueryCache {
-    entries: std::collections::HashMap<String, CacheEntry>,
-    max_entries: usize,
+#[derive(Debug, Clone)]
+pub struct BatchHashResult {
+    pub path: String,
+    pub hash: Option<String>,
 }
 
-struct CacheEntry {
-    result: String,
-    lower_query: String,
+pub fn hash_file(path: &Path, algorithm: HashAlgorithm) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = HashState::new(algorithm);
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.digest_hex())
 }
 
-impl QueryCache {
-    pub fn new(max_entries: usize) -> Self {
-        Self {
-            entries: std::collections::HashMap::new(),
-            max_entries,
-        }
-    }
-
-    pub fn get(&self, query: &str) -> Option<&str> {
-        let key = fnv1a64(query.to_lowercase().as_bytes());
-        let key_str = format!("{:016x}", key);
-        self.entries.get(&key_str).map(|e| e.result.as_str())
-    }
-
-    pub fn put(&mut self, query: &str, result: String) {
-        if self.entries.len() >= self.max_entries {
-            self.entries.clear();
-        }
-        let key = fnv1a64(query.to_lowercase().as_bytes());
-        let key_str = format!("{:016x}", key);
-        self.entries.insert(
-            key_str,
-            CacheEntry {
-                result,
-                lower_query: query.to_lowercase(),
-            },
-        );
-    }
+pub fn hash_batch(paths: &[std::path::PathBuf], algorithm: HashAlgorithm) -> Vec<BatchHashResult> {
+    paths
+        .iter()
+        .map(|path| {
+            let hash = hash_file(path, algorithm).ok();
+            BatchHashResult {
+                path: path.to_string_lossy().to_string(),
+                hash,
+            }
+        })
+        .collect()
 }
 
 fn hex_encode(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().concat()
+    data.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().concat()
 }
 
 #[cfg(test)]
@@ -229,10 +224,58 @@ mod tests {
     }
 
     #[test]
-    fn query_cache_hit_miss() {
-        let mut cache = QueryCache::new(10);
-        assert!(cache.get("hello").is_none());
-        cache.put("hello", "world".to_string());
-        assert_eq!(cache.get("hello"), Some("world"));
+    fn hash_file_small() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("test.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let hash = hash_file(&path, HashAlgorithm::Sha256).unwrap();
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn hash_file_nonexistent() {
+        let result = hash_file(Path::new("/nonexistent/file.txt"), HashAlgorithm::Sha256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn hash_batch_all_succeed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let p1 = dir.path().join("a.txt");
+        let p2 = dir.path().join("b.txt");
+        std::fs::write(&p1, b"data1").unwrap();
+        std::fs::write(&p2, b"data2").unwrap();
+        let results = hash_batch(&[p1, p2], HashAlgorithm::Sha256);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].hash.is_some());
+        assert!(results[1].hash.is_some());
+    }
+
+    #[test]
+    fn hash_batch_some_fail() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let p1 = dir.path().join("exists.txt");
+        let p2 = dir.path().join("missing.txt");
+        std::fs::write(&p1, b"data").unwrap();
+        let results = hash_batch(&[p1, p2], HashAlgorithm::Sha256);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].hash.is_some());
+        assert!(results[1].hash.is_none());
+    }
+
+    #[test]
+    fn hash_state_incremental_sha512() {
+        let mut state = HashState::new(HashAlgorithm::Sha512);
+        state.update(b"test data");
+        let hex = state.digest_hex();
+        assert_eq!(hex.len(), 128);
+    }
+
+    #[test]
+    fn hash_state_incremental_blake3() {
+        let mut state = HashState::new(HashAlgorithm::Blake3);
+        state.update(b"test data");
+        let hex = state.digest_hex();
+        assert_eq!(hex.len(), 64);
     }
 }

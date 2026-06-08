@@ -1,3 +1,4 @@
+pub const MAX_VALUE_LEN: usize = 128;
 pub const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
 pub const MAX_MCP_REQUEST_SIZE: usize = 10 * 1024 * 1024;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;

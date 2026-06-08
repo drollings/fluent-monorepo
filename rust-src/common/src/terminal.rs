@@ -1,3 +1,5 @@
+use std::io::{self, BufRead, IsTerminal, Write};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Color {
     Reset,
@@ -44,15 +46,99 @@ impl Color {
 }
 
 pub fn get_terminal_width() -> usize {
+    #[cfg(unix)]
+    {
+        use std::mem::MaybeUninit;
+        use std::os::fd::AsRawFd;
+        let mut ws: MaybeUninit<libc::winsize> = MaybeUninit::uninit();
+        let ret = unsafe {
+            libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr())
+        };
+        if ret == 0 {
+            let ws = unsafe { ws.assume_init() };
+            if ws.ws_col > 0 {
+                return ws.ws_col as usize;
+            }
+        }
+    }
     80
 }
 
 pub fn get_terminal_height() -> usize {
+    #[cfg(unix)]
+    {
+        use std::mem::MaybeUninit;
+        use std::os::fd::AsRawFd;
+        let mut ws: MaybeUninit<libc::winsize> = MaybeUninit::uninit();
+        let ret = unsafe {
+            libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr())
+        };
+        if ret == 0 {
+            let ws = unsafe { ws.assume_init() };
+            if ws.ws_row > 0 {
+                return ws.ws_row as usize;
+            }
+        }
+    }
     24
 }
 
 pub fn is_terminal() -> bool {
-    false
+    io::stdout().is_terminal()
+}
+
+pub fn confirm(question: &str, default: bool) -> io::Result<bool> {
+    let prompt = if default {
+        format!("{question} [Y/n]: ")
+    } else {
+        format!("{question} [y/N]: ")
+    };
+    print!("{prompt}");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().lock().read_line(&mut input)?;
+    let trimmed = input.trim().to_lowercase();
+    match trimmed.as_str() {
+        "y" | "yes" => Ok(true),
+        "n" | "no" => Ok(false),
+        _ => Ok(default),
+    }
+}
+
+pub fn ask(question: &str, default: &str) -> io::Result<String> {
+    let prompt = if default.is_empty() {
+        format!("{question}: ")
+    } else {
+        format!("{question} [{default}]: ")
+    };
+    print!("{prompt}");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().lock().read_line(&mut input)?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        Ok(default.to_string())
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+pub fn ask_int(question: &str, default: Option<i64>) -> io::Result<i64> {
+    let prompt = if let Some(d) = default {
+        format!("{question} [{d}]: ")
+    } else {
+        format!("{question}: ")
+    };
+    print!("{prompt}");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().lock().read_line(&mut input)?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        default.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no input and no default"))
+    } else {
+        trimmed.parse::<i64>().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid integer"))
+    }
 }
 
 #[derive(Debug)]
@@ -136,4 +222,5 @@ mod tests {
         pb.set(100);
         assert!(pb.is_finished());
     }
+
 }

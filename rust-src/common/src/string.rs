@@ -1,4 +1,3 @@
-use regex::Regex;
 use std::collections::HashSet;
 
 lazy_static::lazy_static! {
@@ -22,6 +21,52 @@ lazy_static::lazy_static! {
     };
 }
 
+pub fn trim_right<'a>(slice: &'a [u8], pattern: &[u8]) -> &'a [u8] {
+    let mut end = slice.len();
+    while end > 0 && pattern.contains(&slice[end - 1]) {
+        end -= 1;
+    }
+    &slice[..end]
+}
+
+pub fn trim_left<'a>(slice: &'a [u8], pattern: &[u8]) -> &'a [u8] {
+    let mut start = 0;
+    while start < slice.len() && pattern.contains(&slice[start]) {
+        start += 1;
+    }
+    &slice[start..]
+}
+
+fn contains_word_with_boundary(text: &str, word: &str, is_boundary: fn(u8) -> bool) -> bool {
+    let lower = text.to_lowercase();
+    let lower_word = word.to_lowercase();
+    let bytes = lower.as_bytes();
+    let wb = lower_word.as_bytes();
+    if wb.is_empty() || wb.len() > bytes.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i + wb.len() <= bytes.len() {
+        if &bytes[i..i + wb.len()] == wb {
+            let left_boundary = i == 0 || is_boundary(bytes[i - 1]);
+            let right_boundary = i + wb.len() == bytes.len() || is_boundary(bytes[i + wb.len()]);
+            if left_boundary && right_boundary {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+fn is_ident_boundary(c: u8) -> bool {
+    !c.is_ascii_alphanumeric()
+}
+
+pub fn contains_ident_word(haystack: &str, needle: &str) -> bool {
+    contains_word_with_boundary(haystack, needle, is_ident_boundary)
+}
+
 pub fn contains_any(text: &str, keywords: &[&str]) -> bool {
     let lower = text.to_lowercase();
     keywords.iter().any(|k| lower.contains(&k.to_lowercase()))
@@ -36,10 +81,7 @@ pub fn contains_ignore_case(text: &str, pattern: &str) -> bool {
 }
 
 pub fn contains_word(text: &str, word: &str) -> bool {
-    let lower = text.to_lowercase();
-    let lower_word = word.to_lowercase();
-    let re = Regex::new(&format!(r"(?i)\b{}\b", regex::escape(word))).unwrap();
-    re.is_match(text)
+    contains_word_with_boundary(text, word, |c| !c.is_ascii_alphanumeric())
 }
 
 pub fn first_comment_line(text: &str) -> Option<String> {
@@ -102,6 +144,14 @@ pub fn looks_like_identifier(s: &str) -> bool {
     s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+pub fn lower_into<'a>(dst: &'a mut [u8], src: &[u8]) -> &'a [u8] {
+    let len = src.len().min(dst.len());
+    for i in 0..len {
+        dst[i] = src[i].to_ascii_lowercase();
+    }
+    &dst[..len]
+}
+
 pub fn slugify(text: &str) -> String {
     text.to_lowercase()
         .chars()
@@ -120,12 +170,25 @@ pub fn strip_boilerplate(text: &str, prefix: &str) -> String {
     }
 }
 
+const NL_PREFIXES: &[&str] = &[
+    "what is ", "what are ", "what does ", "what's ",
+    "where is ", "where are ", "where does ", "where can i find ",
+    "how does ", "how do ", "how can i ", "how to ",
+    "why is ", "why does ", "why do ",
+    "when is ", "when does ", "when do ",
+    "who is ", "who are ", "who does ",
+    "which is ", "which are ", "which does ",
+    "explain ", "define ", "describe ", "tell me about ",
+];
+
 pub fn strip_nl_prefix(text: &str) -> String {
-    if let Some(stripped) = text.strip_prefix('\n') {
-        stripped.to_string()
-    } else {
-        text.to_string()
+    let lower = text.to_ascii_lowercase();
+    for &prefix in NL_PREFIXES {
+        if lower.starts_with(prefix) {
+            return text[prefix.len()..].to_string();
+        }
     }
+    text.to_string()
 }
 
 pub fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
@@ -244,8 +307,10 @@ mod tests {
     }
 
     #[test]
-    fn strip_nl_prefix_removes_prefix() {
-        assert_eq!(strip_nl_prefix("\ncontent"), "content");
+    fn contains_ident_word_no_false_positive_on_substring() {
+        assert!(!contains_ident_word("mystructfield", "struct"));
+        assert!(!contains_ident_word("unstructured", "struct"));
+        assert!(contains_ident_word("test_struct", "struct"));
     }
 
     #[test]
@@ -264,5 +329,113 @@ mod tests {
     fn truncate_at_sentence_within_limit() {
         let text = "Short";
         assert_eq!(truncate_at_sentence(text, 100), "Short");
+    }
+
+    #[test]
+    fn trim_right_basic() {
+        assert_eq!(trim_right(b"hello   ", b" "), b"hello");
+    }
+
+    #[test]
+    fn trim_right_noop() {
+        assert_eq!(trim_right(b"hello", b" "), b"hello");
+    }
+
+    #[test]
+    fn trim_right_all_matching() {
+        assert_eq!(trim_right(b"   ", b" "), b"");
+    }
+
+    #[test]
+    fn trim_right_pattern_subset() {
+        assert_eq!(trim_right(b"hello!?!", b"!?"), b"hello");
+    }
+
+    #[test]
+    fn trim_left_basic() {
+        assert_eq!(trim_left(b"   hello", b" "), b"hello");
+    }
+
+    #[test]
+    fn trim_left_noop() {
+        assert_eq!(trim_left(b"hello", b" "), b"hello");
+    }
+
+    #[test]
+    fn contains_ident_word_basic() {
+        assert!(contains_ident_word("my_struct_field", "struct"));
+        assert!(!contains_ident_word("mystructfield", "struct"));
+    }
+
+    #[test]
+    fn contains_ident_word_underscore_boundary() {
+        assert!(contains_ident_word("test_foo_bar", "foo"));
+        assert!(!contains_ident_word("testfoobar", "foo"));
+    }
+
+    #[test]
+    fn skill_name_from_ref_skil_md() {
+        assert_eq!(
+            skill_name_from_ref("doc/skills/zig-current/SKILL.md"),
+            "zig-current"
+        );
+    }
+
+    #[test]
+    fn skill_name_from_ref_fallback() {
+        assert_eq!(
+            skill_name_from_ref("doc/skills/foo.md"),
+            "foo.md"
+        );
+    }
+
+    #[test]
+    fn skill_name_from_ref_edge() {
+        assert_eq!(skill_name_from_ref("SKILL.md"), "SKILL.md");
+        assert_eq!(
+            skill_name_from_ref("/a/b/c/SKILL.md"),
+            "c"
+        );
+    }
+
+    #[test]
+    fn strip_nl_prefix_new_semantics_what_is() {
+        assert_eq!(strip_nl_prefix("what is X"), "X");
+    }
+
+    #[test]
+    fn strip_nl_prefix_new_semantics_how_does() {
+        assert_eq!(strip_nl_prefix("how does Y work"), "Y work");
+    }
+
+    #[test]
+    fn strip_nl_prefix_new_semantics_no_match() {
+        assert_eq!(strip_nl_prefix("hello world"), "hello world");
+    }
+
+    #[test]
+    fn strip_nl_prefix_new_semantics_explain() {
+        assert_eq!(strip_nl_prefix("explain Z"), "Z");
+    }
+
+    #[test]
+    fn lower_into_short_src() {
+        let mut buf = [0u8; 16];
+        let result = lower_into(&mut buf, b"HELLO");
+        assert_eq!(result, b"hello");
+    }
+
+    #[test]
+    fn lower_into_long_src_truncated() {
+        let mut buf = [0u8; 4];
+        let result = lower_into(&mut buf, b"HELLO WORLD");
+        assert_eq!(result, b"hell");
+    }
+
+    #[test]
+    fn lower_into_empty_src() {
+        let mut buf = [0u8; 4];
+        let result = lower_into(&mut buf, b"");
+        assert_eq!(result, b"");
     }
 }

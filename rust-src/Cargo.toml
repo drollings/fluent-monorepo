@@ -9,6 +9,10 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
+bon = "3"
+ureq = { version = "3", features = ["json"] }
+httpmock = "0.7"
+libc = "0.2"
 blake3 = "1.8"
 smol_str = "0.3"
 internment = { version = "0.8", features = ["arc"] }

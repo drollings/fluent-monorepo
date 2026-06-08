@@ -1,6 +1,6 @@
 use std::fmt;
 
-pub const MAX_VALUE_LEN: usize = 128;
+use crate::constants::MAX_VALUE_LEN;
 
 #[derive(Debug)]
 struct ValueBuffer {
@@ -38,7 +38,7 @@ impl ErrorContext {
     ) -> Self {
         Self {
             operation: operation.to_string(),
-            field: field.map(|s| s.to_string()),
+            field: field.map(ToString::to_string),
             value: ValueBuffer::new(value.unwrap_or("")),
             cause: Box::new(cause),
         }
@@ -58,7 +58,7 @@ impl fmt::Display for ErrorContext {
         if let Some(ref field) = self.field {
             let val = self.value.as_str();
             if !val.is_empty() {
-                write!(f, " {}={}", field, val)?;
+                write!(f, " {field}={val}")?;
             }
         }
         write!(f, ": {}]", self.cause)
@@ -87,18 +87,19 @@ impl HeapErrorContext {
         value: Option<&str>,
         cause: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        let message = format!("{}", cause);
+        let message = format!("{cause}");
         Self {
             operation: operation.to_string(),
-            field: field.map(|s| s.to_string()),
-            value: value.map(|s| s.to_string()),
+            field: field.map(ToString::to_string),
+            value: value.map(ToString::to_string),
             cause: Box::new(cause),
             message,
         }
     }
 
+    #[must_use]
     pub fn chain(self, parent: impl std::error::Error + Send + Sync + 'static) -> Self {
-        let message = format!("{}: {}", parent, self.message);
+        let message = format!("{parent}: {}", self.message);
         Self {
             operation: self.operation,
             field: self.field,
@@ -114,7 +115,7 @@ impl fmt::Display for HeapErrorContext {
         write!(f, "[{}", self.operation)?;
         if let Some(ref field) = self.field {
             if let Some(ref val) = self.value {
-                write!(f, " {}={}", field, val)?;
+                write!(f, " {field}={val}")?;
             }
         }
         write!(f, ": {}]", self.message)

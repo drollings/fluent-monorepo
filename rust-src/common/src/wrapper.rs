@@ -3,6 +3,27 @@ use std::time::Duration;
 pub enum WrapperKind {
     None,
     Retry,
+    Check(Box<dyn Fn() -> bool + Send + Sync>),
+}
+
+impl WrapperKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            WrapperKind::None => "None",
+            WrapperKind::Retry => "Retry",
+            WrapperKind::Check(_) => "Check",
+        }
+    }
+}
+
+impl std::fmt::Debug for WrapperKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WrapperKind::None => write!(f, "None"),
+            WrapperKind::Retry => write!(f, "Retry"),
+            WrapperKind::Check(_) => write!(f, "Check(<fn>)"),
+        }
+    }
 }
 
 pub fn wrap_if<T>(condition: bool, if_true: T, if_false: T) -> T {
@@ -48,13 +69,22 @@ impl Pipeline {
         if kinds.is_empty() || kinds.iter().all(|k| matches!(k, WrapperKind::None)) {
             return f();
         }
+        let mut bypass = false;
         for kind in kinds {
             match kind {
+                WrapperKind::Check(predicate) => {
+                    if !predicate() {
+                        bypass = true;
+                    }
+                }
                 WrapperKind::Retry => {
+                    if bypass {
+                        return f();
+                    }
                     let result = retry_call(3, &f);
                     return result.map(|r| r.result);
                 }
-                WrapperKind::None => continue,
+                WrapperKind::None => {},
             }
         }
         f()
@@ -116,5 +146,36 @@ mod tests {
     fn pipeline_none_is_identity() {
         let result = Pipeline::call(&[], || Ok::<_, ()>(42));
         assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn check_passes_executes() {
+        let result = Pipeline::call(
+            &[WrapperKind::Check(Box::new(|| true))],
+            || Ok::<_, ()>(42),
+        );
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn check_fails_no_retry() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let cc = Arc::clone(&call_count);
+        let result = Pipeline::call(
+            &[WrapperKind::Check(Box::new(|| false)), WrapperKind::Retry],
+            move || {
+                cc.fetch_add(1, Ordering::SeqCst);
+                Err::<i32, ()>(())
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn wrapper_kind_name() {
+        assert_eq!(WrapperKind::None.name(), "None");
+        assert_eq!(WrapperKind::Retry.name(), "Retry");
+        assert_eq!(WrapperKind::Check(Box::new(|| true)).name(), "Check");
     }
 }

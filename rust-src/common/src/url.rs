@@ -34,7 +34,7 @@ pub fn is_private_ip(host: &str) -> bool {
         let parts: Vec<&str> = h.split('.').collect();
         if parts.len() >= 2 {
             if let Ok(second) = parts[1].parse::<u8>() {
-                if second >= 16 && second <= 31 {
+                if (16..=31).contains(&second) {
                     return true;
                 }
             }
@@ -49,7 +49,7 @@ pub fn is_private_ip(host: &str) -> bool {
 
 fn extract_host(url: &str) -> &str {
     if let Some(rest) = url.split("://").nth(1) {
-        let end = rest.find(|c| c == ':' || c == '/').unwrap_or(rest.len());
+        let end = rest.find([':', '/']).unwrap_or(rest.len());
         &rest[..end]
     } else {
         url

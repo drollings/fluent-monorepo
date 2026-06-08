@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::fs;
+use std::io::Read;
+use std::path::Path;
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {
@@ -6,6 +8,9 @@ lazy_static::lazy_static! {
 }
 
 pub type FrequencyTable = [[u16; 256]; 256];
+
+const FREQ_TABLE_MAGIC: u32 = 0x4652_4551;
+const FREQ_TABLE_VERSION: u32 = 1;
 
 pub fn default_frequency_table() -> FrequencyTable {
     let mut table = [[0xFEu16; 256]; 256];
@@ -34,7 +39,7 @@ pub fn get_default_pair_freq() -> &'static FrequencyTable {
     lazy_static::lazy_static! {
         static ref DEFAULT: FrequencyTable = default_frequency_table();
     }
-    &*DEFAULT
+    &DEFAULT
 }
 
 pub fn set_frequency_table(table: Box<FrequencyTable>) {
@@ -65,9 +70,48 @@ pub fn build_frequency_table_from_map(contents: &str) -> FrequencyTable {
     build_frequency_table(contents)
 }
 
+pub fn write_frequency_table(path: &Path, table: &FrequencyTable) -> std::io::Result<()> {
+    let mut buf = Vec::with_capacity(4 + 4 + 256 * 256 * 2);
+    buf.extend_from_slice(&FREQ_TABLE_MAGIC.to_le_bytes());
+    buf.extend_from_slice(&FREQ_TABLE_VERSION.to_le_bytes());
+    for row in table {
+        for &val in row {
+            buf.extend_from_slice(&val.to_le_bytes());
+        }
+    }
+    fs::write(path, buf)
+}
+
+pub fn read_frequency_table(path: &Path) -> std::io::Result<Option<FrequencyTable>> {
+    let Ok(mut file) = fs::File::open(path) else { return Ok(None) };
+    let mut header = [0u8; 8];
+    if file.read_exact(&mut header).is_err() {
+        return Ok(None);
+    }
+    let magic = u32::from_le_bytes(header[0..4].try_into().unwrap());
+    let version = u32::from_le_bytes(header[4..8].try_into().unwrap());
+    if magic != FREQ_TABLE_MAGIC || version != FREQ_TABLE_VERSION {
+        return Ok(None);
+    }
+    let mut data = vec![0u8; 256 * 256 * 2];
+    if file.read_exact(&mut data).is_err() {
+        return Ok(None);
+    }
+    let mut table = [[0u16; 256]; 256];
+    let mut off = 0;
+    for row in &mut table {
+        for val in row.iter_mut() {
+            *val = u16::from_le_bytes(data[off..off + 2].try_into().unwrap());
+            off += 2;
+        }
+    }
+    Ok(Some(table))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn pair_weight_default() {
@@ -77,7 +121,7 @@ mod tests {
 
     #[test]
     fn build_frequency_table_basic() {
-        let table = build_frequency_table("hello world");
+        let _table = build_frequency_table("hello world");
         let w = pair_weight(b'h', b'e');
         assert!(w > 0);
     }
@@ -86,5 +130,32 @@ mod tests {
     fn build_frequency_table_from_map_works() {
         let table = build_frequency_table_from_map("test data");
         let _ = table;
+    }
+
+    #[test]
+    fn freq_table_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("freq.bin");
+        let table = build_frequency_table("hello world");
+        write_frequency_table(&path, &table).unwrap();
+        let read = read_frequency_table(&path).unwrap().unwrap();
+        assert_eq!(table, read);
+    }
+
+    #[test]
+    fn freq_table_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent.bin");
+        let result = read_frequency_table(&path).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn freq_table_wrong_magic() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad.bin");
+        fs::write(&path, b"BADMAGIC").unwrap();
+        let result = read_frequency_table(&path).unwrap();
+        assert!(result.is_none());
     }
 }

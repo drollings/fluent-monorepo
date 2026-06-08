@@ -15,7 +15,7 @@ pub struct WordHit {
     pub line_num: u32,
 }
 
-pub const WORD_INDEX_MAGIC: u32 = 0x574F5244;
+pub const WORD_INDEX_MAGIC: u32 = 0x574F_5244;
 pub const WORD_INDEX_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ impl DocRegistry {
     }
 
     pub fn path_for_id(&self, id: u32) -> &str {
-        self.id_to_path.get(id as usize).map(|s| s.as_str()).unwrap_or("")
+        self.id_to_path.get(id as usize).map_or("", String::as_str)
     }
 
     pub fn count(&self) -> u32 {
@@ -72,7 +72,15 @@ impl WordIndex {
             file_words: HashMap::new(),
         }
     }
+}
 
+impl Default for WordIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WordIndex {
     pub fn hit_path(&self, hit: &WordHit) -> &str {
         self.registry.path_for_id(hit.doc_id)
     }

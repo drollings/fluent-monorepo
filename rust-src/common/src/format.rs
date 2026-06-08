@@ -1,4 +1,73 @@
-use std::fmt;
+use std::fmt::Write as _;
+
+pub fn format_json(value: &serde_json::Value, indent: usize) -> String {
+    let _indent_str = " ".repeat(indent);
+    let json_str = serde_json::to_string_pretty(value).unwrap_or_default();
+    if indent == 2 {
+        return json_str;
+    }
+    json_str
+        .lines()
+        .map(|line| {
+            if line.starts_with(' ') {
+                let trimmed = line.trim_start();
+                let leading = line.len() - trimmed.len();
+                let new_leading = leading * indent / 2;
+                format!("{}{}", " ".repeat(new_leading), trimmed)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn csv_escape(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}
+
+pub fn format_csv(rows: &[serde_json::Value], fieldnames: Option<&[&str]>) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let keys: Vec<&str> = match fieldnames {
+        Some(names) => names.to_vec(),
+        None => rows[0]
+            .as_object()
+            .map(|obj| obj.keys().map(String::as_str).collect())
+            .unwrap_or_default(),
+    };
+    let mut out = String::new();
+    out.push_str(
+        &keys
+            .iter()
+            .map(|k| csv_escape(k))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    out.push('\n');
+    for row in rows {
+        let vals: Vec<String> = keys
+            .iter()
+            .map(|k| {
+                row.get(k)
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => csv_escape(s),
+                        serde_json::Value::Null => String::new(),
+                        other => csv_escape(&other.to_string()),
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+        out.push_str(&vals.join(","));
+        out.push('\n');
+    }
+    out
+}
 
 pub fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -15,7 +84,7 @@ pub fn format_size(bytes: u64) -> String {
     } else if bytes >= KB {
         format!("{:.1} KB", bytes as f64 / KB as f64)
     } else {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     }
 }
 
@@ -90,9 +159,9 @@ impl Table {
         for col in &self.columns {
             let w = col.effective_width();
             if col.align_left {
-                out.push_str(&format!(" {:<w$}", col.header, w = w));
+                let _ = write!(out, " {:<w$}", col.header, w = w);
             } else {
-                out.push_str(&format!(" {:>w$}", col.header, w = w));
+                let _ = write!(out, " {:>w$}", col.header, w = w);
             }
         }
         out.push('\n');
@@ -104,9 +173,9 @@ impl Table {
                 }).unwrap_or_default();
                 let w = col.effective_width();
                 if col.align_left {
-                    out.push_str(&format!(" {:<w$}", val, w = w));
+                    let _ = write!(out, " {val:<w$}");
                 } else {
-                    out.push_str(&format!(" {:>w$}", val, w = w));
+                    let _ = write!(out, " {val:>w$}");
                 }
             }
             out.push('\n');
@@ -144,5 +213,48 @@ mod tests {
     #[test]
     fn parse_size_mb() {
         assert_eq!(parse_size("2 MB"), Some(2 * 1024 * 1024));
+    }
+
+    #[test]
+    fn format_json_empty_object() {
+        let v = serde_json::json!({});
+        let s = format_json(&v, 2);
+        assert_eq!(s, "{}");
+    }
+
+    #[test]
+    fn format_json_nested() {
+        let v = serde_json::json!({"a": {"b": 1}});
+        let s = format_json(&v, 2);
+        assert!(s.contains("\"a\""));
+        assert!(s.contains("\"b\""));
+    }
+
+    #[test]
+    fn format_csv_basic() {
+        let rows = serde_json::from_str::<Vec<serde_json::Value>>(
+            r#"[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]"#,
+        )
+        .unwrap();
+        let csv = format_csv(&rows, Some(&["name", "age"]));
+        assert!(csv.contains("Alice"));
+        assert!(csv.contains("Bob"));
+        assert!(csv.contains("name,age"));
+    }
+
+    #[test]
+    fn format_csv_empty_rows() {
+        let csv = format_csv(&[], Some(&["name"]));
+        assert_eq!(csv, "");
+    }
+
+    #[test]
+    fn format_csv_special_chars() {
+        let rows = serde_json::from_str::<Vec<serde_json::Value>>(
+            r#"[{"name": "Alice, Inc.", "note": "line1\nline2"}]"#,
+        )
+        .unwrap();
+        let csv = format_csv(&rows, Some(&["name"]));
+        assert!(csv.contains("Alice, Inc."));
     }
 }

@@ -22,6 +22,7 @@ impl FileLock {
         let lock_path_str = lock_path.to_string_lossy().to_string();
         let file = fs::OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(&lock_path)?;
         match file.try_lock_exclusive() {

@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+bon = { workspace = true }
+ureq = { workspace = true }
 blake3 = { workspace = true }
 smol_str = { workspace = true }
 internment = { workspace = true, features = ["arc"] }
@@ -16,7 +18,11 @@ tracing = { workspace = true }
 rusqlite = { workspace = true }
 memmap2 = { workspace = true }
 fs2 = { workspace = true }
+libc = { workspace = true }
 time = { workspace = true }
 regex = { workspace = true }
 lazy_static = "1"
 tempfile = { workspace = true }
+
+[dev-dependencies]
+httpmock = { workspace = true }

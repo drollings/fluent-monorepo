@@ -110,7 +110,7 @@ mod tests {
     fn set_source() {
         let mut node = ContentNode::new("old");
         node.set_source("new");
-        assert_eq!(node.source.as_ref(), "new");
+        assert_eq!(&*node.source, "new");
     }
 
     #[test]

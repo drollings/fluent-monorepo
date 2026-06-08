@@ -1,5 +1,7 @@
+pub const DEFAULT_MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
     let pb = Path::new(path);

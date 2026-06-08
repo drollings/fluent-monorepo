@@ -1,7 +1,9 @@
 use std::fmt;
 
-pub const MAX_VALUE_LEN: usize = 128;
+use crate::constants::MAX_VALUE_LEN;
 
+#[allow(deprecated)]
+#[deprecated(note = "Use bon-generated builders with Result instead. See ZIG_TO_RUST_PRACTICES.md §1.2")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Depends,
@@ -12,6 +14,7 @@ pub enum Phase {
     Initialization,
 }
 
+#[allow(deprecated)]
 impl fmt::Display for Phase {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -25,6 +28,8 @@ impl fmt::Display for Phase {
     }
 }
 
+#[allow(deprecated)]
+#[deprecated(note = "Use bon-generated builders with Result instead. See ZIG_TO_RUST_PRACTICES.md §1.2")]
 #[derive(Debug, Clone)]
 pub struct BuilderError {
     pub phase: Phase,
@@ -35,6 +40,7 @@ pub struct BuilderError {
     pub cause: Option<String>,
 }
 
+#[allow(deprecated)]
 impl BuilderError {
     pub fn new(
         phase: Phase,
@@ -45,7 +51,7 @@ impl BuilderError {
     ) -> Self {
         Self {
             phase,
-            field: field.map(|s| s.to_string()),
+            field: field.map(ToString::to_string),
             value: value.map(|s| {
                 if s.len() > MAX_VALUE_LEN {
                     format!("{}...", &s[..MAX_VALUE_LEN])
@@ -53,12 +59,13 @@ impl BuilderError {
                     s.to_string()
                 }
             }),
-            constraint: constraint.map(|s| s.to_string()),
+            constraint: constraint.map(ToString::to_string),
             message: message.to_string(),
             cause: None,
         }
     }
 
+    #[must_use]
     pub fn chain(self, cause: impl fmt::Display) -> Self {
         Self {
             cause: Some(cause.to_string()),
@@ -67,26 +74,28 @@ impl BuilderError {
     }
 }
 
+#[allow(deprecated)]
 impl fmt::Display for BuilderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]", self.phase)?;
         if let Some(ref field) = self.field {
-            write!(f, " field={}", field)?;
+            write!(f, " field={field}")?;
         }
         if let Some(ref value) = self.value {
-            write!(f, " value={}", value)?;
+            write!(f, " value={value}")?;
         }
         if let Some(ref constraint) = self.constraint {
-            write!(f, " constraint={}", constraint)?;
+            write!(f, " constraint={constraint}")?;
         }
         write!(f, ": {}", self.message)?;
         if let Some(ref cause) = self.cause {
-            write!(f, " (cause: {})", cause)?;
+            write!(f, " (cause: {cause})")?;
         }
         Ok(())
     }
 }
 
+#[allow(deprecated)]
 impl std::error::Error for BuilderError {}
 
 pub fn join_string_slice(items: &[String], separator: &str) -> String {
@@ -94,6 +103,7 @@ pub fn join_string_slice(items: &[String], separator: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
