@@ -1,78 +1,176 @@
----
-name: fluent-wvr
-description: Crucially important Zig implementation of Fluent Wrapped Vtables with Reflection
----
+# Fluent WVR in Rust — The Synthesis Pipeline
 
-# Fluent WVR — The Synthesis Pipeline built on Fluent Wrapped Vtables with Reflection
+**A design pattern guide for human coders and AI agents working in `rust-src/`.**
 
-**A design pattern guide for human coders and AI agents working in this codebase.**
+**Supersedes:** `FLUENT_WVR_RUST.md` (raw-pointer variant, deprecated) and the previous `FLUENT_WVR.md`.
+
+**Companion:** `doc/skills/fluent-wvr/SKILL.md` (the Zig original — authoritative for `src/`).
 
 ---
 
 ## Who This Document Is For
 
-**For humans coming from Python or C++**: Zig feels initially restrictive — no `getattr`, no inheritance, no decorators, explicit memory everywhere. This document shows how five composable patterns together give you everything Python's dynamism and C++'s polymorphism provide, with zero runtime overhead and deterministic memory.
+**For humans coming from Python or C++**: Rust's trait system replaces inheritance, its ownership model replaces garbage collection, and its derive macros replace runtime reflection. This document shows how twelve composable patterns together give you Python's runtime ergonomics and C++'s polymorphic flexibility, with absolute memory safety and zero hidden cost.
 
-**For AI agents**: This document is the authoritative reference for how code in this codebase is structured. When writing new code, check the pattern table in §1, find the applicable pattern, read its rules and examples from implemented source, and follow the anti-pattern section to avoid the most common mistakes.
-
-All code examples in this document are drawn from currently implemented and tested source files. Every pattern is in production use.
+**For AI agents**: This document is the authoritative reference for how code in `rust-src/` is structured. When writing new code, check the pattern table in §1, find the applicable pattern, and follow the rules and anti-pattern sections. All patterns are in production use in the codebase.
 
 ---
 
-To transition as a developer from Python and pre-2013 C++ into Zig, it is completely natural to feel the friction of losing dynamic decorators, extensive inheritance trees, and runtime metaprogramming. Zig demands explicit state management and straightforward control flow. There is no `getattr`, no `__init_subclass__`, no virtual keyword, no hidden vtable pointer injected into every class instance.
+## The Core Thesis
 
-However, Zig is not just C with better syntax. By combining a small set of distinct paradigms — fluent interfaces, comptime metaprogramming, explicit vtables, and arena allocation — we can recreate the developer ergonomics of Python and the polymorphism of C++, but with zero runtime overhead, complete memory safety, and absolute type clarity. The result is code that reads like configuration, validates like a type system, routes like an interface, and allocates like a custom allocator — all simultaneously, with no magic hidden from the compiler.
+Every unit of work in this system — a DAG target, a WASM plugin, a query strategy, an embedding provider — presents the **same interface** to the orchestrator regardless of whether it was assembled at compile time or at runtime. The orchestrator never branches on implementation type. It iterates over uniform handles and calls trait methods. The compiler enforces the interface at every implementation site.
 
-This document explains those paradigms as a coherent system called **The Synthesis Pipeline**. Every section answers three questions: what problem this pattern solves in human terms, why this solution and not the obvious alternative, and exactly where in the codebase you can read a working, tested implementation.
+The `Component` supertrait is the concrete expression of this principle:
+
+```rust
+pub trait Component: FieldAccess + Describable + WorkUnit + Send + Sync {}
+
+// Blanket implementation: any type satisfying all bounds is automatically a Component
+impl<T: FieldAccess + Describable + WorkUnit + Send + Sync> Component for T {}
+```
+
+This interface is valid for **both compile-time and runtime assembly**:
+
+| Construction path | Resulting type | Interface |
+|---|---|---|
+| `bon::Builder` on a Rust struct | `Arc<dyn Component>` | Same |
+| WASM plugin loaded at runtime | `Arc<dyn Component>` (via `WasmComponent` bridge) | Same |
+| Database-driven config | `Arc<dyn Component>` (via `DynamicComponent`) | Same |
+| Newtype wrapper at registration | `Arc<dyn Component>` | Same |
+| `ComponentAdapter` at runtime | `Arc<dyn Component>` | Same |
+
+The key design constraint: **construction reads like configuration, validation surfaces at exactly one point, dispatch is uniform, serialization is automatic, runtime configuration is type-safe, and cross-cutting concerns compose without modifying business logic.**
+
+### The Full Pipeline
+
+```
+Developer writes:   Target::builder().name("build").depends(bits).build()
+                           ↓
+bon::Builder:      Generates chained setter methods at compile time (zero cost)
+                           ↓
+Validation:        build() returns Result; ? propagation at call site (type safety)
+                           ↓
+FieldAccess:       component.set_field("port", "9000")?  (runtime configuration)
+                           ↓
+Trait Object:      Arc<dyn Component> stored in registry (uniform interface)
+                           ↓
+Runtime:           Orchestrator calls unit.execute() — no branching needed
+```
 
 ---
 
-## 1. The Synthesis Pipeline at a Glance
+## 1. Pattern Table
 
-Five core patterns and three support patterns compose into a single coherent architecture. Each solves a specific problem; together they solve the entire ergonomics problem of systems programming.
+Twelve patterns compose into a single coherent architecture.
 
 | Pattern | Problem solved | Cost | Primary source |
 |---------|---------------|------|---------------|
-| **Fluent Builder** | Multi-parameter init that callers can't read | Zero — value-typed chain | `src/common/registry.zig` |
-| **Comptime Reflection** | Schema defined in multiple places; boundary string parsing | Zero — compile-time expansion | `src/reflection/` |
-| **Comptime Wrappers** | Cross-cutting logic duplicated across handlers | Zero — compiler inlines | Pattern only; applied at registration sites |
-| **VTables** | Runtime polymorphism with branching in hot loops | Two pointers per handle | `src/common/embeddings.zig`, `src/coral/mcp.zig` |
-| **WASM / Binary IPC** | Executing untrusted dynamic code across a boundary | Memcpy + Extism runtime | `src/wasm/wasm.zig` |
-| **Arena-Backed Builders** | Repeated malloc/free in batch processing | One arena alloc per batch | `src/coral/batch.zig`, `src/coral/mcp.zig` |
-| **Typed Opaque Handles** | ID type confusion across module boundaries | Zero — same representation | `src/coral/db.zig` |
-| **Runtime Dynamic Schemas** | Schema known only at runtime (WASM tools, DB rows) | One heap alloc per schema | `src/reflection/accessor.zig` |
-
-The data flow through the full pipeline:
-
-```
-Developer writes:   target("build").depends(…).provides(…).register()
-                              ↓
-Comptime Reflection: generates Accessor array, ConstraintVTable, FieldMeta
-                              ↓
-Comptime Wrapper:   wraps handler with timing/retry/validation at comptime
-                              ↓
-VTable:             type-erases wrapped handler to *anyopaque + *const VTable
-                              ↓
-Runtime:            orchestrator calls vtable.execute() — no branching needed
-```
-
-To make this concrete: the developer writes a single declarative registration chain. The compiler, during compilation, inspects the handler's type signature and generates type-safe field accessors, serialization logic, and a JSON Schema description — without any schema file or code generator. Still at compile time, any cross-cutting wrapper (timing, retry, validation) is fused into the function so completely that the binary output is identical to hand-written code. Then, at the `register()` terminal call, the now-fully-instrumented, type-safe handler is cast to a `*anyopaque` and stored behind a vtable. From this point forward, the orchestrator loop sees a uniform interface — it never branches on implementation type. The entire four-stage transformation happens with no runtime cost, no allocations beyond the registration arena, and no loss of type information at any stage where type information is still needed.
-
-This is the core thesis: each pattern in isolation is a local improvement; composed together, they form a system where expressiveness, type safety, observability, and runtime efficiency are simultaneously maximised rather than traded off against each other.
+| **Fluent Builder** | Multi-parameter init that callers can't read | Zero — `#[derive(bon::Builder)]` | `common/src/registry.rs` |
+| **Trait-Based Reflection** | Schema defined in multiple places; runtime config by name | Zero — `serde` + `FieldAccess` derive | `common/src/types.rs` |
+| **Trait Composition** | Cross-cutting logic duplicated across handlers | Zero — newtype wrappers | `common/src/wrapper.rs` |
+| **Trait Objects** | Runtime polymorphism with branching in hot loops | One vtable pointer per `dyn Trait` | `common/src/embeddings.rs` |
+| **Binary IPC** | Executing untrusted code across a WASM boundary | Memcpy + `#[repr(C, packed)]` | `wasm_ipc/src/lib.rs` |
+| **Scoped Ownership** | Repeated malloc/free in batch processing | Zero — RAII scope drop | Throughout |
+| **Newtype Handles** | ID type confusion across module boundaries | Zero — same representation | `common/src/types.rs` |
+| **Unit of Work** | Uniform orchestration of heterogeneous tasks | One trait impl per task | `dag/src/work_unit.rs` |
+| **Middleware Chain** | Composable cross-cutting on trait objects | One allocation per layer | `dag/src/middleware.rs` |
+| **Component Adapter** | Runtime type adaptation without losing uniform interface | One `Arc` per adapter | `dag/src/adapter.rs` |
+| **Structured Logging Context** | Request-scoped observability without manual context passing | Thread-local storage | `common/src/logging.rs` |
+| **Runtime Composition** | Full lifecycle: build → configure → wrap → execute → inspect | Zero — uses above patterns | Throughout |
 
 ---
 
-## 2. Pattern 1 — Fluent Builder
+## 2. The Component Interface in Detail
 
-In Python, we relied heavily on decorators to register targets, inject dependencies, and attach metadata: `@target("build", depends=["init"])`. Zig has no macro arguments that generate code and no compile-time function attributes. The naive translation — a constructor call with positional arguments — collapses readability as the parameter count grows. Named keyword arguments help, but Python raises errors mid-construction when something goes wrong, which means your caller must be prepared to catch from any step.
+Understanding this section is a prerequisite for every pattern below. All patterns either produce a `Component`, consume one, or compose with one.
 
-Instead, we achieve declarative conciseness with the **Fluent Builder pattern combined with explicit terminal registration**. The builder struct chains configuration methods and commits on a single terminal call. This keeps intent explicit at the call site, makes type safety the compiler's problem rather than the programmer's, and concentrates error handling to exactly one location. It is our equivalent to Python's `@decorator` syntax — but you can read every step, trace every allocation, and understand every error path without any magic.
+### Trait definitions
+
+```rust
+/// Runtime field access by name with validation.
+/// Generated by #[derive(FieldAccess)] for compile-time-known structs.
+/// Implemented manually for WASM plugins and DB-driven schemas.
+pub trait FieldAccess {
+    /// Set a field by name from a string value. Performs type parsing and validation.
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError>;
+    /// Get a field by name as a string.
+    fn get_field(&self, name: &str) -> Result<String, FieldError>;
+    /// All field names for this type. Used by schema generators and TUI editors.
+    fn field_names(&self) -> &'static [&'static str];
+}
+
+/// Schema description for MCP tool parameter validation and TUI editors.
+/// Must be implemented alongside every FieldAccess implementation.
+pub trait Describable {
+    fn describe(&self) -> serde_json::Value;
+}
+
+/// Uniform orchestration interface. Every task the orchestrator executes implements this.
+pub trait WorkUnit: Send + Sync {
+    fn name(&self) -> &str;
+    fn depends(&self) -> &[ArcIntern<str>];
+    fn provides(&self) -> &[ArcIntern<str>];
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError>;
+}
+
+/// The unified process boundary. Any type implementing all three sub-traits
+/// is automatically a Component via the blanket impl.
+pub trait Component: FieldAccess + Describable + WorkUnit + Send + Sync {}
+impl<T: FieldAccess + Describable + WorkUnit + Send + Sync> Component for T {}
+```
+
+> **Critical design note on `field_names` and `describe`:** Both are defined as `&self` instance methods, not static associated functions. This is deliberate: it makes them callable through `dyn Component`. A `fn field_names() -> &'static [&'static str]` associated function is not object-safe and cannot be dispatched through a trait object. Always use the instance method form.
+
+### Why `describe` is not `json_schema() -> serde_json::Value` (static)
+
+The original design used a static associated function `fn json_schema() -> serde_json::Value`. That form is **not object-safe** — you cannot call it through `Arc<dyn Component>` or `Arc<dyn Describable>`. The turbofish syntax `<ToolConfig as Describable>::json_schema()` only works when the concrete type is known at the call site.
+
+The corrected `describe(&self)` method is callable through any trait object:
+
+```rust
+// This works with the instance-method form:
+let schema = component.describe();  // works on Arc<dyn Component>
+
+// This does NOT work if describe is a static associated function:
+// let schema = component.describe();  // compile error: not object-safe
+```
+
+### FieldAccess mutability and interior mutability
+
+`set_field` takes `&mut self`, which requires mutable access to the concrete type. For trait objects stored in shared registries (`Arc<dyn Component>`), this means callers need `Arc::get_mut` (exclusive ownership) or the implementation must use interior mutability:
+
+```rust
+// Pattern A: exclusive ownership (configure before sharing)
+let mut component = ToolConfig::builder().port(8080).build()?;
+component.set_field("port", "9000")?;
+let shared: Arc<dyn Component> = Arc::new(component);
+
+// Pattern B: interior mutability inside the implementation
+pub struct WasmComponent {
+    config: Mutex<HashMap<String, String>>,  // interior mutability
+    plugin: Mutex<extism::Plugin>,
+}
+
+impl FieldAccess for WasmComponent {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // self is &mut, but we could also offer a set_field_shared(&self, ...) variant
+        self.config.lock().unwrap().insert(name.to_string(), value.to_string());
+        Ok(())
+    }
+}
+```
+
+The rule: **configure Rust-struct components before wrapping in `Arc`; configure WASM/dynamic components through their internal `Mutex`.**
+
+---
+
+## 3. Pattern 1 — Fluent Builder
 
 ### The problem
 
-```c++
+```cpp
 // C++: Can you tell what the 4th argument means?
-Target t = Target("build", TargetType::File, {"compile", "link"}, {"artifact"}, true, "zig build");
+Target t("build", TargetType::File, {"compile", "link"}, {"artifact"}, true, "zig build");
 ```
 
 ```python
@@ -80,233 +178,89 @@ Target t = Target("build", TargetType::File, {"compile", "link"}, {"artifact"}, 
 target = Target(name="build", depends=["compile"], provides=["artifact"], essential=True)
 ```
 
-### The Zig solution
+### The Rust solution
 
-A builder struct accumulates configuration through chained `*Self` setters. Errors are stored in `err: ?*BuilderError` — a rich error type that captures **where** and **why** the failure occurred — and surface only at the terminal call. The key insight is that the *accumulation phase* should never fail visibly to the caller. Each setter tests `if (self.hasError()) return self;` and stores any failure silently. The terminal method (`register`, `build`, `sync`) is the only place the caller writes `try` — it either commits cleanly or surfaces the earliest error that occurred during the chain.
+`#[derive(bon::Builder)]` generates zero-boilerplate fluent builders. Validation moves to `build()` or a separate `register()` step. The `?` operator replaces error accumulation.
 
-**Why `BuilderError` instead of `?anyerror`?**
+### Canonical implementation: `Target` in `common/src/registry.rs`
 
-A naive implementation stores `err: ?anyerror`, which loses all context about *which* setter failed. Zig's error trace shows the terminal `register()` call, not the failing setter. The `BuilderError` pattern solves this by capturing:
+```rust
+use bon::Builder;
+use bitvec::vec::BitVec;
+use internment::ArcIntern;
 
-- `phase`: which setter failed (depends, provides, command, etc.)
-- `field`: the field name being set
-- `value`: the user-supplied value (truncated to 128 bytes)
-- `constraint`: what validation was violated
-- `cause`: the underlying Zig error
-
-The formatted message: `phase=depends field=provides value=compile,link constraint=invalid_reference cause=OutOfMemory`
-
-This is **more useful than a stack trace** — it shows the semantic context that a stack trace cannot.
-
-### Canonical implementation: `TargetBuilder` in `src/common/registry.zig`
-
-```zig
-// Usage — entire chain, single try:
-try registry.target("build", .file)
-    .depends(&.{"compile", "link"})
-    .provides(&.{"artifact"})
-    .command("zig build -Doptimize=ReleaseFast")
-    .essential()
-    .register();
-```
-
-The builder shape:
-
-```zig
-pub const TargetBuilder = struct {
-    allocator: std.mem.Allocator,
-    /// Owns all strings in BuilderError (error messages, value copies).
-    /// Deinited by register() on both success and error paths.
-    arena: std.heap.ArenaAllocator,
-    registry: *TargetRegistry,
-    interner: *StringInterner,
-    target: ?*Target,
-    /// Rich error with field/value/constraint context (arena-allocated).
-    err: ?*BuilderError,
-    /// Fallback plain error when BuilderError arena allocation itself fails.
-    err_any: ?anyerror,
-
-    fn hasError(self: *const TargetBuilder) bool {
-        return self.err != null or self.err_any != null;
-    }
-
-    /// Every setter: guard → mutate → return self.
-    pub fn depends(self: *TargetBuilder, names: []const []const u8) *TargetBuilder {
-        if (self.hasError() or self.target == null) return self;  // short-circuit
-        self.target.?.setDepends(self.allocator, self.interner, names) catch |cause| {
-            const value = joinStringSlice(self.arena.allocator(), names) catch null;
-            self.setError(.depends, "depends", value, "invalid_reference", cause);
-        };
-        return self;
-    }
-
-    /// Terminal: surface accumulated error, transfer ownership to registry.
-    /// Always deinits the arena — do not call any setter after register().
-    pub fn register(self: *TargetBuilder) !void {
-        defer self.arena.deinit();
-        if (self.err) |e| {
-            if (self.target) |t| { t.deinit(self.allocator); self.allocator.destroy(t); }
-            // Caller can log e.message for diagnostics:
-            // std.log.err("Registration failed: {s}", .{e.message});
-            return e.cause;
-        }
-        if (self.err_any) |e| {
-            if (self.target) |t| { t.deinit(self.allocator); self.allocator.destroy(t); }
-            return e;
-        }
-        if (self.target) |t| {
-            try self.registry.add(t);
-            self.target = null;   // registry now owns
-        }
-    }
-};
-```
-
-The `BuilderError` type (see `src/common/builder_error.zig`):
-
-```zig
-pub const BuilderError = struct {
-    phase: Phase,           // which setter failed: depends, provides, command, etc.
-    field: ?[]const u8,     // the field name
-    value: ?[]const u8,     // user-supplied value (truncated to 128 bytes)
-    constraint: ?[]const u8, // what was violated
-    cause: anyerror,        // underlying Zig error
-    message: []const u8,    // formatted: "phase=X field=Y value=Z cause=W"
-};
-
-pub const Phase = enum {
-    depends, provides, command, registration, validation, initialization,
-};
-```
-
-The factory on the owning struct encodes allocation errors into the builder, not the caller:
-
-```zig
-pub fn target(self: *TargetRegistry, name: []const u8, tt: TargetType) TargetBuilder {
-    var arena = std.heap.ArenaAllocator.init(self.allocator);
-    const t = self.allocator.create(Target) catch |e| {
-        return .{ .allocator = self.allocator, .arena = arena,
-                  .registry = self, .interner = self.interner,
-                  .target = null, .err = null, .err_any = e };
-    };_ = t.init(self.allocator, self.interner, name, tt) catch |e| {
-        self.allocator.destroy(t);
-        return .{ .allocator = self.allocator, .arena = arena,
-                  .registry = self, .interner = self.interner,
-                  .target = null, .err = null, .err_any = e };
-    };
-    return .{ .allocator = self.allocator, .arena = arena,
-              .registry = self, .interner = self.interner,
-              .target = t, .err = null, .err_any = null };
+#[derive(Debug, Clone, Builder)]
+#[builder(start_fn = new)]
+pub struct Target {
+    pub id: i64,
+    pub name: ArcIntern<str>,
+    pub target_type: TargetType,
+    pub executor: ExecutorKind,
+    pub depends: BitVec,
+    pub provides: BitVec,
+    #[builder(default)]
+    pub command: String,
+    #[builder(default = false)]
+    pub essential: bool,
 }
 ```
 
-### Value-copy variant: `DbSyncBuilder` in `src/vector/vector_db.zig`
+**Call site:**
 
-When the builder holds only scalars (no mid-chain heap allocation), return `Self` by value from each setter. This avoids aliasing issues with stack-allocated builders:
+```rust
+let target = Target::new()
+    .id(1)
+    .name("build".into())
+    .target_type(TargetType::File)
+    .executor(ExecutorKind::Native)
+    .depends(registry.capabilities().to_bitvec(&["compile", "link"]))
+    .provides(registry.capabilities().to_bitvec(&["artifact"]))
+    .command("cargo build --release".into())
+    .essential(true)
+    .build();
 
-```zig
-pub const DbSyncBuilder = struct {
-    allocator:        std.mem.Allocator,
-    guidance_dir:     []const u8,
-    db_path:          []const u8,
-    embedder:         vector.EmbeddingProvider,
-    capabilities_dir: ?[]const u8 = null,
-
-    pub fn withCapabilities(self: DbSyncBuilder, dir: []const u8) DbSyncBuilder {
-        var b = self; b.capabilities_dir = dir; return b;  // copy-modify-return
-    }
-
-    pub fn withAliases(self: DbSyncBuilder, aliases: SemanticAliases) DbSyncBuilder {
-        var b = self; b.aliases = aliases; return b;
-    }
-
-    pub fn sync(self: DbSyncBuilder) !void {
-        return syncDatabase(self.allocator, self.guidance_dir, self.db_path,
-                            self.embedder, self.capabilities_dir, self.aliases);
-    }
-};
+registry.register(target)?;
 ```
 
-### Also in use: `QueueReactorBuilder` in `src/coral/cache.zig`
+### Fallible two-step construction
 
-```zig
-const reactor = try QueueReactorBuilder.init(allocator)
-    .library(&lib)
-    .embedder(embedding_provider)
-    .knnK(10)
-    .l4Threshold(0.7)
-    .l3MaxDepth(4)
-    .decomposerConfig(decomp_cfg)
+When construction involves fallible validation (string interning into bitset indices), separate infallible argument collection from fallible registration:
+
+```rust
+// Step 1: infallible — bon builder collects arguments
+let args = TargetCreateArgs::builder()
+    .name("build".into())
+    .target_type(TargetType::File)
     .build();
+
+// Step 2: fallible — registry validates and allocates
+let target = registry.validate_and_allocate(args)?;
 ```
 
 ### Rules
 
-- `err: ?*BuilderError` — use the rich error type, not bare `?anyerror`. Capture phase, field, value, and constraint.
-- `arena: std.heap.ArenaAllocator` — the builder owns an arena for error message strings. Always deinit in the terminal method.
-- Every setter calls `hasError()` before any allocation. If already errored, short-circuit.
-- Terminal (`register`, `sync`, `build`) is always the only `try` in the call, andalways deinits the arena.
-- If the terminal is never called, heap-allocated state leaks — document this.
-- Use `*Self` return when the builder is heap-managed or holds mid-chain allocations. Use value-copy (`Self`) return when the builder holds only slice references.
-- Do **not** apply to `init()` functions with 2–3 parameters. The benefit is readability; three params are already readable.
-- On error, log `e.message` for human-readable diagnostics: `std.log.err("Failed: {s}", .{e.message})`
-- Chain errors with `BuilderError.chain(arena, child, parent)` when one error causes another.
+- **Always derive `bon::Builder`** for structs with 4+ fields. Never write manual builder structs.
+- **Use `#[builder(default)]`** for optional fields. Use `#[builder(default = value)]` for non-trivial defaults.
+- **Use `#[builder(start_fn = new)]`** to generate `Type::new()` as the entry point.
+- **Validation belongs in `build()` or `register()`, not in setters.**
+- **Decouple construction from registration.** `Target::builder().build()` produces an owned `Target`; `registry.register(target)` commits it.
+- **Do NOT apply to structs with 2–3 parameters.** Three params are already readable.
 
-### Why not just use a config struct literal?
+### When to avoid
 
-```zig
-// This also works for simple cases:
-const target = Target{ .name = "build", .depends = &.{"compile"}, .essential = true };
-```
-
-A struct literal is right for 3–4 known-at-compile-time fields with no allocation. The builder earns its place when: (a) construction involves allocation or interning that can fail, (b) the parameters have natural human-readable names that improve call-site clarity, or (c) the object must register itself into a shared data structure. `TargetBuilder` does all three — `depends` and `provides` intern string names into bitset indices, which can fail, and `register()` commits to the `TargetRegistry`. Encoding that failure into a struct literal's initializer would require either a multi-step `try` sequence or swallowing errors, both of which are worse.
-
-### Python analogy
-
-```python
-# Python: method chaining with exception-like error accumulation
-class TargetBuilder:
-    def __init__(self, registry):
-        self._error = None
-        self._error_context = None# (phase, field, value)
-    
-    def depends(self, names):
-        if self._error: return self
-        try:
-            self._names = self._interner.intern(names)
-        except Exception as e:
-            self._error = e
-            self._error_context = ("depends", "depends", names)
-        return self
-    
-    def register(self):
-        if self._error:
-            # Rich error message with context
-            phase, field, value = self._error_context
-            raise RuntimeError(f"phase={phase} field={field} value={value}") from self._error
-        self._registry.add(...)# Zig difference: errors accumulate with semantic context; ONE try at the end
-```
-
-**Why BuilderError beats bare `?anyerror`:**
-
-The criticism that "Zig's error traces point to `register()`, not the failing setter" is valid for `?anyerror`. But `BuilderError` solves this differently:
-
-| Approach | Stack Trace | Error Message |
-|----------|-------------|---------------|
-| `?anyerror` | Shows `register()` only | `Error.OutOfMemory` |
-| `?*BuilderError` | Shows `register()` but | `phase=depends field=provides value=compile,link cause=OutOfMemory` |
-
-The debugger sees `register()`, but the **log message** tells you exactly which setter failed, with what value, violating which constraint. This is more actionable than a stack trace through middleware boilerplate.
+- **2–3 parameters with no validation:** A struct literal or `fn new()` is already readable.
+- **Performance-critical construction in hot loops:** Construction of millions of instances per second — use direct construction.
+- **Single-use internal structs:** If the struct is only constructed in one place and never exposed.
 
 ---
 
-## 3. Pattern 2 — Comptime Reflection
+## 4. Pattern 2 — Trait-Based Reflection
 
-Once the fluent builder captures a developer's handler or configuration, we face the "bridge problem": the rest of the system is generic and knows nothing about the specific struct type, yet it needs to serialize fields to strings, validate ranges, enforce permissions, and emit JSON Schemas. In C++, this requires heavy template metaprogramming or external schema definition. In Python, you'd use `kwargs`, `__dict__`, and runtime inspection — convenient, but unable to validate anything until data is already flowing.
+### The Boundary Rule
 
-In Zig, we use **comptime reflection**. The `@typeInfo` builtin and `inline for` let the compiler generate field-level serialisation, validation, permission checking, and schema description code from ordinary Zig structs — without any external schema file, code generator, or annotation processor. You write a normal struct. The compiler writes all the boilerplate.
+**Data that arrives from outside the process is always a string at the boundary. Data moving inside the process is not a string and should never be treated as one.**
 
-The key insight is about *where* data enters as a string and *where* it doesn't. Data that arrives from outside the process — user input, JSON files, HTTP parameters, database rows, RPC calls — is always a string at the boundary. Data moving *inside* the process between modules that both compiled against the same types is not a string and should never be treated as one. Comptime reflection solves the boundary case efficiently and makes the internal case nearly free.
+This governs which of the four reflection tiers to use.
 
 ### The problem
 
@@ -317,1329 +271,1425 @@ The key insight is about *where* data enters as a string and *where* it doesn't.
 # - No schema description
 # - String hashing at every access
 setattr(config, "port", 9000)
-getattr(config, "port")
 ```
 
-### The Zig solution
+### Four tiers of reflection
 
-`@typeInfo`, `inline for`, and `@Type` let the compiler generate field-level access, validation, and binding code from ordinary Zig structs — without an external schema or code generation step. The result is zero runtime overhead on the hot path and complete type safety.
+| Tier | Mechanism | Relative cost | When to use |
+|------|-----------|---------------|-------------|
+| 1 | Direct field access | 1x (baseline) | Hot inner loops, trusted internal code |
+| 2 | `serde` boundary serialization | ~10x | Boundary crossing, type known at compile time |
+| 3 | `FieldAccess` trait | ~20x | Field names from runtime data; config editors, WASM configs |
+| 4 | `HashMap` fallback | ~12–20x† | Schema genuinely unknown until runtime |
 
-### `Editable(T)` — the zero-size mixin
+†`HashMap` cost is dominated by hashing and heap allocation, not a string match. For types with many fields, a generated `match` (Tier 3) is often faster than `HashMap::get` (Tier 4). Do not assume Tier 4 is always cheaper than Tier 3.
 
-**Source: `src/reflection/accessor.zig`**
+#### Tier 1: Direct field access
 
-`Editable(T)` is the primary interface for boundary access. It is a zero-size mixin — you embed it in your struct and it adds zero bytes to the struct's memory footprint while giving you named field access with type coercion, range validation, and role-based permission checking. The implementation is generated entirely at comptime from `@typeInfo(T).@"struct".fields`; no macro, no code generator, no annotation file. Adding a new field to the struct automatically adds it to the reflection layer.
-
-```zig
-const Config = struct {
-    port:     u16 = 8080,
-    host:     []const u8 = "localhost",
-    enabled:  bool = false,
-    editable: Editable(Config) = .{},   // zero bytes at runtime
-};
-
-var config: Config = .{};
-
-// String path — for boundaries: JSON input, user input, database rows
-try config.editable.set(allocator, "port", "9000", .coder);   // validated, role-checked
-const s = try config.editable.get(allocator, "port", .coder); // returns "9000"
-defer allocator.free(s);
-
-// Fast path — for hot code: zero vtable call, zero allocation
-config.editable.setFast("port", @as(u16, 9001));
-const v = config.editable.getFast("port");  // returns u16 directly
+```rust
+config.port = 9001;
+let port = config.port;
 ```
 
-`Editable(T)` is a zero-size struct — it adds **no memory** to the containing struct. `@sizeOf(Editable(Config)) == 0`. The entire implementation is generated at comptime from `@typeInfo(T).@"struct".fields`.
+#### Tier 2: `serde` boundary serialization
 
-### `Constraint(T)` — the vtable generator
+```rust
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
+    #[serde(default = "default_host")]
+    pub host: ArcIntern<str>,
+}
 
-**Source: `src/reflection/constraint.zig`**
+fn default_port() -> u16 { 8080 }
+fn default_host() -> ArcIntern<str> { "localhost".into() }
 
-```zig
-pub fn Constraint(comptime T: type) ConstraintVTable {
-    return .{
-        .setFn = struct {
-            fn set(a: std.mem.Allocator, ptr: *anyopaque, input: []const u8) anyerror!void {
-                const p: *align(@alignOf(T)) T = @ptrCast(@alignCast(ptr));
-                try constraintSet(T, a, p, input);
-            }
-        }.set,
-        .getFn = struct {
-            fn get(a: std.mem.Allocator, ptr: *const anyopaque) anyerror![]const u8 {
-                const p: *align(@alignOf(T)) const T = @ptrCast(@alignCast(ptr));
-                return constraintGet(T, a, p);
-            }
-        }.get,
-        // releaseFn for []const u8 fields that own their allocation
-        .releaseFn = ...,
-    };
+let config: Config = serde_json::from_str(json)?;
+```
+
+#### Tier 3: `FieldAccess` derive macro
+
+```rust
+#[derive(FieldAccess, Describable, bon::Builder)]
+pub struct ToolConfig {
+    #[field(desc = "TCP listen port", min = 1, max = 65535)]
+    pub port: u16,
+    #[field(desc = "Host address")]
+    pub host: String,
+    #[field(desc = "Enable verbose logging")]
+    pub verbose: bool,
 }
 ```
 
-The generated vtable is a comptime constant. Adding the same field to 1000 dynamic schemas adds **zero extra binary**.
+The derive macro generates this implementation:
 
-`constraintSet` dispatch is recursive and comptime-resolved:
+```rust
+impl FieldAccess for ToolConfig {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        match name {
+            "port" => {
+                let v: u16 = value.parse().map_err(|_| FieldError::InvalidType {
+                    field: name, expected: "u16", got: value
+                })?;
+                if v < 1 || v > 65535 {
+                    return Err(FieldError::ConstraintViolation {
+                        field: name, constraint: "1..=65535"
+                    });
+                }
+                self.port = v;
+                Ok(())
+            }
+            "host" => { self.host = value.to_string(); Ok(()) }
+            "verbose" => {
+                self.verbose = value.parse().map_err(|_| FieldError::InvalidType {
+                    field: name, expected: "bool", got: value
+                })?;
+                Ok(())
+            }
+            _ => Err(FieldError::UnknownField(name.to_string()))
+        }
+    }
 
-```zig
-fn constraintSet(comptime T: type, a: std.mem.Allocator, ptr: *T, input: []const u8) !void {
-    switch (@typeInfo(T)) {
-        .int    => ptr.* = try std.fmt.parseInt(T, input, 10),
-        .float  => ptr.* = try std.fmt.parseFloat(T, input),
-        .bool   => ptr.* = parseBool(input),
-        .pointer => |p| if (p.size == .slice and p.child == u8)
-            ptr.* = try a.dupe(u8, input),
-        .@"enum"  => ptr.* = std.meta.stringToEnum(T, input) orelse return error.InvalidEnum,
-        .optional => |o| if (std.mem.eql(u8, input, "null")) {
-            ptr.* = null;
-        } else {
-            var tmp: o.child = undefined;
-            try constraintSet(o.child, a, &tmp, input);
-            ptr.* = tmp;
-        },
-        .array => |arr| { /* iterate csv, recurse per element */ },
-        else   => return error.UnsupportedType,
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        match name {
+            "port"    => Ok(self.port.to_string()),
+            "host"    => Ok(self.host.clone()),
+            "verbose" => Ok(self.verbose.to_string()),
+            _ => Err(FieldError::UnknownField(name.to_string()))
+        }
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        &["port", "host", "verbose"]
+    }
+}
+
+impl Describable for ToolConfig {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "port":    { "type": "integer", "minimum": 1, "maximum": 65535,
+                             "description": "TCP listen port" },
+                "host":    { "type": "string", "description": "Host address" },
+                "verbose": { "type": "boolean", "description": "Enable verbose logging" }
+            },
+            "required": ["port", "host", "verbose"]
+        })
     }
 }
 ```
 
-### `DynamicEditable` — runtime-defined schemas
+> **Macro status:** `#[derive(FieldAccess, Describable)]` is **planned for P3**. Until it ships, implement `FieldAccess` and `Describable` manually for critical types, or use Tier 4 (`HashMap`) for dynamic schemas. The generated code above is the target shape for the macro.
 
-**Source: `src/reflection/accessor.zig`**
+#### Tier 4: `HashMap` fallback
 
-`Editable(T)` requires knowing the struct type at compile time. When you don't — when the schema comes from a database column list, a WASM tool's exported config definition, or a JSON Schema loaded at startup — you need `DynamicEditable`. It operates on the same `Accessor` + `ConstraintVTable` machinery but accepts the field list as a runtime-constructed slice. The type vtables themselves must still exist at compile time (the `Constraint(T)` generator covers all primitive types and the common standard library types), but field names, offsets, and permissions are fully dynamic.
+When the schema is genuinely unknown at compile time (WASM plugin exports its schema, database-driven schemas):
 
-When the struct layout is known only at runtime (WASM tool configs, SQLite rows with dynamic columns), build an `Accessor` slice and use `DynamicEditable`:
+```rust
+use std::collections::HashMap;
+use internment::ArcIntern;
 
-```zig
-const u16_vtable = reflection.Constraint(u16);  // const global — never stack-allocate
-const f32_vtable = reflection.Constraint(f32);
+pub type DynamicConfig = HashMap<ArcIntern<str>, serde_json::Value>;
 
-var buffer align(4) = [_]u8{0} ** 8;
-const accessors = [_]Accessor{
-    .{ .name = "port",  .offset = 0, .permissions = perm_coder, .constraint = &u16_vtable },
-    .{ .name = "value", .offset = 4, .permissions = perm_coder, .constraint = &f32_vtable },
-};
+config.insert("port".into(), serde_json::json!(9000));
 
-var dyn = try DynamicEditable.init(allocator, &buffer, &accessors);
-defer dyn.deinit();
-
-try dyn.set("port", "9000", .coder);
-const val = try dyn.get("port", .coder);
-defer allocator.free(val);
+let port: u16 = config.get("port")
+    .and_then(|v| v.as_u64())
+    .ok_or(ConfigError::MissingField("port"))? as u16;
 ```
 
-`TargetSchema` in `src/common/target.zig` is the production example: it provides a `DynamicEditable` interface over `Target` structs and must be heap-allocated (via `TargetSchema.create()`) because its bitset vtables are stored inside the schema struct — if moved on the stack, the `Accessor.constraint` pointers would dangle.
+### Decision tree
 
-### `FieldMeta` — AI-aware schema annotations
-
-One consequence of generating schemas from struct definitions is that you can also generate *documentation* from them. `FieldMeta` lets you annotate fields with human-readable descriptions, units, valid ranges, and example values. These annotations cost nothing at runtime — they are embedded in the comptime-generated `Accessor` array as compile-time constants. The payoff is `Editable(T).describeSchema(allocator)`, which emits a complete JSON Schema document that MCP tools and AI agents can consume directly. A struct becomes its own documentation.
-
-Attach rich metadata to fields with a comptime `describeField` decl. The reflection layer reads this at comptime, embedding it in the generated `Accessor` array:
-
-```zig
-pub fn describeField(comptime name: []const u8) FieldMeta {
-    if (comptime std.mem.eql(u8, name, "port")) return .{
-        .description = "TCP listen port",
-        .min = 1, .max = 65535,
-        .identity = false,
-    };
-    return .{};
-}
 ```
+Is the access in a hot loop?
+  YES → Tier 1: direct field access
+  NO  → Is data arriving from outside the process?
+    YES → Is the type known at compile time?
+      YES → Tier 2: serde (Deserialize)
+      NO  → Is the schema known at runtime but values are typed?
+        YES → Implement FieldAccess manually (Tier 3)
+        NO  → Tier 4: HashMap<ArcIntern<str>, serde_json::Value>
+    NO  → Tier 1: direct field access
 
-`Editable(T).describeSchema(allocator)` emits a JSON Schema document from these annotations — used to generate MCP tool parameter schemas automatically.
-
-### `TypedAccessorTable(T)` — compile-time typed access for internal code
-
-**Source: `src/reflection/typed.zig`**
-
-When code **knows** field types at compile time and does not need string parsing, use `TypedAccessorTable` for zero-cost type-safe access:
-
-```zig
-const Table = TypedAccessorTable(Config);
-Table.setField(&config, "port", @as(u16, 9000));  // compile-time type-checked, no alloc
-const port = Table.getField(&config, "port");      // returns u16 directly
-```
-
-`TypedEditable` adds range validation on top:
-
-```zig
-var editable = try TypedEditable.init(allocator, @ptrCast(&config), &accessors);
-defer editable.deinit();
-try editable.setTyped("port", @as(u16, 8080), .coder);   // range-checked
-const port = try editable.getTyped("port", u16, .coder); // type-checked get
-```
-
-### Performance tiers
-
-| Access method | Cost | When to use |
-|---------------|------|-------------|
-| `config.port = 9001` | 1× (baseline) | Hot inner loops, trusted internal code |
-| `editable.setFast("port", 9001)` | ~1× | Named access in hot-ish code, no alloc |
-| `TypedAccessorTable.setField(…)` | ~1× | Compile-time-known fields, type checking wanted |
-| `editable.set(a, "port", "9001", .coder)` | ~10–50× | Boundaries: JSON, user input, DB rows, RPC |
-
-**The boundary rule**: use the string path (`set`/`get`) whenever data arrives as strings from outside the process. Use the fast paths everywhere else.
-
-### Compile-time and binary size considerations
-
-**The critique is valid**: generating `Constraint(T)` vtables and `Accessor` arrays for every struct that touches a boundary is zero runtime cost, but not zero compile-time cost or zero binary size. LLVM must monomorphize generic code for each struct type, which increases debug build times and final binary size.
-
-**Why this trade-off is acceptable:**
-
-1. **The alternative is worse.** Hand-writing serialization, validation, and schema code for every struct would produce similar or greater binary size — plus the maintenance burden of keeping N files in sync.
-
-2. **Boundaries are few.** Schema-driven access is used at process boundaries (JSON-RPC, config loading, DB hydration), not in hot loops. The number of schema-enabled structs is bounded by the number of boundary types.
-
-3. **Debug builds don't go to production.** The binary size impact is most visible in debug builds. Release builds with `-OReleaseFast` benefit from LLVM's dead-code elimination — unused schema fields don't appear in the binary.
-
-**When to avoid reflection:**
-
-If a struct never crosses a boundary (never parsed from JSON, never stored to DB, never accessed by name), don't add `editable: Editable(Self)`. Use direct field access instead. The reflection layer is opt-in — you pay only for what you use.
-
-### `BinaryFieldCodec` — binary serialization without string round-trips
-
-**Source: `src/reflection/binary.zig`**
-
-For WASM IPC and binary protocols where string encoding would be wasteful:
-
-```zig
-// Encode
-try BinaryFieldCodec.encodeField(u32, 0x12345678, writer);  // little-endian
-try BinaryFieldCodec.encodeField(bool, true, writer);        // 0x01
-try BinaryFieldCodec.encodeField(Priority, .high, writer);   // enum ordinal
-
-// Decode
-const n = try BinaryFieldCodec.decodeField(u32, reader, allocator);
-const b = try BinaryFieldCodec.decodeField(bool, reader, allocator);
-
-// Wire size
-const sz = BinaryFieldCodec.fieldWireSize(u16);  // returns ?usize = 2
-```
-
-### `EnumRegistry` — runtime enum dispatch
-
-**Source: `src/reflection/enum_registry.zig`**
-
-For dynamic dispatch based on string enum names (command parsing, state machines):
-
-```zig
-var registry = EnumRegistry.init(allocator);
-defer registry.deinit(allocator);
-try registry.registerEnum(allocator, Status);
-
-const value = registry.nameToValue("active");  // returns ?i64
-const name = registry.valueToName(1);          // returns ?[]const u8
+Is a field name known only at runtime (config editor, WASM config)?
+  YES → Tier 3: FieldAccess
+  NO  → Tier 1 or Tier 2 per above
 ```
 
 ### Rules
 
-- Generate `ConstraintVTable` via `Constraint(T)` — never hand-write vtable functions.
-- Store generated vtables as `const` globals; never stack-allocate a vtable and take a pointer.
-- Use `@offsetOf(T, field_name)` for `Accessor.offset` — portable and compiler-verified.
-- `setFast` / `getFast` bypass vtable dispatch for trusted, hot-path code.
-- Do not use `Editable.set` in hot loops — the string path allocates.
-- `TargetSchema` and similar schemas with runtime vtables (e.g., bitset vtables) must be heap-allocated via a `create()` function; document this requirement prominently.
-
-### Python analogy
-
-```python
-# Python @dataclass + __setattr__ validation:
-@dataclass
-class Config:
-    port: int = 8080
-    def __setattr__(self, name, value):
-        if name == "port" and not (1 <= value <= 65535):
-            raise ValueError("Invalid port")
-        super().__setattr__(name, value)
-
-# Zig equivalent:
-# - Zero bytes added to Config
-# - Validation at the string boundary only
-# - Hot path (setFast) is direct field write — no overhead at all
-# - JSON Schema generated automatically from FieldMeta
-```
+- **Every `FieldAccess` implementation must also implement `Describable`.** The schema is the single source of truth — field access without a schema description is incomplete.
+- **Use `serde` for all boundary serialization.** JSON, database rows, RPC.
+- **Never call `set_field` in a hot loop.** Use Tier 1.
+- **Never add `FieldAccess` to a type that never crosses a boundary.** It adds code for no benefit.
 
 ---
 
-## 4. Pattern 3 — Comptime Wrappers
-
-Python decorators are used for cross-cutting concerns: logging, timing, retry logic, rate limiting, and validation. They are elegant because they separate the concern from the business logic. The problem is that they operate at runtime — they create closure objects, they add call frames, and they complicate stack traces. More critically, Python decorators can change a function's signature in ways that break type checkers unless carefully written.
-
-In Zig, we replace decorators with **comptime wrapper functions**. Because Zig allows functions to return types (and therefore functions) at compile time, we can create a generic wrapper that takes the user's handler as a comptime argument, injects our logic around it, and returns a new function of *exactly the same type*. The compiler then inlines both layers completely. The binary output is identical to hand-written code — there is no closure, no extra call frame, and no performance overhead. The cross-cutting concern is genuinely invisible at runtime.
+## 5. Pattern 3 — Trait Composition (Cross-Cutting Concerns)
 
 ### The problem
 
 ```python
-# Python: decorators for cross-cutting concerns
 @timing
 @retry(max=3)
 def ingest_yago(path: str) -> None:
     # business logic
 ```
 
-Python decorators execute at import time and wrap functions transparently. The downside: they're runtime closures, they add overhead, and they can be hard to type correctly.
+Python decorators execute at import time and wrap functions transparently. They're runtime closures and can be hard to type correctly.
 
-### The Zig solution
+### The Rust solution
 
-A function that accepts a comptime function type and returns a new function of the same type, wrapping it with cross-cutting logic. The compiler inlines both layers.
+Newtype wrappers around trait implementations. Each wrapper implements the same trait, delegating to the inner type while adding its cross-cutting concern. The compiler monomorphizes or dispatches through `dyn Trait`.
 
-### Canonical shape
+### Canonical shape: `Instrumented<U>`
 
-```zig
-/// Wrap `func` with execution timing. T must be a function type.
-fn measure(comptime T: type, comptime func: T) T {
-    return struct {
-        fn wrapped(args: anytype) @typeInfo(T).@"fn".return_type.? {
-            const start = std.time.nanoTimestamp();
-            defer {
-                const ns = std.time.nanoTimestamp() - start;
-                std.log.debug("{s} took {d}µs", .{ @typeName(T), ns / 1000 });
-            }
-            return @call(.auto, func, args);
-        }
-    }.wrapped;
+```rust
+pub struct Instrumented<U> {
+    inner: U,
+    name: &'static str,
+}
+
+impl<U: WorkUnit> WorkUnit for Instrumented<U> {
+    fn name(&self) -> &str { self.name }
+    fn depends(&self) -> &[ArcIntern<str>] { self.inner.depends() }
+    fn provides(&self) -> &[ArcIntern<str>] { self.inner.provides() }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let start = Instant::now();
+        let result = self.inner.execute(ctx);
+        info!(unit = self.name, elapsed_us = start.elapsed().as_micros() as u64);
+        result
+    }
 }
 ```
 
 ### Retry wrapper
 
-```zig
-fn withRetry(comptime T: type, comptime func: T, comptime max_attempts: usize) T {
-    return struct {
-        fn wrapped(args: anytype) @typeInfo(T).@"fn".return_type.? {
-            var attempt: usize = 0;
-            while (attempt < max_attempts) : (attempt += 1) {
-                return @call(.auto, func, args) catch |e| {
-                    if (attempt + 1 == max_attempts) return e;
-                    std.time.sleep(10 * std.time.ns_per_ms * (attempt + 1));
-                    continue;
-                };
+```rust
+pub struct WithRetry<U> {
+    inner: U,
+    max_attempts: usize,
+}
+
+impl<U: WorkUnit> WorkUnit for WithRetry<U> {
+    fn name(&self) -> &str { self.inner.name() }
+    fn depends(&self) -> &[ArcIntern<str>] { self.inner.depends() }
+    fn provides(&self) -> &[ArcIntern<str>] { self.inner.provides() }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        for attempt in 0..self.max_attempts {
+            match self.inner.execute(ctx) {
+                Ok(output) => return Ok(output),
+                Err(e) if attempt + 1 < self.max_attempts => {
+                    std::thread::sleep(Duration::from_millis(10 * (attempt + 1) as u64));
+                }
+                Err(e) => return Err(e),
             }
-            unreachable;
         }
-    }.wrapped;
-}
-```
-
-### Registration with a wrapper — the correct integration point
-
-The wrapper must be applied **at the registration site**, before type erasure into a vtable. After the `register()` terminal, the system sees only `*anyopaque + *const VTable` — you can't retroactively wrap something you've already type-erased. The registration chain is therefore the natural moment: the developer's handler is still fully typed, the wrapper can be applied in one line, and the vtable never knows the wrapper exists.
-
-Apply the wrapper **at the registration site**, before type erasure. The VTable sees only the opaque handle:
-
-```zig
-try registry.target("ingest", .command)
-    .handler(measure(@TypeOf(ingestYago), ingestYago))
-    .depends(&.{"download"})
-    .register();
-```
-
-The rest of the system never sees the wrapper type.
-
-### Rules
-
-- Wrappers must preserve the exact function signature (`T` in, `T` out).
-- Use `@call(.auto, func, args)` — never hardcode argument count.
-- Keep wrapper bodies minimal; the compiler inlines them at every call site.
-- **Do not wrap functions that are already behind a vtable** — wrap before type erasure, not after.
-- Use `comptime_int` / `comptime` parameters for configuration baked in at compile time (retry count, log label). Use struct fields for runtime configuration.
-- Wrappers have no persistent state — if you need state (e.g., a running total), use a capturing struct instead.
-
-### Limitation: Zig cannot perfectly wrap arbitrary generic functions
-
-**The critique is correct**: Zig's type system cannot create a wrapper function that preserves exact parameter types for an arbitrary generic function. The original Python decorator pattern `@retry(max=3)` wraps a function and returns one with the same signature — but Zig cannot express "a function that takes any arguments and returns any type."
-
-**The workaround:** §14 introduces **call-site helpers** instead of true decorators:
-
-```zig
-// Instead of decorating a function reference:
-const wrapped = retry(myHandler);  // Cannot preserve parameter types// Apply the wrapper at the call site:
-const result = try retryCall(3, myHandler, .{arg1, arg2});
-```
-
-The `retryCall` helper wraps the *call*, not the *function reference*. This achieves the same effect — retry logic applied transparently — but the syntax differs. See `src/common/wrapper.zig` for`retryCall`, `wrapIf`, and `Pipeline.call`.
-
----
-
-## 5. Pattern 4 — VTables
-
-Finally, the orchestrator — the routing loop, the MCP server, the ingestion pipeline — needs to execute these wrapped, type-safe handlers uniformly. It cannot know at compile time which embedding provider was configured, which memory engine is active, or which WASM tool will satisfy a given query. This is where we cross the dynamic boundary using the **VTable pattern**.
-
-VTables provide runtime polymorphism without C++ inheritance hierarchies and without Python's duck-typed implicit dispatch. A VTable interface in Zig is simply a struct holding a `*anyopaque` pointer to the data and a `*const VTable` pointer to a table of function pointers. Two pointers per handle, period. There is no object header, no type tag embedded in the allocation, no `dynamic_cast`, no RTTI. The interface is an explicit, auditable struct in your source code.
-
-This explicitness is the point. When you read a `ConstraintVTable`, you see every operation the interface supports, including which ones are optional (`null` = not applicable). When you hold an `EmbeddingProvider`, you know exactly what it can do and exactly what it costs. The orchestrator loop becomes a straightforward iteration over uniform handles rather than a cascading `if isinstance` chain.
-
-### The problem
-
-```c++
-// C++: inheritance hierarchies for polymorphism
-class Engine { virtual std::vector<Row> query(std::string sql) = 0; };
-class SqliteEngine : public Engine { ... };
-class RedisEngine  : public Engine { ... };
-// Cost: vtable per class, hidden in the ABI, can't control layout
-```
-
-```python
-# Python: duck typing — convenient but zero static safety
-def run_query(engine, sql):
-    return engine.query(sql)  # Any object with .query() works, crashes at runtime if wrong
-```
-
-### The Zig solution
-
-Runtime polymorphism via `ptr: *anyopaque` + `vtable: *const VTable`. Two pointers per handle; no heap allocation; no inheritance hierarchy. The Zig compiler enforces the interface at every implementation site.
-
-### Canonical shape — `EmbeddingProvider` in `src/common/embeddings.zig`
-
-```zig
-pub const EmbeddingProvider = struct {
-    ptr:    *anyopaque,
-    vtable: *const VTable,
-
-    pub const VTable = struct {
-        name:       *const fn (ptr: *anyopaque) []const u8,
-        dimensions: *const fn (ptr: *anyopaque) u32,
-        embed:      *const fn (ptr: *anyopaque, allocator: std.mem.Allocator,
-                               text: []const u8) anyerror![]f32,
-        deinit:     *const fn (ptr: *anyopaque) void,
-    };
-
-    pub fn embed(self: EmbeddingProvider, allocator: std.mem.Allocator,
-                 text: []const u8) ![]f32 {
-        return self.vtable.embed(self.ptr, allocator, text);
-    }
-};
-```
-
-Three implementations share this interface (`OllamaEmbedding`, `OpenAiEmbedding`, `NoopEmbedding`) and are swapped via `createEmbeddingProvider()` based on config. The calling code never branches on implementation type.
-
-### Parameterised VTable — runtime context pointer
-
-When vtable behaviour depends on runtime state, store it in the vtable's `context` field:
-
-```zig
-pub fn bitSetConstraint(interner: *StringInterner) ConstraintVTable {
-    return .{
-        .context = @ptrCast(interner),
-        .setCtxFn = struct {
-            fn setCtx(vtable: *const ConstraintVTable, a: std.mem.Allocator,
-                      ptr: *anyopaque, input: []const u8) anyerror!void {
-                const i: *StringInterner = @ptrCast(@alignCast(@constCast(vtable.context.?)));
-                const bs: *std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(ptr));
-                try bitSetFromString(i, a, bs, input);
-            }
-        }.setCtx,
-        // ... getBinaryFn, releaseFn ...
-    };
-}
-```
-
-This is used in `TargetSchema.create()`: each Target's `depends` and `provides` bitset fields need a `StringInterner` at parse time. The vtable carries the pointer; the `Accessor` carries a pointer to the vtable. Both are stable because `TargetSchema` is heap-allocated.
-
-### `ConstraintVTable` — the full shape
-
-```zig
-pub const ConstraintVTable = struct {
-    setFn:       *const fn (std.mem.Allocator, *anyopaque, []const u8) anyerror!void,
-    getFn:       *const fn (std.mem.Allocator, *const anyopaque) anyerror![]const u8,
-
-    // Optional extended paths — null = not applicable
-    context:     ?*const anyopaque = null,
-    releaseFn:   ?*const fn (std.mem.Allocator, *anyopaque) void = null,
-    convertFn:   ?*const fn (*const ConstraintVTable, std.mem.Allocator,
-                              *anyopaque, *const anyopaque, *const anyopaque) anyerror!void = null,
-    setCtxFn:    ?*const fn (*const ConstraintVTable, std.mem.Allocator,
-                              *anyopaque, []const u8) anyerror!void = null,
-    getCtxFn:    ?*const fn (*const ConstraintVTable, std.mem.Allocator,
-                              *const anyopaque) anyerror![]const u8 = null,
-    setBinaryFn: ?*const fn (*const ConstraintVTable, *const anyopaque, []u8) anyerror!usize = null,
-    getBinaryFn: ?*const fn (*const ConstraintVTable, std.mem.Allocator,
-                              *anyopaque, []const u8) anyerror!void = null,
-};
-```
-
-Optional fields use `null` to mean "not applicable" — callers null-check before calling.
-
-### Calling through a vtable
-
-```zig
-fn callSet(accessor: *const Accessor, base: *anyopaque,
-           allocator: std.mem.Allocator, input: []const u8, role: Role) !void {
-    if (!accessor.permissions.canWrite(role)) return error.AccessDenied;
-    const ptr: *anyopaque = @as([*]u8, @ptrCast(base))[accessor.offset..].ptr;
-    if (accessor.constraint.setCtxFn) |f| {
-        try f(accessor.constraint, allocator, ptr, input);
-    } else {
-        try accessor.constraint.setFn(allocator, ptr, input);
+        unreachable!()
     }
 }
 ```
 
-### Rules
+### Application at the registration site
 
-- VTables must be `const` globals or comptime-computed values. Never stack-allocate a vtable and take a pointer to it.
-- The implementing struct must outlive every handle that references it. Callers must **own** the implementing struct (local var or heap-alloc). Never return a vtable handle pointing to a temporary.
-- Optional vtable fields use `null`; callers must null-check before calling.
-- Always pair `@ptrCast(@alignCast(...))` — never cast without alignment.
-- Prefer the two-field `{ptr, vtable}` handle. The binary size delta is two pointers; the code clarity benefit is large.
-- Do **not** use vtables when you only have one implementation — use generics.
-- Do **not** use vtables when the type is known at compile time — use generics.
+Apply wrappers **before** type erasure — this is the only point where the compiler can inline through the wrapper. Once stored as `Arc<dyn WorkUnit>`, you must use Middleware (Pattern 9) instead.
 
-### Thread Safety Contract
-
-VTable handles (`EmbeddingProvider`, `ConstraintVTable`) are two pointers: `ptr` (to the implementation struct) and `vtable` (to static const functions). Thread safety depends on the underlying implementation, not the handle shape.
-
-**Rules:**
-
-1. **Handle creation** is NOT thread-safe. Create handles on a single thread during initialization.
-2. **Handle storage** in shared registries requires synchronization (mutex or read-write lock).
-3. **Vtable function calls** ARE thread-safe IF the underlying implementation does not mutate shared state. Stateless implementations (`NoopEmbedding`, `Constraint(T)`) are always safe.
-4. **Handle destruction** requires all concurrent calls to complete first. Join all threads before calling `deinit`.
-
-**Pattern:**
-
-```zig
-// ✅ Thread-safe usage pattern
-//
-// 1. Create on init thread (single-threaded):
-var impl = try OllamaEmbedding.init(allocator, null, null, null);
-const provider = impl.provider();                          // creation: single-threaded
-//
-// 2. Pass to workers (read-only — vtable pointer never changes):
-const worker = struct {
-    fn run(p: EmbeddingProvider) !void {
-        const vec = try p.embed(allocator, "hello");       // call: thread-safe if impl is
-        defer allocator.free(vec);
-    }
+```rust
+// Compose before type erasure: wraps are inlined
+let unit = Instrumented {
+    inner: WithRetry { inner: MyWorkUnit::new(), max_attempts: 3 },
+    name: "ingest_yago",
 };
-//
-// 3. Destroy after all workers join:
-thread.join();
-provider.deinit();                                         // destruction: after join
+registry.register(Arc::new(unit));  // one vtable boundary total
 ```
 
-**Debug-build thread assertions:**
-
-`EmbeddingProvider` carries a `thread_id` field in debug/ReleaseSafe builds that is checked on every `embed()` call. This catches accidental cross-thread use of handles that were created for single-threaded use (e.g., HTTP clients that are not thread-safe). The assertion is a zero-cost no-op in ReleaseFast/ReleaseSmall.
-
-```zig
-// Cross-thread misuse is caught immediately in debug builds:
-const provider = impl.provider();           // creation on thread A
-// ... pass to thread B ...
-try provider.embed(allocator, "text");      // assert fires: wrong thread
-```
-
-Remove the assertion (set `thread_safe = true` when constructing) for implementations that are documented as thread-safe.
-
-### Python / C++ analogy
-
-```python
-# Python Protocol — same semantics, different safety model
-from typing import Protocol
-class EmbeddingProvider(Protocol):
-    def embed(self, text: str) -> list[float]: ...
-# Python: duck typing, crashes at runtime if wrong method signature
-# Zig:    vtable enforced at every implementation site by the compiler
-```
-
-```c++
-// C++ virtual — same cost, less control
-// Zig vtable advantage: you control the struct layout, no hidden vtable pointer per instance
-```
-
----
-
-## 6. Pattern 5 — WASM / Binary IPC
-
-At some point a system must execute code it cannot fully trust — dynamically loaded tool plugins, third-party WASM modules, or code generated by an LLM at runtime. Zig's type system provides safety within a compiled binary, but it cannot reach across the host/guest boundary into a sandboxed WASM process. At that boundary, all you have is a byte buffer.
-
-The naive solution — serialize everything to JSON strings — is too slow and too large for the tight latency budget of the routing loop. The equally naive solution — just pass a Zig struct pointer — fails immediately across WASM boundaries because WebAssembly is a 32-bit address space and has its own memory, disjoint from the host's. Any native struct with default alignment will also have compiler-inserted padding that makes it non-portable across different compilers, languages, or ISAs.
-
-The correct solution is `extern struct` with explicit `align(1)` on every field. This creates a fully portable, padding-free layout that can be `@memcpy`'d across any boundary, parsed by any language that respects the documented offsets, and validated by a magic number in the header. Variable-length data follows the fixed header using offset fields measured from the start of the buffer — no pointers, no relative addressing, just absolute offsets into a known-length byte slice.
-
-### The problem
-
-When executing untrusted or dynamically loaded code (WASM tools), you need a safe, portable, zero-copy message format that works across the host/guest boundary. Strings are too expensive; native structs have alignment and padding problems across compilers.
-
-### The Zig solution
-
-`extern struct` with `align(1)` on every field. Layout is deterministic, padding-free, and safe to `@memcpy` across any language boundary.
-
-### Binary message layout — `src/wasm/wasm.zig`
-
-```zig
-pub const BinaryHeader = extern struct {
-    magic:        u32 align(1),  // 0xC04A_C0DE — integrity guard
-    version:      u8  align(1),  // BINARY_SCHEMA_VERSION (currently 1)
-    payload_type: PayloadType align(1),  // enum(u8)
-    _pad:         [2]u8 align(1) = .{0, 0},
-};
-
-pub const BinaryExecutionRequest = extern struct {
-    header:       BinaryHeader align(1),
-    target_id:    i64 align(1),
-    input_offset: u32 align(1),  // offset from start of buffer to input bytes
-    input_len:    u32 align(1),
-    flags:        u32 align(1),  // VERBOSE | DRY_RUN | FORCE
-};
-
-pub const BinaryExecutionResult = extern struct {
-    header:               BinaryHeader align(1),
-    success:              u32 align(1),
-    error_code:           u32 align(1),
-    output_offset:        u32 align(1),
-    output_len:           u32 align(1),
-    provides_words_offset: u32 align(1),  // DynamicBitSetUnmanaged word array
-    provides_words_count:  u32 align(1),
-
-    pub fn getProvidesBitSet(self: *const BinaryExecutionResult,
-                              allocator: std.mem.Allocator,
-                              payload: []const u8) !std.bit_set.DynamicBitSetUnmanaged {
-        const wc = self.provides_words_count;
-        var bs = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(
-            allocator, @as(usize, wc) * @bitSizeOf(usize));
-        errdefer bs.deinit(allocator);
-        const off = self.provides_words_offset;
-        for (0..wc) |i| {
-            const w = std.mem.readInt(u64, payload[off + i * 8 ..][0..8], .little);
-            bs.masks[i] = @intCast(w);
-        }
-        return bs;
-    }
-};
-```
-
-### Sending a request (current implementation in `src/coral/cache.zig`)
-
-```zig
-// Build payload: header struct + input bytes contiguous in one buffer
-var req = BinaryExecutionRequest{
-    .header    = .{ .magic = BINARY_MAGIC, .version = BINARY_SCHEMA_VERSION,
-                    .payload_type = .execution_request },
-    .target_id    = target_id,
-    .input_offset = @sizeOf(BinaryExecutionRequest),
-    .input_len    = @intCast(input.len),
-    .flags        = 0,
-};
-var buf: std.ArrayListUnmanaged(u8) = .{};
-defer buf.deinit(allocator);
-try buf.appendSlice(allocator, std.mem.asBytes(&req));
-try buf.appendSlice(allocator, input);
-
-const rc = extism_plugin_call(plugin, "execute", buf.items.ptr, buf.items.len);
-```
-
-### Layout rules for `extern struct`
-
-```zig
-// CORRECT: all fields carry align(1) — ABI-portable across languages
-pub const Message = extern struct {
-    tag:  u8  align(1),
-    len:  u32 align(1),
-    data: [16]u8 align(1),
-};
-
-// WRONG: default alignment inserts padding — breaks cross-language reads
-pub const Message = extern struct {
-    tag:  u8,   // 1 byte + 3 bytes implicit padding before len
-    len:  u32,
-};
-```
-
-### Variable-length payload pattern
-
-Fixed header → offset fields → payload sections. All offsets are from the start of the message buffer:
-
-```
-[BinaryHeader][BinaryExecutionRequest header][input_bytes...]
-                            ↑
-              input_offset points here (= sizeof(BinaryExecutionRequest))
-```
-
-### Rules
-
-- Always use `align(1)` on every field of an `extern struct` used for IPC.
-- Offsets are absolute from buffer start, never relative to struct end.
-- Include a magic number (`BINARY_MAGIC`) and a version (`BINARY_SCHEMA_VERSION`) in every header — validate on receipt.
-- Use `std.mem.readInt(u64, slice[0..8], .little)` for cross-platform integer reads from buffers.
-- The `ExecutionRequestBuilder` pattern (arena-backed payload assembly) is planned for P3.3 to formalize the buffer construction shown above.
-
----
-
-## 7. Pattern 6 — Arena-Backed Builders
-
-Python programmers often reach for the garbage collector without thinking about it — create intermediates, let them go out of scope, trust the GC to collect them later. C++ programmers manage this with RAII and `unique_ptr`. Both approaches have the same underlying structure: you define a logical unit of work, and everything created during that work is cleaned up when the work is done.
-
-Zig has no garbage collector and no RAII destructors, but it has something arguably better for bulk operations: `ArenaAllocator`. An arena is a bump-pointer allocator that hands out memory by simply advancing a pointer and frees everything at once by resetting the pointer to the beginning. Individual frees are impossible, which means every allocation in the arena is effectively free at deinit time. No fragmentation, no list traversal, one `defer arena.deinit()` at the scope entrance to guarantee cleanup.
-
-When this is combined with a fluent builder, you get a particularly clean composition: the builder's accumulation phase corresponds exactly to the arena's allocation phase, and the terminal method corresponds exactly to the arena's commit-or-discard decision point. The builder accumulates into the arena; the terminal either persists the result to a long-lived allocator (escaping the arena) or discards everything at once.
-
-The practical impact for this codebase is significant. Batch YAGO ingestion processes hundreds of thousands of triples. Each triple generates multiple intermediate string allocations during RDF normalisation and ContextNode construction. An arena reset between batches — a single pointer update — replaces hundreds of individual `allocator.free()` calls that would otherwise be required, and eliminates the category of bugs where one of those frees is missed or called twice.
-
-### The problem
-
-Batch processing generates hundreds of intermediate allocations (node struct fields, edge descriptors, temporary strings). Managing them with individual `defer allocator.free(...)` calls is verbose and error-prone. Forgetting one is a memory leak.
-
-### The Zig solution
-
-Scope an `ArenaAllocator` to the logical unit of work (a request, a batch, a pipeline invocation). All intermediate allocations come from the arena. At the end of the scope, one `arena.deinit()` frees everything.
-
-### In `BatchIngestor` — `src/coral/batch.zig`
-
-Each batch cycle uses an arena reset rather than per-node frees:
-
-```
-pub fn ingestSource(self: *BatchIngestor, source: []const u8) !void {
-    var batch_arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer batch_arena.deinit();
-    const a = batch_arena.allocator();
-
-    // Hundreds of TripleMapper intermediate allocations come from `a`
-    var mapper = TripleMapper.init(a, &self.library, self.config);
-    // ... parse triples, accumulate nodes ...
-    try mapper.flush();       // writes to Library (owned by library, not the arena)
-    // batch_arena.deinit() frees everything that didn't escape to Library
-}
-```
-
-### In `McpServer` request handling — `src/coral/mcp.zig`
-
-Each incoming JSON-RPC request gets its own arena. The response is the only thing that escapes:
-
-```
-pub fn handleRequest(self: *McpServer, raw_json: []const u8) ![]const u8 {
-    var req_arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer req_arena.deinit();
-    const a = req_arena.allocator();
-
-    const req  = try parseJsonRpc(a, raw_json);           // arena-owned
-    const result = try self.reactor.route(a, req.query);  // arena-owned intermediates
-    return try serializeResponse(self.allocator, result); // caller-owned response only
-}
-```
-
-No mutex inside `handleRequest`. Each worker thread gets its own arena; there is no allocator contention.
-
-### Arena + Fluent Builder composition
-
-```
-Builder created  →  Arena init
-Setters called   →  Arena allocations for intermediate values
-Terminal called  →  Long-lived data moves to registry / library; arena deinits
-```
-
-The simplification is largest when intermediate allocations are numerous and short-lived relative to the data they produce. This is exactly the profile of batch ingestion and per-request processing.
-
-### Rules
-
-- Scope the arena to the natural unit of work (request, batch, pipeline run).
-- Only escape to the caller's allocator what the caller explicitly owns.
-- `arena.reset(.retain_capacity)` between loop iterations avoids page allocator pressure for repeated operations (e.g., a long-running worker thread).
-- Do **not** wrap a single-allocation function in an arena — it adds overhead for no benefit.
-- Do **not** use arena for long-lived data structures (Library, TargetRegistry) — they need their own allocators.
-- Config loading (`Config.load()`) already uses an internal arena — don't add another layer.
-
----
-
-## 8. Pattern 7 — Typed Opaque Handles
-
-This is the simplest pattern in the group and the one most often overlooked. As a system grows, integer IDs proliferate: node IDs, session IDs, bit-index handles, version numbers, timestamps. At some scale, they become indistinguishable to the type system. A function that takes a `NodeId` will happily accept a `SessionId` if both are `i64`. The compiler will not warn. The bug will surface in production when a session ID is used to look up a graph node.
-
-The fix is to make the type system distinguish them at zero cost. Zig's non-exhaustive `enum(i64) { _ }` idiom creates a new type with the same underlying integer representation. Conversion requires an explicit `@enumFromInt` / `@intFromEnum` at the boundary. The compiler rejects accidental mixing at every other call site. There is no runtime overhead — the enum is `i64` in the binary. There is no boilerplate — you just add `enum(i64) { _ }` as the type.
-
-### The problem
-
-```python
-# Python: type aliases are just hints — no enforcement
-NodeId = int
-SessionId = int
-process_node(session_id)  # Accepted silently — crashes later
-```
-
-### The Zig solution
-
-`enum(i64) { _ }` creates a distinct type that shares the integer representation. The compiler rejects mixing `NodeId` with `SessionId` even though both are `i64` underneath.
-
-### In `src/coral/db.zig`
-
-```
-pub const NodeId = i64;  // Matches SQLite INTEGER PRIMARY KEY
-```
-
-The pattern is also used structurally throughout `db.zig` — functions taking `NodeId` cannot be accidentally called with a raw loop counter or session ID. For stricter enforcement, use the `enum` variant:
-
-```
-pub const NodeId    = enum(i64) { _ };
-pub const SessionId = enum(i64) { _ };
-
-fn processNode(id: NodeId) void { ... }
-
-const node: NodeId    = @enumFromInt(42);
-const sess: SessionId = @enumFromInt(42);
-processNode(node);  // OK
-processNode(sess);  // Compile error: expected NodeId, found SessionId
-```
-
-### Rules
-
-- Use for any integer ID that crosses module boundaries and must not be mixed.
-- Use `@enumFromInt` / `@intFromEnum` to convert at the boundary.
-- Do **not** use when you need arithmetic on the ID (`id + 1`).
-- The `enum(i64) { _ }` variant (non-exhaustive enum) is the strictest form. `i64` aliases are less strict but still communicate intent.
-
----
-
-## 9. Why They Work in Synergy
-
-The patterns are not just independently beneficial — their value multiplies when composed. Each pattern hands off to the next in a way that eliminates costs that the previous pattern alone could not avoid.
-
-To understand why, think about what each pattern *produces* and what it *consumes*:
-
-- The **Fluent Builder** produces a fully-configured, allocation-complete object at its terminal call. It consumes an allocator (often an arena) and a registry.
-- **Comptime Reflection** produces vtable-driven field access that requires zero per-field overhead for code that was already compiled together. It consumes struct definitions.
-- **Comptime Wrappers** produce instrumented functions of the same type as their input. They consume comptime function values.
-- **VTables** produce uniform handles that the orchestrator can call without branching. They consume type-erased pointers and `const` vtable globals.
-- **Arenas** produce a single deinit that frees all intermediate allocations. They consume an allocator scope boundary.
-
-These hand-offs are not accidental. The Fluent Builder is a natural scope boundary for an arena precisely because builders have a clear terminal. Comptime Wrappers can only wrap before type erasure, and the registration terminal is exactly the moment of type erasure — so the wrapper goes at that site naturally. VTables require `const` globals for their function pointer tables, and comptime-generated vtables are automatically `const` globals. The patterns fit together because they were each designed around the same philosophy: explicit scope, explicit ownership, explicit dispatch, zero hidden cost.
-
-### Synergy 1: Builder + Arena eliminates per-call allocator contention
-
-A `QueueReactorBuilder` call creates a per-request arena for all intermediate routing allocations. Each worker thread has its own arena. The only mutex-protected objects are `Library` (SQLite writes), `StringInterner` (intern calls), and the MCP work queue. Builder accumulation is completely lock-free.
-
-### Synergy 2: Comptime Reflection + VTable makes schema the single source of truth
-
-`Constraint(T)` generates vtable functions from `@typeInfo(T)`. The `Accessor` array is generated from the struct's field list at comptime. Adding a new field to a struct automatically generates its vtable, its accessor entry, its JSON Schema description, and its binary wire size — in one edit, at one place.
-
-Without this synergy, schema changes require updates in: the struct definition, the serializer, the deserializer, the JSON Schema emitter, and the binary codec. Four files instead of one.
-
-### Synergy 3: Comptime Wrapper + VTable gives zero-overhead observability
-
-Wrap a function with `measure()` at the registration site. The compiler inlines the wrapper. The VTable sees only the type-erased handle. The entire orchestrator is instrumented without modifying any business logic, and the cost is truly zero (inlined timing code is identical to hand-written code).
-
-### Synergy 4: Arena + Binary IPC eliminates payload lifetime management
-
-`BinaryExecutionRequest` payload assembly uses an `ArrayListUnmanaged` backed by an arena. The arena is freed after `extism_plugin_call` returns. The result (`BinaryExecutionResult`) is read directly from the Extism output buffer before it disappears. No individual allocation to track; one `defer arena.deinit()` cleans everything.
-
----
-
-## 10. Anti-Patterns
-
-The anti-patterns below are not hypothetical. They represent the most common ways these patterns are misapplied, each with a concrete explanation of why the mistake is made and what it actually causes.
-
-### ❌ Applying Fluent Builder to a 3-parameter init
-
-```
-// Wrong: Library.init() has 3 params and is already readable
-Library.init(allocator, db_path, timeout)  // Fine as-is
-```
-
-A builder for 3 params adds boilerplate with no readability benefit. The threshold is approximately 5+ parameters, or any configuration that reads naturally as chained declarations.
-
-### ❌ Using Comptime Reflection in a hot loop
-
-```
-// Wrong: string path allocates on every iteration
-for (items) |item| {
-    try editable.set(allocator, "count", std.fmt.allocPrint(allocator, "{d}", .{item.count}));
-}
-
-// Right: direct field access
-for (items) |item| {
-    config.count = item.count;
-}
-```
-
-The string path is for boundaries (data that arrives as strings from outside the process). Inside the process, use direct field access or `setFast`.
-
-### ❌ Stack-allocating a vtable
-
-```
-// Wrong: vtable will dangle when the function returns
-fn makeProvider() EmbeddingProvider {
-    const vtable = ConstraintVTable{ .setFn = ..., .getFn = ... };  // STACK
-    return .{ .ptr = impl, .vtable = &vtable };  // DANGLING POINTER
-}
-
-// Right: vtable is a const global
-const my_vtable = ConstraintVTable{ .setFn = ..., .getFn = ... };  // GLOBAL
-```
-
-### ❌ Stack-allocating a schema with internal vtable pointers
-
-```
-// Wrong: TargetSchema stores vtables by value internally
-var schema = TargetSchema.init(allocator, interner);  // STACK
-var dyn = schema.createEditable(buffer);              // DANGLING: Accessor.constraint points into schema
-
-// Right: heap-allocate schemas that contain vtables
-const schema = try TargetSchema.create(allocator, interner);
-defer schema.destroy(allocator);
-```
-
-This is the subtlest memory safety issue in the pattern. When a vtable is stored inside a struct and accessors hold pointers to it, moving the struct (returning by value, storing in a resizing container) invalidates all the pointers. Always heap-allocate structs that serve as vtable storage.
-
-### ❌ Wrapping a vtable-dispatched function
-
-```
-// Wrong: wrapping after type erasure adds a call layer with no inlining
-const wrapped_vtable = wrap(provider.vtable.embed);  // Can't inline through vtable
-
-// Right: wrap before registration
-const wrapped_embed = measure(@TypeOf(embedImpl), embedImpl);
-const provider = OllamaEmbedding{ .embed_fn = wrapped_embed, ... };
-```
-
-Wrappers must be applied before type erasure, at the registration site.
-
-### ❌ Arena for long-lived data
-
-```
-// Wrong: Library should outlive all requests
-var arena = std.heap.ArenaAllocator.init(page_allocator);
-var lib = Library.init(arena.allocator(), ...);  // Library freed when arena deinits
-// Later: arena.deinit() destroys Library while requests still reference it
-```
-
-Arenas scope to operations, not to data structures with long lifetimes. The Library, TargetRegistry, and StringInterner use their own persistent allocators.
-
-### ❌ Cosmopolitan Polymorphism (identical execute body)
-
-```
-// Wrong: three vtable entries that all call the same execute function
-fn identifierExecute(ptr: *anyopaque, ...) ![]types.Stage {
-    _ = ptr;
-    return staged_mod.executeStagedConfig(allocator, db, config);
-}
-fn capabilityExecute(ptr: *anyopaque, ...) ![]types.Stage {
-    _ = ptr;
-    return staged_mod.executeStagedConfig(allocator, db, config);
-}
-fn conceptExecute(ptr: *anyopaque, ...) ![]types.Stage {
-    _ = ptr;
-    return staged_mod.executeStagedConfig(allocator, db, config);
-}
-
-const strategy_vtable: QueryStrategy.VTable = .{
-    .execute = identifierExecute,  // identical to capabilityExecute and conceptExecute
-    // ...
-};
-```
-
-**Why it's wrong:** The vtable is routing to the same function through three identical entries. The only thing that differs is the `matches` predicate. The vtable is a vehicle for the `matches` function pointer — but the `execute` indirection is pure waste. This is Cosmopolitan Polymorphism: applying the vtable pattern for the routing mechanism while the polymorphism itself is an illusion.
-
-**Right:** Separate the predicate from the dispatch. A function-pointer array is sufficient:
-
-```
-pub const QueryMatch = struct {
-    matches: *const fn (query: []const u8, db: *GuidanceDb) bool,
-    intent: QueryIntent,
-    priority: u8,
-};
-
-pub fn executeQuery(allocator: std.mem.Allocator, db: *GuidanceDb, config: StagedConfig) ![]types.Stage {
-    return staged_mod.executeStagedConfig(allocator, db, config);  // the ONE body
-}
-
-pub fn executeQueryWithMatch(..., matches: []const QueryMatch) ![]types.Stage {
-    for (matches) |m| {
-        if (m.matches(query, db)) return executeQuery(allocator, db, config);
-    }
-    return staged_mod.executeStagedConfig(allocator, db, config);
-}
-```
-
-**How to catch it:** If you write three implementations and notice their `execute` bodies are word-for-word identical, stop. The vtable is not earning its indirection. Use a function-pointer array (like `QueryMatch`) instead. Keep `matches` as a function pointer; move `execute` to a single shared function.
-
-### ❌ Arena for long-lived data
-
-```
-// Wrong: Library should outlive all requests
-var arena = std.heap.ArenaAllocator.init(page_allocator);
-var lib = Library.init(arena.allocator(), ...);  // Library freed when arena deinits
-// Later: arena.deinit() destroys Library while requests still reference it
-```
-
-Arenas scope to operations, not to data structures with long lifetimes. The Library, TargetRegistry, and StringInterner use their own persistent allocators. The arena deallocates everything when it goes out of scope — if the data inside needs to survive beyond the arena's scope boundary, it must escape to a caller-owned allocator before the arena deinits.
-
-**Why arenas destroy long-lived data:** An `ArenaAllocator` does not free individual allocations — it only resets the bump pointer on deinit. Everything allocated within the arena becomes invalid simultaneously. If a data structure is rooted in the arena and the arena deinits, the data structure's backing memory returns to the operating system. Any pointers to that memory become dangling pointers.
-
-**The rule:** Data structures that must outlive the function that created them need their own allocator, not an arena. Use arenas for the *temporary* allocations within a scope boundary (intermediate strings, scratch buffers, parsed tokens). Escape only what the caller explicitly takes ownership of.
-
-### ❌ Mixing typed and untyped access in DynamicEditable
-
-```
-// DynamicEditable has no type information — don't try to add it
-var dyn = try DynamicEditable.init(allocator, buffer, accessors);
-// dyn has no idea what type "port" is — it works through ConstraintVTable only
-// The string path is the contract; don't try to bypass it
-```
-
-`DynamicEditable` operates on raw byte buffers via vtables. It has no type information at runtime. For typed access over a known struct, use `Editable(T)` or `TypedEditable`.
-
----
-
-## 11. Pattern Selection Guide
-
-The most common question when reading new code is: "which pattern, if any, should I reach for here?" The guide below is a decision tree. The questions are ordered so that the most frequent case appears first. If you reach the end without matching anything, the right answer is almost certainly plain imperative Zig: a simple `init()`, direct field access, or a free function.
-
-```
-Does the construction have 5+ parameters, or reads like configuration?
-  YES → Fluent Builder
-  NO  → Simple init()
-
-Does data arrive as a string from outside the process?
-  YES → Editable(T).set() or DynamicEditable.set()
-  NO, but field name known at runtime → Editable(T).setFast()
-  NO, field name known at compile time → direct field access
-
-Do you have multiple concrete implementations today?
-  YES (2+) → VTable with {ptr, vtable} handle
-  NO  → Does a second implementation exist or is one genuinely planned?
-
-      ONE implementation today, no concrete second in progress
-        → Direct struct methods. Not a vtable handle.
-        → Return *Implementation to callers. No indirection.
-        → Add the vtable when the second implementation arrives.
-
-      ONE implementation today, second is actively being coded
-        → Still prefer direct methods for the first implementation.
-        → Design the interface as methods on the struct now.
-        → When second arrives, add the vtable handle wrapper.
-
-      Speculative ("maybe I'll add more later")
-        → This is premature generalization. Do not add a vtable speculatively.
-        → Start with direct methods. The interface is the implementation.
-
-Does a struct cross the WASM host/guest boundary?
-  YES → extern struct with align(1) fields + BinaryFieldCodec
-  NO  → normal struct
-
-Does a batch operation allocate many short-lived intermediates?
-  YES → ArenaAllocator scoped to the batch
-  NO  → caller-managed allocator
-
-Is an integer ID passed across module boundaries and must not mix with other IDs?
-  YES → enum(i64) { _ } typed opaque handle
-  NO  → plain integer
-
-Do multiple implementations share the same execute body, differing only in a predicate?
-  YES → Function-pointer array (e.g., QueryMatch) — not a full vtable
-  NO  → Normal vtable if multiple implementations apply
-
-Does a vtable need runtime state (e.g., StringInterner context)?
-  YES → parameterised vtable with context: ?*const anyopaque
-  NO  → plain comptime-generated vtable
-```
-
----
-
-## 12. Thread Safety and the Patterns
-
-These patterns are **weakly positive** for thread safety:
-
-| Pattern | Thread safety story |
-|---------|---------------------|
-| VTables | `*const VTable` globals are read-only — zero contention |
-| Comptime Reflection | Accessor arrays are `const` comptime globals — zero contention |
-| Comptime Wrappers | Compile-time constants — zero contention |
-| Fluent Builders | Per-request; lock-free until terminal `register()` |
-| Arena-Backed Builders | Per-thread arenas eliminate allocator lock contention |
-| Typed Opaque Handles | No state; no contention |
-
-The shared mutable objects that **do** need explicit protection in this codebase:
-
-| Object | Mechanism | Reason |
-|--------|-----------|--------|
-| `Library` | `std.Thread.Mutex` on write paths | SQLite writes must serialize |
-| `StringInterner` | `std.Thread.RwLock` + double-checked locking in `intern()` | Read-heavy concurrent intern calls |
-| `QueueReactor` work queue | `Mutex` + `Condition` | Producer-consumer coordination |
-
-Arenas eliminate the most common source of allocator contention: a `GeneralPurposeAllocator` under concurrent pressure serializes on its internal free-list mutex. Per-request arenas backed by a thread-local page allocator avoid this entirely.
-
----
-
-## 13. Schema Evolution and Versioning (M4)
-
-`src/reflection/schema_version.zig` provides `SchemaVersion` and helpers for
-forward- and backward-compatible schema evolution.
-
-### SchemaVersion
-
-```
-pub const SchemaVersion = struct {
-    major: u16,
-    minor: u16 = 0,
-
-    pub fn compatible(self, other: SchemaVersion) bool  // true if same major
-    pub fn isNewerThan(self, other: SchemaVersion) bool
-    pub fn eql(self, other: SchemaVersion) bool
-    pub fn format(self, writer: anytype) !void   // {f} → "v1.0"
-};
-
-pub const SCHEMA_CURRENT: SchemaVersion = .{ .major = 1, .minor = 0 };
-
-pub fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) !void;
-```
-
-### Versioning Fields on Accessor
-
-Each `Accessor` carries three optional versioning fields (all default to
-v1.0 / null — backward-compatible with pre-versioning code):
-
-```
-pub const Accessor = struct {
-    // ... existing fields ...
-
-    version_added:   SchemaVersion = SCHEMA_CURRENT,
-    version_removed: ?SchemaVersion = null,
-    migrate_from:    ?*const fn (old: []const u8, allocator: std.mem.Allocator)
-                         anyerror![]const u8 = null,
-
-    pub fn isPresentIn(self: *const Accessor, stored: SchemaVersion) bool
-};
-```
-
-**`isPresentIn(stored)`** returns true when:
-1. `stored >= version_added` (field had been introduced)
-2. `version_removed` is null OR `stored < version_removed` (field not yet removed)
-
-**`migrate_from`** transforms the serialized string before passing it to
-`constraint.setFn`:
-
-```
-if (accessor.migrate_from) |migrate| {
-    const new_val = try migrate(raw_value, allocator);
-    defer allocator.free(new_val);
-    try accessor.constraint.setFn(allocator, field_ptr, new_val);
-} else {
-    try accessor.constraint.setFn(allocator, field_ptr, raw_value);
-}
-```
-
-### Versioning Fields on ConstraintVTable
-
-```
-pub const ConstraintVTable = struct {
-    // ... existing vtable entries ...
-
-    version:   SchemaVersion = SCHEMA_CURRENT,
-    migrateFn: ?*const fn (from: SchemaVersion, to: SchemaVersion,
-                            allocator: std.mem.Allocator, ptr: *anyopaque)
-                   anyerror!void = null,
-};
-```
-
-### Upgrade Path for Schema Changes
-
-| Change | Bump | Action |
-|--------|------|--------|
-| Add field with default | `minor` | Set `version_added = .{ .major=1, .minor=N }` |
-| Remove field | `major` | Set `version_removed = .{ .major=N }` on old accessor |
-| Rename field | `major` | Old accessor with `version_removed`; new accessor with `version_added` + `migrate_from` |
-| Type change | `major` | Old accessor + `migrate_from` transforms old type string to new |
-
-### Re-exports from `reflection`
-
-```
-const reflection = @import("reflection");
-reflection.SchemaVersion    // the struct
-reflection.SCHEMA_CURRENT   // v1.0 constant
-reflection.checkCompatible  // returns error.SchemaMismatch on major mismatch
-```
-
----
-
-## 14. Conditional Wrapper Application (M9)
-
-`src/common/wrapper.zig` provides build-mode-conditional wrappers, a retry
-call helper, and a composable `Pipeline` for call sites.
-
-### Why call helpers instead of type-preserving wrappers
-
-Zig's type system cannot create a wrapper function that perfectly preserves an
-arbitrary function's parameter types (generic functions cannot be cast to
-concrete function types).  The practical solution is **call helpers** that wrap
-a *call site* rather than a *function reference*:
-
-```
-// Instead of:
-const result = try func(arg1, arg2);
-
-// Write:
-const result = try retryCall(3, func, .{arg1, arg2});
-```
-
-### wrapIf
-
-Selects between two functions of the *same* type at comptime:
-
-```
-const handler = wrapIf(builtin.mode == .Debug, debugHandler, releaseHandler);
-```
-
-In release builds, `releaseHandler` is selected with zero overhead.
-
-### retryCall
-
-```
-const result = try retryCall(3, fetchData, .{url, allocator});
-```
-
-Calls `func(args...)` up to `max_attempts` times.  Returns the first success
-or the last error on exhaustion.
-
-### Pipeline
-
-Composes wrapper kinds around a call site:
-
-```
-const result = try Pipeline.call(&.{.retry, .none}, fetchData, .{url, alloc});
-```
-
-Currently defined `WrapperKind` values: `.none` (identity), `.retry` (3 attempts).
-
-### Composition Order
-
-When combining multiple wrappers, apply outer-to-inner:
+### Composition order (outer to inner)
 
 | Layer | Purpose |
 |-------|---------|
 | 1 | Rate limiting — reject early if overloaded |
 | 2 | Auth — reject early if unauthorized |
-| 3 | Tracing — start span (→ `Scope.begin` in logging.zig) |
-| 4 | Timing — measure full duration (→ `callLogged`) |
-| 5 | Retry — retry on transient failure (→ `retryCall`) |
-| 6 | Validation — validate input (→ `validateValue`) |
+| 3 | Tracing — start span |
+| 4 | Timing — measure full duration |
+| 5 | Retry — retry on transient failure |
+| 6 | Validation — validate input |
 | 7 | Core handler |
 
-### Re-exports from `common`
+### Rules
 
-```
-common.wrapIf       // conditional function selector
-common.retryCall    // retry call helper
-common.WrapperKind  // enum for Pipeline
-common.Pipeline     // call pipeline factory
-```
+- **Wrappers must implement the same trait as the inner type.**
+- **Apply wrappers at the registration site, before type erasure.**
+- **Do NOT wrap when there is only one implementation.**
+- **Use `impl Trait` or generics for hot paths** to allow inlining.
+
+### When to avoid
+
+- After type erasure (use Middleware, Pattern 9).
+- When the wrapper doesn't add any cross-cutting concern.
+- When the wrapper changes the interface (use Adapter, Pattern 10).
 
 ---
 
-## 15. Structured Logging Context (M8)
+## 6. Pattern 4 — Trait Objects (Runtime Polymorphism)
 
-`src/common/logging.zig` provides thread-local request context and a timing scope.
+### The problem
 
-### LogContext
-
-```
-const LogContext = struct {
-    request_id: ?[]const u8 = null,
-    user_id:    ?[]const u8 = null,
-    trace_id:   ?[]const u8 = null,
-    span_id:    ?[]const u8 = null,
-
-    threadlocal var current: ?LogContext = null;
-
-    pub fn set(ctx: LogContext) void   { current = ctx; }
-    pub fn get() ?LogContext           { return current; }
-    pub fn clear() void                { current = null; }
-
-    // {f} format: [req=<id> user=<id> trace=<id> span=<id>]
-    pub fn format(self: LogContext, writer: anytype) !void { ... }
-};
+```cpp
+// C++: vtable per class hierarchy, hidden in the ABI
+class Engine { virtual std::vector<Row> query(std::string sql) = 0; };
 ```
 
-**Key properties:**
-- Thread-local: each OS thread has its own slot — no synchronization needed.
-- Zero-copy: `LogContext` holds slices into caller-owned memory, not copies.
-- Context does NOT propagate across thread boundaries. Pass the value explicitly
-  and call `LogContext.set()` on the new thread.
-
-### Scope
-
-```
-pub const Scope = struct {
-    pub fn begin(name: []const u8) Scope { ... }  // logs start if context active
-    pub fn end(self: Scope) void { ... }           // logs duration in µs
-};
+```python
+# Python: duck typing — convenient but zero static safety
+def run_query(engine, sql):
+    return engine.query(sql)  # crashes at runtime if wrong method signature
 ```
 
-When `LogContext.get()` is null (no context active), `Scope.begin/end` are
-no-ops — no allocation, no log call. Zero overhead in production.
+### The Rust solution
 
-Usage:
+`dyn Trait` + `Arc<dyn Trait>` for shared ownership. The compiler generates the vtable. `Send + Sync` bounds enforce thread safety at every implementation site.
 
-```
-// Manual scope:
-const scope = Scope.begin("embed");
-defer scope.end();
-const vec = try provider.embed(allocator, text);
+### Canonical implementation: `EmbeddingProvider`
 
-// Single-expression callsite:
-const vec = try callLogged("embed", provider.embed, .{ allocator, text });
-```
+```rust
+pub trait EmbeddingProvider: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn dimensions(&self) -> u32;
+    fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
+    fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError>;
+}
 
-### callLogged
+pub struct ProviderRegistry {
+    providers: Vec<Arc<dyn EmbeddingProvider>>,
+}
 
-```
-pub inline fn callLogged(
-    comptime name: []const u8,
-    func: anytype,
-    args: anytype,
-) @typeInfo(@TypeOf(func)).@"fn".return_type.? { ... }
-```
-
-Wraps a single function call in a `Scope`. Error unions propagate normally —
-callers use `try` as needed.
-
-### Setting context at request boundaries
-
-```
-pub fn handleRequest(self: *McpServer, raw_json: []const u8) ![]const u8 {
-    LogContext.set(.{ .request_id = generateRequestId() });
-    defer LogContext.clear();
-
-    // All Scope/callLogged calls in this stack now log with context.
-    return try self.reactor.route(raw_json);
+impl ProviderRegistry {
+    pub fn register(&mut self, provider: Arc<dyn EmbeddingProvider>) {
+        self.providers.push(provider);
+    }
+    pub fn get(&self, name: &str) -> Option<Arc<dyn EmbeddingProvider>> {
+        self.providers.iter().find(|p| p.name() == name).cloned()
+    }
 }
 ```
 
-### Re-exports from `common`
+### Trait objects vs. generics
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| 2+ implementations, stored in registry | `dyn Trait` + `Arc` | Uniform handles, shared ownership |
+| Single implementation, hot loop | `<T: Trait>` or `impl Trait` | Zero-cost monomorphization |
+| Single implementation, not hot | Concrete type | No indirection needed |
+| Plugin system (WASM, dynamic load) | `dyn Trait` + `Arc` | Runtime-discovered implementations |
+
+### Serializing trait objects
+
+Rust cannot serialize `dyn Trait` directly. Use a tagged enum wrapper:
+
+```rust
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ProviderConfig {
+    Ollama { model: String, base_url: String },
+    OpenAi { model: String, api_key: String },
+}
+```
+
+### Rules
+
+1. **Always add `Send + Sync`** to traits stored in registries or shared across threads.
+2. **Use `Arc<dyn Trait>` for shared ownership.** Use `Box<dyn Trait>` only for exclusive ownership.
+3. **Never use `dyn Trait` with only one implementation.** Use the concrete type.
+4. **Never create a trait speculatively.** Start with a concrete type; add the trait when the second implementation arrives.
+
+---
+
+## 7. Pattern 5 — Binary IPC (`#[repr(C, packed)]`)
+
+### The problem
+
+When executing untrusted or dynamically loaded code (WASM tools), you need a safe, portable, zero-copy message format that works across the host/guest boundary.
+
+### The Rust solution
+
+`#[repr(C, packed)]` removes padding. Encode/decode explicitly with `to_le_bytes()` / `from_le_bytes()`. Validate magic and version before reading any other field. Never use `transmute`.
+
+### Struct definitions in `wasm_ipc/src/lib.rs`
+
+```rust
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct BinaryHeader {
+    pub magic: [u8; 4],
+    pub version: u32,
+    pub payload_type: u32,
+    pub payload_size: u32,
+    pub checksum: u32,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct BinaryExecutionRequest {
+    pub header: BinaryHeader,
+    pub target_id: i64,
+    pub input_offset: u32,
+    pub input_len: u32,
+    pub flags: u32,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct BinaryExecutionResult {
+    pub header: BinaryHeader,
+    pub success: u32,
+    pub error_code: u32,
+    pub output_offset: u32,
+    pub output_len: u32,
+    pub provides_words_offset: u32,
+    pub provides_words_count: u32,
+}
+```
+
+### Encoding and decoding
+
+```rust
+pub fn encode_request(req: &BinaryExecutionRequest, input: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(
+        std::mem::size_of::<BinaryExecutionRequest>() + input.len()
+    );
+    buf.extend_from_slice(&req.header.magic);
+    buf.extend_from_slice(&req.header.version.to_le_bytes());
+    buf.extend_from_slice(&req.header.payload_type.to_le_bytes());
+    buf.extend_from_slice(&req.header.payload_size.to_le_bytes());
+    buf.extend_from_slice(&req.header.checksum.to_le_bytes());
+    buf.extend_from_slice(&req.target_id.to_le_bytes());
+    buf.extend_from_slice(&req.input_offset.to_le_bytes());
+    buf.extend_from_slice(&req.input_len.to_le_bytes());
+    buf.extend_from_slice(&req.flags.to_le_bytes());
+    buf.extend_from_slice(input);
+    buf
+}
+
+pub fn get_provides_bitset(
+    result: &BinaryExecutionResult,
+    payload: &[u8],
+) -> Result<BitVec, IpcError> {
+    // SAFETY: packed struct fields must be read with read_unaligned to avoid
+    // undefined behavior from misaligned access.
+    let count = unsafe {
+        std::ptr::addr_of!(result.provides_words_count).read_unaligned()
+    } as usize;
+    let offset = unsafe {
+        std::ptr::addr_of!(result.provides_words_offset).read_unaligned()
+    } as usize;
+
+    let mut bits = BitVec::with_capacity(count * 64);
+    for i in 0..count {
+        let start = offset + i * 8;
+        let word = u64::from_le_bytes(
+            payload[start..start + 8].try_into().map_err(|_| IpcError::BufferTooSmall)?
+        );
+        for bit in 0..64 { bits.push((word >> bit) & 1 == 1); }
+    }
+    Ok(bits)
+}
+```
+
+### Rules
+
+1. **Always use `#[repr(C, packed)]`** for structs that cross the Extism boundary.
+2. **Always encode/decode explicitly** with `to_le_bytes()` / `from_le_bytes()`. Never `transmute`.
+3. **Validate magic and version** before reading any other field.
+4. **Offsets are absolute from buffer start**, never relative to struct end.
+5. **Variable-length data** is appended after the fixed header. The header contains `offset` and `len` fields.
+6. **Use `read_unaligned`** for packed struct field access — this is the only required `unsafe`.
+
+### When to avoid
+
+- **Internal structs that never cross a boundary:** `#[repr(C, packed)]` prevents optimizations.
+- **Human-readable protocols:** Use JSON or text.
+- **When the schema changes frequently:** Use Protocol Buffers or FlatBuffers.
+
+---
+
+## 8. Pattern 6 — Scoped Ownership (Replacing Arenas)
+
+### The problem
+
+Zig's `ArenaAllocator` scopes all intermediate allocations to a logical unit of work. Rust has no built-in arena (and `bumpalo` is forbidden by project policy).
+
+### The Rust solution
+
+**Trust the stack and `Drop`.** Ownership scopes naturally replicate the arena pattern. All intermediate `Vec`s and `String`s owned by local variables are dropped at scope exit.
+
+### Per-request scoping
+
+```rust
+async fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
+    let req: JsonRpcRequest = serde_json::from_str(raw_json)?;
+    let result = self.reactor.route(&req.query).await?;
+    // `req` and all intermediates are dropped at end of scope
+    Ok(serde_json::to_string(&result)?)
+}
+```
+
+### Batch processing
+
+```rust
+{
+    let mut mapper = TripleMapper::new(&library, &config);
+    mapper.process_triples(triples)?;
+    mapper.flush()?;  // escaped data cloned into library
+}  // all locals dropped automatically
+```
+
+### Rules
+
+- **Do not pre-allocate reusable buffers** unless profiling proves allocation is a bottleneck.
+- **If you want an arena, use a scoped function** with local `Vec`s.
+- **Builder ownership transfer:** `build()` consumes the builder and returns an owned struct.
+
+---
+
+## 9. Pattern 7 — Newtype Handles (Typed Opaque IDs)
+
+### The problem
+
+```python
+NodeId = int
+SessionId = int
+process_node(session_id)  # Accepted silently — crashes later
+```
+
+### The Rust solution
+
+Newtype wrappers create distinct types that share the integer representation. The compiler rejects mixing `NodeId` with `SessionId` at every call site.
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NodeId(pub i64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub i64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TargetId(pub i64);
+
+impl NodeId {
+    pub fn from_int(i: i64) -> Self { Self(i) }
+    pub fn as_int(self) -> i64 { self.0 }
+}
+```
+
+```rust
+fn process_node(id: NodeId) { ... }
+
+let node = NodeId::from_int(42);
+let sess = SessionId::from_int(42);
+process_node(node);  // OK
+process_node(sess);  // Compile error: expected NodeId, found SessionId
+```
+
+### Rules
+
+- **Use for any integer ID that crosses module boundaries** and must not be mixed with other IDs.
+- **Do NOT use when you need arithmetic on the ID.** Use a raw integer for counters.
+- **Derive `Serialize, Deserialize`** so the newtype is transparent in JSON/DB.
+
+---
+
+## 10. Pattern 8 — Unit of Work (Orchestration Interface)
+
+### The problem
+
+An orchestrator (DAG executor, MCP server, WASM plugin host) must execute heterogeneous tasks uniformly. Without a common interface, the orchestrator branches on implementation type.
+
+### Definition in `dag/src/work_unit.rs`
+
+```rust
+pub struct WorkContext {
+    pub library: Arc<Library>,
+    pub embedder: Arc<dyn EmbeddingProvider>,
+    pub config: WorkConfig,
+    pub input: Vec<u8>,
+}
+
+pub struct WorkOutput {
+    pub provides: BitVec,
+    pub output: Vec<u8>,
+    pub success: bool,
+}
+
+pub trait WorkUnit: Send + Sync {
+    fn name(&self) -> &str;
+    fn depends(&self) -> &[ArcIntern<str>];
+    fn provides(&self) -> &[ArcIntern<str>];
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError>;
+}
+```
+
+### Implementation: native command
+
+```rust
+pub struct CommandUnit {
+    name: ArcIntern<str>,
+    command: String,
+    depends: Vec<ArcIntern<str>>,
+    provides: Vec<ArcIntern<str>>,
+}
+
+impl WorkUnit for CommandUnit {
+    fn name(&self) -> &str { &self.name }
+    fn depends(&self) -> &[ArcIntern<str>] { &self.depends }
+    fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&self.command)
+            .output()
+            .map_err(|e| WorkError::ExecutionFailed(e.to_string()))?;
+
+        Ok(WorkOutput {
+            provides: BitVec::new(),
+            output: if output.status.success() { output.stdout } else { output.stderr },
+            success: output.status.success(),
+        })
+    }
+}
+```
+
+### Implementation: WASM plugin bridge
+
+WASM plugins also implement `Component` — including `FieldAccess` and `Describable` — so they are indistinguishable from native Rust implementations at the orchestrator level.
+
+```rust
+pub struct WasmComponent {
+    name: ArcIntern<str>,
+    plugin: Mutex<extism::Plugin>,
+    config: Mutex<HashMap<String, String>>,
+    schema: serde_json::Value,  // loaded from plugin at init time
+    depends: Vec<ArcIntern<str>>,
+    provides: Vec<ArcIntern<str>>,
+}
+
+impl WorkUnit for WasmComponent {
+    fn name(&self) -> &str { &self.name }
+    fn depends(&self) -> &[ArcIntern<str>] { &self.depends }
+    fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let mut plugin = self.plugin.lock().unwrap();
+        let result = plugin.call("execute", &ctx.input)
+            .map_err(|e| WorkError::WasmFailed(e.to_string()))?;
+        Ok(decode_output(&result)?)
+    }
+}
+
+impl FieldAccess for WasmComponent {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // Delegate configuration into the WASM plugin's config namespace
+        let mut plugin = self.plugin.lock().unwrap();
+        plugin.call("set_config", format!("{}={}", name, value).as_bytes())
+            .map_err(|e| FieldError::SetFailed { field: name.to_string(), reason: e.to_string() })?;
+        self.config.lock().unwrap().insert(name.to_string(), value.to_string());
+        Ok(())
+    }
+
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        self.config.lock().unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| FieldError::UnknownField(name.to_string()))
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        &[]  // WASM fields are dynamic; inspect describe() for schema
+    }
+}
+
+impl Describable for WasmComponent {
+    fn describe(&self) -> serde_json::Value {
+        self.schema.clone()  // schema loaded from the WASM plugin at init
+    }
+}
+```
+
+### Orchestration — uniform loop
+
+```rust
+let mut registry = WorkRegistry::new();
+registry.register(Arc::new(Instrumented {
+    inner: CommandUnit { ... },
+    name: "build",
+}));
+registry.register(Arc::new(WasmComponent { ... }));
+
+// The orchestrator sees one interface regardless of origin:
+for unit in registry.resolve(&["build"])? {
+    let output = unit.execute(&ctx)?;
+}
+```
+
+### Rules
+
+- **Every orchestratable task implements `WorkUnit`.** No exceptions.
+- **Store as `Arc<dyn WorkUnit>` or `Arc<dyn Component>`** in registries.
+- **Do NOT add methods to `WorkUnit` speculatively.** Start with `name`, `depends`, `provides`, `execute`. Add more only when a second implementation requires it.
+- **For full runtime configurability**, implement all three sub-traits to satisfy `Component`.
+
+---
+
+## 11. Pattern 9 — Middleware Chain (Post-Erasure Cross-Cutting)
+
+### The problem
+
+When you already have `Arc<dyn WorkUnit>` and need to add logging, retry, or rate limiting, you cannot use newtype wrappers (Pattern 3) because the type is erased. You need post-erasure composition.
+
+### Definition in `dag/src/middleware.rs`
+
+```rust
+pub trait Middleware: Send + Sync {
+    fn wrap(&self, inner: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit>;
+}
+
+pub struct TimingMiddleware;
+
+impl Middleware for TimingMiddleware {
+    fn wrap(&self, inner: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit> {
+        Arc::new(InstrumentedWorkUnit { inner })
+    }
+}
+
+struct InstrumentedWorkUnit {
+    inner: Arc<dyn WorkUnit>,
+}
+
+impl WorkUnit for InstrumentedWorkUnit {
+    fn name(&self) -> &str { self.inner.name() }
+    fn depends(&self) -> &[ArcIntern<str>] { self.inner.depends() }
+    fn provides(&self) -> &[ArcIntern<str>] { self.inner.provides() }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let start = Instant::now();
+        let result = self.inner.execute(ctx);
+        info!(unit = self.inner.name(), elapsed_us = start.elapsed().as_micros() as u64);
+        result
+    }
+}
+```
+
+### Stacking middleware
+
+```rust
+let unit: Arc<dyn WorkUnit> = Arc::new(CommandUnit { ... });
+
+let middleware: Vec<Arc<dyn Middleware>> = vec![
+    Arc::new(TimingMiddleware),
+    Arc::new(RetryMiddleware { max_attempts: 3 }),
+];
+
+let wrapped = middleware.into_iter().fold(unit, |u, m| m.wrap(u));
+```
+
+### Rules
+
+- **Prefer newtype wrappers (Pattern 3) when the type is not yet erased.** Middleware adds a vtable call layer; wrappers can be inlined.
+- **Use `Arc<dyn WorkUnit>`**, not `Box`, because middleware may be shared across threads.
+- **Apply middleware at registration time**, not at execution time.
+- **Each middleware layer adds one vtable dispatch.** Minimize layers on hot paths.
+
+---
+
+## 12. Pattern 10 — Component Adapter (Runtime Type Adaptation)
+
+### The problem
+
+When adaptation decisions are made at runtime — renaming a component, overriding its execution behavior, or bridging between interfaces — you cannot use compile-time generics.
+
+### Definition in `dag/src/adapter.rs`
+
+```rust
+pub struct ComponentAdapter {
+    inner: Arc<dyn Component>,
+    execute_fn: Option<Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>>,
+    name_override: Option<ArcIntern<str>>,
+    schema_override: Option<serde_json::Value>,
+}
+
+impl ComponentAdapter {
+    pub fn new(inner: Arc<dyn Component>) -> Self {
+        Self { inner, execute_fn: None, name_override: None, schema_override: None }
+    }
+
+    pub fn with_execute<F>(mut self, f: F) -> Self
+    where F: Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync + 'static {
+        self.execute_fn = Some(Arc::new(f));
+        self
+    }
+
+    pub fn with_name(mut self, name: ArcIntern<str>) -> Self {
+        self.name_override = Some(name);
+        self
+    }
+
+    pub fn with_schema(mut self, schema: serde_json::Value) -> Self {
+        self.schema_override = Some(schema);
+        self
+    }
+}
+```
+
+`ComponentAdapter` must implement all three sub-traits to remain a `Component`:
+
+```rust
+impl FieldAccess for ComponentAdapter {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // Adapters typically delegate field access to the inner component.
+        // To delegate to an Arc<dyn Component>, the inner must expose
+        // interior mutability (e.g. WasmComponent uses Mutex internally).
+        // If the inner type requires &mut self, configure it before wrapping.
+        self.inner.get_field(name).and_then(|_| {
+            Err(FieldError::ReadOnly { field: name.to_string() })
+        })
+    }
+
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        self.inner.get_field(name)
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        self.inner.field_names()
+    }
+}
+
+impl Describable for ComponentAdapter {
+    fn describe(&self) -> serde_json::Value {
+        self.schema_override.clone().unwrap_or_else(|| self.inner.describe())
+    }
+}
+
+impl WorkUnit for ComponentAdapter {
+    fn name(&self) -> &str {
+        self.name_override.as_deref().unwrap_or_else(|| self.inner.name())
+    }
+    fn depends(&self) -> &[ArcIntern<str>] { self.inner.depends() }
+    fn provides(&self) -> &[ArcIntern<str>] { self.inner.provides() }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        match &self.execute_fn {
+            Some(f) => f(ctx),
+            None    => self.inner.execute(ctx),
+        }
+    }
+}
+```
+
+### Usage: adapting a WASM plugin
+
+```rust
+let wasm_unit: Arc<dyn Component> = Arc::new(WasmComponent { ... });
+
+let adapted = Arc::new(
+    ComponentAdapter::new(wasm_unit)
+        .with_name("custom_name".into())
+        .with_execute(|ctx| Ok(WorkOutput { ... }))
+        .with_schema(serde_json::json!({ "type": "object", "properties": {} }))
+);
+
+registry.register(adapted);
+```
+
+### Rules
+
+- **Use when adaptation decisions are made at runtime.** For compile-time adaptation, use newtype wrappers.
+- **Adapters implement `Component`**, so they store in the same registry as any other component.
+- **Delegate to the inner component** for all methods you don't override.
+- **`set_field` on an adapter is intentionally limited.** Configure the inner component before wrapping if mutation is needed.
+
+---
+
+## 13. Runtime Composition: The Full Lifecycle
+
+This section demonstrates how all twelve patterns compose into a single workflow. Each step uses the same `Arc<dyn Component>` handle.
+
+### Compile-time assembly (Rust struct)
+
+```rust
+// 1. Build: fluent builder collects arguments
+let mut component = ToolConfig::builder()
+    .port(8080)
+    .host("localhost".into())
+    .verbose(false)
+    .build()?;
+
+// 2. Configure: set fields by name before sharing
+component.set_field("port", "9000")?;
+component.set_field("verbose", "true")?;
+
+// 3. Wrap: add cross-cutting concerns before type erasure (inlineable)
+let wrapped = Instrumented {
+    inner: WithRetry { inner: component, max_attempts: 3 },
+    name: "my_tool",
+};
+
+// 4. Erase to Arc<dyn Component>: uniform handle from this point on
+let handle: Arc<dyn Component> = Arc::new(wrapped);
+registry.register(handle.clone());
+
+// 5. Execute uniformly
+let output = handle.execute(&ctx)?;
+
+// 6. Inspect: read fields through the trait object
+let port = handle.get_field("port")?;
+
+// 7. Describe: generate JSON Schema through the trait object
+let schema = handle.describe();
+```
+
+### Runtime assembly (WASM plugin)
+
+```rust
+// 1. Load plugin and extract schema from the plugin itself
+let plugin = extism::Plugin::new(wasm_bytes)?;
+let schema_bytes = plugin.call("get_schema", &[])?;
+let schema: serde_json::Value = serde_json::from_slice(&schema_bytes)?;
+
+// 2. Bridge into Component interface
+let wasm_comp = WasmComponent::new(plugin, schema);
+
+// 3. Configure by name (delegates into the WASM plugin)
+// Note: WasmComponent uses interior mutability, so this works on &mut self
+let mut wasm_comp = wasm_comp;
+wasm_comp.set_field("timeout_ms", "5000")?;
+
+// 4. Erase to Arc<dyn Component>: same uniform handle as the Rust struct case
+let handle: Arc<dyn Component> = Arc::new(wasm_comp);
+
+// 5-7: execute, inspect, describe — identical call sites
+let output = handle.execute(&ctx)?;
+let schema = handle.describe();
+```
+
+### Runtime assembly (database-driven config)
+
+```rust
+// 1. Load config from database
+let rows = db.query("SELECT key, value FROM tool_config WHERE tool_id = ?", &[tool_id])?;
+let config: HashMap<ArcIntern<str>, String> = rows.into_iter()
+    .map(|r| (r.get::<_, String>("key").into(), r.get::<_, String>("value")))
+    .collect();
+
+// 2. Create dynamic component
+let mut dyn_comp = DynamicComponent::new(config);
+dyn_comp.set_field("retries", "3")?;
+
+// 3. Erase to Arc<dyn Component>: same uniform handle
+let handle: Arc<dyn Component> = Arc::new(dyn_comp);
+let output = handle.execute(&ctx)?;
+```
+
+### Key guarantee
+
+In all three cases — Rust struct, WASM plugin, database config — the orchestrator sees the same five operations through the same `Arc<dyn Component>` handle: `execute`, `get_field`, `set_field`, `field_names`, `describe`. No branching on origin.
+
+---
+
+## 14. Pattern 11 — Structured Logging Context
+
+### The problem
+
+In a multi-threaded server, log messages from different requests interleave. Without request context, correlating log lines with a specific request is difficult.
+
+### Definition in `common/src/logging.rs`
+
+```rust
+#[derive(Debug, Clone, Default)]
+pub struct LogContext {
+    pub request_id: Option<String>,
+    pub user_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub span_id: Option<String>,
+}
+
+thread_local! {
+    static CURRENT_CONTEXT: RefCell<Option<LogContext>> = RefCell::new(None);
+}
+
+impl LogContext {
+    pub fn set(ctx: LogContext) {
+        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(ctx));
+    }
+    pub fn get() -> Option<LogContext> {
+        CURRENT_CONTEXT.with(|c| c.borrow().clone())
+    }
+    pub fn clear() {
+        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = None);
+    }
+}
+
+pub struct Scope {
+    name: &'static str,
+    start: Instant,
+}
+
+impl Scope {
+    pub fn begin(name: &'static str) -> Self {
+        if LogContext::get().is_some() { info!(scope = name, event = "start"); }
+        Self { name, start: Instant::now() }
+    }
+
+    pub fn end(self) {
+        if LogContext::get().is_some() {
+            info!(scope = self.name, event = "end",
+                  elapsed_us = self.start.elapsed().as_micros() as u64);
+        }
+    }
+}
+
+pub fn call_logged<F, T, E>(name: &'static str, f: F) -> Result<T, E>
+where F: FnOnce() -> Result<T, E> {
+    let scope = Scope::begin(name);
+    let result = f();
+    scope.end();
+    result
+}
+```
+
+### Usage at request boundaries
+
+```rust
+async fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
+    LogContext::set(LogContext {
+        request_id: Some(generate_request_id()),
+        user_id: Some(self.user_id.clone()),
+        trace_id: Some(generate_trace_id()),
+        span_id: None,
+    });
+    // Use defer! or a Drop guard to ensure context is cleared on all exit paths.
+    // defer!(LogContext::clear());
+
+    let req: JsonRpcRequest = serde_json::from_str(raw_json)?;
+    let result = call_logged("route", || self.reactor.route(&req.query))?;
+    LogContext::clear();
+    Ok(serde_json::to_string(&result)?)
+}
+```
+
+### Key properties
+
+1. **Thread-local:** Each thread has its own context slot. No synchronization.
+2. **Zero overhead when inactive:** `Scope::begin/end` are no-ops when context is `None`.
+3. **Does not propagate across threads.** Pass context values explicitly to new threads and call `LogContext::set()` there.
+
+### Rules
+
+- **Set context at request boundaries.** Clear it when the request completes using a Drop guard or `defer!`.
+- **Never use `Scope` in hot loops.** Each scope logs two messages.
+- **Do NOT use `call_logged` in tight loops.** It allocates a scope on every call.
+
+---
+
+## 15. Pattern Synergies
+
+The patterns are not independently beneficial — their value multiplies when composed. Each pattern produces something another consumes.
+
+| Pattern | Produces | Consumed by |
+|---------|----------|-------------|
+| Fluent Builder | Fully-configured owned object | Trait Composition (wrap before erasure) |
+| Trait-Based Reflection | `FieldAccess` + `Describable` | Component supertrait blanket impl |
+| Trait Composition | Instrumented concrete type | Trait Object (erase after wrapping) |
+| Trait Objects | `Arc<dyn Component>` uniform handle | Middleware Chain, Component Adapter, registry |
+| Scoped Ownership | RAII-managed intermediates | Binary IPC payload lifetime |
+| Newtype Handles | Distinct integer types | Trait Object registries (prevent ID confusion) |
+| Unit of Work | `WorkUnit` impl | Component blanket impl, registry |
+| Middleware Chain | Wrapped `Arc<dyn WorkUnit>` | Registry, orchestrator |
+| Component Adapter | Runtime-adapted `Arc<dyn Component>` | Registry, orchestrator |
+| Structured Logging Context | Request-scoped observability | All handler entry points |
+
+### Key synergies
+
+**Builder + Trait Object** eliminates per-call type branching. Builder accumulation is lock-free; only registry insertion requires synchronization. The orchestrator iterates `Arc<dyn WorkUnit>` and calls `.execute()` without any `match`.
+
+**Trait-Based Reflection + Describable** makes the struct definition the single source of truth. `#[derive(FieldAccess, Describable)]` generates field access, validation, and JSON Schema from one definition. A new field automatically appears in the accessor, the validator, and the schema — one edit, one file.
+
+**Trait Composition + Trait Objects** gives zero-modification observability. Wrap before erasure; the wrapper is inlined by the compiler. The orchestrator gets instrumented execution without any business logic change.
+
+**Scoped Ownership + Binary IPC** eliminates payload lifetime management. `encode_request` returns an owned `Vec<u8>`; the call takes a byte slice; the `Vec` is dropped after the call. No individual allocation to track.
+
+**Component Adapter + Middleware** enables runtime orchestration policies. An adapter can change execution behavior; middleware can add retry or rate limiting. The orchestrator composes both dynamically without recompilation.
+
+---
+
+## 16. Anti-Patterns
+
+### ❌ Manual builder structs
+
+```rust
+// Wrong: 50+ lines of boilerplate
+pub struct TargetBuilder { name: Option<String>, depends: Option<BitVec>, ... }
+impl TargetBuilder {
+    pub fn name(mut self, name: String) -> Self { self.name = Some(name); self }
+    // ...
+}
+
+// Right
+#[derive(bon::Builder)]
+pub struct Target { ... }
+```
+
+### ❌ Raw-pointer vtables for compile-time-known types
+
+```rust
+// Wrong: bypasses borrow checker, requires manual Box::from_raw cleanup
+pub struct WvrHandle { pub ptr: *mut (), pub vtable: &'static WvrVTable }
+
+// Right: compiler generates the vtable, Arc manages cleanup
+let unit: Arc<dyn Component> = Arc::new(MyComponent::new());
+```
+
+### ✅ Manual vtable bridges for runtime-assembled interfaces (legitimate use case)
+
+When some methods come from a compiled struct and others from a WASM plugin, bridge through a struct that implements `Component` — not through raw pointers:
+
+```rust
+// Right: bridge struct implements the full Component interface
+pub struct WasmComponent { plugin: Mutex<extism::Plugin>, schema: serde_json::Value, ... }
+impl WorkUnit for WasmComponent { ... }
+impl FieldAccess for WasmComponent { ... }
+impl Describable for WasmComponent { ... }
+// WasmComponent is automatically a Component via the blanket impl
+```
+
+### ❌ `dyn Trait` with only one implementation
+
+```rust
+// Wrong: vtable dispatch for a single type
+let provider: Arc<dyn EmbeddingProvider> = Arc::new(NoopEmbedding::new(768));
+
+// Right
+let provider = NoopEmbedding::new(768);
+```
+
+### ❌ Speculative traits
+
+```rust
+// Wrong: trait for one implementation with no second planned
+pub trait DataStore: Send + Sync { ... }
+pub struct SqliteStore;
+impl DataStore for SqliteStore { ... }
+
+// Right: use the concrete type; add the trait when the second implementation arrives
+pub struct SqliteStore;
+impl SqliteStore { ... }
+```
+
+### ❌ Cosmopolitan Polymorphism (identical execute bodies)
+
+```rust
+// Wrong: three impls routing to the same function
+impl WorkUnit for IdentifierQuery {
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        run_staged_query(ctx, &self.config)  // same body
+    }
+}
+impl WorkUnit for CapabilityQuery {
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        run_staged_query(ctx, &self.config)  // same body
+    }
+}
+
+// Right: use a function pointer for the varying predicate; one execute body
+pub struct QueryMatch {
+    pub matches: fn(&str, &GuidanceDb) -> bool,
+    pub intent: QueryIntent,
+}
+fn execute_query(ctx: &WorkContext, config: &StagedConfig) -> Result<WorkOutput, WorkError> {
+    run_staged_query(ctx, config)  // ONE body
+}
+```
+
+**Detection:** If three implementations have word-for-word identical `execute` bodies, the trait is routing for the routing mechanism, not for polymorphism. Use a function-pointer array instead.
+
+### ❌ `transmute` for binary IPC
+
+```rust
+// Wrong: undefined behavior if layout changes
+let result: BinaryExecutionResult = unsafe { std::mem::transmute::<&[u8], _>(buf) };
+
+// Right: explicit byte-order decoding
+let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+```
+
+### ❌ `FieldAccess` or `serde` in hot loops
+
+```rust
+// Wrong: string parsing on every iteration
+for item in &items { item.set_field("count", &item.count.to_string()).unwrap(); }
+
+// Right: direct field access
+for item in &items { item.count = compute_count(); }
+```
+
+### ❌ Wrapping after type erasure
+
+```rust
+// Wrong: cannot inline through dyn Trait; two vtable calls
+let unit: Arc<dyn WorkUnit> = Arc::new(MyUnit);
+let wrapped = Instrumented { inner: unit };
+
+// Right: wrap before storing in the registry; one vtable call total
+let unit = Instrumented { inner: MyUnit };
+registry.register(Arc::new(unit));
+```
+
+### ❌ Stack-allocating a struct that contains vtables
+
+The most common memory bug in this pattern family. Heap-allocate any struct that stores vtable pointers internally. Use `Arc::new(...)`, never `let x = StructWithVtable { ... }` on the stack when the struct will be used as a trait object.
+
+---
+
+## 17. Pattern Selection Guide
 
 ```
-const common = @import("common");
-common.LogContext    // the struct
-common.LogScope      // alias for logging.Scope
-common.callLogged    // the inline wrapper
+Does construction have 4+ parameters?
+  YES → #[derive(bon::Builder)]
+  NO  → fn new() or struct literal
+
+Does data arrive as a string from outside the process?
+  YES → Type known at compile time?
+    YES → serde (Tier 2)
+    NO  → Schema known at runtime but values are typed?
+      YES → Implement FieldAccess manually (Tier 3)
+      NO  → HashMap<ArcIntern<str>, serde_json::Value> (Tier 4)
+  NO  → Is the access in a hot loop?
+    YES → Direct field access (Tier 1)
+    NO  → Field name from runtime data?
+      YES → FieldAccess trait (Tier 3)
+      NO  → Direct field access (Tier 1)
+
+Do you have 2+ concrete implementations today?
+  YES → dyn Trait + Arc<dyn Trait>
+  NO  → Concrete type (add the trait when the second implementation arrives)
+
+Does a struct cross the WASM host/guest boundary?
+  YES → #[repr(C, packed)] + explicit encode/decode
+  NO  → Normal struct
+
+Does a batch operation allocate many short-lived intermediates?
+  YES → Scoped function with local Vecs (RAII)
+  NO  → Normal ownership
+
+Is an integer ID passed across module boundaries?
+  YES → Newtype wrapper: struct NodeId(i64)
+  NO  → Plain integer
+
+Does the task need uniform orchestration (DAG, MCP, WASM)?
+  YES → impl WorkUnit; if runtime-configurable, also FieldAccess + Describable → Component
+  NO  → Concrete type with methods
+
+Do multiple implementations share the same execute body, differing only in a predicate?
+  YES → Function-pointer array (Vec<QueryMatch>) — not a trait
+  NO  → Normal trait with multiple implementations
+
+Do you need cross-cutting concerns?
+  Type not yet erased (compile-time known) → Newtype wrapper (Pattern 3)
+  Type already erased → Middleware (Pattern 9)
+
+Do you need to adapt component behavior at runtime?
+  YES → ComponentAdapter (Pattern 10)
+  NO  → Use the component directly
 ```
 
 ---
 
-## 16. Summary for AI Agents
+## 18. Thread Safety
 
-The patterns in this document are the architectural vocabulary of this codebase. Code that departs from them without a clear local reason will be inconsistent, harder to test, and harder to extend. Code that applies them correctly will compose cleanly with the existing infrastructure, pass the test suite without leaks, and be readable to any contributor who has read this document.
+### Thread safety by pattern
 
-The following directives distill everything above into concrete action items for writing new code:
+| Pattern | Thread safety mechanism |
+|---------|------------------------|
+| `dyn Trait` + `Arc` | `Send + Sync` bounds enforced at compile time |
+| `serde` | Stateless serialization — zero contention |
+| `FieldAccess` on Rust structs | Requires `&mut self` — configure before sharing |
+| `FieldAccess` on WASM/dynamic | Interior mutability (`Mutex`) inside the impl |
+| Newtype wrappers | No state — no contention |
+| `bon::Builder` | Per-request, lock-free until `build()` |
+| Scoped ownership | Stack-local — no sharing |
+| `WorkUnit` | `Send + Sync` required; implementors must be thread-safe |
+| `Middleware` | `Send + Sync` required; stateless middleware is zero-contention |
+| `ComponentAdapter` | `Send + Sync` required; closures must be `Send + Sync` |
+| `LogContext` | Thread-local — no synchronization needed |
 
-When writing new code in this codebase:
+### Detailed rules
 
-1. **Check the source first.** Run `guidance explain "<topic>"` before writing. The pattern you need is probably already implemented and tested.
+1. **Create trait objects on a single thread during initialization.** Do not create `Arc<dyn Trait>` handles concurrently.
+2. **Shared registries require synchronization.** Use `Mutex`, `RwLock`, or `DashMap` for registries accessed from multiple threads.
 
-2. **New multi-parameter construction** → `TargetBuilder` in `src/common/registry.zig` is the template. Use `err: ?*BuilderError` with an `arena: std.heap.ArenaAllocator` for error strings. Capture phase, field, value, and constraint. Log `e.message` at the terminal for diagnostics.
+   > **`DashMap` vs `RwLock<HashMap>`:** `DashMap` is a shard-lock map optimized for write concurrency. For read-dominated workloads (registries are typically read-heavy after initialization), `RwLock<HashMap>` is often faster because it allows fully parallel reads with no per-shard overhead. Profile before choosing `DashMap` for a hot registry.
 
-3. **New field-level access** → Add `editable: Editable(Self) = .{}` to the struct. Use `set`/`get` at boundaries; `setFast`/`getFast` inside the process.
+3. **Destroy after all concurrent calls complete.** Before dropping an `Arc<dyn Trait>`, ensure all threads that hold a reference have finished.
 
-4. **New cross-cutting logic** → Use call-site helpers (`retryCall`, `callLogged`, `Pipeline.call`). Do not try to create true comptime decorators — Zig cannot preserve exact parameter types for wrapped generic functions.
+### Shared mutable objects requiring explicit protection
 
-5. **New subsystem with multiple implementations** → `EmbeddingProvider` in `src/common/embeddings.zig` is the template. Two-field `{ptr, vtable}` handle, `const` vtable globals.
+| Object | Mechanism | Reason |
+|--------|-----------|--------|
+| `Library` | `Mutex<rusqlite::Connection>` | SQLite writes must serialize |
+| `CapabilityRegistry` | `RwLock<HashMap<...>>` | Read-heavy concurrent intern calls |
+| `L1Cache` | `DashMap<String, RoutingResult>` | Write-concurrent cache access |
+| `WasmComponent.plugin` | `Mutex<extism::Plugin>` | Plugin state is not thread-safe |
+| `LogContext` | Thread-local | Each thread has its own context |
 
-6. **New WASM/binary IPC type** → `extern struct` with `align(1)` on all fields, magic + version in header, offsets from buffer start.
+### Typical usage pattern
 
-7. **New batch-processing loop** → Arena scoped to the batch. Only escape what the caller owns.
+```rust
+// Init thread: create and share
+let provider: Arc<dyn EmbeddingProvider> = Arc::new(OllamaProvider::new("model"));
 
-8. **Vtable with runtime state** → `bitSetConstraint` in `src/common/interner.zig` is the template. `context: ?*const anyopaque` in the vtable, retrieved by `setCtxFn`/`getCtxFn`.
+// Worker threads: read-only through Arc
+let p = provider.clone();
+let handle = std::thread::spawn(move || { p.embed("hello").unwrap(); });
 
-9. **Never stack-allocate a vtable or a struct that stores vtables internally.** This is the most common memory bug in this pattern family.
+// After all workers join, drop is safe
+handle.join().unwrap();
+drop(provider);
+```
 
-10. **Never use the string reflection path in hot loops.** It allocates. Use direct field access.
+---
+
+## 19. Schema Evolution
+
+### Versioning with `serde`
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_field: Option<String>,  // added in v1.1
+}
+```
+
+### Field-level version annotations
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[field(version_added = "1.1")]
+    pub new_field: Option<String>,
+
+    #[serde(skip)]
+    #[field(version_removed = "2.0")]
+    pub old_field: Option<String>,
+
+    #[serde(alias = "old_name")]
+    #[field(version_added = "1.2")]
+    pub renamed_field: String,
+}
+```
+
+### Migration functions
+
+```rust
+fn migrate_timeout<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where D: Deserializer<'de> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => parse_duration(&s).map_err(serde::de::Error::custom),
+        serde_json::Value::Number(n) => n.as_u64().ok_or_else(|| serde::de::Error::custom("invalid")),
+        _ => Err(serde::de::Error::custom("invalid timeout format")),
+    }
+}
+```
+
+### Binary IPC versioning
+
+```rust
+pub const BINARY_SCHEMA_VERSION: u32 = 1;
+
+let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+if version != BINARY_SCHEMA_VERSION {
+    return Err(IpcError::UnsupportedVersion);
+}
+```
+
+### Upgrade matrix
+
+| Change | Semver | Action |
+|--------|--------|--------|
+| Add field with default | Minor | `#[serde(default)]` — backward compatible |
+| Remove field | Major | `#[serde(skip)]` — forward compatible |
+| Rename field | Major | `#[serde(alias = "old_name")]` on new field |
+| Type change | Major | Old field + `deserialize_with` migration function |
+| Binary IPC breaking change | Major | Bump `BINARY_SCHEMA_VERSION` |
+
+---
+
+## 20. Quick Reference for AI Agents
+
+When writing new code in `rust-src/`:
+
+1. **Check the source first.** Run `guidance explain "<topic>"` before writing. Check `common/src/registry.rs` for builders, `common/src/embeddings.rs` for trait objects, `wasm_ipc/src/lib.rs` for binary IPC.
+
+2. **New multi-parameter construction** → `#[derive(bon::Builder)]`. Use `#[builder(default)]` for optional fields. Never write manual builders.
+
+3. **New boundary serialization** → `#[derive(Serialize, Deserialize)]` with `#[serde(default)]` and `#[serde(skip_serializing_if = "Option::is_none")]`.
+
+4. **New runtime-configurable component** → Implement `FieldAccess` (instance method `field_names(&self)`), `Describable` (instance method `describe(&self)`), and `WorkUnit`. The blanket impl makes it a `Component` automatically. Both `field_names` and `describe` **must be instance methods** for trait-object dispatch to work.
+
+5. **New cross-cutting logic** → Newtype wrapper **before type erasure** (Pattern 3). If the type is already erased, use Middleware (Pattern 9). Never wrap after type erasure.
+
+6. **New subsystem with multiple implementations** → Define a trait with `Send + Sync`. Store as `Arc<dyn Trait>`. Never use `dyn Trait` with only one implementation.
+
+7. **New WASM/binary IPC type** → `#[repr(C, packed)]` + explicit `to_le_bytes()` / `from_le_bytes()`. Validate magic + version first. Never `transmute`.
+
+8. **New batch-processing loop** → Scoped function with local `Vec`s. RAII drops everything at scope exit.
+
+9. **New orchestratable task** → Implement `WorkUnit`. For runtime configurability, add `FieldAccess` + `Describable` to become a `Component`. Store as `Arc<dyn Component>`.
+
+10. **New request-scoped observability** → `LogContext::set()` at request entry. `Scope::begin()` / `Scope::end()` for timing. `call_logged()` for single-expression calls. Always clear context on exit.
+
+### Never do these
+
+11. **Never use raw pointers for vtables.** Use `dyn Trait` + `Arc`.
+
+12. **Never use `transmute` for binary IPC.** Use explicit byte-order encoding.
+
+13. **Never use `dyn Trait` with only one implementation.**
+
+14. **Never use `serde` or `FieldAccess` in hot loops.** Use direct field access.
+
+15. **Never stack-allocate a struct that stores vtables.** Heap-allocate with `Arc::new(...)`.
+
+16. **Never wrap after type erasure.** Wrap before storing in the registry.
+
+17. **Never use the string reflection path in hot loops.** It allocates.
+
+18. **Never apply Fluent Builder to a 3-parameter init.** Three params are readable.
+
+19. **Never add `FieldAccess` to a type that never crosses a boundary.**
+
+20. **Never create a trait speculatively.** Start with a concrete type.
+
+21. **Never define `field_names` or `describe` as static associated functions.** They must be `&self` instance methods for trait-object dispatch.
+
+### Verification
+
+22. **Run `cargo clippy` before finishing.** The project enforces `#![deny(warnings)]`.
+
+23. **Run `cargo test` before finishing.** All 448 tests must pass.
+
+24. **Check for `unsafe` blocks.** The project has only 7 `unsafe` blocks (3 packed struct reads in `wasm_ipc`, 4 libc ioctl in `terminal.rs`). Every new `unsafe` block must be justified and documented.
+
+---
+
+*This document is the authoritative Rust reference for Fluent WVR patterns. The Zig original (`doc/skills/fluent-wvr/SKILL.md`) remains authoritative for `src/`. The deprecated `FLUENT_WVR_RUST.md` (raw-pointer variant) must not be followed.*

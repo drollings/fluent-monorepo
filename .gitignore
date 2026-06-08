@@ -28,8 +28,9 @@ doc/Legacy
 .guidance/skills
 bin/guidance-cpp
 data/
+zig/
 
-rust-src/target/
+src/target/
 
 # =============================================================================
 # Python Virtual Environments & Package Management
