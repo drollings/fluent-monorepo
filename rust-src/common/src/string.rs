@@ -438,4 +438,154 @@ mod tests {
         let result = lower_into(&mut buf, b"");
         assert_eq!(result, b"");
     }
+
+    #[test]
+    fn contains_any_basic() {
+        assert!(contains_any("hello world", &["hello"]));
+        assert!(contains_any("hello world", &["world", "foo"]));
+        assert!(!contains_any("hello world", &["foo"]));
+    }
+
+    #[test]
+    fn contains_any_word_basic() {
+        assert!(contains_any_word("test builder", &["test", "builder"]));
+        assert!(contains_any_word("test builder", &["builder"]));
+        assert!(!contains_any_word("test builders", &["builder"]));
+    }
+
+    #[test]
+    fn is_test_path_detection() {
+        assert!(is_test_path("src/test.rs"));
+        assert!(is_test_path("tests/foo.rs"));
+        assert!(is_test_path("foo_test.zig"));
+        assert!(is_test_path("foo_tests.zig"));
+        assert!(!is_test_path("src/main.rs"));
+    }
+
+    #[test]
+    fn strip_nl_prefix_why() {
+        assert_eq!(strip_nl_prefix("why is the sky blue"), "the sky blue");
+        assert_eq!(strip_nl_prefix("why does this happen"), "this happen");
+    }
+
+    #[test]
+    fn strip_nl_prefix_when() {
+        assert_eq!(strip_nl_prefix("when is the meeting"), "the meeting");
+    }
+
+    #[test]
+    fn strip_nl_prefix_who() {
+        assert_eq!(strip_nl_prefix("who is there"), "there");
+    }
+
+    #[test]
+    fn strip_nl_prefix_which() {
+        assert_eq!(strip_nl_prefix("which is correct"), "correct");
+    }
+
+    #[test]
+    fn strip_nl_prefix_where() {
+        assert_eq!(strip_nl_prefix("where is the file"), "the file");
+    }
+
+    #[test]
+    fn strip_nl_prefix_describe() {
+        assert_eq!(strip_nl_prefix("describe the system"), "the system");
+    }
+
+    #[test]
+    fn truncate_at_sentence_no_period() {
+        let text = "This is a long string with no period at all in the first half";
+        let result = truncate_at_sentence(text, 20);
+        assert_eq!(result.len(), 20);
+    }
+
+    #[test]
+    fn truncate_at_sentence_period_too_early() {
+        let text = "A. very long string that continues past the limit";
+        let result = truncate_at_sentence(text, 20);
+        assert_eq!(result.len(), 20);
+    }
+
+    #[test]
+    fn is_noisy_comment_empty() {
+        assert!(is_noisy_comment(""));
+    }
+
+    #[test]
+    fn is_noisy_comment_short() {
+        assert!(is_noisy_comment("Hi"));
+    }
+
+    #[test]
+    fn contains_ident_word_empty_needle() {
+        assert!(!contains_ident_word("test", ""));
+    }
+
+    #[test]
+    fn contains_ident_word_needle_longer_than_haystack() {
+        assert!(!contains_ident_word("abc", "abcdef"));
+    }
+
+    #[test]
+    fn looks_like_identifier_empty() {
+        assert!(!looks_like_identifier(""));
+    }
+
+    #[test]
+    fn looks_like_identifier_starts_with_digit() {
+        assert!(!looks_like_identifier("123abc"));
+    }
+
+    #[test]
+    fn slugify_trims_dashes() {
+        assert_eq!(slugify("-hello-"), "hello");
+    }
+
+    #[test]
+    fn strip_boilerplate_no_match() {
+        assert_eq!(strip_boilerplate("hello world", "fn "), "hello world");
+    }
+
+    #[test]
+    fn first_comment_line_with_notice_prefix() {
+        assert_eq!(
+            first_comment_line("//! Module level doc\n/// member"),
+            Some("Module level doc".into())
+        );
+    }
+
+    #[test]
+    fn first_comment_line_empty_after_strip() {
+        assert_eq!(first_comment_line("///"), None);
+    }
+
+    #[test]
+    fn lang_from_path_additional_extensions() {
+        assert_eq!(lang_from_path("foo.go"), "go");
+        assert_eq!(lang_from_path("foo.c"), "c");
+        assert_eq!(lang_from_path("foo.h"), "c");
+        assert_eq!(lang_from_path("foo.cpp"), "cpp");
+        assert_eq!(lang_from_path("foo.hpp"), "cpp");
+        assert_eq!(lang_from_path("foo.js"), "typescript");
+        assert_eq!(lang_from_path("foo.ts"), "typescript");
+        assert_eq!(lang_from_path("foo.md"), "markdown");
+        assert_eq!(lang_from_path("foo.json"), "json");
+        assert_eq!(lang_from_path("foo.yaml"), "yaml");
+        assert_eq!(lang_from_path("foo.yml"), "yaml");
+        assert_eq!(lang_from_path("foo.toml"), "toml");
+        assert_eq!(lang_from_path("foo.unknown"), "unknown");
+    }
+
+    #[test]
+    fn has_extension_case_sensitivity() {
+        assert!(has_extension("file.ZIG", ".zig"));
+        assert!(!has_extension("file.rs", ".zig"));
+    }
+
+    #[test]
+    fn contains_ident_word_boundary_special_chars() {
+        assert!(contains_ident_word("foo->bar", "bar"));
+        assert!(!contains_ident_word("foobar", "bar"));
+    }
 }

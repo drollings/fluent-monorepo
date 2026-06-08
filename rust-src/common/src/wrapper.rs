@@ -204,6 +204,7 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::traits::{WorkContext, WorkError, WorkOutput};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -312,5 +313,138 @@ mod tests {
         assert_eq!(d, "Retry");
         let d = format!("{:?}", WrapperKind::Check(Box::new(|| true)));
         assert_eq!(d, "Check(<fn>)");
+    }
+
+    struct MockUnit {
+        name: ArcIntern<str>,
+        should_fail: bool,
+        call_count: AtomicUsize,
+    }
+
+    impl MockUnit {
+        fn ok(name: &str) -> Self {
+            Self {
+                name: ArcIntern::from(name),
+                should_fail: false,
+                call_count: AtomicUsize::new(0),
+            }
+        }
+        fn fail(name: &str) -> Self {
+            Self {
+                name: ArcIntern::from(name),
+                should_fail: true,
+                call_count: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl WorkUnit for MockUnit {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            if self.should_fail {
+                Err(WorkError::Execution("failed".into()))
+            } else {
+                Ok(WorkOutput::ok("done"))
+            }
+        }
+    }
+
+    #[test]
+    fn pipeline_retry_success() {
+        let unit = MockUnit::ok("mock");
+        let wrapped = WithRetry::new(unit, 3, 1);
+        let ctx = WorkContext::default();
+        let result = wrapped.execute(&ctx);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().message, "done");
+    }
+
+    #[test]
+    fn pipeline_retry_exhausted() {
+        let unit = MockUnit::fail("mock");
+        let wrapped = WithRetry::new(unit, 3, 1);
+        let ctx = WorkContext::default();
+        let result = wrapped.execute(&ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn instrumented_delegates() {
+        let inner = MockUnit::ok("mock");
+        let wrapped = Instrumented::new(inner, "test-label");
+        let ctx = WorkContext::default();
+        let result = wrapped.execute(&ctx);
+        assert!(result.is_ok());
+        assert_eq!(wrapped.name(), "mock");
+    }
+
+    #[test]
+    fn arc_dyn_work_unit_delegates() {
+        let inner = MockUnit::ok("mock");
+        let arc: Arc<dyn WorkUnit> = Arc::new(inner);
+        let ctx = WorkContext::default();
+        assert_eq!(arc.name(), "mock");
+        let result = arc.execute(&ctx);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn pipeline_all_none_calls_fn() {
+        let result = Pipeline::call(
+            &[WrapperKind::None, WrapperKind::None],
+            || Ok::<_, ()>(42),
+        );
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn pipeline_mixed_kinds() {
+        let result = Pipeline::call(
+            &[WrapperKind::Check(Box::new(|| true)), WrapperKind::Retry],
+            || Ok::<_, ()>(99),
+        );
+        assert_eq!(result.unwrap(), 99);
+    }
+
+    #[test]
+    fn pipeline_check_false_without_retry() {
+        let called = Arc::new(AtomicUsize::new(0));
+        let c = Arc::clone(&called);
+        let result = Pipeline::call(
+            &[WrapperKind::Check(Box::new(|| false))],
+            move || {
+                c.fetch_add(1, Ordering::SeqCst);
+                Ok::<i32, ()>(42)
+            },
+        );
+        assert_eq!(result.unwrap(), 42);
+        // Without Retry, Pipeline always calls f() at the end
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn with_retry_accepts_unit_depends_provides() {
+        let inner = MockUnit::ok("mock");
+        let wrapped = WithRetry::new(inner, 3, 1);
+        assert_eq!(wrapped.name(), "mock");
+        assert!(wrapped.depends().is_empty());
+        assert!(wrapped.provides().is_empty());
+    }
+
+    #[test]
+    fn instrumented_depends_provides() {
+        let inner = MockUnit::ok("mock");
+        let wrapped = Instrumented::new(inner, "label");
+        assert_eq!(wrapped.depends().len(), 0);
+        assert_eq!(wrapped.provides().len(), 0);
     }
 }

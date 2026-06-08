@@ -202,4 +202,98 @@ mod tests {
         assert!(excerpt.contains("first"));
         assert!(!excerpt.contains("second"));
     }
+
+    #[test]
+    fn node_type_from_string_fn_decl() {
+        assert_eq!(NodeType::from_string("fn_decl"), NodeType::FnDecl);
+    }
+
+    #[test]
+    fn node_type_from_string_default() {
+        assert_eq!(NodeType::from_string("unknown_thing"), NodeType::Other);
+    }
+
+    #[test]
+    fn is_function_returns_true_for_method_types() {
+        assert!(NodeType::FnDecl.is_function());
+        assert!(NodeType::FnPrivate.is_function());
+        assert!(NodeType::Method.is_function());
+        assert!(NodeType::MethodPrivate.is_function());
+        assert!(!NodeType::Other.is_function());
+    }
+
+    #[test]
+    fn is_container_returns_true_for_union() {
+        assert!(NodeType::UnionDecl.is_container());
+        assert!(!NodeType::Other.is_container());
+    }
+
+    #[test]
+    fn extract_excerpt_return_type_extracts() {
+        let src = "fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(excerpt.contains("fn add"));
+        assert!(excerpt.contains("a + b"));
+    }
+
+    #[test]
+    fn extract_excerpt_start_beyond_file() {
+        let src = "line1\nline2\n";
+        let excerpt = extract_excerpt(src, 100, NodeType::FnDecl, 10);
+        assert_eq!(excerpt, "");
+    }
+
+    #[test]
+    fn extract_excerpt_skips_separator() {
+        let src = "// ---\nfn foo() {\n    return;\n}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(excerpt.contains("fn foo"));
+    }
+
+    #[test]
+    fn extract_excerpt_with_node_type_other() {
+        let src = "some random text\nwith { braces }\nand more\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::Other, 10);
+        assert!(excerpt.contains("some random text"));
+        assert!(excerpt.contains("braces"));
+    }
+
+    #[test]
+    fn extract_excerpt_stops_at_next_fn_before_open_brace() {
+        let src = "pub fn first() {}\npub fn second() {}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(excerpt.contains("first"));
+        assert!(!excerpt.contains("second"));
+    }
+
+    #[test]
+    fn extract_simple_excerpt_uses_other_type() {
+        let src = "line1\nline2\nline3\n";
+        let excerpt = extract_simple_excerpt(src, 2, 2);
+        assert_eq!(excerpt, "line2\nline3");
+    }
+
+    #[test]
+    fn extract_excerpt_strips_trailing_comments() {
+        let src = "fn foo() {\n    return;\n}\n// trailing\n ";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(!excerpt.contains("trailing"));
+        assert!(!excerpt.ends_with(' '));
+    }
+
+    #[test]
+    fn extract_excerpt_stops_at_const_before_open_brace() {
+        let src = "fn first() {}\nconst VERSION = 1;\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(excerpt.contains("first"));
+        assert!(!excerpt.contains("VERSION"));
+    }
+
+    #[test]
+    fn extract_excerpt_stops_at_test_at_top_level() {
+        let src = "fn helper() {}\ntest \"basic\" {\n    try testing.expect(true);\n}\n";
+        let excerpt = extract_excerpt(src, 1, NodeType::FnDecl, 10);
+        assert!(excerpt.contains("helper"));
+        assert!(!excerpt.contains("testing.expect"));
+    }
 }

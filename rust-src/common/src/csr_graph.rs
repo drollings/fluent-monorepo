@@ -222,4 +222,40 @@ mod tests {
         assert!(g.neighbors(99).is_empty());
         assert_eq!(g.degree(99), 0);
     }
+
+    #[test]
+    fn deserialize_blob_too_short() {
+        assert!(matches!(
+            CsrGraph::deserialize(&[0u8; 4]),
+            Err(CsrError::BlobTooShort)
+        ));
+    }
+
+    #[test]
+    fn deserialize_unsupported_version() {
+        let mut blob = vec![0u8; SERIALIZED_CSR_SIZE];
+        blob[0..4].copy_from_slice(&CSR_MAGIC.to_le_bytes());
+        blob[4..8].copy_from_slice(&99u32.to_le_bytes()); // wrong version
+        assert!(matches!(
+            CsrGraph::deserialize(&blob),
+            Err(CsrError::UnsupportedVersion)
+        ));
+    }
+
+    #[test]
+    fn deserialize_without_weights() {
+        let g = CsrGraph::new(2, vec![0, 1, 2], vec![1], None);
+        let blob = g.serialize();
+        let loaded = CsrGraph::deserialize(&blob).unwrap();
+        assert!(loaded.weights.is_none());
+    }
+
+    #[test]
+    fn serialize_deserialize_no_weights_roundtrip() {
+        let g = CsrGraph::new(2, vec![0, 1, 2], vec![1], None);
+        let blob = g.serialize();
+        let loaded = CsrGraph::deserialize(&blob).unwrap();
+        assert_eq!(loaded.node_count, 2);
+        assert_eq!(loaded.edge_count, 1);
+    }
 }

@@ -52,11 +52,17 @@ impl FileType {
         ];
         let known_markdown = [".md", ".markdown", ".mdx"];
         let known_config = [".json", ".toml", ".yaml", ".yml", ".ini", ".env", ".cfg", ".conf"];
+        let known_data = [".csv", ".tsv", ".sqlite", ".db", ".sql", ".parquet"];
+        let known_pdf = [".pdf"];
+        let known_audio = [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".wma"];
 
         let ext = ext.to_lowercase();
         if known_source.iter().any(|e| ext == *e) { return Self::Source; }
         if known_markdown.iter().any(|e| ext == *e) { return Self::Markdown; }
         if known_config.iter().any(|e| ext == *e) { return Self::Config; }
+        if known_data.iter().any(|e| ext == *e) { return Self::Data; }
+        if known_pdf.iter().any(|e| ext == *e) { return Self::Pdf; }
+        if known_audio.iter().any(|e| ext == *e) { return Self::Audio; }
         Self::Unknown
     }
 
@@ -414,6 +420,20 @@ mod tests {
     fn file_type_to_str() {
         assert_eq!(FileType::Source.to_str(), "source");
         assert_eq!(FileType::Markdown.to_str(), "markdown");
+        assert_eq!(FileType::Config.to_str(), "config");
+        assert_eq!(FileType::Data.to_str(), "data");
+        assert_eq!(FileType::Pdf.to_str(), "pdf");
+        assert_eq!(FileType::Audio.to_str(), "audio");
+        assert_eq!(FileType::Unknown.to_str(), "unknown");
+    }
+
+    #[test]
+    fn file_type_from_extension_data_pdf_audio() {
+        assert_eq!(FileType::from_extension(".csv"), FileType::Data);
+        assert_eq!(FileType::from_extension(".db"), FileType::Data);
+        assert_eq!(FileType::from_extension(".pdf"), FileType::Pdf);
+        assert_eq!(FileType::from_extension(".mp3"), FileType::Audio);
+        assert_eq!(FileType::from_extension(".wav"), FileType::Audio);
     }
 
     #[test]
@@ -437,6 +457,13 @@ mod tests {
         let m2: Member = serde_json::from_str(&json).unwrap();
         assert_eq!(m.name, m2.name);
         assert_eq!(m.is_pub, m2.is_pub);
+    }
+
+    #[test]
+    fn guidance_doc_default_language_on_deserialize() {
+        let json = r#"{"meta":{"module":"test","source":"test.zig"}}"#;
+        let doc: GuidanceDoc = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.meta.language.as_str(), "zig");
     }
 
     #[test]

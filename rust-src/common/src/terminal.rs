@@ -88,15 +88,24 @@ pub fn is_terminal() -> bool {
 }
 
 pub fn confirm(question: &str, default: bool) -> io::Result<bool> {
+    confirm_with(question, default, &mut io::stdin().lock(), &mut io::stdout())
+}
+
+pub fn confirm_with(
+    question: &str,
+    default: bool,
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+) -> io::Result<bool> {
     let prompt = if default {
         format!("{question} [Y/n]: ")
     } else {
         format!("{question} [y/N]: ")
     };
-    print!("{prompt}");
-    io::stdout().flush()?;
+    write!(writer, "{prompt}")?;
+    writer.flush()?;
     let mut input = String::new();
-    io::stdin().lock().read_line(&mut input)?;
+    reader.read_line(&mut input)?;
     let trimmed = input.trim().to_lowercase();
     match trimmed.as_str() {
         "y" | "yes" => Ok(true),
@@ -106,15 +115,24 @@ pub fn confirm(question: &str, default: bool) -> io::Result<bool> {
 }
 
 pub fn ask(question: &str, default: &str) -> io::Result<String> {
+    ask_with(question, default, &mut io::stdin().lock(), &mut io::stdout())
+}
+
+pub fn ask_with(
+    question: &str,
+    default: &str,
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+) -> io::Result<String> {
     let prompt = if default.is_empty() {
         format!("{question}: ")
     } else {
         format!("{question} [{default}]: ")
     };
-    print!("{prompt}");
-    io::stdout().flush()?;
+    write!(writer, "{prompt}")?;
+    writer.flush()?;
     let mut input = String::new();
-    io::stdin().lock().read_line(&mut input)?;
+    reader.read_line(&mut input)?;
     let trimmed = input.trim();
     if trimmed.is_empty() {
         Ok(default.to_string())
@@ -124,15 +142,24 @@ pub fn ask(question: &str, default: &str) -> io::Result<String> {
 }
 
 pub fn ask_int(question: &str, default: Option<i64>) -> io::Result<i64> {
+    ask_int_with(question, default, &mut io::stdin().lock(), &mut io::stdout())
+}
+
+pub fn ask_int_with(
+    question: &str,
+    default: Option<i64>,
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+) -> io::Result<i64> {
     let prompt = if let Some(d) = default {
         format!("{question} [{d}]: ")
     } else {
         format!("{question}: ")
     };
-    print!("{prompt}");
-    io::stdout().flush()?;
+    write!(writer, "{prompt}")?;
+    writer.flush()?;
     let mut input = String::new();
-    io::stdin().lock().read_line(&mut input)?;
+    reader.read_line(&mut input)?;
     let trimmed = input.trim();
     if trimmed.is_empty() {
         default.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no input and no default"))
@@ -261,4 +288,125 @@ mod tests {
         assert!(rendered.contains("100/100"));
     }
 
+    #[test]
+    fn confirm_default_yes_with_empty_input() {
+        let mut input = b"\n" as &[u8];
+        let mut output = Vec::new();
+        let result = confirm_with("Proceed?", true, &mut input, &mut output);
+        assert!(result.unwrap());
+        let out = String::from_utf8(output).unwrap();
+        assert!(out.contains("Proceed?"));
+        assert!(out.contains("[Y/n]"));
+    }
+
+    #[test]
+    fn confirm_accepts_yes() {
+        let mut input = b"y\n" as &[u8];
+        let mut output = Vec::new();
+        let result = confirm_with("Go?", false, &mut input, &mut output);
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn confirm_accepts_no() {
+        let mut input = b"n\n" as &[u8];
+        let mut output = Vec::new();
+        let result = confirm_with("Go?", true, &mut input, &mut output);
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn confirm_default_no_with_invalid_input() {
+        let mut input = b"maybe\n" as &[u8];
+        let mut output = Vec::new();
+        let result = confirm_with("Go?", false, &mut input, &mut output);
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn confirm_default_yes_with_invalid_input() {
+        let mut input = b"maybe\n" as &[u8];
+        let mut output = Vec::new();
+        let result = confirm_with("Go?", true, &mut input, &mut output);
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn ask_returns_default_on_empty() {
+        let mut input = b"\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_with("Name", "default_val", &mut input, &mut output);
+        assert_eq!(result.unwrap(), "default_val");
+    }
+
+    #[test]
+    fn ask_returns_input() {
+        let mut input = b"custom\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_with("Name", "default_val", &mut input, &mut output);
+        assert_eq!(result.unwrap(), "custom");
+    }
+
+    #[test]
+    fn ask_no_default_shows_no_brackets() {
+        let mut input = b"val\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_with("Name", "", &mut input, &mut output);
+        assert_eq!(result.unwrap(), "val");
+        let out = String::from_utf8(output).unwrap();
+        assert!(!out.contains('['));
+    }
+
+    #[test]
+    fn ask_int_returns_default_on_empty() {
+        let mut input = b"\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_int_with("Count", Some(42), &mut input, &mut output);
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn ask_int_returns_input() {
+        let mut input = b"99\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_int_with("Count", Some(42), &mut input, &mut output);
+        assert_eq!(result.unwrap(), 99);
+    }
+
+    #[test]
+    fn ask_int_rejects_invalid() {
+        let mut input = b"not_a_number\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_int_with("Count", Some(42), &mut input, &mut output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn ask_int_empty_no_default_is_error() {
+        let mut input = b"\n" as &[u8];
+        let mut output = Vec::new();
+        let result = ask_int_with("Count", None, &mut input, &mut output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn is_terminal_returns_bool() {
+        let result = is_terminal();
+        assert!(result == true || result == false);
+    }
+
+    #[test]
+    fn progress_bar_set_clamps_at_total() {
+        let mut pb = ProgressBar::new("test", 50);
+        pb.set(100);
+        assert_eq!(pb.current, 50);
+        assert!(pb.is_finished());
+    }
+
+    #[test]
+    fn progress_bar_advance_clamps_at_total() {
+        let mut pb = ProgressBar::new("test", 50);
+        pb.advance(100);
+        assert_eq!(pb.current, 50);
+    }
 }

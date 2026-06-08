@@ -154,4 +154,34 @@ mod tests {
         }
         assert_eq!(h.count(), 1000);
     }
+
+    #[test]
+    fn observe_duration_records_millis() {
+        let h = LatencyHistogram::new();
+        let start = Instant::now();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        h.observe_duration(start);
+        assert!(h.count() >= 1);
+        assert!(h.sum_ms() >= 1);
+    }
+
+    #[test]
+    fn bucket_out_of_range_returns_zero() {
+        let h = LatencyHistogram::new();
+        assert_eq!(h.bucket(99), 0);
+    }
+
+    #[test]
+    fn estimate_percentile_returns_max_when_target_in_last_bucket() {
+        let h = LatencyHistogram::new();
+        h.observe(99999);
+        let pct = h.estimate_percentile(100.0);
+        assert!(pct >= 5000);
+    }
+
+    #[test]
+    fn default_creates_empty_histogram() {
+        let h = LatencyHistogram::default();
+        assert_eq!(h.count(), 0);
+    }
 }

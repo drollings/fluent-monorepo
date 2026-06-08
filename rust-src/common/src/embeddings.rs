@@ -756,4 +756,108 @@ mod tests {
         assert_eq!(vec.len(), 3);
         mock.assert();
     }
+
+    #[test]
+    fn noop_embedding_dimensions() {
+        let p = NoopEmbedding::new(512);
+        assert_eq!(p.dimensions(), 512);
+    }
+
+    #[test]
+    fn ollama_embedding_dimensions() {
+        let p = OllamaEmbedding::new(None, Some("http://localhost:11434"), 768).unwrap();
+        assert_eq!(p.dimensions(), 768);
+    }
+
+    #[test]
+    fn openai_embedding_dimensions() {
+        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 1536).unwrap();
+        assert_eq!(p.dimensions(), 1536);
+    }
+
+    #[test]
+    fn openai_embed_empty_text_returns_empty() {
+        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 768).unwrap();
+        let vec = p.embed("").unwrap();
+        assert!(vec.is_empty());
+    }
+
+    #[test]
+    fn ollama_default_constructor() {
+        let p = OllamaEmbedding::new(None, None, 768).unwrap();
+        assert_eq!(p.name(), "ollama");
+    }
+
+    #[tokio::test]
+    async fn ollama_embed_async_empty_text() {
+        let p = OllamaEmbedding::new(None, Some("http://localhost:11434"), 3).unwrap();
+        let vec = p.embed_async("").await.unwrap();
+        assert!(vec.is_empty());
+    }
+
+    #[tokio::test]
+    async fn openai_embed_async_empty_text() {
+        let p = OpenAiEmbedding::new(None, Some("https://api.openai.com/v1"), Some("sk-test"), 3).unwrap();
+        let vec = p.embed_async("").await.unwrap();
+        assert!(vec.is_empty());
+    }
+
+    #[tokio::test]
+    async fn noop_embed_async_delegates() {
+        let p = NoopEmbedding::new(768);
+        let vec = p.embed_async("hello").await.unwrap();
+        assert!(vec.is_empty());
+    }
+
+    #[tokio::test]
+    async fn noop_embed_batch_async_delegates() {
+        let p = NoopEmbedding::new(768);
+        let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
+        assert_eq!(batch.count, 2);
+    }
+
+    #[tokio::test]
+    async fn ollama_embed_batch_async_with_mock() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/api/embed");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
+        });
+        let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2).unwrap();
+        let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
+        assert_eq!(batch.count, 2);
+        assert_eq!(batch.dims, 2);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn openai_embed_batch_async_with_mock() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/v1/embeddings");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"data": [{"embedding": [0.1, 0.2], "index": 0}, {"embedding": [0.3, 0.4], "index": 1}]}"#);
+        });
+        let p = OpenAiEmbedding::new(
+            Some("text-embedding-3-small"),
+            Some(&server.url("")),
+            Some("sk-test"),
+            2,
+        ).unwrap();
+        let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
+        assert_eq!(batch.count, 2);
+        assert_eq!(batch.dims, 2);
+        mock.assert();
+    }
+
+    #[test]
+    fn create_provider_ollama_prefix_custom_url() {
+        let result = create_embedding_provider("ollama:llama3", None, Some("http://localhost:11434"), None, 4096);
+        assert!(result.is_ok());
+    }
 }

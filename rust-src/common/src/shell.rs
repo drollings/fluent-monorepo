@@ -56,4 +56,41 @@ mod tests {
         assert!(add_unique_path(&mut list, "path2", None));
         assert_eq!(list.len(), 2);
     }
+
+    #[test]
+    fn run_command_empty_argv_returns_false() {
+        assert!(!run_command(&[]));
+    }
+
+    #[test]
+    fn add_unique_path_with_project_root_existing() {
+        let mut list = Vec::new();
+        let root = std::env::current_dir().unwrap();
+        let root_str = root.to_str().unwrap();
+        assert!(add_unique_path(&mut list, "src", Some(root_str)));
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn add_unique_path_with_project_root_missing() {
+        let mut list = Vec::new();
+        assert!(!add_unique_path(&mut list, "nonexistent_path_xyz", Some("/tmp")));
+        assert_eq!(list.len(), 0);
+    }
+
+    #[test]
+    fn add_unique_path_with_project_root_trailing_slash() {
+        let mut list = Vec::new();
+        let root = std::env::current_dir().unwrap();
+        let root_str = format!("{}/", root.to_str().unwrap());
+        assert!(add_unique_path(&mut list, "src", Some(&root_str)));
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn add_unique_path_with_empty_project_root() {
+        let mut list = Vec::new();
+        assert!(add_unique_path(&mut list, "some_path", Some("")));
+        assert_eq!(list.len(), 1);
+    }
 }

@@ -268,7 +268,7 @@ fn main() {
             println!("Committing with message: {message}");
         }
         Commands::Check => {
-            /// RALPH waterfall: build → test → lint → fmt → gen → structure → db
+            // RALPH waterfall: build → test → lint → fmt → gen → structure → db
             let waterfall_stages: &[(&str, fn() -> Result<(), String>)] = &[
                 ("build", || {
                     let status = std::process::Command::new("cargo")

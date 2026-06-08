@@ -202,4 +202,34 @@ mod tests {
         let result = TrigramIndex::deserialize(data);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn search_trigram_by_value() {
+        let mut idx = TrigramIndex::new();
+        idx.build_from_content("a.txt", "hello world");
+        let tri = make_trigram(b'h', b'e', b'l');
+        let hits = idx.search_trigram(tri);
+        assert!(!hits.is_empty());
+    }
+
+    #[test]
+    fn search_delegates_to_candidates() {
+        let mut idx = TrigramIndex::new();
+        idx.build_from_content("a.txt", "hello world");
+        let docs = idx.search("hello");
+        assert_eq!(docs.len(), 1);
+    }
+
+    #[test]
+    fn candidates_short_query_returns_empty() {
+        let idx = TrigramIndex::new();
+        let docs = idx.candidates("ab");
+        assert!(docs.is_empty());
+    }
+
+    #[test]
+    fn trigram_index_default_is_empty() {
+        let idx = TrigramIndex::default();
+        assert_eq!(idx.doc_count, 0);
+    }
 }
