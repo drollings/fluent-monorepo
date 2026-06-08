@@ -3,20 +3,24 @@ use internment::ArcIntern;
 use std::collections::HashMap;
 
 pub struct BitSetDrift {
-    interner: HashMap<ArcIntern<String>, usize>,
+    interner: HashMap<ArcIntern<str>, usize>,
+    names: Vec<ArcIntern<str>>,
 }
 
 impl BitSetDrift {
-    pub fn new(interner: HashMap<ArcIntern<String>, usize>) -> Self {
-        Self { interner }
+    pub fn new(interner: HashMap<ArcIntern<str>, usize>) -> Self {
+        let names: Vec<ArcIntern<str>> = interner
+            .iter()
+            .map(|(name, &idx)| {
+                let _ = idx;
+                name.clone()
+            })
+            .collect();
+        Self { interner, names }
     }
 
-    pub fn generate_follow_ups(
-        &self,
-        needed: &BitVec,
-        available: &BitVec,
-    ) -> Vec<String> {
-        let missing: BitVec = (needed.clone() | available.clone()) ^ available.clone();
+    pub fn generate_follow_ups(&self, needed: &BitVec, available: &BitVec) -> Vec<String> {
+        let missing = needed.clone() & !available.clone();
         let mut follow_ups = Vec::new();
         for (name, &idx) in &self.interner {
             if idx < missing.len() && missing[idx] {
@@ -31,8 +35,15 @@ impl BitSetDrift {
         if needed.count_ones() == 0 {
             return true;
         }
-        let missing: BitVec = (needed.clone() | available.clone()) ^ available.clone();
+        let missing = needed.clone() & !available.clone();
         missing.count_ones() == 0
+    }
+
+    pub fn name_for_index(&self, idx: usize) -> Option<&str> {
+        self.interner
+            .iter()
+            .find(|(_, &i)| i == idx)
+            .map(|(name, _)| name.as_ref())
     }
 }
 
@@ -40,10 +51,10 @@ impl BitSetDrift {
 mod tests {
     use super::*;
 
-    fn make_interner(names: &[&str]) -> HashMap<ArcIntern<String>, usize> {
+    fn make_interner(names: &[&str]) -> HashMap<ArcIntern<str>, usize> {
         let mut m = HashMap::new();
         for (i, &name) in names.iter().enumerate() {
-            m.insert(ArcIntern::new(name.to_string()), i);
+            m.insert(ArcIntern::from(name), i);
         }
         m
     }

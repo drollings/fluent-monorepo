@@ -97,14 +97,14 @@ impl HeapErrorContext {
         }
     }
 
-    pub fn chain(mut self, parent: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.message = format!("{}: {}", parent, self.message);
+    pub fn chain(self, parent: impl std::error::Error + Send + Sync + 'static) -> Self {
+        let message = format!("{}: {}", parent, self.message);
         Self {
             operation: self.operation,
             field: self.field,
             value: self.value,
             cause: Box::new(parent),
-            message: self.message,
+            message,
         }
     }
 }

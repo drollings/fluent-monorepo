@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-pub const BUCKET_MS: [u64; 11] = [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000];
+pub const BUCKET_MS: [u64; 11] = [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
 pub const BUCKET_COUNT: usize = 12;
 
 pub struct LatencyHistogram {

@@ -1,20 +1,26 @@
 use std::fmt;
 
+pub const MAX_VALUE_LEN: usize = 128;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    Init,
-    Build,
-    Register,
-    Validate,
+    Depends,
+    Provides,
+    Command,
+    Registration,
+    Validation,
+    Initialization,
 }
 
 impl fmt::Display for Phase {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Phase::Init => write!(f, "init"),
-            Phase::Build => write!(f, "build"),
-            Phase::Register => write!(f, "register"),
-            Phase::Validate => write!(f, "validate"),
+            Phase::Depends => write!(f, "depends"),
+            Phase::Provides => write!(f, "provides"),
+            Phase::Command => write!(f, "command"),
+            Phase::Registration => write!(f, "registration"),
+            Phase::Validation => write!(f, "validation"),
+            Phase::Initialization => write!(f, "initialization"),
         }
     }
 }
@@ -40,16 +46,24 @@ impl BuilderError {
         Self {
             phase,
             field: field.map(|s| s.to_string()),
-            value: value.map(|s| s.to_string()),
+            value: value.map(|s| {
+                if s.len() > MAX_VALUE_LEN {
+                    format!("{}...", &s[..MAX_VALUE_LEN])
+                } else {
+                    s.to_string()
+                }
+            }),
             constraint: constraint.map(|s| s.to_string()),
             message: message.to_string(),
             cause: None,
         }
     }
 
-    pub fn chain(mut self, cause: impl fmt::Display) -> Self {
-        self.cause = Some(cause.to_string());
-        self
+    pub fn chain(self, cause: impl fmt::Display) -> Self {
+        Self {
+            cause: Some(cause.to_string()),
+            ..self
+        }
     }
 }
 
@@ -60,12 +74,7 @@ impl fmt::Display for BuilderError {
             write!(f, " field={}", field)?;
         }
         if let Some(ref value) = self.value {
-            let truncated = if value.len() > 64 {
-                format!("{}...", &value[..64])
-            } else {
-                value.clone()
-            };
-            write!(f, " value={}", truncated)?;
+            write!(f, " value={}", value)?;
         }
         if let Some(ref constraint) = self.constraint {
             write!(f, " constraint={}", constraint)?;
@@ -78,6 +87,8 @@ impl fmt::Display for BuilderError {
     }
 }
 
+impl std::error::Error for BuilderError {}
+
 pub fn join_string_slice(items: &[String], separator: &str) -> String {
     items.join(separator)
 }
@@ -89,13 +100,13 @@ mod tests {
     #[test]
     fn init_captures_all_fields() {
         let err = BuilderError::new(
-            Phase::Build,
+            Phase::Depends,
             Some("name"),
             Some("my-target"),
             Some("unique"),
             "duplicate target name",
         );
-        assert_eq!(err.phase, Phase::Build);
+        assert_eq!(err.phase, Phase::Depends);
         assert_eq!(err.field.as_deref(), Some("name"));
         assert_eq!(err.value.as_deref(), Some("my-target"));
         assert_eq!(err.constraint.as_deref(), Some("unique"));
@@ -103,15 +114,15 @@ mod tests {
 
     #[test]
     fn format_writes_message() {
-        let err = BuilderError::new(Phase::Init, None, None, None, "hello");
+        let err = BuilderError::new(Phase::Initialization, None, None, None, "hello");
         let s = format!("{}", err);
         assert!(s.contains("hello"));
-        assert!(s.contains("[init]"));
+        assert!(s.contains("[initialization]"));
     }
 
     #[test]
     fn chain_appends_parent_message() {
-        let err = BuilderError::new(Phase::Build, None, None, None, "child")
+        let err = BuilderError::new(Phase::Depends, None, None, None, "child")
             .chain("parent error");
         let s = format!("{}", err);
         assert!(s.contains("parent error"));
@@ -137,16 +148,23 @@ mod tests {
 
     #[test]
     fn null_field_and_constraint_format_correctly() {
-        let err = BuilderError::new(Phase::Validate, None, None, None, "ok");
+        let err = BuilderError::new(Phase::Validation, None, None, None, "ok");
         let s = format!("{}", err);
-        assert_eq!(s, "[validate]: ok");
+        assert_eq!(s, "[validation]: ok");
     }
 
     #[test]
     fn value_truncated_to_max_len() {
-        let long = "a".repeat(100);
-        let err = BuilderError::new(Phase::Init, None, Some(&long), None, "too long");
+        let long = "a".repeat(200);
+        let err = BuilderError::new(Phase::Registration, None, Some(&long), None, "too long");
         let s = format!("{}", err);
-        assert!(s.len() < 200);
+        assert!(s.len() < 300);
+        assert!(err.value.unwrap().ends_with("..."));
+    }
+
+    #[test]
+    fn implements_error() {
+        let err = BuilderError::new(Phase::Command, None, None, None, "test");
+        let _: &dyn std::error::Error = &err;
     }
 }
