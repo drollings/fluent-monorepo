@@ -69,9 +69,110 @@ impl WasmPlugin for ExtismPlugin {
     }
 }
 
+use std::sync::Mutex;
+
+use guidance_common::traits::{Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
+use internment::ArcIntern;
+
+pub struct WasmComponent {
+    name: String,
+    plugin: Mutex<Box<dyn WasmPlugin>>,
+    config: Mutex<std::collections::HashMap<String, String>>,
+    depends: Vec<ArcIntern<str>>,
+    provides: Vec<ArcIntern<str>>,
+}
+
+impl WasmComponent {
+    pub fn new(name: impl Into<String>, plugin: Box<dyn WasmPlugin>) -> Self {
+        Self {
+            name: name.into(),
+            plugin: Mutex::new(plugin),
+            config: Mutex::new(std::collections::HashMap::new()),
+            depends: Vec::new(),
+            provides: Vec::new(),
+        }
+    }
+
+    pub fn with_depends(mut self, deps: &[ArcIntern<str>]) -> Self {
+        self.depends = deps.to_vec();
+        self
+    }
+
+    pub fn with_provides(mut self, prov: &[ArcIntern<str>]) -> Self {
+        self.provides = prov.to_vec();
+        self
+    }
+}
+
+impl FieldAccess for WasmComponent {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        self.config.lock().unwrap().insert(name.to_string(), value.to_string());
+        Ok(())
+    }
+
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        self.config
+            .lock()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| FieldError::NotFound(name.into()))
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+impl Describable for WasmComponent {
+    fn describe(&self) -> serde_json::Value {
+        let config = self.config.lock().unwrap();
+        serde_json::json!({
+            "name": self.name,
+            "type": "wasm",
+            "config": *config,
+        })
+    }
+}
+
+impl WorkUnit for WasmComponent {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &self.depends
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &self.provides
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let payload = serde_json::to_vec(&*self.config.lock().unwrap())
+            .map_err(|e| WorkError::Execution(format!("serialization: {e}")))?;
+        let result = self
+            .plugin
+            .lock()
+            .unwrap()
+            .call(&payload)
+            .map_err(|e| WorkError::Execution(e.to_string()))?;
+        let data: serde_json::Value = serde_json::from_slice(&result).unwrap_or_default();
+        Ok(WorkOutput::ok_with_data(format!("{} executed", self.name), data))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct MockPlugin;
+
+    impl WasmPlugin for MockPlugin {
+        fn call(&mut self, payload: &[u8]) -> Result<Vec<u8>, WasmError> {
+            Ok(payload.to_vec())
+        }
+    }
 
     #[test]
     fn test_runtime_creation() {
@@ -85,5 +186,47 @@ mod tests {
         let runtime = ExtismWasmRuntime::new();
         let result = runtime.load_plugin_from_file(Path::new("/nonexistent/plugin.wasm"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_wasm_component_name() {
+        let plugin = MockPlugin;
+        let comp = WasmComponent::new("test_wasm", Box::new(plugin));
+        assert_eq!(comp.name(), "test_wasm");
+    }
+
+    #[test]
+    fn test_wasm_component_field_access() {
+        let mut comp = WasmComponent::new("test", Box::new(MockPlugin));
+        comp.set_field("key1", "value1").unwrap();
+        assert_eq!(comp.get_field("key1").unwrap(), "value1");
+        assert!(comp.get_field("nonexistent").is_err());
+    }
+
+    #[test]
+    fn test_wasm_component_describe() {
+        let mut comp = WasmComponent::new("desc_test", Box::new(MockPlugin));
+        comp.set_field("port", "8080").unwrap();
+        let desc = comp.describe();
+        assert_eq!(desc["name"], "desc_test");
+        assert_eq!(desc["config"]["port"], "8080");
+    }
+
+    #[test]
+    fn test_wasm_component_execute() {
+        let mut comp = WasmComponent::new("exec_test", Box::new(MockPlugin));
+        comp.set_field("msg", "hello").unwrap();
+        let ctx = WorkContext::default();
+        let output = comp.execute(&ctx).unwrap();
+        assert!(output.success);
+    }
+
+    #[test]
+    fn test_wasm_component_deps() {
+        let comp = WasmComponent::new("deps_test", Box::new(MockPlugin))
+            .with_depends(&[ArcIntern::from("prep")])
+            .with_provides(&[ArcIntern::from("result")]);
+        assert_eq!(comp.depends().len(), 1);
+        assert_eq!(&*comp.provides()[0], "result");
     }
 }

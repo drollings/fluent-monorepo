@@ -47,6 +47,7 @@ pub mod source;
 pub mod string;
 pub mod terminal;
 pub mod tokenizer;
+pub mod traits;
 pub mod trigram_index;
 pub mod type_inference;
 pub mod types;
@@ -97,7 +98,8 @@ pub use types::{
     QueryResult, SessionId, Skill, Stage, StageKind, SyncResult, TargetId, TargetType, WasmTool,
 };
 pub use url::{is_local_host, is_private_ip, validate_https_or_local_http, UrlError};
-pub use wrapper::{retry_call, wrap_if, Pipeline, RetryResult, WrapperKind};
+pub use wrapper::{retry_call, wrap_if, Instrumented, Pipeline, RetryResult, WithRetry, WrapperKind};
 pub use error::{RegistryError, EmbedError, IoError, ResolverError, DbError, CacheError};
+pub use traits::{Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
 pub use interner::CapabilityRegistry;
 pub use registry::{Target, TargetRegistry};

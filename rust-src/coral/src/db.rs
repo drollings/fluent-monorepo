@@ -1,6 +1,8 @@
+use std::mem::size_of;
 use std::path::Path;
 use std::sync::Mutex;
 
+use bitvec::vec::BitVec;
 use guidance_common::error::DbError;
 use guidance_common::types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
@@ -50,6 +52,7 @@ impl Library {
                 source TEXT NOT NULL DEFAULT '',
                 lod TEXT NOT NULL DEFAULT '[]',
                 embedding BLOB,
+                capabilities BLOB,
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
@@ -100,10 +103,11 @@ impl Library {
         let conn = self.conn.lock().unwrap();
         let lod_json = serde_json::to_string(&node.lod).unwrap_or_default();
         let embedding_blob = node.embedding.as_ref().map(|v| vec_to_blob(v));
+        let capabilities_blob = node.capabilities.as_deref();
 
         conn.execute(
-            "INSERT INTO context_nodes (name, source, lod, embedding) VALUES (?1, ?2, ?3, ?4)",
-            params![node.name.as_str(), node.source, lod_json, embedding_blob],
+            "INSERT INTO context_nodes (name, source, lod, embedding, capabilities) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![node.name.as_str(), node.source, lod_json, embedding_blob, capabilities_blob],
         )?;
 
         Ok(NodeId::from_int(conn.last_insert_rowid()))
@@ -124,7 +128,7 @@ impl Library {
     pub fn get_node(&self, node_id: NodeId) -> Result<Option<ContextNode>, LibraryError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt =
-            conn.prepare("SELECT id, name, source, lod, embedding FROM context_nodes WHERE id = ?1")?;
+            conn.prepare("SELECT id, name, source, lod, embedding, capabilities FROM context_nodes WHERE id = ?1")?;
         let result = stmt
             .query_row(params![node_id.as_int()], |row| {
                 let id: i64 = row.get(0)?;
@@ -132,6 +136,7 @@ impl Library {
                 let source: String = row.get(2)?;
                 let lod_json: String = row.get(3)?;
                 let embedding_blob: Option<Vec<u8>> = row.get(4)?;
+                let capabilities_blob: Option<Vec<u8>> = row.get(5)?;
                 let lod: Vec<String> = serde_json::from_str(&lod_json).unwrap_or_default();
                 let embedding = embedding_blob.and_then(|b| blob_to_vec(&b));
                 Ok(ContextNode {
@@ -140,32 +145,49 @@ impl Library {
                     source,
                     lod,
                     embedding,
+                    capabilities: capabilities_blob,
                 })
             })
             .ok();
         Ok(result)
     }
 
-    pub fn knn_search(&self, query_vec: &[f32], k: usize) -> Result<Vec<KnnHit>, LibraryError> {
+    pub fn knn_search(&self, query_vec: &[f32], k: usize, capability_filter: Option<&BitVec>) -> Result<Vec<KnnHit>, LibraryError> {
         if query_vec.is_empty() {
             return Ok(Vec::new());
         }
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, embedding FROM context_nodes WHERE embedding IS NOT NULL",
-        )?;
+        let capabilities_col = if capability_filter.is_some() { ", capabilities" } else { "" };
+        let sql = format!("SELECT id, name, embedding{capabilities_col} FROM context_nodes WHERE embedding IS NOT NULL");
+        let mut stmt = conn.prepare(&sql)?;
 
         let mut results: Vec<KnnHit> = Vec::new();
 
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([], move |row| {
             let id: i64 = row.get(0)?;
             let name: String = row.get(1)?;
             let blob: Vec<u8> = row.get(2)?;
-            Ok((id, name, blob))
+            let caps_blob: Option<Vec<u8>> = if capability_filter.is_some() {
+                row.get(3).ok().flatten()
+            } else {
+                None
+            };
+            Ok((id, name, blob, caps_blob))
         })?;
 
         for row_result in rows {
-            let (id, name, blob) = row_result?;
+            let (id, name, blob, caps_blob) = row_result?;
+            if let Some(filter) = capability_filter {
+                let node_bv = caps_blob.as_deref()
+                    .map(blob_to_bitvec)
+                    .unwrap_or_default();
+                let overlap = node_bv.iter()
+                    .zip(filter.iter())
+                    .any(|(a, b)| *a && *b);
+                if !overlap {
+                    continue;
+                }
+            }
             if let Some(emb) = blob_to_vec(&blob) {
                 if emb.len() != query_vec.len() {
                     continue;
@@ -319,6 +341,66 @@ impl Library {
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))?;
         Ok(count)
     }
+
+    pub fn get_all_node_ids(&self) -> Result<Vec<NodeId>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id FROM context_nodes ORDER BY id")?;
+        let ids = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                Ok(NodeId::from_int(id))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ids)
+    }
+
+    pub fn keyword_search(&self, query: &str) -> Result<Vec<KnnHit>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let pattern = format!("%{}%", query);
+        let mut stmt = conn.prepare(
+            "SELECT id, name FROM context_nodes WHERE name LIKE ?1 OR source LIKE ?1 LIMIT 10",
+        )?;
+        let results = stmt
+            .query_map(params![pattern], |row| {
+                let id: i64 = row.get(0)?;
+                let name: String = row.get(1)?;
+                Ok(KnnHit {
+                    node_id: NodeId::from_int(id),
+                    distance: 0.0,
+                    name: name.as_str().into(),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(results)
+    }
+
+    pub fn insert_nodes_batch(&self, nodes: &[ContextNode]) -> Result<(), LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        for node in nodes {
+            let lod_json = serde_json::to_string(&node.lod).unwrap_or_default();
+            let embedding_blob = node.embedding.as_ref().map(|v| vec_to_blob(v));
+            let capabilities_blob = node.capabilities.as_deref();
+            tx.execute(
+                "INSERT INTO context_nodes (name, source, lod, embedding, capabilities) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![node.name.as_str(), node.source, lod_json, embedding_blob, capabilities_blob],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+fn blob_to_bitvec(b: &[u8]) -> BitVec {
+    let words: Vec<usize> = b.chunks(size_of::<usize>())
+        .map(|chunk| {
+            let mut arr = [0u8; size_of::<usize>()];
+            let len = chunk.len().min(size_of::<usize>());
+            arr[..len].copy_from_slice(chunk);
+            usize::from_le_bytes(arr)
+        })
+        .collect();
+    BitVec::from_slice(&words)
 }
 
 fn vec_to_blob(v: &[f32]) -> Vec<u8> {
@@ -385,6 +467,7 @@ mod tests {
             source: "full_source_text".into(),
             lod: vec!["summary".into(), "brief".into()],
             embedding: None,
+            capabilities: None,
         };
         let node_id = lib.insert_node(&node).expect("insert");
         assert!(node_id.as_int() > 0);
@@ -406,6 +489,7 @@ mod tests {
             source: "source_text".into(),
             lod: vec!["full".into(), "summary".into(), "brief".into()],
             embedding: Some(emb.clone()),
+            capabilities: None,
         };
         let node_id = lib.insert_node(&node).expect("insert");
 
@@ -434,13 +518,14 @@ mod tests {
                 name: name.as_str().into(),
                 source: "source".into(),
                 lod: vec![],
-                embedding: Some(emb.clone()),
-            };
+            embedding: Some(emb.clone()),
+            capabilities: None,
+        };
             lib.insert_node(&node).expect("insert");
         }
 
         let query: Vec<f32> = vec![0.0, 0.1, 0.2, 0.3];
-        let hits = lib.knn_search(&query, 3).expect("knn search");
+        let hits = lib.knn_search(&query, 3, None).expect("knn search");
         assert_eq!(hits.len(), 3);
         assert!(hits[0].distance <= hits[1].distance);
     }
@@ -455,6 +540,7 @@ mod tests {
             source: "root".into(),
             lod: vec![],
             embedding: None,
+            capabilities: None,
         };
         let root_id = lib.insert_node(&root).expect("insert");
 
@@ -464,6 +550,7 @@ mod tests {
             source: "child".into(),
             lod: vec![],
             embedding: None,
+            capabilities: None,
         };
         let child_id = lib.insert_node(&child).expect("insert");
 
@@ -473,6 +560,7 @@ mod tests {
             source: "grandchild".into(),
             lod: vec![],
             embedding: None,
+            capabilities: None,
         };
         let grandchild_id = lib.insert_node(&grandchild).expect("insert");
 
@@ -522,6 +610,65 @@ mod tests {
     }
 
     #[test]
+    fn test_knn_search_with_capability_filter() {
+        let lib = Library::open_in_memory().expect("in-memory db");
+
+        let node_a = ContextNode {
+            id: None,
+            name: "node_a".into(),
+            source: "a".into(),
+            lod: vec![],
+            embedding: Some(vec![0.1, 0.2, 0.3, 0.4]),
+            capabilities: Some(vec![0b0001]), // capability 0
+        };
+        lib.insert_node(&node_a).expect("insert");
+
+        let node_b = ContextNode {
+            id: None,
+            name: "node_b".into(),
+            source: "b".into(),
+            lod: vec![],
+            embedding: Some(vec![0.5, 0.6, 0.7, 0.8]),
+            capabilities: Some(vec![0b0010]), // capability 1
+        };
+        lib.insert_node(&node_b).expect("insert");
+
+        let node_c = ContextNode {
+            id: None,
+            name: "node_c".into(),
+            source: "c".into(),
+            lod: vec![],
+            embedding: Some(vec![0.9, 1.0, 1.1, 1.2]),
+            capabilities: Some(vec![0b0100]), // capability 2
+        };
+        lib.insert_node(&node_c).expect("insert");
+
+        let query = vec![0.0, 0.1, 0.2, 0.3];
+
+        let mut filter_cap0 = BitVec::new();
+        filter_cap0.resize(4, false);
+        filter_cap0.set(0, true);
+        let hits_cap0 = lib.knn_search(&query, 10, Some(&filter_cap0)).expect("knn");
+        assert_eq!(hits_cap0.len(), 1);
+        assert_eq!(hits_cap0[0].name.as_str(), "node_a");
+
+        let mut filter_cap1 = BitVec::new();
+        filter_cap1.resize(4, false);
+        filter_cap1.set(1, true);
+        let hits_cap1 = lib.knn_search(&query, 10, Some(&filter_cap1)).expect("knn");
+        assert_eq!(hits_cap1.len(), 1);
+        assert_eq!(hits_cap1[0].name.as_str(), "node_b");
+
+        let mut filter_all = BitVec::new();
+        filter_all.resize(4, false);
+        filter_all.set(0, true);
+        filter_all.set(1, true);
+        filter_all.set(2, true);
+        let hits_all = lib.knn_search(&query, 10, Some(&filter_all)).expect("knn");
+        assert_eq!(hits_all.len(), 3);
+    }
+
+    #[test]
     fn test_blob_roundtrip() {
         let original: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
         let blob = vec_to_blob(&original);
@@ -548,3 +695,4 @@ mod tests {
         assert!((d - 1.0).abs() < 1e-6, "orthogonal vectors should have distance 1");
     }
 }
+

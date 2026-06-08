@@ -86,6 +86,7 @@ mod tests {
             source: "source".into(),
             lod: vec![],
             embedding: None,
+            capabilities: None,
         };
         lib.insert_node(&node).expect("insert");
 
@@ -120,3 +121,4 @@ mod tests {
         assert_eq!(result.result, "cached_result");
     }
 }
+

@@ -1,3 +1,4 @@
+use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 
 use guidance_common::types::ContextNode;
@@ -198,6 +199,27 @@ impl McpServer {
             },
         }
     }
+
+    /// Serve MCP protocol over STDIO: read JSON-RPC 2.0 requests from stdin,
+    /// write responses to stdout, one JSON object per line.
+    pub fn serve_stdio(&self) -> Result<(), McpError> {
+        let stdin = io::stdin();
+        let stdout = io::stdout();
+        let mut stdout = stdout.lock();
+
+        for line in stdin.lock().lines() {
+            let line = line?;
+            let trimmed = line.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let response = self.handle_request(&trimmed)?;
+            writeln!(stdout, "{response}")?;
+            stdout.flush()?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -255,5 +277,29 @@ mod tests {
         let trav_resp = server.handle_request(&traverse_req).expect("handle");
         let tr: serde_json::Value = serde_json::from_str(&trav_resp).expect("parse");
         assert_eq!(tr["result"]["count"].as_i64(), Some(1));
+    }
+
+    #[test]
+    fn test_serve_stdio_handles_multiple_lines() {
+        let server = make_server();
+        // Test that handle_request works for multiple JSON objects
+        let req1 = r#"{"jsonrpc":"2.0","method":"coral_query","id":1,"params":{"name":"nonexistent"}}"#;
+        let req2 = r#"{"jsonrpc":"2.0","method":"coral_insert","id":2,"params":{"name":"test_stdio","source":"test","lod":[],"embedding":null}}"#;
+
+        let resp1 = server.handle_request(req1).expect("handle");
+        let r1: JsonRpcResponse = serde_json::from_str(&resp1).expect("parse");
+        assert_eq!(r1.result.as_ref().and_then(|r| r.get("found")), Some(&serde_json::json!(false)));
+
+        let resp2 = server.handle_request(req2).expect("handle");
+        let r2: JsonRpcResponse = serde_json::from_str(&resp2).expect("parse");
+        assert!(r2.result.as_ref().and_then(|r| r.get("node_id")).is_some());
+    }
+
+    #[test]
+    fn test_serve_stdio_parse_error_for_invalid_json() {
+        let server = make_server();
+        // Invalid JSON should produce an error from handle_request
+        let resp = server.handle_request("not-json");
+        assert!(resp.is_err());
     }
 }

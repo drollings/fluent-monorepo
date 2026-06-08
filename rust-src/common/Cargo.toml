@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 bon = { workspace = true }
+async-trait = { workspace = true }
 ureq = { workspace = true }
 blake3 = { workspace = true }
 smol_str = { workspace = true }
@@ -23,6 +24,7 @@ time = { workspace = true }
 regex = { workspace = true }
 lazy_static = "1"
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
 httpmock = { workspace = true }

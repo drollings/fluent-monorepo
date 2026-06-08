@@ -1714,6 +1714,7 @@ dependencies = [
 name = "guidance-common"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bitvec",
  "blake3",
  "bon",
@@ -1732,6 +1733,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "time",
+ "tokio",
  "tracing",
  "ureq",
 ]
@@ -1767,6 +1769,7 @@ dependencies = [
  "guidance-wasm-ipc",
  "internment",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -1780,6 +1783,7 @@ dependencies = [
  "bon",
  "clap",
  "guidance-common",
+ "guidance-llm",
  "httpmock",
  "internment",
  "notify",
@@ -1803,7 +1807,6 @@ version = "0.1.0"
 dependencies = [
  "async-openai",
  "guidance-common",
- "lazy_static",
  "regex",
  "serde",
  "serde_json",

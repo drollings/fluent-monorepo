@@ -70,6 +70,46 @@ impl LlmClient {
 
         Ok(content)
     }
+
+    pub async fn chat_complete_async(&self, messages: Vec<ChatMessage>) -> Result<String, LlmError> {
+        let url = format!("{}/chat/completions", self.api_base);
+        let model = self.model.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let body = serde_json::json!({
+                "model": model,
+                "messages": messages,
+                "max_tokens": 1024u32,
+                "stream": false,
+            });
+
+            let response = ureq::post(&url)
+                .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
+                .map_err(|e| LlmError::Http(e.to_string()))?;
+
+            let mut body = response.into_body();
+            let body_str = body
+                .read_to_string()
+                .map_err(|e| LlmError::Api(e.to_string()))?;
+
+            let parsed: serde_json::Value =
+                serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
+
+            let content = parsed
+                .get("choices")
+                .and_then(|c| c.as_array())
+                .and_then(|choices| choices.first())
+                .and_then(|c| c.get("message"))
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .ok_or(LlmError::NoResponse)?
+                .to_string();
+
+            Ok(content)
+        })
+        .await
+        .map_err(|e| LlmError::Http(e.to_string()))?
+    }
 }
 
 #[cfg(test)]

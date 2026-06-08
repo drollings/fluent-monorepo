@@ -239,6 +239,8 @@ pub struct ContextNode {
     pub lod: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<u8>>,
 }
 
 // ── KnnHit ──────────────────────────────────────────────────────────────────────
@@ -506,6 +508,7 @@ mod tests {
             source: "full text".into(),
             lod: vec![],
             embedding: None,
+            capabilities: None,
         };
         assert!(node.lod.is_empty());
         assert!(node.embedding.is_none());

@@ -52,6 +52,7 @@ where
                 if attempts >= max_attempts {
                     return Err(e);
                 }
+                #[allow(clippy::cast_lossless)]
                 std::thread::sleep(Duration::from_millis(10 * attempts as u64));
             }
         }
@@ -88,6 +89,115 @@ impl Pipeline {
             }
         }
         f()
+    }
+}
+
+use std::sync::Arc;
+use std::time::Instant;
+
+use internment::ArcIntern;
+use tracing::info;
+
+use crate::traits::{WorkContext, WorkError, WorkOutput, WorkUnit};
+
+impl WorkUnit for Arc<dyn WorkUnit> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        (**self).depends()
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        (**self).provides()
+    }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        (**self).execute(ctx)
+    }
+}
+
+pub struct Instrumented<U> {
+    inner: U,
+    label: String,
+}
+
+impl<U: WorkUnit> Instrumented<U> {
+    pub fn new(inner: U, label: impl Into<String>) -> Self {
+        Self {
+            inner,
+            label: label.into(),
+        }
+    }
+}
+
+impl<U: WorkUnit> WorkUnit for Instrumented<U> {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        self.inner.depends()
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        self.inner.provides()
+    }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let start = Instant::now();
+        let result = self.inner.execute(ctx);
+        let elapsed = start.elapsed();
+        info!(target: "instrumented", label = %self.label, elapsed = ?elapsed, name = %self.inner.name(), "executed");
+        result
+    }
+}
+
+pub struct WithRetry<U> {
+    inner: U,
+    max_attempts: u32,
+    backoff_ms: u64,
+}
+
+impl<U: WorkUnit> WithRetry<U> {
+    pub fn new(inner: U, max_attempts: u32, backoff_ms: u64) -> Self {
+        Self {
+            inner,
+            max_attempts,
+            backoff_ms,
+        }
+    }
+}
+
+impl<U: WorkUnit> WorkUnit for WithRetry<U> {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        self.inner.depends()
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        self.inner.provides()
+    }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let mut attempts = 0u32;
+        loop {
+            attempts += 1;
+            match self.inner.execute(ctx) {
+                Ok(output) => return Ok(output),
+                Err(e) => {
+                    if attempts >= self.max_attempts {
+                        return Err(e);
+                    }
+                    #[allow(clippy::cast_lossless)]
+                    std::thread::sleep(std::time::Duration::from_millis(self.backoff_ms * attempts as u64));
+                }
+            }
+        }
     }
 }
 

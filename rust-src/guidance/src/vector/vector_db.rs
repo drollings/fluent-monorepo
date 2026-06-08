@@ -186,39 +186,15 @@ impl GuidanceDb {
         query_vec: Option<&[f32]>,
         k: usize,
     ) -> Result<Vec<SearchResult>, VectorDbError> {
-        let mut keyword_results = self.keyword_search(query)?;
+        let keyword_results = self.keyword_search(query)?;
 
-        let mut vector_results = if let Some(vec) = query_vec {
+        let vector_results = if let Some(vec) = query_vec {
             self.vector_search(vec, k)?
         } else {
             Vec::new()
         };
 
-        let mut seen = std::collections::HashSet::new();
-        let mut fused: Vec<SearchResult> = Vec::new();
-
-        let kw_weight = 0.35;
-        let vec_weight = 0.65;
-
-        for result in keyword_results.iter_mut() {
-            result.similarity *= kw_weight;
-        }
-
-        for result in vector_results.iter_mut() {
-            result.similarity *= vec_weight;
-        }
-
-        let all_results: Vec<Vec<SearchResult>> = vec![keyword_results, vector_results];
-
-        for mut batch in all_results {
-            for result in batch.drain(..) {
-                if seen.insert(result.id) {
-                    fused.push(result);
-                }
-            }
-        }
-
-        fused.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        let mut fused = rrf_merge(keyword_results, vector_results, 60.0);
         fused.truncate(k);
 
         Ok(fused)
@@ -238,6 +214,48 @@ impl GuidanceDb {
             })?;
         Ok(count)
     }
+}
+
+/// Reciprocal Rank Fusion: merges two ranked result lists using RRF scoring.
+/// RRF score = sum(1 / (k + rank(engine))) for each result appearing in either list.
+/// Results not present in a list get rank = infinity (contribute 0).
+/// `k` is the RRF constant (typically 60).
+pub fn rrf_merge(
+    keyword_results: Vec<SearchResult>,
+    vector_results: Vec<SearchResult>,
+    k_constant: f64,
+) -> Vec<SearchResult> {
+    use std::collections::HashMap;
+
+    let mut rrf_scores: HashMap<i64, (f64, SearchResult)> = HashMap::new();
+
+    for (rank, result) in keyword_results.into_iter().enumerate() {
+        rrf_scores.insert(result.id, (1.0 / (k_constant + rank as f64), result));
+    }
+
+    for (rank, result) in vector_results.into_iter().enumerate() {
+        let score = 1.0 / (k_constant + rank as f64);
+        let entry = rrf_scores
+            .entry(result.id)
+            .or_insert_with(|| (0.0, result));
+        entry.0 += score;
+    }
+
+    let mut merged: Vec<SearchResult> = rrf_scores
+        .into_values()
+        .map(|(score, mut r)| {
+            r.similarity = score as f32;
+            r
+        })
+        .collect();
+
+    merged.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    merged
 }
 
 #[cfg(test)]
@@ -307,5 +325,50 @@ mod tests {
             .hybrid_search("hello", Some(&emb), 5)
             .expect("hybrid search");
         assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_rrf_merge_single_result() {
+        let kw = vec![SearchResult {
+            id: 1,
+            name: "foo".into(),
+            source: "src/foo.zig".into(),
+            signature: None,
+            similarity: 0.0,
+        }];
+        let vec_results = vec![];
+        let merged = rrf_merge(kw, vec_results, 60.0);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].name, "foo");
+    }
+
+    #[test]
+    fn test_rrf_merge_boosts_shared_results() {
+        let kw = vec![
+            SearchResult { id: 1, name: "shared".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
+            SearchResult { id: 2, name: "kw_only".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
+        ];
+        let vec_results = vec![
+            SearchResult { id: 1, name: "shared".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
+            SearchResult { id: 3, name: "vec_only".into(), source: "a.zig".into(), signature: None, similarity: 0.0 },
+        ];
+        let merged = rrf_merge(kw, vec_results, 60.0);
+        // shared (id=1) should be ranked first since it appears in both lists
+        assert!(merged.len() >= 2);
+        assert_eq!(merged[0].name, "shared");
+        assert!(merged[0].similarity > merged[1].similarity);
+    }
+
+    #[test]
+    fn test_rrf_merge_deduplicates() {
+        let kw = vec![
+            SearchResult { id: 1, name: "dup".into(), source: "x.zig".into(), signature: None, similarity: 0.0 },
+        ];
+        let vec_results = vec![
+            SearchResult { id: 1, name: "dup".into(), source: "x.zig".into(), signature: None, similarity: 0.0 },
+        ];
+        let merged = rrf_merge(kw.clone(), vec_results, 60.0);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].name, "dup");
     }
 }

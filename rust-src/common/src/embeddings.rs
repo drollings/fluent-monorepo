@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use crate::url::validate_https_or_local_http;
 
 #[derive(Debug, thiserror::Error)]
@@ -32,11 +33,21 @@ impl BatchEmbedding {
     }
 }
 
+#[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     fn name(&self) -> &'static str;
     fn dimensions(&self) -> u32;
     fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
+
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError>;
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        self.embed(text)
+    }
+
+    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        self.embed_batch(texts)
+    }
 }
 
 pub struct NoopEmbedding {
@@ -92,6 +103,7 @@ impl OllamaEmbedding {
     }
 }
 
+#[async_trait]
 impl EmbeddingProvider for OllamaEmbedding {
     fn name(&self) -> &'static str {
         "ollama"
@@ -120,6 +132,28 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": inputs,
         });
         let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
+        parse_ollama_batch_response(&resp_bytes)
+    }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "model": self.model.clone(),
+            "input": text,
+        });
+        let resp_bytes = do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string()).await?;
+        parse_ollama_response(&resp_bytes)
+    }
+
+    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        let inputs: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::Value::String(t.to_string())).collect();
+        let body = serde_json::json!({
+            "model": self.model.clone(),
+            "input": inputs,
+        });
+        let resp_bytes = do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string()).await?;
         parse_ollama_batch_response(&resp_bytes)
     }
 }
@@ -165,6 +199,7 @@ impl OpenAiEmbedding {
     }
 }
 
+#[async_trait]
 impl EmbeddingProvider for OpenAiEmbedding {
     fn name(&self) -> &'static str {
         "openai"
@@ -195,6 +230,40 @@ impl EmbeddingProvider for OpenAiEmbedding {
         let resp_bytes = do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
         parse_openai_batch_response(&resp_bytes)
     }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "model": self.model.clone(),
+            "input": text,
+        });
+        let resp_bytes = do_openai_request_async(self.embeddings_url(), self.api_key.clone(), body.to_string()).await?;
+        parse_openai_response(&resp_bytes)
+    }
+
+    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        let inputs: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::Value::String(t.to_string())).collect();
+        let body = serde_json::json!({
+            "model": self.model.clone(),
+            "input": inputs,
+        });
+        let resp_bytes = do_openai_request_async(self.embeddings_url(), self.api_key.clone(), body.to_string()).await?;
+        parse_openai_batch_response(&resp_bytes)
+    }
+}
+
+async fn do_embed_request_async(base_url: String, path: String, body_str: String) -> Result<Vec<u8>, EmbeddingError> {
+    tokio::task::spawn_blocking(move || do_embed_request(&base_url, &path, &body_str))
+        .await
+        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?
+}
+
+async fn do_openai_request_async(url: String, api_key: String, body_str: String) -> Result<Vec<u8>, EmbeddingError> {
+    tokio::task::spawn_blocking(move || do_openai_request(&url, &api_key, &body_str))
+        .await
+        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?
 }
 
 fn do_embed_request(base_url: &str, path: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {
@@ -648,5 +717,43 @@ mod tests {
         assert_eq!(batch.count, 0);
         assert_eq!(batch.dims, 0);
         assert!(batch.flat.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_ollama_embed_async_with_mock() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/api/embed");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
+        });
+        let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
+        let vec = p.embed_async("hello").await.unwrap();
+        assert_eq!(vec.len(), 3);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_openai_embed_async_with_mock() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/v1/embeddings")
+                .header("Authorization", "Bearer sk-test");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"data": [{"embedding": [0.1, 0.2, 0.3], "index": 0}]}"#);
+        });
+        let p = OpenAiEmbedding::new(
+            Some("text-embedding-3-small"),
+            Some(&server.url("")),
+            Some("sk-test"),
+            3,
+        ).unwrap();
+        let vec = p.embed_async("hello").await.unwrap();
+        assert_eq!(vec.len(), 3);
+        mock.assert();
     }
 }

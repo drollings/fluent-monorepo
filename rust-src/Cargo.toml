@@ -47,9 +47,11 @@ tree-sitter-python = "0.25.0"
 
 # Async
 tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
 
 # HTTP
 ureq = { version = "3", features = ["json"] }
+
 
 # Testing
 tempfile = "3"

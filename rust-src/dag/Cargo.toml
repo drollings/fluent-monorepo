@@ -7,6 +7,7 @@ edition.workspace = true
 guidance-common = { path = "../common" }
 guidance-wasm-ipc = { path = "../wasm_ipc" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 internment = { workspace = true }
 bitvec = { workspace = true }
 thiserror = { workspace = true }

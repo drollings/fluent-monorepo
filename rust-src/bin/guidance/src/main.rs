@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
+use guidance_coral::mcp::McpServer;
+use guidance_coral::db::Library;
 use guidance_guidance::sync_engine::SyncEngine;
 
 #[derive(Parser)]
@@ -18,6 +21,14 @@ struct Cli {
     show_prompts: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum OutputFormat {
+    Markdown,
+    Json,
+    Compact,
+    Debug,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Explain a keyword or query
@@ -27,6 +38,10 @@ enum Commands {
         /// Path to guidance directory
         #[arg(short, long, default_value = ".guidance")]
         guidance_dir: String,
+
+        /// Output format: markdown, json, compact, debug
+        #[arg(short, long, default_value = "markdown")]
+        output: String,
     },
     /// Show guidance info for a file
     Show {
@@ -82,7 +97,14 @@ fn main() {
     }
 
     match &cli.command {
-        Commands::Explain { query, guidance_dir } => {
+        Commands::Explain { query, guidance_dir, output } => {
+            let format = match output.as_str() {
+                "json" => OutputFormat::Json,
+                "compact" => OutputFormat::Compact,
+                "debug" => OutputFormat::Debug,
+                _ => OutputFormat::Markdown,
+            };
+
             let dir = PathBuf::from(guidance_dir);
             if !dir.exists() {
                 eprintln!("error: guidance directory not found: {guidance_dir}");
@@ -90,11 +112,46 @@ fn main() {
             }
             let source_dir = std::env::current_dir().unwrap_or_default();
             let engine = SyncEngine::new(dir, source_dir);
+
             match engine.status() {
-                Ok(status) => {
-                    println!("Explain: {query}");
-                    println!("Files: {} total, {} stale", status.total_files, status.stale_files);
-                }
+                Ok(status) => match format {
+                    OutputFormat::Json => {
+                        let result = serde_json::json!({
+                            "query": query,
+                            "status": {
+                                "total_files": status.total_files,
+                                "stale_files": status.stale_files,
+                                "up_to_date": status.up_to_date,
+                                "is_clean": status.is_clean(),
+                            }
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                    }
+                    OutputFormat::Compact => {
+                        println!("{query} | files: {} total, {} stale, {} clean",
+                            status.total_files, status.stale_files, status.up_to_date);
+                    }
+                    OutputFormat::Debug => {
+                        println!("=== Explain Debug ===");
+                        println!("Query: {query}");
+                        println!("Guidance dir: {}", guidance_dir);
+                        println!("Total files: {}", status.total_files);
+                        println!("Stale files: {}", status.stale_files);
+                        println!("Up to date: {}", status.up_to_date);
+                        println!("Is clean: {}", status.is_clean());
+                        println!("=====================");
+                    }
+                    OutputFormat::Markdown => {
+                        println!("## Explain: {query}");
+                        println!();
+                        println!("| Metric | Value |");
+                        println!("|--------|-------|");
+                        println!("| Total files | {} |", status.total_files);
+                        println!("| Stale files | {} |", status.stale_files);
+                        println!("| Up to date | {} |", status.up_to_date);
+                        println!("| Clean | {} |", status.is_clean());
+                    }
+                },
                 Err(e) => eprintln!("sync error: {e}"),
             }
         }
@@ -134,7 +191,20 @@ fn main() {
             println!("Cache statistics:");
         }
         Commands::Serve => {
-            println!("MCP server mode (STDIO)...");
+            match Library::open_in_memory() {
+                Ok(lib) => {
+                    let server = McpServer::new(Arc::new(lib));
+                    eprintln!("MCP server started (STDIO)");
+                    if let Err(e) = server.serve_stdio() {
+                        eprintln!("MCP server error: {e}");
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to open library: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Init { dir } => {
             let d = Path::new(dir).join(".guidance");
@@ -198,18 +268,94 @@ fn main() {
             println!("Committing with message: {message}");
         }
         Commands::Check => {
-            let guidance_dir = PathBuf::from(".guidance");
-            let source_dir = std::env::current_dir().unwrap_or_default();
-            let engine = SyncEngine::new(guidance_dir, source_dir);
-            match engine.status() {
-                Ok(status) => {
-                    if status.is_clean() {
-                        println!("All files up to date.");
-                    } else {
-                        println!("{} stale files need regeneration.", status.stale_files);
+            /// RALPH waterfall: build → test → lint → fmt → gen → structure → db
+            let waterfall_stages: &[(&str, fn() -> Result<(), String>)] = &[
+                ("build", || {
+                    let status = std::process::Command::new("cargo")
+                        .args(["build", "--workspace"])
+                        .status()
+                        .map_err(|e| format!("build failed: {e}"))?;
+                    if !status.success() {
+                        return Err("build failed with non-zero exit".into());
+                    }
+                    Ok(())
+                }),
+                ("test", || {
+                    let status = std::process::Command::new("cargo")
+                        .args(["test", "--workspace"])
+                        .status()
+                        .map_err(|e| format!("test failed: {e}"))?;
+                    if !status.success() {
+                        return Err("tests failed".into());
+                    }
+                    Ok(())
+                }),
+                ("lint", || {
+                    let status = std::process::Command::new("cargo")
+                        .args(["clippy", "--workspace", "--", "-D", "warnings"])
+                        .status()
+                        .map_err(|e| format!("clippy failed: {e}"))?;
+                    if !status.success() {
+                        return Err("clippy warnings found".into());
+                    }
+                    Ok(())
+                }),
+                ("fmt", || {
+                    let status = std::process::Command::new("cargo")
+                        .args(["fmt", "--check"])
+                        .status()
+                        .map_err(|e| format!("fmt check failed: {e}"))?;
+                    if !status.success() {
+                        return Err("formatting issues found".into());
+                    }
+                    Ok(())
+                }),
+                ("gen", || {
+                    let guidance_dir = PathBuf::from(".guidance");
+                    let source_dir = std::env::current_dir().unwrap_or_default();
+                    let engine = SyncEngine::new(guidance_dir, source_dir);
+                    let status = engine.status().map_err(|e| format!("status: {e}"))?;
+                    if !status.is_clean() {
+                        eprintln!("{} stale files need regeneration.", status.stale_files);
+                    }
+                    Ok(())
+                }),
+                ("structure", || {
+                    // Regenerate STRUCTURE.md placeholder
+                    let structure_path = Path::new("STRUCTURE.md");
+                    if !structure_path.exists() {
+                        std::fs::write(structure_path, "# Project Structure\n\n").map_err(|e| format!("write: {e}"))?;
+                        println!("STRUCTURE.md regenerated");
+                    }
+                    Ok(())
+                }),
+                ("db", || {
+                    // Sync .guidance.db placeholder
+                    let db_path = Path::new(".guidance.db");
+                    if db_path.exists() {
+                        println!(".guidance.db exists, skipping sync");
+                    }
+                    Ok(())
+                }),
+            ];
+
+            let mut all_passed = true;
+            for (name, stage_fn) in waterfall_stages {
+                print!("{name}... ");
+                match stage_fn() {
+                    Ok(()) => println!("OK"),
+                    Err(e) => {
+                        println!("FAILED: {e}");
+                        all_passed = false;
+                        break;
                     }
                 }
-                Err(e) => eprintln!("error: {e}"),
+            }
+
+            if all_passed {
+                println!("\nAll RALPH checks passed");
+            } else {
+                std::process::exit(1);
             }
         }
         Commands::Todo => {

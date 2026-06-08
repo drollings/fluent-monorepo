@@ -25,6 +25,7 @@ pub struct TargetRegistry {
     targets: Vec<Target>,
     by_name: HashMap<ArcIntern<str>, usize>,
     by_bit_index: HashMap<usize, usize>,
+    providers: HashMap<usize, Vec<usize>>,
 }
 
 impl TargetRegistry {
@@ -33,6 +34,7 @@ impl TargetRegistry {
             targets: Vec::new(),
             by_name: HashMap::new(),
             by_bit_index: HashMap::new(),
+            providers: HashMap::new(),
         }
     }
 
@@ -46,6 +48,11 @@ impl TargetRegistry {
         let bit_idx = target.id as usize;
         self.by_name.insert(target.name.clone(), idx);
         self.by_bit_index.insert(bit_idx, idx);
+
+        for cap_idx in target.provides.iter_ones() {
+            self.providers.entry(cap_idx).or_default().push(bit_idx);
+        }
+
         self.targets.push(target);
         Ok(())
     }
@@ -64,11 +71,28 @@ impl TargetRegistry {
     }
 
     pub fn get_providers(&self, capability_bit_index: usize) -> Vec<&Target> {
+        self.providers
+            .get(&capability_bit_index)
+            .map(|indices| {
+                indices
+                    .iter()
+                    .filter_map(|bit_idx| {
+                        self.by_bit_index
+                            .get(bit_idx)
+                            .map(|&idx| &self.targets[idx])
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn find_providers(&self, required: &BitVec) -> Vec<&Target> {
         self.targets
             .iter()
             .filter(|t| {
                 let prov = &t.provides;
-                capability_bit_index < prov.len() && prov[capability_bit_index]
+                let missing: BitVec = required.clone() & !prov.clone();
+                missing.not_any()
             })
             .collect()
     }
@@ -227,6 +251,33 @@ mod tests {
         }
         let names = reg.list_names();
         assert_eq!(names.len(), 3);
+    }
+
+    #[test]
+    fn find_providers_by_bitvec() {
+        let mut reg = TargetRegistry::new();
+        let mut provides = BitVec::new();
+        provides.resize(5, false);
+        provides.set(0, true);
+        provides.set(1, true);
+
+        let t = Target::new()
+            .id(1)
+            .name("provider".into())
+            .target_type(TargetType::File)
+            .executor(ExecutorKind::Native)
+            .depends(BitVec::new())
+            .provides(provides)
+            .build();
+        reg.register(t).unwrap();
+
+        let mut required = BitVec::new();
+        required.resize(5, false);
+        required.set(0, true);
+
+        let providers = reg.find_providers(&required);
+        assert_eq!(providers.len(), 1);
+        assert_eq!(&*providers[0].name, "provider");
     }
 
     #[test]

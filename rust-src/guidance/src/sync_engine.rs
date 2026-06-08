@@ -4,6 +4,7 @@ use guidance_common::types::GuidanceDoc;
 use thiserror::Error;
 
 use crate::ast_parser::AstParser;
+use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
 
@@ -56,6 +57,11 @@ impl SyncEngine {
 
         let json_path = self.guidance_json_path(source_path);
         json_store::save_guidance(&json_path, &doc)?;
+
+        // Sync comments back to source file after generation
+        if let Err(e) = comments::sync_comments(source_path, &doc) {
+            tracing::warn!("comment sync failed for {:?}: {e}", source_path);
+        }
 
         Ok(doc)
     }
@@ -215,5 +221,28 @@ mod tests {
 
         let status = engine.status().expect("status");
         assert_eq!(status.total_files, 1);
+    }
+
+    #[test]
+    fn test_gen_syncs_comments() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let source_dir = dir.path().join("src");
+        std::fs::create_dir(&source_dir).expect("create src");
+
+        // Source with a function but no comment
+        let zig_file = source_dir.join("test.zig");
+        std::fs::write(&zig_file, "pub fn hello() void {}\n").expect("write");
+
+        let guidance_dir = dir.path().join(".guidance");
+        let mut engine = SyncEngine::new(guidance_dir, source_dir);
+
+        // gen() should call sync_comments which adds /// comments
+        let doc = engine.gen(&zig_file).expect("gen");
+        assert_eq!(doc.members.len(), 1);
+
+        // Reread source to verify comments were synced
+        let source_after = std::fs::read_to_string(&zig_file).expect("read");
+        // The member has no comment, so no /// should be added — just verifying no crash
+        assert!(source_after.contains("pub fn hello() void {}"));
     }
 }

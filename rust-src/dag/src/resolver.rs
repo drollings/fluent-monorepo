@@ -4,7 +4,7 @@ use bitvec::vec::BitVec;
 use guidance_common::error::ResolverError;
 use guidance_common::types::TargetType;
 
-use crate::registry::TargetRegistry;
+use guidance_common::registry::TargetRegistry;
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {

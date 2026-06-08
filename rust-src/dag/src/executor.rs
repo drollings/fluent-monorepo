@@ -5,8 +5,8 @@ use guidance_common::types::ExecutorKind;
 use thiserror::Error;
 use tracing::{info, span, Level};
 
-use crate::registry::TargetRegistry;
 use crate::resolver::ExecutionPlan;
+use guidance_common::registry::TargetRegistry;
 
 #[derive(Error, Debug)]
 pub enum ExecutionError {
@@ -131,8 +131,8 @@ mod tests {
     use guidance_common::registry::Target;
     use guidance_common::types::TargetType;
 
-    use crate::registry::TargetRegistry;
     use crate::resolver::DependencyResolver;
+    use guidance_common::registry::TargetRegistry;
 
     fn make_bitset(bits: &[usize]) -> BitVec {
         let max = bits.iter().max().copied().unwrap_or(0) + 1;

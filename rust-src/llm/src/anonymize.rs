@@ -1,11 +1,11 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 
-lazy_static::lazy_static! {
-    static ref EMAIL_RE: Regex = Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
-    static ref API_KEY_RE: Regex = Regex::new(r#"(?i)(api[_-]?key|apikey|secret|token)\s*[=:]\s*[a-zA-Z0-9_-]{16,}"#).unwrap();
-    static ref IP_RE: Regex = Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap();
-    static ref PHONE_RE: Regex = Regex::new(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b").unwrap();
-}
+static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap());
+static API_KEY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)(api[_-]?key|apikey|secret|token)\s*[=:]\s*[a-zA-Z0-9_-]{16,}"#).unwrap());
+static IP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap());
+static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b").unwrap());
 
 pub fn anonymize(text: &str) -> String {
     let text = EMAIL_RE.replace_all(text, "[EMAIL]");

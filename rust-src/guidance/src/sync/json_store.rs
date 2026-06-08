@@ -157,11 +157,86 @@ pub fn load_guidance(path: &Path) -> Result<Option<GuidanceDoc>, JsonError> {
     Ok(load_guidance_from_value(&v))
 }
 
+/// Merge existing member data into a new member when match_hash is unchanged.
+/// Preserves user-created content: comment, tags, equivalents, comment_generated flag.
+pub fn merge_member(existing: &Member, new: &mut Member) {
+    let hash_match = match (&existing.match_hash, &new.match_hash) {
+        (Some(eh), Some(nh)) => eh == nh,
+        _ => false,
+    };
+    if !hash_match {
+        return;
+    }
+    // Preserve existing comment if the new one is empty/generated
+    if new.comment.is_none() || new.comment_generated {
+        if let Some(ref comment) = existing.comment {
+            new.comment = Some(comment.clone());
+            new.comment_generated = existing.comment_generated;
+        }
+    }
+    // Merge tags: combine existing and new tags (unique)
+    let mut merged_tags = new.tags.clone();
+    for tag in &existing.tags {
+        if !merged_tags.contains(tag) {
+            merged_tags.push(tag.clone());
+        }
+    }
+    new.tags = merged_tags;
+    // Preserve equivalents
+    let mut merged_eqs = new.equivalents.clone();
+    for eq in &existing.equivalents {
+        if !merged_eqs.contains(eq) {
+            merged_eqs.push(eq.clone());
+        }
+    }
+    new.equivalents = merged_eqs;
+}
+
+/// Merge existing doc-level metadata into a new doc, preserving user annotations.
+pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
+    // Preserve doc comment if new one is empty
+    if new.comment.is_none() && existing.comment.is_some() {
+        new.comment = existing.comment.clone();
+    }
+    // Merge keywords
+    for kw in &existing.keywords {
+        if !new.keywords.contains(kw) {
+            new.keywords.push(kw.clone());
+        }
+    }
+    // Merge skills
+    for skill in &existing.skills {
+        if !new.skills.iter().any(|s| s.ref_path == skill.ref_path) {
+            new.skills.push(skill.clone());
+        }
+    }
+    // Preserve capability_eval if new doesn't have one
+    if new.capability_eval.is_none() {
+        new.capability_eval = existing.capability_eval.clone();
+    }
+    // Merge members by match_hash
+    for new_member in new.members.iter_mut() {
+        if let Some(ref new_hash) = new_member.match_hash {
+            if let Some(existing_member) = existing.members.iter().find(|em| {
+                em.match_hash.as_ref() == Some(new_hash)
+            }) {
+                merge_member(existing_member, new_member);
+            }
+        }
+    }
+}
+
+/// Save guidance doc, preserving existing metadata when hashes are unchanged.
 pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json_str = super::json_writer::doc_to_json_string(doc);
+    // Load existing to preserve user annotations on hash-match
+    let mut doc_to_save = doc.clone();
+    if let Ok(Some(existing)) = load_guidance(path) {
+        merge_doc(&existing, &mut doc_to_save);
+    }
+    let json_str = super::json_writer::doc_to_json_string(&doc_to_save);
     std::fs::write(path, json_str)?;
     Ok(())
 }
@@ -170,6 +245,125 @@ pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
 mod tests {
     use super::*;
     use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+
+    fn make_test_member(name: &str, sig: &str, hash: &str, comment: Option<&str>) -> Member {
+        Member {
+            type_name: MemberType::FnDecl,
+            name: name.into(),
+            signature: Some(sig.into()),
+            match_hash: Some(hash.into()),
+            comment: comment.map(SmolStr::from),
+            ..Member::default()
+        }
+    }
+
+    #[test]
+    fn test_merge_member_preserves_comment() {
+        let existing = make_test_member("foo", "fn foo() void", "abc123", Some("Original comment"));
+        let mut new = make_test_member("foo", "fn foo() void", "abc123", None);
+        merge_member(&existing, &mut new);
+        assert_eq!(new.comment.as_ref().map(SmolStr::as_str), Some("Original comment"));
+    }
+
+    #[test]
+    fn test_merge_member_different_hash() {
+        let existing = make_test_member("foo", "fn foo() void", "abc123", Some("Original"));
+        let mut new = make_test_member("foo", "fn foo(x: i32) void", "def456", None);
+        merge_member(&existing, &mut new);
+        assert!(new.comment.is_none(), "should not merge when hash differs");
+    }
+
+    #[test]
+    fn test_merge_member_merges_tags() {
+        let mut existing = make_test_member("foo", "fn foo() void", "abc123", Some("Original"));
+        existing.tags = vec!["api".into(), "public".into()];
+        let mut new = make_test_member("foo", "fn foo() void", "abc123", None);
+        new.tags = vec!["api".into(), "new_tag".into()];
+        merge_member(&existing, &mut new);
+        assert!(new.tags.iter().any(|t| t.as_str() == "public"));
+        assert!(new.tags.iter().any(|t| t.as_str() == "new_tag"));
+        assert_eq!(new.tags.len(), 3);
+    }
+
+    #[test]
+    fn test_save_guidance_preserves_comment_on_round_trip() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("test.json");
+
+        // First save: member with comment and hash
+        let doc1 = GuidanceDoc {
+            meta: Meta {
+                module: "roundtrip".into(),
+                source: "src/rt.zig".into(),
+                language: "zig".into(),
+            },
+            comment: Some("Module comment".into()),
+            members: vec![make_test_member("foo", "fn foo() void", "hash1", Some("User comment"))],
+            ..GuidanceDoc::default()
+        };
+        save_guidance(&path, &doc1).expect("first save");
+
+        // Second save: same member, same hash, no comment
+        let doc2 = GuidanceDoc {
+            meta: Meta {
+                module: "roundtrip".into(),
+                source: "src/rt.zig".into(),
+                language: "zig".into(),
+            },
+            comment: None,
+            members: vec![make_test_member("foo", "fn foo() void", "hash1", None)],
+            ..GuidanceDoc::default()
+        };
+        save_guidance(&path, &doc2).expect("second save");
+
+        // Reload and verify comment preserved
+        let loaded = load_guidance(&path).expect("load").expect("should exist");
+        assert_eq!(
+            loaded.members[0].comment.as_ref().map(SmolStr::as_str),
+            Some("User comment"),
+            "comment should be preserved on round-trip"
+        );
+        assert_eq!(
+            loaded.comment.as_ref().map(SmolStr::as_str),
+            Some("Module comment"),
+            "doc comment should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_save_guidance_overwrites_when_hash_differs() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("test.json");
+
+        let doc1 = GuidanceDoc {
+            meta: Meta {
+                module: "test".into(),
+                source: "src/t.zig".into(),
+                language: "zig".into(),
+            },
+            members: vec![make_test_member("old_fn", "fn old_fn() void", "hash_old", Some("Old comment"))],
+            ..GuidanceDoc::default()
+        };
+        save_guidance(&path, &doc1).expect("first save");
+
+        // Different hash = signature changed = don't preserve
+        let doc2 = GuidanceDoc {
+            meta: Meta {
+                module: "test".into(),
+                source: "src/t.zig".into(),
+                language: "zig".into(),
+            },
+            members: vec![make_test_member("old_fn", "fn old_fn(x: i32) void", "hash_new", None)],
+            ..GuidanceDoc::default()
+        };
+        save_guidance(&path, &doc2).expect("second save");
+
+        let loaded = load_guidance(&path).expect("load").expect("should exist");
+        assert!(
+            loaded.members[0].comment.is_none(),
+            "comment should NOT be preserved when hash differs"
+        );
+    }
 
     #[test]
     fn test_load_guidance_minimal() {
