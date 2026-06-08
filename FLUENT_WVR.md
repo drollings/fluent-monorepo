@@ -10,9 +10,33 @@
 
 ## Who This Document Is For
 
-**For humans coming from Python or C++**: Rust's trait system replaces inheritance, its ownership model replaces garbage collection, and its derive macros replace runtime reflection. This document shows how eleven composable patterns together give you Python's runtime ergonomics and C++'s polymorphic flexibility, with absolute memory safety and zero hidden cost.
+**For humans coming from Python or C++**: Rust's trait system replaces inheritance, its ownership model replaces garbage collection, and its derive macros replace runtime reflection. This document shows how twelve composable patterns together give you Python's runtime ergonomics and C++'s polymorphic flexibility, with absolute memory safety and zero hidden cost.
 
 **For AI agents**: This document is the authoritative reference for how code in `rust-src/` is structured. When writing new code, check the pattern table in §1, find the applicable pattern, and follow the rules and anti-pattern sections. All patterns are in production use in the codebase.
+
+---
+
+## The Core Thesis
+
+Each pattern in this document is a local improvement in isolation. Composed together, they form a system where **expressiveness, type safety, observability, and runtime efficiency are simultaneously maximised rather than traded off against each other.**
+
+The data flow through the full pipeline demonstrates this:
+
+```
+Developer writes:   Target::builder().name("build").depends(bits).build()
+                           ↓
+bon::Builder:      Generates chained setter methods at compile time (zero cost)
+                           ↓
+Validation:        build() returns Result; ? propagation at call site (type safety)
+                           ↓
+FieldAccess:       component.set_field("port", "9000")?  (runtime configuration)
+                           ↓
+Trait Object:      Arc<dyn Component> stored in registry (uniform interface)
+                           ↓
+Runtime:           Orchestrator calls unit.execute() — no branching needed (efficiency)
+```
+
+The developer writes a single declarative construction chain. The compiler generates builder methods, validates types, and produces a trait object. The component can be configured by name at runtime, wrapped with middleware, and executed uniformly. The orchestrator sees a uniform interface — it never branches on implementation type.
 
 ---
 
@@ -38,7 +62,7 @@ Every orchestratable task in the system implements `Component`. Whether it's a c
 
 ## 1. The Synthesis Pipeline at a Glance
 
-Eleven core patterns compose into a single coherent architecture.
+Twelve core patterns compose into a single coherent architecture.
 
 | Pattern | Problem solved | Cost | Primary source |
 |---------|---------------|------|---------------|
@@ -52,6 +76,7 @@ Eleven core patterns compose into a single coherent architecture.
 | **Unit of Work** | Uniform orchestration of heterogeneous tasks | One trait impl per task | `dag/src/work_unit.rs` |
 | **Middleware Chain** | Composable cross-cutting on trait objects | One allocation per layer | `dag/src/middleware.rs` |
 | **Component Adapter** | Runtime type adaptation without losing uniform interface | One `Arc` per adapter | `dag/src/adapter.rs` |
+| **Structured Logging Context** | Request-scoped observability without manual context passing | Thread-local storage | `common/src/logging.rs` |
 | **Runtime Composition** | Full lifecycle: build → configure → wrap → execute → inspect | Zero — uses above patterns | Throughout |
 
 The data flow through the full pipeline:
@@ -156,6 +181,13 @@ let target = registry.validate_and_allocate(args)?;
 - **Do NOT apply to structs with 2–3 parameters.** The benefit is readability; three params are already readable.
 - **Decouple construction from registration.** `Target::builder().build()` produces an owned `Target`; `registry.register(target)` commits it. This clarifies ownership.
 
+### When to Avoid
+
+- **2–3 parameters with no validation:** A struct literal or `fn new()` is already readable. The builder adds boilerplate with no benefit.
+- **No allocation or interning:** If construction cannot fail and involves no heap allocation, a simple constructor is clearer.
+- **Single-use internal structs:** If the struct is only constructed in one place and never exposed, a builder is over-engineering.
+- **Performance-critical construction:** If you're constructing millions of instances in a hot loop, the builder overhead (even if small) may matter. Use direct construction.
+
 ### Why not manual builders?
 
 A manual builder in Rust requires: a separate struct, `impl` blocks for each setter, error accumulation logic, and a terminal method. That's ~50 lines per type. `bon` generates all of this from the struct definition in zero lines of additional code.
@@ -179,6 +211,18 @@ class Target:
 ---
 
 ## 3. Pattern 2 — Trait-Based Reflection
+
+### The Boundary Rule
+
+**Data that arrives from outside the process is always a string at the boundary. Data moving inside the process is not a string and should never be treated as one.**
+
+This is the architectural foundation for choosing between the four tiers of reflection:
+- **Tier 1 (Direct access):** Internal code, hot loops, trusted types
+- **Tier 2 (serde):** Boundary crossing, type known at compile time
+- **Tier 3 (FieldAccess):** Boundary crossing, field names from runtime data
+- **Tier 4 (HashMap):** Schema unknown until runtime
+
+The boundary rule prevents the most common performance mistake: treating internal data as strings when it doesn't need to be.
 
 ### The problem
 
@@ -422,6 +466,14 @@ Is the access in a hot loop?
 - **The `FieldAccess` derive macro is planned** for P3. Until then, use `HashMap<ArcIntern<str>, serde_json::Value>` for dynamic schemas, or implement `FieldAccess` manually for critical types.
 - **Every `FieldAccess` implementation must also implement `Describable`.** The schema is the single source of truth.
 
+### When to Avoid
+
+- **Hot loops:** Never use `set_field` or `serde` in a loop. Use direct field access (Tier 1).
+- **Internal structs that never cross a boundary:** If a struct is only used internally and never configured by name, don't add `FieldAccess`. The derive macro adds code for no benefit.
+- **Single-implementation types:** If there's only one way to configure a type and it's known at compile time, use direct field access or a builder. `FieldAccess` is for runtime-dynamic configuration.
+- **Performance-critical boundaries:** If you're parsing millions of records per second, `serde` may be too slow. Consider a custom parser or binary format.
+- **Types with no schema:** If you can't describe the type with JSON Schema, `FieldAccess` is the wrong tool. Use `HashMap` or a custom representation.
+
 ---
 
 ## 4. Pattern 3 — Trait Composition (Cross-Cutting Concerns)
@@ -532,6 +584,14 @@ When combining multiple wrappers, apply outer-to-inner:
 - **Do NOT wrap when there is only one implementation.** Use the concrete type directly.
 - **Use `impl Trait` or generics for hot paths** to avoid vtable dispatch entirely.
 
+### When to Avoid
+
+- **Single implementation:** If there's only one implementation and no plan for a second, don't wrap. Use the concrete type directly.
+- **Hot paths:** Wrappers add a vtable call layer. For performance-critical code, use generics (`impl Trait` or `<T: Trait>`) to enable inlining.
+- **Stateless wrappers with no cross-cutting concern:** If the wrapper doesn't add logging, retry, timing, or another cross-cutting concern, it's unnecessary indirection.
+- **After type erasure:** You cannot wrap an `Arc<dyn Trait>` with a newtype wrapper and expect the compiler to inline. Use middleware (Pattern 9) for post-erasure composition.
+- **When the wrapper changes the interface:** Wrappers must preserve the trait interface. If you need to change the interface, use a different pattern (e.g., adapter).
+
 ### Python analogy
 
 ```python
@@ -629,6 +689,14 @@ pub enum ProviderConfig {
 | Single implementation, hot loop | `<T: Trait>` or `impl Trait` | Zero-cost monomorphization |
 | Single implementation, not hot | Concrete type | No indirection needed |
 | Plugin system (WASM, dynamic load) | `dyn Trait` + `Arc` | Runtime-discovered implementations |
+
+### When to Avoid
+
+- **Single implementation:** If there's only one implementation and no concrete plan for a second, use the concrete type. Trait objects add indirection for no benefit.
+- **Speculative polymorphism:** Don't create a trait "just in case" you might add more implementations later. Start with a concrete type; add the trait when the second implementation arrives.
+- **Hot loops:** `dyn Trait` dispatch prevents inlining. For performance-critical code, use generics or `impl Trait`.
+- **When you need to serialize the trait object:** Rust doesn't support serializing `dyn Trait` directly. Use an enum wrapper with `#[serde(tag = "type")]` instead.
+- **When the type is known at compile time:** If you know the concrete type at the call site, use it directly. Trait objects are for runtime polymorphism.
 
 ---
 
@@ -740,6 +808,14 @@ pub fn get_provides_bitset(
 5. **Variable-length data** is appended after the fixed header. The header contains `offset` and `len` fields pointing to it.
 6. **Use `read_unaligned`** for packed struct field access. This is the only `unsafe` required.
 
+### When to Avoid
+
+- **Internal structs that never cross a boundary:** If a struct is only used within Rust code, don't add `#[repr(C, packed)]`. It prevents optimizations and requires `unsafe` for field access.
+- **Human-readable protocols:** If the protocol needs to be debuggable or human-readable, use JSON or a text format. Binary IPC is for performance-critical, machine-to-machine communication.
+- **When the schema changes frequently:** Binary IPC requires coordinated updates on both sides. If the schema is volatile, use a self-describing format like JSON or Protocol Buffers.
+- **When performance is not critical:** If you're not in a hot loop or dealing with large payloads, the complexity of binary IPC is not worth it. Use `serde` with JSON.
+- **Cross-language boundaries without a shared spec:** If you're communicating with a language that doesn't respect C layout, use a standard format like Protocol Buffers or FlatBuffers.
+
 ---
 
 ## 7. Pattern 6 — Scoped Ownership (Replacing Arenas)
@@ -788,6 +864,14 @@ async fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
 - **Do not pre-allocate reusable buffers** unless profiling proves allocation is a bottleneck.
 - **If you want an arena, use a scoped function** with local `Vec`s. They are dropped at scope exit.
 - **Builder ownership transfer:** `build()` consumes the builder and returns an owned struct. The registry takes ownership. No manual deinit.
+
+### When to Avoid
+
+- **Long-lived data structures:** If data must outlive the function that created it, don't scope it to a local block. Use a persistent allocator or clone the data to a longer-lived owner.
+- **Single-allocation functions:** If a function only allocates once, scoping doesn't help. The allocation is already managed by the return value.
+- **When you need fine-grained control:** If you need to free individual allocations before scope exit, scoped ownership is too coarse. Use explicit `drop()` or a different ownership model.
+- **Cross-thread sharing:** Scoped locals cannot be shared across threads. For shared data, use `Arc` or other thread-safe primitives.
+- **When profiling shows allocation is not a bottleneck:** Don't optimize prematurely. If allocation is not a performance issue, use the simplest ownership model.
 
 ---
 
@@ -841,6 +925,14 @@ process_node(sess);  // Compile error: expected NodeId, found SessionId
 - **Use for any integer ID that crosses module boundaries** and must not be mixed with other IDs.
 - **Do NOT use when you need arithmetic on the ID** (`id + 1`). Use a raw integer for counters.
 - **Derive `Serialize, Deserialize`** so the newtype is transparent in JSON/DB.
+
+### When to Avoid
+
+- **Internal counters or indices:** If you're using the integer as a loop counter, array index, or for arithmetic, use a raw integer. Newtypes prevent arithmetic operations.
+- **Single-module IDs:** If an ID never crosses module boundaries and there's no risk of confusion, a raw integer is simpler.
+- **When you need multiple representations:** If the same ID needs to be represented as `i64`, `u64`, and `String` in different contexts, newtypes add conversion overhead. Use a single representation with explicit conversion functions.
+- **Performance-critical code:** Newtypes add a wrapper layer. In hot loops, the overhead may matter. Use raw integers and document the intended type.
+- **When the ID is not an integer:** Newtypes are most useful for integer IDs. For string IDs or composite keys, use a different pattern (e.g., a struct with named fields).
 
 ---
 
@@ -971,6 +1063,14 @@ for unit in registry.resolve(&["build"])? {
 - **Compose with wrappers** (Pattern 3) for cross-cutting concerns: `Instrumented { inner: WithRetry { inner: unit } }`.
 - **Do NOT add methods to `WorkUnit` speculatively.** Start with `name`, `depends`, `provides`, `execute`, `schema`. Add more only when a second implementation requires it.
 
+### When to Avoid
+
+- **Non-orchestratable tasks:** If a task is never executed by an orchestrator (DAG executor, MCP server, WASM host), don't implement `WorkUnit`. Use a simpler interface.
+- **Single-use tasks:** If a task is only executed once and never stored in a registry, `WorkUnit` is over-engineering. Use a function or a simple struct.
+- **When the task has no dependencies or provides:** If a task doesn't participate in a dependency graph, the `depends()` and `provides()` methods are unnecessary. Consider a simpler trait.
+- **Hot loops:** `WorkUnit` is for orchestration, not for tight loops. If you're executing millions of tasks per second, use a more direct approach.
+- **When you need fine-grained control over execution:** If the orchestrator's execution model doesn't fit your needs (e.g., you need streaming output, partial results, or cancellation), `WorkUnit` may be too restrictive.
+
 ---
 
 ## 10. Pattern 9 — Middleware Chain (Composable Cross-Cutting on Trait Objects)
@@ -1037,6 +1137,14 @@ let wrapped = middleware.into_iter().fold(unit, |u, m| m.wrap(u));
 - **Use `Arc<dyn WorkUnit>` (not `Box`)** because middleware may be shared across threads.
 - **Delegate `schema()` to the inner unit.** Middleware does not change the schema.
 - **Apply middleware at registration time**, not at execution time.
+
+### When to Avoid
+
+- **Compile-time-known cross-cutting concerns:** If the cross-cutting concern is known at compile time and the type is not erased, use newtype wrappers (Pattern 3) instead. They enable inlining.
+- **Stateless middleware with no configuration:** If the middleware doesn't need configuration (e.g., timing middleware that just logs), consider a simpler approach like a wrapper function.
+- **When you need to modify the interface:** Middleware must preserve the trait interface. If you need to change the interface, use an adapter pattern.
+- **Hot paths:** Each middleware layer adds a vtable call. For performance-critical code, minimize middleware layers or use generics.
+- **When the middleware needs to change the schema:** Middleware should not modify the schema. If you need to change the schema, use a different pattern (e.g., adapter).
 
 ---
 
@@ -1167,6 +1275,14 @@ registry.register(adapted);
 - **The adapter implements `Component`**, so it can be stored in the same registry as any other component.
 - **Use function pointers or closures** for custom behavior. Avoid complex state in the adapter itself.
 
+### When to Avoid
+
+- **Compile-time-known adaptations:** If the adaptation is known at compile time, use newtype wrappers (Pattern 3). They enable inlining and are simpler.
+- **When you need to change the interface:** `ComponentAdapter` preserves the `Component` interface. If you need a different interface, use a different pattern.
+- **When the adapter has complex state:** Adapters should be thin wrappers. If you need complex state, consider a different pattern (e.g., a new struct that implements `Component` directly).
+- **Hot paths:** Adapters add indirection. For performance-critical code, minimize adapter layers.
+- **When you can modify the original component:** If you own the component and can add the behavior directly, do that instead of wrapping it.
+
 ---
 
 ## 12. Runtime Composition: Build, Configure, Wrap, Execute, Inspect
@@ -1267,9 +1383,162 @@ let output = wrapped.execute(&ctx)?;
 
 ---
 
-## 13. Why They Work in Synergy
+## 13. Pattern 11 — Structured Logging Context
 
-The patterns are not independently beneficial — their value multiplies when composed.
+### The problem
+
+In a multi-threaded server, log messages from different requests interleave. Without request context, debugging is difficult: you can't correlate log lines with a specific request, user, or trace. Adding context to every log call is verbose and error-prone.
+
+### The Rust solution
+
+Thread-local request context that is automatically included in all log messages within a scope. The context is set at request boundaries and cleared when the request completes. Timing scopes measure function execution and log duration automatically.
+
+### Definition in `common/src/logging.rs`
+
+```rust
+use std::cell::RefCell;
+use std::time::Instant;
+use tracing::info;
+
+#[derive(Debug, Clone, Default)]
+pub struct LogContext {
+    pub request_id: Option<String>,
+    pub user_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub span_id: Option<String>,
+}
+
+thread_local! {
+    static CURRENT_CONTEXT: RefCell<Option<LogContext>> = RefCell::new(None);
+}
+
+impl LogContext {
+    pub fn set(ctx: LogContext) {
+        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(ctx));
+    }
+
+    pub fn get() -> Option<LogContext> {
+        CURRENT_CONTEXT.with(|c| c.borrow().clone())
+    }
+
+    pub fn clear() {
+        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = None);
+    }
+}
+```
+
+### Timing scopes
+
+```rust
+pub struct Scope {
+    name: &'static str,
+    start: Instant,
+}
+
+impl Scope {
+    pub fn begin(name: &'static str) -> Self {
+        let start = Instant::now();
+        if LogContext::get().is_some() {
+            info!(scope = name, event = "start");
+        }
+        Self { name, start }
+    }
+
+    pub fn end(self) {
+        if LogContext::get().is_some() {
+            let elapsed_us = self.start.elapsed().as_micros() as u64;
+            info!(scope = self.name, event = "end", elapsed_us);
+        }
+    }
+}
+```
+
+### Single-expression helper
+
+```rust
+pub inline fn call_logged<F, T, E>(
+    name: &'static str,
+    f: F,
+) -> Result<T, E>
+where
+    F: FnOnce() -> Result<T, E>,
+{
+    let scope = Scope::begin(name);
+    let result = f();
+    scope.end();
+    result
+}
+```
+
+### Usage at request boundaries
+
+```rust
+async fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
+    // Set context for this request
+    LogContext::set(LogContext {
+        request_id: Some(generate_request_id()),
+        user_id: Some(self.user_id.clone()),
+        trace_id: Some(generate_trace_id()),
+        span_id: None,
+    });
+    defer LogContext::clear();
+
+    // All log calls in this scope include the context
+    let req: JsonRpcRequest = serde_json::from_str(raw_json)?;
+    let result = call_logged("route", || self.reactor.route(&req.query))?;
+    
+    Ok(serde_json::to_string(&result)?)
+}
+```
+
+### Key properties
+
+1. **Thread-local:** Each thread has its own context slot. No synchronization needed.
+2. **Zero-copy:** `LogContext` holds owned strings, not references. Context does NOT propagate across thread boundaries.
+3. **Zero overhead when inactive:** When `LogContext::get()` is `None`, `Scope::begin()` and `Scope::end()` are no-ops. No allocation, no log call.
+4. **Automatic cleanup:** Use `defer` or `Drop` to ensure context is cleared even on error paths.
+
+### Rules
+
+- **Set context at request boundaries** (HTTP handler, MCP request, WASM plugin call).
+- **Clear context when the request completes.** Use `defer` or a guard type.
+- **Do NOT propagate context across thread boundaries.** Pass the value explicitly and call `LogContext::set()` on the new thread.
+- **Use `call_logged` for single-expression calls.** It wraps the call in a `Scope` and logs duration.
+- **Do NOT use `Scope` in hot loops.** Each scope logs two messages (start and end). For tight loops, use direct field access.
+
+### When to Avoid
+
+- **Single-threaded applications:** If your application is single-threaded and doesn't handle concurrent requests, thread-local context is unnecessary. Use a global context or pass context explicitly.
+- **Hot loops:** Each scope logs two messages. For performance-critical code, use direct logging or disable context.
+- **When you need cross-thread propagation:** Thread-local context does NOT propagate across threads. If you need to propagate context, pass it explicitly.
+- **When logging is disabled:** If tracing/logging is disabled, the context is unused. Don't set it.
+
+---
+
+## 14. Why They Work in Synergy
+
+### What Each Pattern Produces and Consumes
+
+The patterns are not independently beneficial — their value multiplies when composed. To understand why, think about what each pattern *produces* and what it *consumes*:
+
+| Pattern | Produces | Consumes |
+|---------|----------|----------|
+| **Fluent Builder** | Fully-configured, allocation-complete object | Allocator, registry |
+| **Trait-Based Reflection** | Vtable-driven field access (zero per-field overhead) | Struct definitions |
+| **Trait Composition** | Instrumented functions of the same type | Comptime function values |
+| **Trait Objects** | Uniform handles for runtime dispatch | Type-erased pointers, `const` vtable globals |
+| **Scoped Ownership** | Single deinit that frees all intermediate allocations | Allocator scope boundary |
+| **Newtype Handles** | Distinct types that share integer representation | Integer IDs |
+| **Unit of Work** | Uniform orchestration interface | Heterogeneous tasks |
+| **Middleware Chain** | Composable cross-cutting on trait objects | `Arc<dyn Trait>` |
+| **Component Adapter** | Runtime type adaptation | `Arc<dyn Component>` |
+| **Structured Logging Context** | Request-scoped observability | Thread-local context |
+
+These hand-offs are not accidental. The Fluent Builder is a natural scope boundary for scoped ownership precisely because builders have a clear terminal. Trait Composition can only wrap before type erasure, and the registration terminal is exactly the moment of type erasure — so the wrapper goes at that site naturally. Trait Objects require `const` globals for their vtables, and comptime-generated vtables are automatically `const` globals. The patterns fit together because they were each designed around the same philosophy: explicit scope, explicit ownership, explicit dispatch, zero hidden cost.
+
+### Synergy Details
+
+The patterns are not just independently beneficial — their value multiplies when composed.
 
 ### Synergy 1: Builder + Trait Object eliminates per-call type branching
 
@@ -1299,7 +1568,7 @@ A `ComponentAdapter` can change execution behavior at runtime. Middleware can ad
 
 ---
 
-## 14. Anti-Patterns
+## 15. Anti-Patterns
 
 ### ❌ Manual builder structs
 
@@ -1433,6 +1702,29 @@ fn execute_query(ctx: &WorkContext, config: &StagedConfig) -> Result<WorkOutput,
 }
 ```
 
+**Why it's wrong:** The trait is routing to the same function through three identical implementations. The only thing that differs is the `matches` predicate. The trait is a vehicle for the `matches` function pointer — but the `execute` indirection is pure waste. This is Cosmopolitan Polymorphism: applying the trait pattern for the routing mechanism while the polymorphism itself is an illusion.
+
+**How to catch it:** If you write three implementations and notice their `execute` bodies are word-for-word identical, stop. The trait is not earning its indirection. Use a function-pointer array (like `QueryMatch`) instead. Keep `matches` as a function pointer; move `execute` to a single shared function.
+
+### ❌ Returning a trait object that wraps a temporary
+
+```rust
+// Wrong: the inner value is dropped at the end of the function
+fn make_provider() -> Arc<dyn EmbeddingProvider> {
+    let provider = OllamaProvider::new("model");  // stack-allocated
+    Arc::new(provider)  // Arc wraps a reference to a temporary
+}
+
+// Right: heap-allocate the inner value
+fn make_provider() -> Arc<dyn EmbeddingProvider> {
+    Arc::new(OllamaProvider::new("model"))  // Arc owns the value
+}
+```
+
+**Why it's wrong:** If you create a value on the stack and then wrap it in an `Arc`, the `Arc` takes ownership and the value is moved to the heap. But if you try to wrap a reference to a stack value, the reference becomes dangling when the function returns. Always ensure the `Arc` owns the value, not a reference to it.
+
+**How to catch it:** If the compiler complains about lifetimes or borrowing, you're probably trying to wrap a reference. Use `Arc::new(value)` to transfer ownership, not `Arc::new(&value)`.
+
 ### ❌ Wrapping after type erasure
 
 ```rust
@@ -1488,7 +1780,7 @@ pub struct ToolConfig {
 
 ---
 
-## 15. Pattern Selection Guide
+## 16. Pattern Selection Guide
 
 ```
 Does the construction have 4+ parameters, or reads like configuration?
@@ -1551,7 +1843,11 @@ Do you need to adapt a component's behavior at runtime?
 
 ---
 
-## 16. Thread Safety
+## 17. Thread Safety
+
+### Thread Safety Contract
+
+The patterns in this document are **weakly positive** for thread safety:
 
 | Pattern | Thread safety story |
 |---------|---------------------|
@@ -1565,8 +1861,40 @@ Do you need to adapt a component's behavior at runtime?
 | `WorkUnit` trait | `Send + Sync` required; implementors must be thread-safe |
 | `Middleware` | `Send + Sync` required; stateless middleware is zero-contention |
 | `ComponentAdapter` | `Send + Sync` required; closures must be thread-safe |
+| `LogContext` | Thread-local; no synchronization needed |
 
-Shared mutable objects that need explicit protection:
+### Detailed Thread Safety Rules
+
+1. **Handle creation is NOT thread-safe.** Create trait objects (`Arc<dyn Trait>`) on a single thread during initialization. Do not create handles concurrently.
+
+2. **Handle storage in shared registries requires synchronization.** Use `Mutex`, `RwLock`, or concurrent collections (`DashMap`) for registries that are accessed from multiple threads.
+
+3. **Trait object method calls ARE thread-safe IF the implementation is thread-safe.** Stateless implementations (`NoopEmbedding`, simple structs) are always safe. Stateful implementations (HTTP clients, database connections) must use interior mutability (`Mutex`, `RwLock`) for mutable state.
+
+4. **Handle destruction requires all concurrent calls to complete first.** Before dropping an `Arc<dyn Trait>`, ensure all threads that hold a reference have completed their work. Use `Arc::strong_count()` to check for remaining references, or use a barrier/join mechanism.
+
+5. **`Send + Sync` bounds are your friend.** Always add `Send + Sync` to traits stored in registries or shared across threads. The compiler will enforce thread safety at every implementation site.
+
+### Example: Thread-safe usage pattern
+
+```rust
+// 1. Create on init thread (single-threaded):
+let provider = Arc::new(OllamaProvider::new("model"));
+
+// 2. Pass to workers (read-only — Arc is immutable):
+let worker = move || {
+    let vec = provider.embed("hello").unwrap();  // thread-safe if impl is
+};
+
+// 3. Destroy after all workers join:
+let handles: Vec<_> = (0..4).map(|_| std::thread::spawn(worker)).collect();
+for h in handles {
+    h.join().unwrap();
+}
+drop(provider);  // safe: all workers have completed
+```
+
+### Shared mutable objects that need explicit protection
 
 | Object | Mechanism | Reason |
 |--------|-----------|--------|
@@ -1574,10 +1902,11 @@ Shared mutable objects that need explicit protection:
 | `CapabilityRegistry` | `RwLock<HashMap<...>>` | Read-heavy concurrent intern calls |
 | `L1Cache` | `DashMap<String, RoutingResult>` | Concurrent cache access |
 | `WasmUnit.plugin` | `Mutex<extism::Plugin>` | Plugin state is not thread-safe |
+| `LogContext` | Thread-local | Each thread has its own context |
 
 ---
 
-## 17. Schema Evolution
+## 18. Schema Evolution
 
 ### Versioning with `serde`
 
@@ -1588,6 +1917,60 @@ pub struct Config {
     pub port: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_field: Option<String>,  // added in v1.1
+}
+```
+
+### Field-level versioning annotations
+
+For more complex schema evolution, annotate fields with version metadata:
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
+    
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[field(version_added = "1.1")]
+    pub new_field: Option<String>,
+    
+    #[serde(skip)]  // removed in v2.0
+    #[field(version_removed = "2.0")]
+    pub old_field: Option<String>,
+    
+    #[serde(alias = "old_name")]  // renamed in v1.2
+    #[field(version_added = "1.2", version_removed = "1.2")]
+    pub renamed_field: String,
+}
+```
+
+### Migration functions
+
+For type changes or complex migrations, provide a migration function:
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default, deserialize_with = "migrate_timeout")]
+    pub timeout_ms: u64,  // changed from String to u64 in v2.0
+}
+
+fn migrate_timeout<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => {
+            // Old format: "5s" or "5000ms"
+            parse_duration(&s).map_err(serde::de::Error::custom)
+        }
+        serde_json::Value::Number(n) => {
+            // New format: 5000 (milliseconds)
+            n.as_u64().ok_or_else(|| serde::de::Error::custom("invalid timeout"))
+        }
+        _ => Err(serde::de::Error::custom("invalid timeout format")),
+    }
 }
 ```
 
@@ -1605,46 +1988,75 @@ if version != BINARY_SCHEMA_VERSION {
 
 ### Upgrade path
 
-| Change | Action |
-|--------|--------|
-| Add field with default | Add `#[serde(default)]` — backward compatible |
-| Remove field | Add `#[serde(skip)]` — forward compatible |
-| Rename field | Use `#[serde(alias = "old_name")]` |
-| Binary IPC breaking change | Bump `BINARY_SCHEMA_VERSION` |
+| Change | Bump | Action |
+|--------|------|--------|
+| Add field with default | Minor | Add `#[serde(default)]` — backward compatible |
+| Remove field | Major | Add `#[serde(skip)]` — forward compatible |
+| Rename field | Major | Old field with `#[serde(skip)]`; new field with `#[serde(alias = "old_name")]` |
+| Type change | Major | Old field + `deserialize_with` migration function |
+| Binary IPC breaking change | Major | Bump `BINARY_SCHEMA_VERSION` |
+
+### Schema compatibility rules
+
+- **Backward compatible:** New code can read old data. Adding fields with defaults is backward compatible.
+- **Forward compatible:** Old code can read new data. Removing fields with `#[serde(skip)]` is forward compatible.
+- **Breaking change:** Requires migration. Type changes and field removals without defaults are breaking.
 
 ---
 
-## 18. Summary for AI Agents
+## 19. Summary for AI Agents
 
 When writing new code in `rust-src/`:
 
-1. **Check the source first.** Run `guidance explain "<topic>"` before writing. The pattern you need is probably already implemented.
+1. **Check the source first.** Run `guidance explain "<topic>"` before writing. The pattern you need is probably already implemented and tested. Check `common/src/registry.rs` for builders, `common/src/embeddings.rs` for trait objects, `wasm_ipc/src/lib.rs` for binary IPC.
 
-2. **New multi-parameter construction** → `#[derive(bon::Builder)]` on the struct. Use `#[builder(default)]` for optional fields. Never write manual builders.
+2. **New multi-parameter construction** → `#[derive(bon::Builder)]` on the struct. Use `#[builder(default)]` for optional fields. Use `#[builder(start_fn = new)]` for `Type::new()` entry point. Never write manual builders — they add 50+ lines of boilerplate.
 
-3. **New boundary serialization** → `#[derive(Serialize, Deserialize)]` with `#[serde(default)]` and `#[serde(skip_serializing_if)]`.
+3. **New boundary serialization** → `#[derive(Serialize, Deserialize)]` with `#[serde(default)]` and `#[serde(skip_serializing_if = "Option::is_none")]`. For schema evolution, use `#[serde(alias = "old_name")]` for renames and `deserialize_with` for type migrations.
 
-4. **New runtime-configurable component** → `#[derive(FieldAccess, Describable)]` or implement manually for WASM/DB bridges. The component can be configured by name, described with JSON Schema, and executed uniformly.
+4. **New runtime-configurable component** → `#[derive(FieldAccess, Describable)]` or implement manually for WASM/DB bridges. The component can be configured by name, described with JSON Schema, and executed uniformly. Every `FieldAccess` implementation must also implement `Describable`.
 
-5. **New cross-cutting logic** → Newtype wrapper implementing the same trait. Apply at registration site, before type erasure. For runtime decisions, use `Middleware` or `ComponentAdapter`.
+5. **New cross-cutting logic** → Newtype wrapper implementing the same trait. Apply at registration site, before type erasure. For runtime decisions, use `Middleware` or `ComponentAdapter`. Never wrap after type erasure — it adds a vtable call layer.
 
-6. **New subsystem with multiple implementations** → Define a trait with `Send + Sync`. Store as `Arc<dyn Trait>`. See `EmbeddingProvider` in `common/src/embeddings.rs`.
+6. **New subsystem with multiple implementations** → Define a trait with `Send + Sync`. Store as `Arc<dyn Trait>`. See `EmbeddingProvider` in `common/src/embeddings.rs`. Never use `dyn Trait` when there is only one implementation — use the concrete type.
 
-7. **New WASM/binary IPC type** → `#[repr(C, packed)]` with explicit `to_le_bytes()` / `from_le_bytes()` encode/decode. Validate magic + version.
+7. **New WASM/binary IPC type** → `#[repr(C, packed)]` with explicit `to_le_bytes()` / `from_le_bytes()` encode/decode. Validate magic + version. Never use `transmute` — it's undefined behavior if layout changes.
 
-8. **New batch-processing loop** → Scoped function with local `Vec`s. No arena needed.
+8. **New batch-processing loop** → Scoped function with local `Vec`s. No arena needed. RAII drops everything at scope exit.
 
 9. **New orchestratable task** → Implement `WorkUnit` trait. If it needs runtime configuration, also implement `FieldAccess` and `Describable` to make it a `Component`. Store as `Arc<dyn Component>`.
 
-10. **Never use raw pointers for vtables.** Use `dyn Trait` + `Arc`. The compiler generates the vtable.
+10. **New request-scoped observability** → Use `LogContext::set()` at request boundaries. Use `Scope::begin()` / `Scope::end()` for timing. Use `call_logged()` for single-expression calls. Clear context with `defer` or a guard type.
 
-11. **Never use `transmute` for binary IPC.** Use explicit byte-order encoding.
+### Never do these
 
-12. **Never use `dyn Trait` when there is only one implementation.** Use the concrete type.
+11. **Never use raw pointers for vtables.** Use `dyn Trait` + `Arc`. The compiler generates the vtable. Raw pointers bypass the borrow checker and require manual `Box::from_raw` cleanup.
 
-13. **Never use `serde` or `FieldAccess` in hot loops.** Use direct field access.
+12. **Never use `transmute` for binary IPC.** Use explicit byte-order encoding. `transmute` is undefined behavior if the layout changes.
 
-14. **Run `cargo clippy` before finishing.** The project enforces `#![deny(warnings)]`.
+13. **Never use `dyn Trait` when there is only one implementation.** Use the concrete type. Trait objects add indirection for no benefit.
+
+14. **Never use `serde` or `FieldAccess` in hot loops.** Use direct field access. Serialization and string parsing add 10-50x overhead.
+
+15. **Never stack-allocate a vtable or a struct that stores vtables internally.** This is the most common memory bug in this pattern family. Heap-allocate schemas that contain vtables.
+
+16. **Never wrap a function that is already behind a vtable.** Wrap before type erasure, at the registration site. Wrapping after adds a vtable call layer with no inlining.
+
+17. **Never use the string reflection path in hot loops.** It allocates. Use direct field access or `setFast`/`getFast`.
+
+18. **Never apply Fluent Builder to a 3-parameter init.** The threshold is 4+ parameters. Three params are already readable.
+
+19. **Never add `FieldAccess` to a type that never crosses a boundary.** If a struct is only used internally and never configured by name, don't add `FieldAccess`.
+
+20. **Never create a trait speculatively.** Start with a concrete type. Add the trait when the second implementation arrives.
+
+### Verification
+
+21. **Run `cargo clippy` before finishing.** The project enforces `#![deny(warnings)]`.
+
+22. **Run `cargo test` before finishing.** All 448 tests must pass.
+
+23. **Check for `unsafe` blocks.** The project has only 7 `unsafe` blocks (3 packed struct reads in `wasm_ipc`, 4 libc ioctl in `terminal.rs`). If you add a new `unsafe` block, it must be justified and documented.
 
 ---
 
