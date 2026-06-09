@@ -12,20 +12,24 @@
 pub mod ast_parser;
 pub mod config;
 pub mod enhancer;
+pub mod guidance_string;
 pub mod plugin;
 pub mod query_engine;
+pub mod scanner;
 pub mod sync_engine;
 
 pub mod query {
     pub mod identifier;
     pub mod llm_filter;
     pub mod llm_filter_batch;
+    pub mod snapshot;
     pub mod strategy;
     pub mod synthesize;
 }
 
 pub mod sync {
     pub mod comments;
+    pub mod file_lock;
     pub mod json_store;
     pub mod json_writer;
     pub mod staleness;

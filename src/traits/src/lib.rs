@@ -1,3 +1,5 @@
+pub mod wrapper;
+
 use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

@@ -1,9 +1,4 @@
-use crate::source::NodeType;
 use std::collections::HashMap;
-
-pub fn extract_excerpt_for_nodes(src: &str, start_line: u32, max_lines: usize) -> String {
-    crate::source::extract_excerpt(src, start_line, NodeType::Other, max_lines)
-}
 
 #[derive(Debug, Clone)]
 pub struct WordHit {

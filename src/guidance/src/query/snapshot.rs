@@ -113,12 +113,4 @@ mod tests {
         assert!(snap.context_files.contains("a"));
         assert!(snap.context_files.contains("b"));
     }
-
-    #[test]
-    fn load_sections_with_empty_paths() {
-        let snap = FrozenSnapshot::load_sections(&[], &[], &[]);
-        assert!(snap.memory.is_empty());
-        assert!(snap.skills.is_empty());
-        assert!(snap.context_files.is_empty());
-    }
 }

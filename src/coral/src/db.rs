@@ -9,6 +9,8 @@ use guidance_vector_math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
 use guidance_common::error::DbError;
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
+pub const MAX_KNN_CANDIDATES: usize = 100_000;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]

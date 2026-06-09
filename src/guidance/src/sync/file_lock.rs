@@ -1,5 +1,5 @@
-use crate::hash::blake3_hex;
 use fs2::FileExt;
+use guidance_common::hash::blake3_hex;
 use std::fs::{self, File};
 use std::path::Path;
 

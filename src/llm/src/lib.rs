@@ -1,8 +1,11 @@
 pub mod anonymize;
 pub mod client;
+pub mod constants;
 pub mod context_packer;
 pub mod decomposer;
 pub mod embeddings;
+pub mod error;
+pub mod url;
 
 pub use anonymize::anonymize;
 pub use client::{
@@ -10,8 +13,10 @@ pub use client::{
     strip_think_block, ChatMessage, LlmClient, LlmConfig, LlmError,
 };
 pub use context_packer::ContextPacker;
+pub use constants::MAX_EMBEDDING_DIMENSIONS;
 pub use decomposer::{DecomposerConfig, LocalDecomposer};
 pub use embeddings::{
     create_embedding_provider, BatchEmbedding, EmbeddingError, EmbeddingProvider, NoopEmbedding,
     OllamaEmbedding, OpenAiEmbedding,
 };
+pub use error::EmbedError;

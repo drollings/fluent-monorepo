@@ -27,7 +27,7 @@ impl Middleware for RetryMiddleware {
 pub struct MiddlewareChain { middlewares: Vec<Box<dyn Middleware>> }
 impl MiddlewareChain {
     pub fn new() -> Self { Self { middlewares: Vec::new() } }
-    pub fn add(mut self, m: Box<dyn Middleware>) -> Self { self.middlewares.push(m); self }
+    pub fn push(mut self, m: Box<dyn Middleware>) -> Self { self.middlewares.push(m); self }
     pub fn apply(&self, unit: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit> {
         let mut result = unit;
         for mw in &self.middlewares { result = mw.wrap(result); }
@@ -60,7 +60,7 @@ mod tests {
         assert!(wrapped.execute(&WorkContext::default()).unwrap().success);
     }
     #[test] fn test_middleware_chain() {
-        let chain = MiddlewareChain::new().add(Box::new(TimingMiddleware)).add(Box::new(RetryMiddleware::new(2, 1)));
+        let chain = MiddlewareChain::new().push(Box::new(TimingMiddleware)).push(Box::new(RetryMiddleware::new(2, 1)));
         let wrapped = chain.apply(Arc::new(PassthroughUnit { name: "chained".into() }));
         assert!(wrapped.execute(&WorkContext::default()).unwrap().success);
     }

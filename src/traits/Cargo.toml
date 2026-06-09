@@ -8,3 +8,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 internment = { workspace = true, features = ["arc", "serde"] }
 thiserror = { workspace = true }
+tracing = { workspace = true }

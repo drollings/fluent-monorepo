@@ -8,6 +8,8 @@ use thiserror::Error;
 
 use crate::db::Library;
 
+pub const MAX_MCP_REQUEST_SIZE: usize = 10 * 1024 * 1024;
+
 #[derive(Error, Debug)]
 pub enum McpError {
     #[error("IO error: {0}")]

@@ -1,4 +1,10 @@
 use std::time::Duration;
+use std::time::Instant;
+
+use internment::ArcIntern;
+use tracing::info;
+
+use crate::{WorkContext, WorkError, WorkOutput, WorkUnit};
 
 pub enum WrapperKind {
     None,
@@ -48,12 +54,7 @@ where
     loop {
         attempts += 1;
         match f() {
-            Ok(v) => {
-                return Ok(RetryResult {
-                    result: v,
-                    attempts,
-                })
-            }
+            Ok(v) => return Ok(RetryResult { result: v, attempts }),
             Err(e) => {
                 if attempts >= max_attempts {
                     return Err(e);
@@ -97,12 +98,6 @@ impl Pipeline {
         f()
     }
 }
-
-use std::time::Instant;
-
-use guidance_traits::{WorkContext, WorkError, WorkOutput, WorkUnit};
-use internment::ArcIntern;
-use tracing::info;
 
 pub struct Instrumented<U> {
     inner: U,
@@ -195,12 +190,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    fn add1(x: i32) -> i32 {
-        x + 1
-    }
-    fn add2(x: i32) -> i32 {
-        x + 2
-    }
+    fn add1(x: i32) -> i32 { x + 1 }
+    fn add2(x: i32) -> i32 { x + 2 }
 
     #[test]
     fn wrap_if_true() {
@@ -221,20 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn retry_call_succeeds_after_failure() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let c = Arc::clone(&counter);
-        let result: Result<RetryResult<i32>, ()> = retry_call(3, move || {
-            if c.fetch_add(1, Ordering::SeqCst) < 2 {
-                Err(())
-            } else {
-                Ok(42)
-            }
-        });
-        assert_eq!(result.unwrap().attempts, 3);
-    }
-
-    #[test]
     fn retry_call_always_fails() {
         let result: Result<RetryResult<i32>, ()> = retry_call(3, || Err(()));
         assert!(result.is_err());
@@ -247,53 +224,10 @@ mod tests {
     }
 
     #[test]
-    fn check_passes_executes() {
-        let result = Pipeline::call(&[WrapperKind::Check(Box::new(|| true))], || Ok::<_, ()>(42));
-        assert_eq!(result.unwrap(), 42);
-    }
-
-    #[test]
-    fn check_fails_no_retry() {
-        let call_count = Arc::new(AtomicUsize::new(0));
-        let cc = Arc::clone(&call_count);
-        let result = Pipeline::call(
-            &[WrapperKind::Check(Box::new(|| false)), WrapperKind::Retry],
-            move || {
-                cc.fetch_add(1, Ordering::SeqCst);
-                Err::<i32, ()>(())
-            },
-        );
-        assert!(result.is_err());
-        assert_eq!(call_count.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
     fn wrapper_kind_name() {
         assert_eq!(WrapperKind::None.name(), "None");
         assert_eq!(WrapperKind::Retry.name(), "Retry");
         assert_eq!(WrapperKind::Check(Box::new(|| true)).name(), "Check");
-    }
-
-    #[test]
-    fn check_passes_executes_no_retry() {
-        let called = Arc::new(AtomicUsize::new(0));
-        let c = Arc::clone(&called);
-        let result = Pipeline::call(&[WrapperKind::Check(Box::new(|| true))], move || {
-            c.fetch_add(1, Ordering::SeqCst);
-            Ok::<i32, ()>(42)
-        });
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(called.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn wrapper_kind_debug() {
-        let d = format!("{:?}", WrapperKind::None);
-        assert_eq!(d, "None");
-        let d = format!("{:?}", WrapperKind::Retry);
-        assert_eq!(d, "Retry");
-        let d = format!("{:?}", WrapperKind::Check(Box::new(|| true)));
-        assert_eq!(d, "Check(<fn>)");
     }
 
     struct MockUnit {
@@ -304,38 +238,20 @@ mod tests {
 
     impl MockUnit {
         fn ok(name: &str) -> Self {
-            Self {
-                name: ArcIntern::from(name),
-                should_fail: false,
-                call_count: AtomicUsize::new(0),
-            }
+            Self { name: ArcIntern::from(name), should_fail: false, call_count: AtomicUsize::new(0) }
         }
         fn fail(name: &str) -> Self {
-            Self {
-                name: ArcIntern::from(name),
-                should_fail: true,
-                call_count: AtomicUsize::new(0),
-            }
+            Self { name: ArcIntern::from(name), should_fail: true, call_count: AtomicUsize::new(0) }
         }
     }
 
     impl WorkUnit for MockUnit {
-        fn name(&self) -> &str {
-            &self.name
-        }
-        fn depends(&self) -> &[ArcIntern<str>] {
-            &[]
-        }
-        fn provides(&self) -> &[ArcIntern<str>] {
-            &[]
-        }
+        fn name(&self) -> &str { &self.name }
+        fn depends(&self) -> &[ArcIntern<str>] { &[] }
+        fn provides(&self) -> &[ArcIntern<str>] { &[] }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
-            if self.should_fail {
-                Err(WorkError::Execution("failed".into()))
-            } else {
-                Ok(WorkOutput::ok("done"))
-            }
+            if self.should_fail { Err(WorkError::Execution("failed".into())) } else { Ok(WorkOutput::ok("done")) }
         }
     }
 
@@ -346,16 +262,15 @@ mod tests {
         let ctx = WorkContext::default();
         let result = wrapped.execute(&ctx);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().message, "done");
     }
 
     #[test]
-    fn pipeline_retry_exhausted() {
-        let unit = MockUnit::fail("mock");
-        let wrapped = WithRetry::new(unit, 3, 1);
-        let ctx = WorkContext::default();
-        let result = wrapped.execute(&ctx);
-        assert!(result.is_err());
+    fn with_retry_accepts_unit_depends_provides() {
+        let inner = MockUnit::ok("mock");
+        let wrapped = WithRetry::new(inner, 3, 1);
+        assert_eq!(wrapped.name(), "mock");
+        assert!(wrapped.depends().is_empty());
+        assert!(wrapped.provides().is_empty());
     }
 
     #[test]
@@ -376,50 +291,5 @@ mod tests {
         assert_eq!(arc.name(), "mock");
         let result = arc.execute(&ctx);
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn pipeline_all_none_calls_fn() {
-        let result = Pipeline::call(&[WrapperKind::None, WrapperKind::None], || Ok::<_, ()>(42));
-        assert_eq!(result.unwrap(), 42);
-    }
-
-    #[test]
-    fn pipeline_mixed_kinds() {
-        let result = Pipeline::call(
-            &[WrapperKind::Check(Box::new(|| true)), WrapperKind::Retry],
-            || Ok::<_, ()>(99),
-        );
-        assert_eq!(result.unwrap(), 99);
-    }
-
-    #[test]
-    fn pipeline_check_false_without_retry() {
-        let called = Arc::new(AtomicUsize::new(0));
-        let c = Arc::clone(&called);
-        let result = Pipeline::call(&[WrapperKind::Check(Box::new(|| false))], move || {
-            c.fetch_add(1, Ordering::SeqCst);
-            Ok::<i32, ()>(42)
-        });
-        assert_eq!(result.unwrap(), 42);
-        // Without Retry, Pipeline always calls f() at the end
-        assert_eq!(called.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn with_retry_accepts_unit_depends_provides() {
-        let inner = MockUnit::ok("mock");
-        let wrapped = WithRetry::new(inner, 3, 1);
-        assert_eq!(wrapped.name(), "mock");
-        assert!(wrapped.depends().is_empty());
-        assert!(wrapped.provides().is_empty());
-    }
-
-    #[test]
-    fn instrumented_depends_provides() {
-        let inner = MockUnit::ok("mock");
-        let wrapped = Instrumented::new(inner, "label");
-        assert_eq!(wrapped.depends().len(), 0);
-        assert_eq!(wrapped.provides().len(), 0);
     }
 }

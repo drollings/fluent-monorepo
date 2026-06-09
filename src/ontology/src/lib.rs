@@ -1,3 +1,4 @@
+pub mod entity;
 pub mod inference;
 pub mod mapper;
 pub mod migration;

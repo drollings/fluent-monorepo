@@ -15,7 +15,7 @@ pub fn bytes_to_vec(b: &[u8]) -> Vec<f32> {
 }
 
 pub fn try_bytes_to_vec(b: &[u8]) -> Option<Vec<f32>> {
-    if b.len() % 4 != 0 { return None; }
+    if !b.len().is_multiple_of(4) { return None; }
     Some(bytes_to_vec(b))
 }
 

@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-guidance-dag-executor = { path = "../dag-executor" }
-guidance-registry = { path = "../registry" }
 guidance-types = { path = "../types" }
+guidance-traits = { path = "../traits" }
+bitvec = { workspace = true }
+internment = { workspace = true, features = ["arc"] }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+bon = { workspace = true }
+rusqlite = { workspace = true }  # TODO(M6): check if needed
+guidance-wasm-ipc = { path = "../wasm_ipc" }  # TODO(M6): remove unused dep

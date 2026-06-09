@@ -20,47 +20,31 @@
     clippy::single_char_pattern,
     clippy::byte_char_slices
 )]
-pub mod builder_error;
 pub mod constants;
 pub mod csr_graph;
-pub mod drift;
-pub mod entity;
 pub mod error;
 pub mod error_context;
-pub mod file_lock;
 pub mod format;
 pub mod freq_table;
-pub mod frozen_snapshot;
 pub mod hash;
 pub mod index_header;
 pub mod io;
 pub mod metrics;
-pub mod pattern;
 pub mod query_cache;
 pub mod shell;
 pub mod shell_parser;
-pub mod source;
 pub mod string;
 pub mod terminal;
 pub mod tokenizer;
 pub mod trigram_index;
-pub mod type_inference;
-pub mod url;
 pub mod word_index;
-pub mod wrapper;
 
-#[allow(deprecated)]
-pub use builder_error::{BuilderError, Phase};
-pub use constants::*;
+pub use constants::{MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN};
 pub use csr_graph::CsrGraph;
-pub use drift::BitSetDrift;
-pub use entity::{extract_entities, EntityFreq, EntityType};
-pub use error::{CacheError, DbError, EmbedError, IoError};
+pub use error::{CacheError, DbError, IoError};
 pub use error_context::{ErrorContext, HeapErrorContext};
-pub use file_lock::FileLock;
 pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
 pub use freq_table::{build_frequency_table, default_frequency_table, pair_weight};
-pub use frozen_snapshot::FrozenSnapshot;
 pub use hash::{
     blake3_hash, blake3_hex, content_hash_with_model, fnv1a64, hash_batch, hash_file, sha256_hex,
     BatchHashResult, HashAlgorithm, HashState,
@@ -70,23 +54,13 @@ pub use io::{
     make_path_absolute, read_file_alloc, read_file_alloc_err, resolve_path, strip_path_prefix,
 };
 pub use metrics::LatencyHistogram;
-pub use pattern::{
-    detect_decorator, detect_proxy, detect_ring_buffer, detect_strategy, detect_template_method,
-    Pattern, PatternType,
-};
 pub use query_cache::QueryCache;
-pub use source::{extract_excerpt, extract_simple_excerpt, NodeType};
 pub use string::{
     contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
-    first_comment_line, has_extension, is_noisy_comment, is_path_token, is_test_path,
-    lang_from_path, looks_like_identifier, lower_into, slugify, strip_boilerplate, strip_nl_prefix,
+    first_comment_line, has_extension, looks_like_identifier, lower_into, slugify,
     trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
 };
 pub use terminal::{get_terminal_height, get_terminal_width, is_terminal, Color, ProgressBar};
 pub use guidance_traits::{
     Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-};
-pub use url::{is_local_host, is_private_ip, validate_https_or_local_http, UrlError};
-pub use wrapper::{
-    retry_call, wrap_if, Instrumented, Pipeline, RetryResult, WithRetry, WrapperKind,
 };

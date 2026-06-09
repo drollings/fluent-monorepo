@@ -14,6 +14,7 @@ use std::convert::TryInto;
 
 pub const BINARY_MAGIC: [u8; 4] = [0x47, 0x52, 0x50, 0x48]; // "GRPH"
 pub const BINARY_SCHEMA_VERSION: u32 = 1;
+pub const MAX_WASM_HOST_CALLS: u32 = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]

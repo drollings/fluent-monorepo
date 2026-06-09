@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use guidance_common::hash::content_hash_with_model;
-use guidance_common::url::validate_https_or_local_http;
+use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
 
 #[derive(Debug, thiserror::Error)]
@@ -268,10 +268,8 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider for CachedE
             }
         }
 
-        for result in &results {
-            if let Some(v) = result {
-                flat.extend_from_slice(v);
-            }
+        for v in results.iter().flatten() {
+            flat.extend_from_slice(v);
         }
 
         let count = results.len();
@@ -631,8 +629,6 @@ pub fn create_embedding_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::hash::content_hash_with_model;
-
     #[test]
     fn create_noop_provider() {
         let p = create_embedding_provider("none", None, None, None, 768).unwrap();
