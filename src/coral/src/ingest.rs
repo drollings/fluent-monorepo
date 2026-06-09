@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use fluent_wvr::error::DbError;
 use guidance_ontology::mapper::PendingNode;
 use guidance_ontology::yago;
 use guidance_types::ContextNode;
 use guidance_types::NodeId;
+use project_common::error::DbError;
 use thiserror::Error;
 
 use crate::db::Library;

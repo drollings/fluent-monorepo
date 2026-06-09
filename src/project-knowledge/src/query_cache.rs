@@ -1,4 +1,4 @@
-use fluent_wvr::hash::fnv1a64;
+use project_common::hash::fnv1a64;
 use rusqlite::{params, Connection};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};

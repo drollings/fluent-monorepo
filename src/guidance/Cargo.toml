@@ -1,10 +1,10 @@
 [package]
-name = "guidance-guidance"
+name = "guidance-core"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fluent-wvr = { path = "../fluent-wvr" }
+project-common = { path = "../project-common" }
 guidance-project-knowledge = { path = "../project-knowledge" }
 guidance-types = { path = "../types" }
 guidance-search-vector = { path = "../search-vector" }

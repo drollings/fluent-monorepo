@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 fluent-wvr = { path = "../fluent-wvr" }
+project-common = { path = "../project-common" }
 guidance-types = { path = "../types" }
 guidance-search-vector = { path = "../search-vector" }
 guidance-llm = { path = "../llm" }

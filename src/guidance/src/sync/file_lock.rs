@@ -1,5 +1,5 @@
-use fluent_wvr::hash::blake3_hex;
 use fs2::FileExt;
+use project_common::hash::blake3_hex;
 use std::fs::{self, File};
 use std::path::Path;
 

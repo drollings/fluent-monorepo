@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "src/types",
     "src/fluent-wvr",
+    "src/project-common",
     "src/project-knowledge",
     "src/search-vector",
     "src/content-node",

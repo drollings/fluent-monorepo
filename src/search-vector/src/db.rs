@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use fluent_wvr::error::DbError;
+use project_common::error::DbError;
 use rusqlite::params;
 use thiserror::Error;
 

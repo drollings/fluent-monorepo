@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use fluent_wvr::shell::run_command;
 use guidance_coral::mcp::serve_stdio_from_path;
-use guidance_guidance::config;
-use guidance_guidance::sync::json_store::walk_guidance_docs;
-use guidance_guidance::sync_engine::SyncEngine;
+use guidance_core::config;
+use guidance_core::sync::json_store::walk_guidance_docs;
+use guidance_core::sync_engine::SyncEngine;
 use guidance_search_vector::GuidanceDb;
+use project_common::shell::run_command;
 use time::OffsetDateTime;
 
 mod structure;
@@ -508,7 +508,7 @@ fn cmd_gen(
                     .display()
             ));
             if !force
-                && !guidance_guidance::sync::staleness::should_generate(&json_path, source_path)
+                && !guidance_core::sync::staleness::should_generate(&json_path, source_path)
             {
                 if verbose {
                     println!("  skip (up to date): {path}");
@@ -614,7 +614,7 @@ fn walk_and_gen(
                 .join("src")
                 .join(format!("{}.json", rel.display()));
             let should_gen =
-                force || guidance_guidance::sync::staleness::should_generate(&json_path, &path);
+                force || guidance_core::sync::staleness::should_generate(&json_path, &path);
             if !should_gen {
                 if verbose {
                     println!("  skip: {}", rel.display());
@@ -962,7 +962,7 @@ fn cmd_benchmark(
                             continue;
                         }
                         if let Ok(Some(doc)) =
-                            guidance_guidance::sync::json_store::load_guidance(&path)
+                            guidance_core::sync::json_store::load_guidance(&path)
                         {
                             for member in &doc.members {
                                 if member.name.as_str().to_lowercase().contains(&lower) {

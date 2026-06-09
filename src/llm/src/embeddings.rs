@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
-use fluent_wvr::hash::content_hash_with_model;
+use project_common::hash::content_hash_with_model;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {

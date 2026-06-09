@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fluent-wvr = { path = "../../fluent-wvr" }
-guidance-guidance = { path = "../../guidance" }
+project-common = { path = "../../project-common" }
+guidance-core = { path = "../../guidance" }
 guidance-coral = { path = "../../coral" }
 guidance-search-vector = { path = "../../search-vector" }
 guidance-llm = { path = "../../llm" }

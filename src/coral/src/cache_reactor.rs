@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use bon::Builder;
-use fluent_wvr::error::CacheError;
-use fluent_wvr::hash::content_hash_with_model;
 use guidance_llm::client::{is_malformed_response, LlmClient, LlmConfig};
 use guidance_llm::decomposer::LocalDecomposer;
 use guidance_types::{ContextNode, NodeId, WasmTool};
+use project_common::error::CacheError;
+use project_common::hash::content_hash_with_model;
 
 use crate::cache_l1::{CacheTier, L1Cache, RoutingResult};
 use crate::cache_router::ParallelRouter;

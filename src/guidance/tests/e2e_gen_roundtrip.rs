@@ -1,5 +1,5 @@
-use guidance_guidance::sync::json_store;
-use guidance_guidance::sync_engine::SyncEngine;
+use guidance_core::sync::json_store;
+use guidance_core::sync_engine::SyncEngine;
 use guidance_types::MemberType;
 
 const FIXTURE_ZIG: &str = r#"/// Sample Zig file for AST parsing tests
@@ -66,7 +66,7 @@ fn e2e_zig_gen_roundtrip() {
     assert_eq!(loaded.meta.module, doc.meta.module);
 
     // Verify staleness
-    assert!(!guidance_guidance::sync::staleness::should_generate(
+    assert!(!guidance_core::sync::staleness::should_generate(
         &json_path, &zig_file
     ));
 }

@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use fluent_wvr::error::CacheError;
 use guidance_types::GraphNode;
+use project_common::error::CacheError;
 
 use crate::cache_l1::{CacheTier, RoutingResult};
 use crate::db::Library;

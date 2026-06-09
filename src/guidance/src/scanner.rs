@@ -1,4 +1,6 @@
-use fluent_wvr::string::{contains_any, contains_any_word, contains_ignore_case, contains_word};
+use project_common::string::{
+    contains_any, contains_any_word, contains_ignore_case, contains_word,
+};
 
 pub const DEFAULT_MAX_LINES: usize = 200;
 
