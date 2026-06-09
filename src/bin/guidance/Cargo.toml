@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-guidance-common = { path = "../../common" }
+fluent-wvr-common = { path = "../../common" }
 guidance-guidance = { path = "../../guidance" }
 guidance-coral = { path = "../../coral" }
 guidance-dag = { path = "../../dag" }

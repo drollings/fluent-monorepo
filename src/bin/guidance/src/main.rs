@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use guidance_common::shell::run_command;
+use fluent_wvr_common::shell::run_command;
 use guidance_coral::mcp::serve_stdio_from_path;
 use guidance_guidance::config;
 use guidance_guidance::sync::json_store::walk_guidance_docs;

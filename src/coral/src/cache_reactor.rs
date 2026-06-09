@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use bon::Builder;
-use guidance_common::error::CacheError;
-use guidance_common::hash::content_hash_with_model;
+use fluent_wvr_common::error::CacheError;
+use fluent_wvr_common::hash::content_hash_with_model;
 use guidance_types::{ContextNode, NodeId, WasmTool};
 use guidance_llm::client::{is_malformed_response, LlmClient, LlmConfig};
 use guidance_llm::decomposer::LocalDecomposer;

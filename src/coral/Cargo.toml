@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-guidance-common = { path = "../common" }
+fluent-wvr-common = { path = "../common" }
 guidance-types = { path = "../types" }
 guidance-traits = { path = "../traits" }
 guidance-vector-math = { path = "../vector-math" }
@@ -23,5 +23,5 @@ rusqlite = { workspace = true }
 tokio = { workspace = true }
 regex = { workspace = true }
 ureq = { workspace = true }
-dashmap = { workspace = true }
+lru = { workspace = true }
 extism = { workspace = true }

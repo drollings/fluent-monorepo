@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 guidance-coral = { path = "../../coral" }
-guidance-common = { path = "../../common" }
+fluent-wvr-common = { path = "../../common" }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

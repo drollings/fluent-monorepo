@@ -12,7 +12,6 @@
 pub mod ast_parser;
 pub mod config;
 pub mod enhancer;
-pub mod guidance_string;
 pub mod plugin;
 pub mod query_engine;
 pub mod scanner;

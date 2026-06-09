@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use guidance_types::GuidanceDoc;
-use guidance_common::word_index::WordIndex;
+use fluent_wvr_common::word_index::WordIndex;
 use thiserror::Error;
 
 use crate::query::identifier;
@@ -503,7 +503,7 @@ impl QueryEngine {
 mod tests {
     use super::*;
     use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
-    use guidance_common::word_index::WordIndex;
+    use fluent_wvr_common::word_index::WordIndex;
 
     fn make_test_doc() -> GuidanceDoc {
         GuidanceDoc {

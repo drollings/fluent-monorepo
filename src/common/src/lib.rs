@@ -57,10 +57,9 @@ pub use metrics::LatencyHistogram;
 pub use query_cache::QueryCache;
 pub use string::{
     contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
-    first_comment_line, has_extension, looks_like_identifier, lower_into, slugify,
-    trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
+    first_comment_line, has_extension, is_noisy_comment, is_path_token, is_test_path,
+    looks_like_identifier, lower_into, skill_name_from_ref, slugify, strip_boilerplate,
+    strip_nl_prefix, trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
 };
 pub use terminal::{get_terminal_height, get_terminal_width, is_terminal, Color, ProgressBar};
-pub use guidance_traits::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-};
+

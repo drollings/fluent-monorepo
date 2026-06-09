@@ -1,4 +1,4 @@
-use guidance_common::string::{contains_any, contains_any_word, contains_ignore_case, contains_word};
+use fluent_wvr_common::string::{contains_any, contains_any_word, contains_ignore_case, contains_word};
 
 pub const DEFAULT_MAX_LINES: usize = 200;
 

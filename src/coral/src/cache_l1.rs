@@ -1,5 +1,7 @@
-use dashmap::DashMap;
+use lru::LruCache;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CacheTier {
@@ -32,42 +34,62 @@ pub struct RoutingResult {
 }
 
 pub struct L1Cache {
-    store: DashMap<String, RoutingResult>,
+    inner: Mutex<LruCache<String, RoutingResult>>,
+    max_entries: usize,
 }
 
 impl L1Cache {
     pub fn new() -> Self {
+        Self::with_capacity(10_000)
+    }
+
+    pub fn with_capacity(max_entries: usize) -> Self {
         Self {
-            store: DashMap::new(),
+            inner: Mutex::new(LruCache::new(NonZeroUsize::new(max_entries).unwrap())),
+            max_entries,
         }
     }
 
     pub fn get(&self, query: &str) -> Option<RoutingResult> {
-        self.store.get(query).map(|r| r.clone())
+        let mut cache = self.inner.lock().unwrap();
+        cache.get(query).cloned()
     }
 
     pub fn set(&self, query: String, result: RoutingResult) {
-        self.store.insert(query, result);
+        let mut cache = self.inner.lock().unwrap();
+        cache.put(query, result);
     }
 
     pub fn len(&self) -> usize {
-        self.store.len()
+        self.inner.lock().unwrap().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.store.is_empty()
+        self.inner.lock().unwrap().is_empty()
+    }
+
+    pub fn max_entries(&self) -> usize {
+        self.max_entries
     }
 }
 
 impl Default for L1Cache {
     fn default() -> Self {
-        Self::new()
+        Self::with_capacity(10_000)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_result(query: &str) -> RoutingResult {
+        RoutingResult {
+            query: query.into(),
+            result: format!("r_{query}"),
+            tier: CacheTier::L1Memory,
+        }
+    }
 
     #[test]
     fn test_l1_cache_set_and_get() {
@@ -93,5 +115,43 @@ mod tests {
     fn test_l1_cache_empty() {
         let cache = L1Cache::new();
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn test_lru_eviction() {
+        let cache = L1Cache::with_capacity(2);
+        cache.set("a".into(), make_result("a"));
+        cache.set("b".into(), make_result("b"));
+        cache.set("c".into(), make_result("c"));
+        assert!(cache.get("a").is_none());
+        assert!(cache.get("b").is_some());
+        assert!(cache.get("c").is_some());
+    }
+
+    #[test]
+    fn test_lru_renew_on_get() {
+        let cache = L1Cache::with_capacity(2);
+        cache.set("a".into(), make_result("a"));
+        cache.set("b".into(), make_result("b"));
+        cache.get("a");
+        cache.set("c".into(), make_result("c"));
+        assert!(cache.get("a").is_some());
+        assert!(cache.get("b").is_none());
+        assert!(cache.get("c").is_some());
+    }
+
+    #[test]
+    fn test_max_entries() {
+        let cache = L1Cache::with_capacity(5);
+        assert_eq!(cache.max_entries(), 5);
+    }
+
+    #[test]
+    fn test_lru_capacity_bound() {
+        let cache = L1Cache::with_capacity(3);
+        for i in 0..100 {
+            cache.set(format!("key{i}"), make_result(&format!("key{i}")));
+        }
+        assert_eq!(cache.len(), 3);
     }
 }

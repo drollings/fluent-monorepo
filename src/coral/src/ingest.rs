@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use guidance_common::error::DbError;
+use fluent_wvr_common::error::DbError;
 use guidance_types::ContextNode;
 use guidance_types::NodeId;
 use guidance_ontology::mapper::PendingNode;

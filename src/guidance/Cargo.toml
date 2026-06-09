@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-guidance-common = { path = "../common" }
+fluent-wvr-common = { path = "../common" }
 guidance-types = { path = "../types" }
 guidance-vector-math = { path = "../vector-math" }
 guidance-vector-aliases = { path = "../vector-aliases" }

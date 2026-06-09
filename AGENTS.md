@@ -56,8 +56,9 @@ src/
     comments/          Comment management (core.zig, header.zig, inserter.zig, sync.zig)
     query/             Query pipeline (identifier.zig, strategy.zig, llm_filter.zig, llm_filter_batch.zig, synthesize.zig)
     sync/              Sync infrastructure (json_store.zig, json_writer.zig, line_verify.zig, marker.zig)
-  common/           Trimmed utility crate
-                    Note: common/ contains no domain-specific logic; no imports from dag/, coral/, or guidance/
+  common/           General-purpose utility crate (fluent-wvr-common)
+                    Note: fluent-wvr-common contains no domain-specific logic;
+                    no imports from dag/, coral/, or guidance/
   types/            guidance-types (FileType, MemberType, Param, Member, etc.)
    traits/           guidance-traits (serde-based replacement for reflection)
    content-node/     guidance-content-node (lod slicing, file content annotation)

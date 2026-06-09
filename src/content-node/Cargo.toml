@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 guidance-types = { path = "../types" }
-guidance-common = { path = "../common" }
+fluent-wvr-common = { path = "../common" }
 serde = { workspace = true }  # TODO(M6): unused dep?
 internment = { workspace = true, features = ["arc", "serde"] }  # TODO(M6): unused dep?
 blake3 = { workspace = true }

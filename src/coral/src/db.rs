@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use bitvec::vec::BitVec;
 use guidance_llm::EmbeddingProvider;
 use guidance_vector_math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
-use guidance_common::error::DbError;
+use fluent_wvr_common::error::DbError;
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;
@@ -96,6 +96,9 @@ impl Library {
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
+            CREATE INDEX IF NOT EXISTS idx_nodes_name_source
+                ON context_nodes(name, source);
+
             CREATE TABLE IF NOT EXISTS entity_types (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 node_id INTEGER NOT NULL,
@@ -172,6 +175,14 @@ impl Library {
         Ok(result)
     }
 
+    /// Brute-force O(n × d) KNN search over stored embeddings.
+    ///
+    /// ## Performance
+    /// - n < 10_000:  sub-millisecond on modern CPU
+    /// - n < 100_000: ~10 ms
+    /// - n > 1_000_000: consider HNSW or IVF index (not yet implemented)
+    /// - d (dimensions): typically 384 (Ollama) or 1536 (OpenAI).  Higher dims
+    ///   increase scan time linearly.
     pub fn knn_search(
         &self,
         query_vec: &[f32],
@@ -259,6 +270,44 @@ impl Library {
 
         let results = stmt
             .query_map(params![node_id.as_int(), max_depth], |row| {
+                let id: i64 = row.get(0)?;
+                let name: String = row.get(1)?;
+                let depth: u32 = row.get(2)?;
+                Ok(GraphNode {
+                    node_id: NodeId::from_int(id),
+                    name: name.as_str().into(),
+                    depth,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(results)
+    }
+
+    /// Traverse all reachable nodes using a single recursive CTE starting
+    /// from root nodes (nodes with no incoming edges).
+    pub fn traverse_all_nodes(&self, max_depth: u8) -> Result<Vec<GraphNode>, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "WITH RECURSIVE
+                roots(id) AS (
+                    SELECT id FROM context_nodes n
+                    WHERE NOT EXISTS (SELECT 1 FROM edges e WHERE e.target_node_id = n.id)
+                ),
+                traverse(id, name, depth) AS (
+                    SELECT n.id, n.name, 0 FROM context_nodes n JOIN roots r ON n.id = r.id
+                    UNION ALL
+                    SELECT n.id, n.name, t.depth + 1
+                    FROM traverse t
+                    JOIN edges e ON e.source_node_id = t.id
+                    JOIN context_nodes n ON n.id = e.target_node_id
+                    WHERE t.depth < ?1
+                )
+            SELECT DISTINCT id, name, depth FROM traverse ORDER BY depth, name",
+        )?;
+
+        let results = stmt
+            .query_map(params![max_depth], |row| {
                 let id: i64 = row.get(0)?;
                 let name: String = row.get(1)?;
                 let depth: u32 = row.get(2)?;

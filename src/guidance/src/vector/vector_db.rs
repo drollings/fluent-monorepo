@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use guidance_common::error::DbError;
+use fluent_wvr_common::error::DbError;
 use rusqlite::params;
 use thiserror::Error;
 
@@ -74,6 +74,7 @@ impl GuidanceDb {
 
             CREATE INDEX IF NOT EXISTS idx_nodes_name ON guidance_nodes(name);
             CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
+            CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON guidance_nodes(name, source);
             CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);
             ",
         )?;
@@ -110,6 +111,14 @@ impl GuidanceDb {
         Ok(conn.last_insert_rowid())
     }
 
+    /// Brute-force O(n × d) vector similarity search over stored embeddings.
+    ///
+    /// ## Performance
+    /// - n < 10_000:  sub-millisecond on modern CPU
+    /// - n < 100_000: ~10 ms
+    /// - n > 1_000_000: consider HNSW or IVF index (not yet implemented)
+    /// - d (dimensions): typically 384 (Ollama) or 1536 (OpenAI).  Higher dims
+    ///   increase scan time linearly.
     pub fn vector_search(
         &self,
         query_vec: &[f32],

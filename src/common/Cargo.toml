@@ -1,5 +1,5 @@
 [package]
-name = "guidance-common"
+name = "fluent-wvr-common"
 version.workspace = true
 edition.workspace = true
 
@@ -13,7 +13,6 @@ rusqlite = { workspace = true }
 libc = { workspace = true }
 lazy_static = "1"
 tempfile = { workspace = true }
-guidance-traits = { path = "../traits" }
 
 [dev-dependencies]
 httpmock = { workspace = true }

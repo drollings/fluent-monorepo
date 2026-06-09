@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use guidance_common::error::CacheError;
+use fluent_wvr_common::error::CacheError;
 use guidance_types::GraphNode;
 
 use crate::cache_l1::{CacheTier, RoutingResult};
@@ -168,28 +168,9 @@ impl ParallelRouter {
         if node_count == 0 {
             return Ok(vec![]);
         }
-        let all_nodes = self
-            .library
-            .get_all_node_ids()
-            .map_err(|_| CacheError::CacheMiss)?;
-        let mut seen = HashSet::new();
-        for node_id in all_nodes {
-            if let Ok(nodes) = self.library.traverse_from(node_id, max_depth) {
-                for node in &nodes {
-                    seen.insert(node.node_id);
-                }
-            }
-        }
-        let result: Vec<_> = seen
-            .into_iter()
-            .filter_map(|id| self.library.get_node(id).ok().flatten())
-            .map(|n| GraphNode {
-                node_id: n.id.unwrap(),
-                name: n.name,
-                depth: 0,
-            })
-            .collect();
-        Ok(result)
+        self.library
+            .traverse_all_nodes(max_depth)
+            .map_err(|_| CacheError::CacheMiss)
     }
 }
 

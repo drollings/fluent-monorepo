@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use guidance_common::hash::content_hash_with_model;
+use fluent_wvr_common::hash::content_hash_with_model;
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
 
