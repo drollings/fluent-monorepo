@@ -1,6 +1,6 @@
+use guidance_types::LOD_COUNT;
 use std::any::Any;
 use std::fmt::Debug;
-use guidance_types::LOD_COUNT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LodLevel {
@@ -27,7 +27,9 @@ pub struct NodeTypeInfo {
 
 pub trait ContentNode: Debug + Send + Sync {
     fn node_type(&self) -> NodeType;
-    fn lod_count(&self) -> usize { LOD_COUNT }
+    fn lod_count(&self) -> usize {
+        LOD_COUNT
+    }
     fn lod(&self, level: LodLevel) -> Option<&str>;
     fn set_lod(&mut self, level: LodLevel, value: &str);
     fn lod_label(&self, level: LodLevel) -> Option<&str>;

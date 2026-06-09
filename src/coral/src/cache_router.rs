@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use fluent_wvr_common::error::CacheError;
+use fluent_wvr::error::CacheError;
 use guidance_types::GraphNode;
 
 use crate::cache_l1::{CacheTier, RoutingResult};

@@ -33,7 +33,3 @@ pub mod sync {
     pub mod json_writer;
     pub mod staleness;
 }
-
-pub mod vector {
-    pub mod vector_db;
-}

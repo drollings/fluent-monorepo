@@ -4,12 +4,11 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fluent-wvr-common = { path = "../../common" }
+fluent-wvr = { path = "../../fluent-wvr" }
 guidance-guidance = { path = "../../guidance" }
 guidance-coral = { path = "../../coral" }
-guidance-dag = { path = "../../dag" }
+guidance-search-vector = { path = "../../search-vector" }
 guidance-llm = { path = "../../llm" }
-guidance-wasm-ipc = { path = "../../wasm_ipc" }
 guidance-content-node = { path = "../../content-node" }
 guidance-types = { path = "../../types" }
 clap = { workspace = true, features = ["derive"] }

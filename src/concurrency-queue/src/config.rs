@@ -20,6 +20,13 @@ impl Default for QueueConfig {
 #[derive(Debug, Clone)]
 pub enum RetryPolicy {
     None,
-    Fixed { max_attempts: u32, backoff_ms: u64 },
-    Exponential { max_attempts: u32, base_ms: u64, max_ms: u64 },
+    Fixed {
+        max_attempts: u32,
+        backoff_ms: u64,
+    },
+    Exponential {
+        max_attempts: u32,
+        base_ms: u64,
+        max_ms: u64,
+    },
 }

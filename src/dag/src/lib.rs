@@ -8,3 +8,4 @@ pub mod resolver;
 pub mod target;
 pub mod type_inference;
 pub mod work_unit;
+pub mod wvr;

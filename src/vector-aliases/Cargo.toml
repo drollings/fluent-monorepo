@@ -1,7 +1,0 @@
-[package]
-name = "guidance-vector-aliases"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-serde_json = { workspace = true }

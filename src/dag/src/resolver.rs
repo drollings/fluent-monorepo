@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use bitvec::vec::BitVec;
 use crate::error::ResolverError;
 use crate::target::TargetRegistry;
+use bitvec::vec::BitVec;
 use guidance_types::TargetType;
 
 #[derive(Debug, Clone)]
@@ -12,8 +12,12 @@ pub struct ExecutionPlan {
 }
 
 impl ExecutionPlan {
-    pub fn len(&self) -> usize { self.order.len() }
-    pub fn is_empty(&self) -> bool { self.order.is_empty() }
+    pub fn len(&self) -> usize {
+        self.order.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
 }
 
 pub struct DependencyResolver<'a> {
@@ -22,35 +26,63 @@ pub struct DependencyResolver<'a> {
 }
 
 impl<'a> DependencyResolver<'a> {
-    pub fn new(registry: &'a TargetRegistry) -> Self { Self { registry, strict: true } }
-    pub fn with_strict(mut self, strict: bool) -> Self { self.strict = strict; self }
+    pub fn new(registry: &'a TargetRegistry) -> Self {
+        Self {
+            registry,
+            strict: true,
+        }
+    }
+    pub fn with_strict(mut self, strict: bool) -> Self {
+        self.strict = strict;
+        self
+    }
 
     pub fn resolve(&self, target_names: &[&str]) -> Result<ExecutionPlan, ResolverError> {
         let mut needed: HashMap<usize, usize> = HashMap::new();
         let mut stack: Vec<usize> = Vec::new();
         for name in target_names {
-            let target = self.registry.get(name).ok_or_else(|| ResolverError::TargetNotFound(name.to_string()))?;
+            let target = self
+                .registry
+                .get(name)
+                .ok_or_else(|| ResolverError::TargetNotFound(name.to_string()))?;
             stack.push(target.id as usize);
         }
         while let Some(bit_idx) = stack.pop() {
-            if needed.contains_key(&bit_idx) { continue; }
-            let target = self.registry.get_by_bit_index(bit_idx).ok_or(ResolverError::TargetNotFound(format!("bit_index {bit_idx}")))?;
+            if needed.contains_key(&bit_idx) {
+                continue;
+            }
+            let target =
+                self.registry
+                    .get_by_bit_index(bit_idx)
+                    .ok_or(ResolverError::TargetNotFound(format!(
+                        "bit_index {bit_idx}"
+                    )))?;
             needed.insert(bit_idx, bit_idx);
             for cap_idx in target.depends.iter_ones() {
                 let providers = self.registry.get_providers(cap_idx);
                 if providers.is_empty() && self.strict {
-                    return Err(ResolverError::MissingDependency(format!("no provider for capability {cap_idx} required by '{}'", target.name)));
+                    return Err(ResolverError::MissingDependency(format!(
+                        "no provider for capability {cap_idx} required by '{}'",
+                        target.name
+                    )));
                 }
                 for provider in providers {
                     let provider_bit_idx = provider.id as usize;
-                    if !needed.contains_key(&provider_bit_idx) { stack.push(provider_bit_idx); }
+                    if !needed.contains_key(&provider_bit_idx) {
+                        stack.push(provider_bit_idx);
+                    }
                 }
             }
         }
         let mut in_degree: HashMap<usize, usize> = needed.keys().map(|&k| (k, 0)).collect();
         let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
         for &bit_idx in needed.keys() {
-            let target = self.registry.get_by_bit_index(bit_idx).ok_or(ResolverError::TargetNotFound(format!("bit_index {bit_idx}")))?;
+            let target =
+                self.registry
+                    .get_by_bit_index(bit_idx)
+                    .ok_or(ResolverError::TargetNotFound(format!(
+                        "bit_index {bit_idx}"
+                    )))?;
             for cap_idx in target.depends.iter_ones() {
                 let providers = self.registry.get_providers(cap_idx);
                 for provider in providers {
@@ -62,40 +94,71 @@ impl<'a> DependencyResolver<'a> {
                 }
             }
         }
-        let mut queue: Vec<usize> = in_degree.iter().filter(|(_, &deg)| deg == 0).map(|(&k, _)| k).collect();
+        let mut queue: Vec<usize> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(&k, _)| k)
+            .collect();
         queue.sort_unstable();
         let mut order = Vec::with_capacity(needed.len());
         let mut head = 0;
         while head < queue.len() {
-            let current = queue[head]; head += 1; order.push(current);
+            let current = queue[head];
+            head += 1;
+            order.push(current);
             if let Some(dependents) = adj.get(&current) {
                 for &dep in dependents {
                     if let Some(deg) = in_degree.get_mut(&dep) {
                         *deg -= 1;
-                        if *deg == 0 { queue.push(dep); queue[head..].sort_unstable(); }
+                        if *deg == 0 {
+                            queue.push(dep);
+                            queue[head..].sort_unstable();
+                        }
                     }
                 }
             }
         }
-        if order.len() != needed.len() { return Err(ResolverError::CircularDependency); }
-        let target_names = order.iter().map(|&bit_idx| {
-            self.registry.get_by_bit_index(bit_idx).map(|t| t.name.to_string()).unwrap_or_else(|| format!("bit_{bit_idx}"))
-        }).collect();
-        Ok(ExecutionPlan { order, target_names })
+        if order.len() != needed.len() {
+            return Err(ResolverError::CircularDependency);
+        }
+        let target_names = order
+            .iter()
+            .map(|&bit_idx| {
+                self.registry
+                    .get_by_bit_index(bit_idx)
+                    .map(|t| t.name.to_string())
+                    .unwrap_or_else(|| format!("bit_{bit_idx}"))
+            })
+            .collect();
+        Ok(ExecutionPlan {
+            order,
+            target_names,
+        })
     }
 
-    pub fn resolve_abstract_dependencies(&self, target_names: &[&str], provided: &BitVec) -> Result<ExecutionPlan, ResolverError> {
+    pub fn resolve_abstract_dependencies(
+        &self,
+        target_names: &[&str],
+        provided: &BitVec,
+    ) -> Result<ExecutionPlan, ResolverError> {
         let mut combined: Vec<String> = target_names.iter().map(|s| s.to_string()).collect();
         for name in target_names {
-            let target = self.registry.get(name).ok_or_else(|| ResolverError::TargetNotFound(name.to_string()))?;
+            let target = self
+                .registry
+                .get(name)
+                .ok_or_else(|| ResolverError::TargetNotFound(name.to_string()))?;
             if target.target_type == TargetType::Abstract {
                 let required = &target.depends;
                 let missing: BitVec = required.clone() & !provided.clone();
-                if missing.not_any() { continue; }
+                if missing.not_any() {
+                    continue;
+                }
                 for cap_idx in missing.iter_ones() {
                     for provider in self.registry.get_providers(cap_idx) {
                         let pname = provider.name.to_string();
-                        if !combined.contains(&pname) { combined.push(pname); }
+                        if !combined.contains(&pname) {
+                            combined.push(pname);
+                        }
                     }
                 }
             }
@@ -115,22 +178,49 @@ mod tests {
         let max = bits.iter().max().copied().unwrap_or(0) + 1;
         let mut bv = BitVec::with_capacity(max);
         bv.resize(max, false);
-        for &bit in bits { if bit < bv.len() { bv.set(bit, true); } }
+        for &bit in bits {
+            if bit < bv.len() {
+                bv.set(bit, true);
+            }
+        }
         bv
     }
 
     fn make_registry(targets: Vec<Target>) -> TargetRegistry {
         let mut reg = TargetRegistry::new();
-        for t in targets { reg.register(t).unwrap(); }
+        for t in targets {
+            reg.register(t).unwrap();
+        }
         reg
     }
 
     #[test]
     fn test_linear_chain() {
         let targets = vec![
-            Target::new().id(0).name("compile".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(BitVec::new()).provides(make_bitset(&[0])).build(),
-            Target::new().id(1).name("link".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0])).provides(make_bitset(&[1])).build(),
-            Target::new().id(2).name("build".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[1])).provides(make_bitset(&[2])).build(),
+            Target::new()
+                .id(0)
+                .name("compile".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(BitVec::new())
+                .provides(make_bitset(&[0]))
+                .build(),
+            Target::new()
+                .id(1)
+                .name("link".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0]))
+                .provides(make_bitset(&[1]))
+                .build(),
+            Target::new()
+                .id(2)
+                .name("build".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[1]))
+                .provides(make_bitset(&[2]))
+                .build(),
         ];
         let reg = make_registry(targets);
         let resolver = DependencyResolver::new(&reg);
@@ -141,10 +231,38 @@ mod tests {
     #[test]
     fn test_diamond_graph() {
         let targets = vec![
-            Target::new().id(0).name("base".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(BitVec::new()).provides(make_bitset(&[0])).build(),
-            Target::new().id(1).name("left".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0])).provides(make_bitset(&[1])).build(),
-            Target::new().id(2).name("right".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0])).provides(make_bitset(&[2])).build(),
-            Target::new().id(3).name("top".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[1, 2])).provides(make_bitset(&[3])).build(),
+            Target::new()
+                .id(0)
+                .name("base".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(BitVec::new())
+                .provides(make_bitset(&[0]))
+                .build(),
+            Target::new()
+                .id(1)
+                .name("left".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0]))
+                .provides(make_bitset(&[1]))
+                .build(),
+            Target::new()
+                .id(2)
+                .name("right".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0]))
+                .provides(make_bitset(&[2]))
+                .build(),
+            Target::new()
+                .id(3)
+                .name("top".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[1, 2]))
+                .provides(make_bitset(&[3]))
+                .build(),
         ];
         let reg = make_registry(targets);
         let resolver = DependencyResolver::new(&reg);
@@ -156,7 +274,14 @@ mod tests {
 
     #[test]
     fn test_missing_dependency_strict() {
-        let targets = vec![Target::new().id(0).name("orphan".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0, 1])).provides(make_bitset(&[2])).build()];
+        let targets = vec![Target::new()
+            .id(0)
+            .name("orphan".into())
+            .target_type(TargetType::File)
+            .executor(ExecutorKind::Native)
+            .depends(make_bitset(&[0, 1]))
+            .provides(make_bitset(&[2]))
+            .build()];
         let reg = make_registry(targets);
         let resolver = DependencyResolver::new(&reg).with_strict(true);
         assert!(resolver.resolve(&["orphan"]).is_err());
@@ -165,24 +290,73 @@ mod tests {
     #[test]
     fn test_circular_dependency() {
         let targets = vec![
-            Target::new().id(0).name("a".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[1])).provides(make_bitset(&[0])).build(),
-            Target::new().id(1).name("b".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0])).provides(make_bitset(&[1])).build(),
+            Target::new()
+                .id(0)
+                .name("a".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[1]))
+                .provides(make_bitset(&[0]))
+                .build(),
+            Target::new()
+                .id(1)
+                .name("b".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0]))
+                .provides(make_bitset(&[1]))
+                .build(),
         ];
         let reg = make_registry(targets);
         let resolver = DependencyResolver::new(&reg);
-        assert!(matches!(resolver.resolve(&["a"]), Err(ResolverError::CircularDependency)));
+        assert!(matches!(
+            resolver.resolve(&["a"]),
+            Err(ResolverError::CircularDependency)
+        ));
     }
 
     #[test]
     fn test_abstract_dependency_resolution() {
         let mut reg = TargetRegistry::new();
-        reg.register(Target::new().id(0).name("build".into()).target_type(TargetType::Abstract).executor(ExecutorKind::Native).depends(make_bitset(&[0, 1])).provides(make_bitset(&[2])).build()).unwrap();
-        reg.register(Target::new().id(1).name("zig_compile".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(BitVec::new()).provides(make_bitset(&[0])).build()).unwrap();
-        reg.register(Target::new().id(2).name("zig_link".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0])).provides(make_bitset(&[1])).build()).unwrap();
+        reg.register(
+            Target::new()
+                .id(0)
+                .name("build".into())
+                .target_type(TargetType::Abstract)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0, 1]))
+                .provides(make_bitset(&[2]))
+                .build(),
+        )
+        .unwrap();
+        reg.register(
+            Target::new()
+                .id(1)
+                .name("zig_compile".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(BitVec::new())
+                .provides(make_bitset(&[0]))
+                .build(),
+        )
+        .unwrap();
+        reg.register(
+            Target::new()
+                .id(2)
+                .name("zig_link".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0]))
+                .provides(make_bitset(&[1]))
+                .build(),
+        )
+        .unwrap();
         let mut provided = BitVec::new();
         provided.resize(3, false);
         let resolver = DependencyResolver::new(&reg);
-        let plan = resolver.resolve_abstract_dependencies(&["build"], &provided).expect("resolve abstract");
+        let plan = resolver
+            .resolve_abstract_dependencies(&["build"], &provided)
+            .expect("resolve abstract");
         assert!(plan.len() >= 2);
     }
 }

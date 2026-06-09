@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use bitvec::vec::BitVec;
+use fluent_wvr::error::DbError;
 use guidance_llm::EmbeddingProvider;
-use guidance_vector_math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
-use fluent_wvr_common::error::DbError;
+use guidance_search_vector::math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;
@@ -575,8 +575,6 @@ fn blob_to_bitvec(b: &[u8]) -> BitVec {
     BitVec::from_slice(&words)
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -866,5 +864,4 @@ mod tests {
         ).expect("query");
         assert_eq!(count, 1);
     }
-
 }

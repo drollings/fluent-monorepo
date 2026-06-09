@@ -4,7 +4,14 @@ use crate::file_node::FileContentNode;
 use crate::node::{ContentNode, LodLevel, NodeType, NodeTypeInfo};
 use guidance_types::GuidanceDoc;
 
-const SOURCE_LOD_LABELS: &[&str] = &["path", "AST member summaries", "full GuidanceDoc JSON", "", "", ""];
+const SOURCE_LOD_LABELS: &[&str] = &[
+    "path",
+    "AST member summaries",
+    "full GuidanceDoc JSON",
+    "",
+    "",
+    "",
+];
 
 #[derive(Debug)]
 pub struct SourceCodeContentNode {
@@ -14,7 +21,10 @@ pub struct SourceCodeContentNode {
 
 impl SourceCodeContentNode {
     pub fn new(inner: FileContentNode) -> Self {
-        Self { inner, ast_doc: None }
+        Self {
+            inner,
+            ast_doc: None,
+        }
     }
 
     #[must_use]
@@ -23,17 +33,26 @@ impl SourceCodeContentNode {
         self
     }
 
-    pub fn inner(&self) -> &FileContentNode { &self.inner }
-    pub fn ast_doc(&self) -> Option<&GuidanceDoc> { self.ast_doc.as_ref() }
+    pub fn inner(&self) -> &FileContentNode {
+        &self.inner
+    }
+    pub fn ast_doc(&self) -> Option<&GuidanceDoc> {
+        self.ast_doc.as_ref()
+    }
 }
 
 impl ContentNode for SourceCodeContentNode {
-    fn node_type(&self) -> NodeType { NodeType::SourceCode }
+    fn node_type(&self) -> NodeType {
+        NodeType::SourceCode
+    }
     fn lod(&self, level: LodLevel) -> Option<&str> {
         match level {
             LodLevel::Source | LodLevel::Name => self.inner.path().to_str(),
             LodLevel::Detailed => self.ast_doc.as_ref().map(|_| "<AST>"),
-            LodLevel::Summary => self.ast_doc.as_ref().map(|d| d.comment.as_deref().unwrap_or("")),
+            LodLevel::Summary => self
+                .ast_doc
+                .as_ref()
+                .map(|d| d.comment.as_deref().unwrap_or("")),
             _ => None,
         }
     }
@@ -42,8 +61,16 @@ impl ContentNode for SourceCodeContentNode {
         SOURCE_LOD_LABELS.get(level as usize).copied()
     }
     fn type_info(&self) -> NodeTypeInfo {
-        NodeTypeInfo { kind: NodeType::SourceCode, name: "SourceCodeContentNode", lod_labels: SOURCE_LOD_LABELS }
+        NodeTypeInfo {
+            kind: NodeType::SourceCode,
+            name: "SourceCodeContentNode",
+            lod_labels: SOURCE_LOD_LABELS,
+        }
     }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }

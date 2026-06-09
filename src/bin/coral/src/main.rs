@@ -1,8 +1,8 @@
-use std::path::PathBuf;
-use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use guidance_coral::db::Library;
 use guidance_coral::mcp::serve_stdio_from_path;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "coral", about = "Context-graph database & MCP server")]

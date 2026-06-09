@@ -49,9 +49,7 @@ Then you you must read
 
 enum Node {
     Dir(BTreeMap<String, Node>),
-    File {
-        rel_path: String,
-    },
+    File { rel_path: String },
 }
 
 fn insert_path(root: &mut BTreeMap<String, Node>, components: &[&str], rel_path: &str) {
@@ -73,12 +71,7 @@ fn insert_path(root: &mut BTreeMap<String, Node>, components: &[&str], rel_path:
     }
 }
 
-fn build_ptree(
-    node: &Node,
-    builder: &mut TreeBuilder,
-    json_dir: &Path,
-    skills: &[String],
-) {
+fn build_ptree(node: &Node, builder: &mut TreeBuilder, json_dir: &Path, skills: &[String]) {
     match node {
         Node::Dir(children) => {
             for (name, child) in children {
@@ -103,10 +96,7 @@ fn build_ptree(
 }
 
 fn is_annotatable(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let dotted = format!(".{ext}");
     matches!(
         FileType::from_extension(&dotted),

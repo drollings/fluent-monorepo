@@ -17,3 +17,4 @@ pub mod ingest;
 pub mod mcp;
 pub mod packer;
 pub mod wasm_runtime;
+pub mod wvr;

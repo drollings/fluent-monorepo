@@ -5,12 +5,11 @@ edition.workspace = true
 
 [dependencies]
 guidance-types = { path = "../types" }
-guidance-traits = { path = "../traits" }
+fluent-wvr = { path = "../fluent-wvr" }
 bitvec = { workspace = true }
 internment = { workspace = true, features = ["arc"] }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 bon = { workspace = true }
-rusqlite = { workspace = true }  # TODO(M6): check if needed
-guidance-wasm-ipc = { path = "../wasm_ipc" }  # TODO(M6): remove unused dep
+rusqlite = { workspace = true }

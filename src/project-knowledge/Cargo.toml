@@ -1,0 +1,15 @@
+[package]
+name = "guidance-project-knowledge"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fluent-wvr = { path = "../fluent-wvr" }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+blake3 = { workspace = true }
+lazy_static = "1"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

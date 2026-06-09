@@ -42,9 +42,7 @@ impl<T: Send + 'static> EventQueue<T> {
     }
 
     pub fn blocking_submit(&self, task: T) -> Result<(), QueueError> {
-        self.sender
-            .send(task)
-            .map_err(|_| QueueError::Disconnected)
+        self.sender.send(task).map_err(|_| QueueError::Disconnected)
     }
 }
 

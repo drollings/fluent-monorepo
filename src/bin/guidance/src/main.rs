@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use fluent_wvr_common::shell::run_command;
+use fluent_wvr::shell::run_command;
 use guidance_coral::mcp::serve_stdio_from_path;
 use guidance_guidance::config;
 use guidance_guidance::sync::json_store::walk_guidance_docs;
 use guidance_guidance::sync_engine::SyncEngine;
-use guidance_guidance::vector::vector_db::GuidanceDb;
+use guidance_search_vector::GuidanceDb;
 use time::OffsetDateTime;
 
 mod structure;
@@ -294,7 +294,7 @@ fn cmd_explain(
     let gdir = PathBuf::from(guidance_dir);
     let db = PathBuf::from(db_path);
 
-    let mut results: Vec<guidance_guidance::vector::vector_db::SearchResult> = Vec::new();
+    let mut results: Vec<guidance_search_vector::db::SearchResult> = Vec::new();
 
     if db.exists() {
         if let Ok(gdb) = GuidanceDb::open(&db) {
@@ -332,7 +332,7 @@ fn collect_json_results(
     dir: &Path,
     lower_query: &str,
     tokens: &[&str],
-    results: &mut Vec<guidance_guidance::vector::vector_db::SearchResult>,
+    results: &mut Vec<guidance_search_vector::db::SearchResult>,
 ) {
     for (_path, doc) in walk_guidance_docs(dir) {
         for member in &doc.members {
@@ -352,13 +352,11 @@ fn collect_json_results(
             let name_match = name_lower.contains(lower_query);
             let token_match = tokens.iter().any(|t| {
                 let tl = t.to_lowercase();
-                name_lower.contains(&tl)
-                    || sig_lower.contains(&tl)
-                    || comment_lower.contains(&tl)
+                name_lower.contains(&tl) || sig_lower.contains(&tl) || comment_lower.contains(&tl)
             });
 
             if exact {
-                results.push(guidance_guidance::vector::vector_db::SearchResult {
+                results.push(guidance_search_vector::db::SearchResult {
                     id: 0,
                     name: member.name.as_str().to_string(),
                     source: doc.meta.source.as_str().to_string(),
@@ -366,7 +364,7 @@ fn collect_json_results(
                     similarity: 1.0,
                 });
             } else if name_match {
-                results.push(guidance_guidance::vector::vector_db::SearchResult {
+                results.push(guidance_search_vector::db::SearchResult {
                     id: 0,
                     name: member.name.as_str().to_string(),
                     source: doc.meta.source.as_str().to_string(),
@@ -374,7 +372,7 @@ fn collect_json_results(
                     similarity: 0.8,
                 });
             } else if token_match {
-                results.push(guidance_guidance::vector::vector_db::SearchResult {
+                results.push(guidance_search_vector::db::SearchResult {
                     id: 0,
                     name: member.name.as_str().to_string(),
                     source: doc.meta.source.as_str().to_string(),

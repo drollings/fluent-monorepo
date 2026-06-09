@@ -1,5 +1,5 @@
 [package]
-name = "fluent-wvr-common"
+name = "fluent-wvr"
 version.workspace = true
 edition.workspace = true
 
@@ -12,7 +12,9 @@ thiserror = { workspace = true }
 rusqlite = { workspace = true }
 libc = { workspace = true }
 lazy_static = "1"
-tempfile = { workspace = true }
+internment = { workspace = true, features = ["arc", "serde"] }
+tracing = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 httpmock = { workspace = true }

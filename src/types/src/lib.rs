@@ -13,24 +13,42 @@ pub struct SessionId(pub i64);
 pub struct TargetId(pub i64);
 
 impl NodeId {
-    pub fn from_int(i: i64) -> Self { Self(i) }
-    pub fn as_int(self) -> i64 { self.0 }
+    pub fn from_int(i: i64) -> Self {
+        Self(i)
+    }
+    pub fn as_int(self) -> i64 {
+        self.0
+    }
 }
 
 impl SessionId {
-    pub fn from_int(i: i64) -> Self { Self(i) }
-    pub fn as_int(self) -> i64 { self.0 }
+    pub fn from_int(i: i64) -> Self {
+        Self(i)
+    }
+    pub fn as_int(self) -> i64 {
+        self.0
+    }
 }
 
 impl TargetId {
-    pub fn from_int(i: i64) -> Self { Self(i) }
-    pub fn as_int(self) -> i64 { self.0 }
+    pub fn from_int(i: i64) -> Self {
+        Self(i)
+    }
+    pub fn as_int(self) -> i64 {
+        self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
-    Source, Markdown, Config, Data, Pdf, Audio, Unknown,
+    Source,
+    Markdown,
+    Config,
+    Data,
+    Pdf,
+    Audio,
+    Unknown,
 }
 
 impl FileType {
@@ -47,12 +65,24 @@ impl FileType {
         let known_pdf = [".pdf"];
         let known_audio = [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".wma"];
         let ext = ext.to_lowercase();
-        if known_source.iter().any(|e| ext == *e) { return Self::Source; }
-        if known_markdown.iter().any(|e| ext == *e) { return Self::Markdown; }
-        if known_config.iter().any(|e| ext == *e) { return Self::Config; }
-        if known_data.iter().any(|e| ext == *e) { return Self::Data; }
-        if known_pdf.iter().any(|e| ext == *e) { return Self::Pdf; }
-        if known_audio.iter().any(|e| ext == *e) { return Self::Audio; }
+        if known_source.iter().any(|e| ext == *e) {
+            return Self::Source;
+        }
+        if known_markdown.iter().any(|e| ext == *e) {
+            return Self::Markdown;
+        }
+        if known_config.iter().any(|e| ext == *e) {
+            return Self::Config;
+        }
+        if known_data.iter().any(|e| ext == *e) {
+            return Self::Data;
+        }
+        if known_pdf.iter().any(|e| ext == *e) {
+            return Self::Pdf;
+        }
+        if known_audio.iter().any(|e| ext == *e) {
+            return Self::Audio;
+        }
         Self::Unknown
     }
 
@@ -72,80 +102,140 @@ impl FileType {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemberType {
-    #[default] FnDecl, FnPrivate, Struct, Enum, Union, EnumField, TestDecl, ComptimeBlock, Method, MethodPrivate,
+    #[default]
+    FnDecl,
+    FnPrivate,
+    Struct,
+    Enum,
+    Union,
+    EnumField,
+    TestDecl,
+    ComptimeBlock,
+    Method,
+    MethodPrivate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeType {
-    Depends, Provides, Imports, Exports, Calls, CalledBy, Extends, Implements,
+    Depends,
+    Provides,
+    Imports,
+    Exports,
+    Calls,
+    CalledBy,
+    Extends,
+    Implements,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageKind {
-    Prose, Code, Metadata, Insight, SkillDoc, CapabilityDoc, NotFound,
+    Prose,
+    Code,
+    Metadata,
+    Insight,
+    SkillDoc,
+    CapabilityDoc,
+    NotFound,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Param {
-    #[serde(default)] pub name: SmolStr,
-    #[serde(skip_serializing_if = "Option::is_none")] pub type_name: Option<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub default: Option<SmolStr>,
+    #[serde(default)]
+    pub name: SmolStr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_name: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<SmolStr>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Member {
-    #[serde(default)] pub type_name: MemberType,
-    #[serde(default)] pub name: SmolStr,
-    #[serde(skip_serializing_if = "Option::is_none")] pub match_hash: Option<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub signature: Option<SmolStr>,
-    #[serde(default)] pub params: Vec<Param>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub returns: Option<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub comment: Option<SmolStr>,
-    #[serde(default)] pub tags: Vec<SmolStr>,
-    #[serde(default)] pub is_pub: bool,
-    #[serde(default)] pub members: Vec<Member>,
-    #[serde(default)] pub equivalents: Vec<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub line: Option<u32>,
-    #[serde(default)] pub comment_generated: bool,
+    #[serde(default)]
+    pub type_name: MemberType,
+    #[serde(default)]
+    pub name: SmolStr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_hash: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<SmolStr>,
+    #[serde(default)]
+    pub params: Vec<Param>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returns: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<SmolStr>,
+    #[serde(default)]
+    pub tags: Vec<SmolStr>,
+    #[serde(default)]
+    pub is_pub: bool,
+    #[serde(default)]
+    pub members: Vec<Member>,
+    #[serde(default)]
+    pub equivalents: Vec<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default)]
+    pub comment_generated: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Skill {
-    #[serde(default)] pub ref_path: SmolStr,
-    #[serde(skip_serializing_if = "Option::is_none")] pub context: Option<SmolStr>,
+    #[serde(default)]
+    pub ref_path: SmolStr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<SmolStr>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Meta {
-    #[serde(default)] pub module: SmolStr,
-    #[serde(default)] pub source: SmolStr,
-    #[serde(default = "default_language")] pub language: SmolStr,
+    #[serde(default)]
+    pub module: SmolStr,
+    #[serde(default)]
+    pub source: SmolStr,
+    #[serde(default = "default_language")]
+    pub language: SmolStr,
 }
 
-fn default_language() -> SmolStr { SmolStr::new("zig") }
+fn default_language() -> SmolStr {
+    SmolStr::new("zig")
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CapabilityEval {
-    #[serde(default)] pub capability_name: SmolStr,
-    #[serde(default)] pub confidence: f32,
-    #[serde(default)] pub evaluated_at_hash: SmolStr,
+    #[serde(default)]
+    pub capability_name: SmolStr,
+    #[serde(default)]
+    pub confidence: f32,
+    #[serde(default)]
+    pub evaluated_at_hash: SmolStr,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GuidanceDoc {
-    #[serde(default)] pub meta: Meta,
-    #[serde(skip_serializing_if = "Option::is_none")] pub comment: Option<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub detail: Option<SmolStr>,
-    #[serde(default)] pub keywords: Vec<SmolStr>,
-    #[serde(default)] pub skills: Vec<Skill>,
-    #[serde(default)] pub capabilities: Vec<SmolStr>,
-    #[serde(default)] pub hashtags: Vec<SmolStr>,
-    #[serde(default)] pub used_by: Vec<SmolStr>,
-    #[serde(default)] pub members: Vec<Member>,
-    #[serde(default)] pub equivalents: Vec<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub capability_eval: Option<CapabilityEval>,
+    #[serde(default)]
+    pub meta: Meta,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<SmolStr>,
+    #[serde(default)]
+    pub keywords: Vec<SmolStr>,
+    #[serde(default)]
+    pub skills: Vec<Skill>,
+    #[serde(default)]
+    pub capabilities: Vec<SmolStr>,
+    #[serde(default)]
+    pub hashtags: Vec<SmolStr>,
+    #[serde(default)]
+    pub used_by: Vec<SmolStr>,
+    #[serde(default)]
+    pub members: Vec<Member>,
+    #[serde(default)]
+    pub equivalents: Vec<SmolStr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_eval: Option<CapabilityEval>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,9 +243,12 @@ pub struct ContextNode {
     pub id: Option<NodeId>,
     pub name: SmolStr,
     pub source: String,
-    #[serde(default)] pub lod: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub embedding: Option<Vec<f32>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub capabilities: Option<Vec<u8>>,
+    #[serde(default)]
+    pub lod: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,7 +270,8 @@ pub struct Stage {
     pub kind: StageKind,
     pub content: String,
     pub source: String,
-    #[serde(skip_serializing_if = "Option::is_none")] pub line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,38 +295,59 @@ pub struct SyncResult {
 pub struct FileMatch {
     pub filename: SmolStr,
     pub filepath: SmolStr,
-    #[serde(default)] pub description: SmolStr,
-    #[serde(default)] pub line_context: SmolStr,
+    #[serde(default)]
+    pub description: SmolStr,
+    #[serde(default)]
+    pub line_context: SmolStr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ASTAnalysis {
     pub filepath: SmolStr,
-    #[serde(default)] pub functions: Vec<Member>,
-    #[serde(default)] pub classes: Vec<Member>,
-    #[serde(default)] pub imports: Vec<SmolStr>,
-    #[serde(default)] pub patterns_detected: Vec<SmolStr>,
-    #[serde(default)] pub token_count: usize,
-    #[serde(default)] pub signature_preview: SmolStr,
+    #[serde(default)]
+    pub functions: Vec<Member>,
+    #[serde(default)]
+    pub classes: Vec<Member>,
+    #[serde(default)]
+    pub imports: Vec<SmolStr>,
+    #[serde(default)]
+    pub patterns_detected: Vec<SmolStr>,
+    #[serde(default)]
+    pub token_count: usize,
+    #[serde(default)]
+    pub signature_preview: SmolStr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuidanceInfo {
     pub path: SmolStr,
-    #[serde(default)] pub comment: SmolStr,
-    #[serde(default)] pub functions: Vec<Member>,
-    #[serde(default)] pub classes: Vec<Member>,
-    #[serde(default)] pub skills: Vec<SmolStr>,
-    #[serde(default)] pub tags: Vec<SmolStr>,
+    #[serde(default)]
+    pub comment: SmolStr,
+    #[serde(default)]
+    pub functions: Vec<Member>,
+    #[serde(default)]
+    pub classes: Vec<Member>,
+    #[serde(default)]
+    pub skills: Vec<SmolStr>,
+    #[serde(default)]
+    pub tags: Vec<SmolStr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TargetType { File, Phony, Abstract, }
+pub enum TargetType {
+    File,
+    Phony,
+    Abstract,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ExecutorKind { Native, Docker, Wasm, }
+pub enum ExecutorKind {
+    Native,
+    Docker,
+    Wasm,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmTool {
@@ -245,20 +360,39 @@ pub struct WasmTool {
 mod tests {
     use super::*;
 
-    #[test] fn node_id_roundtrip() { let id = NodeId::from_int(42); assert_eq!(id.as_int(), 42); }
-    #[test] fn session_id_roundtrip() { let id = SessionId::from_int(-1); assert_eq!(id.as_int(), -1); }
-    #[test] fn target_id_roundtrip() { let id = TargetId::from_int(0); assert_eq!(id.as_int(), 0); }
-    #[test] fn types_are_distinct() {
-        fn takes_node(_: NodeId) {} fn takes_session(_: SessionId) {} fn takes_target(_: TargetId) {}
-        takes_node(NodeId::from_int(1)); takes_session(SessionId::from_int(1)); takes_target(TargetId::from_int(1));
+    #[test]
+    fn node_id_roundtrip() {
+        let id = NodeId::from_int(42);
+        assert_eq!(id.as_int(), 42);
     }
-    #[test] fn file_type_from_extension() {
+    #[test]
+    fn session_id_roundtrip() {
+        let id = SessionId::from_int(-1);
+        assert_eq!(id.as_int(), -1);
+    }
+    #[test]
+    fn target_id_roundtrip() {
+        let id = TargetId::from_int(0);
+        assert_eq!(id.as_int(), 0);
+    }
+    #[test]
+    fn types_are_distinct() {
+        fn takes_node(_: NodeId) {}
+        fn takes_session(_: SessionId) {}
+        fn takes_target(_: TargetId) {}
+        takes_node(NodeId::from_int(1));
+        takes_session(SessionId::from_int(1));
+        takes_target(TargetId::from_int(1));
+    }
+    #[test]
+    fn file_type_from_extension() {
         assert_eq!(FileType::from_extension(".zig"), FileType::Source);
         assert_eq!(FileType::from_extension(".md"), FileType::Markdown);
         assert_eq!(FileType::from_extension(".json"), FileType::Config);
         assert_eq!(FileType::from_extension(".xyz"), FileType::Unknown);
     }
-    #[test] fn file_type_to_str() {
+    #[test]
+    fn file_type_to_str() {
         assert_eq!(FileType::Source.to_str(), "source");
         assert_eq!(FileType::Markdown.to_str(), "markdown");
         assert_eq!(FileType::Config.to_str(), "config");
@@ -267,40 +401,120 @@ mod tests {
         assert_eq!(FileType::Audio.to_str(), "audio");
         assert_eq!(FileType::Unknown.to_str(), "unknown");
     }
-    #[test] fn file_type_from_extension_data_pdf_audio() {
+    #[test]
+    fn file_type_from_extension_data_pdf_audio() {
         assert_eq!(FileType::from_extension(".csv"), FileType::Data);
         assert_eq!(FileType::from_extension(".db"), FileType::Data);
         assert_eq!(FileType::from_extension(".pdf"), FileType::Pdf);
         assert_eq!(FileType::from_extension(".mp3"), FileType::Audio);
         assert_eq!(FileType::from_extension(".wav"), FileType::Audio);
     }
-    #[test] fn member_serde_roundtrip() {
-        let m = Member { type_name: MemberType::FnDecl, name: SmolStr::new("foo"), match_hash: None, signature: Some(SmolStr::new("fn foo()")), params: vec![], returns: None, comment: Some(SmolStr::new("test function")), tags: vec![SmolStr::new("public")], is_pub: true, members: vec![], equivalents: vec![], line: Some(10), comment_generated: false };
+    #[test]
+    fn member_serde_roundtrip() {
+        let m = Member {
+            type_name: MemberType::FnDecl,
+            name: SmolStr::new("foo"),
+            match_hash: None,
+            signature: Some(SmolStr::new("fn foo()")),
+            params: vec![],
+            returns: None,
+            comment: Some(SmolStr::new("test function")),
+            tags: vec![SmolStr::new("public")],
+            is_pub: true,
+            members: vec![],
+            equivalents: vec![],
+            line: Some(10),
+            comment_generated: false,
+        };
         let json = serde_json::to_string(&m).unwrap();
         let m2: Member = serde_json::from_str(&json).unwrap();
-        assert_eq!(m.name, m2.name); assert_eq!(m.is_pub, m2.is_pub);
+        assert_eq!(m.name, m2.name);
+        assert_eq!(m.is_pub, m2.is_pub);
     }
-    #[test] fn guidance_doc_default_language_on_deserialize() {
+    #[test]
+    fn guidance_doc_default_language_on_deserialize() {
         let json = r#"{"meta":{"module":"test","source":"test.zig"}}"#;
         let doc: GuidanceDoc = serde_json::from_str(json).unwrap();
         assert_eq!(doc.meta.language.as_str(), "zig");
     }
-    #[test] fn guidance_doc_serde_roundtrip() {
-        let doc = GuidanceDoc { meta: Meta { module: SmolStr::new("test"), source: SmolStr::new("test.zig"), language: SmolStr::new("zig") }, comment: Some(SmolStr::new("module comment")), detail: None, keywords: vec![SmolStr::new("api")], skills: vec![], capabilities: vec![], hashtags: vec![], used_by: vec![], members: vec![], equivalents: vec![], capability_eval: None };
+    #[test]
+    fn guidance_doc_serde_roundtrip() {
+        let doc = GuidanceDoc {
+            meta: Meta {
+                module: SmolStr::new("test"),
+                source: SmolStr::new("test.zig"),
+                language: SmolStr::new("zig"),
+            },
+            comment: Some(SmolStr::new("module comment")),
+            detail: None,
+            keywords: vec![SmolStr::new("api")],
+            skills: vec![],
+            capabilities: vec![],
+            hashtags: vec![],
+            used_by: vec![],
+            members: vec![],
+            equivalents: vec![],
+            capability_eval: None,
+        };
         let json = serde_json::to_string(&doc).unwrap();
         let doc2: GuidanceDoc = serde_json::from_str(&json).unwrap();
-        assert_eq!(doc.meta.module, doc2.meta.module); assert_eq!(doc.comment, doc2.comment);
+        assert_eq!(doc.meta.module, doc2.meta.module);
+        assert_eq!(doc.comment, doc2.comment);
     }
-    #[test] fn knn_hit_creation() {
-        let hit = KnnHit { node_id: NodeId::from_int(1), distance: 0.95, name: SmolStr::new("test") };
+    #[test]
+    fn knn_hit_creation() {
+        let hit = KnnHit {
+            node_id: NodeId::from_int(1),
+            distance: 0.95,
+            name: SmolStr::new("test"),
+        };
         assert_eq!(hit.node_id.as_int(), 1);
     }
-    #[test] fn stage_kind_serde() {
+    #[test]
+    fn stage_kind_serde() {
         let kinds = [StageKind::Prose, StageKind::Code, StageKind::NotFound];
-        for kind in &kinds { let json = serde_json::to_string(kind).unwrap(); let k2: StageKind = serde_json::from_str(&json).unwrap(); assert_eq!(*kind, k2); }
+        for kind in &kinds {
+            let json = serde_json::to_string(kind).unwrap();
+            let k2: StageKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(*kind, k2);
+        }
     }
-    #[test] fn target_type_serde() { let t = TargetType::File; let json = serde_json::to_string(&t).unwrap(); assert_eq!(json, "\"file\""); let t2: TargetType = serde_json::from_str(&json).unwrap(); assert_eq!(t, t2); }
-    #[test] fn executor_kind_serde() { let e = ExecutorKind::Wasm; let json = serde_json::to_string(&e).unwrap(); assert_eq!(json, "\"wasm\""); }
-    #[test] fn context_node_defaults() { let node = ContextNode { id: None, name: SmolStr::new("root"), source: "full text".into(), lod: vec![], embedding: None, capabilities: None }; assert!(node.lod.is_empty()); assert!(node.embedding.is_none()); }
-    #[test] fn wasm_tool_serde() { let tool = WasmTool { name: SmolStr::new("tokenizer"), path: "/usr/local/bin/guidance-tokenizer.wasm".into(), capabilities: vec![SmolStr::new("tokenize")] }; let json = serde_json::to_string(&tool).unwrap(); let t2: WasmTool = serde_json::from_str(&json).unwrap(); assert_eq!(tool.name, t2.name); }
+    #[test]
+    fn target_type_serde() {
+        let t = TargetType::File;
+        let json = serde_json::to_string(&t).unwrap();
+        assert_eq!(json, "\"file\"");
+        let t2: TargetType = serde_json::from_str(&json).unwrap();
+        assert_eq!(t, t2);
+    }
+    #[test]
+    fn executor_kind_serde() {
+        let e = ExecutorKind::Wasm;
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(json, "\"wasm\"");
+    }
+    #[test]
+    fn context_node_defaults() {
+        let node = ContextNode {
+            id: None,
+            name: SmolStr::new("root"),
+            source: "full text".into(),
+            lod: vec![],
+            embedding: None,
+            capabilities: None,
+        };
+        assert!(node.lod.is_empty());
+        assert!(node.embedding.is_none());
+    }
+    #[test]
+    fn wasm_tool_serde() {
+        let tool = WasmTool {
+            name: SmolStr::new("tokenizer"),
+            path: "/usr/local/bin/guidance-tokenizer.wasm".into(),
+            capabilities: vec![SmolStr::new("tokenize")],
+        };
+        let json = serde_json::to_string(&tool).unwrap();
+        let t2: WasmTool = serde_json::from_str(&json).unwrap();
+        assert_eq!(tool.name, t2.name);
+    }
 }

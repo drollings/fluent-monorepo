@@ -32,7 +32,9 @@ mod tests {
 
     #[test]
     fn registry_error_display() {
-        let err = RegistryError::DuplicateTarget { name: "build".into() };
+        let err = RegistryError::DuplicateTarget {
+            name: "build".into(),
+        };
         assert!(format!("{err}").contains("build"));
     }
 

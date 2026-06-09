@@ -71,10 +71,7 @@ impl LlmRequestQueue {
 }
 
 fn make_llm_request(messages: &[ChatMessage], config: &LlmConfig) -> Result<String, LlmError> {
-    let url = format!(
-        "{}/chat/completions",
-        config.api_url.trim_end_matches('/')
-    );
+    let url = format!("{}/chat/completions", config.api_url.trim_end_matches('/'));
     let mut body = serde_json::json!({
         "model": config.model,
         "messages": messages,
@@ -86,10 +83,7 @@ fn make_llm_request(messages: &[ChatMessage], config: &LlmConfig) -> Result<Stri
     }
 
     let response = ureq::post(&url)
-        .send(
-            serde_json::to_string(&body)
-                .map_err(|e| LlmError::Api(e.to_string()))?,
-        )
+        .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
         .map_err(|e| LlmError::Http(e.to_string()))?;
 
     let mut body = response.into_body();

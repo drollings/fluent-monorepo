@@ -54,7 +54,12 @@ where
     loop {
         attempts += 1;
         match f() {
-            Ok(v) => return Ok(RetryResult { result: v, attempts }),
+            Ok(v) => {
+                return Ok(RetryResult {
+                    result: v,
+                    attempts,
+                })
+            }
             Err(e) => {
                 if attempts >= max_attempts {
                     return Err(e);
@@ -187,11 +192,15 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
-    fn add1(x: i32) -> i32 { x + 1 }
-    fn add2(x: i32) -> i32 { x + 2 }
+    fn add1(x: i32) -> i32 {
+        x + 1
+    }
+    fn add2(x: i32) -> i32 {
+        x + 2
+    }
 
     #[test]
     fn wrap_if_true() {
@@ -238,20 +247,31 @@ mod tests {
 
     impl MockUnit {
         fn ok(name: &str) -> Self {
-            Self { name: ArcIntern::from(name), should_fail: false, call_count: AtomicUsize::new(0) }
-        }
-        fn fail(name: &str) -> Self {
-            Self { name: ArcIntern::from(name), should_fail: true, call_count: AtomicUsize::new(0) }
+            Self {
+                name: ArcIntern::from(name),
+                should_fail: false,
+                call_count: AtomicUsize::new(0),
+            }
         }
     }
 
     impl WorkUnit for MockUnit {
-        fn name(&self) -> &str { &self.name }
-        fn depends(&self) -> &[ArcIntern<str>] { &[] }
-        fn provides(&self) -> &[ArcIntern<str>] { &[] }
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
-            if self.should_fail { Err(WorkError::Execution("failed".into())) } else { Ok(WorkOutput::ok("done")) }
+            if self.should_fail {
+                Err(WorkError::Execution("failed".into()))
+            } else {
+                Ok(WorkOutput::ok("done"))
+            }
         }
     }
 

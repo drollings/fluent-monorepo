@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use fluent_wvr_common::hash::content_hash_with_model;
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
+use fluent_wvr::hash::content_hash_with_model;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
@@ -148,7 +148,6 @@ impl EmbeddingProvider for OllamaEmbedding {
         let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
         parse_ollama_batch_response(&resp_bytes)
     }
-
 }
 
 /// Generic caching wrapper around any EmbeddingProvider.
@@ -178,7 +177,9 @@ impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
 }
 
 #[async_trait]
-impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider for CachedEmbeddingProvider<T> {
+impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
+    for CachedEmbeddingProvider<T>
+{
     fn name(&self) -> &'static str {
         self.inner.name()
     }
@@ -193,7 +194,10 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider for CachedE
         }
         let key = self.cache_key(text);
         {
-            let map = self.cache.lock().map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
+            let map = self
+                .cache
+                .lock()
+                .map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
             if let Some(cached) = map.get(&key) {
                 return Ok(cached.clone());
             }
@@ -245,8 +249,16 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider for CachedE
         }
 
         let count = results.len();
-        let actual_dims = if count > 0 { results[0].as_ref().map_or(0, |v| v.len()) } else { 0 };
-        Ok(BatchEmbedding { flat, count, dims: actual_dims })
+        let actual_dims = if count > 0 {
+            results[0].as_ref().map_or(0, |v| v.len())
+        } else {
+            0
+        };
+        Ok(BatchEmbedding {
+            flat,
+            count,
+            dims: actual_dims,
+        })
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
@@ -333,7 +345,6 @@ impl EmbeddingProvider for OpenAiEmbedding {
             do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
         parse_openai_batch_response(&resp_bytes)
     }
-
 }
 
 fn do_embed_request(base_url: &str, path: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {
@@ -518,7 +529,9 @@ pub fn create_embedding_provider(
 ) -> Result<Box<dyn EmbeddingProvider>, EmbeddingError> {
     let provider: Box<dyn EmbeddingProvider> = match name {
         "none" => Box::new(NoopEmbedding::new(dims)),
-        "ollama" => Box::new(CachedEmbeddingProvider::new(OllamaEmbedding::new(model, base_url, dims)?)),
+        "ollama" => Box::new(CachedEmbeddingProvider::new(OllamaEmbedding::new(
+            model, base_url, dims,
+        )?)),
         "openai" => Box::new(CachedEmbeddingProvider::new(OpenAiEmbedding::new(
             model, base_url, api_key, dims,
         )?)),

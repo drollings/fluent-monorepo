@@ -1,12 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "src/common",
     "src/types",
-    "src/traits",
+    "src/fluent-wvr",
+    "src/project-knowledge",
+    "src/search-vector",
     "src/content-node",
-    "src/vector-math",
-    "src/vector-aliases",
     "src/guidance",
     "src/coral",
     "src/dag",

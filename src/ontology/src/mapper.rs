@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use guidance_types::ContextNode;
-use guidance_types::NodeId;
 use guidance_rdf::normalize::hash_blank_node;
 use guidance_rdf::normalize::hash_iri;
 use guidance_rdf::parser::Term;
 use guidance_rdf::parser::Triple;
+use guidance_types::ContextNode;
+use guidance_types::NodeId;
 use thiserror::Error;
 
 use crate::yago;

@@ -18,13 +18,21 @@ impl FileContentNode {
         Self { path, inode, hash }
     }
 
-    pub fn path(&self) -> &Path { &self.path }
-    pub fn inode(&self) -> u64 { self.inode }
-    pub fn hash(&self) -> &blake3::Hash { &self.hash }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn inode(&self) -> u64 {
+        self.inode
+    }
+    pub fn hash(&self) -> &blake3::Hash {
+        &self.hash
+    }
 }
 
 impl ContentNode for FileContentNode {
-    fn node_type(&self) -> NodeType { NodeType::File }
+    fn node_type(&self) -> NodeType {
+        NodeType::File
+    }
     fn lod(&self, level: LodLevel) -> Option<&str> {
         match level {
             LodLevel::Name | LodLevel::Source => Some(self.path.to_str()?),
@@ -36,8 +44,16 @@ impl ContentNode for FileContentNode {
         FILE_LOD_LABELS.get(level as usize).copied()
     }
     fn type_info(&self) -> NodeTypeInfo {
-        NodeTypeInfo { kind: NodeType::File, name: "FileContentNode", lod_labels: FILE_LOD_LABELS }
+        NodeTypeInfo {
+            kind: NodeType::File,
+            name: "FileContentNode",
+            lod_labels: FILE_LOD_LABELS,
+        }
     }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }

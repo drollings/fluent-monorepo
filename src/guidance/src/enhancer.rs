@@ -1,5 +1,5 @@
-use guidance_types::GuidanceDoc;
 use guidance_llm::client::{ChatMessage, LlmClient};
+use guidance_types::GuidanceDoc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

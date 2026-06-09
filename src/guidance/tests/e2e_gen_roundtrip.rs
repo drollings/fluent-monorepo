@@ -1,6 +1,6 @@
-use guidance_types::MemberType;
 use guidance_guidance::sync::json_store;
 use guidance_guidance::sync_engine::SyncEngine;
+use guidance_types::MemberType;
 
 const FIXTURE_ZIG: &str = r#"/// Sample Zig file for AST parsing tests
 const std = @import("std");

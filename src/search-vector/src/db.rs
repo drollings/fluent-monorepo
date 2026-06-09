@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use fluent_wvr_common::error::DbError;
+use fluent_wvr::error::DbError;
 use rusqlite::params;
 use thiserror::Error;
 
-use guidance_vector_math as math;
+use crate::math;
 
 #[derive(Error, Debug)]
 pub enum VectorDbError {

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fluent-wvr-common = { path = "../common" }
+fluent-wvr = { path = "../fluent-wvr" }
 guidance-concurrency-queue = { path = "../concurrency-queue" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -12,8 +12,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "sync"] }
 regex = { workspace = true }
-# TODO(M6): remove unused dep
-async-openai = { workspace = true }
+
 ureq = { workspace = true }
 bon = { workspace = true }
 async-trait = { workspace = true }

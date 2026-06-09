@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fluent-wvr-common = { path = "../common" }
+fluent-wvr = { path = "../fluent-wvr" }
+guidance-project-knowledge = { path = "../project-knowledge" }
 guidance-types = { path = "../types" }
-guidance-vector-math = { path = "../vector-math" }
-guidance-vector-aliases = { path = "../vector-aliases" }
+guidance-search-vector = { path = "../search-vector" }
 guidance-llm = { path = "../llm" }
 serde = { workspace = true }
 serde_json = { workspace = true }

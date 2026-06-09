@@ -32,13 +32,17 @@ pub fn generate_lod_slices(full_text: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    #[test] fn generate_lod_slices_short_text() {
+    #[test]
+    fn generate_lod_slices_short_text() {
         let slices = generate_lod_slices("Hello");
         assert_eq!(slices.len(), 6);
-        for s in &slices { assert_eq!(s, "Hello"); }
+        for s in &slices {
+            assert_eq!(s, "Hello");
+        }
     }
 
-    #[test] fn generate_lod_slices_truncates_summary() {
+    #[test]
+    fn generate_lod_slices_truncates_summary() {
         let long = "A. ".repeat(500);
         let text = &long[..long.len() - 2];
         let slices = generate_lod_slices(text);
@@ -49,7 +53,8 @@ mod tests {
         assert!(slices[4].len() <= 40);
     }
 
-    #[test] fn generate_lod_slices_sentence_boundary() {
+    #[test]
+    fn generate_lod_slices_sentence_boundary() {
         let text = "First sentence. Second sentence that is longer. Third sentence.";
         let slices = generate_lod_slices(text);
         assert!(slices[1].ends_with('.'));

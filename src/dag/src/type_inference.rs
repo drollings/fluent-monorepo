@@ -61,7 +61,11 @@ impl TypeInference {
                 ancestors.insert(id, bits);
             }
         }
-        Self { ancestors, class_count, id_to_bit }
+        Self {
+            ancestors,
+            class_count,
+            id_to_bit,
+        }
     }
 
     pub fn is_subclass_of(&self, child: i64, parent: i64) -> bool {

@@ -7,7 +7,7 @@ use crate::ast_parser::AstParser;
 use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
-use crate::vector::vector_db::GuidanceDb;
+use guidance_search_vector::GuidanceDb;
 
 #[derive(Error, Debug)]
 pub enum SyncEngineError {

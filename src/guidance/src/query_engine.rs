@@ -1,15 +1,15 @@
 use std::path::Path;
 
+use guidance_project_knowledge::word_index::WordIndex;
 use guidance_types::GuidanceDoc;
-use fluent_wvr_common::word_index::WordIndex;
 use thiserror::Error;
 
 use crate::query::identifier;
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
-use guidance_vector_aliases::SemanticAliases;
-use crate::vector::vector_db::GuidanceDb;
+use guidance_search_vector::GuidanceDb;
+use guidance_search_vector::SemanticAliases;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OutputFormat {
@@ -502,8 +502,8 @@ impl QueryEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use guidance_project_knowledge::word_index::WordIndex;
     use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
-    use fluent_wvr_common::word_index::WordIndex;
 
     fn make_test_doc() -> GuidanceDoc {
         GuidanceDoc {

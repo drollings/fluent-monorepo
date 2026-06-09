@@ -35,15 +35,23 @@ pub struct ExecutionResult {
 
 impl<'a> DagExecutor<'a> {
     pub fn new(registry: &'a TargetRegistry) -> Self {
-        Self { registry, results: HashMap::new() }
+        Self {
+            registry,
+            results: HashMap::new(),
+        }
     }
 
-    pub fn execute(&mut self, plan: &ExecutionPlan) -> Result<Vec<ExecutionResult>, ExecutionError> {
+    pub fn execute(
+        &mut self,
+        plan: &ExecutionPlan,
+    ) -> Result<Vec<ExecutionResult>, ExecutionError> {
         let span = span!(Level::INFO, "dag_execute", size = plan.len());
         let _enter = span.enter();
         let mut results = Vec::with_capacity(plan.len());
         for &bit_idx in &plan.order {
-            let target = self.registry.get_by_bit_index(bit_idx)
+            let target = self
+                .registry
+                .get_by_bit_index(bit_idx)
                 .ok_or_else(|| ExecutionError::TargetNotFound(format!("bit_index {bit_idx}")))?;
             info!(target = %target.name, "executing");
             let result = self.execute_target(target, plan)?;
@@ -53,52 +61,112 @@ impl<'a> DagExecutor<'a> {
         Ok(results)
     }
 
-    fn execute_target(&self, target: &Target, _plan: &ExecutionPlan) -> Result<ExecutionResult, ExecutionError> {
+    fn execute_target(
+        &self,
+        target: &Target,
+        _plan: &ExecutionPlan,
+    ) -> Result<ExecutionResult, ExecutionError> {
         match target.executor {
             ExecutorKind::Native => {
                 if target.command.is_empty() {
-                    return Ok(ExecutionResult { bit_index: target.id as usize, name: target.name.to_string(), success: true, output: String::new() });
+                    return Ok(ExecutionResult {
+                        bit_index: target.id as usize,
+                        name: target.name.to_string(),
+                        success: true,
+                        output: String::new(),
+                    });
                 }
-                let (shell_cmd, shell_arg) = if cfg!(target_os = "windows") { ("cmd", "/C") } else { ("sh", "-c") };
-                let output = Command::new(shell_cmd).arg(shell_arg).arg(&target.command).output()
-                    .map_err(|e| ExecutionError::ExecutionFailed { target: target.name.to_string(), message: e.to_string() })?;
+                let (shell_cmd, shell_arg) = if cfg!(target_os = "windows") {
+                    ("cmd", "/C")
+                } else {
+                    ("sh", "-c")
+                };
+                let output = Command::new(shell_cmd)
+                    .arg(shell_arg)
+                    .arg(&target.command)
+                    .output()
+                    .map_err(|e| ExecutionError::ExecutionFailed {
+                        target: target.name.to_string(),
+                        message: e.to_string(),
+                    })?;
                 let success = output.status.success();
-                let output_str = String::from_utf8_lossy(if success { &output.stdout } else { &output.stderr }).to_string();
-                Ok(ExecutionResult { bit_index: target.id as usize, name: target.name.to_string(), success, output: output_str })
+                let output_str = String::from_utf8_lossy(if success {
+                    &output.stdout
+                } else {
+                    &output.stderr
+                })
+                .to_string();
+                Ok(ExecutionResult {
+                    bit_index: target.id as usize,
+                    name: target.name.to_string(),
+                    success,
+                    output: output_str,
+                })
             }
             ExecutorKind::Wasm => Err(ExecutionError::WasmNotImplemented(target.name.to_string())),
-            ExecutorKind::Docker => Err(ExecutionError::DockerNotImplemented(target.name.to_string())),
+            ExecutorKind::Docker => Err(ExecutionError::DockerNotImplemented(
+                target.name.to_string(),
+            )),
         }
     }
 
-    pub fn results(&self) -> &HashMap<usize, ExecutionResult> { &self.results }
+    pub fn results(&self) -> &HashMap<usize, ExecutionResult> {
+        &self.results
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitvec::prelude::*;
-    use crate::target::{Target, TargetRegistry};
-    use guidance_types::{ExecutorKind, TargetType};
     use crate::resolver::DependencyResolver;
+    use crate::target::{Target, TargetRegistry};
+    use bitvec::prelude::*;
+    use guidance_types::{ExecutorKind, TargetType};
 
     fn make_bitset(bits: &[usize]) -> BitVec {
         let max = bits.iter().max().copied().unwrap_or(0) + 1;
         let mut bv = BitVec::with_capacity(max);
         bv.resize(max, false);
-        for &bit in bits { if bit < bv.len() { bv.set(bit, true); } }
+        for &bit in bits {
+            if bit < bv.len() {
+                bv.set(bit, true);
+            }
+        }
         bv
     }
 
     #[test]
     fn test_execute_noop_targets() {
         let targets = vec![
-            Target::new().id(0).name("init".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(BitVec::new()).provides(make_bitset(&[0])).build(),
-            Target::new().id(1).name("process".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[0])).provides(make_bitset(&[1])).build(),
-            Target::new().id(2).name("finalize".into()).target_type(TargetType::File).executor(ExecutorKind::Native).depends(make_bitset(&[1])).provides(make_bitset(&[2])).build(),
+            Target::new()
+                .id(0)
+                .name("init".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(BitVec::new())
+                .provides(make_bitset(&[0]))
+                .build(),
+            Target::new()
+                .id(1)
+                .name("process".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[0]))
+                .provides(make_bitset(&[1]))
+                .build(),
+            Target::new()
+                .id(2)
+                .name("finalize".into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(make_bitset(&[1]))
+                .provides(make_bitset(&[2]))
+                .build(),
         ];
         let mut reg = TargetRegistry::new();
-        for t in targets { reg.register(t).unwrap(); }
+        for t in targets {
+            reg.register(t).unwrap();
+        }
         let resolver = DependencyResolver::new(&reg);
         let plan = resolver.resolve(&["finalize"]).expect("resolve");
         assert_eq!(plan.order.len(), 3);

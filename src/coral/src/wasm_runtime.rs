@@ -67,7 +67,7 @@ impl WasmPlugin for ExtismPlugin {
 
 use std::sync::Mutex;
 
-use guidance_traits::{
+use fluent_wvr::{
     Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
 };
 use internment::ArcIntern;

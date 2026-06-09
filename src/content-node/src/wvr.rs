@@ -8,12 +8,20 @@ pub struct ContentNodeRef {
 
 impl ContentNodeRef {
     pub fn new(node: impl ContentNode + 'static) -> Self {
-        Self { inner: Box::new(node) }
+        Self {
+            inner: Box::new(node),
+        }
     }
 
-    pub fn node_type(&self) -> NodeType { self.inner.node_type() }
-    pub fn lod(&self, level: LodLevel) -> Option<&str> { self.inner.lod(level) }
-    pub fn type_info(&self) -> NodeTypeInfo { self.inner.type_info() }
+    pub fn node_type(&self) -> NodeType {
+        self.inner.node_type()
+    }
+    pub fn lod(&self, level: LodLevel) -> Option<&str> {
+        self.inner.lod(level)
+    }
+    pub fn type_info(&self) -> NodeTypeInfo {
+        self.inner.type_info()
+    }
 
     pub fn downcast_ref<T: ContentNode + 'static>(&self) -> Option<&T> {
         self.inner.as_any().downcast_ref::<T>()
@@ -27,8 +35,8 @@ impl ContentNodeRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::NodeType;
     use crate::file_node::FileContentNode;
+    use crate::node::NodeType;
     use std::path::PathBuf;
 
     #[test]
