@@ -5,12 +5,14 @@ edition.workspace = true
 
 [dependencies]
 guidance-common = { path = "../common" }
+guidance-concurrency-queue = { path = "../concurrency-queue" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
 regex = { workspace = true }
+# TODO(M6): remove unused dep
 async-openai = { workspace = true }
 ureq = { workspace = true }
 bon = { workspace = true }

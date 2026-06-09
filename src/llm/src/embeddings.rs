@@ -149,34 +149,6 @@ impl EmbeddingProvider for OllamaEmbedding {
         parse_ollama_batch_response(&resp_bytes)
     }
 
-    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        if text.is_empty() {
-            return Ok(Vec::new());
-        }
-        let body = serde_json::json!({
-            "model": self.model.clone(),
-            "input": text,
-        });
-        let resp_bytes =
-            do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string())
-                .await?;
-        parse_ollama_response(&resp_bytes)
-    }
-
-    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        let inputs: Vec<serde_json::Value> = texts
-            .iter()
-            .map(|t| serde_json::Value::String(t.to_string()))
-            .collect();
-        let body = serde_json::json!({
-            "model": self.model.clone(),
-            "input": inputs,
-        });
-        let resp_bytes =
-            do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string())
-                .await?;
-        parse_ollama_batch_response(&resp_bytes)
-    }
 }
 
 /// Generic caching wrapper around any EmbeddingProvider.
@@ -362,60 +334,6 @@ impl EmbeddingProvider for OpenAiEmbedding {
         parse_openai_batch_response(&resp_bytes)
     }
 
-    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        if text.is_empty() {
-            return Ok(Vec::new());
-        }
-        let body = serde_json::json!({
-            "model": self.model.clone(),
-            "input": text,
-        });
-        let resp_bytes = do_openai_request_async(
-            self.embeddings_url(),
-            self.api_key.clone(),
-            body.to_string(),
-        )
-        .await?;
-        parse_openai_response(&resp_bytes)
-    }
-
-    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        let inputs: Vec<serde_json::Value> = texts
-            .iter()
-            .map(|t| serde_json::Value::String(t.to_string()))
-            .collect();
-        let body = serde_json::json!({
-            "model": self.model.clone(),
-            "input": inputs,
-        });
-        let resp_bytes = do_openai_request_async(
-            self.embeddings_url(),
-            self.api_key.clone(),
-            body.to_string(),
-        )
-        .await?;
-        parse_openai_batch_response(&resp_bytes)
-    }
-}
-
-async fn do_embed_request_async(
-    base_url: String,
-    path: String,
-    body_str: String,
-) -> Result<Vec<u8>, EmbeddingError> {
-    tokio::task::spawn_blocking(move || do_embed_request(&base_url, &path, &body_str))
-        .await
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?
-}
-
-async fn do_openai_request_async(
-    url: String,
-    api_key: String,
-    body_str: String,
-) -> Result<Vec<u8>, EmbeddingError> {
-    tokio::task::spawn_blocking(move || do_openai_request(&url, &api_key, &body_str))
-        .await
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?
 }
 
 fn do_embed_request(base_url: &str, path: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {

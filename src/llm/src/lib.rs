@@ -5,6 +5,7 @@ pub mod context_packer;
 pub mod decomposer;
 pub mod embeddings;
 pub mod error;
+pub mod llm_queue;
 pub mod url;
 
 pub use anonymize::anonymize;

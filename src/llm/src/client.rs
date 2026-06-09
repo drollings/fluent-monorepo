@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::llm_queue::LlmRequestQueue;
 
 #[derive(Error, Debug)]
 pub enum LlmError {
@@ -38,6 +42,7 @@ pub struct LlmClient {
     pub api_base: String,
     pub model: String,
     pub config: LlmConfig,
+    pub queue: Option<Arc<LlmRequestQueue>>,
 }
 
 impl LlmClient {
@@ -50,6 +55,20 @@ impl LlmClient {
             api_base: api_base.trim_end_matches('/').to_string(),
             model: model.to_string(),
             config,
+            queue: None,
+        }
+    }
+
+    pub fn with_queue(api_base: &str, model: &str, queue: Arc<LlmRequestQueue>) -> Self {
+        let config = LlmConfig::new()
+            .api_url(api_base.to_string())
+            .model(model.to_string())
+            .build();
+        Self {
+            api_base: api_base.trim_end_matches('/').to_string(),
+            model: model.to_string(),
+            config,
+            queue: Some(queue),
         }
     }
 
@@ -65,6 +84,7 @@ impl LlmClient {
             api_base,
             model,
             config,
+            queue: None,
         }
     }
 
@@ -117,6 +137,9 @@ impl LlmClient {
     }
 
     pub fn chat_complete(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
+        if let Some(ref queue) = self.queue {
+            return queue.submit(messages.to_vec(), self.config.clone());
+        }
         let url = format!("{}/chat/completions", self.api_base);
         let body = self.build_request_body(messages);
 
@@ -139,6 +162,9 @@ impl LlmClient {
         &self,
         messages: Vec<ChatMessage>,
     ) -> Result<String, LlmError> {
+        if let Some(ref queue) = self.queue {
+            return queue.submit_async(messages, self.config.clone()).await;
+        }
         let url = format!("{}/chat/completions", self.api_base);
         let model = self.model.clone();
         let config_think = self.config.think;

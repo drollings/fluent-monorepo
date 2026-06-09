@@ -16,6 +16,7 @@ members = [
     "src/ontology",
     "src/bin/guidance",
     "src/bin/coral",
+    "src/concurrency-queue",
 ]
 
 [workspace.package]
