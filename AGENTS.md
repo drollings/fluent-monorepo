@@ -31,8 +31,9 @@ follow instructions for any queries of interest
                          other languages apart from Zig, i.e.  guidance-py)
                          Follow source patterns and applicable skills only
 
-5. VERIFY (make):        make pre-commit
-                         build → test → lint → guidance gen → STRUCTURE.md
+5. VERIFY (cargo):       cargo build --workspace && cargo test --workspace
+                         && cargo clippy --workspace -- -D warnings
+                         && cargo run --bin guidance -- structure .guidance
 ```
 
 ---
@@ -58,23 +59,24 @@ src/
   common/           Trimmed utility crate
                     Note: common/ contains no domain-specific logic; no imports from dag/, coral/, or guidance/
   types/            guidance-types (FileType, MemberType, Param, Member, etc.)
-  traits/           guidance-traits (serde-based replacement for reflection)
-  registry/         guidance-registry (Target, TargetRegistry, CapabilityRegistry)
-  content-node/     guidance-content-node
-  vector-math/      guidance-vector-math (cosine_similarity, QuantizedEmbedding)
-  vector-aliases/   guidance-vector-aliases (SemanticAliases, expand, expand_query)
-  dag-executor/     guidance-dag-executor (DagExecutor, DependencyResolver)
-  dag/              Thin re-export crate
-  guidance/         Updated consumer
-  coral/            Updated consumer
-  llm/              LLM HTTP client + embeddings (gained embedding providers)
-  ontology/         Ontology types
-  rdf/              RDF/triple handling
-  wasm_ipc/         Wasm tooling
+   traits/           guidance-traits (serde-based replacement for reflection)
+   content-node/     guidance-content-node (lod slicing, file content annotation)
+   vector-math/      guidance-vector-math (cosine_similarity, QuantizedEmbedding, try_bytes_to_vec)
+   vector-aliases/   guidance-vector-aliases (SemanticAliases, expand, expand_query)
+   concurrency-queue/ guidance-concurrency-queue (EventQueue<T>, LlmRequestQueue wrapper)
+   dag/              guidance-dag: executor, resolver, work_unit, adapter, middleware,
+                     drift, type_inference, target, capability registry, error types
+   guidance/         Updated consumer
+   coral/            Updated consumer (MCP server, cache router, KNN ingest)
+   llm/              LLM HTTP client + embeddings (CachedEmbeddingProvider, LlmRequestQueue,
+                     LlmClient, url, error)
+   ontology/         Ontology types (entity, mapper, triple store)
+   rdf/              RDF/triple handling
+   wasm_ipc/         Wasm tooling
 bin/
-  guidance          Updated binary (removed show/ingest, serve→mcp)
-  guidance-py       Python AST provider (Python files → .guidance/ JSON)
-  coral             New binary (coral mcp)
+   guidance          Updated binary (removed show/ingest, serve→mcp; added structure subcommand)
+   guidance-py       Python AST provider (Python files → .guidance/ JSON)
+   coral             New binary (coral mcp)
 .guidance/
   guidance-config.json   Model / provider configuration
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)

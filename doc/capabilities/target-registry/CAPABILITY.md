@@ -11,7 +11,10 @@ anchors:
 
 # Target Registry
 
-`common/src/registry.rs` + `common/src/interner.rs` + `dag/src/registry.rs` implement the build target DAG. The `dag/` crate re-exports `Target` from `common/` and adds a richer `TargetRegistry` with provider queries.
+`dag/src/target.rs` + `dag/src/interner.rs` implement the build target DAG. The
+`guidance-dag` crate consolidates all DAG types (Target, TargetRegistry,
+CapabilityRegistry, executor, resolver, drift, type_inference) into a single
+crate.
 
 ## Target
 
@@ -31,7 +34,7 @@ A `Target` represents one node in the capability DAG, built via `bon::Builder`:
 ## TargetBuilder — bon::Builder
 
 ```rust
-use guidance_common::registry::Target;
+use guidance_dag::target::Target;
 
 let t = Target::new()
     .id(1)
@@ -47,10 +50,11 @@ let t = Target::new()
 
 ## CapabilityRegistry — RwLock interned string mapping
 
-`CapabilityRegistry` in `common/src/interner.rs` provides thread-safe name↔index interning with double-checked locking:
+`CapabilityRegistry` in `dag/src/interner.rs` provides thread-safe name↔index
+interning with double-checked locking:
 
 ```rust
-use guidance_common::interner::CapabilityRegistry;
+use guidance_dag::interner::CapabilityRegistry;
 
 let reg = CapabilityRegistry::new();
 let idx = reg.intern("compile");   // returns 0
@@ -64,10 +68,11 @@ let names: Vec<ArcIntern<str>> = reg.bitvec_to_names(&bits);
 
 ## TargetRegistry — dag-level registry
 
-The `dag` crate's `TargetRegistry` (`dag/src/registry.rs`) wraps `Vec<Target>` with provider query logic:
+The `dag` crate's `TargetRegistry` (`dag/src/target.rs`) wraps `Vec<Target>`
+with provider query logic:
 
 ```rust
-use dag::registry::TargetRegistry;
+use guidance_dag::target::TargetRegistry;
 
 let mut reg = TargetRegistry::new();
 reg.register(target)?;
@@ -87,7 +92,11 @@ for essential in reg.essential_targets() { /* ... */ }
 
 ## Key files
 
-- `registry/src/lib.rs` — `Target` (bon::Builder), `TargetRegistry`, `CapabilityRegistry`
+- `dag/src/target.rs` — `Target` (bon::Builder), `TargetRegistry`, `TargetType`, `ExecutorKind`
+- `dag/src/interner.rs` — `CapabilityRegistry`
+- `dag/src/error.rs` — `RegistryError`, `ResolverError`
+- `dag/src/drift.rs` — `DriftConfig`, `DriftDetector`
+- `dag/src/type_inference.rs` — `TypeInference`
 
 ## Semantic Deviations
 
