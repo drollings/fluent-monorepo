@@ -1,4 +1,5 @@
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::sync::Arc;
 
 use guidance_types::ContextNode;
@@ -220,6 +221,17 @@ impl McpServer {
 
         Ok(())
     }
+}
+
+/// Open a library from a path (or create in-memory if not found) and serve MCP over STDIO.
+pub fn serve_stdio_from_path(db_path: &Path) -> Result<(), McpError> {
+    let lib = if db_path.exists() {
+        Library::open(db_path)?
+    } else {
+        Library::open_in_memory()?
+    };
+    let server = McpServer::new(Arc::new(lib));
+    server.serve_stdio()
 }
 
 #[cfg(test)]

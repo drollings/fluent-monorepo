@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use guidance_common::shell::run_command;
-use guidance_coral::db::Library;
-use guidance_coral::mcp::McpServer;
+use guidance_coral::mcp::serve_stdio_from_path;
 use guidance_guidance::config;
+use guidance_guidance::sync::json_store::walk_guidance_docs;
 use guidance_guidance::sync_engine::SyncEngine;
 use guidance_guidance::vector::vector_db::GuidanceDb;
 use time::OffsetDateTime;
@@ -205,8 +204,8 @@ fn main() {
             cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter);
         }
         Commands::Test => cmd_test(),
-        Commands::Telemetry { db, .. } => cmd_telemetry(db),
-        Commands::CacheStats { db } => cmd_cache_stats(db),
+        Commands::Telemetry { db, .. } => cmd_db_stats(db, "Telemetry stats"),
+        Commands::CacheStats { db } => cmd_db_stats(db, "Cache statistics"),
         Commands::Mcp { port: _, db } => cmd_mcp(db),
         Commands::Init {
             dir,
@@ -333,66 +332,53 @@ fn collect_json_results(
     tokens: &[&str],
     results: &mut Vec<guidance_guidance::vector::vector_db::SearchResult>,
 ) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_json_results(&path, lower_query, tokens, results);
-                continue;
-            }
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            let Ok(Some(doc)) = guidance_guidance::sync::json_store::load_guidance(&path) else {
-                continue;
-            };
-            for member in &doc.members {
-                let name_lower = member.name.as_str().to_lowercase();
-                let sig_lower = member
-                    .signature
-                    .as_ref()
-                    .map(|s| s.as_str().to_lowercase())
-                    .unwrap_or_default();
-                let comment_lower = member
-                    .comment
-                    .as_ref()
-                    .map(|c| c.as_str().to_lowercase())
-                    .unwrap_or_default();
+    for (_path, doc) in walk_guidance_docs(dir) {
+        for member in &doc.members {
+            let name_lower = member.name.as_str().to_lowercase();
+            let sig_lower = member
+                .signature
+                .as_ref()
+                .map(|s| s.as_str().to_lowercase())
+                .unwrap_or_default();
+            let comment_lower = member
+                .comment
+                .as_ref()
+                .map(|c| c.as_str().to_lowercase())
+                .unwrap_or_default();
 
-                let exact = name_lower == *lower_query;
-                let name_match = name_lower.contains(lower_query);
-                let token_match = tokens.iter().any(|t| {
-                    let tl = t.to_lowercase();
-                    name_lower.contains(&tl)
-                        || sig_lower.contains(&tl)
-                        || comment_lower.contains(&tl)
+            let exact = name_lower == *lower_query;
+            let name_match = name_lower.contains(lower_query);
+            let token_match = tokens.iter().any(|t| {
+                let tl = t.to_lowercase();
+                name_lower.contains(&tl)
+                    || sig_lower.contains(&tl)
+                    || comment_lower.contains(&tl)
+            });
+
+            if exact {
+                results.push(guidance_guidance::vector::vector_db::SearchResult {
+                    id: 0,
+                    name: member.name.as_str().to_string(),
+                    source: doc.meta.source.as_str().to_string(),
+                    signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
+                    similarity: 1.0,
                 });
-
-                if exact {
-                    results.push(guidance_guidance::vector::vector_db::SearchResult {
-                        id: 0,
-                        name: member.name.as_str().to_string(),
-                        source: doc.meta.source.as_str().to_string(),
-                        signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
-                        similarity: 1.0,
-                    });
-                } else if name_match {
-                    results.push(guidance_guidance::vector::vector_db::SearchResult {
-                        id: 0,
-                        name: member.name.as_str().to_string(),
-                        source: doc.meta.source.as_str().to_string(),
-                        signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
-                        similarity: 0.8,
-                    });
-                } else if token_match {
-                    results.push(guidance_guidance::vector::vector_db::SearchResult {
-                        id: 0,
-                        name: member.name.as_str().to_string(),
-                        source: doc.meta.source.as_str().to_string(),
-                        signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
-                        similarity: 0.5,
-                    });
-                }
+            } else if name_match {
+                results.push(guidance_guidance::vector::vector_db::SearchResult {
+                    id: 0,
+                    name: member.name.as_str().to_string(),
+                    source: doc.meta.source.as_str().to_string(),
+                    signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
+                    similarity: 0.8,
+                });
+            } else if token_match {
+                results.push(guidance_guidance::vector::vector_db::SearchResult {
+                    id: 0,
+                    name: member.name.as_str().to_string(),
+                    source: doc.meta.source.as_str().to_string(),
+                    signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
+                    similarity: 0.5,
+                });
             }
         }
     }
@@ -407,18 +393,18 @@ fn cmd_test() {
     }
 }
 
-fn cmd_telemetry(db_path: &str) {
-    println!("Telemetry stats:");
+fn cmd_db_stats(db_path: &str, label: &str) {
+    println!("{label}:");
     let db = PathBuf::from(db_path);
     if db.exists() {
         match GuidanceDb::open(&db) {
             Ok(gdb) => {
                 match gdb.get_node_count() {
-                    Ok(count) => println!("  Total nodes: {count}"),
+                    Ok(count) => println!("  Nodes: {count}"),
                     Err(_) => println!("  Could not query node count"),
                 }
                 match gdb.get_embedding_count() {
-                    Ok(count) => println!("  Embedded nodes: {count}"),
+                    Ok(count) => println!("  Embeddings: {count}"),
                     Err(_) => println!("  Could not query embedding count"),
                 }
             }
@@ -429,45 +415,10 @@ fn cmd_telemetry(db_path: &str) {
     }
 }
 
-fn cmd_cache_stats(db_path: &str) {
-    println!("Cache statistics:");
-    let db = PathBuf::from(db_path);
-    if db.exists() {
-        match GuidanceDb::open(&db) {
-            Ok(gdb) => {
-                match gdb.get_node_count() {
-                    Ok(count) => println!("  Guidance nodes: {count}"),
-                    Err(_) => println!("  Could not query nodes"),
-                }
-                match gdb.get_embedding_count() {
-                    Ok(count) => println!("  Embeddings: {count}"),
-                    Err(_) => println!("  Could not query embeddings"),
-                }
-            }
-            Err(e) => println!("  Could not open database: {e}"),
-        }
-    } else {
-        println!("  No database found at {db_path}");
-        println!("  Embedding cache: not available (no database)");
-    }
-}
-
 fn cmd_mcp(db_path: &str) {
     let db = PathBuf::from(db_path);
-    let lib = if db.exists() {
-        Library::open(&db).unwrap_or_else(|e| {
-            eprintln!("Failed to open library: {e}");
-            std::process::exit(1);
-        })
-    } else {
-        Library::open_in_memory().unwrap_or_else(|e| {
-            eprintln!("Failed to open in-memory library: {e}");
-            std::process::exit(1);
-        })
-    };
-    let server = McpServer::new(Arc::new(lib));
     eprintln!("MCP server started (STDIO)");
-    if let Err(e) = server.serve_stdio() {
+    if let Err(e) = serve_stdio_from_path(&db) {
         eprintln!("MCP server error: {e}");
         std::process::exit(1);
     }
@@ -1099,31 +1050,18 @@ fn cmd_benchmark(
 }
 
 fn collect_benchmark_queries(dir: &Path, queries: &mut Vec<(String, String, String)>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_benchmark_queries(&path, queries);
-                continue;
+    for (_path, doc) in walk_guidance_docs(dir) {
+        let source = doc.meta.source.as_str().to_string();
+        for member in &doc.members {
+            let name = member.name.as_str();
+            if !name.is_empty() && queries.len() < 120 {
+                queries.push((name.to_string(), source.clone(), name.to_string()));
             }
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            let Ok(Some(doc)) = guidance_guidance::sync::json_store::load_guidance(&path) else {
-                continue;
-            };
-            let source = doc.meta.source.as_str().to_string();
-            for member in &doc.members {
-                let name = member.name.as_str();
-                if !name.is_empty() && queries.len() < 120 {
-                    queries.push((name.to_string(), source.clone(), name.to_string()));
-                }
-            }
-            if let Some(ref comment) = doc.comment {
-                let words: Vec<&str> = comment.as_str().split_whitespace().take(3).collect();
-                if !words.is_empty() && queries.len() < 120 {
-                    queries.push((words.join(" "), source.clone(), String::new()));
-                }
+        }
+        if let Some(ref comment) = doc.comment {
+            let words: Vec<&str> = comment.as_str().split_whitespace().take(3).collect();
+            if !words.is_empty() && queries.len() < 120 {
+                queries.push((words.join(" "), source.clone(), String::new()));
             }
         }
     }
@@ -1151,20 +1089,11 @@ fn cmd_structure(json_dir: &str) {
 }
 
 fn collect_structure_modules(dir: &Path, modules: &mut Vec<String>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_structure_modules(&path, modules);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(Some(doc)) = guidance_guidance::sync::json_store::load_guidance(&path) {
-                    let module = doc.meta.module.as_str();
-                    let source = doc.meta.source.as_str();
-                    let member_count = doc.members.len();
-                    modules.push(format!("{source} ({module}, {member_count} members)"));
-                }
-            }
-        }
+    for (_path, doc) in walk_guidance_docs(dir) {
+        let module = doc.meta.module.as_str();
+        let source = doc.meta.source.as_str();
+        let member_count = doc.members.len();
+        modules.push(format!("{source} ({module}, {member_count} members)"));
     }
 }
 
@@ -1231,21 +1160,12 @@ fn collect_health_stats(
     no_comments: &mut usize,
     files: &mut Vec<String>,
 ) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_health_stats(&path, total, no_comments, files);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(Some(doc)) = guidance_guidance::sync::json_store::load_guidance(&path) {
-                    files.push(doc.meta.source.as_str().to_string());
-                    for member in &doc.members {
-                        *total += 1;
-                        if member.comment.is_none() {
-                            *no_comments += 1;
-                        }
-                    }
-                }
+    for (_path, doc) in walk_guidance_docs(dir) {
+        files.push(doc.meta.source.as_str().to_string());
+        for member in &doc.members {
+            *total += 1;
+            if member.comment.is_none() {
+                *no_comments += 1;
             }
         }
     }

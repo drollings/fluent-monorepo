@@ -6,8 +6,6 @@ use guidance_common::hash::content_hash_with_model;
 use guidance_common::url::validate_https_or_local_http;
 use async_trait::async_trait;
 
-type EmbeddingCache = Option<Arc<Mutex<HashMap<String, Vec<f32>>>>>;
-
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
     #[error("unknown provider: {0}")]
@@ -94,7 +92,6 @@ pub struct OllamaEmbedding {
     base_url: String,
     model: String,
     dims: u32,
-    cache: EmbeddingCache,
 }
 
 impl OllamaEmbedding {
@@ -109,54 +106,10 @@ impl OllamaEmbedding {
             base_url,
             model: model.unwrap_or("nomic-embed-text").to_string(),
             dims,
-            cache: None,
         })
     }
 
-    /// Enable in-memory embedding cache using content_hash_with_model as key.
-    #[must_use]
-    pub fn with_cache(mut self) -> Self {
-        self.cache = Some(Arc::new(Mutex::new(HashMap::new())));
-        self
-    }
-
-    fn cache_key_bytes(&self, text: &str) -> [u8; 16] {
-        content_hash_with_model(text, &self.model)
-    }
-
-    fn cache_key(&self, text: &str) -> String {
-        let bytes = self.cache_key_bytes(text);
-        let mut key = String::with_capacity(32);
-        for b in bytes {
-            use std::fmt::Write;
-            let _ = write!(key, "{b:02x}");
-        }
-        key
-    }
-
-    fn cache_lookup(&self, text: &str) -> Option<Vec<f32>> {
-        let cache = self.cache.as_ref()?;
-        let key = self.cache_key(text);
-        let map = cache.lock().ok()?;
-        map.get(&key).cloned()
-    }
-
-    fn cache_store(&self, text: &str, embedding: &[f32]) {
-        if let Some(ref cache) = self.cache {
-            let key = self.cache_key(text);
-            if let Ok(mut map) = cache.lock() {
-                map.insert(key, embedding.to_vec());
-            }
-        }
-    }
-
-    /// Embed without any caching layer (direct API call).
-    /// Used by QueueReactor for L4 semantic search.
-    pub fn embed_without_cache(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        self.do_embed(text)
-    }
-
-    fn do_embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+    pub fn embed_raw(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         if text.is_empty() {
             return Ok(Vec::new());
         }
@@ -180,16 +133,7 @@ impl EmbeddingProvider for OllamaEmbedding {
     }
 
     fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        if text.is_empty() {
-            return Ok(Vec::new());
-        }
-        // Check cache first
-        if let Some(cached) = self.cache_lookup(text) {
-            return Ok(cached);
-        }
-        let result = self.do_embed(text)?;
-        self.cache_store(text, &result);
-        Ok(result)
+        self.embed_raw(text)
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -202,21 +146,12 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": inputs,
         });
         let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
-        let result = parse_ollama_batch_response(&resp_bytes)?;
-        // Cache individual embeddings
-        for (i, text) in texts.iter().enumerate() {
-            let vec = result.vector(i).to_vec();
-            self.cache_store(text, &vec);
-        }
-        Ok(result)
+        parse_ollama_batch_response(&resp_bytes)
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         if text.is_empty() {
             return Ok(Vec::new());
-        }
-        if let Some(cached) = self.cache_lookup(text) {
-            return Ok(cached);
         }
         let body = serde_json::json!({
             "model": self.model.clone(),
@@ -225,9 +160,7 @@ impl EmbeddingProvider for OllamaEmbedding {
         let resp_bytes =
             do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string())
                 .await?;
-        let result = parse_ollama_response(&resp_bytes)?;
-        self.cache_store(text, &result);
-        Ok(result)
+        parse_ollama_response(&resp_bytes)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -242,12 +175,116 @@ impl EmbeddingProvider for OllamaEmbedding {
         let resp_bytes =
             do_embed_request_async(self.base_url.clone(), "api/embed".into(), body.to_string())
                 .await?;
-        let result = parse_ollama_batch_response(&resp_bytes)?;
-        for (i, text) in texts.iter().enumerate() {
-            let vec = result.vector(i).to_vec();
-            self.cache_store(text, &vec);
+        parse_ollama_batch_response(&resp_bytes)
+    }
+}
+
+/// Generic caching wrapper around any EmbeddingProvider.
+/// Uses content_hash_with_model for cache keys.
+pub struct CachedEmbeddingProvider<T: EmbeddingProvider> {
+    inner: T,
+    cache: Arc<Mutex<HashMap<String, Vec<f32>>>>,
+}
+
+impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
+    pub fn new(inner: T) -> Self {
+        Self {
+            inner,
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn cache_key(&self, text: &str) -> String {
+        let bytes = content_hash_with_model(text, self.inner.name());
+        let mut key = String::with_capacity(32);
+        for b in bytes {
+            use std::fmt::Write;
+            let _ = write!(key, "{b:02x}");
+        }
+        key
+    }
+}
+
+#[async_trait]
+impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider for CachedEmbeddingProvider<T> {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn dimensions(&self) -> u32 {
+        self.inner.dimensions()
+    }
+
+    fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = self.cache_key(text);
+        {
+            let map = self.cache.lock().map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
+            if let Some(cached) = map.get(&key) {
+                return Ok(cached.clone());
+            }
+        }
+        let result = self.inner.embed(text)?;
+        if let Ok(mut map) = self.cache.lock() {
+            map.insert(key, result.clone());
         }
         Ok(result)
+    }
+
+    fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        let dims = self.dimensions() as usize;
+        let mut flat = Vec::with_capacity(texts.len().saturating_mul(dims));
+        let mut uncached_texts: Vec<&str> = Vec::new();
+        let mut uncached_positions: Vec<usize> = Vec::new();
+        let mut results: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+
+        for (i, text) in texts.iter().enumerate() {
+            if text.is_empty() {
+                results[i] = Some(Vec::new());
+                continue;
+            }
+            let key = self.cache_key(text);
+            if let Ok(map) = self.cache.lock() {
+                if let Some(cached) = map.get(&key) {
+                    results[i] = Some(cached.clone());
+                    continue;
+                }
+            }
+            uncached_texts.push(text);
+            uncached_positions.push(i);
+        }
+
+        if !uncached_texts.is_empty() {
+            let batch = self.inner.embed_batch(&uncached_texts)?;
+            for (j, &pos) in uncached_positions.iter().enumerate() {
+                let vec = batch.vector(j).to_vec();
+                results[pos] = Some(vec.clone());
+                let key = self.cache_key(uncached_texts[j]);
+                if let Ok(mut map) = self.cache.lock() {
+                    map.insert(key, vec);
+                }
+            }
+        }
+
+        for result in &results {
+            if let Some(v) = result {
+                flat.extend_from_slice(v);
+            }
+        }
+
+        let count = results.len();
+        let actual_dims = if count > 0 { results[0].as_ref().map_or(0, |v| v.len()) } else { 0 };
+        Ok(BatchEmbedding { flat, count, dims: actual_dims })
+    }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        self.embed(text)
+    }
+
+    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        self.embed_batch(texts)
     }
 }
 
@@ -256,7 +293,6 @@ pub struct OpenAiEmbedding {
     api_key: String,
     model: String,
     dims: u32,
-    cache: EmbeddingCache,
 }
 
 impl OpenAiEmbedding {
@@ -274,45 +310,7 @@ impl OpenAiEmbedding {
             api_key: api_key.to_string(),
             model: model.unwrap_or("text-embedding-3-small").to_string(),
             dims,
-            cache: None,
         })
-    }
-
-    /// Enable in-memory embedding cache using content_hash_with_model as key.
-    #[must_use]
-    pub fn with_cache(mut self) -> Self {
-        self.cache = Some(Arc::new(Mutex::new(HashMap::new())));
-        self
-    }
-
-    fn cache_key_bytes(&self, text: &str) -> [u8; 16] {
-        content_hash_with_model(text, &self.model)
-    }
-
-    fn cache_key(&self, text: &str) -> String {
-        let bytes = self.cache_key_bytes(text);
-        let mut key = String::with_capacity(32);
-        for b in bytes {
-            use std::fmt::Write;
-            let _ = write!(key, "{b:02x}");
-        }
-        key
-    }
-
-    fn cache_lookup(&self, text: &str) -> Option<Vec<f32>> {
-        let cache = self.cache.as_ref()?;
-        let key = self.cache_key(text);
-        let map = cache.lock().ok()?;
-        map.get(&key).cloned()
-    }
-
-    fn cache_store(&self, text: &str, embedding: &[f32]) {
-        if let Some(ref cache) = self.cache {
-            let key = self.cache_key(text);
-            if let Ok(mut map) = cache.lock() {
-                map.insert(key, embedding.to_vec());
-            }
-        }
     }
 
     fn embeddings_url(&self) -> String {
@@ -343,18 +341,13 @@ impl EmbeddingProvider for OpenAiEmbedding {
         if text.is_empty() {
             return Ok(Vec::new());
         }
-        if let Some(cached) = self.cache_lookup(text) {
-            return Ok(cached);
-        }
         let body = serde_json::json!({
             "model": self.model,
             "input": text,
         });
         let resp_bytes =
             do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
-        let result = parse_openai_response(&resp_bytes)?;
-        self.cache_store(text, &result);
-        Ok(result)
+        parse_openai_response(&resp_bytes)
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -368,20 +361,12 @@ impl EmbeddingProvider for OpenAiEmbedding {
         });
         let resp_bytes =
             do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
-        let result = parse_openai_batch_response(&resp_bytes)?;
-        for (i, text) in texts.iter().enumerate() {
-            let vec = result.vector(i).to_vec();
-            self.cache_store(text, &vec);
-        }
-        Ok(result)
+        parse_openai_batch_response(&resp_bytes)
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         if text.is_empty() {
             return Ok(Vec::new());
-        }
-        if let Some(cached) = self.cache_lookup(text) {
-            return Ok(cached);
         }
         let body = serde_json::json!({
             "model": self.model.clone(),
@@ -393,9 +378,7 @@ impl EmbeddingProvider for OpenAiEmbedding {
             body.to_string(),
         )
         .await?;
-        let result = parse_openai_response(&resp_bytes)?;
-        self.cache_store(text, &result);
-        Ok(result)
+        parse_openai_response(&resp_bytes)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -413,12 +396,7 @@ impl EmbeddingProvider for OpenAiEmbedding {
             body.to_string(),
         )
         .await?;
-        let result = parse_openai_batch_response(&resp_bytes)?;
-        for (i, text) in texts.iter().enumerate() {
-            let vec = result.vector(i).to_vec();
-            self.cache_store(text, &vec);
-        }
-        Ok(result)
+        parse_openai_batch_response(&resp_bytes)
     }
 }
 
@@ -622,31 +600,32 @@ pub fn create_embedding_provider(
     api_key: Option<&str>,
     dims: u32,
 ) -> Result<Box<dyn EmbeddingProvider>, EmbeddingError> {
-    match name {
-        "none" => Ok(Box::new(NoopEmbedding::new(dims))),
-        "ollama" => Ok(Box::new(OllamaEmbedding::new(model, base_url, dims)?)),
-        "openai" => Ok(Box::new(OpenAiEmbedding::new(
+    let provider: Box<dyn EmbeddingProvider> = match name {
+        "none" => Box::new(NoopEmbedding::new(dims)),
+        "ollama" => Box::new(CachedEmbeddingProvider::new(OllamaEmbedding::new(model, base_url, dims)?)),
+        "openai" => Box::new(CachedEmbeddingProvider::new(OpenAiEmbedding::new(
             model, base_url, api_key, dims,
         )?)),
         _ => {
             if let Some(ollama_model) = name.strip_prefix("ollama:") {
-                return Ok(Box::new(OllamaEmbedding::new(
+                Box::new(CachedEmbeddingProvider::new(OllamaEmbedding::new(
                     Some(ollama_model),
                     base_url,
                     dims,
-                )?));
-            }
-            if let Some(custom_url) = name.strip_prefix("custom:") {
-                return Ok(Box::new(OpenAiEmbedding::new(
+                )?))
+            } else if let Some(custom_url) = name.strip_prefix("custom:") {
+                Box::new(CachedEmbeddingProvider::new(OpenAiEmbedding::new(
                     model,
                     Some(custom_url),
                     api_key,
                     dims,
-                )?));
+                )?))
+            } else {
+                return Err(EmbeddingError::UnknownProvider(name.to_string()));
             }
-            Err(EmbeddingError::UnknownProvider(name.to_string()))
         }
-    }
+    };
+    Ok(provider)
 }
 
 #[cfg(test)]
@@ -832,33 +811,6 @@ mod tests {
             e.embeddings_url(),
             "https://my-server.com/custom/path/embeddings"
         );
-    }
-
-    #[test]
-    fn ollama_embedding_cache_keys_consistent() {
-        use guidance_common::hash::content_hash_with_model;
-        let p = OllamaEmbedding::new(Some("test"), Some("http://localhost:11434"), 3).unwrap();
-        let p = p.with_cache();
-        let key = p.cache_key("hello");
-        let hash = content_hash_with_model("hello", "test");
-        let expected_key: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(
-            key, expected_key,
-            "cache key should match content_hash_with_model"
-        );
-    }
-
-    #[test]
-    fn ollama_embedding_cache_key_format() {
-        let p = OllamaEmbedding::new(Some("model-a"), Some("http://localhost:11434"), 3).unwrap();
-        let key_a = p.cache_key("same text");
-        let p2 = OllamaEmbedding::new(Some("model-b"), Some("http://localhost:11434"), 3).unwrap();
-        let key_b = p2.cache_key("same text");
-        assert_ne!(
-            key_a, key_b,
-            "different models should have different cache keys"
-        );
-        assert_eq!(key_a.len(), 32, "16 bytes = 32 hex chars");
     }
 
     #[test]

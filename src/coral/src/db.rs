@@ -5,6 +5,7 @@ use std::sync::Mutex;
 
 use bitvec::vec::BitVec;
 use guidance_llm::EmbeddingProvider;
+use guidance_vector_math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
 use guidance_common::error::DbError;
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
@@ -119,7 +120,7 @@ impl Library {
     pub fn insert_node(&self, node: &ContextNode) -> Result<NodeId, LibraryError> {
         let conn = self.conn.lock().unwrap();
         let lod_json = serde_json::to_string(&node.lod).unwrap_or_default();
-        let embedding_blob = node.embedding.as_ref().map(|v| vec_to_blob(v));
+        let embedding_blob = node.embedding.as_ref().map(|v| vec_to_bytes(v));
         let capabilities_blob = node.capabilities.as_deref();
 
         conn.execute(
@@ -155,7 +156,7 @@ impl Library {
                 let embedding_blob: Option<Vec<u8>> = row.get(4)?;
                 let capabilities_blob: Option<Vec<u8>> = row.get(5)?;
                 let lod: Vec<String> = serde_json::from_str(&lod_json).unwrap_or_default();
-                let embedding = embedding_blob.and_then(|b| blob_to_vec(&b));
+                let embedding = embedding_blob.and_then(|b| try_bytes_to_vec(&b));
                 Ok(ContextNode {
                     id: Some(NodeId::from_int(id)),
                     name: name.as_str().into(),
@@ -210,11 +211,11 @@ impl Library {
                     continue;
                 }
             }
-            if let Some(emb) = blob_to_vec(&blob) {
+            if let Some(emb) = try_bytes_to_vec(&blob) {
                 if emb.len() != query_vec.len() {
                     continue;
                 }
-                let distance = cosine_distance(query_vec, &emb);
+                let distance = 1.0 - cosine_similarity(query_vec, &emb);
                 results.push(KnnHit {
                     node_id: NodeId::from_int(id),
                     distance,
@@ -336,7 +337,7 @@ impl Library {
         embedding: &[f32],
     ) -> Result<(), LibraryError> {
         let conn = self.conn.lock().unwrap();
-        let blob = vec_to_blob(embedding);
+        let blob = vec_to_bytes(embedding);
         conn.execute(
             "INSERT OR REPLACE INTO embedding_cache (query_hash, query_text, embedding) VALUES (?1, ?2, ?3)",
             params![query_hash, query_text, blob],
@@ -352,7 +353,7 @@ impl Library {
                 params![query_hash],
                 |row| {
                     let blob: Vec<u8> = row.get(0)?;
-                    Ok(blob_to_vec(&blob))
+                    Ok(try_bytes_to_vec(&blob))
                 },
             )
             .ok()
@@ -410,7 +411,7 @@ impl Library {
         let tx = conn.unchecked_transaction()?;
         for node in nodes {
             let lod_json = serde_json::to_string(&node.lod).unwrap_or_default();
-            let embedding_blob = node.embedding.as_ref().map(|v| vec_to_blob(v));
+            let embedding_blob = node.embedding.as_ref().map(|v| vec_to_bytes(v));
             let capabilities_blob = node.capabilities.as_deref();
             tx.execute(
                 "INSERT INTO context_nodes (name, source, lod, embedding, capabilities) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -523,36 +524,7 @@ fn blob_to_bitvec(b: &[u8]) -> BitVec {
     BitVec::from_slice(&words)
 }
 
-fn vec_to_blob(v: &[f32]) -> Vec<u8> {
-    v.iter().flat_map(|f| f.to_le_bytes()).collect()
-}
 
-fn blob_to_vec(b: &[u8]) -> Option<Vec<f32>> {
-    if b.len() % 4 != 0 {
-        return None;
-    }
-    let chunks: Vec<[u8; 4]> = b
-        .chunks_exact(4)
-        .map(|c| {
-            let mut arr = [0u8; 4];
-            arr.copy_from_slice(c);
-            arr
-        })
-        .collect();
-    Some(chunks.iter().map(|c| f32::from_le_bytes(*c)).collect())
-}
-
-fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum();
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom < f32::EPSILON {
-        1.0
-    } else {
-        1.0 - (dot / denom)
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -779,17 +751,6 @@ mod tests {
     }
 
     #[test]
-    fn test_blob_roundtrip() {
-        let original: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
-        let blob = vec_to_blob(&original);
-        let restored = blob_to_vec(&blob).expect("should decode");
-        assert_eq!(original.len(), restored.len());
-        for (a, b) in original.iter().zip(restored.iter()) {
-            assert!((a - b).abs() < 1e-6);
-        }
-    }
-
-    #[test]
     fn test_is_a_duck_typing() {
         let lib = Library::open_in_memory().expect("db");
         let node = ContextNode {
@@ -855,25 +816,4 @@ mod tests {
         assert_eq!(count, 1);
     }
 
-    #[test]
-    fn test_cosine_distance_identical() {
-        let a: Vec<f32> = vec![1.0, 0.0, 0.0];
-        let b: Vec<f32> = vec![1.0, 0.0, 0.0];
-        let d = cosine_distance(&a, &b);
-        assert!(
-            (d - 0.0).abs() < 1e-6,
-            "identical vectors should have distance 0"
-        );
-    }
-
-    #[test]
-    fn test_cosine_distance_orthogonal() {
-        let a: Vec<f32> = vec![1.0, 0.0];
-        let b: Vec<f32> = vec![0.0, 1.0];
-        let d = cosine_distance(&a, &b);
-        assert!(
-            (d - 1.0).abs() < 1e-6,
-            "orthogonal vectors should have distance 1"
-        );
-    }
 }

@@ -204,6 +204,7 @@ impl BatchIngestor {
     }
 }
 
+// TODO(M6): remove — superseded by guidance_ontology::mapper::TripleMapper
 pub struct TripleMapper;
 
 impl TripleMapper {

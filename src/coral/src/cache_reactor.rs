@@ -99,7 +99,7 @@ impl QueueReactor {
 
         // L4: Semantic (embedding-based) search
         if let Some(ref embedder) = self.embedder {
-            if let Ok(emb) = embedder.embed_without_cache(query) {
+            if let Ok(emb) = embedder.embed_raw(query) {
                 if let Ok(result) = router.route_with_embedding(query, &emb) {
                     self.persist_solution(query, &result);
                     if depth == 0 {

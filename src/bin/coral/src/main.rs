@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use guidance_coral::db::Library;
-use guidance_coral::mcp::McpServer;
+use guidance_coral::mcp::serve_stdio_from_path;
 
 #[derive(Parser)]
 #[command(name = "coral", about = "Context-graph database & MCP server")]
@@ -42,20 +42,8 @@ fn main() {
 
 fn cmd_mcp(db_path: &str) {
     let db = PathBuf::from(db_path);
-    let lib = if db.exists() {
-        Library::open(&db).unwrap_or_else(|e| {
-            eprintln!("Failed to open library: {e}");
-            std::process::exit(1);
-        })
-    } else {
-        Library::open_in_memory().unwrap_or_else(|e| {
-            eprintln!("Failed to open in-memory library: {e}");
-            std::process::exit(1);
-        })
-    };
-    let server = McpServer::new(Arc::new(lib));
     eprintln!("Coral MCP server started (STDIO)");
-    if let Err(e) = server.serve_stdio() {
+    if let Err(e) = serve_stdio_from_path(&db) {
         eprintln!("MCP server error: {e}");
         std::process::exit(1);
     }

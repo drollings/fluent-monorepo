@@ -14,6 +14,11 @@ pub fn bytes_to_vec(b: &[u8]) -> Vec<f32> {
     b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
 }
 
+pub fn try_bytes_to_vec(b: &[u8]) -> Option<Vec<f32>> {
+    if b.len() % 4 != 0 { return None; }
+    Some(bytes_to_vec(b))
+}
+
 #[derive(Debug, Clone)]
 pub struct QuantizedEmbedding {
     pub values: Vec<i8>,
@@ -63,6 +68,15 @@ mod tests {
         let v = vec![1.5, -2.5, 3.0, 0.0, -0.5];
         let restored = bytes_to_vec(&vec_to_bytes(&v));
         for (a, b) in v.iter().zip(restored.iter()) { assert!((a - b).abs() < 1e-6); }
+    }
+    #[test] fn test_try_bytes_to_vec_valid() {
+        let v = vec![1.0, 2.0, 3.0, 4.0];
+        let bytes = vec_to_bytes(&v);
+        let restored = try_bytes_to_vec(&bytes).unwrap();
+        assert_eq!(restored.len(), 4);
+    }
+    #[test] fn test_try_bytes_to_vec_invalid_length() {
+        assert!(try_bytes_to_vec(&[0u8; 3]).is_none());
     }
     #[test] fn test_quantize_round_trip() {
         let original = vec![0.5, -0.3, 0.8, -0.1, 0.0, 1.0, -1.0];

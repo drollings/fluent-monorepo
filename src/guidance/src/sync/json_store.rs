@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use guidance_types::{CapabilityEval, GuidanceDoc, Member, MemberType, Meta, Param, Skill};
 use smol_str::SmolStr;
@@ -201,6 +201,28 @@ pub fn load_guidance(path: &Path) -> Result<Option<GuidanceDoc>, JsonError> {
     }
     let v: serde_json::Value = serde_json::from_str(&content)?;
     Ok(load_guidance_from_value(&v))
+}
+
+/// Walk a directory recursively for `.json` guidance files and yield `(path, doc)` tuples.
+pub fn walk_guidance_docs(dir: &Path) -> impl Iterator<Item = (PathBuf, GuidanceDoc)> {
+    let mut entries: Vec<(PathBuf, GuidanceDoc)> = Vec::new();
+    walk_json_dir(dir, &mut entries);
+    entries.into_iter()
+}
+
+fn walk_json_dir(dir: &Path, out: &mut Vec<(PathBuf, GuidanceDoc)>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_json_dir(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Ok(Some(doc)) = load_guidance(&path) {
+                    out.push((path, doc));
+                }
+            }
+        }
+    }
 }
 
 /// Merge existing member data into a new member when match_hash is unchanged.

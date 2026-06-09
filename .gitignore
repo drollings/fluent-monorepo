@@ -28,9 +28,13 @@ doc/Legacy
 .guidance/skills
 bin/guidance-cpp
 data/
+
+# Zig
 zig/zig-*
 
-src/target/
+# Rust
+.cargo/
+target/
 
 # =============================================================================
 # Python Virtual Environments & Package Management
