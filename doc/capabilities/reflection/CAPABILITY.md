@@ -1,84 +1,115 @@
 ---
 name: reflection
-description: Standalone Zig reflection module providing vtable-driven field access, role-based permission enforcement, typed/binary codecs, and enum registry. Zero-cost mixin Editable(T) enables string-driven get/set on any struct at runtime without heap allocation per-field.
+description: REPLACED by Rust's native serde serialization, bon builders, and HashMap-based dynamic access. Zig's Editable(T)/DynamicEditable/ConstraintVTable compile-time reflection is not replicated — Rust's trait system and serde derive macros provide equivalent capabilities with less complexity.
 anchors:
-  - Editable
-  - DynamicEditable
-  - FieldMeta
-  - Accessor
-  - Constraint
+  - serde
+  - bon
+  - serde_json
+  - HashMap<ArcIntern<str>, serde_json::Value>
+  - #[derive(Serialize, Deserialize)]
+  - #[builder(start_fn = new)]
 ---
 
 # Reflection
 
-`src/reflection/` is a standalone peer module (promoted from `src/common/reflection.zig` in P2.4). It provides compile-time and runtime field introspection for Zig structs, used throughout Coral and the guidance engine.
+**This capability is replaced, not ported.** Rust does not have Zig's comptime reflection, nor does it need it.
 
-## Sub-modules
+## Zig's approach — replaced
 
-| Sub-module | Key types | Purpose |
-|------------|-----------|---------|
-| `constraint` | `ConstraintVTable`, `Constraint(T)` | Per-field parse/format vtable |
-| `accessor` | `Accessor`, `Editable(T)`, `DynamicEditable`, `FieldMeta` | Field access by name with permission check |
-| `permissions` | `Role`, `RolePermissions`, `perm_*` | 4-role (player/coder/staff/admin) permission bitfield |
-| `typed` | `TypedAccessor`, `TypedAccessorTable(T)`, `TypedEditable` | Compile-time type-safe field access with range validation |
-| `binary` | `BinaryFieldCodec` | Encode/decode primitive fields to binary streams (little-endian) |
-| `enum_registry` | `EnumRegistry` | Runtime name↔value mapping for dynamically known enums |
+Zig's `src/reflection/` module provides:
 
-## Editable(T) — zero-size mixin
+| Feature | Zig type | Rust replacement |
+|---------|----------|------------------|
+| Per-field parse/format | `ConstraintVTable`, `Constraint(T)` | `serde` with custom `Deserialize`/`Serialize` impls |
+| Field access by name | `Editable(T)`, `DynamicEditable` | `HashMap<ArcIntern<str>, serde_json::Value>` or `serde_json::Value` |
+| Permission-based access | `Role`, `RolePermissions` | Application-layer `match role { ... }` on access |
+| Binary encoding | `BinaryFieldCodec` (LE bytes) | `to_le_bytes()` / `from_le_bytes()` on primitives |
+| Enum registry | `EnumRegistry` (runtime name↔value) | `serde_json::Value` + match/FromStr |
+| JSON Schema generation | `Editable(T).describeSchema()` | `schemars` crate (if needed) |
+| Struct builders | Manual fluent `*Self` chain | `#[derive(Builder)]` via `bon` |
 
-```zig
-const Config = struct {
-    port: u16 = 8080,
-    editable: Editable(Config) = .{},
-};
-var cfg: Config = .{};
-try cfg.editable.set(allocator, "port", "9000", .coder);   // string path
-cfg.editable.setFast("port", @as(u16, 9000));               // zero-alloc fast path
+## `bon` Builder pattern
+
+```rust
+use bon::Builder;
+
+#[derive(Debug, Clone, Builder)]
+#[builder(start_fn = new)]
+pub struct Target {
+    pub id: i64,
+    pub name: ArcIntern<str>,
+    pub target_type: TargetType,
+    pub executor: ExecutorKind,
+    pub depends: BitVec,
+    pub provides: BitVec,
+    #[builder(default)]
+    pub command: String,
+    #[builder(default = false)]
+    pub essential: bool,
+}
+
+let t = Target::new()
+    .id(1)
+    .name("build".into())
+    .target_type(TargetType::File)
+    .executor(ExecutorKind::Native)
+    .depends(bitvec![0, 1])
+    .provides(bitvec![1, 0])
+    .build();
 ```
 
-`Editable(T)` is a zero-size struct — it adds no memory overhead to the containing struct.
+## `serde` serialization
 
-## DynamicEditable — runtime field layout
+```rust
+use serde::{Serialize, Deserialize};
 
-`DynamicEditable` accepts an `[]Accessor` slice at runtime, enabling schema-driven editing of arbitrary memory layouts (e.g., WASM binary buffers).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Member {
+    pub type_name: MemberType,
+    pub name: SmolStr,
+    pub signature: Option<SmolStr>,
+    pub is_pub: bool,
+    pub line: Option<u32>,
+}
 
-## describeSchema — AI agent tooling
-
-`Editable(T).describeSchema(allocator)` emits a JSON Schema document describing all fields with types, constraints, and `FieldMeta` descriptions. Used to generate MCP tool parameter schemas.
-
-## Roles
-
+let json = serde_json::to_string_pretty(&member)?;
+let restored: Member = serde_json::from_str(&json)?;
 ```
-player  — end user (narrowest permissions)
-coder   — developer / internal tool
-staff   — operator / admin tool
-admin   — full access (broadest permissions)
+
+## Dynamic access
+
+Where Zig uses `DynamicEditable` with runtime accessor slices, Rust uses:
+
+```rust
+let mut dynamic: HashMap<ArcIntern<str>, serde_json::Value> = HashMap::new();
+dynamic.insert(ArcIntern::from("port"), serde_json::json!(9000));
+dynamic.insert(ArcIntern::from("host"), serde_json::json!("localhost"));
+
+// Read
+if let Some(serde_json::Value::Number(n)) = dynamic.get(&ArcIntern::from("port")) {
+    let port: u16 = n.as_u64().unwrap() as u16;
+}
+
+// Write
+dynamic.insert(ArcIntern::from("port"), serde_json::json!(8080));
 ```
 
 ## Key files
 
-- `src/reflection/root.zig` — umbrella module and all flat re-exports
-- `src/reflection/accessor.zig` — `Editable(T)`, `DynamicEditable`, `FieldMeta`, `TypeTag`
-- `src/reflection/constraint.zig` — `ConstraintVTable`, `Constraint(T)`
-- `src/reflection/permissions.zig` — `Role`, `RolePermissions`
-- `src/reflection/typed.zig` — `TypedAccessorTable(T)`, `TypedEditable`, `ValidationError`
-- `src/reflection/binary.zig` — `BinaryFieldCodec`
-- `src/reflection/enum_registry.zig` — `EnumRegistry`
+- `traits/src/lib.rs` — serde-based trait definitions replacing Zig's `common/src/traits.rs` reflection layer
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (11 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/reflection/accessor.zig` | 1.0 | defines_anchor |
-| `src/reflection/constraint.zig` | 1.0 | defines_anchor |
-| `src/reflection/root.zig` | 0.9 | used_by |
-| `src/reflection/sql.zig` | 0.9 | used_by |
-| `src/reflection/validate.zig` | 0.9 | used_by |
-| `src/reflection/sql_tests.zig` | 0.9 | used_by |
-| `src/reflection/typed.zig` | 0.9 | used_by |
-| `src/reflection/binary.zig` | 0.4 | path_heuristic |
-| `src/reflection/schema_version.zig` | 0.4 | path_heuristic |
-| `src/reflection/enum_registry.zig` | 0.4 | path_heuristic |
-| `src/reflection/permissions.zig` | 0.4 | path_heuristic |
+| Aspect | Zig | Rust |
+|--------|-----|------|
+| Field introspection | `@typeInfo`, `FieldMeta`, compile-time | `serde` derive + `serde_json::Value` |
+| Builder pattern | Manual `*Self` fluent chain (60+ lines) | `#[derive(Builder)]` via `bon` (1 annotation) |
+| Dynamic get/set | `Editable(T)` zero-size mixin | `HashMap<ArcIntern<str>, Value>` |
+| Permissions | `Role`, `RolePermissions`, `perm_*` bitfields | Application-layer match |
+| Binary encoding | `BinaryFieldCodec` generic | `to_le_bytes()` per-type |
+| Enum registry | `EnumRegistry` with comptime init | `serde_json::Value` or `FromStr` |
+| JSON Schema | `describeSchema()` built-in | `schemars` external crate |
 
+## Zig reference
+
+See `doc/capabilities/reflection/CAPABILITY.md` in the Zig project for the original module design (Editable(T), DynamicEditable, ConstraintVTable, Role permissions).

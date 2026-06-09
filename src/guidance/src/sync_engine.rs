@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use guidance_common::types::GuidanceDoc;
+use guidance_types::GuidanceDoc;
 use thiserror::Error;
 
 use crate::ast_parser::AstParser;

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use guidance_common::error::DbError;
-use guidance_common::types::ContextNode;
-use guidance_common::types::NodeId;
+use guidance_types::ContextNode;
+use guidance_types::NodeId;
 use guidance_ontology::mapper::PendingNode;
 use guidance_ontology::yago;
 use thiserror::Error;

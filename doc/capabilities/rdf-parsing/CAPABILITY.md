@@ -1,61 +1,62 @@
 ---
 name: rdf-parsing
-description: Zig RDF parsing module covering Turtle (lexer + recursive-descent parser), N-Quads streaming parser, and IRI normalization. Produces Triple/Term values used by the ontology mapper to ingest YAGO 4.5 and other RDF datasets.
+description: RDF triple mapping embedded in the Coral ingestion pipeline. TripleMapper converts (subject, predicate, object) strings into ContextNode pairs for the Library database.
 anchors:
-  - Parser
-  - Triple
-  - Term
-  - NQuadsParser
+  - TripleMapper
+  - IngestError
+  - BatchIngestor
+  - ContextNode
 ---
 
 # RDF Parsing
 
-`src/rdf/` is a named Zig module providing streaming RDF parsers for the Coral ingestion pipeline.
+Unlike the Zig version which has a full standalone `src/rdf/` module with Turtle lexer, recursive-descent parser, and N-Quads streaming parser, the Rust implementation does **not** have a standalone RDF parser crate. N-Triples parsing is simpler and done via line-by-line string processing embedded directly in the ingestion pipeline.
 
-## Supported formats
+## Architecture
 
-| Format | Parser | Notes |
-|--------|--------|-------|
-| Turtle (`.ttl`) | `rdf.Parser` (recursive descent) | Full prefix/base IRI resolution |
-| N-Quads (`.nq`, `.nt`) | `rdf.NQuadsParser` | Streaming, line-oriented |
+```
+Line-by-line string splitting
+  → TripleMapper::map_triple(subject, predicate, object)
+  → (ContextNode, ContextNode) pair
+  → BatchIngestor::add() → Library::insert_node()
+```
+
+Raw RDF parsing (Turtle, N-Quads) is a **future concern** — currently the pipeline expects pre-split triples as strings.
 
 ## Core types
 
-```zig
-pub const Term = union(enum) {
-    iri: []const u8,
-    blank: []const u8,
-    literal: struct { value: []const u8, datatype: []const u8, lang: []const u8 },
-};
+| Type | Location | Purpose |
+|------|----------|---------|
+| `TripleMapper` | `coral/src/ingest.rs:57` | Maps (s, p, o) strings to `ContextNode` pairs |
+| `BatchIngestor` | `coral/src/ingest.rs:21` | Batched node insertion with automatic flush |
+| `ContextNode` | `common/src/types.rs:234` | Node with name, source, LOD levels, optional embedding |
 
-pub const Triple = struct {
-    subject: Term,
-    predicate: Term,
-    object: Term,
-};
+## Example
+
+```rust
+use coral::ingest::TripleMapper;
+
+let mapper = TripleMapper::new();
+let (subject, object) = mapper.map_triple("Zig", "is_a", "language");
+assert_eq!(subject.name.as_str(), "Zig");
+assert_eq!(object.name.as_str(), "language");
+assert_eq!(subject.lod.len(), 3); // full triple, edge, entity
 ```
 
-## Normalization
+## Key files
 
-`rdf.normalize` provides IRI canonicalization and blank-node skolemization, used by `TripleMapper` before inserting into the Library.
+- `coral/src/ingest.rs` — `TripleMapper`, `BatchIngestor`, `IngestError`
 
-## Sub-modules
+## Semantic Deviations
 
-- `src/rdf/lexer.zig` — Turtle tokenizer
-- `src/rdf/parser.zig` — `Parser`, `Triple`, `Term`
-- `src/rdf/nquads.zig` — `NQuadsParser` (streaming)
-- `src/rdf/normalize.zig` — IRI normalization, blank-node handling
-- `src/rdf/root.zig` — umbrella re-exports `Parser`, `Triple`, `Term`
+| Aspect | Zig | Rust |
+|--------|-----|------|
+| RDF parser crate | Standalone `src/rdf/` (Turtle, N-Quads, normalize) | **None** — line-by-line string processing only |
+| Triple type | `Triple { subject, predicate, object: Term }` | `TripleMapper::map_triple(s, p, o) → (ContextNode, ContextNode)` |
+| IRI normalization | `rdf.normalize` module | Not yet implemented |
+| Streaming parser | `NQuadsParser` for `.nq`/`.nt` | Not yet implemented |
+| Tokenizer | `rdf.lexer` for Turtle | Not yet implemented |
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (6 files, auto-discovered)
+## Zig reference
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/rdf/parser.zig` | 1.0 | defines_anchor |
-| `src/rdf/nquads.zig` | 1.0 | defines_anchor |
-| `src/coral/verify.zig` | 0.9 | used_by |
-| `src/rdf/normalize.zig` | 0.9 | used_by |
-| `src/rdf/root.zig` | 0.9 | used_by |
-| `src/rdf/lexer.zig` | 0.4 | path_heuristic |
-
+See `doc/capabilities/rdf-parsing/CAPABILITY.md` in the Zig project for the original module design (Turtle parser, N-Quads streaming, IRI normalization).

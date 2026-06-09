@@ -5,7 +5,7 @@ use guidance_common::error::DbError;
 use rusqlite::params;
 use thiserror::Error;
 
-use super::math;
+use guidance_vector_math as math;
 
 #[derive(Error, Debug)]
 pub enum VectorDbError {

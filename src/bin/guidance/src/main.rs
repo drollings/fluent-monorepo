@@ -4,7 +4,6 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use guidance_common::shell::run_command;
 use guidance_coral::db::Library;
-use guidance_coral::ingest::{BatchIngestor, IngestionConfig};
 use guidance_coral::mcp::McpServer;
 use guidance_guidance::config;
 use guidance_guidance::sync_engine::SyncEngine;
@@ -50,12 +49,6 @@ enum Commands {
         #[arg(long, default_value = "auto")]
         filter: String,
     },
-    Show {
-        file: String,
-
-        #[arg(long, default_value = ".guidance")]
-        guidance: String,
-    },
     Test,
     Telemetry {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
@@ -68,7 +61,8 @@ enum Commands {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
     },
-    Serve {
+    #[command(name = "mcp")]
+    Mcp {
         #[arg(long, default_value_t = 8080)]
         port: u16,
 
@@ -143,16 +137,6 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    Ingest {
-        #[arg(short, long)]
-        file: String,
-
-        #[arg(short, long, default_value = "10000")]
-        batch_size: usize,
-
-        #[arg(long)]
-        skip_errors: bool,
-    },
     Check,
     Todo,
     Diary {
@@ -220,13 +204,10 @@ fn main() {
         } => {
             cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter);
         }
-        Commands::Show { file, guidance } => {
-            cmd_show(file, guidance);
-        }
         Commands::Test => cmd_test(),
         Commands::Telemetry { db, .. } => cmd_telemetry(db),
         Commands::CacheStats { db } => cmd_cache_stats(db),
-        Commands::Serve { port: _, db } => cmd_serve(db),
+        Commands::Mcp { port: _, db } => cmd_mcp(db),
         Commands::Init {
             dir,
             guidance_dir: _,
@@ -262,11 +243,6 @@ fn main() {
         Commands::Status { guidance_dir } => cmd_status(guidance_dir),
         Commands::Clean { json_dir, db } => cmd_clean(json_dir, db),
         Commands::Commit { message, dry_run } => cmd_commit(message, *dry_run),
-        Commands::Ingest {
-            file,
-            batch_size,
-            skip_errors,
-        } => cmd_ingest(file, batch_size, *skip_errors),
         Commands::Check => cmd_check(),
         Commands::Todo => cmd_todo(),
         Commands::Diary { text } => cmd_diary(text),
@@ -422,33 +398,6 @@ fn collect_json_results(
     }
 }
 
-fn cmd_show(file: &str, guidance_dir: &str) {
-    let path = Path::new(file);
-    if !path.exists() {
-        eprintln!("error: file not found: {file}");
-        std::process::exit(1);
-    }
-    let gdir = PathBuf::from(guidance_dir);
-    let source_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-    let engine = SyncEngine::new(gdir, source_dir);
-    match engine.load_doc(path) {
-        Ok(Some(doc)) => {
-            println!("Module: {}", doc.meta.module);
-            println!("Source: {}", doc.meta.source);
-            println!("Language: {}", doc.meta.language);
-            println!("Members: {}", doc.members.len());
-            for m in &doc.members {
-                let comment = m.comment.as_ref().map(|c| c.as_str()).unwrap_or("");
-                let type_str = serde_json::to_string(&m.type_name).unwrap_or_default();
-                let type_str = type_str.trim_matches('"');
-                println!("  {}({type_str}) — {comment}", m.name);
-            }
-        }
-        Ok(None) => println!("No guidance doc found for {file}"),
-        Err(e) => eprintln!("error: {e}"),
-    }
-}
-
 fn cmd_test() {
     println!("Running tests...");
     let args: Vec<&str> = vec!["cargo", "test", "--workspace"];
@@ -503,7 +452,7 @@ fn cmd_cache_stats(db_path: &str) {
     }
 }
 
-fn cmd_serve(db_path: &str) {
+fn cmd_mcp(db_path: &str) {
     let db = PathBuf::from(db_path);
     let lib = if db.exists() {
         Library::open(&db).unwrap_or_else(|e| {
@@ -800,43 +749,6 @@ fn cmd_commit(message: &str, dry_run: bool) {
     if !status.success() {
         eprintln!("Commit failed");
         std::process::exit(1);
-    }
-}
-
-fn cmd_ingest(file: &str, batch_size: &usize, _skip_errors: bool) {
-    let path = Path::new(file);
-    if !path.exists() {
-        eprintln!("error: file not found: {file}");
-        std::process::exit(1);
-    }
-    match Library::open_in_memory() {
-        Ok(lib) => {
-            let config = IngestionConfig {
-                batch_size: *batch_size,
-                yago_whitelist_only: false,
-                preferred_lang: "en".to_string(),
-            };
-            let mut ingestor = BatchIngestor::with_config(Arc::new(lib), config);
-            match ingestor.ingest_file(path) {
-                Ok(stats) => {
-                    println!("Ingestion complete:");
-                    println!("  Triples processed: {}", stats.triples_processed);
-                    println!("  Nodes created: {}", stats.nodes_created);
-                    println!("  Edges created: {}", stats.edges_created);
-                    println!("  Errors skipped: {}", stats.errors_skipped);
-                    println!("  Batches flushed: {}", stats.batches_flushed);
-                    println!("  Triples filtered: {}", stats.triples_filtered);
-                }
-                Err(e) => {
-                    eprintln!("ingestion error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to open library: {e}");
-            std::process::exit(1);
-        }
     }
 }
 

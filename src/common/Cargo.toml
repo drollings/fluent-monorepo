@@ -25,6 +25,7 @@ regex = { workspace = true }
 lazy_static = "1"
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }
+guidance-traits = { path = "../traits" }
 
 [dev-dependencies]
 httpmock = { workspace = true }

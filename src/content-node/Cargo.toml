@@ -1,0 +1,12 @@
+[package]
+name = "guidance-content-node"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-types = { path = "../types" }
+guidance-common = { path = "../common" }
+serde = { workspace = true }
+internment = { workspace = true, features = ["arc", "serde"] }
+blake3 = { workspace = true }
+thiserror = { workspace = true }

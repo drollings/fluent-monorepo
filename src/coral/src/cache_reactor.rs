@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bon::Builder;
 use guidance_common::error::CacheError;
 use guidance_common::hash::content_hash_with_model;
-use guidance_common::types::{ContextNode, NodeId, WasmTool};
+use guidance_types::{ContextNode, NodeId, WasmTool};
 use guidance_llm::client::{is_malformed_response, LlmClient, LlmConfig};
 use guidance_llm::decomposer::LocalDecomposer;
 
@@ -33,7 +33,7 @@ pub struct QueueReactorCreateArgs {
     #[builder(default = 3)]
     pub max_depth: u8,
 
-    pub embedder: Option<guidance_common::embeddings::OllamaEmbedding>,
+    pub embedder: Option<guidance_llm::OllamaEmbedding>,
 }
 
 pub struct QueueReactor {
@@ -45,7 +45,7 @@ pub struct QueueReactor {
     pub decomposer: Option<LocalDecomposer>,
     pub frontier_config: Option<LlmConfig>,
     pub max_depth: u8,
-    pub embedder: Option<guidance_common::embeddings::OllamaEmbedding>,
+    pub embedder: Option<guidance_llm::OllamaEmbedding>,
 }
 
 impl QueueReactor {
@@ -221,7 +221,7 @@ impl QueueReactor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::ContextNode;
+    use guidance_types::ContextNode;
 
     #[test]
     fn test_reactor_l1_miss_fallback() {

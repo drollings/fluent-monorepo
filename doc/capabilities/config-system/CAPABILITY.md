@@ -1,66 +1,52 @@
 ---
 name: config-system
-description: Two-level configuration loader for guidance projects. Reads guidance-config.json from the project .guidance/ directory, falls back to ~/.config/guidance/, then to built-in defaults.
+description: CLI argument parsing and project configuration via clap + serde_json
 anchors:
-  - ProjectConfig
-  - loadConfig
-  - buildFromParts
+  - Cli
+  - Commands
+  - parse
+  - guidance_dir
 ---
 
 # Config System
 
-Resolves all guidance configuration from a JSON file with a two-level fallback chain.
-
-## Resolution order
-
-1. `{cwd}/.guidance/guidance-config.json` — project-local
-2. `~/.config/guidance/guidance-config.json` — user-global
-3. Built-in defaults
-
-## Key fields
-
-```json
-{
-  "version": "1",
-  "guidance_dir": ".guidance",
-  "db_path": ".guidance.db",
-  "guidance_db_path": ".guidance.db",
-  "embedding_provider": "ollama",
-  "embedding_model": "nomic-embed-text",
-  "embedding_dims": 768,
-  "capabilities_dir": "doc/capabilities",
-  "src_dirs": ["src"],
-  "providers": {
-    "local": { "base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions" }
-  },
-  "models": { "default": "local:code:latest", "fast": "", "thinking": "" },
-  "test_commands": { ".zig": ["zig", "build", "test", "--summary", "all"] },
-  "lint_commands": { ".zig": ["zig", "fmt", "--check", "{file}"] },
-  "fmt_commands":  { ".zig": ["zig", "fmt", "{file}"] }
-}
-```
-
-## Model references
-
-Model names use the format `"provider:modelname"`, e.g. `"local:code:latest"`. The config resolves these to base URLs via the `providers` map.
+Parses CLI arguments with `clap` and loads project configuration from JSON files via `serde_json`. The binary defines a `Cli` struct with global flags (`--debug`, `--show-prompts`) and subcommands (`Explain`, `Gen`, `Mcp`, `Init`, `Status`, etc.). The `show` and `ingest` subcommands were removed; `serve` was renamed to `mcp`. Project-level configuration (model, provider, `.guidance/` directory path) is read from `.guidance/guidance-config.json` at runtime.
 
 ## Key files
 
-- `src/guidance/config.zig` — `loadConfig`, `ProjectConfig`, `buildFromParts`
-- `.guidance/guidance-config.json` — project configuration file
+- `bin/guidance/src/main.rs` — `Cli` parser, `Commands` enum, `--debug` / `--show-prompts` flags
+- Config loading uses `serde_json` from files on disk (no standalone `config.rs` module; configuration is embedded in the CLI entrypoint)
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/guidance/config.zig` | 1.0 | defines_anchor |
-| `src/guidance/health/health.zig` | 0.9 | used_by |
-| `src/guidance/main.zig` | 0.9 | used_by |
-| `src/guidance/query/args.zig` | 0.9 | used_by |
-| `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/sync/commit.zig` | 0.9 | used_by |
-| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
-| `src/guidance/sync_engine.zig` | 0.9 | used_by |
-| `src/coral/config.zig` | 0.7 | keyword_overlap |
+- **clap** replaces Zig's `std.process.args` / hand-rolled `ArgIterator` — declarative derive macros for all CLI flags
+- **serde_json** replaces `std.json` — deserializes `.guidance/guidance-config.json` via `serde_json::from_str`
+- **No Zig comptime reflection** — Rust uses `#[derive(Parser)]` and `#[command]` proc macros
+- **Global flags** (`--debug`, `--show-prompts`) defined on `Cli` with `global = true` rather than per-subcommand
 
+## Example
+
+```rust
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "guidance")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+
+    #[arg(global = true, long)]
+    debug: bool,
+}
+
+#[derive(clap::Subcommand)]
+enum Commands {
+    Explain { query: String, #[arg(short, long)] guidance_dir: String },
+    Gen { #[arg(short, long)] file: Option<String> },
+    Mcp,
+}
+```
+
+## Zig reference
+
+See `../src/guidance/config.zig` (Zig version) for the original `ProjectConfig` struct and `loadConfig()` function using `std.json`.

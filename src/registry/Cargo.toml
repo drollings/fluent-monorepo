@@ -1,0 +1,13 @@
+[package]
+name = "guidance-registry"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-types = { path = "../types" }
+guidance-common = { path = "../common" }
+serde = { workspace = true }
+bitvec = { workspace = true }
+internment = { workspace = true, features = ["arc", "serde"] }
+thiserror = { workspace = true }
+bon = { workspace = true }

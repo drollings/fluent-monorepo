@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use bitvec::vec::BitVec;
-use guidance_common::embeddings::EmbeddingProvider;
+use guidance_llm::EmbeddingProvider;
 use guidance_common::error::DbError;
-use guidance_common::types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
+use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
 use thiserror::Error;
 
@@ -819,7 +819,7 @@ mod tests {
 
     #[test]
     fn test_hydration_pipeline() {
-        use guidance_common::embeddings::NoopEmbedding;
+        use guidance_llm::NoopEmbedding;
         use std::sync::Arc;
 
         let lib = Library::open_in_memory().expect("db");

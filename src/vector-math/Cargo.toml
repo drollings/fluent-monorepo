@@ -1,0 +1,6 @@
+[package]
+name = "guidance-vector-math"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

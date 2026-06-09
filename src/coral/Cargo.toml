@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 guidance-common = { path = "../common" }
+guidance-types = { path = "../types" }
+guidance-traits = { path = "../traits" }
 guidance-llm = { path = "../llm" }
 guidance-ontology = { path = "../ontology" }
 guidance-rdf = { path = "../rdf" }

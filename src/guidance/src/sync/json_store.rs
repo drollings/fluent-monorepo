@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use guidance_common::types::{CapabilityEval, GuidanceDoc, Member, MemberType, Meta, Param, Skill};
+use guidance_types::{CapabilityEval, GuidanceDoc, Member, MemberType, Meta, Param, Skill};
 use smol_str::SmolStr;
 use thiserror::Error;
 
@@ -292,7 +292,7 @@ pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
     fn make_test_member(name: &str, sig: &str, hash: &str, comment: Option<&str>) -> Member {
         Member {

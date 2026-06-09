@@ -1,4 +1,4 @@
-use guidance_common::types::{GuidanceDoc, StageKind};
+use guidance_types::{GuidanceDoc, StageKind};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Stage {
@@ -74,7 +74,7 @@ impl Synthesizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
     #[test]
     fn test_synthesize_with_matches() {

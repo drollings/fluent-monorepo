@@ -1,83 +1,54 @@
 ---
 name: ast-indexing
-description: Parses Zig and Python source files via AST to extract structured metadata (functions, structs, enums, types) into per-file JSON guidance documents under .guidance/src/.
+description: Parses source files (Zig, Python) via tree-sitter into structured GuidanceDoc/Member metadata
 anchors:
   - AstParser
-  - parseFile
+  - parse_file
   - GuidanceDoc
   - Member
+  - MemberType
 ---
 
 # AST Indexing
 
-Converts source code into queryable structured JSON metadata for codebase navigation and LLM context building.
-
-## What it does
-
-- **Zig**: `AstParser` uses `std.zig.Ast` to walk the syntax tree, extracting `fn_decl`, `struct`, `enum`, `const`, `type` declarations with signatures, visibility, line numbers, and doc comments.
-- **Python**: `guidance-py` uses the `ast` module to extract classes, functions, and top-level constants.
-- **Output**: One `.guidance/src/<path>.json` per source file with `meta`, `comment`, `members[]`, `used_by[]`, `skills[]`, and `capabilities[]` fields.
+Parses Zig and Python source files using tree-sitter to extract module-level comments, function declarations, struct/enum/union definitions, variable declarations, and test declarations. Produces a `GuidanceDoc` containing a `Meta` header and a list of `Member` items with signature, doc comments, parameters, return types, visibility, and line numbers.
 
 ## Key files
 
-- `src/guidance/ast_parser.zig` — Zig AST traversal and JSON emission
-- `bin/guidance-py` — Python AST provider
-- `src/guidance/json_store.zig` — Reads/writes guidance JSON files
-- `src/guidance/types.zig` — `GuidanceDoc`, `Member`, `Skill` types
+- `guidance/src/ast_parser.rs` — `AstParser` struct, `parse_file()`, tree-sitter cursor walks
+- `guidance/src/sync/json_store.rs` — `load_guidance()`, `save_guidance()` JSON persistence
+- `common/src/types.rs` — `GuidanceDoc`, `Member`, `MemberType`, `Param`, `Meta`
 
-## Incremental sync
+## Semantic Deviations
 
-Each member has a `match_hash` (SHA-256 of signature). On re-sync, only members whose hash changed are re-processed, making LLM comment infill cheap.
+- **Uses tree-sitter** instead of `std.zig.Ast` — supports Zig and Python with separate tree-sitter parsers; no built-in Zig compiler integration
+- **Language dispatch** by file extension (`.zig`/`.zon` → Zig, `.py` → Python)
+- **Visibility** checked via `pub` keyword in Zig; Python visibility inferred from leading `_`
+- **Module comment** extracted from leading doc-comment nodes (`//!` / `///` / `#`)
+- **No comptime detection** — `comptime_block` variant exists in `MemberType` but no extractor walks comptime blocks
+- **SmolStr** for interned strings rather than Zig's slice+arena pattern
+- **serde JSON** for serialization instead of `std.json`
 
-## Query relevance
+## Example
 
-When searching for "how does X work", the `comment` field of the corresponding `fn_decl` or `struct` is the primary semantic signal. Members without comments still surface via name/signature matching.
+```rust
+use std::path::Path;
+use guidance_guidance::ast_parser::AstParser;
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (42 files, auto-discovered)
+let source = r#"/// Greets the user
+pub fn greet(name: []const u8) []const u8 {
+    return "Hello, " ++ name;
+}
+"#;
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/guidance/types.zig` | 1.0 | defines_anchor |
-| `src/guidance/ast_parser.zig` | 1.0 | defines_anchor |
-| `src/guidance/comments/sync.zig` | 0.9 | used_by |
-| `src/guidance/plugins/zig_plugin.zig` | 0.9 | used_by |
-| `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/sync.zig` | 0.9 | used_by |
-| `src/guidance/comments/core.zig` | 0.9 | used_by |
-| `src/guidance/comments/core_tests.zig` | 0.9 | used_by |
-| `src/guidance/comments/header.zig` | 0.9 | used_by |
-| `src/guidance/comments/header_tests.zig` | 0.9 | used_by |
-| `src/guidance/comments/inserter.zig` | 0.9 | used_by |
-| `src/guidance/comments/sync_tests.zig` | 0.9 | used_by |
-| `src/guidance/core/excerpt.zig` | 0.9 | used_by |
-| `src/guidance/core/format.zig` | 0.9 | used_by |
-| `src/guidance/core/metadata.zig` | 0.9 | used_by |
-| `src/guidance/document_indexer.zig` | 0.9 | used_by |
-| `src/guidance/document_indexer_tests.zig` | 0.9 | used_by |
-| `src/guidance/main.zig` | 0.9 | used_by |
-| `src/guidance/pattern.zig` | 0.9 | used_by |
-| `src/guidance/plugin.zig` | 0.9 | used_by |
-| `src/guidance/plugins/markdown_plugin.zig` | 0.9 | used_by |
-| `src/guidance/plugins/markdown_plugin_tests.zig` | 0.9 | used_by |
-| `src/guidance/plugins/treesitter_extractor.zig` | 0.9 | used_by |
-| `src/guidance/plugins/treesitter_plugin.zig` | 0.9 | used_by |
-| `src/guidance/query/llm_filter.zig` | 0.9 | used_by |
-| `src/guidance/query/llm_filter_batch.zig` | 0.9 | used_by |
-| `src/guidance/query/strategy.zig` | 0.9 | used_by |
-| `src/guidance/query/synthesize.zig` | 0.9 | used_by |
-| `src/guidance/schema_validator.zig` | 0.9 | used_by |
-| `src/guidance/skeleton.zig` | 0.9 | used_by |
-| `src/guidance/stage_builder.zig` | 0.9 | used_by |
-| `src/guidance/stage_builder_tests.zig` | 0.9 | used_by |
-| `src/guidance/staged.zig` | 0.9 | used_by |
-| `src/guidance/staged_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
-| `src/guidance/sync/json_store.zig` | 0.9 | used_by |
-| `src/guidance/sync/json_writer.zig` | 0.9 | used_by |
-| `src/guidance/sync/line_verify.zig` | 0.9 | used_by |
-| `src/guidance/sync/line_verify_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync_engine.zig` | 0.9 | used_by |
-| `src/guidance/types_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync/fast_snapshot.zig` | 0.4 | path_heuristic |
+let mut parser = AstParser::new();
+let doc = parser.parse_file(Path::new("main.zig"), source).expect("parse");
+assert_eq!(doc.meta.language.as_str(), "zig");
+assert_eq!(doc.members.len(), 1);
+assert_eq!(doc.members[0].name.as_str(), "greet");
+assert!(doc.members[0].is_pub);
+```
 
+## Zig reference
+
+See `../doc/capabilities/ast-indexing/CAPABILITY.md` in the Zig guidance source tree for the original Zig AST walker implementation.

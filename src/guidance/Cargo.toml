@@ -5,6 +5,9 @@ edition.workspace = true
 
 [dependencies]
 guidance-common = { path = "../common" }
+guidance-types = { path = "../types" }
+guidance-vector-math = { path = "../vector-math" }
+guidance-vector-aliases = { path = "../vector-aliases" }
 guidance-llm = { path = "../llm" }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 guidance-common = { path = "../common" }
+guidance-types = { path = "../types" }
 guidance-rdf = { path = "../rdf" }
 blake3 = { workspace = true }
 thiserror = { workspace = true }

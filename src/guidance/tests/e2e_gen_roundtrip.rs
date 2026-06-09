@@ -1,4 +1,4 @@
-use guidance_common::types::MemberType;
+use guidance_types::MemberType;
 use guidance_guidance::sync::json_store;
 use guidance_guidance::sync_engine::SyncEngine;
 

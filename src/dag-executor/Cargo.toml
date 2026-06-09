@@ -1,0 +1,19 @@
+[package]
+name = "guidance-dag-executor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-common = { path = "../common" }
+guidance-types = { path = "../types" }
+guidance-traits = { path = "../traits" }
+guidance-registry = { path = "../registry" }
+guidance-wasm-ipc = { path = "../wasm_ipc" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+internment = { workspace = true }
+bitvec = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bon = { workspace = true }
+tokio = { workspace = true }

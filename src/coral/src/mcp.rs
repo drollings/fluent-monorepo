@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 
-use guidance_common::types::ContextNode;
+use guidance_types::ContextNode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -171,8 +171,8 @@ impl McpServer {
             .as_ref()
             .and_then(|p| p.get("node_id"))
             .and_then(|v| v.as_i64())
-            .map(guidance_common::types::NodeId::from_int)
-            .unwrap_or(guidance_common::types::NodeId::from_int(0));
+            .map(guidance_types::NodeId::from_int)
+            .unwrap_or(guidance_types::NodeId::from_int(0));
 
         let max_depth = request
             .params

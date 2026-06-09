@@ -1,82 +1,91 @@
 ---
 name: explain-query
-description: Natural language codebase query engine that uses SimHash vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.
+description: Natural language codebase query engine that classifies intent, matches identifiers or keywords, and synthesizes structured results with source citations.
 anchors:
-  - cmdExplain
-  - executeStaged
-  - executeStagedWithAliases
-  - formatStaged
+  - QueryEngine
+  - QueryIntent
+  - IdentifierPattern
+  - Synthesizer
+  - Stage
+  - detect_identifier_pattern
+  - classify_query
 ---
 
 # Explain Query
 
-The `guidance explain` command answers natural-language questions about the codebase by searching the vector index, collecting skill and capability excerpts, and optionally synthesizing an LLM answer.
+The explain-query capability answers natural-language questions about the codebase by classifying query intent, dispatching to the appropriate matching strategy, and synthesizing a structured `Vec<Stage>` result.
 
-## Pipeline (staged mode, default)
+## Pipeline
 
 ```
-1. Expand query via SemanticAliases (if .guidance/semantic-aliases.json present)
-2. Search .guidance.db for relevant AST nodes (hybrid vector + keyword)
-3. Load skill excerpts from skills[] referenced in matching guidance JSON
-4. Load capability excerpts from capabilities[] in matching guidance JSON
-5. Load source excerpts (30 lines around each match)
-6. LLM synthesis (unless --no-llm): produces a structured answer with
-   file:line citations, relevant functions, and a brief explanation
-7. Render: text/JSON/markdown output
+1. classify_query(query) → QueryIntent variant
+2. dispatch to handler based on intent:
+   - IdentifierLookup  → identifier::find_members_by_name / find_members_by_signature
+   - CapabilityQuery   → keyword match on member name + comment
+   - ConceptQuery      → LLM filter ranking (if available)
+   - GeneralSearch     → substring match on name/signature/comment
+3. Synthesizer::synthesize → Vec<Stage> (Code + Prose entries)
 ```
 
-## Semantic alias expansion
+## QueryStrategy as an enum
 
-`SemanticAliases` maps query tokens to expanded synonyms at search time. For example, `"sync"` → `["synchronise", "sync", "update"]`. Aliases are loaded from `.guidance/semantic-aliases.json` by `loadSemanticAliases()` and passed to `executeStagedWithAliases()`. If the file does not exist, aliases are silently skipped.
+`QueryIntent` is a `#[derive]` enum with a `matches()` method, not a vtable:
 
-```bash
-guidance gen --aliases   # generate semantic-aliases.json from guidance JSON
-```
-
-## CLI
-
-```bash
-# Default (hybrid vector + keyword search + LLM synthesis)
-guidance explain "how does database sync work"
-
-# Skip LLM (fast, structural output only)
-guidance explain --no-llm "frobnicate"
-
-# Makefile shorthand
-make explain QUERY="how does incremental sync work"
-```
-
-## Search Backend
-
-| Backend | Database | Search type |
-|---------|----------|-------------|
-| SQLite (default) | `.guidance.db` | Hybrid vector + keyword |
-
-The hybrid search combines:
-- **Vector search**: Cosine similarity on embeddings stored as BLOBs in SQLite
-- **Keyword search**: SQL LIKE queries (fallback when no embedding provider)
-- **Weighted fusion**: 65% vector / 35% keyword scores
+- `IdentifierLookup` — priority 0 (fastest, <100µs)
+- `CapabilityQuery` — priority 2 (keyword match over members)
+- `ConceptQuery` — priority 4 (LLM filter, ~100ms+)
+- `GeneralSearch` — priority 6 (broad substring match)
 
 ## Key files
 
-- `src/guidance/main.zig` — `cmdExplain`, `cmdExplainStaged`, `renderExplainOutput`, `loadAliases`
-- `src/guidance/staged.zig` — `executeStaged`, `executeStagedWithAliases`, `formatStaged`
-- `src/vector/vector_db.zig` — `GuidanceDb`, `SemanticAliases`, `loadSemanticAliases`
-- `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
-- `src/common/embeddings.zig` — `EmbeddingProvider` vtable
+- `guidance/src/query_engine.rs` — `QueryEngine`, `explain()`, `vector_explain()`
+- `guidance/src/query/identifier.rs` — `IdentifierPattern`, `IdentifierKind`, `detect_identifier_pattern`, `find_members_by_name`, `find_members_by_signature`
+- `guidance/src/query/strategy.rs` — `QueryIntent` enum, `classify_query`, `matches`, `query_strategy_priority`
+- `guidance/src/query/synthesize.rs` — `Stage`, `Synthesizer`, `synthesize()`
+- `guidance/src/query/llm_filter.rs` — `LlmFilter`, `LlmFilterBackend` (concept query ranking)
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/guidance/staged.zig` | 1.0 | defines_anchor |
-| `src/guidance/query_engine.zig` | 1.0 | defines_anchor |
-| `src/guidance/core/format.zig` | 1.0 | defines_anchor |
-| `src/guidance/main.zig` | 0.9 | used_by |
-| `src/guidance/mcp.zig` | 0.9 | used_by |
-| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
-| `src/guidance/query/strategy.zig` | 0.9 | used_by |
-| `src/guidance/staged_tests.zig` | 0.9 | used_by |
-| `src/vector/vector_db.zig` | 0.7 | keyword_overlap |
+- **`QueryIntent` enum** replaces Zig's `QueryStrategy` vtable — dispatch is a match arm, not an interface method call
+- **`matches()` on the enum** replaces `strategy.matches(query)` vtable dispatch — a free function `strategy::matches(query, _db)` returns `QueryMatch { intent, priority, matched }`
+- **Deterministic fast path** completes in <100µs (identifier + capability queries); no heap allocation except the result `Vec`
+- **LLM fallback** uses `LlmFilter` (backed by `async-openai`) for `ConceptQuery`, matching the Zig concept of LLM-assisted ranking
+- **No SimHash** — the Rust version does not use SimHash for vector search; `vector_explain()` calls `GuidanceDb::vector_search` directly with raw `&[f32]`
+- **No semantic alias expansion** — the `SemanticAliases` module exists but `QueryEngine.explain()` does not expand aliases before matching
 
+## Example
+
+```rust
+use guidance_guidance::query_engine::QueryEngine;
+use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+
+let engine = QueryEngine::new();
+
+let doc = GuidanceDoc {
+    meta: Meta {
+        module: "example".into(),
+        source: "src/example.zig".into(),
+        language: "zig".into(),
+    },
+    comment: Some("Example module.".into()),
+    members: vec![
+        Member {
+            type_name: MemberType::FnDecl,
+            name: "greet".into(),
+            signature: Some("fn greet(name: []const u8) []const u8".into()),
+            comment: Some("Greets the user.".into()),
+            is_pub: true,
+            ..Member::default()
+        },
+    ],
+    ..GuidanceDoc::default()
+};
+
+let stages = engine.explain("greet", &doc).expect("explain");
+assert!(!stages.is_empty());
+assert!(stages.iter().any(|s| s.content.contains("greet")));
+```
+
+## Zig reference
+
+See `../doc/capabilities/explain-query/CAPABILITY.md` in the Zig guidance source tree for the original `executeStaged` pipeline with SimHash vector search and semantic alias expansion.

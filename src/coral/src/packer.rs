@@ -1,4 +1,4 @@
-use guidance_common::types::{ContextNode, NodeId};
+use guidance_types::{ContextNode, NodeId};
 use thiserror::Error;
 
 use crate::db::Library;

@@ -2,6 +2,7 @@ pub mod anonymize;
 pub mod client;
 pub mod context_packer;
 pub mod decomposer;
+pub mod embeddings;
 
 pub use anonymize::anonymize;
 pub use client::{
@@ -10,3 +11,7 @@ pub use client::{
 };
 pub use context_packer::ContextPacker;
 pub use decomposer::{DecomposerConfig, LocalDecomposer};
+pub use embeddings::{
+    create_embedding_provider, BatchEmbedding, EmbeddingError, EmbeddingProvider, NoopEmbedding,
+    OllamaEmbedding, OpenAiEmbedding,
+};

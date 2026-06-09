@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use guidance_common::types::ContextNode;
-use guidance_common::types::NodeId;
+use guidance_types::ContextNode;
+use guidance_types::NodeId;
 use guidance_rdf::normalize::hash_blank_node;
 use guidance_rdf::normalize::hash_iri;
 use guidance_rdf::parser::Term;

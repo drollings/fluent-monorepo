@@ -1,0 +1,43 @@
+use crate::node::{ContentNode, LodLevel, NodeType, NodeTypeInfo};
+use std::fmt::Debug;
+
+#[derive(Debug)]
+pub struct ContentNodeRef {
+    inner: Box<dyn ContentNode>,
+}
+
+impl ContentNodeRef {
+    pub fn new(node: impl ContentNode + 'static) -> Self {
+        Self { inner: Box::new(node) }
+    }
+
+    pub fn node_type(&self) -> NodeType { self.inner.node_type() }
+    pub fn lod(&self, level: LodLevel) -> Option<&str> { self.inner.lod(level) }
+    pub fn type_info(&self) -> NodeTypeInfo { self.inner.type_info() }
+
+    pub fn downcast_ref<T: ContentNode + 'static>(&self) -> Option<&T> {
+        self.inner.as_any().downcast_ref::<T>()
+    }
+
+    pub fn downcast_mut<T: ContentNode + 'static>(&mut self) -> Option<&mut T> {
+        self.inner.as_any_mut().downcast_mut::<T>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::node::NodeType;
+    use crate::file_node::FileContentNode;
+    use std::path::PathBuf;
+
+    #[test]
+    fn content_node_ref_downcasting() {
+        let node = FileContentNode::new(PathBuf::from("test.txt"), 42, blake3::hash(b"test"));
+        let wrapper = ContentNodeRef::new(node);
+        assert_eq!(wrapper.node_type(), NodeType::File);
+        let downcast = wrapper.downcast_ref::<FileContentNode>();
+        assert!(downcast.is_some());
+        assert_eq!(downcast.unwrap().inode(), 42);
+    }
+}

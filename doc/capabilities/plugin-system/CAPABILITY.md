@@ -1,74 +1,77 @@
 ---
 name: plugin-system
-description: External AST provider protocol for non-Zig languages. Guidance discovers provider executables via PATH or config, invokes them per-file, and merges their JSON output into the guidance index.
+description: External AST provider protocol for non-Rust languages. Guidance discovers provider executables by scanning paths, registers them by file extension, and invokes them to produce JSON GuidanceDoc metadata.
 anchors:
-  - LanguagePlugin
   - PluginRegistry
-  - discoverProvider
-  - invokeProviderFile
+  - Plugin
+  - PluginError
+  - PluginResult
+  - discover
+  - invoke_plugin
 ---
 
 # Plugin System
 
-Allows non-Zig source files (Python, TypeScript, etc.) to be indexed by guidance through external provider executables that speak the guidance JSON protocol.
+Allows source files in non-Rust languages (Python, TypeScript, Markdown, etc.) to be indexed by guidance through external provider executables that speak the guidance JSON protocol.
 
 ## Provider discovery
 
-Guidance looks for provider executables named `guidance-<ext>` (e.g. `guidance-py` for `.py` files) in:
-1. The project's `bin/` directory
-2. `PATH`
+`PluginRegistry::discover()` scans file-system paths for executables named `guidance-<name>` (e.g. `guidance-py` for `.py` files). Extensions are inferred from the binary name via `infer_extensions`:
+
+| Binary name pattern | Extensions |
+|---------------------|------------|
+| Contains `zig` | `zig`, `zon` |
+| Contains `python` or `py` | `py` |
+| Contains `rust` or `rs` | `rs` |
+| Contains `markdown` or `md` | `md`, `markdown` |
+| Contains `typescript` or `ts` | `ts`, `tsx` |
 
 ## JSON protocol
 
-A provider receives a source file path via stdin or argv, and outputs a guidance JSON document to stdout:
+An external provider reads a source file, outputs a guidance JSON document to stdout, and the result is parsed by `invoke_plugin()` into a `GuidanceDoc`:
 
 ```json
 {
   "meta": { "module": "src.foo.bar", "source": "src/foo/bar.py", "language": "python" },
   "comment": "Module-level description.",
-  "members": [
-    { "type": "fn_decl", "name": "doThing", "signature": "def doThing(x)", "comment": "...", "line": 10 }
-  ]
+  "members": [...]
 }
 ```
 
-## Built-in providers
-
-| Extension | Provider | Location |
-|-----------|----------|----------|
-| `.zig` | Built-in `AstParser` | `src/guidance/ast_parser.zig` |
-| `.py` | `guidance-py` | `bin/guidance-py` |
-| `.md` | `MarkdownPlugin` | `src/guidance/plugins/` |
-
 ## Key files
 
-- `src/guidance/provider_discovery.zig` — `discoverProvider`, `invokeProviderFile`
-- `src/guidance/plugin.zig` — `PluginProvider` interface
-- `src/guidance/plugin_registry.zig` — Built-in plugin registry
-- `bin/guidance-py` — Python AST provider implementation
+- `guidance/src/plugin.rs` — `PluginRegistry`, `Plugin`, `PluginError`, `PluginResult`, `discover()`, `invoke_plugin()`, `infer_extensions()`
 
-## CLI
+## Semantic Deviations
 
-```bash
-guidance gen --all-languages    # discover and invoke external providers
+- **`tokio::process::Command` not used** — the Rust `invoke_plugin()` currently parses the plugin output string as JSON without spawning a subprocess; the `Plugin` struct stores a `path` but no subprocess invocation is implemented yet
+- **`std::process::Command` would replace Zig's `std.ChildProcess`** — when subprocess invocation is added, `tokio::process::Command` or `std::process::Command` will be used
+- **Same JSON protocol** — the `GuidanceDoc` / `Meta` JSON structure matches the Zig version exactly
+- **`PluginRegistry` is a `HashMap<String, Plugin>`** — keyed by file extension, rather than Zig's `StringHashMap(LanguagePlugin)`
+- **`infer_extensions` is a standalone function** — replaces Zig's inline extension mapping in the discovery loop
+- **No built-in `AstParser` plugin** — Zig parsing is handled by `guidance/src/ast_parser.rs` (separate module), not through the plugin system
+- **No `guidance-py` or `MarkdownPlugin`** — the Rust version has no built-in Python or Markdown provider implementations
+
+## Example
+
+```rust
+use std::path::PathBuf;
+use guidance_guidance::plugin::{PluginRegistry, Plugin, invoke_plugin};
+
+let mut registry = PluginRegistry::new();
+registry.register("py", Plugin {
+    name: "guidance-py".into(),
+    extensions: vec!["py".into()],
+    path: PathBuf::from("/usr/local/bin/guidance-py"),
+});
+
+assert!(registry.has_plugin_for("py"));
+
+// discover from a directory
+let plugins = vec![PathBuf::from("/usr/local/bin")];
+let registry = PluginRegistry::discover(&plugins);
 ```
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (13 files, auto-discovered)
+## Zig reference
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/guidance/provider_discovery.zig` | 1.0 | defines_anchor |
-| `src/guidance/plugin.zig` | 1.0 | defines_anchor |
-| `src/guidance/plugin_registry.zig` | 1.0 | defines_anchor |
-| `src/guidance/plugin_registry_tests.zig` | 0.9 | used_by |
-| `src/guidance/plugin_tests.zig` | 0.9 | used_by |
-| `src/guidance/plugins/markdown_plugin.zig` | 0.9 | used_by |
-| `src/guidance/plugins/treesitter_plugin.zig` | 0.9 | used_by |
-| `src/guidance/plugins/zig_plugin.zig` | 0.9 | used_by |
-| `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/provider_discovery_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
-| `src/guidance/plugins/treesitter_loader.zig` | 0.4 | path_heuristic |
-| `src/guidance/plugins/treesitter_extractor.zig` | 0.4 | path_heuristic |
-
+See `../doc/capabilities/plugin-system/CAPABILITY.md` in the Zig guidance source tree for the original `LanguagePlugin` interface, `discoverProvider`, `invokeProviderFile`, and the built-in `guidance-py` and `MarkdownPlugin` implementations.

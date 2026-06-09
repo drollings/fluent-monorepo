@@ -55,21 +55,26 @@ src/
     comments/          Comment management (core.zig, header.zig, inserter.zig, sync.zig)
     query/             Query pipeline (identifier.zig, strategy.zig, llm_filter.zig, llm_filter_batch.zig, synthesize.zig)
     sync/              Sync infrastructure (json_store.zig, json_writer.zig, line_verify.zig, marker.zig)
-  common/           Zig shared utilities (string, hash, format, terminal, log, etc.)
+  common/           Trimmed utility crate
                     Note: common/ contains no domain-specific logic; no imports from dag/, coral/, or guidance/
-  dag/             DAG core (Target, TargetRegistry, DependencyResolver, DagExecutor, repl.zig, json_parser.zig)
-  coral/           Coral Context (db, batch, cache, executor, targets, config, mcp, etc.)
-                    Note: delegation.zig moved here from common/
-  llm/             LLM HTTP client (Ollama/OpenAI)
-  ontology/        Ontology types
-  rdf/             RDF/triple handling
-  reflection/       Reflection layer
-  vector/          Vector/embedding utilities
-  wasm/            Wasm tooling
-  concurrency/     Concurrency primitives
+  types/            guidance-types (FileType, MemberType, Param, Member, etc.)
+  traits/           guidance-traits (serde-based replacement for reflection)
+  registry/         guidance-registry (Target, TargetRegistry, CapabilityRegistry)
+  content-node/     guidance-content-node
+  vector-math/      guidance-vector-math (cosine_similarity, QuantizedEmbedding)
+  vector-aliases/   guidance-vector-aliases (SemanticAliases, expand, expand_query)
+  dag-executor/     guidance-dag-executor (DagExecutor, DependencyResolver)
+  dag/              Thin re-export crate
+  guidance/         Updated consumer
+  coral/            Updated consumer
+  llm/              LLM HTTP client + embeddings (gained embedding providers)
+  ontology/         Ontology types
+  rdf/              RDF/triple handling
+  wasm_ipc/         Wasm tooling
 bin/
-  guidance       Compiled binary — zig-out/bin/guidance (via zig build)
-  guidance-py    Python AST provider (Python files → .guidance/ JSON)
+  guidance          Updated binary (removed show/ingest, serve→mcp)
+  guidance-py       Python AST provider (Python files → .guidance/ JSON)
+  coral             New binary (coral mcp)
 .guidance/
   guidance-config.json   Model / provider configuration
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)

@@ -1,81 +1,95 @@
 ---
 name: sync-pipeline
-description: Incremental source file synchronisation pipeline that runs test, lint, format, and AST guidance generation for each changed file, using mtime and match_hash for cheap change detection.
+description: Incremental source file synchronisation that walks the workspace, detects changed files by mtime, parses ASTs, and persists GuidanceDoc as JSON. Uses blake3 for content hashing and serde_json for I/O.
 anchors:
-  - SyncProcessor
-  - syncDatabase
-  - matchHash
-  - fileNeedsProcessing
+  - SyncEngine
+  - gen_if_stale
+  - is_stale
+  - should_generate
+  - match_hash_from_signature
+  - load_guidance
+  - save_guidance
+  - sync_comments
 ---
 
 # Sync Pipeline
 
-The `guidance gen` command walks the workspace, detects changed source files, and runs the full guidance pipeline (test → lint → fmt → AST parse → LLM infill) for each stale file.
+The `SyncEngine` walks source files, detects staleness, parses AST members, and saves/loads `GuidanceDoc` as JSON in the `.guidance/src/` directory tree.
 
 ## Incremental detection
 
-A file is considered stale when:
+A file is stale when:
 1. Its guidance JSON does not exist, **or**
-2. The source file's `mtime` is newer than the guidance JSON's `mtime`
+2. The source file's mtime is more than 1 second newer than the JSON's mtime
 
-The guidance JSON mtime acts as a "all phases passed" marker — it is only touched after every phase succeeds.
+```rust
+// guidance/src/sync/staleness.rs
+pub fn is_stale(json_path: &Path, source_path: &Path) -> bool;
+pub fn should_generate(json_path: &Path, source_path: &Path) -> bool;
+```
 
 ## Per-file pipeline
 
 ```
-1. Parse AST → members[] with signatures and line numbers
-2. Load existing guidance JSON (if present)
-3. For each member:
-   a. Compute match_hash = SHA-256(signature)
-   b. If hash changed → clear LLM comment (re-infill later)
-   c. If hash unchanged → preserve existing comment
-4. Optional: LLM comment infill (--infill) or regen (--regen)
-5. Write guidance JSON to .guidance/src/<path>.json
-6. Touch mtime as "done" marker
+1. SyncEngine::gen_if_stale(source_path)
+2.   → staleness::should_generate(&json_path, source_path)
+3.   → AST parse → GuidanceDoc with members[]
+4.   → json_store::save_guidance(&json_path, &doc)
+5. Return true if generated, false if up-to-date
 ```
 
-## Database sync
+## match_hash computation
 
-After all source files are processed:
-- `.guidance.db` is updated from `.guidance/src/` JSON files (SimHash vector search)
+Signatures are hashed with **blake3** for change detection:
+
+```rust
+pub fn match_hash_from_signature(signature: &str) -> String {
+    let hash = blake3::hash(signature.as_bytes());
+    hash.to_hex().to_string()
+}
+```
+
+## Example
+
+```rust
+use guidance::sync_engine::SyncEngine;
+
+let mut engine = SyncEngine::new(guidance_dir.into(), source_dir.into());
+
+// Generate if stale — returns true if work was done
+let generated = engine.gen_if_stale(&zig_file)?;
+
+// Load existing doc
+if let Some(doc) = engine.load_doc(&zig_file)? {
+    println!("Module: {}", doc.meta.module);
+    for member in &doc.members {
+        println!("  {} {}", member.type_name, member.name);
+    }
+}
+
+// Check sync status
+let status = engine.status()?;
+println!("Stale: {}, up-to-date: {}", status.stale_files, status.up_to_date);
+```
 
 ## Key files
 
-- `src/guidance/sync.zig` — `SyncProcessor`, per-file pipeline
-- `src/vector/vector_db.zig` — `syncDatabase` (SQLite backend)
-- `src/guidance/hash.zig` — `matchHash` computation
-- `src/guidance/marker.zig` — `fileNeedsProcessing` staleness check
+- `guidance/src/sync_engine.rs` — `SyncEngine`, `SyncStatus`, `SyncEngineError`
+- `guidance/src/sync/json_store.rs` — `load_guidance`, `save_guidance`, `JsonError`
+- `guidance/src/sync/json_writer.rs` — `doc_to_json`, `doc_to_json_string`
+- `guidance/src/sync/staleness.rs` — `is_stale`, `should_generate`, `match_hash_from_signature`
+- `guidance/src/sync/comments.rs` — `sync_comments`, `insert_comments`
 
-## CLI
+## Semantic Deviations
 
-```bash
-guidance gen                    # full workspace scan
-guidance gen --file src/foo.zig # single file
-guidance gen --scan src/        # directory scan
-guidance gen --force            # re-process all, ignore mtime
-guidance gen --infill           # fill missing LLM comments
-```
+| Aspect | Zig | Rust |
+|--------|-----|------|
+| Content hash | SHA-256 for match_hash | **blake3** for match_hash |
+| JSON I/O | Custom `StringBuilder` / `json.Writer` | `serde_json::to_string_pretty` / `from_str` |
+| AST parse phase | Test → lint → fmt → AST → LLM infill pipeline | AST parse only (test/lint/fmt/LLM not yet wired) |
+| Staleness window | Filesystem-duration-based | 1-second mtime tolerance |
+| Comment sync | `comments/sync.zig` handles re-insertion | `sync/comments.rs` with `insert_comments()` |
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (17 files, auto-discovered)
+## Zig reference
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/guidance/sync.zig` | 1.0 | defines_anchor |
-| `src/guidance/sync/marker.zig` | 1.0 | defines_anchor |
-| `src/vector/vector_db.zig` | 1.0 | defines_anchor |
-| `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
-| `src/guidance/comments/sync.zig` | 0.9 | used_by |
-| `src/guidance/sync/marker_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync_engine.zig` | 0.9 | used_by |
-| `src/vector/root.zig` | 0.9 | used_by |
-| `src/vector/vector_db_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync/json_writer.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/commit.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/capability_eval.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/line_verify.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/json_store.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/dep_graph.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/fast_snapshot.zig` | 0.4 | path_heuristic |
-
+See `doc/capabilities/sync-pipeline/CAPABILITY.md` in the Zig project for the original pipeline design (SyncProcessor, full pipeline phases, database sync).

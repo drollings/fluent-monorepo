@@ -1,67 +1,55 @@
 ---
 name: ontology
-description: YAGO 4.5 ontology processing layer that maps RDF triples to Coral ContextNodes, applies rdfs/OWL inference rules, provides schema migration utilities, and enforces the YAGO_TYPE_WHITELIST to keep ingested graphs within size budgets.
+description: RDF triple-to-ContextNode mapping embedded in the Coral ingestion pipeline. No standalone ontology crate; mapping logic lives in the ingest module.
 anchors:
   - TripleMapper
-  - MappingConfig
-  - FlushResult
-  - YAGO_TYPE_WHITELIST
+  - BatchIngestor
+  - ContextNode
 ---
 
 # Ontology
 
-`src/ontology/` maps RDF triples (from the rdf-parsing module) into typed `ContextNode` records that can be persisted to the Coral Library.
+The Rust codebase has no standalone `ontology/` crate. Ontology mapping (RDF triples → `ContextNode` records) is embedded directly in the Coral ingestion pipeline within `coral/src/ingest.rs`. The `TripleMapper` struct converts `(subject, predicate, object)` triples into a pair of `ContextNode` values with pre-computed LOD slices.
 
 ## TripleMapper
 
-The central component. Accumulates RDF triples and, on `flush(library)`, converts them to `ContextNode` and edge records:
+A minimal embedded mapper. It does not accumulate triples or perform batch flushes — it maps one triple at a time and returns two `ContextNode` values ready for insertion:
 
-```zig
-var mapper = TripleMapper.init(allocator, &library, config);
-try mapper.addTriple(triple);          // buffered
-const result = try mapper.flush();     // → Library.insertNode / insertRdfEdge
+```rust
+let mapper = TripleMapper::new();
+let (subject_node, object_node) = mapper.map_triple("Zig", "is_a", "language");
 ```
 
-`MappingConfig` controls: whitelist enforcement, inference level, batch size.
+## BatchIngestor
 
-## Inference engine
-
-`ontology.inference` applies a configurable set of rdfs/OWL rules during mapping:
-
-- `rdfs:subClassOf` transitivity
-- `owl:sameAs` merging
-- `rdfs:domain`/`rdfs:range` type inference
-
-Rules are applied before `flush()` writes to the Library, so inferred triples are stored as first-class edges.
-
-## YAGO integration
-
-`ontology.yago` provides:
-- Type URI helpers (e.g., `yago:Person` → canonical string)
-- Predicate priority ordering for LOD slot assignment
-- `isYagoType(uri) bool` — fast check used by the whitelist filter
-
-## Migration
-
-`ontology.migration` provides schema upgrade helpers for the `coral_nodes` and `coral_edges` SQLite tables.
+`BatchIngestor` wraps a `Library` reference and provides buffered insertion with explicit `flush()` control. Nodes with embeddings are flushed immediately; otherwise the batch flushes on capacity.
 
 ## Key files
 
-- `src/ontology/mapper.zig` — `TripleMapper`, `MappingConfig`, `FlushResult`
-- `src/ontology/inference.zig` — inference rule engine
-- `src/ontology/yago.zig` — YAGO 4.5 type/predicate helpers
-- `src/ontology/migration.zig` — SQLite schema migration
-- `src/ontology/root.zig` — umbrella re-exports
+- `coral/src/ingest.rs` — `TripleMapper`, `BatchIngestor`, `IngestError`
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (6 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/ontology/mapper.zig` | 1.0 | defines_anchor |
-| `src/coral/verify.zig` | 0.9 | used_by |
-| `src/ontology/root.zig` | 0.9 | used_by |
-| `src/ontology/migration.zig` | 0.4 | path_heuristic |
-| `src/ontology/inference.zig` | 0.4 | path_heuristic |
-| `src/ontology/yago.zig` | 0.4 | path_heuristic |
+- **No standalone ontology crate** — `TripleMapper` is embedded in `coral::ingest` rather than split across `ontology/mapper.zig`, `ontology/inference.zig`, `ontology/yago.zig`, `ontology/migration.zig`
+- **No `MappingConfig`** — configuration is hard-coded; no whitelist, inference level, or batch size settings
+- **No `YAGO_TYPE_WHITELIST`** — the Rust version has no YAGO 4.5 integration; no type URI helpers, predicate priority ordering, or whitelist filtering
+- **No inference engine** — `rdfs:subClassOf` transitivity, `owl:sameAs` merging, and `rdfs:domain`/`rdfs:range` inference are not implemented
+- **No `FlushResult`** — `BatchIngestor::flush()` returns `Result<(), IngestError>` without summary stats
+- **No schema migration** — SQLite schema migrations for `coral_nodes` / `coral_edges` are not present
+- **`map_triple` returns two `ContextNode`s** — instead of accumulating triples and flushing in batch; each call is stateless
 
+## Example
+
+```rust
+use coral::ingest::TripleMapper;
+
+let mapper = TripleMapper::new();
+let (sub, obj) = mapper.map_triple("Rust", "is_a", "language");
+assert_eq!(sub.name.as_str(), "Rust");
+assert_eq!(obj.name.as_str(), "language");
+assert_eq!(sub.lod.len(), 3); // triple string, subject->object, subject
+```
+
+## Zig reference
+
+See `../doc/capabilities/ontology/CAPABILITY.md` in the Zig guidance source tree for the original full ontology stack: `TripleMapper`, `MappingConfig`, `FlushResult`, inference engine, YAGO 4.5 integration, and schema migration.

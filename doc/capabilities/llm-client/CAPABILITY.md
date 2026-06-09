@@ -1,93 +1,75 @@
 ---
 name: llm-client
-description: Minimal LLM HTTP client (LlmClient) supporting OpenAI-compatible chat-completion endpoints and Ollama. Handles think-mode toggle for reasoning models, response post-processing (stripThinkBlock, isMalformedResponse), and malformed-response fallback. Used by guidance synthesis, local-model-decomposition, and coral L5 fallback.
+description: Minimal LLM HTTP client (LlmClient) supporting OpenAI-compatible chat-completion endpoints. Provides context packing (ContextPacker) for token-budget management and regex-based PII anonymization.
 anchors:
   - LlmClient
-  - LlmConfig
   - LlmError
-  - stripThinkBlock
-  - isMalformedResponse
-  - anonymizeContext
-  - AnonymizationPattern
+  - ChatMessage
+  - ContextPacker
+  - anonymize
 ---
 
 # LLM Client
 
-`src/llm/root.zig` exports `LlmClient` and `LlmConfig`, a thin HTTP wrapper over OpenAI-compatible `/v1/chat/completions` endpoints. Post-processing helpers live in `src/llm/llm.zig`.
+`llm/src/client.rs` exports `LlmClient`, a thin HTTP wrapper over OpenAI-compatible `/v1/chat/completions` endpoints using synchronous `ureq`. The `ContextPacker` handles token estimation and truncation, and `anonymize` strips PII from context before it is sent to frontier LLMs.
 
-## LlmConfig
+## LlmClient
 
-```zig
-pub const LlmConfig = struct {
-    api_url: []const u8,
-    model: []const u8,
-    think: ?bool = null,    // null=off, true=explicit think, false=suppress think
-    timeout_ms: u32 = 10000,
-    debug: bool = false,
-};
+```rust
+let client = LlmClient::new("http://localhost:11434/v1", "llama3");
+let response = client.chat_complete(&[
+    ChatMessage { role: "system".into(), content: "You are a helpful assistant.".into() },
+    ChatMessage { role: "user".into(), content: "Hello!".into() },
+])?;
 ```
 
-Model references use `"provider:model:name"` format (e.g., `"local:code:latest"`). `LlmConfig.extractModelName()` strips the provider prefix.
+## ContextPacker
 
-## Think-mode
+A token-budget manager that estimates tokens at ~¼ of byte length and truncates context with a `"..."` suffix when it exceeds `max_tokens`.
 
-The `think` field controls the Ollama `think` parameter:
+## Anonymization
 
-| Value | Behaviour |
-|-------|-----------|
-| `null` | Parameter not sent (standard models) |
-| `true` | `"think":true` — thinking explicitly enabled |
-| `false` | `"think":false` — suppress thinking on a thinking-capable model used in non-thinking slot |
+`anonymize()` applies four regex patterns in sequence to redact PII:
 
-`isThinkingModel()` returns `true` only when `think == true`.
-
-## Response post-processing
-
-`stripThinkBlock(response)` removes `<think>…</think>` preamble that reasoning models emit before the actual answer. `isMalformedResponse(text)` detects non-JSON, empty arrays, and residual think-block garbage — used by `LocalDecomposer` before parsing the subtask array.
-
-## Usage patterns
-
-```zig
-var client = try LlmClient.init(allocator, config);
-defer client.deinit();
-const raw = try client.complete(prompt, max_tokens, temperature, system_prompt);
-defer allocator.free(raw);
-const clean = stripThinkBlock(raw);
-```
-
-## PII anonymization
-
-`src/llm/anonymize.zig` strips PII from context before it is sent to frontier LLMs. Eleven pattern types: email, US/intl phone, credit card, US/UK/CA SSN, IPv4/IPv6, Bearer token, AWS key, generic 32-char alphanumeric token.
-
-```zig
-const result = try anonymize.anonymizeContext(allocator, raw_context, &.{
-    .email, .ipv4, .api_key_bearer, .api_key_aws,
-});
-defer allocator.free(result);
-```
-
-Patterns are applied in sequence; result of one pass becomes input of the next. Access via `@import("llm").anonymize`.
+| Pattern | Replacement |
+|---------|-------------|
+| Email addresses | `[EMAIL]` |
+| API keys / secrets | `[REDACTED]` |
+| IPv4 addresses | `[IP_ADDRESS]` |
+| Phone numbers | `[PHONE]` |
 
 ## Key files
 
-- `src/llm/root.zig` — `LlmError`, `LlmConfig`, `LlmClient`; re-exports `anonymize` namespace
-- `src/llm/llm.zig` — `stripThinkBlock`, `isMalformedResponse`, `extractCommentTag`, `stripPreamble`
-- `src/llm/anonymize.zig` — `AnonymizationPattern`, `anonymizeContext`
-- `src/common/local_model.zig` — primary consumer (`LocalDecomposer`)
-- `src/guidance/staged.zig` — guidance synthesis consumer
+- `llm/src/client.rs` — `LlmClient`, `ChatMessage`, `LlmError`, `chat_complete()`
+- `llm/src/context_packer.rs` — `ContextPacker`, `estimate_tokens()`, `truncate_to_budget()`, `pack_context()`
+- `llm/src/anonymize.rs` — `anonymize()` function with `lazy_static` regex patterns
+- `llm/src/embeddings.rs` — `EmbeddingProvider` trait, `OllamaEmbedding`, `OpenAiEmbedding`, `NoopEmbedding`, `BatchEmbedding`, `create_embedding_provider`
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/llm/anonymize.zig` | 1.0 | defines_anchor |
-| `src/llm/llm.zig` | 1.0 | defines_anchor |
-| `src/llm/root.zig` | 0.9 | used_by |
-| `src/llm/root_tests.zig` | 0.9 | used_by |
-| `src/guidance/query/llm_filter.zig` | 0.4 | path_heuristic |
-| `src/llm/context_packer.zig` | 0.4 | path_heuristic |
-| `src/llm/token_budget.zig` | 0.4 | path_heuristic |
-| `src/guidance/query/llm_filter_batch.zig` | 0.4 | path_heuristic |
-| `src/llm/context_compressor.zig` | 0.4 | path_heuristic |
+- **`async-openai` not used** — the Rust `LlmClient` uses synchronous `ureq` for HTTP calls, not the `async-openai` crate; the user spec mentions `async-openai` but the actual implementation uses `ureq`
+- **No `LlmConfig` struct** — configuration is passed directly as `api_base` + `model` strings to `LlmClient::new()`
+- **No `think` mode** — the Rust client does not support the Ollama `think` parameter or reasoning-model post-processing (`stripThinkBlock`, `isMalformedResponse`)
+- **`ChatMessage` is a plain struct** — not Zig's tagged union pattern; serialized via `serde_json`
+- **`anonymize` is a free function** — replaces Zig's `anonymizeContext(allocator, raw_context, &.{...patternSelection})`; uses `regex::Regex` via `lazy_static` instead of Zig's `std.mem` scanning
+- **Simpler PII patterns** — only 4 patterns vs. Zig's 11; no credit card, SSN, Bearer token, AWS key, or generic token patterns
+- **No `LlmConfig.extractModelName()`** — `model()` returns the string as-is
 
+## Example
+
+```rust
+use llm::client::{LlmClient, ChatMessage};
+
+let client = LlmClient::new("http://localhost:11434/v1", "llama3");
+let response = client.chat_complete(&[
+    ChatMessage {
+        role: "user".into(),
+        content: "Say hello in one word.".into(),
+    },
+]);
+assert!(response.is_ok());
+```
+
+## Zig reference
+
+See `../doc/capabilities/llm-client/CAPABILITY.md` in the Zig guidance source tree for the original `LlmClient`, `LlmConfig`, `stripThinkBlock`, `isMalformedResponse`, and the full 11-pattern `anonymizeContext` implementation.

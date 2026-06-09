@@ -1,96 +1,149 @@
 ---
 name: wasm-tools
-description: L2 Workflow Cache tier using Extism (libextism) for sandboxed WASM tool execution. Binary IPC schema (BinaryExecutionRequest/BinaryExecutionResult) is fully defined. WasmTool registration and findWasmTool() matching are implemented. Extism execution path is a TODO stub (P3.3).
+description: Binary IPC schema for Extism WASM boundary with #[repr(C, packed)] structs. WasmRuntime trait abstracts plugin loading. ExtismWasmRuntime implements it using the extism Rust crate.
 anchors:
   - BinaryExecutionRequest
   - BinaryExecutionResult
   - BinaryHeader
-  - WasmTool
-  - findWasmTool
+  - WasmRuntime
+  - ExtismWasmRuntime
+  - WasmPlugin
+  - PayloadType
+  - IpcError
 ---
 
 # WASM Tools
 
-`src/wasm/wasm.zig` defines the binary IPC schema and Extism C-API bindings for the L2 cache tier. The binary types and tool registration are fully implemented; the Extism execution path inside `QueueReactor.route()` is a TODO stub pending P3.3.
-
-## Implementation status
-
-| Component | Status |
-|-----------|--------|
-| `BinaryExecutionRequest` / `BinaryExecutionResult` extern structs | Implemented |
-| `BinaryHeader`, `PayloadType`, `BinaryContextNode` schema | Implemented |
-| `Library.insertWasmTool()` + `findWasmTool()` in QueueReactor | Implemented |
-| Extism C-API bindings (`ExtismPlugin`, `HostFn`, etc.) | Defined |
-| Actual Extism `plugin.call("execute", payload)` in `route()` | TODO P3.3 stub |
-| `ExecutionRequestBuilder` fluent builder (Arena #4) | Planned — not yet implemented |
-
-## Planned architecture (P3.3)
-
-```
-QueueReactor.route()
-  → findWasmTool(query)                       ← match by name or provides bitset
-  → ExecutionRequestBuilder.build()           ← arena-backed binary payload (Arena #4)
-  → extism_plugin_call("execute", payload)    ← sandboxed WASM execution
-  → BinaryExecutionResult.getProvidesBitSet() ← decode dynamic provides words
-  → cacheResult() → L1
-```
+`wasm_ipc/src/lib.rs` defines the binary IPC schema and `coral/src/wasm_runtime.rs` defines the wasm runtime abstraction for the L2 cache tier.
 
 ## Binary IPC schema
 
-All messages use a fixed-size header (`BinaryHeader`) followed by a payload:
+All messages use a fixed-size header (`BinaryHeader`) followed by a payload, encoded with `#[repr(C, packed)]`:
 
-```
-BinaryHeader {
-    magic: [4]u8  = "CRAL"
-    version: u8   = BINARY_SCHEMA_VERSION (1)
-    payload_type: PayloadType  (enum: execution_request | execution_result | context_node)
-    payload_len: u32
+```rust
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct BinaryHeader {
+    pub magic: [u8; 4],       // "GRPH"
+    pub version: u32,         // BINARY_SCHEMA_VERSION (1)
+    pub payload_type: u32,    // PayloadType enum
+    pub payload_size: u32,
+    pub checksum: u32,
+}
+
+#[repr(C, packed)]
+pub struct BinaryExecutionRequest {
+    pub header: BinaryHeader,
+    pub target_id: i64,
+    pub input_offset: u32,
+    pub input_len: u32,
+    pub flags: u32,
+}
+
+#[repr(C, packed)]
+pub struct BinaryExecutionResult {
+    pub header: BinaryHeader,
+    pub success: u32,
+    pub error_code: u32,
+    pub output_offset: u32,
+    pub output_len: u32,
+    pub provides_words_offset: u32,
+    pub provides_words_count: u32,
 }
 ```
 
-`BinaryExecutionRequest` and `BinaryExecutionResult` are `extern struct` types (no padding, `align(1)` fields) for direct BLOB I/O. The result includes a dynamic `provides_words` array (DynamicBitSetUnmanaged serialized as u64 LE words) appended after the fixed header; `getProvidesBitSet()` reconstructs it.
+## Byte-order encoding
 
-## WasmTool registration
+All fields are manually encoded with `to_le_bytes()` / `from_le_bytes()`:
 
-Tools are registered in `Library` with name and `provides` bitset:
-
-```zig
-try library.insertWasmTool(.{
-    .name = "summarize",
-    .wasm_bytes = module_bytes,
-    .provides = capabilities_bitset,
-});
+```rust
+pub fn encode_request(req: &BinaryExecutionRequest, input: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(size_of::<BinaryExecutionRequest>() + input.len());
+    buf.extend_from_slice(&req.header.magic);
+    buf.extend_from_slice(&req.header.version.to_le_bytes());
+    buf.extend_from_slice(&req.header.payload_type.to_le_bytes());
+    buf.extend_from_slice(&req.header.payload_size.to_le_bytes());
+    buf.extend_from_slice(&req.header.checksum.to_le_bytes());
+    buf.extend_from_slice(&req.target_id.to_le_bytes());
+    buf.extend_from_slice(&req.input_offset.to_le_bytes());
+    buf.extend_from_slice(&req.input_len.to_le_bytes());
+    buf.extend_from_slice(&req.flags.to_le_bytes());
+    buf.extend_from_slice(input);
+    buf
+}
 ```
 
-`findWasmTool()` in `QueueReactor` matches by name or by checking if the tool's `provides` bitset covers the query's required capabilities.
+## WasmRuntime trait
 
-## ExecutionRequestBuilder (planned)
+```rust
+pub trait WasmRuntime: Send + Sync {
+    fn load_plugin(&self, wasm_bytes: &[u8]) -> Result<Box<dyn WasmPlugin>, WasmError>;
+    fn load_plugin_from_file(&self, path: &Path) -> Result<Box<dyn WasmPlugin>, WasmError>;
+}
 
-An arena-backed fluent builder for assembling the binary payload will be added in P3.3. The payload buffer (`ArrayListUnmanaged(u8)`) is already arena-like in structure — P3.3 formalizes it. Only the serialized bytes escape to the Extism call; the arena is freed after the call returns.
+pub trait WasmPlugin: Send {
+    fn call(&mut self, payload: &[u8]) -> Result<Vec<u8>, WasmError>;
+}
+```
 
-## Key types (re-exported from `context_node_schema`)
+## ExtismWasmRuntime
 
-- `BINARY_SCHEMA_VERSION` — current wire format version (1)
-- `BINARY_MAGIC` — `"CRAL"` magic bytes
-- `PayloadType` — `execution_request | execution_result | context_node`
-- `BinaryHeader` — fixed 8-byte header
-- `BinaryContextNode` — binary encoding of a ContextNode for WASM IPC
+```rust
+use coral::wasm_runtime::{ExtismWasmRuntime, WasmRuntime};
+
+let runtime = ExtismWasmRuntime::new();
+let mut plugin = runtime.load_plugin_from_file(Path::new("plugin.wasm"))?;
+let output = plugin.call(b"input data")?;
+```
+
+The `ExtismWasmRuntime` wraps the `extism` Rust crate internally:
+
+```rust
+impl WasmRuntime for ExtismWasmRuntime {
+    fn load_plugin(&self, wasm_bytes: &[u8]) -> Result<Box<dyn WasmPlugin>, WasmError> {
+        let plugin = extism::Plugin::new(wasm_bytes, [], true)
+            .map_err(|e| WasmError::PluginLoad(e.to_string()))?;
+        Ok(Box::new(ExtismPlugin { plugin }))
+    }
+}
+
+impl WasmPlugin for ExtismPlugin {
+    fn call(&mut self, payload: &[u8]) -> Result<Vec<u8>, WasmError> {
+        let result = self.plugin.call("execute", payload)
+            .map_err(|e| WasmError::PluginCall(e.to_string()))?;
+        Ok(result)
+    }
+}
+```
+
+## Dynamic provides bitset decoding
+
+`get_provides_bitset()` reconstructs a `BitVec` from the dynamic words array appended to the payload:
+
+```rust
+use wasm_ipc::{decode_result, get_provides_bitset};
+
+let (result, output) = decode_result(&buf)?;
+let provides = get_provides_bitset(&result, &buf)?;
+```
 
 ## Key files
 
-- `src/wasm/wasm.zig` — `BinaryExecutionRequest`, `BinaryExecutionResult`, Extism C-API types
-- `src/coral/context_node_schema.zig` — `BinaryHeader`, `BinaryContextNode`, `PayloadType`, schema constants
-- `src/coral/db.zig` — `Library.insertWasmTool`, `WasmTool` struct
-- `src/coral/cache.zig` — L2 `route()` stub, `findWasmTool()`
+- `wasm_ipc/src/lib.rs` — `BinaryHeader`, `BinaryExecutionRequest`, `BinaryExecutionResult`, `BinaryContextNode`, `PayloadType`, `IpcError`, `encode_request`, `decode_result`, `get_provides_bitset`
+- `coral/src/wasm_runtime.rs` — `WasmRuntime` trait, `WasmPlugin` trait, `ExtismWasmRuntime`
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (5 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/coral/context_node_schema.zig` | 1.0 | defines_anchor |
-| `src/coral/db.zig` | 1.0 | defines_anchor |
-| `src/coral/root.zig` | 0.9 | used_by |
-| `src/wasm/execution_request.zig` | 0.4 | path_heuristic |
-| `src/wasm/wasm.zig` | 0.4 | path_heuristic |
+| Aspect | Zig | Rust |
+|--------|-----|------|
+| Struct layout | `extern struct` with `align(1)` | `#[repr(C, packed)]` |
+| Byte encoding | `@bitCast` / `mem.readIntSliceLittle` | `to_le_bytes()` / `from_le_bytes()` |
+| WASM runtime | Extism C-API (`libextism`) | `extism` Rust crate |
+| Magic bytes | `"CRAL"` (`0x43, 0x52, 0x41, 0x4C`) | `"GRPH"` (`0x47, 0x52, 0x50, 0x48`) |
+| Provides bitset | `DynamicBitSetUnmanaged` → `getProvidesBitSet()` | `BitVec` → `get_provides_bitset()` |
+| WasmTool registration | `Library.insertWasmTool()` with `wasm_bytes` | Not yet ported — `WasmTool` type exists in `common/src/types.rs` |
+| Execution path | `QueueReactor.route()` TODO stub | `ExtismPlugin::call("execute", payload)` implemented |
 
+## Zig reference
+
+See `doc/capabilities/wasm-tools/CAPABILITY.md` in the Zig project for the original module design (Binary schema, WasmTool registration, ExecutionRequestBuilder).

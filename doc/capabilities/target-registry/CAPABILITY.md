@@ -1,94 +1,105 @@
 ---
 name: target-registry
-description: DAG-based target registry for guidance build pipelines. TargetRegistry stores named Target nodes with dependency and capability bitsets. TargetBuilder (in registry.zig) is the canonical Fluent Builder pattern in this codebase — chained *Self setters, deferred error at register(). StringInterner provides thread-safe string→bitset-index interning via RwLock.
+description: DAG-based target registry for build pipelines. Target (bon::Builder) stores node metadata with dependency/provides bitsets. TargetRegistry indexes by name and bit index. CapabilityRegistry provides thread-safe string↔bitset-index interning via RwLock.
 anchors:
-  - TargetRegistry
-  - TargetBuilder
   - Target
-  - StringInterner
+  - TargetBuilder
+  - TargetRegistry
+  - CapabilityRegistry
+  - ArcIntern
 ---
 
 # Target Registry
 
-`src/common/registry.zig` + `src/common/target.zig` + `src/common/interner.zig` implement the build target DAG used by both guidance (`src/guidance/`) and the coral ingestion pipeline (`src/coral/targets.zig`).
+`common/src/registry.rs` + `common/src/interner.rs` + `dag/src/registry.rs` implement the build target DAG. The `dag/` crate re-exports `Target` from `common/` and adds a richer `TargetRegistry` with provider queries.
 
 ## Target
 
-A `Target` represents one node in the capability DAG:
+A `Target` represents one node in the capability DAG, built via `bon::Builder`:
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `id` | `i64` | Stable numeric ID |
-| `name` | `[]const u8` | Interned name string |
-| `target_type` | `TargetType` | `.file`, `.phony`, `.abstract` |
-| `executor` | `ExecutorKind` | `.native`, `.docker`, `.wasm(WasmExecutor)` |
-| `depends` | `DynamicBitSetUnmanaged` | Bitset of required capability indices |
-| `provides` | `DynamicBitSetUnmanaged` | Bitset of provided capability indices |
-| `command` | `[]const u8` | Shell command or empty |
-| `essential` | `bool` | Must run in every plan |
+| `name` | `ArcIntern<str>` | Interned name string |
+| `target_type` | `TargetType` | `File`, `Phony`, `Abstract` |
+| `executor` | `ExecutorKind` | `Native`, `Docker`, `Wasm` |
+| `depends` | `BitVec` | Bitset of required capability indices |
+| `provides` | `BitVec` | Bitset of provided capability indices |
+| `command` | `String` | Shell command (defaults to empty) |
+| `essential` | `bool` | Must run in every plan (defaults to false) |
 
-`dependsSatisfiedBy(available)` and `distanceFrom(available)` enable topological sort and plan generation.
+## TargetBuilder — bon::Builder
 
-## TargetBuilder — canonical Fluent Builder
+```rust
+use guidance_common::registry::Target;
 
-```zig
-try registry.target("build", .file)
-    .depends(&.{"compile", "link"})
-    .provides(&.{"artifact"})
-    .command("zig build -Doptimize=ReleaseFast")
-    .essential()
-    .register();
+let t = Target::new()
+    .id(1)
+    .name("build".into())
+    .target_type(TargetType::File)
+    .executor(ExecutorKind::Native)
+    .depends(bitvec![0, 1])
+    .provides(bitvec![1, 0])
+    .command("cargo build".into())
+    .essential(true)
+    .build();
 ```
 
-`TargetBuilder` accumulates configuration through chained `*Self` setters. Each setter tests `if (self.err != null) return self;` and records any allocation error in `err: ?anyerror`. The terminal method `register()` is the only `try` point — it surfaces the accumulated error, transfers ownership to the registry, and sets `self.target = null`.
+## CapabilityRegistry — RwLock interned string mapping
 
-The factory `TargetRegistry.target(name, type)` returns the builder by value. Any allocation failure at factory time is encoded in the builder's `err` field, not propagated to the caller.
+`CapabilityRegistry` in `common/src/interner.rs` provides thread-safe name↔index interning with double-checked locking:
 
-## TargetSchema — DynamicEditable for Target
+```rust
+use guidance_common::interner::CapabilityRegistry;
 
-`TargetSchema` (in `target.zig`) builds a runtime `Accessor` array for `Target` fields, enabling `DynamicEditable`-style string-driven get/set. It must be **heap-allocated** via `TargetSchema.create(allocator, interner)` because the bitset vtables for `depends` and `provides` are stored in the schema struct itself — stack allocation would dangle the vtable pointers on move.
+let reg = CapabilityRegistry::new();
+let idx = reg.intern("compile");   // returns 0
+let idx2 = reg.intern("compile");  // returns 0 (same)
+let named = reg.get_name(0);       // Some("compile")
 
-## StringInterner — RwLock-protected index mapping
-
-`StringInterner` maps interned strings to monotonically increasing bit indices. Used by `TargetBuilder.depends()` and `.provides()` to convert string names to bitset positions.
-
-Thread safety: `std.Thread.RwLock` with double-checked locking in `intern()` — shared lock for lookup (fast path), write lock for insertion (slow path).
-
-## coral/targets.zig — YAGO ingestion DAG
-
-`src/coral/targets.zig` defines the 7-node YAGO 4.5 ingestion pipeline as `IngestTargetDefs`:
-
-```
-yago_ingest (phony)
-├── yago_download  — fetch YAGO 4.5 TTL
-├── yago_parse     — Turtle → triples
-├── yago_map       — triples → ContextNodes + edges
-├── yago_embed     — compute embeddings
-├── yago_index     — build ANN index
-└── yago_verify    — integrity checks
+// Convert to/from bitsets
+let bits = reg.to_bitvec(&["compile", "link"]);
+let names: Vec<ArcIntern<str>> = reg.bitvec_to_names(&bits);
 ```
 
-These are static compile-time-known targets; `IngestTargetDefs` uses stack-allocated `[N]usize` dependency arrays. `MultiArrayList` / dynamic registry is not used here — the FLUENT_WVR_REFACTOR guidance explicitly preserves this as correct for a fixed small DAG.
+## TargetRegistry — dag-level registry
+
+The `dag` crate's `TargetRegistry` (`dag/src/registry.rs`) wraps `Vec<Target>` with provider query logic:
+
+```rust
+use dag::registry::TargetRegistry;
+
+let mut reg = TargetRegistry::new();
+reg.register(target)?;
+
+// Lookup
+let t = reg.get("build");
+let t = reg.get_by_bit_index(1);
+
+// Provider queries
+let providers = reg.find_providers(&required_bits);
+let providers = reg.get_providers(3);
+
+// Enumeration
+for name in reg.list_names() { /* ... */ }
+for essential in reg.essential_targets() { /* ... */ }
+```
 
 ## Key files
 
-- `src/common/registry.zig` — `TargetRegistry`, `TargetBuilder`
-- `src/common/target.zig` — `Target`, `TargetType`, `ExecutorKind`, `WasmExecutor`, `TargetSchema`
-- `src/common/interner.zig` — `StringInterner` (RwLock + double-checked locking)
-- `src/coral/targets.zig` — `IngestTargetDefs`, YAGO pipeline constants
+- `registry/src/lib.rs` — `Target` (bon::Builder), `TargetRegistry`, `CapabilityRegistry`
 
-<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Semantic Deviations
 
-| File | Confidence | Reason |
-|------|-----------|--------|
-| `src/dag/registry.zig` | 1.0 | defines_anchor |
-| `src/dag/context.zig` | 0.9 | used_by |
-| `src/dag/json_parser.zig` | 0.9 | used_by |
-| `src/dag/repl.zig` | 0.9 | used_by |
-| `src/dag/resolver.zig` | 0.9 | used_by |
-| `src/dag/root.zig` | 0.9 | used_by |
-| `src/dag/target.zig` | 0.7 | keyword_overlap |
-| `src/coral/targets.zig` | 0.4 | path_heuristic |
-| `src/dag/target_state.zig` | 0.4 | path_heuristic |
+| Aspect | Zig | Rust |
+|--------|-----|------|
+| Builder | `TargetBuilder` manual `*Self` fluent chain | `bon::Builder` derive macro (`#[builder(start_fn = new)]`) |
+| Interning | `StringInterner` with `std.Thread.RwLock` | `CapabilityRegistry` with `std::sync::RwLock` |
+| String type | `[]const u8` slices | `ArcIntern<str>` via `internment` crate |
+| Bitset type | `DynamicBitSetUnmanaged` | `bitvec::vec::BitVec` |
+| Error handling | Deferred error in builder, `register()` surfaces it | Immediate `Result` from `register()` |
+| Schema | `TargetSchema` with `DynamicEditable` | Not replicated — fields accessed directly |
 
+## Zig reference
+
+See `doc/capabilities/target-registry/CAPABILITY.md` in the Zig project for the original module design (TargetBuilder fluent chain, StringInterner, TargetSchema, IngestTargetDefs).

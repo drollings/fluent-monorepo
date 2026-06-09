@@ -1,4 +1,4 @@
-use guidance_common::types::{GuidanceDoc, Member};
+use guidance_types::{GuidanceDoc, Member};
 use serde_json::{json, Value};
 
 fn member_to_json(member: &Member) -> Value {
@@ -65,8 +65,8 @@ fn member_to_json(member: &Member) -> Value {
     obj
 }
 
-fn member_type_str(t: guidance_common::types::MemberType) -> &'static str {
-    use guidance_common::types::MemberType::*;
+fn member_type_str(t: guidance_types::MemberType) -> &'static str {
+    use guidance_types::MemberType::*;
     match t {
         FnDecl => "fn_decl",
         FnPrivate => "fn_private",
@@ -152,7 +152,7 @@ pub fn doc_to_json_string(doc: &GuidanceDoc) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta, Param};
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta, Param};
 
     fn make_test_doc() -> GuidanceDoc {
         GuidanceDoc {

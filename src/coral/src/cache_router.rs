@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use guidance_common::error::CacheError;
-use guidance_common::types::GraphNode;
+use guidance_types::GraphNode;
 
 use crate::cache_l1::{CacheTier, RoutingResult};
 use crate::db::Library;
@@ -195,7 +195,7 @@ impl ParallelRouter {
 
 #[cfg(test)]
 mod tests {
-    use guidance_common::types::ContextNode;
+    use guidance_types::ContextNode;
 
     use super::*;
     use crate::cache_l1::CacheTier;

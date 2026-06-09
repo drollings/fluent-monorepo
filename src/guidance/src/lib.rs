@@ -7,7 +7,7 @@
 //! - `sync_engine` — File watcher and guidance doc generation (gen, status, staleness)
 //! - `query` — Query pipeline: `identifier`, `strategy` (FSM), `llm_filter`, `llm_filter_batch`, `synthesize`
 //! - `sync` — Sync infrastructure: `json_store`, `json_writer`, `staleness`, `comments`
-//! - `vector` — Vector search: `vector_db` (SQLite + cosine), `math`, `quantized_embedding`, `semantic_aliases`
+//! - `vector` — Vector search: `vector_db` (SQLite + cosine)
 #![allow(clippy::too_many_arguments)]
 pub mod ast_parser;
 pub mod config;
@@ -32,8 +32,5 @@ pub mod sync {
 }
 
 pub mod vector {
-    pub mod math;
-    pub mod quantized_embedding;
-    pub mod semantic_aliases;
     pub mod vector_db;
 }

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use thiserror::Error;
 
-use guidance_common::types::GuidanceDoc;
+use guidance_types::GuidanceDoc;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -81,7 +81,7 @@ fn insert_comments(source: &str, doc: &GuidanceDoc) -> Result<String, SyncError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
     #[test]
     fn test_insert_comment_on_function() {

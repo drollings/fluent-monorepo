@@ -1,4 +1,4 @@
-use guidance_common::types::GuidanceDoc;
+use guidance_types::GuidanceDoc;
 use guidance_llm::client::{ChatMessage, LlmClient};
 use thiserror::Error;
 
@@ -204,15 +204,15 @@ pub fn enhance_doc(
             .unwrap_or(member.name.as_str());
 
         let result = match member.type_name {
-            guidance_common::types::MemberType::FnDecl
-            | guidance_common::types::MemberType::FnPrivate
-            | guidance_common::types::MemberType::Method
-            | guidance_common::types::MemberType::MethodPrivate => {
+            guidance_types::MemberType::FnDecl
+            | guidance_types::MemberType::FnPrivate
+            | guidance_types::MemberType::Method
+            | guidance_types::MemberType::MethodPrivate => {
                 enhancer.enhance_function(member.name.as_str(), sig, module)
             }
-            guidance_common::types::MemberType::Struct
-            | guidance_common::types::MemberType::Enum
-            | guidance_common::types::MemberType::Union => {
+            guidance_types::MemberType::Struct
+            | guidance_types::MemberType::Enum
+            | guidance_types::MemberType::Union => {
                 enhancer.enhance_struct(member.name.as_str(), sig, module)
             }
             _ => continue,
@@ -241,7 +241,7 @@ pub fn enhance_doc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
     #[test]
     fn test_score_docstring_short() {

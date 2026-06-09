@@ -98,31 +98,11 @@ impl Pipeline {
     }
 }
 
-use std::sync::Arc;
 use std::time::Instant;
 
+use guidance_traits::{WorkContext, WorkError, WorkOutput, WorkUnit};
 use internment::ArcIntern;
 use tracing::info;
-
-use crate::traits::{WorkContext, WorkError, WorkOutput, WorkUnit};
-
-impl WorkUnit for Arc<dyn WorkUnit> {
-    fn name(&self) -> &str {
-        (**self).name()
-    }
-
-    fn depends(&self) -> &[ArcIntern<str>] {
-        (**self).depends()
-    }
-
-    fn provides(&self) -> &[ArcIntern<str>] {
-        (**self).provides()
-    }
-
-    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        (**self).execute(ctx)
-    }
-}
 
 pub struct Instrumented<U> {
     inner: U,
@@ -212,9 +192,8 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::{WorkContext, WorkError, WorkOutput};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn add1(x: i32) -> i32 {
         x + 1

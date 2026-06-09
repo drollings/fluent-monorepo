@@ -22,10 +22,8 @@
 )]
 pub mod builder_error;
 pub mod constants;
-pub mod content_node;
 pub mod csr_graph;
 pub mod drift;
-pub mod embeddings;
 pub mod entity;
 pub mod error;
 pub mod error_context;
@@ -35,22 +33,18 @@ pub mod freq_table;
 pub mod frozen_snapshot;
 pub mod hash;
 pub mod index_header;
-pub mod interner;
 pub mod io;
 pub mod metrics;
 pub mod pattern;
 pub mod query_cache;
-pub mod registry;
 pub mod shell;
 pub mod shell_parser;
 pub mod source;
 pub mod string;
 pub mod terminal;
 pub mod tokenizer;
-pub mod traits;
 pub mod trigram_index;
 pub mod type_inference;
-pub mod types;
 pub mod url;
 pub mod word_index;
 pub mod wrapper;
@@ -58,16 +52,10 @@ pub mod wrapper;
 #[allow(deprecated)]
 pub use builder_error::{BuilderError, Phase};
 pub use constants::*;
-pub use content_node::{generate_lod_slices, ContentNode};
 pub use csr_graph::CsrGraph;
 pub use drift::BitSetDrift;
-pub use embeddings::{
-    create_embedding_provider, parse_ollama_batch_response, parse_ollama_response,
-    parse_openai_batch_response, parse_openai_response, BatchEmbedding, EmbeddingProvider,
-    NoopEmbedding, OllamaEmbedding, OpenAiEmbedding,
-};
 pub use entity::{extract_entities, EntityFreq, EntityType};
-pub use error::{CacheError, DbError, EmbedError, IoError, RegistryError, ResolverError};
+pub use error::{CacheError, DbError, EmbedError, IoError};
 pub use error_context::{ErrorContext, HeapErrorContext};
 pub use file_lock::FileLock;
 pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
@@ -78,7 +66,6 @@ pub use hash::{
     BatchHashResult, HashAlgorithm, HashState,
 };
 pub use index_header::Header as IndexHeader;
-pub use interner::CapabilityRegistry;
 pub use io::{
     make_path_absolute, read_file_alloc, read_file_alloc_err, resolve_path, strip_path_prefix,
 };
@@ -88,7 +75,6 @@ pub use pattern::{
     Pattern, PatternType,
 };
 pub use query_cache::QueryCache;
-pub use registry::{Target, TargetRegistry};
 pub use source::{extract_excerpt, extract_simple_excerpt, NodeType};
 pub use string::{
     contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
@@ -97,13 +83,8 @@ pub use string::{
     trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
 };
 pub use terminal::{get_terminal_height, get_terminal_width, is_terminal, Color, ProgressBar};
-pub use traits::{
+pub use guidance_traits::{
     Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-};
-pub use types::{
-    ASTAnalysis, CapabilityEval, ContextNode, EdgeType, ExecutorKind, FileMatch, FileType,
-    GraphNode, GuidanceDoc, GuidanceInfo, KnnHit, Member, MemberType, Meta, NodeId, Param,
-    QueryResult, SessionId, Skill, Stage, StageKind, SyncResult, TargetId, TargetType, WasmTool,
 };
 pub use url::{is_local_host, is_private_ip, validate_https_or_local_http, UrlError};
 pub use wrapper::{

@@ -9,8 +9,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
 regex = { workspace = true }
 async-openai = { workspace = true }
 ureq = { workspace = true }
 bon = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+httpmock = { workspace = true }

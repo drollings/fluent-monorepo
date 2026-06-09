@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use guidance_common::types::GuidanceDoc;
+use guidance_types::GuidanceDoc;
 use guidance_common::word_index::WordIndex;
 use thiserror::Error;
 
@@ -8,7 +8,7 @@ use crate::query::identifier;
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
-use crate::vector::semantic_aliases::SemanticAliases;
+use guidance_vector_aliases::SemanticAliases;
 use crate::vector::vector_db::GuidanceDb;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -350,11 +350,11 @@ impl QueryEngine {
         let mut out = String::new();
         for stage in stages {
             let kind = match stage.kind {
-                guidance_common::types::StageKind::Prose => "💬 Prose",
-                guidance_common::types::StageKind::Code => "📝 Code",
-                guidance_common::types::StageKind::Metadata => "📋 Metadata",
-                guidance_common::types::StageKind::Insight => "💡 Insight",
-                guidance_common::types::StageKind::SkillDoc => "🔧 Skill",
+                guidance_types::StageKind::Prose => "💬 Prose",
+                guidance_types::StageKind::Code => "📝 Code",
+                guidance_types::StageKind::Metadata => "📋 Metadata",
+                guidance_types::StageKind::Insight => "💡 Insight",
+                guidance_types::StageKind::SkillDoc => "🔧 Skill",
                 _ => "❓",
             };
             out.push_str(&format!("## {kind}\n\n"));
@@ -502,7 +502,7 @@ impl QueryEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
     use guidance_common::word_index::WordIndex;
 
     fn make_test_doc() -> GuidanceDoc {
