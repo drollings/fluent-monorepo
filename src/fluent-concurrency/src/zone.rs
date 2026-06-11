@@ -54,8 +54,13 @@ pub struct ZoneSummary {
 pub struct Zone {
     runtime: Arc<dyn Runtime>,
     caps: CapabilitySet,
+    /// Maps task_name → assets that task depends on.
     deps: HashMap<ArcIntern<str>, Vec<ArcIntern<str>>>,
+    /// Maps task_name → assets that task provides.
     task_provides: HashMap<ArcIntern<str>, Vec<ArcIntern<str>>>,
+    /// Inverted index: asset → task_names that depend on it.
+    /// Built during registration for O(1) lookup in cancel_dependents_of.
+    provides_to_dependents: HashMap<ArcIntern<str>, Vec<ArcIntern<str>>>,
     task_names: HashMap<tokio::task::Id, ArcIntern<str>>,
     abort_handles: HashMap<ArcIntern<str>, tokio::task::AbortHandle>,
     cancelled_tasks: HashSet<ArcIntern<str>>,
@@ -73,6 +78,7 @@ impl Zone {
             caps,
             deps: HashMap::new(),
             task_provides: HashMap::new(),
+            provides_to_dependents: HashMap::new(),
             task_names: HashMap::new(),
             abort_handles: HashMap::new(),
             cancelled_tasks: HashSet::new(),
@@ -100,7 +106,15 @@ impl Zone {
         let provides: Vec<ArcIntern<str>> = unit.provides().to_vec();
 
         if !depends.is_empty() {
-            self.deps.insert(name.clone(), depends);
+            self.deps.insert(name.clone(), depends.clone());
+            // Build inverted index: for each asset this task depends on,
+            // record that this task is a dependent.
+            for dep in &depends {
+                self.provides_to_dependents
+                    .entry(dep.clone())
+                    .or_default()
+                    .push(name.clone());
+            }
         }
         if !provides.is_empty() {
             self.task_provides.insert(name.clone(), provides);
@@ -127,19 +141,50 @@ impl Zone {
 
     fn cancel_dependents_of(&mut self, name: &ArcIntern<str>) {
         let mut to_cancel: Vec<ArcIntern<str>> = Vec::new();
+        // visited: all nodes ever processed (to cancel each at most once).
         let mut visited: HashSet<ArcIntern<str>> = HashSet::new();
-        let mut stack = vec![name.clone()];
+        // active_path: nodes currently on the DFS recursion stack — used for
+        // cycle detection (a back-edge into active_path indicates a cycle).
+        let mut active_path: HashSet<ArcIntern<str>> = HashSet::new();
+        // Stack entries: (node, whether children have been expanded).
+        let mut stack: Vec<(ArcIntern<str>, bool)> = vec![(name.clone(), false)];
+        active_path.insert(name.clone());
 
-        while let Some(current) = stack.pop() {
-            if !visited.insert(current.clone()) {
+        while let Some((current, expanded)) = stack.last_mut() {
+            if *expanded {
+                // Backtrack: remove from active path.
+                active_path.remove(current);
+                stack.pop();
                 continue;
             }
-            if let Some(provides) = self.task_provides.get(&current) {
+            *expanded = true;
+
+            if !visited.insert(current.clone()) {
+                // Already processed this node from another path; still
+                // need to remove it from active_path before backtracking.
+                active_path.remove(current);
+                stack.pop();
+                continue;
+            }
+
+            // O(1): look up what this task provides, then look up which
+            // tasks depend on each provided asset via the inverted index.
+            if let Some(provides) = self.task_provides.get(current) {
                 for provided in provides {
-                    for (dep_name, deps) in &self.deps {
-                        if deps.contains(provided) && !visited.contains(dep_name) {
-                            to_cancel.push(dep_name.clone());
-                            stack.push(dep_name.clone());
+                    if let Some(dependents) = self.provides_to_dependents.get(provided) {
+                        for dep_name in dependents {
+                            if active_path.contains(dep_name) {
+                                tracing::warn!(
+                                    "Dependency cycle detected: '{}' transitively depends on itself",
+                                    dep_name,
+                                );
+                                continue;
+                            }
+                            if !visited.contains(dep_name) {
+                                to_cancel.push(dep_name.clone());
+                                active_path.insert(dep_name.clone());
+                                stack.push((dep_name.clone(), false));
+                            }
                         }
                     }
                 }
@@ -210,11 +255,17 @@ impl Future for Zone {
                             name,
                             reason,
                         });
-                    } else {
+                    } else if e.is_panic() {
                         this.cancel_dependents_of(&name);
                         this.summary.panicked.push(ZoneEvent::Panicked {
                             name,
                             info: "task panicked".into(),
+                        });
+                    } else {
+                        this.cancel_dependents_of(&name);
+                        this.summary.panicked.push(ZoneEvent::Panicked {
+                            name,
+                            info: "task terminated abnormally".into(),
                         });
                     }
                     this.active_count -= 1;
@@ -256,22 +307,12 @@ async fn execute_with_timeout_and_retry(
         let mut attempts = 0u32;
         loop {
             attempts += 1;
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                unit.execute(&ctx)
-            })) {
-                Ok(Ok(output)) => return Ok(output),
-                Ok(Err(e)) => {
+            match unit.execute(&ctx) {
+                Ok(output) => return Ok(output),
+                Err(e) => {
                     if attempts > max_retries {
                         return Err(ConcurrencyError::Io(std::io::Error::other(
                             e.to_string(),
-                        )));
-                    }
-                    tokio::time::sleep(Duration::from_millis(100 * u64::from(attempts))).await;
-                }
-                Err(_) => {
-                    if attempts > max_retries {
-                        return Err(ConcurrencyError::Io(std::io::Error::other(
-                            "task panicked",
                         )));
                     }
                     tokio::time::sleep(Duration::from_millis(100 * u64::from(attempts))).await;

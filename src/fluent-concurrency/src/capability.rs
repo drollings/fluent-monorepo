@@ -11,7 +11,7 @@ use crate::io::net::NetCapability;
 /// DbCapability requires a path to open, so it's not included by default.
 pub fn default_capability_set() -> CapabilitySet {
     CapabilitySet::new()
-        .with(FsCapability)
+        .with(FsCapability::new())
         .with(NetCapability::new())
 }
 
@@ -19,7 +19,7 @@ pub fn default_capability_set() -> CapabilitySet {
 pub fn capability_set_with_db(path: &str) -> Result<CapabilitySet, fluent_wvr::ConcurrencyError> {
     let db = DbCapability::open(path)?;
     Ok(CapabilitySet::new()
-        .with(FsCapability)
+        .with(FsCapability::new())
         .with(NetCapability::new())
         .with(db))
 }

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, VecDeque};
 pub struct PriorityQueue<T> {
     simple: VecDeque<T>,
     prioritized: BTreeMap<i32, VecDeque<T>>,
+    count: usize,
 }
 
 impl<T> PriorityQueue<T> {
@@ -15,6 +16,7 @@ impl<T> PriorityQueue<T> {
         Self {
             simple: VecDeque::new(),
             prioritized: BTreeMap::new(),
+            count: 0,
         }
     }
 
@@ -22,6 +24,7 @@ impl<T> PriorityQueue<T> {
     /// Priority 0 items are stored in a FIFO fast-path queue.
     /// Non-zero priorities are stored in a `BTreeMap` ordered by priority.
     pub fn push(&mut self, item: T, priority: i32) {
+        self.count += 1;
         if priority == 0 {
             self.simple.push_back(item);
         } else {
@@ -44,12 +47,16 @@ impl<T> PriorityQueue<T> {
                     if items.is_empty() {
                         self.prioritized.remove(&key);
                     }
+                    if item.is_some() {
+                        self.count -= 1;
+                    }
                     return item;
                 }
             }
         }
         // Pop from simple (priority 0) first
         if let Some(item) = self.simple.pop_front() {
+            self.count -= 1;
             return Some(item);
         }
         // Simple is empty, drain any remaining prioritized items (negative priorities)
@@ -59,6 +66,9 @@ impl<T> PriorityQueue<T> {
                 if items.is_empty() {
                     self.prioritized.remove(&key);
                 }
+                if item.is_some() {
+                    self.count -= 1;
+                }
                 return item;
             }
         }
@@ -67,14 +77,14 @@ impl<T> PriorityQueue<T> {
 }
 
 impl<T> PriorityQueue<T> {
-    /// Returns the total number of items across all priority levels.
+    /// Returns the total number of items across all priority levels in O(1).
     pub fn len(&self) -> usize {
-        self.simple.len() + self.prioritized.values().map(VecDeque::len).sum::<usize>()
+        self.count
     }
 
     /// Returns true if the queue contains no items.
     pub fn is_empty(&self) -> bool {
-        self.simple.is_empty() && self.prioritized.is_empty()
+        self.count == 0
     }
 
     /// Returns a reference to the highest-priority item without removing it.
@@ -111,6 +121,7 @@ impl<T> PriorityQueue<T> {
 
     /// Removes all items from the queue, returning them in priority order.
     pub fn drain(&mut self) -> impl Iterator<Item = (i32, T)> + '_ {
+        self.count = 0;
         let mut items: Vec<(i32, T)> = Vec::new();
         let prioritized = std::mem::take(&mut self.prioritized);
         for (prio, queue) in prioritized {

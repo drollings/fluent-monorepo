@@ -4,8 +4,19 @@ use std::path::Path;
 
 use fluent_wvr::{Capability, ConcurrencyError};
 
+use crate::io::check_capability;
+
 /// Capability-gated filesystem operations.
-pub struct FsCapability;
+/// Cannot be constructed directly outside this crate; use `FsCapability::new()`.
+pub struct FsCapability {
+    _priv: (),
+}
+
+impl FsCapability {
+    pub fn new() -> Self {
+        Self { _priv: () }
+    }
+}
 
 impl Capability for FsCapability {
     fn name(&self) -> &'static str {
@@ -15,6 +26,7 @@ impl Capability for FsCapability {
 
 impl FsCapability {
     pub async fn read(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, ConcurrencyError> {
+        check_capability(self)?;
         Ok(tokio::fs::read(path).await?)
     }
 
@@ -23,6 +35,7 @@ impl FsCapability {
         path: impl AsRef<Path>,
         contents: impl AsRef<[u8]>,
     ) -> Result<(), ConcurrencyError> {
+        check_capability(self)?;
         Ok(tokio::fs::write(path, contents).await?)
     }
 
@@ -30,6 +43,7 @@ impl FsCapability {
         &self,
         path: impl AsRef<Path>,
     ) -> Result<std::fs::Metadata, ConcurrencyError> {
+        check_capability(self)?;
         Ok(tokio::fs::metadata(path).await?)
     }
 }

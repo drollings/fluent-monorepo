@@ -5,6 +5,8 @@ use std::time::Duration;
 use fluent_wvr::{Capability, ConcurrencyError};
 use tokio::net::{TcpStream, ToSocketAddrs};
 
+use crate::io::check_capability;
+
 /// Capability-gated network operations.
 pub struct NetCapability {
     client: reqwest::Client,
@@ -75,10 +77,12 @@ impl NetCapability {
         &self,
         addr: impl ToSocketAddrs,
     ) -> Result<TcpStream, ConcurrencyError> {
+        check_capability(self)?;
         Ok(TcpStream::connect(addr).await?)
     }
 
     pub async fn http_get(&self, url: &str) -> Result<String, ConcurrencyError> {
+        check_capability(self)?;
         let response = self
             .client
             .get(url)
@@ -97,6 +101,7 @@ impl NetCapability {
         url: &str,
         body: &str,
     ) -> Result<String, ConcurrencyError> {
+        check_capability(self)?;
         let response = self
             .client
             .post(url)

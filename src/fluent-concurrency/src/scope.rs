@@ -55,15 +55,17 @@ impl Drop for Scope {
     fn drop(&mut self) {
         if !self.closed {
             self.tasks.abort_all();
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    while self.tasks.join_next().await.is_some() {}
-                });
-            });
-            tracing::error!(
-                "Scope dropped without calling .close().await; \
-                 all tasks were aborted and drained synchronously"
-            );
+            if std::thread::panicking() {
+                tracing::error!(
+                    "Scope dropped without calling .close().await during panic unwind; \
+                     all tasks were aborted"
+                );
+            } else {
+                panic!(
+                    "Scope dropped without calling .close().await — \
+                     all tasks were aborted. This is a structured concurrency violation."
+                );
+            }
         }
     }
 }

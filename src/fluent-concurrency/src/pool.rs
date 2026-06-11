@@ -2,9 +2,11 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use fluent_wvr::Runtime;
 use thiserror::Error;
 use tokio::sync::{Mutex, Notify, Semaphore};
 use tokio::task::JoinHandle;
@@ -90,7 +92,14 @@ pub struct WorkerPool<T: Send + 'static> {
 
 impl<T: Send + Sync + 'static> WorkerPool<T> {
     /// Creates a new worker pool with `cap` workers and a queue of `queue_capacity`.
-    pub fn new<F, Fut>(cap: usize, queue_capacity: usize, handler: F) -> Self
+    /// All worker tasks are spawned through the injected `runtime` to avoid ambient
+    /// `tokio::spawn` calls in the Data Plane.
+    pub fn new<F, Fut>(
+        runtime: Arc<dyn Runtime>,
+        cap: usize,
+        queue_capacity: usize,
+        handler: F,
+    ) -> Self
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send,
@@ -104,7 +113,8 @@ impl<T: Send + Sync + 'static> WorkerPool<T> {
             let q = Arc::clone(&queue);
             let sd = Arc::clone(&shutdown);
             let h = Arc::clone(&handler);
-            workers.push(tokio::spawn(async move {
+            let r = Arc::clone(&runtime);
+            workers.push(r.spawn(Box::pin(async move {
                 loop {
                     tokio::select! {
                         () = sd.notified() => break,
@@ -117,7 +127,7 @@ impl<T: Send + Sync + 'static> WorkerPool<T> {
                         }
                     }
                 }
-            }));
+            })));
         }
 
         Self {

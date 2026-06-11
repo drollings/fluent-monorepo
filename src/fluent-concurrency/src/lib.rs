@@ -519,6 +519,68 @@ mod tests {
         }
 
         #[tokio::test(start_paused = true)]
+        async fn test_zone_panic_cancels_dependents() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct PanicUnit {
+                name: String,
+                provides: Vec<ArcIntern<str>>,
+            }
+            impl WorkUnit for PanicUnit {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &[] }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    panic!("intentional panic cascade")
+                }
+            }
+
+            struct DepWorkUnit {
+                name: String,
+                deps: Vec<ArcIntern<str>>,
+                provides: Vec<ArcIntern<str>>,
+            }
+            impl WorkUnit for DepWorkUnit {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    Ok(WorkOutput::ok("done"))
+                }
+            }
+
+            let shared = ArcIntern::<str>::from("shared");
+            zone.register(Arc::new(PanicUnit {
+                name: "parent".into(),
+                provides: vec![shared.clone()],
+            }));
+            zone.register_with_context(
+                Arc::new(DepWorkUnit {
+                    name: "child".into(),
+                    deps: vec![shared.clone()],
+                    provides: vec![],
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            );
+
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 0);
+            assert_eq!(summary.panicked.len(), 1);
+            assert_eq!(summary.cancelled.len(), 1);
+            if let ZoneEvent::Cancelled { ref name, ref reason } = summary.cancelled[0] {
+                assert_eq!(&**name, "child");
+                assert!(matches!(reason, CancelReason::DependencyFailed));
+            } else {
+                panic!("expected Cancelled event");
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
         async fn test_zone_budget_exhaustion() {
             let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
             let caps = CapabilitySet::new();
@@ -540,6 +602,8 @@ mod tests {
         use crate::pool::{Limiter, PoolError, Queue, WorkerPool};
         use crate::queue::PriorityQueue;
         use crate::router::PartitionedRouter;
+        use crate::runtime::tokio::TokioRuntime;
+        use std::sync::Arc;
 
         #[tokio::test(start_paused = true)]
         async fn test_queue_push_and_pop_order() {
@@ -579,13 +643,18 @@ mod tests {
         async fn test_worker_pool_processes_all_jobs() {
             let results = Arc::new(std::sync::Mutex::new(Vec::new()));
             let r = Arc::clone(&results);
-            let pool = WorkerPool::new(2, 10, move |job: i32| {
-                let r = Arc::clone(&r);
-                async move {
-                    let mut guard = r.lock().unwrap();
-                    guard.push(job * 2);
-                }
-            });
+            let pool = WorkerPool::new(
+                Arc::new(TokioRuntime),
+                2,
+                10,
+                move |job: i32| {
+                    let r = Arc::clone(&r);
+                    async move {
+                        let mut guard = r.lock().unwrap();
+                        guard.push(job * 2);
+                    }
+                },
+            );
             pool.submit(1).await.unwrap();
             pool.submit(2).await.unwrap();
             pool.submit(3).await.unwrap();
@@ -602,13 +671,18 @@ mod tests {
             tokio::time::resume();
             let completed = Arc::new(AtomicUsize::new(0));
             let c = Arc::clone(&completed);
-            let pool = WorkerPool::new(2, 10, move |job: i32| {
-                let c = Arc::clone(&c);
-                async move {
-                    tokio::time::sleep(Duration::from_millis(10 * u64::try_from(job).unwrap())).await;
-                    c.fetch_add(1, Ordering::SeqCst);
-                }
-            });
+            let pool = WorkerPool::new(
+                Arc::new(TokioRuntime),
+                2,
+                10,
+                move |job: i32| {
+                    let c = Arc::clone(&c);
+                    async move {
+                        tokio::time::sleep(Duration::from_millis(10 * u64::try_from(job).unwrap())).await;
+                        c.fetch_add(1, Ordering::SeqCst);
+                    }
+                },
+            );
             pool.submit(1).await.unwrap();
             pool.submit(2).await.unwrap();
             pool.submit(3).await.unwrap();
@@ -748,20 +822,30 @@ mod tests {
             let results = Arc::new(std::sync::Mutex::new(Vec::new()));
             let r1 = Arc::clone(&results);
             let r2 = Arc::clone(&results);
-            let pool1 = WorkerPool::new(1, 10, move |job: i32| {
-                let r = Arc::clone(&r1);
-                async move {
-                    let mut guard = r.lock().unwrap();
-                    guard.push((0, job));
-                }
-            });
-            let pool2 = WorkerPool::new(1, 10, move |job: i32| {
-                let r = Arc::clone(&r2);
-                async move {
-                    let mut guard = r.lock().unwrap();
-                    guard.push((1, job));
-                }
-            });
+            let pool1 = WorkerPool::new(
+                Arc::new(TokioRuntime),
+                1,
+                10,
+                move |job: i32| {
+                    let r = Arc::clone(&r1);
+                    async move {
+                        let mut guard = r.lock().unwrap();
+                        guard.push((0, job));
+                    }
+                },
+            );
+            let pool2 = WorkerPool::new(
+                Arc::new(TokioRuntime),
+                1,
+                10,
+                move |job: i32| {
+                    let r = Arc::clone(&r2);
+                    async move {
+                        let mut guard = r.lock().unwrap();
+                        guard.push((1, job));
+                    }
+                },
+            );
 
             let router = PartitionedRouter::new(vec![pool1, pool2], |key: &String| key.len());
             router.submit(&"a".to_string(), 10).await.unwrap();
@@ -779,20 +863,30 @@ mod tests {
             let results = Arc::new(std::sync::Mutex::new(Vec::new()));
             let r1 = Arc::clone(&results);
             let r2 = Arc::clone(&results);
-            let pool1 = WorkerPool::new(1, 10, move |job: i32| {
-                let r = Arc::clone(&r1);
-                async move {
-                    let mut guard = r.lock().unwrap();
-                    guard.push((0, job));
-                }
-            });
-            let pool2 = WorkerPool::new(1, 10, move |job: i32| {
-                let r = Arc::clone(&r2);
-                async move {
-                    let mut guard = r.lock().unwrap();
-                    guard.push((1, job));
-                }
-            });
+            let pool1 = WorkerPool::new(
+                Arc::new(TokioRuntime),
+                1,
+                10,
+                move |job: i32| {
+                    let r = Arc::clone(&r1);
+                    async move {
+                        let mut guard = r.lock().unwrap();
+                        guard.push((0, job));
+                    }
+                },
+            );
+            let pool2 = WorkerPool::new(
+                Arc::new(TokioRuntime),
+                1,
+                10,
+                move |job: i32| {
+                    let r = Arc::clone(&r2);
+                    async move {
+                        let mut guard = r.lock().unwrap();
+                        guard.push((1, job));
+                    }
+                },
+            );
 
             let router = PartitionedRouter::new(vec![pool1, pool2], |key: &String| key.len());
             router.submit(&"a".to_string(), 10).await.unwrap();
@@ -965,40 +1059,65 @@ mod tests {
         use crate::io::db::DbCapability;
         use crate::io::fs::FsCapability;
         use crate::io::net::NetCapability;
+        use crate::scope::CURRENT_CAPS;
         use fluent_wvr::CapabilitySet;
 
         #[tokio::test(start_paused = true)]
         async fn test_fs_read_write_roundtrip() {
             let tmp = tempfile::NamedTempFile::new().unwrap();
             let path = tmp.path().to_path_buf();
-            let fs = FsCapability;
-            fs.write(&path, b"hello world")
-                .await
-                .expect("write failed");
-            let data = fs.read(&path).await.expect("read failed");
-            assert_eq!(data, b"hello world");
-            let meta = fs.metadata(&path).await.expect("metadata failed");
-            assert!(meta.is_file());
+            let fs = FsCapability::new();
+            let caps = CapabilitySet::new().with(FsCapability::new());
+            CURRENT_CAPS
+                .scope(caps, async {
+                    fs.write(&path, b"hello world")
+                        .await
+                        .expect("write failed");
+                    let data = fs.read(&path).await.expect("read failed");
+                    assert_eq!(data, b"hello world");
+                    let meta = fs.metadata(&path).await.expect("metadata failed");
+                    assert!(meta.is_file());
+                })
+                .await;
         }
 
         #[tokio::test(start_paused = true)]
         async fn test_net_tcp_connect_refused() {
             let net = NetCapability::new();
-            let result = net
-                .tcp_connect("127.0.0.1:1")
+            let caps = CapabilitySet::new().with(NetCapability::new());
+            let result = CURRENT_CAPS
+                .scope(caps, async { net.tcp_connect("127.0.0.1:1").await })
                 .await;
             assert!(result.is_err());
         }
 
-        #[test]
-        fn test_db_query_execute_roundtrip() {
+        #[tokio::test(start_paused = true)]
+        async fn test_db_query_execute_roundtrip() {
             let db = DbCapability::open(":memory:").unwrap();
-            db.execute("CREATE TABLE t (id INTEGER, name TEXT)").unwrap();
-            db.execute("INSERT INTO t VALUES (1, 'hello')").unwrap();
-            let rows = db.query("SELECT * FROM t").unwrap();
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0]["id"], "1");
-            assert_eq!(rows[0]["name"], "hello");
+            let caps = CapabilitySet::new().with(DbCapability::open(":memory:").unwrap());
+            CURRENT_CAPS
+                .scope(caps, async {
+                    db.execute("CREATE TABLE t (id INTEGER, name TEXT)")
+                        .await
+                        .unwrap();
+                    db.execute("INSERT INTO t VALUES (1, 'hello')")
+                        .await
+                        .unwrap();
+                    let rows = db.query("SELECT * FROM t").await.unwrap();
+                    assert_eq!(rows.len(), 1);
+                    assert_eq!(rows[0]["id"], "1");
+                    assert_eq!(rows[0]["name"], "hello");
+                })
+                .await;
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_capability_missing_denies_io() {
+            let fs = FsCapability::new();
+            let result = fs.read("/etc/passwd").await;
+            assert!(result.is_err());
+            let err = result.unwrap_err().to_string();
+            assert!(err.contains("PermissionDenied"), "expected PermissionDenied, got: {err}");
         }
 
         #[test]
@@ -1011,7 +1130,7 @@ mod tests {
 
         #[test]
         fn test_capability_gating_fs() {
-            let caps = CapabilitySet::new().with(FsCapability);
+            let caps = CapabilitySet::new().with(FsCapability::new());
             assert!(caps.get::<FsCapability>().is_some());
             assert!(caps.get::<NetCapability>().is_none());
         }
@@ -1031,10 +1150,15 @@ mod tests {
             tokio::time::resume();
             let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
             let caps = CapabilitySet::new();
-            let pool = Arc::new(WorkerPool::new(2, 10, |job: i32| async move {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                let _ = job * 2;
-            }));
+            let pool = Arc::new(WorkerPool::new(
+                Arc::clone(&runtime),
+                2,
+                10,
+                |job: i32| async move {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    let _ = job * 2;
+                },
+            ));
 
             struct PoolWorkUnit {
                 name: String,
