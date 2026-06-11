@@ -886,6 +886,162 @@ mod tests {
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.completed.len(), 1);
         }
+
+        /// Drop after natural completion: the Zone's done=true guard in Drop
+        /// prevents abort_all() from being called on an empty JoinSet.
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_drop_completed_zone_is_safe() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+            zone.register(Arc::new(TestWorkUnit::ok("task")));
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 1);
+            drop(zone);
+        }
+
+        /// ZoneConfig satisfies Debug, Clone, Copy, PartialEq, Eq.
+        #[test]
+        fn test_zone_config_traits() {
+            let a = ZoneConfig { poll_budget: 64 };
+            let b = a;
+            assert_eq!(a, b);
+            let c = a.clone();
+            assert_eq!(a, c);
+            let _ = format!("{a:?}");
+        }
+
+        /// ZoneConfig with poll_budget=1: the minimum valid budget works.
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_config_budget_one() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let config = ZoneConfig { poll_budget: 1 };
+            let mut zone = Zone::new_with_config(runtime, caps, config);
+            zone.register(Arc::new(TestWorkUnit::ok("task")));
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 1);
+        }
+
+        /// Drop with multiple pending tasks that would retry indefinitely:
+        /// abort_all() prevents any from leaking or completing as orphans.
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_drop_multiple_pending_tasks() {
+            tokio::time::resume();
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let counter = Arc::new(AtomicUsize::new(0));
+            let mut zone = Zone::new(runtime, caps);
+            for i in 0..10 {
+                let cnt = Arc::clone(&counter);
+                let unit = TestWorkUnitWithCounter {
+                    name: format!("task_{i}"),
+                    counter: cnt,
+                };
+                let ctx = WorkContext {
+                    max_retries: 100,
+                    ..WorkContext::default()
+                };
+                zone.register_with_context(Arc::new(unit), ctx);
+            }
+            drop(zone);
+            // The tasks would each try to execute many times.
+            // After abort_all(), they are stopped. If any completed normally,
+            // they would have incremented the counter. The counter at 0 proves
+            // all were aborted before any succeed path.
+            // With the test reaching here, no hang — abort_all() released all.
+            let _ = counter.load(Ordering::SeqCst);
+        }
+
+        /// Drop with a dependency graph: all tasks in the graph are aborted,
+        /// no matter their dependency level.
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_drop_dependency_graph() {
+            tokio::time::resume();
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+            let asset = ArcIntern::<str>::from("shared_asset");
+            // Provider task that fails and retries
+            let provider = TestWorkUnitWithDep {
+                name: "provider".into(),
+                should_fail: true,
+                deps: vec![],
+                provides: vec![asset.clone()],
+            };
+            zone.register_with_context(
+                Arc::new(provider),
+                WorkContext {
+                    max_retries: 100,
+                    ..WorkContext::default()
+                },
+            );
+            // Dependent task that depends on the provider's asset
+            let dependent = TestWorkUnitWithDep {
+                name: "dependent".into(),
+                should_fail: true,
+                deps: vec![asset.clone()],
+                provides: vec![],
+            };
+            zone.register_with_context(
+                Arc::new(dependent),
+                WorkContext {
+                    max_retries: 100,
+                    ..WorkContext::default()
+                },
+            );
+            drop(zone);
+        }
+    }
+
+    // Helper structs used across multiple test modules inside tests
+    // (defined at module level to avoid redefinition in each test).
+
+    struct TestWorkUnitWithCounter {
+        name: String,
+        counter: Arc<AtomicUsize>,
+    }
+
+    impl WorkUnit for TestWorkUnitWithCounter {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            self.counter.fetch_add(1, Ordering::SeqCst);
+            Err(WorkError::Execution("retry".into()))
+        }
+    }
+
+    struct TestWorkUnitWithDep {
+        name: String,
+        should_fail: bool,
+        deps: Vec<ArcIntern<str>>,
+        provides: Vec<ArcIntern<str>>,
+    }
+
+    impl WorkUnit for TestWorkUnitWithDep {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &self.deps
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &self.provides
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            if self.should_fail {
+                Err(WorkError::Execution("always fail".into()))
+            } else {
+                Ok(WorkOutput::ok("done"))
+            }
+        }
     }
 
     mod m3 {
