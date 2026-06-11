@@ -38,7 +38,6 @@
     clippy::doc_markdown,
     clippy::too_many_lines,
     clippy::large_stack_arrays,
-    clippy::non_std_lazy_statics,
     clippy::case_sensitive_file_extension_comparisons,
     clippy::zero_sized_map_values,
     clippy::unnecessary_literal_bound,
@@ -55,6 +54,7 @@ pub mod config;
 pub mod enhancer;
 pub mod plugin;
 pub mod query_engine;
+pub mod runtime;
 pub mod scanner;
 pub mod sync_engine;
 

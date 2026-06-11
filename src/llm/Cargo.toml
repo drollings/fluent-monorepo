@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 common-core = { path = "../common-core" }
 fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-wvr = { path = "../fluent-wvr" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -13,7 +14,7 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "sync"] }
 regex = { workspace = true }
 
-ureq = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 bon = { workspace = true }
 async-trait = { workspace = true }
 

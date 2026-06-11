@@ -7,7 +7,6 @@ edition.workspace = true
 common-core = { path = "../common-core" }
 rusqlite = { workspace = true }
 blake3 = { workspace = true }
-lazy_static = "1"
 thiserror = { workspace = true }
 
 [dev-dependencies]

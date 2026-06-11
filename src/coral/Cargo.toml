@@ -20,8 +20,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 bon = { workspace = true }
 rusqlite = { workspace = true }
-tokio = { workspace = true }
 regex = { workspace = true }
-ureq = { workspace = true }
 lru = { workspace = true }
 extism = { workspace = true }

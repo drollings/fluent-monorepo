@@ -1,13 +1,18 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use guidance_coral::mcp::serve_stdio_from_path;
+use coral_context::mcp::serve_stdio_from_path;
 use guidance_core::config;
+use guidance_core::runtime;
 use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_search_vector::GuidanceDb;
 use common_core::shell::run_command;
 use time::OffsetDateTime;
+use tokio::sync::oneshot;
+
+use notify::{Config as NotifyConfig, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::mpsc;
 
 mod structure;
 
@@ -119,6 +124,12 @@ enum Commands {
 
         #[arg(long)]
         all_languages: bool,
+
+        #[arg(long)]
+        watch: bool,
+
+        #[arg(long, default_value_t = 500)]
+        watch_debounce_ms: u64,
     },
     Status {
         #[arg(short = 'g', long, default_value = ".guidance")]
@@ -184,7 +195,8 @@ enum Commands {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     if cli.debug {
@@ -228,8 +240,10 @@ fn main() {
             verbose,
             regen: _,
             all_languages: _,
+            watch,
+            watch_debounce_ms,
         } => {
-            cmd_gen(
+            cmd_gen_async(
                 file.as_deref(),
                 scan.as_deref(),
                 workspace,
@@ -239,7 +253,10 @@ fn main() {
                 *no_db,
                 *dry_run,
                 *verbose,
-            );
+                *watch,
+                *watch_debounce_ms,
+            )
+            .await;
         }
         Commands::Status { guidance_dir } => cmd_status(guidance_dir),
         Commands::Clean { json_dir, db } => cmd_clean(json_dir, db),
@@ -459,7 +476,7 @@ fn cmd_init(dir: &str) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn cmd_gen(
+async fn cmd_gen_async(
     file: Option<&str>,
     scan: Option<&str>,
     workspace: &str,
@@ -469,6 +486,8 @@ fn cmd_gen(
     no_db: bool,
     dry_run: bool,
     verbose: bool,
+    watch: bool,
+    watch_debounce_ms: u64,
 ) {
     let workspace_path = PathBuf::from(workspace);
     let guidance_dir = PathBuf::from(json_dir);
@@ -491,9 +510,9 @@ fn cmd_gen(
             source_path.parent().unwrap_or(Path::new(".")).to_path_buf()
         };
         std::fs::create_dir_all(&guidance_dir).expect("create guidance dir");
-        let mut engine = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
 
         if source_path.is_dir() {
+            let engine = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
             let status = engine.status().expect("status");
             println!(
                 "Generated guidance for directory ({} stale)",
@@ -515,23 +534,43 @@ fn cmd_gen(
                 }
                 return;
             }
-            let doc = engine.gen(source_path).expect("generate guidance");
-            if verbose {
-                println!("  gen: {path} ({} members)", doc.members.len());
+            let (tx, rx) = oneshot::channel();
+            let _ = runtime::AST_POOL
+                .submit(runtime::AstGenJob {
+                    source_path: source_path.to_path_buf(),
+                    source_dir,
+                    guidance_dir: guidance_dir.clone(),
+                    config: guidance_core::sync_engine::GenConfig::default(),
+                    result_tx: tx,
+                })
+                .await;
+            match rx.await {
+                Ok(Ok(doc)) => {
+                    if verbose {
+                        println!("  gen: {path} ({} members)", doc.members.len());
+                    }
+                    println!("Generated guidance for {path}");
+                    println!(
+                        "  {} members, language: {}",
+                        doc.members.len(),
+                        doc.meta.language
+                    );
+                }
+                Ok(Err(e)) => eprintln!("error generating {path}: {e}"),
+                Err(_) => eprintln!("error: pool response canceled for {path}"),
             }
-            println!("Generated guidance for {path}");
-            println!(
-                "  {} members, language: {}",
-                doc.members.len(),
-                doc.meta.language
-            );
         }
     } else if let Some(scan_dir) = scan {
         let scan_path = PathBuf::from(scan_dir);
         std::fs::create_dir_all(&guidance_dir).expect("create guidance dir");
-        let mut engine = SyncEngine::new(guidance_dir.clone(), scan_path.clone());
-        let mut generated = 0usize;
-        walk_and_gen(&mut engine, &scan_path, force, &mut generated, verbose);
+        let generated = walk_and_gen_async(
+            guidance_dir.clone(),
+            scan_path,
+            force,
+            verbose,
+            &[],
+        )
+        .await;
         println!("Scanned {scan_dir}: generated {generated} files");
     } else {
         let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
@@ -558,8 +597,14 @@ fn cmd_gen(
             stale_files += status.stale_files;
 
             if stale_files > 0 || force {
-                let mut engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
-                walk_and_gen(&mut engine, src_dir, force, &mut generated, verbose);
+                generated += walk_and_gen_async(
+                    guidance_dir.clone(),
+                    src_dir.clone(),
+                    force,
+                    verbose,
+                    &[],
+                )
+                .await;
             }
         }
 
@@ -571,71 +616,211 @@ fn cmd_gen(
         if !no_db && !dry_run {
             let json_src = guidance_dir.join("src");
             if json_src.is_dir() {
-                if let Ok(gdb) = GuidanceDb::open(&db) {
-                    match gdb.sync_from_dir(&json_src) {
-                        Ok(count) => println!("Synced {count} nodes to {db_path}"),
-                        Err(e) => eprintln!("Warning: db sync failed: {e}"),
-                    }
+                let (tx, rx) = oneshot::channel();
+                let _ = runtime::DB_POOL
+                    .submit(runtime::DbSyncJob {
+                        json_dir: json_src,
+                        db_path: db,
+                        result_tx: tx,
+                    })
+                    .await;
+                match rx.await {
+                    Ok(Ok(count)) => println!("Synced {count} nodes to {db_path}"),
+                    Ok(Err(e)) => eprintln!("Warning: db sync failed: {e}"),
+                    Err(_) => eprintln!("Warning: db sync canceled"),
                 }
             }
         }
         println!("Sync complete.");
     }
+
+    if watch {
+        let src_dirs = src_dirs_from_config(&workspace_path);
+        start_watcher(guidance_dir, &src_dirs, workspace_path, force, verbose, watch_debounce_ms).await;
+    }
 }
 
-fn walk_and_gen(
-    engine: &mut SyncEngine,
-    dir: &Path,
-    force: bool,
-    generated: &mut usize,
-    verbose: bool,
-) {
+fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
+    let cfg = load_project_config(workspace_path);
+    if cfg.src_dirs.is_empty() {
+        vec![workspace_path.to_path_buf()]
+    } else {
+        cfg.src_dirs.iter().map(|d| workspace_path.join(d)).collect()
+    }
+}
+
+fn collect_source_files(dir: &Path, exts: &[&str]) -> Vec<PathBuf> {
+    let mut files = Vec::new();
     if !dir.is_dir() {
-        return;
+        return files;
     }
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+        return files;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.') {
-                continue;
+            if !name.starts_with('.') {
+                files.extend(collect_source_files(&path, exts));
             }
-            walk_and_gen(engine, &path, force, generated, verbose);
         } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if !matches!(ext, "zig" | "zon" | "py" | "rs" | "md") {
-                continue;
+            if exts.is_empty() || exts.contains(&ext) {
+                files.push(path);
             }
-            let rel = path.strip_prefix(&engine.source_dir).unwrap_or(&path);
-            let json_path = engine
-                .guidance_dir
-                .join("src")
-                .join(format!("{}.json", rel.display()));
-            let should_gen =
-                force || guidance_core::sync::staleness::should_generate(&json_path, &path);
-            if !should_gen {
+        }
+    }
+    files
+}
+
+async fn walk_and_gen_async(
+    guidance_dir: PathBuf,
+    source_dir: PathBuf,
+    force: bool,
+    verbose: bool,
+    filter_exts: &[&str],
+) -> usize {
+    let exts = if filter_exts.is_empty() {
+        vec!["zig", "zon", "py", "rs", "md"]
+    } else {
+        filter_exts.to_vec()
+    };
+    let files = collect_source_files(&source_dir, &exts);
+    if files.is_empty() {
+        return 0;
+    }
+
+    let pool = &*runtime::AST_POOL;
+    let mut handles = Vec::with_capacity(files.len());
+    let mut generated = 0usize;
+
+    for path in &files {
+        let rel = path.strip_prefix(&source_dir).unwrap_or(path);
+        let json_path = guidance_dir.join("src").join(format!("{}.json", rel.display()));
+        let should_gen = force || guidance_core::sync::staleness::should_generate(&json_path, path);
+        if !should_gen {
+            if verbose {
+                println!("  skip: {}", rel.display());
+            }
+            continue;
+        }
+
+        let (tx, rx) = oneshot::channel();
+        if pool
+            .submit(runtime::AstGenJob {
+                source_path: path.clone(),
+                source_dir: source_dir.clone(),
+                guidance_dir: guidance_dir.clone(),
+                config: guidance_core::sync_engine::GenConfig::default(),
+                result_tx: tx,
+            })
+            .await
+            .is_ok()
+        {
+            handles.push((rel.display().to_string(), rx));
+        }
+    }
+
+    for (rel_path, rx) in handles {
+        match rx.await {
+            Ok(Ok(doc)) => {
+                generated += 1;
                 if verbose {
-                    println!("  skip: {}", rel.display());
+                    println!("  gen: {rel_path} ({} members)", doc.members.len());
                 }
-                continue;
             }
-            match engine.gen(&path) {
-                Ok(_doc) => {
-                    *generated += 1;
-                    if verbose {
-                        println!("  gen: {}", rel.display());
-                    }
+            Ok(Err(e)) => {
+                if verbose {
+                    eprintln!("  warn: {rel_path} — {e}");
                 }
-                Err(e) => {
-                    if verbose {
-                        eprintln!("  warn: {} — {e}", rel.display());
-                    }
+            }
+            Err(_) => {
+                if verbose {
+                    eprintln!("  warn: {rel_path} — pool response canceled");
                 }
             }
         }
     }
+
+    generated
+}
+
+#[allow(clippy::needless_pass_by_value)]
+async fn start_watcher(
+    guidance_dir: PathBuf,
+    src_dirs: &[PathBuf],
+    workspace_path: PathBuf,
+    _force: bool,
+    verbose: bool,
+    debounce_ms: u64,
+) {
+    if src_dirs.is_empty() {
+        return;
+    }
+
+    let (tx, rx) = mpsc::channel();
+    let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default())
+        .expect("failed to create file watcher");
+    for dir in src_dirs {
+        if dir.is_dir() {
+            watcher
+                .watch(dir, RecursiveMode::Recursive)
+                .unwrap_or_else(|e| eprintln!("Warning: could not watch {:?}: {e}", dir));
+        }
+    }
+
+    println!("Watching for changes (debounce: {debounce_ms}ms)...");
+    let supported_exts = ["zig", "zon", "py", "rs", "md"];
+
+    loop {
+        match rx.recv() {
+            Ok(Ok(Event { paths, .. })) => {
+                for path in &paths {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("");
+                    if !supported_exts.contains(&ext) {
+                        continue;
+                    }
+                    let source_dir = find_source_dir(path, src_dirs);
+
+                    if verbose {
+                        println!("  change detected: {}", path.display());
+                    }
+
+                    let (tx_job, rx_job) = oneshot::channel();
+                    let _ = runtime::AST_POOL
+                        .submit(runtime::AstGenJob {
+                            source_path: path.clone(),
+                            source_dir: source_dir.unwrap_or_else(|| workspace_path.clone()),
+                            guidance_dir: guidance_dir.clone(),
+                            config: guidance_core::sync_engine::GenConfig::default(),
+                            result_tx: tx_job,
+                        })
+                        .await;
+                    if let Ok(Ok(doc)) = rx_job.await {
+                        if verbose {
+                            println!("  regenerated: {} ({} members)", path.display(), doc.members.len());
+                        }
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                eprintln!("Watch error: {e}");
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
+    for dir in src_dirs {
+        if path.starts_with(dir) {
+            return Some(dir.clone());
+        }
+    }
+    None
 }
 
 fn cmd_status(guidance_dir: &str) {

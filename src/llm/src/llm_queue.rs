@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use fluent_concurrency::pool::{PoolError, WorkerPool};
+use fluent_wvr::Runtime;
 use tokio::sync::oneshot;
 
 use crate::client::{ChatMessage, LlmConfig, LlmError};
@@ -30,8 +31,9 @@ pub struct LlmRequestQueue {
 }
 
 impl LlmRequestQueue {
-    pub fn new(config: &LlmQueueConfig) -> Self {
+    pub fn new(runtime: Arc<dyn Runtime>, config: &LlmQueueConfig) -> Self {
         let pool = WorkerPool::new(
+            runtime,
             config.worker_count,
             config.queue_capacity,
             |task: LlmTask| async move {
@@ -100,12 +102,13 @@ fn make_llm_request(messages: &[ChatMessage], config: &LlmConfig) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+use fluent_concurrency::runtime::tokio::TokioRuntime;
 
     #[test]
     fn test_llm_request_queue_creation() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _guard = rt.enter();
-        let queue = LlmRequestQueue::new(&LlmQueueConfig::default());
+        let queue = LlmRequestQueue::new(Arc::new(TokioRuntime), &LlmQueueConfig::default());
         let messages = vec![ChatMessage {
             role: "user".into(),
             content: "hello".into(),

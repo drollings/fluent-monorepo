@@ -1,11 +1,10 @@
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::sync::Mutex;
 
-lazy_static::lazy_static! {
-    static ref ACTIVE_TABLE: Mutex<Option<Box<FrequencyTable>>> = Mutex::new(None);
-}
+static ACTIVE_TABLE: LazyLock<Mutex<Option<Box<FrequencyTable>>>> = LazyLock::new(|| Mutex::new(None));
 
 pub type FrequencyTable = [[u16; 256]; 256];
 
@@ -52,9 +51,7 @@ pub fn default_frequency_table() -> FrequencyTable {
 }
 
 pub fn get_default_pair_freq() -> &'static FrequencyTable {
-    lazy_static::lazy_static! {
-        static ref DEFAULT: FrequencyTable = default_frequency_table();
-    }
+    static DEFAULT: LazyLock<FrequencyTable> = LazyLock::new(default_frequency_table);
     &DEFAULT
 }
 

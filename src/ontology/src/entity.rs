@@ -15,21 +15,21 @@ pub struct EntityFreq {
     pub entity_type: EntityType,
 }
 
-lazy_static::lazy_static! {
-    static ref ENTITY_STOPLIST: std::collections::HashSet<&'static str> = {
-        let mut s = std::collections::HashSet::new();
-        for w in &[
-            "The", "This", "That", "When", "Where", "What", "Why", "Who", "Which", "How",
-            "Then", "There", "Here", "Now", "Just", "Also", "Some", "Such", "Each", "Every",
-            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
-            "January", "February", "March", "April", "May", "June", "July", "August",
-            "September", "October", "November", "December",
-        ] {
-            s.insert(*w);
-        }
-        s
-    };
-}
+use std::sync::LazyLock;
+
+static ENTITY_STOPLIST: LazyLock<std::collections::HashSet<&'static str>> = LazyLock::new(|| {
+    let mut s = std::collections::HashSet::new();
+    for w in &[
+        "The", "This", "That", "When", "Where", "What", "Why", "Who", "Which", "How",
+        "Then", "There", "Here", "Now", "Just", "Also", "Some", "Such", "Each", "Every",
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        "January", "February", "March", "April", "May", "June", "July", "August",
+        "September", "October", "November", "December",
+    ] {
+        s.insert(*w);
+    }
+    s
+});
 
 fn is_capitalized(s: &str) -> bool {
     s.chars().next().is_some_and(char::is_uppercase)

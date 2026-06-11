@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::llm_queue::LlmRequestQueue;
+use crate::llm_queue::{LlmQueueConfig, LlmRequestQueue};
 
 #[derive(Error, Debug)]
 pub enum LlmError {
@@ -37,6 +37,35 @@ pub struct LlmConfig {
     #[builder(default)]
     pub show_prompts: bool,
 }
+
+struct DefaultQueue {
+    #[allow(dead_code)]
+    runtime: tokio::runtime::Runtime,
+    queue: Arc<LlmRequestQueue>,
+}
+
+impl DefaultQueue {
+    fn get() -> &'static Self {
+        static INSTANCE: LazyLock<DefaultQueue> = LazyLock::new(|| {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap();
+            let queue = runtime.block_on(async {
+                Arc::new(LlmRequestQueue::new(
+                    Arc::new(fluent_concurrency::runtime::tokio::TokioRuntime),
+                    &LlmQueueConfig::default(),
+                ))
+            });
+            DefaultQueue { runtime, queue }
+        });
+        &INSTANCE
+    }
+}
+
+static BLOCKING_CLIENT: std::sync::LazyLock<reqwest::blocking::Client> =
+    std::sync::LazyLock::new(reqwest::blocking::Client::new);
 
 pub struct LlmClient {
     pub api_base: String,
@@ -92,28 +121,10 @@ impl LlmClient {
     }
 
     pub fn chat_complete(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
-        if let Some(ref queue) = self.queue {
-            return queue.submit(messages.to_vec(), self.config.clone());
-        }
-        chat_complete_http(&self.api_base, messages, &self.model, self.config.think)
-    }
-
-    pub async fn chat_complete_async(
-        &self,
-        messages: Vec<ChatMessage>,
-    ) -> Result<String, LlmError> {
-        if let Some(ref queue) = self.queue {
-            return queue.submit_async(messages, self.config.clone()).await;
-        }
-        let api_base = self.api_base.clone();
-        let model = self.model.clone();
-        let config_think = self.config.think;
-
-        tokio::task::spawn_blocking(move || {
-            chat_complete_http(&api_base, &messages, &model, config_think)
-        })
-        .await
-        .map_err(|e| LlmError::Http(e.to_string()))?
+        let dq = DefaultQueue::get();
+        let queue = self.queue.clone().unwrap_or_else(|| dq.queue.clone());
+        dq.runtime
+            .block_on(queue.submit_async(messages.to_vec(), self.config.clone()))
     }
 }
 
@@ -134,13 +145,14 @@ pub(crate) fn chat_complete_http(
         body["think"] = serde_json::Value::Bool(true);
     }
 
-    let response = ureq::post(&url)
-        .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
+    let response = BLOCKING_CLIENT
+        .post(&url)
+        .body(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
+        .send()
         .map_err(|e| LlmError::Http(e.to_string()))?;
 
-    let mut response_body = response.into_body();
-    let body_str = response_body
-        .read_to_string()
+    let body_str = response
+        .text()
         .map_err(|e| LlmError::Api(e.to_string()))?;
 
     let parsed: serde_json::Value =

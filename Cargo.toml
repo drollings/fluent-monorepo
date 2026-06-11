@@ -4,6 +4,19 @@ members = [
     "src/fluent-wvr",
     "src/fluent-wvr-macros",
     "src/fluent-concurrency",
+    "src/llm",
+    "src/bin/guidance",
+    "src/coral",
+    "src/guidance",
+    "src/dag",
+    "src/types",
+    "src/common-core",
+    "src/content-node",
+    "src/search-vector",
+    "src/rdf",
+    "src/ontology",
+    "src/project-knowledge",
+    "src/wasm_ipc",
 ]
 
 [workspace.package]
@@ -46,8 +59,7 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # HTTP
-ureq = { version = "3", features = ["json"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 
 # Testing
@@ -71,7 +83,6 @@ memmap2 = "0.9"
 fs2 = "0.4"
 time = "0.3"
 regex = "1"
-lazy_static = "1"
 dashmap = "6"
 lru = "0.13"
 which = "4"

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
@@ -150,6 +151,33 @@ impl EmbeddingProvider for OllamaEmbedding {
         let resp_bytes = do_http_post(&url, &body, None)?;
         parse_ollama_batch_response(&resp_bytes)
     }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": text,
+        });
+        let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
+        let resp_bytes = do_http_post_async(&url, &body, None).await?;
+        parse_ollama_response(&resp_bytes)
+    }
+
+    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        let inputs: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": inputs,
+        });
+        let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
+        let resp_bytes = do_http_post_async(&url, &body, None).await?;
+        parse_ollama_batch_response(&resp_bytes)
+    }
 }
 
 /// Generic caching wrapper around any EmbeddingProvider.
@@ -264,11 +292,76 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        self.embed(text)
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = self.cache_key(text);
+        {
+            let map = self
+                .cache
+                .lock()
+                .map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
+            if let Some(cached) = map.get(&key) {
+                return Ok(cached.clone());
+            }
+        }
+        let result = self.inner.embed_async(text).await?;
+        if let Ok(mut map) = self.cache.lock() {
+            map.insert(key, result.clone());
+        }
+        Ok(result)
     }
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
-        self.embed_batch(texts)
+        let dims = self.dimensions() as usize;
+        let mut flat = Vec::with_capacity(texts.len().saturating_mul(dims));
+        let mut uncached_texts: Vec<&str> = Vec::new();
+        let mut uncached_positions: Vec<usize> = Vec::new();
+        let mut results: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+
+        for (i, text) in texts.iter().enumerate() {
+            if text.is_empty() {
+                results[i] = Some(Vec::new());
+                continue;
+            }
+            let key = self.cache_key(text);
+            if let Ok(map) = self.cache.lock() {
+                if let Some(cached) = map.get(&key) {
+                    results[i] = Some(cached.clone());
+                    continue;
+                }
+            }
+            uncached_texts.push(text);
+            uncached_positions.push(i);
+        }
+
+        if !uncached_texts.is_empty() {
+            let batch = self.inner.embed_batch_async(&uncached_texts).await?;
+            for (j, &pos) in uncached_positions.iter().enumerate() {
+                let vec = batch.vector(j).to_vec();
+                results[pos] = Some(vec.clone());
+                let key = self.cache_key(uncached_texts[j]);
+                if let Ok(mut map) = self.cache.lock() {
+                    map.insert(key, vec);
+                }
+            }
+        }
+
+        for v in results.iter().flatten() {
+            flat.extend_from_slice(v);
+        }
+
+        let count = results.len();
+        let actual_dims = if count > 0 {
+            results[0].as_ref().map_or(0, Vec::len)
+        } else {
+            0
+        };
+        Ok(BatchEmbedding {
+            flat,
+            count,
+            dims: actual_dims,
+        })
     }
 }
 
@@ -345,28 +438,72 @@ impl EmbeddingProvider for OpenAiEmbedding {
         let resp_bytes = do_http_post(&self.embeddings_url(), &body, Some(&self.api_key))?;
         parse_openai_batch_response(&resp_bytes)
     }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": text,
+        });
+        let resp_bytes = do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
+        parse_openai_response(&resp_bytes)
+    }
+
+    async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
+        let inputs: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": inputs,
+        });
+        let resp_bytes = do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
+        parse_openai_batch_response(&resp_bytes)
+    }
 }
 
-fn do_http_post(url: &str, body: &serde_json::Value, auth_header: Option<&str>) -> Result<Vec<u8>, EmbeddingError> {
-    let mut req = ureq::post(url)
-        .header("Content-Type", "application/json");
+fn async_http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
+async fn do_http_post_async(url: &str, body: &serde_json::Value, auth_header: Option<&str>) -> Result<Vec<u8>, EmbeddingError> {
+    let client = async_http_client();
+    let mut req = client.post(url);
+    req = req.header("Content-Type", "application/json");
     if let Some(token) = auth_header {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
-    let mut resp = req
-        .send_json(body)
+    let resp = req
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
-    if resp.status().as_u16() >= 400 {
-        let text = resp.body_mut().read_to_string().unwrap_or_default();
+    let status = resp.status();
+    if status.as_u16() >= 400 {
+        let text = resp.text().await.unwrap_or_default();
         return Err(EmbeddingError::RequestFailed(format!(
-            "HTTP {}: {}",
-            resp.status(),
-            text
+            "HTTP {status}: {text}",
         )));
     }
-    resp.body_mut()
-        .read_to_vec()
+    resp.bytes()
+        .await
+        .map(|b| b.to_vec())
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))
+}
+
+fn do_http_post(url: &str, body: &serde_json::Value, auth_header: Option<&str>) -> Result<Vec<u8>, EmbeddingError> {
+    static RT: std::sync::LazyLock<tokio::runtime::Runtime> = std::sync::LazyLock::new(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap()
+    });
+    RT.block_on(do_http_post_async(url, body, auth_header))
 }
 
 fn parse_float_array(arr: &[serde_json::Value]) -> Result<Vec<f32>, EmbeddingError> {
