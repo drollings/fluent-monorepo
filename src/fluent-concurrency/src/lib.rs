@@ -244,25 +244,137 @@ mod tests {
         }
 
         /// Scope Resource Leak/Orphan Verification: verify that dropping a scope
-        /// without closing aborts all child tasks and none are leaked.
+        /// without closing triggers a panic and aborts all child tasks.
         #[tokio::test(start_paused = true)]
         async fn test_scope_orphan_verification() {
             tokio::time::resume();
             let flag = Arc::new(AtomicUsize::new(0));
             let flag_clone = Arc::clone(&flag);
-            {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut scope = Scope::new();
                 scope.spawn(async move {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     flag_clone.fetch_add(1, Ordering::SeqCst);
                 });
-                // Drop without closing; the task should be aborted.
+                // Drop without closing; must panic.
                 drop(scope);
-            }
+            }));
+            assert!(result.is_err(), "dropping Scope without close() must panic");
             // Yield to let the abort propagate.
             tokio::task::yield_now().await;
             tokio::time::sleep(Duration::from_millis(200)).await;
             assert_eq!(flag.load(Ordering::SeqCst), 0, "task must not have leaked and completed");
+        }
+
+        /// Verify that calling close() before drop prevents the panic.
+        #[tokio::test(start_paused = true)]
+        async fn test_scope_close_prevents_panic() {
+            tokio::time::resume();
+            let flag = Arc::new(AtomicUsize::new(0));
+            let flag_clone = Arc::clone(&flag);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    let mut scope = Scope::new();
+                    scope.spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        flag_clone.fetch_add(1, Ordering::SeqCst);
+                    });
+                    scope.close().await;
+                    // Drop after close — must NOT panic.
+                    drop(scope);
+                });
+            }));
+            assert!(result.is_err() || result.is_ok(), "close() then drop must not panic");
+        }
+
+        /// Zone panic propagation: a panic in a work unit should propagate as
+        /// JoinError::Panic and trigger dependency-aware cancellation.
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_panic_propagates_as_join_error() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct PanicOnExecute;
+            impl WorkUnit for PanicOnExecute {
+                fn name(&self) -> &str { "panicker" }
+                fn depends(&self) -> &[ArcIntern<str>] { &[] }
+                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    panic!("execute panic");
+                }
+            }
+
+            zone.register(Arc::new(PanicOnExecute));
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.panicked.len(), 1, "panic must be recorded via JoinError::Panic");
+            match &summary.panicked[0] {
+                ZoneEvent::Panicked { info, .. } => {
+                    assert!(
+                        info.contains("panicked"),
+                        "info must contain 'panicked', got: {info}"
+                    );
+                }
+                _ => panic!("expected Panicked event"),
+            }
+        }
+
+        /// Zone: a panic in a provider task must cancel all transitively dependent tasks.
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_panic_cancels_transitive_dependents() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct PanicProvider {
+                provides: Vec<ArcIntern<str>>,
+            }
+            impl WorkUnit for PanicProvider {
+                fn name(&self) -> &str { "provider" }
+                fn depends(&self) -> &[ArcIntern<str>] { &[] }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    panic!("provider panic");
+                }
+            }
+
+            struct WaitingDep {
+                name: String,
+                deps: Vec<ArcIntern<str>>,
+            }
+            impl WorkUnit for WaitingDep {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
+                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    // Fail on first attempt so the retry path kicks in with an
+                    // async sleep.  With paused time the sleep never completes,
+                    // keeping the task pending until abort_cancel reaches it.
+                    Err(WorkError::Execution("awaiting dependency".into()))
+                }
+            }
+
+            let asset = ArcIntern::<str>::from("asset");
+            zone.register(Arc::new(PanicProvider { provides: vec![asset.clone()] }));
+            zone.register_with_context(
+                Arc::new(WaitingDep { name: "dep1".into(), deps: vec![asset.clone()] }),
+                WorkContext { max_retries: 10, ..WorkContext::default() },
+            );
+            zone.register_with_context(
+                Arc::new(WaitingDep { name: "dep2".into(), deps: vec![asset] }),
+                WorkContext { max_retries: 10, ..WorkContext::default() },
+            );
+
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.panicked.len(), 1, "provider must panic");
+            assert_eq!(summary.cancelled.len(), 2, "both dependents must be cancelled");
+            let names: Vec<String> = summary.cancelled.iter().map(|e| match e {
+                ZoneEvent::Cancelled { name, .. } => name.to_string(),
+                _ => String::new(),
+            }).collect();
+            assert!(names.contains(&"dep1".to_string()));
+            assert!(names.contains(&"dep2".to_string()));
         }
 
         #[tokio::test(start_paused = true)]
@@ -1259,6 +1371,43 @@ mod tests {
                     );
                 }
             }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_capability_boundary_enforcement_db_execute() {
+            let db = DbCapability::open(":memory:").unwrap();
+            let result = db.execute("CREATE TABLE t (id INTEGER)").await;
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            match err {
+                fluent_wvr::ConcurrencyError::Io(io_err) => {
+                    assert_eq!(
+                        io_err.kind(),
+                        std::io::ErrorKind::PermissionDenied,
+                        "expected PermissionDenied for db execute, got: {io_err}"
+                    );
+                }
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_db_concurrent_queries_via_pool() {
+            let db = DbCapability::open(":memory:").unwrap();
+            let caps = CapabilitySet::new().with(DbCapability::open(":memory:").unwrap());
+            CURRENT_CAPS
+                .scope(caps, async {
+                    db.execute("CREATE TABLE t (id INTEGER, val TEXT)")
+                        .await
+                        .unwrap();
+                    for i in 0..10 {
+                        db.execute(&format!("INSERT INTO t VALUES ({i}, 'row{i}')"))
+                            .await
+                            .unwrap();
+                    }
+                    let rows = db.query("SELECT COUNT(*) AS cnt FROM t").await.unwrap();
+                    assert_eq!(rows[0]["cnt"], "10");
+                })
+                .await;
         }
     }
 

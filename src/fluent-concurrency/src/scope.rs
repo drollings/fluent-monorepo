@@ -56,14 +56,17 @@ impl Drop for Scope {
         if !self.closed {
             self.tasks.abort_all();
             if std::thread::panicking() {
+                // During panic unwind a secondary panic would abort the process.
+                // Log the violation and let the original panic propagate.
                 tracing::error!(
                     "Scope dropped without calling .close().await during panic unwind; \
                      all tasks were aborted"
                 );
             } else {
-                tracing::warn!(
+                panic!(
                     "Scope dropped without calling .close().await — \
-                     all tasks were aborted. This is a structured concurrency violation."
+                     all tasks were aborted. This is a structured concurrency violation. \
+                     Call scope.close().await before dropping."
                 );
             }
         }

@@ -312,6 +312,10 @@ async fn execute_with_timeout_and_retry(
             // Allow abort signals to be processed before each attempt.
             tokio::task::yield_now().await;
             attempts += 1;
+            // Intentionally NOT wrapped in catch_unwind so that panics
+            // propagate through JoinSet as JoinError::Panic. This ensures
+            // Zone::poll intercepts them and triggers the dependency-aware
+            // cancellation graph via cancel_dependents_of.
             match unit.execute(&ctx) {
                 Ok(output) => return Ok(output),
                 Err(e) => {
