@@ -28,9 +28,7 @@ impl NetCapability {
             builder = builder.user_agent(user_agent);
         }
 
-        let client = builder
-            .build()
-            .expect("failed to build reqwest client");
+        let client = builder.build().expect("failed to build reqwest client");
 
         Self { client }
     }
@@ -96,11 +94,7 @@ impl NetCapability {
         Ok(body)
     }
 
-    pub async fn http_post(
-        &self,
-        url: &str,
-        body: &str,
-    ) -> Result<String, ConcurrencyError> {
+    pub async fn http_post(&self, url: &str, body: &str) -> Result<String, ConcurrencyError> {
         check_capability(self)?;
         let response = self
             .client

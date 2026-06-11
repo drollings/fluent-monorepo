@@ -122,10 +122,7 @@ impl Drop for Reserve {
 }
 
 pub trait Runtime: Send + Sync + 'static {
-    fn spawn(
-        &self,
-        future: Pin<Box<dyn Future<Output = ()> + Send>>,
-    ) -> JoinHandle<()>;
+    fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) -> JoinHandle<()>;
     fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
     fn now(&self) -> Instant;
 }
@@ -133,10 +130,7 @@ pub trait Runtime: Send + Sync + 'static {
 pub struct NoopRuntime;
 
 impl Runtime for NoopRuntime {
-    fn spawn(
-        &self,
-        _future: Pin<Box<dyn Future<Output = ()> + Send>>,
-    ) -> JoinHandle<()> {
+    fn spawn(&self, _future: Pin<Box<dyn Future<Output = ()> + Send>>) -> JoinHandle<()> {
         panic!("NoopRuntime::spawn called - no runtime configured");
     }
 

@@ -12,10 +12,7 @@ use tokio::task::JoinHandle;
 pub struct TokioRuntime;
 
 impl Runtime for TokioRuntime {
-    fn spawn(
-        &self,
-        future: Pin<Box<dyn Future<Output = ()> + Send>>,
-    ) -> JoinHandle<()> {
+    fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) -> JoinHandle<()> {
         tokio::spawn(future)
     }
 

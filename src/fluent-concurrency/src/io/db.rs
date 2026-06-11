@@ -9,11 +9,12 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
 
 use fluent_wvr::{Capability, ConcurrencyError};
-use rusqlite::Connection;
 use rusqlite::types::Value;
+use rusqlite::Connection;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::io::check_capability;
+use crate::io::CapabilityError;
 
 /// Default pool size. SQLite with WAL mode can serve many concurrent readers,
 /// but we keep the pool modest to avoid file-descriptor pressure.
@@ -59,9 +60,13 @@ impl Pool {
         let conn = {
             let mut connections = self.connections.lock().unwrap();
             connections.pop().ok_or_else(|| {
-                ConcurrencyError::Io(std::io::Error::other(
-                    "db pool exhausted — all connections in use",
-                ))
+                ConcurrencyError::Io(
+                    CapabilityError::Exhausted {
+                        name: "db",
+                        detail: "all connections in use".into(),
+                    }
+                    .into(),
+                )
             })?
         };
         Ok(PooledConnection {
@@ -75,6 +80,14 @@ impl Pool {
     fn put(&self, conn: Connection) {
         let mut connections = self.connections.lock().unwrap();
         connections.push(conn);
+    }
+
+    #[cfg(test)]
+    fn empty() -> Self {
+        Self {
+            connections: Mutex::new(Vec::new()),
+            semaphore: Arc::new(Semaphore::new(1)),
+        }
     }
 }
 
@@ -151,8 +164,11 @@ impl DbCapability {
                 .prepare(&sql)
                 .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
 
-            let columns: Vec<String> =
-                stmt.column_names().iter().map(ToString::to_string).collect();
+            let columns: Vec<String> = stmt
+                .column_names()
+                .iter()
+                .map(ToString::to_string)
+                .collect();
 
             let mut rows = Vec::new();
             let mut rows_iter = stmt
@@ -206,6 +222,26 @@ impl DbCapability {
         match result {
             Ok(inner) => inner,
             Err(e) => Err(ConcurrencyError::Io(std::io::Error::other(e.to_string()))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn test_pool_exhausted_returns_typed_error() {
+        let pool = Arc::new(Pool::empty());
+        match pool.get().await {
+            Err(ConcurrencyError::Io(io_err)) => {
+                assert_eq!(io_err.kind(), std::io::ErrorKind::PermissionDenied);
+                assert!(
+                    io_err.to_string().contains("exhausted"),
+                    "expected 'exhausted', got: {io_err}"
+                );
+            }
+            _ => panic!("expected exhausted error"),
         }
     }
 }

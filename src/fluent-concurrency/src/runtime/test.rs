@@ -40,10 +40,7 @@ impl Clone for TestRuntime {
 }
 
 impl Runtime for TestRuntime {
-    fn spawn(
-        &self,
-        future: Pin<Box<dyn Future<Output = ()> + Send>>,
-    ) -> JoinHandle<()> {
+    fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) -> JoinHandle<()> {
         self.handle.spawn(future)
     }
 

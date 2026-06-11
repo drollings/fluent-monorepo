@@ -13,8 +13,6 @@ use fluent_wvr::{CapabilitySet, ConcurrencyError, Runtime, WorkContext, WorkOutp
 use internment::ArcIntern;
 use tokio::task::JoinSet;
 
-const POLL_BUDGET: usize = 64;
-
 /// Events emitted by tasks running inside a `Zone`.
 #[derive(Debug, Clone)]
 pub enum ZoneEvent {
@@ -40,6 +38,20 @@ pub enum CancelReason {
     Aborted,
 }
 
+/// Configuration for a `Zone`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZoneConfig {
+    /// Maximum number of tasks to poll per `Zone::poll` invocation.
+    /// Prevents a single zone from starving the executor.
+    pub poll_budget: usize,
+}
+
+impl Default for ZoneConfig {
+    fn default() -> Self {
+        Self { poll_budget: 64 }
+    }
+}
+
 /// Summary of a zone's execution result.
 #[derive(Debug, Default)]
 pub struct ZoneSummary {
@@ -54,6 +66,7 @@ pub struct ZoneSummary {
 pub struct Zone {
     runtime: Arc<dyn Runtime>,
     caps: CapabilitySet,
+    config: ZoneConfig,
     /// Maps task_name → assets that task depends on.
     deps: HashMap<ArcIntern<str>, Vec<ArcIntern<str>>>,
     /// Maps task_name → assets that task provides.
@@ -73,9 +86,19 @@ pub struct Zone {
 impl Zone {
     /// Creates a new zone with the given runtime and capabilities.
     pub fn new(runtime: Arc<dyn Runtime>, caps: CapabilitySet) -> Self {
+        Self::new_with_config(runtime, caps, ZoneConfig::default())
+    }
+
+    /// Creates a new zone with the given runtime, capabilities, and configuration.
+    pub fn new_with_config(
+        runtime: Arc<dyn Runtime>,
+        caps: CapabilitySet,
+        config: ZoneConfig,
+    ) -> Self {
         Self {
             runtime,
             caps,
+            config,
             deps: HashMap::new(),
             task_provides: HashMap::new(),
             provides_to_dependents: HashMap::new(),
@@ -100,7 +123,11 @@ impl Zone {
     }
 
     /// Registers a `WorkUnit` with a custom `WorkContext`.
-    pub fn register_with_context(&mut self, unit: Arc<dyn WorkUnit>, ctx: WorkContext) -> &mut Self {
+    pub fn register_with_context(
+        &mut self,
+        unit: Arc<dyn WorkUnit>,
+        ctx: WorkContext,
+    ) -> &mut Self {
         let name: ArcIntern<str> = ArcIntern::from(unit.name());
         let depends: Vec<ArcIntern<str>> = unit.depends().to_vec();
         let provides: Vec<ArcIntern<str>> = unit.provides().to_vec();
@@ -211,7 +238,7 @@ impl Future for Zone {
             return Poll::Ready(std::mem::take(&mut this.summary));
         }
 
-        let mut budget = POLL_BUDGET;
+        let mut budget = this.config.poll_budget;
         loop {
             let mut join_set = std::pin::Pin::new(&mut this.join_set);
             match join_set.as_mut().poll_join_next_with_id(cx) {
@@ -220,10 +247,9 @@ impl Future for Zone {
                         .task_names
                         .remove(&id)
                         .unwrap_or_else(|| ArcIntern::from("unknown"));
-                    this.summary.completed.push(ZoneEvent::Completed {
-                        name,
-                        output,
-                    });
+                    this.summary
+                        .completed
+                        .push(ZoneEvent::Completed { name, output });
                     this.active_count -= 1;
                     budget -= 1;
                 }
@@ -251,10 +277,9 @@ impl Future for Zone {
                         } else {
                             CancelReason::Aborted
                         };
-                        this.summary.cancelled.push(ZoneEvent::Cancelled {
-                            name,
-                            reason,
-                        });
+                        this.summary
+                            .cancelled
+                            .push(ZoneEvent::Cancelled { name, reason });
                     } else if e.is_panic() {
                         this.cancel_dependents_of(&name);
                         this.summary.panicked.push(ZoneEvent::Panicked {
@@ -297,6 +322,14 @@ impl Future for Zone {
     }
 }
 
+impl Drop for Zone {
+    fn drop(&mut self) {
+        if !self.done {
+            self.join_set.abort_all();
+        }
+    }
+}
+
 async fn execute_with_timeout_and_retry(
     unit: Arc<dyn WorkUnit>,
     ctx: WorkContext,
@@ -320,9 +353,7 @@ async fn execute_with_timeout_and_retry(
                 Ok(output) => return Ok(output),
                 Err(e) => {
                     if attempts > max_retries {
-                        return Err(ConcurrencyError::Io(std::io::Error::other(
-                            e.to_string(),
-                        )));
+                        return Err(ConcurrencyError::Io(std::io::Error::other(e.to_string())));
                     }
                     tokio::time::sleep(Duration::from_millis(100 * u64::from(attempts))).await;
                 }

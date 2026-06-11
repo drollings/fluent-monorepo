@@ -40,10 +40,12 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use fluent_wvr::{Capability, CapabilitySet, Reserve, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
-    use internment::ArcIntern;
     use crate::runtime::test::TestRuntime;
     use crate::runtime::tokio::TokioRuntime;
+    use fluent_wvr::{
+        Capability, CapabilitySet, Reserve, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit,
+    };
+    use internment::ArcIntern;
 
     struct TestCapA;
     impl Capability for TestCapA {
@@ -191,7 +193,7 @@ mod tests {
     mod m2 {
         use super::*;
         use crate::scope::Scope;
-        use crate::zone::{CancelReason, Zone, ZoneSummary, ZoneEvent};
+        use crate::zone::{CancelReason, Zone, ZoneConfig, ZoneEvent, ZoneSummary};
 
         struct TestWorkUnit {
             name: String,
@@ -200,18 +202,30 @@ mod tests {
 
         impl TestWorkUnit {
             fn ok(name: &str) -> Self {
-                Self { name: name.into(), should_fail: false }
+                Self {
+                    name: name.into(),
+                    should_fail: false,
+                }
             }
 
             fn fail(name: &str) -> Self {
-                Self { name: name.into(), should_fail: true }
+                Self {
+                    name: name.into(),
+                    should_fail: true,
+                }
             }
         }
 
         impl WorkUnit for TestWorkUnit {
-            fn name(&self) -> &str { &self.name }
-            fn depends(&self) -> &[ArcIntern<str>] { &[] }
-            fn provides(&self) -> &[ArcIntern<str>] { &[] }
+            fn name(&self) -> &str {
+                &self.name
+            }
+            fn depends(&self) -> &[ArcIntern<str>] {
+                &[]
+            }
+            fn provides(&self) -> &[ArcIntern<str>] {
+                &[]
+            }
             fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                 if self.should_fail {
                     Err(WorkError::Execution("test failure".into()))
@@ -263,7 +277,11 @@ mod tests {
             // Yield to let the abort propagate.
             tokio::task::yield_now().await;
             tokio::time::sleep(Duration::from_millis(200)).await;
-            assert_eq!(flag.load(Ordering::SeqCst), 0, "task must not have leaked and completed");
+            assert_eq!(
+                flag.load(Ordering::SeqCst),
+                0,
+                "task must not have leaked and completed"
+            );
         }
 
         /// Verify that calling close() before drop prevents the panic.
@@ -285,7 +303,10 @@ mod tests {
                     drop(scope);
                 });
             }));
-            assert!(result.is_err() || result.is_ok(), "close() then drop must not panic");
+            assert!(
+                result.is_err() || result.is_ok(),
+                "close() then drop must not panic"
+            );
         }
 
         /// Zone panic propagation: a panic in a work unit should propagate as
@@ -298,9 +319,15 @@ mod tests {
 
             struct PanicOnExecute;
             impl WorkUnit for PanicOnExecute {
-                fn name(&self) -> &str { "panicker" }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn name(&self) -> &str {
+                    "panicker"
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     panic!("execute panic");
                 }
@@ -308,7 +335,11 @@ mod tests {
 
             zone.register(Arc::new(PanicOnExecute));
             let summary: ZoneSummary = (&mut zone).await;
-            assert_eq!(summary.panicked.len(), 1, "panic must be recorded via JoinError::Panic");
+            assert_eq!(
+                summary.panicked.len(),
+                1,
+                "panic must be recorded via JoinError::Panic"
+            );
             match &summary.panicked[0] {
                 ZoneEvent::Panicked { info, .. } => {
                     assert!(
@@ -331,9 +362,15 @@ mod tests {
                 provides: Vec<ArcIntern<str>>,
             }
             impl WorkUnit for PanicProvider {
-                fn name(&self) -> &str { "provider" }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    "provider"
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     panic!("provider panic");
                 }
@@ -344,9 +381,15 @@ mod tests {
                 deps: Vec<ArcIntern<str>>,
             }
             impl WorkUnit for WaitingDep {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     // Fail on first attempt so the retry path kicks in with an
                     // async sleep.  With paused time the sleep never completes,
@@ -356,23 +399,45 @@ mod tests {
             }
 
             let asset = ArcIntern::<str>::from("asset");
-            zone.register(Arc::new(PanicProvider { provides: vec![asset.clone()] }));
+            zone.register(Arc::new(PanicProvider {
+                provides: vec![asset.clone()],
+            }));
             zone.register_with_context(
-                Arc::new(WaitingDep { name: "dep1".into(), deps: vec![asset.clone()] }),
-                WorkContext { max_retries: 10, ..WorkContext::default() },
+                Arc::new(WaitingDep {
+                    name: "dep1".into(),
+                    deps: vec![asset.clone()],
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
             );
             zone.register_with_context(
-                Arc::new(WaitingDep { name: "dep2".into(), deps: vec![asset] }),
-                WorkContext { max_retries: 10, ..WorkContext::default() },
+                Arc::new(WaitingDep {
+                    name: "dep2".into(),
+                    deps: vec![asset],
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
             );
 
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.panicked.len(), 1, "provider must panic");
-            assert_eq!(summary.cancelled.len(), 2, "both dependents must be cancelled");
-            let names: Vec<String> = summary.cancelled.iter().map(|e| match e {
-                ZoneEvent::Cancelled { name, .. } => name.to_string(),
-                _ => String::new(),
-            }).collect();
+            assert_eq!(
+                summary.cancelled.len(),
+                2,
+                "both dependents must be cancelled"
+            );
+            let names: Vec<String> = summary
+                .cancelled
+                .iter()
+                .map(|e| match e {
+                    ZoneEvent::Cancelled { name, .. } => name.to_string(),
+                    _ => String::new(),
+                })
+                .collect();
             assert!(names.contains(&"dep1".to_string()));
             assert!(names.contains(&"dep2".to_string()));
         }
@@ -421,7 +486,9 @@ mod tests {
             assert_eq!(summary.panicked.len(), 1);
             assert_eq!(summary.cancelled.len(), 0);
             match &summary.panicked[0] {
-                crate::zone::ZoneEvent::Panicked { info, .. } => assert!(info.contains("timed out")),
+                crate::zone::ZoneEvent::Panicked { info, .. } => {
+                    assert!(info.contains("timed out"))
+                }
                 _ => panic!("expected Panicked event"),
             }
         }
@@ -440,9 +507,15 @@ mod tests {
                 counter: Arc<AtomicUsize>,
             }
             impl WorkUnit for RetryCounter {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     self.counter.fetch_add(1, Ordering::SeqCst);
                     Err(WorkError::Execution("retry fail".into()))
@@ -453,7 +526,10 @@ mod tests {
                 name: "retry_test".into(),
                 counter: counter_clone,
             });
-            let ctx = WorkContext { max_retries: 2, ..WorkContext::default() };
+            let ctx = WorkContext {
+                max_retries: 2,
+                ..WorkContext::default()
+            };
             zone.register_with_context(unit, ctx);
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.completed.len(), 0);
@@ -469,9 +545,15 @@ mod tests {
 
             struct PanicUnit;
             impl WorkUnit for PanicUnit {
-                fn name(&self) -> &str { "panic" }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn name(&self) -> &str {
+                    "panic"
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     panic!("intentional panic");
                 }
@@ -502,9 +584,15 @@ mod tests {
                 should_fail: bool,
             }
             impl WorkUnit for DepWorkUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     if self.should_fail {
                         Err(WorkError::Execution("dep failure".into()))
@@ -538,7 +626,11 @@ mod tests {
             assert_eq!(summary.completed.len(), 0);
             assert_eq!(summary.panicked.len(), 1);
             assert_eq!(summary.cancelled.len(), 1);
-            if let ZoneEvent::Cancelled { ref name, ref reason } = summary.cancelled[0] {
+            if let ZoneEvent::Cancelled {
+                ref name,
+                ref reason,
+            } = summary.cancelled[0]
+            {
                 assert_eq!(&**name, "child");
                 assert!(matches!(reason, CancelReason::DependencyFailed));
             } else {
@@ -568,8 +660,7 @@ mod tests {
             let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
             let caps = CapabilitySet::new();
             let mut zone = Zone::new(runtime, caps);
-            zone
-                .register(Arc::new(TestWorkUnit::ok("a")))
+            zone.register(Arc::new(TestWorkUnit::ok("a")))
                 .register(Arc::new(TestWorkUnit::ok("b")));
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.completed.len(), 2);
@@ -589,9 +680,15 @@ mod tests {
                 should_fail: bool,
             }
             impl WorkUnit for ChainUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     if self.should_fail {
                         Err(WorkError::Execution("chain failure".into()))
@@ -663,9 +760,15 @@ mod tests {
                 provides: Vec<ArcIntern<str>>,
             }
             impl WorkUnit for PanicUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     panic!("intentional panic cascade")
                 }
@@ -678,9 +781,15 @@ mod tests {
                 should_fail: bool,
             }
             impl WorkUnit for DepWorkUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     if self.should_fail {
                         Err(WorkError::Execution("awaiting cancellation".into()))
@@ -712,7 +821,11 @@ mod tests {
             assert_eq!(summary.completed.len(), 0);
             assert_eq!(summary.panicked.len(), 1);
             assert_eq!(summary.cancelled.len(), 1);
-            if let ZoneEvent::Cancelled { ref name, ref reason } = summary.cancelled[0] {
+            if let ZoneEvent::Cancelled {
+                ref name,
+                ref reason,
+            } = summary.cancelled[0]
+            {
                 assert_eq!(&**name, "child");
                 assert!(matches!(reason, CancelReason::DependencyFailed));
             } else {
@@ -734,6 +847,44 @@ mod tests {
             assert_eq!(summary.completed.len(), 250);
             assert_eq!(summary.panicked.len(), 0);
             assert_eq!(summary.cancelled.len(), 0);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_drop_aborts_all_tasks() {
+            tokio::time::resume();
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct SlowUnit;
+            impl WorkUnit for SlowUnit {
+                fn name(&self) -> &str {
+                    "slow"
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    Ok(WorkOutput::ok("done"))
+                }
+            }
+
+            zone.register(Arc::new(SlowUnit));
+            drop(zone);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_config_custom_budget() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let config = ZoneConfig { poll_budget: 32 };
+            let mut zone = Zone::new_with_config(runtime, caps, config);
+            zone.register(Arc::new(TestWorkUnit::ok("task")));
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 1);
         }
     }
 
@@ -783,18 +934,13 @@ mod tests {
         async fn test_worker_pool_processes_all_jobs() {
             let results = Arc::new(std::sync::Mutex::new(Vec::new()));
             let r = Arc::clone(&results);
-            let pool = WorkerPool::new(
-                Arc::new(TokioRuntime),
-                2,
-                10,
-                move |job: i32| {
-                    let r = Arc::clone(&r);
-                    async move {
-                        let mut guard = r.lock().unwrap();
-                        guard.push(job * 2);
-                    }
-                },
-            );
+            let pool = WorkerPool::new(Arc::new(TokioRuntime), 2, 10, move |job: i32| {
+                let r = Arc::clone(&r);
+                async move {
+                    let mut guard = r.lock().unwrap();
+                    guard.push(job * 2);
+                }
+            });
             pool.submit(1).await.unwrap();
             pool.submit(2).await.unwrap();
             pool.submit(3).await.unwrap();
@@ -811,18 +957,14 @@ mod tests {
             tokio::time::resume();
             let completed = Arc::new(AtomicUsize::new(0));
             let c = Arc::clone(&completed);
-            let pool = WorkerPool::new(
-                Arc::new(TokioRuntime),
-                2,
-                10,
-                move |job: i32| {
-                    let c = Arc::clone(&c);
-                    async move {
-                        tokio::time::sleep(Duration::from_millis(10 * u64::try_from(job).unwrap())).await;
-                        c.fetch_add(1, Ordering::SeqCst);
-                    }
-                },
-            );
+            let pool = WorkerPool::new(Arc::new(TokioRuntime), 2, 10, move |job: i32| {
+                let c = Arc::clone(&c);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(10 * u64::try_from(job).unwrap()))
+                        .await;
+                    c.fetch_add(1, Ordering::SeqCst);
+                }
+            });
             pool.submit(1).await.unwrap();
             pool.submit(2).await.unwrap();
             pool.submit(3).await.unwrap();
@@ -1018,30 +1160,20 @@ mod tests {
             let results = Arc::new(std::sync::Mutex::new(Vec::new()));
             let r1 = Arc::clone(&results);
             let r2 = Arc::clone(&results);
-            let pool1 = WorkerPool::new(
-                Arc::new(TokioRuntime),
-                1,
-                10,
-                move |job: i32| {
-                    let r = Arc::clone(&r1);
-                    async move {
-                        let mut guard = r.lock().unwrap();
-                        guard.push((0, job));
-                    }
-                },
-            );
-            let pool2 = WorkerPool::new(
-                Arc::new(TokioRuntime),
-                1,
-                10,
-                move |job: i32| {
-                    let r = Arc::clone(&r2);
-                    async move {
-                        let mut guard = r.lock().unwrap();
-                        guard.push((1, job));
-                    }
-                },
-            );
+            let pool1 = WorkerPool::new(Arc::new(TokioRuntime), 1, 10, move |job: i32| {
+                let r = Arc::clone(&r1);
+                async move {
+                    let mut guard = r.lock().unwrap();
+                    guard.push((0, job));
+                }
+            });
+            let pool2 = WorkerPool::new(Arc::new(TokioRuntime), 1, 10, move |job: i32| {
+                let r = Arc::clone(&r2);
+                async move {
+                    let mut guard = r.lock().unwrap();
+                    guard.push((1, job));
+                }
+            });
 
             let router = PartitionedRouter::new(vec![pool1, pool2], |key: &String| key.len());
             router.submit(&"a".to_string(), 10).await.unwrap();
@@ -1059,30 +1191,20 @@ mod tests {
             let results = Arc::new(std::sync::Mutex::new(Vec::new()));
             let r1 = Arc::clone(&results);
             let r2 = Arc::clone(&results);
-            let pool1 = WorkerPool::new(
-                Arc::new(TokioRuntime),
-                1,
-                10,
-                move |job: i32| {
-                    let r = Arc::clone(&r1);
-                    async move {
-                        let mut guard = r.lock().unwrap();
-                        guard.push((0, job));
-                    }
-                },
-            );
-            let pool2 = WorkerPool::new(
-                Arc::new(TokioRuntime),
-                1,
-                10,
-                move |job: i32| {
-                    let r = Arc::clone(&r2);
-                    async move {
-                        let mut guard = r.lock().unwrap();
-                        guard.push((1, job));
-                    }
-                },
-            );
+            let pool1 = WorkerPool::new(Arc::new(TokioRuntime), 1, 10, move |job: i32| {
+                let r = Arc::clone(&r1);
+                async move {
+                    let mut guard = r.lock().unwrap();
+                    guard.push((0, job));
+                }
+            });
+            let pool2 = WorkerPool::new(Arc::new(TokioRuntime), 1, 10, move |job: i32| {
+                let r = Arc::clone(&r2);
+                async move {
+                    let mut guard = r.lock().unwrap();
+                    guard.push((1, job));
+                }
+            });
 
             let router = PartitionedRouter::new(vec![pool1, pool2], |key: &String| key.len());
             router.submit(&"a".to_string(), 10).await.unwrap();
@@ -1266,9 +1388,7 @@ mod tests {
             let caps = CapabilitySet::new().with(FsCapability::new());
             CURRENT_CAPS
                 .scope(caps, async {
-                    fs.write(&path, b"hello world")
-                        .await
-                        .expect("write failed");
+                    fs.write(&path, b"hello world").await.expect("write failed");
                     let data = fs.read(&path).await.expect("read failed");
                     assert_eq!(data, b"hello world");
                     let meta = fs.metadata(&path).await.expect("metadata failed");
@@ -1320,6 +1440,10 @@ mod tests {
                         std::io::ErrorKind::PermissionDenied,
                         "expected PermissionDenied, got: {io_err}"
                     );
+                    assert!(
+                        io_err.to_string().contains("missing"),
+                        "expected 'missing' in error, got: {io_err}"
+                    );
                 }
             }
         }
@@ -1352,6 +1476,10 @@ mod tests {
                         std::io::ErrorKind::PermissionDenied,
                         "expected PermissionDenied for net, got: {io_err}"
                     );
+                    assert!(
+                        io_err.to_string().contains("missing"),
+                        "expected 'missing' in error, got: {io_err}"
+                    );
                 }
             }
         }
@@ -1369,6 +1497,10 @@ mod tests {
                         std::io::ErrorKind::PermissionDenied,
                         "expected PermissionDenied for db, got: {io_err}"
                     );
+                    assert!(
+                        io_err.to_string().contains("missing"),
+                        "expected 'missing' in error, got: {io_err}"
+                    );
                 }
             }
         }
@@ -1385,6 +1517,10 @@ mod tests {
                         io_err.kind(),
                         std::io::ErrorKind::PermissionDenied,
                         "expected PermissionDenied for db execute, got: {io_err}"
+                    );
+                    assert!(
+                        io_err.to_string().contains("missing"),
+                        "expected 'missing' in error, got: {io_err}"
                     );
                 }
             }
@@ -1413,11 +1549,13 @@ mod tests {
 
     mod e2e {
         use crate::pool::WorkerPool;
-        use crate::zone::{Zone, ZoneSummary, ZoneEvent};
-        use fluent_wvr::{ArcIntern, CapabilitySet, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
+        use crate::runtime::tokio::TokioRuntime;
+        use crate::zone::{Zone, ZoneEvent, ZoneSummary};
+        use fluent_wvr::{
+            ArcIntern, CapabilitySet, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit,
+        };
         use std::sync::Arc;
         use std::time::Duration;
-        use crate::runtime::tokio::TokioRuntime;
 
         /// End-to-end: Zone orchestrates WorkerPool-backed tasks
         #[tokio::test(start_paused = true)]
@@ -1441,9 +1579,15 @@ mod tests {
                 input: i32,
             }
             impl WorkUnit for PoolWorkUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &[] }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     Ok(WorkOutput::ok_with_data(
                         "done",
@@ -1453,9 +1597,16 @@ mod tests {
             }
 
             let mut zone = Zone::new(runtime, caps);
-            zone
-                .register(Arc::new(PoolWorkUnit { name: "task1".into(), _pool: Arc::clone(&pool), input: 5 }))
-                .register(Arc::new(PoolWorkUnit { name: "task2".into(), _pool: Arc::clone(&pool), input: 10 }));
+            zone.register(Arc::new(PoolWorkUnit {
+                name: "task1".into(),
+                _pool: Arc::clone(&pool),
+                input: 5,
+            }))
+            .register(Arc::new(PoolWorkUnit {
+                name: "task2".into(),
+                _pool: Arc::clone(&pool),
+                input: 10,
+            }));
 
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.completed.len(), 2);
@@ -1476,9 +1627,15 @@ mod tests {
                 provides: Vec<ArcIntern<str>>,
             }
             impl WorkUnit for OutcomeUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     match self.outcome {
                         "ok" => Ok(WorkOutput::ok("done")),
@@ -1491,31 +1648,30 @@ mod tests {
 
             let shared = ArcIntern::<str>::from("shared");
             let mut zone = Zone::new(runtime, caps);
-            zone
-                .register(Arc::new(OutcomeUnit {
-                    name: "root".into(),
+            zone.register(Arc::new(OutcomeUnit {
+                name: "root".into(),
+                outcome: "fail",
+                deps: vec![],
+                provides: vec![shared.clone()],
+            }))
+            .register_with_context(
+                Arc::new(OutcomeUnit {
+                    name: "child1".into(),
                     outcome: "fail",
-                    deps: vec![],
-                    provides: vec![shared.clone()],
-                }))
-                .register_with_context(
-                    Arc::new(OutcomeUnit {
-                        name: "child1".into(),
-                        outcome: "fail",
-                        deps: vec![shared.clone()],
-                        provides: vec![],
-                    }),
-                    WorkContext {
-                        max_retries: 10,
-                        ..WorkContext::default()
-                    },
-                )
-                .register(Arc::new(OutcomeUnit {
-                    name: "independent".into(),
-                    outcome: "panic",
-                    deps: vec![],
+                    deps: vec![shared.clone()],
                     provides: vec![],
-                }));
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            )
+            .register(Arc::new(OutcomeUnit {
+                name: "independent".into(),
+                outcome: "panic",
+                deps: vec![],
+                provides: vec![],
+            }));
 
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.completed.len(), 0);
@@ -1536,9 +1692,15 @@ mod tests {
                 provides: Vec<ArcIntern<str>>,
             }
             impl WorkUnit for PanicUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &[] }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &[]
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     panic!("panic cascade")
                 }
@@ -1551,9 +1713,15 @@ mod tests {
                 should_fail: bool,
             }
             impl WorkUnit for DepWorkUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     if self.should_fail {
                         Err(WorkError::Execution("awaiting cancellation".into()))
@@ -1602,11 +1770,21 @@ mod tests {
             );
 
             let summary: ZoneSummary = (&mut zone).await;
-            assert_eq!(summary.completed.len(), 2, "neighbor and grandchild should complete");
+            assert_eq!(
+                summary.completed.len(),
+                2,
+                "neighbor and grandchild should complete"
+            );
             assert_eq!(summary.panicked.len(), 1, "parent should panic");
             assert_eq!(summary.cancelled.len(), 1, "child should be cancelled");
-            assert!(summary.panicked.iter().any(|e| matches!(e, ZoneEvent::Panicked { name, .. } if &**name == "parent")));
-            assert!(summary.cancelled.iter().any(|e| matches!(e, ZoneEvent::Cancelled { name, .. } if &**name == "child")));
+            assert!(summary
+                .panicked
+                .iter()
+                .any(|e| matches!(e, ZoneEvent::Panicked { name, .. } if &**name == "parent")));
+            assert!(summary
+                .cancelled
+                .iter()
+                .any(|e| matches!(e, ZoneEvent::Cancelled { name, .. } if &**name == "child")));
         }
 
         /// E2E Cycle Resiliency: verify that a circular dependency does not hang
@@ -1623,9 +1801,15 @@ mod tests {
                 provides: Vec<ArcIntern<str>>,
             }
             impl WorkUnit for CycleUnit {
-                fn name(&self) -> &str { &self.name }
-                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
-                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn depends(&self) -> &[ArcIntern<str>] {
+                    &self.deps
+                }
+                fn provides(&self) -> &[ArcIntern<str>] {
+                    &self.provides
+                }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
                     Err(WorkError::Execution("cycle member".into()))
                 }
@@ -1655,9 +1839,19 @@ mod tests {
             // A fails immediately, B is a dependent in a cycle.
             // The cycle should be detected and B should be cancelled.
             assert_eq!(summary.panicked.len(), 1, "A should panic");
-            assert_eq!(summary.cancelled.len(), 1, "B should be cancelled due to cycle detection");
-            assert!(summary.panicked.iter().any(|e| matches!(e, ZoneEvent::Panicked { name, .. } if &**name == "A")));
-            assert!(summary.cancelled.iter().any(|e| matches!(e, ZoneEvent::Cancelled { name, .. } if &**name == "B")));
+            assert_eq!(
+                summary.cancelled.len(),
+                1,
+                "B should be cancelled due to cycle detection"
+            );
+            assert!(summary
+                .panicked
+                .iter()
+                .any(|e| matches!(e, ZoneEvent::Panicked { name, .. } if &**name == "A")));
+            assert!(summary
+                .cancelled
+                .iter()
+                .any(|e| matches!(e, ZoneEvent::Cancelled { name, .. } if &**name == "B")));
         }
     }
 }
