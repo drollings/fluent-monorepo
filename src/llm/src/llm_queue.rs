@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use guidance_concurrency_queue::{EventQueue, QueueConfig, QueueError};
+use fluent_concurrency::pool::{PoolError, WorkerPool};
 use tokio::sync::oneshot;
 
 use crate::client::{ChatMessage, LlmConfig, LlmError};
@@ -11,19 +11,40 @@ pub struct LlmTask {
     pub response_tx: oneshot::Sender<Result<String, LlmError>>,
 }
 
-pub struct LlmRequestQueue {
-    inner: Arc<EventQueue<LlmTask>>,
+pub struct LlmQueueConfig {
+    pub worker_count: usize,
+    pub queue_capacity: usize,
 }
 
-fn process_llm_task(task: LlmTask) {
-    let result = make_llm_request(&task.messages, &task.config);
-    let _ = task.response_tx.send(result);
+impl Default for LlmQueueConfig {
+    fn default() -> Self {
+        Self {
+            worker_count: 1,
+            queue_capacity: 100,
+        }
+    }
+}
+
+pub struct LlmRequestQueue {
+    pool: Arc<WorkerPool<LlmTask>>,
 }
 
 impl LlmRequestQueue {
-    pub fn new(config: &QueueConfig) -> Self {
+    pub fn new(config: &LlmQueueConfig) -> Self {
+        let pool = WorkerPool::new(
+            config.worker_count,
+            config.queue_capacity,
+            |task: LlmTask| async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    make_llm_request(&task.messages, &task.config)
+                })
+                .await
+                .unwrap_or_else(|e| Err(LlmError::Http(e.to_string())));
+                let _ = task.response_tx.send(result);
+            },
+        );
         Self {
-                inner: Arc::new(EventQueue::new(config, process_llm_task)),
+            pool: Arc::new(pool),
         }
     }
 
@@ -38,12 +59,13 @@ impl LlmRequestQueue {
             config,
             response_tx: tx,
         };
-        self.inner.submit(task).map_err(|e| match e {
-            QueueError::Full => LlmError::Http("queue full".into()),
-            QueueError::Disconnected => LlmError::Http("queue disconnected".into()),
-            QueueError::Timeout => LlmError::Http("queue timeout".into()),
-            QueueError::Canceled => LlmError::Http("queue canceled".into()),
-        })?;
+        let handle = tokio::runtime::Handle::current();
+        handle
+            .block_on(self.pool.submit(task))
+            .map_err(|e| match e {
+                PoolError::Full => LlmError::Http("queue full".into()),
+                PoolError::Closed => LlmError::Http("queue closed".into()),
+            })?;
         rx.blocking_recv()
             .map_err(|_| LlmError::Http("queue response canceled".into()))?
     }
@@ -59,12 +81,13 @@ impl LlmRequestQueue {
             config,
             response_tx: tx,
         };
-        self.inner.submit(task).map_err(|e| match e {
-            QueueError::Full => LlmError::Http("queue full".into()),
-            QueueError::Disconnected => LlmError::Http("queue disconnected".into()),
-            QueueError::Timeout => LlmError::Http("queue timeout".into()),
-            QueueError::Canceled => LlmError::Http("queue canceled".into()),
-        })?;
+        self.pool
+            .submit(task)
+            .await
+            .map_err(|e| match e {
+                PoolError::Full => LlmError::Http("queue full".into()),
+                PoolError::Closed => LlmError::Http("queue closed".into()),
+            })?;
         rx.await
             .map_err(|_| LlmError::Http("queue response canceled".into()))?
     }
@@ -77,11 +100,12 @@ fn make_llm_request(messages: &[ChatMessage], config: &LlmConfig) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::LlmConfig;
 
     #[test]
     fn test_llm_request_queue_creation() {
-        let queue = LlmRequestQueue::new(&QueueConfig::default());
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = rt.enter();
+        let queue = LlmRequestQueue::new(&LlmQueueConfig::default());
         let messages = vec![ChatMessage {
             role: "user".into(),
             content: "hello".into(),
@@ -91,7 +115,6 @@ mod tests {
             .model("test".into())
             .build();
 
-        // No server running, so submit should eventually fail
         let result = queue.submit(messages, config);
         assert!(result.is_err());
     }

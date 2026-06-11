@@ -15,7 +15,7 @@ members = [
     "src/ontology",
     "src/bin/guidance",
     "src/bin/coral",
-    "src/concurrency-queue",
+    "src/fluent-concurrency",
     "src/common-core",
 ]
 

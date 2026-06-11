@@ -1,0 +1,16 @@
+[package]
+name = "fluent-concurrency"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+fluent-wvr = { path = "../fluent-wvr" }
+serde_json = { workspace = true }
+internment = { workspace = true, features = ["arc", "serde"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+ureq = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -9,3 +9,4 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 internment = { workspace = true, features = ["arc", "serde"] }
 tracing = { workspace = true }
+tokio = { workspace = true }

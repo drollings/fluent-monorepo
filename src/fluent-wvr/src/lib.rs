@@ -40,8 +40,115 @@ pub mod wrapper;
 
 use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
+use tokio::task::JoinHandle;
+
+#[derive(Error, Debug)]
+pub enum ConcurrencyError {
+    #[error("missing capability: {0}")]
+    MissingCapability(&'static str),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+pub trait Capability: Send + Sync + 'static {
+    fn name(&self) -> &'static str;
+}
+
+#[derive(Default, Debug)]
+pub struct CapabilitySet {
+    caps: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
+}
+
+impl Clone for CapabilitySet {
+    fn clone(&self) -> Self {
+        Self {
+            caps: self.caps.clone(),
+        }
+    }
+}
+
+impl CapabilitySet {
+    pub fn new() -> Self {
+        Self {
+            caps: HashMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with<C: Capability>(mut self, cap: C) -> Self {
+        self.caps.insert(TypeId::of::<C>(), Arc::new(cap));
+        self
+    }
+
+    pub fn get<C: Capability>(&self) -> Option<&C> {
+        self.caps
+            .get(&TypeId::of::<C>())
+            .and_then(|arc| (&**arc as &dyn Any).downcast_ref::<C>())
+    }
+}
+
+pub struct Reserve {
+    counter: Arc<std::sync::atomic::AtomicUsize>,
+    committed: bool,
+}
+
+impl Reserve {
+    pub fn new(counter: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        counter.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        Self {
+            counter,
+            committed: false,
+        }
+    }
+
+    pub fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for Reserve {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.counter
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+pub trait Runtime: Send + Sync + 'static {
+    fn spawn(
+        &self,
+        future: Pin<Box<dyn Future<Output = ()> + Send>>,
+    ) -> JoinHandle<()>;
+    fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+    fn now(&self) -> Instant;
+}
+
+pub struct NoopRuntime;
+
+impl Runtime for NoopRuntime {
+    fn spawn(
+        &self,
+        _future: Pin<Box<dyn Future<Output = ()> + Send>>,
+    ) -> JoinHandle<()> {
+        panic!("NoopRuntime::spawn called - no runtime configured");
+    }
+
+    fn sleep(&self, _duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        panic!("NoopRuntime::sleep called - no runtime configured");
+    }
+
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum FieldError {
@@ -63,12 +170,27 @@ pub enum WorkError {
     Timeout,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct WorkContext {
     pub dry_run: bool,
     pub max_retries: u32,
     pub timeout_ms: u64,
     pub metadata: Vec<(String, String)>,
+    pub rt: Arc<dyn Runtime>,
+    pub caps: CapabilitySet,
+}
+
+impl std::fmt::Debug for WorkContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkContext")
+            .field("dry_run", &self.dry_run)
+            .field("max_retries", &self.max_retries)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("metadata", &self.metadata)
+            .field("rt", &"<dyn Runtime>")
+            .field("caps", &self.caps)
+            .finish()
+    }
 }
 
 impl Default for WorkContext {
@@ -78,6 +200,8 @@ impl Default for WorkContext {
             max_retries: 0,
             timeout_ms: 30000,
             metadata: Vec::new(),
+            rt: Arc::new(NoopRuntime),
+            caps: CapabilitySet::new(),
         }
     }
 }

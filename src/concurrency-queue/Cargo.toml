@@ -1,8 +1,0 @@
-[package]
-name = "guidance-concurrency-queue"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-crossbeam-channel = "0.5"
-thiserror = { workspace = true }
