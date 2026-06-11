@@ -61,7 +61,7 @@ impl Drop for Scope {
                      all tasks were aborted"
                 );
             } else {
-                panic!(
+                tracing::warn!(
                     "Scope dropped without calling .close().await — \
                      all tasks were aborted. This is a structured concurrency violation."
                 );

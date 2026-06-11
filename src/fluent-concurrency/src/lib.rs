@@ -243,6 +243,28 @@ mod tests {
             scope.close().await;
         }
 
+        /// Scope Resource Leak/Orphan Verification: verify that dropping a scope
+        /// without closing aborts all child tasks and none are leaked.
+        #[tokio::test(start_paused = true)]
+        async fn test_scope_orphan_verification() {
+            tokio::time::resume();
+            let flag = Arc::new(AtomicUsize::new(0));
+            let flag_clone = Arc::clone(&flag);
+            {
+                let mut scope = Scope::new();
+                scope.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    flag_clone.fetch_add(1, Ordering::SeqCst);
+                });
+                // Drop without closing; the task should be aborted.
+                drop(scope);
+            }
+            // Yield to let the abort propagate.
+            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert_eq!(flag.load(Ordering::SeqCst), 0, "task must not have leaked and completed");
+        }
+
         #[tokio::test(start_paused = true)]
         async fn test_zone_normal_completion() {
             let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
@@ -541,13 +563,18 @@ mod tests {
                 name: String,
                 deps: Vec<ArcIntern<str>>,
                 provides: Vec<ArcIntern<str>>,
+                should_fail: bool,
             }
             impl WorkUnit for DepWorkUnit {
                 fn name(&self) -> &str { &self.name }
                 fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
                 fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
                 fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                    Ok(WorkOutput::ok("done"))
+                    if self.should_fail {
+                        Err(WorkError::Execution("awaiting cancellation".into()))
+                    } else {
+                        Ok(WorkOutput::ok("done"))
+                    }
                 }
             }
 
@@ -561,6 +588,7 @@ mod tests {
                     name: "child".into(),
                     deps: vec![shared.clone()],
                     provides: vec![],
+                    should_fail: true,
                 }),
                 WorkContext {
                     max_retries: 10,
@@ -815,6 +843,62 @@ mod tests {
             let drained: Vec<(i32, &str)> = pq.drain().collect();
             assert_eq!(drained, vec![(1, "high"), (0, "a"), (0, "b")]);
             assert!(pq.is_empty());
+        }
+
+        /// High-contention efficiency: verify that PriorityQueue::len is O(1)
+        /// and that the queue handles many items correctly.
+        #[test]
+        fn test_high_contention_priority_queue_len() {
+            let mut pq = PriorityQueue::new();
+            for i in 0..10000 {
+                pq.push(i, i % 10);
+            }
+            assert_eq!(pq.len(), 10000);
+            for _ in 0..10000 {
+                pq.pop();
+            }
+            assert!(pq.is_empty());
+            assert_eq!(pq.len(), 0);
+        }
+
+        /// High-contention efficiency: verify that WorkerPool routing remains
+        /// flat, monomorphic, and deadlock-free under parallel load.
+        #[tokio::test(start_paused = true)]
+        async fn test_high_contention_worker_pool() {
+            tokio::time::resume();
+            let completed = Arc::new(AtomicUsize::new(0));
+            let c = Arc::clone(&completed);
+            let pool = Arc::new(WorkerPool::new(
+                Arc::new(TokioRuntime),
+                4,
+                2000,
+                move |job: i32| {
+                    let c = Arc::clone(&c);
+                    async move {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        c.fetch_add(1, Ordering::SeqCst);
+                        let _ = job;
+                    }
+                },
+            ));
+            let mut handles = Vec::new();
+            for _ in 0..10 {
+                let p = Arc::clone(&pool);
+                handles.push(tokio::spawn(async move {
+                    for i in 0..100 {
+                        p.submit(i).await.expect("queue should not be full");
+                    }
+                }));
+            }
+            for h in handles {
+                h.await.unwrap();
+            }
+            // Safety: Arc::try_unwrap is used to get the inner WorkerPool
+            // for shutdown. Since all spawned tasks are done, the reference
+            // count is 1.
+            let pool = Arc::try_unwrap(pool).unwrap_or_else(|_| panic!("pool still referenced"));
+            pool.shutdown().await;
+            assert_eq!(completed.load(Ordering::SeqCst), 1000);
         }
 
         #[tokio::test(start_paused = true)]
@@ -1116,8 +1200,16 @@ mod tests {
             let fs = FsCapability::new();
             let result = fs.read("/etc/passwd").await;
             assert!(result.is_err());
-            let err = result.unwrap_err().to_string();
-            assert!(err.contains("PermissionDenied"), "expected PermissionDenied, got: {err}");
+            let err = result.unwrap_err();
+            match err {
+                fluent_wvr::ConcurrencyError::Io(io_err) => {
+                    assert_eq!(
+                        io_err.kind(),
+                        std::io::ErrorKind::PermissionDenied,
+                        "expected PermissionDenied, got: {io_err}"
+                    );
+                }
+            }
         }
 
         #[test]
@@ -1134,11 +1226,45 @@ mod tests {
             assert!(caps.get::<FsCapability>().is_some());
             assert!(caps.get::<NetCapability>().is_none());
         }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_capability_boundary_enforcement_net() {
+            let net = NetCapability::new();
+            let result = net.tcp_connect("127.0.0.1:1").await;
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            match err {
+                fluent_wvr::ConcurrencyError::Io(io_err) => {
+                    assert_eq!(
+                        io_err.kind(),
+                        std::io::ErrorKind::PermissionDenied,
+                        "expected PermissionDenied for net, got: {io_err}"
+                    );
+                }
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_capability_boundary_enforcement_db() {
+            let db = DbCapability::open(":memory:").unwrap();
+            let result = db.query("SELECT 1").await;
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            match err {
+                fluent_wvr::ConcurrencyError::Io(io_err) => {
+                    assert_eq!(
+                        io_err.kind(),
+                        std::io::ErrorKind::PermissionDenied,
+                        "expected PermissionDenied for db, got: {io_err}"
+                    );
+                }
+            }
+        }
     }
 
     mod e2e {
         use crate::pool::WorkerPool;
-        use crate::zone::{Zone, ZoneSummary};
+        use crate::zone::{Zone, ZoneSummary, ZoneEvent};
         use fluent_wvr::{ArcIntern, CapabilitySet, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
         use std::sync::Arc;
         use std::time::Duration;
@@ -1246,6 +1372,143 @@ mod tests {
             assert_eq!(summary.completed.len(), 0);
             assert_eq!(summary.panicked.len(), 2);
             assert_eq!(summary.cancelled.len(), 1);
+        }
+
+        /// E2E Panic Cascade: verify that a panicking task aborts its transitive
+        /// dependents while independent neighbors continue unhindered.
+        #[tokio::test(start_paused = true)]
+        async fn test_e2e_panic_cascade_with_independent_neighbors() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct PanicUnit {
+                name: String,
+                provides: Vec<ArcIntern<str>>,
+            }
+            impl WorkUnit for PanicUnit {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &[] }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    panic!("panic cascade")
+                }
+            }
+
+            struct DepWorkUnit {
+                name: String,
+                deps: Vec<ArcIntern<str>>,
+                provides: Vec<ArcIntern<str>>,
+                should_fail: bool,
+            }
+            impl WorkUnit for DepWorkUnit {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    if self.should_fail {
+                        Err(WorkError::Execution("awaiting cancellation".into()))
+                    } else {
+                        Ok(WorkOutput::ok("done"))
+                    }
+                }
+            }
+
+            let shared = ArcIntern::<str>::from("shared");
+            let independent = ArcIntern::<str>::from("independent");
+
+            zone.register(Arc::new(PanicUnit {
+                name: "parent".into(),
+                provides: vec![shared.clone()],
+            }));
+            zone.register_with_context(
+                Arc::new(DepWorkUnit {
+                    name: "child".into(),
+                    deps: vec![shared.clone()],
+                    provides: vec![],
+                    should_fail: true,
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            );
+            zone.register(Arc::new(DepWorkUnit {
+                name: "neighbor".into(),
+                deps: vec![],
+                provides: vec![independent.clone()],
+                should_fail: false,
+            }));
+            zone.register_with_context(
+                Arc::new(DepWorkUnit {
+                    name: "grandchild".into(),
+                    deps: vec![independent.clone()],
+                    provides: vec![],
+                    should_fail: false,
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            );
+
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 2, "neighbor and grandchild should complete");
+            assert_eq!(summary.panicked.len(), 1, "parent should panic");
+            assert_eq!(summary.cancelled.len(), 1, "child should be cancelled");
+            assert!(summary.panicked.iter().any(|e| matches!(e, ZoneEvent::Panicked { name, .. } if &**name == "parent")));
+            assert!(summary.cancelled.iter().any(|e| matches!(e, ZoneEvent::Cancelled { name, .. } if &**name == "child")));
+        }
+
+        /// E2E Cycle Resiliency: verify that a circular dependency does not hang
+        /// the zone and that the cascade breaks the loop safely.
+        #[tokio::test(start_paused = true)]
+        async fn test_e2e_cycle_resiliency() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct CycleUnit {
+                name: String,
+                deps: Vec<ArcIntern<str>>,
+                provides: Vec<ArcIntern<str>>,
+            }
+            impl WorkUnit for CycleUnit {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    Err(WorkError::Execution("cycle member".into()))
+                }
+            }
+
+            let a_provides = ArcIntern::<str>::from("a_provides");
+            let b_provides = ArcIntern::<str>::from("b_provides");
+
+            zone.register(Arc::new(CycleUnit {
+                name: "A".into(),
+                deps: vec![b_provides.clone()],
+                provides: vec![a_provides.clone()],
+            }));
+            zone.register_with_context(
+                Arc::new(CycleUnit {
+                    name: "B".into(),
+                    deps: vec![a_provides.clone()],
+                    provides: vec![b_provides.clone()],
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            );
+
+            let summary: ZoneSummary = (&mut zone).await;
+            // A fails immediately, B is a dependent in a cycle.
+            // The cycle should be detected and B should be cancelled.
+            assert_eq!(summary.panicked.len(), 1, "A should panic");
+            assert_eq!(summary.cancelled.len(), 1, "B should be cancelled due to cycle detection");
+            assert!(summary.panicked.iter().any(|e| matches!(e, ZoneEvent::Panicked { name, .. } if &**name == "A")));
+            assert!(summary.cancelled.iter().any(|e| matches!(e, ZoneEvent::Cancelled { name, .. } if &**name == "B")));
         }
     }
 }

@@ -2,7 +2,6 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -94,6 +93,7 @@ impl<T: Send + Sync + 'static> WorkerPool<T> {
     /// Creates a new worker pool with `cap` workers and a queue of `queue_capacity`.
     /// All worker tasks are spawned through the injected `runtime` to avoid ambient
     /// `tokio::spawn` calls in the Data Plane.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new<F, Fut>(
         runtime: Arc<dyn Runtime>,
         cap: usize,

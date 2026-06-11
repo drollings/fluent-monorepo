@@ -18,6 +18,12 @@ impl FsCapability {
     }
 }
 
+impl Default for FsCapability {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Capability for FsCapability {
     fn name(&self) -> &'static str {
         "fs"

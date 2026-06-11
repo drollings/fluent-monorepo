@@ -303,9 +303,14 @@ async fn execute_with_timeout_and_retry(
     max_retries: u32,
     timeout_ms: u64,
 ) -> Result<WorkOutput, ConcurrencyError> {
+    // Yield to allow pending abort signals to be processed before
+    // executing the synchronous work unit body.
+    tokio::task::yield_now().await;
     let fut = async {
         let mut attempts = 0u32;
         loop {
+            // Allow abort signals to be processed before each attempt.
+            tokio::task::yield_now().await;
             attempts += 1;
             match unit.execute(&ctx) {
                 Ok(output) => return Ok(output),
