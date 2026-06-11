@@ -29,11 +29,13 @@ impl Enhancer {
         }
     }
 
+    #[must_use]
     pub fn with_debug(mut self, debug: bool) -> Self {
         self.debug = debug;
         self
     }
 
+    #[must_use]
     pub fn with_show_prompts(mut self, show: bool) -> Self {
         self.show_prompts = show;
         self
@@ -192,7 +194,7 @@ pub fn enhance_doc(
     let mut generated = 0;
     let module = doc.meta.module.as_str();
 
-    for member in doc.members.iter_mut() {
+    for member in &mut doc.members {
         if member.comment.is_some() && !member.comment_generated {
             continue;
         }
@@ -200,8 +202,7 @@ pub fn enhance_doc(
         let sig = member
             .signature
             .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or(member.name.as_str());
+            .map_or(member.name.as_str(), smol_str::SmolStr::as_str);
 
         let result = match member.type_name {
             guidance_types::MemberType::FnDecl

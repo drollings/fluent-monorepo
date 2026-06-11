@@ -1,3 +1,6 @@
+//! guidance-content-node: Level-of-detail text slicing and file content
+//! annotation. Produces annotated nodes from source files.
+
 #![deny(warnings, clippy::all, clippy::pedantic)]
 #![allow(
     clippy::module_name_repetitions,

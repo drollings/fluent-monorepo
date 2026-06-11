@@ -1,3 +1,41 @@
+//! ## Fluent WVR — Framework Trait Crate
+//!
+//! This is a **framework trait** crate — the Rust equivalent of a header-only
+//! interface.  It defines the core `Component`, `WorkUnit`, `FieldAccess`, and
+//! `Describable` traits that the DAG executor, Coral, and ContentNode crates
+//! implement and consume.
+//!
+//! **Design contract:**
+//! - No implementation logic beyond blanket impls and helper types
+//! - No domain-specific dependencies (no rusqlite, no LLM, no guidance-types)
+//! - The thinness is intentional — value is in the trait boundaries
+//! - If a derive macro (`#[derive(FieldAccess)]`) is added later, it goes here
+//!
+//! Consumers: `guidance-dag`, `coral-context`, `guidance-content-node`
+
+#![deny(warnings, clippy::all, clippy::pedantic)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::must_use_candidate,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::doc_markdown,
+    clippy::too_many_lines,
+    clippy::large_stack_arrays,
+    clippy::non_std_lazy_statics,
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::zero_sized_map_values,
+    clippy::unnecessary_literal_bound,
+    clippy::cast_possible_wrap,
+    clippy::unreadable_literal,
+    clippy::similar_names,
+    clippy::single_char_pattern,
+    clippy::byte_char_slices
+)]
+
 pub mod wrapper;
 
 use internment::ArcIntern;

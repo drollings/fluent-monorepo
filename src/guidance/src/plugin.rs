@@ -146,7 +146,7 @@ pub fn invoke_plugin(plugin: &Plugin, src_path: &Path, output_dir: &Path) -> Plu
 /// 2. `PATH` via the `which` crate — system-wide binary
 pub fn discover_provider(workspace: &Path, extension: &str) -> Option<Plugin> {
     let bare = extension.trim_start_matches('.');
-    let name = format!("guidance-{}", bare);
+    let name = format!("guidance-{bare}");
 
     let local = workspace.join("bin").join(&name);
     if local.is_file() {
@@ -307,6 +307,9 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&plugin_path, std::fs::Permissions::from_mode(0o755))
                 .expect("set executable");
+            let f = std::fs::File::open(&plugin_path).expect("open for sync");
+            f.sync_all().expect("sync plugin");
+            drop(f);
         }
 
         let plugin = Plugin {
@@ -339,6 +342,9 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&plugin_path, std::fs::Permissions::from_mode(0o755))
                 .expect("set executable");
+            let f = std::fs::File::open(&plugin_path).expect("open for sync");
+            f.sync_all().expect("sync plugin");
+            drop(f);
         }
 
         let plugin = Plugin {

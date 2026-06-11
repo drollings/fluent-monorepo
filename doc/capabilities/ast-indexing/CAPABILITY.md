@@ -21,34 +21,18 @@ Parses Zig and Python source files using tree-sitter to extract module-level com
 
 ## Semantic Deviations
 
-- **Uses tree-sitter** instead of `std.zig.Ast` — supports Zig and Python with separate tree-sitter parsers; no built-in Zig compiler integration
 - **Language dispatch** by file extension (`.zig`/`.zon` → Zig, `.py` → Python)
 - **Visibility** checked via `pub` keyword in Zig; Python visibility inferred from leading `_`
 - **Module comment** extracted from leading doc-comment nodes (`//!` / `///` / `#`)
 - **No comptime detection** — `comptime_block` variant exists in `MemberType` but no extractor walks comptime blocks
-- **SmolStr** for interned strings rather than Zig's slice+arena pattern
+- **SmolStr** for interned strings
 - **serde JSON** for serialization instead of `std.json`
 
-## Example
+## Incremental sync
 
-```rust
-use std::path::Path;
-use guidance_guidance::ast_parser::AstParser;
+Each member has a `match_hash` (SHA-256 of signature). On re-sync, only members whose hash changed are re-processed, making LLM comment infill cheap.
 
-let source = r#"/// Greets the user
-pub fn greet(name: []const u8) []const u8 {
-    return "Hello, " ++ name;
-}
-"#;
+## Query relevance
 
-let mut parser = AstParser::new();
-let doc = parser.parse_file(Path::new("main.zig"), source).expect("parse");
-assert_eq!(doc.meta.language.as_str(), "zig");
-assert_eq!(doc.members.len(), 1);
-assert_eq!(doc.members[0].name.as_str(), "greet");
-assert!(doc.members[0].is_pub);
-```
+When searching for "how does X work", the `comment` field of the corresponding `fn_decl` or `struct` is the primary semantic signal. Members without comments still surface via name/signature matching.
 
-## Zig reference
-
-See `../doc/capabilities/ast-indexing/CAPABILITY.md` in the Zig guidance source tree for the original Zig AST walker implementation.

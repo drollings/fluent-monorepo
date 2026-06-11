@@ -94,9 +94,8 @@ impl AstParser {
             "python" => &mut self.python_parser,
             _ => return true,
         };
-        let tree = match parser.parse(source, None) {
-            Some(t) => t,
-            None => return true,
+        let Some(tree) = parser.parse(source, None) else {
+            return true;
         };
         tree.root_node().has_error()
     }
@@ -124,13 +123,13 @@ fn extract_module_comment(root: &tree_sitter::Node, source: &str) -> Option<Stri
 fn extract_members(
     root: &tree_sitter::Node,
     source: &str,
-    _cursor: &mut tree_sitter::TreeCursor,
+    cursor: &mut tree_sitter::TreeCursor,
     language: &str,
 ) -> Vec<Member> {
     let mut members = Vec::new();
     let mut child = root.walk();
     for node in root.children(&mut child) {
-        if let Some(member) = extract_member(&node, source, _cursor, language) {
+        if let Some(member) = extract_member(&node, source, cursor, language) {
             members.push(member);
         }
     }
@@ -154,7 +153,7 @@ fn extract_member(
         "union_declaration" => extract_struct_or_class(node, source, cursor, MemberType::Union),
         "test_declaration" => extract_test(node, source),
         "variable_declaration" => extract_var_decl(node, source, cursor),
-        "comptime_expression" => extract_comptime_block(node, source, cursor, language),
+        "comptime_expression" => Some(extract_comptime_block(node, source, cursor, language)),
         _ => None,
     }
 }
@@ -164,7 +163,7 @@ fn extract_comptime_block(
     source: &str,
     cursor: &mut tree_sitter::TreeCursor,
     language: &str,
-) -> Option<Member> {
+) -> Member {
     let line = node.start_position().row + 1;
     // Walk children of the comptime block to find inner declarations
     let mut child_members = Vec::new();
@@ -185,13 +184,13 @@ fn extract_comptime_block(
         .and_then(|n| n.utf8_text(source.as_bytes()).ok())
         .unwrap_or("comptime");
 
-    Some(Member {
+    Member {
         type_name: MemberType::ComptimeBlock,
         name: name.into(),
         line: Some(line as u32),
         members: child_members,
         ..Member::default()
-    })
+    }
 }
 
 fn extract_var_decl(
@@ -345,8 +344,7 @@ fn extract_zig_params(node: &tree_sitter::Node, source: &str) -> Vec<(String, Op
             let param_name = child_node
                 .child_by_field_name("name")
                 .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .map(String::from)
-                .unwrap_or_else(|| "_".into());
+                .map_or_else(|| "_".into(), String::from);
 
             let param_type = child_node
                 .child_by_field_name("type")
@@ -528,9 +526,8 @@ fn extract_preceding_doc_comment(node: &tree_sitter::Node, source: &str) -> Opti
 
 fn check_visibility(node: &tree_sitter::Node, source: &str, language: &str) -> bool {
     if language == "python" {
-        let name_node = match node.child_by_field_name("name") {
-            Some(n) => n,
-            None => return true,
+        let Some(name_node) = node.child_by_field_name("name") else {
+            return true;
         };
         if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
             return !name.starts_with('_');
@@ -549,7 +546,7 @@ fn check_visibility(node: &tree_sitter::Node, source: &str, language: &str) -> b
 
 fn trim_doc_prefix(text: &str) -> String {
     let mut lines: Vec<&str> = text.lines().collect();
-    for line in lines.iter_mut() {
+    for line in &mut lines {
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix("///") {
             *line = rest.strip_prefix(' ').unwrap_or(rest);

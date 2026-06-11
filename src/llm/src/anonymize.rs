@@ -5,7 +5,7 @@ use regex::Regex;
 static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap());
 static API_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?i)(api[_-]?key|apikey|secret|token)\s*[=:]\s*[a-zA-Z0-9_-]{16,}"#).unwrap()
+    Regex::new(r"(?i)(api[_-]?key|apikey|secret|token)\s*[=:]\s*[a-zA-Z0-9_-]{16,}").unwrap()
 });
 static IPV4_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap());

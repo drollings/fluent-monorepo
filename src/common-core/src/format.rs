@@ -1,25 +1,10 @@
 use std::fmt::Write as _;
 
-pub fn format_json(value: &serde_json::Value, indent: usize) -> String {
-    let _indent_str = " ".repeat(indent);
-    let json_str = serde_json::to_string_pretty(value).unwrap_or_default();
-    if indent == 2 {
-        return json_str;
-    }
-    json_str
-        .lines()
-        .map(|line| {
-            if line.starts_with(' ') {
-                let trimmed = line.trim_start();
-                let leading = line.len() - trimmed.len();
-                let new_leading = leading * indent / 2;
-                format!("{}{}", " ".repeat(new_leading), trimmed)
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Formats a JSON value as a pretty-printed string with 2-space indent.
+/// The `_indent` parameter is accepted for API compatibility but only 2-space
+/// indent is supported (matching `serde_json::to_string_pretty`).
+pub fn format_json(value: &serde_json::Value, _indent: usize) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default()
 }
 
 fn csv_escape(field: &str) -> String {
@@ -262,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn format_json_indent_4() {
+    fn format_json_uses_two_space_indent() {
         let v = serde_json::json!({"a": {"b": 1}});
         let s = format_json(&v, 4);
         assert!(s.contains("\"a\""));
@@ -271,7 +256,7 @@ mod tests {
             .iter()
             .find(|l| l.trim_start().starts_with('"'))
             .unwrap();
-        assert!(indent_line.starts_with("    "));
+        assert!(indent_line.starts_with("  "));
     }
 
     #[test]

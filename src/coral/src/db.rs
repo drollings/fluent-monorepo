@@ -7,7 +7,7 @@ use bitvec::vec::BitVec;
 use guidance_llm::EmbeddingProvider;
 use guidance_search_vector::math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
-use project_common::error::DbError;
+use guidance_search_vector::error::DbError;
 use rusqlite::params;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;
 
@@ -439,7 +439,7 @@ impl Library {
 
     pub fn keyword_search(&self, query: &str) -> Result<Vec<KnnHit>, LibraryError> {
         let conn = self.conn.lock().unwrap();
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
         let mut stmt = conn.prepare(
             "SELECT id, name FROM context_nodes WHERE name LIKE ?1 OR source LIKE ?1 LIMIT 10",
         )?;
@@ -532,7 +532,7 @@ impl<'a> HydrationPipeline<'a> {
     /// Returns the new node's ID.
     pub fn insert_and_hydrate(&self, node: &mut ContextNode) -> Result<NodeId, LibraryError> {
         // 1. Compute embedding from LOD[0] (most detailed text)
-        let text = node.lod.first().map(|s| s.as_str()).unwrap_or("");
+        let text = node.lod.first().map_or("", String::as_str);
         if !text.is_empty() {
             if let Ok(emb) = self.embedder.embed(text) {
                 node.embedding = Some(emb);
@@ -551,7 +551,7 @@ impl<'a> HydrationPipeline<'a> {
                             node_id,
                             hit.node_id,
                             "neighbor_of",
-                            hit.distance as f64,
+                            f64::from(hit.distance),
                         );
                     }
                 }

@@ -74,7 +74,7 @@ impl FsmEngine {
     /// INTAKE state: tokenize, detect file paths, detect identifiers
     pub fn intake(&mut self, query: &str) -> QueryClass {
         let trimmed = query.trim().to_string();
-        let tokens: Vec<String> = trimmed.split_whitespace().map(|t| t.to_string()).collect();
+        let tokens: Vec<String> = trimmed.split_whitespace().map(ToString::to_string).collect();
 
         let detected_identifiers: Vec<String> = tokens
             .iter()
@@ -190,9 +190,9 @@ impl FsmEngine {
     }
 
     /// VALIDATE state: check result quality
-    pub fn validate(&self, _qc: &QueryClass) -> bool {
+    pub fn validate(&self, qc: &QueryClass) -> bool {
         // Basic validation: confidence threshold
-        _qc.confidence >= 0.5
+        qc.confidence >= 0.5
     }
 
     /// Run the full FSM pipeline for a query

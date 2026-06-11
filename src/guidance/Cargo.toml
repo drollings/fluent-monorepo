@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-project-common = { path = "../project-common" }
+common-core = { path = "../common-core" }
 guidance-project-knowledge = { path = "../project-knowledge" }
 guidance-types = { path = "../types" }
 guidance-search-vector = { path = "../search-vector" }

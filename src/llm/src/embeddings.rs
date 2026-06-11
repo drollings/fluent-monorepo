@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
-use project_common::hash::content_hash_with_model;
+use common_core::hash::content_hash_with_model;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
@@ -117,7 +117,8 @@ impl OllamaEmbedding {
             "model": self.model,
             "input": text,
         });
-        let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
+        let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
+        let resp_bytes = do_http_post(&url, &body, None)?;
         parse_ollama_response(&resp_bytes)
     }
 }
@@ -145,7 +146,8 @@ impl EmbeddingProvider for OllamaEmbedding {
             "model": self.model,
             "input": inputs,
         });
-        let resp_bytes = do_embed_request(&self.base_url, "api/embed", &body.to_string())?;
+        let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
+        let resp_bytes = do_http_post(&url, &body, None)?;
         parse_ollama_batch_response(&resp_bytes)
     }
 }
@@ -250,7 +252,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
 
         let count = results.len();
         let actual_dims = if count > 0 {
-            results[0].as_ref().map_or(0, |v| v.len())
+            results[0].as_ref().map_or(0, Vec::len)
         } else {
             0
         };
@@ -327,8 +329,7 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "model": self.model,
             "input": text,
         });
-        let resp_bytes =
-            do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
+        let resp_bytes = do_http_post(&self.embeddings_url(), &body, Some(&self.api_key))?;
         parse_openai_response(&resp_bytes)
     }
 
@@ -341,19 +342,19 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "model": self.model,
             "input": inputs,
         });
-        let resp_bytes =
-            do_openai_request(&self.embeddings_url(), &self.api_key, &body.to_string())?;
+        let resp_bytes = do_http_post(&self.embeddings_url(), &body, Some(&self.api_key))?;
         parse_openai_batch_response(&resp_bytes)
     }
 }
 
-fn do_embed_request(base_url: &str, path: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {
-    let url = format!("{}/{}", base_url.trim_end_matches('/'), path);
-    let body: serde_json::Value =
-        serde_json::from_str(body_str).map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
-    let mut resp = ureq::post(&url)
-        .header("Content-Type", "application/json")
-        .send_json(&body)
+fn do_http_post(url: &str, body: &serde_json::Value, auth_header: Option<&str>) -> Result<Vec<u8>, EmbeddingError> {
+    let mut req = ureq::post(url)
+        .header("Content-Type", "application/json");
+    if let Some(token) = auth_header {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    let mut resp = req
+        .send_json(body)
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
     if resp.status().as_u16() >= 400 {
         let text = resp.body_mut().read_to_string().unwrap_or_default();
@@ -363,42 +364,33 @@ fn do_embed_request(base_url: &str, path: &str, body_str: &str) -> Result<Vec<u8
             text
         )));
     }
-    let bytes = resp
-        .body_mut()
+    resp.body_mut()
         .read_to_vec()
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
-    Ok(bytes)
+        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))
 }
 
-fn do_openai_request(url: &str, api_key: &str, body_str: &str) -> Result<Vec<u8>, EmbeddingError> {
-    let body: serde_json::Value =
-        serde_json::from_str(body_str).map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
-    let mut resp = ureq::post(url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", &format!("Bearer {api_key}"))
-        .send_json(&body)
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
-    if resp.status().as_u16() >= 400 {
-        let text = resp.body_mut().read_to_string().unwrap_or_default();
-        return Err(EmbeddingError::RequestFailed(format!(
-            "HTTP {}: {}",
-            resp.status(),
-            text
-        )));
-    }
-    let bytes = resp
-        .body_mut()
-        .read_to_vec()
-        .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;
-    Ok(bytes)
+fn parse_float_array(arr: &[serde_json::Value]) -> Result<Vec<f32>, EmbeddingError> {
+    arr.iter()
+        .map(|x| {
+            x.as_f64()
+                .map(|v| v as f32)
+                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))
+        })
+        .collect()
+}
+
+fn parse_batch_embeddings(arrays: &[Vec<f32>]) -> BatchEmbedding {
+    let count = arrays.len();
+    let dims = arrays.first().map_or(0, Vec::len);
+    let flat = arrays.iter().flatten().copied().collect();
+    BatchEmbedding { flat, count, dims }
 }
 
 pub fn parse_ollama_response(json: &[u8]) -> Result<Vec<f32>, EmbeddingError> {
     let v: serde_json::Value =
         serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let embeddings = v
-        .get("embeddings")
-        .and_then(|e| e.as_array())
+    let embeddings = v["embeddings"]
+        .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("missing embeddings array".into()))?;
     let first = embeddings
         .first()
@@ -406,114 +398,58 @@ pub fn parse_ollama_response(json: &[u8]) -> Result<Vec<f32>, EmbeddingError> {
     let arr = first
         .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?;
-    let vec: Vec<f32> = arr
-        .iter()
-        .map(|x| {
-            x.as_f64()
-                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))
-        })
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .map(|&x| x as f32)
-        .collect();
-    Ok(vec)
+    parse_float_array(arr)
 }
 
 pub fn parse_ollama_batch_response(json: &[u8]) -> Result<BatchEmbedding, EmbeddingError> {
     let v: serde_json::Value =
         serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let embeddings = v
-        .get("embeddings")
-        .and_then(|e| e.as_array())
-        .ok_or_else(|| EmbeddingError::ParseError("missing embeddings array".into()))?;
-    let count = embeddings.len();
-    if count == 0 {
-        return Ok(BatchEmbedding {
-            flat: vec![],
-            count: 0,
-            dims: 0,
-        });
-    }
-    let dims = embeddings[0]
+    let embeddings = v["embeddings"]
         .as_array()
-        .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?
-        .len();
-    let mut flat = Vec::with_capacity(count * dims);
-    for emb in embeddings {
-        let arr = emb
-            .as_array()
-            .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?;
-        for val in arr {
-            let f = val
-                .as_f64()
-                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))?
-                as f32;
-            flat.push(f);
-        }
-    }
-    Ok(BatchEmbedding { flat, count, dims })
+        .ok_or_else(|| EmbeddingError::ParseError("missing embeddings array".into()))?;
+    let arrays: Result<Vec<Vec<f32>>, EmbeddingError> = embeddings
+        .iter()
+        .map(|emb| {
+            let arr = emb
+                .as_array()
+                .ok_or_else(|| EmbeddingError::ParseError("embedding is not an array".into()))?;
+            parse_float_array(arr)
+        })
+        .collect();
+    Ok(parse_batch_embeddings(&arrays?))
 }
 
 pub fn parse_openai_response(json: &[u8]) -> Result<Vec<f32>, EmbeddingError> {
     let v: serde_json::Value =
         serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let data = v
-        .get("data")
-        .and_then(|d| d.as_array())
+    let data = v["data"]
+        .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("missing data array".into()))?;
     let first = data
         .first()
         .ok_or_else(|| EmbeddingError::ParseError("empty data array".into()))?;
-    let embedding = first
-        .get("embedding")
-        .and_then(|e| e.as_array())
+    let embedding = first["embedding"]
+        .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?;
-    let vec: Vec<f32> = embedding
-        .iter()
-        .map(|x| {
-            x.as_f64()
-                .map(|v| v as f32)
-                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(vec)
+    parse_float_array(embedding)
 }
 
 pub fn parse_openai_batch_response(json: &[u8]) -> Result<BatchEmbedding, EmbeddingError> {
     let v: serde_json::Value =
         serde_json::from_slice(json).map_err(|e| EmbeddingError::ParseError(e.to_string()))?;
-    let data = v
-        .get("data")
-        .and_then(|d| d.as_array())
+    let data = v["data"]
+        .as_array()
         .ok_or_else(|| EmbeddingError::ParseError("missing data array".into()))?;
-    let count = data.len();
-    if count == 0 {
-        return Ok(BatchEmbedding {
-            flat: vec![],
-            count: 0,
-            dims: 0,
-        });
-    }
-    let dims = data[0]
-        .get("embedding")
-        .and_then(|e| e.as_array())
-        .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?
-        .len();
-    let mut flat = Vec::with_capacity(count * dims);
-    for entry in data {
-        let embedding = entry
-            .get("embedding")
-            .and_then(|e| e.as_array())
-            .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?;
-        for val in embedding {
-            let f = val
-                .as_f64()
-                .ok_or_else(|| EmbeddingError::ParseError("non-float in embedding".into()))?
-                as f32;
-            flat.push(f);
-        }
-    }
-    Ok(BatchEmbedding { flat, count, dims })
+    let arrays: Result<Vec<Vec<f32>>, EmbeddingError> = data
+        .iter()
+        .map(|entry| {
+            let embedding = entry["embedding"]
+                .as_array()
+                .ok_or_else(|| EmbeddingError::ParseError("missing embedding field".into()))?;
+            parse_float_array(embedding)
+        })
+        .collect();
+    Ok(parse_batch_embeddings(&arrays?))
 }
 
 fn validate_url(url: &str) -> Result<(), EmbeddingError> {

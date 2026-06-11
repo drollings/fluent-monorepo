@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::Path;
 
 use guidance_project_knowledge::word_index::WordIndex;
@@ -63,16 +64,19 @@ impl QueryEngine {
         }
     }
 
+    #[must_use]
     pub fn with_no_llm(mut self) -> Self {
         self.no_llm = true;
         self
     }
 
+    #[must_use]
     pub fn with_word_index(mut self, wi: WordIndex) -> Self {
         self.word_index = Some(wi);
         self
     }
 
+    #[must_use]
     pub fn with_aliases(mut self, aliases: SemanticAliases) -> Self {
         self.aliases = Some(aliases);
         self
@@ -147,12 +151,12 @@ impl QueryEngine {
                 self.explain_identifier(&expanded_query, doc)
             }
             QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword => {
-                self.explain_capability(&expanded_query, doc)
+                Self::explain_capability(&expanded_query, doc)
             }
             QueryIntent::Conceptual | QueryIntent::HowTo => {
                 self.explain_concept(&expanded_query, doc)
             }
-            QueryIntent::FilePath => self.explain_file_path(&expanded_query, doc),
+            QueryIntent::FilePath => Self::explain_file_path(&expanded_query, doc),
             QueryIntent::GeneralSearch => self.explain_general(&expanded_query, doc),
         }
     }
@@ -164,7 +168,7 @@ impl QueryEngine {
     ) -> Result<Vec<Stage>, QueryEngineError> {
         let matched_names: Vec<String> = identifier::find_members_by_name(doc, query)
             .into_iter()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect();
 
         if !matched_names.is_empty() {
@@ -173,7 +177,7 @@ impl QueryEngine {
 
         let sig_matches = identifier::find_members_by_signature(doc, query);
         if !sig_matches.is_empty() {
-            let sig_names: Vec<String> = sig_matches.into_iter().map(|s| s.to_string()).collect();
+            let sig_names: Vec<String> = sig_matches.into_iter().map(ToString::to_string).collect();
             return Ok(Synthesizer::synthesize(query, doc, &sig_names));
         }
 
@@ -207,14 +211,13 @@ impl QueryEngine {
     }
 
     fn explain_capability(
-        &self,
         query: &str,
         doc: &GuidanceDoc,
     ) -> Result<Vec<Stage>, QueryEngineError> {
         let keywords: Vec<&str> = query.split_whitespace().collect();
         let mut matched_names: Vec<String> = Vec::new();
 
-        for member in doc.members.iter() {
+        for member in &doc.members {
             let member_lower = member.name.as_str().to_lowercase();
             let comment_lower = member
                 .comment
@@ -256,7 +259,6 @@ impl QueryEngine {
     }
 
     fn explain_file_path(
-        &self,
         query: &str,
         doc: &GuidanceDoc,
     ) -> Result<Vec<Stage>, QueryEngineError> {
@@ -357,12 +359,13 @@ impl QueryEngine {
                 guidance_types::StageKind::SkillDoc => "🔧 Skill",
                 _ => "❓",
             };
-            out.push_str(&format!("## {kind}\n\n"));
-            out.push_str(&format!(
+            let _ = write!(out, "## {kind}\n\n");
+            let _ = write!(
+                out,
                 "*Source: {}:{}*\n\n",
                 stage.source,
                 stage.line.unwrap_or(0)
-            ));
+            );
             out.push_str(&stage.content);
             out.push_str("\n\n---\n\n");
         }
@@ -399,22 +402,24 @@ impl QueryEngine {
     fn format_debug(stages: &[Stage]) -> String {
         let mut out = String::new();
         out.push_str("=== Query Debug ===\n");
-        out.push_str(&format!("No LLM: {}\n", true));
-        out.push_str(&format!("Stages: {}\n\n", stages.len()));
+        let _ = writeln!(out, "No LLM: true");
+        let _ = write!(out, "Stages: {}\n\n", stages.len());
         for (i, stage) in stages.iter().enumerate() {
             let kind_str = format!("{:?}", stage.kind);
-            out.push_str(&format!("[{}. {}]\n", i + 1, kind_str));
-            out.push_str(&format!(
-                "  Source: {}:{}\n",
+            let _ = writeln!(out, "[{}. {}]", i + 1, kind_str);
+            let _ = writeln!(
+                out,
+                "  Source: {}:{}",
                 stage.source,
                 stage.line.unwrap_or(0)
-            ));
+            );
             let preview: String = stage.content.chars().take(120).collect();
-            out.push_str(&format!(
-                "  Content ({} chars): {}\n",
+            let _ = writeln!(
+                out,
+                "  Content ({} chars): {}",
                 stage.content.len(),
                 preview
-            ));
+            );
         }
         out
     }
@@ -434,12 +439,12 @@ impl QueryEngine {
                 QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier => {
                     let names: Vec<String> = identifier::find_members_by_name(doc, query)
                         .iter()
-                        .map(|s| s.to_string())
+                        .map(ToString::to_string)
                         .collect();
-                    if !names.is_empty() {
-                        Synthesizer::synthesize(query, doc, &names)
-                    } else {
+                    if names.is_empty() {
                         vec![Stage::new_not_found(query, doc)]
+                    } else {
+                        Synthesizer::synthesize(query, doc, &names)
                     }
                 }
                 _ => {

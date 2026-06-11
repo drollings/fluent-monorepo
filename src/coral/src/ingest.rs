@@ -4,7 +4,7 @@ use guidance_ontology::mapper::PendingNode;
 use guidance_ontology::yago;
 use guidance_types::ContextNode;
 use guidance_types::NodeId;
-use project_common::error::DbError;
+use guidance_search_vector::error::DbError;
 use thiserror::Error;
 
 use crate::db::Library;
@@ -152,19 +152,15 @@ impl BatchIngestor {
         let mut triples_processed = 0;
 
         for result in parser {
-            match result {
-                Ok(triple) => {
-                    if mapper.process_triple(&triple).is_err() {
-                        self.stats.errors_skipped += 1;
-                        continue;
-                    }
-                    triples_processed += 1;
-                    self.stats.triples_processed += 1;
-                }
-                Err(_) => {
+            if let Ok(triple) = result {
+                if mapper.process_triple(&triple).is_err() {
                     self.stats.errors_skipped += 1;
                     continue;
                 }
+                triples_processed += 1;
+                self.stats.triples_processed += 1;
+            } else {
+                self.stats.errors_skipped += 1;
             }
         }
 

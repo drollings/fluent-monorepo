@@ -95,7 +95,7 @@ pub struct BinaryContextNode {
     pub lod_lengths: [u32; 6],
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn compute_checksum(data: &[u8]) -> u32 {
     data.iter()
         .fold(0u32, |acc, &b| acc.wrapping_add(u32::from(b)))

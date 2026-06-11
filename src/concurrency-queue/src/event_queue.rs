@@ -10,7 +10,7 @@ pub struct EventQueue<T: Send + 'static> {
 }
 
 impl<T: Send + 'static> EventQueue<T> {
-    pub fn new<F>(config: QueueConfig, handler: F) -> Self
+    pub fn new<F>(config: &QueueConfig, handler: F) -> Self
     where
         F: Fn(T) + Send + Sync + Clone + 'static,
     {
@@ -56,7 +56,7 @@ mod tests {
         let results = Arc::new(Mutex::new(Vec::new()));
         let results_clone = Arc::clone(&results);
         let queue: EventQueue<i32> = EventQueue::new(
-            QueueConfig {
+            &QueueConfig {
                 worker_count: 1,
                 timeout_ms: 1000,
                 retry_policy: crate::RetryPolicy::None,
@@ -81,7 +81,7 @@ mod tests {
         let results = Arc::new(Mutex::new(Vec::new()));
         let results_clone = Arc::clone(&results);
         let queue: EventQueue<i32> = EventQueue::new(
-            QueueConfig {
+            &QueueConfig {
                 worker_count: 3,
                 timeout_ms: 1000,
                 retry_policy: crate::RetryPolicy::None,
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_event_queue_full() {
         let queue: EventQueue<i32> = EventQueue::new(
-            QueueConfig {
+            &QueueConfig {
                 worker_count: 1,
                 timeout_ms: 1000,
                 retry_policy: crate::RetryPolicy::None,
@@ -131,7 +131,7 @@ mod tests {
         let results = Arc::new(Mutex::new(Vec::new()));
         let results_clone = Arc::clone(&results);
         let queue: EventQueue<i32> = EventQueue::new(
-            QueueConfig {
+            &QueueConfig {
                 worker_count: 2,
                 timeout_ms: 1000,
                 retry_policy: crate::RetryPolicy::None,

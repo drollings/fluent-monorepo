@@ -6,7 +6,7 @@ use guidance_core::config;
 use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_search_vector::GuidanceDb;
-use project_common::shell::run_command;
+use common_core::shell::run_command;
 use time::OffsetDateTime;
 
 mod structure;

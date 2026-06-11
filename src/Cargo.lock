@@ -1718,7 +1718,7 @@ dependencies = [
  "bon",
  "clap",
  "guidance-common",
- "guidance-coral",
+ "coral-context",
  "guidance-dag",
  "guidance-guidance",
  "guidance-llm",
@@ -1761,7 +1761,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "guidance-coral"
+name = "coral-context"
 version = "0.1.0"
 dependencies = [
  "bitvec",

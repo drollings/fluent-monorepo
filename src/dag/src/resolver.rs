@@ -32,6 +32,7 @@ impl<'a> DependencyResolver<'a> {
             strict: true,
         }
     }
+    #[must_use]
     pub fn with_strict(mut self, strict: bool) -> Self {
         self.strict = strict;
         self
@@ -126,8 +127,7 @@ impl<'a> DependencyResolver<'a> {
             .map(|&bit_idx| {
                 self.registry
                     .get_by_bit_index(bit_idx)
-                    .map(|t| t.name.to_string())
-                    .unwrap_or_else(|| format!("bit_{bit_idx}"))
+                    .map_or_else(|| format!("bit_{bit_idx}"), |t| t.name.to_string())
             })
             .collect();
         Ok(ExecutionPlan {
@@ -141,7 +141,7 @@ impl<'a> DependencyResolver<'a> {
         target_names: &[&str],
         provided: &BitVec,
     ) -> Result<ExecutionPlan, ResolverError> {
-        let mut combined: Vec<String> = target_names.iter().map(|s| s.to_string()).collect();
+        let mut combined: Vec<String> = target_names.iter().map(ToString::to_string).collect();
         for name in target_names {
             let target = self
                 .registry
@@ -163,7 +163,7 @@ impl<'a> DependencyResolver<'a> {
                 }
             }
         }
-        let names: Vec<&str> = combined.iter().map(|s| s.as_str()).collect();
+        let names: Vec<&str> = combined.iter().map(String::as_str).collect();
         self.resolve(&names)
     }
 }

@@ -72,11 +72,6 @@ impl LlmClient {
         }
     }
 
-    #[deprecated(since = "0.2.0", note = "use LlmClient::with_config instead")]
-    pub fn new_deprecated(api_base: &str, model: &str) -> Self {
-        Self::new(api_base, model)
-    }
-
     pub fn with_config(config: LlmConfig) -> Self {
         let api_base = config.api_url.trim_end_matches('/').to_string();
         let model = config.model.clone();
@@ -96,66 +91,11 @@ impl LlmClient {
         &self.config
     }
 
-    fn build_request_body(&self, messages: &[ChatMessage]) -> serde_json::Value {
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 1024u32,
-            "stream": false,
-        });
-        if self.config.think == Some(true) {
-            body["think"] = serde_json::Value::Bool(true);
-        }
-        body
-    }
-
-    fn extract_content(&self, parsed: &serde_json::Value) -> Result<String, LlmError> {
-        let content = parsed
-            .get("choices")
-            .and_then(|c| c.as_array())
-            .and_then(|choices| choices.first())
-            .and_then(|c| c.get("message"))
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-            .ok_or(LlmError::NoResponse)?
-            .to_string();
-
-        // For think-mode responses, also check reasoning_content
-        if self.config.think == Some(true) {
-            if let Some(reasoning) = parsed
-                .get("choices")
-                .and_then(|c| c.as_array())
-                .and_then(|choices| choices.first())
-                .and_then(|c| c.get("reasoning_content"))
-                .and_then(|c| c.as_str())
-            {
-                return Ok(format!("{}\n{}", reasoning, content));
-            }
-        }
-
-        Ok(content)
-    }
-
     pub fn chat_complete(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
         if let Some(ref queue) = self.queue {
             return queue.submit(messages.to_vec(), self.config.clone());
         }
-        let url = format!("{}/chat/completions", self.api_base);
-        let body = self.build_request_body(messages);
-
-        let response = ureq::post(&url)
-            .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
-            .map_err(|e| LlmError::Http(e.to_string()))?;
-
-        let mut body = response.into_body();
-        let body_str = body
-            .read_to_string()
-            .map_err(|e| LlmError::Api(e.to_string()))?;
-
-        let parsed: serde_json::Value =
-            serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
-
-        self.extract_content(&parsed)
+        chat_complete_http(&self.api_base, messages, &self.model, self.config.think)
     }
 
     pub async fn chat_complete_async(
@@ -165,48 +105,70 @@ impl LlmClient {
         if let Some(ref queue) = self.queue {
             return queue.submit_async(messages, self.config.clone()).await;
         }
-        let url = format!("{}/chat/completions", self.api_base);
+        let api_base = self.api_base.clone();
         let model = self.model.clone();
         let config_think = self.config.think;
 
         tokio::task::spawn_blocking(move || {
-            let mut body = serde_json::json!({
-                "model": model,
-                "messages": messages,
-                "max_tokens": 1024u32,
-                "stream": false,
-            });
-            if config_think == Some(true) {
-                body["think"] = serde_json::Value::Bool(true);
-            }
-
-            let response = ureq::post(&url)
-                .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
-                .map_err(|e| LlmError::Http(e.to_string()))?;
-
-            let mut body = response.into_body();
-            let body_str = body
-                .read_to_string()
-                .map_err(|e| LlmError::Api(e.to_string()))?;
-
-            let parsed: serde_json::Value =
-                serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
-
-            let content = parsed
-                .get("choices")
-                .and_then(|c| c.as_array())
-                .and_then(|choices| choices.first())
-                .and_then(|c| c.get("message"))
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .ok_or(LlmError::NoResponse)?
-                .to_string();
-
-            Ok(content)
+            chat_complete_http(&api_base, &messages, &model, config_think)
         })
         .await
         .map_err(|e| LlmError::Http(e.to_string()))?
     }
+}
+
+pub(crate) fn chat_complete_http(
+    api_base: &str,
+    messages: &[ChatMessage],
+    model: &str,
+    think: Option<bool>,
+) -> Result<String, LlmError> {
+    let url = format!("{}/chat/completions", api_base.trim_end_matches('/'));
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": 1024u32,
+        "stream": false,
+    });
+    if think == Some(true) {
+        body["think"] = serde_json::Value::Bool(true);
+    }
+
+    let response = ureq::post(&url)
+        .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
+        .map_err(|e| LlmError::Http(e.to_string()))?;
+
+    let mut response_body = response.into_body();
+    let body_str = response_body
+        .read_to_string()
+        .map_err(|e| LlmError::Api(e.to_string()))?;
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
+
+    let content = parsed
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|choices| choices.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .ok_or(LlmError::NoResponse)?
+        .to_string();
+
+    if think == Some(true) {
+        if let Some(reasoning) = parsed
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|choices| choices.first())
+            .and_then(|c| c.get("reasoning_content"))
+            .and_then(|c| c.as_str())
+        {
+            return Ok(format!("{reasoning}\n{content}"));
+        }
+    }
+
+    Ok(content)
 }
 
 /// Strips provider: prefix from model reference strings.
@@ -214,8 +176,7 @@ impl LlmClient {
 pub fn model_name(model_ref: &str) -> &str {
     model_ref
         .split_once(':')
-        .map(|(_, name)| name)
-        .unwrap_or(model_ref)
+        .map_or(model_ref, |(_, name)| name)
 }
 
 /// Removes think-block tags from LLM output (e.g. `<think>reasoning</think>`).
@@ -556,35 +517,4 @@ mod tests {
         assert!(!is_blank_or_plausible("function"));
     }
 
-    #[test]
-    fn test_build_request_body_with_think() {
-        let config = LlmConfig::new()
-            .api_url("http://localhost:11434/v1".into())
-            .model("llama3".into())
-            .think(true)
-            .build();
-        let client = LlmClient::with_config(config);
-        let messages = vec![ChatMessage {
-            role: "user".into(),
-            content: "hello".into(),
-        }];
-        let body = client.build_request_body(&messages);
-        assert_eq!(body["think"], serde_json::Value::Bool(true));
-        assert_eq!(body["model"], "llama3");
-    }
-
-    #[test]
-    fn test_build_request_body_without_think() {
-        let config = LlmConfig::new()
-            .api_url("http://localhost:11434/v1".into())
-            .model("llama3".into())
-            .build();
-        let client = LlmClient::with_config(config);
-        let messages = vec![ChatMessage {
-            role: "user".into(),
-            content: "hello".into(),
-        }];
-        let body = client.build_request_body(&messages);
-        assert!(body.get("think").is_none());
-    }
 }

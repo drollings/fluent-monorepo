@@ -68,7 +68,7 @@ impl QuantizedEmbedding {
             return vec![0.0; self.dimensions];
         }
         let inv = 1.0 / self.scale;
-        self.values.iter().map(|&v| (v as f32) * inv).collect()
+        self.values.iter().map(|&v| f32::from(v) * inv).collect()
     }
 }
 
@@ -78,7 +78,7 @@ pub fn cosine_similarity_q8(a: &QuantizedEmbedding, b: &QuantizedEmbedding) -> f
     }
     let (mut dot, mut na, mut nb) = (0i64, 0i64, 0i64);
     for (x, y) in a.values.iter().zip(b.values.iter()) {
-        let (xi, yi) = (*x as i64, *y as i64);
+        let (xi, yi) = (i64::from(*x), i64::from(*y));
         dot += xi * yi;
         na += xi * xi;
         nb += yi * yi;

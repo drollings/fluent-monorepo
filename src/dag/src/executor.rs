@@ -54,7 +54,7 @@ impl<'a> DagExecutor<'a> {
                 .get_by_bit_index(bit_idx)
                 .ok_or_else(|| ExecutionError::TargetNotFound(format!("bit_index {bit_idx}")))?;
             info!(target = %target.name, "executing");
-            let result = self.execute_target(target, plan)?;
+            let result = Self::execute_target(target, plan)?;
             results.push(result.clone());
             self.results.insert(bit_idx, result);
         }
@@ -62,7 +62,6 @@ impl<'a> DagExecutor<'a> {
     }
 
     fn execute_target(
-        &self,
         target: &Target,
         _plan: &ExecutionPlan,
     ) -> Result<ExecutionResult, ExecutionError> {

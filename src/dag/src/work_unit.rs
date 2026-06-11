@@ -19,10 +19,12 @@ impl CommandUnit {
             provides: Vec::new(),
         }
     }
+    #[must_use]
     pub fn with_depends(mut self, deps: &[ArcIntern<str>]) -> Self {
         self.depends = deps.to_vec();
         self
     }
+    #[must_use]
     pub fn with_provides(mut self, prov: &[ArcIntern<str>]) -> Self {
         self.provides = prov.to_vec();
         self

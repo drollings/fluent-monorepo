@@ -14,18 +14,18 @@ pub enum SyncError {
 
 pub fn sync_comments(source_path: &Path, doc: &GuidanceDoc) -> Result<(), SyncError> {
     let source = std::fs::read_to_string(source_path)?;
-    let modified = insert_comments(&source, doc)?;
+    let modified = insert_comments(&source, doc);
     if modified != source {
         std::fs::write(source_path, modified)?;
     }
     Ok(())
 }
 
-fn insert_comments(source: &str, doc: &GuidanceDoc) -> Result<String, SyncError> {
+fn insert_comments(source: &str, doc: &GuidanceDoc) -> String {
     let lines: Vec<&str> = source.lines().collect();
     let mut insertions: Vec<(usize, Vec<String>)> = Vec::new();
 
-    for member in doc.members.iter() {
+    for member in &doc.members {
         if let (Some(ref comment_text), Some(line)) = (&member.comment, member.line) {
             if comment_text.is_empty() || member.comment_generated {
                 continue;
@@ -49,7 +49,7 @@ fn insert_comments(source: &str, doc: &GuidanceDoc) -> Result<String, SyncError>
     }
 
     if insertions.is_empty() {
-        return Ok(source.to_string());
+        return source.to_string();
     }
 
     insertions.sort_by_key(|(idx, _)| *idx);
@@ -75,7 +75,7 @@ fn insert_comments(source: &str, doc: &GuidanceDoc) -> Result<String, SyncError>
         line_idx += 1;
     }
 
-    Ok(result.trim_end().to_string())
+    result.trim_end().to_string()
 }
 
 #[cfg(test)]
@@ -102,7 +102,7 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let result = insert_comments(source, &doc).expect("insert");
+        let result = insert_comments(source, &doc);
         assert!(result.starts_with("/// Greets the user.\npub fn hello"));
     }
 
@@ -125,7 +125,7 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let result = insert_comments(source, &doc).expect("insert");
+        let result = insert_comments(source, &doc);
         assert_eq!(result, source);
     }
 
@@ -148,7 +148,7 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let result = insert_comments(source, &doc).expect("insert");
+        let result = insert_comments(source, &doc);
         assert_eq!(result, source);
     }
 }

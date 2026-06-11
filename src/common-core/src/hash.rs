@@ -56,59 +56,46 @@ pub fn content_hash_with_model(content: &str, model: &str) -> [u8; 16] {
     out
 }
 
+enum HashStateInner {
+    Sha256(Sha256),
+    Sha512(Sha512),
+    Blake3(Box<Hasher>),
+}
+
 pub struct HashState {
-    #[allow(dead_code)]
-    algorithm: HashAlgorithm,
-    sha256: Option<Sha256>,
-    sha512: Option<Sha512>,
-    blake3: Option<Hasher>,
+    inner: HashStateInner,
 }
 
 impl HashState {
     pub fn new(algorithm: HashAlgorithm) -> Self {
         match algorithm {
             HashAlgorithm::Sha256 => Self {
-                algorithm,
-                sha256: Some(Sha256::new()),
-                sha512: None,
-                blake3: None,
+                inner: HashStateInner::Sha256(Sha256::new()),
             },
             HashAlgorithm::Sha512 => Self {
-                algorithm,
-                sha256: None,
-                sha512: Some(Sha512::new()),
-                blake3: None,
+                inner: HashStateInner::Sha512(Sha512::new()),
             },
             HashAlgorithm::Blake3 => Self {
-                algorithm,
-                sha256: None,
-                sha512: None,
-                blake3: Some(Hasher::new()),
+                inner: HashStateInner::Blake3(Box::new(Hasher::new())),
             },
         }
     }
 
     pub fn update(&mut self, data: &[u8]) {
-        if let Some(ref mut h) = self.sha256 {
-            h.update(data);
-        }
-        if let Some(ref mut h) = self.sha512 {
-            h.update(data);
-        }
-        if let Some(ref mut h) = self.blake3 {
-            h.update(data);
+        match &mut self.inner {
+            HashStateInner::Sha256(h) => h.update(data),
+            HashStateInner::Sha512(h) => h.update(data),
+            HashStateInner::Blake3(h) => {
+                h.update(data);
+            }
         }
     }
 
     pub fn finalize(&self) -> Vec<u8> {
-        if let Some(ref h) = self.sha256 {
-            h.clone().finalize().to_vec()
-        } else if let Some(ref h) = self.sha512 {
-            h.clone().finalize().to_vec()
-        } else if let Some(ref h) = self.blake3 {
-            h.clone().finalize().as_bytes().to_vec()
-        } else {
-            Vec::new()
+        match &self.inner {
+            HashStateInner::Sha256(h) => h.clone().finalize().to_vec(),
+            HashStateInner::Sha512(h) => h.clone().finalize().to_vec(),
+            HashStateInner::Blake3(h) => h.clone().finalize().as_bytes().to_vec(),
         }
     }
 

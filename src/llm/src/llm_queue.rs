@@ -21,9 +21,9 @@ fn process_llm_task(task: LlmTask) {
 }
 
 impl LlmRequestQueue {
-    pub fn new(config: QueueConfig) -> Self {
+    pub fn new(config: &QueueConfig) -> Self {
         Self {
-            inner: Arc::new(EventQueue::new(config, process_llm_task)),
+                inner: Arc::new(EventQueue::new(config, process_llm_task)),
         }
     }
 
@@ -71,52 +71,7 @@ impl LlmRequestQueue {
 }
 
 fn make_llm_request(messages: &[ChatMessage], config: &LlmConfig) -> Result<String, LlmError> {
-    let url = format!("{}/chat/completions", config.api_url.trim_end_matches('/'));
-    let mut body = serde_json::json!({
-        "model": config.model,
-        "messages": messages,
-        "max_tokens": 1024u32,
-        "stream": false,
-    });
-    if config.think == Some(true) {
-        body["think"] = serde_json::Value::Bool(true);
-    }
-
-    let response = ureq::post(&url)
-        .send(serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?)
-        .map_err(|e| LlmError::Http(e.to_string()))?;
-
-    let mut body = response.into_body();
-    let body_str = body
-        .read_to_string()
-        .map_err(|e| LlmError::Api(e.to_string()))?;
-
-    let parsed: serde_json::Value =
-        serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
-
-    let content = parsed
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .and_then(|choices| choices.first())
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .ok_or(LlmError::NoResponse)?
-        .to_string();
-
-    if config.think == Some(true) {
-        if let Some(reasoning) = parsed
-            .get("choices")
-            .and_then(|c| c.as_array())
-            .and_then(|choices| choices.first())
-            .and_then(|c| c.get("reasoning_content"))
-            .and_then(|c| c.as_str())
-        {
-            return Ok(format!("{}\n{}", reasoning, content));
-        }
-    }
-
-    Ok(content)
+    crate::client::chat_complete_http(&config.api_url, messages, &config.model, config.think)
 }
 
 #[cfg(test)]
@@ -126,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_llm_request_queue_creation() {
-        let queue = LlmRequestQueue::new(QueueConfig::default());
+        let queue = LlmRequestQueue::new(&QueueConfig::default());
         let messages = vec![ChatMessage {
             role: "user".into(),
             content: "hello".into(),

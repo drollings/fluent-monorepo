@@ -26,8 +26,7 @@ impl NQuadsParser {
         loop {
             let tok = lex.next_token()?;
             match tok.kind {
-                TokenKind::Eof => break,
-                TokenKind::Dot => break,
+                TokenKind::Eof | TokenKind::Dot => break,
                 TokenKind::Iri => {
                     let iri = Self::extract_iri(tok.value);
                     terms.push(Term::Iri(iri));

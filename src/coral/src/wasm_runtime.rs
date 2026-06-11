@@ -91,11 +91,13 @@ impl WasmComponent {
         }
     }
 
+    #[must_use]
     pub fn with_depends(mut self, deps: &[ArcIntern<str>]) -> Self {
         self.depends = deps.to_vec();
         self
     }
 
+    #[must_use]
     pub fn with_provides(mut self, prov: &[ArcIntern<str>]) -> Self {
         self.provides = prov.to_vec();
         self
@@ -189,7 +191,7 @@ pub fn decode_wasm_base64(b64: &str) -> Result<Vec<u8>, WasmError> {
                 )))
             }
         };
-        buf = (buf << 6) | val as u32;
+        buf = (buf << 6) | u32::from(val);
         bits += 6;
         if bits >= 8 {
             bits -= 8;

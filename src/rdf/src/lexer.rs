@@ -103,7 +103,7 @@ impl<'a> Lexer<'a> {
             b'<' => self.lex_iri(start_line, start_col),
             b'"' => self.lex_literal(start_line, start_col),
             b'_' if self.src.as_bytes().get(self.pos + 1) == Some(&b':') => {
-                self.lex_blank_node(start_line, start_col)
+                Ok(self.lex_blank_node(start_line, start_col))
             }
             b'[' => {
                 let start = self.pos;
@@ -125,8 +125,8 @@ impl<'a> Lexer<'a> {
                     col: start_col,
                 })
             }
-            b'@' => self.lex_at_directive(start_line, start_col),
-            b':' => self.lex_prefixed_name(start_line, start_col),
+            b'@' => Ok(self.lex_at_directive(start_line, start_col)),
+            b':' => Ok(self.lex_prefixed_name(start_line, start_col)),
             b'^' if self.src.as_bytes().get(self.pos + 1) == Some(&b'^') => {
                 let start = self.pos;
                 self.advance();
@@ -141,7 +141,7 @@ impl<'a> Lexer<'a> {
             b'.' if self.pos + 1 < self.src.len()
                 && self.src.as_bytes()[self.pos + 1].is_ascii_digit() =>
             {
-                self.lex_numeric_literal(start_line, start_col)
+                Ok(self.lex_numeric_literal(start_line, start_col))
             }
             b'.' => {
                 let start = self.pos;
@@ -205,8 +205,8 @@ impl<'a> Lexer<'a> {
                     col: start_col,
                 })
             }
-            b'+' | b'-' | b'0'..=b'9' => self.lex_numeric_literal(start_line, start_col),
-            _ if is_prefix_start_char(c) => self.lex_prefixed_name(start_line, start_col),
+            b'+' | b'-' | b'0'..=b'9' => Ok(self.lex_numeric_literal(start_line, start_col)),
+            _ if is_prefix_start_char(c) => Ok(self.lex_prefixed_name(start_line, start_col)),
             _ => Err(RdfError::UnexpectedChar {
                 line: start_line,
                 col: start_col,
@@ -319,7 +319,7 @@ impl<'a> Lexer<'a> {
         &mut self,
         start_line: u32,
         start_col: u32,
-    ) -> Result<Token<'a>, RdfError> {
+    ) -> Token<'a> {
         let start = self.pos;
         if let Some(c) = self.peek() {
             if c == b'+' || c == b'-' {
@@ -365,30 +365,30 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
-        Ok(Token {
+        Token {
             kind: TokenKind::Literal,
             value: &self.src[start..self.pos],
             line: start_line,
             col: start_col,
-        })
+        }
     }
 
-    fn lex_blank_node(&mut self, start_line: u32, start_col: u32) -> Result<Token<'a>, RdfError> {
+    fn lex_blank_node(&mut self, start_line: u32, start_col: u32) -> Token<'a> {
         let start = self.pos;
         self.advance();
         self.advance();
         while self.pos < self.src.len() && is_name_char(self.src.as_bytes()[self.pos]) {
             self.advance();
         }
-        Ok(Token {
+        Token {
             kind: TokenKind::BlankNode,
             value: &self.src[start..self.pos],
             line: start_line,
             col: start_col,
-        })
+        }
     }
 
-    fn lex_at_directive(&mut self, start_line: u32, start_col: u32) -> Result<Token<'a>, RdfError> {
+    fn lex_at_directive(&mut self, start_line: u32, start_col: u32) -> Token<'a> {
         let start = self.pos;
         self.advance();
         while self.pos < self.src.len() && is_lang_char(self.src.as_bytes()[self.pos]) {
@@ -396,7 +396,7 @@ impl<'a> Lexer<'a> {
         }
         let word = &self.src[start..self.pos];
         let is_keyword = matches!(word, "@prefix" | "@base" | "@PREFIX" | "@BASE");
-        Ok(Token {
+        Token {
             kind: if is_keyword {
                 TokenKind::Keyword
             } else {
@@ -405,14 +405,14 @@ impl<'a> Lexer<'a> {
             value: word,
             line: start_line,
             col: start_col,
-        })
+        }
     }
 
     fn lex_prefixed_name(
         &mut self,
         start_line: u32,
         start_col: u32,
-    ) -> Result<Token<'a>, RdfError> {
+    ) -> Token<'a> {
         let start = self.pos;
         while self.pos < self.src.len() && is_prefix_char(self.src.as_bytes()[self.pos]) {
             self.advance();
@@ -425,7 +425,7 @@ impl<'a> Lexer<'a> {
         }
         let word = &self.src[start..self.pos];
         let is_keyword = matches!(word, "PREFIX" | "BASE" | "true" | "false");
-        Ok(Token {
+        Token {
             kind: if is_keyword {
                 TokenKind::Keyword
             } else {
@@ -434,7 +434,7 @@ impl<'a> Lexer<'a> {
             value: word,
             line: start_line,
             col: start_col,
-        })
+        }
     }
 }
 

@@ -41,6 +41,7 @@ impl MiddlewareChain {
             middlewares: Vec::new(),
         }
     }
+    #[must_use]
     pub fn push(mut self, m: Box<dyn Middleware>) -> Self {
         self.middlewares.push(m);
         self

@@ -6,7 +6,7 @@ pub struct OntologyVersion {
     pub triple_count: u64,
 }
 
-pub type MigrateFn = fn() -> Result<(), String>;
+pub type MigrateFn = fn();
 
 pub struct OntologyMigration {
     pub from_version: &'static str,
@@ -14,9 +14,7 @@ pub struct OntologyMigration {
     pub migrate_fn: MigrateFn,
 }
 
-fn noop_migration() -> Result<(), String> {
-    Ok(())
-}
+fn noop_migration() {}
 
 pub const MIGRATIONS: &[OntologyMigration] = &[OntologyMigration {
     from_version: "4.5",
@@ -75,7 +73,7 @@ mod tests {
 
     #[test]
     fn test_migration_stub_is_noop() {
-        assert!((MIGRATIONS[0].migrate_fn)().is_ok());
+        (MIGRATIONS[0].migrate_fn)();
     }
 
     #[test]

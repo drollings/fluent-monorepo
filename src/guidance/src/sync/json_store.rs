@@ -102,13 +102,13 @@ fn parse_member(v: &serde_json::Value) -> Option<Member> {
             .and_then(|v| v.as_str())
             .map(SmolStr::from),
         tags,
-        is_pub: obj.get("is_pub").and_then(|v| v.as_bool()).unwrap_or(false),
+        is_pub: obj.get("is_pub").and_then(serde_json::Value::as_bool).unwrap_or(false),
         members,
         equivalents,
-        line: obj.get("line").and_then(|v| v.as_u64()).map(|l| l as u32),
+        line: obj.get("line").and_then(serde_json::Value::as_u64).map(|l| l as u32),
         comment_generated: obj
             .get("comment_generated")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
     })
 }
@@ -264,7 +264,7 @@ pub fn merge_member(existing: &Member, new: &mut Member) {
 pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
     // Preserve doc comment if new one is empty
     if new.comment.is_none() && existing.comment.is_some() {
-        new.comment = existing.comment.clone();
+        new.comment.clone_from(&existing.comment);
     }
     // Merge keywords
     for kw in &existing.keywords {
@@ -280,10 +280,10 @@ pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
     }
     // Preserve capability_eval if new doesn't have one
     if new.capability_eval.is_none() {
-        new.capability_eval = existing.capability_eval.clone();
+        new.capability_eval.clone_from(&existing.capability_eval);
     }
     // Merge members by match_hash
-    for new_member in new.members.iter_mut() {
+    for new_member in &mut new.members {
         if let Some(ref new_hash) = new_member.match_hash {
             if let Some(existing_member) = existing
                 .members

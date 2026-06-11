@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use project_common::error::DbError;
+use crate::error::DbError;
 use rusqlite::params;
 use thiserror::Error;
 
@@ -170,7 +170,7 @@ impl GuidanceDb {
 
     pub fn keyword_search(&self, query: &str) -> Result<Vec<SearchResult>, VectorDbError> {
         let conn = self.conn.lock().unwrap();
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
 
         let mut stmt = conn.prepare(
             "SELECT id, name, source, signature FROM guidance_nodes

@@ -38,11 +38,10 @@ impl Synthesizer {
             if let Some(member) = doc.members.iter().find(|m| m.name.as_str() == name) {
                 stages.push(Stage {
                     kind: StageKind::Code,
-                    content: member
-                        .signature
-                        .clone()
-                        .map(|s| s.as_str().to_string())
-                        .unwrap_or_else(|| member.name.as_str().to_string()),
+                    content: member.signature.clone().map_or_else(
+                        || member.name.as_str().to_string(),
+                        |s| s.as_str().to_string(),
+                    ),
                     source: doc.meta.source.as_str().to_string(),
                     line: member.line,
                 });

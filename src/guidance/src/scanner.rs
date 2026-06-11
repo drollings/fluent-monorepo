@@ -1,4 +1,4 @@
-use project_common::string::{
+use common_core::string::{
     contains_any, contains_any_word, contains_ignore_case, contains_word,
 };
 

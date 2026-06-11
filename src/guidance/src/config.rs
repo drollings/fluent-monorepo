@@ -123,8 +123,7 @@ impl Default for ProjectConfig {
 pub fn model_name(model_ref: &str) -> &str {
     model_ref
         .split_once(':')
-        .map(|(_, name)| name)
-        .unwrap_or(model_ref)
+        .map_or(model_ref, |(_, name)| name)
 }
 
 /// Resolve a model reference into (api_url, model_name, is_thinking).

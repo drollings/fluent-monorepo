@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-project-common = { path = "../project-common" }
+common-core = { path = "../common-core" }
 rusqlite = { workspace = true }
 blake3 = { workspace = true }
 lazy_static = "1"

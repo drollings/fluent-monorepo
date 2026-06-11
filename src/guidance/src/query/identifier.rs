@@ -86,7 +86,7 @@ pub fn find_members_by_signature<'a>(doc: &'a GuidanceDoc, query: &str) -> Vec<&
             m.signature
                 .as_ref()
                 .filter(|sig| sig.as_str().to_lowercase().contains(&lower_query))
-                .map(|sig| sig.as_str())
+                .map(smol_str::SmolStr::as_str)
         })
         .collect()
 }

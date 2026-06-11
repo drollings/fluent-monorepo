@@ -1,3 +1,10 @@
+//! Fluent WVR integration for `guidance-content-node`.
+//!
+//! Provides the `ContentNodeRef` wrapper type with downcasting support
+//! for implementing `WorkUnit` and related traits from `fluent-wvr`.
+//! New content-node types that need Fluent WVR integration should implement
+//! the traits in their own module.
+
 use crate::node::{ContentNode, LodLevel, NodeType, NodeTypeInfo};
 use std::fmt::Debug;
 

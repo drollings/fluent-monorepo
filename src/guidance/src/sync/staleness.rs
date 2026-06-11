@@ -6,13 +6,11 @@ fn mtime(path: &Path) -> Option<SystemTime> {
 }
 
 pub fn is_stale(json_path: &Path, source_path: &Path) -> bool {
-    let json_mtime = match mtime(json_path) {
-        Some(t) => t,
-        None => return true,
+    let Some(json_mtime) = mtime(json_path) else {
+        return true;
     };
-    let source_mtime = match mtime(source_path) {
-        Some(t) => t,
-        None => return false,
+    let Some(source_mtime) = mtime(source_path) else {
+        return false;
     };
 
     match source_mtime.duration_since(json_mtime) {

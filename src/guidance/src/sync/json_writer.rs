@@ -66,7 +66,10 @@ fn member_to_json(member: &Member) -> Value {
 }
 
 fn member_type_str(t: guidance_types::MemberType) -> &'static str {
-    use guidance_types::MemberType::*;
+    use guidance_types::MemberType::{
+        ComptimeBlock, Enum, EnumField, FnDecl, FnPrivate, Method, MethodPrivate, Struct, TestDecl,
+        Union,
+    };
     match t {
         FnDecl => "fn_decl",
         FnPrivate => "fn_private",

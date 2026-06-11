@@ -103,10 +103,10 @@ impl ContextPacker {
             id: focus_id,
             lod_level: 0, // focus node gets most detail
             text: {
-                if !focus_node.lod.is_empty() {
-                    focus_node.lod[0].clone()
-                } else {
+                if focus_node.lod.is_empty() {
                     focus_node.name.to_string()
+                } else {
+                    focus_node.lod[0].clone()
                 }
             },
             graph_distance: 0.0,
@@ -117,13 +117,13 @@ impl ContextPacker {
                 continue;
             }
             if let Ok(Some(node)) = library.get_node(gn.node_id) {
-                let lod_level = Self::select_lod_by_distance(&node, gn.depth as f64, avg_degree);
+                let lod_level = Self::select_lod_by_distance(&node, f64::from(gn.depth), avg_degree);
                 let text = Self::get_lod_text(&node, lod_level).to_string();
                 candidates.push(PackedNode {
                     id: gn.node_id,
                     lod_level,
                     text,
-                    graph_distance: gn.depth as f64,
+                    graph_distance: f64::from(gn.depth),
                 });
             }
         }

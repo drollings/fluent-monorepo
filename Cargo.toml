@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "src/types",
     "src/fluent-wvr",
-    "src/project-common",
     "src/project-knowledge",
     "src/search-vector",
     "src/content-node",
@@ -17,6 +16,7 @@ members = [
     "src/bin/guidance",
     "src/bin/coral",
     "src/concurrency-queue",
+    "src/common-core",
 ]
 
 [workspace.package]

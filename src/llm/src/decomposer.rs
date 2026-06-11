@@ -38,9 +38,8 @@ impl LocalDecomposer {
             },
         ];
 
-        let raw = match client.chat_complete(&messages) {
-            Ok(r) => r,
-            Err(_) => return vec![task.to_string()],
+        let Ok(raw) = client.chat_complete(&messages) else {
+            return vec![task.to_string()];
         };
 
         let stripped = strip_think_block(&raw);
@@ -72,9 +71,8 @@ fn is_malformed_json_array(text: &str) -> bool {
 fn parse_json_array(text: &str, limit: usize) -> Result<Vec<String>, String> {
     let parsed: serde_json::Value =
         serde_json::from_str(text).map_err(|e| format!("json parse: {e}"))?;
-    let arr = match parsed {
-        serde_json::Value::Array(ref a) => a,
-        _ => return Err("not an array".into()),
+    let serde_json::Value::Array(ref arr) = parsed else {
+        return Err("not an array".into());
     };
     if arr.is_empty() {
         return Err("empty array".into());

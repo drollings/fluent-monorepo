@@ -4,8 +4,8 @@ use bon::Builder;
 use guidance_llm::client::{is_malformed_response, LlmClient, LlmConfig};
 use guidance_llm::decomposer::LocalDecomposer;
 use guidance_types::{ContextNode, NodeId, WasmTool};
-use project_common::error::CacheError;
-use project_common::hash::content_hash_with_model;
+use crate::error::CacheError;
+use common_core::hash::content_hash_with_model;
 
 use crate::cache_l1::{CacheTier, L1Cache, RoutingResult};
 use crate::cache_router::ParallelRouter;
@@ -76,7 +76,7 @@ impl QueueReactor {
         }
 
         // L2: WASM workflow cache
-        if let Some(result) = self.route_l2_wasm(query)? {
+        if let Some(result) = self.route_l2_wasm(query) {
             self.l1_cache.set(query.to_string(), result.clone());
             return Ok(result);
         }
@@ -140,7 +140,7 @@ impl QueueReactor {
 
         // L5: Frontier LLM fallback
         if let Some(ref frontier) = self.frontier_config {
-            if let Ok(result) = self.route_l5_frontier(query, frontier) {
+            if let Ok(result) = Self::route_l5_frontier(query, frontier) {
                 self.persist_solution(query, &result);
                 if depth == 0 {
                     self.l1_cache.set(query.to_string(), result.clone());
@@ -152,20 +152,19 @@ impl QueueReactor {
         Err(CacheError::CacheMiss)
     }
 
-    fn route_l2_wasm(&self, query: &str) -> Result<Option<RoutingResult>, CacheError> {
+    fn route_l2_wasm(&self, query: &str) -> Option<RoutingResult> {
         if let Some(tool) = self.find_wasm_tool(query) {
             let result = RoutingResult {
                 query: query.to_string(),
                 result: format!("WASM tool matched: {}", tool.name),
                 tier: CacheTier::L2WasmWorkflow,
             };
-            return Ok(Some(result));
+            return Some(result);
         }
-        Ok(None)
+        None
     }
 
     fn route_l5_frontier(
-        &self,
         query: &str,
         frontier: &LlmConfig,
     ) -> Result<RoutingResult, CacheError> {
@@ -200,7 +199,7 @@ impl QueueReactor {
         let hash_id = i64::from_le_bytes(hash_bytes[..8].try_into().unwrap());
         let node = ContextNode {
             id: Some(NodeId(hash_id)),
-            name: format!("solution:{}", query).into(),
+            name: format!("solution:{query}").into(),
             source: String::new(),
             lod: vec![query.to_string()],
             embedding: None,
@@ -295,7 +294,7 @@ mod tests {
         let lib = Arc::new(Library::open_in_memory().expect("db"));
         let args = QueueReactorCreateArgs::builder().library(lib).build();
         let reactor = QueueReactor::new(args);
-        let result = reactor.route_l2_wasm("test").expect("l2 wasm");
+        let result = reactor.route_l2_wasm("test");
         assert!(result.is_none());
     }
 

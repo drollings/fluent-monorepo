@@ -23,14 +23,17 @@ impl ComponentAdapter {
             field_overrides: Vec::new(),
         }
     }
+    #[must_use]
     pub fn with_name_override(mut self, name: impl Into<String>) -> Self {
         self.name_override = Some(name.into());
         self
     }
+    #[must_use]
     pub fn with_execute_override(mut self, f: ExecuteFn) -> Self {
         self.execute_override = Some(f);
         self
     }
+    #[must_use]
     pub fn with_field_override(
         mut self,
         name: impl Into<String>,

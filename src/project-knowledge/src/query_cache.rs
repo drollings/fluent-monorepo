@@ -1,4 +1,4 @@
-use project_common::hash::fnv1a64;
+use common_core::hash::fnv1a64;
 use rusqlite::{params, Connection};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,8 +14,8 @@ pub struct Entry {
 pub struct QueryCache {
     db: Connection,
     default_ttl_seconds: u64,
-    #[allow(dead_code)]
-    max_entries: usize,
+    /// Future: max entries before LRU eviction. Currently only TTL-based eviction is used.
+    _max_entries: usize,
 }
 
 impl QueryCache {
@@ -32,7 +32,7 @@ impl QueryCache {
         Ok(Self {
             db,
             default_ttl_seconds,
-            max_entries: 4096,
+            _max_entries: 4096,
         })
     }
 
@@ -49,7 +49,7 @@ impl QueryCache {
         Ok(Self {
             db,
             default_ttl_seconds,
-            max_entries: 4096,
+            _max_entries: 4096,
         })
     }
 

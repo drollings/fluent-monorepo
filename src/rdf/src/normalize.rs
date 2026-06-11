@@ -43,9 +43,8 @@ pub enum TypedValue {
 }
 
 pub fn detect_xsd_type(datatype: Option<&str>) -> XsdType {
-    let dt = match datatype {
-        Some(d) => d,
-        None => return XsdType::String,
+    let Some(dt) = datatype else {
+        return XsdType::String;
     };
     if dt == XSD_NS.to_owned() + "string" {
         return XsdType::String;

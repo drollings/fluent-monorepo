@@ -66,7 +66,7 @@ impl<'a> Parser<'a> {
             return Err(RdfError::UnexpectedToken {
                 line: tok.line,
                 col: tok.col,
-                expected: format!("{:?}", kind),
+                expected: format!("{kind:?}"),
                 got: format!("{:?}", tok.kind),
             });
         }
@@ -105,7 +105,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-impl<'a> Iterator for Parser<'a> {
+impl Iterator for Parser<'_> {
     type Item = Result<Triple, RdfError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -117,7 +117,7 @@ impl<'a> Iterator for Parser<'a> {
     }
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     fn parse_prefix(&mut self) -> Result<(), RdfError> {
         let name_tok = self.consume_tok()?;
         if name_tok.kind != TokenKind::PrefixedName && name_tok.kind != TokenKind::Keyword {
@@ -149,7 +149,7 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<(), RdfError> {
         let subj = self.parse_term()?.ok_or(RdfError::UnexpectedEOF)?;
-        self.collect_predicate_object_list(subj)?;
+        self.collect_predicate_object_list(&subj)?;
         let pk = self.peek_tok()?;
         if pk.kind == TokenKind::Dot {
             self.consume_tok()?;
@@ -157,19 +157,16 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn collect_predicate_object_list(&mut self, subj: Term) -> Result<(), RdfError> {
+    fn collect_predicate_object_list(&mut self, subj: &Term) -> Result<(), RdfError> {
         loop {
             let verb = self.parse_verb()?;
-            let verb = match verb {
-                Some(v) => v,
-                None => break,
-            };
+            let Some(verb) = verb else { break };
 
             loop {
                 let insert_pos = self.queue.len();
                 let obj = self.parse_term()?.ok_or(RdfError::UnexpectedEOF)?;
-                let sc = self.clone_term(&subj);
-                let pc = self.clone_term(&verb);
+                let sc = Self::clone_term(subj);
+                let pc = Self::clone_term(&verb);
                 self.queue.insert(
                     insert_pos,
                     Triple {
@@ -220,11 +217,6 @@ impl<'a> Parser<'a> {
     fn parse_term(&mut self) -> Result<Option<Term>, RdfError> {
         let tok = self.peek_tok()?;
         match tok.kind {
-            TokenKind::Eof
-            | TokenKind::Dot
-            | TokenKind::Semicolon
-            | TokenKind::Comma
-            | TokenKind::BlankNodeClose => Ok(None),
             TokenKind::Iri => {
                 self.consume_tok()?;
                 Ok(Some(Term::Iri(Self::extract_iri(tok.value))))
@@ -325,8 +317,8 @@ impl<'a> Parser<'a> {
 
         let pk = self.peek_tok()?;
         if pk.kind != TokenKind::BlankNodeClose {
-            let bn_copy = self.clone_term(&bn_term);
-            self.collect_predicate_object_list(bn_copy)?;
+            let bn_copy = Self::clone_term(&bn_term);
+            self.collect_predicate_object_list(&bn_copy)?;
         }
 
         self.expect_tok(TokenKind::BlankNodeClose)?;
@@ -346,18 +338,18 @@ impl<'a> Parser<'a> {
             let prefix_label = &raw[..colon];
             let local = &raw[colon + 1..];
             if let Some(base_iri) = self.prefix_map.get(prefix_label) {
-                return format!("{}{}", base_iri, local);
+                return format!("{base_iri}{local}");
             }
             raw.to_string()
         } else {
             if let Some(base_iri) = self.prefix_map.get("") {
-                return format!("{}{}", base_iri, raw);
+                return format!("{base_iri}{raw}");
             }
             raw.to_string()
         }
     }
 
-    fn clone_term(&self, t: &Term) -> Term {
+    fn clone_term(t: &Term) -> Term {
         match t {
             Term::Iri(s) => Term::Iri(s.clone()),
             Term::BlankNode(s) => Term::BlankNode(s.clone()),

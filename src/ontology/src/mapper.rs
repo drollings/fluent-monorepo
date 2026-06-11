@@ -125,7 +125,7 @@ impl TripleMapper {
 
     pub fn process_triple(&mut self, triple: &Triple) -> Result<(), MappingError> {
         let subj_id = self.term_to_id(&triple.subject);
-        let pred_iri = self.term_to_iri(&triple.predicate)?;
+        let pred_iri = Self::term_to_iri(&triple.predicate)?;
 
         self.get_or_create_node(&triple.subject, subj_id)?;
 
@@ -138,7 +138,7 @@ impl TripleMapper {
         if pred_iri == rdf_type {
             if let Term::Iri(_) = &triple.object {
                 let type_id = self.term_to_id(&triple.object);
-                let key = self.term_key(&triple.subject)?;
+                let key = Self::term_key(&triple.subject)?;
                 if let Some(node) = self.nodes.get_mut(&key) {
                     node.types.push(type_id);
                 }
@@ -146,7 +146,7 @@ impl TripleMapper {
         } else if pred_iri == rdfs_label || pred_iri == skos_pref {
             if let Term::Literal(lit) = &triple.object {
                 if should_use_lang(lit.lang.as_deref(), &self.config.preferred_lang) {
-                    let key = self.term_key(&triple.subject)?;
+                    let key = Self::term_key(&triple.subject)?;
                     if let Some(node) = self.nodes.get_mut(&key) {
                         if let Some(c) =
                             check_contradiction(node, subj_id, &pred_iri, 4, &lit.value)
@@ -160,7 +160,7 @@ impl TripleMapper {
         } else if pred_iri == rdfs_comment {
             if let Term::Literal(lit) = &triple.object {
                 if should_use_lang(lit.lang.as_deref(), &self.config.preferred_lang) {
-                    let key = self.term_key(&triple.subject)?;
+                    let key = Self::term_key(&triple.subject)?;
                     if let Some(node) = self.nodes.get_mut(&key) {
                         if let Some(c) =
                             check_contradiction(node, subj_id, &pred_iri, 0, &lit.value)
@@ -174,7 +174,7 @@ impl TripleMapper {
         } else if pred_iri == schema_desc {
             if let Term::Literal(lit) = &triple.object {
                 if should_use_lang(lit.lang.as_deref(), &self.config.preferred_lang) {
-                    let key = self.term_key(&triple.subject)?;
+                    let key = Self::term_key(&triple.subject)?;
                     if let Some(node) = self.nodes.get_mut(&key) {
                         if let Some(c) =
                             check_contradiction(node, subj_id, &pred_iri, 1, &lit.value)
@@ -218,10 +218,10 @@ impl TripleMapper {
         self.edges.len()
     }
 
-    fn term_key(&self, term: &Term) -> Result<String, MappingError> {
+    fn term_key(term: &Term) -> Result<String, MappingError> {
         match term {
             Term::Iri(s) => Ok(s.clone()),
-            Term::BlankNode(s) => Ok(format!("bnode:{}", s)),
+            Term::BlankNode(s) => Ok(format!("bnode:{s}")),
             Term::Literal(_) => Err(MappingError::LiteralAsSubject),
         }
     }
@@ -234,7 +234,7 @@ impl TripleMapper {
         }
     }
 
-    fn term_to_iri(&self, term: &Term) -> Result<String, MappingError> {
+    fn term_to_iri(term: &Term) -> Result<String, MappingError> {
         match term {
             Term::Iri(s) => Ok(s.clone()),
             _ => Err(MappingError::PredicateNotIRI),
@@ -244,7 +244,7 @@ impl TripleMapper {
     fn get_or_create_node(&mut self, term: &Term, id: i64) -> Result<(), MappingError> {
         let key = match term {
             Term::Iri(s) => s.clone(),
-            Term::BlankNode(s) => format!("bnode:{}", s),
+            Term::BlankNode(s) => format!("bnode:{s}"),
             Term::Literal(_) => return Err(MappingError::LiteralAsSubject),
         };
         self.nodes

@@ -173,15 +173,14 @@ impl McpServer {
             .params
             .as_ref()
             .and_then(|p| p.get("node_id"))
-            .and_then(|v| v.as_i64())
-            .map(guidance_types::NodeId::from_int)
-            .unwrap_or(guidance_types::NodeId::from_int(0));
+            .and_then(serde_json::Value::as_i64)
+            .map_or(guidance_types::NodeId::from_int(0), guidance_types::NodeId::from_int);
 
         let max_depth = request
             .params
             .as_ref()
             .and_then(|p| p.get("max_depth"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(3) as u8;
 
         match self.library.traverse_from(node_id, max_depth) {

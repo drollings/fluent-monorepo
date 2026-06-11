@@ -95,14 +95,12 @@ impl SyncEngine {
         if config.db_sync {
             let db_path = config
                 .db_path
-                .as_ref()
-                .cloned()
+                .clone()
                 .unwrap_or_else(|| self.guidance_dir.join("..").join(".guidance.db"));
 
             let json_base = config
                 .json_base
-                .as_ref()
-                .cloned()
+                .clone()
                 .unwrap_or_else(|| self.guidance_dir.join("src"));
 
             if let Ok(db) = GuidanceDb::open(&db_path) {
@@ -168,6 +166,7 @@ impl SyncEngine {
         Ok(())
     }
 
+    #[allow(clippy::self_only_used_in_recursion)]
     fn walk_dir<F>(&self, dir: &Path, callback: &mut F) -> std::io::Result<()>
     where
         F: FnMut(&Path),

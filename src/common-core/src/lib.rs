@@ -1,3 +1,6 @@
+//! common-core: Zero-domain generic utility crate (hashing, formatting, I/O,
+//! shell, metrics, string utilities). May NOT import any guidance-* crate.
+
 #![deny(warnings, clippy::all, clippy::pedantic)]
 #![allow(
     clippy::module_name_repetitions,
@@ -31,10 +34,9 @@ pub mod metrics;
 pub mod shell;
 pub mod shell_parser;
 pub mod string;
-pub mod terminal;
 
 pub use constants::{MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN};
-pub use error::{CacheError, DbError, IoError};
+pub use error::{IoError, ResolverError};
 pub use error_context::{ErrorContext, HeapErrorContext};
 pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
 pub use hash::{
@@ -51,4 +53,3 @@ pub use string::{
     looks_like_identifier, lower_into, skill_name_from_ref, slugify, strip_boilerplate,
     strip_nl_prefix, trim_left, trim_right, truncate_at_sentence, STOP_WORDS,
 };
-pub use terminal::{get_terminal_height, get_terminal_width, is_terminal, Color, ProgressBar};
