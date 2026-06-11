@@ -66,6 +66,67 @@ impl<T> PriorityQueue<T> {
     }
 }
 
+impl<T> PriorityQueue<T> {
+    /// Returns the total number of items across all priority levels.
+    pub fn len(&self) -> usize {
+        self.simple.len() + self.prioritized.values().map(VecDeque::len).sum::<usize>()
+    }
+
+    /// Returns true if the queue contains no items.
+    pub fn is_empty(&self) -> bool {
+        self.simple.is_empty() && self.prioritized.is_empty()
+    }
+
+    /// Returns a reference to the highest-priority item without removing it.
+    pub fn peek(&self) -> Option<(&T, i32)> {
+        if let Some((&key, queue)) = self.prioritized.last_key_value() {
+            if key > 0 {
+                return queue.front().map(|item| (item, key));
+            }
+        }
+        if let Some(item) = self.simple.front() {
+            return Some((item, 0));
+        }
+        if let Some((&key, queue)) = self.prioritized.last_key_value() {
+            return queue.front().map(|item| (item, key));
+        }
+        None
+    }
+
+    /// Converts the queue into an iterator, consuming it.
+    /// Items are yielded in priority order (highest first).
+    pub fn into_iter(self) -> impl Iterator<Item = (i32, T)> {
+        let mut items: Vec<(i32, T)> = Vec::new();
+        for (prio, queue) in self.prioritized {
+            for item in queue {
+                items.push((prio, item));
+            }
+        }
+        for item in self.simple {
+            items.push((0, item));
+        }
+        items.sort_by_key(|b| std::cmp::Reverse(b.0));
+        items.into_iter()
+    }
+
+    /// Removes all items from the queue, returning them in priority order.
+    pub fn drain(&mut self) -> impl Iterator<Item = (i32, T)> + '_ {
+        let mut items: Vec<(i32, T)> = Vec::new();
+        let prioritized = std::mem::take(&mut self.prioritized);
+        for (prio, queue) in prioritized {
+            for item in queue {
+                items.push((prio, item));
+            }
+        }
+        let simple = std::mem::take(&mut self.simple);
+        for item in simple {
+            items.push((0, item));
+        }
+        items.sort_by_key(|b| std::cmp::Reverse(b.0));
+        items.into_iter()
+    }
+}
+
 impl<T> Default for PriorityQueue<T> {
     fn default() -> Self {
         Self::new()

@@ -13,6 +13,8 @@ use fluent_wvr::{CapabilitySet, ConcurrencyError, Runtime, WorkContext, WorkOutp
 use internment::ArcIntern;
 use tokio::task::JoinSet;
 
+const POLL_BUDGET: usize = 64;
+
 /// Events emitted by tasks running inside a `Zone`.
 #[derive(Debug, Clone)]
 pub enum ZoneEvent {
@@ -123,19 +125,32 @@ impl Zone {
         self.active_count += 1;
     }
 
-    fn cancel_dependents(&mut self, name: &ArcIntern<str>) {
-        let Some(provides) = self.task_provides.get(name) else {
-            return;
-        };
-        for provided in provides {
-            for (dep_name, deps) in &self.deps {
-                if deps.contains(provided) {
-                    if let Some(handle) = self.abort_handles.get(dep_name) {
-                        if !handle.is_finished() {
-                            handle.abort();
-                            self.cancelled_tasks.insert(dep_name.clone());
+    fn cancel_dependents_of(&mut self, name: &ArcIntern<str>) {
+        let mut to_cancel: Vec<ArcIntern<str>> = Vec::new();
+        let mut visited: HashSet<ArcIntern<str>> = HashSet::new();
+        let mut stack = vec![name.clone()];
+
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current.clone()) {
+                continue;
+            }
+            if let Some(provides) = self.task_provides.get(&current) {
+                for provided in provides {
+                    for (dep_name, deps) in &self.deps {
+                        if deps.contains(provided) && !visited.contains(dep_name) {
+                            to_cancel.push(dep_name.clone());
+                            stack.push(dep_name.clone());
                         }
                     }
+                }
+            }
+        }
+
+        for task_name in &to_cancel {
+            if let Some(handle) = self.abort_handles.get(task_name) {
+                if !handle.is_finished() {
+                    handle.abort();
+                    self.cancelled_tasks.insert(task_name.clone());
                 }
             }
         }
@@ -151,6 +166,7 @@ impl Future for Zone {
             return Poll::Ready(std::mem::take(&mut this.summary));
         }
 
+        let mut budget = POLL_BUDGET;
         loop {
             let mut join_set = std::pin::Pin::new(&mut this.join_set);
             match join_set.as_mut().poll_join_next_with_id(cx) {
@@ -164,18 +180,20 @@ impl Future for Zone {
                         output,
                     });
                     this.active_count -= 1;
+                    budget -= 1;
                 }
                 Poll::Ready(Some(Ok((id, Err(e))))) => {
                     let name = this
                         .task_names
                         .remove(&id)
                         .unwrap_or_else(|| ArcIntern::from("unknown"));
-                    this.cancel_dependents(&name);
+                    this.cancel_dependents_of(&name);
                     this.summary.panicked.push(ZoneEvent::Panicked {
                         name,
                         info: e.to_string(),
                     });
                     this.active_count -= 1;
+                    budget -= 1;
                 }
                 Poll::Ready(Some(Err(e))) => {
                     let name = this
@@ -193,13 +211,14 @@ impl Future for Zone {
                             reason,
                         });
                     } else {
-                        this.cancel_dependents(&name);
+                        this.cancel_dependents_of(&name);
                         this.summary.panicked.push(ZoneEvent::Panicked {
                             name,
                             info: "task panicked".into(),
                         });
                     }
                     this.active_count -= 1;
+                    budget -= 1;
                 }
                 Poll::Ready(None) => {
                     this.done = true;
@@ -213,6 +232,12 @@ impl Future for Zone {
                     return Poll::Pending;
                 }
             }
+
+            if budget == 0 {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+
             if this.active_count == 0 {
                 this.done = true;
                 return Poll::Ready(std::mem::take(&mut this.summary));

@@ -19,7 +19,9 @@
     clippy::unreadable_literal,
     clippy::similar_names,
     clippy::single_char_pattern,
-    clippy::byte_char_slices
+    clippy::byte_char_slices,
+    clippy::items_after_statements,
+    clippy::should_implement_trait
 )]
 
 pub mod capability;
@@ -93,6 +95,17 @@ mod tests {
         let test_runtime = TestRuntime::new(handle, 42);
         let join = test_runtime.spawn(Box::pin(async {}));
         join.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_test_runtime_deterministic_rng() {
+        tokio::time::resume();
+        let handle = tokio::runtime::Handle::current();
+        let rt1 = TestRuntime::new(handle.clone(), 12345);
+        let rt2 = TestRuntime::new(handle, 12345);
+        let a = rt1.rng().lock().unwrap().u32(..);
+        let b = rt2.rng().lock().unwrap().u32(..);
+        assert_eq!(a, b, "same seed must produce same output");
     }
 
     #[test]
@@ -427,6 +440,99 @@ mod tests {
             let summary: ZoneSummary = (&mut zone).await;
             assert_eq!(summary.completed.len(), 2);
         }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_transitive_cancellation() {
+            tokio::time::resume();
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            struct ChainUnit {
+                name: String,
+                deps: Vec<ArcIntern<str>>,
+                provides: Vec<ArcIntern<str>>,
+                should_fail: bool,
+            }
+            impl WorkUnit for ChainUnit {
+                fn name(&self) -> &str { &self.name }
+                fn depends(&self) -> &[ArcIntern<str>] { &self.deps }
+                fn provides(&self) -> &[ArcIntern<str>] { &self.provides }
+                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                    if self.should_fail {
+                        Err(WorkError::Execution("chain failure".into()))
+                    } else {
+                        Ok(WorkOutput::ok("done"))
+                    }
+                }
+            }
+
+            let a_out = ArcIntern::<str>::from("a_out");
+            let b_out = ArcIntern::<str>::from("b_out");
+
+            zone.register(Arc::new(ChainUnit {
+                name: "A".into(),
+                deps: vec![],
+                provides: vec![a_out.clone()],
+                should_fail: true,
+            }));
+            zone.register_with_context(
+                Arc::new(ChainUnit {
+                    name: "B".into(),
+                    deps: vec![a_out.clone()],
+                    provides: vec![b_out.clone()],
+                    should_fail: true,
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            );
+            zone.register_with_context(
+                Arc::new(ChainUnit {
+                    name: "C".into(),
+                    deps: vec![b_out.clone()],
+                    provides: vec![],
+                    should_fail: true,
+                }),
+                WorkContext {
+                    max_retries: 10,
+                    ..WorkContext::default()
+                },
+            );
+
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 0);
+            assert_eq!(summary.panicked.len(), 1);
+            // B and C should both be cancelled (transitive from A failure)
+            assert_eq!(summary.cancelled.len(), 2);
+            let cancelled_names: Vec<String> = summary
+                .cancelled
+                .iter()
+                .map(|e| match e {
+                    ZoneEvent::Cancelled { name, .. } => name.to_string(),
+                    _ => String::new(),
+                })
+                .collect();
+            assert!(cancelled_names.contains(&"B".to_string()));
+            assert!(cancelled_names.contains(&"C".to_string()));
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_zone_budget_exhaustion() {
+            let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
+            let caps = CapabilitySet::new();
+            let mut zone = Zone::new(runtime, caps);
+
+            for i in 0..250 {
+                zone.register(Arc::new(TestWorkUnit::ok(&format!("fast_{i}"))));
+            }
+
+            let summary: ZoneSummary = (&mut zone).await;
+            assert_eq!(summary.completed.len(), 250);
+            assert_eq!(summary.panicked.len(), 0);
+            assert_eq!(summary.cancelled.len(), 0);
+        }
     }
 
     mod m3 {
@@ -580,6 +686,61 @@ mod tests {
             assert_eq!(pq.pop(), Some("first"));
             assert_eq!(pq.pop(), Some("second"));
             assert_eq!(pq.pop(), None);
+        }
+
+        #[test]
+        fn test_priority_queue_len_and_is_empty() {
+            let mut pq = PriorityQueue::new();
+            assert!(pq.is_empty());
+            assert_eq!(pq.len(), 0);
+            pq.push("a", 0);
+            assert!(!pq.is_empty());
+            assert_eq!(pq.len(), 1);
+            pq.push("b", 1);
+            pq.push("c", -1);
+            assert_eq!(pq.len(), 3);
+            pq.pop();
+            assert_eq!(pq.len(), 2);
+            pq.pop();
+            assert_eq!(pq.len(), 1);
+        }
+
+        #[test]
+        fn test_priority_queue_peek() {
+            let mut pq = PriorityQueue::new();
+            assert!(pq.peek().is_none());
+            pq.push("low", -1);
+            pq.push("normal", 0);
+            pq.push("high", 1);
+            let (item, prio) = pq.peek().unwrap();
+            assert_eq!(*item, "high");
+            assert_eq!(prio, 1);
+            pq.pop();
+            let (item, prio) = pq.peek().unwrap();
+            assert_eq!(*item, "normal");
+            assert_eq!(prio, 0);
+        }
+
+        #[test]
+        fn test_priority_queue_into_iter() {
+            let mut pq = PriorityQueue::new();
+            pq.push("low", -1);
+            pq.push("normal", 0);
+            pq.push("high", 1);
+            let items: Vec<(i32, &str)> = pq.into_iter().collect();
+            assert_eq!(items, vec![(1, "high"), (0, "normal"), (-1, "low")]);
+        }
+
+        #[test]
+        fn test_priority_queue_drain() {
+            let mut pq = PriorityQueue::new();
+            pq.push("a", 0);
+            pq.push("high", 1);
+            pq.push("b", 0);
+            assert_eq!(pq.len(), 3);
+            let drained: Vec<(i32, &str)> = pq.drain().collect();
+            assert_eq!(drained, vec![(1, "high"), (0, "a"), (0, "b")]);
+            assert!(pq.is_empty());
         }
 
         #[tokio::test(start_paused = true)]
@@ -761,6 +922,43 @@ mod tests {
             assert_eq!(sent.load(Ordering::SeqCst), 10);
             assert_eq!(received.load(Ordering::SeqCst), 10);
         }
+
+        #[tokio::test(start_paused = true)]
+        async fn test_credit_flow_is_blocked_and_current_credit() {
+            tokio::time::resume();
+            let spec = flow::CreditSpec {
+                initial: 2,
+                more_after: 1,
+            };
+            let (sender, receiver) = flow::new(spec);
+            assert_eq!(sender.current_credit(), 2);
+            assert!(!sender.is_blocked());
+
+            sender.send(|| async {}).await;
+            assert_eq!(sender.current_credit(), 1);
+            assert!(!sender.is_blocked());
+
+            sender.send(|| async {}).await;
+            assert_eq!(sender.current_credit(), 0);
+
+            // Now sender is blocked, wrap in Arc for shared access
+            let sender = std::sync::Arc::new(sender);
+            let sender_clone = std::sync::Arc::clone(&sender);
+            let handle = tokio::spawn(async move {
+                sender_clone.send(|| async {}).await;
+                assert!(!sender_clone.is_blocked());
+            });
+
+            // Allow the spawned task to start and reach the blocking point
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert!(sender.is_blocked());
+
+            receiver.recv();
+            handle.await.unwrap();
+            // Credit went 0 -> +1 (bump) -> 0 (consumed by send)
+            assert_eq!(sender.current_credit(), 0);
+            assert!(!sender.is_blocked());
+        }
     }
 
     mod m5 {
@@ -793,12 +991,14 @@ mod tests {
         }
 
         #[test]
-        fn test_db_placeholder_errors() {
-            let db = DbCapability;
-            let query_result = db.query("SELECT 1");
-            assert!(query_result.is_err());
-            let exec_result = db.execute("INSERT INTO t VALUES (1)");
-            assert!(exec_result.is_err());
+        fn test_db_query_execute_roundtrip() {
+            let db = DbCapability::open(":memory:").unwrap();
+            db.execute("CREATE TABLE t (id INTEGER, name TEXT)").unwrap();
+            db.execute("INSERT INTO t VALUES (1, 'hello')").unwrap();
+            let rows = db.query("SELECT * FROM t").unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0]["id"], "1");
+            assert_eq!(rows[0]["name"], "hello");
         }
 
         #[test]

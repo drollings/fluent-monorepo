@@ -1,40 +1,25 @@
 //! Concrete capability tokens for filesystem, network, and database access.
 //! Used with `CapabilitySet` to gate I/O operations.
 
-use fluent_wvr::Capability;
 use fluent_wvr::CapabilitySet;
 
-/// Capability token for filesystem read/write/metadata operations.
-pub struct FsCapability;
+use crate::io::db::DbCapability;
+use crate::io::fs::FsCapability;
+use crate::io::net::NetCapability;
 
-impl Capability for FsCapability {
-    fn name(&self) -> &'static str {
-        "fs"
-    }
-}
-
-/// Capability token for network operations (TCP connect, HTTP).
-pub struct NetCapability;
-
-impl Capability for NetCapability {
-    fn name(&self) -> &'static str {
-        "net"
-    }
-}
-
-/// Capability token for database queries (placeholder).
-pub struct DbCapability;
-
-impl Capability for DbCapability {
-    fn name(&self) -> &'static str {
-        "db"
-    }
-}
-
-/// Returns a `CapabilitySet` pre-populated with Fs, Net, and Db capabilities.
+/// Returns a `CapabilitySet` pre-populated with Fs and Net capabilities.
+/// DbCapability requires a path to open, so it's not included by default.
 pub fn default_capability_set() -> CapabilitySet {
     CapabilitySet::new()
         .with(FsCapability)
-        .with(NetCapability)
-        .with(DbCapability)
+        .with(NetCapability::new())
+}
+
+/// Returns a `CapabilitySet` with Fs, Net, and Db capabilities.
+pub fn capability_set_with_db(path: &str) -> Result<CapabilitySet, fluent_wvr::ConcurrencyError> {
+    let db = DbCapability::open(path)?;
+    Ok(CapabilitySet::new()
+        .with(FsCapability)
+        .with(NetCapability::new())
+        .with(db))
 }

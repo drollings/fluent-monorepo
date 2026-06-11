@@ -1,21 +1,41 @@
-//! Test `Runtime` implementation with paused time support.
+//! Test `Runtime` implementation with paused time support and seeded PRNG for reproducibility.
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use fluent_wvr::Runtime;
 use tokio::task::JoinHandle;
 
 /// Test runtime that delegates to a `tokio::runtime::Handle` for deterministic time control.
+/// The seeded PRNG provides reproducible non-determinism for tests.
 pub struct TestRuntime {
     handle: tokio::runtime::Handle,
-    _seed: u64,
+    rng: Mutex<fastrand::Rng>,
 }
 
 impl TestRuntime {
     pub fn new(handle: tokio::runtime::Handle, seed: u64) -> Self {
-        Self { handle, _seed: seed }
+        Self {
+            handle,
+            rng: Mutex::new(fastrand::Rng::with_seed(seed)),
+        }
+    }
+
+    /// Returns a reference to the deterministic PRNG for test assertions.
+    pub fn rng(&self) -> &Mutex<fastrand::Rng> {
+        &self.rng
+    }
+}
+
+impl Clone for TestRuntime {
+    fn clone(&self) -> Self {
+        let seed = self.rng.lock().unwrap().u64(..);
+        Self {
+            handle: self.handle.clone(),
+            rng: Mutex::new(fastrand::Rng::with_seed(seed)),
+        }
     }
 }
 

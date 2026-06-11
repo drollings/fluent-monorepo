@@ -11,7 +11,10 @@ internment = { workspace = true, features = ["arc", "serde"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
+rusqlite = { workspace = true }
+fastrand = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+fastrand = { workspace = true }

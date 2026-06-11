@@ -55,7 +55,15 @@ impl Drop for Scope {
     fn drop(&mut self) {
         if !self.closed {
             self.tasks.abort_all();
-            tracing::error!("Scope dropped without calling .close().await; aborting all tasks");
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    while self.tasks.join_next().await.is_some() {}
+                });
+            });
+            tracing::error!(
+                "Scope dropped without calling .close().await; \
+                 all tasks were aborted and drained synchronously"
+            );
         }
     }
 }
