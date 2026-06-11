@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "src/types",
     "src/fluent-wvr",
+    "src/fluent-wvr-macros",
     "src/project-knowledge",
     "src/search-vector",
     "src/content-node",
@@ -60,11 +61,17 @@ async-trait = "0.1"
 
 # HTTP
 ureq = { version = "3", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 
 # Testing
 tempfile = "3"
 httpmock = "0.7"
+
+# Macros
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
 
 # System
 libc = "0.2"

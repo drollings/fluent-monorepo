@@ -38,7 +38,8 @@
 
 pub mod wrapper;
 
-use internment::ArcIntern;
+pub use fluent_wvr_macros::FieldAccess;
+pub use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -51,8 +52,6 @@ use tokio::task::JoinHandle;
 
 #[derive(Error, Debug)]
 pub enum ConcurrencyError {
-    #[error("missing capability: {0}")]
-    MissingCapability(&'static str),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

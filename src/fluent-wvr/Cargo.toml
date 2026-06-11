@@ -10,3 +10,4 @@ thiserror = { workspace = true }
 internment = { workspace = true, features = ["arc", "serde"] }
 tracing = { workspace = true }
 tokio = { workspace = true }
+fluent-wvr-macros = { path = "../fluent-wvr-macros" }

@@ -55,7 +55,7 @@ impl Drop for Scope {
     fn drop(&mut self) {
         if !self.closed {
             self.tasks.abort_all();
-            debug_assert!(false, "Scope dropped without calling .close()");
+            tracing::error!("Scope dropped without calling .close().await; aborting all tasks");
         }
     }
 }

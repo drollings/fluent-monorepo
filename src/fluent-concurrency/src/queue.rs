@@ -7,25 +7,24 @@ use std::collections::{BTreeMap, VecDeque};
 pub struct PriorityQueue<T> {
     simple: VecDeque<T>,
     prioritized: BTreeMap<i32, VecDeque<T>>,
-    has_prioritized: bool,
 }
 
 impl<T> PriorityQueue<T> {
+    /// Creates a new empty priority queue.
     pub fn new() -> Self {
         Self {
             simple: VecDeque::new(),
             prioritized: BTreeMap::new(),
-            has_prioritized: false,
         }
     }
 
+    /// Pushes an item with the given priority.
+    /// Priority 0 items are stored in a FIFO fast-path queue.
+    /// Non-zero priorities are stored in a `BTreeMap` ordered by priority.
     pub fn push(&mut self, item: T, priority: i32) {
-        if priority == 0 && !self.has_prioritized {
+        if priority == 0 {
             self.simple.push_back(item);
         } else {
-            if priority != 0 {
-                self.has_prioritized = true;
-            }
             self.prioritized
                 .entry(priority)
                 .or_default()
@@ -33,20 +32,37 @@ impl<T> PriorityQueue<T> {
         }
     }
 
+    /// Pops the highest-priority item, maintaining FIFO within each priority level.
+    /// Higher positive priorities are popped first; priority-0 items are next;
+    /// negative priorities are popped last.
     pub fn pop(&mut self) -> Option<T> {
-        if !self.has_prioritized {
-            return self.simple.pop_front();
-        }
-        if let Some((&key, items)) = self.prioritized.iter_mut().next_back() {
-            if let Some(item) = items.pop_front() {
-                if items.is_empty() {
-                    self.prioritized.remove(&key);
-                    self.has_prioritized = !self.prioritized.is_empty();
+        // If highest priority > 0, pop from prioritized (higher than simple)
+        if let Some((&key, _)) = self.prioritized.last_key_value() {
+            if key > 0 {
+                if let Some(items) = self.prioritized.get_mut(&key) {
+                    let item = items.pop_front();
+                    if items.is_empty() {
+                        self.prioritized.remove(&key);
+                    }
+                    return item;
                 }
-                return Some(item);
             }
         }
-        self.simple.pop_front()
+        // Pop from simple (priority 0) first
+        if let Some(item) = self.simple.pop_front() {
+            return Some(item);
+        }
+        // Simple is empty, drain any remaining prioritized items (negative priorities)
+        if let Some((&key, _)) = self.prioritized.last_key_value() {
+            if let Some(items) = self.prioritized.get_mut(&key) {
+                let item = items.pop_front();
+                if items.is_empty() {
+                    self.prioritized.remove(&key);
+                }
+                return item;
+            }
+        }
+        None
     }
 }
 
