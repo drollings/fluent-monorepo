@@ -1,12 +1,12 @@
 # Coral Context: Architectural Vision
 
-**A Deterministic-First Neurosymbolic Orchestration Engine for Edge Intelligence**
+**A Deterministic-First Context Graph Library with MCP Server and Multi-Tier Cache**
 
 ---
 
 ## Executive Summary
 
-Coral Context is a **deterministic-first AI orchestration framework** designed for extreme edge efficiency. It separates LLM queries into non-deterministic elements to be cached as context "nodes", and isolates logic, routing, and tool orchestration to compose deterministic tools, knowledge bases, and Directed Acyclic Graph (DAG) executed in Zig. LLMs are relegated to the role of unstructured data compilers, while the core system resolves semantic relationships using an embedded graph database and executes logic securely via WebAssembly.
+Coral Context is a **Rust-native context graph library** that provides a 6-tier intelligent cache, SQLite-backed graph database, MCP server interface, and WASM plugin runtime. It serves as the knowledge backbone for guidance, separating deterministic lookups from probabilistic inference.
 
 ### The Core Goal
 
@@ -19,11 +19,10 @@ Traditional AI systems invoke probabilistic models for every query, incurring la
 │                                                                             │
 │   Traditional AI:       Query → LLM → Response (slow, expensive, variable)  │
 │                                                                             │
-│   Coral Context:       Query → DAG Resolution → Result                      │
-│                            ↓ (if needed)                                    │
-│                       Local Model Decomposition                             │
-│                            ↓ (if needed)                                    │
-│                       Frontier LLM (last resort)                            │
+│   Coral Context:       Query → Cache Tier Check → Result                    │
+│                            ↓ (miss at each tier)                            │
+│                       L1 Memory → L3 Graph → L4 Semantic →                  │
+│                       L4.5 Decompose → L5 Frontier                          │
 │                                                                             │
 │   Result: Sub-100ms for cached patterns, zero marginal cost, auditability  │
 │                                                                             │
@@ -34,40 +33,42 @@ Traditional AI systems invoke probabilistic models for every query, incurring la
 - **Sub-100ms latency** for deterministic execution paths
 - **Zero marginal cost** for cached patterns (no LLM API calls)
 - **Full auditability** through deterministic replay
-- **Continuous improvement** as solutions become permanent DAG capabilities
+- **Continuous improvement** as solutions become permanent cached nodes
 - **Edge-native** design for resource-constrained environments
 
 ---
 
 ## Design Philosophy: Goals Over Implementation
 
-### Goal 1: Replace LLM Reasoning with Bitwise Graph Traversal
+### Goal 1: Replace LLM Reasoning with Cache-Tier Resolution
 
-The fundamental innovation: **DAGs over prompts**. Instead of asking an LLM to "figure out" the next step, the system uses bitwise operations on TraitSet bitmasks to deterministically resolve workflow paths:
+The fundamental innovation: **cascading cache tiers** instead of prompt-based reasoning. Each tier is progressively more expensive, and the system stops at the first hit:
 
-- **TraitSet Matching**: Hardware-accelerated `@popCount` operations measure capability distance
-- **Topological Execution**: Kahn's algorithm guarantees correct dependency ordering
-- **No Prompt Engineering Required**: The DAG encodes the logic explicitly
+- **L1 Memory**: LRU in-memory cache for hot queries (<1ms)
+- **L3 Graph**: SQLite keyword search + recursive CTE graph traversal (<10ms)
+- **L4 Semantic**: Brute-force KNN cosine similarity over embeddings (<50ms)
+- **L4.5 Decompose**: Local LLM decomposes complex queries into subtasks (200ms)
+- **L5 Frontier**: External LLM fallback for genuinely novel problems (500ms+)
 
 ### Goal 2: Edge-First Efficiency
 
 Every component is designed for resource-constrained environments:
 
-- **Memory Safety**: Zig's zero-cost abstractions prevent leaks
+- **Memory Safety**: Rust's ownership model prevents leaks
 - **Single-Process Embedding**: SQLite runs in-process, no separate database server
-- **Binary IPC**: Zero-copy serialization between Zig and WASM using `extern struct align(1)`
 - **Token Optimization**: LOD packing reduces context window requirements by 80%+
+- **No Runtime Overhead**: Zero-cost abstractions via Rust's trait system
 
 ### Goal 3: Neurosymbolic Learning Loop
 
 When deterministic paths fail, the system learns from the solution:
 
 ```
-Novel Query → Local Model Decomposition → Frontier LLM (if needed)
-                            ↓
-                    Solution Cached as New DAG Capability
-                            ↓
-        Next Time: Deterministic Execution (< 50ms)
+Novel Query → L4.5 Decomposition → L5 Frontier LLM (if needed)
+                    ↓
+            Solution Cached as New Node
+                    ↓
+    Next Time: Deterministic Execution (< 50ms)
 ```
 
 The expensive probabilistic step becomes a **one-time cost**, not a recurring one.
@@ -78,291 +79,158 @@ Dynamic tools (LLM-generated or user-provided) run in isolation:
 
 - **WASM Sandboxing**: Extism provides memory-safe execution
 - **No Host Access**: Filesystem and network access blocked by default
-- **Strict Type Boundaries**: Binary IPC prevents injection attacks
+- **SSRF Protection**: URL validation blocks private IPs and remote HTTP
+- **PII Anonymization**: Regex-based redaction for sensitive data
 
 ---
 
 ## Architectural Components
 
-While the focus is on goals, the implementation uses these components:
+### Component 1: SQLite Graph Database (`db.rs`)
 
-### Component 1: The Deterministic Core (Zig + DAG)
-
-The execution engine that replaces LLM reasoning:
+The core storage layer — a single SQLite database replacing dual-engine architectures:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DAG RESOLUTION PIPELINE                             │
+│                         SQLite GRAPH DATABASE                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   Query + Context → TraitSet Extraction                                    │
-│                            ↓                                                │
-│   Capability Registry → Bitmask Intersection                               │
-│                            ↓                                                │
-│   Distance = popCount(needed_mask & ~available_mask)                      │
-│                            ↓                                                │
-│   Distance = 0? → Execute DAG deterministically                            │
-│   Distance > 0? → Partial match: decompose into sub-tasks                 │
+│   Tables:                                                                   │
+│   ├── context_nodes    (id, name, source, lod, embedding, capabilities)    │
+│   ├── edges            (source_id, target_id, edge_type, weight)           │
+│   ├── wasm_tools       (name, path, capabilities)                          │
+│   ├── targets          (name, bit_index, depends, provides, command)       │
+│   ├── embedding_cache  (query_hash, query_text, embedding)                 │
+│   ├── entity_types     (node_id, type_iri)                                 │
+│   └── entity_hierarchy (subclass_iri, superclass_iri)                      │
+│                                                                             │
+│   Query Modes:                                                              │
+│   ├── SQL + recursive CTE   (topological traversal, BFS/DFS)               │
+│   ├── Brute-force KNN       (cosine similarity over float32 BLOBs)         │
+│   ├── Hybrid search         (keyword + vector with RRF merge)              │
+│   └── Duck typing           (recursive CTE is_a hierarchy traversal)       │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key Capabilities**:
-- Hardware-accelerated TraitSet matching
-- Kahn's algorithm for topological sorting
-- Cycle detection for DAG validation
-- Parallel execution of independent nodes
-- **Reflection-based field access**: All Target and ContextNode fields accessible via unified schema
+- Thread-safe via `Mutex<rusqlite::Connection>`
+- KNN search capped at 100K candidates
+- Recursive CTE for graph traversal with depth limit
+- Batch insert with transactional flush
+- Embedding cache for repeated queries
+- Ontology type hierarchy with transitive `is_a` queries
 
-### Component 2: SQLite as Unified Backend
+### Component 2: 6-Tier Cache Cascade (`cache_reactor.rs`, `cache_l1.rs`, `cache_router.rs`)
 
-Single persistent store replacing dual-engine (pgvector + LadybugDB):
-
-| Function | Implementation |
-|----------|----------------|
-| Node payloads | LOD text pyramid + embeddings (BLOB) |
-| Target DAG | DynamicBitSet word arrays (BLOB) |
-| Graph edges | SQL + recursive CTEs for BFS traversal |
-| WASM cache | Base64-encoded binaries |
-| Embeddings | Float32 BLOBs, cosine similarity in Zig |
-
-**Query Modes**:
-- **SQL + recursive CTE**: Topological traversal, dependency resolution
-- **Cosine Similarity**: In-process KNN over float32 BLOBs (≤100K nodes)
-- **Hybrid**: Weighted fusion of vector (0.65) + keyword (0.35) scores
-
-### Component 3: Reflection Layer — Single Source of Truth
-
-A unified reflection system ensures that field access, serialization, IPC, and database persistence all derive from the same schema definition:
+The intelligence layer that routes queries through progressively more expensive tiers:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      REFLECTION ARCHITECTURE                                │
+│                         CACHE TIER CASCADE                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐       │
-│   │                    STRUCT DEFINITION                            │       │
-│   │         Target { id, name, depends, provides, ... }            │       │
-│   │         ContextNode { id, lod[6], embedding, ... }            │       │
-│   └────────────────────────────┬────────────────────────────────────┘       │
-│                                │                                            │
-│                    ┌───────────┴───────────┐                               │
-│                    │    ACCESSOR TABLE     │                               │
-│                    │  (comptime-generated) │                               │
-│                    └───────────┬───────────┘                               │
-│                                │                                            │
-│         ┌──────────────────────┼──────────────────────┐                      │
-│         │                      │                      │                      │
-│         ▼                      ▼                      ▼                      │
-│   ┌───────────┐        ┌───────────┐         ┌───────────┐                │
-│   │ TUI Editor│        │  WASM IPC │         │  SQLite   │                │
-│   │ Role perms│        │ Binary ser│         │ Hydration │                │
-│   └───────────┘        └───────────┘         └───────────┘                │
+│   Query                                                                     │
+│     │                                                                       │
+│     ▼                                                                       │
+│   ┌─────────┐  hit  ┌─────────┐  hit  ┌─────────┐  hit  ┌─────────┐      │
+│   │ L1:     │──────▶│ L2:     │──────▶│ L3:     │──────▶│ L4:     │      │
+│   │ Memory  │       │ WASM    │       │ Graph   │       │Semantic │      │
+│   │ (LRU)   │       │ Tool    │       │ (SQLite)│       │ (KNN)   │      │
+│   └─────────┘       └─────────┘       └─────────┘       └─────────┘      │
+│                                                       │                   │
+│                                                       ▼                   │
+│                                                 ┌─────────┐  hit         │
+│                                                 │ L4.5:   │─────────▶    │
+│                                                 │Decompose│              │
+│                                                 │ (local) │              │
+│                                                 └─────────┘              │
+│                                                       │ miss             │
+│                                                       ▼                   │
+│                                                 ┌─────────┐              │
+│                                                 │ L5:     │              │
+│                                                 │Frontier │              │
+│                                                 │ (LLM)   │              │
+│                                                 └─────────┘              │
 │                                                                             │
-│   All paths use the same field offsets, types, and permissions            │
+│   Every non-L1 hit is persisted as a solution node for future queries.     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key Capabilities**:
+| Tier | Name | Implementation | Latency | When |
+|------|------|---------------|---------|------|
+| L1 | Memory | LRU cache (10K entries) | <1ms | Hot queries |
+| L2 | WASM Workflow | WASM tool matching via `wasm_tools` table | <5ms | Tool-capable queries |
+| L3 | Graph | SQLite LIKE + recursive CTE traversal | <10ms | Structural queries |
+| L4 | Semantic | Brute-force KNN cosine similarity | <50ms | Semantic queries |
+| L4.5 | Decompose | Local LLM splits into subtasks, recurses | 200ms | Complex multi-step |
+| L5 | Frontier | External LLM (Ollama/OpenAI) | 500ms+ | Novel problems |
 
-| Feature | Implementation |
-|---------|---------------|
-| **Unified Schema** | `Accessor` table defines name, offset, type, permissions |
-| **Role-Based Access** | 18-bit `RolePermissions` (6 roles × 3 ops) enforced on every `set`/`get` |
-| **Binary IPC** | `setBinaryFn`/`getBinaryFn` vtable entries for zero-copy WASM serialization |
-| **String Path** | `setCtxFn`/`getCtxFn` for TUI editors, RPC handlers, config loading |
-| **Ownership Tracking** | `releaseFn` with `lod_owned` bitmask prevents double-free on string fields |
-| **Cross-Module Translation** | `convertFn` translates bitsets between different StringInterners |
+### Component 3: MCP Server (`mcp.rs`)
 
-**Schema Types**:
+JSON-RPC 2.0 server implementing the Model Context Protocol for AI agent integration:
 
-| Schema | Host Type | Use Case |
+| Method | Parameters | Behavior |
 |--------|-----------|----------|
-| `Editable(T)` | Comptime-known structs | `WasmTool.editable`, `ToolCompilerConfig.editable` |
-| `DynamicEditable` | Runtime-defined rows | SQLite hydration, WASM tool parameters |
-| `TargetSchema` | `Target` | DAG targets with `depends`/`provides` bitsets |
-| `ContextNodeSchema` | `ContextNode` | Semantic entities with LOD pyramid |
+| `coral_query` | `{ "name": "..." }` | Node lookup by name |
+| `coral_insert` | Full `ContextNode` JSON | Insert a node, return `node_id` |
+| `coral_traverse` | `{ "node_id": N, "max_depth": N }` | Graph traversal |
 
-**Single Source of Truth Principle**:
+**Transport**: STDIO (line-delimited JSON), max request size 10MB.
 
-The struct definition is the schema. Reflection derives:
-- Field offsets for binaryIPC
-- String setters/getters for TUI and RPC
-- Permission masks for role enforcement
-- Ownership modes for memory safety
-- Type tags for heterogeneous storage
+### Component 4: WASM Plugin Runtime (`wasm_runtime.rs`)
 
-Dynamic tool execution in isolated sandboxes:
+Dynamic tool execution via Extism WASM SDK, bridged to the fluent-wvr trait system:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      WASM EXECUTION ARCHITECTURE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   Tool Source (Zig/Rust/Generated) → Compile to WASM                       │
-│                            ↓                                                │
-│   Extism Sandbox: 16MB heap limit, 30s timeout                            │
-│                            ↓                                                │
-│   Binary IPC: extern struct align(1) (no JSON)                            │
-│       └─ Reflection-driven: BinaryContextNode, BinaryTarget               │
-│                            ↓                                                │
-│   Host Functions: Whitelisted only (graph query, node fetch)               │
-│                                                                             │
-│   Security: No filesystem, no network, no subprocesses                      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```rust
+// WasmComponent implements all fluent-wvr traits:
+impl WorkUnit for WasmComponent { ... }
+impl FieldAccess for WasmComponent { ... }
+impl Describable for WasmComponent { ... }
+// Automatic Component via blanket impl
 ```
 
-**Reflection-Powered IPC**:
+**Security Model**:
+- No filesystem access (unless explicitly granted)
+- No network access from sandboxed tools
+- Memory-safe execution via Extism
+- Host functions: whitelisted only
 
-Binary serialization avoids string parsing overhead:
-- `BinaryContextNode` serializes `lod[6]` as offset/length pairs
-- `BinaryExecutionResult` uses word arrays for unbounded bitsets
-- Field order matches `Accessor` table — drift impossible
+### Component 5: Context Packing with LOD (`packer.rs`)
 
-### Component 5: ContextNodes with LOD Packing
-
-Semantic entities stored at multiple detail levels:
+Token-budget-aware context packing using Level of Detail:
 
 | LOD Level | Size | Use Case |
 |-----------|------|----------|
-| lod0_full | Complete | Focal point of query |
-| lod1_summary | ~800 chars | Primary context |
-| lod2_brief | ~240 chars | Secondary context |
-| lod3_tiny | ~80 chars | Distant references |
-| lod4_name | ~10 chars | Peripheral mentions |
+| lod0 | Complete | Focal point of query |
+| lod1 | ~800 chars | Primary context |
+| lod2 | ~240 chars | Secondary context |
+| lod3 | ~80 chars | Distant references |
+| lod4 | ~10 chars | Peripheral mentions |
 
-**Packing Algorithm**:
-1. Identify semantic center via cosine similarity KNN
-2. Compute graph distance via BFS
-3. Assign LOD by distance (closer = more detail)
-4. Fit to token budget, downgrading as needed
+**Algorithm**:
+1. BFS from focus node up to depth 5
+2. Select LOD by effective graph distance (normalized by avg degree)
+3. First-Fit Decreasing bin-pack into token budget
 
-### Component 6: YAGO 4.5 Ontology
+### Component 6: Batch Ingestion (`ingest.rs`)
 
-A sparse ontological foundation for semantic reasoning:
-
-**Dual Purpose**:
-
-1. **Duck Typing Support**: Type hierarchy enables capability inference
-   - Tool built for "Person" → works for "Scientist", "Developer"
-   - Property inheritance through subsumption
-
-2. **Baseline Knowledge**: General world knowledge
-   - Entity relationships from Wikipedia
-   - Temporal grounding for facts
-
-3. **Foundation for Custom Knowledge**:
-   - User knowledge bases build on the baseline
-   - Confidence scoring for merged information
-
-### Component 7: System Boundaries
+RDF/Turtle/N-Quads ingestion pipeline with transactional flush:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SYSTEM BOUNDARIES                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐      │
-│   │                     CORAL CONTEXT                               │      │
-│   │                                                                  │      │
-│   │   ┌─────────────────┐    ┌─────────────────┐                  │      │
-│   │   │  MCP Server     │    │  HTTP Client    │                  │      │
-│   │   │  (JSON-RPC)     │    │  (LLM Access)   │                  │      │
-│   │   │                 │    │                 │                  │      │
-│   │   │ • STDIO transport    │ • Ollama/llama.cpp│                │      │
-│   │   │ • HTTP/SSE    │    │ • Cloud APIs    │                  │      │
-│   │   └────────┬────────┘    └────────┬────────┘                  │      │
-│   │            │                       │                             │      │
-│   │            ▼                       ▼                             │      │
-│   │   ┌─────────────────────────────────────────────────────┐       │      │
-│   │   │           INTERNAL BINARY EXECUTION                  │       │      │
-│   │   │   • DAG Resolution  • WASM Execution                 │       │      │
-│   │   │   • SQLite Queries • Context Packing                │       │      │
-│   │   └─────────────────────────────────────────────────────┘       │      │
-│   │                                                                  │      │
-│   └─────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-│   JSON parsed ONLY at perimeter; internal ops use binary                   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+File → Lexer → Parser → TripleMapper → PendingNode/PendingEdge
+                                              ↓
+                                    BatchIngestor (10K batch)
+                                              ↓
+                                    Transactional flush to SQLite
 ```
 
-**Integration Points**:
-- **MCP Server**: For AI agent integration (Claude Code, Cursor, NullClaw)
-- **HTTP Client**: For edge/cloud LLM access
-- **STDIO**: For local low-latency scenarios
-
----
-
-## Execution Pipeline
-
-### Phase 1: Command Recognition (Deterministic)
-
-```
-Input: "/build src/main.zig"
-  ↓
-Pattern Match → Compiled Target "build_zig"
-  ↓
-Capability Check: needs {zig_compiler, build_zig}
-  ↓
-Resolution: Find providers via bitmask
-  ↓
-Execution: Native Zig execution
-  ↓
-Latency: < 5ms
-```
-
-### Phase 2: Semantic Search (Deterministic)
-
-```
-Input: "Extract tables from quarterly report"
-  ↓
-Embedding: 768-dim vector
-  ↓
-Cosine Similarity: In-process KNN over SQLite BLOBs
-  ↓
-Capability Filter: Verify provides_mask
-  ↓
-DAG Execution: Run matched tools
-  ↓
-Latency: 50-200ms
-```
-
-### Phase 3: Local Decomposition (Hybrid)
-
-```
-Input: Complex multi-step task
-  ↓
-Semantic Search: No complete match
-  ↓
-Local 3-4B Model: Decompose into sub-tasks
-  ↓
-Sub-task Resolution: Each matched via DAG
-  ↓
-Topological Execution: Run in order
-  ↓
-Latency: 200-800ms
-```
-
-### Phase 4: Frontier Consultation (Last Resort)
-
-```
-Input: Genuinely novel problem
-  ↓
-All prior phases failed
-  ↓
-Anonymize + Minimize context
-  ↓
-Frontier LLM: Generate solution
-  ↓
-Validate + Compile to WASM
-  ↓
-Index in SQLite
-  ↓
-**Next query: Deterministic execution**
-```
+**Features**:
+- Turtle and N-Quads format support
+- YAGO ontology whitelist filtering
+- Auto-discovery of neighbor edges via KNN (distance < 0.3)
+- Embedding computation during ingestion
 
 ---
 
@@ -370,68 +238,100 @@ Index in SQLite
 
 ### ContextNode
 
+```rust
+pub struct ContextNode {
+    pub id: NodeId,                    // i64, time-sortable
+    pub name: String,                  // unique identifier
+    pub source: String,                // source reference
+    pub lod: Vec<String>,              // Level of Detail pyramid (6 levels)
+    pub embedding: Option<Vec<f32>>,   // 768-1536 dimensions
+    pub capabilities: BitVec,          // capability bitmask
+}
+```
+
+### Edge
+
 | Field | Type | Description |
 |-------|------|-------------|
-| id | i64 | Time-sortable identifier (SQLite INTEGER PRIMARY KEY) |
-| lod | Array[6] | Level of Detail pyramid (lod0-lod5) |
-| embedding | Float slice | 768-1536 dimensions |
-| valid_from/to | Float64 | Temporal validity window |
-| confidence | i32 | Quality score |
-| provenance_id | i32 | Source reference |
-
-**Reflection Access**: `ContextNodeSchema.viewOf()` provides schema-driven access for TUI editors, WASM IPC binary serialization, and SQLite hydration. The `lod_owned` bitmask tracks which string slots are allocator-owned.
+| source_node_id | i64 | Source node |
+| target_node_id | i64 | Target node |
+| edge_type | String | Relationship type |
+| weight | f64 | Edge weight |
 
 ### Target (DAG Node)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| id | i64 | Target identifier (SQLite INTEGER PRIMARY KEY) |
 | name | String | Human-readable name |
-| depends | DynamicBitSet | Required capabilities (unbounded) |
-| provides | DynamicBitSet | Provided capabilities (unbounded) |
-| executor | ExecutorKind | Native or WASM execution |
+| bit_index | usize | Capability bit position |
+| depends | BitVec | Required capabilities |
+| provides | BitVec | Provided capabilities |
+| essential | bool | Must succeed |
+| command | String | Shell command |
 
-**Reflection Access**: `TargetSchema.viewOf()` enables schema-driven get/set for `depends`/`provides` bitsets with automatic StringInterner translation. Binary IPC uses word arrays for unbounded capability sets.
+---
 
-### Edge Relations
+## Integration with guidance
 
-| Type | Purpose |
-|------|---------|
-| depends_on | DAG dependency tracking |
-| provides_capability | Capability registry |
-| neighbor_of | Semantic proximity |
-| is_a | Ontology hierarchy |
+### How Coral Serves guidance
+
+```
+guidance explain "query"
+        │
+        ▼
+   QueryEngine.classify()
+        │
+        ▼
+   WordIndex / GuidanceDb hybrid search
+        │ (if vector search needed)
+        ▼
+   coral::db::Library::knn_search()
+        │ (if graph traversal needed)
+        ▼
+   coral::db::Library::traverse_from()
+        │ (if context packing needed)
+        ▼
+   coral::packer::ContextPacker::pack()
+```
+
+### Shared Types
+
+| Type | Defined In | Used By |
+|------|-----------|---------|
+| `ContextNode` | `guidance-types` | coral, guidance |
+| `NodeId` | `guidance-types` | coral, guidance |
+| `KnnHit` | `guidance-types` | coral, guidance |
+| `WasmTool` | `guidance-types` | coral |
+| `Component` | `fluent-wvr` | coral, dag |
+| `WorkUnit` | `fluent-wvr` | coral, dag |
 
 ---
 
 ## Implementation Status
 
-### Completed ✅
+### Completed
 
-1. **Deterministic Core**: Target registry, TraitSet bitmasks, Kahn's algorithm
-2. **SQLite Integration**: Unified backend with SQL + recursive CTEs, cosine similarity in Zig
-3. **Context Packing**: LOD pyramid, graph-distance algorithm
-4. **WASM Sandboxing**: Extism integration, binary IPC
-5. **Reflection Layer**: Unified schema-driven field access for Target and ContextNode
-   - `Editable(T)` mixin for comptime-known structs
-   - `DynamicEditable` for runtime-defined schemas
-   - Role-based permissions enforced on every `set`/`get`
-   - Binary and string serialization paths from same accessor table
-6. **MCP Server**: JSON-RPC perimeter for agent integration (HTTP + STDIO transports)
-7. **YAGO 4.5 Ingestion**: Sparse ontology with whitelist filtering, namespace prefix support
-8. **Hybrid Search**: HNSW index + vector similarity, L1-L5 cache hierarchy
-9. **Schema-Driven Hydration**: SQL binder and hydrator using accessor tables
-10. **Performance Benchmarks**: L1 cache, HNSW build/search, comparison targets
+1. **SQLite Graph Database**: Full schema with 7 tables, KNN search, recursive CTE traversal, duck typing
+2. **6-Tier Cache Cascade**: L1 (LRU) through L5 (Frontier), with solution persistence
+3. **MCP Server**: JSON-RPC 2.0 over STDIO with 3 methods
+4. **WASM Plugin Runtime**: Extism integration with fluent-wvr trait bridge
+5. **Context Packing**: Token-budget-aware LOD selection with FFD bin-packing
+6. **Batch Ingestion**: Turtle/N-Quads parsing with YAGO whitelist filtering
+7. **Embedding Support**: Ollama and OpenAI embedding providers with caching
+8. **SSRF Protection**: URL validation blocking private IPs and remote HTTP
+9. **PII Anonymization**: Regex-based redaction for emails, credit cards, SSN, etc.
+10. **Hybrid Search**: Reciprocal Rank Fusion (k=60) for keyword + vector
 
-### In Progress 🔄
+### In Progress
 
-1. **Local Model Integration**: 3-4B parameter inference for decomposition
-2. **Frontier Protocol**: Anonymized LLM fallback for novel queries
+1. **Fluent WVR Pattern Adoption**: Wrapping cache tiers with WorkUnit for uniform orchestration
+2. **Async I/O**: Replacing synchronous SQLite calls with async-friendly patterns
 
-### Planned 📋
+### Planned
 
-1. **Evolutionary Improvement**: *Aspirational* - Genetic selection of high-value tools
-2. **Advanced Caching**: LRU eviction policies for L1, semantic cache warming
+1. **HNSW Index**: Replace brute-force KNN with approximate nearest neighbor for >100K nodes
+2. **Persistent L1 Cache**: Disk-backed LRU for warm starts
+3. **Graph Analytics**: PageRank, community detection for node importance
 
 ---
 
@@ -440,8 +340,7 @@ Index in SQLite
 ### Edge Profile (Raspberry Pi, Mobile)
 
 - **Memory**: 4-8 GB RAM
-- **Storage**: SQLite (persistent)
-- **Model**: 3-4B local inference
+- **Storage**: SQLite (WAL mode)
 - **Max Nodes**: ~100K ContextNodes
 - **Target Latency**: < 50ms deterministic
 
@@ -449,28 +348,8 @@ Index in SQLite
 
 - **Memory**: 16-64 GB RAM
 - **Storage**: SQLite (WAL mode, high concurrency)
-- **Model**: 8-27B local + optional cloud
 - **Max Nodes**: ~1M+ ContextNodes
 - **Target Latency**: < 20ms deterministic
-
----
-
-## Security Model
-
-### WASM Isolation
-
-- No filesystem access (unless explicitly granted)
-- No network access from sandboxed tools
-- 16MB heap limit, 30s timeout
-- Memory-safe execution
-
-### Approved Host Functions
-
-| Function | Purpose |
-|----------|---------|
-| get_node_lod1 | Fetch node summary |
-| get_neighbors | Graph traversal |
-| insert_edge | Add relationship |
 
 ---
 
@@ -488,16 +367,16 @@ Index in SQLite
 
 ## Conclusion
 
-Coral Context represents a fundamental shift in AI architecture: **deterministic execution first, probabilistic inference only when necessary**. By replacing prompt-based LLM reasoning with bitwise DAG traversal, the system achieves:
+Coral Context represents a shift in AI architecture: **deterministic execution first, probabilistic inference only when necessary**. By replacing prompt-based LLM reasoning with a cascading cache tier system, the system achieves:
 
 - **Predictable performance**: Sub-100ms latency for known patterns
 - **Zero marginal cost**: No API calls for cached solutions
-- **Full auditability**: Every decision traceable through the DAG
-- **Continuous improvement**: Each novel solution becomes a permanent capability
+- **Full auditability**: Every decision traceable through the cache tiers
+- **Continuous improvement**: Each novel solution becomes a permanent cached node
 - **Edge deployment**: Full functionality on Raspberry Pi-class hardware
 
 The result is an AI system that grows more capable with every use, while remaining fast, cheap, and deterministic.
 
 ---
 
-*Vision Document v2.1 — March 2026*
+*Vision Document v3.0 — June 2026 (Rust codebase)*

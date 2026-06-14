@@ -1,10 +1,8 @@
 # Fluent WVR in Rust — The Synthesis Pipeline
 
-**A design pattern guide for human coders and AI agents working in `rust-src/`.**
+**A design pattern guide for human coders and AI agents working in the Rust codebase.**
 
 **Supersedes:** `FLUENT_WVR_RUST.md` (raw-pointer variant, deprecated) and the previous `FLUENT_WVR.md`.
-
-**Companion:** `doc/skills/fluent-wvr/SKILL.md` (the Zig original — authoritative for `src/`).
 
 ---
 
@@ -720,7 +718,7 @@ pub fn get_provides_bitset(
 
 ### The problem
 
-Zig's `ArenaAllocator` scopes all intermediate allocations to a logical unit of work. Rust has no built-in arena (and `bumpalo` is forbidden by project policy).
+Rust has no built-in arena allocator (and `bumpalo` is forbidden by project policy). Intermediate allocations are scoped to logical units of work via RAII ownership.
 
 ### The Rust solution
 
@@ -1692,4 +1690,4 @@ When writing new code in `rust-src/`:
 
 ---
 
-*This document is the authoritative Rust reference for Fluent WVR patterns. The Zig original (`doc/skills/fluent-wvr/SKILL.md`) remains authoritative for `src/`. The deprecated `FLUENT_WVR_RUST.md` (raw-pointer variant) must not be followed.*
+*This document is the authoritative reference for Fluent WVR patterns in the Rust codebase. The deprecated `FLUENT_WVR_RUST.md` (raw-pointer variant) must not be followed.*

@@ -42,7 +42,7 @@ Then you you must read
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── README.md  # # guidance
-├── STRUCTURE.md  # # Project Structure
+├── STRUCTURE.md  # # AST-Guidance Project Structure
 ├── bin/
 │   └── gen_simhash_projections.py  # #!/usr/bin/env python3
 ├── doc/
@@ -96,6 +96,8 @@ Then you you must read
 │   │   └── schemas/
 │   │       └── guidance.schema.json
 │   └── skills/
+│       ├── fluent-concurrency/
+│       │   └── SKILL.md  # # `fluent-concurrency` — Lightweight
 │       ├── fluent-wvr/
 │       │   └── SKILL.md  # # Fluent WVR in Rust — The Synthesis
 │       ├── gof-patterns/
@@ -180,12 +182,6 @@ Then you you must read
     │       ├── type_inference.rs  # use bitvec::prelude::*;
     │       ├── work_unit.rs  # use std::process::Command;
     │       └── wvr.rs  # //! Fluent WVR integration for DAG
-    ├── fixtures/
-    │   └── sample-project/
-    │       ├── doc.md  # # Sample Markdown file for AST parsing
-    │       ├── main.py  # """Sample Python file for AST parsing
-    │       ├── main.rs  # # Sample Rust file for AST parsing
-    │       └── main.zig  # /// Sample Zig file for AST parsing
     ├── fluent-concurrency/
     │   ├── Cargo.toml
     │   └── src/
@@ -221,7 +217,7 @@ Then you you must read
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── ast_parser.rs  # use std::path::Path;
-    │   │   ├── config.rs  # use std::path::{Path, PathBuf};
+    │   │   ├── config.rs  # use std::collections::HashMap;
     │   │   ├── enhancer.rs  # use guidance_llm::client::{ChatMessage,
     │   │   ├── lib.rs  # //! Guidance: AST-guided vector search
     │   │   ├── plugin.rs  # use std::collections::HashMap;
@@ -235,10 +231,10 @@ Then you you must read
     │   │   │   └── synthesize.rs  # use guidance_types::{GuidanceDoc,
     │   │   ├── query_engine.rs  # use std::fmt::Write;
     │   │   ├── runtime.rs  # use std::cell::RefCell;
-    │   │   ├── scanner.rs  # use common_core::string::{
+    │   │   ├── scanner.rs  # use common_core::string::{contains_any,
     │   │   ├── sync/
     │   │   │   ├── comments.rs  # use std::path::Path;
-    │   │   │   ├── file_lock.rs  # use fs2::FileExt;
+    │   │   │   ├── file_lock.rs  # use common_core::hash::blake3_hex;
     │   │   │   ├── json_store.rs  # use std::path::{Path, PathBuf};
     │   │   │   ├── json_writer.rs  # use guidance_types::{GuidanceDoc,
     │   │   │   ├── mod.rs  # pub mod comments;
