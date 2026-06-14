@@ -59,14 +59,7 @@ pub mod scanner;
 pub mod sync_engine;
 pub mod walk;
 
-pub mod query {
-    pub mod identifier;
-    pub mod llm_filter;
-    pub mod llm_filter_batch;
-    pub mod snapshot;
-    pub mod strategy;
-    pub mod synthesize;
-}
+pub mod query;
 
 pub mod sync {
     pub mod comments;

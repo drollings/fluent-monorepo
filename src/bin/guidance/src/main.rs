@@ -535,14 +535,7 @@ async fn cmd_sync(
             walk_and_gen_async(guidance_dir.clone(), scan_path, force, verbose, &[]).await;
         println!("Scanned {scan_dir}: generated {generated} files");
     } else {
-        let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
-            vec![workspace_path.clone()]
-        } else {
-            cfg.src_dirs
-                .iter()
-                .map(|d| workspace_path.join(d))
-                .collect()
-        };
+        let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
 
         let mut total_files = 0usize;
         let mut stale_files = 0usize;
@@ -606,8 +599,7 @@ async fn cmd_sync(
     }
 }
 
-fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
-    let cfg = load_project_config(workspace_path);
+fn src_dirs_from_config_with(workspace_path: &Path, cfg: &config::ProjectConfig) -> Vec<PathBuf> {
     if cfg.src_dirs.is_empty() {
         vec![workspace_path.to_path_buf()]
     } else {
@@ -616,6 +608,11 @@ fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
             .map(|d| workspace_path.join(d))
             .collect()
     }
+}
+
+fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
+    let cfg = load_project_config(workspace_path);
+    src_dirs_from_config_with(workspace_path, &cfg)
 }
 
 async fn walk_and_gen_async(
@@ -780,14 +777,7 @@ fn cmd_status(guidance_dir: &str) {
     let gdir = PathBuf::from(guidance_dir);
     let workspace_path = std::env::current_dir().unwrap_or_default();
     let cfg = load_project_config(&workspace_path);
-    let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
-        vec![workspace_path.clone()]
-    } else {
-        cfg.src_dirs
-            .iter()
-            .map(|d| workspace_path.join(d))
-            .collect()
-    };
+    let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
     let mut total_files = 0usize;
     let mut stale_files = 0usize;
     let mut up_to_date = 0usize;
@@ -867,14 +857,7 @@ fn cmd_check(workspace: &str) {
     let guidance_dir = workspace_path.join(".guidance");
     let mut all_passed = true;
 
-    let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
-        vec![workspace_path.clone()]
-    } else {
-        cfg.src_dirs
-            .iter()
-            .map(|d| workspace_path.join(d))
-            .collect()
-    };
+    let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
     let present_exts = walk::collect_extensions(&src_dirs);
 
     type StageFn = Box<dyn Fn() -> Result<(), String>>;
@@ -943,11 +926,7 @@ fn cmd_check(workspace: &str) {
     stages.push((
         "gen",
         Box::new(move || {
-            let src_dirs: Vec<PathBuf> = if cfg_gen.src_dirs.is_empty() {
-                vec![ws_gen.clone()]
-            } else {
-                cfg_gen.src_dirs.iter().map(|d| ws_gen.join(d)).collect()
-            };
+            let src_dirs = src_dirs_from_config_with(&ws_gen, &cfg_gen);
             let mut total_stale = 0usize;
             for src_dir in &src_dirs {
                 if !src_dir.is_dir() {

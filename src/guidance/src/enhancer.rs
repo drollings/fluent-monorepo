@@ -10,12 +10,77 @@ pub enum EnhancerError {
     NoResponse,
 }
 
+/// Language-specific comment generation — the fluent-wvr control plane for
+/// LLM prompting. Each language implements its own system prompt and
+/// member/file prompt templates.
+pub trait CommentGenerator: Send + Sync {
+    /// System message for the LLM conversation.
+    fn system_prompt(&self, language: &str) -> String;
+
+    /// Prompt for generating a member (function/type) comment.
+    fn member_prompt(
+        &self,
+        name: &str,
+        signature: &str,
+        module_context: &str,
+        kind_label: &str,
+        language: &str,
+    ) -> String;
+
+    /// Prompt for generating a file-level description.
+    fn file_prompt(&self, rel_path: &str, source_preview: &str, language: &str) -> String;
+}
+
+/// Default comment generator — language-agnostic prompts that work for any language.
+pub struct DefaultCommentGenerator;
+
+impl CommentGenerator for DefaultCommentGenerator {
+    fn system_prompt(&self, language: &str) -> String {
+        format!("You are a technical documentation assistant for {language} code.")
+    }
+
+    fn member_prompt(
+        &self,
+        name: &str,
+        signature: &str,
+        module_context: &str,
+        kind_label: &str,
+        _language: &str,
+    ) -> String {
+        format!(
+            "{kind_label} in {module_context}:\n  {signature}\n\n\
+             Write a single-line comment for this {kind_label}.\n\
+             Rules:\n\
+             - Plain English, technically specific\n\
+             - Max 200 characters\n\
+             - No boilerplate openers\n\n\
+             Wrap your answer in <comment> tags. Example:\n\
+             <comment>Parses a null-terminated C string into an owned slice.</comment>\n\n\
+             Name: {name}"
+        )
+    }
+
+    fn file_prompt(&self, rel_path: &str, source_preview: &str, _language: &str) -> String {
+        format!(
+            "Source:\n{source_preview}\n\nFile: {rel_path}\n\n\
+             Write a single-line description for this file.\n\
+             Rules:\n\
+             - Plain English, technically specific\n\
+             - Max 200 chars\n\
+             - No boilerplate openers\n\n\
+             Wrap your answer in <comment> tags."
+        )
+    }
+}
+
 /// AI comment enhancer for guidance generation.
 ///
 /// Generates descriptions (≤200 chars) for functions, structs, and files
-/// by calling the configured LLM endpoint.
+/// by calling the configured LLM endpoint. Uses a `CommentGenerator` trait
+/// for language-specific prompting (fluent-wvr control plane pattern).
 pub struct Enhancer {
     pub client: LlmClient,
+    pub generator: Box<dyn CommentGenerator>,
     pub debug: bool,
     pub show_prompts: bool,
 }
@@ -24,9 +89,16 @@ impl Enhancer {
     pub fn new(api_base: &str, model: &str) -> Self {
         Self {
             client: LlmClient::new(api_base, model),
+            generator: Box::new(DefaultCommentGenerator),
             debug: false,
             show_prompts: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_generator(mut self, generator: Box<dyn CommentGenerator>) -> Self {
+        self.generator = generator;
+        self
     }
 
     #[must_use]
@@ -41,26 +113,30 @@ impl Enhancer {
         self
     }
 
+    /// Generate a comment for a function, struct, enum, or union type.
+    pub fn enhance_member(
+        &self,
+        name: &str,
+        signature: &str,
+        module_context: &str,
+        kind_label: &str,
+        language: &str,
+    ) -> Result<Option<String>, EnhancerError> {
+        let prompt = self
+            .generator
+            .member_prompt(name, signature, module_context, kind_label, language);
+        self.call_llm(language, &prompt)
+    }
+
     /// Generate a comment for a function or method.
     pub fn enhance_function(
         &self,
         name: &str,
         signature: &str,
         module_context: &str,
+        language: &str,
     ) -> Result<Option<String>, EnhancerError> {
-        let prompt = format!(
-            "Zig function in {module_context}:\n  {signature}\n\n\
-             Write a single-line comment for this function.\n\
-             Rules:\n\
-             - Plain English, technically specific\n\
-             - Max 200 characters\n\
-             - No boilerplate openers\n\n\
-             Wrap your answer in <comment> tags. Example:\n\
-             <comment>Parses a null-terminated C string into an owned Zig slice.</comment>\n\n\
-             Function: {name}"
-        );
-
-        self.call_llm(&prompt)
+        self.enhance_member(name, signature, module_context, "Function", language)
     }
 
     /// Generate a comment for a struct/enum/union type.
@@ -69,20 +145,9 @@ impl Enhancer {
         name: &str,
         signature: &str,
         module_context: &str,
+        language: &str,
     ) -> Result<Option<String>, EnhancerError> {
-        let prompt = format!(
-            "Zig type in {module_context}:\n  {signature}\n\n\
-             Write a single-line comment for this type.\n\
-             Rules:\n\
-             - Plain English, technically specific\n\
-             - Max 200 characters\n\
-             - No boilerplate openers\n\n\
-             Wrap your answer in <comment> tags. Example:\n\
-             <comment>LRU cache for member comments, keyed by file_path + member_name.</comment>\n\n\
-             Type: {name}"
-        );
-
-        self.call_llm(&prompt)
+        self.enhance_member(name, signature, module_context, "Type", language)
     }
 
     /// Generate a one-line file-level description.
@@ -90,24 +155,15 @@ impl Enhancer {
         &self,
         rel_path: &str,
         source_preview: &str,
+        language: &str,
     ) -> Result<Option<String>, EnhancerError> {
         let preview = if source_preview.len() > 3000 {
             &source_preview[..3000]
         } else {
             source_preview
         };
-
-        let prompt = format!(
-            "Source:\n{preview}\n\nFile: {rel_path}\n\n\
-             Write a single-line description for this file.\n\
-             Rules:\n\
-             - Plain English, technically specific\n\
-             - Max 200 chars\n\
-             - No boilerplate openers\n\n\
-             Wrap your answer in <comment> tags."
-        );
-
-        self.call_llm(&prompt)
+        let prompt = self.generator.file_prompt(rel_path, preview, language);
+        self.call_llm(language, &prompt)
     }
 
     /// Score a docstring for quality (mirrors Zig `scoreDocstring`).
@@ -136,7 +192,7 @@ impl Enhancer {
         score
     }
 
-    fn call_llm(&self, prompt: &str) -> Result<Option<String>, EnhancerError> {
+    fn call_llm(&self, language: &str, prompt: &str) -> Result<Option<String>, EnhancerError> {
         if self.debug {
             tracing::debug!("[enhancer] sending prompt (len={})", prompt.len());
         }
@@ -147,7 +203,7 @@ impl Enhancer {
         let messages = vec![
             ChatMessage {
                 role: "system".into(),
-                content: "You are a technical documentation assistant for Zig code.".into(),
+                content: self.generator.system_prompt(language),
             },
             ChatMessage {
                 role: "user".into(),
@@ -193,6 +249,7 @@ pub fn enhance_doc(
 ) -> Result<usize, EnhancerError> {
     let mut generated = 0;
     let module = doc.meta.module.as_str();
+    let language = doc.meta.language.as_str();
 
     for member in &mut doc.members {
         if member.comment.is_some() && !member.comment_generated {
@@ -209,12 +266,12 @@ pub fn enhance_doc(
             | guidance_types::MemberType::FnPrivate
             | guidance_types::MemberType::Method
             | guidance_types::MemberType::MethodPrivate => {
-                enhancer.enhance_function(member.name.as_str(), sig, module)
+                enhancer.enhance_function(member.name.as_str(), sig, module, language)
             }
             guidance_types::MemberType::Struct
             | guidance_types::MemberType::Enum
             | guidance_types::MemberType::Union => {
-                enhancer.enhance_struct(member.name.as_str(), sig, module)
+                enhancer.enhance_struct(member.name.as_str(), sig, module, language)
             }
             _ => continue,
         };
@@ -229,7 +286,7 @@ pub fn enhance_doc(
     // Generate file-level comment if missing
     if doc.comment.is_none() {
         if let Ok(Some(file_comment)) =
-            enhancer.enhance_file(doc.meta.source.as_str(), source_content)
+            enhancer.enhance_file(doc.meta.source.as_str(), source_content, language)
         {
             doc.comment = Some(file_comment.into());
             generated += 1;
@@ -271,7 +328,6 @@ mod tests {
 
     #[test]
     fn test_call_llm_extracts_comment_tag() {
-        // Test the XML extraction logic directly
         let response = "<comment>Test comment</comment>";
         assert!(response.contains("<comment>"), "should have comment tag");
         assert!(
@@ -302,7 +358,6 @@ mod tests {
         // No LLM available, so enhance should gracefully skip all members
         let enhancer = Enhancer::new("http://localhost:99999", "test");
         let result = enhance_doc(&enhancer, &mut doc, "pub fn foo() void {}");
-        // Should return Ok(0) since no comments could be generated
         assert!(result.is_ok(), "should not propagate LLM errors");
     }
 
@@ -324,5 +379,16 @@ mod tests {
                 assert_eq!(content, "Parses input and produces output.");
             }
         }
+    }
+
+    #[test]
+    fn test_default_comment_generator_language_agnostic() {
+        let gen = DefaultCommentGenerator;
+        let sys = gen.system_prompt("python");
+        assert!(sys.contains("python"), "should mention the language");
+
+        let prompt = gen.member_prompt("foo", "fn foo()", "mod", "Function", "rust");
+        assert!(prompt.contains("foo"), "should contain the name");
+        assert!(prompt.contains("Function"), "should contain the kind label");
     }
 }
