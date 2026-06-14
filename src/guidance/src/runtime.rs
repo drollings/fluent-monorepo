@@ -4,12 +4,13 @@ use std::sync::{Arc, LazyLock};
 
 use fluent_concurrency::pool::WorkerPool;
 use fluent_concurrency::runtime::tokio::TokioRuntime;
+use fluent_concurrency::zone::{Zone, ZoneConfig};
+use fluent_wvr::{CapabilitySet, Runtime};
 use tokio::sync::oneshot;
 
 use crate::ast_parser::AstParser;
 use crate::sync_engine::{GenConfig, SyncEngine, SyncEngineError};
 use guidance_search_vector::GuidanceDb;
-use guidance_types::GuidanceDoc;
 
 /// A file for AST generation in the worker pool.
 pub struct AstGenJob {
@@ -26,6 +27,8 @@ pub struct DbSyncJob {
     pub db_path: PathBuf,
     pub result_tx: oneshot::Sender<Result<usize, String>>,
 }
+
+use guidance_types::GuidanceDoc;
 
 /// Shared AST generation pool — sized to available cores, backpressure-managed queue.
 pub static AST_POOL: LazyLock<Arc<WorkerPool<AstGenJob>>> = LazyLock::new(|| {
@@ -77,3 +80,44 @@ pub static DB_POOL: LazyLock<Arc<WorkerPool<DbSyncJob>>> = LazyLock::new(|| {
         },
     ))
 });
+
+/// Create a Zone that provides structured concurrency, failure containment,
+/// and dependency tracking for a batch of AST generation tasks.
+///
+/// Unlike manual oneshot channel management, a Zone:
+/// - Automatically cancels dependent tasks when a prerequisite fails
+/// - Enforces a poll budget to prevent executor starvation
+/// - Provides a typed event summary (completed/panicked/cancelled)
+///
+/// # Example
+/// ```ignore
+/// let mut zone = create_sync_zone(Arc::new(TokioRuntime));
+/// zone.register(build_task_a);  // provides "parsed"
+/// zone.register(build_task_b);  // depends on "parsed"
+/// let summary = zone.await;
+/// // If task_a panics, task_b is automatically cancelled
+/// ```
+pub fn create_sync_zone(runtime: Arc<dyn Runtime>) -> Zone {
+    Zone::new_with_config(
+        runtime,
+        CapabilitySet::default(),
+        ZoneConfig { poll_budget: 64 },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ast_pool_static_init() {
+        let _ = &*AST_POOL;
+        let _ = &*DB_POOL;
+    }
+
+    #[test]
+    fn test_sync_zone_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Zone>();
+    }
+}

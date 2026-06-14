@@ -97,7 +97,7 @@ assert_eq!(vec.len(), 768);
 
 - **`dyn Trait` + `Box`** replaces Zig's explicit `{ptr, vtable}` struct pattern — Rust's `Box<dyn EmbeddingProvider>` is the idiomatic trait-object dispatch
 - **`Send + Sync` bounds** replace Zig's `thread_id` assertions — the Rust trait requires `Send + Sync` for safe multi-threaded use instead of runtime thread-ID checks
-- **`ureq` HTTP** replaces `std.http.Client` — synchronous blocking HTTP via the `ureq` crate (no async runtime needed for embedding calls)
+- **`reqwest` HTTP** replaces `std.http.Client` — blocking HTTP via `reqwest::blocking::Client` for sync calls, async `reqwest::Client` for the embedding path
 - **`serde_json`** replaces `std.json` — JSON serialization/deserialization for request/response bodies
 - **`thiserror`** replaces Zig error unions — `EmbeddingError` is a typed error enum with `#[derive(thiserror::Error)]`
 - **`CachedEmbeddingProvider<T>`** replaces Zig's `content_hash_with_model` — the Rust version wraps the caching logic generically rather than embedding it in each provider impl

@@ -14,6 +14,8 @@ use tokio::sync::oneshot;
 use notify::{Config as NotifyConfig, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
 
+mod commit;
+mod editor;
 mod structure;
 
 #[derive(Parser)]
@@ -123,11 +125,14 @@ enum Commands {
         db: String,
     },
     Commit {
-        #[arg(default_value = "guidance sync")]
-        message: String,
-
         #[arg(long)]
         dry_run: bool,
+
+        #[arg(long)]
+        debug: bool,
+
+        #[arg(long)]
+        force: bool,
     },
     Check {
         #[arg(short = 'w', long, default_value = ".")]
@@ -136,7 +141,7 @@ enum Commands {
     Todo,
     Diary {
         #[arg(default_value = "")]
-        text: String,
+        text_or_path: String,
     },
     Benchmark {
         query: Option<String>,
@@ -238,10 +243,14 @@ async fn main() {
         }
         Commands::Status { guidance_dir } => cmd_status(guidance_dir),
         Commands::Clean { json_dir, db } => cmd_clean(json_dir, db),
-        Commands::Commit { message, dry_run } => cmd_commit(message, *dry_run),
+        Commands::Commit {
+            dry_run,
+            debug,
+            force,
+        } => cmd_commit(*dry_run, *debug, *force).await,
         Commands::Check { workspace } => cmd_check(workspace),
         Commands::Todo => cmd_todo(),
-        Commands::Diary { text } => cmd_diary(text),
+        Commands::Diary { text_or_path } => cmd_diary(text_or_path),
         Commands::Benchmark {
             query,
             guidance,
@@ -832,22 +841,117 @@ fn cmd_clean(json_dir: &str, db_path: &str) {
     println!("Clean complete.");
 }
 
-fn cmd_commit(message: &str, dry_run: bool) {
-    if dry_run {
-        println!("Dry run: would commit with message: {message}");
+async fn cmd_commit(dry_run: bool, debug: bool, force: bool) {
+    // All work runs inside spawn_blocking because reqwest::blocking::Client
+    // cannot be used from a tokio worker thread (it creates its own internal
+    // runtime and calls block_on during construction and request dispatch).
+    let result = tokio::task::spawn_blocking(move || {
+        cmd_commit_inner(dry_run, debug, force)
+    })
+    .await;
+    match result {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("commit task failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_commit_inner(dry_run: bool, debug: bool, force: bool) {
+    let workspace = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("Failed to get current directory: {e}");
+        std::process::exit(1);
+    });
+    let cfg = load_project_config(&workspace);
+
+    // 1. Get staged diff.
+    let diff = common_core::git::diff_staged(&workspace).unwrap_or_else(|e| {
+        eprintln!("git diff failed: {e}");
+        std::process::exit(1);
+    });
+    if diff.is_empty() {
+        println!("No staged changes to commit. Use 'git add' to stage files first.");
         return;
     }
-    println!("Committing with message: {message}");
-    let status = std::process::Command::new("git")
-        .args(["commit", "-m", message])
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("git commit failed: {e}");
+
+    // 2. Load guidance context for code files.
+    let guidance_dir = workspace.join(&cfg.guidance_dir);
+    let context = commit::load_guidance_context(&diff, &guidance_dir);
+
+    // 3. Resolve commit model from config.
+    let (api_url, model) = commit::resolve_commit_model(&cfg);
+
+    // 4. Generate initial commit message via LLM.
+    let initial_msg =
+        commit::generate_commit_message(&diff, &context, &api_url, &model, debug).unwrap_or_else(
+            |e| {
+                if debug {
+                    eprintln!("[commit] LLM error: {e}");
+                }
+                "* Update codebase".to_string()
+            },
+        );
+
+    if debug {
+        eprintln!("[commit] generated message:\n{initial_msg}");
+    }
+
+    // 5. Write to temp file.
+    let tmp_path =
+        editor::write_temp_file(&initial_msg, "guidance_commit_").unwrap_or_else(|e| {
+            eprintln!("Failed to create temp file: {e}");
             std::process::exit(1);
         });
-    if !status.success() {
-        eprintln!("Commit failed");
+
+    // 6. Record mtime before opening editor.
+    let mtime_before = editor::file_mtime(&tmp_path);
+
+    // 7. Open editor.
+    if let Err(e) = editor::open_editor(&tmp_path) {
+        eprintln!("Failed to open editor: {e}");
+        editor::cleanup_temp(&tmp_path);
         std::process::exit(1);
+    }
+
+    // 8. Compare mtime — if unchanged, user didn't save.
+    let mtime_after = editor::file_mtime(&tmp_path);
+    if mtime_before == mtime_after {
+        editor::cleanup_temp(&tmp_path);
+        println!("Commit message not saved. Aborting.");
+        return;
+    }
+
+    // 9. Read cleaned message (strip # comments, trim whitespace).
+    let final_msg = match editor::read_cleaned(&tmp_path) {
+        Ok(msg) if !msg.is_empty() => msg,
+        _ => {
+            editor::cleanup_temp(&tmp_path);
+            println!("Commit message is empty. Aborting.");
+            return;
+        }
+    };
+    editor::cleanup_temp(&tmp_path);
+
+    // 10. Dry run — print and exit.
+    if dry_run {
+        println!("--- Commit message ---\n{final_msg}\n---");
+        return;
+    }
+
+    // 11. Commit.
+    match common_core::git::commit(&workspace, &final_msg) {
+        Ok(true) => println!("Committed successfully."),
+        Ok(false) => {
+            eprintln!("git commit failed (nothing to commit or hook rejected)");
+            if !force {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("git commit failed: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -1006,7 +1110,7 @@ fn cmd_todo() {
     }
 }
 
-fn cmd_diary(text: &str) {
+fn cmd_diary(text_or_path: &str) {
     let diary_dir = Path::new(".guidance/doc");
     std::fs::create_dir_all(diary_dir).expect("create .guidance/doc dir");
     let diary_path = diary_dir.join("DIARY.md");
@@ -1016,10 +1120,30 @@ fn cmd_diary(text: &str) {
                 .unwrap_or(time::format_description::parse("[year]-[month]-[day]").unwrap()),
         )
         .unwrap_or_else(|_| "unknown date".to_string());
-    let entry = if text.is_empty() {
+
+    // If the argument is a readable file path, read its contents.
+    // Otherwise, treat it as inline text.
+    let content = if !text_or_path.is_empty() {
+        let p = Path::new(text_or_path);
+        if p.is_file() {
+            match std::fs::read_to_string(p) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Could not read {text_or_path}: {e}");
+                    return;
+                }
+            }
+        } else {
+            text_or_path.to_string()
+        }
+    } else {
+        text_or_path.to_string()
+    };
+
+    let entry = if content.is_empty() {
         format!("\n## {timestamp}\n\n(empty entry)\n")
     } else {
-        format!("\n## {timestamp}\n\n{text}\n")
+        format!("\n## {timestamp}\n\n{content}\n")
     };
     std::fs::OpenOptions::new()
         .create(true)

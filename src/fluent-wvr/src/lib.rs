@@ -311,6 +311,45 @@ impl WorkUnit for Arc<dyn WorkUnit> {
     }
 }
 
+impl WorkUnit for Arc<dyn Component> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+    fn depends(&self) -> &[ArcIntern<str>] {
+        (**self).depends()
+    }
+    fn provides(&self) -> &[ArcIntern<str>] {
+        (**self).provides()
+    }
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        (**self).execute(ctx)
+    }
+}
+
+impl FieldAccess for Arc<dyn Component> {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        Arc::get_mut(self)
+            .ok_or_else(|| {
+                FieldError::NotFound(
+                    "Arc has multiple owners; configure before wrapping".into(),
+                )
+            })?
+            .set_field(name, value)
+    }
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        (**self).get_field(name)
+    }
+    fn field_names(&self) -> &'static [&'static str] {
+        (**self).field_names()
+    }
+}
+
+impl Describable for Arc<dyn Component> {
+    fn describe(&self) -> serde_json::Value {
+        (**self).describe()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

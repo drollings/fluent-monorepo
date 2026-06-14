@@ -25,7 +25,7 @@ Implements a multi-tier caching strategy for routing queries. `QueueReactor` coo
 - **dashmap::DashMap** replaces Zig's `std.AutoHashMap` with concurrent read/write support — no explicit `Mutex` needed for L1
 - **Arc<Library>** shared between reactor and router instead of Zig's `*Library` pointer
 - **RoutingResult** is a plain `Clone + Serialize` struct rather than a tagged union
-- **CacheError** lives in `guidance_common::error::CacheError` instead of a Zig error set
+- **CacheError** lives in `coral::error::CacheError` instead of a Zig error set
 
 ## Example
 

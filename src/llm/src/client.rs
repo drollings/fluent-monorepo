@@ -128,7 +128,7 @@ impl LlmClient {
     }
 }
 
-pub(crate) fn chat_complete_http(
+pub fn chat_complete_http(
     api_base: &str,
     messages: &[ChatMessage],
     model: &str,

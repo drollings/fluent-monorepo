@@ -1,0 +1,25 @@
+[package]
+name = "memory-plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Pluggable memory tier for guidance — deterministic search with structured memory backends"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+fluent-wvr = { path = "../fluent-wvr" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+guidance-types = { path = "../types" }
+
+internment = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+sha2 = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = { workspace = true }

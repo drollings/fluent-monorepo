@@ -17,7 +17,7 @@ Parses Zig and Python source files using tree-sitter to extract module-level com
 
 - `guidance/src/ast_parser.rs` — `AstParser` struct, `parse_file()`, tree-sitter cursor walks
 - `guidance/src/sync/json_store.rs` — `load_guidance()`, `save_guidance()` JSON persistence
-- `common/src/types.rs` — `GuidanceDoc`, `Member`, `MemberType`, `Param`, `Meta`
+- `types/src/lib.rs` — `GuidanceDoc`, `Member`, `MemberType`, `Param`, `Meta` (crate: `guidance-types`)
 
 ## Semantic Deviations
 

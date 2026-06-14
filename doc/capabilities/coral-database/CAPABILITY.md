@@ -18,7 +18,7 @@ Provides a persistent graph database built on SQLite. The `Library` struct manag
 ## Key files
 
 - `coral/src/db.rs` — `Library`, `LibraryError`, KNN search, recursive traversal, schema init
-- `common/src/types.rs` — `ContextNode`, `NodeId`, `KnnHit`, `GraphNode`, `WasmTool`
+- `types/src/lib.rs` — `ContextNode`, `NodeId`, `KnnHit`, `GraphNode`, `WasmTool` (crate: `guidance-types`)
 
 ## Semantic Deviations
 
@@ -33,7 +33,7 @@ Provides a persistent graph database built on SQLite. The `Library` struct manag
 ## Example
 
 ```rust
-use guidance_common::types::{ContextNode, NodeId};
+use guidance_types::{ContextNode, NodeId};
 use guidance_coral::db::Library;
 
 let lib = Library::open_in_memory().expect("db");

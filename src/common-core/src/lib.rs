@@ -27,6 +27,7 @@ pub mod constants;
 pub mod error;
 pub mod error_context;
 pub mod format;
+pub mod git;
 pub mod hash;
 pub mod io;
 pub mod metrics;

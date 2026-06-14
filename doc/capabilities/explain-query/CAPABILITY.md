@@ -49,15 +49,15 @@ The explain-query capability answers natural-language questions about the codeba
 - **`QueryIntent` enum** replaces Zig's `QueryStrategy` vtable — dispatch is a match arm, not an interface method call
 - **`matches()` on the enum** replaces `strategy.matches(query)` vtable dispatch — a free function `strategy::matches(query, _db)` returns `QueryMatch { intent, priority, matched }`
 - **Deterministic fast path** completes in <100µs (identifier + capability queries); no heap allocation except the result `Vec`
-- **LLM fallback** uses `LlmFilter` (backed by `async-openai`) for `ConceptQuery`, matching the Zig concept of LLM-assisted ranking
+- **LLM fallback** uses `LlmFilter` (backed by `reqwest` via `LlmClient`) for `ConceptQuery`, matching the Zig concept of LLM-assisted ranking
 - **No SimHash** — the Rust version does not use SimHash for vector search; `vector_explain()` calls `GuidanceDb::vector_search` directly with raw `&[f32]`
 - **No semantic alias expansion** — the `SemanticAliases` module exists but `QueryEngine.explain()` does not expand aliases before matching
 
 ## Example
 
 ```rust
-use guidance_guidance::query_engine::QueryEngine;
-use guidance_common::types::{GuidanceDoc, Member, MemberType, Meta};
+use guidance_core::query_engine::QueryEngine;
+use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
 let engine = QueryEngine::new();
 

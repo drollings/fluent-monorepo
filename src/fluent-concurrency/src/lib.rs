@@ -42,9 +42,33 @@ mod tests {
     use crate::runtime::test::TestRuntime;
     use crate::runtime::tokio::TokioRuntime;
     use fluent_wvr::{
-        Capability, CapabilitySet, Reserve, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit,
+        Capability, CapabilitySet, Describable, FieldAccess, FieldError, Reserve, Runtime,
+        WorkContext, WorkError, WorkOutput, WorkUnit,
     };
     use internment::ArcIntern;
+
+    /// Generates trivial `FieldAccess` + `Describable` impls so test types
+    /// satisfy the `Component` supertrait bound required by `Zone`.
+    macro_rules! impl_component_for_test {
+        ($type:ty) => {
+            impl FieldAccess for $type {
+                fn set_field(&mut self, _: &str, _: &str) -> Result<(), FieldError> {
+                    Ok(())
+                }
+                fn get_field(&self, _: &str) -> Result<String, FieldError> {
+                    Err(FieldError::NotFound("test type: no fields".into()))
+                }
+                fn field_names(&self) -> &'static [&'static str] {
+                    &[]
+                }
+            }
+            impl Describable for $type {
+                fn describe(&self) -> serde_json::Value {
+                    serde_json::json!({})
+                }
+            }
+        };
+    }
 
     struct TestCapA;
     impl Capability for TestCapA {
@@ -79,6 +103,7 @@ mod tests {
             panic!("intentional panic")
         }
     }
+    impl_component_for_test!(PanicUnit);
 
     /// Shared test helper: a `WorkUnit` with dependencies that can optionally fail.
     struct DepWorkUnit {
@@ -105,6 +130,7 @@ mod tests {
             }
         }
     }
+    impl_component_for_test!(DepWorkUnit);
 
     #[tokio::test(start_paused = true)]
     async fn test_tokio_runtime_spawn() {
@@ -287,6 +313,7 @@ mod tests {
                 }
             }
         }
+        impl_component_for_test!(TestWorkUnit);
 
         #[tokio::test(start_paused = true)]
         async fn test_scope_close_drains_tasks() {
@@ -385,6 +412,7 @@ mod tests {
                     panic!("execute panic");
                 }
             }
+            impl_component_for_test!(PanicOnExecute);
 
             zone.register(Arc::new(PanicOnExecute));
             let summary: ZoneSummary = (&mut zone).await;
@@ -428,6 +456,7 @@ mod tests {
                     panic!("provider panic");
                 }
             }
+            impl_component_for_test!(PanicProvider);
 
             struct WaitingDep {
                 name: String,
@@ -450,6 +479,7 @@ mod tests {
                     Err(WorkError::Execution("awaiting dependency".into()))
                 }
             }
+            impl_component_for_test!(WaitingDep);
 
             let asset = ArcIntern::<str>::from("asset");
             zone.register(Arc::new(PanicProvider {
@@ -574,6 +604,7 @@ mod tests {
                     Err(WorkError::Execution("retry fail".into()))
                 }
             }
+            impl_component_for_test!(RetryCounter);
 
             let unit = Arc::new(RetryCounter {
                 name: "retry_test".into(),
@@ -611,6 +642,7 @@ mod tests {
                     panic!("intentional panic");
                 }
             }
+            impl_component_for_test!(PanicUnit);
 
             zone.register(Arc::new(TestWorkUnit::ok("good")));
             zone.register(Arc::new(PanicUnit));
@@ -725,6 +757,7 @@ mod tests {
                     }
                 }
             }
+            impl_component_for_test!(ChainUnit);
 
             let a_out = ArcIntern::<str>::from("a_out");
             let b_out = ArcIntern::<str>::from("b_out");
@@ -855,6 +888,7 @@ mod tests {
                     Ok(WorkOutput::ok("done"))
                 }
             }
+            impl_component_for_test!(SlowUnit);
 
             zone.register(Arc::new(SlowUnit));
             drop(zone);
@@ -1001,6 +1035,7 @@ mod tests {
             Err(WorkError::Execution("retry".into()))
         }
     }
+    impl_component_for_test!(TestWorkUnitWithCounter);
 
     struct TestWorkUnitWithDep {
         name: String,
@@ -1027,6 +1062,7 @@ mod tests {
             }
         }
     }
+    impl_component_for_test!(TestWorkUnitWithDep);
 
     mod m3 {
         use super::*;
@@ -1693,7 +1729,8 @@ mod tests {
         use crate::runtime::tokio::TokioRuntime;
         use crate::zone::{Zone, ZoneEvent, ZoneSummary};
         use fluent_wvr::{
-            ArcIntern, CapabilitySet, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit,
+            ArcIntern, CapabilitySet, Describable, FieldAccess, FieldError, Runtime, WorkContext,
+            WorkError, WorkOutput, WorkUnit,
         };
         use std::sync::Arc;
         use std::time::Duration;
@@ -1736,6 +1773,7 @@ mod tests {
                     ))
                 }
             }
+            impl_component_for_test!(PoolWorkUnit);
 
             let mut zone = Zone::new(runtime, caps);
             zone.register(Arc::new(PoolWorkUnit {
@@ -1786,6 +1824,7 @@ mod tests {
                     }
                 }
             }
+            impl_component_for_test!(OutcomeUnit);
 
             let shared = ArcIntern::<str>::from("shared");
             let mut zone = Zone::new(runtime, caps);
@@ -1911,6 +1950,7 @@ mod tests {
                     Err(WorkError::Execution("cycle member".into()))
                 }
             }
+            impl_component_for_test!(CycleUnit);
 
             let a_provides = ArcIntern::<str>::from("a_provides");
             let b_provides = ArcIntern::<str>::from("b_provides");

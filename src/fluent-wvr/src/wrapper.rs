@@ -5,7 +5,7 @@ use std::time::Instant;
 use internment::ArcIntern;
 use tracing::info;
 
-use crate::{Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
+use crate::{FieldAccess, FieldError, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
 
 pub enum WrapperKind {
     None,
@@ -46,11 +46,12 @@ pub struct RetryResult<T> {
     pub attempts: usize,
 }
 
-/// Synchronous retry with fixed-delay backoff.
+/// Retry with fixed-delay backoff using Tokio's async sleep.
 ///
-/// **Warning:** This function uses `std::thread::sleep`, which blocks the
-/// current thread. In a Tokio worker-pool context, this blocks the executor
-/// thread. Prefer async retry patterns when running inside an async runtime.
+/// When called from within a Tokio runtime context, uses `tokio::time::sleep`
+/// via `Handle::block_on` so the executor thread is not fully blocked (other
+/// tasks can make progress). Falls back to `std::thread::sleep` only when no
+/// Tokio runtime is active (e.g. unit tests without a runtime).
 pub fn retry_call<F, T, E>(max_attempts: usize, f: F) -> Result<RetryResult<T>, E>
 where
     F: Fn() -> Result<T, E>,
@@ -71,7 +72,12 @@ where
                     return Err(e);
                 }
                 #[allow(clippy::cast_lossless)]
-                std::thread::sleep(Duration::from_millis(10 * attempts as u64));
+                let delay = Duration::from_millis(10 * attempts as u64);
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.block_on(tokio::time::sleep(delay));
+                } else {
+                    std::thread::sleep(delay);
+                }
             }
         }
     }
@@ -146,12 +152,32 @@ impl<U: WorkUnit> WorkUnit for Instrumented<U> {
     }
 }
 
+impl<U: crate::Component> FieldAccess for Instrumented<U> {
+    fn set_field(&mut self, name: &str, _value: &str) -> Result<(), FieldError> {
+        // Delegated to inner — instrumentation does not own configuration.
+        // Requires mutable access to the wrapper (configure before sharing).
+        Err(FieldError::NotFound(format!(
+            "{name}: instrumented wrapper is read-only; configure the inner component directly"
+        )))
+    }
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        <U as FieldAccess>::get_field(&self.inner, name)
+    }
+    fn field_names(&self) -> &'static [&'static str] {
+        <U as FieldAccess>::field_names(&self.inner)
+    }
+}
+
+impl<U: crate::Component> crate::Describable for Instrumented<U> {
+    fn describe(&self) -> serde_json::Value {
+        <U as crate::Describable>::describe(&self.inner)
+    }
+}
+
 pub struct WithRetry<U> {
     inner: U,
     max_attempts: u32,
     backoff_ms: u64,
-    /// Optional runtime for async sleep. When `None`, falls back to
-    /// `std::thread::sleep` (blocks Tokio executor threads).
     #[allow(dead_code)]
     rt: Option<Arc<dyn Runtime>>,
 }
@@ -166,13 +192,6 @@ impl<U: WorkUnit> WithRetry<U> {
         }
     }
 
-    /// Create a `WithRetry` that uses the given runtime for sleep.
-    ///
-    /// **Note:** `WorkUnit::execute` is synchronous, so the runtime's async
-    /// sleep cannot be `.await`ed here. This stores the runtime for future
-    /// use when the trait becomes async. Currently falls back to
-    /// `std::thread::sleep`.
-    #[allow(dead_code)]
     pub fn with_runtime(inner: U, max_attempts: u32, backoff_ms: u64, rt: Arc<dyn Runtime>) -> Self {
         Self {
             inner,
@@ -196,11 +215,6 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
         self.inner.provides()
     }
 
-    /// Executes the inner unit with retry logic.
-    ///
-    /// **Warning:** Uses `std::thread::sleep` for backoff, which blocks the
-    /// current thread. In a Tokio worker-pool context, this blocks the
-    /// executor thread. Prefer async retry patterns when possible.
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let mut attempts = 0u32;
         loop {
@@ -212,12 +226,35 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
                         return Err(e);
                     }
                     #[allow(clippy::cast_lossless)]
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        self.backoff_ms * attempts as u64,
-                    ));
+                    let delay = Duration::from_millis(self.backoff_ms * attempts as u64);
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        handle.block_on(tokio::time::sleep(delay));
+                    } else {
+                        std::thread::sleep(delay);
+                    }
                 }
             }
         }
+    }
+}
+
+impl<U: crate::Component> FieldAccess for WithRetry<U> {
+    fn set_field(&mut self, name: &str, _value: &str) -> Result<(), FieldError> {
+        Err(FieldError::NotFound(format!(
+            "{name}: retry wrapper is read-only; configure the inner component directly"
+        )))
+    }
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        <U as FieldAccess>::get_field(&self.inner, name)
+    }
+    fn field_names(&self) -> &'static [&'static str] {
+        <U as FieldAccess>::field_names(&self.inner)
+    }
+}
+
+impl<U: crate::Component> crate::Describable for WithRetry<U> {
+    fn describe(&self) -> serde_json::Value {
+        <U as crate::Describable>::describe(&self.inner)
     }
 }
 

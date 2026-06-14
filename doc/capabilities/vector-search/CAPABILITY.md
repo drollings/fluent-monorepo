@@ -1,6 +1,6 @@
 ---
 name: vector-search
-description: Semantic codebase search using dense vector embeddings and cosine similarity over SQLite-stored AST node embeddings. Hybrid search fuses vector (0.65) and keyword (0.35) scores. QuantizedEmbedding provides int8 compression for memory-constrained deployments.
+description: Semantic codebase search using dense vector embeddings and cosine similarity over SQLite-stored AST node embeddings. Hybrid search fuses vector (0.65) and keyword (0.35) scores via RRF. QuantizedEmbedding provides int8 compression for memory-constrained deployments.
 anchors:
   - GuidanceDb
   - vector_search
@@ -15,7 +15,7 @@ anchors:
 
 # Vector Search
 
-Semantic codebase search using dense vector embeddings and cosine similarity, implemented on top of SQLite (`rusqlite`) with BLOB storage.
+Semantic codebase search using dense vector embeddings and cosine similarity, implemented in the standalone `search-vector` crate (`guidance-search-vector`) on top of SQLite (`rusqlite`) with BLOB storage.
 
 ## Architecture
 
@@ -39,7 +39,7 @@ Query text
 ## Cosine similarity
 
 ```rust
-// guidance/src/vector/math.rs
+// search-vector/src/math.rs
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let mut dot_product = 0.0;
     let mut norm_a = 0.0;
@@ -57,23 +57,23 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 ## Quantized embeddings
 
-`QuantizedEmbedding` compresses `Vec<f32>` to `Vec<i8>` with a scale factor (4× memory reduction):
+`QuantizedEmbedding` compresses `Vec<f32>` to `Vec<i8>` with a scale factor (4x memory reduction):
 
 ```rust
-use guidance::vector::quantized_embedding::QuantizedEmbedding;
+use guidance_search_vector::QuantizedEmbedding;
 
 let original = vec![0.5, -0.3, 0.8, -0.1, 0.0, 1.0, -1.0];
 let q = QuantizedEmbedding::from_f32(&original);
 let restored = q.to_f32();
 
 // Q8 cosine similarity (i64 arithmetic, no float sqrt in loop)
-let sim = cosine_similarity_q8(&q_a, &q_b);
+let sim = QuantizedEmbedding::cosine_similarity_q8(&q_a, &q_b);
 ```
 
 ## Semantic alias expansion
 
 ```rust
-use guidance::vector::semantic_aliases::SemanticAliases;
+use guidance_search_vector::SemanticAliases;
 
 let json = r#"{"fn": ["function", "func"], "arg": ["argument", "param"]}"#;
 let aliases = SemanticAliases::from_json(json)?;
@@ -90,7 +90,7 @@ let queries = aliases.expand_query("fn arg");
 ## Example
 
 ```rust
-use guidance::vector::vector_db::GuidanceDb;
+use guidance_search_vector::GuidanceDb;
 
 let db = GuidanceDb::open_in_memory()?;
 
@@ -113,17 +113,22 @@ let results = db.hybrid_search("hello function", Some(&query_vec), 5)?;
 
 ## Key files
 
-- `guidance/src/vector/vector_db.rs` — `GuidanceDb`, `SearchResult`, `vector_search`, `keyword_search`, `hybrid_search`, `insert_node`
-- `guidance/src/vector/math.rs` — `cosine_similarity`, `vec_to_bytes`, `bytes_to_vec`
-- `guidance/src/vector/quantized_embedding.rs` — `QuantizedEmbedding`, `cosine_similarity_q8`
-- `guidance/src/vector/semantic_aliases.rs` — `SemanticAliases`, `expand`, `expand_query`
-- `vector-math/src/lib.rs` — `cosine_similarity`, `vec_to_bytes`, `bytes_to_vec`, `QuantizedEmbedding`
-- `vector-aliases/src/lib.rs` — `SemanticAliases`, `expand`, `expand_query`
+- `search-vector/src/db.rs` — `GuidanceDb`, `SearchResult`, `vector_search`, `keyword_search`, `hybrid_search`, `insert_node`, `sync_from_dir`
+- `search-vector/src/math.rs` — `cosine_similarity`, `vec_to_bytes`, `bytes_to_vec`, `QuantizedEmbedding`
+- `search-vector/src/aliases.rs` — `SemanticAliases`, `expand`, `expand_query`
+- `search-vector/src/error.rs` — `DbError`
+- `search-vector/src/lib.rs` — Re-exports: `GuidanceDb`, `SemanticAliases`, `QuantizedEmbedding`
+
+## Dependencies
+
+- `rusqlite` (bundled SQLite) for database
+- `guidance-types` for shared types
 
 ## Semantic Deviations
 
 | Aspect | Zig | Rust |
 |--------|-----|------|
+| Crate | `src/vector/` module in guidance | Standalone `guidance-search-vector` crate |
 | SQLite bindings | `zqlite` wrapper | `rusqlite` crate |
 | Embedding storage | BLOB via `zqlite` | BLOB via `rusqlite params![]` |
 | Cosine similarity | `math.cosineSimilarity` (same algo) | `math::cosine_similarity` (same algo) |

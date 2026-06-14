@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use fluent_wvr::wrapper::{Instrumented, WithRetry};
-use fluent_wvr::WorkUnit;
+use fluent_wvr::Component;
 
 pub trait Middleware: Send + Sync {
-    fn wrap(&self, inner: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit>;
+    fn wrap(&self, inner: Arc<dyn Component>) -> Arc<dyn Component>;
 }
 
 pub struct TimingMiddleware;
 impl Middleware for TimingMiddleware {
-    fn wrap(&self, inner: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit> {
+    fn wrap(&self, inner: Arc<dyn Component>) -> Arc<dyn Component> {
         Arc::new(Instrumented::new(inner, "middleware"))
     }
 }
@@ -27,7 +27,7 @@ impl RetryMiddleware {
     }
 }
 impl Middleware for RetryMiddleware {
-    fn wrap(&self, inner: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit> {
+    fn wrap(&self, inner: Arc<dyn Component>) -> Arc<dyn Component> {
         Arc::new(WithRetry::new(inner, self.max_attempts, self.backoff_ms))
     }
 }
@@ -46,7 +46,7 @@ impl MiddlewareChain {
         self.middlewares.push(m);
         self
     }
-    pub fn apply(&self, unit: Arc<dyn WorkUnit>) -> Arc<dyn WorkUnit> {
+    pub fn apply(&self, unit: Arc<dyn Component>) -> Arc<dyn Component> {
         let mut result = unit;
         for mw in &self.middlewares {
             result = mw.wrap(result);
@@ -63,7 +63,7 @@ impl Default for MiddlewareChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fluent_wvr::{WorkContext, WorkError, WorkOutput, WorkUnit};
+    use fluent_wvr::{FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
     use internment::ArcIntern;
 
     struct PassthroughUnit {
@@ -81,6 +81,22 @@ mod tests {
         }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
             Ok(WorkOutput::ok("passthrough"))
+        }
+    }
+    impl FieldAccess for PassthroughUnit {
+        fn set_field(&mut self, _name: &str, _value: &str) -> Result<(), FieldError> {
+            Ok(())
+        }
+        fn get_field(&self, _name: &str) -> Result<String, FieldError> {
+            Err(FieldError::NotFound("no fields".into()))
+        }
+        fn field_names(&self) -> &'static [&'static str] {
+            &[]
+        }
+    }
+    impl fluent_wvr::Describable for PassthroughUnit {
+        fn describe(&self) -> serde_json::Value {
+            serde_json::json!({"name": self.name})
         }
     }
 

@@ -141,7 +141,7 @@ let provides = get_provides_bitset(&result, &buf)?;
 | WASM runtime | Extism C-API (`libextism`) | `extism` Rust crate |
 | Magic bytes | `"CRAL"` (`0x43, 0x52, 0x41, 0x4C`) | `"GRPH"` (`0x47, 0x52, 0x50, 0x48`) |
 | Provides bitset | `DynamicBitSetUnmanaged` → `getProvidesBitSet()` | `BitVec` → `get_provides_bitset()` |
-| WasmTool registration | `Library.insertWasmTool()` with `wasm_bytes` | Not yet ported — `WasmTool` type exists in `common/src/types.rs` |
+| WasmTool registration | `Library.insertWasmTool()` with `wasm_bytes` | Not yet ported — `WasmTool` type exists in `types/src/lib.rs` (`guidance-types`) |
 | Execution path | `QueueReactor.route()` TODO stub | `ExtismPlugin::call("execute", payload)` implemented |
 
 ## Zig reference

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use fluent_wvr::{CapabilitySet, ConcurrencyError, Runtime, WorkContext, WorkOutput, WorkUnit};
+use fluent_wvr::{CapabilitySet, Component, ConcurrencyError, Runtime, WorkContext, WorkOutput, WorkUnit};
 use internment::ArcIntern;
 use tokio::task::JoinSet;
 
@@ -112,8 +112,8 @@ impl Zone {
         }
     }
 
-    /// Registers a `WorkUnit` in the zone. Returns `&mut Self` for builder chaining.
-    pub fn register(&mut self, unit: Arc<dyn WorkUnit>) -> &mut Self {
+    /// Registers a `Component` in the zone. Returns `&mut Self` for builder chaining.
+    pub fn register(&mut self, unit: Arc<dyn Component>) -> &mut Self {
         let ctx = WorkContext {
             rt: Arc::clone(&self.runtime),
             caps: self.caps.clone(),
@@ -122,10 +122,10 @@ impl Zone {
         self.register_with_context(unit, ctx)
     }
 
-    /// Registers a `WorkUnit` with a custom `WorkContext`.
+    /// Registers a `Component` with a custom `WorkContext`.
     pub fn register_with_context(
         &mut self,
-        unit: Arc<dyn WorkUnit>,
+        unit: Arc<dyn Component>,
         ctx: WorkContext,
     ) -> &mut Self {
         let name: ArcIntern<str> = ArcIntern::from(unit.name());
@@ -151,7 +151,7 @@ impl Zone {
         self
     }
 
-    fn spawn_unit(&mut self, unit: Arc<dyn WorkUnit>, ctx: WorkContext) {
+    fn spawn_unit(&mut self, unit: Arc<dyn Component>, ctx: WorkContext) {
         let name: ArcIntern<str> = ArcIntern::from(unit.name());
         let max_retries = ctx.max_retries;
         let timeout_ms = ctx.timeout_ms;
@@ -331,7 +331,7 @@ impl Drop for Zone {
 }
 
 async fn execute_with_timeout_and_retry(
-    unit: Arc<dyn WorkUnit>,
+    unit: Arc<dyn Component>,
     ctx: WorkContext,
     max_retries: u32,
     timeout_ms: u64,

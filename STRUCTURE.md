@@ -46,6 +46,7 @@ Then you you must read
 ├── bin/
 │   └── gen_simhash_projections.py  # #!/usr/bin/env python3
 ├── doc/
+│   ├── MEMORY_PLUGIN.md  # # Memory Plugin Architecture —
 │   ├── SUBAGENT.md  # # REVIEW_20260418_LOCAL_SUBAGENT.
 │   ├── capabilities/
 │   │   ├── ast-indexing/
@@ -63,6 +64,8 @@ Then you you must read
 │   │   ├── embedding-providers/
 │   │   │   └── CAPABILITY.md  # ---
 │   │   ├── explain-query/
+│   │   │   └── CAPABILITY.md  # ---
+│   │   ├── fluent-concurrency/
 │   │   │   └── CAPABILITY.md  # ---
 │   │   ├── llm-client/
 │   │   │   └── CAPABILITY.md  # ---
@@ -137,7 +140,7 @@ Then you you must read
     │       ├── error_context.rs  # use std::fmt;
     │       ├── format.rs  # use std::fmt::Write as _;
     │       ├── hash.rs  # use blake3::Hasher;
-    │       ├── io.rs  # pub const DEFAULT_MAX_FILE_SIZE: usize
+    │       ├── io.rs  # use std::fs;
     │       ├── lib.rs  # //! common-core: Zero-domain generic
     │       ├── metrics.rs  # use std::sync::atomic::{AtomicU64,
     │       ├── shell.rs  # use std::process::Command;
@@ -201,14 +204,12 @@ Then you you must read
     │       │   ├── test.rs  # //! Test `Runtime` implementation with
     │       │   └── tokio.rs  # //! Production `Runtime` implementation
     │       ├── scope.rs  # //! Structured concurrency via `Scope`
-    │       ├── tokio_api_check.rs  # #[allow(dead_code)]
-    │       ├── tokio_api_check4.rs  # use tokio::task::JoinSet;
     │       └── zone.rs  # //! Supervision zone with async retry,
     ├── fluent-wvr/
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lib.rs  # //! ## Fluent WVR — Framework Trait
-    │       └── wrapper.rs  # use std::time::Duration;
+    │       └── wrapper.rs  # use std::sync::Arc;
     ├── fluent-wvr-macros/
     │   ├── Cargo.toml
     │   └── src/
@@ -222,24 +223,26 @@ Then you you must read
     │   │   ├── lib.rs  # //! Guidance: AST-guided vector search
     │   │   ├── plugin.rs  # use std::collections::HashMap;
     │   │   ├── query/
+    │   │   │   ├── formatter.rs  # use std::fmt::Write;
     │   │   │   ├── identifier.rs  # use guidance_types::GuidanceDoc;
     │   │   │   ├── llm_filter.rs  # use guidance_types::GuidanceDoc;
     │   │   │   ├── llm_filter_batch.rs  # use
-    │   │   │   ├── mod.rs  # pub mod identifier;
+    │   │   │   ├── mod.rs  # pub mod formatter;
+    │   │   │   ├── search_backend.rs  # use guidance_types::GuidanceDoc;
     │   │   │   ├── snapshot.rs  # use std::fs;
     │   │   │   ├── strategy.rs  # use guidance_types::GuidanceDoc;
     │   │   │   └── synthesize.rs  # use guidance_types::{GuidanceDoc,
-    │   │   ├── query_engine.rs  # use std::fmt::Write;
+    │   │   ├── query_engine.rs  # use std::path::Path;
     │   │   ├── runtime.rs  # use std::cell::RefCell;
     │   │   ├── scanner.rs  # use common_core::string::{contains_any,
     │   │   ├── sync/
     │   │   │   ├── comments.rs  # use std::path::Path;
-    │   │   │   ├── file_lock.rs  # use common_core::hash::blake3_hex;
     │   │   │   ├── json_store.rs  # use std::path::{Path, PathBuf};
     │   │   │   ├── json_writer.rs  # use guidance_types::{GuidanceDoc,
     │   │   │   ├── mod.rs  # pub mod comments;
     │   │   │   └── staleness.rs  # use std::path::Path;
-    │   │   └── sync_engine.rs  # use std::path::{Path, PathBuf};
+    │   │   ├── sync_engine.rs  # use std::path::{Path, PathBuf};
+    │   │   └── walk.rs  # use std::collections::HashSet;
     │   └── tests/
     │       └── e2e_gen_roundtrip.rs  # use
     ├── llm/
@@ -255,6 +258,25 @@ Then you you must read
     │       ├── lib.rs  # //! guidance-llm: LLM HTTP client
     │       ├── llm_queue.rs  # use std::sync::Arc;
     │       └── url.rs  # use thiserror::Error;
+    ├── memory-plugin/
+    │   ├── Cargo.toml
+    │   └── src/
+    │       ├── capability.rs  # //! Capability token for explicit
+    │       ├── lib.rs  # #![forbid(unsafe_code)]
+    │       ├── plugins/
+    │       │   ├── hindsight/
+    │       │   │   └── mod.rs  # //! Hindsight memory plugin —
+    │       │   ├── holographic/
+    │       │   │   ├── hrr.rs  # //! Holographic Reduced Representations
+    │       │   │   ├── mod.rs  # //! Holographic memory plugin — local
+    │       │   │   └── store.rs  # //! SQLite-backed fact store with
+    │       │   ├── honcho/
+    │       │   │   └── mod.rs  # //! Honcho memory plugin —
+    │       │   └── mod.rs  # //! Memory plugin implementations.
+    │       ├── registry.rs  # //! Central memory plugin registry.
+    │       ├── traits.rs  # //! Core trait definitions for the
+    │       ├── types.rs  # //! Shared types for the memory plugin
+    │       └── zone.rs  # //! Memory ingestion zone.
     ├── ontology/
     │   ├── Cargo.toml
     │   └── src/

@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+    Component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
 };
 use internment::ArcIntern;
 
 type ExecuteFn = Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>;
 
 pub struct ComponentAdapter {
-    inner: Arc<dyn WorkUnit>,
+    inner: Arc<dyn Component>,
     name_override: Option<String>,
     execute_override: Option<ExecuteFn>,
     field_overrides: Vec<(String, String)>,
 }
 
 impl ComponentAdapter {
-    pub fn new(inner: Arc<dyn WorkUnit>) -> Self {
+    pub fn new(inner: Arc<dyn Component>) -> Self {
         Self {
             inner,
             name_override: None,
@@ -108,6 +108,22 @@ mod tests {
         }
         fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
             Ok(WorkOutput::ok("original"))
+        }
+    }
+    impl FieldAccess for TestUnit {
+        fn set_field(&mut self, _name: &str, _value: &str) -> Result<(), FieldError> {
+            Ok(())
+        }
+        fn get_field(&self, _name: &str) -> Result<String, FieldError> {
+            Err(FieldError::NotFound("no fields".into()))
+        }
+        fn field_names(&self) -> &'static [&'static str] {
+            &[]
+        }
+    }
+    impl Describable for TestUnit {
+        fn describe(&self) -> serde_json::Value {
+            serde_json::json!({"name": self.name})
         }
     }
 

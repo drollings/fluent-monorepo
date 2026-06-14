@@ -17,6 +17,7 @@ members = [
     "src/ontology",
     "src/project-knowledge",
     "src/wasm_ipc",
+    "src/memory-plugin",
 ]
 
 [workspace.package]
