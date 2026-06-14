@@ -327,25 +327,26 @@ impl FieldAccess for ToolConfig {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         match name {
             "port" => {
-                let v: u16 = value.parse().map_err(|_| FieldError::InvalidType {
-                    field: name, expected: "u16", got: value
-                })?;
-                if v < 1 || v > 65535 {
-                    return Err(FieldError::ConstraintViolation {
-                        field: name, constraint: "1..=65535"
-                    });
+                let wide: f64 = value.parse().map_err(|_| FieldError::Parse(
+                    format!("invalid u16 for 'port': {}", value)
+                ))?;
+                if wide < 1.0 {
+                    return Err(FieldError::Constraint("port: value below minimum 1".into()));
                 }
-                self.port = v;
+                if wide > 65535.0 {
+                    return Err(FieldError::Constraint("port: value above maximum 65535".into()));
+                }
+                self.port = wide as u16;
                 Ok(())
             }
             "host" => { self.host = value.to_string(); Ok(()) }
             "verbose" => {
-                self.verbose = value.parse().map_err(|_| FieldError::InvalidType {
-                    field: name, expected: "bool", got: value
-                })?;
+                self.verbose = value.parse().map_err(|_| FieldError::Parse(
+                    format!("invalid bool for 'verbose': {}", value)
+                ))?;
                 Ok(())
             }
-            _ => Err(FieldError::UnknownField(name.to_string()))
+            _ => Err(FieldError::NotFound(name.into()))
         }
     }
 
@@ -354,7 +355,7 @@ impl FieldAccess for ToolConfig {
             "port"    => Ok(self.port.to_string()),
             "host"    => Ok(self.host.clone()),
             "verbose" => Ok(self.verbose.to_string()),
-            _ => Err(FieldError::UnknownField(name.to_string()))
+            _ => Err(FieldError::NotFound(name.into()))
         }
     }
 
@@ -368,7 +369,7 @@ impl Describable for ToolConfig {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "port":    { "type": "integer", "minimum": 1, "maximum": 65535,
+                "port":    { "type": "integer", "minimum": "1", "maximum": "65535",
                              "description": "TCP listen port" },
                 "host":    { "type": "string", "description": "Host address" },
                 "verbose": { "type": "boolean", "description": "Enable verbose logging" }
@@ -378,8 +379,6 @@ impl Describable for ToolConfig {
     }
 }
 ```
-
-> **Macro status:** `#[derive(FieldAccess, Describable)]` is **planned for P3**. Until it ships, implement `FieldAccess` and `Describable` manually for critical types, or use Tier 4 (`HashMap`) for dynamic schemas. The generated code above is the target shape for the macro.
 
 #### Tier 4: `HashMap` fallback
 
@@ -893,7 +892,7 @@ impl FieldAccess for WasmComponent {
         // Delegate configuration into the WASM plugin's config namespace
         let mut plugin = self.plugin.lock().unwrap();
         plugin.call("set_config", format!("{}={}", name, value).as_bytes())
-            .map_err(|e| FieldError::SetFailed { field: name.to_string(), reason: e.to_string() })?;
+            .map_err(|e| FieldError::Parse(format!("wasm set_config failed for '{}': {}", name, e)))?;
         self.config.lock().unwrap().insert(name.to_string(), value.to_string());
         Ok(())
     }
@@ -902,7 +901,7 @@ impl FieldAccess for WasmComponent {
         self.config.lock().unwrap()
             .get(name)
             .cloned()
-            .ok_or_else(|| FieldError::UnknownField(name.to_string()))
+            .ok_or_else(|| FieldError::NotFound(name.into()))
     }
 
     fn field_names(&self) -> &'static [&'static str] {
@@ -1052,7 +1051,7 @@ impl FieldAccess for ComponentAdapter {
         // interior mutability (e.g. WasmComponent uses Mutex internally).
         // If the inner type requires &mut self, configure it before wrapping.
         self.inner.get_field(name).and_then(|_| {
-            Err(FieldError::ReadOnly { field: name.to_string() })
+            Err(FieldError::NotFound(format!("{}: read-only adapter", name)))
         })
     }
 

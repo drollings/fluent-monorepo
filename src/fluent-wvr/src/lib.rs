@@ -35,9 +35,11 @@
     clippy::byte_char_slices
 )]
 
+extern crate self as fluent_wvr;
+
 pub mod wrapper;
 
-pub use fluent_wvr_macros::FieldAccess;
+pub use fluent_wvr_macros::{Describable, FieldAccess};
 pub use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
@@ -270,6 +272,20 @@ pub trait Describable {
     fn describe(&self) -> serde_json::Value;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldSchema {
+    pub name: String,
+    pub type_name: String,
+    pub description: Option<String>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub required: bool,
+}
+
+pub trait SchemaProvider {
+    fn schema(&self) -> Vec<FieldSchema>;
+}
+
 pub trait WorkUnit: Send + Sync {
     fn name(&self) -> &str;
     fn depends(&self) -> &[ArcIntern<str>];
@@ -376,5 +392,204 @@ mod tests {
         };
         let boxed: Box<dyn Component> = Box::new(comp);
         assert_eq!(boxed.name(), "test");
+    }
+
+    // --- Derive macro tests ---
+
+    #[derive(FieldAccess, Describable)]
+    struct BasicConfig {
+        name: String,
+        count: u32,
+        enabled: bool,
+    }
+
+    impl WorkUnit for BasicConfig {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            Ok(WorkOutput::ok("done"))
+        }
+    }
+
+    #[test]
+    fn test_derive_field_access_basic() {
+        let mut cfg = BasicConfig {
+            name: "test".into(),
+            count: 5,
+            enabled: true,
+        };
+        assert_eq!(cfg.get_field("name").unwrap(), "test");
+        assert_eq!(cfg.get_field("count").unwrap(), "5");
+        assert_eq!(cfg.get_field("enabled").unwrap(), "true");
+        cfg.set_field("count", "10").unwrap();
+        assert_eq!(cfg.get_field("count").unwrap(), "10");
+        assert!(cfg.set_field("nonexistent", "x").is_err());
+    }
+
+    #[test]
+    fn test_derive_field_names() {
+        let cfg = BasicConfig {
+            name: "".into(),
+            count: 0,
+            enabled: false,
+        };
+        let names = cfg.field_names();
+        assert!(names.contains(&"name"));
+        assert!(names.contains(&"count"));
+        assert!(names.contains(&"enabled"));
+    }
+
+    #[test]
+    fn test_derive_describable_basic() {
+        let cfg = BasicConfig {
+            name: "test".into(),
+            count: 5,
+            enabled: true,
+        };
+        let schema = cfg.describe();
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["properties"]["name"]["type"], "string");
+        assert_eq!(schema["properties"]["count"]["type"], "integer");
+        assert_eq!(schema["properties"]["enabled"]["type"], "boolean");
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.contains(&serde_json::json!("name")));
+        assert!(required.contains(&serde_json::json!("count")));
+    }
+
+    #[derive(FieldAccess, Describable)]
+    struct ConstrainedConfig {
+        #[field(desc = "TCP port", min = 1, max = 65535)]
+        port: u16,
+        #[field(desc = "Retry count", min = 0, max = 10)]
+        retries: u32,
+        #[field(desc = "Host name")]
+        host: String,
+    }
+
+    impl WorkUnit for ConstrainedConfig {
+        fn name(&self) -> &str {
+            &self.host
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            Ok(WorkOutput::ok("done"))
+        }
+    }
+
+    #[test]
+    fn test_derive_field_access_constraint_valid() {
+        let mut cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        cfg.set_field("port", "9000").unwrap();
+        assert_eq!(cfg.port, 9000);
+        cfg.set_field("retries", "5").unwrap();
+        assert_eq!(cfg.retries, 5);
+    }
+
+    #[test]
+    fn test_derive_field_access_constraint_below_min() {
+        let mut cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        let err = cfg.set_field("port", "0").unwrap_err();
+        match err {
+            FieldError::Constraint(msg) => {
+                assert!(msg.contains("below minimum"), "unexpected: {}", msg);
+            }
+            other => panic!("expected Constraint, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_derive_field_access_constraint_above_max() {
+        let mut cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        let err = cfg.set_field("port", "70000").unwrap_err();
+        match err {
+            FieldError::Constraint(msg) => {
+                assert!(msg.contains("above maximum"), "unexpected: {}", msg);
+            }
+            other => panic!("expected Constraint, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_derive_field_access_constraint_zero_min() {
+        let mut cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        cfg.set_field("retries", "0").unwrap();
+        assert_eq!(cfg.retries, 0);
+    }
+
+    #[test]
+    fn test_derive_describable_with_constraints() {
+        let cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        let schema = cfg.describe();
+        let port_schema = &schema["properties"]["port"];
+        assert_eq!(port_schema["type"], "integer");
+        assert_eq!(port_schema["description"], "TCP port");
+        assert_eq!(port_schema["minimum"], "1");
+        assert_eq!(port_schema["maximum"], "65535");
+    }
+
+    #[test]
+    fn test_schema_provider() {
+        use super::SchemaProvider;
+        let cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        let fields = cfg.schema();
+        assert_eq!(fields.len(), 3);
+        let port = &fields[0];
+        assert_eq!(port.name, "port");
+        assert_eq!(port.type_name, "u16");
+        assert_eq!(port.description.as_deref(), Some("TCP port"));
+        assert_eq!(port.min, Some(1.0));
+        assert_eq!(port.max, Some(65535.0));
+        assert!(port.required);
+        let host = &fields[2];
+        assert_eq!(host.name, "host");
+        assert_eq!(host.type_name, "String");
+        assert!(host.min.is_none());
+    }
+
+    #[test]
+    fn test_derive_component_blanket_impl() {
+        let cfg = ConstrainedConfig {
+            port: 8080,
+            retries: 3,
+            host: "localhost".into(),
+        };
+        let boxed: Box<dyn Component> = Box::new(cfg);
+        assert_eq!(boxed.field_names().len(), 3);
     }
 }
