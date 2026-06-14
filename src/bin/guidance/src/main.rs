@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
+use common_core::shell::run_command;
 use guidance_core::config;
 use guidance_core::runtime;
 use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_search_vector::GuidanceDb;
-use common_core::shell::run_command;
 use time::OffsetDateTime;
 use tokio::sync::oneshot;
 
@@ -76,7 +76,7 @@ enum Commands {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
     },
-    Gen {
+    Sync {
         #[arg(short, long)]
         file: Option<String>,
 
@@ -92,14 +92,8 @@ enum Commands {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
 
-        #[arg(long, default_value_t = 2)]
-        timeout: u64,
-
         #[arg(long)]
         force: bool,
-
-        #[arg(long)]
-        no_llm: bool,
 
         #[arg(long)]
         no_db: bool,
@@ -109,12 +103,6 @@ enum Commands {
 
         #[arg(long)]
         verbose: bool,
-
-        #[arg(long)]
-        regen: bool,
-
-        #[arg(long)]
-        all_languages: bool,
 
         #[arg(long)]
         watch: bool,
@@ -140,7 +128,10 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    Check,
+    Check {
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+    },
     Todo,
     Diary {
         #[arg(default_value = "")]
@@ -216,24 +207,20 @@ async fn main() {
             guidance_dir: _,
             db: _,
         } => cmd_init(dir),
-        Commands::Gen {
+        Commands::Sync {
             file,
             scan,
             workspace,
             json_dir,
             db,
-            timeout: _,
             force,
-            no_llm: _,
             no_db,
             dry_run,
             verbose,
-            regen: _,
-            all_languages: _,
             watch,
             watch_debounce_ms,
         } => {
-            cmd_gen_async(
+            cmd_sync(
                 file.as_deref(),
                 scan.as_deref(),
                 workspace,
@@ -251,7 +238,7 @@ async fn main() {
         Commands::Status { guidance_dir } => cmd_status(guidance_dir),
         Commands::Clean { json_dir, db } => cmd_clean(json_dir, db),
         Commands::Commit { message, dry_run } => cmd_commit(message, *dry_run),
-        Commands::Check => cmd_check(),
+        Commands::Check { workspace } => cmd_check(workspace),
         Commands::Todo => cmd_todo(),
         Commands::Diary { text } => cmd_diary(text),
         Commands::Benchmark {
@@ -287,6 +274,34 @@ async fn main() {
 
 fn load_project_config(workspace: &Path) -> config::ProjectConfig {
     config::load_config(workspace).unwrap_or_default()
+}
+
+fn collect_extensions(dirs: &[PathBuf]) -> std::collections::HashSet<String> {
+    let mut exts = std::collections::HashSet::new();
+    for dir in dirs {
+        if !dir.is_dir() {
+            continue;
+        }
+        collect_extensions_recursive(dir, &mut exts);
+    }
+    exts
+}
+
+fn collect_extensions_recursive(dir: &Path, exts: &mut std::collections::HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !name.starts_with('.') && name != "target" && name != "fixtures" {
+                collect_extensions_recursive(&path, exts);
+            }
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            exts.insert(format!(".{ext}"));
+        }
+    }
 }
 
 fn cmd_explain(
@@ -457,7 +472,7 @@ fn cmd_init(dir: &str) {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn cmd_gen_async(
+async fn cmd_sync(
     file: Option<&str>,
     scan: Option<&str>,
     workspace: &str,
@@ -507,9 +522,7 @@ async fn cmd_gen_async(
                     .unwrap_or(source_path)
                     .display()
             ));
-            if !force
-                && !guidance_core::sync::staleness::should_generate(&json_path, source_path)
-            {
+            if !force && !guidance_core::sync::staleness::should_generate(&json_path, source_path) {
                 if verbose {
                     println!("  skip (up to date): {path}");
                 }
@@ -545,14 +558,8 @@ async fn cmd_gen_async(
     } else if let Some(scan_dir) = scan {
         let scan_path = PathBuf::from(scan_dir);
         std::fs::create_dir_all(&guidance_dir).expect("create guidance dir");
-        let generated = walk_and_gen_async(
-            guidance_dir.clone(),
-            scan_path,
-            force,
-            verbose,
-            &[],
-        )
-        .await;
+        let generated =
+            walk_and_gen_async(guidance_dir.clone(), scan_path, force, verbose, &[]).await;
         println!("Scanned {scan_dir}: generated {generated} files");
     } else {
         let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
@@ -579,14 +586,9 @@ async fn cmd_gen_async(
             stale_files += status.stale_files;
 
             if stale_files > 0 || force {
-                generated += walk_and_gen_async(
-                    guidance_dir.clone(),
-                    src_dir.clone(),
-                    force,
-                    verbose,
-                    &[],
-                )
-                .await;
+                generated +=
+                    walk_and_gen_async(guidance_dir.clone(), src_dir.clone(), force, verbose, &[])
+                        .await;
             }
         }
 
@@ -619,7 +621,15 @@ async fn cmd_gen_async(
 
     if watch {
         let src_dirs = src_dirs_from_config(&workspace_path);
-        start_watcher(guidance_dir, &src_dirs, workspace_path, force, verbose, watch_debounce_ms).await;
+        start_watcher(
+            guidance_dir,
+            &src_dirs,
+            workspace_path,
+            force,
+            verbose,
+            watch_debounce_ms,
+        )
+        .await;
     }
 }
 
@@ -628,7 +638,10 @@ fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
     if cfg.src_dirs.is_empty() {
         vec![workspace_path.to_path_buf()]
     } else {
-        cfg.src_dirs.iter().map(|d| workspace_path.join(d)).collect()
+        cfg.src_dirs
+            .iter()
+            .map(|d| workspace_path.join(d))
+            .collect()
     }
 }
 
@@ -679,7 +692,9 @@ async fn walk_and_gen_async(
 
     for path in &files {
         let rel = path.strip_prefix(&source_dir).unwrap_or(path);
-        let json_path = guidance_dir.join("src").join(format!("{}.json", rel.display()));
+        let json_path = guidance_dir
+            .join("src")
+            .join(format!("{}.json", rel.display()));
         let should_gen = force || guidance_core::sync::staleness::should_generate(&json_path, path);
         if !should_gen {
             if verbose {
@@ -690,14 +705,14 @@ async fn walk_and_gen_async(
 
         let (tx, rx) = oneshot::channel();
         pool.submit(runtime::AstGenJob {
-                source_path: path.clone(),
-                source_dir: source_dir.clone(),
-                guidance_dir: guidance_dir.clone(),
-                config: guidance_core::sync_engine::GenConfig::default(),
-                result_tx: tx,
-            })
-            .await
-            .expect("queue closed during gen");
+            source_path: path.clone(),
+            source_dir: source_dir.clone(),
+            guidance_dir: guidance_dir.clone(),
+            config: guidance_core::sync_engine::GenConfig::default(),
+            result_tx: tx,
+        })
+        .await
+        .expect("queue closed during gen");
         handles.push((rel.display().to_string(), rx));
     }
 
@@ -763,10 +778,7 @@ async fn start_watcher(
         match rx.recv() {
             Ok(Ok(Event { paths, .. })) => {
                 for path in &paths {
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("");
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                     if !supported_exts.contains(&ext) {
                         continue;
                     }
@@ -778,7 +790,7 @@ async fn start_watcher(
 
                     let (tx_job, rx_job) = oneshot::channel();
                     runtime::AST_POOL
-                .submit(runtime::AstGenJob {
+                        .submit(runtime::AstGenJob {
                             source_path: path.clone(),
                             source_dir: source_dir.unwrap_or_else(|| workspace_path.clone()),
                             guidance_dir: guidance_dir.clone(),
@@ -789,7 +801,11 @@ async fn start_watcher(
                         .expect("queue closed during gen");
                     if let Ok(Ok(doc)) = rx_job.await {
                         if verbose {
-                            println!("  regenerated: {} ({} members)", path.display(), doc.members.len());
+                            println!(
+                                "  regenerated: {} ({} members)",
+                                path.display(),
+                                doc.members.len()
+                            );
                         }
                     }
                 }
@@ -818,7 +834,10 @@ fn cmd_status(guidance_dir: &str) {
     let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
         vec![workspace_path.clone()]
     } else {
-        cfg.src_dirs.iter().map(|d| workspace_path.join(d)).collect()
+        cfg.src_dirs
+            .iter()
+            .map(|d| workspace_path.join(d))
+            .collect()
     };
     let mut total_files = 0usize;
     let mut stale_files = 0usize;
@@ -893,131 +912,135 @@ fn cmd_commit(message: &str, dry_run: bool) {
     }
 }
 
-fn cmd_check() {
-    let cargo_dir: PathBuf = if Path::new("src/Cargo.toml").exists() {
-        PathBuf::from("src")
+fn cmd_check(workspace: &str) {
+    let workspace_path = PathBuf::from(workspace);
+    let cfg = load_project_config(&workspace_path);
+    let guidance_dir = workspace_path.join(".guidance");
+    let mut all_passed = true;
+
+    let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
+        vec![workspace_path.clone()]
     } else {
-        PathBuf::from(".")
+        cfg.src_dirs
+            .iter()
+            .map(|d| workspace_path.join(d))
+            .collect()
     };
+    let present_exts = collect_extensions(&src_dirs);
 
     type StageFn = Box<dyn Fn() -> Result<(), String>>;
-    let cd = cargo_dir.clone();
-    let cd2 = cargo_dir.clone();
-    let cd3 = cargo_dir.clone();
-    let cd4 = cargo_dir.clone();
-    let waterfall_stages: Vec<(&str, StageFn)> = vec![
-        (
-            "build",
-            Box::new(move || {
-                let status = std::process::Command::new("cargo")
-                    .args(["build", "--workspace"])
-                    .current_dir(&cd)
-                    .status()
-                    .map_err(|e| format!("build failed: {e}"))?;
-                if !status.success() {
-                    return Err("build failed with non-zero exit".into());
-                }
-                Ok(())
-            }),
-        ),
-        (
+    let mut stages: Vec<(&str, StageFn)> = Vec::new();
+
+    for (ext, argv) in &cfg.test_commands {
+        if !present_exts.contains(ext.as_str()) {
+            continue;
+        }
+        let argv: Vec<String> = argv.clone();
+        let ext = ext.clone();
+        stages.push((
             "test",
             Box::new(move || {
-                let status = std::process::Command::new("cargo")
-                    .args(["test", "--workspace"])
-                    .current_dir(&cd2)
-                    .status()
-                    .map_err(|e| format!("test failed: {e}"))?;
-                if !status.success() {
-                    return Err("tests failed".into());
-                }
-                Ok(())
-            }),
-        ),
-        (
-            "lint",
-            Box::new(move || {
-                let status = std::process::Command::new("cargo")
-                    .args(["clippy", "--workspace", "--", "-D", "warnings"])
-                    .current_dir(&cd3)
-                    .status()
-                    .map_err(|e| format!("clippy failed: {e}"))?;
-                if !status.success() {
-                    return Err("clippy warnings found".into());
-                }
-                Ok(())
-            }),
-        ),
-        (
-            "fmt",
-            Box::new(move || {
-                let status = std::process::Command::new("cargo")
-                    .args(["fmt", "--check"])
-                    .current_dir(&cd4)
-                    .status()
-                    .map_err(|e| format!("fmt check failed: {e}"))?;
-                if !status.success() {
-                    return Err("formatting issues found".into());
-                }
-                Ok(())
-            }),
-        ),
-        (
-            "gen",
-            Box::new(|| {
-                let workspace_path = std::env::current_dir().unwrap_or_default();
-                let cfg = load_project_config(&workspace_path);
-                let guidance_dir = PathBuf::from(".guidance");
-                let mut all_clean = true;
-                let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
-                    vec![workspace_path]
-                } else {
-                    cfg.src_dirs.iter().map(|d| workspace_path.join(d)).collect()
-                };
-                for src_dir in &src_dirs {
-                    if !src_dir.is_dir() {
-                        continue;
-                    }
-                    let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
-                    let status = engine.status().map_err(|e| format!("status: {e}"))?;
-                    if !status.is_clean() {
-                        eprintln!("{} stale files need regeneration.", status.stale_files);
-                        all_clean = false;
-                    }
-                }
-                if all_clean {
+                let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+                if run_command(&argv_refs) {
                     Ok(())
                 } else {
-                    Err("stale files need regeneration".into())
+                    Err(format!("{ext}: test command failed"))
                 }
             }),
-        ),
-        (
-            "structure",
-            Box::new(|| {
-                let structure_path = Path::new("STRUCTURE.md");
-                if !structure_path.exists() {
-                    std::fs::write(structure_path, "# Project Structure\n\n")
-                        .map_err(|e| format!("write: {e}"))?;
-                    println!("STRUCTURE.md regenerated");
-                }
-                Ok(())
-            }),
-        ),
-        (
-            "db",
-            Box::new(|| {
-                let db_path = Path::new(".guidance.db");
-                if db_path.exists() {
-                    println!(".guidance.db exists, skipping sync");
-                }
-                Ok(())
-            }),
-        ),
-    ];
+        ));
+    }
 
-    let mut all_passed = true;
-    for (name, stage_fn) in &waterfall_stages {
+    for (ext, argv) in &cfg.lint_commands {
+        if !present_exts.contains(ext.as_str()) {
+            continue;
+        }
+        let argv: Vec<String> = argv.clone();
+        let ext = ext.clone();
+        stages.push((
+            "lint",
+            Box::new(move || {
+                let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+                if run_command(&argv_refs) {
+                    Ok(())
+                } else {
+                    Err(format!("{ext}: lint command failed"))
+                }
+            }),
+        ));
+    }
+
+    for (ext, argv) in &cfg.fmt_commands {
+        if !present_exts.contains(ext.as_str()) {
+            continue;
+        }
+        let argv: Vec<String> = argv.clone();
+        let ext = ext.clone();
+        stages.push((
+            "fmt",
+            Box::new(move || {
+                let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+                if run_command(&argv_refs) {
+                    Ok(())
+                } else {
+                    Err(format!("{ext}: fmt command failed"))
+                }
+            }),
+        ));
+    }
+
+    let cfg_gen = cfg.clone();
+    let ws_gen = workspace_path.clone();
+    let gd_gen = guidance_dir.clone();
+    stages.push((
+        "gen",
+        Box::new(move || {
+            let src_dirs: Vec<PathBuf> = if cfg_gen.src_dirs.is_empty() {
+                vec![ws_gen.clone()]
+            } else {
+                cfg_gen.src_dirs.iter().map(|d| ws_gen.join(d)).collect()
+            };
+            let mut total_stale = 0usize;
+            for src_dir in &src_dirs {
+                if !src_dir.is_dir() {
+                    continue;
+                }
+                let engine = SyncEngine::new(gd_gen.clone(), src_dir.clone());
+                let status = engine.status().map_err(|e| format!("status: {e}"))?;
+                total_stale += status.stale_files;
+            }
+            if total_stale > 0 {
+                Err(format!("{total_stale} stale files need regeneration"))
+            } else {
+                Ok(())
+            }
+        }),
+    ));
+
+    let structure_path = workspace_path.join("STRUCTURE.md");
+    stages.push((
+        "structure",
+        Box::new(move || {
+            if structure_path.exists() {
+                Ok(())
+            } else {
+                Err("STRUCTURE.md not found".into())
+            }
+        }),
+    ));
+
+    let db_path = workspace_path.join(".guidance.db");
+    stages.push((
+        "db",
+        Box::new(move || {
+            if db_path.exists() {
+                Ok(())
+            } else {
+                Err(".guidance.db not found".into())
+            }
+        }),
+    ));
+
+    for (name, stage_fn) in &stages {
         print!("{name}... ");
         match stage_fn() {
             Ok(()) => println!("OK"),
@@ -1030,7 +1053,7 @@ fn cmd_check() {
     }
 
     if all_passed {
-        println!("\nAll RALPH checks passed");
+        println!("\nAll checks passed");
     } else {
         std::process::exit(1);
     }
@@ -1168,8 +1191,7 @@ fn cmd_benchmark(
                         if path.extension().and_then(|e| e.to_str()) != Some("json") {
                             continue;
                         }
-                        if let Ok(Some(doc)) =
-                            guidance_core::sync::json_store::load_guidance(&path)
+                        if let Ok(Some(doc)) = guidance_core::sync::json_store::load_guidance(&path)
                         {
                             for member in &doc.members {
                                 if member.name.as_str().to_lowercase().contains(&lower) {

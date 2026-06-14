@@ -152,7 +152,10 @@ mod tests {
         };
 
         let insertions = collect_comment_insertions(source, &doc, None);
-        assert!(insertions.is_empty(), "should not insert when comment exists");
+        assert!(
+            insertions.is_empty(),
+            "should not insert when comment exists"
+        );
     }
 
     #[test]

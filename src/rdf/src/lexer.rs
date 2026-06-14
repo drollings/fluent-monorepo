@@ -315,11 +315,7 @@ impl<'a> Lexer<'a> {
         Err(RdfError::UnterminatedLiteral)
     }
 
-    fn lex_numeric_literal(
-        &mut self,
-        start_line: u32,
-        start_col: u32,
-    ) -> Token<'a> {
+    fn lex_numeric_literal(&mut self, start_line: u32, start_col: u32) -> Token<'a> {
         let start = self.pos;
         if let Some(c) = self.peek() {
             if c == b'+' || c == b'-' {
@@ -408,11 +404,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn lex_prefixed_name(
-        &mut self,
-        start_line: u32,
-        start_col: u32,
-    ) -> Token<'a> {
+    fn lex_prefixed_name(&mut self, start_line: u32, start_col: u32) -> Token<'a> {
         let start = self.pos;
         while self.pos < self.src.len() && is_prefix_char(self.src.as_bytes()[self.pos]) {
             self.advance();

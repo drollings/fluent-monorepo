@@ -46,11 +46,7 @@ impl SyncEngine {
         }
     }
 
-    pub fn with_parser(
-        guidance_dir: PathBuf,
-        source_dir: PathBuf,
-        ast_parser: AstParser,
-    ) -> Self {
+    pub fn with_parser(guidance_dir: PathBuf, source_dir: PathBuf, ast_parser: AstParser) -> Self {
         Self {
             ast_parser,
             guidance_dir,

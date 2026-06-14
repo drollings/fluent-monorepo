@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use crate::error::CacheError;
 use bon::Builder;
+use common_core::hash::content_hash_with_model;
 use guidance_llm::client::{is_malformed_response, LlmClient, LlmConfig};
 use guidance_llm::decomposer::LocalDecomposer;
 use guidance_types::{ContextNode, NodeId, WasmTool};
-use crate::error::CacheError;
-use common_core::hash::content_hash_with_model;
 
 use crate::cache_l1::{CacheTier, L1Cache, RoutingResult};
 use crate::cache_router::ParallelRouter;
@@ -164,10 +164,7 @@ impl QueueReactor {
         None
     }
 
-    fn route_l5_frontier(
-        query: &str,
-        frontier: &LlmConfig,
-    ) -> Result<RoutingResult, CacheError> {
+    fn route_l5_frontier(query: &str, frontier: &LlmConfig) -> Result<RoutingResult, CacheError> {
         let client = LlmClient::with_config(frontier.clone());
         let messages = vec![
             guidance_llm::client::ChatMessage {

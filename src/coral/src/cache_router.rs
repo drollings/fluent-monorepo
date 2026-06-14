@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use guidance_types::GraphNode;
 use crate::error::CacheError;
+use guidance_types::GraphNode;
 
 use crate::cache_l1::{CacheTier, RoutingResult};
 use crate::db::Library;

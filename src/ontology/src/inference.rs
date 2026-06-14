@@ -56,11 +56,7 @@ impl Default for InferenceEngine {
     }
 }
 
-fn infer_subclass_transitivity(
-    base: &[Triple],
-    derived: &mut Vec<Triple>,
-    predicate_iri: &str,
-) {
+fn infer_subclass_transitivity(base: &[Triple], derived: &mut Vec<Triple>, predicate_iri: &str) {
     let mut known: HashSet<(String, String)> = HashSet::new();
 
     for t in base {
@@ -147,8 +143,12 @@ impl CapabilityInference {
             if !is_subclass_triple(t, predicate_iri) {
                 continue;
             }
-            let Some(child) = triple_subject_iri(t) else { continue };
-            let Some(parent) = triple_object_iri(t) else { continue };
+            let Some(child) = triple_subject_iri(t) else {
+                continue;
+            };
+            let Some(parent) = triple_object_iri(t) else {
+                continue;
+            };
             self.hierarchy.entry(child).or_default().push(parent);
         }
         self.inferred_cache.clear();

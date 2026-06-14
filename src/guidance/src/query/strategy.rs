@@ -74,7 +74,10 @@ impl FsmEngine {
     /// INTAKE state: tokenize, detect file paths, detect identifiers
     pub fn intake(&mut self, query: &str) -> QueryClass {
         let trimmed = query.trim().to_string();
-        let tokens: Vec<String> = trimmed.split_whitespace().map(ToString::to_string).collect();
+        let tokens: Vec<String> = trimmed
+            .split_whitespace()
+            .map(ToString::to_string)
+            .collect();
 
         let detected_identifiers: Vec<String> = tokens
             .iter()

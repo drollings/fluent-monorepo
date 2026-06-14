@@ -447,10 +447,7 @@ fn collect_impl_methods(
     Some((type_name.into(), child_members))
 }
 
-fn extract_rust_type_alias(
-    node: &tree_sitter::Node,
-    source: &str,
-) -> Option<Member> {
+fn extract_rust_type_alias(node: &tree_sitter::Node, source: &str) -> Option<Member> {
     let name = node
         .child_by_field_name("name")
         .and_then(|n| n.utf8_text(source.as_bytes()).ok())?;
@@ -463,10 +460,7 @@ fn extract_rust_type_alias(
     })
 }
 
-fn extract_rust_macro(
-    node: &tree_sitter::Node,
-    source: &str,
-) -> Option<Member> {
+fn extract_rust_macro(node: &tree_sitter::Node, source: &str) -> Option<Member> {
     let name = node
         .child_by_field_name("name")
         .and_then(|n| n.utf8_text(source.as_bytes()).ok())?;
@@ -745,11 +739,7 @@ pub fn file_type_from_extension(ext: &str) -> FileType {
     }
 }
 
-pub fn resolve_span(
-    path: &Path,
-    member_name: &str,
-    member_type: MemberType,
-) -> Option<Span> {
+pub fn resolve_span(path: &Path, member_name: &str, member_type: MemberType) -> Option<Span> {
     let source = std::fs::read_to_string(path).ok()?;
     let ext = path.extension().and_then(|e| e.to_str())?;
     let mut parser = AstParser::new();
@@ -799,7 +789,10 @@ fn try_match_node_span(
         "function_declaration" | "function_definition" | "function_item" => {
             matches!(
                 member_type,
-                MemberType::FnDecl | MemberType::FnPrivate | MemberType::Method | MemberType::MethodPrivate
+                MemberType::FnDecl
+                    | MemberType::FnPrivate
+                    | MemberType::Method
+                    | MemberType::MethodPrivate
             )
         }
         "struct_declaration" | "struct_item" | "class_definition" => {

@@ -44,7 +44,12 @@ impl LlmFilter {
         let candidate_names: Vec<&str> = doc
             .members
             .iter()
-            .filter_map(|m| m.signature.as_ref().or(Some(&m.name)).map(smol_str::SmolStr::as_str))
+            .filter_map(|m| {
+                m.signature
+                    .as_ref()
+                    .or(Some(&m.name))
+                    .map(smol_str::SmolStr::as_str)
+            })
             .take(20)
             .collect();
 

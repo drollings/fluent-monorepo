@@ -174,7 +174,10 @@ impl McpServer {
             .as_ref()
             .and_then(|p| p.get("node_id"))
             .and_then(serde_json::Value::as_i64)
-            .map_or(guidance_types::NodeId::from_int(0), guidance_types::NodeId::from_int);
+            .map_or(
+                guidance_types::NodeId::from_int(0),
+                guidance_types::NodeId::from_int,
+            );
 
         let max_depth = request
             .params

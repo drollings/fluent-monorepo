@@ -120,13 +120,13 @@ doc/
 Example:
 ```bash
 # View metadata only
-guidance gen --debug --file src/example.zig
+guidance sync --debug --file src/example.zig
 
 # View metadata + prompts
-guidance gen --debug --show-prompts --file src/example.zig
+guidance sync --debug --show-prompts --file src/example.zig
 
 # View prompts only (no metadata)
-guidance gen --show-prompts --file src/example.zig
+guidance sync --show-prompts --file src/example.zig
 ```
 
 ### Comment Management
@@ -148,13 +148,13 @@ guidance gen --show-prompts --file src/example.zig
 **Workflow**:
 ```bash
 # Generate JSON without member comments
-guidance gen --file src/example.zig
+guidance sync --file src/example.zig
 
 # View what changed (only metadata, no comment diffs)
 git diff .guidance/src/example.zig.json
 
 # Database sync extracts comments from source
-guidance gen --file src/example.zig --db .guidance.db
+guidance sync --file src/example.zig --db .guidance.db
 ```
 
 ### Staleness Detection

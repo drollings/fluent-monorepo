@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use bitvec::vec::BitVec;
 use guidance_llm::EmbeddingProvider;
+use guidance_search_vector::error::DbError;
 use guidance_search_vector::math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
-use guidance_search_vector::error::DbError;
 use rusqlite::params;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;
 

@@ -215,10 +215,7 @@ impl QueryEngine {
         Err(QueryEngineError::NoResults)
     }
 
-    fn explain_capability(
-        query: &str,
-        doc: &GuidanceDoc,
-    ) -> Result<Vec<Stage>, QueryEngineError> {
+    fn explain_capability(query: &str, doc: &GuidanceDoc) -> Result<Vec<Stage>, QueryEngineError> {
         let keywords: Vec<&str> = query.split_whitespace().collect();
         let mut matched_names: Vec<String> = Vec::new();
 
@@ -263,10 +260,7 @@ impl QueryEngine {
         Ok(Synthesizer::synthesize(query, doc, &matched_names))
     }
 
-    fn explain_file_path(
-        query: &str,
-        doc: &GuidanceDoc,
-    ) -> Result<Vec<Stage>, QueryEngineError> {
+    fn explain_file_path(query: &str, doc: &GuidanceDoc) -> Result<Vec<Stage>, QueryEngineError> {
         let lower_query = query.to_lowercase();
         let matched_names: Vec<String> = doc
             .members
@@ -528,9 +522,7 @@ fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser)
         if !path.exists() {
             continue;
         }
-        let source_changed = cache
-            .as_ref()
-            .is_none_or(|(p, _, _)| *p != path);
+        let source_changed = cache.as_ref().is_none_or(|(p, _, _)| *p != path);
         if source_changed {
             if let Ok(src) = std::fs::read_to_string(&path) {
                 if let Ok(doc) = parser.parse_file(&path, &src) {
@@ -543,7 +535,11 @@ fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser)
             }
         }
         if let Some((_, ref src, ref doc)) = cache {
-            if let Some(fresh_member) = doc.members.iter().find(|m| m.name.as_str() == name.as_str() && m.type_name == mt) {
+            if let Some(fresh_member) = doc
+                .members
+                .iter()
+                .find(|m| m.name.as_str() == name.as_str() && m.type_name == mt)
+            {
                 if let Some(line) = fresh_member.line {
                     stage.line = Some(line);
                     let _ = src;

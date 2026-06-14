@@ -151,9 +151,7 @@ pub(crate) fn chat_complete_http(
         .send()
         .map_err(|e| LlmError::Http(e.to_string()))?;
 
-    let body_str = response
-        .text()
-        .map_err(|e| LlmError::Api(e.to_string()))?;
+    let body_str = response.text().map_err(|e| LlmError::Api(e.to_string()))?;
 
     let parsed: serde_json::Value =
         serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
@@ -528,5 +526,4 @@ mod tests {
         assert!(!is_blank_or_plausible("ab"));
         assert!(!is_blank_or_plausible("function"));
     }
-
 }

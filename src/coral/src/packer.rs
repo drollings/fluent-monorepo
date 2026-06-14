@@ -117,7 +117,8 @@ impl ContextPacker {
                 continue;
             }
             if let Ok(Some(node)) = library.get_node(gn.node_id) {
-                let lod_level = Self::select_lod_by_distance(&node, f64::from(gn.depth), avg_degree);
+                let lod_level =
+                    Self::select_lod_by_distance(&node, f64::from(gn.depth), avg_degree);
                 let text = Self::get_lod_text(&node, lod_level).to_string();
                 candidates.push(PackedNode {
                     id: gn.node_id,

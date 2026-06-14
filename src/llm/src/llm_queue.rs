@@ -83,13 +83,10 @@ impl LlmRequestQueue {
             config,
             response_tx: tx,
         };
-        self.pool
-            .try_submit(task)
-            .await
-            .map_err(|e| match e {
-                PoolError::Full => LlmError::Http("queue full".into()),
-                PoolError::Closed => LlmError::Http("queue closed".into()),
-            })?;
+        self.pool.try_submit(task).await.map_err(|e| match e {
+            PoolError::Full => LlmError::Http("queue full".into()),
+            PoolError::Closed => LlmError::Http("queue closed".into()),
+        })?;
         rx.await
             .map_err(|_| LlmError::Http("queue response canceled".into()))?
     }
@@ -102,7 +99,7 @@ fn make_llm_request(messages: &[ChatMessage], config: &LlmConfig) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-use fluent_concurrency::runtime::tokio::TokioRuntime;
+    use fluent_concurrency::runtime::tokio::TokioRuntime;
 
     #[test]
     fn test_llm_request_queue_creation() {

@@ -4,16 +4,14 @@ use std::sync::LazyLock;
 pub static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut s = HashSet::new();
     for w in &[
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "shall", "can", "need", "dare", "ought",
-        "used", "this", "that", "these", "those", "i", "you", "he", "she",
-        "it", "we", "they", "me", "him", "her", "us", "them", "my", "your",
-        "his", "its", "our", "their", "mine", "yours", "hers", "its", "ours",
-        "theirs", "and", "but", "or", "nor", "not", "so", "yet", "for",
-        "in", "on", "at", "to", "by", "with", "from", "of", "as", "into",
-        "through", "during", "before", "after", "above", "below", "between",
-        "out", "off", "over", "under", "again", "further", "then", "once",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can",
+        "need", "dare", "ought", "used", "this", "that", "these", "those", "i", "you", "he", "she",
+        "it", "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "its", "our",
+        "their", "mine", "yours", "hers", "its", "ours", "theirs", "and", "but", "or", "nor",
+        "not", "so", "yet", "for", "in", "on", "at", "to", "by", "with", "from", "of", "as",
+        "into", "through", "during", "before", "after", "above", "below", "between", "out", "off",
+        "over", "under", "again", "further", "then", "once",
     ] {
         s.insert(*w);
     }

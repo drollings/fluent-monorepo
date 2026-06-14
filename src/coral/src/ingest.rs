@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use guidance_ontology::mapper::PendingNode;
 use guidance_ontology::yago;
+use guidance_search_vector::error::DbError;
 use guidance_types::ContextNode;
 use guidance_types::NodeId;
-use guidance_search_vector::error::DbError;
 use thiserror::Error;
 
 use crate::db::Library;

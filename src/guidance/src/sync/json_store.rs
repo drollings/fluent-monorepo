@@ -102,10 +102,16 @@ fn parse_member(v: &serde_json::Value) -> Option<Member> {
             .and_then(|v| v.as_str())
             .map(SmolStr::from),
         tags,
-        is_pub: obj.get("is_pub").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        is_pub: obj
+            .get("is_pub")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
         members,
         equivalents,
-        line: obj.get("line").and_then(serde_json::Value::as_u64).map(|l| l as u32),
+        line: obj
+            .get("line")
+            .and_then(serde_json::Value::as_u64)
+            .map(|l| l as u32),
         comment_generated: obj
             .get("comment_generated")
             .and_then(serde_json::Value::as_bool)

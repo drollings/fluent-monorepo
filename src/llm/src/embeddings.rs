@@ -447,7 +447,8 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "model": self.model,
             "input": text,
         });
-        let resp_bytes = do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
+        let resp_bytes =
+            do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
         parse_openai_response(&resp_bytes)
     }
 
@@ -460,7 +461,8 @@ impl EmbeddingProvider for OpenAiEmbedding {
             "model": self.model,
             "input": inputs,
         });
-        let resp_bytes = do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
+        let resp_bytes =
+            do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
         parse_openai_batch_response(&resp_bytes)
     }
 }
@@ -470,7 +472,11 @@ fn async_http_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(reqwest::Client::new)
 }
 
-async fn do_http_post_async(url: &str, body: &serde_json::Value, auth_header: Option<&str>) -> Result<Vec<u8>, EmbeddingError> {
+async fn do_http_post_async(
+    url: &str,
+    body: &serde_json::Value,
+    auth_header: Option<&str>,
+) -> Result<Vec<u8>, EmbeddingError> {
     let client = async_http_client();
     let mut req = client.post(url);
     req = req.header("Content-Type", "application/json");
@@ -495,7 +501,11 @@ async fn do_http_post_async(url: &str, body: &serde_json::Value, auth_header: Op
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))
 }
 
-fn do_http_post(url: &str, body: &serde_json::Value, auth_header: Option<&str>) -> Result<Vec<u8>, EmbeddingError> {
+fn do_http_post(
+    url: &str,
+    body: &serde_json::Value,
+    auth_header: Option<&str>,
+) -> Result<Vec<u8>, EmbeddingError> {
     static RT: std::sync::LazyLock<tokio::runtime::Runtime> = std::sync::LazyLock::new(|| {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)

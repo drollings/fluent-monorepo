@@ -4,7 +4,8 @@ use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 
-static ACTIVE_TABLE: LazyLock<Mutex<Option<Box<FrequencyTable>>>> = LazyLock::new(|| Mutex::new(None));
+static ACTIVE_TABLE: LazyLock<Mutex<Option<Box<FrequencyTable>>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 pub type FrequencyTable = [[u16; 256]; 256];
 
