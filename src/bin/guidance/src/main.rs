@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use coral_context::mcp::serve_stdio_from_path;
 use guidance_core::config;
 use guidance_core::runtime;
 use guidance_core::sync::json_store::walk_guidance_docs;
@@ -64,14 +63,6 @@ enum Commands {
         reset: bool,
     },
     CacheStats {
-        #[arg(short = 'o', long, default_value = ".guidance.db")]
-        db: String,
-    },
-    #[command(name = "mcp")]
-    Mcp {
-        #[arg(long, default_value_t = 8080)]
-        port: u16,
-
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
     },
@@ -220,7 +211,6 @@ async fn main() {
         Commands::Test => cmd_test(),
         Commands::Telemetry { db, .. } => cmd_db_stats(db, "Telemetry stats"),
         Commands::CacheStats { db } => cmd_db_stats(db, "Cache statistics"),
-        Commands::Mcp { port: _, db } => cmd_mcp(db),
         Commands::Init {
             dir,
             guidance_dir: _,
@@ -429,15 +419,6 @@ fn cmd_db_stats(db_path: &str, label: &str) {
         }
     } else {
         println!("  No database found at {db_path}");
-    }
-}
-
-fn cmd_mcp(db_path: &str) {
-    let db = PathBuf::from(db_path);
-    eprintln!("MCP server started (STDIO)");
-    if let Err(e) = serve_stdio_from_path(&db) {
-        eprintln!("MCP server error: {e}");
-        std::process::exit(1);
     }
 }
 

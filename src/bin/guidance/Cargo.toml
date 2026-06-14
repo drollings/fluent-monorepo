@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }
-coral-context = { path = "../../coral" }
 guidance-search-vector = { path = "../../search-vector" }
 guidance-llm = { path = "../../llm" }
 guidance-content-node = { path = "../../content-node" }
