@@ -98,12 +98,34 @@ pub struct Reserve {
 }
 
 impl Reserve {
-    pub fn new(counter: Arc<std::sync::atomic::AtomicUsize>) -> Self {
-        counter.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        Self {
-            counter,
-            committed: false,
+    /// Attempt to acquire a permit from the counter.
+    ///
+    /// Returns `None` if the counter is already at zero (no permits available).
+    /// Does NOT underflow — this is the safe alternative to `new()`.
+    pub fn try_acquire(counter: Arc<std::sync::atomic::AtomicUsize>) -> Option<Self> {
+        let prev = counter.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        if prev == 0 {
+            // Underflow would occur — restore counter and return None
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            None
+        } else {
+            Some(Self {
+                counter,
+                committed: false,
+            })
         }
+    }
+
+    /// Acquire a permit, panicking if none are available.
+    ///
+    /// Prefer `try_acquire` in production code. This method exists for
+    /// backward compatibility and test code where exhaustion is unexpected.
+    #[deprecated(
+        since = "0.2.0",
+        note = "use Reserve::try_acquire() to handle permit exhaustion gracefully"
+    )]
+    pub fn new(counter: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        Self::try_acquire(counter).expect("Reserve::new: no permits available")
     }
 
     pub fn commit(mut self) {
@@ -126,15 +148,21 @@ pub trait Runtime: Send + Sync + 'static {
     fn now(&self) -> Instant;
 }
 
+/// A no-op runtime for contexts where `spawn` and `sleep` are never called.
+///
+/// `spawn` logs a warning and returns a dummy `JoinHandle`. `sleep` returns
+/// immediately. This runtime is intended for testing or initialization code
+/// that doesn't actually need async execution.
 pub struct NoopRuntime;
 
 impl Runtime for NoopRuntime {
     fn spawn(&self, _future: Pin<Box<dyn Future<Output = ()> + Send>>) -> JoinHandle<()> {
-        panic!("NoopRuntime::spawn called - no runtime configured");
+        tracing::warn!("NoopRuntime::spawn called — no runtime configured; task will not execute");
+        tokio::spawn(async {})
     }
 
     fn sleep(&self, _duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        panic!("NoopRuntime::sleep called - no runtime configured");
+        Box::pin(async {})
     }
 
     fn now(&self) -> Instant {
@@ -158,8 +186,11 @@ pub enum WorkError {
     Execution(String),
     #[error("dependency not satisfied: {0}")]
     Dependency(String),
-    #[error("timeout")]
-    Timeout,
+    #[error("timeout after {duration_ms}ms ({unit})")]
+    Timeout {
+        duration_ms: u64,
+        unit: String,
+    },
 }
 
 #[derive(Clone)]

@@ -1,10 +1,11 @@
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
 use internment::ArcIntern;
 use tracing::info;
 
-use crate::{WorkContext, WorkError, WorkOutput, WorkUnit};
+use crate::{Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
 
 pub enum WrapperKind {
     None,
@@ -45,6 +46,11 @@ pub struct RetryResult<T> {
     pub attempts: usize,
 }
 
+/// Synchronous retry with fixed-delay backoff.
+///
+/// **Warning:** This function uses `std::thread::sleep`, which blocks the
+/// current thread. In a Tokio worker-pool context, this blocks the executor
+/// thread. Prefer async retry patterns when running inside an async runtime.
 pub fn retry_call<F, T, E>(max_attempts: usize, f: F) -> Result<RetryResult<T>, E>
 where
     F: Fn() -> Result<T, E>,
@@ -144,6 +150,10 @@ pub struct WithRetry<U> {
     inner: U,
     max_attempts: u32,
     backoff_ms: u64,
+    /// Optional runtime for async sleep. When `None`, falls back to
+    /// `std::thread::sleep` (blocks Tokio executor threads).
+    #[allow(dead_code)]
+    rt: Option<Arc<dyn Runtime>>,
 }
 
 impl<U: WorkUnit> WithRetry<U> {
@@ -152,6 +162,23 @@ impl<U: WorkUnit> WithRetry<U> {
             inner,
             max_attempts,
             backoff_ms,
+            rt: None,
+        }
+    }
+
+    /// Create a `WithRetry` that uses the given runtime for sleep.
+    ///
+    /// **Note:** `WorkUnit::execute` is synchronous, so the runtime's async
+    /// sleep cannot be `.await`ed here. This stores the runtime for future
+    /// use when the trait becomes async. Currently falls back to
+    /// `std::thread::sleep`.
+    #[allow(dead_code)]
+    pub fn with_runtime(inner: U, max_attempts: u32, backoff_ms: u64, rt: Arc<dyn Runtime>) -> Self {
+        Self {
+            inner,
+            max_attempts,
+            backoff_ms,
+            rt: Some(rt),
         }
     }
 }
@@ -169,6 +196,11 @@ impl<U: WorkUnit> WorkUnit for WithRetry<U> {
         self.inner.provides()
     }
 
+    /// Executes the inner unit with retry logic.
+    ///
+    /// **Warning:** Uses `std::thread::sleep` for backoff, which blocks the
+    /// current thread. In a Tokio worker-pool context, this blocks the
+    /// executor thread. Prefer async retry patterns when possible.
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let mut attempts = 0u32;
         loop {

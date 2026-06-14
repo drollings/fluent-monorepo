@@ -2,10 +2,8 @@
 //! Mirrors RabbitMQ's `credit_flow` semantics: a sender has a credit budget,
 //! the receiver periodically sends bumps when its counter reaches `more_after`.
 
-use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
-use std::sync::Mutex as StdMutex;
 
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -19,12 +17,10 @@ pub struct CreditSpec {
 
 /// Sends work items, consuming one credit per send.
 /// Blocks when credit is exhausted until the receiver sends a bump.
-/// Supports deferred credit processing and blocked-state tracking.
 pub struct CreditSender {
     credit: AtomicIsize,
     bump_rx: Mutex<mpsc::UnboundedReceiver<usize>>,
     blocked: AtomicBool,
-    deferred: StdMutex<VecDeque<usize>>,
 }
 
 impl CreditSender {
@@ -45,22 +41,7 @@ impl CreditSender {
                 }
             } else {
                 self.blocked.store(true, Ordering::SeqCst);
-                // First, drain any deferred credits
-                {
-                    let mut deferred = self.deferred.lock().unwrap();
-                    while let Some(amount) = deferred.pop_front() {
-                        let prev = self.credit.fetch_add(amount as isize, Ordering::SeqCst);
-                        if prev + amount as isize > 0 {
-                            self.blocked.store(false, Ordering::SeqCst);
-                            break;
-                        }
-                    }
-                    if self.credit.load(Ordering::SeqCst) > 0 {
-                        self.blocked.store(false, Ordering::SeqCst);
-                        continue;
-                    }
-                }
-                // No deferred credits available; wait for a bump
+                // Wait for a bump from the receiver
                 let mut rx = self.bump_rx.lock().await;
                 if let Some(amount) = rx.recv().await {
                     self.credit.fetch_add(amount as isize, Ordering::SeqCst);
@@ -107,7 +88,6 @@ pub fn new(spec: CreditSpec) -> (CreditSender, CreditReceiver) {
             credit: AtomicIsize::new(spec.initial as isize),
             bump_rx: Mutex::new(bump_rx),
             blocked: AtomicBool::new(false),
-            deferred: StdMutex::new(VecDeque::new()),
         },
         CreditReceiver {
             spec,

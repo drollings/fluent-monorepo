@@ -40,8 +40,6 @@ pub enum FsmState {
     Classify,
     Route,
     Validate,
-    Assemble,
-    Synthesize,
 }
 
 #[derive(Debug, Clone)]
@@ -205,9 +203,7 @@ impl FsmEngine {
         self.state = FsmState::Route;
         let _route = self.route(&qc);
         self.state = FsmState::Validate;
-        if self.validate(&qc) {
-            self.state = FsmState::Assemble;
-        }
+        let _valid = self.validate(&qc);
         qc
     }
 }

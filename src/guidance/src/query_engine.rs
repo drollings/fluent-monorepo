@@ -83,6 +83,47 @@ impl QueryEngine {
         self
     }
 
+    /// WordIndex fallback: search for members matching the query in the current file.
+    fn word_index_fallback(
+        &self,
+        query: &str,
+        doc: &GuidanceDoc,
+    ) -> Option<Vec<Stage>> {
+        let wi = self.word_index.as_ref()?;
+        let hits = wi.search(query);
+        if hits.is_empty() {
+            return None;
+        }
+        let source = doc.meta.source.as_str();
+        let lower_query = query.to_lowercase();
+        let file_matches: Vec<String> = hits
+            .iter()
+            .filter(|hit| wi.hit_path(hit) == source)
+            .filter_map(|_| {
+                doc.members.iter().find_map(|m| {
+                    let name_lower = m.name.as_str().to_lowercase();
+                    if name_lower.contains(&lower_query)
+                        || m.signature.as_ref().is_some_and(|s| {
+                            s.as_str().to_lowercase().contains(&lower_query)
+                        })
+                        || m.comment.as_ref().is_some_and(|c| {
+                            c.as_str().to_lowercase().contains(&lower_query)
+                        })
+                    {
+                        Some(m.name.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+        if file_matches.is_empty() {
+            None
+        } else {
+            Some(Synthesizer::synthesize(query, doc, &file_matches))
+        }
+    }
+
     pub fn load_word_index(&mut self, guidance_dir: &Path) -> Result<(), QueryEngineError> {
         let src_dir = guidance_dir.join("src");
         if !src_dir.is_dir() {
@@ -187,29 +228,8 @@ impl QueryEngine {
         }
 
         // Fallback: try WordIndex if available
-        if let Some(ref wi) = self.word_index {
-            let hits = wi.search(query);
-            if !hits.is_empty() {
-                let source = doc.meta.source.as_str();
-                let file_matches: Vec<String> = hits
-                    .iter()
-                    .filter(|hit| wi.hit_path(hit) == source)
-                    .filter_map(|_| {
-                        doc.members.iter().find_map(|m| {
-                            let name_lower = m.name.as_str().to_lowercase();
-                            let query_lower = query.to_lowercase();
-                            if name_lower.contains(&query_lower) {
-                                Some(m.name.as_str().to_string())
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                    .collect();
-                if !file_matches.is_empty() {
-                    return Ok(Synthesizer::synthesize(query, doc, &file_matches));
-                }
-            }
+        if let Some(stages) = self.word_index_fallback(query, doc) {
+            return Ok(stages);
         }
 
         Err(QueryEngineError::NoResults)
@@ -306,32 +326,8 @@ impl QueryEngine {
         }
 
         // Fallback: try WordIndex for broader keyword matching
-        if let Some(ref wi) = self.word_index {
-            let hits = wi.search(query);
-            if !hits.is_empty() {
-                let source = doc.meta.source.as_str();
-                let file_matches: Vec<String> = hits
-                    .iter()
-                    .filter(|hit| wi.hit_path(hit) == source)
-                    .filter_map(|_| {
-                        doc.members.iter().find_map(|m| {
-                            let name_lower = m.name.as_str().to_lowercase();
-                            if name_lower.contains(&lower_query)
-                                || m.comment.as_ref().is_some_and(|c| {
-                                    c.as_str().to_lowercase().contains(&lower_query)
-                                })
-                            {
-                                Some(m.name.as_str().to_string())
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                    .collect();
-                if !file_matches.is_empty() {
-                    return Ok(Synthesizer::synthesize(query, doc, &file_matches));
-                }
-            }
+        if let Some(stages) = self.word_index_fallback(query, doc) {
+            return Ok(stages);
         }
 
         Err(QueryEngineError::NoResults)

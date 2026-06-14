@@ -104,12 +104,10 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         quote! {
             impl #impl_generics fluent_wvr::FieldAccess for #name #ty_generics #where_clause {
                 fn set_field(&mut self, name: &str, _value: &str) -> Result<(), fluent_wvr::FieldError> {
-                    let _key = fluent_wvr::ArcIntern::<str>::from(name);
                     Err(fluent_wvr::FieldError::NotFound(name.into()))
                 }
 
                 fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
-                    let _key = fluent_wvr::ArcIntern::<str>::from(name);
                     Err(fluent_wvr::FieldError::NotFound(name.into()))
                 }
 
@@ -123,14 +121,12 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         quote! {
             impl #impl_generics fluent_wvr::FieldAccess for #name #ty_generics #where_clause {
                 fn set_field(&mut self, name: &str, value: &str) -> Result<(), fluent_wvr::FieldError> {
-                    let _key = fluent_wvr::ArcIntern::<str>::from(name);
                     #set_body else {
                         Err(fluent_wvr::FieldError::NotFound(name.into()))
                     }
                 }
 
                 fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
-                    let _key = fluent_wvr::ArcIntern::<str>::from(name);
                     #get_body else {
                         Err(fluent_wvr::FieldError::NotFound(name.into()))
                     }

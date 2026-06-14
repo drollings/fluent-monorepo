@@ -40,6 +40,28 @@ impl Scope {
         while self.tasks.join_next().await.is_some() {}
     }
 
+    /// Gracefully shuts down: waits up to `timeout` for tasks to complete,
+    /// then aborts any remaining tasks.
+    pub async fn close_graceful(&mut self, timeout: std::time::Duration) {
+        self.closed = true;
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if self.tasks.is_empty() {
+                break;
+            }
+            match tokio::time::timeout_at(deadline, self.tasks.join_next()).await {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    // Timeout expired — abort remaining tasks
+                    self.tasks.abort_all();
+                    while self.tasks.join_next().await.is_some() {}
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }

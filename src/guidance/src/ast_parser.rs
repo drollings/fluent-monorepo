@@ -43,14 +43,20 @@ impl AstParser {
         Self { zig, python, rust }
     }
 
+    /// Map file extension to language name.
+    fn language_from_ext(ext: &str) -> Option<&'static str> {
+        match ext {
+            "zig" | "zon" => Some("zig"),
+            "py" => Some("python"),
+            "rs" => Some("rust"),
+            _ => None,
+        }
+    }
+
     pub fn parse_file(&mut self, path: &Path, source: &str) -> Result<GuidanceDoc, ParseError> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let language = match ext {
-            "zig" | "zon" => "zig",
-            "py" => "python",
-            "rs" => "rust",
-            _ => return Err(ParseError::UnsupportedLanguage(path.display().to_string())),
-        };
+        let language = Self::language_from_ext(ext)
+            .ok_or_else(|| ParseError::UnsupportedLanguage(path.display().to_string()))?;
 
         let tree = match language {
             "zig" => self
@@ -743,12 +749,7 @@ pub fn resolve_span(path: &Path, member_name: &str, member_type: MemberType) -> 
     let source = std::fs::read_to_string(path).ok()?;
     let ext = path.extension().and_then(|e| e.to_str())?;
     let mut parser = AstParser::new();
-    let language = match ext {
-        "zig" | "zon" => "zig",
-        "py" => "python",
-        "rs" => "rust",
-        _ => return None,
-    };
+    let language = AstParser::language_from_ext(ext)?;
     let tree = match language {
         "zig" => parser.zig.parse(&source, None)?,
         "python" => parser.python.parse(&source, None)?,

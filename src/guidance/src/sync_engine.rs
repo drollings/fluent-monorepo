@@ -26,7 +26,6 @@ pub enum SyncEngineError {
 #[derive(Debug, Clone, Default)]
 pub struct GenConfig {
     pub db_sync: bool,
-    pub llm_infill: bool,
     pub db_path: Option<PathBuf>,
     pub json_base: Option<PathBuf>,
 }
@@ -84,12 +83,6 @@ impl SyncEngine {
 
         doc.meta.module = module_name.as_str().into();
         doc.meta.source = rel_path.to_string_lossy().as_ref().into();
-
-        // LLM comment infill — best-effort, requires pre-configured client
-        #[allow(unused_variables)]
-        if config.llm_infill {
-            // LLM infill requires a configured LlmClient; silently skip if unavailable
-        }
 
         let json_path = self.guidance_json_path(source_path);
         json_store::save_guidance(&json_path, &doc)?;

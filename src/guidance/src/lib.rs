@@ -69,7 +69,6 @@ pub mod query {
 
 pub mod sync {
     pub mod comments;
-    pub mod file_lock;
     pub mod json_store;
     pub mod json_writer;
     pub mod staleness;

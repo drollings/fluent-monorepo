@@ -60,6 +60,52 @@ mod tests {
         }
     }
 
+    /// Shared test helper: a `WorkUnit` that panics with a configurable message.
+    struct PanicUnit {
+        name: String,
+        provides: Vec<ArcIntern<str>>,
+    }
+    impl WorkUnit for PanicUnit {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &self.provides
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            panic!("intentional panic")
+        }
+    }
+
+    /// Shared test helper: a `WorkUnit` with dependencies that can optionally fail.
+    struct DepWorkUnit {
+        name: String,
+        deps: Vec<ArcIntern<str>>,
+        provides: Vec<ArcIntern<str>>,
+        should_fail: bool,
+    }
+    impl WorkUnit for DepWorkUnit {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &self.deps
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &self.provides
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            if self.should_fail {
+                Err(WorkError::Execution("dep failure".into()))
+            } else {
+                Ok(WorkOutput::ok("done"))
+            }
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_tokio_runtime_spawn() {
         tokio::time::resume();
@@ -136,7 +182,7 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 2);
 
         {
-            let _reserve = Reserve::new(Arc::clone(&counter));
+            let _reserve = Reserve::try_acquire(Arc::clone(&counter)).unwrap();
             assert_eq!(counter.load(Ordering::SeqCst), 1);
         }
         assert_eq!(counter.load(Ordering::SeqCst), 2);
@@ -147,7 +193,7 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(2));
         assert_eq!(counter.load(Ordering::SeqCst), 2);
 
-        let reserve = Reserve::new(Arc::clone(&counter));
+        let reserve = Reserve::try_acquire(Arc::clone(&counter)).unwrap();
         assert_eq!(counter.load(Ordering::SeqCst), 1);
         reserve.commit();
         assert_eq!(counter.load(Ordering::SeqCst), 1);
@@ -156,14 +202,22 @@ mod tests {
     #[test]
     fn test_reserve_multiple_acquires() {
         let counter = Arc::new(AtomicUsize::new(2));
-        let r1 = Reserve::new(Arc::clone(&counter));
+        let r1 = Reserve::try_acquire(Arc::clone(&counter)).unwrap();
         assert_eq!(counter.load(Ordering::SeqCst), 1);
-        let r2 = Reserve::new(Arc::clone(&counter));
+        let r2 = Reserve::try_acquire(Arc::clone(&counter)).unwrap();
         assert_eq!(counter.load(Ordering::SeqCst), 0);
 
         r1.commit();
         drop(r2);
         assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_reserve_exhaustion_returns_none() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let result = Reserve::try_acquire(Arc::clone(&counter));
+        assert!(result.is_none());
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -576,31 +630,6 @@ mod tests {
             let caps = CapabilitySet::new();
             let mut zone = Zone::new(runtime, caps);
 
-            struct DepWorkUnit {
-                name: String,
-                deps: Vec<ArcIntern<str>>,
-                provides: Vec<ArcIntern<str>>,
-                should_fail: bool,
-            }
-            impl WorkUnit for DepWorkUnit {
-                fn name(&self) -> &str {
-                    &self.name
-                }
-                fn depends(&self) -> &[ArcIntern<str>] {
-                    &self.deps
-                }
-                fn provides(&self) -> &[ArcIntern<str>] {
-                    &self.provides
-                }
-                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                    if self.should_fail {
-                        Err(WorkError::Execution("dep failure".into()))
-                    } else {
-                        Ok(WorkOutput::ok("done"))
-                    }
-                }
-            }
-
             let shared = ArcIntern::<str>::from("shared");
             zone.register(Arc::new(DepWorkUnit {
                 name: "parent".into(),
@@ -753,50 +782,6 @@ mod tests {
             let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
             let caps = CapabilitySet::new();
             let mut zone = Zone::new(runtime, caps);
-
-            struct PanicUnit {
-                name: String,
-                provides: Vec<ArcIntern<str>>,
-            }
-            impl WorkUnit for PanicUnit {
-                fn name(&self) -> &str {
-                    &self.name
-                }
-                fn depends(&self) -> &[ArcIntern<str>] {
-                    &[]
-                }
-                fn provides(&self) -> &[ArcIntern<str>] {
-                    &self.provides
-                }
-                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                    panic!("intentional panic cascade")
-                }
-            }
-
-            struct DepWorkUnit {
-                name: String,
-                deps: Vec<ArcIntern<str>>,
-                provides: Vec<ArcIntern<str>>,
-                should_fail: bool,
-            }
-            impl WorkUnit for DepWorkUnit {
-                fn name(&self) -> &str {
-                    &self.name
-                }
-                fn depends(&self) -> &[ArcIntern<str>] {
-                    &self.deps
-                }
-                fn provides(&self) -> &[ArcIntern<str>] {
-                    &self.provides
-                }
-                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                    if self.should_fail {
-                        Err(WorkError::Execution("awaiting cancellation".into()))
-                    } else {
-                        Ok(WorkOutput::ok("done"))
-                    }
-                }
-            }
 
             let shared = ArcIntern::<str>::from("shared");
             zone.register(Arc::new(PanicUnit {
@@ -1703,6 +1688,7 @@ mod tests {
     }
 
     mod e2e {
+        use super::{DepWorkUnit, PanicUnit};
         use crate::pool::WorkerPool;
         use crate::runtime::tokio::TokioRuntime;
         use crate::zone::{Zone, ZoneEvent, ZoneSummary};
@@ -1841,50 +1827,6 @@ mod tests {
             let runtime = Arc::new(TokioRuntime) as Arc<dyn Runtime>;
             let caps = CapabilitySet::new();
             let mut zone = Zone::new(runtime, caps);
-
-            struct PanicUnit {
-                name: String,
-                provides: Vec<ArcIntern<str>>,
-            }
-            impl WorkUnit for PanicUnit {
-                fn name(&self) -> &str {
-                    &self.name
-                }
-                fn depends(&self) -> &[ArcIntern<str>] {
-                    &[]
-                }
-                fn provides(&self) -> &[ArcIntern<str>] {
-                    &self.provides
-                }
-                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                    panic!("panic cascade")
-                }
-            }
-
-            struct DepWorkUnit {
-                name: String,
-                deps: Vec<ArcIntern<str>>,
-                provides: Vec<ArcIntern<str>>,
-                should_fail: bool,
-            }
-            impl WorkUnit for DepWorkUnit {
-                fn name(&self) -> &str {
-                    &self.name
-                }
-                fn depends(&self) -> &[ArcIntern<str>] {
-                    &self.deps
-                }
-                fn provides(&self) -> &[ArcIntern<str>] {
-                    &self.provides
-                }
-                fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-                    if self.should_fail {
-                        Err(WorkError::Execution("awaiting cancellation".into()))
-                    } else {
-                        Ok(WorkOutput::ok("done"))
-                    }
-                }
-            }
 
             let shared = ArcIntern::<str>::from("shared");
             let independent = ArcIntern::<str>::from("independent");

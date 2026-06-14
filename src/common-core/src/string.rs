@@ -8,7 +8,7 @@ pub static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can",
         "need", "dare", "ought", "used", "this", "that", "these", "those", "i", "you", "he", "she",
         "it", "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "its", "our",
-        "their", "mine", "yours", "hers", "its", "ours", "theirs", "and", "but", "or", "nor",
+        "their", "mine", "yours", "hers", "ours", "theirs", "and", "but", "or", "nor",
         "not", "so", "yet", "for", "in", "on", "at", "to", "by", "with", "from", "of", "as",
         "into", "through", "during", "before", "after", "above", "below", "between", "out", "off",
         "over", "under", "again", "further", "then", "once",
@@ -132,12 +132,20 @@ pub fn slugify(text: &str) -> String {
 }
 
 pub fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
+    let char_count = text.chars().count();
+    if char_count <= max_chars {
         return text.to_string();
     }
-    let truncated = &text[..max_chars];
+    // Find the byte offset for the max_chars-th character
+    let byte_offset = text
+        .char_indices()
+        .nth(max_chars)
+        .map_or(text.len(), |(i, _)| i);
+    let truncated = &text[..byte_offset];
     if let Some(last_period) = truncated.rfind('.') {
-        if last_period > max_chars / 2 {
+        // Find the char index of the period to check if it's past the midpoint
+        let period_char_count = truncated[..last_period].chars().count();
+        if period_char_count > max_chars / 2 {
             return text[..=last_period].to_string();
         }
     }

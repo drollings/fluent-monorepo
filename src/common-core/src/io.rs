@@ -1,5 +1,3 @@
-pub const DEFAULT_MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
-
 use std::fs;
 use std::path::Path;
 

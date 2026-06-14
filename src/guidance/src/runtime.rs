@@ -35,6 +35,7 @@ pub static AST_POOL: LazyLock<Arc<WorkerPool<AstGenJob>>> = LazyLock::new(|| {
         workers,
         workers * 4,
         |job: AstGenJob| async move {
+            let path_display = job.source_path.display().to_string();
             let result = tokio::task::spawn_blocking(move || {
                 thread_local! {
                     static PARSER: RefCell<Option<AstParser>> = const { RefCell::new(None) };
@@ -50,7 +51,9 @@ pub static AST_POOL: LazyLock<Arc<WorkerPool<AstGenJob>>> = LazyLock::new(|| {
             })
             .await
             .unwrap_or_else(|e| Err(SyncEngineError::Parse(e.to_string())));
-            let _ = job.result_tx.send(result);
+            if job.result_tx.send(result).is_err() {
+                tracing::warn!(path = %path_display, "ast_gen result receiver dropped");
+            }
         },
     ))
 });
@@ -68,7 +71,9 @@ pub static DB_POOL: LazyLock<Arc<WorkerPool<DbSyncJob>>> = LazyLock::new(|| {
             })
             .await
             .unwrap_or_else(|e| Err(e.to_string()));
-            let _ = job.result_tx.send(result);
+            if job.result_tx.send(result).is_err() {
+                tracing::warn!("db_sync result receiver dropped");
+            }
         },
     ))
 });
