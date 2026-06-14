@@ -7,6 +7,7 @@ use crate::ast_parser::AstParser;
 use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
+use crate::walk;
 use guidance_search_vector::GuidanceDb;
 
 #[derive(Error, Debug)]
@@ -142,7 +143,7 @@ impl SyncEngine {
             } else {
                 up_to_date += 1;
             }
-        })?;
+        });
 
         Ok(SyncStatus {
             total_files,
@@ -159,43 +160,11 @@ impl SyncEngine {
         self.guidance_dir.join("src").join(&json_name)
     }
 
-    fn walk_source_files<F>(&self, mut callback: F) -> Result<(), SyncEngineError>
+    fn walk_source_files<F>(&self, mut callback: F)
     where
         F: FnMut(&Path),
     {
-        self.walk_dir(&self.source_dir, &mut callback)?;
-        Ok(())
-    }
-
-    #[allow(clippy::self_only_used_in_recursion)]
-    fn walk_dir<F>(&self, dir: &Path, callback: &mut F) -> std::io::Result<()>
-    where
-        F: FnMut(&Path),
-    {
-        if !dir.is_dir() {
-            return Ok(());
-        }
-
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                let skip = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with('.') || n == "target");
-                if !skip {
-                    self.walk_dir(&path, callback)?;
-                }
-            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if matches!(ext, "zig" | "zon" | "py" | "rs" | "md") {
-                    callback(&path);
-                }
-            }
-        }
-
-        Ok(())
+        walk::walk_files(&self.source_dir, walk::SOURCE_EXTENSIONS, &mut callback);
     }
 }
 

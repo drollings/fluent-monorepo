@@ -57,6 +57,7 @@ pub mod query_engine;
 pub mod runtime;
 pub mod scanner;
 pub mod sync_engine;
+pub mod walk;
 
 pub mod query {
     pub mod identifier;

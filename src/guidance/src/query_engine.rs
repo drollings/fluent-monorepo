@@ -10,6 +10,7 @@ use crate::query::identifier;
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
+use crate::walk;
 use guidance_search_vector::GuidanceDb;
 use guidance_search_vector::SemanticAliases;
 
@@ -130,7 +131,17 @@ impl QueryEngine {
             return Ok(());
         }
         let mut wi = WordIndex::new();
-        Self::walk_and_index_source_files(&src_dir, "", &mut wi)?;
+        let root = src_dir.clone();
+        walk::walk_files(&src_dir, walk::SOURCE_EXTENSIONS, |path| {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
+            if let Ok(content) = std::fs::read_to_string(path) {
+                wi.index_file(&rel, &content);
+            }
+        });
         self.word_index = Some(wi);
         Ok(())
     }
@@ -140,41 +151,6 @@ impl QueryEngine {
             wi.remove_file(file_path);
             wi.index_file(file_path, content);
         }
-    }
-
-    fn walk_and_index_source_files(
-        dir: &Path,
-        prefix: &str,
-        wi: &mut WordIndex,
-    ) -> std::io::Result<()> {
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if dir_name == "target" {
-                    continue;
-                }
-                let sub_prefix = if prefix.is_empty() {
-                    entry.file_name().to_string_lossy().to_string()
-                } else {
-                    format!("{}/{}", prefix, entry.file_name().to_string_lossy())
-                };
-                Self::walk_and_index_source_files(&path, &sub_prefix, wi)?;
-            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if matches!(ext, "zig" | "zon" | "py" | "rs" | "md") {
-                    let rel_path = if prefix.is_empty() {
-                        entry.file_name().to_string_lossy().to_string()
-                    } else {
-                        format!("{}/{}", prefix, entry.file_name().to_string_lossy())
-                    };
-                    if let Ok(content) = std::fs::read_to_string(&path) {
-                        wi.index_file(&rel_path, &content);
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 
     pub fn explain(&self, query: &str, doc: &GuidanceDoc) -> Result<Vec<Stage>, QueryEngineError> {

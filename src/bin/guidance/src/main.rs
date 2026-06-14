@@ -6,6 +6,7 @@ use guidance_core::config;
 use guidance_core::runtime;
 use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
+use guidance_core::walk;
 use guidance_search_vector::GuidanceDb;
 use time::OffsetDateTime;
 use tokio::sync::oneshot;
@@ -274,34 +275,6 @@ async fn main() {
 
 fn load_project_config(workspace: &Path) -> config::ProjectConfig {
     config::load_config(workspace).unwrap_or_default()
-}
-
-fn collect_extensions(dirs: &[PathBuf]) -> std::collections::HashSet<String> {
-    let mut exts = std::collections::HashSet::new();
-    for dir in dirs {
-        if !dir.is_dir() {
-            continue;
-        }
-        collect_extensions_recursive(dir, &mut exts);
-    }
-    exts
-}
-
-fn collect_extensions_recursive(dir: &Path, exts: &mut std::collections::HashSet<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !name.starts_with('.') && name != "target" && name != "fixtures" {
-                collect_extensions_recursive(&path, exts);
-            }
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            exts.insert(format!(".{ext}"));
-        }
-    }
 }
 
 fn cmd_explain(
@@ -645,30 +618,6 @@ fn src_dirs_from_config(workspace_path: &Path) -> Vec<PathBuf> {
     }
 }
 
-fn collect_source_files(dir: &Path, exts: &[&str]) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    if !dir.is_dir() {
-        return files;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return files;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !name.starts_with('.') && name != "target" {
-                files.extend(collect_source_files(&path, exts));
-            }
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if exts.is_empty() || exts.contains(&ext) {
-                files.push(path);
-            }
-        }
-    }
-    files
-}
-
 async fn walk_and_gen_async(
     guidance_dir: PathBuf,
     source_dir: PathBuf,
@@ -676,12 +625,13 @@ async fn walk_and_gen_async(
     verbose: bool,
     filter_exts: &[&str],
 ) -> usize {
-    let exts = if filter_exts.is_empty() {
-        vec!["zig", "zon", "py", "rs", "md"]
+    let exts: Vec<&str> = if filter_exts.is_empty() {
+        walk::SOURCE_EXTENSIONS.to_vec()
     } else {
         filter_exts.to_vec()
     };
-    let files = collect_source_files(&source_dir, &exts);
+    let mut files = Vec::new();
+    walk::walk_files(&source_dir, &exts, |p| files.push(p.to_path_buf()));
     if files.is_empty() {
         return 0;
     }
@@ -772,14 +722,13 @@ async fn start_watcher(
     }
 
     println!("Watching for changes (debounce: {debounce_ms}ms)...");
-    let supported_exts = ["zig", "zon", "py", "rs", "md"];
 
     loop {
         match rx.recv() {
             Ok(Ok(Event { paths, .. })) => {
                 for path in &paths {
                     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if !supported_exts.contains(&ext) {
+                    if !walk::SOURCE_EXTENSIONS.contains(&ext) {
                         continue;
                     }
                     let source_dir = find_source_dir(path, src_dirs);
@@ -926,7 +875,7 @@ fn cmd_check(workspace: &str) {
             .map(|d| workspace_path.join(d))
             .collect()
     };
-    let present_exts = collect_extensions(&src_dirs);
+    let present_exts = walk::collect_extensions(&src_dirs);
 
     type StageFn = Box<dyn Fn() -> Result<(), String>>;
     let mut stages: Vec<(&str, StageFn)> = Vec::new();

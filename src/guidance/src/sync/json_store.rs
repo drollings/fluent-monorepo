@@ -4,6 +4,8 @@ use guidance_types::{CapabilityEval, GuidanceDoc, Member, MemberType, Meta, Para
 use smol_str::SmolStr;
 use thiserror::Error;
 
+use crate::walk;
+
 #[derive(Error, Debug)]
 pub enum JsonError {
     #[error("IO error: {0}")]
@@ -212,26 +214,12 @@ pub fn load_guidance(path: &Path) -> Result<Option<GuidanceDoc>, JsonError> {
 /// Walk a directory recursively for `.json` guidance files and yield `(path, doc)` tuples.
 pub fn walk_guidance_docs(dir: &Path) -> impl Iterator<Item = (PathBuf, GuidanceDoc)> {
     let mut entries: Vec<(PathBuf, GuidanceDoc)> = Vec::new();
-    walk_json_dir(dir, &mut entries);
-    entries.into_iter()
-}
-
-fn walk_json_dir(dir: &Path, out: &mut Vec<(PathBuf, GuidanceDoc)>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if dir_name != "target" {
-                    walk_json_dir(&path, out);
-                }
-            } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(Some(doc)) = load_guidance(&path) {
-                    out.push((path, doc));
-                }
-            }
+    walk::walk_files(dir, &["json"], |path| {
+        if let Ok(Some(doc)) = load_guidance(path) {
+            entries.push((path.to_path_buf(), doc));
         }
-    }
+    });
+    entries.into_iter()
 }
 
 /// Merge existing member data into a new member when match_hash is unchanged.
