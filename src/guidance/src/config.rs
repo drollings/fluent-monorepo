@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -15,15 +16,8 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provider {
-    pub name: String,
     pub base_url: String,
     pub chat_endpoint: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LintCommand {
-    pub extension: String,
-    pub argv: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
@@ -62,7 +56,7 @@ pub struct ProjectConfig {
 
     #[serde(default)]
     #[builder(default)]
-    pub providers: Vec<Provider>,
+    pub providers: HashMap<String, Provider>,
 
     #[serde(default)]
     pub model_default: Option<String>,
@@ -75,15 +69,15 @@ pub struct ProjectConfig {
 
     #[serde(default)]
     #[builder(default)]
-    pub test_commands: Vec<Vec<String>>,
+    pub test_commands: HashMap<String, Vec<String>>,
 
     #[serde(default)]
     #[builder(default)]
-    pub lint_commands: Vec<LintCommand>,
+    pub lint_commands: HashMap<String, Vec<String>>,
 
     #[serde(default)]
     #[builder(default)]
-    pub fmt_commands: Vec<Vec<String>>,
+    pub fmt_commands: HashMap<String, Vec<String>>,
 
     #[serde(default)]
     pub embedding_cache_limit: Option<usize>,
@@ -106,13 +100,13 @@ impl Default for ProjectConfig {
             embedding_dims: None,
             capabilities_dir: None,
             src_dirs: vec![],
-            providers: vec![],
+            providers: HashMap::new(),
             model_default: None,
             model_fast: None,
             model_thinking: None,
-            test_commands: vec![],
-            lint_commands: vec![],
-            fmt_commands: vec![],
+            test_commands: HashMap::new(),
+            lint_commands: HashMap::new(),
+            fmt_commands: HashMap::new(),
             embedding_cache_limit: None,
         }
     }
@@ -135,8 +129,7 @@ pub fn resolve_model_url(config: &ProjectConfig) -> (String, String, bool) {
 
     let url = config
         .providers
-        .iter()
-        .find(|p| p.name == provider_name)
+        .get(provider_name)
         .map(|p| {
             format!(
                 "{}/{}",
@@ -218,13 +211,17 @@ mod tests {
 
     #[test]
     fn test_resolve_model_url_with_provider() {
-        let config = ProjectConfig::builder()
-            .embedding_model("ollama:llama3".into())
-            .providers(vec![Provider {
-                name: "ollama".into(),
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "ollama".into(),
+            Provider {
                 base_url: "http://localhost:11434".into(),
                 chat_endpoint: "api/chat".into(),
-            }])
+            },
+        );
+        let config = ProjectConfig::builder()
+            .embedding_model("ollama:llama3".into())
+            .providers(providers)
             .build();
         let (url, model, is_thinking) = resolve_model_url(&config);
         assert_eq!(model, "llama3");

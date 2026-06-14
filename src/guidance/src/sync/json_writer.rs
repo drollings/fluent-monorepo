@@ -47,9 +47,6 @@ fn member_to_json(member: &Member) -> Value {
         let child: Vec<Value> = member.members.iter().map(member_to_json).collect();
         obj["members"] = json!(child);
     }
-    if let Some(line) = member.line {
-        obj["line"] = json!(line);
-    }
     if member.comment_generated {
         obj["comment_generated"] = json!(true);
     }

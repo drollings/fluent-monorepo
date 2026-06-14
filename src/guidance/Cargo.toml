@@ -23,6 +23,7 @@ bon = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-zig = { workspace = true }
 tree-sitter-python = { workspace = true }
+tree-sitter-rust = { workspace = true }
 rusqlite = { workspace = true }
 clap = { workspace = true }
 notify = { workspace = true }

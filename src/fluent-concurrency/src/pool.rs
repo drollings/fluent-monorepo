@@ -24,6 +24,7 @@ struct QueueInner<T> {
     capacity: usize,
     closed: AtomicBool,
     notify: Notify,
+    space_notify: Notify,
 }
 
 /// A bounded, concurrent, single-consumer queue with close-wakes-waiters semantics.
@@ -40,6 +41,7 @@ impl<T: Send + 'static> Queue<T> {
                 capacity,
                 closed: AtomicBool::new(false),
                 notify: Notify::new(),
+                space_notify: Notify::new(),
             }),
         }
     }
@@ -58,6 +60,27 @@ impl<T: Send + 'static> Queue<T> {
         Ok(())
     }
 
+    /// Pushes an item, waiting if the queue is at capacity.
+    /// Returns `Err(Closed)` if the queue is closed before space becomes available.
+    pub async fn push_wait(&self, item: T) -> Result<(), PoolError> {
+        let mut item = Some(item);
+        loop {
+            if self.inner.closed.load(Ordering::SeqCst) {
+                return Err(PoolError::Closed);
+            }
+            let waited = self.inner.space_notify.notified();
+            {
+                let mut items = self.inner.items.lock().await;
+                if items.len() < self.inner.capacity {
+                    items.push_back(item.take().unwrap());
+                    self.inner.notify.notify_one();
+                    return Ok(());
+                }
+            }
+            waited.await;
+        }
+    }
+
     /// Pops an item from the queue, awaiting if empty. Returns `None` when closed.
     pub async fn pop(&self) -> Option<T> {
         loop {
@@ -65,6 +88,7 @@ impl<T: Send + 'static> Queue<T> {
             {
                 let mut items = self.inner.items.lock().await;
                 if let Some(item) = items.pop_front() {
+                    self.inner.space_notify.notify_one();
                     return Some(item);
                 }
                 if self.inner.closed.load(Ordering::SeqCst) {
@@ -79,6 +103,7 @@ impl<T: Send + 'static> Queue<T> {
     pub fn close(&self) {
         self.inner.closed.store(true, Ordering::SeqCst);
         self.inner.notify.notify_waiters();
+        self.inner.space_notify.notify_waiters();
     }
 }
 
@@ -137,9 +162,15 @@ impl<T: Send + Sync + 'static> WorkerPool<T> {
         }
     }
 
-    /// Submits a job to the pool. Returns `Err(Full)` if the queue is at capacity.
-    pub async fn submit(&self, job: T) -> Result<(), PoolError> {
+    /// Tries to submit a job without waiting. Returns `Err(Full)` if the queue is at capacity.
+    pub async fn try_submit(&self, job: T) -> Result<(), PoolError> {
         self.queue.push(job).await
+    }
+
+    /// Submits a job, waiting if the queue is full.
+    /// Returns `Err(Closed)` if the queue is closed.
+    pub async fn submit(&self, job: T) -> Result<(), PoolError> {
+        self.queue.push_wait(job).await
     }
 
     /// Shuts down the pool: closes the queue, notifies workers, and awaits their completion.

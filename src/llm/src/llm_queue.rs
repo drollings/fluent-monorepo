@@ -63,7 +63,7 @@ impl LlmRequestQueue {
         };
         let handle = tokio::runtime::Handle::current();
         handle
-            .block_on(self.pool.submit(task))
+            .block_on(self.pool.try_submit(task))
             .map_err(|e| match e {
                 PoolError::Full => LlmError::Http("queue full".into()),
                 PoolError::Closed => LlmError::Http("queue closed".into()),
@@ -84,7 +84,7 @@ impl LlmRequestQueue {
             response_tx: tx,
         };
         self.pool
-            .submit(task)
+            .try_submit(task)
             .await
             .map_err(|e| match e {
                 PoolError::Full => LlmError::Http("queue full".into()),

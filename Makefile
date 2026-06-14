@@ -50,13 +50,13 @@ help: ## Show this help
 
 # Database target: rebuilt by guidance check automatically.
 # This rule is kept for direct `make .explain.db` invocations.
-$(GUIDANCE_DB): | $(TARGET_BIN)
+$(GUIDANCE_DB): | $(CARGO_BIN)
 	$(Q)echo "Syncing database: $@"
 	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(GUIDANCE_DIR) --db $@ --timeout 1
 	$(Q)touch $@
 
 .PHONY: commit
-commit: $(TARGET_BIN) | STRUCTURE.md ## Generate AI commit message from staged diff + guidance JSON context
+commit: $(CARGO_BIN) | STRUCTURE.md ## Generate AI commit message from staged diff + guidance JSON context
 	$(Q)$(TARGET_BIN) commit $(if $(DRY_RUN),--dry-run) $(if $(DEBUG),--debug)
 
 ##@ Environment
@@ -117,15 +117,18 @@ RUST_SRC_FILES := $(shell find $(RUST_SRC_DIR) -name '*.rs' 2>/dev/null)
 
 # ── Binary ───────────────────────────────────────────────────────────────────
 
-$(TARGET_BIN): $(RUST_SRC_FILES)
-	$(Q)echo "Building $@"
+CARGO_BIN := target/debug/$(TARGET_BIN)
+
+$(CARGO_BIN): $(RUST_SRC_FILES)
+	$(Q)echo "Building $(TARGET_BIN)"
 	$(Q)cargo build
-	$(Q)echo "Build complete: $@"
+	$(Q)echo "Build complete: $(TARGET_BIN)"
 
 .PHONY: install
-install: $(TARGET_BIN)
-	$(Q)cp target/debug/$(TARGET_BIN) $(shell dirname $(shell which guidance 2>/dev/null || echo $(INSTALLDIR)))/guidance
-	$(Q)echo "Installed build in $(INSTALLDIR)/guidance"
+install: $(CARGO_BIN)
+	$(Q)mkdir -p $(INSTALLDIR)
+	$(Q)cp $(CARGO_BIN) $(INSTALLDIR)/guidance
+	$(Q)echo "Installed $(TARGET_BIN) in $(INSTALLDIR)/guidance"
 
 # ── Standard Targets ──────────────────────────────────────────────────────────
 
@@ -149,7 +152,7 @@ format: ## Run rustfmt across the Rust source in src on all .rs files
 # Delegated: guidance check always regenerates STRUCTURE.md after guidance.
 # The target below is kept for direct `make STRUCTURE.md` invocations.
 
-STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
+STRUCTURE.md: $(GUIDANCE_DB) | $(CARGO_BIN)
 	$(Q)$(TARGET_BIN) structure --json-dir $(GUIDANCE_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
 	$(Q)touch STRUCTURE.md
 

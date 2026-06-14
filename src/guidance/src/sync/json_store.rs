@@ -215,7 +215,10 @@ fn walk_json_dir(dir: &Path, out: &mut Vec<(PathBuf, GuidanceDoc)>) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                walk_json_dir(&path, out);
+                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if dir_name != "target" {
+                    walk_json_dir(&path, out);
+                }
             } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
                 if let Ok(Some(doc)) = load_guidance(&path) {
                     out.push((path, doc));

@@ -1,4 +1,4 @@
-use guidance_types::{GuidanceDoc, StageKind};
+use guidance_types::{GuidanceDoc, Member, MemberType, StageKind};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Stage {
@@ -6,17 +6,65 @@ pub struct Stage {
     pub content: String,
     pub source: String,
     pub line: Option<u32>,
+    #[serde(skip)]
+    pub member_name: Option<String>,
+    #[serde(skip)]
+    pub member_type: Option<MemberType>,
 }
 
 pub struct Synthesizer;
 
 impl Stage {
-    pub fn new_not_found(query: &str, doc: &GuidanceDoc) -> Self {
+    pub fn prose(content: &str, source: &str) -> Self {
+        Self {
+            kind: StageKind::Prose,
+            content: content.to_string(),
+            source: source.to_string(),
+            line: None,
+            member_name: None,
+            member_type: None,
+        }
+    }
+
+    pub fn code(member: &Member, source: &str) -> Self {
+        let content = member.signature.clone().map_or_else(
+            || member.name.as_str().to_string(),
+            |s| s.as_str().to_string(),
+        );
+        Self {
+            kind: StageKind::Code,
+            content,
+            source: source.to_string(),
+            line: member.line,
+            member_name: Some(member.name.as_str().to_string()),
+            member_type: Some(member.type_name),
+        }
+    }
+
+    pub fn member_comment(member: &Member, source: &str) -> Self {
+        let content = member
+            .comment
+            .as_ref()
+            .map(|c| c.as_str().to_string())
+            .unwrap_or_default();
+        Self {
+            kind: StageKind::Prose,
+            content,
+            source: source.to_string(),
+            line: member.line,
+            member_name: Some(member.name.as_str().to_string()),
+            member_type: Some(member.type_name),
+        }
+    }
+
+    pub fn not_found(query: &str, doc: &GuidanceDoc) -> Self {
         Self {
             kind: StageKind::NotFound,
             content: format!("No results found for query: {query}"),
             source: doc.meta.source.as_str().to_string(),
             line: None,
+            member_name: None,
+            member_type: None,
         }
     }
 }
@@ -26,33 +74,15 @@ impl Synthesizer {
         let mut stages = Vec::new();
 
         if let Some(ref comment) = doc.comment {
-            stages.push(Stage {
-                kind: StageKind::Prose,
-                content: comment.as_str().to_string(),
-                source: doc.meta.source.as_str().to_string(),
-                line: None,
-            });
+            stages.push(Stage::prose(comment.as_str(), doc.meta.source.as_str()));
         }
 
         for name in matched_names {
             if let Some(member) = doc.members.iter().find(|m| m.name.as_str() == name) {
-                stages.push(Stage {
-                    kind: StageKind::Code,
-                    content: member.signature.clone().map_or_else(
-                        || member.name.as_str().to_string(),
-                        |s| s.as_str().to_string(),
-                    ),
-                    source: doc.meta.source.as_str().to_string(),
-                    line: member.line,
-                });
+                stages.push(Stage::code(member, doc.meta.source.as_str()));
 
-                if let Some(ref comment) = member.comment {
-                    stages.push(Stage {
-                        kind: StageKind::Prose,
-                        content: comment.as_str().to_string(),
-                        source: doc.meta.source.as_str().to_string(),
-                        line: member.line,
-                    });
+                if member.comment.is_some() {
+                    stages.push(Stage::member_comment(member, doc.meta.source.as_str()));
                 }
             }
         }
@@ -63,6 +93,8 @@ impl Synthesizer {
                 content: format!("No results found for query: {query}"),
                 source: String::new(),
                 line: None,
+                member_name: None,
+                member_type: None,
             });
         }
 

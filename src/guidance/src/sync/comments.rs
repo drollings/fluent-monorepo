@@ -2,6 +2,7 @@ use std::path::Path;
 
 use thiserror::Error;
 
+use crate::ast_parser::AstParser;
 use guidance_types::GuidanceDoc;
 
 #[derive(Error, Debug)]
@@ -12,46 +13,70 @@ pub enum SyncError {
     SourceNotFound(String),
 }
 
-pub fn sync_comments(source_path: &Path, doc: &GuidanceDoc) -> Result<(), SyncError> {
+pub fn sync_comments(
+    source_path: &Path,
+    doc: &GuidanceDoc,
+    parser: &mut AstParser,
+) -> Result<(), SyncError> {
     let source = std::fs::read_to_string(source_path)?;
-    let modified = insert_comments(&source, doc);
+    let fresh_doc = parser.parse_file(source_path, &source).ok();
+    let insertions = collect_comment_insertions(&source, doc, fresh_doc.as_ref());
+    if insertions.is_empty() {
+        return Ok(());
+    }
+    let modified = apply_insertions(&source, insertions);
     if modified != source {
         std::fs::write(source_path, modified)?;
     }
     Ok(())
 }
 
-fn insert_comments(source: &str, doc: &GuidanceDoc) -> String {
+fn collect_comment_insertions(
+    source: &str,
+    doc: &GuidanceDoc,
+    fresh_doc: Option<&GuidanceDoc>,
+) -> Vec<(usize, Vec<String>)> {
     let lines: Vec<&str> = source.lines().collect();
-    let mut insertions: Vec<(usize, Vec<String>)> = Vec::new();
+    let mut insertions = Vec::new();
 
     for member in &doc.members {
-        if let (Some(ref comment_text), Some(line)) = (&member.comment, member.line) {
-            if comment_text.is_empty() || member.comment_generated {
+        let Some(ref comment_text) = member.comment else {
+            continue;
+        };
+        if comment_text.is_empty() || member.comment_generated {
+            continue;
+        }
+        let line = fresh_doc
+            .and_then(|fd| fd.members.iter().find(|m| m.name == member.name))
+            .and_then(|m| m.line)
+            .or(member.line);
+        let Some(line) = line else {
+            continue;
+        };
+        let idx = (line as usize).saturating_sub(1);
+        if idx > 0 && idx <= lines.len() {
+            let prev_line = lines[idx - 1].trim();
+            if prev_line.starts_with("///") || prev_line.starts_with("//!") {
                 continue;
             }
-            let idx = (line as usize).saturating_sub(1);
-            if idx > 0 && idx <= lines.len() {
-                let prev_line = lines[idx - 1].trim();
-                if prev_line.starts_with("///") || prev_line.starts_with("//!") {
-                    continue;
-                }
-            }
-            let comment_lines: Vec<String> = comment_text
-                .as_str()
-                .split('\n')
-                .map(|l| format!("/// {l}"))
-                .collect();
-            if !comment_lines.is_empty() {
-                insertions.push((idx, comment_lines));
-            }
+        }
+        let comment_lines: Vec<String> = comment_text
+            .as_str()
+            .split('\n')
+            .map(|l| format!("/// {l}"))
+            .collect();
+        if !comment_lines.is_empty() {
+            insertions.push((idx, comment_lines));
         }
     }
+    insertions
+}
 
+fn apply_insertions(source: &str, mut insertions: Vec<(usize, Vec<String>)>) -> String {
     if insertions.is_empty() {
         return source.to_string();
     }
-
+    let lines: Vec<&str> = source.lines().collect();
     insertions.sort_by_key(|(idx, _)| *idx);
 
     let mut result = String::new();
@@ -102,7 +127,8 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let result = insert_comments(source, &doc);
+        let insertions = collect_comment_insertions(source, &doc, None);
+        let result = apply_insertions(source, insertions);
         assert!(result.starts_with("/// Greets the user.\npub fn hello"));
     }
 
@@ -125,8 +151,8 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let result = insert_comments(source, &doc);
-        assert_eq!(result, source);
+        let insertions = collect_comment_insertions(source, &doc, None);
+        assert!(insertions.is_empty(), "should not insert when comment exists");
     }
 
     #[test]
@@ -148,7 +174,7 @@ mod tests {
             ..GuidanceDoc::default()
         };
 
-        let result = insert_comments(source, &doc);
-        assert_eq!(result, source);
+        let insertions = collect_comment_insertions(source, &doc, None);
+        assert!(insertions.is_empty());
     }
 }

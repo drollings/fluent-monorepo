@@ -46,6 +46,18 @@ impl SyncEngine {
         }
     }
 
+    pub fn with_parser(
+        guidance_dir: PathBuf,
+        source_dir: PathBuf,
+        ast_parser: AstParser,
+    ) -> Self {
+        Self {
+            ast_parser,
+            guidance_dir,
+            source_dir,
+        }
+    }
+
     pub fn gen(&mut self, source_path: &Path) -> Result<GuidanceDoc, SyncEngineError> {
         self.gen_with_config(source_path, &GenConfig::default())
     }
@@ -87,7 +99,7 @@ impl SyncEngine {
         json_store::save_guidance(&json_path, &doc)?;
 
         // Sync comments back to source file after generation
-        if let Err(e) = comments::sync_comments(source_path, &doc) {
+        if let Err(e) = comments::sync_comments(source_path, &doc, &mut self.ast_parser) {
             tracing::warn!("comment sync failed for {:?}: {e}", source_path);
         }
 
@@ -180,11 +192,11 @@ impl SyncEngine {
             let path = entry.path();
 
             if path.is_dir() {
-                if !path
+                let skip = path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with('.'))
-                {
+                    .is_some_and(|n| n.starts_with('.') || n == "target");
+                if !skip {
                     self.walk_dir(&path, callback)?;
                 }
             } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {

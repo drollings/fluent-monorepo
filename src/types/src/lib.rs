@@ -199,10 +199,16 @@ pub struct Member {
     pub members: Vec<Member>,
     #[serde(default)]
     pub equivalents: Vec<SmolStr>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub line: Option<u32>,
     #[serde(default)]
     pub comment_generated: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct Span {
+    pub start_line: u32,
+    pub end_line: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

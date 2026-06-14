@@ -53,6 +53,7 @@ async-openai = "0.28"
 tree-sitter = "0.25"
 tree-sitter-zig = "1.1.2"
 tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
 
 # Async
 tokio = { version = "1", features = ["full"] }

@@ -516,7 +516,7 @@ async fn cmd_gen_async(
                 return;
             }
             let (tx, rx) = oneshot::channel();
-            let _ = runtime::AST_POOL
+            runtime::AST_POOL
                 .submit(runtime::AstGenJob {
                     source_path: source_path.to_path_buf(),
                     source_dir,
@@ -524,7 +524,8 @@ async fn cmd_gen_async(
                     config: guidance_core::sync_engine::GenConfig::default(),
                     result_tx: tx,
                 })
-                .await;
+                .await
+                .expect("queue closed during gen");
             match rx.await {
                 Ok(Ok(doc)) => {
                     if verbose {
@@ -598,13 +599,14 @@ async fn cmd_gen_async(
             let json_src = guidance_dir.join("src");
             if json_src.is_dir() {
                 let (tx, rx) = oneshot::channel();
-                let _ = runtime::DB_POOL
+                runtime::DB_POOL
                     .submit(runtime::DbSyncJob {
                         json_dir: json_src,
                         db_path: db,
                         result_tx: tx,
                     })
-                    .await;
+                    .await
+                    .expect("db sync queue closed");
                 match rx.await {
                     Ok(Ok(count)) => println!("Synced {count} nodes to {db_path}"),
                     Ok(Err(e)) => eprintln!("Warning: db sync failed: {e}"),
@@ -642,7 +644,7 @@ fn collect_source_files(dir: &Path, exts: &[&str]) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !name.starts_with('.') {
+            if !name.starts_with('.') && name != "target" {
                 files.extend(collect_source_files(&path, exts));
             }
         } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -687,8 +689,7 @@ async fn walk_and_gen_async(
         }
 
         let (tx, rx) = oneshot::channel();
-        if pool
-            .submit(runtime::AstGenJob {
+        pool.submit(runtime::AstGenJob {
                 source_path: path.clone(),
                 source_dir: source_dir.clone(),
                 guidance_dir: guidance_dir.clone(),
@@ -696,12 +697,11 @@ async fn walk_and_gen_async(
                 result_tx: tx,
             })
             .await
-            .is_ok()
-        {
-            handles.push((rel.display().to_string(), rx));
-        }
+            .expect("queue closed during gen");
+        handles.push((rel.display().to_string(), rx));
     }
 
+    let mut gen_failed = 0usize;
     for (rel_path, rx) in handles {
         match rx.await {
             Ok(Ok(doc)) => {
@@ -711,16 +711,22 @@ async fn walk_and_gen_async(
                 }
             }
             Ok(Err(e)) => {
+                gen_failed += 1;
                 if verbose {
                     eprintln!("  warn: {rel_path} — {e}");
                 }
             }
             Err(_) => {
+                gen_failed += 1;
                 if verbose {
                     eprintln!("  warn: {rel_path} — pool response canceled");
                 }
             }
         }
+    }
+
+    if gen_failed > 0 {
+        eprintln!("Warning: {gen_failed} files failed to generate");
     }
 
     generated
@@ -771,15 +777,16 @@ async fn start_watcher(
                     }
 
                     let (tx_job, rx_job) = oneshot::channel();
-                    let _ = runtime::AST_POOL
-                        .submit(runtime::AstGenJob {
+                    runtime::AST_POOL
+                .submit(runtime::AstGenJob {
                             source_path: path.clone(),
                             source_dir: source_dir.unwrap_or_else(|| workspace_path.clone()),
                             guidance_dir: guidance_dir.clone(),
                             config: guidance_core::sync_engine::GenConfig::default(),
                             result_tx: tx_job,
                         })
-                        .await;
+                        .await
+                        .expect("queue closed during gen");
                     if let Ok(Ok(doc)) = rx_job.await {
                         if verbose {
                             println!("  regenerated: {} ({} members)", path.display(), doc.members.len());
@@ -806,18 +813,35 @@ fn find_source_dir(path: &Path, src_dirs: &[PathBuf]) -> Option<PathBuf> {
 
 fn cmd_status(guidance_dir: &str) {
     let gdir = PathBuf::from(guidance_dir);
-    let source_dir = std::env::current_dir().unwrap_or_default();
-    let engine = SyncEngine::new(gdir, source_dir);
-    match engine.status() {
-        Ok(status) => {
-            println!("Sync Status:");
-            println!("  Total files: {}", status.total_files);
-            println!("  Stale files: {}", status.stale_files);
-            println!("  Up to date:  {}", status.up_to_date);
-            println!("  Clean:       {}", status.is_clean());
+    let workspace_path = std::env::current_dir().unwrap_or_default();
+    let cfg = load_project_config(&workspace_path);
+    let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
+        vec![workspace_path.clone()]
+    } else {
+        cfg.src_dirs.iter().map(|d| workspace_path.join(d)).collect()
+    };
+    let mut total_files = 0usize;
+    let mut stale_files = 0usize;
+    let mut up_to_date = 0usize;
+    for src_dir in &src_dirs {
+        if !src_dir.is_dir() {
+            continue;
         }
-        Err(e) => eprintln!("error: {e}"),
+        let engine = SyncEngine::new(gdir.clone(), src_dir.clone());
+        match engine.status() {
+            Ok(status) => {
+                total_files += status.total_files;
+                stale_files += status.stale_files;
+                up_to_date += status.up_to_date;
+            }
+            Err(e) => eprintln!("error: {e}"),
+        }
     }
+    println!("Sync Status:");
+    println!("  Total files: {total_files}");
+    println!("  Stale files: {stale_files}");
+    println!("  Up to date:  {up_to_date}");
+    println!("  Clean:       {}", stale_files == 0);
 }
 
 fn cmd_clean(json_dir: &str, db_path: &str) {
@@ -941,14 +965,31 @@ fn cmd_check() {
         (
             "gen",
             Box::new(|| {
+                let workspace_path = std::env::current_dir().unwrap_or_default();
+                let cfg = load_project_config(&workspace_path);
                 let guidance_dir = PathBuf::from(".guidance");
-                let source_dir = std::env::current_dir().unwrap_or_default();
-                let engine = SyncEngine::new(guidance_dir, source_dir);
-                let status = engine.status().map_err(|e| format!("status: {e}"))?;
-                if !status.is_clean() {
-                    eprintln!("{} stale files need regeneration.", status.stale_files);
+                let mut all_clean = true;
+                let src_dirs: Vec<PathBuf> = if cfg.src_dirs.is_empty() {
+                    vec![workspace_path]
+                } else {
+                    cfg.src_dirs.iter().map(|d| workspace_path.join(d)).collect()
+                };
+                for src_dir in &src_dirs {
+                    if !src_dir.is_dir() {
+                        continue;
+                    }
+                    let engine = SyncEngine::new(guidance_dir.clone(), src_dir.clone());
+                    let status = engine.status().map_err(|e| format!("status: {e}"))?;
+                    if !status.is_clean() {
+                        eprintln!("{} stale files need regeneration.", status.stale_files);
+                        all_clean = false;
+                    }
                 }
-                Ok(())
+                if all_clean {
+                    Ok(())
+                } else {
+                    Err("stale files need regeneration".into())
+                }
             }),
         ),
         (

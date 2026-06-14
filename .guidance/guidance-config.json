@@ -6,21 +6,17 @@
   "capabilities_dir": "doc/capabilities",
   "src_dirs": ["src"],
   "providers": {
-    "local": {
-      "base_url": "http://localhost:11434",
+    "llama": {
+      "base_url": "http://localhost:8080",
       "chat_endpoint": "/v1/chat/completions"
-    },
-    "ollama": {
-      "base_url": "http://localhost:11434",
-      "chat_endpoint": "/api/chat"
     }
   },
   "models": {
-    "default": "ollama:code:latest",
-    "fast": "ollama:code:latest",
-    "thinking": "ollama:code:latest",
-    "batch": "ollama:code:latest",
-    "embed": "ollama:embed:latest"
+    "default": "llama:code:latest",
+    "fast": "llama:code:latest",
+    "thinking": "llama:code:latest",
+    "batch": "llama:code:latest",
+    "embed": "llama:embed:latest"
   },
   "embed": {
     "dims": 768,
@@ -28,15 +24,18 @@
   },
   "test_commands": {
     ".zig": ["zig", "build", "test", "--summary", "all", "--libc", "libc.conf"],
-    ".py": ["python", "-m", "pytest", "-v"]
+    ".py": ["python", "-m", "pytest", "-v"],
+    ".rs": ["cargo", "test", "--workspace"]
   },
   "lint_commands": {
     ".zig": ["zig", "fmt", "--check", "{file}"],
-    ".py": ["ruff", "check", "{file}"]
+    ".py": ["ruff", "check", "{file}"],
+    ".rs": ["cargo", "clippy", "--workspace", "--", "-D", "warnings"]
   },
   "fmt_commands": {
     ".zig": ["zig", "fmt", "{file}"],
-    ".py": ["ruff", "format", "{file}"]
+    ".py": ["ruff", "format", "{file}"],
+    ".rs": ["cargo", "fmt"]
   },
   "comment": "guidance: produces .guidance.db SQLite vector search database and .guidance/ JSON mirror."
 }

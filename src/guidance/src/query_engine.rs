@@ -5,6 +5,7 @@ use guidance_project_knowledge::word_index::WordIndex;
 use guidance_types::GuidanceDoc;
 use thiserror::Error;
 
+use crate::ast_parser;
 use crate::query::identifier;
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::strategy::{self, QueryIntent};
@@ -109,6 +110,10 @@ impl QueryEngine {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
+                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if dir_name == "target" {
+                    continue;
+                }
                 let sub_prefix = if prefix.is_empty() {
                     entry.file_name().to_string_lossy().to_string()
                 } else {
@@ -340,11 +345,14 @@ impl QueryEngine {
 
     /// Format stages into the specified output format.
     pub fn format_stages(stages: &[Stage], format: OutputFormat) -> String {
+        let mut resolved = stages.to_vec();
+        let mut parser = ast_parser::AstParser::new();
+        resolve_stage_lines(&mut resolved, &mut parser);
         match format {
-            OutputFormat::Markdown => Self::format_markdown(stages),
-            OutputFormat::Json => Self::format_json(stages),
-            OutputFormat::Compact => Self::format_compact(stages),
-            OutputFormat::Debug => Self::format_debug(stages),
+            OutputFormat::Markdown => Self::format_markdown(&resolved),
+            OutputFormat::Json => Self::format_json(&resolved),
+            OutputFormat::Compact => Self::format_compact(&resolved),
+            OutputFormat::Debug => Self::format_debug(&resolved),
         }
     }
 
@@ -442,7 +450,7 @@ impl QueryEngine {
                         .map(ToString::to_string)
                         .collect();
                     if names.is_empty() {
-                        vec![Stage::new_not_found(query, doc)]
+                        vec![Stage::not_found(query, doc)]
                     } else {
                         Synthesizer::synthesize(query, doc, &names)
                     }
@@ -456,7 +464,7 @@ impl QueryEngine {
                         .map(|m| m.name.as_str().to_string())
                         .collect();
                     if names.is_empty() {
-                        vec![Stage::new_not_found(query, doc)]
+                        vec![Stage::not_found(query, doc)]
                     } else {
                         Synthesizer::synthesize(query, doc, &names)
                     }
@@ -501,6 +509,47 @@ impl QueryEngine {
         }
 
         Ok(Synthesizer::synthesize(query, doc, &combined))
+    }
+}
+
+/// Resolve line numbers for stages that have member metadata but no lines.
+/// Re-parses the source file with tree-sitter to get fresh positions.
+fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser) {
+    let mut cache: Option<(std::path::PathBuf, String, guidance_types::GuidanceDoc)> = None;
+
+    for stage in stages.iter_mut() {
+        if stage.line.is_some() {
+            continue;
+        }
+        let (Some(ref name), Some(mt)) = (&stage.member_name, stage.member_type) else {
+            continue;
+        };
+        let path = std::path::PathBuf::from(&stage.source);
+        if !path.exists() {
+            continue;
+        }
+        let source_changed = cache
+            .as_ref()
+            .is_none_or(|(p, _, _)| *p != path);
+        if source_changed {
+            if let Ok(src) = std::fs::read_to_string(&path) {
+                if let Ok(doc) = parser.parse_file(&path, &src) {
+                    cache = Some((path, src, doc));
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        }
+        if let Some((_, ref src, ref doc)) = cache {
+            if let Some(fresh_member) = doc.members.iter().find(|m| m.name.as_str() == name.as_str() && m.type_name == mt) {
+                if let Some(line) = fresh_member.line {
+                    stage.line = Some(line);
+                    let _ = src;
+                }
+            }
+        }
     }
 }
 
