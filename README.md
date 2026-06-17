@@ -1,10 +1,10 @@
-# guidance monorepo
+# monorepo
 
-A Rust-native, deterministic-first AST-guided vector search and context graph
-system for AI-assisted code navigation. Builds two projects — **guidance** (code
-indexing + query) and **Coral Context** (knowledge graph + cache cascade) — on a
-shared foundation of 15 reusable crates implementing the Fluent WVR component
-model.
+A Rust-native compilation of crates meant to have a uniform set of design patterns 
+and infrastructure.  Builds two projects - **guidance** (code indexing + query) and
+**Coral Context** (knowledge graph + cache cascade) - on a shared foundation of 15
+reusable, composable crates implementing a common Fluent WVR component model for
+low-boilerplate ergonomics later.
 
 The LLM is treated as a fallback compiler for unstructured data, not as the
 primary reasoning engine. Deterministic computation covers 80%+ of queries;
