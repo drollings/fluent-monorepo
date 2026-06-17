@@ -1,4 +1,4 @@
-# monorepo
+# The fluent monorepo
 
 A Rust-native compilation of crates meant to have a uniform set of design patterns 
 and infrastructure.  Builds two projects - **guidance** (code indexing + query) and
