@@ -196,15 +196,15 @@ env/
 
 ## Authorship
 
-Authored by Daniel Rollings, February 2026, with elements from previous
-hand-written projects in Python, C++, and Zig, ported to Rust.
+Authored by Daniel Rollings, February 2026, based on conceptual transfer from
+projects in Python, C++, and Zig, ported to Rust.
 
 ## License
 
-Dual-licensed under GNU GPLv3 and a Commercial License.
+Dual-licensed under GNU LGPL v3.0 and a Commercial License.
 
 **GPLv3**: Free for open-source, hobby, and individual use. If you distribute
-your software, you must open-source it under GPLv3.
+software including this code, you must open-source it under GPLv3.
 
 **Commercial License** required for:
 - Proprietary, closed-source products
