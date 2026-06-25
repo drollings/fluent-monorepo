@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use common_core::shell::run_command;
 use guidance_core::config;
+use guidance_core::memory::MemoryBridge;
 use guidance_core::runtime;
 use guidance_core::sync::json_store::walk_guidance_docs;
 use guidance_core::sync_engine::SyncEngine;
@@ -208,7 +209,9 @@ async fn main() {
             no_llm,
             filter,
         } => {
-            cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter);
+            let memory = guidance_core::memory::init_memory_bridge();
+            cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter, memory.as_ref())
+                .await;
         }
         Commands::Test => cmd_test(),
         Commands::Telemetry { db, .. } => cmd_db_stats(db, "Telemetry stats"),
@@ -292,7 +295,8 @@ fn load_project_config(workspace: &Path) -> config::ProjectConfig {
     config::load_config(workspace).unwrap_or_default()
 }
 
-fn cmd_explain(
+#[allow(clippy::too_many_arguments)]
+async fn cmd_explain(
     query: &str,
     guidance_dir: &str,
     db_path: &str,
@@ -300,9 +304,17 @@ fn cmd_explain(
     limit: usize,
     _no_llm: bool,
     _filter: &str,
+    memory: Option<&MemoryBridge>,
 ) {
     let gdir = PathBuf::from(guidance_dir);
     let db = PathBuf::from(db_path);
+
+    // Pre-fetch memory context for injection into the system prompt
+    let memory_context = if let Some(bridge) = memory {
+        bridge.prefetch_context(query).await
+    } else {
+        String::new()
+    };
 
     let mut results: Vec<guidance_search_vector::db::SearchResult> = Vec::new();
 
@@ -326,6 +338,11 @@ fn cmd_explain(
     results.truncate(limit);
 
     println!("## Explain: {query}");
+    if !memory_context.is_empty() {
+        println!();
+        println!("### Memory Context");
+        println!("{memory_context}");
+    }
     println!();
     if results.is_empty() {
         println!("No results found.");
@@ -335,6 +352,19 @@ fn cmd_explain(
     println!("|------|--------|-------|");
     for r in &results {
         println!("| {} | {} | {:.2} |", r.name, r.source, r.similarity);
+    }
+
+    // Sync turn with memory plugin after synthesis
+    if let Some(bridge) = memory {
+        let assistant_output = format!(
+            "Explain: {query}\n\nResults:\n{}",
+            results
+                .iter()
+                .map(|r| format!("- {} ({})", r.name, r.source))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        bridge.sync_turn(query, &assistant_output).await;
     }
 }
 

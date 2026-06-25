@@ -7,6 +7,8 @@
 use std::sync::Arc;
 
 use memory_plugin::capability::MemoryCapability;
+use memory_plugin::plugins::holographic::{HolographicConfig, HolographicMemory};
+use memory_plugin::registry::MemoryPluginRegistry;
 use memory_plugin::types::{
     MemoryError, MemoryQueryContext, MemoryResult, MemorySearchRequest, ToolSchema, TurnMessage,
 };
@@ -94,11 +96,45 @@ impl MemoryBridge {
     /// must be called before the plugin is wrapped in `Arc`. This method
     /// is provided for completeness but in practice initialization should
     /// happen during startup before the MemoryBridge is created.
-    pub async fn initialize(&self) -> Result<(), MemoryError> {
+    pub fn initialize(&self) -> Result<(), MemoryError> {
         // Plugin initialization must happen before Arc wrapping.
         // This method is a no-op placeholder; actual initialization
         // should be done in the binary's startup code before creating
         // the MemoryBridge.
         Ok(())
     }
+}
+
+/// Initialize the memory plugin system and return a bridge for the query pipeline.
+///
+/// Creates a registry, registers the holographic memory plugin (the primary
+/// deterministic-first memory backend), sets it as active, and wraps the
+/// capability in a `MemoryBridge` for guidance's query engine.
+///
+/// Returns `None` if initialization fails.
+pub fn init_memory_bridge() -> Option<MemoryBridge> {
+    let mut registry = MemoryPluginRegistry::new();
+
+    // Register the holographic memory plugin (deterministic-first, SQLite-backed)
+    let config = HolographicConfig {
+        db_path: dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".guidance")
+            .join("memory.db"),
+        ..HolographicConfig::default()
+    };
+    let plugin = std::sync::Arc::new(HolographicMemory::new(config));
+    registry.register(plugin);
+
+    // Set holographic as the active memory plugin
+    if registry.set_active("holographic").is_err() {
+        return None;
+    }
+
+    let registry = std::sync::Arc::new(tokio::sync::RwLock::new(registry));
+    let capability = MemoryCapability::new(std::sync::Arc::clone(&registry));
+    let session_id: internment::ArcIntern<str> =
+        internment::ArcIntern::from(format!("guidance-{}", std::process::id()));
+
+    Some(MemoryBridge::new(capability, session_id))
 }

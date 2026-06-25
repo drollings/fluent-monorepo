@@ -208,9 +208,12 @@ impl GuidanceDb {
         query_vec: &[f32],
         k: usize,
     ) -> Result<Vec<SearchResult>, VectorDbError> {
-        // Try HNSW first
+        // Try HNSW first, but fall back to brute-force if it returns fewer
+        // results than requested (can happen with very small indices).
         if let Some(results) = self.hnsw_search(query_vec, k) {
-            return Ok(results);
+            if results.len() >= k {
+                return Ok(results);
+            }
         }
 
         // Fall back to brute-force
@@ -374,63 +377,72 @@ impl GuidanceDb {
     /// Walks JSON files, parses GuidanceDoc, upserts into database.
     /// Rebuilds HNSW index after sync.
     pub fn sync_from_dir(&self, json_dir: &std::path::Path) -> Result<usize, VectorDbError> {
-        let mut synced = 0;
-        let conn = self.conn.lock().unwrap();
-
         if !json_dir.is_dir() {
             return Ok(0);
         }
 
-        for entry in std::fs::read_dir(json_dir).map_err(|e| {
-            VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-        })? {
-            let entry = entry.map_err(|e| {
+        let synced = {
+            let mut synced = 0;
+            let conn = self.conn.lock().unwrap();
+
+            for entry in std::fs::read_dir(json_dir).map_err(|e| {
                 VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-            })?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
+            })? {
+                let entry = entry.map_err(|e| {
+                    VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                })?;
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
 
-            let content = std::fs::read_to_string(&path).map_err(|e| {
-                VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-            })?;
-            if content.trim().is_empty() {
-                continue;
-            }
+                let content = std::fs::read_to_string(&path).map_err(|e| {
+                    VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                })?;
+                if content.trim().is_empty() {
+                    continue;
+                }
 
-            let doc: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-                VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-            })?;
+                let doc: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+                    VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                })?;
 
-            let source = doc["meta"]["source"].as_str().unwrap_or("");
-            let module = doc["meta"]["module"].as_str().unwrap_or("");
-            let language = doc["meta"]["language"].as_str().unwrap_or("zig");
-            let comment = doc["comment"].as_str();
+                let source = doc["meta"]["source"].as_str().unwrap_or("");
+                let module = doc["meta"]["module"].as_str().unwrap_or("");
+                let language = doc["meta"]["language"].as_str().unwrap_or("zig");
+                let comment = doc["comment"].as_str();
 
-            // Upsert node
-            if let Some(members) = doc["members"].as_array() {
-                for member in members {
-                    let name = member["name"].as_str().unwrap_or("");
-                    let signature = member["signature"].as_str();
-                    let member_comment = member["comment"].as_str();
-                    let _is_anchor = member["is_anchor"].as_bool().unwrap_or(false);
+                // Upsert node
+                if let Some(members) = doc["members"].as_array() {
+                    for member in members {
+                        let name = member["name"].as_str().unwrap_or("");
+                        let signature = member["signature"].as_str();
+                        let member_comment = member["comment"].as_str();
+                        let _is_anchor = member["is_anchor"].as_bool().unwrap_or(false);
 
-                    let _ = conn.execute(
-                        "INSERT OR REPLACE INTO guidance_nodes (name, source, signature, comment, module, language)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        rusqlite::params![
-                            name,
-                            source,
-                            signature,
-                            member_comment.or(comment),
-                            module,
-                            language
-                        ],
-                    );
-                    synced += 1;
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO guidance_nodes (name, source, signature, comment, module, language)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                            rusqlite::params![
+                                name,
+                                source,
+                                signature,
+                                member_comment.or(comment),
+                                module,
+                                language
+                            ],
+                        );
+                        synced += 1;
+                    }
                 }
             }
+
+            synced
+        };
+
+        // Rebuild HNSW index after releasing the conn lock
+        if synced > 0 {
+            let _ = self.rebuild_hnsw();
         }
 
         Ok(synced)

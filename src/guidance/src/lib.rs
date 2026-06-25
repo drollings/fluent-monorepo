@@ -52,7 +52,6 @@
 pub mod ast_parser;
 pub mod config;
 pub mod enhancer;
-#[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
 pub mod memory;
 pub mod plugin;
 pub mod query_engine;

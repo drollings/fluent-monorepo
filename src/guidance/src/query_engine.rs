@@ -5,6 +5,7 @@ use guidance_types::GuidanceDoc;
 use thiserror::Error;
 
 use crate::ast_parser;
+use crate::memory::MemoryBridge;
 use crate::query::formatter::{
     CompactFormatter, DebugFormatter, Formatter, JsonFormatter, MarkdownFormatter,
 };
@@ -45,6 +46,7 @@ pub struct QueryEngine {
     pub aliases: Option<SemanticAliases>,
     pub no_llm: bool,
     backends: Vec<Box<dyn SearchBackend>>,
+    memory: Option<MemoryBridge>,
 }
 
 impl Default for QueryEngine {
@@ -61,6 +63,7 @@ impl QueryEngine {
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
+            memory: None,
         }
     }
 
@@ -71,6 +74,7 @@ impl QueryEngine {
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
+            memory: None,
         }
     }
 
@@ -108,6 +112,31 @@ impl QueryEngine {
     pub fn with_backend(mut self, backend: Box<dyn SearchBackend>) -> Self {
         self.backends.push(backend);
         self
+    }
+
+    /// Attach a memory bridge for prefetch injection and post-synthesis sync.
+    #[must_use]
+    pub fn with_memory(mut self, memory: MemoryBridge) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
+    /// Pre-fetch memory context for injection into the system prompt.
+    /// Returns formatted text to prepend to the LLM system prompt.
+    /// Returns empty string if no memory bridge is attached.
+    pub async fn prefetch_memory_context(&self, query: &str) -> String {
+        match &self.memory {
+            Some(bridge) => bridge.prefetch_context(query).await,
+            None => String::new(),
+        }
+    }
+
+    /// Sync a completed turn with the active memory plugin.
+    /// Call this after LLM synthesis completes to persist the interaction.
+    pub async fn sync_memory_turn(&self, user_content: &str, assistant_content: &str) {
+        if let Some(ref bridge) = self.memory {
+            bridge.sync_turn(user_content, assistant_content).await;
+        }
     }
 
     pub fn load_word_index(&mut self, guidance_dir: &Path) -> Result<(), QueryEngineError> {
