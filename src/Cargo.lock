@@ -1719,7 +1719,7 @@ dependencies = [
  "clap",
  "guidance-common",
  "coral-context",
- "guidance-dag",
+ "fluent-dag",
  "guidance-guidance",
  "guidance-llm",
  "guidance-wasm-ipc",
@@ -1785,7 +1785,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "guidance-dag"
+name = "fluent-dag"
 version = "0.1.0"
 dependencies = [
  "bitvec",

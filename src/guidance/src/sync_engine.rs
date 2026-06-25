@@ -4,6 +4,7 @@ use guidance_types::GuidanceDoc;
 use thiserror::Error;
 
 use crate::ast_parser::AstParser;
+use crate::enhancer::{enhance_doc, Enhancer};
 use crate::sync::comments;
 use crate::sync::json_store;
 use crate::sync::staleness;
@@ -35,6 +36,7 @@ pub struct SyncEngine {
     pub ast_parser: AstParser,
     pub guidance_dir: PathBuf,
     pub source_dir: PathBuf,
+    pub enhancer: Option<Enhancer>,
 }
 
 impl SyncEngine {
@@ -43,6 +45,7 @@ impl SyncEngine {
             ast_parser: AstParser::new(),
             guidance_dir,
             source_dir,
+            enhancer: None,
         }
     }
 
@@ -51,7 +54,14 @@ impl SyncEngine {
             ast_parser,
             guidance_dir,
             source_dir,
+            enhancer: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_enhancer(mut self, enhancer: Enhancer) -> Self {
+        self.enhancer = Some(enhancer);
+        self
     }
 
     pub fn gen(&mut self, source_path: &Path) -> Result<GuidanceDoc, SyncEngineError> {
@@ -84,6 +94,13 @@ impl SyncEngine {
 
         doc.meta.module = module_name.as_str().into();
         doc.meta.source = rel_path.to_string_lossy().as_ref().into();
+
+        // G5: LLM enhancement — generate missing comments before JSON save
+        if let Some(ref enhancer) = self.enhancer {
+            if let Err(e) = enhance_doc(enhancer, &mut doc, &source) {
+                tracing::warn!("LLM enhancement failed for {:?}: {e}", source_path);
+            }
+        }
 
         let json_path = self.guidance_json_path(source_path);
         json_store::save_guidance(&json_path, &doc)?;

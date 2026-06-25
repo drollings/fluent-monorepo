@@ -11,7 +11,7 @@
 //! - The thinness is intentional — value is in the trait boundaries
 //! - If a derive macro (`#[derive(FieldAccess)]`) is added later, it goes here
 //!
-//! Consumers: `guidance-dag`, `coral-context`, `guidance-content-node`
+//! Consumers: `fluent-dag`, `coral-context`, `guidance-content-node`
 
 #![deny(warnings, clippy::all, clippy::pedantic)]
 #![allow(

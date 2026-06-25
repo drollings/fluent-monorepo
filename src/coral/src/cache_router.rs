@@ -59,7 +59,12 @@ impl ParallelRouter {
         query_emb: &[f32],
     ) -> Result<RoutingResult, CacheError> {
         if !query_emb.is_empty() {
-            if let Ok(hits) = self.library.knn_search(query_emb, self.knn_k, None) {
+            let hits = if query.is_empty() {
+                self.library.knn_search(query_emb, self.knn_k, None)
+            } else {
+                self.library.hybrid_search(query, Some(query_emb), self.knn_k)
+            };
+            if let Ok(ref hits) = hits {
                 if !hits.is_empty() && hits[0].distance < self.l4_threshold {
                     return Ok(RoutingResult {
                         query: query.to_string(),

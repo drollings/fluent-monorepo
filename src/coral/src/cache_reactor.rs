@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::error::CacheError;
+use crate::wasm_runtime::WasmRuntime;
 use bon::Builder;
 use common_core::hash::content_hash_with_model;
 use guidance_llm::client::{is_malformed_response, LlmClient, LlmConfig};
@@ -34,6 +35,8 @@ pub struct QueueReactorCreateArgs {
     pub max_depth: u8,
 
     pub embedder: Option<guidance_llm::OllamaEmbedding>,
+
+    pub wasm_runtime: Option<Box<dyn WasmRuntime>>,
 }
 
 pub struct QueueReactor {
@@ -46,6 +49,7 @@ pub struct QueueReactor {
     pub frontier_config: Option<LlmConfig>,
     pub max_depth: u8,
     pub embedder: Option<guidance_llm::OllamaEmbedding>,
+    pub wasm_runtime: Option<Box<dyn WasmRuntime>>,
 }
 
 impl QueueReactor {
@@ -60,6 +64,7 @@ impl QueueReactor {
             frontier_config: args.frontier_config,
             max_depth: args.max_depth,
             embedder: args.embedder,
+            wasm_runtime: args.wasm_runtime,
         }
     }
 
@@ -153,19 +158,25 @@ impl QueueReactor {
     }
 
     fn route_l2_wasm(&self, query: &str) -> Option<RoutingResult> {
-        if let Some(tool) = self.find_wasm_tool(query) {
-            let result = RoutingResult {
-                query: query.to_string(),
-                result: format!("WASM tool matched: {}", tool.name),
-                tier: CacheTier::L2WasmWorkflow,
-            };
-            return Some(result);
-        }
-        None
+        let tool = self.find_wasm_tool(query)?;
+        let runtime = self.wasm_runtime.as_ref()?;
+
+        let path = std::path::Path::new(&tool.path);
+        let mut plugin = runtime.load_plugin_from_file(path).ok()?;
+
+        let result_bytes = plugin.call(query.as_bytes()).ok()?;
+        let result_str = String::from_utf8_lossy(&result_bytes).to_string();
+
+        Some(RoutingResult {
+            query: query.to_string(),
+            result: result_str,
+            tier: CacheTier::L2WasmWorkflow,
+        })
     }
 
     fn route_l5_frontier(query: &str, frontier: &LlmConfig) -> Result<RoutingResult, CacheError> {
         let client = LlmClient::with_config(frontier.clone());
+        let anonymized = guidance_llm::anonymize::anonymize(query);
         let messages = vec![
             guidance_llm::client::ChatMessage {
                 role: "system".into(),
@@ -173,7 +184,7 @@ impl QueueReactor {
             },
             guidance_llm::client::ChatMessage {
                 role: "user".into(),
-                content: query.to_string(),
+                content: anonymized,
             },
         ];
         match client.chat_complete(&messages) {
@@ -191,15 +202,20 @@ impl QueueReactor {
         }
     }
 
-    pub fn persist_solution(&self, query: &str, _result: &RoutingResult) {
+    pub fn persist_solution(&self, query: &str, result: &RoutingResult) {
         let hash_bytes = content_hash_with_model(query, "solution");
         let hash_id = i64::from_le_bytes(hash_bytes[..8].try_into().unwrap());
+        let embedding = self.embedder.as_ref().and_then(|e| {
+            e.embed_raw(&result.result)
+                .ok()
+                .filter(|v| !v.is_empty())
+        });
         let node = ContextNode {
             id: Some(NodeId(hash_id)),
             name: format!("solution:{query}").into(),
-            source: String::new(),
-            lod: vec![query.to_string()],
-            embedding: None,
+            source: query.to_string(),
+            lod: vec![result.result.clone(), query.to_string()],
+            embedding,
             capabilities: None,
         };
         let _ = self.library.insert_node(&node);

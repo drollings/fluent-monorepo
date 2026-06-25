@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
-use guidance_coral::db::Library;
-use guidance_coral::mcp::serve_stdio_from_path;
+use coral_context::db::Library;
+use coral_context::mcp::serve_stdio_from_path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -25,6 +25,8 @@ enum Commands {
         batch_size: usize,
         #[arg(long)]
         skip_errors: bool,
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
     },
 }
 
@@ -36,7 +38,8 @@ fn main() {
             file,
             batch_size,
             skip_errors,
-        } => cmd_ingest(file, *batch_size, *skip_errors),
+            db,
+        } => cmd_ingest(file, *batch_size, *skip_errors, db),
     }
 }
 
@@ -49,21 +52,21 @@ fn cmd_mcp(db_path: &str) {
     }
 }
 
-fn cmd_ingest(file: &str, batch_size: usize, _skip_errors: bool) {
+fn cmd_ingest(file: &str, batch_size: usize, _skip_errors: bool, db_path: &str) {
     let path = std::path::Path::new(file);
     if !path.exists() {
         eprintln!("error: file not found: {file}");
         std::process::exit(1);
     }
-    match Library::open_in_memory() {
+    match Library::open(std::path::Path::new(db_path)) {
         Ok(lib) => {
-            let config = guidance_coral::ingest::IngestionConfig {
+            let config = coral_context::ingest::IngestionConfig {
                 batch_size,
                 yago_whitelist_only: false,
                 preferred_lang: "en".to_string(),
             };
             let mut ingestor =
-                guidance_coral::ingest::BatchIngestor::with_config(Arc::new(lib), config);
+                coral_context::ingest::BatchIngestor::with_config(Arc::new(lib), config);
             match ingestor.ingest_file(path) {
                 Ok(stats) => {
                     println!("Ingestion complete:");

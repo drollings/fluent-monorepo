@@ -23,3 +23,5 @@ rusqlite = { workspace = true }
 regex = { workspace = true }
 lru = { workspace = true }
 extism = { workspace = true }
+hnsw_rs = { workspace = true }
+anndists = { workspace = true }

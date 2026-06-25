@@ -140,11 +140,16 @@ impl SearchBackend for ConceptBackend {
             .filter_candidates(query, doc, 10)
             .map_err(|e| QueryEngineError::LlmFilter(e.to_string()))?;
 
-        if scores.is_empty() {
+        let matched_names: Vec<String> = scores
+            .into_iter()
+            .filter(|s| s.score >= 0.5)
+            .map(|s| s.member_name)
+            .collect();
+
+        if matched_names.is_empty() {
             return Err(QueryEngineError::NoResults);
         }
 
-        let matched_names: Vec<String> = scores.into_iter().map(|s| s.member_name).collect();
         Ok(Synthesizer::synthesize(query, doc, &matched_names))
     }
 }

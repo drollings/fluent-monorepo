@@ -6,6 +6,7 @@ members = [
     "src/fluent-concurrency",
     "src/llm",
     "src/bin/guidance",
+    "src/bin/coral",
     "src/coral",
     "src/guidance",
     "src/dag",

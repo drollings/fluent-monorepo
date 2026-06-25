@@ -5,7 +5,7 @@ use std::time::Instant;
 use internment::ArcIntern;
 use tracing::info;
 
-use crate::{FieldAccess, FieldError, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
+use crate::{Component, Describable, FieldAccess, FieldError, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
 
 pub enum WrapperKind {
     None,
@@ -258,6 +258,137 @@ impl<U: crate::Component> crate::Describable for WithRetry<U> {
     }
 }
 
+/// A wrapper that adapts any `Arc<dyn Component>` at runtime.
+///
+/// `ComponentAdapter` lets callers override one or more of the four
+/// `Component` facets — `name`, `execute`, and any field — without
+/// subclassing or owning the inner component. Overrides stack in
+/// reverse order of insertion (last override wins), so a caller that
+/// wraps a component multiple times can layer configuration.
+///
+/// # When to use
+///
+/// - **Configuration injection** — wrap a component to set a field
+///   that the inner type does not expose.
+/// - **Behavior override** — swap `execute` for a test double or a
+///   memoized fast-path without touching the inner implementation.
+/// - **Renaming** — keep the inner name as the canonical identifier
+///   while presenting a stable, user-facing name in error messages
+///   or schemas.
+///
+/// # When NOT to use
+///
+/// - If you own the inner type, configure it directly — `Arc::get_mut`
+///   + `set_field` is the canonical path.
+/// - If the override is permanent, add it to the inner type's impl.
+type ExecuteFn = Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>;
+
+pub struct ComponentAdapter {
+    inner: Arc<dyn Component>,
+    name_override: Option<String>,
+    execute_override: Option<ExecuteFn>,
+    field_overrides: Vec<(String, String)>,
+}
+
+impl ComponentAdapter {
+    /// Wrap an `Arc<dyn Component>` with no overrides — delegates every
+    /// call to the inner component.
+    pub fn new(inner: Arc<dyn Component>) -> Self {
+        Self {
+            inner,
+            name_override: None,
+            execute_override: None,
+            field_overrides: Vec::new(),
+        }
+    }
+
+    /// Override the name returned by `WorkUnit::name`. Pass-through to
+    /// the inner component if no override is set.
+    #[must_use]
+    pub fn with_name_override(mut self, name: impl Into<String>) -> Self {
+        self.name_override = Some(name.into());
+        self
+    }
+
+    /// Replace the `execute` implementation. Useful for test doubles
+    /// and policy enforcement layers (e.g. an audit wrapper around
+    /// an existing component).
+    #[must_use]
+    pub fn with_execute_override(mut self, f: ExecuteFn) -> Self {
+        self.execute_override = Some(f);
+        self
+    }
+
+    /// Add a field override. Overrides stack in reverse order — the
+    /// most recently set value for a given field name is the one
+    /// `get_field` returns.
+    #[must_use]
+    pub fn with_field_override(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        self.field_overrides.push((name.into(), value.into()));
+        self
+    }
+
+    /// Borrow the wrapped component.
+    pub fn inner(&self) -> &Arc<dyn Component> {
+        &self.inner
+    }
+}
+
+impl WorkUnit for ComponentAdapter {
+    fn name(&self) -> &str {
+        self.name_override
+            .as_deref()
+            .unwrap_or_else(|| self.inner.name())
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        self.inner.depends()
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        self.inner.provides()
+    }
+
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        match &self.execute_override {
+            Some(f) => f(ctx),
+            None => self.inner.execute(ctx),
+        }
+    }
+}
+
+impl FieldAccess for ComponentAdapter {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        self.field_overrides.push((name.into(), value.into()));
+        Ok(())
+    }
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        self.field_overrides
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| FieldError::NotFound(name.into()))
+    }
+    fn field_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+impl Describable for ComponentAdapter {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({
+            "name": self.name(),
+            "adapted": true,
+            "field_overrides": self.field_overrides,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +511,192 @@ mod tests {
         assert_eq!(arc.name(), "mock");
         let result = arc.execute(&ctx);
         assert!(result.is_ok());
+    }
+
+    // --- ComponentAdapter tests ---
+
+    /// A `Component` that is NOT a `MockUnit` — used to confirm the
+    /// adapter works when wrapping through `Arc<dyn Component>`.
+    struct AdapterHost {
+        name: ArcIntern<str>,
+        last_message: Arc<std::sync::Mutex<String>>,
+    }
+    impl AdapterHost {
+        fn new(name: &str) -> Self {
+            Self {
+                name: ArcIntern::from(name),
+                last_message: Arc::new(std::sync::Mutex::new(String::new())),
+            }
+        }
+    }
+    impl FieldAccess for AdapterHost {
+        fn set_field(&mut self, _name: &str, _value: &str) -> Result<(), FieldError> {
+            Ok(())
+        }
+        fn get_field(&self, _name: &str) -> Result<String, FieldError> {
+            Err(FieldError::NotFound("no fields".into()))
+        }
+        fn field_names(&self) -> &'static [&'static str] {
+            &[]
+        }
+    }
+    impl Describable for AdapterHost {
+        fn describe(&self) -> serde_json::Value {
+            serde_json::json!({"name": &*self.name})
+        }
+    }
+    impl WorkUnit for AdapterHost {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            let mut g = self.last_message.lock().unwrap();
+            *g = "from_inner".to_string();
+            Ok(WorkOutput::ok("from_inner"))
+        }
+    }
+
+    #[test]
+    fn adapter_delegates_by_default() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host));
+        assert_eq!(adapter.name(), "inner");
+        let result = adapter.execute(&WorkContext::default()).unwrap();
+        assert_eq!(result.message, "from_inner");
+    }
+
+    #[test]
+    fn adapter_name_override() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host)).with_name_override("renamed");
+        assert_eq!(adapter.name(), "renamed");
+    }
+
+    #[test]
+    fn adapter_execute_override_short_circuits_inner() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host))
+            .with_execute_override(Arc::new(|_| Ok(WorkOutput::ok("overridden"))));
+        let result = adapter.execute(&WorkContext::default()).unwrap();
+        assert_eq!(result.message, "overridden");
+    }
+
+    #[test]
+    fn adapter_field_override_set_then_get() {
+        let host = AdapterHost::new("inner");
+        let mut adapter =
+            ComponentAdapter::new(Arc::new(host)).with_field_override("port", "8080");
+        assert_eq!(adapter.get_field("port").unwrap(), "8080");
+        adapter.set_field("port", "9090").unwrap();
+        assert_eq!(adapter.get_field("port").unwrap(), "9090");
+    }
+
+    #[test]
+    fn adapter_field_overrides_stack_last_wins() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host))
+            .with_field_override("k", "v1")
+            .with_field_override("k", "v2");
+        assert_eq!(adapter.get_field("k").unwrap(), "v2");
+    }
+
+    #[test]
+    fn adapter_field_not_found() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host));
+        assert!(matches!(
+            adapter.get_field("missing"),
+            Err(FieldError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn adapter_is_itself_a_component() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host));
+        // Box as dyn Component — proves the blanket impl fires.
+        let boxed: Box<dyn Component> = Box::new(adapter);
+        assert_eq!(boxed.name(), "inner");
+    }
+
+    #[test]
+    fn adapter_describe_includes_overrides() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host))
+            .with_name_override("renamed")
+            .with_field_override("port", "8080");
+        let schema = adapter.describe();
+        assert_eq!(schema["name"], "renamed");
+        assert_eq!(schema["adapted"], true);
+        let overrides = schema["field_overrides"].as_array().unwrap();
+        assert_eq!(overrides.len(), 1);
+        assert_eq!(overrides[0][0], "port");
+        assert_eq!(overrides[0][1], "8080");
+    }
+
+    #[test]
+    fn adapter_inner_accessor_returns_wrapped_component() {
+        let host = AdapterHost::new("inner");
+        let adapter = ComponentAdapter::new(Arc::new(host));
+        let inner: &Arc<dyn Component> = adapter.inner();
+        assert_eq!(inner.name(), "inner");
+    }
+
+    #[test]
+    fn adapter_propagates_depends_and_provides_from_inner() {
+        // A Component whose depends/provides are non-empty — confirm
+        // delegation rather than pass-through to the empty default.
+        struct DepProvider {
+            name: ArcIntern<str>,
+            deps: Vec<ArcIntern<str>>,
+            provs: Vec<ArcIntern<str>>,
+        }
+        impl WorkUnit for DepProvider {
+            fn name(&self) -> &str {
+                &self.name
+            }
+            fn depends(&self) -> &[ArcIntern<str>] {
+                &self.deps
+            }
+            fn provides(&self) -> &[ArcIntern<str>] {
+                &self.provs
+            }
+            fn execute(&self, _: &WorkContext) -> Result<WorkOutput, WorkError> {
+                Ok(WorkOutput::ok("ok"))
+            }
+        }
+        impl FieldAccess for DepProvider {
+            fn set_field(&mut self, _: &str, _: &str) -> Result<(), FieldError> {
+                Ok(())
+            }
+            fn get_field(&self, _: &str) -> Result<String, FieldError> {
+                Err(FieldError::NotFound("none".into()))
+            }
+            fn field_names(&self) -> &'static [&'static str] {
+                &[]
+            }
+        }
+        impl Describable for DepProvider {
+            fn describe(&self) -> serde_json::Value {
+                serde_json::json!({})
+            }
+        }
+        let inner = DepProvider {
+            name: ArcIntern::from("dp"),
+            deps: vec![ArcIntern::from("a"), ArcIntern::from("b")],
+            provs: vec![ArcIntern::from("c")],
+        };
+        let adapter = ComponentAdapter::new(Arc::new(inner));
+        assert_eq!(adapter.depends().len(), 2);
+        assert_eq!(&*adapter.depends()[0], "a");
+        assert_eq!(&*adapter.depends()[1], "b");
+        assert_eq!(adapter.provides().len(), 1);
+        assert_eq!(&*adapter.provides()[0], "c");
     }
 }

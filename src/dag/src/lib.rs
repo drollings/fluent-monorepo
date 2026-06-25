@@ -1,4 +1,4 @@
-//! guidance-dag: DAG executor with resolver, middleware, adapter, and work unit
+//! fluent-dag: DAG executor with resolver, middleware, adapter, and work unit
 //! abstractions. Orchestrates dependency-driven workflow execution.
 
 #![deny(warnings, clippy::all, clippy::pedantic)]

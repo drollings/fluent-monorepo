@@ -167,7 +167,12 @@ impl QueryEngine {
         }
     }
 
-    /// Dispatch a query to the first matching search backend.
+    /// Dispatch a query through the tiered search pipeline.
+    ///
+    /// G1: Uses `FsmEngine` for richer classification (intent + domain + confidence)
+    /// instead of the simpler `classify_query()`.
+    /// G2: Implements tiered escalation — tries the primary backend first, then
+    /// falls through to other tiers in priority order until one returns results.
     fn dispatch_search(
         &self,
         query: &str,
@@ -177,25 +182,53 @@ impl QueryEngine {
             word_index: self.word_index.as_ref(),
             llm_filter: &self.llm_filter,
         };
-        for backend in &self.backends {
-            let intent = strategy::classify_query(query);
-            if backend.matches(intent) {
-                return backend.search(query, doc, &ctx);
+
+        let mut fsm = strategy::FsmEngine::new();
+        let primary_intent = fsm.run(query).intent;
+
+        let all_intents: [QueryIntent; 8] = [
+            QueryIntent::SingleIdentifier,
+            QueryIntent::IdentifierLookup,
+            QueryIntent::FilePath,
+            QueryIntent::CapabilityQuery,
+            QueryIntent::HowTo,
+            QueryIntent::Conceptual,
+            QueryIntent::MultiKeyword,
+            QueryIntent::GeneralSearch,
+        ];
+
+        let mut ordered: Vec<QueryIntent> = vec![primary_intent];
+        for intent in all_intents {
+            if intent != primary_intent {
+                ordered.push(intent);
             }
         }
-        // Fallback to general search if no backend matches
-        let ctx = SearchContext {
-            word_index: self.word_index.as_ref(),
-            llm_filter: &self.llm_filter,
-        };
-        for backend in &self.backends {
-            if backend.matches(QueryIntent::GeneralSearch) {
-                return backend.search(query, doc, &ctx);
+
+        let mut tried: Vec<QueryIntent> = Vec::new();
+        for intent in ordered {
+            if tried.contains(&intent) {
+                continue;
+            }
+            tried.push(intent);
+            for backend in &self.backends {
+                if backend.matches(intent) {
+                    match backend.search(query, doc, &ctx) {
+                        Ok(stages) => return Ok(stages),
+                        Err(QueryEngineError::NoResults) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
             }
         }
+
         Err(QueryEngineError::NoResults)
     }
 
+    /// Explain a query with automatic memory integration.
+    ///
+    /// G6: If a MemoryBridge is attached, prefetches memory context before
+    /// search and syncs the turn after synthesis — callers no longer need
+    /// to manually invoke prefetch/sync.
     pub fn explain(&self, query: &str, doc: &GuidanceDoc) -> Result<Vec<Stage>, QueryEngineError> {
         // Expand query with semantic aliases if available
         let expanded_query = if let Some(ref aliases) = self.aliases {
@@ -241,34 +274,65 @@ impl QueryEngine {
         Ok(Self::format_stages(&stages, format))
     }
 
-    /// Keyword-only explain path (no LLM filter). Uses the same backends
-    /// but with a no-op LLM filter, so concept searches degrade to keyword.
+    /// Keyword-only explain path (no LLM filter). Uses the same tiered
+    /// escalation pipeline but with a no-op LLM filter, so concept searches
+    /// degrade to keyword.
     fn explain_no_llm(
         &self,
         query: &str,
         doc: &GuidanceDoc,
     ) -> Result<Vec<Stage>, QueryEngineError> {
-        // Create a temporary engine with NoopLLM filter to avoid LLM calls
         let noop_filter = LlmFilter::new(Some(Box::new(NoopLlmFilter)));
         let ctx = SearchContext {
             word_index: self.word_index.as_ref(),
             llm_filter: &noop_filter,
         };
-        let intent = strategy::classify_query(query);
-        for backend in &self.backends {
-            if backend.matches(intent) {
-                return backend.search(query, doc, &ctx);
+
+        let mut fsm = strategy::FsmEngine::new();
+        let primary_intent = fsm.run(query).intent;
+
+        let all_intents: [QueryIntent; 8] = [
+            QueryIntent::SingleIdentifier,
+            QueryIntent::IdentifierLookup,
+            QueryIntent::FilePath,
+            QueryIntent::CapabilityQuery,
+            QueryIntent::HowTo,
+            QueryIntent::Conceptual,
+            QueryIntent::MultiKeyword,
+            QueryIntent::GeneralSearch,
+        ];
+
+        let mut ordered: Vec<QueryIntent> = vec![primary_intent];
+        for intent in all_intents {
+            if intent != primary_intent {
+                ordered.push(intent);
             }
         }
-        // Fallback
-        for backend in &self.backends {
-            if backend.matches(QueryIntent::GeneralSearch) {
-                return backend.search(query, doc, &ctx);
+
+        let mut tried: Vec<QueryIntent> = Vec::new();
+        for intent in ordered {
+            if tried.contains(&intent) {
+                continue;
+            }
+            tried.push(intent);
+            for backend in &self.backends {
+                if backend.matches(intent) {
+                    match backend.search(query, doc, &ctx) {
+                        Ok(stages) => return Ok(stages),
+                        Err(QueryEngineError::NoResults) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
             }
         }
+
         Err(QueryEngineError::NoResults)
     }
 
+    /// Vector explain using RRF (Reciprocal Rank Fusion) hybrid search.
+    ///
+    /// G3: Replaces the naive dedup union with `GuidanceDb::hybrid_search`,
+    /// which fuses keyword + vector results using RRF (k=60).
     pub fn vector_explain(
         &self,
         query: &str,
@@ -277,28 +341,15 @@ impl QueryEngine {
         doc: &GuidanceDoc,
         k: usize,
     ) -> Result<Vec<Stage>, QueryEngineError> {
-        let vector_results = db
-            .vector_search(query_vec, k)
+        let fused = db
+            .hybrid_search(query, Some(query_vec), k)
             .map_err(|e| QueryEngineError::Db(e.to_string()))?;
 
-        let keyword_results = db
-            .keyword_search(query)
-            .map_err(|e| QueryEngineError::Db(e.to_string()))?;
-
-        let mut combined: Vec<String> = Vec::new();
-        for r in &vector_results {
-            combined.push(r.name.clone());
-        }
-        for r in &keyword_results {
-            if !combined.contains(&r.name) {
-                combined.push(r.name.clone());
-            }
-        }
-
-        if combined.is_empty() {
+        if fused.is_empty() {
             return Err(QueryEngineError::NoResults);
         }
 
+        let combined: Vec<String> = fused.iter().map(|r| r.name.clone()).collect();
         Ok(Synthesizer::synthesize(query, doc, &combined))
     }
 }

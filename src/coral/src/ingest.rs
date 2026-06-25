@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use std::collections::HashMap;
+
 use guidance_ontology::mapper::PendingNode;
 use guidance_ontology::yago;
 use guidance_search_vector::error::DbError;
@@ -189,12 +191,44 @@ impl BatchIngestor {
         // Drain mapper and add pending nodes
         let pending_nodes = mapper.drain_nodes();
         let pending_edges = mapper.drain_edges();
-        self.stats.edges_created += pending_edges.len();
+
+        // Build hash_id → node name map for edge resolution
+        let mut id_to_name: HashMap<i64, String> = HashMap::new();
+        for pn in &pending_nodes {
+            let cn = pn.to_context_node();
+            let name = cn.name.to_string();
+            if !name.is_empty() {
+                id_to_name.insert(pn.id, name);
+            }
+        }
 
         let added = self.add_pending_nodes(pending_nodes)?;
         self.stats.nodes_created += added;
 
         self.flush()?;
+
+        // Insert edges: resolve hash-based IDs to SQLite NodeIds via node name lookup
+        for edge in &pending_edges {
+            let (Some(from_name), Some(to_name)) =
+                (id_to_name.get(&edge.from_id), id_to_name.get(&edge.to_id))
+            else {
+                self.stats.errors_skipped += 1;
+                continue;
+            };
+            let (Ok(Some(from_sql_id)), Ok(Some(to_sql_id))) =
+                (self.library.find_node_by_name(from_name), self.library.find_node_by_name(to_name))
+            else {
+                self.stats.errors_skipped += 1;
+                continue;
+            };
+            match self
+                .library
+                .insert_edge(from_sql_id, to_sql_id, &edge.predicate, 1.0)
+            {
+                Ok(()) => self.stats.edges_created += 1,
+                Err(_) => self.stats.errors_skipped += 1,
+            }
+        }
 
         Ok(self.stats.clone())
     }

@@ -1,15 +1,23 @@
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
+use anndists::dist::DistCosine;
 use bitvec::vec::BitVec;
 use guidance_llm::EmbeddingProvider;
 use guidance_search_vector::error::DbError;
 use guidance_search_vector::math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
+use hnsw_rs::hnsw::Hnsw;
 use rusqlite::params;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;
+
+const HNSW_MAX_NB_CONNECTION: usize = 16;
+const HNSW_MAX_LAYER: usize = 16;
+const HNSW_EF_CONSTRUCTION: usize = 200;
+const HNSW_INITIAL_CAPACITY: usize = 1024;
 
 use thiserror::Error;
 
@@ -27,6 +35,8 @@ pub enum LibraryError {
 
 pub struct Library {
     conn: Mutex<rusqlite::Connection>,
+    hnsw: RwLock<Option<Hnsw<'static, f32, DistCosine>>>,
+    hnsw_id_map: Mutex<Vec<i64>>,
 }
 
 impl Library {
@@ -34,6 +44,8 @@ impl Library {
         let conn = rusqlite::Connection::open(path)?;
         let lib = Self {
             conn: Mutex::new(conn),
+            hnsw: RwLock::new(None),
+            hnsw_id_map: Mutex::new(Vec::new()),
         };
         lib.init_schema()?;
         Ok(lib)
@@ -43,6 +55,8 @@ impl Library {
         let conn = rusqlite::Connection::open_in_memory()?;
         let lib = Self {
             conn: Mutex::new(conn),
+            hnsw: RwLock::new(None),
+            hnsw_id_map: Mutex::new(Vec::new()),
         };
         lib.init_schema()?;
         Ok(lib)
@@ -133,7 +147,14 @@ impl Library {
             params![node.name.as_str(), node.source, lod_json, embedding_blob, capabilities_blob],
         )?;
 
-        Ok(NodeId::from_int(conn.last_insert_rowid()))
+        let node_id = NodeId::from_int(conn.last_insert_rowid());
+        drop(conn);
+
+        if let Some(ref emb) = node.embedding {
+            self.hnsw_insert(node_id.as_int(), emb);
+        }
+
+        Ok(node_id)
     }
 
     pub fn find_node_by_name(&self, name: &str) -> Result<Option<NodeId>, LibraryError> {
@@ -513,6 +534,162 @@ impl Library {
             |row| row.get(0),
         )?;
         Ok(result)
+    }
+
+    /// Insert a vector into the HNSW index.
+    fn hnsw_insert(&self, node_id: i64, embedding: &[f32]) {
+        let mut guard = self.hnsw.write().unwrap();
+        let hnsw = guard.get_or_insert_with(|| {
+            Hnsw::<f32, DistCosine>::new(
+                HNSW_MAX_NB_CONNECTION,
+                HNSW_INITIAL_CAPACITY,
+                HNSW_MAX_LAYER,
+                HNSW_EF_CONSTRUCTION,
+                DistCosine,
+            )
+        });
+
+        let external_id = {
+            let mut id_map = self.hnsw_id_map.lock().unwrap();
+            let idx = id_map.len();
+            id_map.push(node_id);
+            idx
+        };
+
+        hnsw.insert((embedding, external_id));
+    }
+
+    /// Rebuild the HNSW index from all embedded nodes in the database.
+    pub fn rebuild_hnsw(&self) -> Result<usize, LibraryError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, embedding FROM context_nodes WHERE embedding IS NOT NULL",
+        )?;
+
+        let rows: Vec<(i64, Vec<u8>)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?
+            .filter_map(Result::ok)
+            .collect();
+        drop(stmt);
+        drop(conn);
+
+        let count = rows.len();
+        let hnsw = Hnsw::<f32, DistCosine>::new(
+            HNSW_MAX_NB_CONNECTION,
+            count.max(HNSW_INITIAL_CAPACITY),
+            HNSW_MAX_LAYER,
+            HNSW_EF_CONSTRUCTION,
+            DistCosine,
+        );
+
+        let mut id_map = Vec::with_capacity(count);
+        for (node_id, blob) in rows {
+            if let Some(embedding) = try_bytes_to_vec(&blob) {
+                if !embedding.is_empty() {
+                    hnsw.insert((&embedding, id_map.len()));
+                    id_map.push(node_id);
+                }
+            }
+        }
+
+        *self.hnsw.write().unwrap() = Some(hnsw);
+        *self.hnsw_id_map.lock().unwrap() = id_map;
+
+        Ok(count)
+    }
+
+    /// HNSW approximate nearest neighbor search.
+    fn hnsw_search(&self, query_vec: &[f32], k: usize) -> Option<Vec<KnnHit>> {
+        let guard = self.hnsw.read().ok()?;
+        let hnsw = guard.as_ref()?;
+        let id_map = self.hnsw_id_map.lock().ok()?;
+
+        let neighbours = hnsw.search(query_vec, k, k);
+        let conn = self.conn.lock().ok()?;
+
+        let mut results = Vec::with_capacity(neighbours.len());
+        for n in &neighbours {
+            if n.d_id >= id_map.len() {
+                continue;
+            }
+            let node_id = id_map[n.d_id];
+            if let Ok(name) = conn.query_row(
+                "SELECT name FROM context_nodes WHERE id = ?1",
+                params![node_id],
+                |row| row.get::<_, String>(0),
+            ) {
+                results.push(KnnHit {
+                    node_id: NodeId::from_int(node_id),
+                    distance: n.distance,
+                    name: name.as_str().into(),
+                });
+            }
+        }
+        Some(results)
+    }
+
+    pub fn has_hnsw(&self) -> bool {
+        self.hnsw.read().is_ok_and(|g| g.is_some())
+    }
+
+    pub fn hnsw_len(&self) -> usize {
+        self.hnsw
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(Hnsw::get_nb_point))
+            .unwrap_or(0)
+    }
+
+    /// C5: Hybrid search using Reciprocal Rank Fusion (RRF).
+    ///
+    /// Fuses keyword search results with KNN vector search results using RRF
+    /// (k=60), returning a merged ranked list. Uses HNSW for vector search
+    /// when available, falling back to brute-force KNN.
+    pub fn hybrid_search(
+        &self,
+        query: &str,
+        query_vec: Option<&[f32]>,
+        k: usize,
+    ) -> Result<Vec<KnnHit>, LibraryError> {
+        let keyword_results = self.keyword_search(query)?;
+
+        let vector_results = if let Some(vec) = query_vec {
+            if let Some(hnsw_results) = self.hnsw_search(vec, k) {
+                if hnsw_results.len() >= k {
+                    hnsw_results
+                } else {
+                    self.knn_search(vec, k, None)?
+                }
+            } else {
+                self.knn_search(vec, k, None)?
+            }
+        } else {
+            Vec::new()
+        };
+
+        let mut rrf_scores: HashMap<i64, (f64, KnnHit)> = HashMap::new();
+        let k_constant = 60.0_f64;
+
+        for (rank, result) in keyword_results.into_iter().enumerate() {
+            let id = result.node_id.as_int();
+            rrf_scores.insert(id, (1.0 / (k_constant + rank as f64), result));
+        }
+
+        for (rank, result) in vector_results.into_iter().enumerate() {
+            let id = result.node_id.as_int();
+            let score = 1.0 / (k_constant + rank as f64);
+            let entry = rrf_scores.entry(id).or_insert_with(|| (0.0, result.clone()));
+            entry.0 += score;
+        }
+
+        let mut merged: Vec<(f64, KnnHit)> = rrf_scores.into_values().collect();
+        merged.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(merged.into_iter().take(k).map(|(_, hit)| hit).collect())
     }
 }
 

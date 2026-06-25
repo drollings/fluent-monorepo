@@ -52,6 +52,7 @@
 pub mod ast_parser;
 pub mod config;
 pub mod enhancer;
+pub mod grounding;
 pub mod memory;
 pub mod plugin;
 pub mod query_engine;

@@ -7,6 +7,7 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
 
+use guidance_core::memory::MemoryBridge;
 use guidance_search_vector::GuidanceDb;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -48,11 +49,19 @@ pub struct JsonRpcError {
 
 pub struct McpServer {
     db: Arc<GuidanceDb>,
+    memory: Option<MemoryBridge>,
 }
 
 impl McpServer {
     pub fn new(db: Arc<GuidanceDb>) -> Self {
-        Self { db }
+        Self { db, memory: None }
+    }
+
+    pub fn with_memory(db: Arc<GuidanceDb>, memory: MemoryBridge) -> Self {
+        Self {
+            db,
+            memory: Some(memory),
+        }
     }
 
     pub fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
@@ -95,39 +104,52 @@ impl McpServer {
     }
 
     fn handle_tools_list(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        let mut tools: Vec<serde_json::Value> = vec![
+            serde_json::json!({
+                "name": "guidance_explain",
+                "description": "Search the codebase knowledge graph for identifiers, functions, modules, and patterns. Returns ranked results with source locations.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (identifier, keyword, or natural language question)"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results (default: 10)"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }),
+            serde_json::json!({
+                "name": "guidance_status",
+                "description": "Get the status of the guidance database (node count, embedding count).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }),
+        ];
+
+        if let Some(ref memory) = self.memory {
+            let schemas = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(memory.tool_schemas())
+            });
+            for schema in schemas {
+                tools.push(serde_json::json!({
+                    "name": schema.name,
+                    "description": schema.description,
+                    "inputSchema": schema.parameters,
+                }));
+            }
+        }
+
         JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: request.id.clone(),
-            result: Some(serde_json::json!({
-                "tools": [
-                    {
-                        "name": "guidance_explain",
-                        "description": "Search the codebase knowledge graph for identifiers, functions, modules, and patterns. Returns ranked results with source locations.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "query": {
-                                    "type": "string",
-                                    "description": "Search query (identifier, keyword, or natural language question)"
-                                },
-                                "limit": {
-                                    "type": "integer",
-                                    "description": "Maximum number of results (default: 10)"
-                                }
-                            },
-                            "required": ["query"]
-                        }
-                    },
-                    {
-                        "name": "guidance_status",
-                        "description": "Get the status of the guidance database (node count, embedding count).",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        }
-                    }
-                ]
-            })),
+            result: Some(serde_json::json!({ "tools": tools })),
             error: None,
         }
     }
@@ -150,6 +172,31 @@ impl McpServer {
         match tool_name {
             "guidance_explain" => self.handle_guidance_explain(request, &arguments),
             "guidance_status" => self.handle_guidance_status(request),
+            other if self.memory.is_some() => {
+                let memory = self.memory.as_ref().unwrap();
+                match tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(memory.handle_tool_call(other, &arguments))
+                }) {
+                    Ok(result) => JsonRpcResponse {
+                        jsonrpc: "2.0".into(),
+                        id: request.id.clone(),
+                        result: Some(serde_json::json!({
+                            "content": [{"type": "text", "text": result}]
+                        })),
+                        error: None,
+                    },
+                    Err(e) => JsonRpcResponse {
+                        jsonrpc: "2.0".into(),
+                        id: request.id.clone(),
+                        error: Some(JsonRpcError {
+                            code: -32000,
+                            message: e.to_string(),
+                        }),
+                        result: None,
+                    },
+                }
+            }
             _ => JsonRpcResponse {
                 jsonrpc: "2.0".into(),
                 id: request.id.clone(),
@@ -278,7 +325,12 @@ pub fn serve_stdio_from_path(db_path: &Path) -> Result<(), McpError> {
     } else {
         GuidanceDb::open_in_memory().map_err(|e| McpError::Db(e.to_string()))?
     };
-    let server = McpServer::new(Arc::new(db));
+
+    let memory = guidance_core::memory::init_memory_bridge();
+    let server = match memory {
+        Some(m) => McpServer::with_memory(Arc::new(db), m),
+        None => McpServer::new(Arc::new(db)),
+    };
     server.serve_stdio()
 }
 

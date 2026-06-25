@@ -1,5 +1,5 @@
 [package]
-name = "guidance-dag"
+name = "fluent-dag"
 version.workspace = true
 edition.workspace = true
 
