@@ -281,7 +281,7 @@ impl<U: crate::Component> crate::Describable for WithRetry<U> {
 /// - If you own the inner type, configure it directly — `Arc::get_mut`
 ///   + `set_field` is the canonical path.
 /// - If the override is permanent, add it to the inner type's impl.
-type ExecuteFn = Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>;
+pub type ExecuteFn = Arc<dyn Fn(&WorkContext) -> Result<WorkOutput, WorkError> + Send + Sync>;
 
 pub struct ComponentAdapter {
     inner: Arc<dyn Component>,

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+common-core = { path = "../common-core" }
 guidance-types = { path = "../types" }
 fluent-wvr = { path = "../fluent-wvr" }
 bitvec = { workspace = true }

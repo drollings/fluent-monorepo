@@ -24,18 +24,21 @@
 )]
 
 pub mod constants;
+pub mod drift;
 pub mod error;
 pub mod error_context;
 pub mod format;
 pub mod git;
 pub mod hash;
 pub mod io;
+pub mod interner;
 pub mod metrics;
 pub mod shell;
 pub mod shell_parser;
 pub mod string;
 
 pub use constants::{MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN};
+pub use drift::BitSetDrift;
 pub use error::{IoError, ResolverError};
 pub use error_context::{ErrorContext, HeapErrorContext};
 pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
@@ -43,6 +46,7 @@ pub use hash::{
     blake3_hash, blake3_hex, content_hash_with_model, fnv1a64, hash_batch, hash_file, sha256_hex,
     BatchHashResult, HashAlgorithm, HashState,
 };
+pub use interner::CapabilityRegistry;
 pub use io::{
     make_path_absolute, read_file_alloc, read_file_alloc_err, resolve_path, strip_path_prefix,
 };

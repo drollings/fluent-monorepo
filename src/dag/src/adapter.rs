@@ -1,4 +1,4 @@
-//! Re-export of `ComponentAdapter` from `fluent-wvr`.
+//! Re-export of `ComponentAdapter` and `ExecuteFn` from `fluent-wvr`.
 //!
 //! `ComponentAdapter` was moved to `fluent_wvr::wrapper` so that any
 //! `Component` consumer in the workspace can use it without taking
@@ -7,4 +7,4 @@
 //! path; new code should reference
 //! `fluent_wvr::wrapper::ComponentAdapter` directly.
 
-pub use fluent_wvr::wrapper::ComponentAdapter;
+pub use fluent_wvr::wrapper::{ComponentAdapter, ExecuteFn};
