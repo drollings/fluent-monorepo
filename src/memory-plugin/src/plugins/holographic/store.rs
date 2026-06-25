@@ -236,8 +236,7 @@ impl HolographicStore {
         let conn = self.conn.lock().await;
 
         let sql = if category.is_some() {
-            format!(
-                "SELECT f.fact_id, f.content, f.category, f.tags,
+            "SELECT f.fact_id, f.content, f.category, f.tags,
                         f.trust_score, f.retrieval_count, f.helpful_count,
                         f.created_at, f.updated_at
                  FROM facts f
@@ -247,10 +246,9 @@ impl HolographicStore {
                    AND f.category = ?3
                  ORDER BY fts.rank, f.trust_score DESC
                  LIMIT ?4"
-            )
+                .to_string()
         } else {
-            format!(
-                "SELECT f.fact_id, f.content, f.category, f.tags,
+            "SELECT f.fact_id, f.content, f.category, f.tags,
                         f.trust_score, f.retrieval_count, f.helpful_count,
                         f.created_at, f.updated_at
                  FROM facts f
@@ -259,7 +257,7 @@ impl HolographicStore {
                    AND f.trust_score >= ?2
                  ORDER BY fts.rank, f.trust_score DESC
                  LIMIT ?3"
-            )
+                .to_string()
         };
 
         let results = if let Some(cat) = category {
@@ -439,5 +437,5 @@ impl HolographicStore {
 }
 
 fn clamp_trust(value: f64) -> f64 {
-    value.max(TRUST_MIN).min(TRUST_MAX)
+    value.clamp(TRUST_MIN, TRUST_MAX)
 }

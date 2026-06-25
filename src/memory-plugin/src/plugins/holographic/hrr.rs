@@ -35,7 +35,7 @@ pub const TWO_PI: f64 = std::f64::consts::TAU;
 /// 4. Truncate to `dim` elements
 pub fn encode_atom(word: &str, dim: usize) -> Vec<f64> {
     let values_per_block = 16; // 32 bytes / 2 bytes per u16
-    let blocks_needed = (dim + values_per_block - 1) / values_per_block;
+    let blocks_needed = dim.div_ceil(values_per_block);
 
     let mut uint16_values: Vec<u16> = Vec::with_capacity(dim);
     for i in 0..blocks_needed {

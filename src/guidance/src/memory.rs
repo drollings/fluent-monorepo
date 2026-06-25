@@ -1,0 +1,104 @@
+//! Memory integration for the guidance query pipeline.
+//!
+//! Provides the bridge between `memory-plugin` and guidance's query engine.
+//! The `MemoryBridge` holds a `MemoryCapability` and provides methods for
+//! prefetch injection, turn syncing, and tool dispatch.
+
+use std::sync::Arc;
+
+use memory_plugin::capability::MemoryCapability;
+use memory_plugin::types::{
+    MemoryError, MemoryQueryContext, MemoryResult, MemorySearchRequest, ToolSchema, TurnMessage,
+};
+
+/// Bridge between guidance's query pipeline and the memory plugin system.
+///
+/// Holds a `MemoryCapability` and provides high-level methods that guidance
+/// components can call without directly depending on memory-plugin internals.
+pub struct MemoryBridge {
+    capability: MemoryCapability,
+    session_id: internment::ArcIntern<str>,
+}
+
+impl MemoryBridge {
+    /// Create a new memory bridge.
+    pub fn new(
+        capability: MemoryCapability,
+        session_id: internment::ArcIntern<str>,
+    ) -> Self {
+        Self {
+            capability,
+            session_id,
+        }
+    }
+
+    /// Create a query context for memory operations.
+    fn query_ctx(&self) -> MemoryQueryContext {
+        MemoryQueryContext {
+            session_id: self.session_id.clone(),
+            caps: fluent_wvr::CapabilitySet::default(),
+            rt: Arc::new(fluent_wvr::NoopRuntime),
+        }
+    }
+
+    /// Pre-fetch memory context for injection into the system prompt.
+    ///
+    /// Returns formatted text that should be prepended to the LLM system
+    /// prompt. Returns empty string if no memory plugin is active or
+    /// no relevant context is found.
+    pub async fn prefetch_context(&self, query: &str) -> String {
+        let ctx = self.query_ctx();
+        self.capability.prefetch(query, &ctx).await
+    }
+
+    /// Sync a completed turn with the active memory plugin.
+    ///
+    /// Call this after LLM synthesis completes to persist the interaction.
+    pub async fn sync_turn(&self, user_content: &str, assistant_content: &str) {
+        let ctx = self.query_ctx();
+        self.capability
+            .sync_turn(user_content, assistant_content, &ctx)
+            .await;
+    }
+
+    /// Notify the memory plugin of session end.
+    pub async fn session_end(&self, messages: &[TurnMessage]) {
+        self.capability.on_session_end(messages).await;
+    }
+
+    /// Dispatch a tool call to the active memory plugin.
+    pub async fn handle_tool_call(
+        &self,
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> Result<String, MemoryError> {
+        self.capability.handle_tool_call(tool_name, args).await
+    }
+
+    /// Get tool schemas from the active memory plugin.
+    pub async fn tool_schemas(&self) -> Vec<ToolSchema> {
+        self.capability.tool_schemas().await
+    }
+
+    /// Search the active memory plugin.
+    pub async fn search(
+        &self,
+        req: &MemorySearchRequest,
+    ) -> Result<Vec<MemoryResult>, MemoryError> {
+        self.capability.search(req).await
+    }
+
+    /// Initialize the memory plugin system.
+    ///
+    /// Note: `initialize` takes `&mut self` on the plugin, which means it
+    /// must be called before the plugin is wrapped in `Arc`. This method
+    /// is provided for completeness but in practice initialization should
+    /// happen during startup before the MemoryBridge is created.
+    pub async fn initialize(&self) -> Result<(), MemoryError> {
+        // Plugin initialization must happen before Arc wrapping.
+        // This method is a no-op placeholder; actual initialization
+        // should be done in the binary's startup code before creating
+        // the MemoryBridge.
+        Ok(())
+    }
+}

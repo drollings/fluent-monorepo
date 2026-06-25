@@ -1,13 +1,13 @@
 # Agent Bootloader — guidance
 
-**Context**: guidance is a Zig-native, deterministic-first AST-guided vector search
+**Context**: guidance is a Rust-native, deterministic-first AST-guided vector search
 database generator with local AI enhancement.  When used to search the
 codebase's capabilities and code, it can save over 90% of the tokens and tool
 calls compared to the orchestrating AI coder using other tools.
 
 ## Prime Directive
 
-1. **Never guess**: use `guidance explain "<query text>" for guidance, and
+1. **Never guess**: use `guidance explain "<query text>"` for guidance, and
 follow instructions for any queries of interest
 
 ---
@@ -21,14 +21,13 @@ follow instructions for any queries of interest
                          Scan: module purpose, pattern type, skill list
 
 2. UNDERSTAND (MCP):     Read the primary source file(s) from step 1
-                         Grep callers: who @import's this file?
+                         Grep callers: who imports this file?
                          Ask: do the listed skills actually apply?
 
 3. DECIDE:               If skills match → read them
                          If not → proceed to implementation
 
-4. IMPLEMENT:            Write to src/guidance/ or bin/ (for Python or
-                         other languages apart from Zig, i.e.  guidance-py)
+4. IMPLEMENT:            Write to src/guidance/ or src/bin/ (for binary targets)
                          Follow source patterns and applicable skills only
 
 5. VERIFY (cargo):       cargo build --workspace && cargo test --workspace
@@ -42,48 +41,35 @@ follow instructions for any queries of interest
 
 ```
 src/
-  guidance/      Zig core engine
-    main.zig           CLI dispatcher
-    config.zig         Configuration management
-    sync_engine.zig    Sync subcommands (init, gen, status, clean, commit, check, todo, diary)
-    query_engine.zig   Query subcommands (explain, show, test, telemetry, cache-stats, serve)
-    types.zig          Shared types (FileType, MemberType, Param, Member, etc.)
-    enhancer.zig       LLM enhancement for comment generation
-    staged.zig         Stage collection for explain pipeline
-    vector_db.zig      SQLite hybrid search engine
-    scanner.zig        Source file discovery
-    codehealth/        Dead code detection (main.zig, extractor.zig)
-    comments/          Comment management (core.zig, header.zig, inserter.zig, sync.zig)
-    query/             Query pipeline (identifier.zig, strategy.zig, llm_filter.zig, llm_filter_batch.zig, synthesize.zig)
-    sync/              Sync infrastructure (json_store.zig, json_writer.zig, line_verify.zig, marker.zig)
-  common/           General-purpose utility crate (fluent-wvr-common)
-                    Note: fluent-wvr-common contains no domain-specific logic;
-                    no imports from dag/, coral/, or guidance/
-  types/            guidance-types (FileType, MemberType, Param, Member, etc.)
-   traits/           guidance-traits (serde-based replacement for reflection)
-   content-node/     guidance-content-node (lod slicing, file content annotation)
-   vector-math/      guidance-vector-math (cosine_similarity, QuantizedEmbedding, try_bytes_to_vec)
-   vector-aliases/   guidance-vector-aliases (SemanticAliases, expand, expand_query)
-   concurrency-queue/ guidance-concurrency-queue (EventQueue<T>, LlmRequestQueue wrapper)
-   dag/              guidance-dag: executor, resolver, work_unit, adapter, middleware,
-                     drift, type_inference, target, capability registry, error types
-   guidance/         Updated consumer
-   coral/            Updated consumer (MCP server, cache router, KNN ingest)
-   llm/              LLM HTTP client + embeddings (CachedEmbeddingProvider, LlmRequestQueue,
-                     LlmClient, url, error)
-   ontology/         Ontology types (entity, mapper, triple store)
-   rdf/              RDF/triple handling
-   wasm_ipc/         Wasm tooling
-bin/
-   guidance          Updated binary (removed show/ingest, serve→mcp; added structure subcommand)
-   guidance-py       Python AST provider (Python files → .guidance/ JSON)
-   coral             New binary (coral mcp)
+  bin/
+    guidance/          guidance binary (16-subcommand CLI + MCP server)
+    coral/             coral binary (MCP server + ingest CLI)
+  guidance/            guidance-core: AST parser, sync engine, query engine, config
+  coral/               coral-context: graph DB, cache router, MCP server, WASM runtime
+  dag/                 guidance-dag: executor, resolver, work_unit, adapter, middleware,
+                       drift, type_inference, target, capability registry, error types
+  fluent-wvr/          Fluent WVR: Component, WorkUnit, FieldAccess, Describable traits
+  fluent-wvr-macros/   Proc macros for FieldAccess derive
+  fluent-concurrency/  WorkerPool, Scope, Zone, Limiter, PriorityQueue, CreditFlow
+  llm/                 LLM HTTP client + embeddings (CachedEmbeddingProvider, LlmRequestQueue,
+                       LlmClient, url, error)
+  types/               guidance-types (FileType, MemberType, Param, Member, etc.)
+  common-core/         General-purpose utility crate (fluent-wvr-common)
+                       Note: common-core contains no domain-specific logic;
+                       no imports from dag/, coral/, or guidance/
+  content-node/        guidance-content-node (lod slicing, file content annotation)
+  search-vector/       guidance-search-vector (SQLite hybrid search + HNSW index)
+  project-knowledge/   guidance-project-knowledge (WordIndex, TrigramIndex, CsrGraph, QueryCache)
+  ontology/            guidance-ontology (entity extraction, YAGO taxonomy, capability inference)
+  rdf/                 guidance-rdf (Turtle/N-Quads parser, normalization)
+  wasm_ipc/            guidance-wasm-ipc (WASM IPC binary types)
+  memory-plugin/       Pluggable memory tier (holographic, hindsight, honcho backends)
 .guidance/
   guidance-config.json   Model / provider configuration
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)
   .doc/             Capabilities, diary, inbox
   src/              Generated guidance JSON (mirrors src/ tree)
-.guidance.db        SQLite vector search database consumed by NullClaw explain tool
+.guidance.db        SQLite vector search database consumed by guidance explain
 env/
   mk/               Shared Makefile helpers and per-language target overrides
   mise/             Language-specific mise.toml fragments
@@ -95,11 +81,11 @@ doc/
 
 **DO:**
 - Run `guidance explain "<query>"` and read the results
-- Ask: "What capabilitity is used here?" before consulting skills
+- Ask: "What capability is used here?" before consulting skills
 
 **DON'T:**
 - Assume skills apply without validating against source code
-- Write any code in Zig without reading `doc/skills/zig-current/SKILL.md` first
+- Import from `src/guidance/` or `src/coral/` — those are consumers, not producers
 
 ---
 
@@ -120,18 +106,18 @@ doc/
 Example:
 ```bash
 # View metadata only
-guidance sync --debug --file src/example.zig
+guidance sync --debug --file src/example.rs
 
 # View metadata + prompts
-guidance sync --debug --show-prompts --file src/example.zig
+guidance sync --debug --show-prompts --file src/example.rs
 
 # View prompts only (no metadata)
-guidance sync --show-prompts --file src/example.zig
+guidance sync --show-prompts --file src/example.rs
 ```
 
 ### Comment Management
 
-**Source Files** (`.zig`):
+**Source Files** (`.rs`, `.zig`, `.py`):
 - Member comments (`///`) are the source of truth
 - File/module comments (`//!`) also stored in JSON
 
@@ -148,13 +134,13 @@ guidance sync --show-prompts --file src/example.zig
 **Workflow**:
 ```bash
 # Generate JSON without member comments
-guidance sync --file src/example.zig
+guidance sync --file src/example.rs
 
 # View what changed (only metadata, no comment diffs)
-git diff .guidance/src/example.zig.json
+git diff .guidance/src/example.rs.json
 
 # Database sync extracts comments from source
-guidance sync --file src/example.zig --db .guidance.db
+guidance sync --file src/example.rs --db .guidance.db
 ```
 
 ### Staleness Detection

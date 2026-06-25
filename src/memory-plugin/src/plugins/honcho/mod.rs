@@ -178,11 +178,70 @@ impl MemoryOps for HonchoMemory {
 
     fn sync_turn(
         &self,
-        _user_content: &str,
-        _assistant_content: &str,
+        user_content: &str,
+        assistant_content: &str,
         _ctx: &MemoryQueryContext,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(async {})
+        let sessions = self.sessions.clone();
+        let user = user_content.to_string();
+        let assistant = assistant_content.to_string();
+        let _min_confidence = self.config.min_confidence;
+        Box::pin(async move {
+            // Extract decision-like statements from assistant responses
+            let decision_patterns = [
+                r"(?i)\bwe should\b (.+)",
+                r"(?i)\bthe best (?:approach|way) is\b (.+)",
+                r"(?i)\brecommend(?:ed|ation)?\b (.+)",
+                r"(?i)\bthe (?:correct|right|optimal) (?:approach|solution) is\b (.+)",
+            ];
+
+            let mut decisions = Vec::new();
+            for pattern in &decision_patterns {
+                if let Ok(re) = regex::Regex::new(pattern) {
+                    for cap in re.captures_iter(&assistant) {
+                        if let Some(m) = cap.get(1) {
+                            let statement = m.as_str().trim().to_string();
+                            if statement.len() > 10 && statement.len() < 300 {
+                                decisions.push(Decision {
+                                    statement,
+                                    confidence: 0.7,
+                                    evidence_sessions: Vec::new(),
+                                    contradicted_by: Vec::new(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Extract reasoning paths from assistant responses
+            let mut reasoning_paths = Vec::new();
+            if assistant.contains("step") || assistant.contains("because") || assistant.contains("therefore") {
+                let steps: Vec<String> = assistant
+                    .lines()
+                    .filter(|l| l.starts_with('-') || l.starts_with("Step"))
+                    .map(|l| l.trim().trim_start_matches('-').trim_start_matches("Step").trim().to_string())
+                    .filter(|s| s.len() > 5)
+                    .take(5)
+                    .collect();
+
+                if steps.len() >= 2 {
+                    reasoning_paths.push(ReasoningPath {
+                        description: user.chars().take(100).collect(),
+                        steps,
+                        outcome: assistant.chars().take(200).collect(),
+                    });
+                }
+            }
+
+            if !decisions.is_empty() || !reasoning_paths.is_empty() {
+                let mut sessions = sessions.lock().await;
+                if let Some(last) = sessions.last_mut() {
+                    last.decisions.extend(decisions);
+                    last.reasoning_paths.extend(reasoning_paths);
+                }
+            }
+        })
     }
 
     fn on_session_end(
@@ -239,9 +298,94 @@ impl MemoryOps for HonchoMemory {
         match tool_name {
             "reasoning_search" => {
                 let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                let sessions = self.sessions.clone();
+                let rt = tokio::runtime::Handle::current();
+                let result = rt.block_on(async {
+                    let sessions = sessions.lock().await;
+                    let query_lower = query.to_lowercase();
+
+                    // Search through decisions
+                    let decisions: Vec<serde_json::Value> = sessions
+                        .iter()
+                        .flat_map(|s| &s.decisions)
+                        .filter(|d| d.statement.to_lowercase().contains(&query_lower))
+                        .take(10)
+                        .map(|d| {
+                            serde_json::json!({
+                                "type": "decision",
+                                "statement": d.statement,
+                                "confidence": d.confidence,
+                                "evidence_sessions": d.evidence_sessions,
+                            })
+                        })
+                        .collect();
+
+                    // Search through reasoning paths
+                    let paths: Vec<serde_json::Value> = sessions
+                        .iter()
+                        .flat_map(|s| &s.reasoning_paths)
+                        .filter(|p| {
+                            p.description.to_lowercase().contains(&query_lower)
+                                || p.outcome.to_lowercase().contains(&query_lower)
+                        })
+                        .take(10)
+                        .map(|p| {
+                            serde_json::json!({
+                                "type": "reasoning_path",
+                                "description": p.description,
+                                "steps": p.steps,
+                                "outcome": p.outcome,
+                            })
+                        })
+                        .collect();
+
+                    let mut results = decisions;
+                    results.extend(paths);
+
+                    serde_json::json!({
+                        "results": results,
+                        "query": query,
+                        "total_sessions": sessions.len(),
+                    })
+                });
+
+                Ok(result.to_string())
+            }
+            "decision_add" => {
+                let statement = args
+                    .get("statement")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| MemoryError::ToolError("missing 'statement'".into()))?
+                    .to_string();
+                let confidence = args
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.7);
+
+                let sessions = self.sessions.clone();
+                let rt = tokio::runtime::Handle::current();
+                let result = rt.block_on(async {
+                    let mut sessions = sessions.lock().await;
+                    let decision = Decision {
+                        statement: statement.clone(),
+                        confidence,
+                        evidence_sessions: Vec::new(),
+                        contradicted_by: Vec::new(),
+                    };
+
+                    if let Some(last) = sessions.last_mut() {
+                        last.decisions.push(decision);
+                        last.decisions.len()
+                    } else {
+                        0
+                    }
+                });
+
                 Ok(serde_json::json!({
-                    "results": [],
-                    "query": query,
+                    "status": "added",
+                    "statement": statement,
+                    "confidence": confidence,
+                    "total_decisions": result,
                 })
                 .to_string())
             }
@@ -252,17 +396,31 @@ impl MemoryOps for HonchoMemory {
     }
 
     fn tool_schemas(&self) -> Vec<ToolSchema> {
-        vec![ToolSchema {
-            name: "reasoning_search".into(),
-            description: "Search cross-session reasoning and decisions.".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" }
-                },
-                "required": ["query"]
-            }),
-        }]
+        vec![
+            ToolSchema {
+                name: "reasoning_search".into(),
+                description: "Search cross-session reasoning, decisions, and reasoning paths.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Search query" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+            ToolSchema {
+                name: "decision_add".into(),
+                description: "Record a decision or conclusion reached during a session.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "statement": { "type": "string", "description": "The decision statement" },
+                        "confidence": { "type": "number", "description": "Confidence score 0.0-1.0" }
+                    },
+                    "required": ["statement"]
+                }),
+            },
+        ]
     }
 }
 

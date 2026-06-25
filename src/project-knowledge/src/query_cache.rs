@@ -14,12 +14,19 @@ pub struct Entry {
 pub struct QueryCache {
     db: Connection,
     default_ttl_seconds: u64,
-    /// Future: max entries before LRU eviction. Currently only TTL-based eviction is used.
-    _max_entries: usize,
+    max_entries: usize,
 }
 
 impl QueryCache {
     pub fn new(db_path: &Path, default_ttl_seconds: u64) -> rusqlite::Result<Self> {
+        Self::with_max_entries(db_path, default_ttl_seconds, 4096)
+    }
+
+    pub fn with_max_entries(
+        db_path: &Path,
+        default_ttl_seconds: u64,
+        max_entries: usize,
+    ) -> rusqlite::Result<Self> {
         let db = Connection::open(db_path)?;
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS query_cache (
@@ -29,11 +36,13 @@ impl QueryCache {
                 ttl_seconds INTEGER NOT NULL
             )",
         )?;
-        Ok(Self {
+        let cache = Self {
             db,
             default_ttl_seconds,
-            _max_entries: 4096,
-        })
+            max_entries,
+        };
+        cache.evict_expired()?;
+        Ok(cache)
     }
 
     pub fn new_in_memory(default_ttl_seconds: u64) -> rusqlite::Result<Self> {
@@ -49,13 +58,20 @@ impl QueryCache {
         Ok(Self {
             db,
             default_ttl_seconds,
-            _max_entries: 4096,
+            max_entries: 4096,
         })
     }
 
     fn query_key(query: &str) -> String {
         let hash = fnv1a64(query.to_lowercase().as_bytes());
         format!("{hash:016x}")
+    }
+
+    fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
     }
 
     pub fn get(&self, query: &str) -> rusqlite::Result<Option<Entry>> {
@@ -73,11 +89,12 @@ impl QueryCache {
         });
         match result {
             Ok(entry) => {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                if now > entry.timestamp + entry.ttl_seconds {
+                let now = Self::now_secs();
+                // TTL=0 means always expired; otherwise check timestamp
+                if entry.ttl_seconds == 0 || now > entry.timestamp + entry.ttl_seconds {
+                    // Expired — remove it
+                    self.db
+                        .execute("DELETE FROM query_cache WHERE key = ?1", params![key])?;
                     return Ok(None);
                 }
                 Ok(Some(entry))
@@ -89,14 +106,43 @@ impl QueryCache {
 
     pub fn put(&self, query: &str, result: &str) -> rusqlite::Result<()> {
         let key = Self::query_key(query);
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = Self::now_secs();
         self.db.execute(
             "INSERT OR REPLACE INTO query_cache (key, result_json, timestamp, ttl_seconds) VALUES (?1, ?2, ?3, ?4)",
             params![key, result, now, self.default_ttl_seconds],
         )?;
+
+        // Evict if over capacity
+        self.evict_lru()?;
+
+        Ok(())
+    }
+
+    /// Remove all expired entries (TTL=0 or timestamp+ttl < now).
+    pub fn evict_expired(&self) -> rusqlite::Result<usize> {
+        let now = Self::now_secs();
+        let count = self.db.execute(
+            "DELETE FROM query_cache WHERE ttl_seconds = 0 OR ?1 > timestamp + ttl_seconds",
+            params![now],
+        )?;
+        Ok(count)
+    }
+
+    /// Evict oldest entries when over capacity (LRU by timestamp).
+    fn evict_lru(&self) -> rusqlite::Result<()> {
+        let count: usize = self
+            .db
+            .query_row("SELECT COUNT(*) FROM query_cache", [], |row| row.get(0))?;
+
+        if count > self.max_entries {
+            let excess = count - self.max_entries;
+            self.db.execute(
+                "DELETE FROM query_cache WHERE key IN (
+                    SELECT key FROM query_cache ORDER BY timestamp ASC LIMIT ?1
+                )",
+                params![excess],
+            )?;
+        }
         Ok(())
     }
 
@@ -105,11 +151,19 @@ impl QueryCache {
         Ok(())
     }
 
-    pub fn stats(&self) -> rusqlite::Result<(usize, u64)> {
+    pub fn stats(&self) -> rusqlite::Result<(usize, u64, usize)> {
         let count: usize = self
             .db
             .query_row("SELECT COUNT(*) FROM query_cache", [], |row| row.get(0))?;
-        Ok((count, self.default_ttl_seconds))
+        let expired: usize = {
+            let now = Self::now_secs();
+            self.db.query_row(
+                "SELECT COUNT(*) FROM query_cache WHERE ?1 > timestamp + ttl_seconds",
+                params![now],
+                |row| row.get(0),
+            )?
+        };
+        Ok((count, self.default_ttl_seconds, expired))
     }
 }
 
@@ -136,11 +190,11 @@ mod tests {
     #[test]
     fn stats_work() {
         let (cache, _dir) = setup();
-        let (count, ttl) = cache.stats().unwrap();
+        let (count, ttl, _expired) = cache.stats().unwrap();
         assert_eq!(count, 0);
         assert_eq!(ttl, 3600);
         cache.put("q", "r").unwrap();
-        let (count, _) = cache.stats().unwrap();
+        let (count, _, _) = cache.stats().unwrap();
         assert_eq!(count, 1);
     }
 
@@ -150,5 +204,47 @@ mod tests {
         cache.put("q", "r").unwrap();
         cache.clear().unwrap();
         assert!(cache.get("q").unwrap().is_none());
+    }
+
+    #[test]
+    fn lru_eviction_works() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("cache.db");
+        let cache = QueryCache::with_max_entries(&db_path, 3600, 3).unwrap();
+
+        cache.put("q1", "r1").unwrap();
+        cache.put("q2", "r2").unwrap();
+        cache.put("q3", "r3").unwrap();
+        cache.put("q4", "r4").unwrap(); // should evict q1
+
+        let (count, _, _) = cache.stats().unwrap();
+        assert!(count <= 3, "expected <= 3 entries after LRU eviction, got {count}");
+    }
+
+    #[test]
+    fn expired_entry_returns_none() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("cache.db");
+        // TTL of 0 seconds means immediately expired
+        let cache = QueryCache::with_max_entries(&db_path, 0, 4096).unwrap();
+
+        cache.put("expired", "data").unwrap();
+        let entry = cache.get("expired").unwrap();
+        assert!(entry.is_none(), "expired entry should return None");
+    }
+
+    #[test]
+    fn evict_expired_works() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("cache.db");
+        let cache = QueryCache::with_max_entries(&db_path, 0, 4096).unwrap();
+
+        cache.put("a", "1").unwrap();
+        cache.put("b", "2").unwrap();
+        let evicted = cache.evict_expired().unwrap();
+        assert!(evicted >= 2, "should evict expired entries");
+
+        let (count, _, _) = cache.stats().unwrap();
+        assert_eq!(count, 0);
     }
 }

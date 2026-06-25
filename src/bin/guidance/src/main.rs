@@ -16,6 +16,7 @@ use std::sync::mpsc;
 
 mod commit;
 mod editor;
+mod mcp;
 mod structure;
 
 #[derive(Parser)]
@@ -181,6 +182,10 @@ enum Commands {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
     },
+    Mcp {
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
+    },
 }
 
 #[tokio::main]
@@ -279,6 +284,7 @@ async fn main() {
         } => {
             cmd_health(workspace, *min_age, format, db);
         }
+        Commands::Mcp { db } => cmd_mcp(db),
     }
 }
 
@@ -1433,6 +1439,14 @@ fn collect_health_stats(
                 *no_comments += 1;
             }
         }
+    }
+}
+
+fn cmd_mcp(db_path: &str) {
+    let db = PathBuf::from(db_path);
+    if let Err(e) = mcp::serve_stdio_from_path(&db) {
+        eprintln!("MCP server error: {e}");
+        std::process::exit(1);
     }
 }
 

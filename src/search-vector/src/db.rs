@@ -1,11 +1,14 @@
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use crate::error::DbError;
 use rusqlite::params;
 use thiserror::Error;
 
 use crate::math;
+
+use anndists::dist::DistCosine;
+use hnsw_rs::hnsw::Hnsw;
 
 #[derive(Error, Debug)]
 pub enum VectorDbError {
@@ -26,8 +29,16 @@ pub struct SearchResult {
     pub similarity: f32,
 }
 
+/// Default HNSW parameters.
+const HNSW_MAX_NB_CONNECTION: usize = 16;
+const HNSW_MAX_LAYER: usize = 16;
+const HNSW_EF_CONSTRUCTION: usize = 200;
+const HNSW_INITIAL_CAPACITY: usize = 1024;
+
 pub struct GuidanceDb {
     conn: Mutex<rusqlite::Connection>,
+    hnsw: RwLock<Option<Hnsw<'static, f32, DistCosine>>>,
+    hnsw_id_map: Mutex<Vec<i64>>,
 }
 
 impl GuidanceDb {
@@ -35,6 +46,8 @@ impl GuidanceDb {
         let conn = rusqlite::Connection::open(path)?;
         let db = Self {
             conn: Mutex::new(conn),
+            hnsw: RwLock::new(None),
+            hnsw_id_map: Mutex::new(Vec::new()),
         };
         db.init_schema()?;
         Ok(db)
@@ -44,6 +57,8 @@ impl GuidanceDb {
         let conn = rusqlite::Connection::open_in_memory()?;
         let db = Self {
             conn: Mutex::new(conn),
+            hnsw: RwLock::new(None),
+            hnsw_id_map: Mutex::new(Vec::new()),
         };
         db.init_schema()?;
         Ok(db)
@@ -108,18 +123,143 @@ impl GuidanceDb {
             ],
         )?;
 
-        Ok(conn.last_insert_rowid())
+        let node_id = conn.last_insert_rowid();
+
+        // Insert into HNSW index if embedding is provided
+        if let Some(emb) = embedding {
+            self.hnsw_insert(node_id, emb);
+        }
+
+        Ok(node_id)
     }
 
-    /// Brute-force O(n × d) vector similarity search over stored embeddings.
+    /// Insert a vector into the HNSW index.
+    fn hnsw_insert(&self, node_id: i64, embedding: &[f32]) {
+        let mut guard = self.hnsw.write().unwrap();
+        let hnsw = guard.get_or_insert_with(|| {
+            Hnsw::<f32, DistCosine>::new(
+                HNSW_MAX_NB_CONNECTION,
+                HNSW_INITIAL_CAPACITY,
+                HNSW_MAX_LAYER,
+                HNSW_EF_CONSTRUCTION,
+                DistCosine,
+            )
+        });
+
+        let external_id = {
+            let mut id_map = self.hnsw_id_map.lock().unwrap();
+            let idx = id_map.len();
+            id_map.push(node_id);
+            idx
+        };
+
+        hnsw.insert((embedding, external_id));
+    }
+
+    /// Rebuild the HNSW index from all embedded nodes in the database.
+    pub fn rebuild_hnsw(&self) -> Result<usize, VectorDbError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, embedding FROM guidance_nodes WHERE embedding IS NOT NULL",
+        )?;
+
+        let rows: Vec<(i64, Vec<u8>)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?
+            .filter_map(Result::ok)
+            .collect();
+
+        let count = rows.len();
+
+        // Build new HNSW index
+        let hnsw = Hnsw::<f32, DistCosine>::new(
+            HNSW_MAX_NB_CONNECTION,
+            count.max(HNSW_INITIAL_CAPACITY),
+            HNSW_MAX_LAYER,
+            HNSW_EF_CONSTRUCTION,
+            DistCosine,
+        );
+
+        let mut id_map = Vec::with_capacity(count);
+        for (i, (node_id, blob)) in rows.into_iter().enumerate() {
+            let embedding = math::bytes_to_vec(&blob);
+            if !embedding.is_empty() {
+                hnsw.insert((&embedding, i));
+                id_map.push(node_id);
+            }
+        }
+
+        *self.hnsw.write().unwrap() = Some(hnsw);
+        *self.hnsw_id_map.lock().unwrap() = id_map;
+
+        Ok(count)
+    }
+
+    /// Vector similarity search. Uses HNSW index when available, falls back
+    /// to brute-force O(n × d) scan otherwise.
     ///
     /// ## Performance
-    /// - n < 10_000:  sub-millisecond on modern CPU
-    /// - n < 100_000: ~10 ms
-    /// - n > 1_000_000: consider HNSW or IVF index (not yet implemented)
-    /// - d (dimensions): typically 384 (Ollama) or 1536 (OpenAI).  Higher dims
-    ///   increase scan time linearly.
+    /// - With HNSW: O(log n) approximate nearest neighbor search
+    /// - Without HNSW, n < 10_000:  sub-millisecond on modern CPU
+    /// - Without HNSW, n < 100_000: ~10 ms
     pub fn vector_search(
+        &self,
+        query_vec: &[f32],
+        k: usize,
+    ) -> Result<Vec<SearchResult>, VectorDbError> {
+        // Try HNSW first
+        if let Some(results) = self.hnsw_search(query_vec, k) {
+            return Ok(results);
+        }
+
+        // Fall back to brute-force
+        self.bruteforce_vector_search(query_vec, k)
+    }
+
+    /// HNSW approximate nearest neighbor search.
+    fn hnsw_search(&self, query_vec: &[f32], k: usize) -> Option<Vec<SearchResult>> {
+        let guard = self.hnsw.read().ok()?;
+        let hnsw = guard.as_ref()?;
+        let id_map = self.hnsw_id_map.lock().ok()?;
+
+        let neighbours = hnsw.search(query_vec, k, k);
+
+        let conn = self.conn.lock().ok()?;
+
+        let mut results = Vec::with_capacity(neighbours.len());
+        for n in &neighbours {
+            let idx = n.d_id;
+            if idx >= id_map.len() {
+                continue;
+            }
+            let node_id = id_map[idx];
+
+            // Convert cosine distance to similarity: dist = 1 - cos_sim
+            let similarity = 1.0 - n.distance;
+
+            if let Ok(row) = conn.query_row(
+                "SELECT name, source, signature FROM guidance_nodes WHERE id = ?1",
+                params![node_id],
+                |row| {
+                    Ok(SearchResult {
+                        id: node_id,
+                        name: row.get(0)?,
+                        source: row.get(1)?,
+                        signature: row.get(2)?,
+                        similarity,
+                    })
+                },
+            ) {
+                results.push(row);
+            }
+        }
+
+        Some(results)
+    }
+
+    /// Brute-force O(n × d) vector similarity search.
+    fn bruteforce_vector_search(
         &self,
         query_vec: &[f32],
         k: usize,
@@ -232,6 +372,7 @@ impl GuidanceDb {
 
     /// Sync all JSON files from a directory into the `guidance_nodes` table.
     /// Walks JSON files, parses GuidanceDoc, upserts into database.
+    /// Rebuilds HNSW index after sync.
     pub fn sync_from_dir(&self, json_dir: &std::path::Path) -> Result<usize, VectorDbError> {
         let mut synced = 0;
         let conn = self.conn.lock().unwrap();
@@ -293,6 +434,20 @@ impl GuidanceDb {
         }
 
         Ok(synced)
+    }
+
+    /// Check if the HNSW index is built.
+    pub fn has_hnsw(&self) -> bool {
+        self.hnsw.read().is_ok_and(|g| g.is_some())
+    }
+
+    /// Get the number of points in the HNSW index.
+    pub fn hnsw_len(&self) -> usize {
+        self.hnsw
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(Hnsw::get_nb_point))
+            .unwrap_or(0)
     }
 }
 
