@@ -18,6 +18,33 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+/// Brute-force KNN search: compute cosine distance from `query` to every
+/// candidate, sort ascending, and return the top `k` as `(id, distance)`.
+///
+/// `candidates` yields `(id, embedding_slice)` pairs. Candidates whose
+/// embedding length differs from `query` are silently skipped.
+pub fn knn_brute_force<Id: Clone>(
+    query: &[f32],
+    candidates: impl Iterator<Item = (Id, Vec<f32>)>,
+    k: usize,
+) -> Vec<(Id, f32)> {
+    if query.is_empty() || k == 0 {
+        return Vec::new();
+    }
+    let mut results: Vec<(Id, f32)> = candidates
+        .filter_map(|(id, emb)| {
+            if emb.len() != query.len() {
+                return None;
+            }
+            let distance = 1.0 - cosine_similarity(query, &emb);
+            Some((id, distance))
+        })
+        .collect();
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(k);
+    results
+}
+
 pub fn vec_to_bytes(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
@@ -151,5 +178,51 @@ mod tests {
             ),
             0.0
         );
+    }
+
+    #[test]
+    fn knn_brute_force_returns_top_k() {
+        let query = vec![1.0, 0.0, 0.0];
+        let candidates = vec![
+            (1u32, vec![1.0, 0.0, 0.0]),
+            (2, vec![0.0, 1.0, 0.0]),
+            (3, vec![0.9, 0.1, 0.0]),
+        ];
+        let results = knn_brute_force(&query, candidates.into_iter(), 2);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, 1);
+        assert!((results[0].1 - 0.0).abs() < 1e-5);
+        assert_eq!(results[1].0, 3);
+    }
+
+    #[test]
+    fn knn_brute_force_skips_mismatched_dimensions() {
+        let query = vec![1.0, 0.0];
+        let candidates = vec![(1u32, vec![1.0, 0.0]), (2, vec![1.0, 0.0, 0.0])];
+        let results = knn_brute_force(&query, candidates.into_iter(), 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 1);
+    }
+
+    #[test]
+    fn knn_brute_force_empty_query_returns_empty() {
+        let candidates = vec![(1u32, vec![1.0])];
+        let results = knn_brute_force(&[], candidates.into_iter(), 5);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn knn_brute_force_zero_k_returns_empty() {
+        let query = vec![1.0, 0.0];
+        let candidates = vec![(1u32, vec![1.0, 0.0])];
+        let results = knn_brute_force(&query, candidates.into_iter(), 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn knn_brute_force_empty_candidates() {
+        let query = vec![1.0, 0.0];
+        let results: Vec<(u32, f32)> = knn_brute_force(&query, std::iter::empty(), 5);
+        assert!(results.is_empty());
     }
 }

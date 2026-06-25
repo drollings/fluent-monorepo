@@ -36,8 +36,7 @@ impl Pool {
     fn open(path: &str, size: usize) -> Result<Self, rusqlite::Error> {
         let mut connections = Vec::with_capacity(size);
         for _ in 0..size {
-            let conn = Connection::open(path)?;
-            conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+            let conn = common_core::sqlite::open_wal(std::path::Path::new(path))?;
             connections.push(conn);
         }
         Ok(Self {
@@ -56,17 +55,15 @@ impl Pool {
             .clone()
             .acquire_owned()
             .await
-            .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+            .map_err(std::io::Error::other)?;
         let conn = {
             let mut connections = self.connections.lock().unwrap();
-            connections.pop().ok_or_else(|| {
-                ConcurrencyError::Io(
-                    CapabilityError::Exhausted {
-                        name: "db",
-                        detail: "all connections in use".into(),
-                    }
-                    .into(),
-                )
+            connections.pop().ok_or_else(|| -> ConcurrencyError {
+                std::io::Error::from(CapabilityError::Exhausted {
+                    name: "db",
+                    detail: "all connections in use".into(),
+                })
+                .into()
             })?
         };
         Ok(PooledConnection {
@@ -140,8 +137,7 @@ impl DbCapability {
     ///
     /// Creates a pool of 5 connections, all with WAL mode enabled.
     pub fn open(path: &str) -> Result<Self, ConcurrencyError> {
-        let pool = Pool::open(path, DEFAULT_POOL_SIZE)
-            .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+        let pool = Pool::open(path, DEFAULT_POOL_SIZE).map_err(std::io::Error::other)?;
         Ok(Self {
             pool: Arc::new(pool),
         })
@@ -160,9 +156,7 @@ impl DbCapability {
         let sql = sql.to_string();
         let conn = Arc::clone(&self.pool).get().await?;
         let result = tokio::task::spawn_blocking(move || {
-            let mut stmt = conn
-                .prepare(&sql)
-                .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+            let mut stmt = conn.prepare(&sql).map_err(std::io::Error::other)?;
 
             let columns: Vec<String> = stmt
                 .column_names()
@@ -171,14 +165,9 @@ impl DbCapability {
                 .collect();
 
             let mut rows = Vec::new();
-            let mut rows_iter = stmt
-                .query([])
-                .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+            let mut rows_iter = stmt.query([]).map_err(std::io::Error::other)?;
 
-            while let Some(row) = rows_iter
-                .next()
-                .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?
-            {
+            while let Some(row) = rows_iter.next().map_err(std::io::Error::other)? {
                 let mut map = std::collections::HashMap::new();
                 for (i, col) in columns.iter().enumerate() {
                     let value: String = match row.get::<_, Value>(i) {
@@ -199,7 +188,7 @@ impl DbCapability {
 
         match result {
             Ok(inner) => inner,
-            Err(e) => Err(ConcurrencyError::Io(std::io::Error::other(e.to_string()))),
+            Err(e) => Err(ConcurrencyError::from(std::io::Error::other(e.to_string()))),
         }
     }
 
@@ -212,16 +201,14 @@ impl DbCapability {
         let sql = sql.to_string();
         let conn = Arc::clone(&self.pool).get().await?;
         let result = tokio::task::spawn_blocking(move || {
-            let rows_affected = conn
-                .execute(&sql, [])
-                .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+            let rows_affected = conn.execute(&sql, []).map_err(std::io::Error::other)?;
             Ok(rows_affected)
         })
         .await;
 
         match result {
             Ok(inner) => inner,
-            Err(e) => Err(ConcurrencyError::Io(std::io::Error::other(e.to_string()))),
+            Err(e) => Err(ConcurrencyError::from(std::io::Error::other(e.to_string()))),
         }
     }
 }
@@ -235,7 +222,7 @@ mod tests {
         let pool = Arc::new(Pool::empty());
         match pool.get().await {
             Err(ConcurrencyError::Io(io_err)) => {
-                assert_eq!(io_err.kind(), std::io::ErrorKind::PermissionDenied);
+                assert_eq!(io_err.kind(), Some(std::io::ErrorKind::PermissionDenied));
                 assert!(
                     io_err.to_string().contains("exhausted"),
                     "expected 'exhausted', got: {io_err}"

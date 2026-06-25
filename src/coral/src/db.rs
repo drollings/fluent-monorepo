@@ -6,31 +6,33 @@ use std::sync::{Mutex, RwLock};
 
 use anndists::dist::DistCosine;
 use bitvec::vec::BitVec;
+use common_core::constants::HnswParams;
 use guidance_llm::EmbeddingProvider;
 use guidance_search_vector::error::DbError;
-use guidance_search_vector::math::{cosine_similarity, try_bytes_to_vec, vec_to_bytes};
+use guidance_search_vector::math::{knn_brute_force, try_bytes_to_vec, vec_to_bytes};
 use guidance_types::{ContextNode, GraphNode, KnnHit, NodeId, WasmTool};
 use hnsw_rs::hnsw::Hnsw;
 use rusqlite::params;
 pub const MAX_KNN_CANDIDATES: usize = 100_000;
-
-const HNSW_MAX_NB_CONNECTION: usize = 16;
-const HNSW_MAX_LAYER: usize = 16;
-const HNSW_EF_CONSTRUCTION: usize = 200;
-const HNSW_INITIAL_CAPACITY: usize = 1024;
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LibraryError {
     #[error("SQLite error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    Sqlite(#[from] common_core::error::SqliteError),
     #[error("database error: {0}")]
     Db(#[from] DbError),
     #[error("node not found: {0}")]
     NodeNotFound(String),
     #[error("duplicate node: {0}")]
     DuplicateNode(String),
+}
+
+impl From<rusqlite::Error> for LibraryError {
+    fn from(e: rusqlite::Error) -> Self {
+        LibraryError::Sqlite(common_core::error::SqliteError(e))
+    }
 }
 
 pub struct Library {
@@ -41,7 +43,7 @@ pub struct Library {
 
 impl Library {
     pub fn open(path: &Path) -> Result<Self, LibraryError> {
-        let conn = rusqlite::Connection::open(path)?;
+        let conn = common_core::sqlite::open_wal(path)?;
         let lib = Self {
             conn: Mutex::new(conn),
             hnsw: RwLock::new(None),
@@ -52,7 +54,7 @@ impl Library {
     }
 
     pub fn open_in_memory() -> Result<Self, LibraryError> {
-        let conn = rusqlite::Connection::open_in_memory()?;
+        let conn = common_core::sqlite::open_in_memory()?;
         let lib = Self {
             conn: Mutex::new(conn),
             hnsw: RwLock::new(None),
@@ -100,17 +102,11 @@ impl Library {
                 provides BLOB,
                 essential INTEGER NOT NULL DEFAULT 0,
                 command TEXT NOT NULL DEFAULT ''
-            );
-
-            CREATE TABLE IF NOT EXISTS embedding_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_hash TEXT NOT NULL UNIQUE,
-                query_text TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_nodes_name_source
+            );",
+        )?;
+        common_core::sqlite::init_embedding_cache(&conn)?;
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_name_source
                 ON context_nodes(name, source);
 
             CREATE TABLE IF NOT EXISTS entity_types (
@@ -222,8 +218,6 @@ impl Library {
         let sql = format!("SELECT id, name, embedding{capabilities_col} FROM context_nodes WHERE embedding IS NOT NULL");
         let mut stmt = conn.prepare(&sql)?;
 
-        let mut results: Vec<KnnHit> = Vec::new();
-
         let rows = stmt.query_map([], move |row| {
             let id: i64 = row.get(0)?;
             let name: String = row.get(1)?;
@@ -236,6 +230,9 @@ impl Library {
             Ok((id, name, blob, caps_blob))
         })?;
 
+        let mut row_meta: Vec<(NodeId, String)> = Vec::new();
+        let mut candidates: Vec<(usize, Vec<f32>)> = Vec::new();
+
         for row_result in rows {
             let (id, name, blob, caps_blob) = row_result?;
             if let Some(filter) = capability_filter {
@@ -246,24 +243,21 @@ impl Library {
                 }
             }
             if let Some(emb) = try_bytes_to_vec(&blob) {
-                if emb.len() != query_vec.len() {
-                    continue;
-                }
-                let distance = 1.0 - cosine_similarity(query_vec, &emb);
-                results.push(KnnHit {
-                    node_id: NodeId::from_int(id),
-                    distance,
-                    name: name.as_str().into(),
-                });
+                let idx = row_meta.len();
+                row_meta.push((NodeId::from_int(id), name));
+                candidates.push((idx, emb));
             }
         }
 
-        results.sort_by(|a, b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        results.truncate(k);
+        let top_k = knn_brute_force(query_vec, candidates.into_iter(), k);
+        let results = top_k
+            .into_iter()
+            .map(|(idx, distance)| KnnHit {
+                node_id: row_meta[idx].0,
+                distance,
+                name: row_meta[idx].1.as_str().into(),
+            })
+            .collect();
         Ok(results)
     }
 
@@ -540,11 +534,12 @@ impl Library {
     fn hnsw_insert(&self, node_id: i64, embedding: &[f32]) {
         let mut guard = self.hnsw.write().unwrap();
         let hnsw = guard.get_or_insert_with(|| {
+            let p = HnswParams::default();
             Hnsw::<f32, DistCosine>::new(
-                HNSW_MAX_NB_CONNECTION,
-                HNSW_INITIAL_CAPACITY,
-                HNSW_MAX_LAYER,
-                HNSW_EF_CONSTRUCTION,
+                p.max_nb_connection,
+                p.initial_capacity,
+                p.max_layer,
+                p.ef_construction,
                 DistCosine,
             )
         });
@@ -562,9 +557,8 @@ impl Library {
     /// Rebuild the HNSW index from all embedded nodes in the database.
     pub fn rebuild_hnsw(&self) -> Result<usize, LibraryError> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, embedding FROM context_nodes WHERE embedding IS NOT NULL",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, embedding FROM context_nodes WHERE embedding IS NOT NULL")?;
 
         let rows: Vec<(i64, Vec<u8>)> = stmt
             .query_map([], |row| {
@@ -576,11 +570,12 @@ impl Library {
         drop(conn);
 
         let count = rows.len();
+        let p = HnswParams::default();
         let hnsw = Hnsw::<f32, DistCosine>::new(
-            HNSW_MAX_NB_CONNECTION,
-            count.max(HNSW_INITIAL_CAPACITY),
-            HNSW_MAX_LAYER,
-            HNSW_EF_CONSTRUCTION,
+            p.max_nb_connection,
+            count.max(p.initial_capacity),
+            p.max_layer,
+            p.ef_construction,
             DistCosine,
         );
 
@@ -680,14 +675,14 @@ impl Library {
         for (rank, result) in vector_results.into_iter().enumerate() {
             let id = result.node_id.as_int();
             let score = 1.0 / (k_constant + rank as f64);
-            let entry = rrf_scores.entry(id).or_insert_with(|| (0.0, result.clone()));
+            let entry = rrf_scores
+                .entry(id)
+                .or_insert_with(|| (0.0, result.clone()));
             entry.0 += score;
         }
 
         let mut merged: Vec<(f64, KnnHit)> = rrf_scores.into_values().collect();
-        merged.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        merged.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(merged.into_iter().take(k).map(|(_, hit)| hit).collect())
     }

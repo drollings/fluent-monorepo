@@ -1,3 +1,4 @@
+use common_core::tokens::DEFAULT_CHARS_PER_TOKEN;
 use guidance_types::{ContextNode, NodeId};
 use thiserror::Error;
 
@@ -28,13 +29,13 @@ impl ContextPacker {
     pub fn new(token_budget: usize) -> Self {
         Self {
             token_budget,
-            chars_per_token: 4,
+            chars_per_token: DEFAULT_CHARS_PER_TOKEN,
         }
     }
 
     /// Estimate token count from text length.
     pub fn estimate_tokens(text: &str) -> usize {
-        text.len().div_ceil(4)
+        common_core::tokens::estimate_tokens(text)
     }
 
     /// Select the appropriate LOD level based on graph distance.

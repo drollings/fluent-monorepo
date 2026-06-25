@@ -1,15 +1,10 @@
 use std::path::Path;
-use std::time::SystemTime;
-
-fn mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
-}
 
 pub fn is_stale(json_path: &Path, source_path: &Path) -> bool {
-    let Some(json_mtime) = mtime(json_path) else {
+    let Some(json_mtime) = common_core::io::mtime(json_path) else {
         return true;
     };
-    let Some(source_mtime) = mtime(source_path) else {
+    let Some(source_mtime) = common_core::io::mtime(source_path) else {
         return false;
     };
 
@@ -27,20 +22,20 @@ pub fn should_generate(json_path: &Path, source_path: &Path) -> bool {
 }
 
 pub fn match_hash_from_signature(signature: &str) -> String {
-    let hash = blake3::hash(signature.as_bytes());
-    hash.to_hex().to_string()
+    common_core::hash::blake3_hex(signature.as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
     use std::fs;
     use std::thread;
     use std::time::Duration;
 
     #[test]
     fn test_json_absent_is_stale() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let json = dir.path().join("nonexistent.json");
         let source = dir.path().join("source.zig");
         fs::write(&source, "content").expect("write source");
@@ -49,7 +44,7 @@ mod tests {
 
     #[test]
     fn test_stale_when_json_older_by_2s() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let json = dir.path().join("test.json");
         let source = dir.path().join("test.zig");
         fs::write(&json, "old").expect("write json");
@@ -60,7 +55,7 @@ mod tests {
 
     #[test]
     fn test_not_stale_when_json_newer() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let json = dir.path().join("test.json");
         let source = dir.path().join("test.zig");
         fs::write(&source, "old").expect("write source");
@@ -71,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_not_stale_when_same_mtime() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let json = dir.path().join("test.json");
         let source = dir.path().join("test.zig");
         let content = b"same time";
@@ -82,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_should_generate_no_json() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let json = dir.path().join("missing.json");
         let source = dir.path().join("source.zig");
         fs::write(&source, "x").expect("write source");

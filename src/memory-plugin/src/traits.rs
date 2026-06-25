@@ -80,7 +80,11 @@ pub trait MemoryOps: Send + Sync {
     // ── Tool dispatch ──────────────────────────────────────────
 
     /// Handle a tool call from the LLM. Returns JSON string.
-    fn handle_tool_call(&self, tool_name: &str, args: &serde_json::Value) -> Result<String, MemoryError>;
+    fn handle_tool_call(
+        &self,
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> Result<String, MemoryError>;
 
     /// Tool schemas in OpenAI function-calling format.
     fn tool_schemas(&self) -> Vec<ToolSchema>;

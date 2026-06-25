@@ -3,48 +3,28 @@
 //! JSON-RPC 2.0 over STDIO, exposing guidance's search capabilities
 //! as MCP tools for AI coding assistants.
 
-use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
 
+use common_core::jsonrpc::{JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpcResponse};
 use guidance_core::memory::MemoryBridge;
 use guidance_search_vector::GuidanceDb;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum McpError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("database error: {0}")]
     Db(String),
 }
 
-#[derive(Debug, Deserialize)]
-pub struct JsonRpcRequest {
-    #[allow(dead_code)]
-    pub jsonrpc: String,
-    pub method: String,
-    pub id: Option<serde_json::Value>,
-    pub params: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JsonRpcResponse {
-    pub jsonrpc: String,
-    pub id: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JsonRpcError {
-    pub code: i32,
-    pub message: String,
+impl From<std::io::Error> for McpError {
+    fn from(e: std::io::Error) -> Self {
+        McpError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub struct McpServer {
@@ -64,25 +44,13 @@ impl McpServer {
         }
     }
 
-    pub fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
-        let request: JsonRpcRequest = serde_json::from_str(raw_json)?;
-
-        let response = match request.method.as_str() {
-            "initialize" => self.handle_initialize(&request),
-            "tools/list" => self.handle_tools_list(&request),
-            "tools/call" => self.handle_tools_call(&request),
-            _ => JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: request.id,
-                error: Some(JsonRpcError {
-                    code: -32601,
-                    message: format!("method not found: {}", request.method),
-                }),
-                result: None,
-            },
-        };
-
-        Ok(serde_json::to_string(&response)?)
+    fn dispatch(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        match request.method.as_str() {
+            "initialize" => self.handle_initialize(request),
+            "tools/list" => self.handle_tools_list(request),
+            "tools/call" => self.handle_tools_call(request),
+            _ => common_core::jsonrpc::method_not_found(request.id.clone(), &request.method),
+        }
     }
 
     fn handle_initialize(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -295,26 +263,13 @@ impl McpServer {
             error: None,
         }
     }
+}
 
-    /// Serve MCP protocol over STDIO: read JSON-RPC 2.0 requests from stdin,
-    /// write responses to stdout, one JSON object per line.
-    pub fn serve_stdio(&self) -> Result<(), McpError> {
-        let stdin = io::stdin();
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
-
-        for line in stdin.lock().lines() {
-            let line = line?;
-            let trimmed = line.trim().to_string();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let response = self.handle_request(&trimmed)?;
-            writeln!(stdout, "{response}")?;
-            stdout.flush()?;
-        }
-
-        Ok(())
+impl JsonRpcHandler for McpServer {
+    fn handle_request(&self, raw: &str) -> Result<String, JsonRpcError> {
+        let request: JsonRpcRequest = serde_json::from_str(raw)?;
+        let response = self.dispatch(&request);
+        Ok(serde_json::to_string(&response)?)
     }
 }
 
@@ -331,7 +286,7 @@ pub fn serve_stdio_from_path(db_path: &Path) -> Result<(), McpError> {
         Some(m) => McpServer::with_memory(Arc::new(db), m),
         None => McpServer::new(Arc::new(db)),
     };
-    server.serve_stdio()
+    common_core::jsonrpc::serve_stdio(&server).map_err(McpError::Io)
 }
 
 #[cfg(test)]

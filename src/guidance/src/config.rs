@@ -7,7 +7,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("JSON parse error: {0}")]
     Parse(#[from] serde_json::Error),
     #[error("config not found")]
@@ -166,11 +166,7 @@ pub fn find_config_file(workspace: &Path) -> Option<PathBuf> {
 pub fn load_config(workspace: &Path) -> Result<ProjectConfig, ConfigError> {
     let config_path = find_config_file(workspace);
     match config_path {
-        Some(path) => {
-            let content = std::fs::read_to_string(&path)?;
-            let config: ProjectConfig = serde_json::from_str(&content)?;
-            Ok(config)
-        }
+        Some(path) => Ok(common_core::config::load_json(&path)?),
         None => Ok(ProjectConfig::default()),
     }
 }
@@ -183,6 +179,7 @@ pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
 
     #[test]
     fn test_model_name_strips_provider() {
@@ -242,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_find_config_file_project() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let guidance_dir = dir.path().join(".guidance");
         std::fs::create_dir_all(&guidance_dir).expect("create");
         let config_path = guidance_dir.join("guidance-config.json");
@@ -254,21 +251,21 @@ mod tests {
 
     #[test]
     fn test_find_config_file_not_found() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let found = find_config_file(dir.path());
         assert!(found.is_none(), "should not find config");
     }
 
     #[test]
     fn test_load_config_defaults() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let config = load_config(dir.path()).expect("should return default");
         assert_eq!(config.guidance_dir, PathBuf::from(".guidance"));
     }
 
     #[test]
     fn test_load_config_from_file() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let guidance_dir = dir.path().join(".guidance");
         std::fs::create_dir_all(&guidance_dir).expect("create");
         let config_path = guidance_dir.join("guidance-config.json");

@@ -5,13 +5,19 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum WasmError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("plugin load failed: {0}")]
     PluginLoad(String),
     #[error("plugin call failed: {0}")]
     PluginCall(String),
     #[error("invalid payload: {0}")]
     InvalidPayload(String),
+}
+
+impl From<std::io::Error> for WasmError {
+    fn from(e: std::io::Error) -> Self {
+        WasmError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub trait WasmPlugin: Send {

@@ -7,7 +7,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum PluginError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("plugin not found for extension: {0}")]
@@ -16,6 +16,12 @@ pub enum PluginError {
     ExecutionFailed(String),
     #[error("plugin subprocess crashed: {0}")]
     SubprocessCrashed(String),
+}
+
+impl From<std::io::Error> for PluginError {
+    fn from(e: std::io::Error) -> Self {
+        PluginError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub type PluginResult = Result<GuidanceDoc, PluginError>;
@@ -46,6 +52,12 @@ impl PluginRegistry {
         self.plugins.get(ext)
     }
 
+    /// Discover plugin binaries in the given directories.
+    ///
+    /// Uses a flat (non-recursive) `read_dir` intentionally: plugin discovery
+    /// scans a single directory level for executables, does not filter by source
+    /// extensions, and must not recurse into subdirectories.  This differs from
+    /// `common_core::walk::walk_files` which recurses and filters by extension.
     pub fn discover(paths: &[PathBuf]) -> Self {
         let mut registry = Self::new();
 
@@ -118,24 +130,24 @@ fn infer_extensions(plugin_name: &str) -> Vec<String> {
 /// Spawns `{plugin.path} sync --file {src_path} --output {output_dir}`,
 /// captures the JSON `GuidanceDoc` from stdout, and returns it.
 pub fn invoke_plugin(plugin: &Plugin, src_path: &Path, output_dir: &Path) -> PluginResult {
-    let output = std::process::Command::new(&plugin.path)
-        .arg("sync")
-        .arg("--file")
-        .arg(src_path)
-        .arg("--output")
-        .arg(output_dir)
-        .output()
-        .map_err(|e| PluginError::SubprocessCrashed(format!("failed to spawn plugin: {e}")))?;
+    let output = common_core::shell::run_capture(&[
+        plugin.path.to_str().unwrap_or(""),
+        "sync",
+        "--file",
+        &src_path.to_string_lossy(),
+        "--output",
+        &output_dir.to_string_lossy(),
+    ])
+    .map_err(|e| PluginError::SubprocessCrashed(format!("failed to spawn plugin: {e}")))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.success {
         return Err(PluginError::ExecutionFailed(format!(
-            "plugin exited with {}: {stderr}",
-            output.status
+            "plugin exited with non-zero status: {}",
+            output.stderr
         )));
     }
 
-    let doc: GuidanceDoc = serde_json::from_slice(&output.stdout)?;
+    let doc: GuidanceDoc = serde_json::from_str(&output.stdout)?;
     Ok(doc)
 }
 
@@ -171,6 +183,7 @@ pub fn discover_provider(workspace: &Path, extension: &str) -> Option<Plugin> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
 
     // ── PluginRegistry tests ────────────────────────────────────────────────────
 
@@ -196,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_discover_from_paths() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let zig_plugin = dir.path().join("guidance-zig");
         std::fs::write(&zig_plugin, "#!/bin/sh").expect("write");
         let py_plugin = dir.path().join("guidance-py");
@@ -211,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_discover_ignores_non_guidance_binaries() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let other = dir.path().join("some-other-tool");
         std::fs::write(&other, "#!/bin/sh").expect("write");
 
@@ -285,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_invoke_plugin_success() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let src_path = dir.path().join("test.py");
         std::fs::write(&src_path, "print('hello')").expect("write");
         let output_dir = dir.path().join("out");
@@ -328,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_invoke_plugin_exit_code_error() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let src_path = dir.path().join("test.py");
         std::fs::write(&src_path, "content").expect("write");
         let output_dir = dir.path().join("out");
@@ -357,12 +370,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             PluginError::ExecutionFailed(msg) => {
-                assert!(
-                    msg.contains("exit status: 1")
-                        || msg.contains("exit code: 1")
-                        || msg.contains("exit status: 256"),
-                    "got: {msg}"
-                );
+                assert!(msg.contains("non-zero status"), "got: {msg}");
             }
             other => panic!("expected ExecutionFailed, got {other:?}"),
         }
@@ -386,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_discover_provider_workspace_bin() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let bin_dir = dir.path().join("bin");
         std::fs::create_dir_all(&bin_dir).expect("create bin dir");
 
@@ -403,14 +411,14 @@ mod tests {
 
     #[test]
     fn test_discover_provider_not_found() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let result = discover_provider(dir.path(), ".nonexistent");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_discover_provider_skips_non_executable() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let bin_dir = dir.path().join("bin");
         std::fs::create_dir_all(&bin_dir).expect("create bin dir");
 

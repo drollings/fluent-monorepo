@@ -9,11 +9,17 @@ use crate::walk;
 #[derive(Error, Debug)]
 pub enum JsonError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("JSON parse error: {0}")]
     Parse(#[from] serde_json::Error),
     #[error("missing required field: {0}")]
     MissingField(String),
+}
+
+impl From<std::io::Error> for JsonError {
+    fn from(e: std::io::Error) -> Self {
+        JsonError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 fn parse_member_type(s: &str) -> Option<MemberType> {
@@ -203,7 +209,7 @@ fn load_guidance_from_value(v: &serde_json::Value) -> Option<GuidanceDoc> {
 }
 
 pub fn load_guidance(path: &Path) -> Result<Option<GuidanceDoc>, JsonError> {
-    let content = std::fs::read_to_string(path)?;
+    let content = common_core::io::read_to_string_err(path)?;
     if content.trim().is_empty() {
         return Ok(None);
     }
@@ -304,13 +310,14 @@ pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
         merge_doc(&existing, &mut doc_to_save);
     }
     let json_str = super::json_writer::doc_to_json_string(&doc_to_save);
-    std::fs::write(path, json_str)?;
+    common_core::io::write_atomic(path, json_str.as_bytes())?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
     use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
     fn make_test_member(name: &str, sig: &str, hash: &str, comment: Option<&str>) -> Member {
@@ -357,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_save_guidance_preserves_comment_on_round_trip() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("test.json");
 
         // First save: member with comment and hash
@@ -407,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_save_guidance_overwrites_when_hash_differs() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("test.json");
 
         let doc1 = GuidanceDoc {
@@ -471,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_round_trip() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("test.json");
 
         let doc = GuidanceDoc {

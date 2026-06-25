@@ -291,7 +291,7 @@ pub fn is_malformed_response(text: &str) -> bool {
         return true;
     }
     for &pattern in LLM_PREAMBLE_PATTERNS {
-        if trimmed.to_lowercase().contains(pattern) {
+        if common_core::string::contains_ignore_case(trimmed, pattern) {
             return true;
         }
     }

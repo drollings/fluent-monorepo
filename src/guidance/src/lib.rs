@@ -59,7 +59,7 @@ pub mod query_engine;
 pub mod runtime;
 pub mod scanner;
 pub mod sync_engine;
-pub mod walk;
+pub use common_core::walk;
 
 pub mod query;
 

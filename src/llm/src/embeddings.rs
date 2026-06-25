@@ -1,11 +1,14 @@
-use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
-use common_core::hash::content_hash_with_model;
+use common_core::hash::{content_hash_with_model, hex_encode};
+use lru::LruCache;
+
+const DEFAULT_CACHE_LIMIT: usize = 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
@@ -182,27 +185,29 @@ impl EmbeddingProvider for OllamaEmbedding {
 
 /// Generic caching wrapper around any EmbeddingProvider.
 /// Uses content_hash_with_model for cache keys.
+/// Bounded by an LRU cache (default 1024 entries).
 pub struct CachedEmbeddingProvider<T: EmbeddingProvider> {
     inner: T,
-    cache: Arc<Mutex<HashMap<String, Vec<f32>>>>,
+    cache: Arc<Mutex<LruCache<String, Vec<f32>>>>,
 }
 
 impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
     pub fn new(inner: T) -> Self {
+        Self::new_with_limit(inner, DEFAULT_CACHE_LIMIT)
+    }
+
+    pub fn new_with_limit(inner: T, limit: usize) -> Self {
         Self {
             inner,
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(Mutex::new(LruCache::new(
+                NonZeroUsize::new(limit).unwrap_or(NonZeroUsize::new(DEFAULT_CACHE_LIMIT).unwrap()),
+            ))),
         }
     }
 
     fn cache_key(&self, text: &str) -> String {
         let bytes = content_hash_with_model(text, self.inner.name());
-        let mut key = String::with_capacity(32);
-        for b in bytes {
-            use std::fmt::Write;
-            let _ = write!(key, "{b:02x}");
-        }
-        key
+        hex_encode(&bytes)
     }
 }
 
@@ -224,7 +229,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
         }
         let key = self.cache_key(text);
         {
-            let map = self
+            let mut map = self
                 .cache
                 .lock()
                 .map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
@@ -234,7 +239,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
         }
         let result = self.inner.embed(text)?;
         if let Ok(mut map) = self.cache.lock() {
-            map.insert(key, result.clone());
+            map.put(key, result.clone());
         }
         Ok(result)
     }
@@ -252,7 +257,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
                 continue;
             }
             let key = self.cache_key(text);
-            if let Ok(map) = self.cache.lock() {
+            if let Ok(mut map) = self.cache.lock() {
                 if let Some(cached) = map.get(&key) {
                     results[i] = Some(cached.clone());
                     continue;
@@ -269,7 +274,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
                 results[pos] = Some(vec.clone());
                 let key = self.cache_key(uncached_texts[j]);
                 if let Ok(mut map) = self.cache.lock() {
-                    map.insert(key, vec);
+                    map.put(key, vec);
                 }
             }
         }
@@ -297,7 +302,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
         }
         let key = self.cache_key(text);
         {
-            let map = self
+            let mut map = self
                 .cache
                 .lock()
                 .map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
@@ -307,7 +312,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
         }
         let result = self.inner.embed_async(text).await?;
         if let Ok(mut map) = self.cache.lock() {
-            map.insert(key, result.clone());
+            map.put(key, result.clone());
         }
         Ok(result)
     }
@@ -325,7 +330,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
                 continue;
             }
             let key = self.cache_key(text);
-            if let Ok(map) = self.cache.lock() {
+            if let Ok(mut map) = self.cache.lock() {
                 if let Some(cached) = map.get(&key) {
                     results[i] = Some(cached.clone());
                     continue;
@@ -342,7 +347,7 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
                 results[pos] = Some(vec.clone());
                 let key = self.cache_key(uncached_texts[j]);
                 if let Ok(mut map) = self.cache.lock() {
-                    map.insert(key, vec);
+                    map.put(key, vec);
                 }
             }
         }
@@ -609,29 +614,30 @@ pub fn create_embedding_provider(
     base_url: Option<&str>,
     api_key: Option<&str>,
     dims: u32,
+    cache_limit: Option<usize>,
 ) -> Result<Box<dyn EmbeddingProvider>, EmbeddingError> {
+    let limit = cache_limit.unwrap_or(DEFAULT_CACHE_LIMIT);
     let provider: Box<dyn EmbeddingProvider> = match name {
         "none" => Box::new(NoopEmbedding::new(dims)),
-        "ollama" => Box::new(CachedEmbeddingProvider::new(OllamaEmbedding::new(
-            model, base_url, dims,
-        )?)),
-        "openai" => Box::new(CachedEmbeddingProvider::new(OpenAiEmbedding::new(
-            model, base_url, api_key, dims,
-        )?)),
+        "ollama" => Box::new(CachedEmbeddingProvider::new_with_limit(
+            OllamaEmbedding::new(model, base_url, dims)?,
+            limit,
+        )),
+        "openai" => Box::new(CachedEmbeddingProvider::new_with_limit(
+            OpenAiEmbedding::new(model, base_url, api_key, dims)?,
+            limit,
+        )),
         _ => {
             if let Some(ollama_model) = name.strip_prefix("ollama:") {
-                Box::new(CachedEmbeddingProvider::new(OllamaEmbedding::new(
-                    Some(ollama_model),
-                    base_url,
-                    dims,
-                )?))
+                Box::new(CachedEmbeddingProvider::new_with_limit(
+                    OllamaEmbedding::new(Some(ollama_model), base_url, dims)?,
+                    limit,
+                ))
             } else if let Some(custom_url) = name.strip_prefix("custom:") {
-                Box::new(CachedEmbeddingProvider::new(OpenAiEmbedding::new(
-                    model,
-                    Some(custom_url),
-                    api_key,
-                    dims,
-                )?))
+                Box::new(CachedEmbeddingProvider::new_with_limit(
+                    OpenAiEmbedding::new(model, Some(custom_url), api_key, dims)?,
+                    limit,
+                ))
             } else {
                 return Err(EmbeddingError::UnknownProvider(name.to_string()));
             }
@@ -645,14 +651,14 @@ mod tests {
     use super::*;
     #[test]
     fn create_noop_provider() {
-        let p = create_embedding_provider("none", None, None, None, 768).unwrap();
+        let p = create_embedding_provider("none", None, None, None, 768, None).unwrap();
         assert_eq!(p.name(), "none");
         assert_eq!(p.dimensions(), 768);
     }
 
     #[test]
     fn create_unknown_provider() {
-        let result = create_embedding_provider("bogus", None, None, None, 0);
+        let result = create_embedding_provider("bogus", None, None, None, 0, None);
         assert!(result.is_err());
     }
 
@@ -766,6 +772,7 @@ mod tests {
             Some("http://localhost:11434"),
             None,
             4096,
+            None,
         )
         .unwrap();
         assert_eq!(p.name(), "ollama");
@@ -779,6 +786,7 @@ mod tests {
             None,
             Some("sk-test"),
             768,
+            None,
         )
         .unwrap();
         assert_eq!(p.name(), "openai");
@@ -1112,7 +1120,23 @@ mod tests {
             Some("http://localhost:11434"),
             None,
             4096,
+            None,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn cached_provider_evicts_when_full() {
+        let limit = 5;
+        let provider = CachedEmbeddingProvider::new_with_limit(NoopEmbedding::new(768), limit);
+
+        // Insert `limit + 10` entries
+        for i in 0..limit + 10 {
+            let text = format!("text_{i}");
+            let _ = provider.embed(&text);
+        }
+
+        let cache = provider.cache.lock().unwrap();
+        assert_eq!(cache.len(), limit);
     }
 }

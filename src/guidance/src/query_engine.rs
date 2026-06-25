@@ -31,13 +31,19 @@ pub enum OutputFormat {
 #[derive(Error, Debug)]
 pub enum QueryEngineError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("database error: {0}")]
     Db(String),
     #[error("LLM filter error: {0}")]
     LlmFilter(String),
     #[error("no results found")]
     NoResults,
+}
+
+impl From<std::io::Error> for QueryEngineError {
+    fn from(e: std::io::Error) -> Self {
+        QueryEngineError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub struct QueryEngine {
@@ -400,6 +406,7 @@ fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
     use guidance_project_knowledge::word_index::WordIndex;
     use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
@@ -512,7 +519,7 @@ mod tests {
 
     #[test]
     fn test_load_word_index_from_dir() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let src_dir = dir.path().join("src");
         std::fs::create_dir_all(&src_dir).expect("create src dir");
         std::fs::write(src_dir.join("test.zig"), "pub fn hello_world() void {}").expect("write");

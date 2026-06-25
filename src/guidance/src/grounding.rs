@@ -32,9 +32,7 @@ impl GroundingResult {
 /// and a line number — this is the minimum requirement for grounded synthesis.
 pub fn can_synthesize(stages: &[Stage]) -> bool {
     stages.iter().any(|s| {
-        s.kind == guidance_types::StageKind::Code
-            && !s.source.is_empty()
-            && s.line.is_some()
+        s.kind == guidance_types::StageKind::Code && !s.source.is_empty() && s.line.is_some()
     })
 }
 
@@ -68,7 +66,9 @@ fn extract_citation_at(text: &str, colon_pos: usize) -> Option<String> {
     let after = &text[colon_pos + 1..];
 
     let file_start = before
-        .rfind(|c: char| !c.is_alphanumeric() && c != '/' && c != '\\' && c != '.' && c != '_' && c != '-')
+        .rfind(|c: char| {
+            !c.is_alphanumeric() && c != '/' && c != '\\' && c != '.' && c != '_' && c != '-'
+        })
         .map_or(0, |p| p + 1);
 
     let file_part = &before[file_start..];
@@ -217,7 +217,10 @@ mod tests {
     fn test_extract_citations_no_file_extension() {
         let text = "See Makefile:42";
         let cites = extract_citations(text);
-        assert!(cites.is_empty(), "citations without file extension should be ignored");
+        assert!(
+            cites.is_empty(),
+            "citations without file extension should be ignored"
+        );
     }
 
     #[test]
@@ -235,7 +238,9 @@ mod tests {
         let output = "Related to main.rs:42 and also other.rs:99";
         let result = verify_citations(output, &stages);
         assert!(!result.is_grounded());
-        assert!(result.unverified_citations.contains(&"other.rs:99".to_string()));
+        assert!(result
+            .unverified_citations
+            .contains(&"other.rs:99".to_string()));
     }
 
     #[test]

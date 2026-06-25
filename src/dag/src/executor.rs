@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::process::Command;
 
 use crate::target::{Target, TargetRegistry};
 use guidance_types::ExecutorKind;
@@ -75,26 +74,19 @@ impl<'a> DagExecutor<'a> {
                         output: String::new(),
                     });
                 }
-                let (shell_cmd, shell_arg) = if cfg!(target_os = "windows") {
-                    ("cmd", "/C")
-                } else {
-                    ("sh", "-c")
-                };
-                let output = Command::new(shell_cmd)
-                    .arg(shell_arg)
-                    .arg(&target.command)
-                    .output()
-                    .map_err(|e| ExecutionError::ExecutionFailed {
-                        target: target.name.to_string(),
-                        message: e.to_string(),
+                let output =
+                    common_core::shell::run_shell_capture(&target.command).map_err(|e| {
+                        ExecutionError::ExecutionFailed {
+                            target: target.name.to_string(),
+                            message: e.to_string(),
+                        }
                     })?;
-                let success = output.status.success();
-                let output_str = String::from_utf8_lossy(if success {
-                    &output.stdout
+                let success = output.success;
+                let output_str = if success {
+                    output.stdout
                 } else {
-                    &output.stderr
-                })
-                .to_string();
+                    output.stderr
+                };
                 Ok(ExecutionResult {
                     bit_index: target.id as usize,
                     name: target.name.to_string(),

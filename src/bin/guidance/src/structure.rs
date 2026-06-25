@@ -173,7 +173,7 @@ fn extract_skills(doc: &GuidanceDoc, available: &[String]) -> Vec<String> {
     matched
 }
 
-fn file_metadata(path: &Path) -> (u64, blake3::Hash) {
+fn file_metadata(path: &Path) -> (u64, [u8; 32]) {
     let meta = std::fs::metadata(path).ok();
     let inode = meta
         .as_ref()
@@ -189,7 +189,7 @@ fn file_metadata(path: &Path) -> (u64, blake3::Hash) {
         })
         .unwrap_or(0);
     let content = std::fs::read(path).unwrap_or_default();
-    let hash = blake3::hash(&content);
+    let hash = common_core::hash::blake3_hash(&content);
     (inode, hash)
 }
 
@@ -253,14 +253,12 @@ pub fn generate(guidance_dir: &Path) -> Result<String, Box<dyn std::error::Error
 }
 
 fn get_git_tracked_files() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("git")
-        .args(["ls-files"])
-        .output()?;
-    if !output.status.success() {
+    let output = common_core::shell::run_capture(&["git", "ls-files"])?;
+    if !output.success {
         return Err("git ls-files failed".into());
     }
-    let stdout = String::from_utf8(output.stdout)?;
-    let mut files: Vec<String> = stdout
+    let mut files: Vec<String> = output
+        .stdout
         .lines()
         .filter(|l| !l.is_empty())
         .map(|l| l.to_string())
@@ -269,6 +267,9 @@ fn get_git_tracked_files() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     Ok(files)
 }
 
+/// List available skill directories. Uses a flat (non-recursive) `read_dir`
+/// intentionally: this enumerates subdirectory names, not files, which is
+/// outside the scope of `common_core::walk::walk_files`.
 fn get_available_skills(guidance_dir: &Path) -> Vec<String> {
     let skills_dir = guidance_dir.join("skills");
     let mut skills = Vec::new();

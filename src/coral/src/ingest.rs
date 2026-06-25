@@ -14,13 +14,19 @@ use crate::db::Library;
 #[derive(Error, Debug)]
 pub enum IngestError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("database error: {0}")]
     Db(#[from] DbError),
     #[error("library error: {0}")]
     Library(#[from] crate::db::LibraryError),
     #[error("parse error: {0}")]
     Parse(String),
+}
+
+impl From<std::io::Error> for IngestError {
+    fn from(e: std::io::Error) -> Self {
+        IngestError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -140,7 +146,7 @@ impl BatchIngestor {
     /// Ingest triples from an RDF file (Turtle or N-Quads).
     /// Streams through the RDF parser, maps via TripleMapper, and flushes in batches.
     pub fn ingest_file(&mut self, path: &std::path::Path) -> Result<IngestStats, IngestError> {
-        let source = std::fs::read_to_string(path).map_err(IngestError::Io)?;
+        let source = common_core::io::read_to_string_err(path).map_err(IngestError::Io)?;
 
         let mut mapper = guidance_ontology::mapper::TripleMapper::new(
             guidance_ontology::mapper::MappingConfig {
@@ -215,9 +221,10 @@ impl BatchIngestor {
                 self.stats.errors_skipped += 1;
                 continue;
             };
-            let (Ok(Some(from_sql_id)), Ok(Some(to_sql_id))) =
-                (self.library.find_node_by_name(from_name), self.library.find_node_by_name(to_name))
-            else {
+            let (Ok(Some(from_sql_id)), Ok(Some(to_sql_id))) = (
+                self.library.find_node_by_name(from_name),
+                self.library.find_node_by_name(to_name),
+            ) else {
                 self.stats.errors_skipped += 1;
                 continue;
             };

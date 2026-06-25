@@ -5,24 +5,9 @@ pub fn generate_lod_slices(full_text: &str) -> Vec<String> {
         if max_chars == usize::MAX || full_text.len() <= max_chars {
             slices.push(full_text.to_string());
         } else {
-            // Find the nearest char boundary at or before max_chars
-            let idx = if full_text.is_char_boundary(max_chars) {
-                max_chars
-            } else {
-                full_text.floor_char_boundary(max_chars)
-            };
-            let truncated = &full_text[..idx];
-            if let Some(last_period) = truncated.rfind('.') {
-                if last_period > idx / 2 {
-                    slices.push(full_text[..=last_period].to_string());
-                    continue;
-                }
-            }
-            if let Some(last_space) = truncated.rfind(' ') {
-                slices.push(full_text[..last_space].to_string());
-            } else {
-                slices.push(truncated.to_string());
-            }
+            slices.push(common_core::string::truncate_at_sentence(
+                full_text, max_chars,
+            ));
         }
     }
     slices

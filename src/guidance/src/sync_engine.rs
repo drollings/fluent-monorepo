@@ -14,7 +14,7 @@ use guidance_search_vector::GuidanceDb;
 #[derive(Error, Debug)]
 pub enum SyncEngineError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("JSON error: {0}")]
     Json(#[from] json_store::JsonError),
     #[error("parse error: {0}")]
@@ -23,6 +23,12 @@ pub enum SyncEngineError {
     SourceNotFound(PathBuf),
     #[error("database error: {0}")]
     Db(String),
+}
+
+impl From<std::io::Error> for SyncEngineError {
+    fn from(e: std::io::Error) -> Self {
+        SyncEngineError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -73,7 +79,7 @@ impl SyncEngine {
         source_path: &Path,
         config: &GenConfig,
     ) -> Result<GuidanceDoc, SyncEngineError> {
-        let source = std::fs::read_to_string(source_path)?;
+        let source = common_core::io::read_to_string_err(source_path)?;
 
         let rel_path = source_path
             .strip_prefix(&self.source_dir)
@@ -201,10 +207,11 @@ impl SyncStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
 
     #[test]
     fn test_gen_and_load_round_trip() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let source_dir = dir.path().join("src");
         std::fs::create_dir(&source_dir).expect("create src");
 
@@ -222,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_gen_if_stale() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let source_dir = dir.path().join("src");
         std::fs::create_dir(&source_dir).expect("create src");
 
@@ -237,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_status() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let source_dir = dir.path().join("src");
         std::fs::create_dir(&source_dir).expect("create src");
 
@@ -254,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_gen_syncs_comments() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let source_dir = dir.path().join("src");
         std::fs::create_dir(&source_dir).expect("create src");
 

@@ -6,7 +6,9 @@
 
 use crate::traits::MemoryOps;
 use crate::types::*;
-use fluent_wvr::{FieldAccess, FieldError, Describable, WorkUnit, WorkContext, WorkOutput, WorkError};
+use fluent_wvr::{
+    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+};
 use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -160,7 +162,7 @@ impl MemoryOps for HindsightMemory {
     fn initialize(&mut self, _ctx: &MemoryInitContext) -> Result<(), MemoryError> {
         if let Some(path) = &self.config.graph_path {
             if path.exists() {
-                let data = std::fs::read_to_string(path)
+                let data = common_core::io::read_to_string_err(path)
                     .map_err(|e| MemoryError::InitFailed(e.to_string()))?;
                 let graph: KnowledgeGraph = serde_json::from_str(&data)
                     .map_err(|e| MemoryError::InitFailed(e.to_string()))?;
@@ -203,12 +205,11 @@ impl MemoryOps for HindsightMemory {
             }
 
             let g = graph.read().await;
-            let query_lower = query.to_lowercase();
 
             let matching: Vec<&String> = g
                 .entities
                 .keys()
-                .filter(|name| name.to_lowercase().contains(&query_lower))
+                .filter(|name| common_core::string::contains_ignore_case(name, &query))
                 .take(5)
                 .collect();
 
@@ -231,21 +232,20 @@ impl MemoryOps for HindsightMemory {
         let req = req.clone();
         Box::pin(async move {
             let g = graph.read().await;
-            let query_lower = req.query.to_lowercase();
 
             let results: Vec<MemoryResult> = g
                 .entities
                 .iter()
-                .filter(|(name, _)| name.to_lowercase().contains(&query_lower))
+                .filter(|(name, _)| common_core::string::contains_ignore_case(name, &req.query))
                 .take(req.limit)
                 .map(|(name, entity)| {
                     let content = match entity {
-                        GraphEntity::Function {
-                            module_path, ..
-                        } => format!("function {name} in {module_path}"),
-                        GraphEntity::Struct {
-                            module_path, ..
-                        } => format!("struct {name} in {module_path}"),
+                        GraphEntity::Function { module_path, .. } => {
+                            format!("function {name} in {module_path}")
+                        }
+                        GraphEntity::Struct { module_path, .. } => {
+                            format!("struct {name} in {module_path}")
+                        }
                         GraphEntity::Module { path, .. } => format!("module {path}"),
                         GraphEntity::Observation { content, .. } => content.clone(),
                     };
@@ -404,10 +404,7 @@ impl MemoryOps for HindsightMemory {
                     .and_then(|v| v.as_str())
                     .unwrap_or("observation")
                     .to_string();
-                let from = args
-                    .get("from")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
+                let from = args.get("from").and_then(|v| v.as_str()).map(String::from);
                 let relation = args
                     .get("relation")
                     .and_then(|v| v.as_str())
@@ -481,27 +478,20 @@ impl MemoryOps for HindsightMemory {
                 .to_string())
             }
             "knowledge_search" => {
-                let query = args
-                    .get("query")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let depth = args
-                    .get("depth")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(3) as usize;
+                let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                let depth = args.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
 
                 let graph = self.graph.clone();
                 let max_depth = self.config.max_depth.min(depth);
                 let rt = tokio::runtime::Handle::current();
                 let result = rt.block_on(async {
                     let g = graph.read().await;
-                    let query_lower = query.to_lowercase();
 
                     // Phase 1: find matching entities by name
                     let matching: Vec<String> = g
                         .entities
                         .keys()
-                        .filter(|name| name.to_lowercase().contains(&query_lower))
+                        .filter(|name| common_core::string::contains_ignore_case(name, query))
                         .take(10)
                         .cloned()
                         .collect();
@@ -527,17 +517,17 @@ impl MemoryOps for HindsightMemory {
 
                         if let Some(entity) = g.entities.get(&name) {
                             let (entity_type, summary) = match entity {
-                                GraphEntity::Function {
-                                    module_path, ..
-                                } => ("function", format!("fn {name} in {module_path}")),
-                                GraphEntity::Struct {
-                                    module_path, ..
-                                } => ("struct", format!("struct {name} in {module_path}")),
-                                GraphEntity::Module { path, .. } => ("module", format!("mod {path}")),
+                                GraphEntity::Function { module_path, .. } => {
+                                    ("function", format!("fn {name} in {module_path}"))
+                                }
+                                GraphEntity::Struct { module_path, .. } => {
+                                    ("struct", format!("struct {name} in {module_path}"))
+                                }
+                                GraphEntity::Module { path, .. } => {
+                                    ("module", format!("mod {path}"))
+                                }
                                 GraphEntity::Observation {
-                                    content,
-                                    category,
-                                    ..
+                                    content, category, ..
                                 } => ("observation", format!("[{category}] {content}")),
                             };
 
@@ -582,9 +572,7 @@ impl MemoryOps for HindsightMemory {
 
                 Ok(result.to_string())
             }
-            _ => Err(MemoryError::ToolError(format!(
-                "unknown tool: {tool_name}"
-            ))),
+            _ => Err(MemoryError::ToolError(format!("unknown tool: {tool_name}"))),
         }
     }
 

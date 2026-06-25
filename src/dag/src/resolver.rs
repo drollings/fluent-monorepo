@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::error::ResolverError;
 use crate::target::TargetRegistry;
 use bitvec::vec::BitVec;
+use common_core::error::ResolverError;
 use guidance_types::TargetType;
 
 #[derive(Debug, Clone)]

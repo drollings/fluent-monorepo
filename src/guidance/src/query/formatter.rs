@@ -112,8 +112,8 @@ impl Formatter for DebugFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
     use crate::query::synthesize::Synthesizer;
+    use guidance_types::{GuidanceDoc, Member, MemberType, Meta};
 
     fn test_stages() -> Vec<Stage> {
         let doc = GuidanceDoc {

@@ -8,9 +8,15 @@ use guidance_types::GuidanceDoc;
 #[derive(Error, Debug)]
 pub enum SyncError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("source file not found: {0}")]
     SourceNotFound(String),
+}
+
+impl From<std::io::Error> for SyncError {
+    fn from(e: std::io::Error) -> Self {
+        SyncError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub fn sync_comments(
@@ -18,7 +24,7 @@ pub fn sync_comments(
     doc: &GuidanceDoc,
     parser: &mut AstParser,
 ) -> Result<(), SyncError> {
-    let source = std::fs::read_to_string(source_path)?;
+    let source = common_core::io::read_to_string_err(source_path)?;
     let fresh_doc = parser.parse_file(source_path, &source).ok();
     let insertions = collect_comment_insertions(&source, doc, fresh_doc.as_ref());
     if insertions.is_empty() {
@@ -26,7 +32,7 @@ pub fn sync_comments(
     }
     let modified = apply_insertions(&source, insertions);
     if modified != source {
-        std::fs::write(source_path, modified)?;
+        common_core::io::write_atomic(source_path, modified.as_bytes())?;
     }
     Ok(())
 }

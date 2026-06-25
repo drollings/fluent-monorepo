@@ -27,7 +27,7 @@ impl QueryCache {
         default_ttl_seconds: u64,
         max_entries: usize,
     ) -> rusqlite::Result<Self> {
-        let db = Connection::open(db_path)?;
+        let db = common_core::sqlite::open_wal(db_path)?;
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS query_cache (
                 key TEXT PRIMARY KEY,
@@ -46,7 +46,7 @@ impl QueryCache {
     }
 
     pub fn new_in_memory(default_ttl_seconds: u64) -> rusqlite::Result<Self> {
-        let db = Connection::open_in_memory()?;
+        let db = common_core::sqlite::open_in_memory()?;
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS query_cache (
                 key TEXT PRIMARY KEY,
@@ -170,13 +170,13 @@ impl QueryCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use fluent_wvr_testutil::tempdir;
 
-    fn setup() -> (QueryCache, TempDir) {
-        let dir = TempDir::new().unwrap();
+    fn setup() -> (QueryCache, std::path::PathBuf) {
+        let dir = tempdir();
         let db_path = dir.path().join("cache.db");
         let cache = QueryCache::new(&db_path, 3600).unwrap();
-        (cache, dir)
+        (cache, dir.keep())
     }
 
     #[test]
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn lru_eviction_works() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let db_path = dir.path().join("cache.db");
         let cache = QueryCache::with_max_entries(&db_path, 3600, 3).unwrap();
 
@@ -218,12 +218,15 @@ mod tests {
         cache.put("q4", "r4").unwrap(); // should evict q1
 
         let (count, _, _) = cache.stats().unwrap();
-        assert!(count <= 3, "expected <= 3 entries after LRU eviction, got {count}");
+        assert!(
+            count <= 3,
+            "expected <= 3 entries after LRU eviction, got {count}"
+        );
     }
 
     #[test]
     fn expired_entry_returns_none() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let db_path = dir.path().join("cache.db");
         // TTL of 0 seconds means immediately expired
         let cache = QueryCache::with_max_entries(&db_path, 0, 4096).unwrap();
@@ -235,7 +238,7 @@ mod tests {
 
     #[test]
     fn evict_expired_works() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let db_path = dir.path().join("cache.db");
         let cache = QueryCache::with_max_entries(&db_path, 0, 4096).unwrap();
 

@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use bon::Builder;
 use fluent_wvr::{FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
 use internment::ArcIntern;
@@ -35,26 +33,17 @@ impl WorkUnit for CommandUnit {
         if self.command.is_empty() {
             return Ok(WorkOutput::ok(format!("no-op: {}", self.name)));
         }
-        let (shell_cmd, shell_arg) = if cfg!(target_os = "windows") {
-            ("cmd", "/C")
-        } else {
-            ("sh", "-c")
-        };
-        let output = Command::new(shell_cmd)
-            .arg(shell_arg)
-            .arg(&self.command)
-            .output()
+        let output = common_core::shell::run_shell_capture(&self.command)
             .map_err(|e| WorkError::Execution(format!("command failed: {e}")))?;
-        if output.status.success() {
+        if output.success {
             Ok(WorkOutput::ok_with_data(
                 format!("{} completed", self.name),
-                serde_json::json!({"stdout": String::from_utf8_lossy(&output.stdout).to_string()}),
+                serde_json::json!({"stdout": output.stdout}),
             ))
         } else {
             Err(WorkError::Execution(format!(
                 "{} failed: {}",
-                self.name,
-                String::from_utf8_lossy(&output.stderr)
+                self.name, output.stderr
             )))
         }
     }

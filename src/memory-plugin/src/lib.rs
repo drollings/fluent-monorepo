@@ -16,15 +16,15 @@
 //! The `MemoryPluginRegistry` stores type-erased `Arc<dyn MemoryPlugin>` handles.
 //! The orchestrator never branches on implementation type.
 
+pub mod capability;
+pub mod plugins;
+pub mod registry;
 pub mod traits;
 pub mod types;
-pub mod registry;
-pub mod capability;
 pub mod zone;
-pub mod plugins;
 
+pub use capability::MemoryCapability;
+pub use registry::MemoryPluginRegistry;
 pub use traits::{MemoryOps, MemoryPlugin};
 pub use types::*;
-pub use registry::MemoryPluginRegistry;
-pub use capability::MemoryCapability;
 pub use zone::MemoryZone;

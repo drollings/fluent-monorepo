@@ -94,7 +94,7 @@ mod tests {
         let conc_err: fluent_wvr::ConcurrencyError = io_err.into();
         match &conc_err {
             fluent_wvr::ConcurrencyError::Io(e) => {
-                assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied);
+                assert_eq!(e.kind(), Some(std::io::ErrorKind::PermissionDenied));
                 assert!(e.to_string().contains("missing"));
             }
         }

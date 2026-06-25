@@ -122,9 +122,9 @@ impl Enhancer {
         kind_label: &str,
         language: &str,
     ) -> Result<Option<String>, EnhancerError> {
-        let prompt = self
-            .generator
-            .member_prompt(name, signature, module_context, kind_label, language);
+        let prompt =
+            self.generator
+                .member_prompt(name, signature, module_context, kind_label, language);
         self.call_llm(language, &prompt)
     }
 

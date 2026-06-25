@@ -10,16 +10,18 @@
 pub mod hrr;
 pub mod store;
 
-use store::{HolographicStore, StoreConfig};
 use crate::traits::MemoryOps;
 use crate::types::*;
-use fluent_wvr::{FieldAccess, FieldError, Describable, WorkUnit, WorkContext, WorkOutput, WorkError};
+use fluent_wvr::{
+    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+};
 use internment::ArcIntern;
 use serde_json::json;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use store::{HolographicStore, StoreConfig};
 
 /// Holographic memory plugin configuration.
 #[derive(Debug, Clone)]
@@ -153,9 +155,8 @@ impl MemoryOps for HolographicMemory {
         let req = req.clone();
 
         Box::pin(async move {
-            let store = store.ok_or_else(|| {
-                MemoryError::NotAvailable("store not initialized".into())
-            })?;
+            let store =
+                store.ok_or_else(|| MemoryError::NotAvailable("store not initialized".into()))?;
 
             let facts = store
                 .search_facts(
@@ -235,11 +236,7 @@ impl MemoryOps for HolographicMemory {
                 for pattern in pref_patterns.iter().flatten() {
                     if pattern.is_match(&msg.content) {
                         let _ = store
-                            .add_fact(
-                                &msg.content[..msg.content.len().min(400)],
-                                "user_pref",
-                                "",
-                            )
+                            .add_fact(&msg.content[..msg.content.len().min(400)], "user_pref", "")
                             .await;
                         break;
                     }
@@ -248,11 +245,7 @@ impl MemoryOps for HolographicMemory {
                 for pattern in decision_patterns.iter().flatten() {
                     if pattern.is_match(&msg.content) {
                         let _ = store
-                            .add_fact(
-                                &msg.content[..msg.content.len().min(400)],
-                                "project",
-                                "",
-                            )
+                            .add_fact(&msg.content[..msg.content.len().min(400)], "project", "")
                             .await;
                         break;
                     }
@@ -360,14 +353,10 @@ impl HolographicMemory {
                     .get("min_trust")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(self.config.min_trust_threshold);
-                let limit = args
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(10) as usize;
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
                 let category = args.get("category").and_then(|v| v.as_str());
 
-                let results =
-                    rt.block_on(store.search_facts(query, category, min_trust, limit))?;
+                let results = rt.block_on(store.search_facts(query, category, min_trust, limit))?;
                 Ok(serde_json::json!({"results": results, "count": results.len()}).to_string())
             }
             "feedback" => {

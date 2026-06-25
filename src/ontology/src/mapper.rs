@@ -6,11 +6,10 @@ use guidance_rdf::parser::Term;
 use guidance_rdf::parser::Triple;
 use guidance_types::ContextNode;
 use guidance_types::NodeId;
+use guidance_types::LOD_COUNT;
 use thiserror::Error;
 
 use crate::yago;
-
-pub const LOD_COUNT: usize = 6;
 
 #[derive(Debug, Clone)]
 pub struct PendingNode {

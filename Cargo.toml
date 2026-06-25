@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "src/fluent-wvr",
     "src/fluent-wvr-macros",
+    "src/fluent-wvr-testutil",
     "src/fluent-concurrency",
     "src/llm",
     "src/bin/guidance",

@@ -32,11 +32,14 @@ pub fn write_temp_file(content: &str, prefix: &str) -> std::io::Result<PathBuf> 
 ///
 /// Resolves `$EDITOR`, then `$VISUAL`, then falls back to `vi`.
 /// Blocks until the editor exits.
+///
+/// Note: This intentionally uses `std::process::Command` directly (not
+/// `common_core::shell::run_capture`) because the editor requires stdin
+/// inheritance for interactive use — `run_capture` would capture stdin and
+/// block the editor from receiving user input.
 pub fn open_editor(path: &Path) -> std::io::Result<()> {
     let editor = resolve_editor();
-    let status = std::process::Command::new(&editor)
-        .arg(path)
-        .status()?;
+    let status = std::process::Command::new(&editor).arg(path).status()?;
     if !status.success() {
         eprintln!("Editor {editor} exited with status {status}");
     }
@@ -45,9 +48,7 @@ pub fn open_editor(path: &Path) -> std::io::Result<()> {
 
 /// Returns the modification time of a file, or `None` if the file doesn't exist.
 pub fn file_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
+    common_core::io::mtime(path)
 }
 
 /// Reads a file, strips comment lines (starting with `#`), joins, and trims.
@@ -86,10 +87,11 @@ fn resolve_editor() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
 
     #[test]
     fn test_read_cleaned_strips_comments() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("test.txt");
         std::fs::write(
             &path,
@@ -103,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_read_cleaned_empty_after_strip() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("test.txt");
         std::fs::write(&path, "# only comments\n# another\n").expect("write");
 
@@ -113,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_file_mtime_exists() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("test.txt");
         std::fs::write(&path, "hello").expect("write");
 
@@ -122,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_file_mtime_missing() {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = tempdir();
         let path = dir.path().join("nonexistent.txt");
         assert!(file_mtime(&path).is_none());
     }

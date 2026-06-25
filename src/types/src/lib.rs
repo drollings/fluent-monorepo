@@ -23,6 +23,7 @@
     clippy::byte_char_slices
 )]
 
+use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
@@ -31,11 +32,8 @@ pub const LOD_COUNT: usize = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub i64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SessionId(pub i64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TargetId(pub i64);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub ArcIntern<str>);
 
 impl NodeId {
     pub fn from_int(i: i64) -> Self {
@@ -47,20 +45,11 @@ impl NodeId {
 }
 
 impl SessionId {
-    pub fn from_int(i: i64) -> Self {
-        Self(i)
+    pub fn new(s: impl Into<ArcIntern<str>>) -> Self {
+        Self(s.into())
     }
-    pub fn as_int(self) -> i64 {
-        self.0
-    }
-}
-
-impl TargetId {
-    pub fn from_int(i: i64) -> Self {
-        Self(i)
-    }
-    pub fn as_int(self) -> i64 {
-        self.0
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -398,22 +387,16 @@ mod tests {
     }
     #[test]
     fn session_id_roundtrip() {
-        let id = SessionId::from_int(-1);
-        assert_eq!(id.as_int(), -1);
-    }
-    #[test]
-    fn target_id_roundtrip() {
-        let id = TargetId::from_int(0);
-        assert_eq!(id.as_int(), 0);
+        let id = SessionId::new("test_session");
+        assert_eq!(id.as_str(), "test_session");
     }
     #[test]
     fn types_are_distinct() {
         fn takes_node(_: NodeId) {}
-        fn takes_session(_: SessionId) {}
-        fn takes_target(_: TargetId) {}
+        fn takes_session(_: &SessionId) {}
         takes_node(NodeId::from_int(1));
-        takes_session(SessionId::from_int(1));
-        takes_target(TargetId::from_int(1));
+        let sess = SessionId::new("test");
+        takes_session(&sess);
     }
     #[test]
     fn file_type_from_extension() {

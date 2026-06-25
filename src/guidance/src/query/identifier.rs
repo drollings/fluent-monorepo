@@ -1,3 +1,4 @@
+use common_core::string::contains_ignore_case;
 use guidance_types::GuidanceDoc;
 use regex::Regex;
 
@@ -79,13 +80,12 @@ pub fn find_members_by_name<'a>(doc: &'a GuidanceDoc, name: &str) -> Vec<&'a str
 }
 
 pub fn find_members_by_signature<'a>(doc: &'a GuidanceDoc, query: &str) -> Vec<&'a str> {
-    let lower_query = query.to_lowercase();
     doc.members
         .iter()
         .filter_map(|m| {
             m.signature
                 .as_ref()
-                .filter(|sig| sig.as_str().to_lowercase().contains(&lower_query))
+                .filter(|sig| contains_ignore_case(sig.as_str(), query))
                 .map(smol_str::SmolStr::as_str)
         })
         .collect()

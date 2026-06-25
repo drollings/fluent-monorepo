@@ -17,6 +17,7 @@ regex = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 bon = { workspace = true }
 async-trait = { workspace = true }
+lru = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }

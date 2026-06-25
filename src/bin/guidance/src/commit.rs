@@ -133,10 +133,7 @@ fn collect_members(
 /// For each code file, loads the corresponding `.guidance/src/*.json`, parses
 /// hunk ranges from the diff, and extracts member names, line numbers,
 /// comments, and signatures.
-pub fn load_guidance_context(
-    diff: &str,
-    guidance_dir: &Path,
-) -> String {
+pub fn load_guidance_context(diff: &str, guidance_dir: &Path) -> String {
     let guidance_prefix = format!("{}/", guidance_dir.display());
 
     // Split diff into per-file chunks.
@@ -181,7 +178,10 @@ pub fn load_guidance_context(
         }
 
         // Append a budget-limited excerpt of the raw diff.
-        let budget = std::cmp::min(chunk.len(), TOTAL_CONTEXT_CAP / std::cmp::max(1, chunks.len()));
+        let budget = std::cmp::min(
+            chunk.len(),
+            TOTAL_CONTEXT_CAP / std::cmp::max(1, chunks.len()),
+        );
         context.push_str(safe_truncate(chunk, budget));
         context.push('\n');
 
@@ -208,7 +208,11 @@ fn split_diff_by_file(diff: &str) -> Vec<String> {
 
     for (pos, line) in diff.lines().enumerate() {
         if line.starts_with("diff --git ") && pos > 0 {
-            let chunk_end = diff[..].lines().take(pos).map(|l| l.len() + 1).sum::<usize>();
+            let chunk_end = diff[..]
+                .lines()
+                .take(pos)
+                .map(|l| l.len() + 1)
+                .sum::<usize>();
             if start < chunk_end {
                 chunks.push(diff[start..chunk_end].to_string());
             }
@@ -517,19 +521,16 @@ diff --git a/b.rs b/b.rs
         let api_url = format!("http://{addr}");
         let diff = "diff --git a/src/main.rs b/src/main.rs\n\
                      --- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n";
-        let context = "### Functions in src/main.rs:\n- cmdCommit (line 10)\n: Handles git commits\n";
+        let context =
+            "### Functions in src/main.rs:\n- cmdCommit (line 10)\n: Handles git commits\n";
 
-        let result =
-            generate_commit_message(diff, context, &api_url, "test-model", false).unwrap();
+        let result = generate_commit_message(diff, context, &api_url, "test-model", false).unwrap();
 
         assert!(result.contains("staged diff parser"));
         assert!(result.contains("guidance JSON context"));
         // Each line should be a bullet.
         for line in result.lines() {
-            assert!(
-                line.starts_with("* "),
-                "expected bullet line, got: {line}"
-            );
+            assert!(line.starts_with("* "), "expected bullet line, got: {line}");
         }
     }
 
@@ -578,8 +579,7 @@ diff --git a/b.rs b/b.rs
                      --- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n";
         let context = "### Functions in src/main.rs:\n- cmdCommit (line 10)\n";
 
-        let result =
-            generate_commit_message(diff, context, &api_url, "test-model", false).unwrap();
+        let result = generate_commit_message(diff, context, &api_url, "test-model", false).unwrap();
 
         // Verify multi-byte chars survived the round-trip.
         assert!(result.contains("──"));

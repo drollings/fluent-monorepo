@@ -199,6 +199,9 @@ async fn main() {
             .init();
     }
 
+    let cmd_histogram = std::sync::Arc::new(common_core::LatencyHistogram::new());
+    let cmd_start = std::time::Instant::now();
+
     match &cli.command {
         Commands::Explain {
             query,
@@ -210,8 +213,17 @@ async fn main() {
             filter,
         } => {
             let memory = guidance_core::memory::init_memory_bridge();
-            cmd_explain(query, guidance, db, workspace, *limit, *no_llm, filter, memory.as_ref())
-                .await;
+            cmd_explain(
+                query,
+                guidance,
+                db,
+                workspace,
+                *limit,
+                *no_llm,
+                filter,
+                memory.as_ref(),
+            )
+            .await;
         }
         Commands::Test => cmd_test(),
         Commands::Telemetry { db, .. } => cmd_db_stats(db, "Telemetry stats"),
@@ -288,6 +300,17 @@ async fn main() {
             cmd_health(workspace, *min_age, format, db);
         }
         Commands::Mcp { db } => cmd_mcp(db),
+    }
+
+    cmd_histogram.observe_duration(cmd_start);
+    if cli.debug && cmd_histogram.count() > 0 {
+        eprintln!(
+            "[telemetry] command latency: count={} sum_ms={} p50={}ms p99={}ms",
+            cmd_histogram.count(),
+            cmd_histogram.sum_ms(),
+            cmd_histogram.estimate_percentile(50.0),
+            cmd_histogram.estimate_percentile(99.0),
+        );
     }
 }
 
@@ -857,21 +880,10 @@ fn cmd_clean(json_dir: &str, db_path: &str) {
     }
     let guidance_src = Path::new(json_dir).join("src");
     if guidance_src.exists() {
-        fn remove_json_files(dir: &Path) {
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        remove_json_files(&path);
-                    } else if path.extension().is_some_and(|e| e == "json") {
-                        std::fs::remove_file(&path).unwrap_or_else(|e| {
-                            eprintln!("Warning: could not remove {:?}: {e}", path)
-                        });
-                    }
-                }
-            }
-        }
-        remove_json_files(&guidance_src);
+        walk::walk_files(&guidance_src, &["json"], |path| {
+            std::fs::remove_file(path)
+                .unwrap_or_else(|e| eprintln!("Warning: could not remove {:?}: {e}", path));
+        });
         println!("  Removed generated JSON files");
     }
     println!("Clean complete.");
@@ -881,10 +893,7 @@ async fn cmd_commit(dry_run: bool, debug: bool, force: bool) {
     // All work runs inside spawn_blocking because reqwest::blocking::Client
     // cannot be used from a tokio worker thread (it creates its own internal
     // runtime and calls block_on during construction and request dispatch).
-    let result = tokio::task::spawn_blocking(move || {
-        cmd_commit_inner(dry_run, debug, force)
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || cmd_commit_inner(dry_run, debug, force)).await;
     match result {
         Ok(()) => {}
         Err(e) => {
@@ -919,26 +928,23 @@ fn cmd_commit_inner(dry_run: bool, debug: bool, force: bool) {
     let (api_url, model) = commit::resolve_commit_model(&cfg);
 
     // 4. Generate initial commit message via LLM.
-    let initial_msg =
-        commit::generate_commit_message(&diff, &context, &api_url, &model, debug).unwrap_or_else(
-            |e| {
-                if debug {
-                    eprintln!("[commit] LLM error: {e}");
-                }
-                "* Update codebase".to_string()
-            },
-        );
+    let initial_msg = commit::generate_commit_message(&diff, &context, &api_url, &model, debug)
+        .unwrap_or_else(|e| {
+            if debug {
+                eprintln!("[commit] LLM error: {e}");
+            }
+            "* Update codebase".to_string()
+        });
 
     if debug {
         eprintln!("[commit] generated message:\n{initial_msg}");
     }
 
     // 5. Write to temp file.
-    let tmp_path =
-        editor::write_temp_file(&initial_msg, "guidance_commit_").unwrap_or_else(|e| {
-            eprintln!("Failed to create temp file: {e}");
-            std::process::exit(1);
-        });
+    let tmp_path = editor::write_temp_file(&initial_msg, "guidance_commit_").unwrap_or_else(|e| {
+        eprintln!("Failed to create temp file: {e}");
+        std::process::exit(1);
+    });
 
     // 6. Record mtime before opening editor.
     let mtime_before = editor::file_mtime(&tmp_path);
@@ -1130,7 +1136,7 @@ fn cmd_check(workspace: &str) {
 fn cmd_todo() {
     let todo_path = Path::new(".guidance/doc/TODO.md");
     if todo_path.exists() {
-        match std::fs::read_to_string(todo_path) {
+        match common_core::io::read_to_string_err(todo_path) {
             Ok(content) => {
                 println!("TODO items:\n");
                 for line in content.lines() {
@@ -1162,7 +1168,7 @@ fn cmd_diary(text_or_path: &str) {
     let content = if !text_or_path.is_empty() {
         let p = Path::new(text_or_path);
         if p.is_file() {
-            match std::fs::read_to_string(p) {
+            match common_core::io::read_to_string_err(p) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("Could not read {text_or_path}: {e}");
@@ -1228,6 +1234,7 @@ fn cmd_benchmark(
 
     let total = queries.len();
     let mut scores: Vec<f64> = Vec::new();
+    let bench_histogram = std::sync::Arc::new(common_core::LatencyHistogram::new());
 
     println!("Benchmarking {total} queries...\n");
 
@@ -1256,9 +1263,10 @@ fn cmd_benchmark(
                 if !found {
                     found = results.iter().any(|r| {
                         if !expected_member.is_empty() {
-                            r.name
-                                .to_lowercase()
-                                .contains(&expected_member.to_lowercase())
+                            common_core::string::contains_ignore_case(
+                                r.name.as_str(),
+                                expected_member,
+                            )
                         } else if !expected_source.is_empty() {
                             r.source.contains(expected_source.as_str())
                         } else {
@@ -1270,34 +1278,33 @@ fn cmd_benchmark(
         }
 
         if !found {
-            let lower = query.to_lowercase();
             let json_src = gdir.join("src");
             if json_src.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&json_src) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                            continue;
-                        }
-                        if let Ok(Some(doc)) = guidance_core::sync::json_store::load_guidance(&path)
-                        {
-                            for member in &doc.members {
-                                if member.name.as_str().to_lowercase().contains(&lower) {
-                                    found = true;
-                                    result_count += 1;
-                                    if top_result_name.is_empty() {
-                                        top_result_name = member.name.as_str().to_string();
-                                    }
+                walk::walk_files(&json_src, &["json"], |path| {
+                    if found {
+                        return;
+                    }
+                    if let Ok(Some(doc)) = guidance_core::sync::json_store::load_guidance(path) {
+                        for member in &doc.members {
+                            if common_core::string::contains_ignore_case(
+                                member.name.as_str(),
+                                query,
+                            ) {
+                                found = true;
+                                result_count += 1;
+                                if top_result_name.is_empty() {
+                                    top_result_name = member.name.as_str().to_string();
                                 }
                             }
                         }
                     }
-                }
+                });
             }
         }
 
         let elapsed = start.elapsed();
         let ms = elapsed.as_secs_f64() * 1000.0;
+        bench_histogram.observe(elapsed.as_millis() as u64);
 
         let accuracy = if found {
             if result_count <= 3 {
@@ -1364,6 +1371,15 @@ fn cmd_benchmark(
     println!("  High (>=7):     {high}");
     println!("  Middling (4-6): {mid}");
     println!("  Low (<4):       {low}");
+    println!(
+        "  Latency p50:    {}ms",
+        bench_histogram.estimate_percentile(50.0)
+    );
+    println!(
+        "  Latency p99:    {}ms",
+        bench_histogram.estimate_percentile(99.0)
+    );
+    println!("  Latency total:  {}ms", bench_histogram.sum_ms());
 }
 
 fn collect_benchmark_queries(dir: &Path, queries: &mut Vec<(String, String, String)>) {

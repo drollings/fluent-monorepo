@@ -135,17 +135,24 @@ Then you you must read
     ├── common-core/
     │   ├── Cargo.toml
     │   └── src/
+    │       ├── config.rs  # load_json_or_default, load_json
     │       ├── constants.rs  # pub const MAX_VALUE_LEN: usize =
+    │       ├── drift.rs  # BitSetDrift
     │       ├── error.rs  # use thiserror::Error;
     │       ├── error_context.rs  # use std::fmt;
     │       ├── format.rs  # use std::fmt::Write as _;
     │       ├── hash.rs  # use blake3::Hasher;
+    │       ├── interner.rs  # CapabilityRegistry
     │       ├── io.rs  # use std::fs;
+    │       ├── jsonrpc.rs  # JsonRpcRequest/Response/Error + serve_stdio
     │       ├── lib.rs  # //! common-core: Zero-domain generic
     │       ├── metrics.rs  # use std::sync::atomic::{AtomicU64,
     │       ├── shell.rs  # use std::process::Command;
     │       ├── shell_parser.rs  # use thiserror::Error;
-    │       └── string.rs  # use std::collections::HashSet;
+    │       ├── sqlite.rs  # open_wal, open_in_memory (feature-gated)
+    │       ├── string.rs  # use std::collections::HashSet;
+    │       ├── tokens.rs  # estimate_tokens, TokenBudget
+    │       └── walk.rs  # walk_files, collect_extensions, SOURCE_EXTENSIONS
     ├── content-node/
     │   ├── Cargo.toml
     │   └── src/
@@ -174,10 +181,8 @@ Then you you must read
     │   ├── Cargo.toml
     │   └── src/
     │       ├── adapter.rs  # use std::sync::Arc;
-    │       ├── drift.rs  # use bitvec::prelude::*;
     │       ├── error.rs  # use thiserror::Error;
     │       ├── executor.rs  # use std::collections::HashMap;
-    │       ├── interner.rs  # use bitvec::vec::BitVec;
     │       ├── lib.rs  # //! guidance-dag: DAG executor with
     │       ├── middleware.rs  # use std::sync::Arc;
     │       ├── resolver.rs  # use std::collections::HashMap;
@@ -242,7 +247,7 @@ Then you you must read
     │   │   │   ├── mod.rs  # pub mod comments;
     │   │   │   └── staleness.rs  # use std::path::Path;
     │   │   ├── sync_engine.rs  # use std::path::{Path, PathBuf};
-    │   │   └── walk.rs  # use std::collections::HashSet;
+    │   │   └── (walk re-exported from common_core::walk)
     │   └── tests/
     │       └── e2e_gen_roundtrip.rs  # use
     ├── llm/

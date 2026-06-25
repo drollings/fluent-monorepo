@@ -54,9 +54,10 @@ impl MemoryCapability {
         &self,
         req: &MemorySearchRequest,
     ) -> Result<Vec<MemoryResult>, MemoryError> {
-        let plugin = self.active_plugin().await.ok_or_else(|| {
-            MemoryError::NotAvailable("no active memory plugin".into())
-        })?;
+        let plugin = self
+            .active_plugin()
+            .await
+            .ok_or_else(|| MemoryError::NotAvailable("no active memory plugin".into()))?;
         plugin.search(req).await
     }
 
@@ -75,9 +76,10 @@ impl MemoryCapability {
         tool_name: &str,
         args: &serde_json::Value,
     ) -> Result<String, MemoryError> {
-        let plugin = self.active_plugin().await.ok_or_else(|| {
-            MemoryError::NotAvailable("no active memory plugin".into())
-        })?;
+        let plugin = self
+            .active_plugin()
+            .await
+            .ok_or_else(|| MemoryError::NotAvailable("no active memory plugin".into()))?;
         plugin.handle_tool_call(tool_name, args)
     }
 

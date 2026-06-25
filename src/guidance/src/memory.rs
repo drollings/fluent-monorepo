@@ -24,10 +24,7 @@ pub struct MemoryBridge {
 
 impl MemoryBridge {
     /// Create a new memory bridge.
-    pub fn new(
-        capability: MemoryCapability,
-        session_id: internment::ArcIntern<str>,
-    ) -> Self {
+    pub fn new(capability: MemoryCapability, session_id: internment::ArcIntern<str>) -> Self {
         Self {
             capability,
             session_id,

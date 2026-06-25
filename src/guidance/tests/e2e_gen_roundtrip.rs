@@ -1,3 +1,4 @@
+use fluent_wvr_testutil::tempdir;
 use guidance_core::sync::json_store;
 use guidance_core::sync_engine::SyncEngine;
 use guidance_types::MemberType;
@@ -29,7 +30,7 @@ class Calculator:
 
 #[test]
 fn e2e_zig_gen_roundtrip() {
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = tempdir();
     let source_dir = dir.path().join("src");
     let guidance_dir = dir.path().join(".guidance");
     std::fs::create_dir_all(&source_dir).expect("create src");
@@ -73,7 +74,7 @@ fn e2e_zig_gen_roundtrip() {
 
 #[test]
 fn e2e_python_gen_roundtrip() {
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = tempdir();
     let source_dir = dir.path().join("src");
     let guidance_dir = dir.path().join(".guidance");
     std::fs::create_dir_all(&source_dir).expect("create src");
@@ -96,7 +97,7 @@ fn e2e_python_gen_roundtrip() {
 
 #[test]
 fn e2e_incremental_sync() {
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = tempdir();
     let source_dir = dir.path().join("src");
     let guidance_dir = dir.path().join(".guidance");
     std::fs::create_dir_all(&source_dir).expect("create src");
@@ -133,7 +134,7 @@ fn e2e_incremental_sync() {
 
 #[test]
 fn e2e_sync_status_clean() {
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = tempdir();
     let source_dir = dir.path().join("src");
     let guidance_dir = dir.path().join(".guidance");
     std::fs::create_dir_all(&source_dir).expect("create src");

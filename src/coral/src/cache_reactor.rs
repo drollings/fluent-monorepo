@@ -205,13 +205,12 @@ impl QueueReactor {
     pub fn persist_solution(&self, query: &str, result: &RoutingResult) {
         let hash_bytes = content_hash_with_model(query, "solution");
         let hash_id = i64::from_le_bytes(hash_bytes[..8].try_into().unwrap());
-        let embedding = self.embedder.as_ref().and_then(|e| {
-            e.embed_raw(&result.result)
-                .ok()
-                .filter(|v| !v.is_empty())
-        });
+        let embedding = self
+            .embedder
+            .as_ref()
+            .and_then(|e| e.embed_raw(&result.result).ok().filter(|v| !v.is_empty()));
         let node = ContextNode {
-            id: Some(NodeId(hash_id)),
+            id: Some(NodeId::from_int(hash_id)),
             name: format!("solution:{query}").into(),
             source: query.to_string(),
             lod: vec![result.result.clone(), query.to_string()],

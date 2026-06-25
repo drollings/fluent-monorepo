@@ -1,3 +1,4 @@
+use common_core::string::contains_ignore_case;
 use guidance_types::GuidanceDoc;
 
 use super::identifier;
@@ -123,10 +124,7 @@ pub struct ConceptBackend;
 
 impl SearchBackend for ConceptBackend {
     fn matches(&self, intent: QueryIntent) -> bool {
-        matches!(
-            intent,
-            QueryIntent::Conceptual | QueryIntent::HowTo
-        )
+        matches!(intent, QueryIntent::Conceptual | QueryIntent::HowTo)
     }
 
     fn search(
@@ -168,14 +166,12 @@ impl SearchBackend for FilePathBackend {
         doc: &GuidanceDoc,
         _ctx: &SearchContext<'_>,
     ) -> Result<Vec<Stage>, QueryEngineError> {
-        let lower_query = query.to_lowercase();
         let matched_names: Vec<String> = doc
             .members
             .iter()
             .filter(|m| {
-                let src_lower = doc.meta.source.as_str().to_lowercase();
-                src_lower.contains(&lower_query)
-                    || m.name.as_str().to_lowercase().contains(&lower_query)
+                contains_ignore_case(doc.meta.source.as_str(), query)
+                    || contains_ignore_case(m.name.as_str(), query)
             })
             .map(|m| m.name.as_str().to_string())
             .collect();
@@ -202,18 +198,17 @@ impl SearchBackend for GeneralBackend {
         doc: &GuidanceDoc,
         ctx: &SearchContext<'_>,
     ) -> Result<Vec<Stage>, QueryEngineError> {
-        let lower_query = query.to_lowercase();
         let matched_names: Vec<String> = doc
             .members
             .iter()
             .filter(|m| {
-                m.name.as_str().to_lowercase().contains(&lower_query)
+                contains_ignore_case(m.name.as_str(), query)
                     || m.signature
                         .as_ref()
-                        .is_some_and(|s| s.as_str().to_lowercase().contains(&lower_query))
+                        .is_some_and(|s| contains_ignore_case(s.as_str(), query))
                     || m.comment
                         .as_ref()
-                        .is_some_and(|c| c.as_str().to_lowercase().contains(&lower_query))
+                        .is_some_and(|c| contains_ignore_case(c.as_str(), query))
             })
             .map(|m| m.name.as_str().to_string())
             .collect();
@@ -234,30 +229,24 @@ impl SearchBackend for GeneralBackend {
 }
 
 /// WordIndex fallback logic — shared by IdentifierBackend and GeneralBackend.
-fn word_index_fallback(
-    query: &str,
-    doc: &GuidanceDoc,
-    wi: &WordIndex,
-) -> Option<Vec<Stage>> {
+fn word_index_fallback(query: &str, doc: &GuidanceDoc, wi: &WordIndex) -> Option<Vec<Stage>> {
     let hits = wi.search(query);
     if hits.is_empty() {
         return None;
     }
     let source = doc.meta.source.as_str();
-    let lower_query = query.to_lowercase();
     let file_matches: Vec<String> = hits
         .iter()
         .filter(|hit| wi.hit_path(hit) == source)
         .filter_map(|_| {
             doc.members.iter().find_map(|m| {
-                let name_lower = m.name.as_str().to_lowercase();
-                if name_lower.contains(&lower_query)
-                    || m.signature.as_ref().is_some_and(|s| {
-                        s.as_str().to_lowercase().contains(&lower_query)
-                    })
-                    || m.comment.as_ref().is_some_and(|c| {
-                        c.as_str().to_lowercase().contains(&lower_query)
-                    })
+                if contains_ignore_case(m.name.as_str(), query)
+                    || m.signature
+                        .as_ref()
+                        .is_some_and(|s| contains_ignore_case(s.as_str(), query))
+                    || m.comment
+                        .as_ref()
+                        .is_some_and(|c| contains_ignore_case(c.as_str(), query))
                 {
                     Some(m.name.as_str().to_string())
                 } else {

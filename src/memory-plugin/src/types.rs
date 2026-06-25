@@ -127,9 +127,15 @@ pub enum MemoryError {
 
     /// SQLite error.
     #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] common_core::error::SqliteError),
 
     /// JSON serialization error.
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+}
+
+impl From<rusqlite::Error> for MemoryError {
+    fn from(e: rusqlite::Error) -> Self {
+        MemoryError::Database(common_core::error::SqliteError(e))
+    }
 }

@@ -60,6 +60,7 @@ fn read_and_join(paths: &[&Path]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluent_wvr_testutil::tempdir;
 
     #[test]
     fn init_produces_empty_snapshot() {
@@ -89,7 +90,7 @@ mod tests {
 
     #[test]
     fn load_reads_file_content() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let p = dir.path().join("test.txt");
         fs::write(&p, "hello").unwrap();
         let snap = FrozenSnapshot::load(&[&p]);
@@ -104,7 +105,7 @@ mod tests {
 
     #[test]
     fn load_concatenates_multiple_files() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
         fs::write(&a, "a").unwrap();

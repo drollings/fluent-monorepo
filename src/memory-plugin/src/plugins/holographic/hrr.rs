@@ -16,7 +16,7 @@
 //! Atoms are generated deterministically from SHA-256 so representations
 //! are identical across processes, machines, and language versions.
 
-use sha2::{Digest, Sha256};
+use common_core::hash::sha256_digest;
 
 /// 2π — the full circle in radians.
 pub const TWO_PI: f64 = std::f64::consts::TAU;
@@ -39,9 +39,8 @@ pub fn encode_atom(word: &str, dim: usize) -> Vec<f64> {
 
     let mut uint16_values: Vec<u16> = Vec::with_capacity(dim);
     for i in 0..blocks_needed {
-        let mut hasher = Sha256::new();
-        hasher.update(format!("{word}:{i}"));
-        let digest = hasher.finalize();
+        let input = format!("{word}:{i}");
+        let digest = sha256_digest(input.as_bytes());
         for chunk in digest.chunks_exact(2) {
             uint16_values.push(u16::from_le_bytes([chunk[0], chunk[1]]));
         }
@@ -70,11 +69,7 @@ pub fn bind(a: &[f64], b: &[f64]) -> Vec<f64> {
 /// Unbinding retrieves the value associated with a key from a memory vector.
 /// `unbind(bind(a, b), a) ≈ b` (up to superposition noise).
 pub fn unbind(memory: &[f64], key: &[f64]) -> Vec<f64> {
-    assert_eq!(
-        memory.len(),
-        key.len(),
-        "unbind: vector length mismatch"
-    );
+    assert_eq!(memory.len(), key.len(), "unbind: vector length mismatch");
     memory
         .iter()
         .zip(key.iter())

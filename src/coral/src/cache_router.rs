@@ -62,7 +62,8 @@ impl ParallelRouter {
             let hits = if query.is_empty() {
                 self.library.knn_search(query_emb, self.knn_k, None)
             } else {
-                self.library.hybrid_search(query, Some(query_emb), self.knn_k)
+                self.library
+                    .hybrid_search(query, Some(query_emb), self.knn_k)
             };
             if let Ok(ref hits) = hits {
                 if !hits.is_empty() && hits[0].distance < self.l4_threshold {

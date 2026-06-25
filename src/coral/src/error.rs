@@ -9,9 +9,15 @@ pub enum CacheError {
     #[error("cache miss")]
     CacheMiss,
     #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] common_core::error::SqliteError),
     #[error("embedding error: {0}")]
     Embedding(String),
+}
+
+impl From<rusqlite::Error> for CacheError {
+    fn from(e: rusqlite::Error) -> Self {
+        CacheError::Database(common_core::error::SqliteError(e))
+    }
 }
 
 #[cfg(test)]

@@ -10,11 +10,11 @@ const FILE_LOD_LABELS: &[&str] = &["path", "inode+hash", "", "", "", ""];
 pub struct FileContentNode {
     path: PathBuf,
     inode: u64,
-    hash: blake3::Hash,
+    hash: [u8; 32],
 }
 
 impl FileContentNode {
-    pub fn new(path: PathBuf, inode: u64, hash: blake3::Hash) -> Self {
+    pub fn new(path: PathBuf, inode: u64, hash: [u8; 32]) -> Self {
         Self { path, inode, hash }
     }
 
@@ -24,7 +24,7 @@ impl FileContentNode {
     pub fn inode(&self) -> u64 {
         self.inode
     }
-    pub fn hash(&self) -> &blake3::Hash {
+    pub fn hash(&self) -> &[u8; 32] {
         &self.hash
     }
 }

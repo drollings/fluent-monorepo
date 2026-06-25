@@ -6,11 +6,17 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("failed to read file: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
     #[error("failed to parse source: {0}")]
     Syntax(String),
     #[error("unsupported language for file: {0}")]
     UnsupportedLanguage(String),
+}
+
+impl From<std::io::Error> for ParseError {
+    fn from(e: std::io::Error) -> Self {
+        ParseError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub struct AstParser {

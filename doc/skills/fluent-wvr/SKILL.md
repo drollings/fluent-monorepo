@@ -63,17 +63,17 @@ Twelve patterns compose into a single coherent architecture.
 
 | Pattern | Problem solved | Cost | Primary source |
 |---------|---------------|------|---------------|
-| **Fluent Builder** | Multi-parameter init that callers can't read | Zero — `#[derive(bon::Builder)]` | `common/src/registry.rs` |
-| **Trait-Based Reflection** | Schema defined in multiple places; runtime config by name | Zero — `serde` + `FieldAccess` derive | `common/src/types.rs` |
-| **Trait Composition** | Cross-cutting logic duplicated across handlers | Zero — newtype wrappers | `common/src/wrapper.rs` |
-| **Trait Objects** | Runtime polymorphism with branching in hot loops | One vtable pointer per `dyn Trait` | `common/src/embeddings.rs` |
+| **Fluent Builder** | Multi-parameter init that callers can't read | Zero — `#[derive(bon::Builder)]` | `dag/src/target.rs` |
+| **Trait-Based Reflection** | Schema defined in multiple places; runtime config by name | Zero — `serde` + `FieldAccess` derive | `fluent-wvr-macros/src/lib.rs` |
+| **Trait Composition** | Cross-cutting logic duplicated across handlers | Zero — newtype wrappers | `fluent-wvr/src/wrapper.rs` |
+| **Trait Objects** | Runtime polymorphism with branching in hot loops | One vtable pointer per `dyn Trait` | `llm/src/embeddings.rs` |
 | **Binary IPC** | Executing untrusted code across a WASM boundary | Memcpy + `#[repr(C, packed)]` | `wasm_ipc/src/lib.rs` |
 | **Scoped Ownership** | Repeated malloc/free in batch processing | Zero — RAII scope drop | Throughout |
-| **Newtype Handles** | ID type confusion across module boundaries | Zero — same representation | `common/src/types.rs` |
+| **Newtype Handles** | ID type confusion across module boundaries | Zero — same representation | `guidance-types/src/lib.rs` |
 | **Unit of Work** | Uniform orchestration of heterogeneous tasks | One trait impl per task | `dag/src/work_unit.rs` |
 | **Middleware Chain** | Composable cross-cutting on trait objects | One allocation per layer | `dag/src/middleware.rs` |
 | **Component Adapter** | Runtime type adaptation without losing uniform interface | One `Arc` per adapter | `dag/src/adapter.rs` |
-| **Structured Logging Context** | Request-scoped observability without manual context passing | Thread-local storage | `common/src/logging.rs` |
+| **Structured Logging Context** | Request-scoped observability without manual context passing | Thread-local storage | `fluent-wvr/src/wrapper.rs` (Instrumented) |
 | **Runtime Composition** | Full lifecycle: build → configure → wrap → execute → inspect | Zero — uses above patterns | Throughout |
 
 ---
@@ -1202,92 +1202,50 @@ In all three cases — Rust struct, WASM plugin, database config — the orchest
 
 In a multi-threaded server, log messages from different requests interleave. Without request context, correlating log lines with a specific request is difficult.
 
-### Definition in `common/src/logging.rs`
+### Canonical implementation
+
+The codebase does **not** implement a standalone `LogContext` / `Scope` / `call_logged`
+module. Instead, timing and observability are handled by two composable primitives:
+
+1. **`fluent_wvr::wrapper::Instrumented<U>`** — wraps any `WorkUnit` and logs
+   execution duration via `tracing::info!` on every `execute` call. Optionally
+   records into a `LatencyHistogram` when constructed with `with_metrics`.
+
+2. **`common_core::metrics::LatencyHistogram`** — a lock-free, atomic
+   histogram with bucket-based approximation. Supports `observe(duration_ms)`,
+   `observe_duration(start)`, and `estimate_percentile(pct)`.
+
+### Usage
 
 ```rust
-#[derive(Debug, Clone, Default)]
-pub struct LogContext {
-    pub request_id: Option<String>,
-    pub user_id: Option<String>,
-    pub trace_id: Option<String>,
-    pub span_id: Option<String>,
-}
+use std::sync::Arc;
+use common_core::LatencyHistogram;
+use fluent_wvr::wrapper::Instrumented;
 
-thread_local! {
-    static CURRENT_CONTEXT: RefCell<Option<LogContext>> = RefCell::new(None);
-}
+// Basic instrumentation (tracing only):
+let unit = Instrumented::new(my_component, "ingest_yago");
 
-impl LogContext {
-    pub fn set(ctx: LogContext) {
-        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(ctx));
-    }
-    pub fn get() -> Option<LogContext> {
-        CURRENT_CONTEXT.with(|c| c.borrow().clone())
-    }
-    pub fn clear() {
-        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = None);
-    }
-}
+// With metrics (tracing + histogram):
+let histogram = Arc::new(LatencyHistogram::new());
+let unit = Instrumented::with_metrics(my_component, "ingest_yago", histogram.clone());
 
-pub struct Scope {
-    name: &'static str,
-    start: Instant,
-}
-
-impl Scope {
-    pub fn begin(name: &'static str) -> Self {
-        if LogContext::get().is_some() { info!(scope = name, event = "start"); }
-        Self { name, start: Instant::now() }
-    }
-
-    pub fn end(self) {
-        if LogContext::get().is_some() {
-            info!(scope = self.name, event = "end",
-                  elapsed_us = self.start.elapsed().as_micros() as u64);
-        }
-    }
-}
-
-pub fn call_logged<F, T, E>(name: &'static str, f: F) -> Result<T, E>
-where F: FnOnce() -> Result<T, E> {
-    let scope = Scope::begin(name);
-    let result = f();
-    scope.end();
-    result
-}
-```
-
-### Usage at request boundaries
-
-```rust
-async fn handle_request(&self, raw_json: &str) -> Result<String, McpError> {
-    LogContext::set(LogContext {
-        request_id: Some(generate_request_id()),
-        user_id: Some(self.user_id.clone()),
-        trace_id: Some(generate_trace_id()),
-        span_id: None,
-    });
-    // Use defer! or a Drop guard to ensure context is cleared on all exit paths.
-    // defer!(LogContext::clear());
-
-    let req: JsonRpcRequest = serde_json::from_str(raw_json)?;
-    let result = call_logged("route", || self.reactor.route(&req.query))?;
-    LogContext::clear();
-    Ok(serde_json::to_string(&result)?)
-}
+// After execution, query the histogram:
+let p50 = histogram.estimate_percentile(50.0);
+let p99 = histogram.estimate_percentile(99.0);
+println!("p50={p50}ms p99={p99}ms total={}ms", histogram.sum_ms());
 ```
 
 ### Key properties
 
-1. **Thread-local:** Each thread has its own context slot. No synchronization.
-2. **Zero overhead when inactive:** `Scope::begin/end` are no-ops when context is `None`.
-3. **Does not propagate across threads.** Pass context values explicitly to new threads and call `LogContext::set()` there.
+1. **Thread-safe:** `LatencyHistogram` uses `AtomicU64` counters — no locks.
+2. **Zero overhead when unused:** `histogram: None` skips the observe call.
+3. **Composable:** `Instrumented` wraps before type erasure (Pattern 3), preserving inlining.
 
 ### Rules
 
-- **Set context at request boundaries.** Clear it when the request completes using a Drop guard or `defer!`.
-- **Never use `Scope` in hot loops.** Each scope logs two messages.
-- **Do NOT use `call_logged` in tight loops.** It allocates a scope on every call.
+- **Use `Instrumented` for per-unit timing.** It logs via `tracing` and optionally records to a histogram.
+- **Use `LatencyHistogram` for aggregate latency stats.** Expose via `--debug` or a telemetry command.
+- **Do NOT hand-roll `Instant::now()` + `elapsed()` + `info!`** when `Instrumented` can do it.
 
 ---
 
@@ -1686,6 +1644,14 @@ When writing new code in `rust-src/`:
 23. **Run `cargo test` before finishing.** All 448 tests must pass.
 
 24. **Check for `unsafe` blocks.** The project has only 7 `unsafe` blocks (3 packed struct reads in `wasm_ipc`, 4 libc ioctl in `terminal.rs`). Every new `unsafe` block must be justified and documented.
+
+---
+
+## 21. Future Work — MCP Handler as WorkUnit
+
+An MCP method handler (e.g. `coral_query`, `guidance_explain`) is a natural `WorkUnit`: the method name maps to `name()`, and the dispatch body maps to `execute()`. Converting MCP handlers to `WorkUnit` implementations would allow them to participate in the DAG orchestration pipeline, middleware chains, and `Instrumented`/`WithRetry` wrappers.
+
+**Do not implement this now.** There is currently only one `JsonRpcHandler` per MCP server, and the `WorkUnit` interface would require adapting the JSON-RPC request/response model into `WorkContext`/`WorkOutput`. This is a follow-up task to be undertaken only when a second consumer of MCP method dispatch appears or when MCP methods need DAG orchestration.
 
 ---
 

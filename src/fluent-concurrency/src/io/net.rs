@@ -86,11 +86,8 @@ impl NetCapability {
             .get(url)
             .send()
             .await
-            .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
-        let body = response
-            .text()
-            .await
-            .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+            .map_err(std::io::Error::other)?;
+        let body = response.text().await.map_err(std::io::Error::other)?;
         Ok(body)
     }
 
@@ -103,11 +100,8 @@ impl NetCapability {
             .body(body.to_string())
             .send()
             .await
-            .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
-        let response_body = response
-            .text()
-            .await
-            .map_err(|e| ConcurrencyError::Io(std::io::Error::other(e)))?;
+            .map_err(std::io::Error::other)?;
+        let response_body = response.text().await.map_err(std::io::Error::other)?;
         Ok(response_body)
     }
 }

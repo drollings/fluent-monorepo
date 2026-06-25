@@ -1,20 +1,18 @@
 pub struct BlankNodeScope;
 
 pub fn hash_iri(iri: &str) -> i64 {
-    let hash = blake3::hash(iri.as_bytes());
-    let bytes = hash.as_bytes();
-    i64::from_le_bytes(bytes[0..8].try_into().unwrap())
+    let hash = common_core::hash::blake3_hash(iri.as_bytes());
+    i64::from_le_bytes(hash[0..8].try_into().unwrap())
 }
 
 pub fn hash_blank_node(scope: &str, id: &str) -> i64 {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&scope.len().to_le_bytes());
-    hasher.update(scope.as_bytes());
-    hasher.update(&id.len().to_le_bytes());
-    hasher.update(id.as_bytes());
-    let hash = hasher.finalize();
-    let bytes = hash.as_bytes();
-    i64::from_le_bytes(bytes[0..8].try_into().unwrap())
+    let mut input = Vec::with_capacity(8 + scope.len() + 8 + id.len());
+    input.extend_from_slice(&scope.len().to_le_bytes());
+    input.extend_from_slice(scope.as_bytes());
+    input.extend_from_slice(&id.len().to_le_bytes());
+    input.extend_from_slice(id.as_bytes());
+    let hash = common_core::hash::blake3_hash(&input);
+    i64::from_le_bytes(hash[0..8].try_into().unwrap())
 }
 
 use crate::XSD_NS;

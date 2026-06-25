@@ -48,7 +48,11 @@ mod tests {
 
     #[test]
     fn content_node_ref_downcasting() {
-        let node = FileContentNode::new(PathBuf::from("test.txt"), 42, blake3::hash(b"test"));
+        let node = FileContentNode::new(
+            PathBuf::from("test.txt"),
+            42,
+            common_core::hash::blake3_hash(b"test"),
+        );
         let wrapper = ContentNodeRef::new(node);
         assert_eq!(wrapper.node_type(), NodeType::File);
         let downcast = wrapper.downcast_ref::<FileContentNode>();

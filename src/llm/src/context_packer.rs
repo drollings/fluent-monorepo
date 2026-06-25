@@ -1,4 +1,5 @@
 use crate::client::ChatMessage;
+use common_core::tokens::estimate_tokens;
 
 pub struct ContextPacker {
     max_tokens: usize,
@@ -14,7 +15,7 @@ impl ContextPacker {
     }
 
     pub fn estimate_tokens(text: &str) -> usize {
-        text.len().div_ceil(4)
+        estimate_tokens(text)
     }
 
     pub fn truncate_to_budget(&self, text: &str) -> String {

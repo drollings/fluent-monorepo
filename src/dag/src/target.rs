@@ -127,7 +127,7 @@ impl Default for TargetRegistry {
     }
 }
 
-pub use crate::interner::CapabilityRegistry;
+pub use common_core::interner::CapabilityRegistry;
 
 #[cfg(test)]
 mod tests {

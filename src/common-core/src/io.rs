@@ -1,5 +1,32 @@
 use std::fs;
 use std::path::Path;
+use std::time::SystemTime;
+
+use crate::constants::MAX_FILE_SIZE;
+use crate::error::IoError;
+
+pub fn mtime(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+pub fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, data)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+pub fn read_to_string_err(path: &Path) -> Result<String, IoError> {
+    let meta = fs::metadata(path).map_err(IoError::Io)?;
+    let size = meta.len() as usize;
+    if size > MAX_FILE_SIZE {
+        return Err(IoError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file too large: {size} bytes exceeds maximum {MAX_FILE_SIZE} bytes"),
+        )));
+    }
+    fs::read_to_string(path).map_err(IoError::Io)
+}
 
 pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
     let pb = Path::new(path);
@@ -123,5 +150,48 @@ mod tests {
     fn read_file_alloc_err_missing() {
         let result = read_file_alloc_err("/nonexistent/path/file.txt");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn mtime_returns_some_for_existing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.txt");
+        fs::write(&path, "hello").unwrap();
+        assert!(mtime(&path).is_some());
+    }
+
+    #[test]
+    fn mtime_returns_none_for_nonexistent() {
+        assert!(mtime(Path::new("/nonexistent/file.txt")).is_none());
+    }
+
+    #[test]
+    fn write_atomic_creates_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.txt");
+        write_atomic(&path, b"hello").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
+    }
+
+    #[test]
+    fn write_atomic_overwrites_existing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.txt");
+        fs::write(&path, "old").unwrap();
+        write_atomic(&path, b"new").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+    }
+
+    #[test]
+    fn read_to_string_err_reads_content() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.txt");
+        fs::write(&path, "hello").unwrap();
+        assert_eq!(read_to_string_err(&path).unwrap(), "hello");
+    }
+
+    #[test]
+    fn read_to_string_err_missing_file() {
+        assert!(read_to_string_err(Path::new("/nonexistent/file.txt")).is_err());
     }
 }

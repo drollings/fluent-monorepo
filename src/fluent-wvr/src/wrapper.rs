@@ -2,10 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+use common_core::metrics::LatencyHistogram;
 use internment::ArcIntern;
 use tracing::info;
 
-use crate::{Component, Describable, FieldAccess, FieldError, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit};
+use crate::{
+    Component, Describable, FieldAccess, FieldError, Runtime, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
+};
 
 pub enum WrapperKind {
     None,
@@ -119,6 +123,7 @@ impl Pipeline {
 pub struct Instrumented<U> {
     inner: U,
     label: String,
+    histogram: Option<Arc<LatencyHistogram>>,
 }
 
 impl<U: WorkUnit> Instrumented<U> {
@@ -126,6 +131,19 @@ impl<U: WorkUnit> Instrumented<U> {
         Self {
             inner,
             label: label.into(),
+            histogram: None,
+        }
+    }
+
+    pub fn with_metrics(
+        inner: U,
+        label: impl Into<String>,
+        histogram: Arc<LatencyHistogram>,
+    ) -> Self {
+        Self {
+            inner,
+            label: label.into(),
+            histogram: Some(histogram),
         }
     }
 }
@@ -147,6 +165,9 @@ impl<U: WorkUnit> WorkUnit for Instrumented<U> {
         let start = Instant::now();
         let result = self.inner.execute(ctx);
         let elapsed = start.elapsed();
+        if let Some(ref hist) = self.histogram {
+            hist.observe_duration(start);
+        }
         info!(target: "instrumented", label = %self.label, elapsed = ?elapsed, name = %self.inner.name(), "executed");
         result
     }
@@ -192,7 +213,12 @@ impl<U: WorkUnit> WithRetry<U> {
         }
     }
 
-    pub fn with_runtime(inner: U, max_attempts: u32, backoff_ms: u64, rt: Arc<dyn Runtime>) -> Self {
+    pub fn with_runtime(
+        inner: U,
+        max_attempts: u32,
+        backoff_ms: u64,
+        rt: Arc<dyn Runtime>,
+    ) -> Self {
         Self {
             inner,
             max_attempts,
@@ -590,8 +616,7 @@ mod tests {
     #[test]
     fn adapter_field_override_set_then_get() {
         let host = AdapterHost::new("inner");
-        let mut adapter =
-            ComponentAdapter::new(Arc::new(host)).with_field_override("port", "8080");
+        let mut adapter = ComponentAdapter::new(Arc::new(host)).with_field_override("port", "8080");
         assert_eq!(adapter.get_field("port").unwrap(), "8080");
         adapter.set_field("port", "9090").unwrap();
         assert_eq!(adapter.get_field("port").unwrap(), "9090");

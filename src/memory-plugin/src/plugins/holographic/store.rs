@@ -145,10 +145,8 @@ impl HolographicStore {
             })?;
         }
 
-        let conn = Connection::open(&config.db_path)?;
-
-        // WAL mode for concurrent reads
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
+        let conn = common_core::sqlite::open_wal(&config.db_path)
+            .map_err(|e| MemoryError::InitFailed(format!("failed to open db: {e}")))?;
 
         // Create schema
         conn.execute_batch(SCHEMA)?;
@@ -302,9 +300,12 @@ impl HolographicStore {
                 "UPDATE facts SET retrieval_count = retrieval_count + 1 WHERE fact_id IN ({})",
                 placeholders.join(",")
             );
-            let params: Vec<Box<dyn rusqlite::types::ToSql>> =
-                ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids
+                .iter()
+                .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+                .collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
             conn.execute(&sql, param_refs.as_slice())?;
         }
 

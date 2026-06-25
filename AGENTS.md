@@ -89,6 +89,62 @@ doc/
 
 ---
 
+## Consolidation Contract
+
+`src/common-core` is the **only permitted zero-domain crate** in the workspace.
+It must NOT import any `guidance-*` / `coral-*` / `fluent-*` / `dag` crate
+(see `src/common-core/src/lib.rs` module doc). Generic storage backends
+(`rusqlite` behind the `sqlite` feature) and generic data utilities
+(hashing, I/O, strings, formatting, metrics, drift, interner) belong here;
+anything that knows what a "node", "session", "target", "embedding", or
+"WASM plugin" is belongs in its respective domain crate.
+
+The active consolidation plan lives in
+`ROADMAP_20260625_CONSOLIDATE.md` (checklist:
+`ROADMAP_20260625_CONSOLIDATE_CHECKLIST.md`). Add new cross-crate limit or
+helper there before re-implementing it locally.
+
+### Canonical Locations (single source of truth)
+
+| Concept | Canonical location | Notes |
+|---------|-------------------|-------|
+| Hashing (blake3, sha256, fnv1a64, hex) | `common-core::hash` | `src/common-core/src/hash.rs` |
+| Text utilities (`contains_ignore_case`, `truncate_at_sentence`, …) | `common-core::string` | `src/common-core/src/string.rs` |
+| Path / fs helpers (`mtime`, `read_file_alloc_err`, `write_atomic`, …) | `common-core::io` | `src/common-core/src/io.rs` |
+| Shared error leaf types (`IoError`, `SqliteError`, `ResolverError`) | `common-core::error` | `src/common-core/src/error.rs` |
+| Cross-crate magic constants (`MAX_FILE_SIZE`, `HnswParams`, …) | `common-core::constants` | `src/common-core/src/constants.rs` |
+| Bitset / capability registry | `common-core::interner` | `src/common-core/src/interner.rs` |
+| BitSetDrift | `common-core::drift` | `src/common-core/src/drift.rs` |
+| Latency histograms / metrics | `common-core::metrics` | `src/common-core/src/metrics.rs` |
+| Fluent WVR newtype wrappers (`Instrumented`, `WithRetry`, `ComponentAdapter`, `Pipeline`, `retry_call`) | `fluent-wvr::wrapper` | `src/fluent-wvr/src/wrapper.rs` |
+| Shared domain newtypes (`NodeId`, `SessionId`, `TargetId`, `LOD_COUNT`) | `guidance-types` | `src/types/src/lib.rs` |
+| Cosine similarity / brute-force KNN | `search-vector::math` | `src/search-vector/src/math.rs` |
+| SQLite open helpers + schemas | `common-core::sqlite` | `src/common-core/src/sqlite.rs` (feature `sqlite`) |
+| JSON-RPC / MCP stdio loop | `common-core::jsonrpc` | `src/common-core/src/jsonrpc.rs` |
+| Token budget helpers | `common-core::tokens` | `src/common-core/src/tokens.rs` |
+| Directory walk / file scan | `common-core::walk` | `src/common-core/src/walk.rs` |
+| Shell / subprocess helpers | `common-core::shell` | `src/common-core/src/shell.rs` |
+| JSON config load-or-default | `common-core::config` | `src/common-core/src/config.rs` |
+| Test utilities (`impl_component_for_test!`, `PassthroughUnit`, `tempdir()`) | `fluent-wvr-testutil` | `src/fluent-wvr-testutil/src/lib.rs` |
+
+Cross-crate limits that currently have a single consumer stay in their
+domain crate but **must** be moved to `common-core::constants` if a second
+consumer appears. Current single-consumer limits (candidates for future
+promotion): `MAX_KNN_CANDIDATES` in `src/coral/src/db.rs:15`,
+`MAX_MCP_REQUEST_SIZE` in `src/coral/src/mcp.rs:11`, `MAX_WASM_HOST_CALLS`
+in `src/wasm_ipc/src/lib.rs:17`.
+
+### HNSW instances
+
+`coral` and `search-vector` each maintain **separate** HNSW indices backed by
+the same `HnswParams::default()` constants (Milestone 2). They remain separate
+because no shared vector store exists between the two crates today. If a shared
+store appears in the future, host the HNSW index in `search-vector` and have
+`coral` delegate. Both crates use `knn_brute_force` from `search-vector::math`
+for brute-force fallback.
+
+---
+
 ## Debugging and LLM Usage
 
 ### Command-Line Flags

@@ -127,7 +127,7 @@ pub fn read_frequency_table(path: &Path) -> std::io::Result<Option<FrequencyTabl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use fluent_wvr_testutil::tempdir;
 
     #[test]
     fn pair_weight_default() {
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn freq_table_roundtrip() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let path = dir.path().join("freq.bin");
         let table = build_frequency_table("hello world");
         write_frequency_table(&path, &table).unwrap();
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn freq_table_missing_file() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let path = dir.path().join("nonexistent.bin");
         let result = read_frequency_table(&path).unwrap();
         assert!(result.is_none());
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn freq_table_wrong_magic() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let path = dir.path().join("bad.bin");
         fs::write(&path, b"BADMAGIC").unwrap();
         let result = read_frequency_table(&path).unwrap();
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn freq_table_read_truncated() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempdir();
         let path = dir.path().join("truncated.bin");
         let magic: [u8; 4] = 0x4652_4551u32.to_le_bytes();
         let version: [u8; 4] = 1u32.to_le_bytes();

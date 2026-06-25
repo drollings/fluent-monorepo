@@ -1,3 +1,4 @@
+use common_core::string::contains_ignore_case;
 use guidance_types::GuidanceDoc;
 use thiserror::Error;
 
@@ -79,11 +80,10 @@ impl LlmFilterBackend for NoopLlmFilter {
         query: &str,
         candidates: &[&str],
     ) -> Result<Vec<RelevanceScore>, LlmFilterError> {
-        let lower_query = query.to_lowercase();
         Ok(candidates
             .iter()
             .map(|c| {
-                let score = if c.to_lowercase().contains(&lower_query) {
+                let score = if contains_ignore_case(c, query) {
                     0.9
                 } else {
                     0.1

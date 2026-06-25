@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::hash::BuildHasher;
 use std::path::{Path, PathBuf};
 
 /// Source file extensions recognized by the guidance pipeline.
@@ -10,7 +11,7 @@ const DEFAULT_SKIP: &[&str] = &["target", "fixtures"];
 /// Recursively walk `root`, calling `callback` for each file whose extension
 /// matches one of `extensions`.  Hidden directories (starting with `.`),
 /// `target/`, and `fixtures/` are always skipped.  Additional directories can
-/// be skipped via [`FileWalker::skip_dir`].
+/// be skipped via [`should_skip_dir`].
 pub fn walk_files<F>(root: &Path, extensions: &[&str], mut callback: F)
 where
     F: FnMut(&Path),
@@ -46,7 +47,9 @@ fn walk_recursive<F>(
     }
 }
 
-fn should_skip_dir(path: &Path, extra: &HashSet<&str>) -> bool {
+/// Returns `true` if `path` is a hidden directory (starts with `.`) or its
+/// file name is in the `extra` skip set.
+pub fn should_skip_dir<S: BuildHasher>(path: &Path, extra: &HashSet<&str, S>) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return true;
     };
@@ -80,22 +83,24 @@ fn collect_ext_recursive(dir: &Path, exts: &mut HashSet<String>) {
     }
 }
 
+/// Test helper: create a directory tree with the given files and directories.
+#[cfg(test)]
+pub fn make_tree(root: &Path, files: &[&str], dirs: &[&str]) {
+    for d in dirs {
+        std::fs::create_dir_all(root.join(d)).unwrap();
+    }
+    for f in files {
+        let p = root.join(f);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&p, "").unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_tree(root: &Path, files: &[&str], dirs: &[&str]) {
-        for d in dirs {
-            std::fs::create_dir_all(root.join(d)).unwrap();
-        }
-        for f in files {
-            let p = root.join(f);
-            if let Some(parent) = p.parent() {
-                std::fs::create_dir_all(parent).unwrap();
-            }
-            std::fs::write(&p, "").unwrap();
-        }
-    }
 
     #[test]
     fn collects_source_files() {
@@ -119,12 +124,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         make_tree(
             tmp.path(),
-            &[
-                "a.zig",
-                ".hidden/b.zig",
-                "target/c.zig",
-                "fixtures/d.zig",
-            ],
+            &["a.zig", ".hidden/b.zig", "target/c.zig", "fixtures/d.zig"],
             &[],
         );
 

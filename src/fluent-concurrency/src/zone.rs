@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use fluent_wvr::{CapabilitySet, Component, ConcurrencyError, Runtime, WorkContext, WorkOutput, WorkUnit};
+use fluent_wvr::{
+    CapabilitySet, Component, ConcurrencyError, Runtime, WorkContext, WorkOutput, WorkUnit,
+};
 use internment::ArcIntern;
 use tokio::task::JoinSet;
 
@@ -353,7 +355,7 @@ async fn execute_with_timeout_and_retry(
                 Ok(output) => return Ok(output),
                 Err(e) => {
                     if attempts > max_retries {
-                        return Err(ConcurrencyError::Io(std::io::Error::other(e.to_string())));
+                        return Err(ConcurrencyError::from(std::io::Error::other(e.to_string())));
                     }
                     tokio::time::sleep(Duration::from_millis(100 * u64::from(attempts))).await;
                 }
@@ -364,7 +366,7 @@ async fn execute_with_timeout_and_retry(
     if timeout_ms > 0 {
         match tokio::time::timeout(Duration::from_millis(timeout_ms), fut).await {
             Ok(result) => result,
-            Err(_) => Err(ConcurrencyError::Io(std::io::Error::new(
+            Err(_) => Err(ConcurrencyError::from(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 "zone task timed out",
             ))),

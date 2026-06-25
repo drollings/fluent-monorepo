@@ -54,7 +54,13 @@ use tokio::task::JoinHandle;
 #[derive(Error, Debug)]
 pub enum ConcurrencyError {
     #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] common_core::error::IoError),
+}
+
+impl From<std::io::Error> for ConcurrencyError {
+    fn from(e: std::io::Error) -> Self {
+        ConcurrencyError::Io(common_core::error::IoError::Io(e))
+    }
 }
 
 pub trait Capability: Send + Sync + 'static {
@@ -189,10 +195,7 @@ pub enum WorkError {
     #[error("dependency not satisfied: {0}")]
     Dependency(String),
     #[error("timeout after {duration_ms}ms ({unit})")]
-    Timeout {
-        duration_ms: u64,
-        unit: String,
-    },
+    Timeout { duration_ms: u64, unit: String },
 }
 
 #[derive(Clone)]
@@ -330,9 +333,7 @@ impl FieldAccess for Arc<dyn Component> {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         Arc::get_mut(self)
             .ok_or_else(|| {
-                FieldError::NotFound(
-                    "Arc has multiple owners; configure before wrapping".into(),
-                )
+                FieldError::NotFound("Arc has multiple owners; configure before wrapping".into())
             })?
             .set_field(name, value)
     }

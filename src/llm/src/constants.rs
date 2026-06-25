@@ -1,4 +1,7 @@
-pub const MAX_EMBEDDING_DIMENSIONS: usize = 4_096;
+//! Cross-crate limit moved to `common-core::constants` (consolidation roadmap
+//! M2.3). Re-exported here for backward compatibility — any consumer may
+//! switch to `common_core::MAX_EMBEDDING_DIMENSIONS` directly.
+pub use common_core::MAX_EMBEDDING_DIMENSIONS;
 
 #[cfg(test)]
 mod tests {

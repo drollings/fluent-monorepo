@@ -5,7 +5,9 @@
 
 use crate::traits::MemoryOps;
 use crate::types::*;
-use fluent_wvr::{FieldAccess, FieldError, Describable, WorkUnit, WorkContext, WorkOutput, WorkError};
+use fluent_wvr::{
+    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+};
 use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -121,12 +123,11 @@ impl MemoryOps for HonchoMemory {
             }
 
             let sessions = sessions.lock().await;
-            let query_lower = query.to_lowercase();
 
             let matching: Vec<&Decision> = sessions
                 .iter()
                 .flat_map(|s| &s.decisions)
-                .filter(|d| d.statement.to_lowercase().contains(&query_lower))
+                .filter(|d| common_core::string::contains_ignore_case(&d.statement, &query))
                 .take(3)
                 .collect();
 
@@ -153,12 +154,11 @@ impl MemoryOps for HonchoMemory {
         let req = req.clone();
         Box::pin(async move {
             let sessions = sessions.lock().await;
-            let query_lower = req.query.to_lowercase();
 
             let results: Vec<MemoryResult> = sessions
                 .iter()
                 .flat_map(|s| &s.decisions)
-                .filter(|d| d.statement.to_lowercase().contains(&query_lower))
+                .filter(|d| common_core::string::contains_ignore_case(&d.statement, &req.query))
                 .take(req.limit)
                 .map(|d| MemoryResult {
                     content: d.statement.clone(),
@@ -216,11 +216,20 @@ impl MemoryOps for HonchoMemory {
 
             // Extract reasoning paths from assistant responses
             let mut reasoning_paths = Vec::new();
-            if assistant.contains("step") || assistant.contains("because") || assistant.contains("therefore") {
+            if assistant.contains("step")
+                || assistant.contains("because")
+                || assistant.contains("therefore")
+            {
                 let steps: Vec<String> = assistant
                     .lines()
                     .filter(|l| l.starts_with('-') || l.starts_with("Step"))
-                    .map(|l| l.trim().trim_start_matches('-').trim_start_matches("Step").trim().to_string())
+                    .map(|l| {
+                        l.trim()
+                            .trim_start_matches('-')
+                            .trim_start_matches("Step")
+                            .trim()
+                            .to_string()
+                    })
                     .filter(|s| s.len() > 5)
                     .take(5)
                     .collect();
@@ -302,13 +311,12 @@ impl MemoryOps for HonchoMemory {
                 let rt = tokio::runtime::Handle::current();
                 let result = rt.block_on(async {
                     let sessions = sessions.lock().await;
-                    let query_lower = query.to_lowercase();
 
                     // Search through decisions
                     let decisions: Vec<serde_json::Value> = sessions
                         .iter()
                         .flat_map(|s| &s.decisions)
-                        .filter(|d| d.statement.to_lowercase().contains(&query_lower))
+                        .filter(|d| common_core::string::contains_ignore_case(&d.statement, query))
                         .take(10)
                         .map(|d| {
                             serde_json::json!({
@@ -325,8 +333,8 @@ impl MemoryOps for HonchoMemory {
                         .iter()
                         .flat_map(|s| &s.reasoning_paths)
                         .filter(|p| {
-                            p.description.to_lowercase().contains(&query_lower)
-                                || p.outcome.to_lowercase().contains(&query_lower)
+                            common_core::string::contains_ignore_case(&p.description, query)
+                                || common_core::string::contains_ignore_case(&p.outcome, query)
                         })
                         .take(10)
                         .map(|p| {
@@ -389,9 +397,7 @@ impl MemoryOps for HonchoMemory {
                 })
                 .to_string())
             }
-            _ => Err(MemoryError::ToolError(format!(
-                "unknown tool: {tool_name}"
-            ))),
+            _ => Err(MemoryError::ToolError(format!("unknown tool: {tool_name}"))),
         }
     }
 
@@ -399,7 +405,8 @@ impl MemoryOps for HonchoMemory {
         vec![
             ToolSchema {
                 name: "reasoning_search".into(),
-                description: "Search cross-session reasoning, decisions, and reasoning paths.".into(),
+                description: "Search cross-session reasoning, decisions, and reasoning paths."
+                    .into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {

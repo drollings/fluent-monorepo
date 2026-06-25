@@ -17,7 +17,6 @@ serde_json = { workspace = true }
 smol_str = { workspace = true }
 internment = { workspace = true }
 bitvec = { workspace = true }
-blake3 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 bon = { workspace = true }
@@ -37,3 +36,4 @@ dirs = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }
+fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }

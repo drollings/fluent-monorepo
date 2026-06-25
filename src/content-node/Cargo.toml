@@ -5,4 +5,4 @@ edition.workspace = true
 
 [dependencies]
 guidance-types = { path = "../types" }
-blake3 = { workspace = true }
+common-core = { path = "../common-core" }

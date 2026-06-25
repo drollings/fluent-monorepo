@@ -42,33 +42,10 @@ mod tests {
     use crate::runtime::test::TestRuntime;
     use crate::runtime::tokio::TokioRuntime;
     use fluent_wvr::{
-        Capability, CapabilitySet, Describable, FieldAccess, FieldError, Reserve, Runtime,
-        WorkContext, WorkError, WorkOutput, WorkUnit,
+        Capability, CapabilitySet, Reserve, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit,
     };
+    use fluent_wvr_testutil::impl_component_for_test;
     use internment::ArcIntern;
-
-    /// Generates trivial `FieldAccess` + `Describable` impls so test types
-    /// satisfy the `Component` supertrait bound required by `Zone`.
-    macro_rules! impl_component_for_test {
-        ($type:ty) => {
-            impl FieldAccess for $type {
-                fn set_field(&mut self, _: &str, _: &str) -> Result<(), FieldError> {
-                    Ok(())
-                }
-                fn get_field(&self, _: &str) -> Result<String, FieldError> {
-                    Err(FieldError::NotFound("test type: no fields".into()))
-                }
-                fn field_names(&self) -> &'static [&'static str] {
-                    &[]
-                }
-            }
-            impl Describable for $type {
-                fn describe(&self) -> serde_json::Value {
-                    serde_json::json!({})
-                }
-            }
-        };
-    }
 
     struct TestCapA;
     impl Capability for TestCapA {
@@ -273,6 +250,7 @@ mod tests {
         use super::*;
         use crate::scope::Scope;
         use crate::zone::{CancelReason, Zone, ZoneConfig, ZoneEvent, ZoneSummary};
+        use fluent_wvr_testutil::impl_component_for_test;
 
         struct TestWorkUnit {
             name: String,
@@ -1613,7 +1591,7 @@ mod tests {
                 fluent_wvr::ConcurrencyError::Io(io_err) => {
                     assert_eq!(
                         io_err.kind(),
-                        std::io::ErrorKind::PermissionDenied,
+                        Some(std::io::ErrorKind::PermissionDenied),
                         "expected PermissionDenied, got: {io_err}"
                     );
                     assert!(
@@ -1649,7 +1627,7 @@ mod tests {
                 fluent_wvr::ConcurrencyError::Io(io_err) => {
                     assert_eq!(
                         io_err.kind(),
-                        std::io::ErrorKind::PermissionDenied,
+                        Some(std::io::ErrorKind::PermissionDenied),
                         "expected PermissionDenied for net, got: {io_err}"
                     );
                     assert!(
@@ -1670,7 +1648,7 @@ mod tests {
                 fluent_wvr::ConcurrencyError::Io(io_err) => {
                     assert_eq!(
                         io_err.kind(),
-                        std::io::ErrorKind::PermissionDenied,
+                        Some(std::io::ErrorKind::PermissionDenied),
                         "expected PermissionDenied for db, got: {io_err}"
                     );
                     assert!(
@@ -1691,7 +1669,7 @@ mod tests {
                 fluent_wvr::ConcurrencyError::Io(io_err) => {
                     assert_eq!(
                         io_err.kind(),
-                        std::io::ErrorKind::PermissionDenied,
+                        Some(std::io::ErrorKind::PermissionDenied),
                         "expected PermissionDenied for db execute, got: {io_err}"
                     );
                     assert!(
@@ -1729,9 +1707,9 @@ mod tests {
         use crate::runtime::tokio::TokioRuntime;
         use crate::zone::{Zone, ZoneEvent, ZoneSummary};
         use fluent_wvr::{
-            ArcIntern, CapabilitySet, Describable, FieldAccess, FieldError, Runtime, WorkContext,
-            WorkError, WorkOutput, WorkUnit,
+            ArcIntern, CapabilitySet, Runtime, WorkContext, WorkError, WorkOutput, WorkUnit,
         };
+        use fluent_wvr_testutil::impl_component_for_test;
         use std::sync::Arc;
         use std::time::Duration;
 

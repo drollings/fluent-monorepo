@@ -11,9 +11,11 @@ internment = { workspace = true, features = ["arc", "serde"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
+common-core = { path = "../common-core", features = ["sqlite"] }
 rusqlite = { workspace = true }
 fastrand = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }

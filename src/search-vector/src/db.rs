@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::{Mutex, RwLock};
 
 use crate::error::DbError;
+use common_core::constants::HnswParams;
 use rusqlite::params;
 use thiserror::Error;
 
@@ -13,11 +14,17 @@ use hnsw_rs::hnsw::Hnsw;
 #[derive(Error, Debug)]
 pub enum VectorDbError {
     #[error("SQLite error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    Sqlite(#[from] common_core::error::SqliteError),
     #[error("database error: {0}")]
     Db(#[from] DbError),
     #[error("embedding dimension mismatch: expected {expected}, got {got}")]
     DimensionMismatch { expected: usize, got: usize },
+}
+
+impl From<rusqlite::Error> for VectorDbError {
+    fn from(e: rusqlite::Error) -> Self {
+        VectorDbError::Sqlite(common_core::error::SqliteError(e))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -29,12 +36,6 @@ pub struct SearchResult {
     pub similarity: f32,
 }
 
-/// Default HNSW parameters.
-const HNSW_MAX_NB_CONNECTION: usize = 16;
-const HNSW_MAX_LAYER: usize = 16;
-const HNSW_EF_CONSTRUCTION: usize = 200;
-const HNSW_INITIAL_CAPACITY: usize = 1024;
-
 pub struct GuidanceDb {
     conn: Mutex<rusqlite::Connection>,
     hnsw: RwLock<Option<Hnsw<'static, f32, DistCosine>>>,
@@ -43,7 +44,7 @@ pub struct GuidanceDb {
 
 impl GuidanceDb {
     pub fn open(path: &Path) -> Result<Self, VectorDbError> {
-        let conn = rusqlite::Connection::open(path)?;
+        let conn = common_core::sqlite::open_wal(path)?;
         let db = Self {
             conn: Mutex::new(conn),
             hnsw: RwLock::new(None),
@@ -54,7 +55,7 @@ impl GuidanceDb {
     }
 
     pub fn open_in_memory() -> Result<Self, VectorDbError> {
-        let conn = rusqlite::Connection::open_in_memory()?;
+        let conn = common_core::sqlite::open_in_memory()?;
         let db = Self {
             conn: Mutex::new(conn),
             hnsw: RwLock::new(None),
@@ -77,21 +78,14 @@ impl GuidanceDb {
                 language TEXT NOT NULL DEFAULT 'zig',
                 embedding BLOB,
                 created_at TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS embedding_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_hash TEXT NOT NULL UNIQUE,
-                query_text TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_nodes_name ON guidance_nodes(name);
-            CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
-            CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON guidance_nodes(name, source);
-            CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);
-            ",
+            );",
+        )?;
+        common_core::sqlite::init_embedding_cache(&conn)?;
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_name ON guidance_nodes(name);
+             CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
+             CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON guidance_nodes(name, source);
+             CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);",
         )?;
         Ok(())
     }
@@ -137,11 +131,12 @@ impl GuidanceDb {
     fn hnsw_insert(&self, node_id: i64, embedding: &[f32]) {
         let mut guard = self.hnsw.write().unwrap();
         let hnsw = guard.get_or_insert_with(|| {
+            let p = HnswParams::default();
             Hnsw::<f32, DistCosine>::new(
-                HNSW_MAX_NB_CONNECTION,
-                HNSW_INITIAL_CAPACITY,
-                HNSW_MAX_LAYER,
-                HNSW_EF_CONSTRUCTION,
+                p.max_nb_connection,
+                p.initial_capacity,
+                p.max_layer,
+                p.ef_construction,
                 DistCosine,
             )
         });
@@ -159,9 +154,8 @@ impl GuidanceDb {
     /// Rebuild the HNSW index from all embedded nodes in the database.
     pub fn rebuild_hnsw(&self) -> Result<usize, VectorDbError> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, embedding FROM guidance_nodes WHERE embedding IS NOT NULL",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, embedding FROM guidance_nodes WHERE embedding IS NOT NULL")?;
 
         let rows: Vec<(i64, Vec<u8>)> = stmt
             .query_map([], |row| {
@@ -173,11 +167,12 @@ impl GuidanceDb {
         let count = rows.len();
 
         // Build new HNSW index
+        let p = HnswParams::default();
         let hnsw = Hnsw::<f32, DistCosine>::new(
-            HNSW_MAX_NB_CONNECTION,
-            count.max(HNSW_INITIAL_CAPACITY),
-            HNSW_MAX_LAYER,
-            HNSW_EF_CONSTRUCTION,
+            p.max_nb_connection,
+            count.max(p.initial_capacity),
+            p.max_layer,
+            p.ef_construction,
             DistCosine,
         );
 
@@ -385,26 +380,25 @@ impl GuidanceDb {
             let mut synced = 0;
             let conn = self.conn.lock().unwrap();
 
-            for entry in std::fs::read_dir(json_dir).map_err(|e| {
-                VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-            })? {
-                let entry = entry.map_err(|e| {
-                    VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-                })?;
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                    continue;
-                }
+            let mut json_files = Vec::new();
+            common_core::walk::walk_files(json_dir, &["json"], |path| {
+                json_files.push(path.to_path_buf());
+            });
 
-                let content = std::fs::read_to_string(&path).map_err(|e| {
-                    VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+            for path in &json_files {
+                let content = std::fs::read_to_string(path).map_err(|e| {
+                    VectorDbError::Sqlite(common_core::error::SqliteError(
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(e)),
+                    ))
                 })?;
                 if content.trim().is_empty() {
                     continue;
                 }
 
                 let doc: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-                    VectorDbError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                    VectorDbError::Sqlite(common_core::error::SqliteError(
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(e)),
+                    ))
                 })?;
 
                 let source = doc["meta"]["source"].as_str().unwrap_or("");

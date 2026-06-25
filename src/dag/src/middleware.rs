@@ -63,56 +63,18 @@ impl Default for MiddlewareChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fluent_wvr::{FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit};
-    use internment::ArcIntern;
-
-    struct PassthroughUnit {
-        name: String,
-    }
-    impl WorkUnit for PassthroughUnit {
-        fn name(&self) -> &str {
-            &self.name
-        }
-        fn depends(&self) -> &[ArcIntern<str>] {
-            &[]
-        }
-        fn provides(&self) -> &[ArcIntern<str>] {
-            &[]
-        }
-        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-            Ok(WorkOutput::ok("passthrough"))
-        }
-    }
-    impl FieldAccess for PassthroughUnit {
-        fn set_field(&mut self, _name: &str, _value: &str) -> Result<(), FieldError> {
-            Ok(())
-        }
-        fn get_field(&self, _name: &str) -> Result<String, FieldError> {
-            Err(FieldError::NotFound("no fields".into()))
-        }
-        fn field_names(&self) -> &'static [&'static str] {
-            &[]
-        }
-    }
-    impl fluent_wvr::Describable for PassthroughUnit {
-        fn describe(&self) -> serde_json::Value {
-            serde_json::json!({"name": self.name})
-        }
-    }
+    use fluent_wvr::{WorkContext, WorkUnit};
+    use fluent_wvr_testutil::PassthroughUnit;
 
     #[test]
     fn test_timing_middleware() {
         let mw = TimingMiddleware;
-        let wrapped = mw.wrap(Arc::new(PassthroughUnit {
-            name: "test".into(),
-        }));
+        let wrapped = mw.wrap(Arc::new(PassthroughUnit::new("test")));
         assert!(wrapped.execute(&WorkContext::default()).unwrap().success);
     }
     #[test]
     fn test_retry_middleware() {
-        let wrapped = RetryMiddleware::new(3, 1).wrap(Arc::new(PassthroughUnit {
-            name: "retry_test".into(),
-        }));
+        let wrapped = RetryMiddleware::new(3, 1).wrap(Arc::new(PassthroughUnit::new("retry_test")));
         assert!(wrapped.execute(&WorkContext::default()).unwrap().success);
     }
     #[test]
@@ -120,9 +82,7 @@ mod tests {
         let chain = MiddlewareChain::new()
             .push(Box::new(TimingMiddleware))
             .push(Box::new(RetryMiddleware::new(2, 1)));
-        let wrapped = chain.apply(Arc::new(PassthroughUnit {
-            name: "chained".into(),
-        }));
+        let wrapped = chain.apply(Arc::new(PassthroughUnit::new("chained")));
         assert!(wrapped.execute(&WorkContext::default()).unwrap().success);
     }
 }

@@ -122,7 +122,9 @@ mod tests {
     use super::*;
     use crate::traits::MemoryOps;
     use crate::types::*;
-    use fluent_wvr::{FieldAccess, FieldError, Describable, WorkUnit, WorkContext, WorkOutput, WorkError};
+    use fluent_wvr::{
+        Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
+    };
     use internment::ArcIntern;
     use serde_json::json;
     use std::future::Future;
@@ -278,7 +280,11 @@ mod tests {
 
         let list = reg.list();
         assert_eq!(list.len(), 2);
-        assert!(list.iter().any(|(n, active, avail)| *n == "a" && *active && *avail));
-        assert!(list.iter().any(|(n, active, avail)| *n == "b" && !*active && !*avail));
+        assert!(list
+            .iter()
+            .any(|(n, active, avail)| *n == "a" && *active && *avail));
+        assert!(list
+            .iter()
+            .any(|(n, active, avail)| *n == "b" && !*active && !*avail));
     }
 }

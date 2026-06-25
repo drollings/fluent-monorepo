@@ -137,7 +137,16 @@ pub fn hash_batch(paths: &[std::path::PathBuf], algorithm: HashAlgorithm) -> Vec
         .collect()
 }
 
-fn hex_encode(data: &[u8]) -> String {
+pub fn sha256_digest(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&result);
+    out
+}
+
+pub fn hex_encode(data: &[u8]) -> String {
     data.iter()
         .map(|b| format!("{b:02x}"))
         .collect::<Vec<_>>()

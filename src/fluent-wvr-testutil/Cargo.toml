@@ -1,0 +1,10 @@
+[package]
+name = "fluent-wvr-testutil"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fluent-wvr = { path = "../fluent-wvr" }
+serde_json = { workspace = true }
+internment = { workspace = true }
+tempfile = { workspace = true }
