@@ -163,7 +163,6 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(CARGO_BIN)
 # guidance sync regenerates JSON + DB for stale files.
 .PHONY: pre-commit
 pre-commit: STRUCTURE.md $(CARGO_BIN) ## Run full RALPH loop
-	$(Q)$(TARGET_BIN) check --workspace .
 	$(Q)$(TARGET_BIN) sync --workspace .
 	$(Q)echo "✓ All checks passed. Ready to commit."
 

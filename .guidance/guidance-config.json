@@ -12,11 +12,11 @@
     }
   },
   "models": {
-    "default": "llama:code:latest",
-    "fast": "llama:code:latest",
-    "thinking": "llama:code:latest",
-    "batch": "llama:code:latest",
-    "embed": "llama:embed:latest"
+    "default": "llama:fast",
+    "fast": "llama:fast",
+    "thinking": "llama:code",
+    "batch": "llama:code",
+    "embed": "llama:embed"
   },
   "embed": {
     "dims": 768,

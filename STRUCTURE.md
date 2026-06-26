@@ -35,18 +35,18 @@ Then you you must read
 
 ```
 .
-├── AGENTS.md  # # Agent Bootloader —
+├── AGENTS.md  # # Agent Bootloader — guidance
 ├── Cargo.toml
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
-├── README.md  # # guidance
+├── README.md  # # The fluent monorepo
 ├── STRUCTURE.md  # # AST-Guidance Project Structure
 ├── bin/
 │   └── gen_simhash_projections.py  # #!/usr/bin/env python3
 ├── doc/
-│   ├── MEMORY_PLUGIN.md  # # Memory Plugin Architecture —
+│   ├── MEMORY_PLUGIN.md  # # Memory Plugin Architecture — Clea...
 │   ├── SUBAGENT.md  # # REVIEW_20260418_LOCAL_SUBAGENT.
 │   ├── capabilities/
 │   │   ├── ast-indexing/
@@ -89,26 +89,26 @@ Then you you must read
 │   │       └── CAPABILITY.md  # ---
 │   ├── coral/
 │   │   ├── CHANGELOG.md  # # Changelog
-│   │   ├── DETAILS.md  # # Coral Context: Detailed Engineering
-│   │   ├── OVERVIEW.md  # # Coral Context: Architectural Design
-│   │   └── VISION.md  # # Coral Context: Architectural
+│   │   ├── DETAILS.md  # # Coral Context: Detailed Engineering Sp
+│   │   ├── OVERVIEW.md  # # Coral Context: Architectural Design Do
+│   │   └── VISION.md  # # Coral Context: Architectural Vision
 │   ├── guidance/
-│   │   ├── DESIGN.md  # Comprehensive Analysis: Agentic
+│   │   ├── DESIGN.md  # Comprehensive Analysis: Agentic Document
 │   │   ├── MCP.md  # # guidance MCP Server
 │   │   ├── VISION.md  # # guidance: Vision Document
 │   │   └── schemas/
 │   │       └── guidance.schema.json
 │   └── skills/
 │       ├── fluent-concurrency/
-│       │   └── SKILL.md  # # `fluent-concurrency` — Lightweight
+│       │   └── SKILL.md  # # `fluent-concurrency` — Lightweigh...
 │       ├── fluent-wvr/
-│       │   └── SKILL.md  # # Fluent WVR in Rust — The Synthesis
+│       │   └── SKILL.md  # # Fluent WVR in Rust — The Synthesi...
 │       ├── gof-patterns/
 │       │   └── SKILL.md  # ---
 │       ├── subagent/
 │       │   └── SKILL.md  # ---
 │       └── zig-to-rust/
-│           └── SKILL.md  # # Zig to Rust Practices: Master
+│           └── SKILL.md  # # Zig to Rust Practices: Master Guidelin
 ├── env/
 │   └── mk/
 │       ├── common.mk
@@ -130,203 +130,212 @@ Then you you must read
     │   └── guidance/
     │       ├── Cargo.toml
     │       └── src/
+    │           ├── commit.rs  # //! Commit message generation — LLM...
+    │           ├── editor.rs  # //! Editor interaction utilities for hum
     │           ├── main.rs  # use std::path::{Path, PathBuf};
+    │           ├── mcp.rs  # //! MCP (Model Context Protocol) server 
     │           └── structure.rs  # use std::collections::BTreeMap;
     ├── common-core/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── config.rs  # load_json_or_default, load_json
-    │       ├── constants.rs  # pub const MAX_VALUE_LEN: usize =
-    │       ├── drift.rs  # BitSetDrift
+    │       ├── config.rs  # use std::path::Path;
+    │       ├── constants.rs  # pub const MAX_VALUE_LEN: usize = 128;
+    │       ├── drift.rs  # use bitvec::prelude::*;
     │       ├── error.rs  # use thiserror::Error;
     │       ├── error_context.rs  # use std::fmt;
     │       ├── format.rs  # use std::fmt::Write as _;
+    │       ├── git.rs  # //! Git operations — thin wrappers ...
     │       ├── hash.rs  # use blake3::Hasher;
-    │       ├── interner.rs  # CapabilityRegistry
+    │       ├── interner.rs  # use bitvec::vec::BitVec;
     │       ├── io.rs  # use std::fs;
-    │       ├── jsonrpc.rs  # JsonRpcRequest/Response/Error + serve_stdio
-    │       ├── lib.rs  # //! common-core: Zero-domain generic
-    │       ├── metrics.rs  # use std::sync::atomic::{AtomicU64,
-    │       ├── shell.rs  # use std::process::Command;
+    │       ├── jsonrpc.rs  # //! Shared JSON-RPC 2.
+    │       ├── lib.rs  # //! common-core: Zero-domain generic uti
+    │       ├── metrics.rs  # use std::sync::atomic::{AtomicU64, Order
+    │       ├── shell.rs  # use std::process::{Command, Output};
     │       ├── shell_parser.rs  # use thiserror::Error;
-    │       ├── sqlite.rs  # open_wal, open_in_memory (feature-gated)
+    │       ├── sqlite.rs  # //! Shared SQLite helpers — connect...
     │       ├── string.rs  # use std::collections::HashSet;
-    │       ├── tokens.rs  # estimate_tokens, TokenBudget
-    │       └── walk.rs  # walk_files, collect_extensions, SOURCE_EXTENSIONS
+    │       ├── tokens.rs  # pub const DEFAULT_CHARS_PER_TOKEN: usize
+    │       └── walk.rs  # use std::collections::HashSet;
     ├── content-node/
     │   ├── Cargo.toml
     │   └── src/
     │       ├── doc_node.rs  # use std::any::Any;
     │       ├── file_node.rs  # use std::any::Any;
-    │       ├── lib.rs  # //! guidance-content-node:
-    │       ├── lod.rs  # pub fn generate_lod_slices(full_text:
+    │       ├── lib.rs  # //! guidance-content-node: Level-of-deta
+    │       ├── lod.rs  # pub fn generate_lod_slices(full_text: &s
     │       ├── node.rs  # use guidance_types::LOD_COUNT;
     │       ├── source_node.rs  # use std::any::Any;
-    │       └── wvr.rs  # //! Fluent WVR integration for
+    │       └── wvr.rs  # //! Fluent WVR integration for `guidance
     ├── coral/
     │   ├── Cargo.toml
     │   └── src/
     │       ├── cache_l1.rs  # use lru::LruCache;
     │       ├── cache_reactor.rs  # use std::sync::Arc;
     │       ├── cache_router.rs  # use std::sync::Arc;
-    │       ├── db.rs  # use std::mem::size_of;
+    │       ├── db.rs  # use std::collections::HashMap;
     │       ├── error.rs  # use thiserror::Error;
     │       ├── ingest.rs  # use std::sync::Arc;
-    │       ├── lib.rs  # //! Coral: Context-graph library for
-    │       ├── mcp.rs  # use std::io::{self, BufRead,
-    │       ├── packer.rs  # use guidance_types::{ContextNode,
+    │       ├── lib.rs  # //! Coral: Context-graph library for gui
+    │       ├── mcp.rs  # use std::path::Path;
+    │       ├── packer.rs  # use common_core::tokens::DEFAULT_CHARS_P
+    │       ├── test_stubs.rs  # //! Test stubs for coral cache reactor t
     │       ├── tier_units.rs  # use std::sync::{Arc, Weak};
-    │       ├── test_stubs.rs  # #[cfg(test)] pub(crate) mod test_stubs
-    │       ├── wasm_runtime.rs  # use std::path::Path;
-    │       └── wvr.rs  # //! Fluent WVR integration for Coral
+    │       ├── wasm_runtime.rs  # use std::num::NonZeroUsize;
+    │       └── wvr.rs  # //! Fluent WVR integration for Coral cra
     ├── dag/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── adapter.rs  # use std::sync::Arc;
+    │       ├── adapter.rs  # //! Re-export of `ComponentAdapter` and 
     │       ├── error.rs  # use thiserror::Error;
     │       ├── executor.rs  # use std::collections::HashMap;
-    │       ├── lib.rs  # //! guidance-dag: DAG executor with
+    │       ├── lib.rs  # //! fluent-dag: DAG executor with resolv
     │       ├── middleware.rs  # use std::sync::Arc;
     │       ├── resolver.rs  # use std::collections::HashMap;
     │       ├── target.rs  # use bitvec::vec::BitVec;
     │       ├── type_inference.rs  # use bitvec::prelude::*;
-    │       ├── work_unit.rs  # use std::process::Command;
-    │       └── wvr.rs  # //! Fluent WVR integration for DAG
+    │       ├── work_unit.rs  # use bon::Builder;
+    │       └── wvr.rs  # //! Fluent WVR integration for DAG crate
     ├── fluent-concurrency/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── capability.rs  # //! Concrete capability tokens for
-    │       ├── flow.rs  # //! Credit-based backpressure flow
+    │       ├── capability.rs  # //! Concrete capability tokens for files
+    │       ├── flow.rs  # //! Credit-based backpressure flow contr
     │       ├── io/
-    │       │   ├── db.rs  # //! SQLite-backed database capability
-    │       │   ├── fs.rs  # //! Capability-gated filesystem I/O
-    │       │   ├── mod.rs  # //! Capability-gated I/O primitive
-    │       │   └── net.rs  # //! Capability-gated network I/O (TCP
+    │       │   ├── db.rs  # //! SQLite-backed database capability wi
+    │       │   ├── fs.rs  # //! Capability-gated filesystem I/O (rea
+    │       │   ├── mod.rs  # //! Capability-gated I/O primitive engin
+    │       │   └── net.rs  # //! Capability-gated network I/O (TCP co
     │       ├── lib.rs  # #![forbid(unsafe_code)]
-    │       ├── pool.rs  # //! Bounded async queue, worker pool,
-    │       ├── queue.rs  # //! A priority queue with a fast path
-    │       ├── router.rs  # //! A partitioned router that
+    │       ├── pool.rs  # //! Bounded async queue, worker pool, an
+    │       ├── queue.rs  # //! A priority queue with a fast path fo
+    │       ├── router.rs  # //! A partitioned router that distribute
     │       ├── runtime/
-    │       │   ├── mod.rs  # //! Pluggable `Runtime` backends
-    │       │   ├── test.rs  # //! Test `Runtime` implementation with
-    │       │   └── tokio.rs  # //! Production `Runtime` implementation
-    │       ├── scope.rs  # //! Structured concurrency via `Scope`
-    │       └── zone.rs  # //! Supervision zone with async retry,
+    │       │   ├── mod.rs  # //! Pluggable `Runtime` backends (produc
+    │       │   ├── test.rs  # //! Test `Runtime` implementation with p
+    │       │   └── tokio.rs  # //! Production `Runtime` implementation 
+    │       ├── scope.rs  # //! Structured concurrency via `Scope...
+    │       └── zone.rs  # //! Supervision zone with async retry, d
     ├── fluent-wvr/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── lib.rs  # //! ## Fluent WVR — Framework Trait
+    │       ├── lib.rs  # //! ## Fluent WVR — Framework Trait...
     │       └── wrapper.rs  # use std::sync::Arc;
     ├── fluent-wvr-macros/
     │   ├── Cargo.toml
     │   └── src/
     │       └── lib.rs  # use proc_macro::TokenStream;
+    ├── fluent-wvr-testutil/
+    │   ├── Cargo.toml
+    │   └── src/
+    │       └── lib.rs  # //! Test utilities for Fluent WVR crates
     ├── guidance/
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── ast_parser.rs  # use std::path::Path;
     │   │   ├── config.rs  # use std::collections::HashMap;
-    │   │   ├── enhancer.rs  # use guidance_llm::client::{ChatMessage,
-    │   │   ├── lib.rs  # //! Guidance: AST-guided vector search
+    │   │   ├── enhancer.rs  # use guidance_llm::client::{ChatMessage, 
+    │   │   ├── grounding.rs  # //! Grounding enforcement — ensures...
+    │   │   ├── lib.rs  # //! Guidance: AST-guided vector search &
+    │   │   ├── memory.rs  # //! Memory integration for the guidance 
     │   │   ├── plugin.rs  # use std::collections::HashMap;
     │   │   ├── query/
     │   │   │   ├── formatter.rs  # use std::fmt::Write;
-    │   │   │   ├── identifier.rs  # use guidance_types::GuidanceDoc;
-    │   │   │   ├── llm_filter.rs  # use guidance_types::GuidanceDoc;
-    │   │   │   ├── llm_filter_batch.rs  # use
+    │   │   │   ├── identifier.rs  # use common_core::string::contains_ignore
+    │   │   │   ├── llm_filter.rs  # use common_core::string::contains_ignore
+    │   │   │   ├── llm_filter_batch.rs  # use super::llm_filter::{LlmFilterBackend
     │   │   │   ├── mod.rs  # pub mod formatter;
-    │   │   │   ├── search_backend.rs  # use guidance_types::GuidanceDoc;
-    │   │   │   ├── snapshot.rs  # use std::fs;
+    │   │   │   ├── search_backend.rs  # use common_core::string::contains_ignore
+    │   │   │   ├── snapshot.rs  # use std::path::Path;
     │   │   │   ├── strategy.rs  # use guidance_types::GuidanceDoc;
-    │   │   │   └── synthesize.rs  # use guidance_types::{GuidanceDoc,
+    │   │   │   └── synthesize.rs  # use guidance_types::{GuidanceDoc, Member
     │   │   ├── query_engine.rs  # use std::path::Path;
     │   │   ├── runtime.rs  # use std::cell::RefCell;
-    │   │   ├── scanner.rs  # use common_core::string::{contains_any,
+    │   │   ├── scanner.rs  # use common_core::string::{contains_any, 
     │   │   ├── sync/
     │   │   │   ├── comments.rs  # use std::path::Path;
     │   │   │   ├── json_store.rs  # use std::path::{Path, PathBuf};
-    │   │   │   ├── json_writer.rs  # use guidance_types::{GuidanceDoc,
+    │   │   │   ├── json_writer.rs  # use guidance_types::{GuidanceDoc, Member
     │   │   │   ├── mod.rs  # pub mod comments;
     │   │   │   └── staleness.rs  # use std::path::Path;
-    │   │   ├── sync_engine.rs  # use std::path::{Path, PathBuf};
-    │   │   └── (walk re-exported from common_core::walk)
+    │   │   └── sync_engine.rs  # use std::path::{Path, PathBuf};
     │   └── tests/
-    │       └── e2e_gen_roundtrip.rs  # use
+    │       └── e2e_gen_roundtrip.rs  # use fluent_wvr_testutil::tempdir;
     ├── llm/
     │   ├── Cargo.toml
     │   └── src/
     │       ├── anonymize.rs  # use std::sync::LazyLock;
     │       ├── client.rs  # use std::sync::{Arc, LazyLock};
-    │       ├── constants.rs  # pub const MAX_EMBEDDING_DIMENSIONS:
+    │       ├── constants.rs  # //! Cross-crate limit moved to `common-c
     │       ├── context_packer.rs  # use crate::client::ChatMessage;
     │       ├── decomposer.rs  # use bon::Builder;
-    │       ├── embeddings.rs  # use std::collections::HashMap;
-    │       ├── error.rs  # use
-    │       ├── lib.rs  # //! guidance-llm: LLM HTTP client
+    │       ├── embeddings.rs  # use std::num::NonZeroUsize;
+    │       ├── error.rs  # use crate::embeddings::EmbeddingError;
+    │       ├── lib.rs  # //! guidance-llm: LLM HTTP client provid
     │       ├── llm_queue.rs  # use std::sync::Arc;
     │       └── url.rs  # use thiserror::Error;
     ├── memory-plugin/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── capability.rs  # //! Capability token for explicit
+    │       ├── capability.rs  # //! Capability token for explicit memory
     │       ├── lib.rs  # #![forbid(unsafe_code)]
     │       ├── plugins/
     │       │   ├── hindsight/
-    │       │   │   └── mod.rs  # //! Hindsight memory plugin —
+    │       │   │   └── mod.rs  # //! Hindsight memory plugin — struc...
     │       │   ├── holographic/
-    │       │   │   ├── hrr.rs  # //! Holographic Reduced Representations
-    │       │   │   ├── mod.rs  # //! Holographic memory plugin — local
-    │       │   │   └── store.rs  # //! SQLite-backed fact store with
+    │       │   │   ├── hrr.rs  # //! Holographic Reduced Representations 
+    │       │   │   ├── mod.rs  # //! Holographic memory plugin — loc...
+    │       │   │   └── store.rs  # //! SQLite-backed fact store with entity
     │       │   ├── honcho/
-    │       │   │   └── mod.rs  # //! Honcho memory plugin —
+    │       │   │   └── mod.rs  # //! Honcho memory plugin — cross-se...
     │       │   └── mod.rs  # //! Memory plugin implementations.
     │       ├── registry.rs  # //! Central memory plugin registry.
-    │       ├── traits.rs  # //! Core trait definitions for the
-    │       ├── types.rs  # //! Shared types for the memory plugin
+    │       ├── traits.rs  # //! Core trait definitions for the memor
+    │       ├── types.rs  # //! Shared types for the memory plugin s
     │       └── zone.rs  # //! Memory ingestion zone.
     ├── ontology/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── entity.rs  # use
-    │       ├── inference.rs  # use std::collections::{HashMap,
-    │       ├── lib.rs  # //! guidance-ontology: Entity
+    │       ├── entity.rs  # use std::collections::HashMap;
+    │       ├── inference.rs  # use std::collections::{HashMap, HashSet}
+    │       ├── lib.rs  # //! guidance-ontology: Entity extraction
     │       ├── mapper.rs  # use std::collections::HashMap;
     │       ├── migration.rs  # #[derive(Debug, Clone)]
-    │       └── yago.rs  # pub const NS_YAGO: &str =
+    │       └── yago.rs  # pub const NS_YAGO: &str = "http://yago-k
     ├── project-knowledge/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── csr_graph.rs  # pub const CSR_MAGIC: u32 =
+    │       ├── csr_graph.rs  # pub const CSR_MAGIC: u32 = 0x4752_5343;
     │       ├── freq_table.rs  # use std::fs;
-    │       ├── index_header.rs  # pub const INDEX_HEADER_SIZE: usize =
-    │       ├── lib.rs  # //! guidance-project-knowledge:
+    │       ├── index_header.rs  # pub const INDEX_HEADER_SIZE: usize = 10;
+    │       ├── lib.rs  # //! guidance-project-knowledge: Word/tri
     │       ├── query_cache.rs  # use common_core::hash::fnv1a64;
     │       ├── tokenizer.rs  # pub struct WordTokenizer<'a> {
     │       ├── trigram_index.rs  # use crate::index_header::Header;
-    │       └── word_index.rs  # use
+    │       └── word_index.rs  # use std::collections::HashMap;
     ├── rdf/
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lexer.rs  # use crate::RdfError;
-    │       ├── lib.rs  # //! guidance-rdf: RDF/Turtle/N-Quads
+    │       ├── lib.rs  # //! guidance-rdf: RDF/Turtle/N-Quads par
     │       ├── normalize.rs  # pub struct BlankNodeScope;
-    │       ├── nquads.rs  # use crate::lexer::{Lexer,
-    │       └── parser.rs  # use std::collections::{HashMap,
+    │       ├── nquads.rs  # use crate::lexer::{Lexer, TokenKind};
+    │       └── parser.rs  # use std::collections::{HashMap, VecDeque
     ├── requirements.txt
     ├── search-vector/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── aliases.rs  # use
+    │       ├── aliases.rs  # use std::collections::HashMap;
     │       ├── db.rs  # use std::path::Path;
     │       ├── error.rs  # use thiserror::Error;
-    │       ├── lib.rs  # //! guidance-search-vector: SQLite
-    │       └── math.rs  # pub fn cosine_similarity(a: &[f32], b:
+    │       ├── lib.rs  # //! guidance-search-vector: SQLite hybri
+    │       └── math.rs  # pub fn cosine_similarity(a: &[f32], b: &
     ├── types/
     │   ├── Cargo.toml
     │   └── src/
-    │       └── lib.rs  # //! guidance-types: Shared data types
+    │       └── lib.rs  # //! guidance-types: Shared data types (G
     └── wasm_ipc/
-├── Cargo.toml  # workspace root: [workspace.lints] defines shared clippy/rust lints
+        ├── Cargo.toml
         └── src/
-            └── lib.rs  # //! WASM IPC — Binary schemas for
+            └── lib.rs  # //! WASM IPC — Binary schemas for E...
 ```

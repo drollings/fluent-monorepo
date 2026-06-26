@@ -81,6 +81,13 @@ pub struct ProjectConfig {
 
     #[serde(default)]
     pub embedding_cache_limit: Option<usize>,
+
+    /// Deserializes the `"models"` map from the JSON config.
+    /// Keys are role names ("default", "fast", "thinking", "batch", "embed"),
+    /// values are model references like `"llama:code"`.
+    #[serde(default)]
+    #[builder(default)]
+    pub models: HashMap<String, String>,
 }
 
 fn default_guidance_dir() -> PathBuf {
@@ -108,6 +115,7 @@ impl Default for ProjectConfig {
             lint_commands: HashMap::new(),
             fmt_commands: HashMap::new(),
             embedding_cache_limit: None,
+            models: HashMap::new(),
         }
     }
 }
@@ -120,9 +128,32 @@ pub fn model_name(model_ref: &str) -> &str {
         .map_or(model_ref, |(_, name)| name)
 }
 
+/// Resolve a model reference for a given role.
+///
+/// Checks the `"models"` map first (e.g. `models["fast"]` → `"llama:code"`),
+/// then falls back to the flat config fields (`model_fast`, `model_default`).
+/// Returns a model reference string like `"llama:code"`.
+pub fn resolve_model_ref(config: &ProjectConfig, role: &str) -> String {
+    // 1. Check the nested "models" map from the JSON config.
+    if let Some(val) = config.models.get(role) {
+        return val.clone();
+    }
+    // 2. Fall back to flat fields for backwards compatibility.
+    match role {
+        "fast" => config
+            .model_fast
+            .clone()
+            .or_else(|| config.model_default.clone())
+            .unwrap_or_else(|| "code:latest".to_string()),
+        _ => config
+            .model_default
+            .clone()
+            .unwrap_or_else(|| "code:latest".to_string()),
+    }
+}
+
 /// Resolve a model reference into (api_url, model_name, is_thinking).
-pub fn resolve_model_url(config: &ProjectConfig) -> (String, String, bool) {
-    let model_ref = config.embedding_model.as_deref().unwrap_or("default");
+pub fn resolve_model_url(config: &ProjectConfig, model_ref: &str) -> (String, String, bool) {
     let is_thinking = config.model_thinking.as_deref() == Some(model_ref);
 
     let (provider_name, model) = model_ref.split_once(':').unwrap_or(("default", model_ref));
@@ -200,7 +231,7 @@ mod tests {
     #[test]
     fn test_resolve_model_url_no_providers() {
         let config = ProjectConfig::builder().build();
-        let (url, model, is_thinking) = resolve_model_url(&config);
+        let (url, model, is_thinking) = resolve_model_url(&config, "default");
         assert_eq!(model, "default");
         assert!(!is_thinking);
         assert!(url.is_empty());
@@ -217,10 +248,9 @@ mod tests {
             },
         );
         let config = ProjectConfig::builder()
-            .embedding_model("ollama:llama3".into())
             .providers(providers)
             .build();
-        let (url, model, is_thinking) = resolve_model_url(&config);
+        let (url, model, is_thinking) = resolve_model_url(&config, "ollama:llama3");
         assert_eq!(model, "llama3");
         assert_eq!(url, "http://localhost:11434/api/chat");
         assert!(!is_thinking);
@@ -230,9 +260,8 @@ mod tests {
     fn test_resolve_model_url_is_thinking() {
         let config = ProjectConfig::builder()
             .model_thinking("deepseek:r1".into())
-            .embedding_model("deepseek:r1".into())
             .build();
-        let (_, model, is_thinking) = resolve_model_url(&config);
+        let (_, model, is_thinking) = resolve_model_url(&config, "deepseek:r1");
         assert_eq!(model, "r1");
         assert!(is_thinking);
     }
@@ -296,5 +325,48 @@ mod tests {
             .build();
         assert_eq!(config.guidance_dir, PathBuf::from("custom"));
         assert_eq!(config.embedding_model.as_deref(), Some("ollama:llama3"));
+    }
+
+    #[test]
+    fn test_resolve_model_ref_from_models_map() {
+        let mut models = std::collections::HashMap::new();
+        models.insert("fast".to_string(), "llama:code".to_string());
+        models.insert("default".to_string(), "llama:code".to_string());
+        let config = ProjectConfig::builder()
+            .models(models)
+            .build();
+        assert_eq!(resolve_model_ref(&config, "fast"), "llama:code");
+        assert_eq!(resolve_model_ref(&config, "default"), "llama:code");
+    }
+
+    #[test]
+    fn test_resolve_model_ref_falls_back_to_flat_fields() {
+        let config = ProjectConfig::builder()
+            .model_fast("ollama:fast-model".into())
+            .build();
+        assert_eq!(resolve_model_ref(&config, "fast"), "ollama:fast-model");
+    }
+
+    #[test]
+    fn test_resolve_model_ref_unknown_role_returns_default() {
+        let config = ProjectConfig::builder().build();
+        assert_eq!(resolve_model_ref(&config, "unknown"), "code:latest");
+    }
+
+    #[test]
+    fn test_load_config_deserializes_models_map() {
+        let dir = tempdir();
+        let guidance_dir = dir.path().join(".guidance");
+        std::fs::create_dir_all(&guidance_dir).expect("create");
+        let config_path = guidance_dir.join("guidance-config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"models": {"fast": "llama:code", "default": "llama:code"}}"#,
+        )
+        .expect("write");
+
+        let config = load_config(dir.path()).expect("should load");
+        assert_eq!(config.models.get("fast").unwrap(), "llama:code");
+        assert_eq!(config.models.get("default").unwrap(), "llama:code");
     }
 }

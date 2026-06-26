@@ -1,82 +1,82 @@
 # Benchmark queries for guidance test
 
-## Each query is followed by `---` and a rubric that defines the expected answer.  The rubric is a concise description of what a correct answer must contain.  cmdTest uses the rubric to judge whether the LLM evaluation is accurate.
+## Each query is followed by `---` and a rubric that defines the expected answer.  The rubric is a concise description of what a correct answer must contain.  cmdBenchmark uses the rubric to judge whether the LLM evaluation is accurate.
 
 ---
 
 ## Short queries (fast path, deterministic AST match)
 
-cmdExplain
+cmd_explain
 
-- **Rubric**: Must return the `cmdExplain` function definition from `src/guidance/query_engine.zig` with signature and purpose.
-
----
-
-src/dag/target.zig
-
-- **Rubric**: Must return information about the DAG target module, specifically the target.zig file with its struct/function definitions.
+- **Rubric**: Must return the `cmd_explain` async function from `src/bin/guidance/src/main.rs` showing the explain subcommand dispatch (line 341 area) and the call site to `query_engine`.
 
 ---
 
-match_hash
+cmd_check
 
-- **Rubric**: Must return code locations where `match_hash` is computed (SHA-256 of signature + comment) and explain its role in staleness detection.
-
----
-
-fileNeedsProcessing
-
-- **Rubric**: Must return the exact `fileNeedsProcessing` function from `src/guidance/sync/marker.zig` showing mtime comparison logic (JSON absent → stale; source newer → stale).
+- **Rubric**: Must return the `cmd_check` function from `src/bin/guidance/src/main.rs` (line 1019 area) showing how it walks `cfg.test_commands`, `cfg.lint_commands`, and `cfg.fmt_commands` for the RALPH loop.
 
 ---
 
-JsonStore
+match_hash_from_signature
 
-- **Rubric**: Must return the JsonStore struct interface from `src/guidance/sync/json_store.zig` listing its 10 public functions (init, loadGuidance, saveGuidance, etc.).
+- **Rubric**: Must return the `match_hash_from_signature` function from `src/guidance/src/sync/staleness.rs` (line 24) which computes a blake3 hex digest of the signature, and explain its role in detecting member changes for incremental sync.
+
+---
+
+should_generate
+
+- **Rubric**: Must return the `should_generate` function from `src/guidance/src/sync/staleness.rs` (line 17) and the helper `is_stale` showing the mtime comparison rules (JSON absent → stale; source mtime > json mtime by more than 1 second → stale).
 
 ---
 
 GuidanceDb
 
-- **Rubric**: Must return the GuidanceDb struct from `src/vector/vector_db.zig` with its key methods (syncFromDir, syncCapabilities, knnSearch, etc.).
+- **Rubric**: Must return the `GuidanceDb` struct from `src/search-vector/src/db.rs` listing its key methods (`hybrid_search`, `sync_from_dir`, `keyword_search`, `vector_search`) and the SQLite `guidance_nodes` table it owns.
 
 ---
 
-sync
+LlmClient
 
-- **Rubric**: Must return the SyncProcessor or sync-related code from `src/guidance/sync.zig` showing the incremental sync pipeline workflow.
+- **Rubric**: Must return the `LlmClient` struct from `src/llm/src/client.rs` (line 77) with `LlmConfig`, `chat_complete`, and the OpenAI/Ollama HTTP routing that powers every LLM call in the CLI.
+
+---
+
+WordIndex
+
+- **Rubric**: Must return the `WordIndex` struct from `src/project-knowledge/src/word_index.rs` (line 52) showing its inverted-index `get`/`insert` API and its role in the L1 (sub-1ms) cache tier.
 
 ---
 
 ## Natural language queries (LLM synthesis path)
 
-How does filterStages work?
+How does the query FSM classify a query?
 
-- **Rubric**: Must explain that `filterStages` in `src/guidance/query/llm_filter.zig` uses an LLM to filter prose stages while keeping code/metadata unconditionally; askRelevant is called for each prose stage.
+- **Rubric**: Must explain the `FsmEngine` in `src/guidance/src/query/strategy.rs` walking through `Intake` → `Classify` → `Route` → `Validate` states, and the `QueryIntent` enum (SingleIdentifier, IdentifierLookup, FilePath, CapabilityQuery, HowTo, Conceptual, MultiKeyword, GeneralSearch) with their priority values.
 
 ---
 
 How does this code use cosine similarity?
 
-- **Rubric**: Must explain cosine similarity is used in `src/vector/vector_db.zig` (hybridSearch, vector_similarity) to rank search results by combining vector distance with keyword matching.
+- **Rubric**: Must explain `cosine_similarity` and `knn_brute_force` from `src/search-vector/src/math.rs` are used by `GuidanceDb::hybrid_search` to rank results when a query embedding is provided, fused via RRF with keyword search.
 
 ---
 
 How is the RALPH loop implemented?
 
-- **Rubric**: Must explain the RalphState enum (read/ask/learn/plan/help/done) driving the loop in `src/guidance/ralph.zig`, using enhanceFunction and enhanceModuleDetail for LLM generation.
+- **Rubric**: Must explain `cmd_check` in `src/bin/guidance/src/main.rs` (line 1019) iterates over `cfg.test_commands`, `cfg.lint_commands`, and `cfg.fmt_commands` from `ProjectConfig` and runs each as a stage, stopping on the first failure; defaults read from `guidance-config.json`.
 
 ---
 
 What capabilities does this codebase have?
 
-- **Rubric**: Must list key capabilities: coral-database (SQLite vector DB), sync-pipeline (incremental sync), explain-query (staged pipeline), llm-client (Ollama/OpenAI), target-registry (Fluent Builder), reflection (field-level), rdf-parsing (Turtle/N-Quads).
+- **Rubric**: Must list the workspace crates as capabilities: `common-core` (hashing, io, string, walk, metrics), `fluent-wvr` (Component/WorkUnit traits), `fluent-concurrency` (Scope, Limiter, WorkerPool), `dag` (executor/resolver/target), `llm` (LlmClient, CachedEmbeddingProvider), `search-vector` (GuidanceDb, math), `project-knowledge` (WordIndex, TrigramIndex, CsrGraph), `ontology` (YAGO taxonomy), `coral` (cache_router, L1Cache, MCP server).
 
 ---
 
-I want to understand how match_hash and fileNeedsProcessing work together to detect staleness.
+I want to understand how match_hash_from_signature and should_generate work together to detect staleness.
 
-- **Rubric**: Must explain that fileNeedsProcessing checks mtime (JSON absent or source newer → stale) while match_hash (SHA-256 of signature+comment) tracks content changes; both used to determine whether to re-enhance comments.
+- **Rubric**: Must explain `should_generate` in `src/guidance/src/sync/staleness.rs` decides whether to re-parse a file by comparing mtimes (JSON absent → stale, source newer by >1s → stale), while `match_hash_from_signature` (blake3 of the member signature) preserves existing comments/tags when only unrelated files changed; together they form the incremental sync gate in `SyncEngine`.
 
 ---
 
@@ -84,13 +84,10 @@ I want to understand how match_hash and fileNeedsProcessing work together to det
 
 How does the quantum entanglement protocol work in the coral module?
 
-- **Rubric**: Must return "not found" or escalation status because quantum entanglement protocol does not exist in this codebase; results should be empty or show no matches.
+- **Rubric**: Must return "not found" or escalation status because quantum entanglement protocol does not exist in this codebase; results should be empty or show no matches. The `coral` crate handles caching/MCP, not physics.
 
 ---
 
 Show me the implementation of the flux capacitor pattern for warp drive acceleration.
 
-- **Rubric**: Must return "not found" or escalation status because flux capacitor pattern does not exist in this codebase; results should be empty or show no matches.
-
----
-
+- **Rubric**: Must return "not found" or escalation status because flux capacitor pattern does not exist in this codebase; results should be empty or show no matches. The codebase has no warp drive, only deterministic-first code navigation.

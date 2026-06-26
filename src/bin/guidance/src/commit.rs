@@ -247,30 +247,13 @@ fn extract_file_path(chunk: &str) -> String {
 /// Looks at `models.commit`, falls back to `models.default`.
 /// Returns `(api_url, model_name)`.
 pub fn resolve_commit_model(config: &ProjectConfig) -> (String, String) {
-    // Try the "models" map from the JSON config (loaded as embedding_model for
-    // the default model). The config struct stores model_default as the primary.
-    let model_ref = config
-        .model_default
-        .as_deref()
-        .unwrap_or("local:code:latest");
-
-    let (provider_name, model_name) = match model_ref.split_once(':') {
-        Some((p, m)) => (p, m.to_string()),
-        None => ("default", model_ref.to_string()),
+    let model_ref = guidance_core::config::resolve_model_ref(config, "default");
+    let (api_url, model_name, _) = guidance_core::config::resolve_model_url(config, &model_ref);
+    let api_url = if api_url.is_empty() {
+        "http://localhost:11434/v1".to_string()
+    } else {
+        api_url
     };
-
-    let api_url = config
-        .providers
-        .get(provider_name)
-        .map(|p| {
-            format!(
-                "{}/{}",
-                p.base_url.trim_end_matches('/'),
-                p.chat_endpoint.trim_start_matches('/')
-            )
-        })
-        .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
-
     (api_url, model_name)
 }
 

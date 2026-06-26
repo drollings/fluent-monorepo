@@ -15,6 +15,7 @@ use tokio::sync::oneshot;
 use notify::{Config as NotifyConfig, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
 
+mod benchmark;
 mod commit;
 mod editor;
 mod mcp;
@@ -165,6 +166,18 @@ enum Commands {
 
         #[arg(short = 'v', long)]
         verbose: bool,
+
+        #[arg(long)]
+        api_url: Option<String>,
+
+        #[arg(short = 'm', long)]
+        model: Option<String>,
+
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+
+        #[arg(long, default_value_t = 2)]
+        concurrency: usize,
     },
     Structure {
         #[arg(long, default_value = ".guidance")]
@@ -282,16 +295,29 @@ async fn main() {
             num,
             no_llm,
             verbose,
+            api_url,
+            model,
+            timeout,
+            concurrency,
         } => {
-            cmd_benchmark(
-                query.as_deref(),
+            let config = benchmark::BenchmarkConfig::from_cli(
+                query.clone(),
                 guidance,
                 db,
                 workspace,
                 *num,
                 *no_llm,
                 *verbose,
+                cli.debug,
+                api_url.clone(),
+                model.clone(),
+                *timeout,
+                *concurrency,
             );
+            if let Err(e) = benchmark::run_benchmark(config).await {
+                eprintln!("benchmark error: {e}");
+                std::process::exit(1);
+            }
         }
         Commands::Structure { json_dir } => cmd_structure(json_dir),
         Commands::Health {
@@ -1197,210 +1223,6 @@ fn cmd_diary(text_or_path: &str) {
         .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()))
         .unwrap_or_else(|e| eprintln!("Could not write diary: {e}"));
     println!("Diary entry appended to {:?}", diary_path);
-}
-
-fn cmd_benchmark(
-    single_query: Option<&str>,
-    guidance_dir: &str,
-    db_path: &str,
-    _workspace: &str,
-    num: Option<usize>,
-    _no_llm: bool,
-    verbose: bool,
-) {
-    let gdir = PathBuf::from(guidance_dir);
-    let db = PathBuf::from(db_path);
-    let src_dir = gdir.join("src");
-
-    let mut queries: Vec<(String, String, String)> = Vec::new();
-
-    if let Some(q) = single_query {
-        queries.push((q.to_string(), String::new(), String::new()));
-    } else {
-        collect_benchmark_queries(&src_dir, &mut queries);
-    }
-
-    if let Some(n) = num {
-        queries.truncate(n);
-    }
-
-    if queries.is_empty() {
-        println!("No benchmark queries found. Generate guidance first with `guidance gen`.");
-        return;
-    }
-
-    let gdb = if db.exists() {
-        GuidanceDb::open(&db).ok()
-    } else {
-        None
-    };
-
-    let total = queries.len();
-    let mut scores: Vec<f64> = Vec::new();
-    let bench_histogram = std::sync::Arc::new(common_core::LatencyHistogram::new());
-
-    println!("Benchmarking {total} queries...\n");
-
-    for (i, (query, expected_source, expected_member)) in queries.iter().enumerate() {
-        let start = std::time::Instant::now();
-        let mut found = false;
-        let mut result_count = 0usize;
-        let mut top_result_name = String::new();
-
-        if let Some(ref gdb) = gdb {
-            if let Ok(results) = gdb.hybrid_search(query, None, 15) {
-                result_count = results.len();
-                if let Some(top) = results.first() {
-                    top_result_name = top.name.clone();
-                    if !expected_member.is_empty() {
-                        found = top
-                            .name
-                            .to_lowercase()
-                            .contains(&expected_member.to_lowercase());
-                    } else if !expected_source.is_empty() {
-                        found = top.source.contains(expected_source.as_str());
-                    } else {
-                        found = result_count > 0;
-                    }
-                }
-                if !found {
-                    found = results.iter().any(|r| {
-                        if !expected_member.is_empty() {
-                            common_core::string::contains_ignore_case(
-                                r.name.as_str(),
-                                expected_member,
-                            )
-                        } else if !expected_source.is_empty() {
-                            r.source.contains(expected_source.as_str())
-                        } else {
-                            false
-                        }
-                    });
-                }
-            }
-        }
-
-        if !found {
-            let json_src = gdir.join("src");
-            if json_src.is_dir() {
-                walk::walk_files(&json_src, &["json"], |path| {
-                    if found {
-                        return;
-                    }
-                    if let Ok(Some(doc)) = guidance_core::sync::json_store::load_guidance(path) {
-                        for member in &doc.members {
-                            if common_core::string::contains_ignore_case(
-                                member.name.as_str(),
-                                query,
-                            ) {
-                                found = true;
-                                result_count += 1;
-                                if top_result_name.is_empty() {
-                                    top_result_name = member.name.as_str().to_string();
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        let elapsed = start.elapsed();
-        let ms = elapsed.as_secs_f64() * 1000.0;
-        bench_histogram.observe(elapsed.as_millis() as u64);
-
-        let accuracy = if found {
-            if result_count <= 3 {
-                10.0
-            } else if result_count <= 10 {
-                7.0
-            } else {
-                4.0
-            }
-        } else {
-            1.0
-        };
-
-        let relevance = if found {
-            if !top_result_name.is_empty()
-                && top_result_name
-                    .to_lowercase()
-                    .contains(&query.to_lowercase())
-            {
-                10.0
-            } else if found {
-                6.0
-            } else {
-                1.0
-            }
-        } else {
-            1.0
-        };
-
-        let completeness = if found {
-            if result_count >= 2 {
-                8.0
-            } else {
-                5.0
-            }
-        } else {
-            1.0
-        };
-
-        let navigation = if found { 7.0 } else { 1.0 };
-
-        let avg = (accuracy + relevance + completeness + navigation) / 4.0;
-        scores.push(avg);
-
-        if verbose {
-            println!("  [{:3}/{total}] {query:40} acc={accuracy:.0} rel={relevance:.0} cmpl={completeness:.0} nav={navigation:.0} avg={avg:.1} {ms:.1}ms", i + 1);
-        } else {
-            println!("  [{:3}/{total}] {query:40} avg={avg:.1}  {ms:.1}ms", i + 1);
-        }
-    }
-
-    let avg: f64 = scores.iter().sum::<f64>() / scores.len() as f64;
-    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let min = scores.iter().cloned().fold(f64::INFINITY, f64::min);
-    let high = scores.iter().filter(|&&s| s >= 7.0).count();
-    let mid = scores.iter().filter(|&&s| (4.0..7.0).contains(&s)).count();
-    let low = scores.iter().filter(|&&s| s < 4.0).count();
-
-    println!("\n=== Benchmark Results ===");
-    println!("  Total queries:  {total}");
-    println!("  Average score:  {avg:.1}/10");
-    println!("  Min score:      {min:.1}/10");
-    println!("  Max score:      {max:.1}/10");
-    println!("  High (>=7):     {high}");
-    println!("  Middling (4-6): {mid}");
-    println!("  Low (<4):       {low}");
-    println!(
-        "  Latency p50:    {}ms",
-        bench_histogram.estimate_percentile(50.0)
-    );
-    println!(
-        "  Latency p99:    {}ms",
-        bench_histogram.estimate_percentile(99.0)
-    );
-    println!("  Latency total:  {}ms", bench_histogram.sum_ms());
-}
-
-fn collect_benchmark_queries(dir: &Path, queries: &mut Vec<(String, String, String)>) {
-    for (_path, doc) in walk_guidance_docs(dir) {
-        let source = doc.meta.source.as_str().to_string();
-        for member in &doc.members {
-            let name = member.name.as_str();
-            if !name.is_empty() && queries.len() < 120 {
-                queries.push((name.to_string(), source.clone(), name.to_string()));
-            }
-        }
-        if let Some(ref comment) = doc.comment {
-            let words: Vec<&str> = comment.as_str().split_whitespace().take(3).collect();
-            if !words.is_empty() && queries.len() < 120 {
-                queries.push((words.join(" "), source.clone(), String::new()));
-            }
-        }
-    }
 }
 
 fn cmd_structure(json_dir: &str) {
