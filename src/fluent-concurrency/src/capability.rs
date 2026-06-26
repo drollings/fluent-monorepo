@@ -16,7 +16,7 @@ pub fn default_capability_set() -> CapabilitySet {
 }
 
 /// Returns a `CapabilitySet` with Fs, Net, and Db capabilities.
-pub fn capability_set_with_db(path: &str) -> Result<CapabilitySet, fluent_wvr::ConcurrencyError> {
+pub fn capability_set_with_db(path: &str) -> Result<CapabilitySet, common_core::error::IoError> {
     let db = DbCapability::open(path)?;
     Ok(CapabilitySet::new()
         .with(FsCapability::new())

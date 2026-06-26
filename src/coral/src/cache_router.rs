@@ -50,7 +50,7 @@ impl ParallelRouter {
             }
         }
 
-        Err(CacheError::CacheMiss)
+        Err(CacheError::Miss)
     }
 
     pub fn route_with_embedding(
@@ -75,20 +75,17 @@ impl ParallelRouter {
                 }
             }
         }
-        Err(CacheError::CacheMiss)
+        Err(CacheError::Miss)
     }
 
     fn traverse_all(&self, max_depth: u8) -> Result<Vec<GraphNode>, CacheError> {
-        let node_count = self
-            .library
-            .node_count()
-            .map_err(|_| CacheError::CacheMiss)?;
+        let node_count = self.library.node_count().map_err(|_| CacheError::Miss)?;
         if node_count == 0 {
             return Ok(vec![]);
         }
         self.library
             .traverse_all_nodes(max_depth)
-            .map_err(|_| CacheError::CacheMiss)
+            .map_err(|_| CacheError::Miss)
     }
 }
 

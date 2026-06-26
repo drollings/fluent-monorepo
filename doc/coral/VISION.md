@@ -167,6 +167,23 @@ The intelligence layer that routes queries through progressively more expensive 
 | L4.5 | Decompose | Local LLM splits into subtasks, recurses | 200ms | Complex multi-step |
 | L5 | Frontier | External LLM (Ollama/OpenAI) | 500ms+ | Novel problems |
 
+**Uniform dispatch** — each tier is an `Arc<dyn Component>` stored in a
+`TierRegistry`. The orchestrator never branches on tier type:
+
+```rust
+// cache_reactor.rs — route_with_depth
+match self.tier_registry.execute(query, depth) {
+    Ok(result) => { /* persist + cache */ }
+    Err(_) => { /* fall through to L4.5 decomposition */ }
+}
+```
+
+Each tier's `execute()` receives the prior tier's miss as a signal via
+`WorkContext.metadata`, and returns a `RoutingResult` indicating which tier
+satisfied the query. Tiers L3–L5 are wrapped in `Instrumented::with_metrics`
+before type erasure, providing per-tier latency histograms exposed via
+`coral_stats`.
+
 ### Component 3: MCP Server (`mcp.rs`)
 
 JSON-RPC 2.0 server implementing the Model Context Protocol for AI agent integration:
@@ -324,12 +341,15 @@ guidance explain "query"
 
 ### In Progress
 
-1. **Fluent WVR Pattern Adoption**: Wrapping cache tiers with WorkUnit for uniform orchestration
-2. **Async I/O**: Replacing synchronous SQLite calls with async-friendly patterns
+1. **Async I/O**: Replacing synchronous SQLite calls with async-friendly patterns
+
+### Wired (documented, not separately listed)
+
+1. **Fluent WVR Pattern Adoption**: All 6 cache tiers are `WorkUnit` implementations dispatched uniformly through `TierRegistry` (completed by M3 of `ROADMAP_REFINE.md`)
 
 ### Planned
 
-1. **HNSW Index**: Replace brute-force KNN with approximate nearest neighbor for >100K nodes
+1. **HNSW Index**: Currently wired — `insert_node` (`db.rs:152`) calls `hnsw_insert` (`db.rs:167`) on every node with an embedding; brute-force KNN remains the primary query path. Upgrade to HNSW query when candidate count exceeds 100K.
 2. **Persistent L1 Cache**: Disk-backed LRU for warm starts
 3. **Graph Analytics**: PageRank, community detection for node importance
 

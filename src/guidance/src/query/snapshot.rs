@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone, Default)]
@@ -52,7 +51,7 @@ impl FrozenSnapshot {
 fn read_and_join(paths: &[&Path]) -> String {
     let contents: Vec<String> = paths
         .iter()
-        .filter_map(|p| fs::read_to_string(p).ok())
+        .filter_map(|p| common_core::io::read_to_string_err(p).ok())
         .collect();
     contents.join("\n")
 }
@@ -92,7 +91,7 @@ mod tests {
     fn load_reads_file_content() {
         let dir = tempdir();
         let p = dir.path().join("test.txt");
-        fs::write(&p, "hello").unwrap();
+        std::fs::write(&p, "hello").unwrap();
         let snap = FrozenSnapshot::load(&[&p]);
         assert_eq!(snap.context_files, "hello");
     }
@@ -108,8 +107,8 @@ mod tests {
         let dir = tempdir();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
-        fs::write(&a, "a").unwrap();
-        fs::write(&b, "b").unwrap();
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
         let snap = FrozenSnapshot::load(&[&a, &b]);
         assert!(snap.context_files.contains("a"));
         assert!(snap.context_files.contains("b"));

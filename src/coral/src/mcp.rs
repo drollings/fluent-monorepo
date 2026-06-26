@@ -5,6 +5,7 @@ use common_core::jsonrpc::{JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpc
 use guidance_types::ContextNode;
 use thiserror::Error;
 
+use crate::cache_reactor::QueueReactor;
 use crate::db::Library;
 
 pub const MAX_MCP_REQUEST_SIZE: usize = 10 * 1024 * 1024;
@@ -25,17 +26,29 @@ pub enum McpError {
 
 impl From<std::io::Error> for McpError {
     fn from(e: std::io::Error) -> Self {
-        McpError::Io(common_core::error::IoError::Io(e))
+        McpError::Io(common_core::error::IoError(e))
     }
 }
 
 pub struct McpServer {
     library: Arc<Library>,
+    reactor: Option<Arc<QueueReactor>>,
 }
 
 impl McpServer {
     pub fn new(library: Arc<Library>) -> Self {
-        Self { library }
+        Self {
+            library,
+            reactor: None,
+        }
+    }
+
+    /// Create an MCP server with a reactor for cache tier stats.
+    pub fn with_reactor(library: Arc<Library>, reactor: Arc<QueueReactor>) -> Self {
+        Self {
+            library,
+            reactor: Some(reactor),
+        }
     }
 
     fn dispatch(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -43,6 +56,7 @@ impl McpServer {
             "coral_query" => self.handle_coral_query(request),
             "coral_insert" => self.handle_coral_insert(request),
             "coral_traverse" => self.handle_coral_traverse(request),
+            "coral_stats" => self.handle_coral_stats(request),
             _ => common_core::jsonrpc::method_not_found(request.id.clone(), &request.method),
         }
     }
@@ -173,6 +187,29 @@ impl McpServer {
             },
         }
     }
+
+    fn handle_coral_stats(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        match &self.reactor {
+            Some(reactor) => {
+                let stats = reactor.coral_stats();
+                JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: request.id.clone(),
+                    result: Some(serde_json::to_value(&stats).unwrap_or_default()),
+                    error: None,
+                }
+            }
+            None => JsonRpcResponse {
+                jsonrpc: "2.0".into(),
+                id: request.id.clone(),
+                error: Some(JsonRpcError {
+                    code: -32000,
+                    message: "no reactor configured".into(),
+                }),
+                result: None,
+            },
+        }
+    }
 }
 
 impl JsonRpcHandler for McpServer {
@@ -280,5 +317,38 @@ mod tests {
         let server = make_server();
         let resp = server.handle_request("not-json");
         assert!(resp.is_err());
+    }
+
+    #[test]
+    fn test_coral_stats_no_reactor() {
+        let server = make_server();
+        let req = r#"{"jsonrpc":"2.0","method":"coral_stats","id":1}"#;
+        let resp = server.handle_request(req).expect("handle");
+        let v: serde_json::Value = serde_json::from_str(&resp).expect("parse");
+        assert!(v["error"].is_object());
+        assert_eq!(v["error"]["code"], -32000);
+    }
+
+    #[test]
+    fn test_coral_stats_with_reactor() {
+        use crate::cache_reactor::{QueueReactor, QueueReactorCreateArgs};
+        use std::sync::Arc;
+
+        let lib = Arc::new(Library::open_in_memory().expect("db"));
+        let args = QueueReactorCreateArgs::builder()
+            .library(Arc::clone(&lib))
+            .build();
+        let reactor = Arc::new(QueueReactor::new(args));
+        let server = McpServer::with_reactor(lib, reactor);
+
+        let req = r#"{"jsonrpc":"2.0","method":"coral_stats","id":1}"#;
+        let resp = server.handle_request(req).expect("handle");
+        let v: serde_json::Value = serde_json::from_str(&resp).expect("parse");
+        assert!(v["result"].is_object());
+        assert!(v["error"].is_null());
+        // No routes yet, so total_count should be 0
+        assert_eq!(v["result"]["total_count"], 0);
+        // But we should have at least one tier histogram (L3)
+        assert!(v["result"]["tier_count"].as_u64().unwrap() > 0);
     }
 }

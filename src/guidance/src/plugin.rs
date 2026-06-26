@@ -20,7 +20,7 @@ pub enum PluginError {
 
 impl From<std::io::Error> for PluginError {
     fn from(e: std::io::Error) -> Self {
-        PluginError::Io(common_core::error::IoError::Io(e))
+        PluginError::Io(common_core::error::IoError(e))
     }
 }
 

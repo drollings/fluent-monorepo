@@ -27,7 +27,7 @@ pub enum SyncEngineError {
 
 impl From<std::io::Error> for SyncEngineError {
     fn from(e: std::io::Error) -> Self {
-        SyncEngineError::Io(common_core::error::IoError::Io(e))
+        SyncEngineError::Io(common_core::error::IoError(e))
     }
 }
 

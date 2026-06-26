@@ -1,5 +1,6 @@
 //! Shared types for the memory plugin system.
 
+use guidance_types::SessionId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct MemoryInitContext {
     /// Current session identifier.
-    pub session_id: internment::ArcIntern<str>,
+    pub session_id: SessionId,
     /// Workspace root (e.g., `/opt/src/rust/monorepo`).
     pub workspace_root: PathBuf,
     /// Memory storage root (e.g., `~/.guidance/memory/`).
@@ -21,7 +22,7 @@ pub struct MemoryInitContext {
 #[derive(Clone)]
 pub struct MemoryQueryContext {
     /// Current session identifier.
-    pub session_id: internment::ArcIntern<str>,
+    pub session_id: SessionId,
     /// Capability set for this query scope.
     pub caps: fluent_wvr::CapabilitySet,
     /// Runtime handle for spawning background work.

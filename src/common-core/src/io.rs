@@ -17,15 +17,15 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 }
 
 pub fn read_to_string_err(path: &Path) -> Result<String, IoError> {
-    let meta = fs::metadata(path).map_err(IoError::Io)?;
+    let meta = fs::metadata(path).map_err(IoError)?;
     let size = meta.len() as usize;
     if size > MAX_FILE_SIZE {
-        return Err(IoError::Io(std::io::Error::new(
+        return Err(IoError(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("file too large: {size} bytes exceeds maximum {MAX_FILE_SIZE} bytes"),
         )));
     }
-    fs::read_to_string(path).map_err(IoError::Io)
+    fs::read_to_string(path).map_err(IoError)
 }
 
 pub fn make_path_absolute(path: &str) -> std::io::Result<String> {

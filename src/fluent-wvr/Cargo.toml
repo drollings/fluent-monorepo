@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 common-core = { path = "../common-core" }
+fastrand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -12,3 +13,6 @@ internment = { workspace = true, features = ["arc", "serde"] }
 tracing = { workspace = true }
 tokio = { workspace = true }
 fluent-wvr-macros = { path = "../fluent-wvr-macros" }
+
+[lints]
+workspace = true

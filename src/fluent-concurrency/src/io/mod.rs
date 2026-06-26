@@ -91,12 +91,8 @@ mod tests {
     fn test_capability_error_into_concurrency_error() {
         let cap_err = CapabilityError::Missing { name: "net" };
         let io_err: std::io::Error = cap_err.into();
-        let conc_err: fluent_wvr::ConcurrencyError = io_err.into();
-        match &conc_err {
-            fluent_wvr::ConcurrencyError::Io(e) => {
-                assert_eq!(e.kind(), Some(std::io::ErrorKind::PermissionDenied));
-                assert!(e.to_string().contains("missing"));
-            }
-        }
+        let conc_err: common_core::error::IoError = io_err.into();
+        assert_eq!(conc_err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(conc_err.to_string().contains("missing"));
     }
 }

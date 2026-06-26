@@ -17,3 +17,6 @@ bon = { workspace = true }
 [dev-dependencies]
 fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -6,3 +6,6 @@ edition.workspace = true
 [dependencies]
 guidance-types = { path = "../types" }
 common-core = { path = "../common-core" }
+
+[lints]
+workspace = true

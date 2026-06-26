@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use fluent_wvr::{Capability, ConcurrencyError};
+use common_core::error::IoError;
+use fluent_wvr::Capability;
 
 use crate::io::check_capability;
 
@@ -31,7 +32,7 @@ impl Capability for FsCapability {
 }
 
 impl FsCapability {
-    pub async fn read(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, ConcurrencyError> {
+    pub async fn read(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, IoError> {
         check_capability(self)?;
         Ok(tokio::fs::read(path).await?)
     }
@@ -40,15 +41,12 @@ impl FsCapability {
         &self,
         path: impl AsRef<Path>,
         contents: impl AsRef<[u8]>,
-    ) -> Result<(), ConcurrencyError> {
+    ) -> Result<(), IoError> {
         check_capability(self)?;
         Ok(tokio::fs::write(path, contents).await?)
     }
 
-    pub async fn metadata(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> Result<std::fs::Metadata, ConcurrencyError> {
+    pub async fn metadata(&self, path: impl AsRef<Path>) -> Result<std::fs::Metadata, IoError> {
         check_capability(self)?;
         Ok(tokio::fs::metadata(path).await?)
     }

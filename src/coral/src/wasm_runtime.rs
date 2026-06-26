@@ -1,6 +1,12 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
+use lru::LruCache;
 use thiserror::Error;
+
+type CachedPlugin = Arc<Mutex<Box<dyn WasmPlugin>>>;
+type PluginCache = LruCache<String, CachedPlugin>;
 
 #[derive(Error, Debug)]
 pub enum WasmError {
@@ -16,12 +22,59 @@ pub enum WasmError {
 
 impl From<std::io::Error> for WasmError {
     fn from(e: std::io::Error) -> Self {
-        WasmError::Io(common_core::error::IoError::Io(e))
+        WasmError::Io(common_core::error::IoError(e))
     }
 }
 
 pub trait WasmPlugin: Send {
     fn call(&mut self, payload: &[u8]) -> Result<Vec<u8>, WasmError>;
+}
+
+/// LRU cache of loaded WASM plugins, keyed by file path.
+///
+/// Plugins are loaded on first access and reused for subsequent calls to the
+/// same path. When the cache exceeds `max_capacity`, the least-recently-used
+/// plugin is evicted.
+pub struct PluginPool {
+    plugins: Mutex<PluginCache>,
+    runtime: Arc<dyn WasmRuntime>,
+}
+
+impl PluginPool {
+    pub fn new(runtime: Arc<dyn WasmRuntime>, max_capacity: usize) -> Self {
+        let cap = NonZeroUsize::new(max_capacity).unwrap_or(NonZeroUsize::new(1).unwrap());
+        Self {
+            plugins: Mutex::new(LruCache::new(cap)),
+            runtime,
+        }
+    }
+
+    /// Return a cached plugin for `path`, or load + cache a new one.
+    ///
+    /// The caller receives an `Arc<Mutex<Box<dyn WasmPlugin>>>` and should
+    /// lock it only for the duration of the `call`. On eviction the `Arc`
+    /// stays valid (the caller may still hold a reference) but subsequent
+    /// `get_or_load` calls for the same path will load a fresh instance.
+    pub fn get_or_load(&self, path: &str) -> Result<CachedPlugin, WasmError> {
+        // Fast path: plugin already cached
+        {
+            let mut cache = self.plugins.lock().unwrap();
+            if let Some(plugin) = cache.get(path) {
+                return Ok(Arc::clone(plugin));
+            }
+        }
+        // Slow path: load from disk, insert into cache
+        let plugin = self.runtime.load_plugin_from_file(Path::new(path))?;
+        let shared = Arc::new(Mutex::new(plugin));
+        let mut cache = self.plugins.lock().unwrap();
+        cache.put(path.to_string(), Arc::clone(&shared));
+        Ok(shared)
+    }
+
+    /// Number of plugins currently held in the cache.
+    pub fn cache_size(&self) -> usize {
+        self.plugins.lock().unwrap().len()
+    }
 }
 
 pub trait WasmRuntime: Send + Sync {
@@ -70,8 +123,6 @@ impl WasmPlugin for ExtismPlugin {
         Ok(result)
     }
 }
-
-use std::sync::Mutex;
 
 use fluent_wvr::{
     Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
@@ -220,6 +271,17 @@ mod tests {
         }
     }
 
+    struct MockRuntime;
+
+    impl WasmRuntime for MockRuntime {
+        fn load_plugin(&self, _wasm_bytes: &[u8]) -> Result<Box<dyn WasmPlugin>, WasmError> {
+            Ok(Box::new(MockPlugin))
+        }
+        fn load_plugin_from_file(&self, _path: &Path) -> Result<Box<dyn WasmPlugin>, WasmError> {
+            Ok(Box::new(MockPlugin))
+        }
+    }
+
     #[test]
     fn test_runtime_creation() {
         let runtime = ExtismWasmRuntime::new();
@@ -274,5 +336,52 @@ mod tests {
             .with_provides(&[ArcIntern::from("result")]);
         assert_eq!(comp.depends().len(), 1);
         assert_eq!(&*comp.provides()[0], "result");
+    }
+
+    // --- PluginPool tests ---
+
+    #[test]
+    fn test_plugin_pool_returns_same_instance_for_same_path() {
+        let runtime: Arc<dyn WasmRuntime> = Arc::new(MockRuntime);
+        let pool = PluginPool::new(runtime, 4);
+        let p1 = pool.get_or_load("/fake/tool.wasm").unwrap();
+        let p2 = pool.get_or_load("/fake/tool.wasm").unwrap();
+        assert!(
+            Arc::ptr_eq(&p1, &p2),
+            "pool should return same Arc instance"
+        );
+        assert_eq!(pool.cache_size(), 1);
+    }
+
+    #[test]
+    fn test_plugin_pool_different_paths_return_different_instances() {
+        let runtime: Arc<dyn WasmRuntime> = Arc::new(MockRuntime);
+        let pool = PluginPool::new(runtime, 4);
+        let p1 = pool.get_or_load("/tool_a.wasm").unwrap();
+        let p2 = pool.get_or_load("/tool_b.wasm").unwrap();
+        assert!(
+            !Arc::ptr_eq(&p1, &p2),
+            "different paths should yield different plugin instances"
+        );
+        assert_eq!(pool.cache_size(), 2);
+    }
+
+    #[test]
+    fn test_plugin_pool_lru_eviction() {
+        let runtime: Arc<dyn WasmRuntime> = Arc::new(MockRuntime);
+        let pool = PluginPool::new(runtime, 2);
+        let _p1 = pool.get_or_load("/a.wasm").unwrap();
+        let _p2 = pool.get_or_load("/b.wasm").unwrap();
+        assert_eq!(pool.cache_size(), 2);
+        // Adding a third entry evicts the least-recently-used (/a.wasm)
+        let _p3 = pool.get_or_load("/c.wasm").unwrap();
+        assert_eq!(pool.cache_size(), 2);
+        // /a.wasm was evicted — get_or_load loads a fresh instance
+        let p1_new = pool.get_or_load("/a.wasm").unwrap();
+        let p1_old = _p1;
+        assert!(
+            !Arc::ptr_eq(&p1_new, &p1_old),
+            "evicted plugin should be reloaded as a new instance"
+        );
     }
 }

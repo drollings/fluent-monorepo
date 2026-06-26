@@ -25,3 +25,6 @@ lru = { workspace = true }
 extism = { workspace = true }
 hnsw_rs = { workspace = true }
 anndists = { workspace = true }
+
+[lints]
+workspace = true

@@ -2,6 +2,13 @@ use bon::Builder;
 
 use crate::client::{strip_think_block, LlmClient, LlmConfig};
 
+/// Trait for task decomposition — splits a query into subtasks.
+///
+/// Implemented by `LocalDecomposer` (LLM-backed) and test stubs.
+pub trait Decomposer: Send + Sync {
+    fn decompose(&self, task: &str) -> Vec<String>;
+}
+
 #[derive(Debug, Clone, Builder)]
 pub struct DecomposerConfig {
     pub llm: LlmConfig,
@@ -13,6 +20,12 @@ pub struct DecomposerConfig {
 
 pub struct LocalDecomposer {
     pub config: DecomposerConfig,
+}
+
+impl Decomposer for LocalDecomposer {
+    fn decompose(&self, task: &str) -> Vec<String> {
+        self.decompose(task)
+    }
 }
 
 const SYSTEM_PROMPT: &str = r#"You are a task planner. Given a user query, decompose it into at most 5

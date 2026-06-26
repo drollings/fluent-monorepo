@@ -42,7 +42,7 @@ pub enum QueryEngineError {
 
 impl From<std::io::Error> for QueryEngineError {
     fn from(e: std::io::Error) -> Self {
-        QueryEngineError::Io(common_core::error::IoError::Io(e))
+        QueryEngineError::Io(common_core::error::IoError(e))
     }
 }
 
@@ -158,7 +158,7 @@ impl QueryEngine {
                 .unwrap_or(path)
                 .to_string_lossy()
                 .to_string();
-            if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(content) = common_core::io::read_to_string_err(path) {
                 wi.index_file(&rel, &content);
             }
         });
@@ -378,7 +378,7 @@ fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser)
         }
         let source_changed = cache.as_ref().is_none_or(|(p, _, _)| *p != path);
         if source_changed {
-            if let Ok(src) = std::fs::read_to_string(&path) {
+            if let Ok(src) = common_core::io::read_to_string_err(&path) {
                 if let Ok(doc) = parser.parse_file(&path, &src) {
                     cache = Some((path, src, doc));
                 } else {

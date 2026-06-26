@@ -199,6 +199,9 @@ async fn main() {
             .init();
     }
 
+    // Currently observes total command time; per-unit observation pending
+    // `Instrumented::with_metrics` consumer wiring (M12). See
+    // `ROADMAP_20260625_CONSOLIDATE_CHECKLIST.md` M12 notes.
     let cmd_histogram = std::sync::Arc::new(common_core::LatencyHistogram::new());
     let cmd_start = std::time::Instant::now();
 

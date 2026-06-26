@@ -2,7 +2,8 @@
 
 use std::time::Duration;
 
-use fluent_wvr::{Capability, ConcurrencyError};
+use common_core::error::IoError;
+use fluent_wvr::Capability;
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 use crate::io::check_capability;
@@ -71,15 +72,12 @@ impl Capability for NetCapability {
 }
 
 impl NetCapability {
-    pub async fn tcp_connect(
-        &self,
-        addr: impl ToSocketAddrs,
-    ) -> Result<TcpStream, ConcurrencyError> {
+    pub async fn tcp_connect(&self, addr: impl ToSocketAddrs) -> Result<TcpStream, IoError> {
         check_capability(self)?;
         Ok(TcpStream::connect(addr).await?)
     }
 
-    pub async fn http_get(&self, url: &str) -> Result<String, ConcurrencyError> {
+    pub async fn http_get(&self, url: &str) -> Result<String, IoError> {
         check_capability(self)?;
         let response = self
             .client
@@ -91,7 +89,7 @@ impl NetCapability {
         Ok(body)
     }
 
-    pub async fn http_post(&self, url: &str, body: &str) -> Result<String, ConcurrencyError> {
+    pub async fn http_post(&self, url: &str, body: &str) -> Result<String, IoError> {
         check_capability(self)?;
         let response = self
             .client

@@ -1,7 +1,7 @@
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CacheTier {
@@ -34,7 +34,7 @@ pub struct RoutingResult {
 }
 
 pub struct L1Cache {
-    inner: Mutex<LruCache<String, RoutingResult>>,
+    inner: Mutex<LruCache<String, Arc<RoutingResult>>>,
     max_entries: usize,
 }
 
@@ -50,12 +50,12 @@ impl L1Cache {
         }
     }
 
-    pub fn get(&self, query: &str) -> Option<RoutingResult> {
+    pub fn get(&self, query: &str) -> Option<Arc<RoutingResult>> {
         let mut cache = self.inner.lock().unwrap();
         cache.get(query).cloned()
     }
 
-    pub fn set(&self, query: String, result: RoutingResult) {
+    pub fn set(&self, query: String, result: Arc<RoutingResult>) {
         let mut cache = self.inner.lock().unwrap();
         cache.put(query, result);
     }
@@ -83,23 +83,23 @@ impl Default for L1Cache {
 mod tests {
     use super::*;
 
-    fn make_result(query: &str) -> RoutingResult {
-        RoutingResult {
+    fn make_result(query: &str) -> Arc<RoutingResult> {
+        Arc::new(RoutingResult {
             query: query.into(),
             result: format!("r_{query}"),
             tier: CacheTier::L1Memory,
-        }
+        })
     }
 
     #[test]
     fn test_l1_cache_set_and_get() {
         let cache = L1Cache::new();
-        let result = RoutingResult {
+        let result = Arc::new(RoutingResult {
             query: "hello".into(),
             result: "world".into(),
             tier: CacheTier::L1Memory,
-        };
-        cache.set("hello".into(), result.clone());
+        });
+        cache.set("hello".into(), Arc::clone(&result));
         let cached = cache.get("hello").expect("should exist");
         assert_eq!(cached.result, "world");
         assert_eq!(cached.tier, CacheTier::L1Memory);

@@ -175,6 +175,8 @@ Then you you must read
     │       ├── lib.rs  # //! Coral: Context-graph library for
     │       ├── mcp.rs  # use std::io::{self, BufRead,
     │       ├── packer.rs  # use guidance_types::{ContextNode,
+    │       ├── tier_units.rs  # use std::sync::{Arc, Weak};
+    │       ├── test_stubs.rs  # #[cfg(test)] pub(crate) mod test_stubs
     │       ├── wasm_runtime.rs  # use std::path::Path;
     │       └── wvr.rs  # //! Fluent WVR integration for Coral
     ├── dag/
@@ -324,7 +326,7 @@ Then you you must read
     │   └── src/
     │       └── lib.rs  # //! guidance-types: Shared data types
     └── wasm_ipc/
-        ├── Cargo.toml
+├── Cargo.toml  # workspace root: [workspace.lints] defines shared clippy/rust lints
         └── src/
             └── lib.rs  # //! WASM IPC — Binary schemas for
 ```

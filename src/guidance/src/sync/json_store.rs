@@ -18,7 +18,7 @@ pub enum JsonError {
 
 impl From<std::io::Error> for JsonError {
     fn from(e: std::io::Error) -> Self {
-        JsonError::Io(common_core::error::IoError::Io(e))
+        JsonError::Io(common_core::error::IoError(e))
     }
 }
 

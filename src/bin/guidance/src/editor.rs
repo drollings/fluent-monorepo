@@ -56,6 +56,7 @@ pub fn file_mtime(path: &Path) -> Option<SystemTime> {
 /// Returns the cleaned string. Returns an empty string if the result is only
 /// whitespace.
 pub fn read_cleaned(path: &Path) -> std::io::Result<String> {
+    // kept: see editor.rs:36-39 rationale for stdin/utf8 handling
     let raw = std::fs::read_to_string(path)?;
     let cleaned: String = raw
         .lines()

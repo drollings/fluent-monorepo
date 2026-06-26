@@ -1,25 +1,31 @@
 use thiserror::Error;
 
+/// I/O error wrapper.
+///
+/// Single-variant tuple struct that wraps `std::io::Error`. Consumers can use
+/// the `IoError(e)` constructor directly (or, equivalently, `e.into()` thanks
+/// to the `#[from]` derive). `kind()` mirrors `std::io::Error::kind()` so
+/// callers do not need to unwrap an `Option` to inspect the I/O error kind.
+///
+/// The older `FileTooLarge` / `PathNotFound` / `InvalidPath` variants were
+/// dead and have been removed; the `MAX_FILE_SIZE` guard in
+/// `crate::io::read_to_string_err` emits a plain `io::Error` with
+/// `ErrorKind::InvalidData` instead.
 #[derive(Error, Debug)]
-pub enum IoError {
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("file too large: {size} > {max}")]
-    FileTooLarge { size: usize, max: usize },
-    #[error("path not found: {0}")]
-    PathNotFound(String),
-    #[error("invalid path: {0}")]
-    InvalidPath(String),
-}
+#[error("I/O error: {0}")]
+pub struct IoError(#[from] pub std::io::Error);
 
 impl IoError {
-    /// Returns the inner `std::io::Error::kind` if this wraps one, else `None`.
+    /// Returns the inner `std::io::Error::kind()`.
     #[must_use]
-    pub fn kind(&self) -> Option<std::io::ErrorKind> {
-        match self {
-            IoError::Io(e) => Some(e.kind()),
-            _ => None,
-        }
+    pub fn kind(&self) -> std::io::ErrorKind {
+        self.0.kind()
+    }
+
+    /// Borrow the wrapped `std::io::Error`.
+    #[must_use]
+    pub fn as_inner(&self) -> &std::io::Error {
+        &self.0
     }
 }
 
@@ -43,24 +49,6 @@ pub enum ResolverError {
 #[error("sqlite error: {0}")]
 pub struct SqliteError(#[from] pub rusqlite::Error);
 
-/// Common error umbrella that consolidates the most common leaf error
-/// types. Crate-level errors should `#[from]` into this where possible
-/// (e.g. `CommonError::Io`) instead of redefining `Io(#[from] std::io::Error)`.
-#[derive(Error, Debug)]
-pub enum CommonError {
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-    #[cfg(feature = "sqlite")]
-    #[error("sqlite error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
-    #[error("not found: {0}")]
-    NotFound(String),
-    #[error("parse error: {0}")]
-    Parse(String),
-    #[error("constraint violation: {0}")]
-    Constraint(String),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,30 +56,28 @@ mod tests {
     #[test]
     fn io_error_from_std() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let err = IoError::Io(io_err);
+        let err = IoError(io_err);
         assert!(format!("{err}").contains("file not found"));
     }
 
     #[test]
-    fn common_error_from_io() {
+    fn io_error_kind_returns_inner_kind() {
         let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
-        let err: CommonError = io_err.into();
-        assert!(matches!(err, CommonError::Io(_)));
+        let err = IoError(io_err);
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
     #[test]
-    fn common_error_variants_display() {
-        assert_eq!(
-            format!("{}", CommonError::NotFound("x".into())),
-            "not found: x"
-        );
-        assert_eq!(
-            format!("{}", CommonError::Parse("bad".into())),
-            "parse error: bad"
-        );
-        assert_eq!(
-            format!("{}", CommonError::Constraint("oob".into())),
-            "constraint violation: oob"
-        );
+    fn io_error_from_via_into() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "boom");
+        let err: IoError = io_err.into();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+    }
+
+    #[test]
+    fn io_error_as_inner_borrows_source() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "short");
+        let err = IoError(io_err);
+        assert_eq!(err.as_inner().kind(), std::io::ErrorKind::UnexpectedEof);
     }
 }

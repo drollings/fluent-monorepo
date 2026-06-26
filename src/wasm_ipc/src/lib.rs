@@ -1,14 +1,6 @@
 //! WASM IPC — Binary schemas for Extism boundary.
 //! #[repr(C, packed)] structs for zero-copy IPC.
 
-#![deny(warnings, clippy::all, clippy::pedantic)]
-#![allow(
-    clippy::module_name_repetitions,
-    clippy::cast_possible_truncation,
-    clippy::missing_panics_doc,
-    clippy::missing_errors_doc
-)]
-
 use bitvec::vec::BitVec;
 use std::convert::TryInto;
 

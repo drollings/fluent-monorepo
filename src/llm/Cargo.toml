@@ -21,3 +21,6 @@ lru = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }
+
+[lints]
+workspace = true

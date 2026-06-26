@@ -18,7 +18,7 @@ pub fn load_json_or_default<T: DeserializeOwned + Default>(path: &Path) -> T {
 pub fn load_json<T: DeserializeOwned>(path: &Path) -> Result<T, IoError> {
     let content = crate::io::read_to_string_err(path)?;
     serde_json::from_str(&content).map_err(|e| {
-        IoError::Io(std::io::Error::new(
+        IoError(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("JSON parse error: {e}"),
         ))

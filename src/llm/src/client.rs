@@ -6,6 +6,13 @@ use thiserror::Error;
 
 use crate::llm_queue::{LlmQueueConfig, LlmRequestQueue};
 
+/// Trait for chat backends — sends messages and returns a response string.
+///
+/// Implemented by `LlmClient` (production) and test stubs.
+pub trait ChatBackend: Send + Sync {
+    fn chat_complete(&self, messages: &[ChatMessage]) -> Result<String, LlmError>;
+}
+
 #[derive(Error, Debug)]
 pub enum LlmError {
     #[error("API error: {0}")]
@@ -125,6 +132,12 @@ impl LlmClient {
         let queue = self.queue.clone().unwrap_or_else(|| dq.queue.clone());
         dq.runtime
             .block_on(queue.submit_async(messages.to_vec(), self.config.clone()))
+    }
+}
+
+impl ChatBackend for LlmClient {
+    fn chat_complete(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
+        self.chat_complete(messages)
     }
 }
 

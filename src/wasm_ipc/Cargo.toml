@@ -7,3 +7,6 @@ edition.workspace = true
 bitvec = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+
+[lints]
+workspace = true

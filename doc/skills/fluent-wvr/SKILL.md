@@ -1235,6 +1235,12 @@ let p99 = histogram.estimate_percentile(99.0);
 println!("p50={p50}ms p99={p99}ms total={}ms", histogram.sum_ms());
 ```
 
+**Production consumer:** Coral's `QueueReactor` wraps each tier
+(`L3GraphUnit`, `L4SemanticUnit`, `L5FrontierUnit`) in
+`Instrumented::with_metrics` before type erasure into `Arc<dyn
+Component>`. The histograms are exposed via the `coral_stats` MCP
+method, returning aggregated p50/p99/count/sum across all tiers.
+
 ### Key properties
 
 1. **Thread-safe:** `LatencyHistogram` uses `AtomicU64` counters — no locks.
@@ -1265,6 +1271,7 @@ The patterns are not independently beneficial — their value multiplies when co
 | Middleware Chain | Wrapped `Arc<dyn WorkUnit>` | Registry, orchestrator |
 | Component Adapter | Runtime-adapted `Arc<dyn Component>` | Registry, orchestrator |
 | Structured Logging Context | Request-scoped observability | All handler entry points |
+| Cache Tier WorkUnit | Per-tier `Arc<dyn Component>` (`L4SemanticUnit`, etc.) | `TierRegistry`, `QueueReactor` |
 
 ### Key synergies
 
@@ -1405,6 +1412,25 @@ registry.register(Arc::new(unit));
 ### ❌ Stack-allocating a struct that contains vtables
 
 The most common memory bug in this pattern family. Heap-allocate any struct that stores vtable pointers internally. Use `Arc::new(...)`, never `let x = StructWithVtable { ... }` on the stack when the struct will be used as a trait object.
+
+### ❌ Orchestrator branch-on-tier (cache cascade)
+
+```rust
+// Wrong: the orchestrator knows which tier comes next — tight coupling
+fn route_with_depth(query: &str, depth: u8) -> Result<Arc<RoutingResult>> {
+    if let Ok(result) = router.route(query) { return Ok(result); }       // L3
+    if let Ok(result) = router.route_with_embedding(query) { ... }       // L4
+    if let Some(subtasks) = decomposer.decompose(query) { ... }          // L4.5
+    if let Ok(resp) = client.chat_complete(query) { ... }                // L5
+    Err(CacheError::Miss)
+}
+
+// Right: each tier is an Arc<dyn Component>; the registry dispatches uniformly
+let plan = self.tier_registry.execute(query, depth)?;
+// Each tier's execute() receives the prior miss as its trigger via WorkContext
+```
+
+**Why it's wrong:** The orchestrator encodes domain knowledge about tier ordering, retry policy, and error propagation — violating the "orchestrator never branches on implementation type" principle (§10). The fix (M3 of `ROADMAP_REFINE.md`) wraps each tier as a `WorkUnit` in a `TierRegistry`.
 
 ---
 

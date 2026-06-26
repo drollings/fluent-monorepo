@@ -25,7 +25,7 @@ pub enum IngestError {
 
 impl From<std::io::Error> for IngestError {
     fn from(e: std::io::Error) -> Self {
-        IngestError::Io(common_core::error::IoError::Io(e))
+        IngestError::Io(common_core::error::IoError(e))
     }
 }
 

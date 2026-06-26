@@ -19,3 +19,6 @@ fastrand = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }
+
+[lints]
+workspace = true

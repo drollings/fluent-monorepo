@@ -131,7 +131,7 @@ fn annotate_file(rel_path: &str, name: &str, json_dir: &Path, skills: &[String])
         }
         file_skills = extract_skills(&doc, skills);
     } else if is_annotatable(&path) && path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(content) = common_core::io::read_to_string_err(&path) {
             let (inode, hash) = file_metadata(&path);
             let file_node = FileContentNode::new(path, inode, hash);
             let doc_node = DocumentContentNode::new(file_node, &content);

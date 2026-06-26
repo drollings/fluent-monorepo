@@ -1,27 +1,4 @@
 #![forbid(unsafe_code)]
-#![deny(warnings, clippy::all, clippy::pedantic)]
-#![allow(
-    clippy::module_name_repetitions,
-    clippy::must_use_candidate,
-    clippy::missing_panics_doc,
-    clippy::missing_errors_doc,
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::doc_markdown,
-    clippy::too_many_lines,
-    clippy::large_stack_arrays,
-    clippy::case_sensitive_file_extension_comparisons,
-    clippy::zero_sized_map_values,
-    clippy::unnecessary_literal_bound,
-    clippy::cast_possible_wrap,
-    clippy::unreadable_literal,
-    clippy::similar_names,
-    clippy::single_char_pattern,
-    clippy::byte_char_slices,
-    clippy::items_after_statements,
-    clippy::should_implement_trait
-)]
 
 pub mod capability;
 pub mod flow;
@@ -1587,19 +1564,15 @@ mod tests {
             let result = fs.read("/etc/passwd").await;
             assert!(result.is_err());
             let err = result.unwrap_err();
-            match err {
-                fluent_wvr::ConcurrencyError::Io(io_err) => {
-                    assert_eq!(
-                        io_err.kind(),
-                        Some(std::io::ErrorKind::PermissionDenied),
-                        "expected PermissionDenied, got: {io_err}"
-                    );
-                    assert!(
-                        io_err.to_string().contains("missing"),
-                        "expected 'missing' in error, got: {io_err}"
-                    );
-                }
-            }
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "expected PermissionDenied, got: {err}"
+            );
+            assert!(
+                err.to_string().contains("missing"),
+                "expected 'missing' in error, got: {err}"
+            );
         }
 
         #[test]
@@ -1623,19 +1596,15 @@ mod tests {
             let result = net.tcp_connect("127.0.0.1:1").await;
             assert!(result.is_err());
             let err = result.unwrap_err();
-            match err {
-                fluent_wvr::ConcurrencyError::Io(io_err) => {
-                    assert_eq!(
-                        io_err.kind(),
-                        Some(std::io::ErrorKind::PermissionDenied),
-                        "expected PermissionDenied for net, got: {io_err}"
-                    );
-                    assert!(
-                        io_err.to_string().contains("missing"),
-                        "expected 'missing' in error, got: {io_err}"
-                    );
-                }
-            }
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "expected PermissionDenied for net, got: {err}"
+            );
+            assert!(
+                err.to_string().contains("missing"),
+                "expected 'missing' in error, got: {err}"
+            );
         }
 
         #[tokio::test(start_paused = true)]
@@ -1644,19 +1613,15 @@ mod tests {
             let result = db.query("SELECT 1").await;
             assert!(result.is_err());
             let err = result.unwrap_err();
-            match err {
-                fluent_wvr::ConcurrencyError::Io(io_err) => {
-                    assert_eq!(
-                        io_err.kind(),
-                        Some(std::io::ErrorKind::PermissionDenied),
-                        "expected PermissionDenied for db, got: {io_err}"
-                    );
-                    assert!(
-                        io_err.to_string().contains("missing"),
-                        "expected 'missing' in error, got: {io_err}"
-                    );
-                }
-            }
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "expected PermissionDenied for db, got: {err}"
+            );
+            assert!(
+                err.to_string().contains("missing"),
+                "expected 'missing' in error, got: {err}"
+            );
         }
 
         #[tokio::test(start_paused = true)]
@@ -1665,19 +1630,15 @@ mod tests {
             let result = db.execute("CREATE TABLE t (id INTEGER)").await;
             assert!(result.is_err());
             let err = result.unwrap_err();
-            match err {
-                fluent_wvr::ConcurrencyError::Io(io_err) => {
-                    assert_eq!(
-                        io_err.kind(),
-                        Some(std::io::ErrorKind::PermissionDenied),
-                        "expected PermissionDenied for db execute, got: {io_err}"
-                    );
-                    assert!(
-                        io_err.to_string().contains("missing"),
-                        "expected 'missing' in error, got: {io_err}"
-                    );
-                }
-            }
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "expected PermissionDenied for db execute, got: {err}"
+            );
+            assert!(
+                err.to_string().contains("missing"),
+                "expected 'missing' in error, got: {err}"
+            );
         }
 
         #[tokio::test(start_paused = true)]

@@ -9,3 +9,6 @@ guidance-rdf = { path = "../rdf" }
 blake3 = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+
+[lints]
+workspace = true

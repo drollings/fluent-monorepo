@@ -7,3 +7,6 @@ edition.workspace = true
 common-core = { path = "../common-core" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

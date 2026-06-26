@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use guidance_types::SessionId;
 use memory_plugin::capability::MemoryCapability;
 use memory_plugin::plugins::holographic::{HolographicConfig, HolographicMemory};
 use memory_plugin::registry::MemoryPluginRegistry;
@@ -19,12 +20,12 @@ use memory_plugin::types::{
 /// components can call without directly depending on memory-plugin internals.
 pub struct MemoryBridge {
     capability: MemoryCapability,
-    session_id: internment::ArcIntern<str>,
+    session_id: SessionId,
 }
 
 impl MemoryBridge {
     /// Create a new memory bridge.
-    pub fn new(capability: MemoryCapability, session_id: internment::ArcIntern<str>) -> Self {
+    pub fn new(capability: MemoryCapability, session_id: SessionId) -> Self {
         Self {
             capability,
             session_id,
@@ -130,8 +131,7 @@ pub fn init_memory_bridge() -> Option<MemoryBridge> {
 
     let registry = std::sync::Arc::new(tokio::sync::RwLock::new(registry));
     let capability = MemoryCapability::new(std::sync::Arc::clone(&registry));
-    let session_id: internment::ArcIntern<str> =
-        internment::ArcIntern::from(format!("guidance-{}", std::process::id()));
+    let session_id = SessionId::new(format!("guidance-{}", std::process::id()));
 
     Some(MemoryBridge::new(capability, session_id))
 }

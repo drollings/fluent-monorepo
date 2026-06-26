@@ -23,7 +23,7 @@ pub enum McpError {
 
 impl From<std::io::Error> for McpError {
     fn from(e: std::io::Error) -> Self {
-        McpError::Io(common_core::error::IoError::Io(e))
+        McpError::Io(common_core::error::IoError(e))
     }
 }
 

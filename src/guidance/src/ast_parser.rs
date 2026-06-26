@@ -15,7 +15,7 @@ pub enum ParseError {
 
 impl From<std::io::Error> for ParseError {
     fn from(e: std::io::Error) -> Self {
-        ParseError::Io(common_core::error::IoError::Io(e))
+        ParseError::Io(common_core::error::IoError(e))
     }
 }
 
@@ -752,7 +752,7 @@ pub fn file_type_from_extension(ext: &str) -> FileType {
 }
 
 pub fn resolve_span(path: &Path, member_name: &str, member_type: MemberType) -> Option<Span> {
-    let source = std::fs::read_to_string(path).ok()?;
+    let source = common_core::io::read_to_string_err(path).ok()?;
     let ext = path.extension().and_then(|e| e.to_str())?;
     let mut parser = AstParser::new();
     let language = AstParser::language_from_ext(ext)?;

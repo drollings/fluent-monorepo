@@ -8,7 +8,8 @@
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
 
-use fluent_wvr::{Capability, ConcurrencyError};
+use common_core::error::IoError;
+use fluent_wvr::Capability;
 use rusqlite::types::Value;
 use rusqlite::Connection;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -49,7 +50,7 @@ impl Pool {
     ///
     /// Returns `Err` if the pool is exhausted (should never happen with a
     /// properly sized semaphore) or the semaphore is closed.
-    async fn get(self: Arc<Self>) -> Result<PooledConnection, ConcurrencyError> {
+    async fn get(self: Arc<Self>) -> Result<PooledConnection, IoError> {
         let permit = self
             .semaphore
             .clone()
@@ -58,12 +59,11 @@ impl Pool {
             .map_err(std::io::Error::other)?;
         let conn = {
             let mut connections = self.connections.lock().unwrap();
-            connections.pop().ok_or_else(|| -> ConcurrencyError {
-                std::io::Error::from(CapabilityError::Exhausted {
+            connections.pop().ok_or_else(|| -> IoError {
+                IoError(std::io::Error::from(CapabilityError::Exhausted {
                     name: "db",
                     detail: "all connections in use".into(),
-                })
-                .into()
+                }))
             })?
         };
         Ok(PooledConnection {
@@ -136,7 +136,7 @@ impl DbCapability {
     /// Opens a database at the given path (or `:memory:` for in-memory).
     ///
     /// Creates a pool of 5 connections, all with WAL mode enabled.
-    pub fn open(path: &str) -> Result<Self, ConcurrencyError> {
+    pub fn open(path: &str) -> Result<Self, IoError> {
         let pool = Pool::open(path, DEFAULT_POOL_SIZE).map_err(std::io::Error::other)?;
         Ok(Self {
             pool: Arc::new(pool),
@@ -151,7 +151,7 @@ impl DbCapability {
     pub async fn query(
         &self,
         sql: &str,
-    ) -> Result<Vec<std::collections::HashMap<String, String>>, ConcurrencyError> {
+    ) -> Result<Vec<std::collections::HashMap<String, String>>, IoError> {
         check_capability(self)?;
         let sql = sql.to_string();
         let conn = Arc::clone(&self.pool).get().await?;
@@ -188,7 +188,7 @@ impl DbCapability {
 
         match result {
             Ok(inner) => inner,
-            Err(e) => Err(ConcurrencyError::from(std::io::Error::other(e.to_string()))),
+            Err(e) => Err(IoError(std::io::Error::other(e.to_string()))),
         }
     }
 
@@ -196,7 +196,7 @@ impl DbCapability {
     ///
     /// Grabs a connection from the pool, offloads the synchronous work to Tokio's
     /// blocking thread pool, and returns the connection automatically.
-    pub async fn execute(&self, sql: &str) -> Result<usize, ConcurrencyError> {
+    pub async fn execute(&self, sql: &str) -> Result<usize, IoError> {
         check_capability(self)?;
         let sql = sql.to_string();
         let conn = Arc::clone(&self.pool).get().await?;
@@ -208,7 +208,7 @@ impl DbCapability {
 
         match result {
             Ok(inner) => inner,
-            Err(e) => Err(ConcurrencyError::from(std::io::Error::other(e.to_string()))),
+            Err(e) => Err(IoError(std::io::Error::other(e.to_string()))),
         }
     }
 }
@@ -221,14 +221,14 @@ mod tests {
     async fn test_pool_exhausted_returns_typed_error() {
         let pool = Arc::new(Pool::empty());
         match pool.get().await {
-            Err(ConcurrencyError::Io(io_err)) => {
-                assert_eq!(io_err.kind(), Some(std::io::ErrorKind::PermissionDenied));
+            Err(io_err) => {
+                assert_eq!(io_err.kind(), std::io::ErrorKind::PermissionDenied);
                 assert!(
                     io_err.to_string().contains("exhausted"),
                     "expected 'exhausted', got: {io_err}"
                 );
             }
-            _ => panic!("expected exhausted error"),
+            Ok(_) => panic!("expected error from exhausted pool"),
         }
     }
 }

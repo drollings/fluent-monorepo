@@ -141,7 +141,44 @@ the same `HnswParams::default()` constants (Milestone 2). They remain separate
 because no shared vector store exists between the two crates today. If a shared
 store appears in the future, host the HNSW index in `search-vector` and have
 `coral` delegate. Both crates use `knn_brute_force` from `search-vector::math`
-for brute-force fallback.
+for brute-force fallback. Each crate owns a private `make_hnsw(&HnswParams,
+initial_capacity)` helper that centralizes the positional-argument unpacking
+of `Hnsw::new(...)` so the `(max_nb_connection, initial_capacity, max_layer,
+ef_construction, DistCosine)` ordering is decided exactly once per crate
+(`ROADMAP_20260625_CONSOLIDATE.md` Priority 6). The rebuild paths pass
+`count.max(p.initial_capacity)` to grow the index with the loaded row count.
+
+### Metrics / Instrumented wiring (M12)
+
+`common_core::metrics::LatencyHistogram` is the canonical latency surface,
+and `fluent_wvr::wrapper::Instrumented::with_metrics(inner, label, histogram)`
+is the future-ready API for recording per-unit execution durations. The
+in-tree consumer today is the CLI-level `cmd_histogram` in
+`src/bin/guidance/src/main.rs` (total command timing). The `with_metrics`
+constructor itself has **no production consumer** yet — its only in-tree
+exercise is the `instrumented_with_metrics_records_duration` unit test in
+`src/fluent-wvr/src/wrapper.rs`. Candidate adoption sites are documented in
+the `with_metrics` doc comment (the L4 Semantic KNN dispatch in
+`coral::cache_reactor`, and the top-level dispatch in `dag::executor`).
+Adoption at any of those moves M12 from "test-only" to a real consumer
+wiring; see `ROADMAP_20260625_CONSOLIDATE_CHECKLIST.md` M12 notes.
+
+---
+
+## Refinement contract
+
+The active refinement plan lives in `ROADMAP_REFINE.md` (checklist:
+`ROADMAP_REFINE_CHECKLIST.md`). Three non-negotiables for new coral code:
+
+1. **Cache tiers MUST be `WorkUnit` implementations** — the orchestrator
+   never branches on implementation type; every tier is an `Arc<dyn Component>`
+   behind a uniform registry (M3).
+2. **`RoutingResult` MUST be shared via `Arc`, never cloned under a lock** —
+   `L1Cache::get` returns `Option<Arc<RoutingResult>>`; callers hold the `Arc`
+   clone, not a deep copy (M1).
+3. **`Handle::block_on(tokio::time::sleep)` MUST NOT appear inside a
+   `WorkUnit::execute`** — sync `WorkUnit::execute` is a real boundary;
+   `WithRetry` uses `std::thread::sleep` unconditionally (M5).
 
 ---
 
