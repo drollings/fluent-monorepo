@@ -59,6 +59,9 @@ local dispatch is a direct HTTP call to the owning server.
 │                                                                         │
 │  Stage 1: DeterministicPreFilter — deterministic filter engine          │
 │    (no model call; Filter trait chain, PII detection, commands)         │
+│  NeedlePreFilter (optional, needle.enabled) — decides on the routing    │
+│    window; reroutes to a route, answers an output_template directly,    │
+│    or declines (Skipped) to fall through to the classifier              │
 │  Stage 2: ClassifierStage         — single LLM call (or Classification  │
 │    Tree engine) → direct response / routing target / rejection          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -81,11 +84,13 @@ local dispatch is a direct HTTP call to the owning server.
 
 ## Pipeline: two-stage design
 
-The pipeline executes exactly two stages. The `PipelineStage::Router` enum
+The base pipeline executes exactly two stages. The `PipelineStage::Router` enum
 variant (in `pipeline_types.rs`) is retained as a taxonomy slot; today it is
 only emitted by `PipelineOrchestrator` when a stage's `execute` returns an
 `Err` (the orchestrator records the failure as a `Router`-stage error
-decision before propagating).
+decision before propagating). An optional **Needle** rung
+(`needle.enabled`) inserts between the deterministic pre-filter and the
+classifier — see [Optional Needle rung](#optional-needle-rung) below.
 
 | Stage | File | Model call? | Produces |
 |-------|------|-------------|----------|
@@ -141,7 +146,8 @@ impl Describable for DeterministicPreFilter { … }
 impl_component!(DeterministicPreFilter);
 ```
 
-**Typed handoff.** The two known stages implement
+**Typed handoff.** The three known stages (`DeterministicPreFilter`,
+`NeedlePreFilter` when `needle.enabled`, and `ClassifierStage`) implement
 `StageDecisionProducer` (`pipeline_types.rs`); the orchestrator downcasts via
 `component_downcast_ref` and calls `evaluate(ctx, prior)` directly — a typed
 call that removes the per-stage `StageDecision` serialize→deserialize through
@@ -171,9 +177,10 @@ exactly once and published to the same typed store.
 | File | Role |
 |------|------|
 | `stages/deterministic.rs` | `DeterministicPreFilter` — delegates to `DeterministicFilterEngine`; slash-command dispatch (`/help`, `/stats`, `/checkpoint`) |
+| `stages/needle.rs` | `NeedlePreFilter` — the optional non-generative route-picking rung: decides on the routing window (`stages/common.rs`), renders the tool catalogue via `schema_for`/`is_general_route`, short-circuits with a `Rerouted` target, answers deterministic `output_template` tools directly, and declines (`Skipped`) to fall through to the classifier — including the `general`-category fallback. Emits `rerouted`/`direct_response`/`declined`/`action` audit records + the aggregate deciding-stage record |
 | `stages/classifier.rs` | `ClassifierStage` — single LLM call (flat) or the `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds the `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the "Dispatch rules" section of the system prompt from routes marked `always_route` |
 | `stages/tree/` | `ClassificationEngine` — recursive nested-tree evaluation; filter / classifier / terminal / fallback nodes; `tree_path` audit trail; `kind = "tree_node"` records. Split into `mod.rs` (re-exports), `engine.rs` (the recursive walk + `cost`), `verdict.rs` (`TreeClassifierVerdict` + `parse_tree_verdict`), `decisions.rs` (`TreeOutcome`/`TreeEvaluation` + the `StageDecision` builders); the classifier-node prompt builders live in `config/classification.rs` (`ClassificationNode::build_prompt`) |
-| `stages/common.rs` | Shared stage helpers — `extract_user_message()`, `get_metadata_string()`, JSON-field ensure helpers |
+| `stages/common.rs` | Shared stage helpers — `extract_user_message()`, `get_metadata_string()`, JSON-field ensure helpers, and `routing_window()` + `ROUTING_WINDOW_MAX_CHARS` (the Needle decision window: the first sentence/paragraph, ≤200 chars) |
 | `stages/prompt_parse.rs` | `chat_json` + `PromptParseError` — the router-local LLM-JSON round-trip codec over `fluent_llm::parse::parse_typed` (call + tolerant parse/coerce in one envelope) |
 | `stages/retry_classifier.rs` | `RetryClassifier` — retry-with-backoff decorator over the classifier stage (opt-in behind `classifier_retry_max`) |
 | `stages/pipeline_ref.rs` | `PipelineRefStage` — re-usable pipeline stage from named config |
@@ -229,6 +236,7 @@ exactly once and published to the same typed store.
 | `kv_cache.rs` | Two-tier: `HotSnapshotIndex` (RAM LRU over `common_core::cache::LoadCache`, metadata only) + `ColdSnapshotIndex` (disk tree `model/adapter/session`); `SnapshotStore` composes both; the router never reads/writes raw KV bytes — it manages filesystem layout + sidecar metadata for llama.cpp slot save/restore |
 | `instances/` | Instance-pool grammar generation + validation (`instance_grammar_string`, `validate_instances`, `is_valid_instance_name`) and the sidecar. Split into `mod.rs` (grammar/validation helpers + test stub), `client.rs` (`InstanceClient` — one server's `/instances` API over raw `reqwest`, `HttpClass`-classified; `InstanceError`/`InstanceInfo`/`InstanceTotals`/`SnapshotInfo`), `manager.rs` (`InstanceManager` — boot reconcile; per-instance `resume` map; `is_sleeping` residency probe; `list_with_fallback` synthesizing a resident footprint for plain — weights-only, no-instance-grammar — models; `weights_bytes`; `ensure_instance` on-demand creation; `ensure_group` allocate-on-503), and `pool.rs` (`InstancePool` — the router's aggregate facade: `<model_id>:<name>` ids, 64-bit-summed `total`, `/v1/models`, op proxies; footprint-weighted eviction `Evictable::{Context, Model}` + `evict_to_fit`; load-time admission control `make_room_for`; `resume` snapshot/expiry and control ops; the residency engine `run_residency`). The public `/instances` surface lives in `instances/api.rs` |
 | `supervisor.rs` | `LlamaServerSupervisor` + `ManagedServer` — resolves `llama-server` from `$PATH` (or `LLAMA_SERVER`), spawns one process per managed model on a free localhost port (`--alias`, `-m`/`-hf`, `--instance` grammar, `--slot-save-path`, `--api-key`), waits for `/health`, and supervises each child (logs its output, restarts with capped backoff; post-boot **liveness** supervision probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only models with a pinned instance (`start_all`); lazy models load on demand via `ensure_running` (spawn-locked, no double-spawn) and unload via `unload` (spec stays registered). `free_port`, `build_server_args`, `shutdown` |
+| `needle/` | The Needle engine integration — `backend.rs` (`NeedleBackend` trait: `complete`/`is_available`/`reset`, injectable and mock-able; `MockNeedleBackend`), `engine.rs` (`NativeNeedleEngine` — the FFI wrapper over `libneedle.so` via `needle_init`/`needle_complete`/`needle_load`/`needle_reset`, `resolve_library_path`), `envelope.rs` (`NeedleEnvelope`/`NeedleEnvelopeType`/`NeedleFunctionCall` + tolerant parse/coerce), `queue.rs` (`NeedleQueue` — the cap-1 single-worker serialization), `schema.rs` (`NeedleRouteSchema`, `schema_for`, `is_general_route`, `build_candidate_schemas`, `render_tools_json`, `overflows_rung`), `template.rs` (`render_output_template`/`template_placeholders` — the pure `output_template` renderer), `retriever.rs` (optional `HnswToolRetriever`/`IdentityToolRetriever` shortlisters — BM25 is excluded by design). Never a `models` entry; FFI-only; never hard-errors a request |
 | `scheduler.rs` | Re-exports `AffinityScheduler` / `ScheduledTask` / `AgingConfig` from `fluent_concurrency::affinity` |
 | `summarization.rs` | `ResultScorer` + `Summarizer` — `WorkUnit` impls that call an LLM (via `Arc<dyn ChatBackend>`) to score/condense responses; feeds the ledger's lazy LOD tiers |
 | `score_matrix.rs` | `ScoreMatrix` — multi-dimensional weighted scoring (coherence/complexity/completeness/risk) with per-route dimension bands |
