@@ -621,6 +621,7 @@ mod tests {
             idle_timeout_ms: 5000,
             total_timeout_ms: 30000,
             fallbacks: vec![],
+            target: None,
         }
     }
 

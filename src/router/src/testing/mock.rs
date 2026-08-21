@@ -8,7 +8,11 @@ use fluent_llm::{ChatMessage, LlmError};
 use serde::{Deserialize, Serialize};
 
 use crate::config::ClassifierOutput;
+use crate::needle::backend::NeedleBackend;
+use crate::needle::envelope::{NeedleEnvelope, NeedleEnvelopeType};
+use crate::needle::NeedleError;
 use crate::pipeline::RoutingTarget;
+use crate::stages::common::routing_window;
 use crate::types::{RouterMessage, RouterMessageContent, RouterResponse, Usage};
 
 pub struct TranscriptProvider {
@@ -79,10 +83,17 @@ pub fn default_transcript() -> TranscriptProvider {
     TranscriptProvider::new(HashMap::new())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MockTranscriptEntry {
     pub user_message: String,
     pub classifier_response: String,
+    /// Optional canned Needle envelope JSON for this probe. When present, the
+    /// `NeedlePreFilter` rung (with an injected `NeedleTranscriptProvider`)
+    /// decides the request from this envelope instead of the classifier. Keyed
+    /// by the routing window of `user_message`. Absent → the provider returns
+    /// its default (a `refuse` decline), so the classifier decides as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needle_response: Option<String>,
     #[serde(default)]
     pub expected_route: Option<String>,
     /// When set, the resolved routing target must have dispatched through this
@@ -113,6 +124,118 @@ pub fn transcript_provider_from_entries(entries: &[MockTranscriptEntry]) -> Tran
         .map(|e| (e.user_message.clone(), e.classifier_response.clone()))
         .collect();
     TranscriptProvider::new(map)
+}
+
+/// A `NeedleBackend` driven by a canned-envelope table — the hermetic
+/// counterpart to [`TranscriptProvider`] for the Needle pre-filter rung.
+///
+/// Envelopes are keyed by the **routing window** of each entry's `user_message`
+/// (the same window the `NeedlePreFilter` stage computes and passes as `text`
+/// to `complete`), so the provider and the stage agree on the key without
+/// re-deriving it. A probe without a `needle_response` falls back to the
+/// default envelope (a `refuse` decline), preserving the classifier-decides
+/// path for entries that don't exercise Needle.
+pub struct NeedleTranscriptProvider {
+    entries: HashMap<String, NeedleEnvelope>,
+    default: NeedleEnvelope,
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl NeedleTranscriptProvider {
+    pub fn new(entries: HashMap<String, NeedleEnvelope>) -> Self {
+        Self {
+            entries,
+            default: refuse_envelope(),
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+
+    #[must_use]
+    pub fn with_default(mut self, default: NeedleEnvelope) -> Self {
+        self.default = default;
+        self
+    }
+
+    /// How many `complete` calls the rung made — lets a test assert Needle was
+    /// actually consulted (the feedback-loop "Needle actions are logged and
+    /// tested" hook).
+    pub fn calls(&self) -> usize {
+        self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl NeedleBackend for NeedleTranscriptProvider {
+    fn complete(
+        &self,
+        text: &str,
+        _tools_json: &str,
+        _max_new_tokens: i32,
+    ) -> Result<NeedleEnvelope, NeedleError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(self
+            .entries
+            .get(text)
+            .cloned()
+            .unwrap_or_else(|| self.default.clone()))
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    fn reset(&self) {}
+}
+
+/// A canned Needle envelope that declines — the default fallback for entries
+/// without a `needle_response`, so the classifier decides unchanged.
+fn refuse_envelope() -> NeedleEnvelope {
+    NeedleEnvelope {
+        r#type: NeedleEnvelopeType::Refuse,
+        success: None,
+        error: None,
+        error_code: None,
+        function_calls: vec![],
+        reasoning: None,
+        confidence: None,
+        results: None,
+    }
+}
+
+/// Build a `NeedleTranscriptProvider` from transcript entries, keying each
+/// `needle_response` envelope by the routing window of its `user_message`.
+pub fn needle_provider_from_entries(entries: &[MockTranscriptEntry]) -> NeedleTranscriptProvider {
+    let mut map = HashMap::new();
+    for entry in entries {
+        if let Some(raw) = &entry.needle_response {
+            if let Ok(env) = NeedleEnvelope::parse(raw) {
+                map.insert(routing_window(&entry.user_message).to_string(), env);
+            }
+        }
+    }
+    NeedleTranscriptProvider::new(map)
+}
+
+/// A needle `call` envelope naming `tool` at the given confidence with no bound
+/// arguments — the routing verdict a config-synced probe needs to drive the
+/// rung.
+pub fn needle_call_envelope(tool: &str, confidence: f64) -> String {
+    needle_call_envelope_with_args(tool, confidence, &serde_json::json!({}))
+}
+
+/// A needle `call` envelope naming `tool` at the given confidence with explicit
+/// bound `arguments` — used to exercise the direct (template) tool-response
+/// path, which renders the `output_template` from these arguments.
+pub fn needle_call_envelope_with_args(
+    tool: &str,
+    confidence: f64,
+    arguments: &serde_json::Value,
+) -> String {
+    serde_json::json!({
+        "type": "call",
+        "confidence": confidence,
+        "function_calls": [{"name": tool, "arguments": arguments}],
+    })
+    .to_string()
 }
 
 pub struct MockDispatchContext {

@@ -2,6 +2,8 @@
 //! materialize the `tree_path` audit trail (`node_decision` family) and the
 //! final pipeline-handoff decision (`final_decision`).
 
+use fluent_dag::resolver::ExecutionPlan;
+
 use crate::config::ClassificationNode;
 use crate::pipeline::RoutingTarget;
 use crate::pipeline_types::{PipelineStage, StageDecision, StageMetadata, StageVerdict};
@@ -117,6 +119,34 @@ pub fn terminal_decision(
             rt.target_name.as_deref().unwrap_or("?")
         ),
         extra,
+    )
+}
+
+/// Build the `tree_path` decision for a `target` terminal leaf. Records the
+/// named `Target` and the resolver's deterministic execution plan
+/// (`target_plan`, dependency-first) so the dispatch path can materialize the
+/// `TargetWorkUnit` chain and the walk is fully auditable.
+pub fn target_terminal_decision(
+    description: &str,
+    rt: &RoutingTarget,
+    plan: &ExecutionPlan,
+    complexity: Option<u8>,
+) -> StageDecision {
+    node_decision(
+        "terminal",
+        description,
+        StageVerdict::Passed,
+        format!(
+            "terminal resolved to target '{}'",
+            rt.target.as_deref().unwrap_or("?")
+        ),
+        serde_json::json!({
+            "route": rt.target_name,
+            "model": rt.model,
+            "complexity": complexity,
+            "target": rt.target,
+            "target_plan": plan.target_names,
+        }),
     )
 }
 

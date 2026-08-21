@@ -67,6 +67,10 @@ ROUTE_PROMPTS = {
 # booted pinned / were exercised by the route sweep). Warm = resident now.
 WARM_PROMPT = "Say the word 'ready' and nothing else."
 
+# Default time to let the non-blocking audit writer flush before reading the
+# durable audit log after the route sweep (the live Needle attribution reads it).
+DEFAULT_AUDIT_SETTLE_S = 1.0
+
 
 def log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
@@ -121,6 +125,191 @@ def derive_expectations(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "always_route": bool(rref.get("always_route", False)),
         }
     return expectations
+
+
+def needle_schema_overrides(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """The `needle.schema_overrides` map (route key -> tool schema)."""
+    return cfg.get("needle", {}).get("schema_overrides", {})
+
+
+def is_general_route(cfg: Dict[str, Any], route: str) -> bool:
+    """Whether a route is a `general` category (needle.schema_overrides.*.general).
+
+    A general category is a classifier decision by design (roadmap Milestone 3
+    guardrail): Needle declines it, so it must never be scored as a Needle miss.
+    """
+    return bool(needle_schema_overrides(cfg).get(route, {}).get("general", False))
+
+
+def audit_dir_from_config(cfg: Dict[str, Any]) -> str:
+    """The durable audit log dir the router writes `kind = "route"` records to."""
+    return cfg.get("logging", {}).get("audit_log", {}).get("log_dir", "logs/audit")
+
+
+def load_audit_records(audit_dir: str) -> List[Dict[str, Any]]:
+    """Parse the durable `router.audit` JSON-lines files into route records.
+
+    Each line is a tracing JSON record of the shape
+    `{"fields": {"kind": "route", "detail": "<json string>"}}`; `detail` is the
+    emitted audit payload (roadmap Milestone 4/5). Only `kind = "route"` records
+    whose `detail.stage` is a deciding stage (needle/classifier/none) are kept —
+    the per-request aggregate routing-source records the scorer attributes on.
+    """
+    if not os.path.isdir(audit_dir):
+        return []
+    records: List[Dict[str, Any]] = []
+    for fname in sorted(os.listdir(audit_dir)):
+        path = os.path.join(audit_dir, fname)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(obj, dict):
+                        continue
+                    fields = obj.get("fields", {})
+                    if not isinstance(fields, dict) or fields.get("kind") != "route":
+                        continue
+                    raw = fields.get("detail")
+                    if not raw:
+                        continue
+                    try:
+                        detail = json.loads(raw) if isinstance(raw, str) else raw
+                    except json.JSONDecodeError:
+                        continue
+                    if (
+                        isinstance(detail, dict)
+                        and detail.get("stage") in ("needle", "classifier", "none")
+                    ):
+                        records.append(detail)
+        except OSError:
+            continue
+    return records
+
+
+def attribute_decisions(
+    records: List[Dict[str, Any]], cfg: Dict[str, Any]
+) -> Dict[str, Dict[str, Any]]:
+    """Map each configured route to its deciding aggregate record (last wins).
+
+    The harness probes each route warmup-first then scores it, so the last
+    aggregate record naming a route is that route's scored-request decision.
+    General routes are attributed to the classifier regardless (roadmap
+    guardrail: Needle never decides a general category), even on a misconfig
+    that routed one.
+    """
+    per_route: Dict[str, Dict[str, Any]] = {}
+    for rec in records:
+        stage = rec.get("stage")
+        if stage not in ("needle", "classifier"):
+            continue
+        route = rec.get("route") or rec.get("tool") or rec.get("target_route")
+        if not route:
+            continue
+        if stage == "needle" and is_general_route(cfg, route):
+            rec = dict(rec)
+            rec["stage"] = "classifier"
+            rec["verdict"] = "fallback"
+        per_route[route] = rec
+    return per_route
+
+
+def needle_metrics(
+    records: List[Dict[str, Any]],
+    cfg: Dict[str, Any],
+    exp_table: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Needle coverage / routing accuracy / direct-response rate (Milestone 5).
+
+    Computed from the durable audit aggregate records keyed per route.
+
+    * **coverage** — share of non-general routes decided by Needle.
+    * **routing accuracy** — among Needle-decided routes, the share that
+      dispatched through the route's configured `model_group` (a direct
+      template response is inherently correct — it answered deterministically).
+    * **direct-response rate** — share of Needle-decided routes answered
+      directly from an `output_template`.
+
+    General routes are excluded from every metric (the classifier decides them
+    by design — never a Needle miss).
+    """
+    per_route = attribute_decisions(records, cfg)
+    non_general = [r for r in exp_table if not is_general_route(cfg, r)]
+    needle_decided = [
+        r for r in non_general if per_route.get(r, {}).get("stage") == "needle"
+    ]
+    total = len(non_general)
+    coverage = len(needle_decided) / total if total else 0.0
+
+    correct = 0
+    direct = 0
+    for r in needle_decided:
+        rec = per_route[r]
+        if rec.get("verdict") == "direct_response":
+            direct += 1
+            correct += 1
+        elif rec.get("group") == exp_table.get(r, {}).get("group"):
+            correct += 1
+
+    decided = len(needle_decided)
+    accuracy = correct / decided if decided else 0.0
+    direct_rate = direct / decided if decided else 0.0
+    return {
+        "needle_coverage": round_half(coverage),
+        "needle_routing_accuracy": round_half(accuracy),
+        "needle_direct_response_rate": round_half(direct_rate),
+        "needle_decided_routes": decided,
+        "non_general_routes": total,
+        "audit_records_parsed": len(records),
+    }
+
+
+def print_needle_metrics(
+    m: Dict[str, Any],
+    cfg: Dict[str, Any],
+    exp_table: Dict[str, Dict[str, Any]],
+    per_route: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> None:
+    """Print the Needle metric block (live and --audit-only share this)."""
+    coverage = m["needle_coverage"]
+    accuracy = m["needle_routing_accuracy"]
+    direct = m["needle_direct_response_rate"]
+    decided = m["needle_decided_routes"]
+    non_general = m["non_general_routes"]
+    print("=" * 78)
+    print("NEEDLE ROUTING  (deciding stage attributed from the durable audit)")
+    print("=" * 78)
+    general_routes = sorted(r for r in exp_table if is_general_route(cfg, r))
+    if general_routes:
+        print(f"general (classifier-decided, excluded): {', '.join(general_routes)}")
+    per_route = per_route or {}
+    for route in sorted(exp_table):
+        rec = per_route.get(route)
+        if rec is None:
+            stage = "classifier"
+        else:
+            stage = rec.get("stage", "classifier")
+            if is_general_route(cfg, route):
+                stage = "classifier"
+        verdict = (rec or {}).get("verdict", "—")
+        mark = "  [general → classifier]" if is_general_route(cfg, route) else ""
+        print(f"  {route:<11} decided_by={stage:<10} verdict={verdict:<16}{mark}")
+    print("-" * 78)
+    print(
+        f"Needle coverage:              {coverage:5.2f}  "
+        f"({decided}/{non_general} non-general routes)"
+    )
+    print(f"Needle routing accuracy:      {accuracy:5.2f}  (correct model_group dispatch)")
+    print(f"Needle direct-response rate:  {direct:5.2f}  (output_template answers)")
+    print(f"Audit records parsed:         {m['audit_records_parsed']}")
+    print("=" * 78)
 
 
 def device_vram_total(cfg: Dict[str, Any]) -> Optional[int]:
@@ -335,6 +524,9 @@ def main() -> int:
     ap.add_argument("--ttft-timeout", type=float, default=300.0, help="per-request stream timeout seconds")
     ap.add_argument("--warmup", type=int, default=1, help="number of warmup calls per route before scoring")
     ap.add_argument("--skip-warm-ttft", action="store_true", help="skip the post-sweep warm TTFT probe")
+    ap.add_argument("--audit-dir", default=None, help="durable audit log dir (default: from config logging.audit_log.log_dir)")
+    ap.add_argument("--audit-settle", type=float, default=DEFAULT_AUDIT_SETTLE_S, help="seconds to let the audit writer flush before reading (live mode)")
+    ap.add_argument("--audit-only", metavar="AUDIT_DIR", default=None, help="hermetic mode: parse audit records and report Needle metrics only; requires no live router")
     args = ap.parse_args()
 
     try:
@@ -342,8 +534,21 @@ def main() -> int:
     except (OSError, json.JSONDecodeError) as e:
         log(f"ERROR: cannot load config {args.config}: {e}")
         return 2
-    base = base_url_from_config(cfg, args.base_url)
     exp_table = derive_expectations(cfg)
+
+    if args.audit_only:
+        # Hermetic audit-only mode: no router contact at all. Reports the Needle
+        # metrics from the given audit dir/file of aggregate route records.
+        records = load_audit_records(args.audit_only)
+        m = needle_metrics(records, cfg, exp_table)
+        print(f"audit source:  {args.audit_only}")
+        print(f"config:        {args.config}")
+        print(f"routes:        {len(exp_table)} ({', '.join(sorted(exp_table))})")
+        print("")
+        print_needle_metrics(m, cfg, exp_table, attribute_decisions(records, cfg))
+        return 0
+
+    base = base_url_from_config(cfg, args.base_url)
     device_total = device_vram_total(cfg)
     min_rem = min_remaining_vram(cfg)
 
@@ -449,6 +654,20 @@ def main() -> int:
         f"models resident={resident_keys} vram_score={vram:.1f}"
     )
 
+    # ---- Needle attribution (Milestone 5): from the durable audit ----
+    audit_dir = args.audit_dir or audit_dir_from_config(cfg)
+    time.sleep(max(0.0, args.audit_settle))
+    records = load_audit_records(audit_dir)
+    needle = needle_metrics(records, cfg, exp_table)
+    per_route = attribute_decisions(records, cfg)
+    log(
+        f"\nneedle audit: {len(records)} route records parsed from {audit_dir} "
+        f"(settle {args.audit_settle}s); "
+        f"coverage={needle['needle_coverage']:.2f} "
+        f"accuracy={needle['needle_routing_accuracy']:.2f} "
+        f"direct={needle['needle_direct_response_rate']:.2f}"
+    )
+
     # ---- Aggregate scores ----
     routing_scores = [r["routing_score"] for r in results.values()]
     speed_scores = [r["speed_score"] for r in results.values()]
@@ -478,10 +697,13 @@ def main() -> int:
         print(f"Warm TTFT:     {warm_ttft:.2f}s (steady-state beginning of inference)")
     print(f"Residency:     {total_resident}/{sum(len(exp['ladder']) for exp in exp_table.values())} "
           f"contexts resident, {len(resident_keys)}/{len(managed_keys)} model keys loaded")
+    print("")
+    print_needle_metrics(needle, cfg, exp_table, per_route)
 
     report = {
         "config": args.config,
         "base_url": base,
+        "audit_dir": audit_dir,
         "device_vram_total": device_total,
         "minimum_remaining_vram": min_rem,
         "vram_used": used,
@@ -491,6 +713,8 @@ def main() -> int:
         "resident_model_keys": resident_keys,
         "managed_model_keys": managed_keys,
         "warm_ttft_s": warm_ttft,
+        "needle": needle,
+        "needle_decisions": per_route,
         "scores": {
             "routing_accuracy": round_half(mean_routing),
             "speed_ttft": round_half(mean_speed),

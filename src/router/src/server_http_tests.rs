@@ -1716,6 +1716,7 @@ async fn knowledge_gate_is_open_inside_http_request_and_closed_outside() {
             dispatch_response: Some("four".into()),
             rejected: false,
             reject_reason_contains: None,
+            ..Default::default()
         }],
         vec![],
     ));

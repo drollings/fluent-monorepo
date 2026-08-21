@@ -16,7 +16,9 @@ pub mod routing;
 
 pub use self::addr::{hosts_equivalent, parse_bind_addr, validate_no_self_routing};
 pub use self::builder::{PipelineParams, TargetMatchMode};
-pub use self::classification::{ClassificationChild, ClassificationNode, ClassificationTree};
+pub use self::classification::{
+    ClassificationChild, ClassificationNode, ClassificationTree, ClassifierBackend,
+};
 pub use self::escalation::{EscalationLadderConfig, FrontierConfig, ModelGroup};
 pub use self::filters::{
     CommandConfig, ConfidenceGate, FilterAction, FilterOutcome, FilterScope, MockConfig,
@@ -119,6 +121,13 @@ pub struct RouterConfig {
     /// with `--gguf-dir`; `None` falls back to the built-in default.
     #[serde(default)]
     pub gguf_dir: Option<String>,
+    /// Needle configuration - the dedicated top-level `needle` block. `Some`
+    /// declares the Needle pre-filter rung (subject to `NeedleConfig.enabled`);
+    /// `None` (absent) keeps today's behavior with no Needle hop in the
+    /// pipeline. Needle is a separate engine path and never enters the
+    /// llama-server supervisor / instances / VRAM machinery.
+    #[serde(default)]
+    pub needle: Option<NeedleConfig>,
 }
 
 impl Default for RouterConfig {
@@ -150,6 +159,7 @@ impl Default for RouterConfig {
             session: None,
             default_params: DefaultModelParams::default(),
             gguf_dir: None,
+            needle: None,
         }
     }
 }
@@ -666,6 +676,256 @@ impl Default for ChartsConfig {
 
 const fn default_charts_max_candidates() -> usize {
     5
+}
+
+// -- Needle (cheapest structured rung) configuration -------------------
+
+/// Needle route-to-tool schema — the enriched per-route schema handed to the
+/// Needle engine as grammar + retrieval context.
+///
+/// This is the single typed home for a route's tool description. It is derived
+/// from the `routes.<key>` entry (description) and **overridden** by
+/// `NeedleConfig.schema_overrides` when a route declares one (kills the drift a
+/// parallel hand-maintained schema list would create). Fields:
+///
+/// - `name` — the route key (the tool name Needle may call).
+/// - `description` — what the tool does (drives both grammar and retrieval).
+/// - `examples` — canonical command phrasings (retrieval context).
+/// - `parameters` — the tool's argument object schema (grammar constraints).
+/// - `intents` — intent labels/phrases that map onto this route.
+/// - `output_template` — when set, a `call` to this tool whose invocation is
+///   complete is answered **directly** by rendering this template with the
+///   bound arguments — no dispatch, no classifier, no extra inference. The
+///   template is literal text with `{arg}` placeholders substituted from the
+///   `arguments` object (JSON values rendered inline). A template that cannot
+///   be fully rendered (a referenced arg missing, or a malformed brace) never
+///   produces a direct answer — the call falls through to the normal
+///   route/dispatch path. Absent on tools that must keep dispatching to a
+///   model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NeedleRouteSchema {
+    /// The route key — the tool name.
+    pub name: String,
+    /// What the route does.
+    #[serde(default)]
+    pub description: String,
+    /// Canonical command phrasings that should trigger this route.
+    #[serde(default)]
+    pub examples: Vec<String>,
+    /// Argument object schema (`{"type": "object", "properties": {...}}`).
+    /// Defaults to an empty object schema.
+    #[serde(default = "default_needle_empty_object")]
+    pub parameters: serde_json::Value,
+    /// Intent labels/phrases that map onto this route.
+    #[serde(default)]
+    pub intents: Vec<String>,
+    /// When set, enables a direct (template) tool response for complete
+    /// invocations of this tool. See the struct doc for syntax.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_template: Option<String>,
+    /// When true, a Needle `call` to this route is **not** a routing decision:
+    /// the general category falls through to the classifier LLM, which
+    /// classifies the whole prompt as-is (roadmap Milestone 3 — "primary
+    /// router; general-category → classifier fallback"). Non-general route
+    /// tools keep the authoritative `Rerouted` short-circuit. Marking a route
+    /// `general` is the operator's way to say "Needle should never answer
+    /// this on its own"; a template-bearing general route still answers
+    /// directly when the template renders (a direct answer beats a fallback).
+    #[serde(default)]
+    pub general: bool,
+}
+
+/// How the candidate set is shortlisted when it exceeds `candidates_per_rung`.
+///
+/// **BM25 is excluded by design** (roadmap design decision 4); at
+/// `candidates_per_rung` or fewer candidates every one is grammar-rendered and
+/// reachable (O(1), no index needed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NeedleShortlistMode {
+    /// No shortlisting — pass all candidates up to `candidates_per_rung`.
+    #[default]
+    None,
+    /// Shortlist to ≤ `candidates_per_rung` via the HNSW tool index.
+    Hnsw,
+}
+
+/// The `shortlist` sub-block of the `needle` config section.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeedleShortlistConfig {
+    /// Shortlisting strategy: `"none"` or `"hnsw"`.
+    #[serde(default)]
+    pub mode: NeedleShortlistMode,
+    /// Model key for the embed provider that embeds schemas + queries once.
+    /// Selects an entry from `models` (the same embed seam the charts store
+    /// uses).
+    #[serde(default)]
+    pub embedding_model: Option<String>,
+    /// Persisted HNSW index path for the tool catalogue. Built lazily.
+    #[serde(default)]
+    pub index_path: Option<String>,
+    /// Cosine-similarity threshold below which a candidate is dropped.
+    #[serde(default = "default_needle_shortlist_min_score")]
+    pub min_score: f64,
+}
+
+impl Default for NeedleShortlistConfig {
+    fn default() -> Self {
+        Self {
+            mode: NeedleShortlistMode::None,
+            embedding_model: None,
+            index_path: None,
+            min_score: default_needle_shortlist_min_score(),
+        }
+    }
+}
+
+/// Needle configuration - the dedicated top-level `needle` section of
+/// `RouterConfig`.
+///
+/// Needle is **not** a `models` entry: it is a separate engine path that never
+/// touches the llama-server supervisor / instances / VRAM machinery
+/// (`ModelEntry::is_managed` is left untouched). The rung runs between the
+/// deterministic pre-filter and the classifier, gated by `enabled`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeedleConfig {
+    /// Master switch for the Needle pre-filter rung. `false` (default) keeps
+    /// today's behavior — the pipeline goes deterministic pre-filter →
+    /// classifier with no Needle hop.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Explicit `libneedle` shared-library path. `None` resolves via
+    /// `NEEDLE_LIB_PATH`, the package dir, then the user cache (mirrors
+    /// `needle/__init__.py::_library_path`).
+    #[serde(default)]
+    pub engine: Option<String>,
+    /// Engine version key for the cache directory. `None` uses the version the
+    /// wrapper was written against (`needle::engine::ENGINE_VERSION`).
+    #[serde(default)]
+    pub engine_version: Option<String>,
+    /// Tuned `.cact` weights blob path, loaded into the engine once (sticky for
+    /// the process). `None` keeps the engine's base weights.
+    #[serde(default)]
+    pub weights: Option<String>,
+    /// Pipeline id to run the rung on. `None` applies to the default pipeline.
+    #[serde(default)]
+    pub pipeline: Option<String>,
+    /// Minimum command length (chars) for the gate. Shorter requests skip.
+    #[serde(default = "default_needle_min_command_chars")]
+    pub min_command_chars: usize,
+    /// Maximum command length (chars) for the gate. Longer requests skip.
+    #[serde(default = "default_needle_max_command_chars")]
+    pub max_command_chars: usize,
+    /// Maximum input size (tokens) for the gate. Bulk-context requests skip.
+    #[serde(default = "default_needle_max_input_tokens")]
+    pub max_input_tokens: usize,
+    /// Calibrated-confidence floor in [0, 1]. Envelopes below it decline.
+    #[serde(default = "default_needle_confidence_threshold")]
+    pub confidence_threshold: f64,
+    /// When `true`, a `call` envelope with no `confidence` declines (the
+    /// finetuned-weights case). When `false` (default) a missing confidence is
+    /// not itself a reason to decline — the envelope type is the primary
+    /// signal.
+    #[serde(default)]
+    pub decline_on_missing_confidence: bool,
+    /// Per-completion wall-clock budget (ms).
+    #[serde(default = "default_needle_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Max candidates per rung. At or below this every candidate is
+    /// grammar-rendered and reachable; on overflow the `shortlist` strategy
+    /// reduces to ≤ `candidates_per_rung`. Clamped to ≥ 1.
+    #[serde(
+        default = "default_needle_candidates_per_rung",
+        deserialize_with = "deserialize_needle_candidates_per_rung"
+    )]
+    pub candidates_per_rung: usize,
+    /// Persisted tool-index path (grammar retrieval context for the engine).
+    #[serde(default)]
+    pub tool_index_path: Option<String>,
+    /// Fixed cap on round-after-round DAG construction (VISION: "terminate, don't
+    /// loop"). Needle is consulted at each bounded choice point; the round count
+    /// is never open-ended. Scaffolded here for the deferred workflow roadmap;
+    /// the current single-shot rung makes at most one Needle call regardless.
+    #[serde(default = "default_needle_max_rounds")]
+    pub max_rounds: usize,
+    /// Per-route tool-schema overrides. Keys are route keys; values override the
+    /// description/examples/parameters/intents derived from `routes.<key>`.
+    #[serde(default)]
+    pub schema_overrides: HashMap<String, NeedleRouteSchema>,
+    /// Candidate shortlisting strategy for tool catalogues larger than
+    /// `candidates_per_rung`.
+    #[serde(default)]
+    pub shortlist: NeedleShortlistConfig,
+}
+
+impl Default for NeedleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            engine: None,
+            engine_version: None,
+            weights: None,
+            pipeline: None,
+            min_command_chars: default_needle_min_command_chars(),
+            max_command_chars: default_needle_max_command_chars(),
+            max_input_tokens: default_needle_max_input_tokens(),
+            confidence_threshold: default_needle_confidence_threshold(),
+            decline_on_missing_confidence: false,
+            timeout_ms: default_needle_timeout_ms(),
+            candidates_per_rung: default_needle_candidates_per_rung(),
+            tool_index_path: None,
+            max_rounds: default_needle_max_rounds(),
+            schema_overrides: HashMap::new(),
+            shortlist: NeedleShortlistConfig::default(),
+        }
+    }
+}
+
+fn default_needle_empty_object() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+const fn default_needle_min_command_chars() -> usize {
+    4
+}
+
+const fn default_needle_max_command_chars() -> usize {
+    512
+}
+
+const fn default_needle_max_input_tokens() -> usize {
+    1024
+}
+
+fn default_needle_confidence_threshold() -> f64 {
+    0.6
+}
+
+const fn default_needle_timeout_ms() -> u64 {
+    2000
+}
+
+const fn default_needle_candidates_per_rung() -> usize {
+    5
+}
+
+const fn default_needle_max_rounds() -> usize {
+    3
+}
+
+fn default_needle_shortlist_min_score() -> f64 {
+    0.6
+}
+
+/// Deserialize `candidates_per_rung`, clamping to ≥ 1 so a rung always has at
+/// least one reachable candidate (a cap of 0 would make the rung unreachable
+/// by construction).
+fn deserialize_needle_candidates_per_rung<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = usize::deserialize(deserializer)?;
+    Ok(value.max(1))
 }
 
 // -- Rigor configuration ----------------------------------------------
@@ -1349,6 +1609,145 @@ mod tests {
         assert_eq!(cfg.charts.dir.as_deref(), Some("env/workflows/charts"));
         assert_eq!(cfg.charts.max_candidates, 8);
         assert_eq!(cfg.charts.min_score, 0.6, "unset field keeps its default");
+    }
+
+    // -- Needle configuration ----------------------------------------
+
+    #[test]
+    fn needle_config_defaults() {
+        let cfg = NeedleConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.min_command_chars, 4);
+        assert_eq!(cfg.max_command_chars, 512);
+        assert_eq!(cfg.max_input_tokens, 1024);
+        assert_eq!(cfg.confidence_threshold, 0.6);
+        assert!(!cfg.decline_on_missing_confidence);
+        assert_eq!(cfg.timeout_ms, 2000);
+        assert_eq!(cfg.candidates_per_rung, 5);
+        assert!(cfg.engine.is_none());
+        assert!(cfg.weights.is_none());
+        assert!(cfg.tool_index_path.is_none());
+        assert!(cfg.schema_overrides.is_empty());
+        assert_eq!(cfg.shortlist.mode, NeedleShortlistMode::None);
+        assert_eq!(cfg.shortlist.min_score, 0.6);
+    }
+
+    #[test]
+    fn needle_shortlist_mode_serde() {
+        let none: NeedleShortlistMode = serde_json::from_str(r#""none""#).expect("none");
+        assert_eq!(none, NeedleShortlistMode::None);
+        let hnsw: NeedleShortlistMode = serde_json::from_str(r#""hnsw""#).expect("hnsw");
+        assert_eq!(hnsw, NeedleShortlistMode::Hnsw);
+        assert!(serde_json::from_str::<NeedleShortlistMode>(r#""bm25""#).is_err());
+    }
+
+    #[test]
+    fn needle_candidates_per_rung_is_clamped_to_at_least_one() {
+        let zero: NeedleConfig = serde_json::from_str(r#"{"candidates_per_rung": 0}"#).expect("zero");
+        assert_eq!(zero.candidates_per_rung, 1, "a cap of 0 would make the rung unreachable");
+        let one: NeedleConfig = serde_json::from_str(r#"{"candidates_per_rung": 1}"#).expect("one");
+        assert_eq!(one.candidates_per_rung, 1);
+        let seven: NeedleConfig = serde_json::from_str(r#"{"candidates_per_rung": 7}"#).expect("seven");
+        assert_eq!(seven.candidates_per_rung, 7, "upper values pass through unclamped");
+    }
+
+    #[test]
+    fn needle_config_round_trip() {
+        let json = serde_json::json!({
+            "enabled": true,
+            "engine": "/opt/lib/libneedle.so",
+            "engine_version": "2.0.2",
+            "weights": "/opt/weights/tuned.cact",
+            "pipeline": "commands",
+            "min_command_chars": 2,
+            "max_command_chars": 256,
+            "max_input_tokens": 512,
+            "confidence_threshold": 0.8,
+            "decline_on_missing_confidence": true,
+            "timeout_ms": 1500,
+            "candidates_per_rung": 4,
+            "tool_index_path": "data/tool_index.sqlite",
+            "schema_overrides": {
+                "weather": {
+                    "name": "weather",
+                    "description": "get the weather",
+                    "examples": ["weather in Paris", "what is the forecast"],
+                    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
+                    "intents": ["forecast", "temperature"],
+                }
+            },
+            "shortlist": {
+                "mode": "hnsw",
+                "embedding_model": "embed",
+                "index_path": "data/tool_index.sqlite",
+                "min_score": 0.55,
+            }
+        });
+        let cfg: RouterConfig =
+            serde_json::from_value(serde_json::json!({"needle": json})).unwrap();
+        let needle = cfg.needle.as_ref().expect("needle section parsed");
+        assert!(needle.enabled);
+        assert_eq!(needle.engine.as_deref(), Some("/opt/lib/libneedle.so"));
+        assert_eq!(needle.engine_version.as_deref(), Some("2.0.2"));
+        assert_eq!(needle.weights.as_deref(), Some("/opt/weights/tuned.cact"));
+        assert_eq!(needle.pipeline.as_deref(), Some("commands"));
+        assert_eq!(needle.min_command_chars, 2);
+        assert_eq!(needle.max_command_chars, 256);
+        assert_eq!(needle.max_input_tokens, 512);
+        assert_eq!(needle.confidence_threshold, 0.8);
+        assert!(needle.decline_on_missing_confidence);
+        assert_eq!(needle.timeout_ms, 1500);
+        assert_eq!(needle.candidates_per_rung, 4);
+        assert_eq!(needle.tool_index_path.as_deref(), Some("data/tool_index.sqlite"));
+
+        let weather = needle.schema_overrides.get("weather").expect("override");
+        assert_eq!(weather.name, "weather");
+        assert_eq!(weather.description, "get the weather");
+        assert_eq!(weather.examples.len(), 2);
+        assert_eq!(weather.intents, vec!["forecast", "temperature"]);
+        assert_eq!(
+            weather.parameters,
+            serde_json::json!({"type": "object", "properties": {"city": {"type": "string"}}})
+        );
+
+        assert_eq!(needle.shortlist.mode, NeedleShortlistMode::Hnsw);
+        assert_eq!(needle.shortlist.embedding_model.as_deref(), Some("embed"));
+        assert_eq!(needle.shortlist.index_path.as_deref(), Some("data/tool_index.sqlite"));
+        assert_eq!(needle.shortlist.min_score, 0.55);
+
+        let serialized = serde_json::to_string(&cfg).unwrap();
+        let back: RouterConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(back.needle.unwrap().candidates_per_rung, 4);
+    }
+
+    #[test]
+    fn partial_needle_section_defaults_missing_fields() {
+        let cfg: RouterConfig = serde_json::from_str(r#"{"needle": {"enabled": true}}"#).unwrap();
+        let needle = cfg.needle.expect("needle parsed");
+        assert!(needle.enabled);
+        assert_eq!(needle.candidates_per_rung, 5, "absent field keeps default");
+        assert_eq!(needle.min_command_chars, 4);
+        assert_eq!(needle.confidence_threshold, 0.6);
+        assert!(needle.schema_overrides.is_empty());
+        assert_eq!(needle.shortlist.mode, NeedleShortlistMode::None);
+    }
+
+    #[test]
+    fn router_config_absent_needle_section_defaults_to_none() {
+        // The shipped env/coral-router.json (before Milestone 8 wires a block)
+        // has no `needle` section; the rung stays absent (None), never a crash.
+        let cfg: RouterConfig =
+            serde_json::from_str(r#"{"server": {"bind_addr": "127.0.0.1:0"}}"#).unwrap();
+        assert!(cfg.needle.is_none());
+    }
+
+    #[test]
+    fn needle_route_schema_parameters_defaults_to_empty_object() {
+        let schema: NeedleRouteSchema =
+            serde_json::from_str(r#"{"name": "r", "description": "d"}"#).unwrap();
+        assert_eq!(schema.parameters, serde_json::json!({}));
+        assert!(schema.examples.is_empty());
+        assert!(schema.intents.is_empty());
     }
 
     // -- Post-process (learning loop) --------------------------------

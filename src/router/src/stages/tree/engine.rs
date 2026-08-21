@@ -6,20 +6,33 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use common_core::interner::CapabilityRegistry;
 use fluent_concurrency::pool::Limiter;
+use fluent_dag::resolver::{DependencyResolver, ExecutionPlan};
+use fluent_dag::target::TargetRegistry;
+use fluent_dag::target_work_unit::TargetWorkUnit;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
 use fluent_wvr::prelude::*;
 use regex::Regex;
 
 use crate::config::filters::FilterOutcome;
-use crate::config::{ClassificationNode, ClassificationTree, RoutingConfig};
+use crate::config::{ClassificationNode, ClassificationTree, ClassifierBackend, RoutingConfig};
+use crate::needle::backend::NeedleBackend;
+use crate::needle::envelope::NeedleEnvelope;
 use crate::pipeline::RoutingTarget;
 use crate::pipeline_types::{StageDecision, StageVerdict};
 use crate::target_match::{candidates_for_group, AssessmentRecord, TargetMatcher};
 
-use super::decisions::{fallback_child, final_decision, node_decision, terminal_decision, TreeEvaluation, TreeOutcome};
+use super::decisions::{
+    fallback_child, final_decision, node_decision, target_terminal_decision, terminal_decision,
+    TreeEvaluation, TreeOutcome,
+};
 use super::verdict::{parse_tree_verdict, TreeClassifierVerdict};
+
+/// Cap on a tree classifier node's Needle completion. Needle is
+/// non-generative — the envelope is a small JSON tool call, far below this.
+const NEEDLE_MAX_NEW_TOKENS: i32 = 256;
 
 pub struct ClassificationEngine {
     tree: ClassificationTree,
@@ -31,6 +44,11 @@ pub struct ClassificationEngine {
     /// only), so a sub-classifier on a different model dispatches to its own
     /// endpoint.
     clients: HashMap<String, Arc<dyn ChatBackend>>,
+    /// The Needle backend for `classifier` nodes whose `backend` is
+    /// `ClassifierBackend::Needle`. `None` makes such a node fall back/reject
+    /// exactly like an LLM outage — the tree never silently diverts a
+    /// misconfigured needle node to the default route.
+    needle_backend: Option<Arc<dyn NeedleBackend>>,
     /// Bounds concurrent classifier LLM calls (same primitive as the flat
     /// stage).
     limiter: Arc<Limiter>,
@@ -42,6 +60,13 @@ pub struct ClassificationEngine {
     /// per-candidate self-assessment; `None` keeps the static
     /// cheapest-qualifying pick.
     target_matcher: Option<TargetMatcher>,
+    /// The DAG target registry for `target` terminal leaves. `None` rejects a
+    /// `target` terminal (the registry is the target's source of truth; a
+    /// missing registry must not silently route elsewhere).
+    targets: Option<Arc<TargetRegistry>>,
+    /// Capability name↔bit registry shared with `TargetRegistry`, required by
+    /// the `NarrowOne` resolver and `TargetWorkUnit::from_target`.
+    target_caps: Option<Arc<CapabilityRegistry>>,
 }
 
 impl ClassificationEngine {
@@ -54,15 +79,21 @@ impl ClassificationEngine {
         limiter: Arc<Limiter>,
         default_coherence_threshold: f64,
         target_matcher: Option<TargetMatcher>,
+        needle_backend: Option<Arc<dyn NeedleBackend>>,
+        targets: Option<Arc<TargetRegistry>>,
+        target_caps: Option<Arc<CapabilityRegistry>>,
     ) -> Self {
         Self {
             tree,
             routing,
             default_client,
             clients,
+            needle_backend,
             limiter,
             default_coherence_threshold,
             target_matcher,
+            targets,
+            target_caps,
         }
     }
 
@@ -103,12 +134,14 @@ impl ClassificationEngine {
                 model,
                 coherence_threshold,
                 safety_threshold,
+                backend,
                 children,
             } => self.evaluate_classifier(
                 description,
                 model,
                 *coherence_threshold,
                 *safety_threshold,
+                *backend,
                 children,
                 node,
                 user_text,
@@ -117,10 +150,12 @@ impl ClassificationEngine {
             ClassificationNode::Terminal {
                 route,
                 group,
+                target,
                 description,
             } => Ok(self.evaluate_terminal(
                 route,
                 group.as_deref(),
+                target.as_deref(),
                 description,
                 complexity,
                 user_text,
@@ -148,7 +183,9 @@ impl ClassificationEngine {
     }
 
     /// Classifier node: run deterministic filter children first (short-circuit),
-    /// then an LLM call over the auto-built prompt, thresholds, then pick a child.
+    /// then a branch-pick call over the auto-built prompt (LLM) or the
+    /// routeable-children tool set (`backend: "needle"`), thresholds, then pick
+    /// a child.
     #[allow(clippy::too_many_arguments)]
     fn evaluate_classifier(
         &self,
@@ -156,12 +193,13 @@ impl ClassificationEngine {
         model: &str,
         coherence_threshold: Option<f64>,
         safety_threshold: Option<f64>,
+        backend: ClassifierBackend,
         children: &[crate::config::ClassificationChild],
         node: &ClassificationNode,
         user_text: &str,
         visited: &mut Vec<StageDecision>,
     ) -> Result<TreeOutcome, WorkError> {
-        // Deterministic filter children short-circuit before any LLM call.
+        // Deterministic filter children short-circuit before any branch-pick call.
         let siblings: HashMap<String, ClassificationNode> = children
             .iter()
             .map(|c| (c.key.clone(), c.node.clone()))
@@ -185,31 +223,40 @@ impl ClassificationEngine {
                 description,
                 StageVerdict::Rejected,
                 reason.clone(),
-                serde_json::json!({ "model": model }),
+                serde_json::json!({ "model": model, "backend": format!("{backend:?}").to_lowercase() }),
             ));
             return Ok(TreeOutcome::Reject(reason));
         };
 
-        let verdict = match self.call_classifier(model, &prompt, user_text) {
+        let verdict = match backend {
+            ClassifierBackend::Llm => self.call_classifier(model, &prompt, user_text),
+            ClassifierBackend::Needle => self.call_needle_classifier(model, children, user_text),
+        };
+        let verdict = match verdict {
             Ok(v) => v,
             Err(e) => {
+                let backend_label = match backend {
+                    ClassifierBackend::Llm => "LLM",
+                    ClassifierBackend::Needle => "needle",
+                };
                 tracing::warn!(
                     target: "router.pipeline.stage2.tree",
+                    backend = backend_label,
                     model = %model,
                     error = %e,
-                    "tree classifier LLM call failed — falling to fallback/reject",
+                    "tree classifier call failed — falling to fallback/reject",
                 );
                 if let Some(fb) = fallback_child(children) {
                     visited.push(node_decision(
                         "classifier",
                         description,
                         StageVerdict::Rerouted,
-                        format!("classifier LLM error, falling back: {e}"),
+                        format!("classifier {backend_label} error, falling back: {e}"),
                         serde_json::json!({ "model": model, "route": fb.key }),
                     ));
                     return self.evaluate_node(&fb.node, &siblings, user_text, None, visited);
                 }
-                let reason = format!("classifier LLM error: {e}");
+                let reason = format!("classifier {backend_label} error: {e}");
                 visited.push(node_decision(
                     "classifier",
                     description,
@@ -322,21 +369,30 @@ impl ClassificationEngine {
         Ok(TreeOutcome::Reject(reason))
     }
 
-    /// Terminal node: resolve a dispatch target. When the pipeline opts into
-    /// target-matching (`target_match: "self_assess"`), a 2+ member group
-    /// resolves through the shared self-assessment ladder
-    /// (`crate::target_match::TargetMatcher`); otherwise the static
-    /// cheapest-qualifying pick runs (`RoutingConfig::routing_target` /
-    /// [`Self::resolve_group_target`]).
+    /// Terminal node: resolve a dispatch target. A `target` terminal resolves
+    /// through the DAG target layer (`TargetRegistry` → `NarrowOne` plan);
+    /// otherwise, when the pipeline opts into target-matching
+    /// (`target_match: "self_assess"`), a 2+ member group resolves through the
+    /// shared self-assessment ladder (`crate::target_match::TargetMatcher`);
+    /// otherwise the static cheapest-qualifying pick runs
+    /// (`RoutingConfig::routing_target` / [`Self::resolve_group_target`]).
     fn evaluate_terminal(
         &self,
         route: &str,
         group: Option<&str>,
+        target: Option<&str>,
         description: &str,
         complexity: Option<u8>,
         user_text: &str,
         visited: &mut Vec<StageDecision>,
     ) -> TreeOutcome {
+        // A `target` terminal executes deterministic Rust, never a model
+        // group. Strict resolution: an unknown/missing target rejects rather
+        // than diverting to a model route or the default route.
+        if let Some(target) = target {
+            return self.evaluate_target(target, route, description, complexity, visited);
+        }
+
         // Strict resolution: a terminal names an explicit route. Unknown route
         // names must not silently divert to the default route — `resolve_route`
         // would fall back; check the flat map first.
@@ -369,6 +425,161 @@ impl ClassificationEngine {
             serde_json::json!({ "route": route }),
         ));
         TreeOutcome::Reject(reason)
+    }
+
+    /// Resolve a `target` terminal leaf: narrow the named `Target` through the
+    /// shared DAG resolver (`ProviderSelection::NarrowOne`) and return a
+    /// `RoutingTarget` that executes the deterministic `TargetWorkUnit` chain.
+    ///
+    /// Needle is only ever a *branch pick* (contested provider choice / tool
+    /// call) — ordering and reachability are owned by the resolver's pure
+    /// `kahn_sort` over the capability bits, never by a model.
+    fn evaluate_target(
+        &self,
+        target: &str,
+        route: &str,
+        description: &str,
+        complexity: Option<u8>,
+        visited: &mut Vec<StageDecision>,
+    ) -> TreeOutcome {
+        let plan = match self.resolve_target_plan(target) {
+            Ok(plan) => plan,
+            Err(reason) => {
+                visited.push(node_decision(
+                    "terminal",
+                    description,
+                    StageVerdict::Rejected,
+                    reason.clone(),
+                    serde_json::json!({ "route": route, "target": target }),
+                ));
+                return TreeOutcome::Reject(reason);
+            }
+        };
+
+        let rt = RoutingTarget {
+            url: String::new(),
+            model: target.to_string(),
+            group: None,
+            target_name: Some(route.to_string()),
+            params: None,
+            instance: None,
+            snapshot: None,
+            id_slot: None,
+            filter_thinking: false,
+            retry_count: 0,
+            retry_base_interval_s: 1,
+            stream: true,
+            idle_timeout_ms: 0,
+            total_timeout_ms: 0,
+            fallbacks: vec![],
+            target: Some(target.to_string()),
+        };
+        visited.push(target_terminal_decision(description, &rt, &plan, complexity));
+        TreeOutcome::Route(Box::new(rt))
+    }
+
+    /// Resolve the deterministic `NarrowOne` execution plan for a registered
+    /// `Target`. `Err` for a missing registry, an unknown target, or an
+    /// unresolvable plan — callers must reject on failure, never fall back to
+    /// a default route.
+    pub fn resolve_target_plan(&self, target: &str) -> Result<ExecutionPlan, String> {
+        let (Some(registry), Some(caps)) = (&self.targets, &self.target_caps) else {
+            return Err("target terminal configured but no target registry is available".into());
+        };
+        if registry.get(target).is_none() {
+            return Err(format!("target not registered: {target}"));
+        }
+        DependencyResolver::with_narrowing(registry, caps)
+            .resolve(&[target])
+            .map_err(|e| format!("target resolution failed for '{target}': {e}"))
+    }
+
+    /// Materialize the deterministic `TargetWorkUnit` chain for a resolved
+    /// execution plan (dependency-first `plan.order`). The dispatch path walks
+    /// the returned units in order; each runs the target's deterministic
+    /// `ExecuteFn`/shell command under `WorkUnit` semantics. Empty when the
+    /// registry is unavailable.
+    pub fn work_units_for_plan(&self, plan: &ExecutionPlan) -> Vec<TargetWorkUnit> {
+        let (Some(registry), Some(caps)) = (&self.targets, &self.target_caps) else {
+            return Vec::new();
+        };
+        plan.order
+            .iter()
+            .filter_map(|&bit_idx| registry.get_by_bit_index(bit_idx))
+            .map(|target| TargetWorkUnit::from_target(target, caps.as_ref()))
+            .collect()
+    }
+
+    /// One Needle branch pick for a `backend: "needle"` classifier node: build
+    /// a tool schema per routeable child (key + description — the same
+    /// routeable set the LLM prompt lists), complete against the shared Needle
+    /// backend, and adapt the envelope to the three-axis verdict.
+    ///
+    /// A missing/unavailable backend is a hard error so the node behaves
+    /// exactly like an LLM outage (fallback child or rejection) — the tree
+    /// never silently diverts a misconfigured needle node to the default
+    /// route.
+    fn call_needle_classifier(
+        &self,
+        model: &str,
+        children: &[crate::config::ClassificationChild],
+        user_text: &str,
+    ) -> Result<TreeClassifierVerdict, WorkError> {
+        let backend = self.needle_backend.as_ref().ok_or_else(|| {
+            WorkError::Execution(
+                "needle classifier node configured but no NeedleBackend is available".into(),
+            )
+        })?;
+
+        let routeable: Vec<&crate::config::ClassificationChild> = children
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c.node,
+                    ClassificationNode::Classifier { .. } | ClassificationNode::Terminal { .. }
+                )
+            })
+            .collect();
+        if routeable.is_empty() {
+            return Err(WorkError::Execution(
+                "needle classifier node has no routeable children".into(),
+            ));
+        }
+
+        let tools_json = render_child_tools(&routeable);
+        tracing::info!(
+            target: "router.pipeline.stage2.tree",
+            model = %model,
+            tools = routeable.len(),
+            input_len = user_text.len(),
+            "tree needle classifier request",
+        );
+
+        let call_start = Instant::now();
+        let envelope = self.limiter.run_sync(|| async {
+            backend.complete(user_text, &tools_json, NEEDLE_MAX_NEW_TOKENS)
+        });
+        let latency_ms = call_start.elapsed().as_millis() as u64;
+
+        let envelope = match envelope {
+            Ok(e) => {
+                tracing::info!(
+                    target: "router.pipeline.stage2.tree",
+                    model = %model,
+                    latency_ms = latency_ms,
+                    envelope_type = ?e.r#type,
+                    "tree needle classifier call succeeded",
+                );
+                e
+            }
+            Err(e) => {
+                return Err(WorkError::Execution(format!(
+                    "tree needle classifier error for node '{model}': {e}"
+                )));
+            }
+        };
+
+        Ok(verdict_from_envelope(&envelope, &routeable, model))
     }
 
     /// Flat-route terminal resolution through the shared target-matching
@@ -626,4 +837,81 @@ impl ClassificationEngine {
 /// Cost of a model entry for the cheapest-first group resolution.
 pub fn cost(entry: &crate::config::ModelEntry) -> f64 {
     entry.cost_input + entry.cost_output
+}
+
+/// One tool schema per routeable child key — the Needle grammar's branch set.
+/// Mirrors the prompt's "Available routes" list so the LLM and Needle nodes of
+/// the same classifier agree on exactly what is pickable.
+fn render_child_tools(routeable: &[&crate::config::ClassificationChild]) -> String {
+    let tools: Vec<serde_json::Value> = routeable
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "name": c.key,
+                "description": c.description,
+                "parameters": { "type": "object", "properties": {} },
+            })
+        })
+        .collect();
+    serde_json::to_string(&tools).unwrap_or_else(|_| "[]".into())
+}
+
+/// Adapt a Needle envelope to the three-axis verdict the gating code expects.
+///
+/// Grammar-constrained output cannot be incoherent free prose, so `coherence`
+/// mirrors the calibrated `confidence` (the routing-agreement score) and
+/// `safety` is pinned to 1.0 (no free prose; the deterministic pre-filter
+/// already gated known-bad content before the tree). A `refuse`/`text`
+/// envelope, a multi-tool call, or a tool naming no routeable child is a
+/// decline — `route: None` funnels into the existing "no named child picked"
+/// path (fallback child or rejection), never a silent default-route diversion.
+fn verdict_from_envelope(
+    envelope: &NeedleEnvelope,
+    routeable: &[&crate::config::ClassificationChild],
+    model: &str,
+) -> TreeClassifierVerdict {
+    let confidence = envelope.confidence.unwrap_or(1.0);
+    let reason = envelope
+        .reasoning
+        .clone()
+        .unwrap_or_else(|| "needle branch pick".to_string());
+
+    if !envelope.is_call() {
+        return TreeClassifierVerdict {
+            route: None,
+            coherence: confidence,
+            safety: 1.0,
+            complexity: 1,
+            reason: format!("needle declined ({:?}): {reason}", envelope.r#type),
+        };
+    }
+
+    let Some(tool) = envelope.single_tool() else {
+        return TreeClassifierVerdict {
+            route: None,
+            coherence: confidence,
+            safety: 1.0,
+            complexity: 1,
+            reason: format!(
+                "needle emitted {} tool calls, expected one",
+                envelope.function_calls.len()
+            ),
+        };
+    };
+    if !routeable.iter().any(|c| c.key == tool) {
+        return TreeClassifierVerdict {
+            route: None,
+            coherence: confidence,
+            safety: 1.0,
+            complexity: 1,
+            reason: format!("needle called unknown child '{tool}' (node '{model}')"),
+        };
+    }
+    TreeClassifierVerdict {
+        route: Some(tool.to_string()),
+        coherence: confidence,
+        safety: 1.0,
+        complexity: 1,
+        reason,
+    }
 }

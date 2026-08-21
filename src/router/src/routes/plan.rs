@@ -12,6 +12,7 @@ use crate::charts::extract::WorkflowExtractor;
 use crate::charts::select::{ChartFit, ChartSelector};
 use crate::charts::store::ChartStore;
 use crate::config::ChartsConfig;
+use crate::needle::backend::NeedleBackend;
 use crate::ledger::prompt::{LedgerPromptAssembler, LodSpec, PromptBudget, WorkerContext};
 use crate::server::responses::{empty_response, HyperResponse, ServerStats};
 use crate::views::ParallelLedger;
@@ -28,6 +29,11 @@ pub struct PlanRoute {
     /// Reranker backend for chart selection. `None` skips
     /// candidate re-ranking (Step 2 → Step 3 directly).
     reranker_backend: Option<Arc<dyn ChatBackend>>,
+    /// Needle adjudicator backend for chart selection. When set, Step 3
+    /// adjudicates the HNSW shortlist with a Needle tool-pick (cheapest,
+    /// non-generative) instead of the LLM `selector_backend`. `None` keeps the
+    /// LLM adjudicator.
+    needle_selector_backend: Option<Arc<dyn NeedleBackend>>,
     /// Backend that executes a selected chart's targets.
     /// `None` degrades an exact fit to a fresh draft.
     execution_backend: Option<Arc<dyn ChatBackend>>,
@@ -136,6 +142,7 @@ impl PlanRoute {
             charts: Arc::new(ChartStore::new(None)),
             selector_backend: None,
             reranker_backend: None,
+            needle_selector_backend: None,
             execution_backend: None,
             limiter: Arc::new(Limiter::new(4)),
             cfg: ChartsConfig::default(),
@@ -176,6 +183,15 @@ impl PlanRoute {
     #[must_use]
     pub fn with_reranker_backend(mut self, backend: Arc<dyn ChatBackend>) -> Self {
         self.reranker_backend = Some(backend);
+        self
+    }
+
+    /// Attach the Needle adjudicator backend used by chart selection. When
+    /// set, Step 3 adjudicates the HNSW shortlist with a Needle tool-pick
+    /// instead of the LLM `selector_backend`. Mock-injectable.
+    #[must_use]
+    pub fn with_needle_selector_backend(mut self, backend: Arc<dyn NeedleBackend>) -> Self {
+        self.needle_selector_backend = Some(backend);
         self
     }
 
@@ -315,6 +331,9 @@ impl PlanRoute {
         );
         if let Some(reranker) = &self.reranker_backend {
             selector = selector.with_reranker(reranker.clone());
+        }
+        if let Some(needle) = &self.needle_selector_backend {
+            selector = selector.with_needle_adjudicator(needle.clone());
         }
         let selection = match selector.select(user_message, entities) {
             Ok(m) => m,

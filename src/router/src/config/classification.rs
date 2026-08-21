@@ -85,8 +85,9 @@ fn default_safety_threshold() -> f64 {
     0.5
 }
 
-/// A named branch of a classifier node. The LLM picks exactly one `key`; the
-/// tree engine then evaluates that child's `node` recursively.
+/// A named branch of a classifier node. The branch-picking backend picks
+/// exactly one `key`; the tree engine then evaluates that child's `node`
+/// recursively.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClassificationChild {
     pub key: String,
@@ -95,22 +96,47 @@ pub struct ClassificationChild {
     pub node: ClassificationNode,
 }
 
+/// The backend that picks a classifier node's child branch.
+///
+/// `llm` (the default) is today's path: the node's `model` key selects a
+/// `ChatBackend` and the auto-built three-axis prompt is completed. `needle`
+/// runs the same recursion, `siblings` map, `fallback_child` gating, and
+/// three-axis thresholds, but the branch pick comes from a grammar-constrained
+/// `NeedleBackend` completion over the routeable children (one tool per child
+/// key — mirroring the prompt's "Available routes" list) instead of an LLM
+/// prompt. Only the "LLM call" is swapped; the rest of the walk is identical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassifierBackend {
+    #[default]
+    Llm,
+    Needle,
+}
+
 /// One node in the classification tree.
 ///
-/// | `type` | Role | LLM call? |
+/// | `type` | Role | Branch-pick call? |
 /// |--------|------|-----------|
-/// | `classifier` | LLM call that picks one child branch; prompt auto-built from children | Yes |
-/// | `terminal` | Dispatch target; resolves a model via `RoutingConfig::resolve_route` | No |
+/// | `classifier` | Picks one child branch; prompt auto-built from children (LLM) or one tool per routeable child (`backend: "needle"`) | Yes |
+/// | `terminal` | Dispatch target; resolves a model via `RoutingConfig::resolve_route`, or a DAG `Target` when `target` is set | No |
 /// | `filter` | Deterministic regex check that short-circuits (`hard_reject` / `soft_redirect` / `output_filter`) | No |
-/// | `fallback` | Child evaluated when a classifier picks no named child or its LLM call fails | Only if the wrapped node is a classifier |
+/// | `fallback` | Child evaluated when a classifier picks no named child or its branch-pick call fails | Only if the wrapped node is a classifier |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum ClassificationNode {
     Classifier {
         description: String,
-        /// Model key (from `models`) used for this classifier's LLM call.
+        /// Model key (from `models`) used for this classifier's LLM call —
+        /// and the audit label for a `backend: "needle"` node (whose dispatch
+        /// ignores the model key; only the label and the routeable-child check
+        /// remain).
         model: String,
+        /// Backend that picks the child branch. `needle` dispatches to a
+        /// grammar-constrained `NeedleBackend`; `llm` (default) is today's
+        /// path.
+        #[serde(default)]
+        backend: ClassifierBackend,
         /// Per-node coherence threshold; defaults to the pipeline's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         coherence_threshold: Option<f64>,
@@ -122,11 +148,19 @@ pub enum ClassificationNode {
     },
     /// A dispatch target. `route` names an entry in the flat `routes` map;
     /// when the tree config has no such entry, `group` supplies one for the
-    /// derived flat view.
+    /// derived flat view. When `target` is set, the terminal instead resolves
+    /// to a registered DAG `Target` (deterministic `TargetWorkUnit` execution)
+    /// and never touches a model group.
     Terminal {
         route: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         group: Option<String>,
+        /// Named `Target` in the DAG `TargetRegistry` to execute
+        /// deterministically. `Some` makes this a `target` terminal leaf — it
+        /// resolves through the shared resolver's `NarrowOne` plan and is
+        /// excluded from the derived flat `routes` view (it has no model).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
         #[serde(default)]
         description: String,
     },
@@ -255,8 +289,16 @@ impl ClassificationNode {
             ClassificationNode::Terminal {
                 route,
                 group,
+                target,
                 description,
-            } => out.push((route.clone(), group.clone(), description.clone())),
+            } => {
+                // `target` terminals execute deterministic Rust via the DAG
+                // target layer — they have no model group and must not appear
+                // in the flat `routes` view (which would route them to a model).
+                if target.is_none() {
+                    out.push((route.clone(), group.clone(), description.clone()));
+                }
+            }
             ClassificationNode::Classifier { children, .. } => {
                 for child in children {
                     child.node.collect_terminals(out);
@@ -324,6 +366,7 @@ mod tests {
             model,
             coherence_threshold,
             safety_threshold,
+            backend,
             children,
         } = &tree.root
         else {
@@ -350,6 +393,7 @@ mod tests {
             children[3].node,
             ClassificationNode::Fallback { .. }
         ));
+        assert_eq!(*backend, ClassifierBackend::Llm, "backend defaults to llm");
     }
 
     #[test]
@@ -371,6 +415,7 @@ mod tests {
                         node: Box::new(ClassificationNode::Terminal {
                             route: "local".into(),
                             group: Some("question".into()),
+                            target: None,
                             description: String::new()
                         })
                     }
@@ -521,5 +566,62 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(node, ClassificationNode::Fallback { .. }));
+    }
+
+    #[test]
+    fn classifier_backend_field_parses_and_defaults() {
+        let needle: ClassificationNode = serde_json::from_str(
+            r#"{"type": "classifier", "description": "d", "model": "fast", "backend": "needle", "children": []}"#,
+        )
+        .unwrap();
+        let ClassificationNode::Classifier { backend, .. } = &needle else {
+            panic!("expected classifier")
+        };
+        assert_eq!(*backend, ClassifierBackend::Needle);
+
+        let default: ClassificationNode = serde_json::from_str(
+            r#"{"type": "classifier", "description": "d", "model": "fast", "children": []}"#,
+        )
+        .unwrap();
+        let ClassificationNode::Classifier { backend, .. } = &default else {
+            panic!("expected classifier")
+        };
+        assert_eq!(*backend, ClassifierBackend::Llm, "backend defaults to llm");
+    }
+
+    #[test]
+    fn target_terminal_parses_and_is_excluded_from_flat_views() {
+        let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+            "root": {
+                "type": "classifier",
+                "description": "router",
+                "model": "fast",
+                "children": [
+                    {
+                        "key": "reproduce",
+                        "description": "reproduce the bug deterministically",
+                        "node": { "type": "terminal", "route": "reproduce", "target": "reproduce" }
+                    },
+                    {
+                        "key": "code",
+                        "description": "programming",
+                        "node": { "type": "terminal", "route": "code", "group": "code" }
+                    }
+                ]
+            }
+        }))
+        .unwrap();
+        let ClassificationNode::Classifier { children, .. } = &tree.root else {
+            panic!("expected classifier")
+        };
+        assert!(matches!(
+            &children[0].node,
+            ClassificationNode::Terminal { target: Some(t), .. } if t.as_str() == "reproduce"
+        ));
+        // The `target` terminal has no model group — it must NOT leak into the
+        // flat routes view (which would resolve it to a model endpoint).
+        let views = tree.terminal_views();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].0, "code");
     }
 }

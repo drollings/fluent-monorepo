@@ -5,12 +5,16 @@
 //! - `filter` nodes short-circuit deterministically (`hard_reject` /
 //!   `soft_redirect` / `output_filter`),
 //! - `classifier` nodes auto-build their prompt from their children (key +
-//!   description) and the three-axis JSON schema, call the injected backend,
-//!   enforce coherence/safety thresholds, and pick a child,
+//!   description) and the three-axis JSON schema, then dispatch on their
+//!   per-node `backend`: `"llm"` calls the injected `ChatBackend`, `"needle"`
+//!   calls the shared `NeedleBackend` (tool-schema per routeable child), and
+//!   enforce coherence/safety thresholds before picking a child,
 //! - `terminal` nodes resolve a `RoutingTarget` through
-//!   `RoutingConfig::resolve_route` (complexity-based model selection),
+//!   `RoutingConfig::resolve_route` (complexity-based model selection), or a
+//!   `target` terminal resolves a registered DAG `Target` through the
+//!   `NarrowOne` resolver into a deterministic `TargetWorkUnit` execution plan,
 //! - `fallback` children are evaluated when a classifier picks no named child
-//!   or its LLM call fails.
+//!   or its LLM/needle call fails.
 //!
 //! Every visited node emits a `StageDecision` (the final one carries the
 //! `routing_target` / rejection for the pipeline handoff) and a durable audit
@@ -35,12 +39,18 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
+    use common_core::interner::CapabilityRegistry;
     use common_core::sync::lock;
     use fluent_concurrency::pool::Limiter;
+    use fluent_dag::target::{ExecutorKind, Target, TargetRegistry, TargetType};
     use fluent_llm::{ChatMessage, LlmError};
     use fluent_llm::client::ChatBackend;
 
-    use crate::config::{ClassificationTree, ModelEntry, ModelGroup, RouteRef, RoutingConfig};
+    use crate::config::{
+        ClassificationNode, ClassificationTree, ModelEntry, ModelGroup, RouteRef, RoutingConfig,
+    };
+    use crate::needle::backend::{MockNeedleBackend, NeedleBackend};
+    use crate::needle::envelope::{NeedleEnvelope, NeedleEnvelopeType, NeedleFunctionCall};
     use crate::pipeline::RoutingTarget;
     use crate::pipeline_types::{StageDecision, StageMetadata, StageVerdict};
     use crate::target_match::{TargetBackends, TargetMatcher};
@@ -163,6 +173,9 @@ mod tests {
             Arc::new(Limiter::new(4)),
             0.5,
             matcher,
+            None,
+            None,
+            None,
         )
     }
 
@@ -713,6 +726,402 @@ mod tests {
         let engine = engine(&tree, backend);
         let decision = engine.evaluate("hello").unwrap().decision;
         assert_eq!(decision.verdict, StageVerdict::Rejected);
+    }
+
+    // ── Needle-backend classifier nodes ────────────────────────────────
+
+    fn needle_call(tool: &str) -> NeedleEnvelope {
+        NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Call,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![NeedleFunctionCall {
+                name: tool.to_string(),
+                arguments: serde_json::json!({}),
+            }],
+            reasoning: Some(format!("pick {tool}")),
+            confidence: Some(0.9),
+            results: None,
+        }
+    }
+
+    fn needle_tree() -> ClassificationTree {
+        serde_json::from_value(serde_json::json!({
+            "root": {
+                "type": "classifier",
+                "description": "request router",
+                "model": "fast",
+                "backend": "needle",
+                "children": [
+                    {
+                        "key": "code",
+                        "description": "programming",
+                        "node": { "type": "terminal", "route": "code", "group": "code" }
+                    },
+                    {
+                        "key": "translation",
+                        "description": "translation",
+                        "node": { "type": "terminal", "route": "translation", "group": "translation" }
+                    }
+                ]
+            }
+        }))
+        .unwrap()
+    }
+
+    fn engine_with_needle(
+        tree: &ClassificationTree,
+        backend: Arc<dyn ChatBackend>,
+        needle_backend: Option<Arc<dyn NeedleBackend>>,
+    ) -> ClassificationEngine {
+        ClassificationEngine::new(
+            tree.clone(),
+            test_routing(),
+            backend,
+            HashMap::new(),
+            Arc::new(Limiter::new(4)),
+            0.5,
+            None,
+            needle_backend,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn needle_classifier_picks_child_and_routes() {
+        let tree = needle_tree();
+        let needle = Arc::new(MockNeedleBackend::always(needle_call("code")));
+        let engine = engine_with_needle(&tree, Arc::new(StubChatBackend::always("{}")), Some(needle));
+        let decision = engine.evaluate("help me debug rust").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert_eq!(
+            routed_target(&decision).target_name.as_deref(),
+            Some("code")
+        );
+        assert_eq!(routed_target(&decision).model, "code-model");
+    }
+
+    #[test]
+    fn needle_classifier_audits_reason_confidence_tool_in_metadata() {
+        // VISION audit principle: a Needle decision records reason/confidence/
+        // tool in the node's StageDecision.metadata (coherence is the
+        // envelope's calibrated confidence; route is the picked tool).
+        let tree = needle_tree();
+        let needle = Arc::new(MockNeedleBackend::always(needle_call("code")));
+        let engine = engine_with_needle(&tree, Arc::new(StubChatBackend::always("{}")), Some(needle));
+        let decision = engine.evaluate("help me debug rust").unwrap().decision;
+        let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+        let classifier = path
+            .iter()
+            .find(|d| d["metadata"]["node_type"] == "classifier")
+            .expect("classifier node decision");
+        let meta = &classifier["metadata"];
+        assert_eq!(meta["route"], "code", "tool must be recorded");
+        assert_eq!(meta["coherence"], 0.9, "confidence must be recorded as coherence");
+        assert_eq!(meta["reason"], "pick code", "needle reasoning must be recorded");
+    }
+
+    #[test]
+    fn needle_decline_falls_back_to_fallback_child() {
+        // A `refuse` envelope is a decline — the tree falls through to the
+        // fallback child (never acts on the decline, never diverts to default).
+        let mut tree = needle_tree();
+        let ClassificationNode::Classifier { children, .. } = &mut tree.root else {
+            panic!("expected classifier")
+        };
+        children.push(serde_json::from_value(serde_json::json!({
+            "key": "general",
+            "description": "everything else",
+            "node": {
+                "type": "fallback",
+                "node": { "type": "terminal", "route": "local", "group": "question" }
+            }
+        })).unwrap());
+        let needle = Arc::new(MockNeedleBackend::always(NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Refuse,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![],
+            reasoning: Some("cannot route".to_string()),
+            confidence: None,
+            results: None,
+        }));
+        let engine = engine_with_needle(&tree, Arc::new(StubChatBackend::always("{}")), Some(needle));
+        let decision = engine.evaluate("hello").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert_eq!(
+            routed_target(&decision).target_name.as_deref(),
+            Some("local")
+        );
+    }
+
+    #[test]
+    fn needle_missing_backend_falls_back_then_rejects() {
+        // No `NeedleBackend` at all → behaves exactly like an LLM outage:
+        // fallback child when present, rejection otherwise — never a silent
+        // default-route diversion.
+        let mut tree = needle_tree();
+        let ClassificationNode::Classifier { children, .. } = &mut tree.root else {
+            panic!("expected classifier")
+        };
+        children.push(serde_json::from_value(serde_json::json!({
+            "key": "general",
+            "description": "everything else",
+            "node": {
+                "type": "fallback",
+                "node": { "type": "terminal", "route": "local", "group": "question" }
+            }
+        })).unwrap());
+        let engine = engine_with_needle(&tree, Arc::new(StubChatBackend::always("{}")), None);
+        let decision = engine.evaluate("hello").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert_eq!(
+            routed_target(&decision).target_name.as_deref(),
+            Some("local"),
+            "needle outage with a fallback child must fall through to it"
+        );
+
+        let no_fallback = needle_tree();
+        let engine = engine_with_needle(&no_fallback, Arc::new(StubChatBackend::always("{}")), None);
+        let decision = engine.evaluate("hello").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Rejected);
+        assert!(decision.reason.contains("needle"));
+    }
+
+    #[test]
+    fn needle_unknown_child_declines() {
+        let tree = needle_tree();
+        let needle = Arc::new(MockNeedleBackend::always(needle_call("nonexistent")));
+        let engine = engine_with_needle(&tree, Arc::new(StubChatBackend::always("{}")), Some(needle));
+        let decision = engine.evaluate("hello").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Rejected);
+        assert!(decision.reason.contains("no valid child"));
+        let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+        let classifier = path
+            .iter()
+            .find(|d| d["metadata"]["node_type"] == "classifier")
+            .expect("classifier node decision");
+        assert!(
+            classifier["metadata"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("unknown child"),
+            "decline reason must name the unknown child: {}",
+            classifier["metadata"]["reason"],
+        );
+    }
+
+    #[test]
+    fn needle_multi_call_declines() {
+        let tree = needle_tree();
+        let needle = Arc::new(MockNeedleBackend::always(NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Call,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![
+                NeedleFunctionCall {
+                    name: "code".to_string(),
+                    arguments: serde_json::json!({}),
+                },
+                NeedleFunctionCall {
+                    name: "translation".to_string(),
+                    arguments: serde_json::json!({}),
+                },
+            ],
+            reasoning: None,
+            confidence: Some(0.9),
+            results: None,
+        }));
+        let engine = engine_with_needle(&tree, Arc::new(StubChatBackend::always("{}")), Some(needle));
+        let decision = engine.evaluate("hello").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Rejected);
+        assert!(decision.reason.contains("no valid child"));
+        let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+        let classifier = path
+            .iter()
+            .find(|d| d["metadata"]["node_type"] == "classifier")
+            .expect("classifier node decision");
+        assert!(
+            classifier["metadata"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("expected one"),
+            "decline reason must explain the multi-call: {}",
+            classifier["metadata"]["reason"],
+        );
+    }
+
+    #[test]
+    fn needle_node_under_llm_root_recurses_across_backends() {
+        // Root LLM classifier picks the `sub` needle classifier node; that node
+        // then calls Needle and lands on the code terminal. Recursion works
+        // across backends — each node dispatches by its own `backend` field.
+        let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+            "root": {
+                "type": "classifier",
+                "description": "domain router",
+                "model": "fast",
+                "children": [
+                    {
+                        "key": "sub",
+                        "description": "sub routing",
+                        "node": {
+                            "type": "classifier",
+                            "description": "sub router",
+                            "model": "fast",
+                            "backend": "needle",
+                            "children": [
+                                {
+                                    "key": "code",
+                                    "description": "programming",
+                                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                                },
+                                {
+                                    "key": "translation",
+                                    "description": "translation",
+                                    "node": { "type": "terminal", "route": "translation", "group": "translation" }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }))
+        .unwrap();
+        let needle = Arc::new(MockNeedleBackend::always(needle_call("code")));
+        let backend = Arc::new(StubChatBackend::always(verdict("sub", 0.9, 0.9, 3)));
+        let engine = engine_with_needle(&tree, backend, Some(needle));
+        let decision = engine.evaluate("help me debug rust").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert_eq!(
+            routed_target(&decision).target_name.as_deref(),
+            Some("code")
+        );
+    }
+
+    // ── Target terminal leaves ─────────────────────────────────────────
+
+    /// A 3-target dependency chain: `a` → `b` → `c`. Resolving `c` must yield
+    /// the deterministic order [a, b, c] (Kahn, not a model).
+    fn target_registry() -> (TargetRegistry, CapabilityRegistry) {
+        let caps = CapabilityRegistry::new();
+        let mut registry = TargetRegistry::new();
+        for (id, name, depends, provides) in [
+            (0, "a", &[][..], &["a"][..]),
+            (1, "b", &["a"], &["b"]),
+            (2, "c", &["b"], &["c"]),
+        ] {
+            registry
+                .register(
+                    Target::new()
+                        .id(id)
+                        .name(name.into())
+                        .target_type(TargetType::File)
+                        .executor(ExecutorKind::Native)
+                        .depends(caps.to_bitvec(depends))
+                        .provides(caps.to_bitvec(provides))
+                        .build(),
+                )
+                .unwrap();
+        }
+        (registry, caps)
+    }
+
+    fn engine_with_targets(
+        tree: &ClassificationTree,
+        backend: Arc<dyn ChatBackend>,
+        targets: Option<Arc<TargetRegistry>>,
+        target_caps: Option<Arc<CapabilityRegistry>>,
+    ) -> ClassificationEngine {
+        ClassificationEngine::new(
+            tree.clone(),
+            test_routing(),
+            backend,
+            HashMap::new(),
+            Arc::new(Limiter::new(4)),
+            0.5,
+            None,
+            None,
+            targets,
+            target_caps,
+        )
+    }
+
+    #[test]
+    fn target_terminal_resolves_deterministic_work_unit_chain() {
+        let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+            "root": { "type": "terminal", "route": "reproduce", "target": "c" }
+        }))
+        .unwrap();
+        let (registry, caps) = target_registry();
+        let engine = engine_with_targets(
+            &tree,
+            Arc::new(StubChatBackend::always("{}")),
+            Some(Arc::new(registry)),
+            Some(Arc::new(caps)),
+        );
+        let decision = engine.evaluate("reproduce this bug").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        let rt = routed_target(&decision);
+        assert_eq!(rt.target.as_deref(), Some("c"));
+        // The tree_path records the deterministic plan (dependency-first).
+        let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+        let terminal = path
+            .iter()
+            .find(|d| d["metadata"]["node_type"] == "terminal")
+            .expect("terminal node decision");
+        assert_eq!(terminal["metadata"]["target"], "c");
+        assert_eq!(
+            terminal["metadata"]["target_plan"],
+            serde_json::json!(["a", "b", "c"]),
+            "target_plan must be the resolver's deterministic dependency order",
+        );
+
+        // The work-unit chain materializes in that same order.
+        let plan = engine.resolve_target_plan("c").expect("plan");
+        assert_eq!(plan.target_names, vec!["a", "b", "c"]);
+        let units = engine.work_units_for_plan(&plan);
+        assert_eq!(units.len(), 3);
+        assert_eq!(&*units[0].name, "a");
+        assert_eq!(&*units[1].name, "b");
+        assert_eq!(&*units[2].name, "c");
+        // Dependency-first: each unit's deps were produced by an earlier unit.
+        assert!(units[1].depends.iter().any(|d| &**d == "a"));
+        assert!(units[2].depends.iter().any(|d| &**d == "b"));
+    }
+
+    #[test]
+    fn target_terminal_missing_target_rejects() {
+        let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+            "root": { "type": "terminal", "route": "reproduce", "target": "no-such-target" }
+        }))
+        .unwrap();
+        let (registry, caps) = target_registry();
+        let engine = engine_with_targets(
+            &tree,
+            Arc::new(StubChatBackend::always("{}")),
+            Some(Arc::new(registry)),
+            Some(Arc::new(caps)),
+        );
+        let decision = engine.evaluate("reproduce").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Rejected);
+        assert!(decision.reason.contains("no-such-target"));
+    }
+
+    #[test]
+    fn target_terminal_without_registry_rejects() {
+        let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+            "root": { "type": "terminal", "route": "reproduce", "target": "c" }
+        }))
+        .unwrap();
+        let engine = engine_with_targets(&tree, Arc::new(StubChatBackend::always("{}")), None, None);
+        let decision = engine.evaluate("reproduce").unwrap().decision;
+        assert_eq!(decision.verdict, StageVerdict::Rejected);
+        assert!(decision.reason.contains("no target registry"));
     }
 
     // ── Multi-level trees ──────────────────────────────────────────────

@@ -114,6 +114,61 @@ pub fn get_metadata_string(ctx: &WorkContext, key: &str) -> Option<String> {
     })
 }
 
+/// The routing window for Needle: the first sentence or first paragraph of a
+/// prompt, up to [`ROUTING_WINDOW_MAX_CHARS`] characters, whichever is
+/// smallest.
+///
+/// Needle is a cheap, non-generative tool-calling rung that should always
+/// decide on the *opening* of a request — the first sentence or paragraph —
+/// rather than the whole message, so a long prompt can never blow the rung's
+/// gate or bury the actionable intent. The window is the earlier of:
+///
+/// - the end of the first sentence (a `.`/`!`/`?` followed by whitespace or
+///   end-of-input), or
+/// - the end of the first paragraph (the first newline),
+///
+/// truncated to [`ROUTING_WINDOW_MAX_CHARS`] characters. Leading/trailing
+/// whitespace is trimmed. Returns an empty slice for empty/whitespace input.
+pub const ROUTING_WINDOW_MAX_CHARS: usize = 200;
+
+pub fn routing_window(input: &str) -> &str {
+    let input = input.trim();
+    if input.is_empty() {
+        return input;
+    }
+    let mut boundary = input.len();
+    // First paragraph boundary: the first newline.
+    if let Some(idx) = input.find(['\n', '\r']) {
+        boundary = boundary.min(idx);
+    }
+    // First sentence boundary: a terminator followed by whitespace or end.
+    for (i, b) in input.as_bytes().iter().enumerate() {
+        if matches!(b, b'.' | b'!' | b'?') {
+            let after = i + 1;
+            let followed_by_ws = input[after..].chars().next().is_none_or(char::is_whitespace);
+            if followed_by_ws {
+                boundary = boundary.min(after);
+                break;
+            }
+        }
+    }
+    let window = &input[..boundary.min(input.len())];
+    // Truncate to ROUTING_WINDOW_MAX_CHARS characters (char-boundary safe).
+    let count = window.chars().count();
+    if count <= ROUTING_WINDOW_MAX_CHARS {
+        window
+    } else {
+        let mut end = 0;
+        for (idx, c) in window.char_indices() {
+            if idx >= ROUTING_WINDOW_MAX_CHARS {
+                break;
+            }
+            end = idx + c.len_utf8();
+        }
+        &window[..end]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +264,43 @@ mod tests {
         let ctx = WorkContext::default();
         let err = extract_user_message(&ctx).unwrap_err();
         assert!(err.to_string().contains("missing request"));
+    }
+
+    #[test]
+    fn routing_window_takes_first_sentence() {
+        assert_eq!(
+            routing_window("Write a Rust function to sort a vec. Then explain it."),
+            "Write a Rust function to sort a vec."
+        );
+        assert_eq!(routing_window("What is 2+2?"), "What is 2+2?");
+    }
+
+    #[test]
+    fn routing_window_prefers_paragraph_break_before_sentence() {
+        // A paragraph break ends the window even if the first sentence would
+        // have run longer.
+        assert_eq!(
+            routing_window("Line one\nLine two continues here. Still line two."),
+            "Line one"
+        );
+    }
+
+    #[test]
+    fn routing_window_truncates_to_char_cap() {
+        let long = format!("{} and then some trailing words.", "word ".repeat(100));
+        let w = routing_window(&long);
+        assert!(w.chars().count() <= ROUTING_WINDOW_MAX_CHARS);
+        assert!(w.chars().count() > 0);
+    }
+
+    #[test]
+    fn routing_window_empty_and_whitespace() {
+        assert_eq!(routing_window(""), "");
+        assert_eq!(routing_window("   "), "");
+    }
+
+    #[test]
+    fn routing_window_trims_leading_whitespace() {
+        assert_eq!(routing_window("  Dim the lights. Then relax."), "Dim the lights.");
     }
 }

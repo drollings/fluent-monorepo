@@ -33,7 +33,8 @@ use fluent_router::routes::plan::PlanRoute;
 use fluent_router::routes::rigor::RigorRoute;
 use fluent_router::server::RouterServer;
 use fluent_router::testing::{
-    load_transcript_file, transcript_provider_from_entries, MockDispatchContext,
+    load_transcript_file, needle_provider_from_entries, transcript_provider_from_entries,
+    MockDispatchContext,
 };
 
 #[derive(Parser)]
@@ -470,7 +471,12 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         } else {
             let provider = transcript_provider_from_entries(dispatch_ctx.transcripts());
             let provider: Arc<dyn ChatBackend> = Arc::new(provider);
-            config.build_all_pipelines_with_backend(Some(&provider))
+            // A hermetic Needle backend keyed by each entry's `needle_response`
+            // (declining by default), so `--mock` exercises the Needle rung
+            // deterministically instead of loading the real libneedle engine.
+            let needle: Arc<dyn fluent_router::needle::backend::NeedleBackend> =
+                Arc::new(needle_provider_from_entries(dispatch_ctx.transcripts()));
+            config.build_all_pipelines_with_backends(Some(&provider), Some(&needle))
         };
 
         (pipelines, Some(dispatch_ctx))

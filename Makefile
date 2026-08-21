@@ -151,6 +151,17 @@ install: $(CARGO_BIN) $(CORAL_ROUTER_BIN)
 .PHONY: router
 router: $(CORAL_ROUTER_BIN) ## Build coral-router (fast, no run; the base for every other router target)
 
+# ── Needle (cheapest structured rung) ────────────────────────────────────────
+
+NEEDLE_DIR := vendor/needle
+NEEDLE_LIB := $(NEEDLE_DIR)/linux-x86_64/libneedle.so
+
+.PHONY: libneedle
+libneedle: $(NEEDLE_LIB) ## Build libneedle.so from the shipped libneedle.a (needs g++ + libc++/libc++abi)
+
+$(NEEDLE_LIB): $(NEEDLE_DIR)/linux-x86_64/libneedle.a
+	$(Q)bin/build-libneedle.sh
+
 # Kill any running coral-router and wait for it to actually exit before the
 # caller starts a fresh one. The router is the process owner of its spawned
 # llama-servers and handles SIGTERM gracefully (stops the supervisor first),
@@ -181,6 +192,10 @@ CORAL_ROUTER_TEST_SCRIPT := bin/coral-router-test.py
 .PHONY: router-benchmark
 router-benchmark: router-start ## Score the live router (routing accuracy, TTFT, VRAM) via bin/coral-router-test.py; reads env/coral-router.json for routes + expectations
 	$(Q)python3 $(CORAL_ROUTER_TEST_SCRIPT) --config $(CORAL_ROUTER_CONFIG)
+
+.PHONY: router-benchmark-smoke
+router-benchmark-smoke: ## Hermetic Needle-metric scorer smoke: parse the fixture audit file (bin/fixtures/) and report Needle coverage/accuracy/direct-rate — no live router required
+	$(Q)python3 $(CORAL_ROUTER_TEST_SCRIPT) --audit-only bin/fixtures --config $(CORAL_ROUTER_CONFIG)
 
 .PHONY: doc-check
 doc-check: ## Doc consistency lint — types named in skill/router docs must exist in source

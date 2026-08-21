@@ -105,6 +105,29 @@ backup) — emitting a per-node `StageDecision` into `metadata.tree_path` and a
 `kind = "tree_node"` audit record per visited node. Route-name guessing is
 gone; route selection is the tree's job.
 
+### Optional Needle rung
+
+An optional **Needle** stage (`needle.enabled`) runs between the deterministic
+pre-filter and the classifier: a non-generative native engine picks a route
+tool via a grammar-constrained tool-call envelope, cheapest first. Needle is
+the **primary router for non-general categories**: it decides on the *routing
+window* (the first sentence/paragraph, ≤200 chars, `stages::common::routing_window`)
+and, when it picks a non-general route tool, short-circuits the pipeline with a
+`Rerouted` verdict. A tool declaring an `output_template` in
+`schema_overrides` is answered **directly** by rendering that template with the
+envelope's bound arguments — no dispatch (`needle::template::render_output_template`).
+A `general` category (e.g. the `local` route) is **not** a Needle decision: it
+falls through to the classifier LLM. Every outcome is audited on the
+`router.audit` stream, including one aggregate per-request record naming the
+deciding stage (`needle` vs `classifier`) that `make router-benchmark` scores
+against (coverage / routing accuracy / direct-response rate).
+
+The same injectable `NeedleBackend` also powers per-node `"backend": "needle"`
+classification-tree nodes and the chart selector's Needle adjudicator. Needle
+is FFI-only, never a `models` entry, and never hard-errors a request (it
+degrades to `Skipped`/fallback). See [`NEEDLE.md`](./NEEDLE.md) for the seams,
+the `needle` config block, and the live-AI test contract.
+
 ## Design Contract
 
 Every pipeline stage implements `Component` (the Fluent WVR supertrait). The

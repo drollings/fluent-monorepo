@@ -461,6 +461,7 @@ impl TargetMatcher {
                 idle_timeout_ms: common_core::constants::DEFAULT_IDLE_TIMEOUT_MS,
                 total_timeout_ms: common_core::constants::DEFAULT_TOTAL_TIMEOUT_MS,
                 fallbacks: vec![],
+                target: None,
             },
         };
         rt.group = Some(group.to_string());

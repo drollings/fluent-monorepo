@@ -1,6 +1,7 @@
 pub mod classifier;
 pub mod common;
 pub mod deterministic;
+pub mod needle;
 pub mod pipeline_ref;
 pub mod prompt_parse;
 pub mod retry_classifier;

@@ -24,15 +24,17 @@
 //! on the pipeline/engine constructors is a builder-shape, not a call-shape.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common_core::config::load_json_or_default;
 use fluent_llm::client::ChatBackend;
-use fluent_llm::{LlmClient, LlmConfig};
+use fluent_llm::{create_embedding_provider, EmbeddingProvider, LlmClient, LlmConfig};
 use fluent_wvr::prelude::Component;
 
-use super::{default_true, strip_declaration_params, RejectPatterns, RouterConfig};
+use super::{default_true, strip_declaration_params, NeedleConfig, RejectPatterns, RouterConfig};
+use crate::needle::backend::NeedleBackend;
+use crate::needle::retriever::{HnswToolRetriever, ToolRetriever};
 use crate::pipeline::PipelineOrchestrator;
 use crate::score_matrix::ScoreMatrix;
 use crate::target_match::{TargetBackends, TargetMatcher};
@@ -153,6 +155,75 @@ fn default_classifier_concurrency() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get().max(1))
 }
 
+/// Number of embedding dimensions to declare for the Needle tool-index
+/// embedder. The actual vector length is whatever the endpoint returns (the
+/// embeddings HTTP client parses the response); this only sets the declared
+/// capacity, mirroring the charts embedder.
+const NEEDLE_EMBEDDING_DIMS: u32 = 768;
+
+/// Bounded queue depth for the single Needle worker (jobs waiting behind the
+/// in-flight completion). Oversized bursts degrade to `Unavailable` → skip.
+const NEEDLE_QUEUE_CAPACITY: usize = 64;
+
+/// Whether the `needle` rung applies to a named pipeline. `needle.pipeline`
+/// selects a single pipeline; `None` applies to the default pipeline only.
+fn needle_applies_to_pipeline(needle_cfg: &NeedleConfig, pipeline_name: &str) -> bool {
+    match needle_cfg.pipeline.as_deref() {
+        Some(p) => p == pipeline_name,
+        None => pipeline_name == "default",
+    }
+}
+
+/// Attempt to build the production Needle backend from `NeedleConfig`.
+///
+/// Resolves `libneedle.so` (explicit `engine` path, else the standard
+/// `NEEDLE_LIB_PATH` → package → cache resolution), loads the engine, and
+/// binds tuned `.cact` weights once. Any failure returns `None` — the rung is
+/// skipped (fall through to the classifier), never a boot or request error.
+/// The engine's availability is a routing concern, not a boot concern.
+fn build_native_needle_backend(needle_cfg: &NeedleConfig) -> Option<Arc<dyn NeedleBackend>> {
+    let path = needle_cfg
+        .engine
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(crate::needle::engine::resolve_library_path)?;
+    let weights = needle_cfg.weights.as_deref().map(PathBuf::from);
+    // Seam: the engine binds a minimal system prompt — the tool schemas carry
+    // the routing context (description + examples + intents). Tuned in M8.
+    match crate::needle::engine::NativeNeedleEngine::load(
+        &path,
+        "",
+        needle_cfg.tool_index_path.clone(),
+        weights.as_deref(),
+    ) {
+        Ok(engine) => {
+            tracing::info!(
+                target: "router.config",
+                path = %path.display(),
+                "needle engine loaded",
+            );
+            // Serialize all FFI through one worker thread (single global
+            // engine; stateless single-shot adjudication). Backpressure when
+            // the bounded queue is full, per-call timeout from config.
+            let queue = crate::needle::queue::NeedleQueue::new(
+                Arc::new(engine),
+                NEEDLE_QUEUE_CAPACITY,
+                needle_cfg.timeout_ms,
+            );
+            Some(Arc::new(queue))
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "router.config",
+                path = %path.display(),
+                error = %e,
+                "needle engine unavailable — rung skipped",
+            );
+            None
+        }
+    }
+}
+
 impl RouterConfig {
     pub fn load_reject_patterns(path: &str) -> RejectPatterns {
         load_json_or_default::<RejectPatterns>(Path::new(path))
@@ -181,6 +252,46 @@ impl RouterConfig {
         }
     }
 
+    /// Build the Needle candidate shortlister (Milestone 5), if derivable.
+    ///
+    /// Only when `needle.shortlist.mode` is `hnsw` and an embedding model can
+    /// be resolved (`shortlist.embedding_model`, falling back to the root
+    /// `embedding_model`) does a [`HnswToolRetriever`] get built; the
+    /// `NeedlePreFilter` default is the identity retriever, whose overflow
+    /// path falls through to the classifier (design decision 4). The embedder
+    /// mirrors `default_chart_embedder` (the same OpenAI-compatible `/v1/
+    /// embeddings` seam). `None` leaves the identity shortlister in place —
+    /// the rung degrades to pass-all/fall-through, never a boot or request
+    /// error.
+    fn build_needle_retriever(&self, needle_cfg: &NeedleConfig) -> Option<Arc<dyn ToolRetriever>> {
+        if needle_cfg.shortlist.mode != super::NeedleShortlistMode::Hnsw {
+            return None;
+        }
+        let key = needle_cfg
+            .shortlist
+            .embedding_model
+            .as_deref()
+            .or(self.embedding_model.as_deref())?;
+        let entry = self.models.get(key)?;
+        let base = fluent_llm::url::derive_embeddings_url(&entry.endpoint);
+        let embedder = create_embedding_provider(
+            "openai",
+            entry.name.as_deref(),
+            Some(&base),
+            Some(""),
+            NEEDLE_EMBEDDING_DIMS,
+            None,
+            entry.params.as_ref(),
+        )
+        .ok()?;
+        let embedder: Arc<dyn EmbeddingProvider> = Arc::from(embedder);
+        Some(Arc::new(HnswToolRetriever::new(
+            embedder,
+            needle_cfg.shortlist.index_path.clone(),
+            needle_cfg.shortlist.min_score,
+        )))
+    }
+
     pub fn build_named_pipeline(&self, name: &str) -> Option<PipelineOrchestrator> {
         self.build_named_pipeline_with_backend(name, None)
     }
@@ -190,8 +301,35 @@ impl RouterConfig {
         name: &str,
         classifier_backend: Option<Arc<dyn ChatBackend>>,
     ) -> Option<PipelineOrchestrator> {
+        self.build_named_pipeline_with_backends(name, classifier_backend, None)
+    }
+
+    /// Build one named pipeline with injectable backends for both LLM hops.
+    ///
+    /// `needle_backend` mirrors the `classifier_backend` seam: tests and `--mock`
+    /// mode inject a hermetic `MockNeedleBackend`; `None` makes the builder
+    /// attempt the production `NativeNeedleEngine` (which degrades cleanly —
+    /// an unavailable engine simply omits the rung, never errors a request).
+    pub fn build_named_pipeline_with_backends(
+        &self,
+        name: &str,
+        classifier_backend: Option<Arc<dyn ChatBackend>>,
+        needle_backend: Option<Arc<dyn NeedleBackend>>,
+    ) -> Option<PipelineOrchestrator> {
         let params = self.pipelines.get(name)?;
         let mut stages: Vec<Arc<dyn Component>> = Vec::new();
+
+        // One shared Needle backend for this pipeline: the injected
+        // mock/transcript backend wins; otherwise the production engine is
+        // loaded from the `needle` config once and reused by the pre-filter
+        // rung AND the tree's `backend: "needle"` classifier nodes (avoids
+        // double-loading the FFI library + tuned weights).
+        let resolved_needle_backend: Option<Arc<dyn NeedleBackend>> = needle_backend.or_else(|| {
+            self.needle
+                .as_ref()
+                .filter(|c| c.enabled)
+                .and_then(build_native_needle_backend)
+        });
 
         if params.deterministic_prefilter {
             if let Some(ref blacklist_path) = params.blacklist {
@@ -205,6 +343,42 @@ impl RouterConfig {
                 stages.push(Arc::new(
                     crate::stages::deterministic::DeterministicPreFilter::new(),
                 ));
+            }
+        }
+
+        // Needle pre-classifier rung — between the deterministic pre-filter and
+        // the classifier, gated by `needle.enabled` (and `needle.pipeline`).
+        if let Some(needle_cfg) = self.needle.as_ref() {
+            if needle_cfg.enabled && needle_applies_to_pipeline(needle_cfg, name) {
+                match resolved_needle_backend.as_ref() {
+                    Some(backend) => {
+                        let routing_config = self.routing_config();
+                        let retriever =
+                            self.build_needle_retriever(needle_cfg)
+                                .unwrap_or_else(|| Arc::new(crate::needle::retriever::IdentityToolRetriever));
+                        let stage = crate::stages::needle::NeedlePreFilter::with_retriever(
+                            backend.clone(),
+                            retriever,
+                            needle_cfg.clone(),
+                            routing_config,
+                        );
+                        tracing::info!(
+                            target: "router.config",
+                            pipeline = %name,
+                            candidates_per_rung = needle_cfg.candidates_per_rung,
+                            shortlist_mode = ?needle_cfg.shortlist.mode,
+                            "needle pre-filter rung enabled",
+                        );
+                        stages.push(Arc::new(stage));
+                    }
+                    None => {
+                        tracing::warn!(
+                            target: "router.config",
+                            pipeline = %name,
+                            "needle enabled but engine unavailable — rung skipped, falling through to classifier",
+                        );
+                    }
+                }
             }
         }
 
@@ -288,6 +462,7 @@ impl RouterConfig {
                     params.coherence_threshold,
                     !injected_backend,
                     target_matcher.clone(),
+                    resolved_needle_backend.clone(),
                 );
                 tracing::info!(
                     target: "router.config",
@@ -370,6 +545,16 @@ impl RouterConfig {
         &self,
         classifier_backend: Option<&Arc<dyn ChatBackend>>,
     ) -> HashMap<String, Arc<PipelineOrchestrator>> {
+        self.build_all_pipelines_with_backends(classifier_backend, None)
+    }
+
+    /// Build every named pipeline with injectable backends for both LLM hops
+    /// (see [`Self::build_named_pipeline_with_backends`]).
+    pub fn build_all_pipelines_with_backends(
+        &self,
+        classifier_backend: Option<&Arc<dyn ChatBackend>>,
+        needle_backend: Option<&Arc<dyn NeedleBackend>>,
+    ) -> HashMap<String, Arc<PipelineOrchestrator>> {
         let mut map = HashMap::new();
         let mut dropped = Vec::new();
         let pipeline_count = self.pipelines.len();
@@ -377,9 +562,12 @@ impl RouterConfig {
         tracing::info!(target: "router.config", pipeline_count = pipeline_count, mock_backend = has_mock, classifier_model = ?self.classifier_model, default_route = %self.default_route, "building pipelines");
         for name in self.pipelines.keys() {
             let backend_for_pipeline = classifier_backend.cloned();
-            if let Some(pipeline) =
-                self.build_named_pipeline_with_backend(name, backend_for_pipeline)
-            {
+            let needle_for_pipeline = needle_backend.cloned();
+            if let Some(pipeline) = self.build_named_pipeline_with_backends(
+                name,
+                backend_for_pipeline,
+                needle_for_pipeline,
+            ) {
                 map.insert(name.clone(), Arc::new(pipeline));
             } else {
                 dropped.push(name.clone());
@@ -483,6 +671,7 @@ fn build_classification_engine(
     coherence_threshold: f64,
     use_per_node_backends: bool,
     target_matcher: Option<TargetMatcher>,
+    needle_backend: Option<Arc<dyn NeedleBackend>>,
 ) -> crate::stages::tree::ClassificationEngine {
     let default_params = PipelineParams::default();
     let default_model_key = resolve_classifier_model_key(config, &default_params);
@@ -505,6 +694,13 @@ fn build_classification_engine(
         limiter,
         coherence_threshold,
         target_matcher,
+        needle_backend,
+        // The DAG `TargetRegistry`/`CapabilityRegistry` are injected here when
+        // a `targets` config section lands (Milestone 8 integration); until
+        // then a `target` terminal leaf rejects truthfully rather than routing
+        // elsewhere.
+        None,
+        None,
     )
 }
 

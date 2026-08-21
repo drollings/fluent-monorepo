@@ -35,6 +35,7 @@ pub mod ledger;
 pub mod ledger_guard;
 pub mod logging;
 pub mod metrics;
+pub mod needle;
 pub mod node_store;
 pub mod normalize;
 pub mod pipeline;

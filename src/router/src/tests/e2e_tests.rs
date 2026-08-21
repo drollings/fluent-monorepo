@@ -8,8 +8,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::config::RouterConfig;
+use crate::needle::backend::MockNeedleBackend;
+use crate::needle::envelope::{NeedleEnvelope, NeedleEnvelopeType, NeedleFunctionCall};
 use crate::pipeline::{PipelineOrchestrator, PipelineResult};
-use crate::pipeline_types::{PipelineStage, StageVerdict};
+use crate::pipeline_types::{PipelineStage, StageMetadata, StageVerdict};
+use crate::test_stubs::CountingBackend;
 use crate::testing::mock::TranscriptProvider;
 use crate::testing::test_request;
 use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
@@ -342,6 +345,134 @@ fn test_e2e_tree_config_unknown_route_uses_fallback() {
         .expect("fallback terminal should produce a routing target");
     assert_eq!(rt.target_name.as_deref(), Some("local"));
     assert_eq!(rt.model, "fast");
+}
+
+// ── Needle pre-filter rung (Milestone 4) ────────────────────────────────
+
+fn make_needle_config(enabled: bool) -> RouterConfig {
+    serde_json::from_str::<RouterConfig>(&format!(
+        r#"{{
+        "pipelines": {{"default": {{"deterministic_prefilter": true, "classifier": true}}}},
+        "models": {{"fast": {{"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.000001, "cost_output": 0.000006, "cost_cached_read": 0.0000004, "speed": 10}}}},
+        "model_groups": {{"fast": ["fast"]}},
+        "routes": {{"fast": {{"group": "fast", "pipelines": ["default"]}}}},
+        "default_route": "fast",
+        "needle": {{"enabled": {enabled}}}
+    }}"#
+    ))
+    .expect("valid needle config")
+}
+
+fn needle_call(tool: &str, confidence: Option<f64>) -> NeedleEnvelope {
+    NeedleEnvelope {
+        r#type: NeedleEnvelopeType::Call,
+        success: None,
+        error: None,
+        error_code: None,
+        function_calls: vec![NeedleFunctionCall {
+            name: tool.into(),
+            arguments: serde_json::json!({}),
+        }],
+        reasoning: None,
+        confidence,
+        results: None,
+    }
+}
+
+fn make_needle_pipeline(
+    config: &RouterConfig,
+    needle: MockNeedleBackend,
+    classifier: Arc<dyn ChatBackend>,
+) -> PipelineOrchestrator {
+    config
+        .build_named_pipeline_with_backends(
+            "default",
+            Some(classifier),
+            Some(Arc::new(needle)),
+        )
+        .expect("default pipeline should build with needle backend")
+}
+
+#[test]
+fn test_e2e_needle_route_short_circuits_before_classifier() {
+    let config = make_needle_config(true);
+    let classifier = Arc::new(CountingBackend::new("must not be called"));
+    let pipeline = make_needle_pipeline(
+        &config,
+        MockNeedleBackend::always(needle_call("fast", Some(0.95))),
+        classifier.clone(),
+    );
+    let result = route(&pipeline, &make_request("route me to fast")).expect("pipeline should complete");
+
+    assert!(!result.rejected);
+    let rt = result
+        .routing_target
+        .expect("needle route tool must produce a routing target");
+    assert_eq!(rt.target_name.as_deref(), Some("fast"));
+    assert_eq!(classifier.calls(), 0, "the classifier must never run after a Needle route verdict");
+
+    // The short-circuit decision record is the Needle stage's own.
+    let last = result.decisions.last().expect("at least the needle decision");
+    assert_eq!(last.stage, PipelineStage::NeedlePreFilter);
+    assert_eq!(last.verdict, StageVerdict::Rerouted);
+    let meta = StageMetadata::from(last.metadata.clone());
+    assert_eq!(meta.needle_tool(), Some("fast"));
+    assert_eq!(meta.needle_confidence(), Some(0.95));
+}
+
+#[test]
+fn test_e2e_needle_decline_falls_through_to_classifier() {
+    let config = make_needle_config(true);
+    let classifier = Arc::new(CountingBackend::new(classify_with_target("fast")));
+    let pipeline = make_needle_pipeline(
+        &config,
+        MockNeedleBackend::always(NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Refuse,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![],
+            reasoning: None,
+            confidence: None,
+            results: None,
+        }),
+        classifier.clone(),
+    );
+    let result = route(&pipeline, &make_request("What is the capital of France?"))
+        .expect("pipeline should complete");
+
+    assert_eq!(classifier.calls(), 1, "a Needle decline must fall through to the classifier");
+    let stages: Vec<PipelineStage> = result.decisions.iter().map(|d| d.stage).collect();
+    assert_eq!(
+        stages,
+        vec![
+            PipelineStage::DeterministicPreFilter,
+            PipelineStage::NeedlePreFilter,
+            PipelineStage::Classifier,
+        ],
+        "needle sits between the pre-filter and the classifier"
+    );
+    let needle_decision = &result.decisions[1];
+    assert_eq!(needle_decision.verdict, StageVerdict::Skipped);
+    assert!(needle_decision.reason.contains("refuse"));
+}
+
+#[test]
+fn test_e2e_needle_disabled_keeps_two_stage_order() {
+    let config = make_needle_config(false);
+    let pipeline = make_needle_pipeline(
+        &config,
+        MockNeedleBackend::always(needle_call("fast", Some(0.95))),
+        Arc::new(TranscriptProvider::new(HashMap::new())),
+    );
+    let result = route(&pipeline, &make_request("What is Rust?")).expect("pipeline should complete");
+
+    let stages: Vec<PipelineStage> = result.decisions.iter().map(|d| d.stage).collect();
+    assert_eq!(
+        stages,
+        vec![PipelineStage::DeterministicPreFilter, PipelineStage::Classifier],
+        "needle disabled keeps today's two-stage pipeline"
+    );
 }
 
 // ── Checkpoint/Rewind Cycle (DAG session-level) ─────────────────────────

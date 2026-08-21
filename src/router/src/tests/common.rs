@@ -257,6 +257,7 @@ pub fn mock_for(user_message: &str, dispatch_response: &str) -> MockDispatchCont
             dispatch_response: Some(dispatch_response.to_string()),
             rejected: false,
             reject_reason_contains: None,
+            ..Default::default()
         }],
         vec![],
     )

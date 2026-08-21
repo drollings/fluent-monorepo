@@ -2,19 +2,7 @@
 # Editor and Platform Files
 # =============================================================================
 
-# macOS
-._*
-
-# Kate editor
-*.kate-swp
-.kate-swp
-
-# Aider (AI coding assistant)
-.aider*
-
-# Log files
-*.log
-
+src/router/libneedle.so
 .claude
 doc/Legacy
 .guidance.db
@@ -28,15 +16,29 @@ doc/Legacy
 .guidance/skills
 bin/guidance-cpp
 data/
+vendor/
 
 env/coral-router.json
-
-# Zig
-zig/zig-*
 
 # Rust
 .cargo/
 target/
+
+# macOS
+._*
+
+# Kate editor
+*.kate-swp
+.kate-swp
+
+# Aider (AI coding assistant)
+.aider*
+
+# Log files
+*.log
+
+# Zig
+zig/zig-*
 
 # =============================================================================
 # Environment & Infrastructure Tools
@@ -51,7 +53,6 @@ target/
 
 # opencode (project-specific tool)
 .opencode
-
 
 
 # =============================================================================

@@ -39,9 +39,13 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 
 use crate::config::{ClassifierOutput, ModelGroup, RouteRef, RouterConfig};
+use crate::needle::backend::NeedleBackend;
+use crate::needle::template::{render_output_template, template_placeholders};
 use crate::server::serve_http;
 use crate::testing::mock::{
-    load_transcript_file, transcript_provider_from_entries, MockDispatchContext, MockTranscriptEntry,
+    load_transcript_file, needle_call_envelope, needle_call_envelope_with_args,
+    needle_provider_from_entries, transcript_provider_from_entries, MockDispatchContext,
+    MockTranscriptEntry,
 };
 use crate::tests::common::{get, post_chat, TestServer};
 use fluent_llm::client::ChatBackend;
@@ -220,6 +224,7 @@ fn route_entry(route: &str, expect_model_group: &str, user_message: &str) -> Moc
         dispatch_response: Some(format!("mock {route} answer")),
         rejected: false,
         reject_reason_contains: None,
+        ..Default::default()
     }
 }
 
@@ -243,15 +248,24 @@ fn transcripts_from_config(config: &RouterConfig) -> Vec<MockTranscriptEntry> {
 }
 
 /// Boot the real `serve_http` accept loop with the given config, a transcript
-/// classifier that returns each probe's canned `target`, and a dispatch mock
-/// that validates route + model_group resolution. Returns the server and the
-/// shared mock context (whose `take_failures()` is the routing verdict).
+/// classifier that returns each probe's canned `target`, a needle transcript
+/// provider derived from each probe's `needle_response` (declining by default
+/// so the classifier decides probes that don't exercise Needle), and a dispatch
+/// mock that validates route + model_group resolution. Returns the server, the
+/// shared mock context (whose `take_failures()` is the routing verdict), and
+/// the needle provider (whose `calls()` proves the rung was consulted).
 async fn spawn_config_mock_server(
     config: RouterConfig,
     entries: Vec<MockTranscriptEntry>,
-) -> (TestServer, Arc<MockDispatchContext>) {
+) -> (TestServer, Arc<MockDispatchContext>, Arc<crate::testing::mock::NeedleTranscriptProvider>) {
     let backend: Arc<dyn ChatBackend> = Arc::new(transcript_provider_from_entries(&entries));
-    let pipelines = Arc::new(config.build_all_pipelines_with_backend(Some(&backend)));
+    let concrete: Arc<crate::testing::mock::NeedleTranscriptProvider> =
+        Arc::new(needle_provider_from_entries(&entries));
+    let needle = Arc::clone(&concrete);
+    let needle_backend: Arc<dyn NeedleBackend> = concrete;
+    let pipelines = Arc::new(
+        config.build_all_pipelines_with_backends(Some(&backend), Some(&needle_backend)),
+    );
     let mock = Arc::new(MockDispatchContext::new(entries, vec![]));
 
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -274,7 +288,7 @@ async fn spawn_config_mock_server(
         }
     });
 
-    (TestServer { addr, handle }, mock)
+    (TestServer { addr, handle }, mock, needle)
 }
 
 /// Every route's `group` maps to a non-empty `model_groups` ladder whose
@@ -365,7 +379,7 @@ async fn route_intents_dispatch_to_their_model_groups() {
     let config = load_config();
     let route_count = config.routes.len();
     let entries = transcripts_from_config(&config);
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock, _needle) = spawn_config_mock_server(config, entries.clone()).await;
 
     let mut probed = 0;
     for entry in &entries {
@@ -413,6 +427,376 @@ async fn route_intents_dispatch_to_their_model_groups() {
     );
 }
 
+/// Needle — the cheapest structured rung — is the primary router for **non-
+/// general** routes that carry a `schema_overrides` tool description: a
+/// grammar-constrained Needle call that names the route short-circuits the
+/// pipeline and dispatches through that route's `model_group`, exactly as the
+/// classifier would. This test drives each such route's probe with a canned
+/// Needle `call` envelope and a *decoy* classifier response (routed to a
+/// different route), so a probe can only answer through the correct group if
+/// the Needle rung actually fired and won. Config-synced: the probed routes
+/// and expected groups are derived from `env/coral-router.json` at runtime, so
+/// the suite cannot drift from it. (General routes — `schema_overrides`
+/// entries marked `general` — are excluded: they fall through to the
+/// classifier and are covered by
+/// `needle_general_category_falls_through_to_classifier`.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn needle_routes_dispatch_via_needle_to_their_model_groups() {
+    let config = load_config();
+    let route_keys: Vec<String> = config.routes.keys().cloned().collect();
+    let needle_routes: Vec<String> = config
+        .needle
+        .as_ref()
+        .map(|n| {
+            n.schema_overrides
+                .iter()
+                .filter(|(_, s)| !s.general)
+                .map(|(k, _)| k.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        !needle_routes.is_empty(),
+        "needle config declares no non-general schema_overrides — nothing to test"
+    );
+
+    let entries: Vec<MockTranscriptEntry> = needle_routes
+        .iter()
+        .map(|route| {
+            let rref = &config.routes[route];
+            let probe = probe_for_route(route, rref);
+            // A decoy route that differs from the target, so a probe can only
+            // reach the expected group if Needle fired (the classifier decoy
+            // would send it elsewhere).
+            let decoy = route_keys
+                .iter()
+                .find(|k| *k != route)
+                .cloned()
+                .unwrap_or_else(|| config.default_route.clone());
+            MockTranscriptEntry {
+                user_message: probe.clone(),
+                classifier_response: route_classifier_response(&decoy),
+                needle_response: Some(needle_call_envelope(route, 0.95)),
+                expected_route: Some(route.clone()),
+                expect_model_group: Some(rref.group.clone()),
+                dispatch_response: Some(format!("mock {route} answer")),
+                rejected: false,
+                reject_reason_contains: None,
+                ..Default::default()
+            }
+        })
+        .collect();
+    let (server, mock, needle) = spawn_config_mock_server(config, entries.clone()).await;
+
+    for entry in &entries {
+        let route = entry.expected_route.as_deref().expect("derived route");
+        let body = json!({
+            "model": route,
+            "messages": [{"role": "user", "content": entry.user_message}],
+        });
+        let response = post_chat(&server.base_url(), body, 15_000)
+            .await
+            .unwrap_or_else(|e| panic!("needle probe for route '{route}' failed: {e}"));
+        assert_eq!(response.status(), 200, "needle route '{route}' must answer 200");
+        let value: Value = response
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("needle route '{route}' response must be valid JSON: {e}"));
+        let content = value["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("");
+        let expected = format!("mock {route} answer");
+        assert!(
+            content.contains(&expected),
+            "needle route '{route}' must dispatch its answer (not the classifier's decoy), got: {content:?}"
+        );
+    }
+
+    assert!(
+        needle.calls() > 0,
+        "the Needle rung must have been consulted for these probes"
+    );
+    let failures = mock.take_failures();
+    assert!(
+        failures.is_empty(),
+        "needle -> model_group mismatches (a route did not dispatch through its group):\n  {}",
+        failures.join("\n  ")
+    );
+}
+
+/// The `general` category is **not** a Needle decision: a Needle `call` to a
+/// route whose `schema_overrides` entry is marked `general` (e.g. the `local`
+/// general Q&A route) falls through to the classifier LLM, which classifies the
+/// whole prompt as-is — never a Needle short-circuit. Non-general route tools
+/// keep dispatching through their `model_group`. Config-synced: the general and
+/// non-general routes, and the fallback/keep-dispatch expectations, are all
+/// derived from `env/coral-router.json` at runtime, so the suite cannot drift.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn needle_general_category_falls_through_to_classifier() {
+    let config = load_config();
+    let needle = config
+        .needle
+        .as_ref()
+        .expect("needle config present in coral-router.json");
+    let general: Vec<String> = needle
+        .schema_overrides
+        .iter()
+        .filter(|(_, s)| s.general)
+        .map(|(k, _)| k.clone())
+        .collect();
+    let non_general: Vec<String> = needle
+        .schema_overrides
+        .iter()
+        .filter(|(_, s)| !s.general)
+        .map(|(k, _)| k.clone())
+        .collect();
+    assert!(
+        !general.is_empty(),
+        "config must mark at least one schema_override `general` — nothing to test"
+    );
+    assert!(
+        !non_general.is_empty(),
+        "config must declare at least one non-general schema_override — nothing to test"
+    );
+
+    let mut entries: Vec<MockTranscriptEntry> = Vec::new();
+    // General routes: a Needle `call` falls through and the classifier answers
+    // directly (proving the request reached the classifier, not a Needle
+    // dispatch).
+    for route in &general {
+        entries.push(MockTranscriptEntry {
+            user_message: format!("general fallback probe: {route}"),
+            classifier_response: json!({
+                "action": "respond",
+                "response": "GENERAL-CLASSIFIER-ANSWER",
+                "coherence_score": 0.95,
+                "safety_score": 0.9,
+                "intent": "general",
+                "reason": "general category decided by classifier",
+            })
+            .to_string(),
+            needle_response: Some(needle_call_envelope(route, 0.95)),
+            expected_route: None,
+            expect_model_group: None,
+            dispatch_response: None,
+            rejected: false,
+            reject_reason_contains: None,
+            ..Default::default()
+        });
+    }
+    // Non-general control: still dispatches through its group (Needle decides).
+    let control_route = non_general[0].clone();
+    let control_rref = &config.routes[&control_route];
+    let control_probe = format!("non-general control probe: {control_route}");
+    entries.push(MockTranscriptEntry {
+        user_message: control_probe.clone(),
+        classifier_response: route_classifier_response(&control_route),
+        needle_response: Some(needle_call_envelope(&control_route, 0.95)),
+        expected_route: Some(control_route.clone()),
+        expect_model_group: Some(control_rref.group.clone()),
+        dispatch_response: Some(format!("mock {control_route} answer")),
+        rejected: false,
+        reject_reason_contains: None,
+        ..Default::default()
+    });
+
+    let (server, mock, needle_provider) = spawn_config_mock_server(config, entries.clone()).await;
+
+    for entry in &entries {
+        let model = entry
+            .expected_route
+            .clone()
+            .unwrap_or_else(|| "local".to_string());
+        let body = json!({
+            "model": model,
+            "messages": [{"role": "user", "content": entry.user_message}],
+        });
+        let response = post_chat(&server.base_url(), body, 15_000)
+            .await
+            .unwrap_or_else(|e| panic!("probe '{:?}' failed: {e}", entry.user_message));
+        assert_eq!(
+            response.status(),
+            200,
+            "probe '{:?}' must answer",
+            entry.user_message
+        );
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| panic!("probe '{:?}' body: {e}", entry.user_message));
+
+        if entry.user_message == control_probe {
+            let expected = format!("mock {control_route} answer");
+            assert!(
+                text.contains(&expected),
+                "non-general route '{control_route}' must still dispatch via needle, got: {text}"
+            );
+        } else {
+            assert!(
+                text.contains("GENERAL-CLASSIFIER-ANSWER"),
+                "general route '{:?}' must fall through to the classifier (direct answer), got: {text}",
+                entry.user_message
+            );
+            assert!(
+                !text.contains("mock "),
+                "general route '{:?}' must NOT dispatch via needle, got: {text}",
+                entry.user_message
+            );
+        }
+    }
+
+    assert!(
+        needle_provider.calls() > 0,
+        "the Needle rung must have been consulted for these probes"
+    );
+    let failures = mock.take_failures();
+    assert!(
+        failures.is_empty(),
+        "unexpected dispatch/validation for general-fallback probes:\n  {}",
+        failures.join("\n  ")
+    );
+}
+
+/// A tool that declares an `output_template` in `schema_overrides` is answered
+/// **directly** by rendering that template with the bound arguments — no
+/// dispatch, no group validation, no extra inference. Non-template routes keep
+/// dispatching to their model_group. Config-synced: the template-bearing tools,
+/// the argument set, and the expected rendered output are all derived from
+/// `env/coral-router.json` at runtime, so the test cannot drift from it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn needle_direct_tool_response_answers_from_template() {
+    let config = load_config();
+    let needle = config
+        .needle
+        .as_ref()
+        .expect("needle config present in coral-router.json");
+    let template_routes: Vec<(String, String)> = needle
+        .schema_overrides
+        .iter()
+        .filter_map(|(route, schema)| {
+            schema
+                .output_template
+                .as_ref()
+                .map(|t| (route.clone(), t.clone()))
+        })
+        .collect();
+    assert!(
+        !template_routes.is_empty(),
+        "config declares no output_template schema_overrides — nothing to test"
+    );
+
+    let mut entries = Vec::new();
+    let mut expected_outputs: Vec<String> = Vec::new();
+    for (route, template) in &template_routes {
+        // Build a complete argument set from the template's placeholders and
+        // render the expected output with the same pure function the router
+        // uses — the two agree by construction.
+        let mut args = serde_json::Map::new();
+        for key in template_placeholders(template) {
+            args.insert(key.clone(), serde_json::json!(format!("v-{key}")));
+        }
+        let arguments = serde_json::Value::Object(args);
+        let expected = render_output_template(template, arguments.as_object().expect("object"))
+            .expect("a complete argument set must render the template");
+        assert!(
+            !expected.is_empty(),
+            "template for '{route}' rendered empty — a direct answer must be non-empty"
+        );
+        expected_outputs.push(expected.clone());
+
+        // A decoy classifier response: if the probe dispatches (instead of
+        // answering directly) it will surface the decoy, failing the assertion.
+        let decoy = config.routes.keys().next().cloned().unwrap_or_default();
+        entries.push(MockTranscriptEntry {
+            user_message: format!("needle direct probe: {route}"),
+            classifier_response: route_classifier_response(&decoy),
+            needle_response: Some(needle_call_envelope_with_args(route, 0.95, &arguments)),
+            expected_route: None,
+            expect_model_group: None,
+            dispatch_response: Some(format!("mock {route} answer")),
+            rejected: false,
+            reject_reason_contains: None,
+            ..Default::default()
+        });
+    }
+
+    // Control: a non-template schema_override must still dispatch (prove the
+    // direct path is opt-in, not the default for every route).
+    let non_template = needle
+        .schema_overrides
+        .iter()
+        .find(|(_, s)| s.output_template.is_none())
+        .map(|(route, _)| route.clone());
+    let control_route = non_template.expect("config must declare a non-template schema_override");
+    let control_rref = &config.routes[&control_route];
+    entries.push(MockTranscriptEntry {
+        user_message: format!("needle control probe: {control_route}"),
+        classifier_response: route_classifier_response(&control_route),
+        needle_response: Some(needle_call_envelope(&control_route, 0.95)),
+        expected_route: Some(control_route.clone()),
+        expect_model_group: Some(control_rref.group.clone()),
+        dispatch_response: Some(format!("mock {control_route} answer")),
+        rejected: false,
+        reject_reason_contains: None,
+        ..Default::default()
+    });
+
+    let (server, mock, needle_provider) = spawn_config_mock_server(config, entries.clone()).await;
+
+    // Template-bearing probes are answered directly — the rendered template is
+    // the response content, with no dispatch (no route/group validation).
+    for (i, entry) in entries.iter().enumerate() {
+        let body = json!({
+            "model": "local",
+            "messages": [{"role": "user", "content": entry.user_message}],
+        });
+        let response = post_chat(&server.base_url(), body, 15_000)
+            .await
+            .unwrap_or_else(|e| panic!("probe '{:?}' failed: {e}", entry.user_message));
+        assert_eq!(response.status(), 200, "probe '{:?}' must answer", entry.user_message);
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| panic!("probe '{:?}' body: {e}", entry.user_message));
+        let value: Value = serde_json::from_str(&text).unwrap_or(Value::String(text.clone()));
+        let content = value["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("");
+
+        if i < expected_outputs.len() {
+            let expected = &expected_outputs[i];
+            assert!(
+                content.contains(expected),
+                "template route '{:?}' must answer directly with the rendered template '{expected}', got: {text}",
+                entry.user_message
+            );
+            assert!(
+                !content.contains("mock "),
+                "template route '{:?}' must not dispatch, got: {text}",
+                entry.user_message
+            );
+        } else {
+            let expected = format!("mock {control_route} answer");
+            assert!(
+                content.contains(&expected),
+                "non-template route '{}' must still dispatch, got: {text}",
+                control_route
+            );
+        }
+    }
+
+    assert!(
+        needle_provider.calls() > 0,
+        "the Needle rung must have been consulted"
+    );
+    let failures = mock.take_failures();
+    assert!(
+        failures.is_empty(),
+        "unexpected dispatch/validation for direct-template probes:\n  {}",
+        failures.join("\n  ")
+    );
+}
+
 /// Every declared model answers when requested directly by its config key
 /// (bypassing the route table): `target_name` resolves to the model key and
 /// each request returns its canned answer.
@@ -436,10 +820,11 @@ async fn every_declared_model_answers_directly() {
                 dispatch_response: Some(format!("mock answer from {key}")),
                 rejected: false,
                 reject_reason_contains: None,
+                ..Default::default()
             }
         })
         .collect();
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock, _needle) = spawn_config_mock_server(config, entries.clone()).await;
 
     for entry in &entries {
         let key = entry.expected_route.as_deref().expect("model key");
@@ -524,6 +909,7 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
             dispatch_response: Some("DISPATCHED-ANSWER".into()),
             rejected: false,
             reject_reason_contains: None,
+            ..Default::default()
         })
         .collect();
 
@@ -546,10 +932,11 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
             dispatch_response: Some("DISPATCHED-ANSWER".into()),
             rejected: false,
             reject_reason_contains: None,
+            ..Default::default()
         });
     }
 
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock, _needle) = spawn_config_mock_server(config, entries.clone()).await;
 
     for entry in &entries {
         let route = entry.expected_route.as_deref().expect("declared route");
@@ -592,7 +979,7 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn deterministic_commands_dispatch() {
     let config = load_config();
-    let (server, _mock) = spawn_config_mock_server(config.clone(), vec![]).await;
+    let (server, _mock, _needle) = spawn_config_mock_server(config.clone(), vec![]).await;
 
     let cases: &[(&str, &str)] = &[
         ("/help", "help"),
@@ -636,6 +1023,7 @@ async fn pii_requests_are_blocked() {
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("blocked".into()),
+            ..Default::default()
         },
         MockTranscriptEntry {
             user_message: "Email me@test.com please".into(),
@@ -645,6 +1033,7 @@ async fn pii_requests_are_blocked() {
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("email".into()),
+            ..Default::default()
         },
         MockTranscriptEntry {
             user_message: "api_key=sk-abcdefghijklmnop123456".into(),
@@ -654,9 +1043,10 @@ async fn pii_requests_are_blocked() {
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("api_key".into()),
+            ..Default::default()
         },
     ];
-    let (server, mock) = spawn_config_mock_server(config.clone(), entries.clone()).await;
+    let (server, mock, _needle) = spawn_config_mock_server(config.clone(), entries.clone()).await;
 
     for entry in &entries {
         let body = json!({
@@ -692,7 +1082,7 @@ async fn pii_requests_are_blocked() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn health_and_stats_endpoints_report_ok() {
     let config = load_config();
-    let (server, _mock) = spawn_config_mock_server(config, vec![]).await;
+    let (server, _mock, _needle) = spawn_config_mock_server(config, vec![]).await;
 
     let health = get(&server.base_url(), "/health", 10_000)
         .await
@@ -714,7 +1104,7 @@ async fn health_and_stats_endpoints_report_ok() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unknown_path_returns_404() {
     let config = load_config();
-    let (server, _mock) = spawn_config_mock_server(config, vec![]).await;
+    let (server, _mock, _needle) = spawn_config_mock_server(config, vec![]).await;
 
     let response = get(&server.base_url(), "/nonexistent", 10_000)
         .await
@@ -786,7 +1176,7 @@ async fn mock_transcript_entries_serve_their_expected_answers() {
     let default_route = config.default_route.clone();
     let entries = load_transcript_file(mock_transcripts_path())
         .expect("load mock-transcripts.json (validated by mock_transcript_fixture_stays_synced_with_config)");
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock, _needle) = spawn_config_mock_server(config, entries.clone()).await;
 
     for entry in &entries {
         let body = json!({

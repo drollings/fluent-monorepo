@@ -33,6 +33,8 @@ bytes = { workspace = true }
 rusqlite = { workspace = true }
 minijinja = { workspace = true }
 search-vector = { path = "../search-vector" }
+libloading = { workspace = true }
+dirs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

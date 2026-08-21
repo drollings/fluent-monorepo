@@ -74,6 +74,11 @@ impl StageDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PipelineStage {
     DeterministicPreFilter,
+    /// The Needle pre-classifier rung — a `StageDecisionProducer` running
+    /// between `DeterministicPreFilter` and `Classifier`. Emits a routing
+    /// verdict (`Rerouted` + `RoutingTarget`) or declines (`Skipped`, falling
+    /// through to the full classifier).
+    NeedlePreFilter,
     Classifier,
     /// Synthetic error marker only — NOT a real pipeline stage. Retained so
     /// telemetry/rejection paths have a stable value to report when the
@@ -165,6 +170,49 @@ impl StageMetadata {
         self.0.get("fallback").and_then(serde_json::Value::as_bool)
     }
 
+    /// Needle's calibrated confidence for the deciding call, when the engine
+    /// reported one (finetuned weights omit it). Recorded on every Needle
+    /// verdict for the audit trail.
+    pub fn needle_confidence(&self) -> Option<f64> {
+        self.0
+            .get("needle_confidence")
+            .and_then(serde_json::Value::as_f64)
+    }
+
+    /// The tool name the Needle call named (a route key, or an action/target
+    /// name). `None` on decline paths.
+    pub fn needle_tool(&self) -> Option<&str> {
+        self.0
+            .get("needle_tool")
+            .and_then(serde_json::Value::as_str)
+    }
+
+    /// Why the Needle rung produced its verdict (a decline reason, the routed
+    /// tool, or the action tool) — the audit-trail companion to `needle_tool`.
+    pub fn needle_reason(&self) -> Option<&str> {
+        self.0
+            .get("needle_reason")
+            .and_then(serde_json::Value::as_str)
+    }
+
+    /// The routing window (first sentence/paragraph, ≤
+    /// `ROUTING_WINDOW_MAX_CHARS`) Needle actually decided on, when the rung
+    /// ran. Recorded for the audit trail so a Needle decision is attributable
+    /// to the exact input it saw.
+    pub fn needle_window(&self) -> Option<&str> {
+        self.0
+            .get("needle_window")
+            .and_then(serde_json::Value::as_str)
+    }
+
+    /// The rendered direct (template) tool response, when the Needle rung
+    /// answered a tool invocation directly instead of dispatching.
+    pub fn needle_response(&self) -> Option<&str> {
+        self.0
+            .get("needle_response")
+            .and_then(serde_json::Value::as_str)
+    }
+
     // ── Typed setters (producers) ────────────────────────────────────────
 
     pub fn set_routing_target(&mut self, rt: &RoutingTarget) {
@@ -195,6 +243,28 @@ impl StageMetadata {
         self.0["fallback"] = serde_json::Value::Bool(fallback);
     }
 
+    pub fn set_needle_confidence(&mut self, confidence: f64) {
+        if let Some(n) = serde_json::Number::from_f64(confidence) {
+            self.0["needle_confidence"] = serde_json::Value::Number(n);
+        }
+    }
+
+    pub fn set_needle_tool(&mut self, tool: impl Into<String>) {
+        self.0["needle_tool"] = serde_json::Value::String(tool.into());
+    }
+
+    pub fn set_needle_reason(&mut self, reason: impl Into<String>) {
+        self.0["needle_reason"] = serde_json::Value::String(reason.into());
+    }
+
+    pub fn set_needle_window(&mut self, window: impl Into<String>) {
+        self.0["needle_window"] = serde_json::Value::String(window.into());
+    }
+
+    pub fn set_needle_response(&mut self, response: impl Into<String>) {
+        self.0["needle_response"] = serde_json::Value::String(response.into());
+    }
+
     /// Write an arbitrary diagnostic field (not a documented handoff key).
     pub fn insert(&mut self, key: impl AsRef<str>, value: serde_json::Value) {
         self.0[key.as_ref()] = value;
@@ -215,6 +285,7 @@ mod tests {
     fn pipeline_stage_serde_round_trip() {
         for stage in [
             PipelineStage::DeterministicPreFilter,
+            PipelineStage::NeedlePreFilter,
             PipelineStage::Classifier,
             PipelineStage::Router,
         ] {
@@ -291,6 +362,18 @@ mod tests {
         assert_eq!(m.command_result(), Some("result"));
         assert_eq!(m.fallback(), Some(true));
 
+        // Needle handoff keys: confidence/tool/reason ride on every verdict.
+        m.set_needle_confidence(0.9);
+        m.set_needle_tool("fast");
+        m.set_needle_reason("needle route: fast");
+        assert_eq!(m.needle_confidence(), Some(0.9));
+        assert_eq!(m.needle_tool(), Some("fast"));
+        assert_eq!(m.needle_reason(), Some("needle route: fast"));
+
+        // Direct template response accessor.
+        m.set_needle_response("Extracted: 42");
+        assert_eq!(m.needle_response(), Some("Extracted: 42"));
+
         let pii = PiiVerdict {
             pattern: "ssn".into(),
             action: FilterAction::Redact,
@@ -324,6 +407,10 @@ mod tests {
         assert_eq!(m.response(), None);
         assert!(m.pii_filter().is_none());
         assert_eq!(m.fallback(), None);
+        assert_eq!(m.needle_confidence(), None);
+        assert_eq!(m.needle_tool(), None);
+        assert_eq!(m.needle_reason(), None);
+        assert_eq!(m.needle_response(), None);
     }
 
     #[test]

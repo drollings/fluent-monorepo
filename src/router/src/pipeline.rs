@@ -58,6 +58,14 @@ pub struct RoutingTarget {
     /// ordered by intelligence proximity to the request complexity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fallbacks: Vec<RoutingTarget>,
+    /// When set, the target executes a registered DAG `Target` (deterministic
+    /// `TargetWorkUnit` / `ExecuteFn`) instead of dispatching to the inference
+    /// endpoint at `url`. The tree engine sets it for `target` terminal
+    /// leaves; the dispatch path materializes the resolver's ordered
+    /// `TargetWorkUnit` chain from the shared `TargetRegistry` and runs the
+    /// units in dependency order. `url`/`model` are unused for such targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// The model id grammar on the wire: `<base>` qualified with a group or exact
@@ -100,6 +108,7 @@ impl RoutingTarget {
             idle_timeout_ms: entry.idle_timeout_ms,
             total_timeout_ms: entry.total_timeout_ms,
             fallbacks: vec![],
+            target: None,
         }
     }
 
@@ -132,6 +141,7 @@ impl RoutingTarget {
             idle_timeout_ms: entry.idle_timeout_ms,
             total_timeout_ms: entry.total_timeout_ms,
             fallbacks: vec![],
+            target: None,
         }
     }
 }
@@ -180,6 +190,80 @@ pub struct PipelineOrchestrator {
 /// is reserved for serialization boundaries.
 pub const STAGE_DECISION_KEY: &str = "stage.decision";
 
+/// Build the single per-request routing-source audit record (roadmap
+/// Milestone 5): one `route` record the scoring harness can key on to
+/// attribute each request's decision to `needle` vs `classifier`, alongside
+/// the route and the resolved target. The individual per-stage records
+/// (Milestone 4) stay — this is the aggregate summary that names the deciding
+/// stage.
+///
+/// The deciding source is the first *authoritative* outcome: a Needle reroute
+/// or direct (template) response short-circuits the pipeline, so it is the
+/// decision; otherwise the classifier decided (passed a target or answered
+/// directly). A rejected/errored request is not a routing decision and yields
+/// `stage: none`.
+fn deciding_route_record(
+    decisions: &[StageDecision],
+    routing_target: Option<&RoutingTarget>,
+    classifier_response: Option<&String>,
+) -> serde_json::Value {
+    for d in decisions {
+        if d.stage != PipelineStage::NeedlePreFilter {
+            continue;
+        }
+        let meta = StageMetadata::from(d.metadata.clone());
+        match d.verdict {
+            StageVerdict::Rerouted => {
+                let rt = meta.routing_target();
+                return serde_json::json!({
+                    "stage": "needle",
+                    "verdict": "rerouted",
+                    "route": meta.needle_tool(),
+                    "group": rt.as_ref().and_then(|t| t.group.clone()),
+                    "model": rt.as_ref().map(|t| t.model.clone()),
+                    "url": rt.as_ref().map(|t| t.url.clone()),
+                    "window": meta.needle_window(),
+                    "confidence": meta.needle_confidence(),
+                    "reason": meta.needle_reason(),
+                });
+            }
+            StageVerdict::Passed => {
+                if let Some(resp) = meta.needle_response() {
+                    return serde_json::json!({
+                        "stage": "needle",
+                        "verdict": "direct_response",
+                        "route": meta.needle_tool(),
+                        "window": meta.needle_window(),
+                        "confidence": meta.needle_confidence(),
+                        "reason": meta.needle_reason(),
+                        "response_len": resp.len(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    // No authoritative Needle decision → the classifier decided.
+    if let Some(rt) = routing_target {
+        return serde_json::json!({
+            "stage": "classifier",
+            "verdict": "passed",
+            "route": rt.target_name,
+            "group": rt.group,
+            "model": rt.model,
+            "url": rt.url,
+        });
+    }
+    if let Some(resp) = classifier_response {
+        return serde_json::json!({
+            "stage": "classifier",
+            "verdict": "direct_response",
+            "response_len": resp.len(),
+        });
+    }
+    serde_json::json!({ "stage": "none", "verdict": "unresolved" })
+}
+
 impl PipelineOrchestrator {
     pub fn new(stages: Vec<Arc<dyn Component>>) -> Self {
         Self {
@@ -219,6 +303,78 @@ impl PipelineOrchestrator {
         let metadata = StageMetadata::from(decision.metadata.clone());
         match decision.verdict {
             StageVerdict::Passed | StageVerdict::Skipped => {
+                if stage_name == PipelineStage::NeedlePreFilter {
+                    // Needle direct tool response — the cheapest rung answered a
+                    // template-bearing tool invocation directly (no dispatch).
+                    // Short-circuit the pipeline exactly like the classifier
+                    // direct-response branch so the classifier never re-decides.
+                    if let Some(resp) = metadata.needle_response() {
+                        tracing::info!(target: "router.pipeline",
+                            needle_tool = %metadata.needle_tool().unwrap_or("?"),
+                            confidence = ?metadata.needle_confidence(),
+                            response_len = resp.len(),
+                            "needle direct tool response"
+                        );
+                        crate::audit::emit(
+                            "route",
+                            serde_json::json!({
+                                "stage": "needle",
+                                "verdict": "direct_response",
+                                "tool": metadata.needle_tool(),
+                                "confidence": metadata.needle_confidence(),
+                                "window": metadata.needle_window(),
+                                "reason": metadata.needle_reason(),
+                            }),
+                        );
+                        *classifier_response = Some(resp.to_string());
+                        return Some(WorkOutput::typed(
+                            "pipeline_complete",
+                            &PipelineResult {
+                                decisions: vec![decision.clone()],
+                                final_response: None,
+                                rejected: false,
+                                reject_reason: None,
+                                routing_target: routing_target.clone(),
+                                classifier_response: classifier_response.clone(),
+                            },
+                        ));
+                    }
+                }
+                // No direct response from the Needle rung: it either declined
+                // (a `Skipped` — gate rejection, refuse, low confidence,
+                // general-category fallback) or passed an action through (a
+                // `Passed` with a recorded `needle_action`). Both are audited
+                // so every Needle outcome is attributable, matching the LLM
+                // routing records (roadmap Milestone 4).
+                if stage_name == PipelineStage::NeedlePreFilter {
+                    if decision.verdict == StageVerdict::Skipped {
+                        crate::audit::emit(
+                            "route",
+                            serde_json::json!({
+                                "stage": "needle",
+                                "verdict": "declined",
+                                "tool": metadata.needle_tool(),
+                                "confidence": metadata.needle_confidence(),
+                                "window": metadata.needle_window(),
+                                "reason": metadata.needle_reason(),
+                            }),
+                        );
+                    } else if metadata.needle_tool().is_some() {
+                        // A `Passed` action verdict (the call is recorded in
+                        // `needle_action`; execution is deferred).
+                        crate::audit::emit(
+                            "route",
+                            serde_json::json!({
+                                "stage": "needle",
+                                "verdict": "action",
+                                "tool": metadata.needle_tool(),
+                                "confidence": metadata.needle_confidence(),
+                                "window": metadata.needle_window(),
+                                "reason": metadata.needle_reason(),
+                            }),
+                        );
+                    }
+                }
                 if stage_name == PipelineStage::Classifier {
                     if let Some(resp) = metadata.response() {
                         tracing::info!(target: "router.pipeline",
@@ -258,7 +414,50 @@ impl PipelineOrchestrator {
                 None
             }
             StageVerdict::Rerouted => {
-                if let Some(rewritten) = metadata.rewritten_request() {
+                if stage_name == PipelineStage::NeedlePreFilter {
+                    // Needle route verdict — the cheapest rung already decided
+                    // the target with a grammar-constrained call. Short-circuit
+                    // the pipeline so the full classifier never re-decides a
+                    // target Needle chose (roadmap design decision 3: no extra
+                    // classifier pass on the routing decision).
+                    if let Some(rt) = metadata.routing_target() {
+                        let needle_tool = metadata.needle_tool();
+                        tracing::info!(target: "router.pipeline",
+                            needle_tool = %needle_tool.unwrap_or("?"),
+                            confidence = ?metadata.needle_confidence(),
+                            target_route = %rt.target_name.as_deref().unwrap_or("?"),
+                            target_model = %rt.model,
+                            target_url = %rt.url,
+                            "needle pre-filter set routing target"
+                        );
+                        crate::audit::emit(
+                            "route",
+                            serde_json::json!({
+                                "stage": "needle",
+                                "verdict": "rerouted",
+                                "tool": needle_tool,
+                                "confidence": metadata.needle_confidence(),
+                                "window": metadata.needle_window(),
+                                "reason": metadata.needle_reason(),
+                                "target_route": rt.target_name,
+                                "target_model": rt.model,
+                                "target_url": rt.url,
+                            }),
+                        );
+                        *routing_target = Some(rt);
+                        return Some(WorkOutput::typed(
+                            "pipeline_complete",
+                            &PipelineResult {
+                                decisions: vec![decision.clone()],
+                                final_response: None,
+                                rejected: false,
+                                reject_reason: None,
+                                routing_target: routing_target.clone(),
+                                classifier_response: None,
+                            },
+                        ));
+                    }
+                } else if let Some(rewritten) = metadata.rewritten_request() {
                     tracing::info!(target: "router.pipeline",
                         new_request_len = rewritten.len(),
                         "request rerouted"
@@ -329,7 +528,8 @@ impl PipelineOrchestrator {
 
 /// Router-internal downcast to the typed decision producers. The
 /// pipelines built by `config::RouterConfigBuilder` contain exactly
-/// `DeterministicPreFilter` and `ClassifierStage`; the `None` fallback keeps
+/// `DeterministicPreFilter`, `NeedlePreFilter` (when `needle.enabled`), and
+/// `ClassifierStage`; the `None` fallback keeps
 /// the orchestrator usable with arbitrary components (test stubs, pipeline
 /// refs), which then go through the `WorkOutput` channel unchanged.
 fn as_producer(stage: &dyn Component) -> Option<&dyn StageDecisionProducer> {
@@ -337,6 +537,10 @@ fn as_producer(stage: &dyn Component) -> Option<&dyn StageDecisionProducer> {
         .map(|s| s as &dyn StageDecisionProducer)
         .or_else(|| {
             component_downcast_ref::<crate::stages::classifier::ClassifierStage>(stage)
+                .map(|s| s as &dyn StageDecisionProducer)
+        })
+        .or_else(|| {
+            component_downcast_ref::<crate::stages::needle::NeedlePreFilter>(stage)
                 .map(|s| s as &dyn StageDecisionProducer)
         })
 }
@@ -449,6 +653,17 @@ impl WorkUnit for PipelineOrchestrator {
                         &mut routing_target,
                         &mut classifier_response,
                     ) {
+                        // One aggregate routing-source record per request
+                        // (roadmap Milestone 5): the scorer keys on this to
+                        // attribute the request to needle vs classifier.
+                        crate::audit::emit(
+                            "route",
+                            deciding_route_record(
+                                &decisions,
+                                routing_target.as_ref(),
+                                classifier_response.as_ref(),
+                            ),
+                        );
                         return early_return;
                     }
                 }
@@ -481,6 +696,14 @@ impl WorkUnit for PipelineOrchestrator {
             routing_model = ?routing_target.as_ref().map(|rt| &rt.model),
             routing_route = ?routing_target.as_ref().and_then(|rt| rt.target_name.as_ref()),
             "pipeline complete"
+        );
+
+        // One aggregate routing-source record per request (roadmap Milestone
+        // 5) for the normal (non-short-circuit) completion path — e.g. a
+        // Needle decline that fell through to a classifier decision.
+        crate::audit::emit(
+            "route",
+            deciding_route_record(&decisions, routing_target.as_ref(), classifier_response.as_ref()),
         );
 
         WorkOutput::typed(

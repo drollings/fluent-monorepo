@@ -1,20 +1,23 @@
-//! Chart selection — deterministic capability match → HNSW retrieval → LLM
-//! adjudication.
+//! Chart selection — deterministic capability match → HNSW retrieval →
+//! adjudication (Needle tool-pick or LLM).
 //!
 //! Given a raw request, the selector picks the best chart, cheapest step
 //! first (VISION: deterministic before probabilistic):
 //!
 //! 1. **Deterministic capability match** — if the request already names a
 //!    chart or one of its provides assets, select it with `score = 1.0`.
-//!    No LLM call.
+//!    No model call — a request naming a chart/asset never reaches Needle.
 //! 2. **HNSW retrieval** — embed the *raw user request* (never a
 //!    classifier-authored summary, review R1) and query the `workflow_library`
 //!    index built at boot in `ChartStore`; candidates below `cfg.min_score`
 //!    are dropped.
-//! 3. **LLM adjudication** — one `ChatBackend` call over the candidate list
-//!    returns the single best chart (or none). The LLM decides *which* chart;
-//!    the deterministic entity binding decides *whether it is executable*
-//!    (`Exact` vs `Partial` with interview gaps).
+//! 3. **Adjudication** — pick the single best chart from the candidate list.
+//!    The cheapest adjudicator wins: a `NeedleBackend` tool-pick
+//!    (non-generative, grammar-constrained — one candidate per tool) when one
+//!    is configured, else one `ChatBackend` call over the candidate list. The
+//!    adjudicator decides *which* chart; the deterministic entity binding
+//!    decides *whether it is executable* (`Exact` vs `Partial` with interview
+//!    gaps).
 //!
 //! Everything here is pure data-in / data-out — no orchestration state.
 
@@ -29,6 +32,8 @@ use crate::charts::binding::{bind_chart, AmbiguousDep, Bindings, Entity};
 use crate::charts::store::ChartStore;
 use crate::charts::{ChartDef, ChartError};
 use crate::config::ChartsConfig;
+use crate::needle::backend::NeedleBackend;
+use crate::needle::envelope::NeedleEnvelope;
 
 /// How well a request fits a chart.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +80,10 @@ pub struct ChartSelector {
     /// Adjudicator backend (mock-injectable). `None` skips the LLM step and
     /// falls back to the top HNSW candidate.
     client: Option<Arc<dyn ChatBackend>>,
+    /// Needle adjudicator backend (mock-injectable). When set, Step 3 uses
+    /// Needle (a non-generative tool-pick over the HNSW shortlist) instead of
+    /// the LLM `client`. `None` keeps the LLM adjudicator (or no adjudicator).
+    needle_adjudicator: Option<Arc<dyn NeedleBackend>>,
     /// Reranker backend (mock-injectable). `None` skips the rerank step.
     reranker: Option<Arc<dyn ChatBackend>>,
     cfg: ChartsConfig,
@@ -90,9 +99,21 @@ impl ChartSelector {
         Self {
             store,
             client,
+            needle_adjudicator: None,
             reranker: None,
             cfg,
         }
+    }
+
+    /// Attach a Needle adjudicator backend for Step 3. When set, the HNSW
+    /// shortlist is adjudicated by a Needle tool-pick (cheapest, deterministic
+    /// grammar) instead of the LLM. A decline (`refuse`/`text`/multi-call /
+    /// unknown candidate) is honored as a chart `Mismatch`; a backend error
+    /// degrades to the top HNSW candidate.
+    #[must_use]
+    pub fn with_needle_adjudicator(mut self, backend: Arc<dyn NeedleBackend>) -> Self {
+        self.needle_adjudicator = Some(backend);
+        self
     }
 
     /// Attach a reranker backend for Step 2.5 (candidate re-ranking).
@@ -128,30 +149,33 @@ impl ChartSelector {
         // must judge). Failure degrades to the HNSW order.
         let candidates = self.rerank(request, candidates);
 
-        // Step 3: LLM adjudication over the candidate list.
-        if let Some(client) = &self.client {
-            match self.adjudicate(client, request, &candidates) {
-                Ok(Some((name, gaps))) => {
-                    let score = candidates
-                        .iter()
-                        .find(|(n, _)| *n == name)
-                        .map_or(0.0, |(_, s)| *s);
-                    let Some(chart) = self.store.get(&name) else {
-                        return Ok(ChartMatch::mismatch());
-                    };
-                    return Ok(self.build_match(&chart, score, entities, &gaps));
-                }
-                Ok(None) => {
-                    // The LLM judged no candidate fits — honor that.
+        // Step 3: adjudicate the HNSW shortlist — Needle (cheapest,
+        // non-generative tool-pick) when configured, else the LLM
+        // adjudicator. Both honor an explicit "no candidate fits" (Mismatch →
+        // fresh planning); an error or a missing backend degrades to the top
+        // HNSW candidate. The deterministic capability pre-match (step 1)
+        // already returned for any request naming a chart/asset, so this only
+        // ever sees retrieval-sourced candidates.
+        match self.adjudication(request, &candidates) {
+            Adjudication::Pick { name, gaps } => {
+                let score = candidates
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map_or(0.0, |(_, s)| *s);
+                let Some(chart) = self.store.get(&name) else {
                     return Ok(ChartMatch::mismatch());
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "router.charts.select",
-                        error = %e,
-                        "adjudicator call failed — using top HNSW candidate"
-                    );
-                }
+                };
+                return Ok(self.build_match(&chart, score, entities, &gaps));
+            }
+            Adjudication::Mismatch => {
+                // The adjudicator judged no candidate fits — honor that.
+                return Ok(ChartMatch::mismatch());
+            }
+            Adjudication::Unavailable => {
+                tracing::warn!(
+                    target: "router.charts.select",
+                    "adjudicator unavailable or failed — using top HNSW candidate"
+                );
             }
         }
 
@@ -329,9 +353,83 @@ impl ChartSelector {
         Ok(Some((name.to_string(), out.gaps)))
     }
 
+    /// Step 3 dispatch: Needle adjudicator when configured, else the LLM
+    /// adjudicator, else "unavailable". `Adjudication::Mismatch` means the
+    /// adjudicator explicitly judged no candidate fits (honored → fresh
+    /// planning); `Adjudication::Unavailable` means no backend or a backend
+    /// error (degrade to the top HNSW candidate).
+    fn adjudication(
+        &self,
+        request: &str,
+        candidates: &[(String, f64)],
+    ) -> Adjudication {
+        if let Some(needle) = &self.needle_adjudicator {
+            return match self.adjudicate_with_needle(needle, request, candidates) {
+                Ok(Some((name, gaps))) => Adjudication::Pick { name, gaps },
+                Ok(None) => {
+                    tracing::warn!(
+                        target: "router.charts.select",
+                        "needle adjudicator declined — treating as chart mismatch"
+                    );
+                    Adjudication::Mismatch
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "router.charts.select",
+                        error = %e,
+                        "needle adjudicator call failed — using top HNSW candidate"
+                    );
+                    Adjudication::Unavailable
+                }
+            };
+        }
+        if let Some(client) = &self.client {
+            return match self.adjudicate(client, request, candidates) {
+                Ok(Some((name, gaps))) => Adjudication::Pick { name, gaps },
+                Ok(None) => Adjudication::Mismatch,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "router.charts.select",
+                        error = %e,
+                        "adjudicator call failed — using top HNSW candidate"
+                    );
+                    Adjudication::Unavailable
+                }
+            };
+        }
+        Adjudication::Unavailable
+    }
+
+    /// Needle adjudication (Step 3, Needle path): one grammar-constrained
+    /// tool-pick over the HNSW shortlist. Each candidate chart becomes a tool
+    /// (name + description + provides); the single emitted tool call is the
+    /// selected chart. A decline (`refuse`/`text`/multi-call/unknown) returns
+    /// `Ok(None)` — the caller honors it as a chart `Mismatch` (fresh
+    /// planning), mirroring the LLM adjudicator's explicit-no-fit contract.
+    fn adjudicate_with_needle(
+        &self,
+        backend: &Arc<dyn NeedleBackend>,
+        request: &str,
+        candidates: &[(String, f64)],
+    ) -> Result<Option<(String, Vec<String>)>, ChartError> {
+        let tools_json = render_candidate_tools(candidates, &self.store);
+        tracing::debug!(
+            target: "router.charts.select",
+            candidates = candidates.len(),
+            tools_len = tools_json.len(),
+            "needle chart adjudicator request",
+        );
+        let envelope = backend
+            .complete(request, &tools_json, crate::stages::needle::MAX_NEW_TOKENS)
+            .map_err(|e| ChartError::Selection {
+                reason: format!("needle adjudicator call failed: {e}"),
+            })?;
+        let name = needle_pick_from_envelope(&envelope, candidates);
+        Ok(name.map(|n| (n, Vec::new())))
+    }
+
     /// Build a `ChartMatch` for a chosen chart, resolving any ambiguous
     /// deps first (LLM pick with a deterministic tie-break fallback).
-    ///
     /// The fit is the union of the deterministic binding's gaps (unmatched
     /// required deps) and the adjudicator's flagged gaps. The binding is the
     /// authority on executability; the LLM's gaps capture semantic
@@ -426,6 +524,77 @@ impl ChartSelector {
         }
         picked
     }
+}
+
+/// The Step-3 adjudication outcome, shared by the Needle and LLM backends so
+/// `select` handles both uniformly.
+enum Adjudication {
+    /// A candidate chart was picked (name + adjudicator-flagged gaps).
+    Pick { name: String, gaps: Vec<String> },
+    /// The adjudicator explicitly judged no candidate fits (honored).
+    Mismatch,
+    /// No adjudicator, or the adjudicator call failed (degrade to top HNSW).
+    Unavailable,
+}
+
+/// One tool schema per HNSW candidate chart — the Needle grammar's pick set.
+/// Mirrors the adjudicator prompt's candidate list so the LLM and Needle
+/// adjudicators agree on exactly what is pickable.
+fn render_candidate_tools(candidates: &[(String, f64)], store: &ChartStore) -> String {
+    let tools: Vec<serde_json::Value> = candidates
+        .iter()
+        .filter_map(|(name, _)| {
+            let chart = store.get(name)?;
+            Some(serde_json::json!({
+                "name": name,
+                "description": chart.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            }))
+        })
+        .collect();
+    serde_json::to_string(&tools).unwrap_or_else(|_| "[]".into())
+}
+
+/// Adapt a Needle envelope to a selected candidate chart name.
+///
+/// A `refuse`/`text` envelope, a multi-tool call, or a tool naming no
+/// candidate chart is a decline — `None` honors it as a chart `Mismatch`
+/// (never a silent default pick). This mirrors the LLM adjudicator's
+/// validation of hallucinated charts.
+fn needle_pick_from_envelope(
+    envelope: &NeedleEnvelope,
+    candidates: &[(String, f64)],
+) -> Option<String> {
+    if !envelope.is_call() {
+        tracing::warn!(
+            target: "router.charts.select",
+            envelope_type = ?envelope.r#type,
+            "needle declined chart adjudication ({:?})",
+            envelope.reasoning.as_deref().unwrap_or("no reason"),
+        );
+        return None;
+    }
+    let Some(tool) = envelope.single_tool() else {
+        tracing::warn!(
+            target: "router.charts.select",
+            calls = envelope.function_calls.len(),
+            "needle emitted multiple tool calls — treating as chart mismatch",
+        );
+        return None;
+    };
+    if !candidates.iter().any(|(n, _)| n == tool) {
+        tracing::warn!(
+            target: "router.charts.select",
+            chart = tool,
+            "needle picked a chart outside the candidate list — treating as mismatch",
+        );
+        return None;
+    }
+    Some(tool.to_string())
 }
 
 /// Deterministic tie-break for an ambiguous dep: first, then lexicographic
@@ -696,6 +865,8 @@ mod tests {
     use super::*;
     use crate::charts::store::{chart_from_str, ChartStore};
     use crate::hnsw::HnswIndexHandle;
+    use crate::needle::backend::MockNeedleBackend;
+    use crate::needle::envelope::{NeedleEnvelope, NeedleEnvelopeType, NeedleFunctionCall};
     use crate::test_stubs::{HashEmbedder, StubChatBackend};
     use std::path::Path;
     use tempfile::TempDir;
@@ -879,6 +1050,148 @@ mod tests {
             .select("how do I cook pasta for dinner", &[])
             .expect("selection");
         assert_ne!(m.fit, ChartFit::Mismatch);
+    }
+
+    // ── Step 3: Needle adjudication ───────────────────────────────────
+
+    fn needle_selector(
+        store: Arc<ChartStore>,
+        needle: Option<Arc<dyn NeedleBackend>>,
+        min_score: f64,
+    ) -> ChartSelector {
+        selector(store, None, min_score)
+            .with_needle_adjudicator(needle.expect("needle backend provided"))
+    }
+
+    fn needle_call(tool: &str) -> NeedleEnvelope {
+        NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Call,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![NeedleFunctionCall {
+                name: tool.to_string(),
+                arguments: serde_json::json!({}),
+            }],
+            reasoning: Some(format!("pick {tool}")),
+            confidence: Some(0.9),
+            results: None,
+        }
+    }
+
+    #[test]
+    fn needle_adjudicator_picks_chart_from_shortlist() {
+        let tmp = TempDir::new().unwrap();
+        let index_path = tmp.path().join("workflow_library.sqlite");
+        let store = store_with(&[triage_chart_json(), draft_chart_json()], Some(&index_path));
+        let needle = Arc::new(MockNeedleBackend::always(needle_call("bug_triage")));
+        let selector = needle_selector(store, Some(needle), 0.0);
+        let m = selector
+            .select(
+                "Triage a bug report into reproduction, root cause, and fix plan",
+                &[report_entity()],
+            )
+            .expect("needle-adjudicated selection");
+        assert_eq!(m.chart, "bug_triage");
+        assert_eq!(m.fit, ChartFit::Exact, "binding still derives the fit");
+    }
+
+    #[test]
+    fn needle_adjudicator_decline_is_mismatch() {
+        let tmp = TempDir::new().unwrap();
+        let index_path = tmp.path().join("workflow_library.sqlite");
+        let store = store_with(&[triage_chart_json()], Some(&index_path));
+        // A refuse envelope is a decline → honored as a chart Mismatch (fresh
+        // planning), never a silent default pick.
+        let needle = Arc::new(MockNeedleBackend::always(NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Refuse,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![],
+            reasoning: Some("no chart fits".to_string()),
+            confidence: None,
+            results: None,
+        }));
+        let selector = needle_selector(store, Some(needle), 0.0);
+        let m = selector
+            .select("Triage a bug report", &[])
+            .expect("selection");
+        assert_eq!(m.fit, ChartFit::Mismatch);
+    }
+
+    #[test]
+    fn needle_adjudicator_unknown_candidate_is_mismatch() {
+        let tmp = TempDir::new().unwrap();
+        let index_path = tmp.path().join("workflow_library.sqlite");
+        let store = store_with(&[triage_chart_json()], Some(&index_path));
+        // A tool call naming a chart outside the candidate list is a decline,
+        // mirroring the LLM adjudicator's hallucinated-chart rejection.
+        let needle = Arc::new(MockNeedleBackend::always(needle_call("not_a_real_chart")));
+        let selector = needle_selector(store, Some(needle), 0.0);
+        let m = selector
+            .select("Triage a bug report", &[])
+            .expect("selection");
+        assert_eq!(m.fit, ChartFit::Mismatch);
+    }
+
+    #[test]
+    fn needle_adjudicator_error_degrades_to_top_hnsw_candidate() {
+        let tmp = TempDir::new().unwrap();
+        let index_path = tmp.path().join("workflow_library.sqlite");
+        let store = store_with(
+            &[triage_chart_json(), draft_chart_json()],
+            Some(&index_path),
+        );
+        // A failing backend behaves like an LLM outage: degrade to the top
+        // HNSW candidate rather than error the request.
+        let needle = Arc::new(MockNeedleBackend::failing());
+        let selector = needle_selector(store, Some(needle), 0.0);
+        let m = selector
+            .select(
+                "Triage a bug report into reproduction, root cause, and fix plan",
+                &[report_entity()],
+            )
+            .expect("selection");
+        assert_eq!(m.chart, "bug_triage", "top HNSW candidate wins on needle error");
+    }
+
+    #[test]
+    fn deterministic_pre_match_bypasses_needle() {
+        let store = store_with(&[triage_chart_json()], None);
+        // A request naming the chart resolves deterministically (step 1) —
+        // the failing Needle backend must never be called.
+        let needle = Arc::new(MockNeedleBackend::failing());
+        let selector = needle_selector(store, Some(needle), 0.6);
+        let m = selector
+            .select("please bug_triage this issue", &[report_entity()])
+            .expect("deterministic hit must not reach needle");
+        assert_eq!(m.chart, "bug_triage");
+        assert!((m.score - 1.0).abs() < f64::EPSILON);
+        assert_eq!(m.fit, ChartFit::Exact);
+    }
+
+    #[test]
+    fn parse_candidate_tools_lists_every_candidate() {
+        let tmp = TempDir::new().unwrap();
+        let index_path = tmp.path().join("workflow_library.sqlite");
+        let store = store_with(
+            &[triage_chart_json(), draft_chart_json()],
+            Some(&index_path),
+        );
+        let candidates = vec![
+            ("bug_triage".to_string(), 0.9),
+            ("draft_doc".to_string(), 0.8),
+        ];
+        let tools: serde_json::Value =
+            serde_json::from_str(&render_candidate_tools(&candidates, &store)).unwrap();
+        let arr = tools.as_array().expect("tool array");
+        assert_eq!(arr.len(), 2);
+        let names: Vec<&str> = arr
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+        assert_eq!(names, vec!["bug_triage", "draft_doc"]);
     }
 
     #[test]

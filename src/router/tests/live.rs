@@ -9,3 +9,6 @@
 
 #[path = "live/smoke_live.rs"]
 mod smoke_live;
+
+#[path = "live/needle_live.rs"]
+mod needle_live;

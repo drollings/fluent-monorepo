@@ -5,11 +5,15 @@ mod tests {
     use fluent_wvr::prelude::*;
 
     use crate::config::{
-        ConfidenceGate, FilterAction, FilterOutcome, FilterScope, PatternEntry, RejectPatterns,
+        ConfidenceGate, FilterAction, FilterOutcome, FilterScope, ModelGroup, NeedleConfig,
+        NeedleRouteSchema, PatternEntry, RejectPatterns, RouteRef, RoutingConfig,
     };
+    use crate::needle::backend::MockNeedleBackend;
+    use crate::needle::envelope::{NeedleEnvelope, NeedleEnvelopeType, NeedleFunctionCall};
     use crate::pipeline::PipelineOrchestrator;
     use crate::pipeline_types::{PipelineStage, StageDecision, StageMetadata, StageVerdict};
     use crate::stages::deterministic::DeterministicPreFilter;
+    use crate::stages::needle::NeedlePreFilter;
     use crate::test_support::capture_logs;
 
     fn make_pii_filter() -> DeterministicPreFilter {
@@ -304,6 +308,210 @@ mod tests {
         let stage = Arc::new(DeterministicPreFilter::new());
         let orchestrator = PipelineOrchestrator::builder().push(stage).build();
         assert_eq!(orchestrator.name(), "pipeline.orchestrator");
+    }
+
+    // ── Needle audit records ──────────────────────────────────────────────
+    //
+    // Every Needle outcome (rerouted, direct response, action, declined) is
+    // emitted to the durable `router.audit` stream with the same shape as LLM
+    // routing records plus the decision `window` (roadmap Milestone 4). These
+    // tests drive the rung through the orchestrator under `capture_logs` and
+    // assert the flat JSON audit line carries `stage: "needle"` and the
+    // expected verdict/window/tool/confidence.
+
+    fn needle_routing() -> RoutingConfig {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "fast".into(),
+            RouteRef {
+                group: "fast".into(),
+                pipelines: vec!["default".into()],
+                description: "fast route".into(),
+                always_route: false,
+            },
+        );
+        routes.insert(
+            "local".into(),
+            RouteRef {
+                group: "local".into(),
+                pipelines: vec!["default".into()],
+                description: "local route".into(),
+                always_route: false,
+            },
+        );
+        let mut models = std::collections::HashMap::new();
+        models.insert(
+            "fast_model".into(),
+            serde_json::from_value(serde_json::json!({
+                "endpoint": "http://127.0.0.1:8081/v1/chat/completions",
+                "name": "fast-model", "intelligence": 1,
+                "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "speed": 8,
+            }))
+            .unwrap(),
+        );
+        models.insert(
+            "local_model".into(),
+            serde_json::from_value(serde_json::json!({
+                "endpoint": "http://127.0.0.1:8082/v1/chat/completions",
+                "name": "local-model", "intelligence": 2,
+                "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "speed": 7,
+            }))
+            .unwrap(),
+        );
+        let mut model_groups = std::collections::HashMap::new();
+        model_groups.insert("fast".into(), ModelGroup::Array(vec!["fast_model".into()]));
+        model_groups.insert("local".into(), ModelGroup::Array(vec!["local_model".into()]));
+        RoutingConfig {
+            routes,
+            models,
+            model_groups,
+            system_prompt: String::new(),
+            safety_threshold: 0.7,
+            default_route: "local".into(),
+            score_matrix: None,
+        }
+    }
+
+    fn needle_call_envelope(tool: &str) -> NeedleEnvelope {
+        NeedleEnvelope {
+            r#type: NeedleEnvelopeType::Call,
+            success: None,
+            error: None,
+            error_code: None,
+            function_calls: vec![NeedleFunctionCall {
+                name: tool.to_string(),
+                arguments: serde_json::json!({}),
+            }],
+            reasoning: None,
+            confidence: Some(0.95),
+            results: None,
+        }
+    }
+
+    fn needle_schema(name: &str, general: bool, output_template: Option<&str>) -> NeedleRouteSchema {
+        NeedleRouteSchema {
+            name: name.into(),
+            description: format!("{name} route"),
+            examples: vec![],
+            parameters: serde_json::json!({"type": "object", "properties": {}}),
+            intents: vec![],
+            output_template: output_template.map(str::to_string),
+            general,
+        }
+    }
+
+    fn base_needle_config() -> NeedleConfig {
+        let mut config = NeedleConfig::default();
+        config
+            .schema_overrides
+            .insert("fast".into(), needle_schema("fast", false, None));
+        config
+            .schema_overrides
+            .insert("local".into(), needle_schema("local", true, None));
+        config
+    }
+
+    fn needle_stage(backend: MockNeedleBackend, config: NeedleConfig) -> Arc<dyn Component> {
+        Arc::new(NeedlePreFilter::new(Arc::new(backend), config, needle_routing()))
+    }
+
+    #[test]
+    fn needle_rerouted_emits_audit_record() {
+        let stage =
+            needle_stage(MockNeedleBackend::always(needle_call_envelope("fast")), base_needle_config());
+        let orchestrator = PipelineOrchestrator::new(vec![stage]);
+        let ctx = make_ctx("route me to fast");
+        let (_result, logs) = capture_logs(|| {
+            orchestrator.execute(&ctx).expect("execute");
+        });
+        let joined = logs.join("\n");
+        assert!(joined.contains("router.audit"), "must land on router.audit, got:\n{joined}");
+        assert!(joined.contains("\"stage\":\"needle\""), "stage field, got:\n{joined}");
+        assert!(joined.contains("\"verdict\":\"rerouted\""), "verdict, got:\n{joined}");
+        assert!(joined.contains("\"tool\":\"fast\""), "tool, got:\n{joined}");
+        assert!(joined.contains("\"confidence\":0.95"), "confidence, got:\n{joined}");
+        assert!(joined.contains("\"window\":\"route me to fast\""), "window, got:\n{joined}");
+        assert!(joined.contains("\"reason\":\"needle route: fast\""), "reason, got:\n{joined}");
+    }
+
+    #[test]
+    fn needle_declined_emits_audit_record() {
+        let stage =
+            needle_stage(MockNeedleBackend::always(needle_call_envelope("local")), base_needle_config());
+        let orchestrator = PipelineOrchestrator::new(vec![stage]);
+        let ctx = make_ctx("route me to local");
+        let (_result, logs) = capture_logs(|| {
+            orchestrator.execute(&ctx).expect("execute");
+        });
+        let joined = logs.join("\n");
+        assert!(joined.contains("router.audit"), "must land on router.audit, got:\n{joined}");
+        assert!(joined.contains("\"stage\":\"needle\""), "stage field, got:\n{joined}");
+        assert!(joined.contains("\"verdict\":\"declined\""), "verdict, got:\n{joined}");
+        assert!(joined.contains("\"tool\":\"local\""), "tool, got:\n{joined}");
+        assert!(joined.contains("\"window\":\"route me to local\""), "window, got:\n{joined}");
+        assert!(joined.contains("general category"), "reason must name the fallback, got:\n{joined}");
+    }
+
+    #[test]
+    fn needle_direct_response_emits_audit_record() {
+        let mut config = base_needle_config();
+        config
+            .schema_overrides
+            .insert("extract".into(), needle_schema("extract", false, Some("Extracted: {value}")));
+        let mut env = needle_call_envelope("extract");
+        env.function_calls[0].arguments = serde_json::json!({"value": "42"});
+        let stage = needle_stage(MockNeedleBackend::always(env), config);
+        let orchestrator = PipelineOrchestrator::new(vec![stage]);
+        let ctx = make_ctx("extract 42");
+        let (_result, logs) = capture_logs(|| {
+            orchestrator.execute(&ctx).expect("execute");
+        });
+        let joined = logs.join("\n");
+        assert!(joined.contains("router.audit"), "must land on router.audit, got:\n{joined}");
+        assert!(joined.contains("\"stage\":\"needle\""), "stage field, got:\n{joined}");
+        assert!(joined.contains("\"verdict\":\"direct_response\""), "verdict, got:\n{joined}");
+        assert!(joined.contains("\"tool\":\"extract\""), "tool, got:\n{joined}");
+        assert!(joined.contains("\"window\":\"extract 42\""), "window, got:\n{joined}");
+    }
+
+    #[test]
+    fn needle_reroute_emits_aggregate_deciding_stage_record() {
+        // Roadmap Milestone 5: one aggregate `route` record per request that
+        // names the deciding stage (needle vs classifier) and the resolved
+        // target, so the live scorer can attribute the request. The per-decision
+        // records stay; this asserts the aggregate (`route`/`group` keys are
+        // unique to it).
+        let stage =
+            needle_stage(MockNeedleBackend::always(needle_call_envelope("fast")), base_needle_config());
+        let orchestrator = PipelineOrchestrator::new(vec![stage]);
+        let ctx = make_ctx("route me to fast");
+        let (_result, logs) = capture_logs(|| {
+            orchestrator.execute(&ctx).expect("execute");
+        });
+        let joined = logs.join("\n");
+        assert!(joined.contains("\"stage\":\"needle\""), "stage, got:\n{joined}");
+        assert!(joined.contains("\"verdict\":\"rerouted\""), "verdict, got:\n{joined}");
+        assert!(joined.contains("\"route\":\"fast\""), "route, got:\n{joined}");
+        assert!(joined.contains("\"group\":\"fast\""), "group, got:\n{joined}");
+        assert!(joined.contains("\"model\":\"fast-model\""), "model, got:\n{joined}");
+    }
+
+    #[test]
+    fn unresolved_pipeline_emits_none_aggregate_deciding_stage_record() {
+        // A pipeline where no stage produced an authoritative decision (here: a
+        // Needle decline with no classifier stage to fall through to) yields an
+        // aggregate record that names `stage: none` — the aggregate mechanism
+        // must not fabricate a deciding stage for an unresolved request.
+        let stage =
+            needle_stage(MockNeedleBackend::always(needle_call_envelope("local")), base_needle_config());
+        let orchestrator = PipelineOrchestrator::new(vec![stage]);
+        let ctx = make_ctx("route me to local");
+        let (_result, logs) = capture_logs(|| {
+            orchestrator.execute(&ctx).expect("execute");
+        });
+        let joined = logs.join("\n");
+        assert!(joined.contains("\"stage\":\"none\""), "stage, got:\n{joined}");
+        assert!(joined.contains("\"verdict\":\"unresolved\""), "verdict, got:\n{joined}");
     }
 
     #[test]
