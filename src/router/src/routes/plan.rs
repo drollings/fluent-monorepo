@@ -235,6 +235,12 @@ impl PlanRoute {
         self.charts.as_ref()
     }
 
+    /// The shared chart store `Arc` (for the tool-plan `chart` lookup resolver,
+    /// which holds its own `Arc` to the same store the plan route serves).
+    pub fn chart_store_arc(&self) -> &Arc<ChartStore> {
+        &self.charts
+    }
+
     /// Plan a request against the chart library, executing server-side.
     ///
     /// Selection outcome drives the returned plan:

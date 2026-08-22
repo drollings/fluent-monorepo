@@ -135,24 +135,6 @@ pub struct TargetMatch {
     pub assessments: Vec<AssessmentRecord>,
 }
 
-/// Step 1 of §4.1: the cheapest index whose `intelligence` meets the
-/// classifier's complexity estimate.
-///
-/// Candidates are in config order (ascending cost and intelligence). Returns
-/// `0` when `classifier_complexity` is absent or no member qualifies — the
-/// cheapest candidate self-assesses first; the climb never skips a candidate
-/// the classifier already ruled out as too weak when a stronger one is cheaper
-/// (cost ordering governs within the group).
-pub fn start_index(candidates: &[TargetCandidate], classifier_complexity: Option<u8>) -> usize {
-    let Some(c) = classifier_complexity else {
-        return 0;
-    };
-    candidates
-        .iter()
-        .position(|cand| cand.intelligence >= c)
-        .unwrap_or(0)
-}
-
 /// The match rule for a single assessed candidate (§4.1 step 2c): a candidate
 /// matches when its assessed complexity does not exceed its configured
 /// `intelligence`. The "last member always matches" escape is enforced by the
@@ -252,7 +234,6 @@ impl TargetMatcher {
         group: &str,
         routing: &RoutingConfig,
         candidates: &[TargetCandidate],
-        classifier_complexity: Option<u8>,
         user_text: &str,
     ) -> Option<TargetMatch> {
         if candidates.is_empty() {
@@ -265,7 +246,10 @@ impl TargetMatcher {
             return None;
         }
 
-        let start = start_index(candidates, classifier_complexity);
+        // The classifier no longer seeds a complexity estimate (DD-2): the
+        // climb always starts at the cheapest candidate, which self-assesses
+        // first, and proceeds in cost order.
+        let start = 0;
         let mut assessments: Vec<AssessmentRecord> = Vec::with_capacity(candidates.len());
         let mut matched_index = candidates.len() - 1;
 
@@ -321,7 +305,6 @@ impl TargetMatcher {
         let fallbacks = Self::build_fallbacks(
             routing,
             route,
-            classifier_complexity,
             &primary,
             candidates,
             matched_index,
@@ -477,7 +460,6 @@ impl TargetMatcher {
     fn build_fallbacks(
         routing: &RoutingConfig,
         route: &str,
-        classifier_complexity: Option<u8>,
         primary: &RoutingTarget,
         candidates: &[TargetCandidate],
         matched_index: usize,
@@ -496,7 +478,7 @@ impl TargetMatcher {
             }
         }
 
-        for (name, entry) in routing.all_dispatch_targets(route, classifier_complexity) {
+        for (name, entry) in routing.all_dispatch_targets(route, None) {
             let rt = RoutingTarget::from_model_entry(&name, &entry);
             if seen.insert(rt.model.clone()) {
                 result.push(rt);
@@ -587,44 +569,6 @@ mod tests {
     }
 
     // ── Pure selection core ──────────────────────────────────────────────
-
-    #[test]
-    fn start_index_with_classifier_complexity() {
-        let cands = candidates(&[("swarm", 2, 1.0), ("qwen", 6, 3.0)]);
-        // complexity 5 → first member with intelligence >= 5 is qwen (index 1).
-        assert_eq!(start_index(&cands, Some(5)), 1);
-        // complexity 1 → swarm qualifies at index 0.
-        assert_eq!(start_index(&cands, Some(1)), 0);
-        // complexity exactly equal → that index.
-        assert_eq!(start_index(&cands, Some(6)), 1);
-    }
-
-    #[test]
-    fn start_index_none_or_unqualified_returns_zero() {
-        let cands = candidates(&[("swarm", 2, 1.0), ("qwen", 6, 3.0)]);
-        assert_eq!(start_index(&cands, None), 0);
-        // No member qualifies (complexity beyond the top intelligence) → 0:
-        // the cheapest candidate self-assesses first; the climb proceeds.
-        assert_eq!(start_index(&cands, Some(9)), 0);
-    }
-
-    #[test]
-    fn start_index_empty_group_is_zero() {
-        let empty: Vec<TargetCandidate> = vec![];
-        assert_eq!(start_index(&empty, Some(3)), 0);
-        assert_eq!(start_index(&empty, None), 0);
-    }
-
-    #[test]
-    fn start_index_skips_weak_cheaper_candidates() {
-        // Cost ordering governs within the group: index 0 is cheapest but too
-        // weak; the classifier already ruled it out, so the climb starts at
-        // the first qualifying member.
-        let cands = candidates(&[("tiny", 1, 0.5), ("small", 3, 1.0), ("big", 6, 3.0)]);
-        assert_eq!(start_index(&cands, Some(3)), 1);
-        assert_eq!(start_index(&cands, Some(2)), 1);
-        assert_eq!(start_index(&cands, Some(6)), 2);
-    }
 
     #[test]
     fn is_match_boundary_inclusive() {
@@ -730,21 +674,19 @@ mod tests {
             ("qwen3.6-27b", 6, 5.0),
         ]);
         let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-        let matcher = matcher_with(vec![assessment(4, "mid"), assessment(6, "hard")]);
+        // The climb starts at the cheapest candidate (no classifier seed, DD-2).
+        // swarm self-assesses 2 <= 2 → match.
+        let matcher = matcher_with(vec![assessment(2, "easy for swarm")]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, Some(3), "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
-        // start_index(Some(3)) = 1 (qwen3.5-9b, the first member with
-        // intelligence >= 3). It self-assesses 4 <= 4 → match.
-        assert_eq!(tm.primary.model, "qwen3.5-9b");
+        assert_eq!(tm.primary.model, "swarm");
         assert_eq!(tm.primary.target_name.as_deref(), Some("local"));
         assert_eq!(tm.primary.group.as_deref(), Some("default"));
-        // Exactly 1 self-assessment: swarm skipped by the start index, qwen3.5-9b
-        // assessed and matched.
         assert_eq!(tm.assessments.len(), 1);
         let rec = &tm.assessments[0];
-        assert_eq!(rec.assessed, Some(4));
+        assert_eq!(rec.assessed, Some(2));
         assert!(rec.matched);
     }
 
@@ -756,26 +698,29 @@ mod tests {
             ("qwen3.6-27b", 6, 5.0),
         ]);
         let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
+        // Start at 0: swarm self-assesses 7 > 2 → escalate; qwen3.5-9b assesses
+        // 6 > 4 → escalate; qwen3.6-27b assesses 5 <= 6 → match.
         let matcher = matcher_with(vec![
-            assessment(7, "hard for qwen3.5"),
-            assessment(6, "ok for 27b"),
+            assessment(7, "hard for swarm"),
+            assessment(6, "hard for 9b"),
+            assessment(5, "ok for 27b"),
         ]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, Some(3), "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
-        // start_index(Some(3)) = 1. qwen3.5-9b self-assesses 7 > 4 → escalate.
-        // qwen3.6-27b self-assesses 6 <= 6 → match.
         assert_eq!(tm.primary.model, "qwen3.6-27b");
-        assert_eq!(tm.assessments.len(), 2);
+        assert_eq!(tm.assessments.len(), 3);
         assert_eq!(tm.assessments[0].assessed, Some(7));
         assert!(!tm.assessments[0].matched);
         assert_eq!(tm.assessments[1].assessed, Some(6));
-        assert!(tm.assessments[1].matched);
+        assert!(!tm.assessments[1].matched);
+        assert_eq!(tm.assessments[2].assessed, Some(5));
+        assert!(tm.assessments[2].matched);
     }
 
     #[test]
-    fn climb_starts_at_classifier_seed() {
+    fn climb_starts_at_cheapest_candidate() {
         let cands = candidates(&[
             ("swarm", 2, 1.0),
             ("qwen3.5-9b", 4, 3.0),
@@ -785,9 +730,9 @@ mod tests {
         let matcher = matcher_with(vec![assessment(1, "easy"), assessment(3, "ok")]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, None, "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
-        // No classifier estimate → start at 0 (swarm). Swarm self-assesses 1 <= 2 → match.
+        // No classifier seed → start at 0 (swarm). Swarm self-assesses 1 <= 2 → match.
         assert_eq!(tm.primary.model, "swarm");
         assert_eq!(tm.assessments.len(), 1);
     }
@@ -808,7 +753,7 @@ mod tests {
         ]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, None, "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
         assert_eq!(tm.primary.model, "qwen3.5-9b");
         assert_eq!(tm.assessments.len(), 2);
@@ -827,7 +772,7 @@ mod tests {
         let matcher = matcher_with(vec![]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, None, "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
         assert_eq!(tm.primary.model, "qwen3.6-27b");
         assert_eq!(tm.assessments.len(), 2);
@@ -844,7 +789,7 @@ mod tests {
         let matcher = matcher_with(vec![assessment(3, "ok for swarm"), assessment(9, "hard")]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, None, "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
         assert_eq!(tm.primary.model, "qwen3.6-27b");
         assert_eq!(tm.assessments.len(), 2);
@@ -853,21 +798,26 @@ mod tests {
     }
 
     #[test]
-    fn exact_call_count_two_assessments() {
+    fn exact_call_count_three_assessments() {
         let cands = candidates(&[
             ("swarm", 2, 1.0),
             ("qwen3.5-9b", 4, 3.0),
             ("qwen3.6-27b", 6, 5.0),
         ]);
         let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-        let matcher = matcher_with(vec![assessment(7, "too hard"), assessment(6, "match")]);
+        // Start at 0 (no classifier seed): swarm 7 > 2 → escalate, qwen3.5-9b
+        // 6 > 4 → escalate, qwen3.6-27b 5 <= 6 → match. Exactly 3 calls.
+        let matcher = matcher_with(vec![
+            assessment(7, "too hard for swarm"),
+            assessment(6, "too hard for 9b"),
+            assessment(5, "match for 27b"),
+        ]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, Some(3), "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
-        // start index 1 → swarm never self-assesses; exactly 2 calls made.
-        assert_eq!(tm.assessments.len(), 2);
-        assert_eq!(tm.assessments[0].model_key, "qwen3.5-9b");
+        assert_eq!(tm.assessments.len(), 3);
+        assert_eq!(tm.assessments[0].model_key, "swarm");
         assert_eq!(tm.primary.model, "qwen3.6-27b");
     }
 
@@ -882,7 +832,7 @@ mod tests {
         let matcher = matcher_with(vec![assessment(1, "easy")]);
 
         let tm = matcher
-            .match_target("local", "default", &routing, &cands, None, "hello")
+            .match_target("local", "default", &routing, &cands, "hello")
             .expect("match");
         assert_eq!(tm.primary.model, "swarm");
         // Fallback tail = the more-intelligent members of the group, in order.
@@ -896,7 +846,7 @@ mod tests {
         let matcher = matcher_with(vec![]);
         assert!(
             matcher
-                .match_target("local", "default", &routing, &[], Some(3), "hello")
+                .match_target("local", "default", &routing, &[], "hello")
                 .is_none()
         );
     }

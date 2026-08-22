@@ -135,6 +135,12 @@ pub fn forbidden_response() -> HyperResponse {
     )
 }
 
+/// The canned answer of the all-targets-failed completion
+/// (`fallback_completion`). Callers that need to distinguish a real model
+/// answer from the degraded fallback (e.g. tool-plan step execution) match
+/// on this constant instead of re-hardcoding the string.
+pub const FALLBACK_ANSWER: &str = "pipeline completed successfully";
+
 pub fn fallback_completion(model_name: &str) -> RouterResponse {
     RouterResponse {
         id: String::new(),
@@ -145,7 +151,7 @@ pub fn fallback_completion(model_name: &str) -> RouterResponse {
             index: 0,
             message: RouterMessage {
                 role: "assistant".into(),
-                content: RouterMessageContent::Text("pipeline completed successfully".into()),
+                content: RouterMessageContent::Text(FALLBACK_ANSWER.into()),
                 tool_calls: None,
                 tool_call_id: None,
             },

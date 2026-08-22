@@ -33,12 +33,10 @@ use crate::pipeline_types::{
     PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict,
 };
 use crate::score_matrix::ScoreMatrix;
-use crate::stages::common::{coerce_float, coerce_string, coerce_u8, extract_user_message};
+use crate::stages::common::{coerce_float, coerce_string, extract_user_message};
 use crate::stages::tree::ClassificationEngine;
 use crate::target_match::TargetMatcher;
 
-const DEFAULT_COMPLEXITY: u8 = 5;
-const COMPLEXITY_SCALE: f64 = 10.0;
 const DEFAULT_COMPLETENESS: f64 = 0.5;
 
 /// Build the per-call `response_format` extras for the classifier LLM call.
@@ -69,18 +67,17 @@ fn classifier_response_format() -> serde_json::Value {
             "schema": {
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string" },
+                    "domain": { "type": "string" },
                     "coherence_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
                     "safety_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                    "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
                     "reason": { "type": "string" },
                     "response": { "type": "string" },
                     "target": { "type": "string" },
-                    "complexity": { "type": "integer", "minimum": 0, "maximum": 10 },
-                    "intent": { "type": "string" },
                     "completeness": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
                     "risk": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
                 },
-                "required": ["action", "coherence_score", "safety_score", "reason"]
+                "required": ["domain", "coherence_score", "safety_score", "confidence", "reason"]
             }
         }
     })
@@ -93,15 +90,17 @@ fn classifier_response_format() -> serde_json::Value {
 ///
 /// The field-coercion lives in the shared `stages::common` helpers (the
 /// "surviving normalization" both this stage and the tree engine use).
-/// Route-name guessing is gone — the classification tree replaces it.
+/// Route-name guessing is gone — the classification tree replaces it, and the
+/// classifier's `domain` is the route key it emits (defaulted to `local` here;
+/// `parse_classifier_response` re-binds it to the config's `default_route`).
 fn sanitize_classifier_json(v: &mut serde_json::Value) {
     if let Some(obj) = v.as_object_mut() {
         coerce_float(obj, "coherence_score", 1.0);
         coerce_float(obj, "safety_score", 1.0);
+        coerce_float(obj, "confidence", 1.0);
         coerce_float(obj, "completeness", 0.5);
         coerce_float(obj, "risk", 0.0);
-        coerce_u8(obj, "complexity", 5);
-        coerce_string(obj, "action", "route");
+        coerce_string(obj, "domain", "local");
         coerce_string(obj, "reason", "");
     }
 }
@@ -151,13 +150,13 @@ fn parse_classifier_response(
             // path); a small re-parse of the already-owned string, once per
             // classifier call — not on any hot loop.
             let ok = serde_json::from_str::<ClassifierOutput>(response).is_ok();
-            let output = ClassifierOutput {
-                target: o
-                    .target
-                    .clone()
-                    .or_else(|| o.action.as_str().eq("route").then(|| default_route.into())),
-                ..o
-            };
+            let mut output = o;
+            // An empty `domain` (the model omitted the route key) binds to the
+            // configured default route — the route table is the single source
+            // of truth, so a fabricated/absent domain degrades to `default_route`.
+            if output.domain.trim().is_empty() {
+                output.domain = default_route.to_string();
+            }
             Ok((output, ok))
         }
         Err(fluent_llm::JsonParseError::NoJson) => {
@@ -167,7 +166,7 @@ fn parse_classifier_response(
             // No JSON attempt at all: if this route permits direct answering,
             // the prose IS the answer the model was allowed to give.
             if direct_answer_allowed {
-                if let Some(output) = prose_as_respond(response) {
+                if let Some(output) = prose_as_respond(response, default_route) {
                     return Ok((output, true));
                 }
             }
@@ -197,24 +196,21 @@ fn parse_classifier_response(
 
 /// Last-resort, schema-driven recovery of a classifier response that the whole
 /// repair pipeline could not parse as JSON (e.g. brace-less
-/// `action: route, target: code`). Member values are coerced through
+/// `domain: local, confidence: 0.9`). Member values are coerced through
 /// `set_field` with the field's `#[field(coerce = "...")]` / `parse = "number"`
 /// modes — the same vocabulary the repair walker uses — so a member that fails
 /// to coerce keeps its (failing) default instead of fabricating a value.
 ///
 /// Conservative by construction: a recovered output must carry a non-empty
-/// `action` (else there is nothing to route on), and it is always flagged
+/// `domain` (else there is nothing to route on), and it is always flagged
 /// recovered (`ok == false`). Returns `None` when nothing decodes.
 fn try_boundary_decode(response: &str, default_route: &str) -> Option<ClassifierOutput> {
     let schema = ClassifierOutput::default().field_names();
     let opts = fluent_wvr::BoundaryOptions::for_schema(schema);
     let (mut output, decoded) =
         fluent_wvr::decode_boundary::<ClassifierOutput>(response, &opts).ok()?;
-    if output.action.is_empty() {
-        return None;
-    }
-    if output.target.is_none() && output.action == "route" {
-        output.target = Some(default_route.to_string());
+    if output.domain.trim().is_empty() {
+        output.domain = default_route.to_string();
     }
     tracing::info!(
         target: "router.pipeline.stage2",
@@ -246,7 +242,7 @@ fn try_boundary_decode(response: &str, default_route: &str) -> Option<Classifier
 /// - Scores mirror `sanitize_classifier_json`'s defaults for a `respond` that
 ///   omitted scores (coherence 1.0, safety 1.0), so the output passes the
 ///   thresholds exactly like a pristine respond would.
-fn prose_as_respond(response: &str) -> Option<ClassifierOutput> {
+fn prose_as_respond(response: &str, default_route: &str) -> Option<ClassifierOutput> {
     let prose = response.trim();
     if prose.is_empty() || prose.contains(['{', '[']) {
         return None;
@@ -257,10 +253,11 @@ fn prose_as_respond(response: &str) -> Option<ClassifierOutput> {
         "classifier prose response interpreted as a direct answer (no JSON envelope)",
     );
     Some(ClassifierOutput {
-        action: "respond".into(),
+        domain: default_route.to_string(),
         response: Some(prose.to_string()),
         coherence_score: 1.0,
         safety_score: 1.0,
+        confidence: 1.0,
         reason: "prose response interpreted as a direct answer (no JSON envelope)".into(),
         ..ClassifierOutput::default()
     })
@@ -296,8 +293,8 @@ fn check_thresholds(
         metadata: serde_json::json!({
             "coherence_score": output.coherence_score,
             "safety_score": output.safety_score,
-            "intent": output.intent,
-            "action": output.action,
+            "domain": output.domain,
+            "confidence": output.confidence,
         }),
     })
 }
@@ -312,13 +309,16 @@ fn check_thresholds(
 /// group, an empty candidate list, or an internal `None`, the static
 /// `routing_target` path runs (defense in depth).
 ///
+/// Model selection inside the group is entirely the ladder's job — it
+/// self-assesses each candidate's complexity from `user_text` (DD-2); the
+/// classifier no longer seeds a complexity estimate.
+///
 /// This is the one selection algorithm shared by the LLM-driven flat path and
 /// the matrix-authoritative branch (DRY — §4.3 of the roadmap).
 fn resolve_via_matcher(
     routing_config: &RoutingConfig,
     matcher: Option<&TargetMatcher>,
     route: &str,
-    complexity: Option<u8>,
     user_text: &str,
 ) -> Option<RoutingTarget> {
     if let Some(matcher) = matcher {
@@ -330,7 +330,6 @@ fn resolve_via_matcher(
                     group,
                     routing_config,
                     &candidates,
-                    complexity,
                     user_text,
                 ) {
                     tracing::info!(
@@ -351,60 +350,79 @@ fn resolve_via_matcher(
             }
         }
     }
-    routing_config.routing_target(route, complexity)
+    routing_config.routing_target(route, None)
 }
 
-/// Resolve a classifier output to a typed `RoutingTarget`.
+/// Resolve a classifier decision to a typed `RoutingTarget` — the single
+/// respond-vs-route decision point (DD-1, DRY §5 rule 3).
 ///
-/// Only the three standard `action` values are honored:
-/// - `respond` → `None` (direct response, handled by the caller),
-/// - `route` → the explicit `target` or `default_route`,
-/// - anything else → a warning and the `default_route` fallback.
-///
-/// The cleanup deleted `normalize_classifier_action`'s route-name
-/// guessing from `action`/`intent` strings — route selection is the
-/// classification tree's job now. Complexity-based model selection still flows
-/// through the shared target resolver (`resolve_via_matcher`), which runs the
-/// self-assessment ladder when the pipeline opts in.
-fn resolve_routing_target(
-    action: &str,
+/// 1. **Domain → route (DD-4):** the classifier's `domain` is the route key. An
+///    unknown (or empty) `domain` resolves to `default_route` with a warning —
+///    the route table is the single source of truth, never a fabricated name.
+/// 2. **derive_action:** `domain`'s `always_route` flag + `confidence` +
+///    `respond_threshold` compute `Respond` vs `Route`.
+/// 3. **`Respond` → `None`** (direct answer, handled by the caller). **`Route`
+///    →** resolve through the shared target-matching ladder.
+fn resolve_classifier_outcome(
     output: &ClassifierOutput,
     routing_config: &RoutingConfig,
     matcher: Option<&TargetMatcher>,
+    respond_threshold: f64,
     user_text: &str,
 ) -> Option<RoutingTarget> {
-    if action == "respond" {
-        tracing::info!(target: "router.pipeline.stage2", "direct response — no dispatch");
-        return None;
-    }
-
-    let route = if action == "route" {
-        output
-            .target
-            .as_deref()
-            .unwrap_or(&routing_config.default_route)
+    // Domain → route (DD-4). An unknown domain degrades to default_route.
+    let route: &str = if routing_config.routes.contains_key(&output.domain) {
+        &output.domain
     } else {
-        tracing::warn!(target: "router.pipeline.stage2", action = %action, fallback_route = %routing_config.default_route, "unknown action, falling back to default route");
+        tracing::warn!(
+            target: "router.pipeline.stage2",
+            domain = %output.domain,
+            default_route = %routing_config.default_route,
+            "classifier domain is not a declared route — falling back to default_route",
+        );
         &routing_config.default_route
     };
 
-    if let Some(rt) = resolve_via_matcher(routing_config, matcher, route, output.complexity, user_text) {
-        tracing::info!(target: "router.pipeline.stage2",
-            route = %route,
-            model = %rt.model,
-            url = %rt.url,
-            group = ?rt.group,
-            idle_timeout_ms = rt.idle_timeout_ms,
-            total_timeout_ms = rt.total_timeout_ms,
-            retry_count = rt.retry_count,
-            stream = rt.stream,
-            filter_thinking = rt.filter_thinking,
-            "routing target resolved"
-        );
-        return Some(rt);
+    let dispatch_only = routing_config
+        .routes
+        .get(route)
+        .is_some_and(|r| r.always_route);
+
+    match crate::routing_policy::derive_action(
+        route,
+        output.confidence,
+        respond_threshold,
+        dispatch_only,
+    ) {
+        crate::routing_policy::ClassifierAction::Respond => {
+            tracing::info!(
+                target: "router.pipeline.stage2",
+                route = %route,
+                confidence = output.confidence,
+                "direct response — no dispatch",
+            );
+            None
+        }
+        crate::routing_policy::ClassifierAction::Route => {
+            if let Some(rt) = resolve_via_matcher(routing_config, matcher, route, user_text) {
+                tracing::info!(target: "router.pipeline.stage2",
+                    route = %route,
+                    model = %rt.model,
+                    url = %rt.url,
+                    group = ?rt.group,
+                    idle_timeout_ms = rt.idle_timeout_ms,
+                    total_timeout_ms = rt.total_timeout_ms,
+                    retry_count = rt.retry_count,
+                    stream = rt.stream,
+                    filter_thinking = rt.filter_thinking,
+                    "routing target resolved"
+                );
+                return Some(rt);
+            }
+            tracing::warn!(target: "router.pipeline.stage2", route = %route, "resolve_route returned None — no dispatch target");
+            None
+        }
     }
-    tracing::warn!(target: "router.pipeline.stage2", route = %route, "resolve_route returned None — no dispatch target");
-    None
 }
 
 pub struct ClassifierStage {
@@ -412,12 +430,17 @@ pub struct ClassifierStage {
     client: Arc<dyn ChatBackend>,
     routing_config: RoutingConfig,
     coherence_threshold: f64,
+    /// Confidence (0.0-1.0) at or above which a non-dispatch-only domain
+    /// responds directly instead of routing (the `respond_threshold` fed to
+    /// `routing_policy::derive_action`). Defaults to 0.6. This is the
+    /// classifier's own respond gate — distinct from Needle's
+    /// `confidence_threshold` (which gates Needle reroutes).
+    respond_threshold: f64,
     score_matrix: Option<ScoreMatrix>,
     /// When `true` and `score_matrix` is `Some`, the matrix's top route
-    /// decides the dispatch target instead of the LLM's `action`/`target`
-    /// being metadata-only. Thresholds/`reject` still gate first.
+    /// decides the dispatch target instead of the LLM's `domain` being
+    /// metadata-only. Thresholds still gate first.
     score_matrix_authoritative: bool,
-    classifier_intelligence: u8,
     /// Config key of the model the classifier dispatches to (e.g. "fast").
     /// Logged as structured context on every classifier LLM call so the
     /// inference sub-stage is attributable without re-deriving it from the
@@ -510,9 +533,9 @@ impl ClassifierStage {
         client: Arc<dyn ChatBackend>,
         routing_config: RoutingConfig,
         coherence_threshold: f64,
+        respond_threshold: f64,
         score_matrix: Option<ScoreMatrix>,
         score_matrix_authoritative: bool,
-        classifier_intelligence: u8,
         classifier_model: impl Into<String>,
         limiter: Arc<Limiter>,
         target_matcher: Option<TargetMatcher>,
@@ -524,9 +547,9 @@ impl ClassifierStage {
             client,
             routing_config,
             coherence_threshold,
+            respond_threshold,
             score_matrix,
             score_matrix_authoritative,
-            classifier_intelligence,
             classifier_model: classifier_model.into(),
             limiter,
             tree_engine: None,
@@ -547,9 +570,9 @@ impl ClassifierStage {
         client: Arc<dyn ChatBackend>,
         routing_config: RoutingConfig,
         coherence_threshold: f64,
+        respond_threshold: f64,
         score_matrix: Option<ScoreMatrix>,
         score_matrix_authoritative: bool,
-        classifier_intelligence: u8,
         classifier_model: impl Into<String>,
         limiter: Arc<Limiter>,
         tree_engine: Arc<ClassificationEngine>,
@@ -562,9 +585,9 @@ impl ClassifierStage {
             client,
             routing_config,
             coherence_threshold,
+            respond_threshold,
             score_matrix,
             score_matrix_authoritative,
-            classifier_intelligence,
             classifier_model: classifier_model.into(),
             limiter,
             tree_engine: Some(tree_engine),
@@ -610,9 +633,9 @@ impl ClassifierStage {
         prompt.push('\n');
 
         // Dispatch rules — auto-generated for routes configured `always_route`
-        // (domains where the classifier model is overconfident and must never
-        // answer directly, e.g. creative prose, code, translation, specialized
-        // knowledge). Completely config-driven.
+        // (dispatch-only domains: the response function is a dispatch, never a
+        // classifier direct answer). Completely config-driven — no hardcoded
+        // domain list (DRY, self-updating).
         let mut always_routes: Vec<&String> = route_names
             .iter()
             .copied()
@@ -625,50 +648,49 @@ impl ClassifierStage {
             .collect();
         if !always_routes.is_empty() {
             always_routes.sort();
-            prompt.push_str("Dispatch rules (never answer these directly):\n");
+            prompt.push_str("Dispatch-only domains (never answer these directly):\n");
             for name in &always_routes {
                 let _ = writeln!(
                     prompt,
-                    "  - Requests on the \"{name}\" route ALWAYS dispatch to \"{name}\". Set action=route and target=\"{name}\" even if the reasoning complexity seems low: these domains need the stronger model, not you."
+                    "  - Set domain=\"{name}\" for a request in this domain: the router dispatches it to the \"{name}\" route's model group, never a direct answer from you."
                 );
             }
             prompt.push('\n');
         }
 
         // Output schema — derived from ClassifierOutput
-        let intent_values: Vec<String> = route_names.iter().map(|n| format!("\"{n}\"")).collect();
-        let intent_enum = if intent_values.is_empty() {
-            String::from("\"question\" | \"command\" | \"code\"")
+        let domain_values: Vec<String> = route_names.iter().map(|n| format!("\"{n}\"")).collect();
+        let domain_enum = if domain_values.is_empty() {
+            String::from("\"local\"")
         } else {
-            intent_values.join(" | ")
+            domain_values.join(" | ")
         };
 
         let coherence = format!("{:.2}", self.coherence_threshold);
         let safety = format!("{:.2}", self.routing_config.safety_threshold);
-        let intel = self.classifier_intelligence;
         let _ = write!(
             prompt,
-            "Output schema (output these four fields FIRST, in this order, then the rest):\n\
+            "Output schema (output these five fields FIRST, in this order, then the rest):\n\
             {{\n\
-            \x20 \"action\": \"respond\" | \"route\" | \"reject\",\n\
+            \x20 \"domain\": {domain_enum},\n\
             \x20 \"coherence_score\": 0.0-1.0,\n\
             \x20 \"safety_score\": 0.0-1.0,\n\
+            \x20 \"confidence\": 0.0-1.0,\n\
             \x20 \"reason\": \"brief explanation\",\n\
-            \x20 \"response\": \"direct answer (only if action=respond)\",\n\
-            \x20 \"target\": \"route name (only if action=route)\",\n\
-            \x20 \"complexity\": 0-10,\n\
-            \x20 \"intent\": {intent_enum},\n\
+            \x20 \"response\": \"direct answer (only when you would answer directly)\",\n\
+            \x20 \"target\": \"reserved\",\n\
             \x20 \"completeness\": 0.0-1.0,\n\
             \x20 \"risk\": 0.0-1.0\n\
             }}\n\n\
             Response rules:\n\
-            - If complexity <= {intel} (your intelligence level), set action=respond and answer directly — UNLESS the request matches a dispatch rule above.\n\
-            - If complexity > {intel}, the query needs a more capable model: set action=route with target set to the matching route name. Code requests ALWAYS go to the \"code\" route. Translation requests ALWAYS go to the \"translation\" route.\n\
-            - Dispatch rules above ALWAYS win: set action=route with the named target, never action=respond.\n\
-            - If content is incoherent (coherence_score < {coherence}), set action=reject.\n\
-            - If content is unsafe (safety_score < {safety}), set action=reject.\n\
+            - You never choose whether to respond. You output a domain and a confidence (0-1); the router decides.\n\
+            - Set \"domain\" to the single route key above that best matches the request; set \"confidence\" to your self-assessed confidence in that classification.\n\
+            - A \"domain\" marked dispatch-only above always dispatches; never put your own answer in \"response\" for it.\n\
+            - If you have a complete, self-contained answer to a non-dispatch-only domain, put it in \"response\".\n\
+            - If content is incoherent (coherence_score < {coherence}), set coherence_score below {coherence}.\n\
+            - If content is unsafe (safety_score < {safety}), set safety_score below {safety}.\n\
             - Safety score 1.0 = completely safe, 0.0 = dangerous.\n\
-            - Complexity 0 = trivial, 10 = extremely complex.\n\
+            - Confidence 0.0 = uncertain, 1.0 = certain.\n\
             - Only output JSON, no other text.\n"
         );
 
@@ -805,7 +827,7 @@ impl ClassifierStage {
                 .is_some_and(|r| r.always_route)
         });
 
-        let (mut output, ok) = match parse_classifier_response(
+        let (output, ok) = match parse_classifier_response(
             &response,
             &self.routing_config.default_route,
             direct_answer_allowed,
@@ -850,57 +872,15 @@ impl ClassifierStage {
             return Ok(("rejected".into(), decision));
         }
 
-        if output.action == "reject" {
-            let decision = StageDecision {
-                stage: PipelineStage::Classifier,
-                verdict: StageVerdict::Rejected,
-                score: Some(output.coherence_score),
-                reason: format!("blocked: {}", output.reason),
-                latency_ms: 0,
-                metadata: serde_json::json!({
-                    "coherence_score": output.coherence_score,
-                    "safety_score": output.safety_score,
-                    "intent": output.intent,
-                    "action": output.action,
-                    "reason": output.reason,
-                }),
-            };
-            return Ok(("rejected".into(), decision));
-        }
-
-        // Route-level `always_route` (config): a route configured to always
-        // dispatch never lets the classifier answer directly. The classifier
-        // model is often a small edge model overconfident in exactly these
-        // domains (creative prose, code, translation, specialized knowledge),
-        // so its `action=respond` is overridden to `action=route` toward the
-        // requested route regardless of its complexity judgment. Simple prompts
-        // on `local`-style routes keep the direct-answer path.
-        if let Some(route) = requested_route.as_deref() {
-            if self
-                .routing_config
-                .routes
-                .get(route)
-                .is_some_and(|r| r.always_route)
-            {
-                tracing::info!(
-                    target: "router.pipeline.stage2",
-                    model = %self.classifier_model,
-                    route = %route,
-                    classifier_action = %output.action,
-                    "always_route override - dispatching instead of direct response",
-                );
-                output.action = "route".into();
-                output.target = Some(route.to_string());
-                output.response = None;
-            }
-        }
+        // Rejection is now purely the coherence/safety gate above — the model
+        // no longer emits an `action`, so there is no model-chosen `reject`.
 
         // Matrix-authoritative routing. When opted in, the weighted score
         // matrix DECIDES the route — the top-scoring route's name is resolved
         // through the one shared dispatch path (`routing_config.routing_target`)
-        // — instead of the LLM's `action`/`target` being metadata-only. The
-        // coherence/safety thresholds and the `reject` action above run first:
-        // gating checks still protect downstream models.
+        // — instead of the domain-derived decision being metadata-only. The
+        // coherence/safety thresholds above run first: gating checks still
+        // protect downstream models.
         if self.score_matrix_authoritative {
             if let Some(sm) = &self.score_matrix {
                 let scores = Self::score_vector(&output);
@@ -921,7 +901,6 @@ impl ClassifierStage {
                             &self.routing_config,
                             self.target_matcher.as_ref(),
                             &top.route_name,
-                            output.complexity,
                             &input,
                         )
                     };
@@ -932,15 +911,17 @@ impl ClassifierStage {
                         Some(sm),
                     ));
                 }
-                // No route matched any band — fall through to the LLM path.
+                // No route matched any band — fall through to the domain path.
             }
         }
 
-        let routing_target = resolve_routing_target(
-            &output.action,
+        // The single respond-vs-route decision point: domain + confidence +
+        // the route's `always_route` flag derive the outcome (DD-1).
+        let routing_target = resolve_classifier_outcome(
             &output,
             &self.routing_config,
             self.target_matcher.as_ref(),
+            self.respond_threshold,
             &input,
         );
 
@@ -985,22 +966,25 @@ impl ClassifierStage {
             }
             ClassifierFailurePolicy::RouteToDefaultTruthful => {
                 let output = ClassifierOutput {
-                    action: "route".into(),
+                    domain: self.routing_config.default_route.clone(),
                     response: None,
                     target: Some(self.routing_config.default_route.clone()),
                     coherence_score: 0.0,
                     safety_score: 0.0,
-                    complexity: None,
-                    intent: None,
+                    confidence: 0.0,
                     reason: reason.into(),
                     completeness: None,
                     risk: None,
                 };
-                let fallback_rt = resolve_routing_target(
-                    &output.action,
+                // A truthful fail-open always routes to the default route's
+                // group (never a fabricated direct answer): confidence 0.0
+                // with a non-dispatch-only default route routes below the
+                // respond threshold.
+                let fallback_rt = resolve_classifier_outcome(
                     &output,
                     &self.routing_config,
                     self.target_matcher.as_ref(),
+                    self.respond_threshold,
                     "",
                 );
                 Self::build_decision(
@@ -1012,22 +996,21 @@ impl ClassifierStage {
             }
             ClassifierFailurePolicy::LegacyFailOpen => {
                 let output = ClassifierOutput {
-                    action: "route".into(),
+                    domain: self.routing_config.default_route.clone(),
                     response: None,
                     target: Some(self.routing_config.default_route.clone()),
                     coherence_score: 1.0,
                     safety_score: 1.0,
-                    complexity: None,
-                    intent: None,
+                    confidence: 0.0,
                     reason: reason.into(),
                     completeness: None,
                     risk: None,
                 };
-                let fallback_rt = resolve_routing_target(
-                    &output.action,
+                let fallback_rt = resolve_classifier_outcome(
                     &output,
                     &self.routing_config,
                     self.target_matcher.as_ref(),
+                    self.respond_threshold,
                     "",
                 );
                 Self::build_decision(
@@ -1056,17 +1039,14 @@ impl StageDecisionProducer for ClassifierStage {
 }
 
 impl ClassifierStage {
-    /// The four-axis score vector the matrix ranks over: coherence, normalized
-    /// complexity (0–1), completeness, and risk. The single source of the
-    /// vector — shared by the matrix-authoritative `decide()` path and the
-    /// `build_decision` audit metadata.
+    /// The score vector the matrix ranks over: coherence, completeness, and
+    /// risk. `complexity` is gone — the classifier no longer emits it (DD-2);
+    /// model selection is the target-matching ladder's job. The single source
+    /// of the vector — shared by the matrix-authoritative `decide()` path and
+    /// the `build_decision` audit metadata.
     fn score_vector(output: &ClassifierOutput) -> HashMap<String, f64> {
         std::collections::HashMap::from([
             ("coherence".into(), output.coherence_score),
-            (
-                "complexity".into(),
-                f64::from(output.complexity.unwrap_or(DEFAULT_COMPLEXITY)) / COMPLEXITY_SCALE,
-            ),
             (
                 "completeness".into(),
                 output.completeness.unwrap_or(DEFAULT_COMPLETENESS),
@@ -1086,11 +1066,10 @@ impl ClassifierStage {
         let mut metadata = StageMetadata::from(serde_json::json!({
             "coherence_score": output.coherence_score,
             "safety_score": output.safety_score,
-            "complexity": output.complexity,
+            "domain": output.domain,
+            "confidence": output.confidence,
             "completeness": output.completeness,
             "risk": output.risk,
-            "intent": output.intent,
-            "action": output.action,
             "reason": output.reason,
             "fallback": !ok,
         }));
@@ -1140,9 +1119,9 @@ impl ClassifierStage {
                 verdict: StageVerdict::Passed,
                 score: Some(output.coherence_score),
                 reason: format!(
-                    "intent={}, action={}, coherence={:.2}",
-                    output.intent.as_deref().unwrap_or("?"),
-                    output.action,
+                    "domain={}, confidence={:.2}, coherence={:.2}",
+                    output.domain,
+                    output.confidence,
                     output.coherence_score
                 ),
                 latency_ms: 0,
@@ -1209,10 +1188,10 @@ mod tests {
         assert_eq!(coherence["type"], "number");
         assert!(coherence["minimum"].is_number(), "minimum must be a number");
         assert!(coherence["maximum"].is_number(), "maximum must be a number");
-        let complexity = &props["complexity"];
-        assert_eq!(complexity["type"], "integer");
-        assert!(complexity["minimum"].is_number(), "integer minimum must be a number");
-        assert!(complexity["maximum"].is_number(), "integer maximum must be a number");
+        let confidence = &props["confidence"];
+        assert_eq!(confidence["type"], "number");
+        assert!(confidence["minimum"].is_number(), "confidence minimum must be a number");
+        assert!(confidence["maximum"].is_number(), "confidence maximum must be a number");
     }
 
     /// The response_format extras must be a valid fork-shaped body: top-level
@@ -1229,36 +1208,35 @@ mod tests {
     /// call: single quotes, bare keys, and a trailing comma.
     #[test]
     fn parse_heals_malformed_json_instead_of_rejecting() {
-        let raw = "{action: 'route', target: 'code', coherence_score: 0.9, safety_score: 1, \
-                    complexity: 7, intent: 'code', reason: 'needs the big model',}";
+        let raw = "{domain: 'code', coherence_score: 0.9, safety_score: 1, \
+                    confidence: 0.9, reason: 'needs the big model',}";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must self-heal");
         assert!(!ok, "a repaired parse must be flagged as recovered, not pristine");
-        assert_eq!(out.action, "route");
-        assert_eq!(out.target.as_deref(), Some("code"));
+        assert_eq!(out.domain, "code");
         assert_eq!(out.coherence_score, 0.9);
-        assert_eq!(out.complexity, Some(7));
+        assert_eq!(out.confidence, 0.9);
     }
 
     /// Truncated responses (missing closing brace / string) are the common
     /// small-model failure; the repair must close the dangling containers.
     #[test]
     fn parse_heals_truncated_json() {
-        let raw = "{\"action\": \"route\", \"target\": \"code\", \"coherence_score\": 0.85, \
+        let raw = "{\"domain\": \"code\", \"coherence_score\": 0.85, \
                     \"safety_score\": 1";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must heal truncation");
         assert!(!ok);
-        assert_eq!(out.action, "route");
+        assert_eq!(out.domain, "code");
         assert_eq!(out.coherence_score, 0.85);
     }
 
     /// Pristine JSON stays on the fast path (ok == true), untouched by repair.
     #[test]
     fn parse_pristine_is_not_flagged_recovered() {
-        let raw = "{\"action\": \"respond\", \"response\": \"hi\", \"coherence_score\": 0.99, \
-                    \"safety_score\": 1.0, \"complexity\": 2, \"reason\": \"trivial\"}";
+        let raw = "{\"domain\": \"local\", \"response\": \"hi\", \"coherence_score\": 0.99, \
+                    \"safety_score\": 1.0, \"confidence\": 0.99, \"reason\": \"trivial\"}";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must parse");
         assert!(ok, "pristine JSON must not be flagged as recovered");
-        assert_eq!(out.action, "respond");
+        assert_eq!(out.domain, "local");
         assert_eq!(out.response.as_deref(), Some("hi"));
     }
 
@@ -1275,12 +1253,12 @@ mod tests {
     /// rejected.
     #[test]
     fn parse_heals_raw_control_chars() {
-        let raw = "{\"action\": \"respond\", \"response\": \"first line\nsecond line\", \
+        let raw = "{\"domain\": \"local\", \"response\": \"first line\nsecond line\", \
                     \"coherence_score\": 0.9, \"safety_score\": 1, \
                     \"reason\": \"tab\there\"}";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must escape controls");
         assert!(!ok);
-        assert_eq!(out.action, "respond");
+        assert_eq!(out.domain, "local");
         assert_eq!(out.response.as_deref(), Some("first line\nsecond line"));
     }
 
@@ -1288,12 +1266,11 @@ mod tests {
     /// tail rather than fail.
     #[test]
     fn parse_heals_truncated_mid_member() {
-        let raw = "{\"action\": \"route\", \"target\": \"code\", \"coherence_score\": 0.8, \
+        let raw = "{\"domain\": \"code\", \"coherence_score\": 0.8, \
                     \"safety_score\": 1, \"reason\": \"big\", \"completeness\": ";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must drop tail");
         assert!(!ok);
-        assert_eq!(out.action, "route");
-        assert_eq!(out.target.as_deref(), Some("code"));
+        assert_eq!(out.domain, "code");
         assert_eq!(out.reason, "big");
     }
 
@@ -1326,14 +1303,13 @@ mod tests {
     /// it member-by-member through `set_field`, flagged recovered.
     #[test]
     fn parse_recovers_brace_less_key_value_via_boundary_decode() {
-        let raw = "action: route, target: code, coherence_score: 0.8, safety_score: 1, \
-                    complexity: 7, reason: needs the big model";
+        let raw = "domain: code, coherence_score: 0.8, safety_score: 1, \
+                    confidence: 0.9, reason: needs the big model";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must decode members");
         assert!(!ok, "a boundary decode is a recovered parse, never pristine");
-        assert_eq!(out.action, "route");
-        assert_eq!(out.target.as_deref(), Some("code"));
+        assert_eq!(out.domain, "code");
         assert_eq!(out.coherence_score, 0.8);
-        assert_eq!(out.complexity, Some(7));
+        assert_eq!(out.confidence, 0.9);
     }
 
     /// A member that fails to coerce (e.g. a null-ish gating score) keeps its
@@ -1341,10 +1317,10 @@ mod tests {
     /// output still rejects on the coherence gate downstream.
     #[test]
     fn parse_boundary_decode_keeps_failing_default_for_bad_score() {
-        let raw = "action: route, target: code, coherence_score: undefined, safety_score: 1";
+        let raw = "domain: code, coherence_score: undefined, safety_score: 1";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must decode members");
         assert!(!ok);
-        assert_eq!(out.action, "route");
+        assert_eq!(out.domain, "code");
         // `undefined` -> parse_number fails -> the field stays at its 0.0
         // default (which fails the coherence threshold, not fabricates a pass).
         assert_eq!(out.coherence_score, 0.0);
@@ -1362,7 +1338,7 @@ mod tests {
                    inference.";
         let (out, ok) = parse_classifier_response(raw, "local", true).expect("must respond");
         assert!(ok, "a prose direct answer is complete, not a retryable fallback");
-        assert_eq!(out.action, "respond");
+        assert_eq!(out.domain, "local");
         assert_eq!(out.response.as_deref(), Some(raw.trim()));
         assert_eq!(out.coherence_score, 1.0, "mirrors sanitize defaults for respond");
         assert_eq!(out.safety_score, 1.0, "mirrors sanitize defaults for respond");
@@ -1432,11 +1408,11 @@ mod tests {
         let backend = ExtrasRecordingBackend {
             seen_extras: Arc::clone(&seen),
             response: serde_json::json!({
-                "action": "respond",
+                "domain": "local",
                 "response": "hi",
                 "coherence_score": 0.99,
                 "safety_score": 1.0,
-                "complexity": 2,
+                "confidence": 0.99,
                 "reason": "trivial",
             })
             .to_string(),
@@ -1454,9 +1430,9 @@ mod tests {
             Arc::new(backend),
             routing_config,
             0.2,
+            0.6,
             None,
             false,
-            1,
             "lfm2.5-2.6b",
             Arc::new(fluent_concurrency::pool::Limiter::new(4)),
             None,
@@ -1485,7 +1461,7 @@ mod tests {
         assert_eq!(rf["type"], "json_object", "must request a JSON object");
         assert!(rf["schema"].is_object(), "must carry the JSON schema");
         assert_eq!(
-            rf["schema"]["properties"]["action"]["type"],
+            rf["schema"]["properties"]["domain"]["type"],
             "string",
             "schema must cover the classifier output shape"
         );

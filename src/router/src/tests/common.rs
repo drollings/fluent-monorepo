@@ -149,6 +149,9 @@ pub fn test_deps(
         api_key_env_name: None,
         supervisor: None,
         coordinator: None,
+        tool_plans: HashMap::new(),
+        needle_max_rounds: 3,
+        tool_lookup: crate::server::tool_lookup::ToolLookupRegistry::new(),
     }
 }
 

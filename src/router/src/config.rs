@@ -128,6 +128,13 @@ pub struct RouterConfig {
     /// llama-server supervisor / instances / VRAM machinery.
     #[serde(default)]
     pub needle: Option<NeedleConfig>,
+    /// Read-only lookup-store wiring for tool-plan `Lookup` steps. Controls
+    /// which backing stores the boot path installs `ToolLookup` resolvers over
+    /// (see `server/tool_lookup/`). Stores that are already configured (the
+    /// ledger, the session registry, the chart store) are always used when
+    /// present; this section only adds the stores with no other config home.
+    #[serde(default)]
+    pub tool_lookups: ToolLookupConfig,
 }
 
 impl Default for RouterConfig {
@@ -160,6 +167,7 @@ impl Default for RouterConfig {
             default_params: DefaultModelParams::default(),
             gguf_dir: None,
             needle: None,
+            tool_lookups: ToolLookupConfig::default(),
         }
     }
 }
@@ -561,15 +569,27 @@ impl Default for AuditLogConfig {
     }
 }
 
-/// The classifier's parsed LLM output. `FieldAccess` + the `#[field(...)]`
-/// coercions make the struct the single source of truth for the boundary
-/// decode path (`fluent_wvr::boundary::decode_boundary`): the `coerce`/`parse`
-/// modes shape the raw model value strings exactly as the repair walker does,
-/// so both decode paths share one vocabulary.
+/// The classifier's parsed LLM output — the unified confident-offload envelope.
+///
+/// The model never chooses whether to respond. It emits a `domain` route key
+/// and a self-assessed `confidence` (0.0–1.0, the same calibrated self-assessment
+/// semantic Needle's `confidence` carries); the router derives `respond` vs
+/// `route` from `domain + confidence + always_route` (see `routing_policy`).
+/// `coherence_score`/`safety_score` remain the hard gating checks that protect
+/// downstream models from garbage or harmful input.
+///
+/// `FieldAccess` + the `#[field(...)]` coercions make the struct the single
+/// source of truth for the boundary decode path
+/// (`fluent_wvr::boundary::decode_boundary`): the `coerce`/`parse` modes shape
+/// the raw model value strings exactly as the repair walker does, so both decode
+/// paths share one vocabulary.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, FieldAccess, Describable)]
 pub struct ClassifierOutput {
-    #[field(desc = "classifier action", coerce = "strip_quotes,trim")]
-    pub action: String,
+    /// The route key this decision belongs to (1:1 with a route in
+    /// `env/coral-router.json` — DD-4). The route table is the single source of
+    /// truth; an unknown `domain` resolves to `default_route` with a warning.
+    #[field(desc = "domain route key", coerce = "strip_quotes,trim")]
+    pub domain: String,
     #[field(desc = "direct response text", coerce = "strip_quotes,trim")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<String>,
@@ -580,12 +600,10 @@ pub struct ClassifierOutput {
     pub coherence_score: f64,
     #[field(desc = "safety score", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
     pub safety_score: f64,
-    #[field(desc = "complexity", min = 0.0, max = 10.0, coerce = "strip_quotes,trim", parse = "number")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub complexity: Option<u8>,
-    #[field(desc = "intent", coerce = "strip_quotes,trim,normalize_literal")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub intent: Option<String>,
+    /// The classifier's self-assessed confidence in its decision (0.0–1.0).
+    /// Read verbatim into `routing_policy::derive_action`; never nulled.
+    #[field(desc = "confidence", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
+    pub confidence: f64,
     #[field(desc = "routing reason", coerce = "strip_quotes,trim")]
     pub reason: String,
     #[field(desc = "completeness", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
@@ -680,8 +698,11 @@ const fn default_charts_max_candidates() -> usize {
 
 // -- Needle (cheapest structured rung) configuration -------------------
 
-/// Needle route-to-tool schema — the enriched per-route schema handed to the
-/// Needle engine as grammar + retrieval context.
+/// Needle route-to-tool schema — the enriched per-route schema. The engine
+/// only ever sees the **plain OpenAI tool format** (name, description,
+/// parameters) rendered from it; `examples`/`intents` are retrieval context
+/// for the HNSW shortlister, never engine grammar (measured routing regression
+/// otherwise — see `needle::schema::render_tool_schema`).
 ///
 /// This is the single typed home for a route's tool description. It is derived
 /// from the `routes.<key>` entry (description) and **overridden** by
@@ -689,10 +710,10 @@ const fn default_charts_max_candidates() -> usize {
 /// parallel hand-maintained schema list would create). Fields:
 ///
 /// - `name` — the route key (the tool name Needle may call).
-/// - `description` — what the tool does (drives both grammar and retrieval).
-/// - `examples` — canonical command phrasings (retrieval context).
+/// - `description` — what the tool does (drives the engine schema + retrieval).
+/// - `examples` — canonical command phrasings (retrieval context only).
 /// - `parameters` — the tool's argument object schema (grammar constraints).
-/// - `intents` — intent labels/phrases that map onto this route.
+/// - `intents` — intent labels/phrases that map onto this route (retrieval).
 /// - `output_template` — when set, a `call` to this tool whose invocation is
 ///   complete is answered **directly** by rendering this template with the
 ///   bound arguments — no dispatch, no classifier, no extra inference. The
@@ -780,6 +801,82 @@ impl Default for NeedleShortlistConfig {
     }
 }
 
+/// The kind of work a tool-plan step performs.
+///
+/// Each variant maps to a distinct dispatch path: `Dispatch` goes through the
+/// standard `ChatBackend` chain targeting a model group; `Lookup` performs a
+/// read-only data-store / knowledge-graph / DAG lookup; `Compose` runs the
+/// final synthesis over all prior step results.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolPlanStepKind {
+    /// Dispatch to a model group via the standard ChatBackend chain.
+    /// The step's `target_group` selects which `model_groups` entry to use.
+    Dispatch,
+    /// Read-only lookup: DAG graph, knowledge-graph, data-store, entity-tool,
+    /// or chart store. The lookup kind is carried in the step's `lookup_kind`
+    /// field; M4 supports `"dag"`, `"knowledge_graph"`, `"chart"`, and
+    /// `"entity_tool"` as recognized values — anything else is a passthrough
+    /// error so future kinds are additive.
+    Lookup,
+    /// Compose the final answer from prior step results. Must be the last
+    /// step in a plan.
+    Compose,
+    /// Generic passthrough for extensibility — forward the step's input text
+    /// to the target group and return the response verbatim.
+    #[serde(other)]
+    Passthrough,
+}
+
+/// A single step in a bounded tool plan.
+///
+/// Steps execute in list order. Each step records its result into the session
+/// ledger as a typed `ContentNode` by origin, and writes audit metadata (step
+/// id, target, confidence) so the dispatch is legible post-hoc (VISION:
+/// "auditable by construction").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolPlanStep {
+    /// Step identifier for audit trail and dependency tracking.
+    pub id: String,
+    /// What this step does.
+    pub kind: ToolPlanStepKind,
+    /// `model_groups` key for `Dispatch` steps. Ignored for `Compose`.
+    #[serde(default)]
+    pub target_group: Option<String>,
+    /// Human-readable description for audit / prompt assembly.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Lookup kind for `Lookup` steps: `"dag"`, `"knowledge_graph"`,
+    /// `"chart"`, `"entity_tool"`, etc. Ignored for non-Lookup kinds.
+    #[serde(default)]
+    pub lookup_kind: Option<String>,
+    /// Per-step round limit. `None` defers to the plan-level max_rounds
+    /// (which itself defers to `needle.max_rounds`).
+    #[serde(default)]
+    pub step_max_rounds: Option<usize>,
+}
+
+/// A config-declared, bounded tool plan for a specific route.
+///
+/// When a `Rerouted` target matches a route with a `tool_plans` entry, the
+/// handler executes the plan's ordered steps instead of a single
+/// `handle_dispatch` call. Each step goes through the standard `ChatBackend`
+/// chain (for `Dispatch` steps) or a ledger/DAG lookup (for `Lookup` steps),
+/// and the results are composed into the final answer.
+///
+/// Plans are **config-declared, never hardcoded** (VISION: "self-updating
+/// routing config"). Exceeding `max_rounds` falls back to the route's plain
+/// group dispatch rather than looping.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolPlan {
+    /// Ordered list of steps to execute.
+    pub steps: Vec<ToolPlanStep>,
+    /// Plan-level round limit. Overrides `needle.max_rounds` when set.
+    /// Falls back to the route's plain group dispatch on exhaustion.
+    #[serde(default)]
+    pub max_rounds: Option<usize>,
+}
+
 /// Needle configuration - the dedicated top-level `needle` section of
 /// `RouterConfig`.
 ///
@@ -856,6 +953,12 @@ pub struct NeedleConfig {
     /// `candidates_per_rung`.
     #[serde(default)]
     pub shortlist: NeedleShortlistConfig,
+    /// Config-declared bounded tool plans. Keys are route keys (tool names);
+    /// values are ordered step sequences. When a `Rerouted` target matches a
+    /// route with a plan, the handler runs the plan instead of a single
+    /// `handle_dispatch`. Exceeding `max_rounds` falls back to plain dispatch.
+    #[serde(default)]
+    pub tool_plans: HashMap<String, ToolPlan>,
 }
 
 impl Default for NeedleConfig {
@@ -877,12 +980,30 @@ impl Default for NeedleConfig {
             max_rounds: default_needle_max_rounds(),
             schema_overrides: HashMap::new(),
             shortlist: NeedleShortlistConfig::default(),
+            tool_plans: HashMap::new(),
         }
     }
 }
 
 fn default_needle_empty_object() -> serde_json::Value {
     serde_json::json!({})
+}
+
+/// Lookup-store wiring for tool-plan `Lookup` steps.
+///
+/// The `dag`/`knowledge_graph`/`chart`/`entity_tool` kinds are backed by the
+/// stores the deployment already configures (the session registry, the
+/// ledger, and the chart store) — this section only carries the stores with no
+/// other config home. A kind whose backing store is absent is simply not
+/// installed: a plan needing it is declined to plain group dispatch, never
+/// executed with a placeholder (see `server/tool_lookup/`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolLookupConfig {
+    /// SQLite path for the `data_store` lookup kind. `None` (the default)
+    /// leaves the kind uninstalled — a plan needing `data_store` is declined to
+    /// plain dispatch. The store is read-only and capability-gated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_store_path: Option<String>,
 }
 
 const fn default_needle_min_command_chars() -> usize {

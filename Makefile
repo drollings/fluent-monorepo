@@ -162,6 +162,48 @@ libneedle: $(NEEDLE_LIB) ## Build libneedle.so from the shipped libneedle.a (nee
 $(NEEDLE_LIB): $(NEEDLE_DIR)/linux-x86_64/libneedle.a
 	$(Q)bin/build-libneedle.sh
 
+# ── Needle Fine-Tune ─────────────────────────────────────────────────────────
+
+NEEDLE_OPT := bin/needle-opt
+NEEDLE_DATA_DIR := data/needle-opt
+NEEDLE_FINETUNE_GEN := $(NEEDLE_OPT)/gen_finetune_data.py
+NEEDLE_FINETUNE_CORPUS := $(NEEDLE_OPT)/corpus_v3_five.jsonl
+NEEDLE_FINETUNE_DATA := $(NEEDLE_DATA_DIR)/finetune_data.jsonl
+NEEDLE_ADAPTER := $(NEEDLE_DATA_DIR)/adapter.pkl
+NEEDLE_CLI ?= /opt/src/ai/model/needle/.venv/bin/needle
+NEEDLE_PY ?= /opt/src/ai/model/needle/.venv/bin/python
+# ROCm runs need XLA command buffers off or the HIP graph capture asserts;
+# harmless on CPU. Override with NEEDLE_XLA_FLAGS= for a different backend.
+NEEDLE_XLA_FLAGS ?= --xla_gpu_enable_command_buffer=
+NEEDLE_EPOCHS ?= 8
+NEEDLE_BATCH_SIZE ?= 16
+NEEDLE_LORA_RANK ?= 16
+NEEDLE_LORA_ALPHA ?= 32
+NEEDLE_MAX_LEN ?= 512
+
+# Regenerate the fine-tune dataset whenever its inputs change (generator,
+# corpus, or the router config that anchors routes/descriptions).
+$(NEEDLE_FINETUNE_DATA): $(NEEDLE_FINETUNE_GEN) $(NEEDLE_FINETUNE_CORPUS) $(CORAL_ROUTER_CONFIG)
+	$(Q)echo "Regenerating $(NEEDLE_FINETUNE_DATA)"
+	$(Q)$(NEEDLE_PY) $(NEEDLE_FINETUNE_GEN)
+
+# Fine-tune the router model on the current dataset. Only rebuilds when the
+# dataset is newer than the adapter (make dependency), and the existing adapter
+# is backed up with a timestamp before being overwritten.
+$(NEEDLE_ADAPTER): $(NEEDLE_FINETUNE_DATA)
+	@if [ -f $(NEEDLE_ADAPTER) ]; then \
+		ts=$$(date +%Y%m%d%H%M%S); \
+		cp $(NEEDLE_ADAPTER) $(NEEDLE_ADAPTER).$$ts; \
+		echo "Backed up $(NEEDLE_ADAPTER) to $(NEEDLE_ADAPTER).$$ts"; \
+	fi
+	$(Q)XLA_FLAGS="$(NEEDLE_XLA_FLAGS)" $(NEEDLE_CLI) finetune $(NEEDLE_FINETUNE_DATA) \
+		--epochs $(NEEDLE_EPOCHS) --batch-size $(NEEDLE_BATCH_SIZE) \
+		--lora-rank $(NEEDLE_LORA_RANK) --lora-alpha $(NEEDLE_LORA_ALPHA) \
+		--max-len $(NEEDLE_MAX_LEN) --val-split 0.1 --out $(NEEDLE_ADAPTER)
+
+.PHONY: needle-finetune
+needle-finetune: $(NEEDLE_ADAPTER) ## Fine-tune the Needle router model on the latest finetune_data.jsonl (regenerates data if stale, backs up the prior adapter with a timestamp)
+
 # Kill any running coral-router and wait for it to actually exit before the
 # caller starts a fresh one. The router is the process owner of its spawned
 # llama-servers and handles SIGTERM gracefully (stops the supervisor first),

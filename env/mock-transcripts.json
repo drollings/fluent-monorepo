@@ -1,7 +1,7 @@
 [
     {
         "user_message": "What is 2+2?",
-        "classifier_response": "{\"action\":\"route\",\"target\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"intent\":\"question\",\"reason\":\"simple factual query\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"confidence\":0.0,\"reason\":\"simple factual query\"}",
         "expected_route": "local",
         "expect_model_group": "default",
         "dispatch_response": "2 + 2 = 4",
@@ -9,7 +9,7 @@
     },
     {
         "user_message": "What is the capital of France?",
-        "classifier_response": "{\"action\":\"route\",\"target\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"intent\":\"question\",\"reason\":\"factual query\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"confidence\":0.0,\"reason\":\"factual query\"}",
         "expected_route": "local",
         "expect_model_group": "default",
         "dispatch_response": "The capital of France is Paris.",
@@ -17,23 +17,23 @@
     },
     {
         "user_message": "My SSN is 123-45-6789",
-        "classifier_response": "{\"action\":\"reject\",\"coherence_score\":1.0,\"safety_score\":1.0,\"intent\":null,\"reason\":\"PII detected\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":1.0,\"safety_score\":0.1,\"confidence\":0.9,\"reason\":\"PII detected\"}",
         "expected_route": null,
         "dispatch_response": null,
         "rejected": true,
-        "reject_reason_contains": "blocked"
+        "reject_reason_contains": "safety"
     },
     {
         "user_message": "Email me@test.com please",
-        "classifier_response": "{\"action\":\"reject\",\"coherence_score\":1.0,\"safety_score\":1.0,\"intent\":null,\"reason\":\"email address detected\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":1.0,\"safety_score\":0.1,\"confidence\":0.9,\"reason\":\"email address detected\"}",
         "expected_route": null,
         "dispatch_response": null,
         "rejected": true,
-        "reject_reason_contains": "email"
+        "reject_reason_contains": "safety"
     },
     {
         "user_message": "/help",
-        "classifier_response": "{\"action\":\"reject\",\"coherence_score\":1.0,\"safety_score\":1.0,\"intent\":null,\"reason\":\"command\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":1.0,\"safety_score\":1.0,\"confidence\":0.9,\"reason\":\"command\"}",
         "expected_route": null,
         "dispatch_response": null,
         "rejected": true,
@@ -41,7 +41,7 @@
     },
     {
         "user_message": "Write a Rust function to compute Fibonacci numbers.",
-        "classifier_response": "{\"action\":\"route\",\"target\":\"code\",\"coherence_score\":0.95,\"safety_score\":0.9,\"complexity\":4,\"intent\":\"code\",\"reason\":\"code generation request\"}",
+        "classifier_response": "{\"domain\":\"code\",\"coherence_score\":0.95,\"safety_score\":0.9,\"confidence\":0.95,\"reason\":\"code generation request\"}",
         "expected_route": "code",
         "expect_model_group": "code",
         "dispatch_response": "fn fibonacci(n: u32) -> u64 { ... }",
@@ -49,7 +49,7 @@
     },
     {
         "user_message": "What color is the sky?",
-        "classifier_response": "{\"action\":\"route\",\"target\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"intent\":\"question\",\"reason\":\"factual query about natural phenomena\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"confidence\":0.0,\"reason\":\"factual query about natural phenomena\"}",
         "expected_route": "local",
         "expect_model_group": "default",
         "dispatch_response": "The sky appears blue during the day due to Rayleigh scattering.",
@@ -57,7 +57,7 @@
     },
     {
         "user_message": "hi",
-        "classifier_response": "{\"action\":\"route\",\"target\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"intent\":\"chitchat\",\"reason\":\"simple greeting\"}",
+        "classifier_response": "{\"domain\":\"local\",\"coherence_score\":0.95,\"safety_score\":0.9,\"confidence\":0.0,\"reason\":\"simple greeting\"}",
         "expected_route": "local",
         "expect_model_group": "default",
         "dispatch_response": "Hello! How can I help you today?",

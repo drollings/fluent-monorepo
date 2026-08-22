@@ -601,7 +601,6 @@ impl ClassificationEngine {
                         group,
                         &self.routing,
                         &candidates,
-                        complexity,
                         user_text,
                     ) {
                         return Some((tm.primary, Some(tm.assessments)));
@@ -634,7 +633,6 @@ impl ClassificationEngine {
                     group,
                     &self.routing,
                     &candidates,
-                    min_complexity,
                     user_text,
                 ) {
                     return Some((tm.primary, Some(tm.assessments)));

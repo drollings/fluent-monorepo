@@ -18,13 +18,15 @@ pub struct RouteRef {
     pub pipelines: Vec<String>,
     #[serde(default)]
     pub description: String,
-    /// Never let the classifier answer requests on this route directly: force
-    /// dispatch to the route's group. For domains where the classifier model is
-    /// overconfident (creative prose, code, translation, and specialized
-    /// knowledge such as science/legal/medical), this guarantees the request
-    /// reaches the route's model regardless of the classifier's own complexity
-    /// judgment. `local`-style routes keep `always_route: false` so simple
-    /// prompts are still answered directly.
+    /// Dispatch-only: this route's response function is a dispatch, never a
+    /// classifier direct answer. A route with `always_route: true` is resolved
+    /// to its model group regardless of the classifier's confidence — even at
+    /// maximum confidence it routes. This is a property of the route's
+    /// response function (the work it performs is not something a single
+    /// classifier `response` can produce), not a patch for model behavior.
+    /// Routes without it keep `always_route: false` so the classifier may
+    /// answer simple prompts directly; the route table's sole direct-answer
+    /// domain is the one marked respond-eligible (e.g. `local`).
     #[serde(default)]
     pub always_route: bool,
 }

@@ -695,16 +695,16 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     }
 
     let mut server =
-        RouterServer::new(pipelines, routes, config.models, &config.server, classifier)
-            .with_plan_route(plan_route)
+        RouterServer::new(pipelines, routes, config.models.clone(), &config.server, classifier)
+            .with_plan_route(plan_route.clone())
             .with_rigor_route(rigor_route)
             .with_ladders(ladders);
 
-    if let Some(ledger) = ledger {
-        server = server.with_ledger(ledger);
+    if let Some(ref ledger) = ledger {
+        server = server.with_ledger(Arc::clone(ledger));
     }
-    if let Some(sessions) = sessions {
-        server = server.with_sessions(sessions);
+    if let Some(ref sessions) = sessions {
+        server = server.with_sessions(Arc::clone(sessions));
     }
     if let Some(handle) = tier_worker_handle {
         server = server.with_tier_worker(handle);
@@ -718,6 +718,20 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     }
     server = server.with_management_api_key(config.sidecar.api_key_env.clone());
     server = server.with_supervisor(_supervisor.clone());
+    // Config-declared bounded tool plans (from `needle.tool_plans`), with the
+    // global `needle.max_rounds` as the default round budget. The read-only
+    // `Lookup`-step resolvers are installed from the stores this deployment
+    // configures (see `tool_lookup::build_registry`).
+    let needle_cfg = config.needle.clone().unwrap_or_default();
+    server = server
+        .with_tool_plans(needle_cfg.tool_plans)
+        .with_needle_max_rounds(needle_cfg.max_rounds)
+        .with_tool_lookups(fluent_router::server::tool_lookup::build_registry(
+            &config,
+            ledger.as_ref(),
+            Some(plan_route.chart_store_arc()),
+            default_chart_embedder(&config),
+        ));
 
     if let Some(ctx) = mock_dispatch {
         server = server.with_mock(ctx);

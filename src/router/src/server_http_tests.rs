@@ -741,18 +741,17 @@ async fn classifier_fallback_dispatch_honors_stream_flag() {
     let config = make_config(&upstream, true, false, 5000, 2000);
     let classifier_entry = config.models.get("fast").expect("fast model").clone();
 
-    // Classifier answers `respond` with no response text: neither a routing
-    // target nor a direct response, so the handler falls back to dispatching
-    // the request to the classifier model itself.
+    // Classifier answers with no response text and no routing target: neither a
+    // routing target nor a direct response, so the handler falls back to
+    // dispatching the request to the classifier model itself.
     let provider = TranscriptProvider::new(HashMap::new()).with_default(
         serde_json::to_string(&crate::config::ClassifierOutput {
-            action: "respond".into(),
+            domain: "local".into(),
             response: None,
             target: None,
             coherence_score: 0.9,
             safety_score: 1.0,
-            complexity: None,
-            intent: None,
+            confidence: 0.0,
             reason: "no direct answer".into(),
             completeness: None,
             risk: None,
@@ -1675,13 +1674,12 @@ impl ChatBackend for KnowledgeProbeBackend {
                 .is_ok();
         *lock(&self.gate) = Some(granted);
         let out = serde_json::to_string(&crate::config::ClassifierOutput {
-            action: "route".into(),
+            domain: "fast".into(),
             response: None,
             target: Some("fast".into()),
             coherence_score: 0.95,
             safety_score: 0.9,
-            complexity: None,
-            intent: Some("question".into()),
+            confidence: 0.0,
             reason: "probe".into(),
             completeness: None,
             risk: None,

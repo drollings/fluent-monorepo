@@ -36,13 +36,12 @@ impl TranscriptProvider {
 
     fn default_pass_response() -> String {
         serde_json::to_string(&ClassifierOutput {
-            action: "route".into(),
+            domain: "fast".into(),
             response: None,
             target: Some("fast".into()),
             coherence_score: 0.95,
             safety_score: 0.9,
-            complexity: None,
-            intent: Some("question".into()),
+            confidence: 0.0,
             reason: "well-formed factual query".into(),
             completeness: None,
             risk: None,

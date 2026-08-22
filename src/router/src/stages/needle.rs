@@ -286,6 +286,10 @@ impl NeedlePreFilter {
             // (e.g. the `local` general Q&A route) falls through to the
             // classifier LLM, which classifies the whole prompt as-is — Needle
             // never short-circuits a category the operator marked general.
+            // Defense-in-depth: `schema.rs` already excludes general routes
+            // from the engine grammar by construction, so the engine cannot
+            // name one in practice — this check exists so the invariant holds
+            // even if a caller injects a non-grammar-derived envelope.
             // Non-general route tools keep the authoritative Rerouted
             // short-circuit below.
             if is_general_route(&self.config, tool) {

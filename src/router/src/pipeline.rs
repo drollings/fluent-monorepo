@@ -202,6 +202,26 @@ pub const STAGE_DECISION_KEY: &str = "stage.decision";
 /// decision; otherwise the classifier decided (passed a target or answered
 /// directly). A rejected/errored request is not a routing decision and yields
 /// `stage: none`.
+/// The deterministic PII/blacklist pre-filter's verdict for the request, from
+/// the stage's recorded decision. Needle reroutes are a documented, audited
+/// bypass of the classifier's coherence/safety gate (DD-5), so the audit
+/// record carries the deterministic pre-filter's verdict to make the trust
+/// boundary legible post-hoc. A request that reached Needle necessarily passed
+/// the pre-filter (a rejection would have short-circuited the pipeline first).
+fn prefilter_verdict(decisions: &[StageDecision]) -> &'static str {
+    for d in decisions {
+        if d.stage != PipelineStage::DeterministicPreFilter {
+            continue;
+        }
+        return match d.verdict {
+            StageVerdict::Passed => "passed",
+            StageVerdict::Skipped => "skipped",
+            _ => "rejected",
+        };
+    }
+    "not_run"
+}
+
 fn deciding_route_record(
     decisions: &[StageDecision],
     routing_target: Option<&RoutingTarget>,
@@ -225,6 +245,8 @@ fn deciding_route_record(
                     "window": meta.needle_window(),
                     "confidence": meta.needle_confidence(),
                     "reason": meta.needle_reason(),
+                    "bypassed_classifier_gate": true,
+                    "prefilter_verdict": prefilter_verdict(decisions),
                 });
             }
             StageVerdict::Passed => {
@@ -244,6 +266,18 @@ fn deciding_route_record(
         }
     }
     // No authoritative Needle decision → the classifier decided.
+    // Surface the classifier's unified confident-offload envelope (`domain` +
+    // `confidence`, DD-1) so the deciding stage is legible post-hoc: the eval
+    // harness scores classifier `domain` correctness and `confidence`
+    // calibration from the durable audit (M6).
+    let classifier_meta = decisions
+        .iter()
+        .find(|d| d.stage == PipelineStage::Classifier)
+        .map(|d| StageMetadata::from(d.metadata.clone()));
+    let classifier_domain = classifier_meta.as_ref().and_then(|m| m.classifier_domain());
+    let classifier_confidence =
+        classifier_meta.as_ref().and_then(|m| m.classifier_confidence());
+
     if let Some(rt) = routing_target {
         return serde_json::json!({
             "stage": "classifier",
@@ -252,13 +286,18 @@ fn deciding_route_record(
             "group": rt.group,
             "model": rt.model,
             "url": rt.url,
+            "domain": classifier_domain,
+            "confidence": classifier_confidence,
         });
     }
     if let Some(resp) = classifier_response {
         return serde_json::json!({
             "stage": "classifier",
             "verdict": "direct_response",
+            "route": classifier_domain,
             "response_len": resp.len(),
+            "domain": classifier_domain,
+            "confidence": classifier_confidence,
         });
     }
     serde_json::json!({ "stage": "none", "verdict": "unresolved" })
@@ -442,6 +481,7 @@ impl PipelineOrchestrator {
                                 "target_route": rt.target_name,
                                 "target_model": rt.model,
                                 "target_url": rt.url,
+                                "bypassed_classifier_gate": true,
                             }),
                         );
                         *routing_target = Some(rt);
@@ -919,5 +959,71 @@ mod tests {
             rt.retry_base_interval_s,
             common_core::constants::DEFAULT_RETRY_INTERVAL_S
         );
+    }
+
+    /// The classifier aggregate deciding-stage record must carry the unified
+    /// confident-offload envelope (`domain` + `confidence`, DD-1) so the eval
+    /// harness can score classifier `domain` correctness and `confidence`
+    /// calibration from the durable audit (M6).
+    #[test]
+    fn classifier_aggregate_record_carries_domain_and_confidence() {
+        let rt = RoutingTarget::from_model_entry("fast", &test_entry());
+        let classifier_decision = StageDecision {
+            stage: PipelineStage::Classifier,
+            verdict: StageVerdict::Passed,
+            score: Some(0.9),
+            reason: "domain=code, confidence=0.90, coherence=0.90".into(),
+            latency_ms: 0,
+            metadata: serde_json::json!({
+                "domain": "code",
+                "confidence": 0.9,
+                "coherence_score": 0.9,
+                "safety_score": 0.9,
+                "reason": "needs the code model",
+                "fallback": false,
+            }),
+        };
+        let record = deciding_route_record(
+            &[classifier_decision],
+            Some(&rt),
+            None,
+        );
+        assert_eq!(record["stage"], "classifier");
+        assert_eq!(record["verdict"], "passed");
+        assert_eq!(record["domain"], "code");
+        assert_eq!(record["confidence"], 0.9);
+        assert_eq!(record["route"], "fast");
+    }
+
+    /// The classifier direct-response aggregate record carries the same
+    /// envelope, so a respond-on-`local` decision is legible post-hoc.
+    #[test]
+    fn classifier_direct_response_aggregate_carries_domain_and_confidence() {
+        let classifier_decision = StageDecision {
+            stage: PipelineStage::Classifier,
+            verdict: StageVerdict::Passed,
+            score: Some(0.95),
+            reason: "domain=local, confidence=0.95, coherence=0.95".into(),
+            latency_ms: 0,
+            metadata: serde_json::json!({
+                "domain": "local",
+                "confidence": 0.95,
+                "coherence_score": 0.95,
+                "safety_score": 0.95,
+                "response": "42",
+                "reason": "simple",
+                "fallback": false,
+            }),
+        };
+        let record = deciding_route_record(
+            &[classifier_decision],
+            None,
+            Some(&"42".to_string()),
+        );
+        assert_eq!(record["stage"], "classifier");
+        assert_eq!(record["verdict"], "direct_response");
+        assert_eq!(record["domain"], "local");
+        assert_eq!(record["confidence"], 0.95);
+        assert_eq!(record["response_len"], 2);
     }
 }

@@ -5,6 +5,7 @@
             "classifier": true,
             "router": true,
             "coherence_threshold": 0.2,
+            "classifier_respond_threshold": 0.6,
             "classifier_model": "lfm2.5-2.6b",
             "blacklist": "env/pii-patterns.json"
         }
@@ -118,7 +119,7 @@
             "retry_base_interval_s": 1
         }
     },
-    "_comment_routes": "`always_route: true` means requests on that route are NEVER answered by the classifier model directly - the router forces dispatch to the route's group (compensating for the classifier's overconfidence in prose, code, translation, and specialized knowledge). Routes without it (local/extract/summarize) still let the classifier answer simple prompts directly.",
+    "_comment_routes": "The route table is the functional tool taxonomy: each route key is a functionally-disjoint response function (code / summarize / explore / explain / prose), plus `local` as the general Q&A category that is the classifier's own territory (see needle.schema_overrides.local.general). `always_route: true` marks the route as dispatch-only: its response function is a dispatch to the route's group, never a classifier direct answer, even at maximum confidence. Routes without it (`local`) keep the direct-answer path. Subject-matter routing (science, medical, legal, translation, entity recognition) is handled as bounded subagent plans dispatched after a tool is selected, not as separate top-level routes.",
     "routes": {
         "local": {
             "group": "default",
@@ -129,80 +130,51 @@
         "prose": {
             "group": "prose",
             "pipelines": ["default"],
-            "description": "Write a story, novel, poem, essay, screenplay, or letter - any substantial creative writing. Always dispatched to the dedicated writer model.",
+            "description": "Write a story, novel, poem, essay, screenplay, or letter - any substantial creative writing.",
             "always_route": true
         },
         "code": {
             "group": "code",
             "pipelines": ["default"],
-            "description": "Programming, software development, Linux, bash, Python, Rust, dev-ops, debugging, and technical implementation",
+            "description": "Programming, software development, Linux, bash, Python, Rust, dev-ops, debugging, and technical implementation - write, debug, or explain code.",
             "always_route": true
-        },
-        "extract": {
-            "group": "extract",
-            "pipelines": ["default"],
-            "description": "Entity recognition, structured data extraction, database lookups"
         },
         "summarize": {
             "group": "summarize",
             "pipelines": ["default"],
-            "description": "Summarize or condense text"
+            "description": "Summarize or condense text - an article, report, email thread, meeting notes, or other content, into a shorter form."
         },
-        "translation": {
-            "group": "translation",
+        "explore": {
+            "group": "explore",
             "pipelines": ["default"],
-            "description": "Translate between different languages",
+            "description": "Search, navigate, look up, or pull a value - search the web, open a page, look up an API, query data storage or a knowledge graph, or extract a specific value (a date, amount, email, or identifier) from text.",
             "always_route": true
         },
-        "science": {
-            "group": "science",
+        "explain": {
+            "group": "explain",
             "pipelines": ["default"],
-            "description": "Physics, chemistry, biology, mathematics, engineering, and the natural sciences - explanations, derivations, and research questions. Always dispatched to the capable model.",
-            "always_route": true
-        },
-        "legal": {
-            "group": "legal",
-            "pipelines": ["default"],
-            "description": "Law, contracts, compliance, regulations, and legal drafting or analysis. Always dispatched to the capable model.",
-            "always_route": true
-        },
-        "medical": {
-            "group": "medical",
-            "pipelines": ["default"],
-            "description": "Medicine, pharmacology, anatomy, diagnostics, and health questions. Always dispatched to the capable model.",
+            "description": "A deep answer - translate between languages, analyze or reason about a topic, identify named entities in text, or explain a concept from the sciences, mathematics, medicine, or law, including graph, entity-tool, and chart lookups relevant to the subject.",
             "always_route": true
         }
     },
-    "_comment_model_groups": "Each model_group is an ordered target-matching ladder (VISION 'Target selection within a group'): the cheapest candidate self-assesses the request's complexity first and defers to the next, more-intelligent member when the assessed complexity exceeds its `intelligence`. E.g. `default` = [swarm (intelligence 2), qwen3.6-27b (intelligence 6)]: swarm answers unless it assesses the request above complexity 2, in which case qwen3.6-27b re-classifies and answers. Single-member groups resolve statically. Controlled per pipeline via `pipelines.<name>.target_match` (\"self_assess\" default | \"static\") and `target_match_timeout_ms`.",
+    "_comment_model_groups": "Each model_group is an ordered target-matching ladder (VISION 'Target selection within a group'): the cheapest candidate self-assesses the request's complexity first and defers to the next, more-intelligent member when the assessed complexity exceeds its `intelligence`. `explore` leads with a cheap capable model (the value-pull fast path); `explain` leads with the capable model (deep answers). Single-member groups resolve statically. Controlled per pipeline via `pipelines.<name>.target_match` (\"self_assess\" default | \"static\") and `target_match_timeout_ms`.",
     "model_groups": {
         "default": [
-            "lfm2.5-2.6b"
-        ],
-        "extract": [
-            "lfm2.5-2.6b"
-        ],
-        "summarize": [
             "lfm2.5-2.6b"
         ],
         "code": [
             "qwen3.6-27b"
         ],
-        "reasoning": [
-            "qwen3.6-27b"
+        "summarize": [
+            "lfm2.5-2.6b"
         ],
-        "translation": [
+        "explore": [
+            "lfm2.5-2.6b"
+        ],
+        "explain": [
             "qwen3.6-27b"
         ],
         "prose": [
-            "nyx-rp-mini"
-        ],
-        "science": [
-            "qwen3.6-27b"
-        ],
-        "legal": [
-            "qwen3.6-27b"
-        ],
-        "medical": [
             "qwen3.6-27b"
         ]
     },
@@ -219,6 +191,230 @@
     },
     "post_process": {
         "workflow_extraction": false
+    },
+    "ledger": {
+        "path": "data/ledger.sqlite",
+        "model": "lfm2.5-2.6b"
+    },
+    "session": {
+        "root": "data/sessions"
+    },
+    "tool_lookups": {
+        "data_store_path": null
+    },
+    "needle": {
+        "enabled": true,
+        "engine": "vendor/needle/linux-x86_64/libneedle.so",
+        "engine_version": null,
+        "weights": "data/needle-opt/needle_routes_v10.cact",
+        "pipeline": null,
+        "min_command_chars": 4,
+        "max_command_chars": 512,
+        "max_input_tokens": 1024,
+        "confidence_threshold": 0.7,
+        "decline_on_missing_confidence": true,
+        "timeout_ms": 2000,
+        "candidates_per_rung": 5,
+        "tool_index_path": null,
+        "max_rounds": 3,
+        "schema_overrides": {
+            "local": {
+                "name": "local",
+                "description": "General Q&A, simple questions, chitchat, research queries, brainstorming, and help formulating prompts.",
+                "examples": [
+                    "What is 2+2?",
+                    "Explain how request routing works",
+                    "Help me brainstorm an idea"
+                ],
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                },
+                "intents": [
+                    "general",
+                    "chitchat",
+                    "research",
+                    "brainstorm",
+                    "prompting"
+                ],
+                "general": true
+            },
+            "code": {
+                "name": "code",
+                "description": "Programming, software development, Linux, bash, Python, Rust, dev-ops, debugging, and technical implementation - write, debug, or explain code.",
+                "examples": [
+                    "Write a Rust function that sorts a vec",
+                    "Debug this error trace",
+                    "Explain this bash one-liner"
+                ],
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                },
+                "intents": [
+                    "programming",
+                    "coding",
+                    "debugging",
+                    "devops",
+                    "technical"
+                ]
+            },
+            "summarize": {
+                "name": "summarize",
+                "description": "Summarize or condense text - an article, report, email thread, meeting notes, or other content, into a shorter form.",
+                "examples": [
+                    "Summarize this article",
+                    "Give me a TL;DR of this text"
+                ],
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                },
+                "intents": [
+                    "summarization",
+                    "condense",
+                    "digest",
+                    "tl;dr",
+                    "shorten"
+                ]
+            },
+            "explore": {
+                "name": "explore",
+                "description": "Search, navigate, look up, or pull a value - search the web, open a page, look up an API, query data storage or a knowledge graph, or extract a specific value (a date, amount, email, or identifier) from text.",
+                "examples": [
+                    "Search the web for the latest Rust release",
+                    "Look up the docs for the billing API",
+                    "Extract the invoice total from this email",
+                    "Go to the project page",
+                    "What does the ledger say about this service?",
+                    "Find related nodes for this concept"
+                ],
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "value": {
+                            "type": "string",
+                            "description": "The extracted value to return"
+                        }
+                    },
+                    "required": []
+                },
+                "intents": [
+                    "search",
+                    "navigation",
+                    "api lookup",
+                    "data store lookup",
+                    "knowledge graph lookup",
+                    "extraction",
+                    "value pull"
+                ],
+                "output_template": "Found: {value}"
+            },
+            "explain": {
+                "name": "explain",
+                "description": "A deep answer - translate between languages, analyze or reason about a topic, identify named entities in text, or explain a concept from the sciences, mathematics, medicine, or law, including graph, entity-tool, and chart lookups relevant to the subject.",
+                "examples": [
+                    "Translate this to French",
+                    "Explain the greenhouse effect",
+                    "Who are the companies in this text?",
+                    "What causes hypertension?",
+                    "Find relevant graphs for this analysis",
+                    "Show a chart of these metrics"
+                ],
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                },
+                "intents": [
+                    "translation",
+                    "analysis",
+                    "reasoning",
+                    "named entities",
+                    "ner",
+                    "science",
+                    "mathematics",
+                    "medicine",
+                    "law",
+                    "concept",
+                    "graph lookup",
+                    "chart"
+                ]
+            },
+            "prose": {
+                "name": "prose",
+                "description": "Write a story, novel, poem, essay, screenplay, or letter - any substantial creative writing.",
+                "examples": [
+                    "Write a short story about a lighthouse keeper",
+                    "Compose a poem about the sea",
+                    "Draft a letter to a friend"
+                ],
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                },
+                "intents": [
+                    "creative writing",
+                    "story",
+                    "poem",
+                    "essay",
+                    "screenplay",
+                    "letter",
+                    "narrative"
+                ]
+            }
+        },
+        "shortlist": {
+            "mode": "none",
+            "embedding_model": null,
+            "index_path": null,
+            "min_score": 0.6
+        },
+        "_comment_tool_plans": "Bounded tool plans for explore and explain. When a Rerouted target matches a route with a plan, the handler runs the plan steps instead of a single dispatch. Exceeding max_rounds falls back to plain group dispatch. Plans are config-declared, never hardcoded. Lookup steps are resolved by read-only `ToolLookup` resolvers installed at boot from the stores this deployment configures (the session DAG, the ledger, the chart store, and optionally the `tool_lookups` data store). A plan whose Lookup step names a kind with no installed resolver is declined to plain group dispatch, never executed with a placeholder; a lookup that resolves to nothing is omitted from the composition, never synthesized. explore: dispatch -> knowledge_graph lookup -> compose. explain: dispatch -> chart lookup -> compose.",
+        "tool_plans": {
+            "explore": {
+                "max_rounds": 3,
+                "steps": [
+                    {
+                        "id": "identify_subject",
+                        "kind": "dispatch",
+                        "target_group": "explore"
+                    },
+                    {
+                        "id": "lookup_graph",
+                        "kind": "lookup",
+                        "lookup_kind": "knowledge_graph"
+                    },
+                    {
+                        "id": "compose",
+                        "kind": "compose"
+                    }
+                ]
+            },
+            "explain": {
+                "max_rounds": 3,
+                "steps": [
+                    {
+                        "id": "identify_subject",
+                        "kind": "dispatch",
+                        "target_group": "explain"
+                    },
+                    {
+                        "id": "lookup_chart",
+                        "kind": "lookup",
+                        "lookup_kind": "chart"
+                    },
+                    {
+                        "id": "compose",
+                        "kind": "compose"
+                    }
+                ]
+            }
+        }
     },
     "embedding_model": "embed",
     "gguf_dir": "/app/ai/models/gguf",

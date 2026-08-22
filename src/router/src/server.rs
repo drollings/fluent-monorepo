@@ -6,6 +6,7 @@ pub mod dispatch;
 pub mod handler;
 pub mod instances_api;
 pub mod responses;
+pub mod tool_lookup;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use fluent_wvr::prelude::*;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-use crate::config::{ModelEntry, RouteRef, ServerConfig};
+use crate::config::{ModelEntry, RouteRef, ServerConfig, ToolPlan};
 use crate::dag_session::SessionRegistry;
 use crate::dispatch::escalation::Ladder;
 use crate::ledger::ContentNodeLedger;
@@ -62,6 +63,15 @@ pub struct RouterServer {
     /// The `LedgerAgentCoordinator`, when the operator opts in. `None`
     /// keeps dispatch unchanged.
     coordinator: Option<Arc<crate::ledger::orchestrator::LedgerAgentCoordinator>>,
+    /// Config-declared bounded tool plans (from `needle.tool_plans`).
+    /// Keys are route keys; values are ordered step sequences.
+    tool_plans: HashMap<String, ToolPlan>,
+    /// Global `needle.max_rounds` — the default round budget for tool plans.
+    needle_max_rounds: usize,
+    /// Read-only `Lookup`-step resolvers for tool plans. A plan whose `Lookup`
+    /// step names a kind without an installed resolver is declined to plain
+    /// group dispatch (never a placeholder lookup).
+    tool_lookup: crate::server::tool_lookup::ToolLookupRegistry,
     depends: Vec<ArcIntern<str>>,
     provides: Vec<ArcIntern<str>>,
 }
@@ -95,6 +105,9 @@ impl RouterServer {
             api_key_env_name: None,
             tier_worker: None,
             coordinator: None,
+            tool_plans: HashMap::new(),
+            needle_max_rounds: 3,
+            tool_lookup: crate::server::tool_lookup::ToolLookupRegistry::new(),
             depends: vec![],
             provides: vec![ArcIntern::from("http.endpoint")],
         }
@@ -212,6 +225,40 @@ impl RouterServer {
         self
     }
 
+    /// Attach config-declared bounded tool plans (from `needle.tool_plans`).
+    /// When a `Rerouted` target matches a route with a plan, the handler
+    /// executes the plan instead of a single `handle_dispatch`.
+    #[must_use]
+    pub fn with_tool_plans(mut self, tool_plans: HashMap<String, ToolPlan>) -> Self {
+        self.tool_plans = tool_plans;
+        self
+    }
+
+    /// Set the global `needle.max_rounds` — the default round budget for
+    /// tool plans that don't override it.
+    #[must_use]
+    pub fn with_needle_max_rounds(mut self, max_rounds: usize) -> Self {
+        self.needle_max_rounds = max_rounds;
+        self
+    }
+
+    /// Attach the read-only `Lookup`-step resolvers for tool plans. A plan
+    /// whose `Lookup` step names a kind without an installed resolver is
+    /// declined to plain group dispatch — never a placeholder lookup.
+    #[must_use]
+    pub fn with_tool_lookups(
+        mut self,
+        registry: crate::server::tool_lookup::ToolLookupRegistry,
+    ) -> Self {
+        tracing::info!(
+            target: "router.server",
+            lookup_kinds = ?registry.kinds(),
+            "tool-plan lookup resolvers attached",
+        );
+        self.tool_lookup = registry;
+        self
+    }
+
     #[must_use]
     pub fn with_mock(mut self, mock_dispatch: MockDispatchContext) -> Self {
         tracing::info!(
@@ -276,6 +323,9 @@ impl RouterServer {
             api_key_env_name: self.api_key_env_name.clone(),
             supervisor: self.supervisor.clone(),
             coordinator: self.coordinator.clone(),
+            tool_plans: self.tool_plans.clone(),
+            needle_max_rounds: self.needle_max_rounds,
+            tool_lookup: self.tool_lookup.clone(),
         };
 
         // Reconcile configured pinned instances at boot (retrying until the
@@ -359,6 +409,9 @@ impl WorkUnit for RouterServer {
             api_key_env_name: self.api_key_env_name.clone(),
             supervisor: self.supervisor.clone(),
             coordinator: self.coordinator.clone(),
+            tool_plans: self.tool_plans.clone(),
+            needle_max_rounds: self.needle_max_rounds,
+            tool_lookup: self.tool_lookup.clone(),
         };
         let rt = ctx.rt.clone();
 

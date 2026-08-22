@@ -26,25 +26,24 @@ fn make_request(text: &str) -> RouterRequest {
     req
 }
 
-fn classify_output(action: &str, coherence: f64, safety: f64, reason: &str) -> String {
+fn classify_output(coherence: f64, safety: f64, reason: &str) -> String {
     serde_json::to_string(&serde_json::json!({
-        "action": action,
+        "domain": "fast",
         "coherence_score": coherence,
         "safety_score": safety,
+        "confidence": 1.0,
         "reason": reason,
-        "intent": if action == "reject" { serde_json::Value::Null } else { serde_json::Value::String("question".into()) },
     }))
     .unwrap()
 }
 
 fn classify_with_target(target: &str) -> String {
     serde_json::to_string(&serde_json::json!({
-        "action": "route",
+        "domain": target,
         "coherence_score": 0.95,
         "safety_score": 0.9,
-        "intent": "question",
+        "confidence": 0.3,
         "reason": "well-formed factual query",
-        "target": target,
     }))
     .unwrap()
 }
@@ -151,7 +150,7 @@ fn test_e2e_garbage_rejected_by_classifier() {
     let mut entries = HashMap::new();
     entries.insert(
         "asdfghjkl qwerty zxcvbnm".into(),
-        classify_output("reject", 0.15, 0.9, "incoherent input"),
+        classify_output(0.15, 0.9, "incoherent input"),
     );
     let pipeline = make_pipeline(TranscriptProvider::new(entries));
     let request = make_request("asdfghjkl qwerty zxcvbnm");
@@ -251,7 +250,7 @@ fn test_e2e_custom_fixtures_produce_expected_results() {
     let mut entries = HashMap::new();
     entries.insert(
         "bad input that should be rejected".into(),
-        classify_output("reject", 0.2, 0.9, "mock rejection: low quality"),
+        classify_output(0.2, 0.9, "mock rejection: low quality"),
     );
     entries.insert("good quality input".into(), classify_with_target("fast"));
 
@@ -472,6 +471,41 @@ fn test_e2e_needle_disabled_keeps_two_stage_order() {
         stages,
         vec![PipelineStage::DeterministicPreFilter, PipelineStage::Classifier],
         "needle disabled keeps today's two-stage pipeline"
+    );
+}
+
+// ── Confident-offload trust boundary (DD-5) ────────────────────────────────
+// A Needle reroute bypasses the classifier's coherence/safety gate by design,
+// but the deterministic PII/blacklist pre-filter still runs before it, and the
+// audit record must make that bypass explicit and legible post-hoc
+// (`bypassed_classifier_gate`) alongside the pre-filter's verdict.
+
+#[test]
+fn test_e2e_needle_reroute_audit_marks_classifier_gate_bypass() {
+    let config = make_needle_config(true);
+    let pipeline = make_needle_pipeline(
+        &config,
+        MockNeedleBackend::always(needle_call("fast", Some(0.95))),
+        Arc::new(CountingBackend::new("must not be called")),
+    );
+    let request = make_request("route me to fast");
+
+    let (_result, logs) = crate::test_support::capture_logs(|| {
+        route(&pipeline, &request).expect("pipeline should complete");
+    });
+    let joined = logs.join("\n");
+
+    assert!(
+        joined.contains("\"verdict\":\"rerouted\""),
+        "rerouted verdict, got:\n{joined}"
+    );
+    assert!(
+        joined.contains("\"bypassed_classifier_gate\":true"),
+        "reroute must be audited as a classifier-gate bypass, got:\n{joined}"
+    );
+    assert!(
+        joined.contains("\"prefilter_verdict\":\"passed\""),
+        "reroute must record the deterministic pre-filter's verdict, got:\n{joined}"
     );
 }
 

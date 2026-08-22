@@ -41,6 +41,7 @@ pub mod normalize;
 pub mod pipeline;
 pub mod pipeline_types;
 pub mod routes;
+pub mod routing_policy;
 pub mod scheduler;
 pub mod score_matrix;
 pub mod server;

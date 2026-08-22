@@ -6,7 +6,7 @@ use common_core::hash::uuid_v4;
 use common_core::ResponseCache;
 use http_body_util::BodyExt;
 
-use crate::config::{ModelEntry, RouteRef};
+use crate::config::{ModelEntry, RouteRef, ToolPlan};
 use crate::dag_session::{DependencySession, SessionRegistry, SessionStep, StepResult};
 use crate::dispatch::escalation::{EscalationContext, Ladder};
 use crate::ledger::ContentNodeLedger;
@@ -61,6 +61,16 @@ pub struct ServerDeps {
     /// (the default) leaves dispatch unchanged — requests fall through to the
     /// existing pipeline.
     pub coordinator: Option<Arc<crate::ledger::orchestrator::LedgerAgentCoordinator>>,
+    /// Config-declared bounded tool plans (from `needle.tool_plans`).
+    /// Keys are route keys; values are ordered step sequences.
+    pub tool_plans: HashMap<String, ToolPlan>,
+    /// Global `needle.max_rounds` — the default round budget for tool plans
+    /// that don't override it.
+    pub needle_max_rounds: usize,
+    /// Read-only `Lookup`-step resolvers for tool plans. A plan whose `Lookup`
+    /// step names a kind without an installed resolver is declined to plain
+    /// group dispatch (never a placeholder lookup).
+    pub tool_lookup: crate::server::tool_lookup::ToolLookupRegistry,
 }
 
 impl ServerDeps {
@@ -280,6 +290,457 @@ fn begin_session_step(
     })
 }
 
+/// Record a tool-plan step result into the session ledger (best-effort).
+async fn record_step_to_ledger(
+    ledger: Option<&Arc<ContentNodeLedger>>,
+    step_id: &str,
+    router_request: &RouterRequest,
+    content: &str,
+) {
+    let Some(l) = ledger else { return };
+    let l = Arc::clone(l);
+    let session = router_request.session_id.clone().unwrap_or_default();
+    let step_id = step_id.to_string();
+    let content = content.to_string();
+    tokio::task::spawn_blocking(move || {
+        let _ = l.record_request(&session, &step_id, &content);
+    })
+    .await
+    .ok();
+}
+
+/// Durable-audit one tool-plan step onto the canonical `router.audit`
+/// stream (VISION: "auditable by construction"): the route, step id, ordinal,
+/// kind, and dispatch target (model group for `Dispatch`/`Passthrough`,
+/// lookup kind for `Lookup`) so a subagent-dispatched request is legible
+/// post-hoc.
+fn emit_step_audit(route: &str, step: &crate::config::ToolPlanStep, step_idx: usize) {
+    let kind = match step.kind {
+        crate::config::ToolPlanStepKind::Dispatch => "dispatch",
+        crate::config::ToolPlanStepKind::Lookup => "lookup",
+        crate::config::ToolPlanStepKind::Compose => "compose",
+        crate::config::ToolPlanStepKind::Passthrough => "passthrough",
+    };
+    let target = match step.kind {
+        crate::config::ToolPlanStepKind::Lookup => {
+            step.lookup_kind.clone().unwrap_or_else(|| "unknown".into())
+        }
+        _ => step.target_group.clone().unwrap_or_else(|| "route".into()),
+    };
+    crate::audit::emit(
+        "tool_plan_step",
+        serde_json::json!({
+            "route": route,
+            "step": step.id,
+            "step_idx": step_idx,
+            "kind": kind,
+            "target": target,
+        }),
+    );
+}
+
+/// Execute a bounded, config-declared tool plan.
+///
+/// When a `Rerouted` target matches a route with a `tool_plans` entry, this
+/// function runs the plan's ordered steps instead of a single `handle_dispatch`
+/// call. Each step records its result into the session ledger as a typed
+/// `ContentNode` by origin and writes audit metadata (step id, target,
+/// confidence) so the dispatch is legible post-hoc (VISION: "auditable by
+/// construction").
+///
+/// Exceeding the plan's `max_rounds` (or the global `needle.max_rounds` when
+/// the plan has none) falls back to the route's plain group dispatch rather
+/// than looping (VISION: "terminate, don't loop").
+///
+/// `Dispatch` steps go through the standard `ChatBackend` chain via
+/// `handle_dispatch`; `Lookup` steps perform a read-only data-store or
+/// knowledge-graph lookup through an installed [`ToolLookup`] resolver;
+/// `Compose` steps synthesize the final answer from prior step results.
+///
+/// A plan is executed only when it is *executable*: every `Lookup` step's
+/// `lookup_kind` must have an installed resolver in `tool_lookup` (or the plan
+/// has no `Lookup` steps). A plan with an unresolved `Lookup` kind is declined
+/// to plain group dispatch — never executed with a placeholder (VISION: "no
+/// fabricated data"). A `Lookup` step that resolves to nothing (absent) is
+/// omitted from the composition; a `Lookup` step that errors degrades to plain
+/// group dispatch.
+async fn run_tool_plan(
+    plan: &ToolPlan,
+    rt: &RoutingTarget,
+    router_request: &RouterRequest,
+    model_name: &str,
+    user_text: &str,
+    mock_dispatch: Option<&Arc<MockDispatchContext>>,
+    is_stream: bool,
+    dispatch_deps: &crate::server::dispatch::DispatchDeps,
+    ledger: Option<&Arc<ContentNodeLedger>>,
+    ledger_node_id: Option<fluent_types::NodeId>,
+    needle_max_rounds: usize,
+    tool_lookup: &crate::server::tool_lookup::ToolLookupRegistry,
+) -> Result<crate::server::dispatch::DispatchOutcome, std::convert::Infallible> {
+    let plan_max = plan.max_rounds.unwrap_or(needle_max_rounds);
+    let route = rt.target_name.as_deref().unwrap_or("unknown");
+
+    tracing::info!(
+        target: "router.server.tool_plan",
+        route = %route,
+        step_count = plan.steps.len(),
+        max_rounds = plan_max,
+        "executing bounded tool plan"
+    );
+
+    // A plan with a `Lookup` step of an unsupported kind is never executed —
+    // decline to plain group dispatch (the fabricated-lookup leak is closed by
+    // construction, not by a placeholder).
+    if !crate::server::tool_lookup::plan_is_executable(plan, tool_lookup) {
+        let unresolved: Vec<String> = plan
+            .steps
+            .iter()
+            .filter(|s| matches!(s.kind, crate::config::ToolPlanStepKind::Lookup))
+            .filter_map(|s| s.lookup_kind.clone())
+            .collect();
+        tracing::warn!(
+            target: "router.server.tool_plan",
+            route = %route,
+            unresolved_lookup_kinds = ?unresolved,
+            "tool plan has an unresolved lookup kind — declining to plain dispatch"
+        );
+        crate::audit::emit(
+            "tool_plan_declined",
+            serde_json::json!({
+                "route": route,
+                "reason": "unresolved_lookup",
+                "lookup_kinds": unresolved,
+            }),
+        );
+        return crate::server::dispatch::handle_dispatch(
+            rt,
+            router_request,
+            model_name,
+            user_text,
+            mock_dispatch,
+            is_stream,
+            dispatch_deps,
+        )
+        .await;
+    }
+
+    // Accumulate step results for the Compose step. Only real step results are
+    // pushed — a step that resolved to nothing is absent, never synthesized.
+    let mut step_results: Vec<(String, String)> = Vec::new();
+    let mut last_outcome: Option<crate::server::dispatch::DispatchOutcome> = None;
+
+    crate::audit::emit(
+        "tool_plan",
+        serde_json::json!({
+            "route": route,
+            "steps": plan.steps.len(),
+            "max_rounds": plan_max,
+        }),
+    );
+
+    for (step_idx, step) in plan.steps.iter().enumerate() {
+        if step_idx >= plan_max {
+            tracing::warn!(
+                target: "router.server.tool_plan",
+                route = %route,
+                step = %step.id,
+                step_idx = step_idx,
+                max_rounds = plan_max,
+                "tool plan exceeded max_rounds — falling back to plain dispatch"
+            );
+            crate::audit::emit(
+                "tool_plan_fallback",
+                serde_json::json!({
+                    "route": route,
+                    "step": step.id,
+                    "reason": "max_rounds_exceeded",
+                    "max_rounds": plan_max,
+                }),
+            );
+            // Fall back to plain group dispatch for the remainder.
+            let outcome = crate::server::dispatch::handle_dispatch(
+                rt,
+                router_request,
+                model_name,
+                user_text,
+                mock_dispatch,
+                is_stream,
+                dispatch_deps,
+            )
+            .await?;
+            return Ok(outcome);
+        }
+
+        tracing::info!(
+            target: "router.server.tool_plan",
+            route = %route,
+            step = %step.id,
+            step_idx = step_idx,
+            kind = ?step.kind,
+            "executing tool plan step"
+        );
+        emit_step_audit(route, step, step_idx);
+
+        match &step.kind {
+            crate::config::ToolPlanStepKind::Dispatch => {
+                let step_rt = if let Some(ref group) = step.target_group {
+                    let mut t = rt.clone();
+                    t.group = Some(group.clone());
+                    t
+                } else {
+                    rt.clone()
+                };
+                let outcome = crate::server::dispatch::handle_dispatch(
+                    &step_rt,
+                    router_request,
+                    model_name,
+                    user_text,
+                    mock_dispatch,
+                    is_stream,
+                    dispatch_deps,
+                )
+                .await?;
+                // A mechanical failure of every target in the chain degrades
+                // to the canned fallback completion (see `dispatch_real`) —
+                // that sentinel, not the HTTP status (always 200), is the
+                // step-failure signal.
+                let ok = outcome.response.status().is_success()
+                    && outcome.answer_text.as_deref()
+                        != Some(crate::server::responses::FALLBACK_ANSWER);
+                let answer = outcome.answer_text.clone().unwrap_or_default();
+                step_results.push((step.id.clone(), answer.clone()));
+                record_step_to_ledger(ledger, &step.id, router_request, &answer).await;
+                if !ok {
+                    // A failed step does not loop or continue the plan
+                    // (VISION: "terminate, don't loop") — fall back to the
+                    // route's plain group dispatch.
+                    tracing::warn!(
+                        target: "router.server.tool_plan",
+                        route = %route,
+                        step = %step.id,
+                        status = %outcome.response.status(),
+                        "tool plan step failed - falling back to plain dispatch"
+                    );
+                    crate::audit::emit(
+                        "tool_plan_fallback",
+                        serde_json::json!({
+                            "route": route,
+                            "step": step.id,
+                            "reason": "step_failed",
+                            "status": outcome.response.status().as_u16(),
+                        }),
+                    );
+                    return crate::server::dispatch::handle_dispatch(
+                        rt,
+                        router_request,
+                        model_name,
+                        user_text,
+                        mock_dispatch,
+                        is_stream,
+                        dispatch_deps,
+                    )
+                    .await;
+                }
+                last_outcome = Some(outcome);
+            }
+            crate::config::ToolPlanStepKind::Lookup => {
+                let lookup_kind = step.lookup_kind.as_deref().unwrap_or("unknown");
+                // The plan is executable, so a resolver is installed for this
+                // kind. A resolver returns `Ok(Some)` (present material),
+                // `Ok(None)` (absent — nothing relevant), or `Err` (failure —
+                // degrade to plain dispatch, never a composed half-answer).
+                let resolver = tool_lookup.get(lookup_kind);
+                let ctx = crate::server::tool_lookup::LookupContext {
+                    request: router_request,
+                    ledger,
+                    user_text,
+                    session: dispatch_deps.session.as_ref(),
+                };
+                // `resolver` is installed (`plan_is_executable` guarantees it);
+                // the defensive `Ok(None)` arm (no resolver) is treated as
+                // absent rather than a hard failure.
+                let resolved = resolver
+                    .map(|r| r.lookup(user_text, &ctx))
+                    .transpose();
+                match resolved {
+                    Ok(Some(Some(result))) if !result.is_empty() => {
+                        let text = result.to_string();
+                        step_results.push((step.id.clone(), text.clone()));
+                        tracing::info!(
+                            target: "router.server.tool_plan",
+                            route = %route,
+                            step = %step.id,
+                            lookup_kind = %lookup_kind,
+                            result_items = result.items.len(),
+                            result_chars = text.chars().count(),
+                            "lookup step resolved",
+                        );
+                        crate::audit::emit(
+                            "tool_plan_lookup",
+                            serde_json::json!({
+                                "route": route,
+                                "step": step.id,
+                                "lookup_kind": lookup_kind,
+                                "present": true,
+                                "result_count": result.items.len(),
+                            }),
+                        );
+                        record_step_to_ledger(ledger, &step.id, router_request, &text).await;
+                    }
+                    Ok(_) => {
+                        // Absent: nothing relevant in the backing store. The
+                        // step contributes no material — it is omitted from the
+                        // composition, never replaced with placeholder text.
+                        tracing::info!(
+                            target: "router.server.tool_plan",
+                            route = %route,
+                            step = %step.id,
+                            lookup_kind = %lookup_kind,
+                            "lookup step absent — omitted from composition",
+                        );
+                        crate::audit::emit(
+                            "tool_plan_lookup",
+                            serde_json::json!({
+                                "route": route,
+                                "step": step.id,
+                                "lookup_kind": lookup_kind,
+                                "present": false,
+                                "result_count": 0,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        // A genuine lookup failure degrades to plain group
+                        // dispatch — never a half-composed answer.
+                        tracing::warn!(
+                            target: "router.server.tool_plan",
+                            route = %route,
+                            step = %step.id,
+                            lookup_kind = %lookup_kind,
+                            error = %e,
+                            "tool plan lookup failed - falling back to plain dispatch"
+                        );
+                        crate::audit::emit(
+                            "tool_plan_fallback",
+                            serde_json::json!({
+                                "route": route,
+                                "step": step.id,
+                                "reason": "lookup_failed",
+                                "lookup_kind": lookup_kind,
+                                "error": e.to_string(),
+                            }),
+                        );
+                        return crate::server::dispatch::handle_dispatch(
+                            rt,
+                            router_request,
+                            model_name,
+                            user_text,
+                            mock_dispatch,
+                            is_stream,
+                            dispatch_deps,
+                        )
+                        .await;
+                    }
+                }
+            }
+            crate::config::ToolPlanStepKind::Compose => {
+                // Join only the step results that are real, non-empty material
+                // from a successful Dispatch/Lookup/Passthrough. A step that
+                // resolved to nothing (absent) never lands in `step_results`,
+                // and an empty string is defensively omitted too — the
+                // composition never carries a placeholder or a synthesized
+                // stand-in for an absent step.
+                let real: Vec<&(String, String)> =
+                    step_results.iter().filter(|(_, result)| !result.is_empty()).collect();
+                let composed = if real.is_empty() {
+                    tracing::warn!(
+                        target: "router.server.tool_plan",
+                        route = %route,
+                        step = %step.id,
+                        "compose step with no real results",
+                    );
+                    String::new()
+                } else {
+                    real.iter()
+                        .map(|(id, result)| format!("[{id}]: {result}"))
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                };
+                step_results.push((step.id.clone(), composed.clone()));
+                let completion =
+                    crate::server::responses::make_text_completion(model_name, &composed);
+                let response = crate::server::responses::completion_to_response(
+                    &completion,
+                    model_name,
+                    is_stream,
+                    None,
+                );
+                record_ledger_result(ledger, ledger_node_id, true, Some(1.0), composed.clone())
+                    .await;
+                crate::audit::emit(
+                    "tool_plan_composed",
+                    serde_json::json!({
+                        "route": route,
+                        "step": step.id,
+                        "inputs": step_results.len() - 1,
+                        "answer_chars": composed.chars().count(),
+                    }),
+                );
+                return Ok(crate::server::dispatch::DispatchOutcome {
+                    response,
+                    answer_text: Some(composed),
+                    stream_answer: None,
+                });
+            }
+            crate::config::ToolPlanStepKind::Passthrough => {
+                let step_rt = {
+                    let mut t = rt.clone();
+                    if let Some(ref group) = step.target_group {
+                        t.group = Some(group.clone());
+                    }
+                    t
+                };
+                let outcome = crate::server::dispatch::handle_dispatch(
+                    &step_rt,
+                    router_request,
+                    model_name,
+                    user_text,
+                    mock_dispatch,
+                    is_stream,
+                    dispatch_deps,
+                )
+                .await?;
+                let answer = outcome.answer_text.clone().unwrap_or_default();
+                step_results.push((step.id.clone(), answer));
+                last_outcome = Some(outcome);
+            }
+        }
+    }
+
+    // If we exhausted all steps without a Compose step, return the last
+    // dispatch outcome (degrades to plain dispatch behavior).
+    if let Some(outcome) = last_outcome {
+        Ok(outcome)
+    } else {
+        tracing::warn!(
+            target: "router.server.tool_plan",
+            route = %route,
+            "tool plan completed with no outcome - falling back to plain dispatch"
+        );
+        crate::server::dispatch::handle_dispatch(
+            rt,
+            router_request,
+            model_name,
+            user_text,
+            mock_dispatch,
+            is_stream,
+            dispatch_deps,
+        )
+        .await
+    }
+}
+
 /// On-demand residency for the classifier, mirroring the dispatch path's
 /// `ensure_target_ready` + allocate-on-miss guarantee.
 ///
@@ -344,6 +805,9 @@ async fn handle_chat_completion(
         api_key_env_name: _,
         supervisor: _,
         coordinator,
+        tool_plans,
+        needle_max_rounds,
+        tool_lookup,
     } = deps;
     // The dispatch post-processing hook (workflow extraction), if the
     // operator configured it. Passed through to successful dispatches only.
@@ -606,6 +1070,37 @@ async fn handle_chat_completion(
     };
 
     if let Some(ref rt) = pipeline_result.routing_target {
+        // Check if this route has a config-declared tool plan.
+        let route_name = rt.target_name.as_deref().unwrap_or("");
+        if let Some(plan) = tool_plans.get(route_name) {
+            let outcome = run_tool_plan(
+                plan,
+                rt,
+                &router_request,
+                &model_name,
+                &user_text,
+                mock_dispatch.as_ref(),
+                is_stream,
+                &dispatch_deps,
+                ledger.as_ref(),
+                ledger_node_id,
+                needle_max_rounds,
+                &tool_lookup,
+            )
+            .await?;
+            let status = outcome.response.status();
+            record_dispatch_outcome(
+                outcome.answer_text.clone(),
+                format!("tool plan dispatched: {route_name}: {status}"),
+                outcome.stream_answer.clone(),
+                ledger.as_ref(),
+                ledger_node_id,
+                session_step.as_ref(),
+                rt.total_timeout_ms,
+            )
+            .await;
+            return Ok(outcome.response);
+        }
         let outcome = handle_dispatch(
             rt,
             &router_request,
@@ -1067,4 +1562,553 @@ fn resolve_pipeline(
     };
     final_result.decisions = all_decisions;
     final_result
+}
+
+
+#[cfg(test)]
+mod tool_plan_tests {
+    use super::*;
+    use crate::config::{ToolPlan, ToolPlanStep, ToolPlanStepKind};
+    use crate::server::dispatch::DispatchDeps;
+    use crate::testing::test_request;
+
+    fn block<T>(f: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Runtime::new().unwrap().block_on(f)
+    }
+
+    fn plan_target() -> crate::pipeline::RoutingTarget {
+        crate::pipeline::RoutingTarget {
+            url: "http://x/v1/chat/completions".into(),
+            model: "plan-model".into(),
+            group: Some("explain".into()),
+            target_name: Some("explain".into()),
+            params: None,
+            instance: None,
+            snapshot: None,
+            id_slot: None,
+            filter_thinking: false,
+            retry_count: 0,
+            retry_base_interval_s: 1,
+            stream: false,
+            idle_timeout_ms: 5000,
+            total_timeout_ms: 30000,
+            fallbacks: vec![],
+            target: None,
+        }
+    }
+
+    fn dispatch_step(id: &str) -> ToolPlanStep {
+        ToolPlanStep {
+            id: id.to_string(),
+            kind: ToolPlanStepKind::Dispatch,
+            target_group: Some("explain".into()),
+            description: None,
+            lookup_kind: None,
+            step_max_rounds: None,
+        }
+    }
+
+    fn compose_step() -> ToolPlanStep {
+        ToolPlanStep {
+            id: "compose".to_string(),
+            kind: ToolPlanStepKind::Compose,
+            target_group: None,
+            description: None,
+            lookup_kind: None,
+            step_max_rounds: None,
+        }
+    }
+
+    fn deps() -> DispatchDeps {
+        DispatchDeps {
+            http_client: Arc::new(reqwest::Client::new()),
+            cache: None,
+            stats: Arc::new(crate::server::responses::ServerStats::default()),
+            extractor: None,
+            ladders: HashMap::new(),
+            context_cache: None,
+            session: None,
+            instance_pool: None,
+        }
+    }
+
+    fn mock_canned(answer: &str) -> Arc<crate::testing::MockDispatchContext> {
+        Arc::new(crate::testing::MockDispatchContext::new(
+            vec![crate::testing::MockTranscriptEntry {
+                user_message: "hello".into(),
+                classifier_response: String::new(),
+                dispatch_response: Some(answer.into()),
+                ..Default::default()
+            }],
+            vec![],
+        ))
+    }
+
+    fn empty_lookups() -> crate::server::tool_lookup::ToolLookupRegistry {
+        crate::server::tool_lookup::ToolLookupRegistry::new()
+    }
+
+    #[test]
+    fn plan_within_rounds_composes_step_results() {
+        let plan = ToolPlan {
+            steps: vec![dispatch_step("identify_subject"), compose_step()],
+            max_rounds: Some(3),
+        };
+        let mock = mock_canned("subject identified");
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                run_tool_plan(
+                    &plan,
+                    &plan_target(),
+                    &test_request("hello"),
+                    "test-model",
+                    "hello",
+                    Some(&mock),
+                    false,
+                    &deps(),
+                    None,
+                    None,
+                    3,
+                    &empty_lookups(),
+                )
+                .await
+                .expect("run_tool_plan is infallible")
+            })
+        });
+
+        assert!(outcome.response.status().is_success());
+        // The Compose step synthesized the answer from the prior step result.
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert!(
+            answer.contains("[identify_subject]: subject identified"),
+            "composed answer must carry the step results, got: {answer}"
+        );
+
+        // Every step is audited on the durable `router.audit` stream.
+        let joined = lines.join("\n");
+        assert!(joined.contains("router.audit"), "audit stream used: {joined}");
+        assert!(joined.contains("tool_plan_step"), "per-step audit: {joined}");
+        assert!(
+            joined.contains("identify_subject"),
+            "step id in audit detail: {joined}"
+        );
+        assert!(
+            joined.contains("tool_plan_composed"),
+            "compose audited: {joined}"
+        );
+    }
+
+    #[test]
+    fn exceeding_max_rounds_falls_back_to_plain_dispatch() {
+        let plan = ToolPlan {
+            steps: vec![
+                dispatch_step("identify_subject"),
+                dispatch_step("second"),
+                compose_step(),
+            ],
+            max_rounds: Some(1),
+        };
+        let mock = mock_canned("plain answer");
+
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                run_tool_plan(
+                    &plan,
+                    &plan_target(),
+                    &test_request("hello"),
+                    "test-model",
+                    "hello",
+                    Some(&mock),
+                    false,
+                    &deps(),
+                    None,
+                    None,
+                    3,
+                    &empty_lookups(),
+                )
+                .await
+                .expect("infallible")
+            })
+        });
+
+        assert!(outcome.response.status().is_success());
+        // The budget cut the plan off after one round: no Compose ran, so the
+        // answer is the plain-dispatch fallback — not a composed synthesis.
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert_eq!(answer, "plain answer");
+
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("tool_plan_fallback") && joined.contains("max_rounds_exceeded"),
+            "round exhaustion must be audited as a fallback: {joined}"
+        );
+    }
+
+    #[test]
+    fn failed_dispatch_step_falls_back_to_plain_dispatch() {
+        use crate::instances::stub::StubServer;
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                let stub = StubServer::start(std::sync::Arc::new(
+                    |_m: &str, path: &str, _b: &str| {
+                        if path.ends_with("/chat/completions") {
+                            (500, r#"{"error":{"message":"boom"}}"#.into())
+                        } else {
+                            (200, "{}".into())
+                        }
+                    },
+                ));
+                let mut target = plan_target();
+                target.url = format!("{}/v1/chat/completions", stub.base_url());
+                let plan = ToolPlan {
+                    steps: vec![dispatch_step("identify_subject"), compose_step()],
+                    max_rounds: Some(3),
+                };
+                run_tool_plan(
+                    &plan,
+                    &target,
+                    &test_request("hello"),
+                    "test-model",
+                    "hello",
+                    None,
+                    false,
+                    &deps(),
+                    None,
+                    None,
+                    3,
+                    &empty_lookups(),
+                )
+                .await
+                .expect("infallible")
+            })
+        });
+
+        // The failed step aborted the plan; the plain group dispatch was
+        // attempted instead (it hits the same failing server, which degrades
+        // to the canned fallback completion — a 200 with no step synthesis).
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert!(
+            !answer.contains("[identify_subject]"),
+            "no composed answer may survive a failed plan: {answer}"
+        );
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("tool_plan_fallback") && joined.contains("step_failed"),
+            "a failed step must be audited as a fallback to plain dispatch: {joined}"
+        );
+    }
+
+    #[test]
+    fn lookup_steps_are_audited_with_their_lookup_kind() {
+        let step = ToolPlanStep {
+            id: "lookup_or_dispatch".into(),
+            kind: ToolPlanStepKind::Lookup,
+            target_group: None,
+            description: None,
+            lookup_kind: Some("dag".into()),
+            step_max_rounds: None,
+        };
+        let (_, lines) =
+            crate::test_support::capture_logs(|| emit_step_audit("explain", &step, 1));
+        let joined = lines.join("\n");
+        assert!(joined.contains("router.audit"), "{joined}");
+        assert!(joined.contains("tool_plan_step"), "{joined}");
+        assert!(
+            joined.contains("dag") && joined.contains("lookup_or_dispatch"),
+            "lookup kind + step id must appear in the audit detail: {joined}"
+        );
+    }
+
+    fn lookup_step(id: &str, kind: &str) -> ToolPlanStep {
+        ToolPlanStep {
+            id: id.into(),
+            kind: ToolPlanStepKind::Lookup,
+            target_group: None,
+            description: None,
+            lookup_kind: Some(kind.into()),
+            step_max_rounds: None,
+        }
+    }
+
+    #[test]
+    fn unresolvable_lookup_plan_is_declined_to_plain_dispatch() {
+        // A plan whose `Lookup` step names a kind with no installed resolver is
+        // declined to plain group dispatch — never executed with a placeholder
+        // (the fabricated-lookup leak is closed by construction).
+        let plan = ToolPlan {
+            steps: vec![lookup_step("lookup_dag", "dag")],
+            max_rounds: Some(3),
+        };
+        let mock = mock_canned("plain answer");
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                run_tool_plan(
+                    &plan,
+                    &plan_target(),
+                    &test_request("hello"),
+                    "test-model",
+                    "hello",
+                    Some(&mock),
+                    false,
+                    &deps(),
+                    None,
+                    None,
+                    3,
+                    &empty_lookups(),
+                )
+                .await
+                .expect("infallible")
+            })
+        });
+
+        assert!(outcome.response.status().is_success());
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert_eq!(answer, "plain answer", "declined plan falls back to plain dispatch");
+        assert!(
+            !answer.contains("[lookup:"),
+            "a declined plan must never produce a [lookup: placeholder, got: {answer}"
+        );
+
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("tool_plan_declined") && joined.contains("unresolved_lookup"),
+            "decline must be audited with reason unresolved_lookup: {joined}"
+        );
+        assert!(
+            joined.contains("dag"),
+            "the unresolved kind must be named in the audit: {joined}"
+        );
+    }
+
+    #[test]
+    fn compose_with_empty_result_set_falls_back_cleanly() {
+        // A `Lookup` step that resolves to nothing (absent) contributes no
+        // material; the `Compose` step then has no real results and falls back
+        // cleanly — an empty answer, never a synthesized half-answer or a
+        // placeholder.
+        #[derive(Debug)]
+        struct AbsentLookup;
+        impl crate::server::tool_lookup::ToolLookup for AbsentLookup {
+            fn kind(&self) -> &str {
+                "dag"
+            }
+
+            fn lookup(
+                &self,
+                _query: &str,
+                _ctx: &crate::server::tool_lookup::LookupContext<'_>,
+            ) -> Result<Option<crate::server::tool_lookup::LookupResult>, crate::server::tool_lookup::LookupError>
+            {
+                Ok(None)
+            }
+        }
+        let mut lookups = empty_lookups();
+        lookups.register(Arc::new(AbsentLookup));
+        let plan = ToolPlan {
+            steps: vec![lookup_step("lookup_dag", "dag"), compose_step()],
+            max_rounds: Some(3),
+        };
+        let mock = mock_canned("plain answer");
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                run_tool_plan(
+                    &plan,
+                    &plan_target(),
+                    &test_request("hello"),
+                    "test-model",
+                    "hello",
+                    Some(&mock),
+                    false,
+                    &deps(),
+                    None,
+                    None,
+                    3,
+                    &lookups,
+                )
+                .await
+                .expect("infallible")
+            })
+        });
+
+        assert!(outcome.response.status().is_success());
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert!(
+            !answer.contains("[lookup:"),
+            "an absent lookup must never leave a [lookup: placeholder, got: {answer}"
+        );
+        assert!(
+            !answer.contains("resolved"),
+            "an absent lookup must not be synthesized, got: {answer}"
+        );
+
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("tool_plan_lookup") && joined.contains("\"present\":false"),
+            "an absent lookup must be audited as absent: {joined}"
+        );
+    }
+
+    #[test]
+    fn e2e_plan_with_real_knowledge_graph_lookup_composes_real_node_text() {
+        // End-to-end through a real `ContentNodeStore` (M5): a plan
+        // `dispatch -> knowledge_graph lookup -> compose` produces an answer
+        // that includes the lookup's real node LOD0 text and nothing
+        // fabricated — no `[lookup:` placeholder, no synthesized summary.
+        use crate::ledger::ContentNodeLedger;
+        use crate::node_store::new_node;
+        use crate::server::tool_lookup::{KnowledgeGraphLookup, ToolLookupRegistry};
+        use crate::test_stubs::HashEmbedder;
+        use fluent_llm::EmbeddingProvider;
+        use fluent_types::NodeId;
+
+        let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+        let embedder = Arc::new(HashEmbedder::new(256));
+        let mut node = new_node(
+            NodeId::from_int(7001),
+            "sess-kg",
+            "r1",
+            "assistant",
+            "The capital of France is Paris.",
+            Some(true),
+        );
+        // The node's embedding must live in the same vector space as the query
+        // embedding (the HashEmbedder's), so the cosine KNN is
+        // dimension-consistent.
+        node.embedding = embedder.embed("The capital of France is Paris.").ok();
+        ledger.record_content_node(&node).unwrap();
+
+        let mut lookups = ToolLookupRegistry::new();
+        lookups.register(Arc::new(KnowledgeGraphLookup::new(embedder)));
+
+        let plan = ToolPlan {
+            steps: vec![
+                dispatch_step("identify_subject"),
+                lookup_step("lookup_graph", "knowledge_graph"),
+                compose_step(),
+            ],
+            max_rounds: Some(3),
+        };
+        // The mock must match the exact user_text (MockDispatchContext matches
+        // on the literal user message).
+        let mock = Arc::new(crate::testing::MockDispatchContext::new(
+            vec![crate::testing::MockTranscriptEntry {
+                user_message: "capital of France".into(),
+                classifier_response: String::new(),
+                dispatch_response: Some("subject identified".into()),
+                ..Default::default()
+            }],
+            vec![],
+        ));
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                run_tool_plan(
+                    &plan,
+                    &plan_target(),
+                    &test_request("capital of France"),
+                    "test-model",
+                    "capital of France",
+                    Some(&mock),
+                    false,
+                    &deps(),
+                    Some(&ledger),
+                    None,
+                    3,
+                    &lookups,
+                )
+                .await
+                .expect("run_tool_plan is infallible")
+            })
+        });
+
+        assert!(outcome.response.status().is_success());
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert!(
+            answer.contains("The capital of France is Paris."),
+            "the lookup's real node text must be composed, got: {answer}"
+        );
+        assert!(
+            !answer.contains("[lookup:"),
+            "no lookup placeholder may ever be composed, got: {answer}"
+        );
+
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("tool_plan_lookup") && joined.contains("\"present\":true"),
+            "a resolved lookup must be audited as present: {joined}"
+        );
+        assert!(
+            joined.contains("\"result_count\":1"),
+            "the audit must count the resolved node: {joined}"
+        );
+        assert!(
+            joined.contains("tool_plan_composed"),
+            "the composition must be audited: {joined}"
+        );
+    }
+
+    #[test]
+    fn failed_lookup_step_degrades_to_plain_dispatch() {
+        // A `Lookup` step that returns `Err` degrades to plain group dispatch —
+        // never a composed half-answer.
+        #[derive(Debug)]
+        struct FailingLookup;
+        impl crate::server::tool_lookup::ToolLookup for FailingLookup {
+            fn kind(&self) -> &str {
+                "dag"
+            }
+
+            fn lookup(
+                &self,
+                _query: &str,
+                _ctx: &crate::server::tool_lookup::LookupContext<'_>,
+            ) -> Result<Option<crate::server::tool_lookup::LookupResult>, crate::server::tool_lookup::LookupError>
+            {
+                Err(crate::server::tool_lookup::LookupError::Failed(
+                    "dag".into(),
+                    "backing store unreachable".into(),
+                ))
+            }
+        }
+        let mut lookups = empty_lookups();
+        lookups.register(Arc::new(FailingLookup));
+        let plan = ToolPlan {
+            steps: vec![lookup_step("lookup_dag", "dag"), compose_step()],
+            max_rounds: Some(3),
+        };
+        let mock = mock_canned("plain answer");
+        let (outcome, lines) = crate::test_support::capture_logs(|| {
+            block(async {
+                run_tool_plan(
+                    &plan,
+                    &plan_target(),
+                    &test_request("hello"),
+                    "test-model",
+                    "hello",
+                    Some(&mock),
+                    false,
+                    &deps(),
+                    None,
+                    None,
+                    3,
+                    &lookups,
+                )
+                .await
+                .expect("infallible")
+            })
+        });
+
+        assert!(outcome.response.status().is_success());
+        let answer = outcome.answer_text.unwrap_or_default();
+        assert_eq!(answer, "plain answer", "a failed lookup falls back to plain dispatch");
+        assert!(
+            !answer.contains("[lookup:") && !answer.contains("lookup_dag"),
+            "a failed lookup must not be composed: {answer}"
+        );
+
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("tool_plan_fallback") && joined.contains("lookup_failed"),
+            "a failed lookup must be audited as a fallback: {joined}"
+        );
+    }
 }

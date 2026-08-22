@@ -10,8 +10,14 @@
 //! Two surfaces are provided:
 //!
 //! - [`build_all_schemas`] — deterministic derivation of one
-//!   [`NeedleRouteSchema`] per route (route keys sorted, `schema_overrides`
-//!   applied), the full enriched catalogue.
+//!   [`NeedleRouteSchema`] per **non-general** route (route keys sorted,
+//!   `schema_overrides` applied), the full enriched engine catalogue.
+//!   General routes (`schema_overrides.<key>.general: true`) are **excluded by
+//!   construction**: the engine grammar never contains a `general` route —
+//!   general is classifier territory, and excluding it keeps the catalogue
+//!   exactly the functionally-disjoint non-general tools (≤
+//!   `candidates_per_rung`), so the engine's built-in contrastive head stays
+//!   off and every tool is always grammar-reachable.
 //! - [`build_candidate_schemas`] — the rung candidate set: the full catalogue
 //!   when it fits within `candidates_per_rung` (every candidate grammar-
 //!   rendered and reachable, O(1)); on overflow it is the seam where the
@@ -99,17 +105,27 @@ pub fn schema_for<'a>(config: &'a NeedleConfig, tool: &str) -> Option<&'a Needle
     config.schema_overrides.get(tool)
 }
 
-/// Deterministic derivation of every route's tool schema.
+/// Deterministic derivation of every **non-general** route's tool schema.
 ///
 /// Route keys are sorted so the catalogue is independent of `HashMap`
 /// iteration order — the engine and the HNSW shortlister both see a stable,
 /// reproducible set.
+///
+/// The invariant: **the engine grammar never contains a `general` route.**
+/// Routes whose `schema_overrides` entry carries `general: true` (e.g. the
+/// `local` general Q&A route) are excluded from the catalogue, so the engine
+/// can never name one — general is classifier territory by construction. The
+/// `NeedlePreFilter` stage keeps `is_general_route` as defense-in-depth, but it
+/// is unreachable in practice.
 #[allow(clippy::implicit_hasher)]
 pub fn build_all_schemas(
     config: &NeedleConfig,
     routes: &HashMap<String, RouteRef>,
 ) -> Vec<NeedleRouteSchema> {
-    let mut keys: Vec<&String> = routes.keys().collect();
+    let mut keys: Vec<&String> = routes
+        .keys()
+        .filter(|key| !is_general_route(config, key))
+        .collect();
     keys.sort_unstable();
     keys.into_iter()
         .map(|key| {
@@ -151,25 +167,20 @@ pub fn build_candidate_schemas(
 
 /// Render one enriched schema as the engine's tool-schema JSON object.
 ///
-/// `examples` and `intents` ride along as grammar + retrieval context when
-/// present; they are omitted when empty so the engine's schema stays minimal.
+/// The engine schema is the **standard OpenAI tool format** (`name`,
+/// `description`, `parameters`) — the distribution the base model was trained
+/// on. `examples`/`intents` are deliberately **not** rendered here: measured
+/// against the real engine, adding them to the engine schema regressed routing
+/// coverage and calibration (the base model treats the custom keys as noise).
+/// They remain first-class fields on `NeedleRouteSchema` for retrieval — the
+/// HNSW shortlister embeds them via `schema_doc_text` (retriever.rs) — and for
+/// the config-synced tests, but the engine only ever sees the plain format.
 pub fn render_tool_schema(schema: &NeedleRouteSchema) -> Value {
-    let mut tool = json!({
+    json!({
         "name": schema.name,
         "description": schema.description,
         "parameters": schema.parameters,
-    });
-    if !schema.examples.is_empty() {
-        tool["examples"] = Value::Array(
-            schema.examples.iter().cloned().map(Value::String).collect(),
-        );
-    }
-    if !schema.intents.is_empty() {
-        tool["intents"] = Value::Array(
-            schema.intents.iter().cloned().map(Value::String).collect(),
-        );
-    }
-    tool
+    })
 }
 
 /// Render a candidate set as the `tools_json` array string handed to
@@ -180,13 +191,19 @@ pub fn render_tools_json(schemas: &[NeedleRouteSchema]) -> String {
     serde_json::to_string(&tools).unwrap_or_else(|_| "[]".to_string())
 }
 
-/// Whether the route catalogue overflows the rung cap (and therefore requires
-/// shortlisting or a fall-through). The stage uses this to decide between
-/// "every candidate is reachable" and "the tool set must be reduced or
-/// skipped".
+/// Whether the non-general route catalogue overflows the rung cap (and
+/// therefore requires shortlisting or a fall-through). The stage uses this to
+/// decide between "every candidate is reachable" and "the tool set must be
+/// reduced or skipped". General routes are excluded — they are never part of
+/// the engine catalogue, so a config that fits within `candidates_per_rung`
+/// once general is excluded keeps every reachable tool grammar-rendered.
 #[allow(clippy::implicit_hasher)]
 pub fn overflows_rung(config: &NeedleConfig, routes: &HashMap<String, RouteRef>) -> bool {
-    routes.len() > config.candidates_per_rung
+    let non_general = routes
+        .keys()
+        .filter(|key| !is_general_route(config, key))
+        .count();
+    non_general > config.candidates_per_rung
 }
 
 #[cfg(test)]
@@ -338,16 +355,61 @@ mod tests {
             },
         );
         let r = routes();
+        // General routes are excluded from the engine catalogue by
+        // construction — the grammar never contains a general tool.
         let schemas = build_all_schemas(&c, &r);
-        let alpha = schemas.iter().find(|s| s.name == "alpha").unwrap();
-        assert!(alpha.general, "general override must propagate to the derived schema");
+        assert!(
+            schemas.iter().all(|s| s.name != "alpha"),
+            "general routes must never enter the engine catalogue"
+        );
+        assert_eq!(
+            schemas.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            vec!["mid", "zeta"]
+        );
         let mid = schemas.iter().find(|s| s.name == "mid").unwrap();
         assert!(!mid.general, "non-overridden routes default to non-general");
 
-        // `is_general_route` looks up the override (not the derived schema).
+        // `is_general_route` looks up the override (not the derived schema) —
+        // the defense-in-depth check the stage keeps even though the grammar
+        // can no longer name a general route.
         assert!(is_general_route(&c, "alpha"));
         assert!(!is_general_route(&c, "mid"));
         assert!(!is_general_route(&c, "unknown-tool"));
+    }
+
+    #[test]
+    fn general_routes_do_not_count_toward_rung_overflow() {
+        // A catalogue of 5 non-general tools + 1 general route fits the rung
+        // (candidates_per_rung = 5): general is excluded from both the
+        // catalogue and the overflow count, so every reachable tool stays
+        // grammar-rendered and the contrastive head never engages.
+        let mut c = config();
+        let mut r = HashMap::new();
+        for i in 0..5 {
+            r.insert(format!("tool{i}"), route_ref(&format!("tool {i}")));
+        }
+        r.insert("local".into(), route_ref("general q&a"));
+        c.schema_overrides.insert(
+            "local".into(),
+            NeedleRouteSchema {
+                name: "local".into(),
+                description: "general q&a".into(),
+                examples: vec![],
+                parameters: json!({}),
+                intents: vec!["general".into()],
+                output_template: None,
+                general: true,
+            },
+        );
+        assert!(!overflows_rung(&c, &r), "6 routes, 5 non-general -> fits the rung");
+        let candidates = build_candidate_schemas(&c, &r, None, "query");
+        assert_eq!(candidates.len(), 5, "exactly the 5 non-general tools");
+        let names: Vec<&str> = candidates.iter().map(|s| s.name.as_str()).collect();
+        assert!(!names.contains(&"local"), "general route never in the catalogue");
+
+        // Adding a sixth non-general tool overflows the rung again.
+        r.insert("tool5".into(), route_ref("tool 5"));
+        assert!(overflows_rung(&c, &r));
     }
 
     #[test]
@@ -369,17 +431,37 @@ mod tests {
         assert_eq!(tool["name"], "alpha");
         assert_eq!(tool["description"], "overridden");
         assert_eq!(tool["parameters"]["type"], "object");
-        assert_eq!(tool["examples"], json!(["do alpha"]));
-        assert_eq!(tool["intents"], json!(["alpha"]));
+        // The engine schema is the plain OpenAI tool format: examples and
+        // intents stay retrieval-side (HNSW schema_doc_text), never in the
+        // grammar the engine sees (measured routing regression otherwise).
+        assert!(tool.get("examples").is_none(), "examples are not engine context");
+        assert!(tool.get("intents").is_none(), "intents are not engine context");
     }
 
     #[test]
-    fn render_tool_schema_omits_empty_context_fields() {
-        let schema = derive_route_schema("alpha", &route_ref("a route"), None);
+    fn render_tool_schema_emits_plain_engine_format() {
+        // Even a schema with rich examples/intents renders the plain format:
+        // name + description + parameters only (the base model's training
+        // distribution). Retrieval context stays on the schema itself.
+        let schema = derive_route_schema(
+            "alpha",
+            &route_ref("a route"),
+            Some(&NeedleRouteSchema {
+                name: "alpha".into(),
+                description: String::new(),
+                examples: vec!["do alpha now".into()],
+                parameters: json!({"type": "object", "properties": {}}),
+                intents: vec!["alpha".into(), "beta".into()],
+                output_template: None,
+                general: false,
+            }),
+        );
         let tool = render_tool_schema(&schema);
-        assert!(tool.get("examples").is_none());
-        assert!(tool.get("intents").is_none());
-        assert_eq!(tool["name"], "alpha");
+        let keys: Vec<&str> = tool.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys.len(), 3);
+        for k in ["name", "description", "parameters"] {
+            assert!(keys.contains(&k), "engine schema must carry {k}, got {keys:?}");
+        }
     }
 
     #[test]

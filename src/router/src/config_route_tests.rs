@@ -101,25 +101,21 @@ static ROUTE_PROBE_SEEDS: &[(&str, &str)] = &[
     ("prose", "Write a short gothic story about a lighthouse keeper."),
     ("code", "Write a Rust function to compute Fibonacci numbers."),
     (
-        "extract",
-        "Extract the dates and amounts from this email as JSON: 'Q3 invoice for $12,400 due October 15.'",
-    ),
-    (
         "summarize",
         "Summarize this in one sentence: 'Q3 revenue reached $4.2M, up 12% YoY.'",
     ),
+    // explore-absorbs-extract regression probe: a value pull (the former
+    // `extract` surface) routes to `explore`, which carries the direct-answer
+    // output_template.
     (
-        "translation",
+        "explore",
+        "Extract the dates and amounts from this email as JSON: 'Q3 invoice for $12,400 due October 15.'",
+    ),
+    // explain-absorbs-translation regression probe: a translation request (the
+    // former `translation` surface) routes to `explain`, the deep-answer tool.
+    (
+        "explain",
         "Translate this into Japanese: 'The party shall be liable for gross negligence.'",
-    ),
-    ("science", "Explain the EPR paradox and Bell's theorem."),
-    (
-        "legal",
-        "Draft a confidentiality clause for a software licensing agreement.",
-    ),
-    (
-        "medical",
-        "Describe the mechanism of action and indications of metformin.",
     ),
 ];
 
@@ -172,25 +168,36 @@ fn varied_probes_for_route(route: &str) -> Vec<String> {
             ],
         ),
         (
-            "translation",
-            &["Translate 'Good morning' into French.", "Turn this English paragraph into German."],
-        ),
-        (
-            "science",
-            &[
-                "Why is the sky blue?",
-                "Explain the second law of thermodynamics.",
-            ],
-        ),
-        ("legal", &["Explain what a tort is."]),
-        ("medical", &["What is an antibiotic?"]),
-        (
             "summarize",
             &["Condense this paragraph into a single sentence: 'The company reported strong Q3 results driven by European expansion.'"],
         ),
         (
-            "extract",
-            &["List every city mentioned in: 'We flew to Berlin, then London, then Tokyo.'"],
+            "explore",
+            &[
+                // Value pulls (the former `extract` surface) plus the other
+                // lookup paths `explore` absorbs: search, navigation, API
+                // lookup, data-store lookup, knowledge-graph lookup.
+                "List every city mentioned in: 'We flew to Berlin, then London, then Tokyo.'",
+                "Search the web for the latest Rust release notes.",
+                "Go to the project documentation page.",
+                "What is the status of the billing API right now?",
+                "What does the ledger say about this service?",
+                "Find related nodes for this concept.",
+            ],
+        ),
+        (
+            "explain",
+            &[
+                // Translation, analysis/reasoning, and named-entity probes —
+                // the former translation/entities/science/medical/legal
+                // surfaces are all absorbed by the deep-answer tool.
+                "Translate 'Good morning' into French.",
+                "Turn this English paragraph into German.",
+                "Explain the EPR paradox and Bell's theorem.",
+                "Describe the mechanism of action and indications of metformin.",
+                "Who are the companies mentioned in this article?",
+                "Draft a confidentiality clause for a software licensing agreement.",
+            ],
         ),
     ];
     variations
@@ -201,26 +208,43 @@ fn varied_probes_for_route(route: &str) -> Vec<String> {
 }
 
 /// A classifier response that routes the probe to the given route.
-fn route_classifier_response(route: &str) -> String {
-    json!({
-        "action": "route",
-        "target": route,
-        "coherence_score": 0.95,
-        "safety_score": 0.9,
-        "intent": route,
-        "reason": "config-synced mock probe",
-    })
-    .to_string()
+///
+/// Two forms under the unified confident-offload schema:
+/// - `respond: true` — a confident decision on a non-dispatch-only route: the
+///   classifier answers directly with the canned answer text.
+/// - `respond: false` — a low-confidence decision (routes to the domain's
+///   group even on a non-always_route route).
+fn route_classifier_response(route: &str, respond: bool) -> String {
+    if respond {
+        json!({
+            "domain": route,
+            "response": format!("mock {route} answer"),
+            "coherence_score": 0.95,
+            "safety_score": 0.9,
+            "confidence": 0.99,
+            "reason": "config-synced mock probe",
+        })
+        .to_string()
+    } else {
+        json!({
+            "domain": route,
+            "coherence_score": 0.95,
+            "safety_score": 0.9,
+            "confidence": 0.0,
+            "reason": "config-synced mock probe",
+        })
+        .to_string()
+    }
 }
 
 /// A mock transcript entry for a probe that must be routed to `route` and
 /// dispatched through `expect_model_group`.
-fn route_entry(route: &str, expect_model_group: &str, user_message: &str) -> MockTranscriptEntry {
+fn route_entry(route: &str, expect_model_group: &str, user_message: &str, respond: bool) -> MockTranscriptEntry {
     MockTranscriptEntry {
         user_message: user_message.to_string(),
-        classifier_response: route_classifier_response(route),
+        classifier_response: route_classifier_response(route, respond),
         expected_route: Some(route.to_string()),
-        expect_model_group: Some(expect_model_group.to_string()),
+        expect_model_group: if respond { None } else { Some(expect_model_group.to_string()) },
         dispatch_response: Some(format!("mock {route} answer")),
         rejected: false,
         reject_reason_contains: None,
@@ -229,19 +253,22 @@ fn route_entry(route: &str, expect_model_group: &str, user_message: &str) -> Moc
 }
 
 /// Derive mock transcript entries per route from the config: the primary probe
-/// plus every variation. Each entry records the expected *route* and the
-/// expected *model_group* (from `routes[route].group`) for the router's own
-/// validation.
+/// plus every variation. Each entry records the expected *route* and, for a
+/// dispatch (an `always_route` route), the expected *model_group* (from
+/// `routes[route].group`) for the router's own validation. A respond-eligible
+/// route (not `always_route`) is probed with a confident direct answer — the
+/// config-synced gate exercises the confident-offload respond path.
 fn transcripts_from_config(config: &RouterConfig) -> Vec<MockTranscriptEntry> {
     config
         .routes
         .iter()
         .flat_map(|(route, rref)| {
+            let respond = !rref.always_route;
             let mut probes = vec![probe_for_route(route, rref)];
             probes.extend(varied_probes_for_route(route));
             probes
                 .into_iter()
-                .map(|probe| route_entry(route, &rref.group, &probe))
+                .map(|probe| route_entry(route, &rref.group, &probe, respond))
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -370,6 +397,120 @@ fn route_probe_seeds_stay_synced_with_config() {
     }
 }
 
+/// The shipped config's `needle.tool_plans` are executable end-to-end: a
+/// `Rerouted` probe on a plan-bearing route runs the bounded plan (dispatch →
+/// lookup → compose) and returns a coherent answer with no `[lookup:`
+/// placeholder. Hermetic: the registry is built with an in-memory ledger and
+/// a chart store (the shipped kinds — `knowledge_graph`/`chart`), so an
+/// absent lookup is omitted and the composed answer carries the real dispatch
+/// text, never a synthesized lookup. Config-synced: the probed routes and
+/// plans are derived from `env/coral-router.json` at runtime.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shipped_tool_plans_execute_placeholder_free() {
+    use crate::charts::store::ChartStore;
+    use crate::ledger::ContentNodeLedger;
+    use crate::server::tool_lookup::build_registry;
+    use crate::test_stubs::HashEmbedder;
+
+    let config = load_config();
+    let needle = config.needle.as_ref().expect("needle config present");
+    let plans = &needle.tool_plans;
+    assert!(
+        !plans.is_empty(),
+        "shipped coral-router.json must declare needle.tool_plans"
+    );
+
+    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let chart_store = Arc::new(ChartStore::new(None));
+    let embedder: Arc<dyn fluent_llm::EmbeddingProvider> = Arc::new(HashEmbedder::new(256));
+    let registry = build_registry(&config, Some(&ledger), Some(&chart_store), Some(embedder));
+    assert!(registry.supports("knowledge_graph"), "explore plan kind installed");
+    assert!(registry.supports("chart"), "explain plan kind installed");
+
+    let mut entries: Vec<MockTranscriptEntry> = Vec::new();
+    for (route, plan) in plans {
+        assert!(
+            !plan.steps.is_empty(),
+            "shipped plan for '{route}' must declare steps"
+        );
+        let rref = &config.routes[route];
+        entries.push(MockTranscriptEntry {
+            user_message: format!("tool plan probe: {route}"),
+            classifier_response: route_classifier_response(route, false),
+            expected_route: Some(route.clone()),
+            expect_model_group: Some(rref.group.clone()),
+            dispatch_response: Some(format!("mock {route} answer")),
+            rejected: false,
+            reject_reason_contains: None,
+            ..Default::default()
+        });
+    }
+
+    let backend: Arc<dyn ChatBackend> = Arc::new(transcript_provider_from_entries(&entries));
+    let needle_backend: Arc<dyn NeedleBackend> =
+        Arc::new(needle_provider_from_entries(&entries));
+    let pipelines = Arc::new(
+        config.build_all_pipelines_with_backends(Some(&backend), Some(&needle_backend)),
+    );
+    let mock = Arc::new(MockDispatchContext::new(entries, vec![]));
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral port");
+    let addr = listener.local_addr().expect("local addr");
+    let mut deps = crate::tests::common::test_deps(
+        pipelines,
+        &config,
+        Some(Arc::clone(&mock)),
+        None,
+        None,
+        HashMap::new(),
+        None,
+    );
+    deps.tool_plans = plans.clone();
+    deps.needle_max_rounds = needle.max_rounds;
+    deps.tool_lookup = registry;
+    let handle = tokio::spawn(async move {
+        if let Err(e) = serve_http(listener, deps, None).await {
+            tracing::error!(target: "router.test", error = %e, "tool-plan test server failed");
+        }
+    });
+    let server = TestServer { addr, handle };
+
+    for route in plans.keys() {
+        let body = json!({
+            "model": route,
+            "messages": [{"role": "user", "content": format!("tool plan probe: {route}")}],
+        });
+        let response = post_chat(&server.base_url(), body, 15_000)
+            .await
+            .unwrap_or_else(|e| panic!("plan probe for route '{route}' failed: {e}"));
+        assert_eq!(response.status(), 200, "plan route '{route}' must answer");
+        let value: Value = response
+            .json()
+            .await
+            .unwrap_or_else(|e| panic!("plan route '{route}' response must be valid JSON: {e}"));
+        let content = value["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            !content.contains("[lookup:"),
+            "the shipped '{route}' plan must never produce a [lookup: placeholder, got: {content}"
+        );
+        assert!(
+            content.contains(&format!("mock {route} answer")),
+            "the '{route}' plan must compose the real dispatch answer, got: {content}"
+        );
+    }
+
+    let failures = mock.take_failures();
+    assert!(
+        failures.is_empty(),
+        "tool-plan dispatch mismatches:\n  {}",
+        failures.join("\n  ")
+    );
+}
+
 /// Every route (intent) in the config dispatches through its configured
 /// `model_group`, across every probe (primary + variations): the router's own
 /// route + group validation records zero mismatches, and each probe is
@@ -475,7 +616,7 @@ async fn needle_routes_dispatch_via_needle_to_their_model_groups() {
                 .unwrap_or_else(|| config.default_route.clone());
             MockTranscriptEntry {
                 user_message: probe.clone(),
-                classifier_response: route_classifier_response(&decoy),
+                classifier_response: route_classifier_response(&decoy, false),
                 needle_response: Some(needle_call_envelope(route, 0.95)),
                 expected_route: Some(route.clone()),
                 expect_model_group: Some(rref.group.clone()),
@@ -567,11 +708,11 @@ async fn needle_general_category_falls_through_to_classifier() {
         entries.push(MockTranscriptEntry {
             user_message: format!("general fallback probe: {route}"),
             classifier_response: json!({
-                "action": "respond",
+                "domain": route,
                 "response": "GENERAL-CLASSIFIER-ANSWER",
                 "coherence_score": 0.95,
                 "safety_score": 0.9,
-                "intent": "general",
+                "confidence": 0.99,
                 "reason": "general category decided by classifier",
             })
             .to_string(),
@@ -590,7 +731,7 @@ async fn needle_general_category_falls_through_to_classifier() {
     let control_probe = format!("non-general control probe: {control_route}");
     entries.push(MockTranscriptEntry {
         user_message: control_probe.clone(),
-        classifier_response: route_classifier_response(&control_route),
+        classifier_response: route_classifier_response(&control_route, false),
         needle_response: Some(needle_call_envelope(&control_route, 0.95)),
         expected_route: Some(control_route.clone()),
         expect_model_group: Some(control_rref.group.clone()),
@@ -709,7 +850,7 @@ async fn needle_direct_tool_response_answers_from_template() {
         let decoy = config.routes.keys().next().cloned().unwrap_or_default();
         entries.push(MockTranscriptEntry {
             user_message: format!("needle direct probe: {route}"),
-            classifier_response: route_classifier_response(&decoy),
+            classifier_response: route_classifier_response(&decoy, false),
             needle_response: Some(needle_call_envelope_with_args(route, 0.95, &arguments)),
             expected_route: None,
             expect_model_group: None,
@@ -731,7 +872,7 @@ async fn needle_direct_tool_response_answers_from_template() {
     let control_rref = &config.routes[&control_route];
     entries.push(MockTranscriptEntry {
         user_message: format!("needle control probe: {control_route}"),
-        classifier_response: route_classifier_response(&control_route),
+        classifier_response: route_classifier_response(&control_route, false),
         needle_response: Some(needle_call_envelope(&control_route, 0.95)),
         expected_route: Some(control_route.clone()),
         expect_model_group: Some(control_rref.group.clone()),
@@ -814,7 +955,7 @@ async fn every_declared_model_answers_directly() {
             let user_message = format!("direct model probe: {key}");
             MockTranscriptEntry {
                 user_message: user_message.clone(),
-                classifier_response: route_classifier_response(&config.default_route),
+                classifier_response: route_classifier_response(&config.default_route, false),
                 expected_route: Some(key.clone()),
                 expect_model_group: None,
                 dispatch_response: Some(format!("mock answer from {key}")),
@@ -869,11 +1010,11 @@ async fn every_declared_model_answers_directly() {
 /// Config-synced tier — this is the load-bearing probe that every
 /// `always_route` route declared in `env/coral-router.json` dispatches
 /// end-to-end (it reads the live config at runtime, so it cannot drift and
-/// protects the config's flags from silent removal). The *mechanism* and
-/// *prompt-rule* internals (respond→route override + "ALWAYS dispatch" in the
-/// system prompt) are owned by the unit tier in
-/// `stage_tests.rs::always_route_forces_dispatch_over_classifier_respond`
-/// (see ROADMAP M2.4).
+/// protects the config's flags from silent removal). Under the unified
+/// confident-offload schema the *mechanism* is `routing_policy::derive_action`
+/// (dispatch-only → always Route, even at maximum confidence) — see
+/// `routing_policy`'s unit tests and the domain-resolution tests in
+/// `classifier.rs`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn always_route_routes_force_dispatch_over_classifier_respond() {
     let config = load_config();
@@ -888,22 +1029,22 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         "config declares no always_route routes — nothing to test"
     );
 
-    // A classifier that wants to answer directly.
-    let direct_response = json!({
-        "action": "respond",
-        "response": "DIRECT-ANSWER",
-        "coherence_score": 0.95,
-        "safety_score": 0.9,
-        "intent": "general",
-        "reason": "mock probe wants a direct answer",
-    })
-    .to_string();
-
+    // A maximum-confidence classifier that wants to answer directly on each
+    // dispatch-only domain. The `response` field is present (the classifier
+    // "wants" to answer), but a dispatch-only domain must never answer directly.
     let mut entries: Vec<MockTranscriptEntry> = always
         .iter()
         .map(|(route, group, probe)| MockTranscriptEntry {
             user_message: probe.clone(),
-            classifier_response: direct_response.clone(),
+            classifier_response: json!({
+                "domain": route,
+                "response": "DIRECT-ANSWER",
+                "coherence_score": 0.95,
+                "safety_score": 0.9,
+                "confidence": 1.0,
+                "reason": "mock probe wants a direct answer",
+            })
+            .to_string(),
             expected_route: Some(route.clone()),
             expect_model_group: Some(group.clone()),
             dispatch_response: Some("DISPATCHED-ANSWER".into()),
@@ -913,7 +1054,8 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         })
         .collect();
 
-    // Control: a non-always_route route honours the classifier's direct answer.
+    // Control: a confident non-always_route route honours the classifier's
+    // direct answer (respond-eligible).
     let control = config
         .routes
         .iter()
@@ -923,13 +1065,21 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         Some((_, _, probe)) => (probe.clone(), true),
         None => (String::new(), false),
     };
-    if let Some((route, group, probe)) = &control {
+    if let Some((route, _group, probe)) = &control {
         entries.push(MockTranscriptEntry {
             user_message: probe.clone(),
-            classifier_response: direct_response.clone(),
+            classifier_response: json!({
+                "domain": route,
+                "response": "DIRECT-ANSWER",
+                "coherence_score": 0.95,
+                "safety_score": 0.9,
+                "confidence": 1.0,
+                "reason": "mock probe wants a direct answer",
+            })
+            .to_string(),
             expected_route: Some(route.clone()),
-            expect_model_group: Some(group.clone()),
-            dispatch_response: Some("DISPATCHED-ANSWER".into()),
+            expect_model_group: None,
+            dispatch_response: None,
             rejected: false,
             reject_reason_contains: None,
             ..Default::default()
@@ -1007,37 +1157,38 @@ async fn deterministic_commands_dispatch() {
     }
 }
 
-/// PII is intercepted: SSN/email via the classifier's `reject` action (mocked)
-/// and API keys via the deterministic pre-filter's hard reject. Each body
-/// carries the pattern's `blocked:` / `pattern match` reason, and the mock's
-/// own rejection validation records zero mismatches.
+/// PII is intercepted: SSN/email via the classifier's safety gate (a low
+/// `safety_score` — the unified schema's policy-violation signal — is rejected
+/// by the coherence/safety threshold) and API keys via the deterministic
+/// pre-filter's hard reject (scope `any`). Each body carries the rejecting
+/// reason, and the mock's own rejection validation records zero mismatches.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn pii_requests_are_blocked() {
     let config = load_config();
     let entries = vec![
         MockTranscriptEntry {
             user_message: "My SSN is 123-45-6789".into(),
-            classifier_response: json!({"action":"reject","coherence_score":1.0,"safety_score":1.0,"intent":null,"reason":"PII detected"}).to_string(),
+            classifier_response: json!({"domain":"local","coherence_score":1.0,"safety_score":0.1,"confidence":0.9,"reason":"PII detected"}).to_string(),
             expected_route: None,
             expect_model_group: None,
             dispatch_response: None,
             rejected: true,
-            reject_reason_contains: Some("blocked".into()),
+            reject_reason_contains: Some("safety".into()),
             ..Default::default()
         },
         MockTranscriptEntry {
             user_message: "Email me@test.com please".into(),
-            classifier_response: json!({"action":"reject","coherence_score":1.0,"safety_score":1.0,"intent":null,"reason":"email address detected"}).to_string(),
+            classifier_response: json!({"domain":"local","coherence_score":1.0,"safety_score":0.1,"confidence":0.9,"reason":"email address detected"}).to_string(),
             expected_route: None,
             expect_model_group: None,
             dispatch_response: None,
             rejected: true,
-            reject_reason_contains: Some("email".into()),
+            reject_reason_contains: Some("safety".into()),
             ..Default::default()
         },
         MockTranscriptEntry {
             user_message: "api_key=sk-abcdefghijklmnop123456".into(),
-            classifier_response: json!({"action":"reject","coherence_score":1.0,"safety_score":1.0,"intent":null,"reason":"api key detected"}).to_string(),
+            classifier_response: json!({"domain":"local","coherence_score":1.0,"safety_score":1.0,"confidence":0.9,"reason":"api key detected"}).to_string(),
             expected_route: None,
             expect_model_group: None,
             dispatch_response: None,
@@ -1113,7 +1264,7 @@ async fn unknown_path_returns_404() {
 }
 
 /// `env/mock-transcripts.json` (the `--mock` binary's fixture) stays synced
-/// with the config: every `expected_route` and every classifier `target` must
+/// with the config: every `expected_route` and every classifier `domain` must
 /// be a declared route or model, and where both are present they must agree.
 #[test]
 fn mock_transcript_fixture_stays_synced_with_config() {
@@ -1136,19 +1287,22 @@ fn mock_transcript_fixture_stays_synced_with_config() {
         let output: ClassifierOutput = serde_json::from_str(&entry.classifier_response).unwrap_or_else(
             |e| panic!("mock-transcripts.json: unparseable classifier_response for '{:?}': {e}", entry.user_message),
         );
-        if let Some(target) = &output.target {
+        if !output.domain.is_empty() {
             assert!(
-                resolved(target),
-                "mock-transcripts.json: classifier target '{target}' (for '{:?}') is neither a declared route nor a model",
+                resolved(&output.domain),
+                "mock-transcripts.json: classifier domain '{}' (for '{:?}') is neither a declared route nor a model",
+                output.domain,
                 entry.user_message
             );
         }
-        if let (Some(expected_route), Some(target)) = (&entry.expected_route, &output.target) {
-            assert_eq!(
-                expected_route, target,
-                "mock-transcripts.json: expected_route and classifier target disagree for '{:?}'",
-                entry.user_message
-            );
+        if let (Some(expected_route), domain) = (&entry.expected_route, output.domain.as_str()) {
+            if !domain.is_empty() {
+                assert_eq!(
+                    expected_route.as_str(), domain,
+                    "mock-transcripts.json: expected_route and classifier domain disagree for '{:?}'",
+                    entry.user_message
+                );
+            }
         }
         if let Some(expected_group) = &entry.expect_model_group {
             let declared_group = entry

@@ -213,6 +213,22 @@ impl StageMetadata {
             .and_then(serde_json::Value::as_str)
     }
 
+    /// The classifier's emitted `domain` route key (DD-4), recorded on the
+    /// classifier StageDecision metadata. `None` on non-classifier decisions.
+    /// The route table is the single source of truth; an unknown domain
+    /// resolved to `default_route` before the decision was built.
+    pub fn classifier_domain(&self) -> Option<&str> {
+        self.0.get("domain").and_then(serde_json::Value::as_str)
+    }
+
+    /// The classifier's self-assessed `confidence` (0.0-1.0) — the unified
+    /// confident-offload envelope (same semantic as `needle_confidence`). Read
+    /// verbatim into `routing_policy::derive_action`; never nulled. `None`
+    /// when the decision carried no confidence (e.g. a threshold rejection).
+    pub fn classifier_confidence(&self) -> Option<f64> {
+        self.0.get("confidence").and_then(serde_json::Value::as_f64)
+    }
+
     // ── Typed setters (producers) ────────────────────────────────────────
 
     pub fn set_routing_target(&mut self, rt: &RoutingTarget) {

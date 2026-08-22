@@ -579,9 +579,9 @@ mod tests {
             backend as Arc<dyn fluent_llm::client::ChatBackend>,
             routing_config,
             0.7,
+            0.6,
             None,
             false,
-            1,
             "fast",
             limiter,
             None,
@@ -659,9 +659,9 @@ mod tests {
             backend,
             routing_config,
             0.7,
+            0.6,
             None,
             false,
-            1,
             "fast",
             Arc::new(fluent_concurrency::pool::Limiter::new(4)),
             None,
@@ -742,7 +742,11 @@ mod tests {
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let meta = decision.metadata.as_object().expect("metadata object");
-        assert_eq!(meta.get("action").and_then(|v| v.as_str()), Some("respond"));
+        assert_eq!(
+            meta.get("domain").and_then(|v| v.as_str()),
+            Some("fast"),
+            "a prose direct answer binds to the default route's domain"
+        );
         assert_eq!(
             meta.get("fallback").and_then(|v| v.as_bool()),
             Some(false),
@@ -780,9 +784,9 @@ mod tests {
             }),
             routing_config,
             0.7,
+            0.6,
             None,
             false,
-            1,
             "fast",
             Arc::new(fluent_concurrency::pool::Limiter::new(4)),
             None,
@@ -1078,11 +1082,10 @@ mod tests {
         let result = run_matrix_pipeline(
             &config,
             &serde_json::json!({
-                "action": "route",
-                "target": "code",
+                "domain": "code",
                 "coherence_score": 0.9,
                 "safety_score": 0.9,
-                "complexity": 3,
+                "confidence": 0.0,
                 "completeness": 0.9,
                 "risk": 0.1,
                 "reason": "code request",
@@ -1107,11 +1110,10 @@ mod tests {
         let result = run_matrix_pipeline(
             &config,
             &serde_json::json!({
-                "action": "route",
-                "target": "code",
+                "domain": "code",
                 "coherence_score": 0.9,
                 "safety_score": 0.9,
-                "complexity": 3,
+                "confidence": 0.0,
                 "completeness": 0.6,
                 "risk": 0.1,
                 "reason": "code request",
@@ -1163,11 +1165,10 @@ mod tests {
         let result = run_matrix_pipeline(
             &config,
             &serde_json::json!({
-                "action": "route",
-                "target": "code",
+                "domain": "code",
                 "coherence_score": 0.9,
                 "safety_score": 0.9,
-                "complexity": 3,
+                "confidence": 0.0,
                 "completeness": 0.9,
                 "risk": 0.1,
                 "reason": "code request",
@@ -1204,11 +1205,10 @@ mod tests {
         let result = run_matrix_pipeline(
             &config,
             &serde_json::json!({
-                "action": "route",
-                "target": "code",
+                "domain": "code",
                 "coherence_score": 0.9,
                 "safety_score": 0.9,
-                "complexity": 2,
+                "confidence": 0.0,
                 "completeness": 0.3,
                 "risk": 0.1,
                 "response": "the direct answer",
@@ -1236,11 +1236,10 @@ mod tests {
         let result = run_matrix_pipeline(
             &config,
             &serde_json::json!({
-                "action": "route",
-                "target": "code",
+                "domain": "code",
                 "coherence_score": 0.9,
                 "safety_score": 0.9,
-                "complexity": 3,
+                "confidence": 0.0,
                 "completeness": 0.9,
                 "risk": 0.1,
                 "reason": "code request",
@@ -1327,13 +1326,11 @@ mod tests {
             calls: calls.clone(),
             prompts: prompts.clone(),
             success_response: serde_json::json!({
-                "action": "route",
-                "target": "code",
+                "domain": "code",
                 "coherence_score": 0.9,
                 "safety_score": 0.9,
-                "complexity": 3,
-                "intent": "code",
-                "reason": "recovered",
+                "confidence": 0.0,
+                                "reason": "recovered",
             })
             .to_string(),
         };
@@ -1601,13 +1598,12 @@ mod tests {
         output.data_as().expect("pipeline result")
     }
 
-    fn classifier_verdict(complexity: u8, target: &str) -> String {
+    fn classifier_verdict(target: &str) -> String {
         serde_json::json!({
-            "action": "route",
-            "target": target,
+            "domain": target,
             "coherence_score": 0.9,
             "safety_score": 0.9,
-            "complexity": complexity,
+            "confidence": 0.0,
             "completeness": 0.9,
             "risk": 0.1,
             "reason": "code request",
@@ -1633,7 +1629,7 @@ mod tests {
         let result = run_ladder_pipeline(
             &config,
             vec![
-                classifier_verdict(1, "code"),
+                classifier_verdict("code"),
                 assessment(7, "hard"),
                 assessment(5, "ok"),
             ],
@@ -1660,7 +1656,7 @@ mod tests {
         let config = ladder_config("self_assess");
         let result = run_ladder_pipeline(
             &config,
-            vec![classifier_verdict(1, "code"), assessment(1, "easy")],
+            vec![classifier_verdict("code"), assessment(1, "easy")],
         );
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
@@ -1677,7 +1673,7 @@ mod tests {
         // qualifying model (swarm) is picked at resolution time, and only the
         // single classifier response is consumed — no self-assessment calls.
         let config = ladder_config("static");
-        let result = run_ladder_pipeline(&config, vec![classifier_verdict(1, "code")]);
+        let result = run_ladder_pipeline(&config, vec![classifier_verdict("code")]);
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
         assert_eq!(rt.model, "swarm");
@@ -1697,7 +1693,7 @@ mod tests {
             "code".into(),
             crate::config::ModelGroup::Array(vec!["qwen3.6-27b".into()]),
         );
-        let result = run_ladder_pipeline(&config, vec![classifier_verdict(1, "code")]);
+        let result = run_ladder_pipeline(&config, vec![classifier_verdict("code")]);
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
         assert_eq!(rt.model, "qwen3.6-27b");
@@ -1745,7 +1741,7 @@ mod tests {
         let result = run_ladder_pipeline(
             &config,
             vec![
-                classifier_verdict(1, "code"),
+                classifier_verdict("code"),
                 assessment(7, "hard"),
                 assessment(5, "ok"),
             ],
@@ -1771,22 +1767,25 @@ mod tests {
         use crate::config::RoutingConfig;
         use crate::stages::classifier::ClassifierStage;
 
-        // The classifier model is overconfident and answers a prose prompt
-        // directly; the route is configured `always_route: true`, so the stage
-        // must override action=respond into a dispatch to the route's group.
+        // The classifier is a maximum-confidence decision on a dispatch-only
+        // domain; the route's `always_route` flag forces dispatch.
         let prompt_log = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-        let backend: Arc<dyn fluent_llm::client::ChatBackend> = Arc::new(TreeRecordingBackend {
-            prompts: Arc::clone(&prompt_log),
-            response: serde_json::json!({
-                "action": "respond",
-                "coherence_score": 0.9,
-                "safety_score": 0.9,
-                "reason": "i can write prose",
-                "intent": "prose",
-                "response": "once upon a time...",
-            })
-            .to_string(),
-        });
+        // A maximum-confidence classifier that "wants" to answer directly on a
+        // dispatch-only domain: it emits `domain: "prose"` with a response, but
+        // the route's `always_route` flag forces dispatch (DD-3).
+        let backend_prose: Arc<dyn fluent_llm::client::ChatBackend> =
+            Arc::new(TreeRecordingBackend {
+                prompts: Arc::clone(&prompt_log),
+                response: serde_json::json!({
+                    "domain": "prose",
+                    "coherence_score": 0.9,
+                    "safety_score": 0.9,
+                    "confidence": 0.99,
+                    "reason": "i can write prose",
+                    "response": "once upon a time...",
+                })
+                .to_string(),
+            });
         let routing_config: RoutingConfig = serde_json::from_value(serde_json::json!({
             "routes": {
                 "prose": { "group": "prose", "pipelines": ["default"], "description": "creative", "always_route": true },
@@ -1808,13 +1807,13 @@ mod tests {
 
         let limiter = Arc::new(fluent_concurrency::pool::Limiter::new(2));
         let stage = ClassifierStage::new(
-            backend,
+            backend_prose,
             routing_config.clone(),
             0.7,
+            0.6,
             None,
             false,
-            2,
-            "swarm",
+            "fast",
             limiter,
             None,
             crate::config::ClassifierFailurePolicy::Reject,
@@ -1841,15 +1840,44 @@ mod tests {
         assert_eq!(rt.target_name.as_deref(), Some("prose"));
         assert_eq!(rt.model, "gemma");
 
-        // The system prompt advertises the dispatch rule so the LLM routes even
-        // without the hard enforcement.
+        // The system prompt advertises the dispatch-only rule so the LLM sets the
+        // right domain even without the hard enforcement.
         let recorded = prompt_log.lock().unwrap().clone();
         assert!(
-            recorded.iter().any(|p| p.contains("ALWAYS dispatch") && p.contains("prose")),
+            recorded
+                .iter()
+                .any(|p| p.contains("Dispatch-only domains") && p.contains("prose")),
             "prompt must teach the always-route rule: {recorded:?}"
         );
 
-        // A `local`-style route (always_route off) keeps the direct response.
+        // A `local`-style route (always_route off) keeps the direct response:
+        // a confident classifier decision on a respond-eligible domain responds.
+        let backend_local: Arc<dyn fluent_llm::client::ChatBackend> =
+            Arc::new(TreeRecordingBackend {
+                prompts: Arc::new(std::sync::Mutex::new(Vec::<String>::new())),
+                response: serde_json::json!({
+                    "domain": "local",
+                    "coherence_score": 0.9,
+                    "safety_score": 0.9,
+                    "confidence": 0.99,
+                    "reason": "trivial",
+                    "response": "once upon a time...",
+                })
+                .to_string(),
+            });
+        let stage_local = ClassifierStage::new(
+            backend_local,
+            routing_config,
+            0.7,
+            0.6,
+            None,
+            false,
+            "fast",
+            Arc::new(fluent_concurrency::pool::Limiter::new(2)),
+            None,
+            crate::config::ClassifierFailurePolicy::Reject,
+            None,
+        );
         let mut ctx_local = WorkContext::default();
         ctx_local.set_structured(
             "request",
@@ -1858,7 +1886,7 @@ mod tests {
                 "messages": [{"role": "user", "content": "what is 2+2?"}],
             }),
         );
-        let output_local = stage.execute(&ctx_local).expect("execute");
+        let output_local = stage_local.execute(&ctx_local).expect("execute");
         let decision_local: StageDecision = output_local.data_as().expect("data_as");
         let metadata_local = StageMetadata::from(decision_local.metadata.clone());
         assert_eq!(metadata_local.response().as_deref(), Some("once upon a time..."));

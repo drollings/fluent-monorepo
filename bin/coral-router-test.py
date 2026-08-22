@@ -55,12 +55,9 @@ ROUTE_PROMPTS = {
     "local": "What is the capital of France? Answer in one short sentence.",
     "prose": "Write a 400-word gothic short story about a lighthouse keeper who discovers his light is powered by the souls of drowned sailors. Include dialogue and a dramatic climax.",
     "code": "Write a complete Rust program using the rayon crate that parses a CSV of numbers, computes the sum in parallel, and prints both the total and the count of rows.",
-    "extract": "From the following email, extract every date, dollar amount, product name, and person name as structured JSON: 'Hi Sam, the Q3 invoice for the Nebula server upgrade is $12,400. Please wire it by October 15, 2025. Regards, Priya Patel.'",
     "summarize": "Provide a structured two-sentence executive summary of this quarterly report, including the revenue figure and the key risk: 'Q3 revenue reached $4.2M, up 12% YoY, driven by the Europe expansion. The principal risk is component supply chain delays from the Taiwan foundry, which may impact Q4 shipments by up to 15%.'",
-    "translation": "Translate the following business contract clause into Japanese, preserving legal precision: 'The party shall be liable for consequential damages arising from gross negligence, subject to a limitation of liability cap of one million dollars.'",
-    "science": "Explain the EPR paradox and how Bell's theorem rules out local hidden variables, being precise about the CHSH inequality and what a Bell-inequality-violating experiment demonstrates.",
-    "legal": "Draft a confidentiality clause for a software licensing agreement that covers the definition of confidential information, permitted disclosures to counsel and subcontractors bound by similar terms, and a three-year survival obligation after termination.",
-    "medical": "Describe the mechanism of action, indications, contraindications, and the most serious adverse effects of metformin, including the circumstances under which lactic acidosis is a clinical concern.",
+    "explore": "Extract every date and dollar amount from the following email as structured JSON: 'Hi Sam, the Q3 invoice for the Nebula server upgrade is $12,400. Please wire it by October 15, 2025. Regards, Priya Patel.' Then search the web for the current status of the API.",
+    "explain": "Translate the following business contract clause into Japanese, preserving legal precision, then explain the liability cap it sets: 'The party shall be liable for consequential damages arising from gross negligence, subject to a limitation of liability cap of one million dollars.'",
 }
 
 # Family of "already warm" probes used for the warm TTFT score (models that
@@ -269,6 +266,118 @@ def needle_metrics(
         "non_general_routes": total,
         "audit_records_parsed": len(records),
     }
+
+
+def classifier_metrics(
+    records: List[Dict[str, Any]],
+    cfg: Dict[str, Any],
+    exp_table: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Classifier `domain` correctness + `confidence` calibration (M6).
+
+    The classifier emits the unified confident-offload envelope (`domain` +
+    `confidence`, DD-1), and the router derives respond-vs-route. This scores
+    the *classifier's* decision quality from the durable audit aggregate
+    records that carry `domain`/`confidence`:
+
+    * **domain accuracy** — share of classifier-decided records whose emitted
+      `domain` is a declared route key *and* matches the probed route's expected
+      domain. A `domain` not in the route table resolved to `default_route` at
+      routing time (DD-4); that is scored as a misrouting (the model fabricated
+      a route key) so the calibration stays honest.
+    * **confidence ECE** — binned reliability over `(confidence, correct)`
+      pairs (the same ECE definition the Needle probe reports), so the
+      classifier's self-assessment is measurable on the same curve.
+    * **respond rate** — share of classifier-decided records that answered
+      directly (a `direct_response` aggregate) vs routed.
+
+    Secondary to the Needle probe metrics (M1) — reported alongside, never
+    folded into Needle coverage/accuracy.
+    """
+    per_route = attribute_decisions(records, cfg)
+    classifier_decided = [
+        rec
+        for rec in per_route.values()
+        if rec.get("stage") == "classifier"
+        and rec.get("domain") is not None
+        and rec.get("confidence") is not None
+    ]
+    route_keys = set(cfg.get("routes", {}))
+    expected_domain = {
+        r: r for r in exp_table
+    }  # the probed route key IS the expected domain
+
+    n_domain = len(classifier_decided)
+    domain_correct = 0
+    respond = 0
+    conf_pairs = []  # (confidence, correct)
+    for rec in classifier_decided:
+        domain = rec.get("domain")
+        expected = expected_domain.get(rec.get("route")) or rec.get("route")
+        # A fabricated domain (not a declared route key) is a misroute (DD-4
+        # resolves it to default_route at routing time — never score it as a
+        # correct self-assessment).
+        correct = domain in route_keys and domain == expected
+        if correct:
+            domain_correct += 1
+        if rec.get("verdict") == "direct_response":
+            respond += 1
+        conf_pairs.append((float(rec["confidence"]), correct))
+
+    domain_accuracy = domain_correct / n_domain if n_domain else None
+
+    # Binned ECE (same definition as the Needle probe's confidence ECE).
+    bins = [(b / 10.0, (b + 1) / 10.0) for b in range(10)]
+    ece = 0.0
+    weight = 0.0
+    bin_stats = []
+    for lo, hi in bins:
+        sel = [c for c, _ in conf_pairs if lo <= c < hi]
+        if not sel:
+            bin_stats.append({"bin": f"{lo:.1f}-{hi:.1f}", "n": 0, "acc": None})
+            continue
+        acc = sum(sel) / len(sel)
+        mid = (lo + hi) / 2.0
+        ece += len(sel) * abs(acc - mid)
+        weight += len(sel)
+        bin_stats.append({"bin": f"{lo:.1f}-{hi:.1f}", "n": len(sel), "acc": round(acc, 3)})
+    ece = ece / weight if weight else 0.0
+
+    return {
+        "classifier_domain_accuracy": round_half(domain_accuracy) if domain_accuracy is not None else None,
+        "classifier_domain_correct": domain_correct,
+        "classifier_domain_scored": n_domain,
+        "classifier_respond_rate": round_half(respond / n_domain) if n_domain else None,
+        "classifier_respond": respond,
+        "classifier_confidence_ece": round(ece, 4),
+        "classifier_conf_pairs": len(conf_pairs),
+        "classifier_confidence_bins": bin_stats,
+    }
+
+
+def print_classifier_metrics(
+    m: Dict[str, Any],
+    per_route: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> None:
+    """Print the classifier metric block (live and --audit-only share this)."""
+    print("CLASSIFIER DECISIONS  (unified confident-offload envelope, M6)")
+    print("=" * 78)
+    acc = m["classifier_domain_accuracy"]
+    if acc is None:
+        print("No classifier-decided audit records carried domain/confidence — not scored.")
+    else:
+        print(
+            f"Classifier domain accuracy:   {acc:5.2f}  "
+            f"({m['classifier_domain_correct']}/{m['classifier_domain_scored']} scored)"
+        )
+        respond = m["classifier_respond_rate"]
+        print(
+            f"Classifier respond rate:      {respond:5.2f}  "
+            f"({m['classifier_respond']} direct responses / {m['classifier_domain_scored']} decided)"
+        )
+        print(f"Classifier confidence ECE:    {m['classifier_confidence_ece']:.4f}  "
+              f"({m['classifier_conf_pairs']} scored envelopes)")
+    print("=" * 78)
 
 
 def print_needle_metrics(
@@ -541,11 +650,14 @@ def main() -> int:
         # metrics from the given audit dir/file of aggregate route records.
         records = load_audit_records(args.audit_only)
         m = needle_metrics(records, cfg, exp_table)
+        cm = classifier_metrics(records, cfg, exp_table)
         print(f"audit source:  {args.audit_only}")
         print(f"config:        {args.config}")
         print(f"routes:        {len(exp_table)} ({', '.join(sorted(exp_table))})")
         print("")
         print_needle_metrics(m, cfg, exp_table, attribute_decisions(records, cfg))
+        print("")
+        print_classifier_metrics(cm)
         return 0
 
     base = base_url_from_config(cfg, args.base_url)
@@ -699,6 +811,8 @@ def main() -> int:
           f"contexts resident, {len(resident_keys)}/{len(managed_keys)} model keys loaded")
     print("")
     print_needle_metrics(needle, cfg, exp_table, per_route)
+    print("")
+    print_classifier_metrics(classifier_metrics(records, cfg, exp_table), per_route)
 
     report = {
         "config": args.config,

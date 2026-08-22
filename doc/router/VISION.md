@@ -152,21 +152,27 @@ Available routes:
 ...
 
 You must output exactly one JSON object with:
-  "route": "<exactly one of: {comma-joined child keys}>"
-  "coherence": 0.0–1.0 (how well-formed and coherent the query is)
-  "safety": 0.0–1.0 (1.0 = completely safe, 0.0 = policy violation)
-  "complexity": 0–10 (0 = trivial, 10 = requires most capable model)
+  "domain": "<exactly one of: {comma-joined child keys}>"
+  "coherence_score": 0.0–1.0 (how well-formed and coherent the query is)
+  "safety_score": 0.0–1.0 (1.0 = completely safe, 0.0 = policy violation)
+  "confidence": 0.0–1.0 (self-assessed confidence in the domain decision)
   "reason": "brief explanation for the routing decision"
 ```
 
-If a child key is added, removed, or its description changes, the prompt
-updates automatically. No manual prompt maintenance. No stale route names.
+The model never chooses whether to respond — it emits a `domain` and a
+`confidence`, and the router derives `respond` vs `route` deterministically
+(`routing_policy::derive_action`) from the domain's `always_route` flag and the
+confidence against the route's respond threshold. If a child key is added,
+removed, or its description changes, the prompt updates automatically. No
+manual prompt maintenance. No stale route names.
 
 ### Three axes of routing
 
 1. **Domain** — the classifier's primary output: `"code"` vs `"prose"` vs
-   `"translation"`, etc. This is the first branch, matching the human
-   category the query falls into.
+   `"explain"`, etc. The `domain` is 1:1 with a route key in
+   `env/coral-router.json` — the route table is the single source of truth, and
+   an unknown (or empty) `domain` resolves to `default_route` (`local`) with a
+   warning. No separate taxonomy, no model-fabricated route name.
 
 2. **Coherence / Safety** — every classifier node enforces configurable
    thresholds. A query below the coherence threshold is rejected
@@ -174,19 +180,27 @@ updates automatically. No manual prompt maintenance. No stale route names.
    is rejected (policy violation). These are the gating checks that
    protect downstream models from garbage or harmful input.
 
-3. **Complexity** — each model carries an `intelligence` field (0–10),
-   configured in `env/coral-router.json`. A `model_group` is an ordered
-   list of target models, and the classifier's job is to choose the
-   best-matching *target* within that group. The current candidate target
-   is prompted to classify the prompt, and if the complexity exceeds that
-   model's configured `intelligence` — while a more intelligent model
-   exists in the group — the request falls back to the next model in the
-   group, which re-classifies. The first target whose `intelligence` meets
-   or exceeds the complexity is the one that actually answers, and its
-   answer is recorded in the session's ledger. The group's chain is a
-   target-matching ladder, not a failure fallback and never a backup for
-   the classifier. This is automatic for every terminal node, not a
-   separate config section.
+3. **Confidence / dispatch-only** — the classifier emits a self-assessed
+   `confidence` (0.0–1.0, the same calibrated self-assessment semantic as
+   Needle's confident-offload envelope). The router derives the outcome
+   deterministically: a route marked `always_route` (dispatch-only — its
+   response function is a dispatch, never a classifier direct answer) always
+   routes even at maximum confidence; a non-dispatch-only route responds
+   directly when `confidence` meets the route's respond threshold, and routes
+   otherwise. The model never chooses.
+
+   Model selection inside a group is the **target-matching ladder's** job, not
+   the classifier's. Each model carries an `intelligence` field (0–10),
+   configured in `env/coral-router.json`. A `model_group` is an ordered list of
+   target models; the current candidate target is prompted to self-assess the
+   request's complexity, and if the assessed complexity exceeds that model's
+   configured `intelligence` — while a more intelligent model exists in the
+   group — the request falls back to the next model in the group, which
+   re-assesses. The first target whose `intelligence` meets or exceeds the
+   assessed complexity is the one that actually answers, and its answer is
+   recorded in the session's ledger. The group's chain is a target-matching
+   ladder, not a failure fallback and never a backup for the classifier. This
+   is automatic for every terminal node, not a separate config section.
 
 ### Pre-filters: deterministic before probabilistic
 
@@ -224,7 +238,7 @@ The classification tree replaces four previously-separate config sections:
 | `pipelines` | Tree structure IS the pipeline — each classifier node is a stage |
 | `routes` | The children of each classifier node |
 | `system_prompt` | Auto-generated from the tree children + descriptions |
-| `score_matrix` | Coherence/safety thresholds at each classifier node + complexity-based model selection |
+| `score_matrix` | Coherence/safety thresholds at each classifier node; model selection is the target-matching ladder's job |
 
 `models`, `model_groups`, `server`, and `logging` are unchanged.
 
@@ -287,17 +301,17 @@ default:
   2. qwen3.6-27b (intelligence 6)    ← next target if complexity exceeds swarm's
 ```
 
-The chain is a complexity-matching ladder for *targets*. The classifier
-resolves a route to a group; within the group, the current target model is
-prompted to classify the prompt, and if the complexity exceeds that model's
-configured `intelligence` — and a more intelligent model exists in the
-group — the request falls back to the next model in the group, which
-re-classifies. The target that matches the complexity actually answers the
-request, and its answer is added to the session's ledger. Only if every
-local target fails for a mechanical reason (unreachable, timeout, incoherent
-output) does the escalation ladder engage. The frontier is never consulted
-when a local target can handle the query — even the smallest local target
-gets its self-assessment shot first. Fallback models are always target
+The chain is a complexity-matching ladder for *targets*. The classifier's
+`domain` resolves a route to a group; within the group, the current target
+model self-assesses the prompt's complexity, and if the assessed complexity
+exceeds that model's configured `intelligence` — and a more intelligent model
+exists in the group — the request falls back to the next model in the group,
+which self-assesses in turn. The target that matches the complexity actually
+answers the request, and its answer is added to the session's ledger. Only if
+every local target fails for a mechanical reason (unreachable, timeout,
+incoherent output) does the escalation ladder engage. The frontier is never
+consulted when a local target can handle the query — even the smallest local
+target gets its self-assessment shot first. Fallback models are always target
 models; none of them backs up the classifier's own classification job.
 
 ### Post-processing: audit + workflow extraction
@@ -646,16 +660,16 @@ rule never fires on a bare pattern match alone when a cheap confirmation is
 available.
 
 **A fast classifier** — small, fast, running across parallel slots on shared
-resident weights — evaluates intent, coherence, safety, and complexity, and
-resolves the result through a weighted score matrix rather than nested
-thresholds. Most requests are fully decided by this point: answered
-trivially, rejected, or routed to a specific local model, all without
-touching the system's larger models. Routing lands on the best-matching
-*target* within a target model group: the current target self-classifies
-the prompt, and when the complexity exceeds that model's `intelligence` the
-request falls to the next, more intelligent model in the group; the target
-that matches the complexity answers, and its answer is recorded to the
-session's ledger.
+resident weights — evaluates domain, coherence, safety, and a self-assessed
+confidence, and resolves the outcome deterministically (a `domain` + a
+`confidence`; the router derives `respond` vs `route`). Most requests are fully
+decided by this point: answered trivially, rejected, or routed to a specific
+local model, all without touching the system's larger models. Routing lands on
+the best-matching *target* within a target model group: the current target
+self-assesses the request's complexity, and when the assessed complexity
+exceeds that model's `intelligence` the request falls to the next, more
+intelligent model in the group; the target that matches the complexity answers,
+and its answer is recorded to the session's ledger.
 
 **The Ledger** — nested Content Nodes rendered at per-node levels of detail,
 shared and reference-counted across parallel and filtered views — replaces a

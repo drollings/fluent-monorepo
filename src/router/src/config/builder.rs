@@ -19,8 +19,8 @@
 //!    ledger + agent coordinator wiring.
 //!
 //! Today they are kept together because they all live on `impl RouterConfig`
-//! and share `resolve_classifier_model_key` / `classifier_intelligence` /
-//! `build_classifier_client` helpers; the `#[allow(clippy::too_many_arguments)]`
+//! and share `resolve_classifier_model_key` / `build_classifier_client`
+//! helpers; the `#[allow(clippy::too_many_arguments)]`
 //! on the pipeline/engine constructors is a builder-shape, not a call-shape.
 
 use std::collections::HashMap;
@@ -69,6 +69,12 @@ pub struct PipelineParams {
     pub router: bool,
     #[serde(default = "default_coherence_threshold")]
     pub coherence_threshold: f64,
+    /// The classifier's own respond gate (0.0–1.0): at or above this
+    /// self-assessed `confidence`, a non-dispatch-only domain may answer
+    /// directly; below it the decision routes. This is distinct from Needle's
+    /// `confidence_threshold` (which gates Needle reroutes). Default 0.6.
+    #[serde(default = "default_classifier_respond_threshold")]
+    pub classifier_respond_threshold: f64,
     #[serde(default)]
     pub classifier_model: Option<String>,
     /// Bounds the number of concurrently executing classifier LLM calls for
@@ -132,6 +138,7 @@ impl Default for PipelineParams {
             classifier: true,
             router: true,
             coherence_threshold: default_coherence_threshold(),
+            classifier_respond_threshold: default_classifier_respond_threshold(),
             classifier_model: None,
             classifier_max_concurrency: None,
             blacklist: None,
@@ -147,6 +154,12 @@ impl Default for PipelineParams {
 
 fn default_coherence_threshold() -> f64 {
     0.70
+}
+
+/// Default classifier respond threshold: confidence at or above this lets a
+/// non-dispatch-only domain answer directly; below it the decision routes.
+fn default_classifier_respond_threshold() -> f64 {
+    0.6
 }
 
 /// Default classifier concurrency cap: the machine's available parallelism,
@@ -385,7 +398,6 @@ impl RouterConfig {
         if params.classifier {
             let injected_backend = classifier_backend.is_some();
             let routing_config = self.routing_config();
-            let classifier_intel = classifier_intelligence(self, params);
             let classifier_model = resolve_classifier_model_key(self, params)
                 .map_or_else(|| "unknown".into(), str::to_string);
             let client: Arc<dyn ChatBackend> = if let Some(backend) = classifier_backend {
@@ -474,9 +486,9 @@ impl RouterConfig {
                     client,
                     routing_config,
                     params.coherence_threshold,
+                    params.classifier_respond_threshold,
                     params.score_matrix.clone(),
                     params.score_matrix_authoritative,
-                    classifier_intel,
                     classifier_model,
                     limiter,
                     Arc::new(engine),
@@ -489,9 +501,9 @@ impl RouterConfig {
                     client,
                     routing_config,
                     params.coherence_threshold,
+                    params.classifier_respond_threshold,
                     params.score_matrix.clone(),
                     params.score_matrix_authoritative,
-                    classifier_intel,
                     classifier_model,
                     limiter,
                     target_matcher,
@@ -628,13 +640,6 @@ fn resolve_classifier_model_key<'a>(
                 .and_then(|group| group.models().first())
                 .map(String::as_str)
         })
-}
-
-/// Return the classifier model's intelligence rating, or 0 if not found.
-fn classifier_intelligence(config: &RouterConfig, params: &PipelineParams) -> u8 {
-    resolve_classifier_model_key(config, params)
-        .and_then(|k| config.models.get(k))
-        .map_or(0, |m| m.intelligence)
 }
 
 /// Build a classifier LLM client from the model config.

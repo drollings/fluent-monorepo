@@ -127,6 +127,18 @@ falls through to the classifier LLM. Every outcome is audited on the
 deciding stage (`needle` vs `classifier`) that `make router-benchmark` scores
 against (coverage / routing accuracy / direct-response rate).
 
+**Trust boundary (DD-5).** A Needle `Rerouted` short-circuits the pipeline
+before the classifier runs, so it bypasses the classifier's coherence/safety
+gate by design. That is a documented, bounded, audited risk: the deterministic
+PII/blacklist pre-filter runs before Needle; Needle's calibrated
+`confidence_threshold` gates every reroute; the target model still answers; and
+the reroute audit record marks the bypass explicitly
+(`bypassed_classifier_gate: true` plus the pre-filter's `prefilter_verdict`).
+Needle's `confidence` and the classifier's `confidence` are one vocabulary — a
+calibrated self-assessment of a decision (Needle of its tool call, the
+classifier of its `domain`) — so the "confident-offload" posture is a single
+concept across both rungs.
+
 The same injectable `NeedleBackend` also powers per-node `"backend": "needle"`
 classification-tree nodes and the chart selector's Needle adjudicator. Needle
 is FFI-only, never a `models` entry, and never hard-errors a request (it
@@ -178,7 +190,7 @@ exactly once and published to the same typed store.
 |------|------|
 | `stages/deterministic.rs` | `DeterministicPreFilter` — delegates to `DeterministicFilterEngine`; slash-command dispatch (`/help`, `/stats`, `/checkpoint`) |
 | `stages/needle.rs` | `NeedlePreFilter` — the optional non-generative route-picking rung: decides on the routing window (`stages/common.rs`), renders the tool catalogue via `schema_for`/`is_general_route`, short-circuits with a `Rerouted` target, answers deterministic `output_template` tools directly, and declines (`Skipped`) to fall through to the classifier — including the `general`-category fallback. Emits `rerouted`/`direct_response`/`declined`/`action` audit records + the aggregate deciding-stage record |
-| `stages/classifier.rs` | `ClassifierStage` — single LLM call (flat) or the `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds the `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the "Dispatch rules" section of the system prompt from routes marked `always_route` |
+| `stages/classifier.rs` | `ClassifierStage` — single LLM call (flat) or the `ClassificationEngine` (tree); parses the unified confident-offload verdict (`domain`/`coherence_score`/`safety_score`/`confidence`/`reason`); derives respond-vs-route via `derive_action` (`routing_policy.rs`); enforces the route's `always_route` dispatch-only flag (never a direct answer at any confidence) and auto-generates the "Dispatch rules" section of the system prompt from routes marked `always_route` |
 | `stages/tree/` | `ClassificationEngine` — recursive nested-tree evaluation; filter / classifier / terminal / fallback nodes; `tree_path` audit trail; `kind = "tree_node"` records. Split into `mod.rs` (re-exports), `engine.rs` (the recursive walk + `cost`), `verdict.rs` (`TreeClassifierVerdict` + `parse_tree_verdict`), `decisions.rs` (`TreeOutcome`/`TreeEvaluation` + the `StageDecision` builders); the classifier-node prompt builders live in `config/classification.rs` (`ClassificationNode::build_prompt`) |
 | `stages/common.rs` | Shared stage helpers — `extract_user_message()`, `get_metadata_string()`, JSON-field ensure helpers, and `routing_window()` + `ROUTING_WINDOW_MAX_CHARS` (the Needle decision window: the first sentence/paragraph, ≤200 chars) |
 | `stages/prompt_parse.rs` | `chat_json` + `PromptParseError` — the router-local LLM-JSON round-trip codec over `fluent_llm::parse::parse_typed` (call + tolerant parse/coerce in one envelope) |
@@ -446,22 +458,22 @@ coral's Context a reachable read path without the router importing coral.
    reject, output-filter flag (PII detected), or pass-through.
 5. **Stage 2** (`ClassifierStage`): extracts the user message, calls the LLM
    via `ChatBackend` (or the classification-tree engine in tree mode), parses
-   the structured JSON verdict (action, target, coherence/safety/complexity
-   scores, reason). Checks coherence and safety thresholds. **Route-level
-   `always_route`**: when the requested route is configured `always_route:
-   true` (`RouteRef.always_route`, e.g. prose, code, translation, science,
-   legal, medical), a classifier `action=respond` is overridden to
-   `action=route` toward that route — the classifier never answers those
-   domains directly, compensating for a small model's overconfidence; the same
-   routes are advertised to the LLM as "Dispatch rules" in the generated
-   system prompt. Resolves the route via `RoutingConfig::resolve_route()` with
-   complexity-gated model selection and optional score-matrix ranking — or,
-   when the pipeline opts in (`target_match: "self_assess"`), via the shared
-   `TargetMatcher`, which runs the in-group target-matching ladder (each
-   candidate self-assesses the prompt; the first whose `intelligence` meets its
-   assessed complexity — or the last member — becomes the primary target).
-   Emits a `StageDecision` carrying `metadata.response` (direct answer),
-   `metadata.routing_target` (dispatch instructions), or a rejection verdict.
+   the structured JSON verdict (`domain`, `coherence_score`, `safety_score`,
+   `confidence`, `reason`, optional `response`). Checks coherence and safety
+   thresholds. The router derives respond-vs-route via `derive_action`
+   (`routing_policy.rs`) from the resolved route's `always_route` flag and the
+   classifier's `confidence` against `classifier_respond_threshold` — the
+   model never chooses. **Route-level `always_route`** (`RouteRef.always_route`)
+   marks a route as dispatch-only: its response function is a dispatch, never a
+   classifier direct answer, so even at maximum confidence it routes. Resolves
+   the route via `RoutingConfig::resolve_route()` with complexity-gated model
+   selection and optional score-matrix ranking — or, when the pipeline opts in
+   (`target_match: "self_assess"`), via the shared `TargetMatcher`, which runs
+   the in-group target-matching ladder (each candidate self-assesses the
+   prompt; the first whose `intelligence` meets its assessed complexity — or
+   the last member — becomes the primary target). Emits a `StageDecision`
+   carrying `metadata.response` (direct answer), `metadata.routing_target`
+   (dispatch instructions), or a rejection verdict.
 6. **Server** (post-pipeline): `server/handler.rs` reads `PipelineResult` — if
    `classifier_response` exists, responds directly; if `routing_target` exists,
    calls    `server/dispatch.rs::handle_dispatch`, which walks the primary target
@@ -517,10 +529,11 @@ Each pipeline entry controls:
 `target_match` (`"self_assess"` default | `"static"`) selects the in-group
 target-matching policy (§"Model-group target selection"); `target_match_timeout_ms`
 (default `DEFAULT_TOTAL_TIMEOUT_MS`) bounds each self-assessment call.
-`routes.<name>.always_route` forbids direct classifier answers on that route
-(§"Pipeline data flow detail", step 5) — prose, code, translation, science,
-legal, and medical all route unconditionally to their group's model, while
-`local` keeps the classifier's direct-answer path for simple prompts. `gguf_dir`
+`routes.<name>.always_route` marks a route as dispatch-only — its response
+function is a dispatch, never a classifier direct answer (§"Pipeline data flow
+detail", step 5) — so prose, code, explain, and explore all route
+unconditionally to their group's model, while `local` keeps the classifier's
+direct-answer path for simple prompts. `gguf_dir`
 feeds the admin CLI's weights resolution (`list`/`scan`/`show`/`pull`/`ps`),
 overridden by an explicit `--gguf-dir`.
 
@@ -544,17 +557,17 @@ one of two modes controlled per pipeline by `pipelines.<name>.target_match`:
   classifier call, bounded by `target_match_timeout_ms` under the shared
   `Limiter`). The first candidate whose assessed complexity does not exceed its
   `intelligence` — or the last member of the group — is the matched target.
-  The classifier's own complexity estimate only seeds the *start* index (§4.1
-  of the roadmap): the cheapest candidate whose `intelligence` meets the
-  estimate self-assesses first, so the climb never skips a candidate the
-  classifier already ruled out as too weak. The ladder is DRY-shared between
+  The climb always starts at the cheapest candidate (the classifier emits no
+  complexity estimate — DD-2; model selection is entirely the ladder's job).
+  The ladder is DRY-shared between
   the flat classifier path and the classification-tree engine, and runs only
   for 2+ member groups (single-member groups and `"static"` resolve
   byte-identically to today). Every self-assessment and the final match emit a
   `kind = "target_match"` audit record.
 - **`target_match: "static"`** — today's behavior. `RoutingConfig::resolve_route`
   picks the cheapest model in the route's group whose `intelligence` meets the
-  classifier's `complexity` score; if none qualifies, it picks the cheapest in
+  request's assessed complexity (when a self-assessment already exists) or the
+  cheapest in the group; if none qualifies, it picks the cheapest in
   the group.
 
 In both modes, `RoutingConfig::routing_target` populates `RoutingTarget.fallbacks`
@@ -579,18 +592,18 @@ handler dispatches to that classifier model as a fallback target
 target's answer is recorded in the session ledger and session step after
 dispatch (§"Pipeline data flow detail", step 7).
 
-**Always-route domains.** Routes configured `always_route: true` (the reference
-deployment: `prose`, `code`, `translation`, `science`, `legal`, `medical` —
-every single-member group backed by a stronger model) never let the classifier
-answer directly; step 5 of the pipeline data flow overrides `action=respond`
-into `action=route` toward the requested route, deterministically. This is what
-keeps a small overconfident classifier from "writing" prose or "answering"
-legal/medical questions itself: a request on those routes always reaches the
-route's group model. Routes without the flag (`local`, `extract`, `summarize`)
-keep the direct-answer path, so simple prompts, prompt formulation, and direct
-classification still happen on the cheap model. All of it is config — the
-classifier prompt's "Dispatch rules" section is generated from the same
-`always_route` flags.
+**Dispatch-only domains.** A route configured `always_route: true` (the
+reference deployment: `code`, `explore`, `explain`, `prose`) is dispatch-only:
+its response function is a dispatch to the route's group, never a classifier
+direct answer. `derive_action` (`routing_policy.rs`) routes such a domain even
+at maximum classifier confidence — the model never chooses, and the route's
+function property is enforced uniformly. This is not a patch for model
+behavior; it is a property of the work the route performs. Routes without the
+flag (`local`) keep the direct-answer path, so simple prompts, prompt
+formulation, and direct classification still happen on the cheap model — the
+route table's sole direct-answer domain. All of it is config — the classifier
+prompt's "Dispatch rules" section is generated from the same `always_route`
+flags.
 
 ## Instance pools, the serving layer, and the sidecar
 
