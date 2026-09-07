@@ -718,7 +718,7 @@ fn discover_config_json(model_path: &Path) -> Option<PathBuf> {
 // A top-level `onnx` section keys one optional `OnnxRoleConfig` per role
 // (Encoder / PII / Router / Policy / ColBERT). Every role is optional and the
 // pipeline is fully functional (pure-deterministic) with none of them loaded.
-// The config vocabulary parallels the llama.cpp `ModelEntry` + `default_params`
+// The config vocabulary parallels the llama.cpp `ModelEntry` + `roles.<role>.params`
 // surface — resident/pinned residency, run/idle timeouts, and sampling
 // `params` merged into dispatch — because the same operator thinks about both
 // fleets; the difference is that onnx models run in-process via `ort`, never
@@ -895,7 +895,7 @@ pub struct OnnxRoleConfig {
     #[serde(default = "default_zero_u64")]
     pub idle_timeout_ms: u64,
     /// Sampling defaults merged into dispatch bodies (parallel to llama
-    /// `params` / `default_params`); per-request values win.
+    /// `params` / `roles.<role>.params`); per-request values win.
     #[serde(default)]
     pub params: Option<serde_json::Value>,
     /// Declared context windows (the onnx analogue of a llama `ModelEntry`'s

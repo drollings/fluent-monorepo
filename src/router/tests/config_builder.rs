@@ -263,9 +263,17 @@ fn local_backend_single_resolver_with_role_work_point() {
     // target builder keeps resolving the fork's default instance (ledger).
     // (Covers the removed pool/default resolver pair alongside the role
     // golden.)
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {"models": ["swarm"], "instance": "swarm"}
+            "work": {
+                "models": ["swarm"],
+                "instance": "swarm",
+                "instances": {
+                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
+                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
+                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
+                }
+            }
         },
         "models": {
             "swarm": {
@@ -273,15 +281,13 @@ fn local_backend_single_resolver_with_role_work_point() {
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
-                "instances": {
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                }
+                "speed": 8
             }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it (no per-model selection:
+    // pool as authored).
+    config.apply_defaults();
 
     // Every construction path builds (is_some); the qualifier each serves is
     // pinned through the single precedence below.
@@ -290,13 +296,13 @@ fn local_backend_single_resolver_with_role_work_point() {
     assert!(config.local_backend("swarm:scratch").is_some());
     let entry = config.models.get("swarm").expect("swarm");
     assert_eq!(
-        crate::config::resolve_inference_point(&config.models, &config.roles, "swarm", None, None)
+        crate::config::resolve_inference_point(&config.models, &config.roles, "swarm", None)
             .as_deref(),
         Some("ledger"),
         "bare key serves the entry default"
     );
     assert_eq!(
-        crate::config::resolve_inference_point(&config.models, &config.roles, "work", None, None)
+        crate::config::resolve_inference_point(&config.models, &config.roles, "work", None)
             .as_deref(),
         Some("swarm"),
         "role serves its instance point"
@@ -306,8 +312,7 @@ fn local_backend_single_resolver_with_role_work_point() {
             &config.models,
             &config.roles,
             "swarm",
-            Some("scratch"),
-            None
+            Some("scratch")
         )
         .as_deref(),
         Some("scratch"),
@@ -328,23 +333,30 @@ fn summarizer_for_ledger_builds_when_ledger_section_present() {
     // The ledger Summarizer's DIP construction site. With a `ledger`
     // section and a swarm entry declaring a `ledger` instance, the backend
     // builds; without a ledger section it is `None`.
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "classifier_model": "swarm",
         "ledger": { "model": "swarm", "max_summary_tokens": 300 },
+        "roles": {
+            "work": {
+                "models": ["swarm"],
+                "instances": {
+                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
+                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
+                }
+            }
+        },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
-                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
-                }
+                "speed": 8
             }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it.
+    config.apply_defaults();
 
     let summarizer = config.summarizer_for_ledger();
     assert!(summarizer.is_some(), "ledger section + ledger instance -> Some");
@@ -354,33 +366,43 @@ fn summarizer_for_ledger_builds_when_ledger_section_present() {
 fn ledger_tier_backend_builds_when_ledger_section_present() {
     // The tier worker's DIP backend targets `<base>:ledger` via the
     // single LlmClient factory; tier_model wins over ledger.model.
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "classifier_model": "swarm",
         "ledger": {
             "model": "swarm",
             "tier_model": "qwen3.5-4b",
             "background_tiering": true
         },
-        "models": {
-            "swarm": {
-                "endpoint": "http://x/v1/chat/completions",
-                "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8,
+        "roles": {
+            "work": {
+                "models": ["swarm"],
                 "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
                     "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
                 }
             },
-            "qwen3.5-4b": {
-                "endpoint": "http://y/v1/chat/completions",
-                "name": "qwen3.5-4b", "intelligence": 5,
-                "cost_input": 2.0, "cost_output": 2.0, "cost_cached_read": 0.8, "speed": 4,
+            "tier": {
+                "models": ["qwen3.5-4b"],
                 "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
                 }
             }
+        },
+        "models": {
+            "swarm": {
+                "endpoint": "http://x/v1/chat/completions",
+                "name": "swarm", "intelligence": 2,
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
+            },
+            "qwen3.5-4b": {
+                "endpoint": "http://y/v1/chat/completions",
+                "name": "qwen3.5-4b", "intelligence": 5,
+                "cost_input": 2.0, "cost_output": 2.0, "cost_cached_read": 0.8, "speed": 4
+            }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it.
+    config.apply_defaults();
 
     // tier_model wins over ledger.model.
     assert!(config.ledger_tier_backend(Some("qwen3.5-4b")).is_some());
@@ -432,21 +454,28 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
     // to their named instances. `local_backend_for_instance` builds an
     // `LlmClient` for the `models` key qualified to `<base>:<instance>`,
     // and `RoutingTarget::from_model_entry_instance` mirrors the model id.
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "models": ["swarm"],
+                "instances": {
+                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
+                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
+                }
+            }
+        },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
-                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                }
+                "speed": 8
             }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it.
+    config.apply_defaults();
 
     // The named-instance backends build (single LlmClient factory).
     assert!(config.local_backend_for_instance("swarm", "ledger").is_some());
@@ -472,19 +501,15 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
 }
 
 #[test]
-fn local_backend_for_instance_merges_profile_params_over_entry_params() {
-    // Scratch's profile `params` (temperature 0.4) overlay the entry
-    // `params` (repeat_penalty 1.05); declaration-only keys are stripped so
-    // the merged body carries both sampling params and nothing else.
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
-        "models": {
-            "swarm": {
-                "endpoint": "http://x/v1/chat/completions",
-                "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
-                "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
-                "params": { "repeat_penalty": 1.05, "num_ctx": 0 },
+fn local_backend_for_instance_entry_params_are_final_over_profile_params() {
+    // The entry top-level is the final sparse layer: its `temperature`
+    // wins over scratch's profile `params`, while keys only the profile
+    // sets survive underneath; declaration-only keys are stripped so the
+    // merged body carries sampling params and nothing else.
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "models": ["swarm"],
                 "instances": {
                     "scratch": {
                         "num_ctx": 131072,
@@ -493,8 +518,20 @@ fn local_backend_for_instance_merges_profile_params_over_entry_params() {
                     }
                 }
             }
+        },
+        "models": {
+            "swarm": {
+                "endpoint": "http://x/v1/chat/completions",
+                "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
+                "intelligence": 2,
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
+                "speed": 8,
+                "params": { "temperature": 0.9, "repeat_penalty": 1.05, "num_ctx": 0 }
+            }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it.
+    config.apply_defaults();
 
     let merged = config
         .models
@@ -504,8 +541,8 @@ fn local_backend_for_instance_merges_profile_params_over_entry_params() {
         .expect("scratch profile resolves");
     let stripped = strip_declaration_params(merged);
     let obj = stripped.as_object().expect("merged params object");
-    // Profile wins for temperature; entry key preserved.
-    assert_eq!(obj["temperature"].as_f64(), Some(0.4));
+    // Entry wins for temperature; profile-only key preserved underneath.
+    assert_eq!(obj["temperature"].as_f64(), Some(0.9));
     assert_eq!(obj["repeat_penalty"].as_f64(), Some(1.05));
     // Declaration-only keys are stripped from the merged object.
     assert!(obj.get("num_ctx").is_none(), "declaration key stripped");
@@ -521,8 +558,7 @@ fn local_backend_for_instance_none_for_unknown_instance() {
                 "name": "swarm",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
-                "instances": { "scratch": { "num_ctx": 131072 } }
+                "speed": 8
             }
         }
     })).expect("valid config");
@@ -536,7 +572,13 @@ fn local_backend_for_instance_none_for_unknown_instance() {
 fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
     // No profile `params` -> the merged body is exactly the entry params
     // (sampling params preserved, declaration keys stripped).
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "models": ["swarm"],
+                "instances": { "scratch": { "num_ctx": 131072 } }
+            }
+        },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
@@ -544,11 +586,12 @@ fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
                 "speed": 8,
-                "params": { "repeat_penalty": 1.05, "num_ctx": 0 },
-                "instances": { "scratch": { "num_ctx": 131072 } }
+                "params": { "repeat_penalty": 1.05, "num_ctx": 0 }
             }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it.
+    config.apply_defaults();
     let merged = config
         .models
         .get("swarm")
@@ -835,12 +878,19 @@ fn encoder_model_serde_round_trips() {
 /// A config with a stub onnx backend registered (as the composition root does).
 fn config_with_onnx_stub() -> RouterConfig {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "models": ["swarm"],
+                "instances": {
+                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
+                }
+            }
+        },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8,
-                "instances": { "ledger": { "num_ctx": 131072, "pinned": true, "default": true } }
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
             }
         },
         "onnx": {
@@ -853,6 +903,8 @@ fn config_with_onnx_stub() -> RouterConfig {
         }
     }))
     .expect("valid config");
+    // Boot composition, as production boot runs it.
+    config.apply_defaults();
     config.set_inference_registry(
         crate::test_stubs::StubInferenceBackend::fixed(
             "onnx",
@@ -1090,9 +1142,16 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
     // A role key builds the head candidate's backend (fail-open `None` when
     // the role is unknown or names nothing buildable); literal keys behave
     // exactly as before.
-    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {"models": ["swarm:default"], "instance": "swarm"},
+            "work": {
+                "models": ["swarm:default"],
+                "instance": "swarm",
+                "instances": {
+                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
+                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
+                }
+            },
             "empty": {"models": []}
         },
         "models": {
@@ -1101,14 +1160,13 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
                 "name": "swarm",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
-                "instances": {
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                }
+                "speed": 8
             }
         }
     })).expect("valid config");
+    // Boot composition, as production boot runs it (the role pool composes
+    // into the model's effective pool; the role point serves "swarm").
+    config.apply_defaults();
 
     assert!(config.local_backend("work").is_some(), "role builds head candidate");
     assert!(config.local_backend("swarm:default").is_some(), "literal keys unchanged");

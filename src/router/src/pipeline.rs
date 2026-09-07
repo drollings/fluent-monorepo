@@ -148,8 +148,8 @@ fn base_target(entry: &ModelEntry, model_key: &str) -> (String, Option<serde_jso
     let base = entry.name.clone().unwrap_or_else(|| model_key.to_string());
     // The entry-default inference point — the shared step of the single
     // qualifier precedence, so dispatch wire ids agree with backend ids.
-    // Routing entries arrive with fleet defaults materialized, hence `None`.
-    let qualifier = crate::config::root::default_inference_point(entry, None);
+    // Routing entries arrive boot-materialized.
+    let qualifier = crate::config::root::default_inference_point(entry);
     let model = QualifiedModelId::new(base.clone(), qualifier.clone()).as_wire();
     let params = qualifier
         .as_deref()

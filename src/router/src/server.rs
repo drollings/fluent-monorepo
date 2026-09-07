@@ -34,12 +34,10 @@ pub struct RouterServer {
     pipelines: HashMap<String, Arc<PipelineOrchestrator>>,
     routes: HashMap<String, RouteRef>,
     models: HashMap<String, ModelEntry>,
-    /// Fleet-default instance map (mirrors
-    /// `RouterConfig.default_params.instances`), carried so per-request paths
-    /// inherit it through the same code path.
-    default_instances: Option<HashMap<String, crate::config::InstanceProfile>>,
     /// Routing-vocabulary table (mirrors `RouterConfig.roles`), carried so
-    /// per-request paths can resolve roles without the full config.
+    /// per-request paths can resolve roles without the full config. Entries
+    /// in `models` arrive boot-materialized (effective pools composed), so no
+    /// fleet-default map is carried — one code path, never a fork.
     roles: HashMap<String, RoleEntry>,
     bind_addr: String,
     max_payload: usize,
@@ -121,7 +119,6 @@ impl RouterServer {
             pipelines,
             routes,
             models,
-            default_instances: None,
             roles: HashMap::new(),
             bind_addr: config.bind_addr.clone(),
             max_payload: config.max_payload,
@@ -150,17 +147,6 @@ impl RouterServer {
             depends: vec![],
             provides: vec![ArcIntern::from("http.endpoint")],
         }
-    }
-
-    /// Attach the fleet-default instance map (`default_params.instances`) so
-    /// per-request paths inherit it through the same code path.
-    #[must_use]
-    pub fn with_default_instances(
-        mut self,
-        instances: Option<HashMap<String, crate::config::InstanceProfile>>,
-    ) -> Self {
-        self.default_instances = instances;
-        self
     }
 
     /// Attach the routing-vocabulary table (`RouterConfig.roles`) so
@@ -443,7 +429,6 @@ impl RouterServer {
             onnx_llm_backend: self.onnx_llm_backend.clone(),
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
-            default_instances: self.default_instances.clone(),
         };
 
         // Reconcile configured pinned instances at boot (retrying until the
@@ -560,7 +545,6 @@ impl WorkUnit for RouterServer {
             onnx_llm_backend: self.onnx_llm_backend.clone(),
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
-            default_instances: self.default_instances.clone(),
         };
         let rt = ctx.rt.clone();
 

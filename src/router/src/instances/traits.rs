@@ -396,7 +396,7 @@ impl LlamaContext {
         let name = profile.name.clone().unwrap_or_default();
         let group = profile.group.clone().unwrap_or_else(|| name.clone());
         let n_ctx = if profile.num_ctx == 0 {
-            // The `default_params.num_ctx` default (16384) — the plain-model
+            // The `roles.default.params` num_ctx default (16384) — the plain-model
             // context size the supervisor hands a no-instance server.
             16_384
         } else {
@@ -842,22 +842,20 @@ pub struct LlamaBackend {
     pool: InstancePool,
     models: HashMap<String, ModelEntry>,
     roles: HashMap<String, crate::config::RoleEntry>,
-    default_instances: Option<HashMap<String, InstanceProfile>>,
     onnx_keys: BTreeSet<String>,
     sidecar: SidecarConfig,
 }
 
 impl LlamaBackend {
     /// Build the adapter over the managed pool, the `models` map (for chat
-    /// construction), the `roles` table (role-key resolution through the
-    /// single inference-point precedence), the fleet-default instance map
-    /// (for entries declaring none), the configured onnx role keys
+    /// construction — entries arrive boot-materialized, so no fleet-default
+    /// map is carried), the `roles` table (role-key resolution through the
+    /// single inference-point precedence), the configured onnx role keys
     /// (precedence), and the sidecar policy (for `LlamaWeights` construction).
     pub fn new(
         pool: InstancePool,
         models: HashMap<String, ModelEntry>,
         roles: HashMap<String, crate::config::RoleEntry>,
-        default_instances: Option<HashMap<String, InstanceProfile>>,
         onnx_keys: BTreeSet<String>,
         sidecar: SidecarConfig,
     ) -> Self {
@@ -865,7 +863,6 @@ impl LlamaBackend {
             pool,
             models,
             roles,
-            default_instances,
             onnx_keys,
             sidecar,
         }
@@ -952,21 +949,15 @@ impl InferenceBackend for LlamaBackend {
         // Both halves resolve role keys through the single inference-point
         // precedence (a role serves its head candidate at the role's point).
         match instance {
-            // The adapter's fleet defaults come from the composition root
-            // (the hoisted `default_params.instances` map, if any).
+            // Entries arrive boot-materialized (effective pools composed),
+            // so the shared constructors resolve through one code path.
             Some(name) => llama_chat_backend_for_instance(
                 &self.models,
                 &self.roles,
                 key,
                 name,
-                self.default_instances.as_ref(),
             ),
-            None => llama_chat_backend_for_key(
-                &self.models,
-                &self.roles,
-                key,
-                self.default_instances.as_ref(),
-            ),
+            None => llama_chat_backend_for_key(&self.models, &self.roles, key),
         }
     }
     fn capabilities(&self) -> BackendCaps {

@@ -31,11 +31,12 @@ pub use self::routing::{RoleEntry, RouteRef, RoutingConfig};
 pub use common_core::constants::default_true;
 pub use self::root::{
     AuditLogConfig, ArcReadyConfig, ChartsConfig, ClassifierFailurePolicy, ClassifierOutput,
-    DefaultModelParams, EvictionPolicy, InstanceProfile, LedgerConfig, ModelEntry,
+    EvictionPolicy, InstanceProfile, LedgerConfig, ModelEntry, ModelInstanceRef,
     OrchestratorSection, OverlayConfig, PostProcessConfig, ReviewConfig, RigorConfig,
-    RouterConfig, ServerConfig, SessionConfig, SidecarConfig, WorkflowExtractionMode,
-    DECLARATION_PARAM_KEYS, DEFAULT_LEDGER_MAX_SUMMARY_TOKENS, detect_device_vram_total,
-    resolve_inference_point, role_head_key, strip_declaration_params,
+    RoleParams, RouterConfig, ServerConfig, SessionConfig, SidecarConfig,
+    WorkflowExtractionMode, DECLARATION_PARAM_KEYS, DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
+    detect_device_vram_total, overlay_params, resolve_inference_point, role_head_key,
+    strip_declaration_params,
 };
 #[allow(unused_imports)]
-pub(crate) use self::root::{merge_sampling_params, split_model_key};
+pub(crate) use self::root::{materialize_effective_pool, split_model_key};

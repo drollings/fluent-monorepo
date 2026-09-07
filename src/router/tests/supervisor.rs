@@ -9,23 +9,71 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 fn managed_entry() -> ModelEntry {
+    let mut entry: ModelEntry =
     serde_json::from_value(serde_json::json!({
         "endpoint": "http://127.0.0.1:0/v1/chat/completions",
         "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
         "intelligence": 2,
         "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
         "speed": 8,
-        "weights": "/models/lfm2.6b.gguf",
-        "instances": {
-            "swarm": { "count": 2, "group": "swarm", "num_ctx": 8192, "pinned": true },
-            "ledger": { "num_ctx": 65536, "default": true }
-        }
+        "weights": "/models/lfm2.6b.gguf"
     }))
-    .expect("entry parses")
+    .expect("entry parses");
+    // Spawn tests pin the fork argv, not role composition: the effective
+    // pool is set directly (what boot materialization would compose from
+    // the role pool + this model's selection).
+    entry.effective_profiles = Some(vec![
+        crate::config::InstanceProfile {
+            name: Some("swarm-0".into()),
+            group: Some("swarm".into()),
+            count: 2,
+            num_ctx: 8192,
+            parallel: None,
+            pinned: true,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: false,
+            resume: false,
+            params: None,
+            max_ctx: None,
+            session: false,
+        },
+        crate::config::InstanceProfile {
+            name: Some("swarm-1".into()),
+            group: Some("swarm".into()),
+            count: 2,
+            num_ctx: 8192,
+            parallel: None,
+            pinned: true,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: false,
+            resume: false,
+            params: None,
+            max_ctx: None,
+            session: false,
+        },
+        crate::config::InstanceProfile {
+            name: Some("ledger".into()),
+            group: Some("ledger".into()),
+            count: 1,
+            num_ctx: 65536,
+            parallel: None,
+            pinned: false,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: true,
+            resume: false,
+            params: None,
+            max_ctx: None,
+            session: false,
+        },
+    ]);
+    entry
 }
 
-fn defaults() -> crate::config::DefaultModelParams {
-    crate::config::DefaultModelParams::default()
+fn defaults() -> crate::config::RoleParams {
+    crate::config::RoleParams::default()
 }
 
 #[test]
@@ -158,48 +206,38 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
     // all-unpinned pool declares its full grammar at spawn (there is no
     // resident anchor whose VRAM a declaration would waste).
     let mut entry = managed_entry();
-    entry.instances = Some(
-        [
-            (
-                "scratch".to_string(),
-                crate::config::InstanceProfile {
-                    name: None,
-                    group: None,
-                    count: 1,
-                    num_ctx: 131072,
-                    parallel: None,
-                    pinned: false,
-                    no_sleep: false,
-                    sleep_idle_seconds: Some(1),
-                    default: false,
-                    resume: false,
-                    params: None,
-                    max_ctx: None,
-                    session: false,
-                },
-            ),
-            (
-                "ledger".to_string(),
-                crate::config::InstanceProfile {
-                    name: None,
-                    group: None,
-                    count: 1,
-                    num_ctx: 65536,
-                    parallel: None,
-                    pinned: false,
-                    no_sleep: false,
-                    sleep_idle_seconds: None,
-                    default: true,
-                    resume: false,
-                    params: None,
-                    max_ctx: None,
-                    session: false,
-                },
-            ),
-        ]
-        .into_iter()
-        .collect(),
-    );
+    entry.effective_profiles = Some(vec![
+        crate::config::InstanceProfile {
+            name: Some("scratch".into()),
+            group: Some("scratch".into()),
+            count: 1,
+            num_ctx: 131072,
+            parallel: None,
+            pinned: false,
+            no_sleep: false,
+            sleep_idle_seconds: Some(1),
+            default: false,
+            resume: false,
+            params: None,
+            max_ctx: None,
+            session: false,
+        },
+        crate::config::InstanceProfile {
+            name: Some("ledger".into()),
+            group: Some("ledger".into()),
+            count: 1,
+            num_ctx: 65536,
+            parallel: None,
+            pinned: false,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: true,
+            resume: false,
+            params: None,
+            max_ctx: None,
+            session: false,
+        },
+    ]);
     let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
     assert!(!spec.boot, "no pinned instance -> all-lazy, loaded on demand");
     let args = build_server_args(&spec);
@@ -219,6 +257,7 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
 fn plain_model_gets_default_ctx_and_idle_sleep() {
     let mut entry = managed_entry();
     entry.instances = None;
+    entry.effective_profiles = None;
     let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
     assert!(!spec.boot, "no pinned instance -> lazy model");
     let args = build_server_args(&spec);
@@ -248,6 +287,11 @@ fn model_entry_managed_detection() {
     assert!(entry.is_managed(), "weights -> managed");
     entry.weights = None;
     entry.hf_repo = None;
+    entry.instances = Some(
+        [("work".to_string(), crate::config::ModelInstanceRef::default())]
+            .into_iter()
+            .collect(),
+    );
     assert!(entry.is_managed(), "instances -> managed");
     entry.instances = None;
     assert!(!entry.is_managed(), "nothing to load -> not managed");

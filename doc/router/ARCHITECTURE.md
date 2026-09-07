@@ -618,8 +618,8 @@ chain is exhausted does the per-group `Ladder` engage
 
 Every model in the chain is a candidate to answer the request — a fallback
 *target*. None of them backs up the classifier: the classifier stage runs on
-its own `classifier_model`, and when the pipeline produces no target the
-handler dispatches to that classifier model as a fallback target
+the `classifier` role's head candidate, and when the pipeline produces no target the
+handler dispatches to that classifier key as a fallback target
 (`server/handler.rs`) rather than to a classifier backup. The matched
 target's answer is recorded in the session ledger and session step after
 dispatch (§"Pipeline data flow detail", step 7).
@@ -700,21 +700,33 @@ names are internal. `ModelEntry::llama_model_name` resolves the server's
 `--alias`, and dispatch always sends the translated id (`<llama-name>[:<instance>]`).
 Roles are the routing vocabulary: `model_groups` members name roles (fanning
 out to candidate keys per request) or literal keys, plus the `last`/`any`
-availability sentinels. One qualifier precedence serves every path
+availability sentinels. Each role owns its run configuration —
+`roles.<role>.params` (the full run block; the fleet block is
+`roles.default.params`, which also supplies the supervisor's spawn defaults)
+and `roles.<role>.instances` (the fleet named pool). A model's `instances`
+entry under a role's name selects that role's profile (`select`) with a
+sparse `params` tweak; sampling composes role-base ← pool profile ←
+selection ← entry top-level (entry wins), materialized at boot into each
+model's effective pool. One qualifier precedence serves every path
 (`resolve_inference_point`): explicit qualifier, else the role's instance
 point, else the entry default (the `default: true` profile's group, else the
-single shared group), else a bare key. Backend construction
+single shared group), else a bare key. Special-purpose roles ride the same
+machinery: `classifier` (head candidate serves classification;
+`RouterConfig::classifier_role_key` is the single classifier-key source —
+there is no top-level `classifier_model`) and `embedding` (serves the chart
+embedder; role params compose under the entry's params for provider
+options). Backend construction
 (`llama_chat_backend_for_key`/`for_instance`, shared with the `LlamaBackend`
 adapter), dispatch wire ids (`RoutingTarget::from_model_entry`), and the
 classifier/rigor ensure paths all compose it, so backend model ids and
 dispatch wire ids agree.
 
 `RoutingTarget::from_model_entry_instance` targets a named point
-(`<base>:ledger`, `<base>:scratch`); `local_backend_for_instance` merges the
-named instance profile's `params` over the entry `params` (profile wins) and
-strips declaration-only keys, so instance-level sampling knobs actually reach
-the body. On the client-facing surface the handler also resolves the model-id
-grammar directly (`resolve_pipeline`): a request for `model: "<id>:<instance>"`
+(`<base>:ledger`, `<base>:scratch`); `local_backend_for_instance` overlays the
+entry `params` onto the named instance profile's `params` (entry wins — it is
+the final sparse layer; the profile already carries the role-base ← pool ←
+selection chain composed at boot) and strips declaration-only keys, so
+instance-level sampling knobs actually reach the body. On the client-facing surface the handler also resolves the model-id grammar directly (`resolve_pipeline`): a request for `model: "<id>:<instance>"`
 (or `:<group>`, `:latest`) bypasses the route table and targets the owning
 server. The routing fields `instance`/`snapshot`/`id_slot` are read from the
 JSON body and the query string (body wins), merged in `server/handler.rs`,

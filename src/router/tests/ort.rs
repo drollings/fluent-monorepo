@@ -18,6 +18,8 @@ fn plain_entry() -> ModelEntry {
         retry_base_interval_s: 0,
         params: None,
         instances: None,
+        effective_profiles: None,
+        sessions: None,
         weights: None,
         hf_repo: None,
         hf_file: None,

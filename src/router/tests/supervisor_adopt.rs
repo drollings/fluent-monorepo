@@ -10,7 +10,7 @@ use super::*;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::config::{DefaultModelParams, InstanceProfile, SidecarConfig};
+use crate::config::{InstanceProfile, RoleParams, SidecarConfig};
 use crate::instances::stub::StubServer;
 use crate::instances::{InstanceClient, InstanceManager};
 use crate::supervisor::{LlamaServerSpec, LlamaServerSupervisor, ManagedServer};
@@ -28,7 +28,7 @@ fn code_spec(port: u16) -> LlamaServerSpec {
         slot_save_path: None,
         api_key: None,
         instance_wait_s: None,
-        defaults: DefaultModelParams::default(),
+        defaults: RoleParams::default(),
         extra_args: vec![],
     }
 }

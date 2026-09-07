@@ -76,12 +76,17 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub logging: LoggingConfig,
+    /// There is no top-level `classifier_model` key: the classifier is a
+    /// role (`roles.classifier`, head candidate serves). See
+    /// [`RouterConfig::classifier_role_key`]. A retired key parses here so
+    /// old configs fail with a guided warning at boot instead of silently
+    /// losing their classifier — always `None` after load, never read.
     #[field(skip)]
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub classifier_model: Option<String>,
-    /// Chart-embedding model key (HNSW index). Selects an entry from
-    /// `models`. `None` falls back to `charts.selector_model`, then
-    /// `classifier_model`.
+    /// Chart-embedding model: a role name first (the `embedding` role
+    /// mapping), else a literal `models` key. `None` falls back to
+    /// `charts.selector_model`, then the classifier role head.
     #[field(skip)]
     #[serde(default)]
     pub embedding_model: Option<String>,
@@ -158,16 +163,21 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub session: Option<SessionConfig>,
-    /// Default "how a model is run" parameters (the `default_params` block).
-    /// Applied to every managed model that does not declare the key itself.
+    /// Fleet run configuration. There is no top-level `default_params` block:
+    /// the fleet defaults live as `roles.default.params` (launch knobs +
+    /// base sampling) and `roles.default.instances` (the shared pool).
+    /// Models declaring no role selection inherit the `default` role's pool
+    /// through the same code path. Kept as a deserialization alias so
+    /// pre-R7 configs fail with a guided message instead of an unknown field
+    /// — always `None` after load; the materializer never reads it.
     #[field(skip)]
-    #[serde(default)]
-    pub default_params: DefaultModelParams,
+    #[serde(default, skip_serializing)]
+    pub default_params: Option<RoleParams>,
     /// In-process ONNX fleet: one optional role-scoped model declaration per
     /// role (Encoder / PII / Router / Policy / ColBERT). Every role is optional
     /// and the pipeline is fully functional (pure-deterministic) with none of
     /// them loaded. The config vocabulary parallels the llama.cpp
-    /// `ModelEntry`/`default_params` surface (resident/pinned residency, run
+    /// `ModelEntry`/`roles.<role>.params` surface (resident/pinned residency, run
     /// and idle timeouts, sampling `params`), but the models run in-process via
     /// `ort` — never a spawned `llama-server`. Absent → fully fail-open.
     #[field(skip)]
@@ -247,7 +257,7 @@ impl Default for RouterConfig {
             review: None,
             overlay: None,
             session: None,
-            default_params: DefaultModelParams::default(),
+            default_params: None,
             onnx_limiter_cap: common_core::constants::DEFAULT_ONNX_LIMITER_CAP,
             onnx_threads: common_core::constants::DEFAULT_ONNX_THREADS,
             gguf_dir: None,
@@ -262,13 +272,21 @@ impl Default for RouterConfig {
 }
 
 impl RouterConfig {
-    /// Merge the `default_params` sampling defaults into every model entry that
-    /// does not declare its own values (per-model values win). Call once after
-    /// config load so the rest of the crate sees fully-materialized params.
+    /// Boot composition: deserialize-then-compose the role params chain so
+    /// the rest of the crate sees fully-materialized entries. Call once after
+    /// config load:
     ///
-    /// Only the sampling `params` object is merged here — the server-launch
-    /// defaults (`batch_size`, KV cache types, GPU offload, context size) are
-    /// consumed directly by the supervisor (`build_server_args`).
+    /// 1. The `roles.default.params` sampling base is merged into every model
+    ///    entry that does not declare its own values (per-model values win —
+    ///    the entry top-level stays the final sparse layer).
+    /// 2. Every model's effective instance pool is composed
+    ///    ([`materialize_effective_pool`]: role-base ← pool profile ←
+    ///    per-model selection) and stored on the entry.
+    ///
+    /// A retired top-level `default_params` block is ignored with a loud
+    /// warning (its content now lives as `roles.default.params`); only the
+    /// server-launch knobs are read elsewhere — the supervisor consumes them
+    /// from `roles.default.params` (`build_server_args`).
     pub fn apply_defaults(&mut self) {
         // Merge top-level ONNX role keys into the `onnx` fleet when `onnx` is
         // absent. This supports the simplified config format where roles like
@@ -276,21 +294,69 @@ impl RouterConfig {
         // instead of nested under `onnx`.
         self.normalize_onnx();
 
-        let Some(default_params) = self.default_params.params.clone() else {
-            return;
-        };
-        let serde_json::Value::Object(defaults) = default_params else {
-            return;
-        };
-        for entry in self.models.values_mut() {
-            let Some(serde_json::Value::Object(existing)) = entry.params.as_mut() else {
-                entry.params = Some(serde_json::Value::Object(defaults.clone()));
-                continue;
-            };
-            for (key, value) in &defaults {
-                existing.entry(key.clone()).or_insert_with(|| value.clone());
+        if self.default_params.is_some() {
+            tracing::warn!(
+                target: "router.config",
+                "top-level `default_params` is retired; move its content to \
+                 `roles.default.params` (`instances` to `roles.<role>.instances`). \
+                 The block is ignored.",
+            );
+        }
+        if self.classifier_model.is_some() {
+            tracing::warn!(
+                target: "router.config",
+                "top-level `classifier_model` is retired; the classifier is \
+                 the `classifier` role (its head candidate serves). \
+                 The key is ignored.",
+            );
+        }
+        if let Some(serde_json::Value::Object(defaults)) =
+            self.default_role_params().params.clone()
+        {
+            for entry in self.models.values_mut() {
+                let Some(serde_json::Value::Object(existing)) = entry.params.as_mut()
+                else {
+                    entry.params = Some(serde_json::Value::Object(defaults.clone()));
+                    continue;
+                };
+                for (key, value) in &defaults {
+                    existing.entry(key.clone()).or_insert_with(|| value.clone());
+                }
             }
         }
+        for (key, entry) in &mut self.models {
+            if entry.sessions.is_some() {
+                tracing::warn!(
+                    target: "router.config",
+                    model = %key,
+                    "retired `sessions` pool key is ignored; move its profiles to \
+                     `roles.<role>.instances` and select them per role",
+                );
+            }
+            entry.effective_profiles =
+                Some(materialize_effective_pool(key, entry, &self.roles));
+        }
+    }
+
+    /// The fleet run block: `roles.default.params`, or struct defaults when
+    /// no `default` role is declared. The single source for spawn defaults
+    /// (supervisor) and the entry-params merge base above.
+    pub fn default_role_params(&self) -> RoleParams {
+        self.roles
+            .get("default")
+            .map(|r| r.params.clone())
+            .unwrap_or_default()
+    }
+
+    /// The classifier's serving key: the head candidate of the `classifier`
+    /// role (config order), else `None`. The single classifier-key source —
+    /// the retired top-level `classifier_model` is never read.
+    pub fn classifier_role_key(&self) -> Option<&str> {
+        self.roles
+            .get("classifier")?
+            .models
+            .first()
+            .map(String::as_str)
     }
 
     /// Merge top-level ONNX role keys into the `onnx` fleet. When `onnx` is
@@ -441,10 +507,27 @@ pub struct ModelEntry {
     pub retry_base_interval_s: u64,
     #[serde(default)]
     pub params: Option<serde_json::Value>,
-    /// Instance-pool declaration for the fork's shared-weight instances. The
-    /// old `sessions` key is accepted as an alias during the transition.
-    #[serde(default, alias = "sessions")]
-    pub instances: Option<HashMap<String, InstanceProfile>>,
+    /// Per-role instance selection for this model, keyed by role name. The
+    /// entry under a role's name is the model's selected instance for that
+    /// role: `select` names a profile in `roles.<role>.instances`, and
+    /// `params` is a sparse update composed over it at boot. A model that
+    /// declares no selection for a role it serves uses the pool as authored;
+    /// a model serving no role and declaring nothing inherits the `default`
+    /// role's pool (the fleet-inherit fallback, same code path).
+    #[serde(default)]
+    pub instances: Option<HashMap<String, ModelInstanceRef>>,
+    /// Boot-materialized effective pool: every profile the qualifier and
+    /// params paths resolve against, with the role-base ← pool ← selection
+    /// sampling chain already composed into each profile's `params`.
+    /// `None` before boot composition runs. Not serialized (derived).
+    #[serde(skip)]
+    pub effective_profiles: Option<Vec<InstanceProfile>>,
+    /// Retired pre-R7 `sessions` pool key: parsed so old configs fail with a
+    /// guided warning instead of silently losing their pool (pools now live
+    /// in `roles.<role>.instances`). Always ignored after load; never
+    /// serialized.
+    #[serde(default, skip_serializing)]
+    pub sessions: Option<serde_json::Value>,
     /// Local GGUF weights file path. When set (or when `hf_repo` or `instances`
     /// is set), Coral Router is the process owner: it spawns and supervises a
     /// dedicated `llama-server` for this model on a free localhost port and
@@ -481,12 +564,36 @@ impl ModelEntry {
     }
 }
 
-/// One config-declared instance profile. The map key on `ModelEntry.instances`
-/// provides the default instance name; `count > 1` expands into sibling
-/// instances named `<key>-0` .. `<key>-{count-1}` sharing the profile's group.
-/// Sampling `params` are merged into the request body for dispatches through
-/// these instances; declaration-only keys (`num_ctx`/`parallel`/
-/// `sleep_idle_seconds`) are stripped before dispatch.
+/// One model's selected instance for one role: the value type of
+/// `ModelEntry.instances`, keyed by role name.
+///
+/// `select` names a profile in `roles.<role>.instances` — the fleet pool for
+/// that role — and that profile IS the model's pool for the role (a selection
+/// narrows; unselected models use the pool as authored). Absent selects the
+/// pool's `default: true` profile (else the single profile, else nothing).
+/// `params` is a sparse sampling update composed over the selected profile's
+/// params at boot; absent contributes nothing. A wholly-absent selection
+/// (`select` and `params` both `None`) is "pool as authored" — no narrowing.
+///
+/// Unknown fields are rejected: a legacy pool profile deserializes here only
+/// by accident, and silently dropping its keys would misroute — fail loud.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ModelInstanceRef {
+    /// Pool profile name selected for the role; see above for the absent rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<String>,
+    /// Sparse sampling update over the selected profile's params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+/// One config-declared instance profile. The map key on
+/// `roles.<role>.instances` provides the default instance name; `count > 1`
+/// expands into sibling instances named `<key>-0` .. `<key>-{count-1}`
+/// sharing the profile's group. Sampling `params` are merged into the request
+/// body for dispatches through these instances; declaration-only keys
+/// (`num_ctx`/`parallel`/ `sleep_idle_seconds`) are stripped before dispatch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct InstanceProfile {
@@ -531,8 +638,8 @@ pub struct InstanceProfile {
     /// instance.
     #[serde(default)]
     pub params: Option<serde_json::Value>,
-    /// Per-profile context-size cap (tokens). `None` = inherit (the global
-    /// `default_params.max_ctx`, else no cap). A cap below this profile's
+    /// Per-profile context-size cap (tokens). `None` = inherit (the role's
+    /// `max_ctx`, else no cap). A cap below this profile's
     /// `num_ctx` clamps the context window at materialization
     /// (`ModelEntry::instance_profiles`).
     #[serde(default)]
@@ -551,111 +658,258 @@ fn default_instance_count() -> u32 {
 }
 
 impl ModelEntry {
-    /// The expanded flat list of `InstanceProfile`s for this model: applies
-    /// `count` expansion (naming each sibling `<key>-0` .. `<key>-{count-1}`)
-    /// and resolves the name/group defaults (name = map key, group = name when
-    /// absent). Empty when no instances are configured.
-    pub fn instance_profiles(&self) -> Vec<InstanceProfile> {
-        self.instance_profiles_with(None)
+    /// The boot-materialized effective pool: `effective_profiles` when boot
+    /// composition ran, else empty (pre-boot entries resolve bare). The
+    /// single pool every qualifier and params path reads — never a fork.
+    pub fn effective_pool(&self) -> &[InstanceProfile] {
+        self.effective_profiles.as_deref().unwrap_or_default()
     }
+}
 
-    /// Expand over the fleet-wide default profiles merged under this entry's
-    /// own `instances`. A model that declares none inherits the whole default
-    /// map; a model that declares some keeps them, and any map key present in
-    /// both resolves to the entry's profile **whole** — profiles are replaced
-    /// per key, never field-merged, so two `default: true` flags can never
-    /// fuse silently. `None` (no fleet defaults) is byte-identical to
-    /// [`Self::instance_profiles`]: the merge, the `count` expansion, and the
-    /// `max_ctx` clamp below all run on one code path, never a fork.
-    pub fn instance_profiles_with(
-        &self,
-        defaults: Option<&HashMap<String, InstanceProfile>>,
-    ) -> Vec<InstanceProfile> {
-        let mut merged: HashMap<String, InstanceProfile> =
-            defaults.cloned().unwrap_or_default();
-        if let Some(own) = &self.instances {
-            for (key, profile) in own {
-                merged.insert(key.clone(), profile.clone());
+/// Expand a raw profile map into the flat sibling list: `count` expansion
+/// (naming siblings `<key>-0` .. `<key>-{count-1}`), name/group default
+/// resolution, the `max_ctx` clamp, and the one-shot `resume` rule. Shared by
+/// the boot materializer below — the expansion lives here once.
+fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<InstanceProfile> {
+    // Exactly one profile may carry `default: true`: a second flag is a
+    // declaration collision, warned loudly and resolved first-wins in
+    // deterministic map order (the same order the expansion below and
+    // every `find(|p| p.default)` consumer observe).
+    if merged.values().filter(|p| p.default).count() > 1 {
+        let mut keys: Vec<&str> = merged
+            .iter()
+            .filter(|(_, p)| p.default)
+            .map(|(k, _)| k.as_str())
+            .collect();
+        keys.sort_unstable();
+        tracing::warn!(
+            target: "router.config",
+            keys = ?keys,
+            "multiple `default: true` instance profiles merged; \
+             the first in map order wins",
+        );
+    }
+    let mut keys: Vec<&String> = merged.keys().collect();
+    keys.sort();
+    let mut out = Vec::new();
+    for key in keys {
+        let profile = &merged[key];
+        let base_name = profile.name.clone().unwrap_or_else(|| key.clone());
+        let count = profile.count.max(1);
+        // All siblings share the profile's group (default = base name).
+        let group = profile.group.clone().unwrap_or_else(|| base_name.clone());
+        for i in 0..count {
+            let name = if count > 1 {
+                format!("{base_name}-{i}")
+            } else {
+                base_name.clone()
+            };
+            let mut p = profile.clone();
+            // A profile whose `max_ctx` cap sits below its `num_ctx` is
+            // clamped at materialization; absent cap (the default) is a
+            // no-op — byte-identical to today's profiles.
+            if let Some(cap) = p.max_ctx {
+                if cap < p.num_ctx {
+                    p.num_ctx = cap;
+                }
             }
+            // One-shot profiles (the default) never carry multi-step
+            // state: a `resume: true` on them is inapplicable, forced
+            // false fail-open with a loud warn. Session profiles keep
+            // their declared `resume` value unchanged.
+            if !p.session && p.resume {
+                tracing::warn!(
+                    target: "router.config",
+                    profile = %key,
+                    "resume:true on a one-shot instance profile is inapplicable \
+                     (multi-step state needs session:true); forcing resume:false",
+                );
+                p.resume = false;
+            }
+            p.name = Some(name);
+            p.group = Some(group.clone());
+            out.push(p);
         }
-        // Exactly one profile may carry `default: true`: a second flag is a
-        // declaration collision, warned loudly and resolved first-wins in
-        // deterministic map order (the same order the expansion below and
-        // every `find(|p| p.default)` consumer observe).
-        if merged.values().filter(|p| p.default).count() > 1 {
-            let mut keys: Vec<&str> = merged
+    }
+    out
+}
+
+/// Compose one model's effective instance pool at boot: the single
+/// role → per-model-instance params chain, deserialized and composed here so
+/// every qualifier, sampling, backend, and supervision path reads composed
+/// values through `ModelEntry::effective_pool`.
+///
+/// Contributing roles (deterministic sorted order): every role listing the
+/// model as a candidate, plus every role the model's `instances` selects
+/// for. A model serving no role and declaring nothing inherits the
+/// `default` role's pool (the fleet-inherit fallback). Selections naming an
+/// unknown role, or a `select` naming an unknown pool profile, warn loudly
+/// and resolve to the pool as authored.
+///
+/// Per contributing role, the sampling chain composes role-base ← pool
+/// profile ← per-model selection into each profile's `params` (each sparser
+/// layer wins; the entry top-level stays the final layer, applied at
+/// dispatch). Profiles collide first-role-wins with a loud warn; a
+/// non-empty selection narrows the role's contribution to the resolved
+/// target (the selected instance IS the model's pool for that role) and
+/// designates it the dispatch point (`default: true`, displacing a pool
+/// default with a loud warn).
+#[allow(clippy::implicit_hasher)]
+pub(crate) fn materialize_effective_pool(
+    model_key: &str,
+    entry: &ModelEntry,
+    roles: &HashMap<String, RoleEntry>,
+) -> Vec<InstanceProfile> {
+    let mut contributing: Vec<&str> = roles
+        .iter()
+        .filter(|(name, role)| {
+            role.models
                 .iter()
-                .filter(|(_, p)| p.default)
-                .map(|(k, _)| k.as_str())
-                .collect();
-            keys.sort_unstable();
+                .any(|m| split_model_key(m).0 == model_key)
+                || entry
+                    .instances
+                    .as_ref()
+                    .is_some_and(|s| s.contains_key(name.as_str()))
+        })
+        .map(|(name, _)| name.as_str())
+        .collect();
+    contributing.sort_unstable();
+    if contributing.is_empty()
+        && entry.instances.is_none()
+        && roles.contains_key("default")
+    {
+        contributing.push("default");
+    }
+    if let Some(selections) = &entry.instances {
+        let mut unknown: Vec<&str> = selections
+            .keys()
+            .filter(|k| !roles.contains_key(k.as_str()))
+            .map(String::as_str)
+            .collect();
+        unknown.sort_unstable();
+        if !unknown.is_empty() {
             tracing::warn!(
                 target: "router.config",
-                keys = ?keys,
-                "multiple `default: true` instance profiles merged; \
-                 the first in map order wins",
+                model = %model_key,
+                roles = ?unknown,
+                "model selects instances for unknown roles; selections ignored",
             );
         }
-        let mut keys: Vec<&String> = merged.keys().collect();
-        keys.sort();
-        let mut out = Vec::new();
-        for key in keys {
-            let profile = &merged[key];
-            let base_name = profile.name.clone().unwrap_or_else(|| key.clone());
-            let count = profile.count.max(1);
-            // All siblings share the profile's group (default = base name).
-            let group = profile.group.clone().unwrap_or_else(|| base_name.clone());
-            for i in 0..count {
-                let name = if count > 1 {
-                    format!("{base_name}-{i}")
-                } else {
-                    base_name.clone()
-                };
-                let mut p = profile.clone();
-                // A profile whose `max_ctx` cap sits below its `num_ctx` is
-                // clamped at materialization; absent cap (the default) is a
-                // no-op — byte-identical to today's profiles.
-                if let Some(cap) = p.max_ctx {
-                    if cap < p.num_ctx {
-                        p.num_ctx = cap;
+    }
+    let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
+    for role_name in &contributing {
+        let role = &roles[*role_name];
+        for (profile_name, profile) in &role.instances {
+            if merged.contains_key(profile_name) {
+                tracing::warn!(
+                    target: "router.config",
+                    model = %model_key,
+                    profile = %profile_name,
+                    role = %role_name,
+                    "instance profile collides across contributing roles; \
+                     first role wins",
+                );
+                continue;
+            }
+            let mut composed = profile.clone();
+            composed.params = Some(overlay_params(
+                role.params.params.as_ref(),
+                composed.params.as_ref(),
+            ));
+            merged.insert(profile_name.clone(), composed);
+        }
+    }
+    if let Some(selections) = &entry.instances {
+        for role_name in &contributing {
+            let Some(selection) = selections.get(*role_name) else {
+                continue;
+            };
+            // A wholly-absent selection ("pool as authored") contributes
+            // nothing beyond the merge above.
+            if selection.select.is_none() && selection.params.is_none() {
+                continue;
+            }
+            let target = match &selection.select {
+                Some(name) => {
+                    if merged.contains_key(name) {
+                        Some(name.clone())
+                    } else {
+                        tracing::warn!(
+                            target: "router.config",
+                            model = %model_key,
+                            role = %role_name,
+                            select = %name,
+                            "selection names an unknown pool profile; \
+                             pool used as authored",
+                        );
+                        None
                     }
                 }
-                // One-shot profiles (the default) never carry multi-step
-                // state: a `resume: true` on them is inapplicable, forced
-                // false fail-open with a loud warn. Session profiles keep
-                // their declared `resume` value unchanged.
-                if !p.session && p.resume {
+                None => {
+                    // Pool as authored: the pool default, else the single
+                    // profile, else nothing to designate.
+                    merged
+                        .iter()
+                        .find(|(_, p)| p.default)
+                        .map(|(k, _)| k.clone())
+                        .or_else(|| {
+                            if merged.len() == 1 {
+                                merged.keys().next().cloned()
+                            } else {
+                                None
+                            }
+                        })
+                }
+            };
+            let Some(target) = target else { continue };
+            // The selection narrows the role's contribution to the resolved
+            // target: the selected instance IS the model's pool for the role.
+            // Only profiles this role contributed are removed — another
+            // role's same-named profile (first-wins above) stays.
+            let role_names: Vec<String> = roles[*role_name]
+                .instances
+                .keys()
+                .cloned()
+                .collect();
+            merged.retain(|name, _| *name == target || !role_names.contains(name));
+            // The selection designates the role's dispatch point, displacing
+            // a pool default with a loud warn.
+            for (name, profile) in &mut merged {
+                if *name != target && profile.default {
                     tracing::warn!(
                         target: "router.config",
-                        profile = %key,
-                        "resume:true on a one-shot instance profile is inapplicable \
-                         (multi-step state needs session:true); forcing resume:false",
+                        model = %model_key,
+                        role = %role_name,
+                        profile = %name,
+                        "explicit selection displaces pool default profile",
                     );
-                    p.resume = false;
+                    profile.default = false;
                 }
-                p.name = Some(name);
-                p.group = Some(group.clone());
-                out.push(p);
+            }
+            if let Some(chosen) = merged.get_mut(&target) {
+                chosen.default = true;
+                if selection.params.is_some() {
+                    chosen.params = Some(overlay_params(
+                        chosen.params.as_ref(),
+                        selection.params.as_ref(),
+                    ));
+                }
             }
         }
-        out
     }
+    expand_instance_map(&merged)
 }
 
 /// The entry-default step of the inference-point precedence: the `default:
 /// true` profile's group, else the single shared group across all profiles,
-/// else `None` (bare `<base>`). `None` also when no instances are configured.
-/// Runs over the fleet-default-merged map, so entries declaring none inherit
-/// the fleet default through the same code path. Shared by the single
-/// precedence function below and `RoutingTarget` construction (whose entries
-/// arrive with fleet defaults materialized, hence `None` there) so backend
-/// model ids and dispatch wire ids agree; not a second path — the rule lives
-/// here once.
-pub(crate) fn default_inference_point(
-    entry: &ModelEntry,
-    defaults: Option<&HashMap<String, InstanceProfile>>,
-) -> Option<String> {
-    let profiles = entry.instance_profiles_with(defaults);
+/// else `None` (bare `<base>`). `None` also when no pool was materialized.
+/// Runs over the boot-materialized effective pool, so entries declaring no
+/// selection inherit their roles' pools through the same code path. Shared by
+/// the single precedence function below and `RoutingTarget` construction
+/// (whose entries arrive materialized) so backend model ids and dispatch wire
+/// ids agree; not a second path — the rule lives here once.
+pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
+    let profiles = entry.effective_pool();
     if profiles.is_empty() {
         return None;
     }
@@ -681,21 +935,23 @@ pub(crate) fn default_inference_point(
 /// 1. Explicit qualifier — embedded (`base:point`) or parametric — wins,
 ///    except `latest`, which normalizes away and falls through.
 /// 2. A role's named instance point (`roles[name].instance`).
-/// 3. The entry default over the fleet-default-merged map (the `default: true`
-///    profile's group, else the single shared group — [`default_inference_point`]).
-/// 4. Bare key (`None`): no instances, or no rule matched.
+/// 3. The entry default over the boot-materialized effective pool (the
+///    `default: true` profile's group, else the single shared group —
+///    [`default_inference_point`]).
+/// 4. Bare key (`None`): no pool materialized, or no rule matched.
 ///
 /// A bare role name resolves its qualifier through step 2; the role's model
 /// key itself (head candidate, config order) is resolved by the caller via
 /// [`role_head_key`]. Unknown roles and keys fail closed (`None`); a role
-/// with no instance point on a model without a pool stays bare.
+/// with no instance point on a model without a pool stays bare. Entries are
+/// expected boot-materialized (pools composed); pre-boot entries resolve
+/// through step 4.
 #[allow(clippy::implicit_hasher)]
 pub fn resolve_inference_point(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,
     role_or_key: &str,
     qualifier: Option<&str>,
-    default_instances: Option<&HashMap<String, InstanceProfile>>,
 ) -> Option<String> {
     let (base, embedded) = split_model_key(role_or_key);
     if let Some(point) = embedded {
@@ -715,7 +971,7 @@ pub fn resolve_inference_point(
     }
     models
         .get(base)
-        .and_then(|entry| default_inference_point(entry, default_instances))
+        .and_then(default_inference_point)
 }
 
 /// Resolve a role or model key to its serving model key: a role name fans out
@@ -765,21 +1021,22 @@ pub fn strip_declaration_params(params: serde_json::Value) -> serde_json::Value 
     serde_json::Value::Object(out)
 }
 
-/// Merge a model entry's top-level sampling `params` with a specific
-/// instance profile's `params` (profile wins), returning the merged object.
-/// Non-object params degrade to an empty object (nothing to merge). This is
-/// the single canonical merge for per-instance sampling knobs; the profile is
+/// Overlay one sampling `params` object over a base (the overlay wins),
+/// returning the merged object. Non-object sides degrade to an empty object
+/// (nothing to merge). This is the single canonical params merge: every layer
+/// of the role → per-model-instance chain composes through it, and the entry
+/// top-level is always the final (winning) layer. The matching profile is
 /// looked up by name-or-group so both the exact-instance and group dispatch
 /// paths reach the same value.
-pub(crate) fn merge_sampling_params(
-    entry: Option<&serde_json::Value>,
-    profile: Option<&serde_json::Value>,
+pub fn overlay_params(
+    base: Option<&serde_json::Value>,
+    over: Option<&serde_json::Value>,
 ) -> serde_json::Value {
     let mut merged = serde_json::Map::new();
-    if let Some(v) = entry.and_then(serde_json::Value::as_object) {
+    if let Some(v) = base.and_then(serde_json::Value::as_object) {
         merged.extend(v.clone());
     }
-    if let Some(v) = profile.and_then(serde_json::Value::as_object) {
+    if let Some(v) = over.and_then(serde_json::Value::as_object) {
         merged.extend(v.clone());
     }
     serde_json::Value::Object(merged)
@@ -787,28 +1044,17 @@ pub(crate) fn merge_sampling_params(
 
 impl ModelEntry {
     /// Resolve the sampling params to send when dispatching to `qualifier`
-    /// (an instance name or group of this model's pool): the matching
-    /// profile's `params` overlaid onto the entry's top-level `params`
-    /// (profile wins), declaration-only keys stripped. `None` when no profile
-    /// matches `qualifier` — callers fall back to the entry's bare params.
+    /// (an instance name or group of this model's boot-materialized pool):
+    /// the entry's top-level `params` overlaid onto the matching profile's
+    /// `params` (entry wins — it is the final sparse layer; the profile
+    /// already carries the role-base ← pool ← selection chain composed at
+    /// boot), declaration-only keys stripped. `None` when no profile matches
+    /// `qualifier` — callers fall back to the entry's bare params.
     pub fn instance_params_for(&self, qualifier: &str) -> Option<serde_json::Value> {
-        self.instance_params_for_with(qualifier, None)
-    }
-
-    /// [`Self::instance_params_for`] over the fleet-default-merged profile
-    /// map, so a profile inherited from `default_params.instances` contributes
-    /// the same sampling knobs as a per-model one. `None` defaults are
-    /// byte-identical to [`Self::instance_params_for`].
-    pub fn instance_params_for_with(
-        &self,
-        qualifier: &str,
-        defaults: Option<&HashMap<String, InstanceProfile>>,
-    ) -> Option<serde_json::Value> {
-        let profile = self.instance_profiles_with(defaults).into_iter().find(|p| {
+        let profile = self.effective_pool().iter().find(|p| {
             p.name.as_deref() == Some(qualifier) || p.group.as_deref() == Some(qualifier)
         })?;
-        let merged =
-            merge_sampling_params(self.params.as_ref(), profile.params.as_ref());
+        let merged = overlay_params(profile.params.as_ref(), self.params.as_ref());
         Some(strip_declaration_params(merged))
     }
 }
@@ -1340,15 +1586,18 @@ impl Default for OrchestratorSection {
 /// `Some` opts the composition root into a `SessionRegistry` (canonical
 /// session home) so checkpoint/rewind state and rigor rewind exist at runtime.
 /// `None` (absent) keeps today's behavior - no session registry at boot.
-/// Default model run parameters - the top-level `default_params` block.
+/// A role's run parameters — the `params` block on a `roles` entry.
 ///
-/// Supplies the "how a model is run" defaults applied to every managed model
-/// that does not declare the key itself: the `llama-server` launch knobs
-/// (`--batch-size`, `--ubatch-size`, `--cache-type-k/v`, `--flash-attn`,
-/// `--n-gpu-layers`, `--n-cpu-moe`, `--sleep-idle-seconds`, `--ctx-size`) and
-/// the sampling `params` merged into dispatch bodies (per-model values win).
+/// Supplies the "how a model is run" configuration for everything serving
+/// the role: the `llama-server` launch knobs (`--batch-size`,
+/// `--ubatch-size`, `--cache-type-k/v`, `--flash-attn`, `--n-gpu-layers`,
+/// `--n-cpu-moe`, `--sleep-idle-seconds`, `--ctx-size`) and the base sampling
+/// `params` every selection for the role composes over (pool profile, then
+/// per-model selection, then the entry top-level — each sparser layer wins).
+/// The fleet-wide block lives as `roles.default.params`; the supervisor reads
+/// its launch knobs as the spawn defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DefaultModelParams {
+pub struct RoleParams {
     /// Default context size in tokens (`--ctx-size`; also `ctx_size` alias).
     #[serde(default = "default_num_ctx", alias = "ctx_size")]
     pub num_ctx: u64,
@@ -1394,15 +1643,9 @@ pub struct DefaultModelParams {
     /// a model's `num_ctx`/`ctx_size` is the sole bound).
     #[serde(default)]
     pub max_ctx: Option<u64>,
-    /// Fleet-wide instance-profile map. A model entry that declares its own
-    /// `instances` keeps them; one that declares none inherits this map
-    /// (whole-profile replace per map key, never field merge). `None` (the
-    /// default) leaves today's per-model declarations untouched.
-    #[serde(default)]
-    pub instances: Option<HashMap<String, InstanceProfile>>,
 }
 
-impl Default for DefaultModelParams {
+impl Default for RoleParams {
     fn default() -> Self {
         Self {
             num_ctx: default_num_ctx(),
@@ -1418,7 +1661,6 @@ impl Default for DefaultModelParams {
             filter_thinking: false,
             params: None,
             max_ctx: None,
-            instances: None,
         }
     }
 }

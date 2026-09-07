@@ -18,9 +18,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -43,9 +41,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -68,9 +64,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -93,9 +87,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -118,9 +110,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -143,9 +133,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -168,9 +156,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -193,9 +179,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -218,9 +202,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -243,9 +225,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -268,9 +248,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -293,9 +271,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -318,9 +294,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -343,9 +317,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -368,9 +340,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -393,9 +363,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -418,9 +386,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -443,9 +409,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -468,9 +432,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -493,9 +455,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -518,9 +478,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -543,9 +501,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -568,9 +524,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -593,9 +547,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -617,9 +569,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -640,9 +590,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -663,9 +611,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "sleep-idle-seconds": 7200,
+          "repeat_penalty": 1.0,
           "temperature": 0.6,
           "top_k": 40,
           "top_p": 0.9
@@ -686,7 +632,9 @@
         "instance": "default",
         "is_onnx": false,
         "model": "liquidai/lfm2.6-2.6b:default",
-        "params": {},
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
@@ -702,7 +650,9 @@
         "idle_timeout_ms": 3000,
         "is_onnx": false,
         "model": "liquidai/lfm2.6-2.6b:default",
-        "params": {},
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,

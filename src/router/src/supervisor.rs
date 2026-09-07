@@ -94,9 +94,9 @@ pub struct LlamaServerSpec {
     pub api_key: Option<String>,
     /// `--instance-wait` (group wait seconds); `None` keeps the server default.
     pub instance_wait_s: Option<i64>,
-    /// `default_params` run defaults: batch sizes, KV cache types, flash
+    /// `roles.default.params` run defaults: batch sizes, KV cache types, flash
     /// attention, GPU offload, and the plain-model context size.
-    pub defaults: crate::config::DefaultModelParams,
+    pub defaults: crate::config::RoleParams,
     /// Additional raw args passed through verbatim.
     pub extra_args: Vec<String>,
 }
@@ -109,9 +109,9 @@ impl LlamaServerSpec {
         port: u16,
         slot_save_path: Option<String>,
         api_key: Option<String>,
-        defaults: crate::config::DefaultModelParams,
+        defaults: crate::config::RoleParams,
     ) -> Self {
-        let instances = entry.instance_profiles_with(defaults.instances.as_ref());
+        let instances = entry.effective_pool().to_vec();
         let boot = instances.iter().any(|p| p.pinned);
         Self {
             model_key: model_key.to_string(),
@@ -159,7 +159,7 @@ pub fn prepend_library_path(dir: &Path, existing: Option<std::ffi::OsString>) ->
 /// Render the exact argv for a spawned server (unit-testable, no side effects).
 ///
 /// A model with a `weights` path loads it via `-m`; an `hf_repo` loads
-/// on-demand via `-hf`/`-hff`. Run defaults from `default_params` (batch
+/// on-demand via `-hf`/`-hff`. Run defaults from `roles.default.params` (batch
 /// sizes, KV cache types, flash attention, GPU offload) are always emitted so
 /// every managed server runs identically; a plain model (no instance pool)
 /// also gets the default context size and idle-sleep timeout. Only **pinned**
@@ -189,7 +189,7 @@ pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
         args.push("-hff".into());
         args.push(file.clone());
     }
-    // default_params run defaults (the "how a model is run" contract).
+    // Role run defaults (the "how a model is run" contract).
     args.push("--batch-size".into());
     args.push(spec.defaults.batch_size.to_string());
     args.push("--ubatch-size".into());
@@ -223,7 +223,7 @@ pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
         args.push(instance_grammar_string(std::slice::from_ref(profile)));
     }
     // A plain model (no instance pool) takes the default context size and
-    // idle-sleep timeout from `default_params`.
+    // idle-sleep timeout from `roles.default.params`.
     if spec.instances.is_empty() {
         args.push("--ctx-size".into());
         args.push(spec.defaults.num_ctx.to_string());
@@ -1059,7 +1059,7 @@ impl LlamaServerSupervisor {
                 port,
                 slot_save_path.clone(),
                 api_key.clone(),
-                config.default_params.clone(),
+                config.default_role_params(),
             );
             servers.insert(
                 key.clone(),
@@ -1103,7 +1103,7 @@ impl LlamaServerSupervisor {
             slot_save_path: None,
             api_key: None,
             instance_wait_s: None,
-            defaults: crate::config::DefaultModelParams::default(),
+            defaults: crate::config::RoleParams::default(),
             extra_args: Vec::new(),
         };
         self.servers.insert(

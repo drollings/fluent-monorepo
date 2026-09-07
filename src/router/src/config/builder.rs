@@ -378,21 +378,20 @@ impl RouterConfig {
             .as_ref()
             .and_then(super::ClassificationTree::derive_system_prompt)
             .unwrap_or_default();
-        // Effective instance maps: entries declaring none inherit the whole
-        // fleet-default map (the R1 fallback), materialized into this derived
-        // view so every routing path below resolves through one code path.
-        // The authoritative `RouterConfig` is untouched (round-trips clean;
-        // supervision keeps reading the originals).
+        // Effective instance pools: the role → per-model-instance chain
+        // composed at boot (`materialize_effective_pool`), materialized into
+        // this derived view so every routing path below resolves through one
+        // code path. The authoritative `RouterConfig` entries are untouched
+        // (round-trips clean; supervision keeps reading the originals and
+        // materializes the same way in `apply_defaults`).
         let models = self
             .models
             .iter()
             .map(|(key, entry)| {
                 let mut effective = entry.clone();
-                if effective.instances.is_none() {
-                    effective
-                        .instances
-                        .clone_from(&self.default_params.instances);
-                }
+                effective.effective_profiles = Some(
+                    super::materialize_effective_pool(key, entry, &self.roles),
+                );
                 (key.clone(), effective)
             })
             .collect();
@@ -927,7 +926,7 @@ impl RouterConfig {
         let mut dropped = Vec::new();
         let pipeline_count = self.pipelines.len();
         let has_mock = classifier_backend.is_some();
-        tracing::info!(target: "router.config", pipeline_count = pipeline_count, mock_backend = has_mock, classifier_model = ?self.classifier_model, default_route = %self.default_route, "building pipelines");
+        tracing::info!(target: "router.config", pipeline_count = pipeline_count, mock_backend = has_mock, classifier_role = ?self.classifier_role_key(), default_route = %self.default_route, "building pipelines");
         for name in self.pipelines.keys() {
             let backend_for_pipeline = classifier_backend.cloned();
             if let Some(pipeline) = self.build_named_pipeline_with_deps(
@@ -973,7 +972,8 @@ impl RouterConfig {
 
 /// Resolve the classifier model key from config, following the priority:
 /// 1. Pipeline-level `classifier_model`
-/// 2. Root-level `classifier_model`
+/// 2. The `classifier` role's head candidate (the classifier is a role —
+///    the retired root-level `classifier_model` is never read)
 /// 3. Root `classification` classifier node's `model` (tree configs boot
 ///    without a flat classifier key)
 /// 4. First model in the `fast` model group
@@ -984,7 +984,7 @@ fn resolve_classifier_model_key<'a>(
     params
         .classifier_model
         .as_deref()
-        .or(config.classifier_model.as_deref())
+        .or_else(|| config.classifier_role_key())
         .or_else(|| {
             config
                 .classification
@@ -1096,17 +1096,16 @@ pub(crate) fn llama_chat_backend_for_key(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, crate::config::RoleEntry>,
     key: &str,
-    default_instances: Option<&HashMap<String, crate::config::InstanceProfile>>,
 ) -> Option<Arc<dyn ChatBackend>> {
     let resolved = crate::config::role_head_key(models, roles, key, true)?;
     let (base, _) = crate::config::split_model_key(&resolved);
     let entry = models.get(base)?;
     let base_name = entry.name.as_deref().unwrap_or(base);
     // One qualifier resolver for every path: explicit qualifier, else the
-    // role's instance point, else the entry default (over the fleet-default
-    // map when the entry declares none), else bare.
-    let qualifier =
-        crate::config::resolve_inference_point(models, roles, key, None, default_instances);
+    // role's instance point, else the entry default (over the
+    // boot-materialized effective pool), else bare. Entries are expected
+    // boot-materialized; pre-boot entries resolve bare.
+    let qualifier = crate::config::resolve_inference_point(models, roles, key, None);
     let model = match &qualifier {
         Some(qualifier) => format!("{base_name}:{qualifier}"),
         None => base_name.to_string(),
@@ -1115,7 +1114,7 @@ pub(crate) fn llama_chat_backend_for_key(
     // params (e.g. the swarm work pool's temperature) reach the body.
     let params = qualifier
         .as_deref()
-        .and_then(|q| entry.instance_params_for_with(q, default_instances))
+        .and_then(|q| entry.instance_params_for(q))
         .or_else(|| entry.params.clone().map(strip_declaration_params));
     let llm_config = LlmConfig::new()
         .api_url(entry.endpoint.clone())
@@ -1130,28 +1129,27 @@ pub(crate) fn llama_chat_backend_for_key(
 /// (`<base>:<instance_or_group>`) — the llama construction half of
 /// `RouterConfig::local_backend_for_instance`, shared with the
 /// `LlamaBackend` adapter. `None` for an unknown key or instance.
-/// Fleet-wide default profiles (`default_params.instances`) back entries
-/// that declare none, so a hoisted profile is addressable by name.
-/// A role name resolves to its head candidate's entry first.
+/// The boot-materialized effective pool backs the lookup, so a role-pool
+/// profile is addressable by name. A role name resolves to its head
+/// candidate's entry first.
 pub(crate) fn llama_chat_backend_for_instance(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, crate::config::RoleEntry>,
     key: &str,
     instance_or_group: &str,
-    default_instances: Option<&HashMap<String, crate::config::InstanceProfile>>,
 ) -> Option<Arc<dyn ChatBackend>> {
     let resolved = crate::config::role_head_key(models, roles, key, true)?;
     let (base, _) = crate::config::split_model_key(&resolved);
     let entry = models.get(base)?;
     // Resolve the named profile; an unknown instance name -> None.
     entry
-        .instance_profiles_with(default_instances)
-        .into_iter()
+        .effective_pool()
+        .iter()
         .find(|p| p.name.as_deref() == Some(instance_or_group))?;
     let base_name = entry.name.as_deref().unwrap_or(base);
     let model = format!("{base_name}:{instance_or_group}");
     let params = entry
-        .instance_params_for_with(instance_or_group, default_instances)
+        .instance_params_for(instance_or_group)
         .unwrap_or_else(|| strip_declaration_params(serde_json::Value::Null));
     let llm_config = LlmConfig::new()
         .api_url(entry.endpoint.clone())
@@ -1246,12 +1244,7 @@ impl RouterConfig {
         }) {
             return Some(backend);
         }
-        llama_chat_backend_for_key(
-            &self.models,
-            &self.roles,
-            key,
-            self.default_params.instances.as_ref(),
-        )
+        llama_chat_backend_for_key(&self.models, &self.roles, key)
     }
 
     /// The onnx LLM role's registry key when the generative role is configured
@@ -1292,11 +1285,13 @@ impl RouterConfig {
     /// scratch route (`<base>:scratch`), which must target a named instance
     /// rather than the entry's default dispatch point.
     ///
-    /// D4 param merging: the matching instance profile's `params` are overlaid
-    /// onto the entry `params` (profile wins) so instance-level sampling knobs
-    /// (e.g. `scratch`'s `temperature: 0.4`) actually reach the body; the
-    /// merged object is then `strip_declaration_params`'d. Returns `None` when
-    /// the key is unknown or the named instance does not exist.
+    /// D4 param merging: the entry `params` are overlaid onto the matching
+    /// instance profile's `params` (entry wins — it is the final sparse
+    /// layer; the profile already carries the role-base ← pool ← selection
+    /// chain composed at boot) so instance-level sampling knobs (e.g.
+    /// `scratch`'s `temperature: 0.4`) actually reach the body; the merged
+    /// object is then `strip_declaration_params`'d. Returns `None` when the
+    /// key is unknown or the named instance does not exist.
     pub fn local_backend_for_instance(
         &self,
         key: &str,
@@ -1311,13 +1306,7 @@ impl RouterConfig {
         }) {
             return Some(backend);
         }
-        llama_chat_backend_for_instance(
-            &self.models,
-            &self.roles,
-            key,
-            instance_or_group,
-            self.default_params.instances.as_ref(),
-        )
+        llama_chat_backend_for_instance(&self.models, &self.roles, key, instance_or_group)
     }
 
     /// Build the ledger `Summarizer`'s DIP backend - the ledger
@@ -1331,7 +1320,7 @@ impl RouterConfig {
     pub fn summarizer_for_ledger(&self) -> Option<crate::summarization::Summarizer> {
         let ledger = self.ledger.as_ref()?;
         let backend = self
-            .ledger_enrichment_backend(ledger.model.as_deref().or(self.classifier_model.as_deref()))?;
+            .ledger_enrichment_backend(ledger.model.as_deref().or_else(|| self.classifier_role_key()))?;
         Some(crate::summarization::Summarizer::new(
             backend,
             ledger.max_summary_tokens,
@@ -1352,7 +1341,7 @@ impl RouterConfig {
         let ledger = self.ledger.as_ref()?;
         let key = tier_model
             .or(ledger.model.as_deref())
-            .or(self.classifier_model.as_deref());
+            .or_else(|| self.classifier_role_key());
         self.ledger_enrichment_backend(key)
     }
 

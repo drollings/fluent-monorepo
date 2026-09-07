@@ -564,7 +564,6 @@ pub async fn handle_rigor_request(
         classifier,
         models,
         roles,
-        default_instances,
         ..
     } = &deps;
     let Some(route) = rigor_route else {
@@ -630,13 +629,8 @@ pub async fn handle_rigor_request(
         let mut s = lock(session);
         s.set_model(model_endpoint.clone());
     }
-    let kv_instance = crate::config::resolve_inference_point(
-        models,
-        roles,
-        &model_endpoint,
-        None,
-        default_instances.as_ref(),
-    );
+    let kv_instance =
+        crate::config::resolve_inference_point(models, roles, &model_endpoint, None);
     let ledger = ledger.clone();
 
     let ctx = RigorContext {

@@ -315,12 +315,13 @@ fn resolve_config_path(explicit: &str) -> String {
 }
 
 /// Resolve the classifier model key for logging/attribution, entirely from
-/// config (never a hardcoded name): the root `classifier_model`, else the
-/// first pipeline's `classifier_model`, else the default route's first model,
-/// else the first configured model key. Empty when nothing resolves.
+/// config (never a hardcoded name): the `classifier` role's head candidate
+/// (the classifier is a role), else the first pipeline's `classifier_model`,
+/// else the default route's first model, else the first configured model
+/// key. Empty when nothing resolves.
 fn resolve_classifier_model_name(config: &RouterConfig) -> String {
-    if let Some(m) = &config.classifier_model {
-        return m.clone();
+    if let Some(m) = config.classifier_role_key() {
+        return m.to_string();
     }
     for params in config.pipelines.values() {
         if let Some(m) = &params.classifier_model {
@@ -789,7 +790,6 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             instance_pool.clone(),
             config.models.clone(),
             config.roles.clone(),
-            config.default_params.instances.clone(),
             config.onnx_role_keys(),
             config.sidecar.clone(),
         );
@@ -893,7 +893,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         let review_model_key = review_cfg
             .review_model
             .clone()
-            .or_else(|| config.classifier_model.clone())
+            .or_else(|| config.classifier_role_key().map(str::to_string))
             .or_else(|| config.onnx_llm_key());
         let review_backend: Option<Arc<dyn ChatBackend>> = review_model_key
             .as_deref()
@@ -1198,7 +1198,6 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     let mut server =
         RouterServer::new(pipelines, routes, config.models, &config.server, classifier)
             .with_roles(config.roles.clone())
-            .with_default_instances(config.default_params.instances.clone())
             .with_plan_route(plan_route)
             .with_rigor_route(rigor_route)
             .with_ladders(ladders);
@@ -1559,14 +1558,40 @@ fn default_chart_embedder(
     // OpenAI-compatible path: an HTTP embedding model key (no onnx encoder
     // role configured). An empty API key is sent (local llama.cpp servers
     // ignore the header).
-    let key = config
-        .embedding_model
+    //
+    // `embedding_model` names a role first (the role mapping: today the
+    // `embedding` role serves the `embed` model); a literal model key still
+    // resolves directly. Role params compose under the entry's own params
+    // (per-model override wins) for the provider options.
+    let mut role_base: Option<serde_json::Value> = None;
+    let mut key = config.embedding_model.clone();
+    if let Some(name) = key.as_deref() {
+        if let Some(role) = config.roles.get(name) {
+            role_base = role.params.params.clone();
+            key = fluent_router::config::role_head_key(
+                &config.models,
+                &config.roles,
+                name,
+                false,
+            );
+        }
+    }
+    let key = key
         .as_deref()
         .or(config.charts.selector_model.as_deref())
-        .or(config.classifier_model.as_deref())?;
+        .or_else(|| config.classifier_role_key())?;
     let entry = config.models.get(key)?;
 
     let base = embeddings_base_url(&entry.endpoint);
+    let options = match fluent_router::config::overlay_params(
+        role_base.as_ref(),
+        entry.params.as_ref(),
+    ) {
+        serde_json::Value::Object(map) if !map.is_empty() => {
+            Some(serde_json::Value::Object(map))
+        }
+        _ => entry.params.clone(),
+    };
     let boxed = create_embedding_provider(
         "openai",
         entry.name.as_deref(),
@@ -1574,7 +1599,7 @@ fn default_chart_embedder(
         Some(""),
         CHART_EMBEDDING_DIMS,
         None,
-        entry.params.as_ref(),
+        options.as_ref(),
     )
     .ok()?;
     Some(Arc::from(boxed))
@@ -1713,8 +1738,9 @@ mod config_tests {
 
     #[test]
     fn test_embedding_model_key_derives_embedder() {
-        // The env config points `embedding_model` at the `embed` model; the
-        // embedder must derive from that key (and build against its endpoint).
+        // The env config points `embedding_model` at the `embedding` role,
+        // which serves the `embed` model; the embedder must derive through
+        // that role mapping (and build against its endpoint).
         let config = super::load_router_config();
         let embedder = super::default_chart_embedder(&config, None);
         assert!(

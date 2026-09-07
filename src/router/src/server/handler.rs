@@ -91,10 +91,6 @@ pub struct ServerDeps {
     /// for the single inference-point precedence and role expansion on paths
     /// that only carry the `models` map otherwise.
     pub roles: Arc<HashMap<String, RoleEntry>>,
-    /// Fleet-default instance map (mirrors
-    /// `RouterConfig.default_params.instances`): entries declaring no
-    /// `instances` of their own inherit it through the same code path.
-    pub default_instances: Option<HashMap<String, crate::config::InstanceProfile>>,
 }
 
 impl ServerDeps {
@@ -403,14 +399,13 @@ fn begin_session_step(
 /// request is rejected. Before the pipeline runs, ensure the classifier's
 /// managed model is loaded and its work-pool group exists — created on demand
 /// exactly as the dispatch path would. Everything is derived from config
-/// (`RouterConfig.classifier_model` → the single inference-point precedence);
+/// (the `classifier` role's head → the single inference-point precedence);
 /// nothing is hardcoded. Best-effort: a load/allocate failure degrades to the
 /// classifier's own error path below.
 async fn ensure_classifier_ready(
     classifier: Option<&(String, ModelEntry)>,
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,
-    default_instances: Option<&HashMap<String, crate::config::InstanceProfile>>,
     instance_pool: Option<&Arc<crate::instances::InstancePool>>,
 ) {
     let (Some((key, entry)), Some(pool)) = (classifier, instance_pool) else {
@@ -422,13 +417,7 @@ async fn ensure_classifier_ready(
     if !entry.is_managed() {
         return;
     }
-    let Some(group) = crate::config::resolve_inference_point(
-        models,
-        roles,
-        key,
-        None,
-        default_instances,
-    ) else {
+    let Some(group) = crate::config::resolve_inference_point(models, roles, key, None) else {
         return;
     };
     let Some(manager) = pool.manager_for_url(&entry.endpoint) else {
@@ -477,7 +466,6 @@ async fn handle_chat_completion(
         fleet: _,
         onnx_llm_backend,
         roles,
-        default_instances,
     } = deps;
     // The dispatch post-processing hook (workflow extraction), if the
     // operator configured it. Passed through to successful dispatches only.
@@ -652,7 +640,6 @@ async fn handle_chat_completion(
         classifier.as_ref(),
         &models,
         &roles,
-        default_instances.as_ref(),
         instance_pool.as_ref(),
     )
     .await;
@@ -661,7 +648,6 @@ async fn handle_chat_completion(
         &model_name,
         &routes,
         &models,
-        default_instances.as_ref(),
         &pipelines,
         &router_request,
         &stats,
@@ -1358,7 +1344,6 @@ fn resolve_pipeline(
     model_name: &str,
     routes: &std::collections::HashMap<String, RouteRef>,
     models: &std::collections::HashMap<String, ModelEntry>,
-    default_instances: Option<&std::collections::HashMap<String, crate::config::InstanceProfile>>,
     pipelines: &std::collections::HashMap<String, Arc<PipelineOrchestrator>>,
     router_request: &RouterRequest,
     stats: &Arc<ServerStats>,
@@ -1366,31 +1351,10 @@ fn resolve_pipeline(
 ) -> crate::pipeline::PipelineResult {
     use fluent_wvr::prelude::*;
 
-    // Direct-model requests resolve against the effective entry: an entry
-    // declaring no `instances` inherits the fleet-default map (the same
-    // fallback the routing view materializes), so direct wire ids agree with
-    // route-resolved ones. Materialized into the caller-held slot on this
-    // cold path only, never the pipeline.
-    fn effective_entry<'a>(
-        models: &'a std::collections::HashMap<String, ModelEntry>,
-        default_instances: Option<&std::collections::HashMap<String, crate::config::InstanceProfile>>,
-        key: &str,
-        slot: &'a mut Option<ModelEntry>,
-    ) -> Option<&'a ModelEntry> {
-        let entry = models.get(key)?;
-        if entry.instances.is_none() {
-            if let Some(defaults) = default_instances {
-                *slot = Some(ModelEntry {
-                    instances: Some(defaults.clone()),
-                    ..entry.clone()
-                });
-                return slot.as_ref();
-            }
-        }
-        Some(entry)
-    }
-    let mut qualified_slot: Option<ModelEntry> = None;
-    let mut bare_slot: Option<ModelEntry> = None;
+    // Direct-model requests resolve against the entry as carried: entries
+    // arrive boot-materialized (effective pools composed), so direct wire ids
+    // agree with route-resolved ones through the same code path — no
+    // request-time fallback, never a fork.
 
     // The model id grammar `<model_id>[:<instance|group|latest>]`: a qualified
     // id resolves directly to the owning model's server, bypassing the route
@@ -1398,7 +1362,7 @@ fn resolve_pipeline(
     // Canonical model-id split — zero-alloc callers use split_model_key (see pipeline.rs).
     let (base_model, qual_opt) = crate::config::split_model_key(model_name);
     if let Some(qualifier) = qual_opt {
-        if let Some(entry) = effective_entry(models, default_instances, base_model, &mut qualified_slot) {
+        if let Some(entry) = models.get(base_model) {
             let rt = if qualifier == "latest" {
                 RoutingTarget::from_model_entry(base_model, entry)
             } else {
@@ -1425,9 +1389,7 @@ fn resolve_pipeline(
 
     let pipeline_names: Vec<String> = if let Some(ref r) = route {
         r.pipelines.clone()
-    } else if let Some(model_entry) =
-        effective_entry(models, default_instances, model_name, &mut bare_slot)
-    {
+    } else if let Some(model_entry) = models.get(model_name) {
         let rt = RoutingTarget::from_model_entry(model_name, model_entry);
         return crate::pipeline::PipelineResult {
             decisions: vec![],
@@ -1507,7 +1469,7 @@ fn resolve_pipeline(
         None => {
             // No requested pipeline is built (boot logged the drop). In a
             // healthy boot every route's pipeline exists; an empty build
-            // means a config error — most commonly a `classifier_model` that
+            // means a config error — most commonly a classifier role head that
             // does not resolve to a configured model. Surface a legible
             // error rather than a canned success.
             if pipeline_names.is_empty() {

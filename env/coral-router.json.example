@@ -9,39 +9,159 @@
       "coherence_threshold": 0.5
     }
   },
-  "default_params": {
-    "num_ctx": 8192,
-    "max_ctx": 262144,
-    "batch_size": 4096,
-    "ubatch_size": 1024,
-    "cache_type_k": "q8_0",
-    "cache_type_v": "q8_0",
-    "flash_attn": "on",
-    "n_gpu_layers": 999,
-    "n_cpu_moe": 0,
-    "sleep_idle_seconds": 60,
-    "stream": true,
-    "filter_thinking": true,
-    "params": {
-      "temperature": 0.1
-    },
-    "instances": {
-      "default": {
+  "roles": {
+    "default": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
         "num_ctx": 8192,
         "max_ctx": 262144,
-        "pinned": false,
-        "default": true,
+        "batch_size": 4096,
+        "ubatch_size": 1024,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
+        "flash_attn": "on",
+        "n_gpu_layers": 999,
+        "n_cpu_moe": 0,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "filter_thinking": true,
         "params": {
-          "sleep-idle-seconds": 7200,
-          "n-cpu-moe": 10,
-          "repeat-penalty": 1.01,
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
+          "temperature": 0.1
+        }
+      },
+      "instances": {
+        "default": {
+          "num_ctx": 8192,
+          "max_ctx": 262144,
+          "pinned": false,
+          "default": true,
+          "params": {
+            "sleep_idle_seconds": 7200,
+            "repeat_penalty": 1.0,
+            "temperature": 0.6,
+            "top_k": 40,
+            "top_p": 0.9
+          }
+        },
+        "lfm": {
+          "num_ctx": 8192,
+          "max_ctx": 128000,
+          "pinned": false,
+          "default": false,
+          "group": "default"
         }
       }
+    },
+    "classifier": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "batch_size": 4096,
+        "ubatch_size": 1024,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
+        "flash_attn": "on",
+        "n_gpu_layers": 999,
+        "n_cpu_moe": 0,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "filter_thinking": true
+      },
+      "instances": {}
+    },
+    "code": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "batch_size": 4096,
+        "ubatch_size": 1024,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
+        "flash_attn": "on",
+        "n_gpu_layers": 999,
+        "n_cpu_moe": 0,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "filter_thinking": true
+      },
+      "instances": {}
+    },
+    "reasoning": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "batch_size": 4096,
+        "ubatch_size": 1024,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
+        "flash_attn": "on",
+        "n_gpu_layers": 999,
+        "n_cpu_moe": 0,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "filter_thinking": true
+      },
+      "instances": {}
+    },
+    "ledger": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "batch_size": 4096,
+        "ubatch_size": 1024,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
+        "flash_attn": "on",
+        "n_gpu_layers": 999,
+        "n_cpu_moe": 0,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "filter_thinking": true
+      },
+      "instances": {}
+    },
+    "embedding": {
+      "models": [
+        "embed"
+      ],
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "batch_size": 4096,
+        "ubatch_size": 1024,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
+        "flash_attn": "on",
+        "n_gpu_layers": 999,
+        "n_cpu_moe": 0,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "filter_thinking": true,
+        "params": {}
+      },
+      "instances": {}
     }
   },
+  "_comment_roles": "Roles are the routing vocabulary: groups reference roles (expanded per request to candidate keys), and a role's instance point is the single qualifier default. Each role owns its run block (roles.<role>.params; the fleet block is roles.default.params) and its fleet named pool (roles.<role>.instances). A model's instances entry under a role's name selects that role's profile (select) with a sparse params tweak; sampling composes role-base <- pool profile <- selection <- entry top-level at boot.",
   "models": {
     "lfm2.5-350m": {
       "name": "liquidai/lfm2.5-350m",
@@ -77,10 +197,7 @@
       "retry_base_interval_s": 1,
       "instances": {
         "default": {
-          "num_ctx": 8192,
-          "max_ctx": 128000,
-          "pinned": false,
-          "default": false
+          "select": "lfm"
         }
       }
     },
@@ -100,8 +217,8 @@
       "retry_count": 1,
       "retry_base_interval_s": 2,
       "params": {
-        "num-ctx": 65536,
-        "repeat-penalty": 1.05,
+        "num_ctx": 65536,
+        "repeat_penalty": 1.05,
         "temperature": 0.7
       }
     },
@@ -119,7 +236,12 @@
       "stream": true,
       "filter_thinking": true,
       "retry_count": 1,
-      "retry_base_interval_s": 2
+      "retry_base_interval_s": 2,
+      "instances": {
+        "default": {
+          "select": "default"
+        }
+      }
     },
     "gemma4-12b": {
       "name": "mradermacher/gemma-4-12b-styletune-i1",
@@ -288,7 +410,7 @@
   "session": {
     "root": "data/sessions"
   },
-  "embedding_model": "embed",
+  "embedding_model": "embedding",
   "gguf_dir": "/app/ai/models/gguf",
   "server": {
     "bind_addr": "127.0.0.1:8079",
@@ -320,38 +442,5 @@
       "json_format": true,
       "console_output": false
     }
-  },
-  "roles": {
-    "default": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default"
-    },
-    "classifier": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default"
-    },
-    "code": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default"
-    },
-    "reasoning": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default"
-    },
-    "ledger": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default"
-    }
-  },
-  "_comment_roles": "Roles are the routing vocabulary: groups reference roles (expanded per request to candidate keys), and a role's instance point is the single qualifier default. lfm2.5-2.6b keeps a per-model instances override (whole-profile replace): its context cap differs from the fleet default hoisted under default_params.instances."
+  }
 }

@@ -62,16 +62,52 @@ fn from_model_entry_keeps_sampling_params() {
     assert!(params.get("chat_template_kwargs").is_some());
 }
 
-fn entry_with_instances(instances: serde_json::Value) -> ModelEntry {
-    serde_json::from_value(serde_json::json!({
+/// A dispatch entry with a boot-composed effective pool: the default
+/// profile (ledger) carries temperature 0.1, scratch carries 0.4 (what boot
+/// materialization composes from the role pool + selection — set directly
+/// here because this test pins dispatch, not composition).
+fn entry_with_effective_pool() -> ModelEntry {
+    let mut entry: ModelEntry = serde_json::from_value(serde_json::json!({
         "endpoint": "http://localhost:8080/v1/chat/completions",
         "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
         "intelligence": 2,
         "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7,
         "speed": 8,
-        "instances": instances,
     }))
-    .expect("valid ModelEntry")
+    .expect("valid ModelEntry");
+    entry.effective_profiles = Some(vec![
+        crate::config::InstanceProfile {
+            name: Some("ledger".into()),
+            group: Some("ledger".into()),
+            count: 1,
+            num_ctx: 131072,
+            parallel: None,
+            pinned: true,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: true,
+            resume: false,
+            params: Some(serde_json::json!({ "temperature": 0.1 })),
+            max_ctx: None,
+            session: false,
+        },
+        crate::config::InstanceProfile {
+            name: Some("scratch".into()),
+            group: Some("scratch".into()),
+            count: 1,
+            num_ctx: 131072,
+            parallel: None,
+            pinned: false,
+            no_sleep: false,
+            sleep_idle_seconds: Some(30),
+            default: false,
+            resume: false,
+            params: Some(serde_json::json!({ "temperature": 0.4 })),
+            max_ctx: None,
+            session: false,
+        },
+    ]);
+    entry
 }
 
 // NOTE (pruned): single-shared-group, default-profile, bare-base, and
@@ -85,14 +121,7 @@ fn from_model_entry_merges_instance_profile_params() {
     // The reference swarm config: the default profile (ledger) carries
     // temperature 0.1, scratch carries 0.4. Those must reach the body for
     // the qualifier each builder resolves.
-    let entry = entry_with_instances(serde_json::json!({
-        "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384, "warm": true,
-                   "params": { "temperature": 0.1 } },
-        "ledger": { "num_ctx": 131072, "pinned": true, "default": true,
-                    "params": { "temperature": 0.1 } },
-        "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30,
-                     "params": { "temperature": 0.4 } }
-    }));
+    let entry = entry_with_effective_pool();
 
     // from_model_entry resolves the default profile (ledger, temp 0.1).
     let rt = RoutingTarget::from_model_entry("swarm", &entry);

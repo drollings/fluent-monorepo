@@ -1563,15 +1563,21 @@ fn build_instance_managers_rejects_duplicate_name_within_model() {
     // also `swarm0`. The pool grammar is invalid and boot fails fast.
     let config: crate::config::RouterConfig =
         serde_json::from_value(serde_json::json!({
+            "roles": {
+                "work": {
+                    "models": ["a"],
+                    "instances": {
+                        "swarm0": { "num_ctx": 16384 },
+                        "x": { "name": "swarm0", "num_ctx": 32768 }
+                    }
+                }
+            },
             "models": {
                 "a": {
                     "endpoint": "http://x/v1/chat/completions",
                     "intelligence": 1,
                     "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 1,
-                    "instances": {
-                        "swarm0": { "num_ctx": 16384 },
-                        "x": { "name": "swarm0", "num_ctx": 32768 }
-                    }
+                    "weights": "/models/a.gguf"
                 }
             }
         }))
@@ -1604,12 +1610,18 @@ fn residency_backoff_progresses_and_caps() {
 fn build_instance_managers_ok_on_valid_config() {
     let config: crate::config::RouterConfig =
         serde_json::from_value(serde_json::json!({
+            "roles": {
+                "work": {
+                    "models": ["a"],
+                    "instances": { "swarm": { "num_ctx": 16384, "count": 2 } }
+                }
+            },
             "models": {
                 "a": {
                     "endpoint": "http://x/v1/chat/completions",
                     "intelligence": 1,
                     "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 1,
-                    "instances": { "swarm": { "num_ctx": 16384, "count": 2 } }
+                    "weights": "/models/a.gguf"
                 }
             }
         }))

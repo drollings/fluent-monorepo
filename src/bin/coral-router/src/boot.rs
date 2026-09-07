@@ -49,7 +49,7 @@ pub fn open_ledger(config: &RouterConfig) -> Result<Arc<ContentNodeLedger>, Stri
                     let model_key = ledger_cfg
                         .model
                         .clone()
-                        .or_else(|| config.classifier_model.clone());
+                        .or_else(|| config.classifier_role_key().map(str::to_string));
                     tracing::info!(
                         target: "coral-router",
                         ledger_model = ?model_key,

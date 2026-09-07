@@ -106,27 +106,42 @@ fn write_fake_llama(dir: &TempDir) -> std::path::PathBuf {
 
 fn managed_config() -> RouterConfig {
     let mut cfg: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "models": ["pinned-m"],
+                "instances": {
+                    "swarm": {"group": "swarm", "num_ctx": 4096, "pinned": true}
+                }
+            },
+            "rest": {
+                "models": ["lazy-m"],
+                "instances": {
+                    "scratch": {"num_ctx": 4096}
+                }
+            }
+        },
         "models": {
             "pinned-m": {
                 "endpoint": "http://127.0.0.1:1/v1/chat/completions",
                 "name": "pinned-m", "intelligence": 1,
                 "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
                 "speed": 8,
-                "weights": "/models/pinned.gguf",
-                "instances": {"swarm": {"group": "swarm", "num_ctx": 4096, "pinned": true}}
+                "weights": "/models/pinned.gguf"
             },
             "lazy-m": {
                 "endpoint": "http://127.0.0.1:1/v1/chat/completions",
                 "name": "lazy-m", "intelligence": 1,
                 "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
                 "speed": 8,
-                "weights": "/models/lazy.gguf",
-                "instances": {"scratch": {"num_ctx": 4096}}
+                "weights": "/models/lazy.gguf"
             }
         }
     }))
     .expect("managed config parses");
     cfg.sidecar = SidecarConfig::default();
+    // Boot composition, as production boot runs it (both models ride the
+    // work pool as authored — no per-model selection).
+    cfg.apply_defaults();
     cfg
 }
 

@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 
 use super::ModelEntry;
+use super::{InstanceProfile, RoleParams};
 use crate::config::split_model_key;
 use crate::config::ModelGroup;
 use crate::pipeline::RoutingTarget;
@@ -40,6 +41,13 @@ fn default_pipelines() -> Vec<String> {
 /// fleet inventory of *what exists*. Resolution to a concrete
 /// `base:qualifier` target happens per request at dispatch time, never at
 /// boot, so lazy models load correctly.
+///
+/// A role also owns its run configuration: `params` is the role's full
+/// "how a model is run" block (the old top-level `default_params` now lives
+/// as `roles.default.params`), and `instances` is the role's fleet named
+/// pool — the profiles a model's role-keyed selection (`select`) resolves
+/// against. Sampling composes role-base ← pool profile ← per-model selection
+/// ← entry top-level, materialized at boot into each model's effective pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleEntry {
     /// Candidate model keys, in config order.
@@ -49,6 +57,16 @@ pub struct RoleEntry {
     /// qualifier to the entry default / bare key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
+    /// The role's run block: launch knobs plus the base sampling `params`
+    /// every selection for this role composes over. Absent (the default)
+    /// contributes no sampling base.
+    #[serde(default)]
+    pub params: RoleParams,
+    /// The role's fleet named instance pool. Models select from it by name
+    /// through their role-keyed `instances` entries; empty (the default)
+    /// means the role defines no shared profiles.
+    #[serde(default)]
+    pub instances: HashMap<String, InstanceProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

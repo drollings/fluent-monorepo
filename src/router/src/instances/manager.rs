@@ -751,7 +751,10 @@ pub fn build_instance_managers(
 ) -> Result<InstancePool, String> {
     // One manager per managed model. Instances belong to a single model pool,
     // and each model now owns its own server, so the manager talks directly to
-    // that server (no `model` routing).
+    // that server (no `model` routing). Pools compose here (the boot step):
+    // entries may arrive unmaterialized, so each entry's effective pool is
+    // composed from the roles before validation — one code path with
+    // `apply_defaults`, never a fork.
     let mut managers = HashMap::new();
     for (key, entry) in &config.models {
         // Onnx models are served by the ort registry, never by a llama-server
@@ -759,8 +762,10 @@ pub fn build_instance_managers(
         if !entry.is_managed() {
             continue;
         }
-        let profiles =
-            entry.instance_profiles_with(config.default_params.instances.as_ref());
+        let profiles = match &entry.effective_profiles {
+            Some(profiles) => profiles.clone(),
+            None => crate::config::materialize_effective_pool(key, entry, &config.roles),
+        };
         validate_instances(&profiles)
             .map_err(|e| format!("model {key}: invalid instance grammar: {e}"))?;
         let model_name = entry.llama_model_name(key);

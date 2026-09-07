@@ -31,6 +31,8 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         retry_base_interval_s: 1,
         params: None,
         instances: None,
+        effective_profiles: None,
+        sessions: None,
         weights: None,
         hf_repo: None,
         hf_file: None,
