@@ -424,6 +424,8 @@
     "minimum_remaining_vram": 2048000000,
     "slot_save_path": "data/slots",
     "resume_ttl_s": 3600,
+    "snapshot_ttl_s": 604800,
+    "snapshot_budget_bytes": 10737418240,
     "server_state_path": "data/server_state.json",
     "api_key_env": null
   },

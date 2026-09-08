@@ -2,13 +2,9 @@ use super::*;
 use crate::test_stubs::{CountingBackend, StubChatBackend};
 
 fn temp_store() -> ContentNodeStore {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-nodestore-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = ContentNodeStore::open(&dir).unwrap();
-    let _ = std::fs::remove_file(&dir);
-    store
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    ContentNodeStore::open_in_memory().unwrap()
 }
 
 #[test]
@@ -62,11 +58,11 @@ fn interned_session_and_role_indices_return_correct_sets() {
 
 #[test]
 fn hydration_round_trip_preserves_data_and_continues_next_id() {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-nodestore-rt-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let path = dir.clone();
+    // A real reopen needs a real directory: `tempfile::TempDir` owns it and
+    // removes the whole directory (main file plus `-wal`/`-shm` sidecars) on
+    // drop, so nothing is left in `/tmp`.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
     {
         let store = ContentNodeStore::open(&path).unwrap();
         store.record_request("s", "r1", "first").unwrap();
@@ -85,7 +81,6 @@ fn hydration_round_trip_preserves_data_and_continues_next_id() {
         assert!(store.get_node(id).is_some());
         assert_eq!(store.get_session_nodes("s", 10).unwrap().len(), 3);
     }
-    let _ = std::fs::remove_file(&path);
 }
 
 #[test]

@@ -511,12 +511,9 @@ impl ChatBackend for RecordingRed {
 
 #[tokio::test]
 async fn red_prompt_contains_live_lod0_and_excludes_dead_end() {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-rigor-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let ledger = Arc::new(ContentNodeLedger::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
 
     let store = ledger.node_store().clone();
     let live = store
@@ -582,12 +579,9 @@ async fn judge_prompt_renders_ledger_via_assembler() {
     // With a ledger + assembler attached, the judge's review prompt
     // folds in the session ledger rendered through the assembler's
     // budget/relevance rules (red team keeps its LOD0 view unchanged).
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-rigor-judge-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let ledger = Arc::new(ContentNodeLedger::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
     ledger
         .record_request("sess-rigor", "r1", "JUDGE LEDGER CONTEXT at LOD0")
         .unwrap();

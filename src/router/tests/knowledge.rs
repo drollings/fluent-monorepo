@@ -8,13 +8,9 @@ fn caps() -> CapabilitySet {
 }
 
 fn temp_store() -> ContentNodeStore {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-knowledge-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = ContentNodeStore::open(&dir).unwrap();
-    let _ = std::fs::remove_file(&dir);
-    store
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    ContentNodeStore::open_in_memory().unwrap()
 }
 
 #[test]

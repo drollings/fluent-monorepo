@@ -1,13 +1,11 @@
 use super::*;
-use common_core::hash::uuid_v4;
 use fluent_types::ProvenanceTier;
 use crate::test_support::capture_logs;
 
 fn temp_ledger() -> ContentNodeLedger {
-    let dir = std::env::temp_dir().join(format!("coral-router-ledger-{}", uuid_v4()));
-    let ledger = ContentNodeLedger::open(&dir).unwrap();
-    let _ = std::fs::remove_file(&dir);
-    ledger
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    ContentNodeLedger::open_in_memory().unwrap()
 }
 
 /// The `ContentNodeLedger::write_annotation` writer surface (ROADMAP M4) — a

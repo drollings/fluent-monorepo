@@ -365,12 +365,12 @@ async fn test_rewind_restores_kv_snapshot_for_real() {
     assert_eq!(restored.session_id, "sess-1");
     assert_eq!(restored.snapshot_name, "readfiles");
     assert_eq!(restored.instance.as_deref(), Some("scratch"));
-    // The derived path matches the fork layout
-    // `<slot_save_path>/<model_key>/<snapshot_name>.bin`; the router never
-    // copies KV bytes, so no file is materialized.
+    // The derived path matches the fork's per-instance layout
+    // `<slot_save_path>/<model_key>/<instance>/<snapshot_name>.bin`; the
+    // router never copies KV bytes, so no file is materialized.
     assert_eq!(
         restored.file_path,
-        dir.path().join("model-x").join("readfiles.bin")
+        dir.path().join("model-x").join("scratch").join("readfiles.bin")
     );
     assert!(!restored.file_path.exists());
     // Metadata is preserved (it was recorded, not re-derived from a file).
@@ -484,6 +484,37 @@ fn test_session_registry_get_or_create() {
     assert_eq!(registry.session_count(), 0);
 }
 
+#[test]
+fn test_session_registry_evict_expired() {
+    use std::path::PathBuf;
+
+    let dir = tempfile::tempdir().unwrap();
+    let registry = SessionRegistry::new(Some(dir.path().to_path_buf()));
+    assert_eq!(registry.evict_expired(), 0, "empty registry evicts nothing");
+
+    // A stale cold-tier entry (the registry default TTL is 7 days).
+    registry
+        .kv_cache()
+        .store(KvSnapshot {
+            model: "m".into(),
+            adapter: None,
+            session_id: "old".into(),
+            snapshot_name: "old-1".into(),
+            instance: Some("agent".into()),
+            file_path: PathBuf::new(),
+            token_count: None,
+            created_at: 0,
+            last_used_at: 0,
+            llama_cpp_version: None,
+            model_quant: None,
+            base_model_hash: None,
+            turn_seq: None,
+        })
+        .unwrap();
+    assert_eq!(registry.evict_expired(), 1, "stale metadata swept");
+    assert_eq!(registry.evict_expired(), 0, "second sweep finds nothing");
+}
+
 // -- context-advance KV snapshotting --------------------------------
 
 fn test_kv_manager(slot_path: &std::path::Path) -> (SnapshotStore, Arc<HotSnapshotIndex>) {
@@ -538,6 +569,49 @@ fn advance_without_fork_is_metadata_only_noop() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn advance_without_opt_in_takes_no_snapshot() {
+    use crate::instances::stub::StubServer;
+    use crate::instances::InstanceClient;
+
+    let handler = Arc::new(
+        |method: &str, path: &str, _body: &str| {
+            if method == "POST" && path == "/instances/scratch/snapshot" {
+                (200, "{}".into())
+            } else {
+                (200, "[]".into())
+            }
+        },
+    );
+    let stub = StubServer::start(handler);
+    let fork = Arc::new(InstanceClient::new(
+        reqwest::Client::new(),
+        stub.base_url(),
+        None,
+    ));
+
+    let dir = tempfile::tempdir().unwrap();
+    let (kv, _) = test_kv_manager(dir.path());
+    let kv = kv.with_fork_io(fork);
+    // Model set, fork handle attached — but no `with_snapshot_on_advance`:
+    // per-turn snapshots stay off unless specifically asked.
+    let mut session = DependencySession::new("sess")
+        .with_model("model-x")
+        .with_kv_cache(kv);
+    assert!(!session.snapshot_on_advance());
+
+    let result = session.advance_and_snapshot("scratch").unwrap();
+    assert!(result.is_none(), "opt-in missing -> no snapshot");
+    assert!(session.pending_snapshot().is_none());
+
+    let posts = stub
+        .recorded()
+        .iter()
+        .filter(|(m, p, _)| m == "POST" && p == "/instances/scratch/snapshot")
+        .count();
+    assert_eq!(posts, 0, "no fork snapshot write without opt-in");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn advance_with_fork_records_snapshot_and_sets_pending() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
@@ -563,6 +637,7 @@ async fn advance_with_fork_records_snapshot_and_sets_pending() {
     let kv = kv.with_fork_io(fork);
     let mut session = DependencySession::new("sess")
         .with_model("model-x")
+        .with_snapshot_on_advance()
         .with_kv_cache(kv);
 
     // Two turns -> two independently-addressable snapshots under the key.

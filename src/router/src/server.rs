@@ -444,6 +444,30 @@ impl RouterServer {
                 });
             }
         }
+        // Session KV snapshot metadata sweep: expire cold-tier entries past
+        // their TTL so the in-memory index cannot grow without bound (fork
+        // bytes are owned by the llama retention pass, not this task). A
+        // process-lifetime background task in the drained JoinSet — never
+        // detached; the cadence is `SESSION_SNAPSHOT_SWEEP_INTERVAL`.
+        if let Some(sessions) = &self.sessions {
+            let sessions = Arc::clone(sessions);
+            background.spawn(async move {
+                let mut interval = tokio::time::interval(
+                    crate::dag_session::SESSION_SNAPSHOT_SWEEP_INTERVAL,
+                );
+                loop {
+                    interval.tick().await;
+                    let evicted = sessions.evict_expired();
+                    if evicted > 0 {
+                        tracing::info!(
+                            target: "router.server",
+                            evicted,
+                            "session kv snapshot metadata expired",
+                        );
+                    }
+                }
+            });
+        }
         // The shared residency engine (M5): ONE loop over the fleet's weights
         // (llama adapters + onnx implementors), replacing both the llama
         // sidecar task and the onnx residency sibling. It runs on an injected

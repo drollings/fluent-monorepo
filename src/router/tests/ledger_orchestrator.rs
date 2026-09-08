@@ -9,13 +9,10 @@ fn test_registry() -> SessionRegistry {
 }
 
 fn temp_store() -> Arc<ContentNodeStore> {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-orch-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
-    store
+    // In-memory: these suites exercise orchestration, not durability, so no
+    // `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of a deleted main
+    // file would otherwise be left behind).
+    Arc::new(ContentNodeStore::open_in_memory().unwrap())
 }
 
 /// A fork-enabled `SnapshotStore` (records snapshot metadata via a

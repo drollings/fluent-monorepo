@@ -240,7 +240,7 @@ where
 }
 
 fn default_log_dir() -> PathBuf {
-    PathBuf::from("/tmp/coral-router-logs")
+    PathBuf::from("logs")
 }
 
 const fn default_max_file_size_mb() -> u64 {

@@ -8,12 +8,7 @@ use crate::views::ParallelLedger;
 /// triggers lazy derivation), plus a `CountingBackend` summarizer to prove
 /// no derivation happened.
 fn pre_filled_store(contents: &[(&str, &str, &str, Option<&[f32]>)]) -> (Arc<ContentNodeStore>, usize) {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-prompt-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
+    let store = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let backend = Arc::new(crate::test_stubs::CountingBackend::new("derived"));
     let summarizer = crate::summarization::Summarizer::new(backend.clone(), 20);
     store.set_summarizer(summarizer);
@@ -175,12 +170,9 @@ fn budget_exhaustion_degrades_toward_coarser_never_exceeds_max() {
 
 #[test]
 fn empty_view_does_not_panic() {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-prompt-empty-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    let store = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let view = ParallelLedger::for_session(store, "absent");
     let out = LedgerPromptAssembler.assemble(
         &view,

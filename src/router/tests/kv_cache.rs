@@ -81,7 +81,21 @@ fn model_key_sanitizes_slashes_and_colons() {
 
 #[test]
 fn kv_snapshot_path_matches_fork_layout() {
-    let p = kv_snapshot_path(Path::new("/srv/slots"), "abiray/lfm2.5", "readfiles");
+    let p = kv_snapshot_path(
+        Path::new("/srv/slots"),
+        "abiray/lfm2.5",
+        Some("scratch"),
+        "readfiles",
+    );
+    assert_eq!(
+        p,
+        PathBuf::from("/srv/slots/abiray_lfm2.5/scratch/readfiles.bin")
+    );
+}
+
+#[test]
+fn kv_snapshot_path_legacy_flat_without_instance() {
+    let p = kv_snapshot_path(Path::new("/srv/slots"), "abiray/lfm2.5", None, "readfiles");
     assert_eq!(p, PathBuf::from("/srv/slots/abiray_lfm2.5/readfiles.bin"));
 }
 
@@ -100,10 +114,11 @@ async fn test_cold_cache_save_load() {
     assert_eq!(loaded.session_id, "sess-cold");
     assert_eq!(loaded.snapshot_name, "readfiles");
     assert_eq!(loaded.instance.as_deref(), Some("scratch"));
-    // The derived path matches the fork layout: <slot_save_path>/<model_key>/<name>.bin
+    // The derived path matches the fork's per-instance layout:
+    // <slot_save_path>/<model_key>/<instance>/<name>.bin
     assert_eq!(
         loaded.file_path,
-        dir.path().join("test-model").join("readfiles.bin")
+        dir.path().join("test-model").join("scratch").join("readfiles.bin")
     );
 }
 

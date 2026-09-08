@@ -4,13 +4,9 @@ use crate::summarization::Summarizer;
 use crate::test_stubs::CountingBackend;
 
 fn temp_store() -> Arc<ContentNodeStore> {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-views-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
-    store
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    Arc::new(ContentNodeStore::open_in_memory().unwrap())
 }
 
 fn counting_store() -> (Arc<ContentNodeStore>, Arc<CountingBackend>) {

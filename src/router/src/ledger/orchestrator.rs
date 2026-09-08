@@ -300,6 +300,14 @@ impl LedgerAgentCoordinator {
                 .lock()
                 .map_err(|_| CoordinatorError::LockPoisoned)?;
             guard.set_model(model);
+            // The coordinator is an explicit multi-step KV consumer: it
+            // restores same-model snapshots (per `kv_policy`) or re-prefills,
+            // and checkpoints KV on every context advance. That per-turn
+            // snapshot is its checkpoint mechanism — opt the session in here
+            // so `advance_and_snapshot` below passes the opt-in gate.
+            // (Ad-hoc `DependencySession` use stays opted out: no snapshots
+            // unless specifically asked.)
+            guard.set_snapshot_on_advance(true);
             let snapshot = guard
                 .kv_cache()
                 .and_then(|kv| kv.retrieve(model, guard.adapter.as_deref(), session_id).ok());

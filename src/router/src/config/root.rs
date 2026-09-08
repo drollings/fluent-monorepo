@@ -1084,7 +1084,7 @@ pub struct AuditLogConfig {
 }
 
 fn default_audit_log_dir() -> PathBuf {
-    PathBuf::from("/tmp/coral-router-audit-logs")
+    PathBuf::from("logs/audit")
 }
 
 const fn default_audit_file_size_mb() -> u64 {
@@ -1742,7 +1742,7 @@ pub struct SidecarConfig {
     #[serde(default)]
     pub minimum_remaining_vram: Option<u64>,
     /// Slot-save directory the fork writes KV snapshots under
-    /// (`<slot_save_path>/<model_key>/`). Feeds snapshot-path derivation.
+    /// (`<slot_save_path>/<model_key>/<instance>/`). Feeds snapshot-path derivation.
     #[serde(default)]
     pub slot_save_path: Option<String>,
     /// Resume snapshots older than this many seconds of context idle are
@@ -1752,6 +1752,21 @@ pub struct SidecarConfig {
     /// the `-resume` snapshot naming the router uses on eviction.
     #[serde(default)]
     pub resume_ttl_s: Option<u64>,
+    /// Non-resume KV snapshots (per-turn `<session>-<seq>-<hash>` files, rigor
+    /// blue snapshots) older than this many seconds (fork `mtime`) are deleted
+    /// from the fork by the residency pass. `None` disables the age sweep —
+    /// snapshots then accumulate until the byte budget (or an operator)
+    /// removes them. Resume snapshots (`<instance>-resume`) are never touched
+    /// by this sweep; they follow `resume_ttl_s` above.
+    #[serde(default)]
+    pub snapshot_ttl_s: Option<u64>,
+    /// Byte budget for non-resume KV snapshots per model: when their summed
+    /// fork-reported sizes exceed this, the residency pass deletes oldest
+    /// (by fork `mtime`) first until under budget. `None` disables the budget
+    /// sweep. Combines with `snapshot_ttl_s` (the age sweep runs first).
+    /// Resume snapshots are excluded from both the sum and the sweep.
+    #[serde(default)]
+    pub snapshot_budget_bytes: Option<u64>,
     /// Env var naming the management API key sent as `Authorization: Bearer`.
     #[serde(default)]
     pub api_key_env: Option<String>,
@@ -1802,6 +1817,8 @@ impl Default for SidecarConfig {
             minimum_remaining_vram: None,
             slot_save_path: None,
             resume_ttl_s: None,
+            snapshot_ttl_s: None,
+            snapshot_budget_bytes: None,
             api_key_env: None,
             liveness_poll_interval_s: default_sidecar_liveness_poll_s(),
             liveness_failures_before_restart: default_sidecar_liveness_failures(),

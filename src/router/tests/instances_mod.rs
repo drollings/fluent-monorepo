@@ -252,6 +252,8 @@ fn sidecar_policy() -> crate::config::SidecarConfig {
         minimum_remaining_vram: Some(2000),
         slot_save_path: Some("/srv/slots".into()),
         resume_ttl_s: None,
+        snapshot_ttl_s: None,
+        snapshot_budget_bytes: None,
         api_key_env: None,
         liveness_poll_interval_s: 30,
         liveness_failures_before_restart: 3,
@@ -2233,6 +2235,124 @@ async fn expire_resume_clears_idle_context_and_deletes_snapshot() {
     assert!(
         deletes.contains(&"/instances/agent/snapshot/agent-resume"),
         "resume snapshot deleted on expiry: {deletes:?}"
+    );
+}
+
+fn snapshot_entry(
+    name: &str,
+    instance: Option<&str>,
+    size: u64,
+    mtime: i64,
+) -> serde_json::Value {
+    let mut entry = serde_json::json!({
+        "name": name,
+        "size": size,
+        "mtime": mtime,
+        "n_ctx_seq": 1,
+    });
+    if let Some(instance) = instance {
+        entry["instance"] = serde_json::Value::String(instance.into());
+    }
+    entry
+}
+
+fn retention_manager(
+    stub: &StubServer,
+    policy: &crate::config::SidecarConfig,
+) -> Arc<InstanceManager> {
+    Arc::new(InstanceManager::new(
+        "base",
+        InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
+        vec![session_profile("agent", "g", true)],
+        policy.clone(),
+    ))
+}
+
+fn snapshot_deletes(stub: &StubServer) -> Vec<String> {
+    stub.recorded()
+        .iter()
+        .filter(|(m, _, _)| m == "DELETE")
+        .map(|(_, p, _)| p.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn snapshot_retention_deletes_only_expired_non_resume() {
+    // `snapshot_ttl_s = 3600`: the ancient per-turn snapshot is deleted; the
+    // fresh one, the resume-owned one (the resume lifecycle owns it, whatever
+    // its age), and the legacy flat file (no owning instance) all survive.
+    let now = common_core::now_secs() as i64;
+    let envelope = serde_json::json!({
+        "instances": [ instance_info("agent", "g", false, 100) ],
+        "snapshots": [
+            snapshot_entry("sess-000001-aaaaaaaa", Some("agent"), 1000, 100),
+            snapshot_entry("sess-000002-bbbbbbbb", Some("agent"), 1000, now),
+            snapshot_entry("agent-resume", Some("agent"), 1000, 100),
+            snapshot_entry("legacy-flat", None, 1000, 100),
+        ],
+        "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
+    });
+    let stub = residency_stub(envelope);
+    let mut policy = sidecar_policy();
+    policy.snapshot_ttl_s = Some(3600);
+    let mut managers = HashMap::new();
+    managers.insert("base".into(), retention_manager(&stub, &policy));
+    let pool = InstancePool::from_managers(managers, None);
+    engine_cycle(&pool, &policy, &["base"]).await;
+
+    assert_eq!(
+        snapshot_deletes(&stub),
+        vec!["/instances/agent/snapshot/sess-000001-aaaaaaaa"],
+        "only the expired non-resume snapshot is deleted",
+    );
+}
+
+#[tokio::test]
+async fn snapshot_retention_budget_deletes_oldest_first() {
+    // No TTL, budget 10000 against two 6000-byte snapshots: the oldest goes,
+    // the newest stays (6000 <= 10000).
+    let now = common_core::now_secs() as i64;
+    let envelope = serde_json::json!({
+        "instances": [ instance_info("agent", "g", false, 100) ],
+        "snapshots": [
+            snapshot_entry("sess-old", Some("agent"), 6000, 100),
+            snapshot_entry("sess-new", Some("agent"), 6000, now),
+        ],
+        "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
+    });
+    let stub = residency_stub(envelope);
+    let mut policy = sidecar_policy();
+    policy.snapshot_budget_bytes = Some(10_000);
+    let mut managers = HashMap::new();
+    managers.insert("base".into(), retention_manager(&stub, &policy));
+    let pool = InstancePool::from_managers(managers, None);
+    engine_cycle(&pool, &policy, &["base"]).await;
+
+    assert_eq!(
+        snapshot_deletes(&stub),
+        vec!["/instances/agent/snapshot/sess-old"],
+        "over budget deletes oldest-first until under budget",
+    );
+}
+
+#[tokio::test]
+async fn snapshot_retention_disabled_without_limits() {
+    // Neither knob set: even ancient snapshots are kept (today's behavior).
+    let envelope = serde_json::json!({
+        "instances": [ instance_info("agent", "g", false, 100) ],
+        "snapshots": [ snapshot_entry("sess-old", Some("agent"), 6000, 100) ],
+        "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
+    });
+    let stub = residency_stub(envelope);
+    let policy = sidecar_policy();
+    let mut managers = HashMap::new();
+    managers.insert("base".into(), retention_manager(&stub, &policy));
+    let pool = InstancePool::from_managers(managers, None);
+    engine_cycle(&pool, &policy, &["base"]).await;
+
+    assert!(
+        snapshot_deletes(&stub).is_empty(),
+        "no limits configured -> no snapshot deleted",
     );
 }
 

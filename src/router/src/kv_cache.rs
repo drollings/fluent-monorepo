@@ -14,8 +14,10 @@
 //! `(model, adapter, session)` so a rewind can find which fork snapshot to
 //! switch into a slot. It does not copy KV bytes into its own tree - the fork's
 //! `--slot-save-path` owns the bytes. The derived `file_path`
-//! (`<slot_save_path>/<model_key>/<snapshot_name>.bin`) matches the fork's
-//! layout byte-for-byte.
+//! (`<slot_save_path>/<model_key>/<instance>/<snapshot_name>.bin`) matches the
+//! fork's per-instance layout byte-for-byte (flat
+//! `<slot_save_path>/<model_key>/<snapshot_name>.bin` files are the fork's
+//! legacy migration fallback, read back with no owning instance).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -53,13 +55,25 @@ pub fn model_key(model: &str) -> String {
     model.replace(['/', ':'], "_")
 }
 
-/// The fork's on-disk snapshot path for `(model, snapshot)`:
-/// `<slot_save_path>/<model_key>/<snapshot_name>.bin`. The router derives this
-/// so its metadata and the server's layout agree; it never writes the bytes.
-pub fn kv_snapshot_path(slot_save_path: &Path, model: &str, snapshot_name: &str) -> PathBuf {
-    slot_save_path
-        .join(model_key(model))
-        .join(format!("{snapshot_name}.bin"))
+/// The fork's on-disk snapshot path for `(model, instance, snapshot)`:
+/// `<slot_save_path>/<model_key>/<instance>/<snapshot_name>.bin`. A `None`
+/// instance derives the legacy flat path
+/// `<slot_save_path>/<model_key>/<snapshot_name>.bin` (the fork's migration
+/// fallback, tagged with no owning instance). The router derives this so its
+/// metadata and the server's layout agree; it never writes the bytes.
+pub fn kv_snapshot_path(
+    slot_save_path: &Path,
+    model: &str,
+    instance: Option<&str>,
+    snapshot_name: &str,
+) -> PathBuf {
+    let dir = slot_save_path.join(model_key(model));
+    match instance {
+        Some(instance) => dir
+            .join(instance)
+            .join(format!("{snapshot_name}.bin")),
+        None => dir.join(format!("{snapshot_name}.bin")),
+    }
 }
 
 /// A KV cache snapshot - metadata and the fork-layout filesystem path only.
@@ -78,8 +92,11 @@ pub struct KvSnapshot {
     /// `<snapshot_name>.bin`.
     pub snapshot_name: String,
     /// Instance whose slot owns the snapshot - the `instance` request field.
+    /// `None` for legacy flat files (the fork's migration fallback).
     pub instance: Option<String>,
-    /// Derived path `<slot_save_path>/<model_key>/<snapshot_name>.bin`.
+    /// Derived path `<slot_save_path>/<model_key>/<instance>/<snapshot_name>.bin`
+    /// (flat `<slot_save_path>/<model_key>/<snapshot_name>.bin` when
+    /// `instance` is `None`).
     pub file_path: PathBuf,
     /// Token count, when the caller records it. `None` where the value is
     /// unknowable - never a fabricated default.
@@ -184,7 +201,7 @@ impl HotSnapshotIndex {
 /// Cold tier: the durable snapshot *index*. Keyed by `(model, adapter,
 /// session)`, each entry records snapshot metadata (name, instance, size,
 /// mtime) and a `file_path` derived to the fork's
-/// `<slot_save_path>/<model_key>/` layout. The fork owns the bytes; this tier
+/// `<slot_save_path>/<model_key>/<instance>/` layout. The fork owns the bytes; this tier
 /// only records which snapshot a session's KV was saved under so a rewind can
 /// switch it back into a slot.
 ///
@@ -253,7 +270,12 @@ impl ColdSnapshotIndex {
 
     fn derive_path(&self, snapshot: &KvSnapshot) -> PathBuf {
         match &self.slot_save_path {
-            Some(base) => kv_snapshot_path(base, &snapshot.model, &snapshot.snapshot_name),
+            Some(base) => kv_snapshot_path(
+                base,
+                &snapshot.model,
+                snapshot.instance.as_deref(),
+                &snapshot.snapshot_name,
+            ),
             None => PathBuf::new(),
         }
     }

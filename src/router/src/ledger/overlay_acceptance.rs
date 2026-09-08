@@ -28,13 +28,9 @@ use crate::node_store::{ContentNodeStore, LLM_OVERLAY_META_KEY};
 use common_core::sync::lock_read;
 
 fn temp_store() -> Arc<ContentNodeStore> {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-overlay-acceptance-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
-    store
+    // In-memory: these suites exercise overlay derivation, not durability,
+    // so no `/tmp` directory is created (and none is left behind).
+    Arc::new(ContentNodeStore::open_in_memory().unwrap())
 }
 
 fn worker_config() -> OverlayWorkerConfig {

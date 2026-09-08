@@ -12,6 +12,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use common_core::registry::ConcurrentRegistry;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
@@ -166,6 +167,13 @@ pub struct DependencySession {
     /// names on context advance: each turn's snapshot is independently
     /// addressable under the `(model, adapter, session)` key.
     snapshot_seq: u64,
+    /// Whether [`Self::advance_and_snapshot`] may trigger a fork KV snapshot
+    /// write. Default `false`: snapshots are taken only when specifically
+    /// asked (an explicit management-API call, a resume-marked eviction, or a
+    /// session opted in here because it drives a declared multi-step
+    /// instance). The flag is the single choke point — every
+    /// `advance_and_snapshot` caller is covered without a per-callsite check.
+    snapshot_on_advance: bool,
     /// Set when the escalation ladder's turnover mode hands the session to
     /// a frontier model.  Subsequent requests in the session bypass the
     /// local pipeline and go straight to frontier.
@@ -183,6 +191,7 @@ impl DependencySession {
             kv_cache: None,
             pending_snapshot: None,
             snapshot_seq: 0,
+            snapshot_on_advance: false,
             frontier_owned: false,
         }
     }
@@ -225,6 +234,27 @@ impl DependencySession {
     pub fn with_kv_cache(mut self, cache: SnapshotStore) -> Self {
         self.kv_cache = Some(cache);
         self
+    }
+
+    /// Opt this session into fork KV snapshot writes on context advance (see
+    /// [`Self::advance_and_snapshot`]). Off by default: a session takes no
+    /// snapshots unless specifically asked. Enable only for sessions driving a
+    /// declared multi-step (`session: true`) instance whose KV is worth
+    /// preserving — one-shot contexts must never enable this.
+    #[must_use]
+    pub fn with_snapshot_on_advance(mut self) -> Self {
+        self.snapshot_on_advance = true;
+        self
+    }
+
+    /// Enable or disable fork KV snapshot writes on context advance in place.
+    pub fn set_snapshot_on_advance(&mut self, enabled: bool) {
+        self.snapshot_on_advance = enabled;
+    }
+
+    /// Whether this session takes fork KV snapshots on context advance.
+    pub fn snapshot_on_advance(&self) -> bool {
+        self.snapshot_on_advance
     }
 
     /// The attached `SnapshotStore`, when present. Lets rigor's blue-pass
@@ -477,10 +507,13 @@ impl DependencySession {
     /// session)` key and sets `pending_snapshot` so the next dispatch can pass
     /// the fork-facing `snapshot`/`instance`/`id_slot` fields.
     ///
-    /// Requires `self.model` set (the KV key is `(model, adapter, session)`);
-    /// without a model this logs and returns `Ok(None)` — never a fabricated
-    /// key. Without an attached fork handle `SnapshotStore::save_snapshot`
-    /// degrades to a metadata-only no-op, so this returns `Ok(None)`.
+    /// Requires opt-in via [`Self::with_snapshot_on_advance`]: without it this
+    /// logs and returns `Ok(None)` — no snapshot is ever taken unless
+    /// specifically asked. Requires `self.model` set (the KV key is `(model,
+    /// adapter, session)`); without a model this logs and returns `Ok(None)` —
+    /// never a fabricated key. Without an attached fork handle
+    /// `SnapshotStore::save_snapshot` degrades to a metadata-only no-op, so
+    /// this returns `Ok(None)`.
     ///
     /// Synchronous by design (mirrors `rewind_to_checkpoint`): the fork
     /// round-trip runs through the sync `block_on` bridge inside
@@ -497,6 +530,13 @@ impl DependencySession {
         &mut self,
         instance: &str,
     ) -> Result<Option<Arc<KvSnapshot>>, DagError> {
+        if !self.snapshot_on_advance {
+            tracing::debug!(
+                session_id = %self.session_id,
+                "per-turn kv snapshot disabled - skipping (snapshots are opt-in)",
+            );
+            return Ok(None);
+        }
         let Some(model) = self.model.clone() else {
             tracing::debug!(
                 session_id = %self.session_id,
@@ -612,6 +652,11 @@ impl DependencySession {
     }
 }
 
+/// How often the server sweeps expired KV snapshot *metadata* from the cold
+/// tier. The TTL is days (7 by default); hourly is plenty and keeps the
+/// in-memory index bounded without hot-path cost.
+pub const SESSION_SNAPSHOT_SWEEP_INTERVAL: Duration = Duration::from_secs(3600);
+
 /// Process-wide registry of `DependencySession`s keyed by `session_id`.
 ///
 /// The canonical server-side session home: sessions are
@@ -666,6 +711,25 @@ impl SessionRegistry {
     /// session in this registry.
     pub fn kv_cache(&self) -> &SnapshotStore {
         &self.inner.kv_cache
+    }
+
+    /// Sweep expired KV snapshot *metadata* from the cold tier (the TTL
+    /// predicate in `ColdSnapshotIndex::evict`). Fork-owned bytes are
+    /// untouched here — the llama retention pass (driven by the residency
+    /// engine) deletes those. Returns the count evicted; best-effort, never
+    /// a crash. Called periodically by the server's background tasks.
+    pub fn evict_expired(&self) -> usize {
+        match self.inner.kv_cache.evict() {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(
+                    target: "router.session",
+                    error = %e,
+                    "session kv snapshot metadata sweep failed",
+                );
+                0
+            }
+        }
     }
 
     /// Look up a session by ID, creating it (with the shared `SnapshotStore`

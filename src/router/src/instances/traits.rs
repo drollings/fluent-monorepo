@@ -294,6 +294,10 @@ impl LlmWeights for LlamaWeights {
     }
 
     async fn expire_resume(&self) {
+        // Snapshot retention (age + byte budget) rides the same engine seam:
+        // one "llama expiry pass", two distinct concerns in two methods, so
+        // the resume lifecycle below stays untouched.
+        self.enforce_snapshot_retention().await;
         let Some(ttl) = self.policy.resume_ttl_s else {
             return;
         };
@@ -345,6 +349,133 @@ impl LlmWeights for LlamaWeights {
                     "resume snapshot delete on expiry failed",
                 ),
             }
+        }
+    }
+}
+
+/// One fork-reported snapshot selected for retention enforcement: the owning
+/// instance plus the fork's listing row (name/size/mtime).
+struct RetentionCandidate {
+    instance: String,
+    name: String,
+    size: u64,
+    /// Fork `mtime` (unix seconds) when numeric and positive; `None` when
+    /// unknowable — never a fabricated default.
+    mtime: Option<i64>,
+}
+
+impl LlamaWeights {
+    /// Delete non-resume KV snapshots past the configured age
+    /// (`snapshot_ttl_s`) or byte budget (`snapshot_budget_bytes`). Both
+    /// `None` → no-op (no limits configured). Driven by the residency engine
+    /// through the `expire_resume` seam (the llama expiry pass); never fails
+    /// the pass — a down server or failed delete logs and moves on.
+    ///
+    /// The source of truth is the fork's pool envelope (every on-disk
+    /// snapshot, including namespaces whose instance is already gone — a
+    /// snapshot outlives its instance fork-side). Resume snapshots
+    /// (`<instance>-resume`) are excluded: the resume lifecycle owns them.
+    /// Legacy flat files (no owning instance) are excluded: the router never
+    /// creates them, the fork drops them on save, and there is no safe
+    /// instance handle to delete one through. Entries whose age is unknowable
+    /// (missing or non-numeric `mtime`) are kept by the age sweep and ordered
+    /// newest by the budget sweep — deletion never fires on a fabricated age.
+    async fn enforce_snapshot_retention(&self) {
+        let ttl = self.policy.snapshot_ttl_s;
+        let budget = self.policy.snapshot_budget_bytes;
+        if ttl.is_none() && budget.is_none() {
+            return;
+        }
+        let Some((envelope, _)) = self.manager.list_with_fallback().await else {
+            return; // server down / never loaded — fail open, retried next pass
+        };
+        let now = i64::try_from(common_core::now_secs()).unwrap_or(i64::MAX);
+        let mut candidates: Vec<RetentionCandidate> = Vec::new();
+        for snap in &envelope.snapshots {
+            let Some(instance) = snap.instance.as_deref() else {
+                continue; // legacy flat file — see doc above
+            };
+            if snap.name == resume_snapshot_name(instance) {
+                continue; // resume lifecycle owns it
+            }
+            candidates.push(RetentionCandidate {
+                instance: instance.to_string(),
+                name: snap.name.clone(),
+                size: snap.size,
+                mtime: snap.mtime.as_i64().filter(|&t| t > 0),
+            });
+        }
+        // Age sweep first (mirrors the cold-tier `age >= ttl` evicts
+        // boundary verbatim — unifying it would be a behavior change).
+        let mut survivors: Vec<RetentionCandidate> = Vec::new();
+        for cand in candidates {
+            let expired = match (ttl, cand.mtime) {
+                (Some(ttl), Some(mtime)) => now.saturating_sub(mtime) as u64 >= ttl,
+                _ => false, // no TTL configured, or age unknowable — keep
+            };
+            if expired {
+                self.delete_retained_snapshot(&cand, "age_ttl").await;
+            } else {
+                survivors.push(cand);
+            }
+        }
+        // Budget sweep: oldest-first until under budget (unknown mtime sorts
+        // newest — kept unless everything dated is already gone).
+        if let Some(budget) = budget {
+            let mut used: u64 = survivors.iter().map(|c| c.size).sum();
+            survivors.sort_by(|a, b| match (a.mtime, b.mtime) {
+                (Some(x), Some(y)) => x.cmp(&y),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            });
+            for cand in survivors {
+                if used <= budget {
+                    break;
+                }
+                self.delete_retained_snapshot(&cand, "byte_budget").await;
+                used = used.saturating_sub(cand.size);
+            }
+        }
+    }
+
+    /// Delete one retention-expired snapshot from the fork (best-effort) and
+    /// audit the outcome. Never fails — a failed delete is retried next pass.
+    async fn delete_retained_snapshot(&self, cand: &RetentionCandidate, reason: &str) {
+        match self
+            .manager
+            .client()
+            .delete_snapshot(&cand.instance, &cand.name)
+            .await
+        {
+            Ok(()) => {
+                tracing::info!(
+                    target: "router.instances",
+                    model = %self.model_key,
+                    instance = %cand.instance,
+                    snapshot = %cand.name,
+                    reason = %reason,
+                    "kv snapshot deleted by retention sweep",
+                );
+                crate::audit::emit(
+                    "instances",
+                    serde_json::json!({
+                        "action": "snapshot_retention",
+                        "model": self.model_key,
+                        "instance": cand.instance,
+                        "snapshot": cand.name,
+                        "reason": reason,
+                    }),
+                );
+            }
+            Err(e) => tracing::warn!(
+                target: "router.instances",
+                model = %self.model_key,
+                instance = %cand.instance,
+                snapshot = %cand.name,
+                error = %e,
+                "retention snapshot delete failed - retried next pass",
+            ),
         }
     }
 }

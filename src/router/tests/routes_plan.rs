@@ -315,12 +315,9 @@ async fn plan_for_session_folds_ledger_context_into_selector_prompt() {
     // With a ledger store + assembler attached, `plan_for_session`
     // renders the session ledger and prepends it to the selector prompt.
     use crate::node_store::ContentNodeStore;
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-plan-ctx-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    let store = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     store
         .record_request("sess-plan", "r1", "PLAN LEDGER CONTEXT at LOD0")
         .unwrap();
@@ -364,12 +361,9 @@ async fn plan_without_session_keeps_blank_slate_prompt() {
     // Degradation: no session_id → identical to today's prompt (no
     // ledger context prepended), even with an assembler attached.
     use crate::node_store::ContentNodeStore;
-    let dir = std::env::temp_dir().join(format!(
-        "coral-router-plan-nosess-{}",
-        common_core::hash::uuid_v4()
-    ));
-    let store = Arc::new(ContentNodeStore::open(&dir).unwrap());
-    let _ = std::fs::remove_file(&dir);
+    // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
+    // a deleted main file would otherwise be left behind).
+    let store = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     store
         .record_request("sess-plan", "r1", "CONTEXT SHOULD NOT APPEAR")
         .unwrap();
