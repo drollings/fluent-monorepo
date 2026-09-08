@@ -79,7 +79,7 @@ Every orchestratable task presents the same `Arc<dyn Component>` interface -
 whether it is a native Rust struct, a WASM plugin, or a database-driven
 config - so the orchestrator iterates uniform handles and never branches on
 origin. Twelve composable patterns are documented in
-`doc/skills/fluent-wvr/SKILL.md` (Fluent Builder, Trait-Based Reflection,
+`doc/fluent-wvr/USAGE.md` (Fluent Builder, Trait-Based Reflection,
 Trait Composition, Trait Objects, Binary IPC, Scoped Ownership, Newtype
 Handles, Unit of Work, Middleware Chain, Component Adapter, Structured
 Logging Context, Runtime Composition). These patterns are for the control
@@ -100,7 +100,7 @@ server-owned background/connection tasks are awaited when the server drains
 them at graceful shutdown. Capability tokens gate DB and knowledge access on
 the serving path - operator CLI tooling is capability-exempt by design.
 
-→ `doc/skills/fluent-concurrency/SKILL.md`
+→ `doc/fluent-concurrency/USAGE.md`
 
 ## DAG - the dependency fabric
 
@@ -108,7 +108,7 @@ the serving path - operator CLI tooling is capability-exempt by design.
 primitives that drive the chart executor, session orchestration, and workflow
 execution: dependency validation, ready-node selection, dependency-aware
 cancellation, and checkpoint/rewind - shared by every graph consumer in the
-workspace rather than re-implemented per crate. → `doc/skills/dag/SKILL.md`
+workspace rather than re-implemented per crate. → `doc/dag/USAGE.md`
 
 ## Safe Rust
 
@@ -139,9 +139,9 @@ restart on `:8079`), `make router-test` (tests), `make router-mock`
 - **Guidance** - AST-guided code navigation subagent producing metadata
   mirrors and SQLite vector search databases; sub-100ms deterministic queries
   for AI-assisted development. → `doc/guidance/VISION.md`
-- **Fluent WVR** - the unifying component model. → `doc/skills/fluent-wvr/SKILL.md`
-- **Fluent Concurrency** - structured concurrency primitives. → `doc/skills/fluent-concurrency/SKILL.md`
-- **Fluent DAG** - dependency graph and checkpointed step graph. → `doc/skills/dag/SKILL.md`
+- **Fluent WVR** - the unifying component model. → `doc/fluent-wvr/USAGE.md`
+- **Fluent Concurrency** - structured concurrency primitives. → `doc/fluent-concurrency/USAGE.md`
+- **Fluent DAG** - dependency graph and checkpointed step graph. → `doc/dag/USAGE.md`
 
 ## Design philosophy
 
