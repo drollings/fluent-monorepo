@@ -120,3 +120,66 @@ fn loader_rejects_bad_blobs() {
     // loader defends the same invariants.
     assert!(TaggerOrtho::from_bytes(&[]).is_err());
 }
+
+fn pinned_words() -> Vec<&'static str> {
+    vec![
+        "calls", "CALLS", "as", "quarterly", "QUARTERLY", "July", "opened", "OPENED", "red",
+        "smiling", "SMILING", "king", "rain", "raining", "go", "a", "today", "statuses",
+        ".", "!", "?", ";", ":", ",", "-", "—", "--", "(", ")", "...", "calls", "x", "",
+    ]
+}
+
+#[test]
+fn english_constructor_matches_fresh_parse() {
+    // The shared English handle must answer identically to a freshly parsed
+    // blob on a pinned token list — caching the parse never changes it.
+    let cached = TaggerOrtho::english();
+    let fresh = TaggerOrtho::from_bytes(crate::lang::en::ORTHO_BLOB).expect("fresh parse");
+    assert_eq!(cached.trailing_punct(), fresh.trailing_punct());
+    assert_eq!(cached.sentence_boundary(), fresh.sentence_boundary());
+    assert_eq!(cached.bare_follow(), fresh.bare_follow());
+    assert_eq!(cached.plural_s(), fresh.plural_s());
+    assert_eq!(cached.manner_ly(), fresh.manner_ly());
+    assert_eq!(cached.past_ed(), fresh.past_ed());
+    assert_eq!(cached.part_ing(), fresh.part_ing());
+    assert_eq!(cached.comma(), fresh.comma());
+    for w in pinned_words() {
+        assert_eq!(cached.is_plural_s(w), fresh.is_plural_s(w), "plural {w:?}");
+        assert_eq!(cached.is_manner_ly(w), fresh.is_manner_ly(w), "manner {w:?}");
+        assert_eq!(cached.is_past_ed(w), fresh.is_past_ed(w), "past {w:?}");
+        assert_eq!(cached.is_part_ing(w), fresh.is_part_ing(w), "part {w:?}");
+        assert_eq!(
+            cached.is_trailing_punct(w),
+            fresh.is_trailing_punct(w),
+            "trailing {w:?}"
+        );
+        assert_eq!(cached.is_boundary(w), fresh.is_boundary(w), "boundary {w:?}");
+        assert_eq!(cached.is_bare_follow(w), fresh.is_bare_follow(w), "bare {w:?}");
+        assert_eq!(cached.is_comma(w), fresh.is_comma(w), "comma {w:?}");
+    }
+}
+
+#[test]
+fn english_handles_concurrent_construction() {
+    // N threads building the English handle at once must neither deadlock
+    // nor diverge in what they observe.
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            std::thread::spawn(|| {
+                let o = TaggerOrtho::english();
+                pinned_words()
+                    .iter()
+                    .map(|w| (o.is_plural_s(w), o.is_past_ed(w), o.is_boundary(w)))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    let mut first: Option<Vec<(bool, bool, bool)>> = None;
+    for h in handles {
+        let got = h.join().expect("worker panicked — deadlock or crash");
+        match &first {
+            None => first = Some(got),
+            Some(want) => assert_eq!(&got, want, "concurrent handles diverged"),
+        }
+    }
+}

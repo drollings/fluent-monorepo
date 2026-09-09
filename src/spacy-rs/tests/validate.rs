@@ -336,3 +336,91 @@ fn custom_dep_label_set_accepts_and_rejects() {
         Err(AnnotationError::UnknownDep(_))
     ));
 }
+
+#[test]
+fn narrowed_checks_match_stringly_behavior() {
+    // Differential pin: the narrowed comparisons must agree with the
+    // previous string-allocating logic on adversarial inputs — mixed-case
+    // deps, padded IOB tags, single-char punctuation, and the full UPOS
+    // space including near-misses the old parse accepted or rejected.
+    let old_upos_known = |pos: &str| {
+        pos.parse::<Upos>()
+            .map(|p: Upos| Upos::UPOS.contains(&p))
+            .unwrap_or(false)
+    };
+    let mut pos_cases: Vec<String> = Upos::UPOS.iter().map(|p| p.to_string()).collect();
+    pos_cases.extend(
+        [
+            "NOUN", "Verb", "PROPN", "Aux", "X", "notapos", "", "conj", "eol", "space", "NOUNX",
+            " noun", "noun ", "SYM",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    );
+    for pos in &pos_cases {
+        assert_eq!(upos_known(pos), old_upos_known(pos), "pos {pos:?}");
+    }
+
+    for dep in [
+        "root", "ROOT", "Root", "rOoT", "nsubj", "ROOT ", " root", "roo", "rootx",
+    ] {
+        assert_eq!(
+            is_root_dep(dep),
+            dep.eq_ignore_ascii_case("root"),
+            "dep {dep:?}"
+        );
+    }
+
+    let old_iob_marker = |trimmed: &str| match trimmed.to_ascii_uppercase().as_str() {
+        "" | "O" => Some(IobMarker::Outside),
+        "B" => Some(IobMarker::Begin),
+        "U" => Some(IobMarker::Unit),
+        "I" => Some(IobMarker::Inside),
+        "L" => Some(IobMarker::Last),
+        _ => None,
+    };
+    for iob in [
+        "", "O", "o", "B", "b", "U", "u", "I", "i", "L", "l", "X", "x", "BB", " b ", " O ",
+        "Ll", "o ",
+    ] {
+        assert_eq!(
+            IobMarker::classify(iob.trim()),
+            old_iob_marker(iob.trim()),
+            "iob {iob:?}"
+        );
+    }
+}
+
+#[test]
+fn accepts_adversarial_case_and_padding() {
+    // End to end through `validate`: mixed-case POS/deps, padded IOB tags,
+    // and single-char punctuation must validate exactly as before.
+    let mut doc = Doc::new(vocab());
+    for (t, s) in [("Cats", true), ("!", false)] {
+        doc.push_back(t, s).expect("push");
+    }
+    let mut recs = vec![
+        recorder("Cats", "NOUN", "nsubj", 1),
+        recorder("!", "PUNCT", "punct", -1),
+    ];
+    recs[0].ent_iob = " b ".into();
+    recs[0].ent_type = " PERSON ".into();
+    recs[1].ent_iob = "l".into();
+    recs[1].ent_type = " PERSON ".into();
+    // Root in mixed case with head 0.
+    recs[0].dep = "ROOT".into();
+    recs[0].head = 0;
+    recs[1].dep = "punct".into();
+    recs[1].head = -1;
+    let set = AnnotationSet(recs);
+    assert_eq!(AnnotationValidator::new().validate(&doc, &set), Ok(()));
+
+    // A mixed-case ROOT with a non-zero head is still a mismatch.
+    let (doc2, mut set2) = valid_doc_and_set();
+    set2.0[2].dep = "Root".into();
+    set2.0[2].head = 1;
+    assert!(matches!(
+        AnnotationValidator::new().validate(&doc2, &set2),
+        Err(AnnotationError::RootHeadMismatch { .. })
+    ));
+}

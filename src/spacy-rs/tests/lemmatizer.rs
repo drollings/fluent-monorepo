@@ -182,3 +182,66 @@ fn lemma_key_is_display_without_alloc() {
     assert_eq!(Upos::Verb.lemma_key(), "verb");
     assert_eq!(Upos::Adj.lemma_key(), "adj");
 }
+
+fn pinned_surfaces() -> Vec<(&'static str, Upos)> {
+    vec![
+        ("cats", Upos::Noun),
+        ("boxes", Upos::Noun),
+        ("wives", Upos::Noun),
+        ("children", Upos::Noun),
+        ("running", Upos::Verb),
+        ("studies", Upos::Verb),
+        ("went", Upos::Verb),
+        ("is", Upos::Aux),
+        ("were", Upos::Aux),
+        ("quickly", Upos::Adv),
+        ("taller", Upos::Adj),
+        ("CEO", Upos::Noun),
+        ("Let", Upos::Verb),
+        ("unknownword", Upos::Noun),
+    ]
+}
+
+#[test]
+fn english_rule_matches_fresh_parse() {
+    // The shared-handle constructor must lemmatize identically to a freshly
+    // parsed blob on a pinned surface list — caching the parse never
+    // changes an analysis.
+    let cached = Lemmatizer::english_rule();
+    let fresh = Lemmatizer::from_blob(
+        crate::lemma_blob::LemmaBlob::from_bytes(crate::lang::en::LEMMAS_BLOB)
+            .expect("fresh parse"),
+    );
+    for (surface, pos) in pinned_surfaces() {
+        assert_eq!(
+            cached.lemmatize(surface, pos, 0),
+            fresh.lemmatize(surface, pos, 0),
+            "{surface:?}/{pos:?}"
+        );
+    }
+}
+
+#[test]
+fn english_rule_handles_concurrent_construction() {
+    // N threads building the rule lemmatizer at once must neither deadlock
+    // nor diverge in the analyses they produce.
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            std::thread::spawn(|| {
+                let l = Lemmatizer::english_rule();
+                pinned_surfaces()
+                    .iter()
+                    .map(|(s, p)| l.lemmatize(s, *p, 0))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    let mut first: Option<Vec<Vec<String>>> = None;
+    for h in handles {
+        let got = h.join().expect("worker panicked — deadlock or crash");
+        match &first {
+            None => first = Some(got),
+            Some(want) => assert_eq!(&got, want, "concurrent handles diverged"),
+        }
+    }
+}

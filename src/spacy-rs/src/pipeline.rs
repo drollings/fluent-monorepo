@@ -2133,6 +2133,11 @@ pub struct NlpPipeline {
     tokenizer: Tokenizer,
     validator: Arc<AnnotationValidator>,
     rule: Arc<RuleAnnotator>,
+    /// The eager annotator, built once over this pipeline's vocab and shared
+    /// by every ladder run. Construction re-parses the orthography/lemma
+    /// blobs and re-interns the label set, none of which depends on the
+    /// request, so it lives here next to `rule` rather than per call.
+    eager: Arc<ArcEagerAnnotator>,
     stages: StagePipeline,
     resolver: Option<Arc<InterlinguaResolver>>,
     /// M6.1 span cache (shared across ladders, read-through view over the
@@ -2181,11 +2186,13 @@ impl NlpPipeline {
             resolver.clone(),
             plausibility,
         )?;
+        let eager = Arc::new(ArcEagerAnnotator::en_default(Arc::clone(&vocab)));
         Ok(Self {
             vocab,
             tokenizer,
             validator: Arc::new(validator),
             rule: Arc::new(RuleAnnotator::en_default()),
+            eager,
             stages,
             resolver,
             span_cache: None,
@@ -2347,6 +2354,7 @@ impl NlpPipeline {
         let mut doc = self.tokenizer.tokenize(text)?;
         let (mut result, reason) = run_ladder_sync(
             &doc,
+            &self.eager,
             fetch,
             encoder,
             seams,
@@ -2383,6 +2391,13 @@ impl NlpPipeline {
     #[must_use]
     pub fn rule(&self) -> &RuleAnnotator {
         &self.rule
+    }
+
+    /// The shared eager annotator for this pipeline's vocab. Ladder runs
+    /// clone the `Arc` (cheap) instead of rebuilding the annotator.
+    #[must_use]
+    pub fn eager(&self) -> &Arc<ArcEagerAnnotator> {
+        &self.eager
     }
 
     /// The stage DAG.
@@ -2486,6 +2501,7 @@ impl NlpPipeline {
 
         let validator = Arc::clone(&self.validator);
         let rule = Arc::clone(&self.rule);
+        let eager = Arc::clone(&self.eager);
         let resolver = self.resolver.clone();
         let seams = seams.clone();
         let pool = ResultPool::new(
@@ -2499,12 +2515,14 @@ impl NlpPipeline {
             )| {
                 let validator = Arc::clone(&validator);
                 let rule = Arc::clone(&rule);
+                let eager = Arc::clone(&eager);
                 let resolver = resolver.clone();
                 let seams = seams.clone();
                 let policy = policy;
                 async move {
                     let result = run_ladder_for(
                         &doc,
+                        &eager,
                         fetch,
                         encoder.as_ref(),
                         &seams,
@@ -2548,6 +2566,7 @@ impl NlpPipeline {
     ) -> Result<AnnotationResult, PipelineError> {
         run_ladder_for(
             doc,
+            &self.eager,
             fetch,
             encoder,
             seams,
@@ -2751,6 +2770,7 @@ fn refiner_order(
 #[allow(clippy::too_many_arguments)]
 async fn run_ladder_for(
     doc: &Doc,
+    eager: &Arc<ArcEagerAnnotator>,
     fetch: Option<LlmFetch>,
     encoder: Option<&EncoderFetchSync>,
     seams: &RefineSeams,
@@ -2760,8 +2780,7 @@ async fn run_ladder_for(
     policy: RefinePolicy,
 ) -> Result<AnnotationResult, PipelineError> {
     // ── Base phase: deterministic, unconditional ──
-    let annotator = Arc::new(ArcEagerAnnotator::en_default(Arc::clone(doc.vocab())));
-    let eager = ArcEagerRung::new(Arc::clone(&annotator), Arc::clone(validator));
+    let eager = ArcEagerRung::new(Arc::clone(eager), Arc::clone(validator));
     let rule_rung = RuleRung {
         rule: Arc::clone(rule),
     };
@@ -2842,6 +2861,7 @@ async fn run_ladder_for(
 #[allow(clippy::too_many_arguments)]
 fn run_ladder_sync(
     doc: &Doc,
+    eager: &Arc<ArcEagerAnnotator>,
     fetch: Option<&LlmFetchSync>,
     encoder: Option<&EncoderFetchSync>,
     seams: &RefineSeams,
@@ -2861,7 +2881,7 @@ fn run_ladder_sync(
         Rule(Arc<RuleAnnotator>),
     }
 
-    let annotator = Arc::new(ArcEagerAnnotator::en_default(Arc::clone(doc.vocab())));
+    let annotator = Arc::clone(eager);
 
     // ── Base phase: deterministic, unconditional ──
     let base_rungs: Vec<SyncRung> = vec![

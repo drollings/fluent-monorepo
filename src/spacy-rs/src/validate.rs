@@ -26,6 +26,9 @@
 //! Projectivity (§10.2 check 8, optional) is gated behind
 //! [`AnnotationValidator::require_projectivity`], off by default.
 
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
 use thiserror::Error;
 
 use crate::doc::Doc;
@@ -198,6 +201,67 @@ impl AnnotationValidator {
     }
 }
 
+/// The 17 UPOS tags as lowercase strings: the allocation-free fast path
+/// for the check-2 vocabulary probe.
+static UPOS_STRINGS: LazyLock<HashSet<&'static str>> =
+    LazyLock::new(|| Upos::UPOS.iter().map(|p| p.lemma_key()).collect());
+
+/// Whether `pos` names one of the 17 UPOS tags. Lowercase records hit the
+/// precomputed set with no allocation; any other casing falls back to the
+/// case-insensitive parse so exactly the previously accepted spellings pass.
+fn upos_known(pos: &str) -> bool {
+    if UPOS_STRINGS.contains(pos) {
+        return true;
+    }
+    matches!(pos.parse::<Upos>(), Ok(p) if Upos::UPOS.contains(&p))
+}
+
+/// Whether `dep` names the ROOT label (ASCII case-insensitive): the one
+/// normalized root comparison shared by checks 3–6.
+#[inline]
+fn is_root_dep(dep: &str) -> bool {
+    dep.eq_ignore_ascii_case("root")
+}
+
+/// A BILUO entity marker classified without allocating: the byte-level twin
+/// of matching on the trimmed, uppercased marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IobMarker {
+    Outside,
+    Begin,
+    Unit,
+    Inside,
+    Last,
+}
+
+impl IobMarker {
+    /// Classify an already-trimmed marker; `None` is an unknown marker.
+    /// Both ASCII cases classify (the previous `to_ascii_uppercase` match
+    /// accepted lowercase too).
+    fn classify(trimmed: &str) -> Option<Self> {
+        match trimmed.as_bytes() {
+            b"" | b"O" | b"o" => Some(Self::Outside),
+            b"B" | b"b" => Some(Self::Begin),
+            b"U" | b"u" => Some(Self::Unit),
+            b"I" | b"i" => Some(Self::Inside),
+            b"L" | b"l" => Some(Self::Last),
+            _ => None,
+        }
+    }
+
+    /// The canonical uppercase marker for diagnostics (what the previous
+    /// uppercasing match reported).
+    fn label(self) -> &'static str {
+        match self {
+            Self::Outside => "O",
+            Self::Begin => "B",
+            Self::Unit => "U",
+            Self::Inside => "I",
+            Self::Last => "L",
+        }
+    }
+}
+
 /// Free-function form of the gate with an explicit label set.
 pub fn validate(
     doc: &Doc,
@@ -218,11 +282,18 @@ pub fn validate(
         });
     }
     for (i, rec) in records.iter().enumerate() {
-        let orth = doc.token_text(i);
-        if rec.text != orth {
+        let matches = match doc.vocab().strings().get(doc.token(i).lexeme.orth) {
+            // Borrowed comparison against the stored orth: no `String`
+            // materialization on the hot path (`token_text` stays for callers
+            // that need an owned copy, and for the mismatch error below).
+            Some(stored) => rec.text.as_str() == &*stored,
+            // A missing entry resolves to "" through `token_text`; match that.
+            None => rec.text.is_empty(),
+        };
+        if !matches {
             return Err(AnnotationError::TextMismatch {
                 index: i,
-                expected: orth,
+                expected: doc.token_text(i),
                 got: rec.text.clone(),
             });
         }
@@ -230,11 +301,7 @@ pub fn validate(
 
     // ── Check 2: closed vocabularies ──
     for rec in records {
-        let pos: Upos = rec
-            .pos
-            .parse()
-            .map_err(|_e| AnnotationError::UnknownPos(rec.pos.clone()))?;
-        if !Upos::UPOS.contains(&pos) {
+        if !upos_known(&rec.pos) {
             return Err(AnnotationError::UnknownPos(rec.pos.clone()));
         }
         if !dep_labels.contains(&rec.dep) {
@@ -253,7 +320,7 @@ pub fn validate(
                 len,
             });
         }
-        let is_root = rec.dep.eq_ignore_ascii_case("root");
+        let is_root = is_root_dep(&rec.dep);
         if rec.head == 0 && !is_root {
             return Err(AnnotationError::SelfLoop { token: i });
         }
@@ -271,7 +338,7 @@ pub fn validate(
     let roots: Vec<usize> = records
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.dep.eq_ignore_ascii_case("root"))
+        .filter(|(_, r)| is_root_dep(&r.dep))
         .map(|(i, _)| i)
         .collect();
     if roots.is_empty() {
@@ -291,7 +358,7 @@ pub fn validate(
     // and cycles are rejected, each token is reachable from some root.
     let mut graph = fluent_dag::dep_graph::DependencyGraph::<usize>::new();
     for (i, rec) in records.iter().enumerate() {
-        let is_root = rec.dep.eq_ignore_ascii_case("root");
+        let is_root = is_root_dep(&rec.dep);
         let deps: Vec<usize> = if is_root {
             Vec::new()
         } else {
@@ -307,7 +374,7 @@ pub fn validate(
     // Connectivity: every token must be reachable from some ROOT.
     let mut reachable: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for (i, rec) in records.iter().enumerate() {
-        if rec.dep.eq_ignore_ascii_case("root") {
+        if is_root_dep(&rec.dep) {
             reachable.insert(i);
             reachable.extend(graph.dependents_of(&i));
         }
@@ -320,10 +387,18 @@ pub fn validate(
     // ── Check 7: BILUO entity spans ──
     let mut open: Option<(String, bool)> = None; // (type, span_closed)
     for (i, rec) in records.iter().enumerate() {
-        let iob = rec.ent_iob.trim().to_ascii_uppercase();
+        let trimmed = rec.ent_iob.trim();
         let ty = rec.ent_type.trim();
-        match iob.as_str() {
-            "" | "O" => {
+        let Some(marker) = IobMarker::classify(trimmed) else {
+            return Err(AnnotationError::MalformedBiluo {
+                index: i,
+                // Cold path only: uppercase for the diagnostic to report the
+                // canonical marker, as the previous match did.
+                detail: format!("unknown IOB marker {:?}", trimmed.to_ascii_uppercase()),
+            });
+        };
+        match marker {
+            IobMarker::Outside => {
                 if matches!(open, Some((_, false))) {
                     return Err(AnnotationError::MalformedBiluo {
                         index: i,
@@ -332,7 +407,7 @@ pub fn validate(
                 }
                 open = None;
             }
-            "B" | "U" => {
+            IobMarker::Begin | IobMarker::Unit => {
                 if matches!(open, Some((_, false))) {
                     return Err(AnnotationError::MalformedBiluo {
                         index: i,
@@ -342,36 +417,34 @@ pub fn validate(
                 if ty.is_empty() {
                     return Err(AnnotationError::MalformedBiluo {
                         index: i,
-                        detail: format!("{iob} requires ent_type"),
+                        detail: format!("{} requires ent_type", marker.label()),
                     });
                 }
-                open = Some((ty.to_string(), iob == "U"));
+                open = Some((ty.to_string(), marker == IobMarker::Unit));
             }
-            "I" | "L" => match &open {
+            IobMarker::Inside | IobMarker::Last => match &open {
                 Some((pty, closed)) if !*closed && pty == ty => {
-                    open = Some((ty.to_string(), iob == "L"));
+                    open = Some((ty.to_string(), marker == IobMarker::Last));
                 }
                 Some((pty, _)) => {
                     return Err(AnnotationError::MalformedBiluo {
                         index: i,
                         detail: format!(
-                            "{iob} must continue a B/I of the same type (open {pty:?})"
+                            "{} must continue a B/I of the same type (open {pty:?})",
+                            marker.label()
                         ),
                     });
                 }
                 None => {
                     return Err(AnnotationError::MalformedBiluo {
                         index: i,
-                        detail: format!("{iob} without a preceding B of the same type"),
+                        detail: format!(
+                            "{} without a preceding B of the same type",
+                            marker.label()
+                        ),
                     });
                 }
             },
-            other => {
-                return Err(AnnotationError::MalformedBiluo {
-                    index: i,
-                    detail: format!("unknown IOB marker {other:?}"),
-                });
-            }
         }
     }
     if matches!(open, Some((_, false))) {

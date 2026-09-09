@@ -11,7 +11,7 @@
 //! same lemma string, so downstream never knows which mode produced it.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 
 use crate::hash::hash_utf8;
 use crate::labels::Upos;
@@ -22,6 +22,14 @@ use crate::strings::StringStore;
 
 /// The lemma cache key: `(orth hash, pos id, morph key)`.
 type CacheKey = (u64, u8, u64);
+
+/// The English lemma tables, parsed once from the embedded blob. The parsed
+/// tables are read-only shared data; each `english_rule()` handle clones
+/// them cheaply and keeps its own per-instance result cache.
+static LEMMAS_EN: LazyLock<LemmaBlob> = LazyLock::new(|| {
+    LemmaBlob::from_bytes(crate::lang::en::LEMMAS_BLOB)
+        .expect("embedded English lemma blob is valid (build.rs)")
+});
 
 /// How the lemmatizer resolves a lemma.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,12 +74,11 @@ impl Lemmatizer {
     }
 
     /// A rule-mode lemmatizer over the generated English tables
-    /// (`en_core_web_sm`'s `mode=rule` configuration).
+    /// (`en_core_web_sm`'s `mode=rule` configuration). The tables parse
+    /// once and are shared; each handle keeps its own result cache.
     #[must_use]
     pub fn english_rule() -> Self {
-        let blob = LemmaBlob::from_bytes(crate::lang::en::LEMMAS_BLOB)
-            .expect("embedded English lemma blob is valid (build.rs)");
-        Self::from_blob(blob)
+        Self::from_blob(LEMMAS_EN.clone())
     }
 
     /// A lookup-mode lemmatizer over a flat `surface → lemma` table.

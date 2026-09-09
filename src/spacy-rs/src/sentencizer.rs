@@ -79,7 +79,16 @@ impl Sentencizer {
         guesses[0] = true;
         for i in 0..doc.len() {
             let text = doc.token_text(i);
-            let is_in_punct_chars = text.chars().count() == 1 && self.punct_chars.contains(&text.chars().next().expect("one char"));
+            // ASCII fast path: a one-byte token is one char, so skip the
+            // `chars()` scan; longer tokens take the exact old path.
+            let is_in_punct_chars = if text.len() == 1 {
+                self.punct_chars.contains(&(text.as_bytes()[0] as char))
+            } else {
+                text.chars().count() == 1
+                    && self
+                        .punct_chars
+                        .contains(&text.chars().next().expect("one char"))
+            };
             let is_punct = doc.token(i).lexeme.flags.is_punct();
             if seen_period && !is_punct && !is_in_punct_chars {
                 guesses[start] = true;

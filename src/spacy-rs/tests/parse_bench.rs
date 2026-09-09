@@ -162,6 +162,13 @@ fn parse_bench_accuracy_floors() {
     let floors: Floors = serde_json::from_str(&raw).expect("floors parse");
 
     let pipe = spacy_rs::NlpPipeline::en_default().expect("en pipeline");
+    let bench_start = std::time::Instant::now();
+    // Short/long split at the corpus median length (5 tokens): per-item
+    // timings accumulate into both buckets so scaling shows in the printout.
+    let mut short_tokens = 0usize;
+    let mut short_elapsed = std::time::Duration::ZERO;
+    let mut long_tokens = 0usize;
+    let mut long_elapsed = std::time::Duration::ZERO;
     let mut overall = Accum::default();
     let mut per_category: BTreeMap<String, Accum> = BTreeMap::new();
     let mut scored = 0usize;
@@ -176,6 +183,7 @@ fn parse_bench_accuracy_floors() {
             unscored.push((item.category.clone(), item.id.clone()));
             continue;
         };
+        let item_start = std::time::Instant::now();
         let (doc, result) = pipe
             .process_sync_with_confidence(
                 &item.text,
@@ -184,6 +192,7 @@ fn parse_bench_accuracy_floors() {
                 spacy_rs::RefinePolicy::default(),
             )
             .expect("deterministic parse");
+        let item_elapsed = item_start.elapsed();
         let _ = doc;
         let set = result.records;
         if set.0.len() != gold.len()
@@ -193,6 +202,13 @@ fn parse_bench_accuracy_floors() {
             continue;
         }
         scored += 1;
+        if gold.len() <= 5 {
+            short_tokens += gold.len();
+            short_elapsed += item_elapsed;
+        } else {
+            long_tokens += gold.len();
+            long_elapsed += item_elapsed;
+        }
         let accum = per_category.entry(item.category.clone()).or_default();
         for (pred, g) in set.0.iter().zip(gold.iter()) {
             overall.add(&pred.pos, &pred.dep, pred.head, &pred.lemma, g);
@@ -218,6 +234,29 @@ fn parse_bench_accuracy_floors() {
             "  {:<14} upos={:.3} uas={:.3} las={:.3} lemma={:.3} ({} tokens) [{}/{}/{}/{}]",
             category, s.upos, s.uas, s.las, s.lemma, accum.tokens,
             accum.upos, accum.uas, accum.las, accum.lemma
+        );
+    }
+    {
+        let elapsed = bench_start.elapsed();
+        let secs = elapsed.as_secs_f64().max(f64::EPSILON);
+        let tok_s = overall.tokens as f64 / secs;
+        eprintln!(
+            "timing: {} tokens in {:.3}s = {:.1} tok/s",
+            overall.tokens, secs, tok_s
+        );
+        let short_secs = short_elapsed.as_secs_f64().max(f64::EPSILON);
+        let long_secs = long_elapsed.as_secs_f64().max(f64::EPSILON);
+        eprintln!(
+            "timing: short (<=5 toks): {} tokens in {:.3}s = {:.1} tok/s",
+            short_tokens,
+            short_secs,
+            short_tokens as f64 / short_secs
+        );
+        eprintln!(
+            "timing: long (>5 toks): {} tokens in {:.3}s = {:.1} tok/s",
+            long_tokens,
+            long_secs,
+            long_tokens as f64 / long_secs
         );
     }
     if !unscored.is_empty() {

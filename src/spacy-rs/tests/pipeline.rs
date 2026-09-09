@@ -1,4 +1,5 @@
 use super::*;
+use std::path::PathBuf;
 use fluent_concept::ConceptStore;
 use fluent_concept::InMemoryConceptStore;
 use crate::interlingua::InterlinguaResolver;
@@ -2996,4 +2997,58 @@ fn r2_aggregated_no_false_positive_when_all_sentences_resolved() {
         refine_reason_aggregated(&base, &signals, policy),
         RefineReason::NoTrigger
     );
+}
+
+#[test]
+fn eager_annotator_is_shared_across_calls() {
+    // The pipeline holds one eager annotator for its vocab; every ladder
+    // run observes the same allocation (no per-request rebuild).
+    let pipe = en_pipeline();
+    assert!(
+        Arc::ptr_eq(pipe.eager(), pipe.eager()),
+        "eager() must return the same shared allocation"
+    );
+    let before: *const () = Arc::as_ptr(pipe.eager()) as *const ();
+    let (_doc_a, _res_a) = pipe
+        .process_sync_with_confidence("The cat sat.", None, None, RefinePolicy::default())
+        .expect("first parse");
+    let (_doc_b, _res_b) = pipe
+        .process_sync_with_confidence("Dogs bark loudly.", None, None, RefinePolicy::default())
+        .expect("second parse");
+    assert!(
+        Arc::ptr_eq(pipe.eager(), pipe.eager()),
+        "eager allocation must survive annotation calls"
+    );
+    let after: *const () = Arc::as_ptr(pipe.eager()) as *const ();
+    assert_eq!(before, after, "no rebuild across process_sync calls");
+}
+
+#[test]
+fn eager_output_matches_pinned_golden() {
+    // Per-item records snapshot over the parse-bench corpus. The fixture is
+    // byte-identical before/after the sharing change: annotation work never
+    // changes a parse. Regenerate with UPDATE_GOLDEN=1, then review the diff.
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dataset_raw =
+        std::fs::read_to_string(manifest.join("tests/data/parse_bench.json")).expect("dataset readable");
+    let dataset: serde_json::Value = serde_json::from_str(&dataset_raw).expect("dataset parses");
+    let items = dataset["items"].as_array().expect("items array").clone();
+    let pipe = en_pipeline();
+    let mut snapshot = serde_json::Map::new();
+    for item in &items {
+        let id = item["id"].as_str().expect("item id").to_string();
+        let text = item["text"].as_str().expect("item text");
+        let (_doc, result) = pipe
+            .process_sync_with_confidence(text, None, None, RefinePolicy::default())
+            .expect("deterministic parse");
+        snapshot.insert(id, serde_json::to_value(result.records()).expect("records serialize"));
+    }
+    let rendered = serde_json::to_string_pretty(&serde_json::Value::Object(snapshot)).expect("snapshot renders");
+    let golden_path = manifest.join("tests/data/pipeline_eager_golden.json");
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(&golden_path, format!("{rendered}\n")).expect("golden writable");
+        return;
+    }
+    let golden = std::fs::read_to_string(&golden_path).expect("golden fixture readable");
+    assert_eq!(rendered + "\n", golden, "annotation records drifted from golden");
 }

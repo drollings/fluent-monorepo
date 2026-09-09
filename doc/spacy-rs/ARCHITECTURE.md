@@ -455,3 +455,15 @@ lexeme-flag + closed function-word/verb maps; PROPN fires on `is_upper()` only
 The router suites (`cargo test -p fluent-router`) cover the integration:
 `NlpStage` accessors, `match_interlingua` filters, ledger interlingua tables,
 and the review worker.
+
+Throughput (printed by the `parse_bench` scoreboard as `timing:`, never a
+floor — timings are machine-specific): ~31.0–31.2k tok/s before the
+pipeline-owned eager annotator, ~32.5–36.0k tok/s after (release mode,
+1482 scored tokens, 277 items; short docs ≤5 tokens and long docs >5 tokens
+track within ~2%, so per-request scaling is linear). The gain comes from constructing the
+eager annotator once per pipeline instead of per request; the annotation
+outputs are pinned byte-identical by the `pipeline_eager_golden` fixture.
+Suspected dominant remaining per-request costs (not yet profiled — see the
+deferred `perf`/`samply` follow-up): the per-`validate` `DependencyGraph`
+build in checks 5+6, the per-call ladder rung `Vec`, and the tokenizer's
+`Vec<char>` + per-span `String` scan.

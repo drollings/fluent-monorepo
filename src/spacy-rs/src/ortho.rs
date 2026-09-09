@@ -21,6 +21,8 @@
 //! Empty scalars and NUL-containing entries are rejected — an empty suffix
 //! would match every word, so that data bug must fail at load, not parse.
 
+use std::sync::LazyLock;
+
 use crate::error::SpacyError;
 
 /// Magic bytes `"SOR1"` — tagger orthography artifact.
@@ -128,9 +130,10 @@ impl<'a> TaggerOrtho<'a> {
 
     /// The embedded English orthography. Fails loudly at startup if the
     /// build-time artifact drifts (same contract as the lemma blob).
+    /// The blob parses once on first use; each call clones a cheap handle
+    /// over the shared tables.
     pub fn english() -> TaggerOrtho<'static> {
-        TaggerOrtho::from_bytes(crate::lang::en::ORTHO_BLOB)
-            .expect("embedded English orthography blob is valid (build.rs)")
+        ORTHO_EN.clone()
     }
 
     /// Allocation-free case-insensitive ASCII suffix check — the single
@@ -219,6 +222,14 @@ impl<'a> TaggerOrtho<'a> {
         self.comma
     }
 }
+
+/// The English orthography tables, parsed once from the embedded blob.
+/// Slices borrow the blob bytes, so the tables are read-only shared data;
+/// `english()` hands out cheap clones of this handle.
+static ORTHO_EN: LazyLock<TaggerOrtho<'static>> = LazyLock::new(|| {
+    TaggerOrtho::from_bytes(crate::lang::en::ORTHO_BLOB)
+        .expect("embedded English orthography blob is valid (build.rs)")
+});
 
 #[path = "../tests/ortho.rs"]
 #[cfg(test)]
