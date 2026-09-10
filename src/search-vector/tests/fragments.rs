@@ -180,6 +180,73 @@ fn lemmas_round_trip_per_fragment() {
 }
 
 #[test]
+fn lemma_lookup_orders_full_matches_before_partial() {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    // Partial matches inserted FIRST, so pure rowid order would bury the
+    // exact match (the S1 `scale_needle_042` failure: insertion-ordered
+    // lemma membership let a non-discriminative route outvote FTS rank 1
+    // in RRF fusion).
+    db.upsert_fragments(
+        &file_a(),
+        &[
+            frag("partial-b", None, "B", "b"),
+            frag("partial-c", None, "C", "c"),
+            frag("exact-a", None, "A", "a"),
+        ],
+        &[],
+    )
+    .expect("upsert");
+    db.insert_fragment_lemmas(&[
+        lemma("partial-b", "scale", 1.0),
+        lemma("partial-b", "needle", 1.0),
+        lemma("partial-c", "scale", 1.0),
+        lemma("partial-c", "needle", 1.0),
+        lemma("exact-a", "scale", 1.0),
+        lemma("exact-a", "needle", 1.0),
+        lemma("exact-a", "042", 1.0),
+    ])
+    .expect("lemmas");
+    let ids = db
+        .fragments_for_lemmas(
+            &["scale".to_string(), "needle".to_string(), "042".to_string()],
+            10,
+        )
+        .expect("lookup");
+    assert_eq!(ids.len(), 3);
+    assert_eq!(
+        ids[0], "exact-a",
+        "fragment matching all query lemmas must outrank partial matches"
+    );
+}
+
+#[test]
+fn lemma_lookup_keeps_insertion_order_on_count_ties() {
+    // Must-NOT-fire control: uniform match counts preserve today's rowid
+    // order exactly — the promotion must only fire on count differences.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(
+        &file_a(),
+        &[
+            frag("partial-b", None, "B", "b"),
+            frag("partial-c", None, "C", "c"),
+            frag("exact-a", None, "A", "a"),
+        ],
+        &[],
+    )
+    .expect("upsert");
+    db.insert_fragment_lemmas(&[
+        lemma("partial-b", "scale", 1.0),
+        lemma("partial-c", "scale", 1.0),
+        lemma("exact-a", "scale", 1.0),
+    ])
+    .expect("lemmas");
+    let ids = db
+        .fragments_for_lemmas(&["scale".to_string()], 10)
+        .expect("lookup");
+    assert_eq!(ids, vec!["partial-b", "partial-c", "exact-a"]);
+}
+
+#[test]
 fn vector_search_orders_by_similarity_and_skips_dim_mismatch() {
     let db = GuidanceDb::open_in_memory().expect("db");
     let mut near = frag("near", None, "Near", "near code");

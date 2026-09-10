@@ -788,6 +788,12 @@ impl GuidanceDb {
     }
 
     /// Fragment ids carrying any of the given lemmas (stable rowid order).
+    /// Fragment ids carrying any listed lemma, most matches first.
+    /// `fragment_lemmas` rows are unique per `(fragment_id, lemma)`, so
+    /// `COUNT(*)` is the number of distinct query lemmas matched: a
+    /// fragment matching the whole query outranks partial matches (exact
+    /// discrimination survives rank-only RRF fusion), while uniform
+    /// counts fall back to insertion order exactly as before.
     pub fn fragments_for_lemmas(
         &self,
         lemmas: &[String],
@@ -798,7 +804,8 @@ impl GuidanceDb {
         }
         let placeholders: Vec<String> = (0..lemmas.len()).map(|i| format!("?{}", i + 1)).collect();
         let sql = format!(
-            "SELECT DISTINCT fragment_id FROM fragment_lemmas WHERE lemma IN ({}) ORDER BY rowid LIMIT ?{}",
+            "SELECT fragment_id FROM fragment_lemmas WHERE lemma IN ({}) \
+             GROUP BY fragment_id ORDER BY COUNT(*) DESC, MIN(rowid) ASC LIMIT ?{}",
             placeholders.join(","),
             lemmas.len() + 1
         );

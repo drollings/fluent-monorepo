@@ -264,10 +264,7 @@ pub fn run_search(
     };
     let mut symbol_types = Vec::new();
     for name in symbol_type_names {
-        match parse_symbol_type(name) {
-            Ok(symbol_type) => symbol_types.push(symbol_type),
-            Err(message) => return Err(message),
-        }
+        symbol_types.push(parse_symbol_type(name)?);
     }
     let limit = clamp_limit(limit);
 
