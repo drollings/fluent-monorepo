@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -14,13 +16,12 @@ use guidance_core::walk;
 use search_vector::GuidanceDb;
 use time::OffsetDateTime;
 
-use notify::{Config as NotifyConfig, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use std::sync::mpsc;
-
 mod benchmark;
 mod commit;
 mod editor;
+mod index_cmd;
 mod mcp;
+mod search;
 mod structure;
 
 #[derive(Parser)]
@@ -29,8 +30,12 @@ mod structure;
     about = "AST-guided vector search & edge AI orchestrator"
 )]
 struct Cli {
+    /// First word still searches: a bare `guidance <query>` runs `search`.
+    #[arg(index = 1)]
+    query: Option<String>,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     #[arg(global = true, long)]
     debug: bool,
@@ -142,6 +147,12 @@ enum Commands {
     Check {
         #[arg(short = 'w', long, default_value = ".")]
         workspace: String,
+
+        /// Script contract: fast readiness probe only (no test/lint/fmt
+        /// subprocesses), single-line READY / NOT READY output, exit code
+        /// carries the verdict.
+        #[arg(long)]
+        check_ready: bool,
     },
     Todo,
     Diary {
@@ -201,6 +212,88 @@ enum Commands {
     Mcp {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
+
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(long, default_value = ".guidance")]
+        json_dir: String,
+
+        #[arg(long, default_value = "full")]
+        toolset: String,
+    },
+    Search {
+        query: String,
+
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
+
+        #[arg(short = 'l', long, default_value_t = 10)]
+        limit: usize,
+
+        #[arg(long)]
+        fts: bool,
+
+        #[arg(long)]
+        vector: bool,
+
+        #[arg(long)]
+        rg: bool,
+
+        #[arg(long)]
+        fuse: bool,
+
+        #[arg(long)]
+        trace: bool,
+
+        #[arg(long)]
+        compact: bool,
+
+        #[arg(long)]
+        prefer_symbol: bool,
+
+        #[arg(long)]
+        glob: Vec<String>,
+
+        #[arg(long)]
+        symbol_type: Vec<String>,
+
+        #[arg(short = 'A', long, default_value_t = 0)]
+        after: usize,
+
+        #[arg(short = 'B', long, default_value_t = 0)]
+        before: usize,
+
+        #[arg(short = 'C', long, default_value_t = 0)]
+        context: usize,
+
+        #[arg(long)]
+        mtime_after: Option<i64>,
+
+        #[arg(long)]
+        mtime_before: Option<i64>,
+
+        #[arg(long)]
+        no_enrich: bool,
+    },
+    Index {
+        #[arg(default_value = ".")]
+        path: String,
+
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        #[arg(long, default_value = ".guidance")]
+        json_dir: String,
+
+        #[arg(short = 'o', long, default_value = ".guidance.db")]
+        db: String,
+
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -220,8 +313,8 @@ async fn main() {
     let cmd_histogram = std::sync::Arc::new(common_core::LatencyHistogram::new());
     let cmd_start = std::time::Instant::now();
 
-    match &cli.command {
-        Commands::Explain {
+    match cli.command.as_ref() {
+        Some(Commands::Explain {
             query,
             guidance,
             db,
@@ -229,7 +322,7 @@ async fn main() {
             limit,
             no_llm,
             filter,
-        } => {
+        }) => {
             let memory = guidance_core::memory::init_memory_bridge();
             cmd_explain(
                 query,
@@ -243,15 +336,15 @@ async fn main() {
             )
             .await;
         }
-        Commands::Test => cmd_test(),
-        Commands::Telemetry { db, .. } => cmd_db_stats(db, "Telemetry stats"),
-        Commands::CacheStats { db } => cmd_db_stats(db, "Cache statistics"),
-        Commands::Init {
+        Some(Commands::Test) => cmd_test(),
+        Some(Commands::Telemetry { db, .. }) => cmd_db_stats(db, "Telemetry stats"),
+        Some(Commands::CacheStats { db }) => cmd_db_stats(db, "Cache statistics"),
+        Some(Commands::Init {
             dir,
             guidance_dir: _,
             db: _,
-        } => cmd_init(dir),
-        Commands::Sync {
+        }) => cmd_init(dir),
+        Some(Commands::Sync {
             file,
             scan,
             workspace,
@@ -263,7 +356,7 @@ async fn main() {
             verbose,
             watch,
             watch_debounce_ms,
-        } => {
+        }) => {
             cmd_sync(
                 file.as_deref(),
                 scan.as_deref(),
@@ -279,17 +372,20 @@ async fn main() {
             )
             .await;
         }
-        Commands::Status { guidance_dir } => cmd_status(guidance_dir),
-        Commands::Clean { json_dir, db } => cmd_clean(json_dir, db),
-        Commands::Commit {
+        Some(Commands::Status { guidance_dir }) => cmd_status(guidance_dir),
+        Some(Commands::Clean { json_dir, db }) => cmd_clean(json_dir, db),
+        Some(Commands::Commit {
             dry_run,
             debug,
             force,
-        } => cmd_commit(*dry_run, *debug, *force).await,
-        Commands::Check { workspace } => cmd_check(workspace),
-        Commands::Todo => cmd_todo(),
-        Commands::Diary { text_or_path } => cmd_diary(text_or_path),
-        Commands::Benchmark {
+        }) => cmd_commit(*dry_run, *debug, *force).await,
+        Some(Commands::Check {
+            workspace,
+            check_ready,
+        }) => cmd_check(workspace, *check_ready),
+        Some(Commands::Todo) => cmd_todo(),
+        Some(Commands::Diary { text_or_path }) => cmd_diary(text_or_path),
+        Some(Commands::Benchmark {
             query,
             guidance,
             db,
@@ -301,7 +397,7 @@ async fn main() {
             model,
             timeout,
             concurrency,
-        } => {
+        }) => {
             let config = benchmark::BenchmarkConfig::from_cli(
                 query.clone(),
                 guidance,
@@ -322,16 +418,109 @@ async fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Structure { json_dir } => cmd_structure(json_dir),
-        Commands::Health {
+        Some(Commands::Structure { json_dir }) => cmd_structure(json_dir),
+        Some(Commands::Health {
             workspace,
             min_age,
             format,
             db,
-        } => {
+        }) => {
             cmd_health(workspace, *min_age, format, db);
         }
-        Commands::Mcp { db } => cmd_mcp(db),
+        Some(Commands::Mcp {
+            db,
+            workspace,
+            json_dir,
+            toolset,
+        }) => {
+            cmd_mcp(db, workspace, json_dir, toolset);
+        }
+        Some(Commands::Search {
+            query,
+            workspace,
+            db,
+            limit,
+            fts,
+            vector,
+            rg,
+            fuse,
+            trace,
+            compact,
+            prefer_symbol,
+            glob,
+            symbol_type,
+            after,
+            before,
+            context,
+            mtime_after,
+            mtime_before,
+            no_enrich,
+        }) => {
+            let rg_options = search::RgDisplayOptions {
+                before: (*before).max(*context),
+                after: (*after).max(*context),
+                mtime_after_ms: *mtime_after,
+                mtime_before_ms: *mtime_before,
+                enrich: !no_enrich,
+            };
+            search::cmd_search(
+                query,
+                workspace,
+                db,
+                *limit,
+                *fts,
+                *vector,
+                *rg,
+                *fuse,
+                *trace,
+                *compact,
+                *prefer_symbol,
+                glob,
+                symbol_type,
+                &rg_options,
+            );
+        }
+        Some(Commands::Index {
+            path,
+            workspace,
+            json_dir,
+            db: _,
+            force,
+        }) => {
+            // The fragment index (`GuidanceDb`) is populated by `sync --db`;
+            // `index` owns member-doc generation for the path scope.
+            index_cmd::cmd_index(workspace, json_dir, Some(path), *force);
+        }
+        None => {
+            // First word still searches: `guidance <query>` is `search`.
+            if let Some(query) = &cli.query {
+                search::cmd_search(
+                    query,
+                    ".",
+                    ".guidance.db",
+                    10,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    &[],
+                    &[],
+                    &search::RgDisplayOptions {
+                        before: 0,
+                        after: 0,
+                        mtime_after_ms: None,
+                        mtime_before_ms: None,
+                        enrich: false,
+                    },
+                );
+            } else {
+                eprintln!("No command given. Try `guidance --help` or `guidance <query>`.");
+                std::process::exit(2);
+            }
+        }
     }
 
     cmd_histogram.observe_duration(cmd_start);
@@ -603,7 +792,7 @@ async fn cmd_sync(
                 }
                 return;
             }
-            match runtime::AST_POOL
+            match runtime::ast_pool()
                 .submit(runtime::AstGenPayload {
                     source_path: source_path.to_path_buf(),
                     source_dir,
@@ -668,7 +857,7 @@ async fn cmd_sync(
         if !no_db && !dry_run {
             let json_src = guidance_dir.join("src");
             if json_src.is_dir() {
-                match runtime::DB_POOL
+                match runtime::db_pool()
                     .submit(runtime::DbSyncPayload {
                         json_dir: json_src,
                         db_path: db,
@@ -684,6 +873,19 @@ async fn cmd_sync(
                         eprintln!("Warning: db sync queue: {e}")
                     }
                 }
+            }
+            // Fragment ingestion (FTS + lemmas; embeddings need a backend):
+            // populates the `zg_*` index the fused shell queries.
+            match index_cmd::ingest_workspace_fragments(
+                Path::new(db_path),
+                &workspace_path,
+                &src_dirs.iter().filter(|dir| dir.is_dir()).cloned().collect::<Vec<_>>(),
+            ) {
+                Ok(stats) => println!(
+                    "Ingested {} files ({} fragments, {} images skipped, {} failed) to {db_path}",
+                    stats.files, stats.fragments, stats.skipped_images, stats.failed
+                ),
+                Err(e) => eprintln!("Warning: fragment ingestion failed: {e}"),
             }
         }
         println!("Sync complete.");
@@ -737,6 +939,7 @@ async fn walk_and_gen_async(
         return 0;
     }
 
+    let pool = runtime::ast_pool();
     let mut handles = Vec::with_capacity(files.len());
     let mut generated = 0usize;
 
@@ -753,7 +956,7 @@ async fn walk_and_gen_async(
             continue;
         }
 
-        let pool = Arc::clone(&*runtime::AST_POOL);
+        let pool = Arc::clone(&pool);
         let source_path = path.clone();
         let src_dir = source_dir.clone();
         let gd = guidance_dir.clone();
@@ -809,7 +1012,119 @@ async fn walk_and_gen_async(
     generated
 }
 
-#[allow(clippy::needless_pass_by_value)]
+/// Coordinator revision authority for `--watch` (binside `RootRuntime`).
+struct WatchRuntime {
+    root: String,
+    dirty: std::sync::atomic::AtomicU64,
+    indexed: std::sync::atomic::AtomicU64,
+    verbose: bool,
+}
+
+impl WatchRuntime {
+    fn new(root: String, verbose: bool) -> Self {
+        Self {
+            root,
+            dirty: std::sync::atomic::AtomicU64::new(0),
+            indexed: std::sync::atomic::AtomicU64::new(0),
+            verbose,
+        }
+    }
+}
+
+impl guidance_core::coordinator::RootRuntime for WatchRuntime {
+    fn canonical_root(&self) -> String {
+        self.root.clone()
+    }
+    fn mark_dirty(&self) -> u64 {
+        self.dirty.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+    }
+    fn mark_indexed(&self, revision: u64) {
+        self.indexed
+            .store(revision, std::sync::atomic::Ordering::SeqCst);
+        if self.verbose {
+            println!("  indexed revision {revision}");
+        }
+    }
+    fn mark_reconciled(&self, revision: u64, epoch: u64) {
+        self.indexed
+            .store(revision, std::sync::atomic::Ordering::SeqCst);
+        println!("Reconciled revision {revision} at epoch {epoch}");
+    }
+    fn require_full_reconciliation(&self) {
+        if self.verbose {
+            println!("  full reconciliation required");
+        }
+    }
+}
+
+/// Harvest code files under `src_dirs` for graph-assisted invalidation
+/// (single linear read+parse pass, no embeddings).
+fn harvest_watch_inputs(src_dirs: &[PathBuf]) -> Vec<guidance_core::graph_index::HarvestInput> {
+    use guidance_core::extractor::adapter::format_for_extension;
+    use guidance_core::graph_index::HarvestInput;
+    let mut inputs = Vec::new();
+    for dir in src_dirs {
+        let mut files = Vec::new();
+        walk::walk_files(dir, walk::SOURCE_EXTENSIONS, |p| {
+            files.push(p.to_path_buf());
+        });
+        for path in files {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let Some(format) = format_for_extension(ext) else {
+                continue;
+            };
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                inputs.push(HarvestInput {
+                    path: path.to_string_lossy().into_owned(),
+                    format: format.to_string(),
+                    text,
+                });
+            }
+        }
+    }
+    inputs
+}
+
+/// Regenerate one source file through the AST pool (per-file isolation:
+/// one failure never aborts the batch).
+async fn regen_single_file(
+    pool: &fluent_concurrency::pool::ResultPool<
+        runtime::AstGenPayload,
+        fluent_types::GuidanceDoc,
+        guidance_core::sync_engine::SyncEngineError,
+    >,
+    source_path: PathBuf,
+    src_dirs: &[PathBuf],
+    workspace_path: &Path,
+    guidance_dir: &Path,
+    verbose: bool,
+) {
+    let source_dir =
+        find_source_dir(&source_path, src_dirs).unwrap_or_else(|| workspace_path.to_path_buf());
+    match pool
+        .submit(runtime::AstGenPayload {
+            source_path: source_path.clone(),
+            source_dir,
+            guidance_dir: guidance_dir.to_path_buf(),
+            config: guidance_core::sync_engine::GenConfig::default(),
+        })
+        .await
+    {
+        Ok(doc) => {
+            if verbose {
+                println!(
+                    "  regenerated: {} ({} members)",
+                    source_path.display(),
+                    doc.members.len()
+                );
+            }
+        }
+        Err(ResultPoolError::Inner(e)) => eprintln!("  regeneration failed: {e}"),
+        Err(ResultPoolError::Canceled) => eprintln!("  regeneration canceled"),
+        Err(ResultPoolError::Pool(e)) => eprintln!("  regeneration queue error: {e}"),
+    }
+}
+
 async fn start_watcher(
     guidance_dir: PathBuf,
     src_dirs: &[PathBuf],
@@ -818,72 +1133,200 @@ async fn start_watcher(
     verbose: bool,
     debounce_ms: u64,
 ) {
+    use fluent_concurrency::stream::StreamAbort;
+    use guidance_core::coordinator::{
+        EnqueueReason, IndexCoordinator, JobProgress, ProgressSink, ReconciliationProof,
+    };
+    use guidance_core::scheduler::{BoxFuture, JobError, JobScheduler};
+    use guidance_core::watcher::{
+        NotifyBackend, WatchManager, WatchOptions, WatchPlatform, WatchReason,
+    };
+
     if src_dirs.is_empty() {
         return;
     }
 
-    let (tx, rx) = mpsc::channel();
-    let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default())
-        .expect("failed to create file watcher");
-    for dir in src_dirs {
-        if dir.is_dir() {
-            watcher
-                .watch(dir, RecursiveMode::Recursive)
-                .unwrap_or_else(|e| eprintln!("Warning: could not watch {:?}: {e}", dir));
-        }
-    }
+    // R.6: the old bespoke `--watch` loop is gone. Watching now runs on
+    // the P3 `WatchManager` (debounce + storm compaction + error resume)
+    // feeding the `IndexCoordinator` (revision ordering + followup
+    // coalescing); `--watch-debounce-ms` still drives the debounce delay.
+    let scheduler = JobScheduler::new(1, 3, 500);
+    let runtime = Arc::new(WatchRuntime::new(
+        workspace_path.to_string_lossy().into_owned(),
+        verbose,
+    ));
+    let ast_pool = runtime::ast_pool();
+    let epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let src_dirs_owned: Vec<PathBuf> = src_dirs.to_vec();
 
-    println!("Watching for changes (debounce: {debounce_ms}ms)...");
-
-    loop {
-        match rx.recv() {
-            Ok(Ok(Event { paths, .. })) => {
-                for path in &paths {
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if !walk::SOURCE_EXTENSIONS.contains(&ext) {
-                        continue;
-                    }
-                    let source_dir = find_source_dir(path, src_dirs);
-
-                    if verbose {
-                        println!("  change detected: {}", path.display());
-                    }
-
-                    match runtime::AST_POOL
-                        .submit(runtime::AstGenPayload {
-                            source_path: path.clone(),
-                            source_dir: source_dir.unwrap_or_else(|| workspace_path.clone()),
-                            guidance_dir: guidance_dir.clone(),
-                            config: guidance_core::sync_engine::GenConfig::default(),
-                        })
-                        .await
-                    {
-                        Ok(doc) => {
-                            if verbose {
-                                println!(
-                                    "  regenerated: {} ({} members)",
-                                    path.display(),
-                                    doc.members.len()
-                                );
+    let run = {
+        let guidance_dir = guidance_dir.clone();
+        let workspace_path = workspace_path.clone();
+        let src_dirs_owned = src_dirs_owned.clone();
+        let ast_pool = Arc::clone(&ast_pool);
+        let epoch = Arc::clone(&epoch);
+        Arc::new(
+            move |snapshot: guidance_core::change_set::ChangeSetSnapshot,
+                  report: ProgressSink,
+                  _abort: StreamAbort|
+                  -> BoxFuture<Result<Option<ReconciliationProof>, JobError>> {
+                let guidance_dir = guidance_dir.clone();
+                let workspace_path = workspace_path.clone();
+                let src_dirs_owned = src_dirs_owned.clone();
+                let ast_pool = Arc::clone(&ast_pool);
+                let epoch = Arc::clone(&epoch);
+                Box::pin(async move {
+                    if snapshot.force_full_reconcile {
+                        let mut generated = 0usize;
+                        for src_dir in &src_dirs_owned {
+                            if src_dir.is_dir() {
+                                generated += walk_and_gen_async(
+                                    guidance_dir.clone(),
+                                    src_dir.clone(),
+                                    false,
+                                    verbose,
+                                    &[],
+                                )
+                                .await;
                             }
                         }
-                        Err(ResultPoolError::Inner(e)) => {
-                            eprintln!("  regeneration failed: {e}");
-                        }
-                        Err(ResultPoolError::Canceled) => {
-                            eprintln!("  regeneration canceled");
-                        }
-                        Err(ResultPoolError::Pool(e)) => {
-                            eprintln!("  regeneration queue error: {e}");
-                        }
+                        report(JobProgress {
+                            done: generated,
+                            total: generated,
+                            message: "full reconcile".to_string(),
+                        });
+                        let next = epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        return Ok(Some(ReconciliationProof {
+                            reconciled: true,
+                            reconciliation_epoch: next,
+                        }));
                     }
-                }
+                    // Incremental: expand watcher paths through the
+                    // dependents closure (unit of staleness = affected
+                    // subgraph, not the workspace), then regen.
+                    let graph = guidance_core::graph_index::GraphIndex::build(
+                        &harvest_watch_inputs(&src_dirs_owned),
+                        &src_dirs_owned
+                            .iter()
+                            .map(|dir| dir.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>(),
+                    )
+                    .map_err(|e| JobError::terminal(e.to_string()))?;
+                    let mut seeds: Vec<String> = snapshot.touched_files.clone();
+                    for dir in &snapshot.rescan_directories {
+                        let mut files = Vec::new();
+                        walk::walk_files(&PathBuf::from(dir), walk::SOURCE_EXTENSIONS, |p| {
+                            files.push(p.to_path_buf())
+                        });
+                        seeds.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
+                    }
+                    let affected = graph.dependents_closure(&seeds);
+                    let mut done = 0usize;
+                    for path in &affected {
+                        let path = PathBuf::from(path);
+                        if !path.is_file() {
+                            continue;
+                        }
+                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        if !walk::SOURCE_EXTENSIONS.contains(&ext) {
+                            continue;
+                        }
+                        regen_single_file(
+                            &ast_pool,
+                            path,
+                            &src_dirs_owned,
+                            &workspace_path,
+                            &guidance_dir,
+                            verbose,
+                        )
+                        .await;
+                        done += 1;
+                        report(JobProgress {
+                            done,
+                            total: affected.len(),
+                            message: "incremental reconcile".to_string(),
+                        });
+                    }
+                    // Deleted prefixes: drop their JSON sidecars (best effort).
+                    for prefix in &snapshot.deleted_prefixes {
+                        remove_sidecars(&guidance_dir, &src_dirs_owned, &PathBuf::from(prefix));
+                    }
+                    Ok(None)
+                })
+            },
+        )
+    };
+
+    let coordinator = Arc::new(IndexCoordinator::new(runtime, scheduler, run));
+    if verbose {
+        let progress = verbose;
+        coordinator.on_progress(Arc::new(move |progress_update| {
+            if progress {
+                println!(
+                    "  progress: {}/{} {}",
+                    progress_update.done, progress_update.total, progress_update.message
+                );
             }
-            Ok(Err(e)) => {
-                eprintln!("Watch error: {e}");
-            }
-            Err(_) => break,
-        }
+        }));
+    }
+    let manager = WatchManager::new(WatchOptions {
+        root: workspace_path.clone(),
+        platform: WatchPlatform::Current,
+        debounce_ms,
+        max_wait_ms: guidance_core::zg_constants::WATCH_MAX_WAIT_MS,
+        reconcile_interval_ms: guidance_core::zg_constants::WATCH_RECONCILE_INTERVAL_MS,
+        resume_check_interval_ms: guidance_core::zg_constants::WATCH_RESUME_CHECK_INTERVAL_MS,
+        resume_threshold_ms: guidance_core::zg_constants::WATCH_RESUME_THRESHOLD_MS,
+        max_changed_paths: guidance_core::zg_constants::CHANGE_SET_PATH_BUDGET,
+        backend: Arc::new(NotifyBackend::new()),
+        root_paths: Vec::new(),
+        on_changes: {
+            let coordinator = Arc::clone(&coordinator);
+            Arc::new(move |snapshot, reason| {
+                coordinator.enqueue(
+                    &snapshot,
+                    match reason {
+                        WatchReason::Watch => EnqueueReason::Watch,
+                        WatchReason::Reconcile => EnqueueReason::Reconcile,
+                    },
+                );
+                Box::pin(async {}) as BoxFuture<()>
+            })
+        },
+        on_pending_change: None,
+        on_activity: None,
+    });
+    manager.start();
+    println!("Watching for changes (debounce: {debounce_ms}ms)...");
+
+    tokio::signal::ctrl_c().await.ok();
+    manager.close().await;
+    coordinator.close();
+}
+
+/// Remove JSON sidecars for a deleted source prefix (best effort).
+fn remove_sidecars(guidance_dir: &Path, src_dirs: &[PathBuf], prefix: &Path) {
+    let Some(source_dir) = find_source_dir(prefix, src_dirs) else {
+        return;
+    };
+    let Ok(relative) = prefix.strip_prefix(&source_dir) else {
+        return;
+    };
+    let sidecar_base = guidance_dir.join("src").join(relative);
+    if prefix.is_file() || !prefix.exists() && sidecar_base.with_extension("json").is_file() {
+        let sidecar = if relative.extension().is_some() {
+            PathBuf::from(format!("{}.json", sidecar_base.display()))
+        } else {
+            sidecar_base
+        };
+        let _ = std::fs::remove_file(&sidecar);
+        return;
+    }
+    // Directory prefix: drop sidecars beneath it.
+    let mut stale = Vec::new();
+    walk::walk_files(&sidecar_base, &["json"], |p| stale.push(p.to_path_buf()));
+    for sidecar in stale {
+        let _ = std::fs::remove_file(&sidecar);
     }
 }
 
@@ -1052,7 +1495,7 @@ fn cmd_commit_inner(dry_run: bool, debug: bool, force: bool) {
     }
 }
 
-fn cmd_check(workspace: &str) {
+fn cmd_check(workspace: &str, check_ready: bool) {
     let workspace_path = PathBuf::from(workspace);
     let cfg = load_project_config(&workspace_path);
     let guidance_dir = workspace_path.join(".guidance");
@@ -1064,61 +1507,65 @@ fn cmd_check(workspace: &str) {
     type StageFn = Box<dyn Fn() -> Result<(), String>>;
     let mut stages: Vec<(&str, StageFn)> = Vec::new();
 
-    for (ext, argv) in &cfg.test_commands {
-        if !present_exts.contains(ext.as_str()) {
-            continue;
+    // Full `check` runs project test/lint/fmt subprocesses first; the
+    // `--check-ready` script contract probes readiness only.
+    if !check_ready {
+        for (ext, argv) in &cfg.test_commands {
+            if !present_exts.contains(ext.as_str()) {
+                continue;
+            }
+            let argv: Vec<String> = argv.clone();
+            let ext = ext.clone();
+            stages.push((
+                "test",
+                Box::new(move || {
+                    let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+                    if run_command(&argv_refs) {
+                        Ok(())
+                    } else {
+                        Err(format!("{ext}: test command failed"))
+                    }
+                }),
+            ));
         }
-        let argv: Vec<String> = argv.clone();
-        let ext = ext.clone();
-        stages.push((
-            "test",
-            Box::new(move || {
-                let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
-                if run_command(&argv_refs) {
-                    Ok(())
-                } else {
-                    Err(format!("{ext}: test command failed"))
-                }
-            }),
-        ));
-    }
 
-    for (ext, argv) in &cfg.lint_commands {
-        if !present_exts.contains(ext.as_str()) {
-            continue;
+        for (ext, argv) in &cfg.lint_commands {
+            if !present_exts.contains(ext.as_str()) {
+                continue;
+            }
+            let argv: Vec<String> = argv.clone();
+            let ext = ext.clone();
+            stages.push((
+                "lint",
+                Box::new(move || {
+                    let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+                    if run_command(&argv_refs) {
+                        Ok(())
+                    } else {
+                        Err(format!("{ext}: lint command failed"))
+                    }
+                }),
+            ));
         }
-        let argv: Vec<String> = argv.clone();
-        let ext = ext.clone();
-        stages.push((
-            "lint",
-            Box::new(move || {
-                let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
-                if run_command(&argv_refs) {
-                    Ok(())
-                } else {
-                    Err(format!("{ext}: lint command failed"))
-                }
-            }),
-        ));
-    }
 
-    for (ext, argv) in &cfg.fmt_commands {
-        if !present_exts.contains(ext.as_str()) {
-            continue;
+        for (ext, argv) in &cfg.fmt_commands {
+            if !present_exts.contains(ext.as_str()) {
+                continue;
+            }
+            let argv: Vec<String> = argv.clone();
+            let ext = ext.clone();
+            stages.push((
+                "fmt",
+                Box::new(move || {
+                    let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+                    if run_command(&argv_refs) {
+                        Ok(())
+                    } else {
+                        Err(format!("{ext}: fmt command failed"))
+                    }
+                }),
+            ));
         }
-        let argv: Vec<String> = argv.clone();
-        let ext = ext.clone();
-        stages.push((
-            "fmt",
-            Box::new(move || {
-                let argv_refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
-                if run_command(&argv_refs) {
-                    Ok(())
-                } else {
-                    Err(format!("{ext}: fmt command failed"))
-                }
-            }),
-        ));
     }
 
     let cfg_gen = cfg.clone();
@@ -1170,6 +1617,13 @@ fn cmd_check(workspace: &str) {
     ));
 
     for (name, stage_fn) in &stages {
+        if check_ready {
+            if let Err(reason) = stage_fn() {
+                println!("NOT READY: {name}: {reason}");
+                std::process::exit(1);
+            }
+            continue;
+        }
         print!("{name}... ");
         match stage_fn() {
             Ok(()) => println!("OK"),
@@ -1181,7 +1635,9 @@ fn cmd_check(workspace: &str) {
         }
     }
 
-    if all_passed {
+    if check_ready {
+        println!("READY");
+    } else if all_passed {
         println!("\nAll checks passed");
     } else {
         std::process::exit(1);
@@ -1340,9 +1796,21 @@ fn collect_health_stats(
     }
 }
 
-fn cmd_mcp(db_path: &str) {
+fn cmd_mcp(db_path: &str, workspace: &str, json_dir: &str, toolset: &str) {
+    let toolset = match mcp::Toolset::parse(toolset) {
+        Ok(toolset) => toolset,
+        Err(message) => {
+            eprintln!("error: {message}");
+            std::process::exit(2);
+        }
+    };
     let db = PathBuf::from(db_path);
-    if let Err(e) = mcp::serve_stdio_from_path(&db) {
+    if let Err(e) = mcp::serve_stdio_with_options(
+        &db,
+        Some(PathBuf::from(workspace)),
+        Some(PathBuf::from(json_dir)),
+        toolset,
+    ) {
         eprintln!("MCP server error: {e}");
         std::process::exit(1);
     }

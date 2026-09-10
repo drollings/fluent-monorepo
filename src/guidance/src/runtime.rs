@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use fluent_concurrency::pool::{global_pool_config, ResultPool};
 use fluent_concurrency::runtime::tokio::TokioRuntime;
@@ -29,66 +29,46 @@ use fluent_types::GuidanceDoc;
 
 fluent_concurrency::thread_local_resource!(static PARSER: AstParser);
 
-/// Shared AST generation pool — sized to available cores, backpressure-managed queue.
-pub static AST_POOL: LazyLock<Arc<ResultPool<AstGenPayload, GuidanceDoc, SyncEngineError>>> =
-    LazyLock::new(|| {
-        let (workers, queue_cap) = global_pool_config(4, 4);
-        Arc::new(ResultPool::new(
-            Arc::new(TokioRuntime),
-            workers,
-            queue_cap,
-            |job: AstGenPayload| async move {
-                tokio::task::spawn_blocking(move || {
-                    with_tlr(&PARSER, |parser| {
-                        let mut engine = SyncEngine::with_parser(
-                            job.guidance_dir,
-                            job.source_dir,
-                            std::mem::take(parser),
-                        );
-                        let r = engine.gen_with_config(&job.source_path, &job.config);
-                        *parser = engine.ast_parser;
-                        r
-                    })
+/// Build an AST generation pool — sized to available cores,
+/// backpressure-managed queue. Owned per call (R.5: the `AST_POOL` static
+/// is gone; callers hold the `Arc` for one command invocation and drop
+/// it, so no pool system outlives its run).
+pub fn ast_pool() -> Arc<ResultPool<AstGenPayload, GuidanceDoc, SyncEngineError>> {
+    let (workers, queue_cap) = global_pool_config(4, 4);
+    Arc::new(ResultPool::new(
+        Arc::new(TokioRuntime),
+        workers,
+        queue_cap,
+        |job: AstGenPayload| async move {
+            tokio::task::spawn_blocking(move || {
+                with_tlr(&PARSER, |parser| {
+                    let mut engine = SyncEngine::with_parser(
+                        job.guidance_dir,
+                        job.source_dir,
+                        std::mem::take(parser),
+                    );
+                    let r = engine.gen_with_config(&job.source_path, &job.config);
+                    *parser = engine.ast_parser;
+                    r
                 })
-                .await
-                .unwrap_or_else(|e| Err(SyncEngineError::Parse(e.to_string())))
-            },
-        ))
-    });
-
-/// Shared `GuidanceDb` cache for the DB sync pool.
-///
-/// The first `DbSyncPayload` to reach `DB_POOL` opens the database once; later
-/// jobs at the same path reuse it, so the connection/schema lifecycle lives in
-/// `fluent-db`/`search-vector` rather than being hand-opened per job.
-static SHARED_DB: Mutex<Option<(PathBuf, Arc<GuidanceDb>)>> = Mutex::new(None);
-
-fn shared_guidance_db(path: &Path) -> Result<Arc<GuidanceDb>, String> {
-    let mut cache = SHARED_DB
-        .lock()
-        .map_err(|_| "shared guidance db lock poisoned".to_string())?;
-    if let Some((cached_path, db)) = cache.as_ref() {
-        if cached_path == path {
-            return Ok(Arc::clone(db));
-        }
-    }
-    let db = Arc::new(GuidanceDb::open(path).map_err(|e| e.to_string())?);
-    *cache = Some((path.to_path_buf(), Arc::clone(&db)));
-    Ok(db)
+            })
+            .await
+            .unwrap_or_else(|e| Err(SyncEngineError::Parse(e.to_string())))
+        },
+    ))
 }
 
 /// Build the `DbWorkUnit` that performs a guidance DB sync.
 ///
 /// The op runs on a dedicated blocking thread via `DbWorkUnit::execute`'s
 /// offload, so the `ResultPool` worker never blocks on the rusqlite work.
-/// The full `sync_from_dir` (SQL writes + HNSW rebuild) lives on
-/// `GuidanceDb`, so the generic op form is used over the shared db rather
-/// than a bare-connection `store_unit` op.
+/// The database opens per job (R.5: the `SHARED_DB` static is gone); writes
+/// stay serialized by the single-worker pool built in [`db_pool`].
 fn db_sync_work_unit(job: DbSyncPayload) -> DbWorkUnit<StoreUnitOp> {
     DbWorkUnit::builder()
         .name("db.sync")
         .op(Box::new(move |_ctx: &WorkContext| {
-            let db = shared_guidance_db(&job.db_path).map_err(WorkError::Execution)?;
+            let db = GuidanceDb::open(&job.db_path).map_err(|e| WorkError::Execution(e.to_string()))?;
             let count = db
                 .sync_from_dir(&job.json_dir)
                 .map_err(|e| WorkError::Execution(e.to_string()))?;
@@ -98,8 +78,9 @@ fn db_sync_work_unit(job: DbSyncPayload) -> DbWorkUnit<StoreUnitOp> {
         .build()
 }
 
-/// Shared database sync pool — serializes writes to avoid SQLite contention.
-pub static DB_POOL: LazyLock<Arc<ResultPool<DbSyncPayload, usize, String>>> = LazyLock::new(|| {
+/// Build a database sync pool — serializes writes to avoid SQLite
+/// contention. Owned per call (R.5: the `DB_POOL` static is gone).
+pub fn db_pool() -> Arc<ResultPool<DbSyncPayload, usize, String>> {
     Arc::new(ResultPool::new(
         Arc::new(TokioRuntime),
         1,
@@ -112,7 +93,7 @@ pub static DB_POOL: LazyLock<Arc<ResultPool<DbSyncPayload, usize, String>>> = La
             output.data_take::<usize>().map_err(|e| e.to_string())
         },
     ))
-});
+}
 
 /// Create a `SupervisedBatch` with the standard guidance configuration (structured
 /// concurrency, failure containment, and dependency tracking for batches of
@@ -144,9 +125,11 @@ mod tests {
     use fluent_concurrency::batch::SupervisedBatch;
 
     #[tokio::test]
-    async fn test_ast_pool_static_init() {
-        let _ = &*AST_POOL;
-        let _ = &*DB_POOL;
+    async fn test_ast_pool_owned_lifecycle() {
+        let pool = ast_pool();
+        let db_pool = db_pool();
+        assert!(Arc::strong_count(&pool) >= 1);
+        assert!(Arc::strong_count(&db_pool) >= 1);
     }
 
     #[test]

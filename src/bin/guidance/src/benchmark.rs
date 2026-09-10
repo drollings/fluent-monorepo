@@ -1,5 +1,13 @@
 //! `guidance benchmark` — query accuracy scoring with LLM-based evaluation.
 //!
+//! R.8 disposition (explicit split, recorded P5): this command keeps its own
+//! task-loading harness (benchmarks.md queries, LLM rubric scoring) instead
+//! of thinning over a shared criterion/A-B harness, because no shared
+//! harness exists yet — criterion benches and the paired A/B benchmark doc
+//! are P6 work. The split is deliberate: live-query accuracy scoring and
+//! micro-benchmarks measure different things. Revisit in P6 when the shared
+//! harness lands.
+//!
 //! Clean port of `cmdBenchmark` from `query_engine.zig`. Reads queries from
 //! `.guidance/benchmarks.md` (or generates fallback queries from module
 //! comments), runs each query through the same search pipeline as
@@ -43,7 +51,9 @@ use fluent_concurrency::pool::Limiter;
 use fluent_concurrency::scope::Scope;
 use fluent_concurrency::tokio_runtime;
 use fluent_llm::llm_queue::build_default_queue;
-use fluent_llm::{strip_think_block, ChatMessage, LlmClient, LlmConfig, LlmQueueConfig, LlmRequestQueue};
+use fluent_llm::{
+    strip_think_block, ChatMessage, LlmClient, LlmConfig, LlmQueueConfig, LlmRequestQueue,
+};
 use fluent_types::{GuidanceDoc, MemberType, StageKind};
 use guidance_core::ast_parser;
 use guidance_core::config::ProjectConfig;
@@ -499,6 +509,7 @@ fn search_results_to_stages(
                 end_line,
                 member_name: Some(r.name.clone()),
                 member_type: None,
+                trace: None,
             }
         })
         .chain(std::iter::once_with(|| Stage {
@@ -509,6 +520,7 @@ fn search_results_to_stages(
             end_line: None,
             member_name: None,
             member_type: None,
+            trace: None,
         }))
         .collect()
 }
@@ -750,6 +762,7 @@ fn append_matching_stages(
                 end_line: None,
                 member_name: None,
                 member_type: None,
+                trace: None,
             });
             pushed = true;
         }
@@ -791,6 +804,7 @@ fn append_matching_stages(
             end_line: None,
             member_name: Some(member.name.as_str().to_string()),
             member_type: Some(member.type_name),
+            trace: None,
         });
         if member.comment.is_some() {
             out.push(Stage {
@@ -805,6 +819,7 @@ fn append_matching_stages(
                 end_line: None,
                 member_name: Some(member.name.as_str().to_string()),
                 member_type: Some(member.type_name),
+                trace: None,
             });
         }
         pushed = true;
@@ -1447,6 +1462,7 @@ src/dag/target.zig
                 end_line: Some(1250),
                 member_name: Some("cmd_benchmark".into()),
                 member_type: None,
+                trace: None,
             },
             Stage {
                 kind: StageKind::Prose,
@@ -1456,6 +1472,7 @@ src/dag/target.zig
                 end_line: None,
                 member_name: None,
                 member_type: None,
+                trace: None,
             },
         ];
         let lines = stages_for_llm_prompt(&stages);
@@ -1481,6 +1498,7 @@ src/dag/target.zig
                 end_line: Some(3),
                 member_name: Some("alpha".into()),
                 member_type: None,
+                trace: None,
             },
             Stage {
                 kind: StageKind::Code,
@@ -1490,6 +1508,7 @@ src/dag/target.zig
                 end_line: Some(4),
                 member_name: Some("beta".into()),
                 member_type: None,
+                trace: None,
             },
             Stage {
                 kind: StageKind::Code,
@@ -1499,6 +1518,7 @@ src/dag/target.zig
                 end_line: Some(5),
                 member_name: Some("gamma".into()),
                 member_type: None,
+                trace: None,
             },
         ];
         // Simulate the LLM returning "1,0" (beta first, then alpha) and the

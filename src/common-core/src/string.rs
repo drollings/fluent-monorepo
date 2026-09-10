@@ -665,3 +665,47 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
 }
 
+/// Whether a char is CJK (Han, Hiragana, Katakana, Hangul syllables +
+/// Jamo). Letter/syllable blocks only — CJK punctuation is excluded so
+/// bigram indexes carry no junk pairs. Shared by the FTS5 application-level
+/// CJK bigram expansion (guidance index + query sides).
+#[must_use]
+pub fn is_cjk_char(c: char) -> bool {
+    matches!(c,
+        '\u{1100}'..='\u{11FF}' // Hangul Jamo
+        | '\u{3040}'..='\u{309F}' // Hiragana
+        | '\u{30A0}'..='\u{30FF}' // Katakana
+        | '\u{3130}'..='\u{318F}' // Hangul compatibility Jamo
+        | '\u{3400}'..='\u{4DBF}' // CJK Extension A
+        | '\u{4E00}'..='\u{9FFF}' // CJK Unified Ideographs
+        | '\u{AC00}'..='\u{D7AF}' // Hangul syllables
+        | '\u{20000}'..='\u{2A6DF}' // CJK Extension B
+    )
+}
+
+/// Overlapping character bigrams over CJK runs — the application-level half
+/// of the FTS CJK contract (`FTS_CJK_STRATEGY = "cjk-bigram-expansion"`).
+/// SQLite FTS5 has no CJK dictionary tokenizer, so index and query sides
+/// both expand CJK runs to space-joined bigrams; non-CJK text breaks runs
+/// and runs shorter than two chars emit nothing.
+#[must_use]
+pub fn cjk_bigrams(text: &str) -> Vec<String> {
+    fn flush(run: &mut Vec<char>, out: &mut Vec<String>) {
+        for pair in run.windows(2) {
+            out.push(pair.iter().collect());
+        }
+        run.clear();
+    }
+    let mut out = Vec::new();
+    let mut run: Vec<char> = Vec::new();
+    for c in text.chars() {
+        if is_cjk_char(c) {
+            run.push(c);
+        } else {
+            flush(&mut run, &mut out);
+        }
+    }
+    flush(&mut run, &mut out);
+    out
+}
+

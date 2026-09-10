@@ -3,15 +3,26 @@ use fluent_types::GuidanceDoc;
 
 use super::identifier;
 use super::llm_filter::LlmFilter;
+use super::recall::RecallStorage;
 use super::strategy::QueryIntent;
 use super::synthesize::{Stage, Synthesizer};
 use crate::query_engine::QueryEngineError;
-use fluent_knowledge::word_index::WordIndex;
 
 /// Shared context for search backends — avoids threading individual references
 /// through every method.
+///
+/// R.1 (P1): the `WordIndex` fallback is deleted — lexical recall lives in
+/// the fragment index (`storage`). `storage`/`embedder`/`nlp` are `None` on
+/// the legacy doc path; index-backed backends decline (`NoResults`) without
+/// them so doc backends serve.
 pub struct SearchContext<'a> {
-    pub word_index: Option<&'a WordIndex>,
+    /// Fragment index for hybrid backends.
+    pub storage: Option<&'a dyn RecallStorage>,
+    /// Query embedder for the vector backend.
+    pub embedder: Option<&'a dyn fluent_llm::embeddings::EmbeddingProvider>,
+    /// Query lemmatizer for the lemma backend.
+    pub nlp: Option<&'a spacy_rs::pipeline::NlpPipeline>,
+    /// Relevance filter for the concept backend (R.2: retained rung).
     pub llm_filter: &'a LlmFilter,
 }
 
@@ -32,7 +43,7 @@ pub trait SearchBackend: Send + Sync {
     ) -> Result<Vec<Stage>, QueryEngineError>;
 }
 
-/// Search by exact or fuzzy member name, with WordIndex fallback.
+/// Search by exact or fuzzy member name.
 pub struct IdentifierBackend;
 
 impl SearchBackend for IdentifierBackend {
@@ -47,7 +58,7 @@ impl SearchBackend for IdentifierBackend {
         &self,
         query: &str,
         doc: &GuidanceDoc,
-        ctx: &SearchContext<'_>,
+        _ctx: &SearchContext<'_>,
     ) -> Result<Vec<Stage>, QueryEngineError> {
         let matched_names: Vec<String> = identifier::find_members_by_name(doc, query)
             .into_iter()
@@ -62,13 +73,6 @@ impl SearchBackend for IdentifierBackend {
         if !sig_matches.is_empty() {
             let sig_names: Vec<String> = sig_matches.into_iter().map(ToString::to_string).collect();
             return Ok(Synthesizer::synthesize(query, doc, &sig_names));
-        }
-
-        // WordIndex fallback
-        if let Some(wi) = ctx.word_index {
-            if let Some(stages) = word_index_fallback(query, doc, wi) {
-                return Ok(stages);
-            }
         }
 
         Err(QueryEngineError::NoResults)
@@ -182,7 +186,7 @@ impl SearchBackend for FilePathBackend {
     }
 }
 
-/// General keyword search with WordIndex fallback.
+/// General keyword search across member names and comments.
 pub struct GeneralBackend;
 
 impl SearchBackend for GeneralBackend {
@@ -194,7 +198,7 @@ impl SearchBackend for GeneralBackend {
         &self,
         query: &str,
         doc: &GuidanceDoc,
-        ctx: &SearchContext<'_>,
+        _ctx: &SearchContext<'_>,
     ) -> Result<Vec<Stage>, QueryEngineError> {
         let matched_names: Vec<String> = doc
             .members
@@ -215,48 +219,7 @@ impl SearchBackend for GeneralBackend {
             return Ok(Synthesizer::synthesize(query, doc, &matched_names));
         }
 
-        // WordIndex fallback
-        if let Some(wi) = ctx.word_index {
-            if let Some(stages) = word_index_fallback(query, doc, wi) {
-                return Ok(stages);
-            }
-        }
-
         Err(QueryEngineError::NoResults)
-    }
-}
-
-/// WordIndex fallback logic — shared by IdentifierBackend and GeneralBackend.
-fn word_index_fallback(query: &str, doc: &GuidanceDoc, wi: &WordIndex) -> Option<Vec<Stage>> {
-    let hits = wi.search(query);
-    if hits.is_empty() {
-        return None;
-    }
-    let source = doc.meta.source.as_str();
-    let file_matches: Vec<String> = hits
-        .iter()
-        .filter(|hit| wi.hit_path(hit) == source)
-        .filter_map(|_| {
-            doc.members.iter().find_map(|m| {
-                if contains_ignore_case(m.name.as_str(), query)
-                    || m.signature
-                        .as_ref()
-                        .is_some_and(|s| contains_ignore_case(s.as_str(), query))
-                    || m.comment
-                        .as_ref()
-                        .is_some_and(|c| contains_ignore_case(c.as_str(), query))
-                {
-                    Some(m.name.as_str().to_string())
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
-    if file_matches.is_empty() {
-        None
-    } else {
-        Some(Synthesizer::synthesize(query, doc, &file_matches))
     }
 }
 
@@ -268,11 +231,13 @@ mod tests {
     };
     use crate::tests::common::make_test_doc;
 
-    fn ctx_with_filter<'a>(filter: &'a LlmFilter) -> SearchContext<'a> {
-        // `llm_filter` is the only field the backends under test read; a null
-        // `word_index` exercises the non-fallback path.
+    fn ctx_with_filter(filter: &LlmFilter) -> SearchContext<'_> {
+        // `llm_filter` is the only field the legacy backends under test
+        // read; index seams stay empty on the doc path.
         SearchContext {
-            word_index: None,
+            storage: None,
+            embedder: None,
+            nlp: None,
             llm_filter: filter,
         }
     }
@@ -345,8 +310,16 @@ mod tests {
         assert!(ConceptBackend.matches(QueryIntent::Conceptual));
         assert!(ConceptBackend.matches(QueryIntent::HowTo));
         let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![
-            RelevanceScore { member_name: "helloWorld".into(), score: 0.9, reasoning: "".into() },
-            RelevanceScore { member_name: "addNumbers".into(), score: 0.2, reasoning: "".into() },
+            RelevanceScore {
+                member_name: "helloWorld".into(),
+                score: 0.9,
+                reasoning: String::new(),
+            },
+            RelevanceScore {
+                member_name: "addNumbers".into(),
+                score: 0.2,
+                reasoning: String::new(),
+            },
         ]))));
         let stages = ConceptBackend
             .search("add things", &make_test_doc(), &ctx_with_filter(&filter))
@@ -357,9 +330,11 @@ mod tests {
 
     #[test]
     fn concept_backend_no_results_when_all_below_threshold() {
-        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![
-            RelevanceScore { member_name: "helloWorld".into(), score: 0.1, reasoning: "".into() },
-        ]))));
+        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![RelevanceScore {
+            member_name: "helloWorld".into(),
+            score: 0.1,
+            reasoning: String::new(),
+        }]))));
         assert!(matches!(
             ConceptBackend.search("x", &make_test_doc(), &ctx_with_filter(&filter)),
             Err(QueryEngineError::NoResults)
@@ -410,35 +385,104 @@ mod tests {
         // Control group: positives (genuine conceptual queries) should have high scores,
         // negatives (near-miss / single-token / empty) should have low scores.
         // We test the 0.5 threshold operating point via common_core::calibration.
-        struct Case { score: f64, label: bool }
+        struct Case {
+            score: f64,
+            label: bool,
+        }
         let cases = vec![
             // Positives — should fire at 0.5
-            Case { score: 0.9, label: true },
-            Case { score: 0.85, label: true },
-            Case { score: 0.75, label: true },
-            Case { score: 0.60, label: true },
-            Case { score: 0.95, label: true },
-            Case { score: 0.80, label: true },
-            Case { score: 0.70, label: true },
-            Case { score: 0.55, label: true },
+            Case {
+                score: 0.9,
+                label: true,
+            },
+            Case {
+                score: 0.85,
+                label: true,
+            },
+            Case {
+                score: 0.75,
+                label: true,
+            },
+            Case {
+                score: 0.60,
+                label: true,
+            },
+            Case {
+                score: 0.95,
+                label: true,
+            },
+            Case {
+                score: 0.80,
+                label: true,
+            },
+            Case {
+                score: 0.70,
+                label: true,
+            },
+            Case {
+                score: 0.55,
+                label: true,
+            },
             // Negatives — must NOT fire at 0.5 (precision guard)
-            Case { score: 0.40, label: false },
-            Case { score: 0.30, label: false },
-            Case { score: 0.20, label: false },
-            Case { score: 0.10, label: false },
-            Case { score: 0.05, label: false },
-            Case { score: 0.45, label: false },
-            Case { score: 0.35, label: false },
-            Case { score: 0.15, label: false },
-            Case { score: 0.0, label: false },
-            Case { score: 0.25, label: false },
+            Case {
+                score: 0.40,
+                label: false,
+            },
+            Case {
+                score: 0.30,
+                label: false,
+            },
+            Case {
+                score: 0.20,
+                label: false,
+            },
+            Case {
+                score: 0.10,
+                label: false,
+            },
+            Case {
+                score: 0.05,
+                label: false,
+            },
+            Case {
+                score: 0.45,
+                label: false,
+            },
+            Case {
+                score: 0.35,
+                label: false,
+            },
+            Case {
+                score: 0.15,
+                label: false,
+            },
+            Case {
+                score: 0.0,
+                label: false,
+            },
+            Case {
+                score: 0.25,
+                label: false,
+            },
         ];
-        let thresholds: Vec<f64> = (0..=20).map(|i| i as f64 * 0.05).collect();
-        let reports = common_core::calibration::sweep_thresholds(&cases, |c| c.score, |c| c.label, &thresholds);
+        let thresholds: Vec<f64> = (0..=20).map(|i| f64::from(i) * 0.05).collect();
+        let reports = common_core::calibration::sweep_thresholds(
+            &cases,
+            |c| c.score,
+            |c| c.label,
+            &thresholds,
+        );
         // Emit artifact
         common_core::calibration::emit_markdown_artifact("guidance_concept_backend", &reports);
         // Gate at 0.5
-        let report_at_05 = common_core::calibration::calibrate_threshold(&cases, |c| c.score, |c| c.label, 0.5);
-        assert!(report_at_05.passes_gate(), "ConceptBackend 0.5 must pass gate: precision {} FPR {} \n{}", report_at_05.precision, report_at_05.fpr, common_core::calibration::render_markdown_table(&reports));
+        let report_at_05 =
+            common_core::calibration::calibrate_threshold(&cases, |c| c.score, |c| c.label, 0.5);
+        assert!(
+            report_at_05.passes_gate(),
+            "ConceptBackend 0.5 must pass gate: precision {} FPR {} \n{}",
+            report_at_05.precision,
+            report_at_05.fpr,
+            common_core::calibration::render_markdown_table(&reports)
+        );
     }
 }

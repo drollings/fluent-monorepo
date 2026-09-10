@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! # fluent-db — the canonical database-access layer for the workspace
 //!
 //! **The DB principle**: a single database-access crate owns *connection

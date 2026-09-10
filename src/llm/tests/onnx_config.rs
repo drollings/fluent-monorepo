@@ -202,8 +202,7 @@ fn annotation_heads_serde_round_trip_with_defaults() {
     assert_eq!(heads.head_output, "head_logits");
     let json = serde_json::to_string(&heads).unwrap();
     // A labels-only onnx block round-trips with the default head names.
-    let from: AnnotationHeads =
-        serde_json::from_str(&format!(r#"{{"labels":"/l.json"}}"#)).unwrap();
+    let from: AnnotationHeads = serde_json::from_str(r#"{"labels":"/l.json"}"#).unwrap();
     assert_eq!(from.pos_output, "upos_logits");
     let back: AnnotationHeads = serde_json::from_str(&json).unwrap();
     assert_eq!(back, heads);

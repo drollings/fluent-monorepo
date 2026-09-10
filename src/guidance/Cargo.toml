@@ -2,6 +2,8 @@
 name = "guidance-core"
 version.workspace = true
 edition.workspace = true
+autotests = false
+autobenches = false
 
 [dependencies]
 common-core = { path = "../common-core" }
@@ -13,6 +15,7 @@ fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-wvr = { path = "../fluent-wvr" }
 fluent-db = { path = "../db" }
 memory-plugin = { path = "../memory-plugin" }
+spacy-rs = { path = "../spacy-rs" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 smol_str = { workspace = true }
@@ -23,9 +26,19 @@ tree-sitter = { workspace = true }
 tree-sitter-zig = { workspace = true }
 tree-sitter-python = { workspace = true }
 tree-sitter-rust = { workspace = true }
+tree-sitter-c = { workspace = true }
+tree-sitter-cpp = { workspace = true }
+tree-sitter-go = { workspace = true }
+tree-sitter-java = { workspace = true }
+tree-sitter-javascript = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+fluent-dag = { path = "../dag" }
+internment = { workspace = true }
 clap = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "time"] }
 regex = { workspace = true }
+notify = { workspace = true }
+ignore = { workspace = true }
 which = { workspace = true }
 dirs = { workspace = true }
 
@@ -33,9 +46,32 @@ dirs = { workspace = true }
 httpmock = { workspace = true }
 fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }
 tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "recall_depth_sweep"
+harness = false
 
 [features]
 live-ai = []
 
+[[test]]
+name = "e2e_gen_roundtrip"
+path = "tests/e2e_gen_roundtrip.rs"
+
+[[test]]
+name = "hybrid_parity"
+path = "tests/hybrid_parity.rs"
+
+[[test]]
+name = "live"
+path = "tests/live.rs"
+
+[[test]]
+name = "l2_probe"
+path = "tests/l2_probe.rs"
+
+
 [lints]
 workspace = true
+

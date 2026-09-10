@@ -104,6 +104,26 @@ impl Formatter for DebugFormatter {
                 stage.content.len(),
                 preview
             );
+            // P1: hybrid recall provenance renders under `--trace`/`--debug`.
+            if let Some(trace) = &stage.trace {
+                let _ = writeln!(
+                    out,
+                    "  Trace: {} rank {} score {:.6}",
+                    trace.matched_by, trace.rank, trace.score
+                );
+                for recall in &trace.recall {
+                    let _ = writeln!(
+                        out,
+                        "    recall {} route {} rank {} found {}",
+                        recall.path,
+                        recall.route_id.as_deref().unwrap_or("-"),
+                        recall
+                            .rank
+                            .map_or_else(|| "-".to_string(), |rank| rank.to_string()),
+                        recall.found,
+                    );
+                }
+            }
         }
         out
     }

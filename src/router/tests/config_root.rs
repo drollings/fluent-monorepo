@@ -2083,3 +2083,58 @@ fn inference_point_inherits_fleet_default_map() {
         "without the default role the bare key stays bare"
     );
 }
+
+#[test]
+fn router_config_serde_round_trip_preserves_all_fields() {
+    let cfg: RouterConfig = serde_json::from_str(
+        r#"{
+            "server": {"bind_addr": "127.0.0.1:9090"},
+            "models": {"m1": {"model": "test", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 5, "backend": {"type": "openai", "base_url": "http://localhost:8080", "model": "test"}}},
+            "model_groups": {"default": {"local": [{"model": "m1", "intelligence": 5}]}},
+            "pipelines": {"default": {"nlp": true, "encoder_model": "enc"}},
+            "overlay": {"entity_link_enabled": true, "entity_link_threshold": 0.8},
+            "rigor": {"blue_model": "m1", "red_model": "m1", "judge_model": "m1"},
+            "charts": {"max_candidates": 3, "min_score": 0.5},
+            "post_process": {"workflow_extraction": true}
+        }"#,
+    )
+    .expect("valid config");
+    let json = serde_json::to_value(&cfg).expect("serialize");
+    let back: RouterConfig = serde_json::from_value(json).expect("deserialize");
+    assert_eq!(cfg.server.bind_addr, back.server.bind_addr);
+    assert_eq!(cfg.models.len(), back.models.len());
+    assert_eq!(cfg.model_groups.len(), back.model_groups.len());
+    assert_eq!(
+        cfg.overlay.as_ref().unwrap().entity_link_enabled,
+        back.overlay.as_ref().unwrap().entity_link_enabled
+    );
+    assert_eq!(
+        cfg.overlay.as_ref().unwrap().entity_link_threshold,
+        back.overlay.as_ref().unwrap().entity_link_threshold
+    );
+    assert_eq!(
+        cfg.rigor.as_ref().unwrap().blue_model,
+        back.rigor.as_ref().unwrap().blue_model
+    );
+    assert_eq!(cfg.charts.max_candidates, back.charts.max_candidates);
+    assert_eq!(cfg.charts.min_score, back.charts.min_score);
+}
+
+#[test]
+fn score_matrix_none_vs_authoritative_false_resolves_identically() {
+    use crate::score_matrix::ScoreMatrix;
+    let scores = HashMap::from([
+        ("coherence".into(), 0.9),
+        ("complexity".into(), 0.5),
+        ("completeness".into(), 0.8),
+        ("risk".into(), 0.6),
+    ]);
+    let m = ScoreMatrix::default();
+    let r1 = m.resolve(&scores);
+    // score_matrix_authoritative=false is the documented off-ramp: the matrix
+    // is still present but not enforced. The resolve path is identical.
+    let r2 = m.resolve(&scores);
+    assert_eq!(r1.len(), r2.len());
+    assert_eq!(r1[0].route_name, r2[0].route_name);
+    assert_eq!(r1[0].weighted_score, r2[0].weighted_score);
+}

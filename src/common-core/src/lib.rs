@@ -95,7 +95,11 @@ pub use string::{
     IdentifierKind, STOP_WORDS,
 };
 pub use time::now_secs;
-pub use walk::{collect_extensions, should_skip_dir, walk_files, SOURCE_EXTENSIONS};
+pub use walk::{
+    collect_extensions, should_skip_dir, sniff_is_binary, walk_files, walk_files_filtered,
+    BINARY_CONTROL_CHAR_RATIO, BINARY_SNIFF_BYTES, SOURCE_EXTENSIONS, WalkEntry, WalkFilter,
+    SkipReason,
+};
 pub use watchdog::{
     BudgetWatchdog, RepetitionWatchdog, WallClockWatchdog, WatchdogEvent, WatchdogEventType,
     WatchdogSet,

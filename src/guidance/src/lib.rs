@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Guidance: AST-guided vector search & edge AI orchestration engine.
 //!
 //! This is the **consumer-layer** crate — it composes all domain capabilities
@@ -19,6 +21,8 @@
 //! | `query_engine` | Explain/query orchestration | `fluent-types`, `search-vector`, `fluent-knowledge`, `query/*` |
 //! | `query` sub-modules | Query pipeline: identifier, strategy, filters, synthesizer, snapshot | `fluent-types`, `regex` |
 //! | `sync` sub-modules | JSON store, staleness, comment management | `fluent-types`, `common-core` |
+//! | `zg_types` | zvec-grep value types + pure search helpers (P0 contracts) | `serde`, `thiserror` |
+//! | `zg_constants` | Ported zvec-grep tested constants + pure budget helpers | none |
 //!
 //! ## Extraction Candidates (when other consumers exist)
 //! - `scanner` — pure pattern detection, zero domain coupling
@@ -27,16 +31,28 @@
 //! - `query/snapshot` — pure file-reading snapshot type
 //! - `enhancer` — generic LLM comment generation trait
 pub mod ast_parser;
+pub mod change_set;
 pub mod config;
+pub mod coordinator;
+pub mod diff;
 pub mod enhancer;
+pub mod extractor;
+pub mod freshness;
+pub mod graph_index;
 pub mod grounding;
+pub mod index_pipeline;
 pub mod memory;
 pub mod plugin;
 pub mod query_engine;
 pub mod runtime;
 pub mod scanner;
+pub mod scheduler;
+pub mod selection;
 pub mod sync_engine;
+pub mod watcher;
 pub use common_core::walk;
+pub mod zg_constants;
+pub mod zg_types;
 
 pub mod query;
 
@@ -49,3 +65,4 @@ pub mod sync {
 
 #[cfg(test)]
 mod tests;
+

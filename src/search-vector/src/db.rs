@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use fluent_db::error::DbError;
@@ -29,6 +31,10 @@ pub struct SearchResult {
 /// SQLite hybrid search engine backed by the canonical `fluent-db` components:
 /// a `SqliteStore` for the connection/schema and an `HnswIndex` for the KNN
 /// index.
+///
+/// Two table families coexist: the legacy `guidance_nodes` member index
+/// (untouched — P5 regression gate) and the P1 `zg_*` fragment index
+/// (FTS5 + vectors + lemmas) that the hybrid recall path queries.
 pub struct GuidanceDb {
     store: SqliteStore,
     hnsw: HnswIndex,
@@ -76,9 +82,67 @@ impl GuidanceDb {
                 "CREATE INDEX IF NOT EXISTS idx_nodes_name ON guidance_nodes(name);
                  CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
                  CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON guidance_nodes(name, source);
-                 CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);",
+                 CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);
+                 CREATE TABLE IF NOT EXISTS zg_files (
+                     id TEXT PRIMARY KEY,
+                     absolute_path TEXT NOT NULL,
+                     relative_path TEXT NOT NULL,
+                     root_path TEXT NOT NULL,
+                     size_bytes INTEGER NOT NULL DEFAULT 0,
+                     last_modified_time INTEGER NOT NULL DEFAULT 0,
+                     kind TEXT,
+                     format TEXT NOT NULL DEFAULT ''
+                 );
+                 CREATE TABLE IF NOT EXISTS zg_fragments (
+                     id TEXT PRIMARY KEY,
+                     grp TEXT,
+                     file_id TEXT NOT NULL,
+                     range_json TEXT NOT NULL DEFAULT '{}',
+                     content_kind TEXT NOT NULL DEFAULT 'text',
+                     content_text TEXT,
+                     cjk_text TEXT NOT NULL DEFAULT '',
+                     symbol_type TEXT,
+                     symbol_name TEXT,
+                     scope TEXT,
+                     signature TEXT,
+                     doc TEXT,
+                     modifiers TEXT NOT NULL DEFAULT '',
+                      heading TEXT,
+                      heading_level INTEGER,
+                      embedding BLOB,
+                      embedding_q8 BLOB
+                  );
+                 CREATE INDEX IF NOT EXISTS idx_zg_frag_file ON zg_fragments(file_id);
+                 CREATE INDEX IF NOT EXISTS idx_zg_frag_group ON zg_fragments(grp);
+                 CREATE INDEX IF NOT EXISTS idx_zg_frag_symbol ON zg_fragments(symbol_name);
+                 CREATE VIRTUAL TABLE IF NOT EXISTS zg_fragments_fts USING fts5(
+                     content_text, symbol_name, cjk_text,
+                     tokenize='unicode61 remove_diacritics 2',
+                     content='zg_fragments', content_rowid='rowid');
+                 CREATE TRIGGER IF NOT EXISTS zg_fragments_ai AFTER INSERT ON zg_fragments BEGIN
+                     INSERT INTO zg_fragments_fts(rowid, content_text, symbol_name, cjk_text)
+                     VALUES (new.rowid, new.content_text, new.symbol_name, new.cjk_text);
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS zg_fragments_ad AFTER DELETE ON zg_fragments BEGIN
+                     INSERT INTO zg_fragments_fts(zg_fragments_fts, rowid, content_text, symbol_name, cjk_text)
+                     VALUES ('delete', old.rowid, old.content_text, old.symbol_name, old.cjk_text);
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS zg_fragments_au AFTER UPDATE ON zg_fragments BEGIN
+                     INSERT INTO zg_fragments_fts(zg_fragments_fts, rowid, content_text, symbol_name, cjk_text)
+                     VALUES ('delete', old.rowid, old.content_text, old.symbol_name, old.cjk_text);
+                     INSERT INTO zg_fragments_fts(rowid, content_text, symbol_name, cjk_text)
+                     VALUES (new.rowid, new.content_text, new.symbol_name, new.cjk_text);
+                 END;
+                 CREATE TABLE IF NOT EXISTS fragment_lemmas (
+                     fragment_id TEXT NOT NULL,
+                     lemma TEXT NOT NULL,
+                     confidence REAL NOT NULL DEFAULT 1.0,
+                     PRIMARY KEY (fragment_id, lemma));
+                 CREATE INDEX IF NOT EXISTS idx_lemmas_lemma ON fragment_lemmas(lemma);",
             )
             .map_err(DbError::from)?;
+            ensure_file_status_columns(conn).map_err(DbError::from)?;
+            ensure_fragment_q8_column(conn).map_err(DbError::from)?;
             Ok(())
         })?;
         Ok(())
@@ -496,11 +560,744 @@ impl GuidanceDb {
     pub fn hnsw_len(&self) -> usize {
         self.hnsw.len()
     }
+
+    // -- P1 fragment index (zg_* tables) ----------------------------------
+
+    /// Replace a file's fragments: delete-by-file (fragments, lemmas, FTS
+    /// rows via triggers) then insert the file row, fragments, and lemmas
+    /// atomically. Returns the fragment count.
+    pub fn upsert_fragments(
+        &self,
+        file: &ZgFileRecord,
+        fragments: &[ZgFragmentRecord],
+        lemmas: &[FragmentLemma],
+    ) -> Result<usize, VectorDbError> {
+        self.store
+            .transaction(|tx| {
+                use rusqlite::params;
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM zg_fragments WHERE file_id = ?1)",
+                    params![file.id],
+                )?;
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM zg_fragments WHERE file_id = ?1",
+                    params![file.id],
+                )?;
+                fluent_db::query::execute(
+                    tx,
+                    "INSERT OR REPLACE INTO zg_files
+                     (id, absolute_path, relative_path, root_path, size_bytes, last_modified_time, kind, format,
+                      content_hash, index_status, fail_count, last_error, indexed_time)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, NULL,
+                             CASE WHEN ?10 = 'indexed' THEN strftime('%s','now') * 1000 ELSE NULL END)",
+                    params![
+                        file.id,
+                        file.absolute_path,
+                        file.relative_path,
+                        file.root_path,
+                        file.size_bytes as i64,
+                        file.last_modified_time,
+                        file.kind,
+                        file.format,
+                        file.content_hash,
+                        file.index_status.as_deref().unwrap_or("indexed"),
+                    ],
+                )?;
+                for fragment in fragments {
+                    // P6 int8: new rows store quantized bytes only
+                    // (`dims + 8` vs `4 * dims` FP32); legacy FP32 rows
+                    // stay readable through the read fallback.
+                    let embedding_q8 = fragment
+                        .embedding
+                        .as_deref()
+                        .map(vector::QuantizedEmbedding::from_f32)
+                        .map(|quantized| vector::quantized_to_bytes(&quantized));
+                    fluent_db::query::execute(
+                        tx,
+                        "INSERT INTO zg_fragments
+                         (id, grp, file_id, range_json, content_kind, content_text, cjk_text,
+                          symbol_type, symbol_name, scope, signature, doc, modifiers,
+                          heading, heading_level, embedding, embedding_q8)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, NULL, ?16)",
+                        params![
+                            fragment.id,
+                            fragment.group,
+                            fragment.file_id,
+                            fragment.range_json,
+                            fragment.content_kind,
+                            fragment.content_text,
+                            fragment.cjk_text,
+                            fragment.symbol_type,
+                            fragment.symbol_name,
+                            fragment.scope,
+                            fragment.signature,
+                            fragment.doc,
+                            fragment.modifiers,
+                            fragment.heading,
+                            fragment.heading_level,
+                            embedding_q8,
+                        ],
+                    )?;
+                }
+                for lemma in lemmas {
+                    fluent_db::query::execute(
+                        tx,
+                        "INSERT OR REPLACE INTO fragment_lemmas (fragment_id, lemma, confidence)
+                         VALUES (?1, ?2, ?3)",
+                        params![lemma.fragment_id, lemma.lemma, lemma.confidence],
+                    )?;
+                }
+                Ok(fragments.len())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Insert or replace lemma rows without touching fragments.
+    pub fn insert_fragment_lemmas(&self, lemmas: &[FragmentLemma]) -> Result<usize, VectorDbError> {
+        self.store
+            .transaction(|tx| {
+                for lemma in lemmas {
+                    fluent_db::query::execute(
+                        tx,
+                        "INSERT OR REPLACE INTO fragment_lemmas (fragment_id, lemma, confidence)
+                         VALUES (?1, ?2, ?3)",
+                        rusqlite::params![lemma.fragment_id, lemma.lemma, lemma.confidence],
+                    )?;
+                }
+                Ok(lemmas.len())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Ranked lexical recall over the FTS5 index. Scores are `-bm25`
+    /// (higher is better); recall assigns 1-based ranks. An unindexable
+    /// query yields no rows (never match-all).
+    pub fn search_fts(
+        &self,
+        query: &str,
+        limit: usize,
+        filter: &ZgFragmentFilter,
+    ) -> Result<Vec<ZgScoredFragment>, VectorDbError> {
+        let Some(match_expr) = build_fts_match(query) else {
+            return Ok(Vec::new());
+        };
+        let mut sql = String::from(
+            "SELECT f.id, f.file_id, bm25(zg_fragments_fts) AS r FROM zg_fragments_fts \
+             JOIN zg_fragments f ON f.rowid = zg_fragments_fts.rowid \
+             LEFT JOIN zg_files fl ON fl.id = f.file_id \
+             WHERE zg_fragments_fts MATCH ?1",
+        );
+        let mut values = vec![rusqlite::types::Value::Text(match_expr)];
+        let mut param = 2;
+        append_fragment_filter(&mut sql, &mut values, filter, &mut param);
+        let _ = write!(sql, " ORDER BY r ASC LIMIT ?{param}");
+        values.push(rusqlite::types::Value::Integer(limit as i64));
+        self.store
+            .with_conn(|conn| {
+                fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| {
+                    let rank_value: f64 = row.get(2)?;
+                    Ok(ZgScoredFragment {
+                        id: row.get(0)?,
+                        file_id: row.get(1)?,
+                        score: -rank_value,
+                    })
+                })
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Ranked vector recall (P6: quantized-first brute-force cosine KNN
+    /// with an FP32 fallback for legacy rows; HNSW wiring rides with the P6
+    /// calibration). Dimension mismatches and corrupt rows are skipped;
+    /// recall assigns 1-based ranks.
+    pub fn search_vector_fragments(
+        &self,
+        embedding: &[f32],
+        limit: usize,
+        filter: &ZgFragmentFilter,
+    ) -> Result<Vec<ZgScoredFragment>, VectorDbError> {
+        let mut sql = String::from(
+            "SELECT f.id, f.file_id, f.embedding, f.embedding_q8 FROM zg_fragments f \
+             LEFT JOIN zg_files fl ON fl.id = f.file_id \
+             WHERE (f.embedding IS NOT NULL OR f.embedding_q8 IS NOT NULL)",
+        );
+        let mut values: Vec<rusqlite::types::Value> = Vec::new();
+        let mut param = 1;
+        append_fragment_filter(&mut sql, &mut values, filter, &mut param);
+        let rows: Vec<FragmentVectorRow> = self
+            .store
+            .with_conn(|conn| {
+                fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+            })
+            .map_err(VectorDbError::from)?;
+        // Shared vector tail (G-1.vecmath + G-1.topk): quantized-first
+        // decode (corrupt rows skipped, legacy FP32 re-quantized on the
+        // fly), q8 KNN, distance mapped back to similarity. Order ties fall
+        // back to rowid (stable sort); the id tie-break lives in RRF.
+        let query = vector::QuantizedEmbedding::from_f32(embedding);
+        let decoded: Vec<(String, String, vector::QuantizedEmbedding)> = rows
+            .into_iter()
+            .filter_map(|(id, file_id, fp32_blob, q8_blob)| {
+                let quantized = q8_blob
+                    .as_deref()
+                    .and_then(vector::quantized_from_bytes)
+                    .or_else(|| {
+                        fp32_blob
+                            .as_deref()
+                            .map(vector::bytes_to_vec)
+                            .filter(|vec| vec.len() == embedding.len())
+                            .map(|vec| vector::QuantizedEmbedding::from_f32(&vec))
+                    })?;
+                Some((id, file_id, quantized))
+            })
+            .collect();
+        let files: HashMap<&str, &str> = decoded
+            .iter()
+            .map(|(id, file_id, _)| (id.as_str(), file_id.as_str()))
+            .collect();
+        Ok(vector::knn_brute_force_q8(
+            &query,
+            decoded.iter().map(|(id, _, vec)| (id.as_str(), vec)),
+            limit,
+        )
+        .into_iter()
+        .map(|(id, distance)| ZgScoredFragment {
+            file_id: files.get(id).unwrap_or(&"").to_string(),
+            id: id.to_string(),
+            score: f64::from(vector::distance_to_similarity(distance)),
+        })
+        .collect())
+    }
+
+    /// All rows for an entity: the major plus its group minors.
+    pub fn fragments_for_entity(&self, entity_id: &str) -> Result<Vec<ZgFragmentRow>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT id, grp, file_id, range_json, content_kind, content_text,
+                        symbol_type, symbol_name, scope, signature, doc, modifiers,
+                        heading, heading_level
+                 FROM zg_fragments WHERE id = ?1 OR grp = ?2 ORDER BY id",
+                params![entity_id, entity_id],
+                ZgFragmentRow::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Fragment ids carrying any of the given lemmas (stable rowid order).
+    pub fn fragments_for_lemmas(
+        &self,
+        lemmas: &[String],
+        limit: usize,
+    ) -> Result<Vec<String>, VectorDbError> {
+        if lemmas.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (0..lemmas.len()).map(|i| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT DISTINCT fragment_id FROM fragment_lemmas WHERE lemma IN ({}) ORDER BY rowid LIMIT ?{}",
+            placeholders.join(","),
+            lemmas.len() + 1
+        );
+        let mut values: Vec<rusqlite::types::Value> =
+            lemmas.iter().map(|l| rusqlite::types::Value::Text(l.clone())).collect();
+        values.push(rusqlite::types::Value::Integer(limit as i64));
+        self.store
+            .with_conn(|conn| {
+                fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| row.get(0))
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// One indexed file by id.
+    pub fn zg_get_file(&self, file_id: &str) -> Result<Option<ZgFileRecord>, VectorDbError> {
+        self.store
+            .query_row(
+                "SELECT id, absolute_path, relative_path, root_path, size_bytes,
+                        last_modified_time, kind, format, content_hash,
+                        index_status, fail_count, last_error
+                 FROM zg_files WHERE id = ?1",
+                params![file_id],
+                ZgFileRecord::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// All indexed files (filter resolution input).
+    pub fn zg_list_files(&self) -> Result<Vec<ZgFileRecord>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT id, absolute_path, relative_path, root_path, size_bytes,
+                        last_modified_time, kind, format, content_hash,
+                        index_status, fail_count, last_error
+                 FROM zg_files ORDER BY id",
+                &[],
+                ZgFileRecord::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Whether a table exists (schema-gate input).
+    pub fn has_table(&self, table: &str) -> bool {
+        self.store
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                params![table],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    /// Delete-by-file plus upsert of fragments/lemmas in one transaction
+    /// (P2 commit primitive; failure is stored data via `mark_file_failed`).
+    pub fn replace_file(
+        &self,
+        file: &ZgFileRecord,
+        fragments: &[ZgFragmentRecord],
+        lemmas: &[FragmentLemma],
+    ) -> Result<usize, VectorDbError> {
+        self.upsert_fragments(file, fragments, lemmas)
+    }
+
+    /// Record a per-file failure (stored data, never an aborted run).
+    /// Upserts the file row so files that fail before their first commit
+    /// (embed/prepare) are still tracked for the failed-retry pass.
+    pub fn mark_file_failed(&self, file: &ZgFileRecord, reason: &str) -> Result<(), VectorDbError> {
+        self.store
+            .execute(
+                "INSERT INTO zg_files
+                 (id, absolute_path, relative_path, root_path, size_bytes, last_modified_time,
+                  kind, format, content_hash, index_status, fail_count, last_error)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'failed', 1, ?10)
+                 ON CONFLICT(id) DO UPDATE SET
+                   index_status = 'failed', last_error = ?10, fail_count = fail_count + 1",
+                &[
+                    &file.id as &dyn rusqlite::ToSql,
+                    &file.absolute_path as &dyn rusqlite::ToSql,
+                    &file.relative_path as &dyn rusqlite::ToSql,
+                    &file.root_path as &dyn rusqlite::ToSql,
+                    &(file.size_bytes as i64) as &dyn rusqlite::ToSql,
+                    &file.last_modified_time as &dyn rusqlite::ToSql,
+                    &file.kind as &dyn rusqlite::ToSql,
+                    &file.format as &dyn rusqlite::ToSql,
+                    &file.content_hash as &dyn rusqlite::ToSql,
+                    &reason as &dyn rusqlite::ToSql,
+                ],
+            )
+            .map(|_| ())
+            .map_err(VectorDbError::from)
+    }
+
+    /// Drop the whole fragment index (workspace-index drop; the legacy
+    /// `guidance_nodes` table is untouched).
+    pub fn drop_index(&self) -> Result<(), VectorDbError> {
+        self.store
+            .transaction(|tx| {
+                for table in ["fragment_lemmas", "zg_fragments", "zg_files"] {
+                    fluent_db::query::execute(
+                        tx,
+                        &format!("DELETE FROM {table}"),
+                        rusqlite::params![],
+                    )?;
+                }
+                Ok(())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Delete a file record and all its fragments/lemmas (P2 diff `deleted`).
+    pub fn delete_file(&self, file_id: &str) -> Result<(), VectorDbError> {
+        self.store
+            .transaction(|tx| {
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM zg_fragments WHERE file_id = ?1)",
+                    rusqlite::params![file_id],
+                )?;
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM zg_fragments WHERE file_id = ?1",
+                    rusqlite::params![file_id],
+                )?;
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM zg_files WHERE id = ?1",
+                    rusqlite::params![file_id],
+                )?;
+                Ok(())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Ids of files in `failed` status (failed-retry-once input).
+    pub fn failed_file_ids(&self) -> Result<Vec<String>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT id FROM zg_files WHERE index_status = 'failed' ORDER BY id",
+                &[],
+                |row| row.get(0),
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Major entity ids for a file (major = `grp = id`, or ungrouped).
+    /// Diagnostic + adapter input for entity listing.
+    pub fn entity_ids_for_file(&self, file_id: &str) -> Result<Vec<String>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT id FROM zg_fragments WHERE file_id = ?1 \
+                 AND (grp = id OR grp IS NULL OR grp = '') ORDER BY rowid",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// Distinct non-empty group ids for files (diagnostic: group collapse).
+    pub fn group_ids_for_files(&self, file_ids: &[String]) -> Result<Vec<String>, VectorDbError> {
+        if file_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "SELECT DISTINCT grp FROM zg_fragments WHERE file_id IN ({}) \
+             AND grp IS NOT NULL AND grp != '' ORDER BY grp",
+            common_core::sqlite::in_clause(file_ids.len())
+        );
+        let values: Vec<rusqlite::types::Value> =
+            file_ids.iter().map(|id| rusqlite::types::Value::Text(id.clone())).collect();
+        self.store
+            .with_conn(|conn| {
+                fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| row.get(0))
+            })
+            .map_err(VectorDbError::from)
+    }
+}
+
+// -- P1 fragment records, filter, and FTS match builder ---------------------
+
+/// Add P2 file-status columns to pre-P2 databases (fresh tables already
+/// carry them via `ALTER ... ADD COLUMN` no-ops guarded here).
+fn ensure_file_status_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    use rusqlite::params;
+    let mut existing = std::collections::HashSet::new();
+    let mut stmt = conn.prepare("PRAGMA table_info(zg_files)")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for name in rows.flatten() {
+        existing.insert(name);
+    }
+    for (column, ddl) in [
+        ("content_hash", "TEXT"),
+        ("index_status", "TEXT DEFAULT 'indexed'"),
+        ("fail_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_error", "TEXT"),
+        ("indexed_time", "INTEGER"),
+    ] {
+        if !existing.contains(column) {
+            conn.execute(
+                &format!("ALTER TABLE zg_files ADD COLUMN {column} {ddl}"),
+                params![],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// P6 int8 rollout: nullable `embedding_q8` on `zg_fragments` (scale plus
+/// dims plus i8 values: `dims + 8` bytes vs `4 * dims` FP32). Guarded like
+/// the file status columns — old databases gain the column on open, old
+/// FP32 rows keep working through the read fallback.
+fn ensure_fragment_q8_column(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    use rusqlite::params;
+    let mut existing = std::collections::HashSet::new();
+    let mut stmt = conn.prepare("PRAGMA table_info(zg_fragments)")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for name in rows.flatten() {
+        existing.insert(name);
+    }
+    if !existing.contains("embedding_q8") {
+        conn.execute("ALTER TABLE zg_fragments ADD COLUMN embedding_q8 BLOB", params![])?;
+    }
+    Ok(())
+}
+
+/// Indexed file row (mirrors the P0 `FileInfo` contract).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZgFileRecord {
+    /// Stable file id.
+    pub id: String,
+    /// Absolute workspace path.
+    pub absolute_path: String,
+    /// Workspace-relative path.
+    pub relative_path: String,
+    /// Owning root path.
+    pub root_path: String,
+    /// File size in bytes.
+    pub size_bytes: u64,
+    /// Last-modified time (ms epoch).
+    pub last_modified_time: i64,
+    /// File kind tag.
+    pub kind: Option<String>,
+    /// Format tag.
+    pub format: String,
+    /// Content hash (sha256 hex), when computed.
+    pub content_hash: Option<String>,
+    /// Index status (`indexed` | `failed` | `None` = pending).
+    pub index_status: Option<String>,
+    /// Consecutive failure count.
+    pub fail_count: i64,
+    /// Last failure reason.
+    pub last_error: Option<String>,
+}
+
+impl ZgFileRecord {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            absolute_path: row.get(1)?,
+            relative_path: row.get(2)?,
+            root_path: row.get(3)?,
+            size_bytes: row.get::<_, i64>(4)? as u64,
+            last_modified_time: row.get(5)?,
+            kind: row.get(6)?,
+            format: row.get(7)?,
+            content_hash: row.get(8)?,
+            index_status: row.get(9)?,
+            fail_count: row.get(10)?,
+            last_error: row.get(11)?,
+        })
+    }
+}
+
+/// Fragment row for ingestion (mirrors the P0 `EntityFragment` contract;
+/// `cjk_text` is the space-joined bigram expansion computed by the
+/// guidance-core ingestion helper).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZgFragmentRecord {
+    /// Fragment id (unique per file).
+    pub id: String,
+    /// Group id; the major carries its own id.
+    pub group: Option<String>,
+    /// Owning file id.
+    pub file_id: String,
+    /// Serialized range.
+    pub range_json: String,
+    /// Content kind (`text` | `image`).
+    pub content_kind: String,
+    /// Text content, if any.
+    pub content_text: Option<String>,
+    /// Space-joined CJK bigram expansion.
+    pub cjk_text: String,
+    /// Symbol type / name / scope / signature / doc / modifiers.
+    pub symbol_type: Option<String>,
+    /// Symbol type / name / scope / signature / doc / modifiers.
+    pub symbol_name: Option<String>,
+    /// Symbol type / name / scope / signature / doc / modifiers.
+    pub scope: Option<String>,
+    /// Symbol type / name / scope / signature / doc / modifiers.
+    pub signature: Option<String>,
+    /// Symbol type / name / scope / signature / doc / modifiers.
+    pub doc: Option<String>,
+    /// Symbol type / name / scope / signature / doc / modifiers.
+    pub modifiers: String,
+    /// Markdown heading, if any.
+    pub heading: Option<String>,
+    /// Heading level, if any.
+    pub heading_level: Option<i64>,
+    /// Fragment embedding, if any.
+    pub embedding: Option<Vec<f32>>,
+}
+
+/// Lemma row for the `fragment_lemmas` L2 table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FragmentLemma {
+    /// Owning fragment id.
+    pub fragment_id: String,
+    /// Lemma string.
+    pub lemma: String,
+    /// Parse confidence.
+    pub confidence: f64,
+}
+
+/// Full fragment row for hit materialization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZgFragmentRow {
+    /// Fragment id.
+    pub id: String,
+    /// Group id, if any.
+    pub group: Option<String>,
+    /// Owning file id.
+    pub file_id: String,
+    /// Serialized range.
+    pub range_json: String,
+    /// Content kind.
+    pub content_kind: String,
+    /// Text content, if any.
+    pub content_text: Option<String>,
+    /// Symbol fields.
+    pub symbol_type: Option<String>,
+    /// Symbol fields.
+    pub symbol_name: Option<String>,
+    /// Symbol fields.
+    pub scope: Option<String>,
+    /// Symbol fields.
+    pub signature: Option<String>,
+    /// Symbol fields.
+    pub doc: Option<String>,
+    /// Symbol fields.
+    pub modifiers: String,
+    /// Markdown fields.
+    pub heading: Option<String>,
+    /// Markdown fields.
+    pub heading_level: Option<i64>,
+}
+
+impl ZgFragmentRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            group: row.get(1)?,
+            file_id: row.get(2)?,
+            range_json: row.get(3)?,
+            content_kind: row.get(4)?,
+            content_text: row.get(5)?,
+            symbol_type: row.get(6)?,
+            symbol_name: row.get(7)?,
+            scope: row.get(8)?,
+            signature: row.get(9)?,
+            doc: row.get(10)?,
+            modifiers: row.get(11)?,
+            heading: row.get(12)?,
+            heading_level: row.get(13)?,
+        })
+    }
+}
+
+/// Recall filter pushed into fragment queries.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ZgFragmentFilter {
+    /// File allow-list (`None` = no path selection; `Some([])` = no files).
+    pub file_ids: Option<Vec<String>>,
+    /// Group allow-list (force-track targeting).
+    pub group_ids: Vec<String>,
+    /// Symbol-name allow-list.
+    pub symbol_names: Vec<String>,
+    /// Symbol-type allow-list.
+    pub symbol_types: Vec<String>,
+    /// Modification-time window (ms epoch).
+    pub modified_after: Option<i64>,
+    /// Modification-time window (ms epoch).
+    pub modified_before: Option<i64>,
+}
+
+/// One ranked recall hit (rank assignment stays with the recall loop).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZgScoredFragment {
+    /// Fragment id.
+    pub id: String,
+    /// Owning file id.
+    pub file_id: String,
+    /// Raw score (higher is better; scale varies by axis).
+    pub score: f64,
+}
+
+/// One fragment vector row: id, file id, legacy FP32 blob, int8 blob.
+type FragmentVectorRow = (String, String, Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// Shared pushdown: file allow-list, symbol allow-lists, mtime window.
+/// `frag_alias`/`file_alias` qualify the joined `zg_fragments`/`zg_files`.
+fn append_fragment_filter(
+    sql: &mut String,
+    values: &mut Vec<rusqlite::types::Value>,
+    filter: &ZgFragmentFilter,
+    param: &mut usize,
+) {
+    use rusqlite::types::Value;
+    let mut push_ids = |column: &str, ids: &[String]| {
+        if ids.is_empty() {
+            sql.push_str(" AND 1 = 0");
+            return;
+        }
+        let placeholders: Vec<String> = (0..ids.len()).map(|i| format!("?{}", *param + i)).collect();
+        let _ = write!(sql, " AND {column} IN ({})", placeholders.join(","));
+        values.extend(ids.iter().map(|id| Value::Text(id.clone())));
+        *param += ids.len();
+    };
+    if let Some(ids) = &filter.file_ids {
+        push_ids("f.file_id", ids);
+    }
+    if !filter.group_ids.is_empty() {
+        push_ids("f.grp", &filter.group_ids);
+    }
+    if !filter.symbol_names.is_empty() {
+        push_ids("f.symbol_name", &filter.symbol_names);
+    }
+    if !filter.symbol_types.is_empty() {
+        push_ids("f.symbol_type", &filter.symbol_types);
+    }
+    if let Some(after) = filter.modified_after {
+        let _ = write!(sql, " AND fl.last_modified_time >= ?{param}");
+        values.push(Value::Integer(after));
+        *param += 1;
+    }
+    if let Some(before) = filter.modified_before {
+        let _ = write!(sql, " AND fl.last_modified_time <= ?{param}");
+        values.push(Value::Integer(before));
+        *param += 1;
+    }
+}
+
+/// Build the FTS5 `MATCH` expression for a query: ASCII tokens hit the
+/// text/symbol columns, CJK runs hit the bigram column (P0 `cjk-bigram`
+/// contract). Returns `None` when nothing is indexable — callers return
+/// empty (never match-all).
+#[must_use]
+pub fn build_fts_match(query: &str) -> Option<String> {
+    fn quote(token: &str) -> String {
+        format!("\"{}\"", token.replace('"', "\"\""))
+    }
+    let mut ascii: Vec<String> = Vec::new();
+    for token in query.split(|c: char| !c.is_alphanumeric()) {
+        if token.is_empty() {
+            continue;
+        }
+        let lower = token.to_lowercase();
+        if !ascii.contains(&lower) {
+            ascii.push(lower);
+        }
+    }
+    let bigrams = common_core::string::cjk_bigrams(query);
+    let mut parts = Vec::new();
+    if !ascii.is_empty() {
+        let or: Vec<String> = ascii.iter().map(|t| quote(t)).collect();
+        parts.push(format!("{{content_text symbol_name}} : ({})", or.join(" OR ")));
+    }
+    if !bigrams.is_empty() {
+        let or: Vec<String> = bigrams.iter().map(|b| quote(b)).collect();
+        parts.push(format!("cjk_text : ({})", or.join(" OR ")));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" OR "))
+    }
 }
 
 #[cfg(test)]
 #[path = "../tests/error_hops.rs"]
 mod error_hops;
+
+#[cfg(test)]
+#[path = "../tests/file_status.rs"]
+mod file_status;
+
+#[cfg(test)]
+#[path = "../tests/fragments.rs"]
+mod fragments;
 
 #[cfg(test)]
 mod tests {

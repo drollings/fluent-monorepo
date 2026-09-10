@@ -162,6 +162,67 @@ pub fn cosine_similarity_q8(a: &QuantizedEmbedding, b: &QuantizedEmbedding) -> f
     }
 }
 
+/// int8 storage codec (P6): `scale` (f32 LE) + `dimensions` (u32 LE) + raw
+/// i8 values. Stored bytes per vector = `dims + 8` vs `4 * dims` FP32.
+#[must_use]
+pub fn quantized_to_bytes(quantized: &QuantizedEmbedding) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(8 + quantized.values.len());
+    bytes.extend_from_slice(&quantized.scale.to_le_bytes());
+    bytes.extend_from_slice(&(quantized.dimensions as u32).to_le_bytes());
+    bytes.extend_from_slice(&bytemuck_like_i8(&quantized.values));
+    bytes
+}
+
+/// Decode [`quantized_to_bytes`]; `None` on truncation or dimension
+/// mismatch (corrupt rows never poison recall — callers skip them).
+#[must_use]
+pub fn quantized_from_bytes(bytes: &[u8]) -> Option<QuantizedEmbedding> {
+    if bytes.len() < 8 {
+        return None;
+    }
+    let scale = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let dimensions =
+        u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    let values = &bytes[8..];
+    if values.len() != dimensions {
+        return None;
+    }
+    Some(QuantizedEmbedding {
+        values: values.iter().map(|byte| *byte as i8).collect(),
+        scale,
+        dimensions,
+    })
+}
+
+fn bytemuck_like_i8(values: &[i8]) -> Vec<u8> {
+    values.iter().map(|value| *value as u8).collect()
+}
+
+/// Brute-force KNN over quantized candidates (mirrors
+/// [`knn_brute_force`]): dimension mismatches are skipped; ties fall back
+/// to candidate order (stable sort); the id tie-break lives in RRF.
+pub fn knn_brute_force_q8<'a, Id: Clone>(
+    query: &QuantizedEmbedding,
+    candidates: impl Iterator<Item = (Id, &'a QuantizedEmbedding)>,
+    k: usize,
+) -> Vec<(Id, f32)> {
+    if query.dimensions == 0 || k == 0 {
+        return Vec::new();
+    }
+    let mut results: Vec<(Id, f32)> = candidates
+        .filter_map(|(id, emb)| {
+            if emb.dimensions != query.dimensions || emb.dimensions == 0 {
+                return None;
+            }
+            let distance = 1.0 - cosine_similarity_q8(query, emb);
+            Some((id, distance))
+        })
+        .collect();
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(k);
+    results
+}
+
 /// Reciprocal Rank Fusion (RRF): merges two ranked candidate lists into a
 /// single fused ranking.
 ///
@@ -194,22 +255,59 @@ pub fn rrf_merge<T>(
     vector_results: Vec<(i64, T)>,
     k_constant: f64,
 ) -> Vec<(f64, T)> {
+    let postings = keyword_results
+        .into_iter()
+        .enumerate()
+        .map(|(rank, (id, item))| (id, rank, item))
+        .chain(
+            vector_results
+                .into_iter()
+                .enumerate()
+                .map(|(rank, (id, item))| (id, rank, item)),
+        )
+        .collect();
+    rrf_merge_n(postings, k_constant)
+        .into_iter()
+        .map(|(score, _id, item)| (score, item))
+        .collect()
+}
+
+/// One RRF term: the contribution of a single recall at an explicit rank.
+///
+/// Ranks are caller-defined positions, treated opaquely: in-memory ranked
+/// lists use 0-based positions, zvec storage recalls use 1-based ranks.
+pub fn rrf_term(k_constant: f64, rank: usize) -> f64 {
+    1.0 / (k_constant + rank as f64)
+}
+
+/// N-list Reciprocal Rank Fusion over explicit `(id, rank, item)` postings.
+///
+/// Score = Σ `rrf_term(k, rank)` per id; the first-seen item wins on id
+/// collision. Results sort by descending score with ties broken by ascending
+/// id (lexicographic for strings — deterministic, unlike the previous
+/// `HashMap` order). Duplicate postings for one id sum (one recall per
+/// route, as in zvec `fuseCandidates`).
+pub fn rrf_merge_n<K, T>(postings: Vec<(K, usize, T)>, k_constant: f64) -> Vec<(f64, K, T)>
+where
+    K: Eq + std::hash::Hash + Ord,
+{
     use std::collections::HashMap;
 
-    let mut rrf_scores: HashMap<i64, (f64, T)> = HashMap::new();
-
-    for (rank, (id, item)) in keyword_results.into_iter().enumerate() {
-        rrf_scores.insert(id, (1.0 / (k_constant + rank as f64), item));
+    let mut rrf_scores: HashMap<K, (f64, Option<T>)> = HashMap::new();
+    for (id, rank, item) in postings {
+        let entry = rrf_scores.entry(id).or_insert_with(|| (0.0, Some(item)));
+        entry.0 += rrf_term(k_constant, rank);
     }
 
-    for (rank, (id, item)) in vector_results.into_iter().enumerate() {
-        let score = 1.0 / (k_constant + rank as f64);
-        let entry = rrf_scores.entry(id).or_insert_with(|| (0.0, item));
-        entry.0 += score;
-    }
-
-    let mut merged: Vec<(f64, T)> = rrf_scores.into_values().collect();
-    merged.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<(f64, K, T)> = rrf_scores
+        .into_iter()
+        .filter_map(|(id, (score, item))| item.map(|item| (score, id, item)))
+        .collect();
+    merged.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    });
     merged
 }
 

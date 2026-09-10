@@ -21,6 +21,9 @@ bon = { workspace = true }
 async-trait = { workspace = true }
 lru = { workspace = true }
 rusqlite = { workspace = true }
+httpdate = { workspace = true }
+sha2 = { workspace = true }
+getrandom = { workspace = true }
 
 [dev-dependencies]
 httpmock = { workspace = true }
@@ -31,6 +34,38 @@ tempfile = { workspace = true }
 common-core = { path = "../common-core", features = ["sqlite"] }
 [features]
 live-ai = []
+
+[[test]]
+name = "catalog"
+path = "tests/catalog.rs"
+
+[[test]]
+name = "grants"
+path = "tests/grants.rs"
+
+[[test]]
+name = "factory"
+path = "tests/factory.rs"
+
+[[test]]
+name = "qwen"
+path = "tests/qwen.rs"
+
+[[test]]
+name = "gguf"
+path = "tests/gguf.rs"
+
+[[test]]
+name = "artifact"
+path = "tests/artifact.rs"
+
+[[test]]
+name = "artifact_lock"
+path = "tests/artifact_lock.rs"
+
+[[test]]
+name = "resolution"
+path = "tests/resolution.rs"
 
 [[test]]
 name = "constants"
@@ -79,6 +114,11 @@ path = "tests/calibration.rs"
 [[test]]
 name = "backend"
 path = "tests/backend.rs"
+
+[[test]]
+name = "live"
+path = "tests/live.rs"
+required-features = ["live-ai"]
 
 [[test]]
 name = "testutil"

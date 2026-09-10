@@ -1,9 +1,14 @@
+#![forbid(unsafe_code)]
+
 //! fluent-llm: LLM HTTP client provider — embeddings, chat completions,
 //! prompt utilities, context packing, and request queueing.
 
 pub mod anonymize;
+pub mod artifact;
+pub mod artifact_lock;
 pub mod backend;
 pub mod cache;
+pub mod catalog;
 pub mod client;
 pub mod constants;
 pub mod context_packer;
@@ -11,6 +16,9 @@ pub mod decomposer;
 pub mod embeddings;
 pub mod embeddings_cache;
 pub mod error;
+pub mod factory;
+pub mod gguf;
+pub mod grants;
 pub mod http_class;
 pub mod llm_queue;
 pub mod onnx_config;
@@ -20,6 +28,8 @@ pub mod openai;
 pub mod parse;
 pub mod pii_patterns;
 pub mod protocol;
+pub mod qwen;
+pub mod resolution;
 pub mod runtime;
 pub mod sse;
 pub mod telemetry;
@@ -34,8 +44,27 @@ pub mod url;
 pub use protocol::{
     ChatMessage, LlmConfig, LlmError, LlmQueueConfig, LlmRequestQueue, LlmTask,
 };
+pub use qwen::{
+    EmbedContent, Qwen37TextEmbedding, Qwen3VlEmbedding, QwenEmbedResult, QwenImageFormat,
+    QwenTextEmbeddingV4, QwenTextOptions,
+};
+pub use resolution::{
+    resolve_embedding_reference, ResolveEmbeddingReferenceOptions,
+    EMBEDDING_ENVIRONMENT_VARIABLE,
+};
 
 pub use anonymize::{anonymize, build_anonymize_map};
+pub use artifact::{
+    model_artifact_url, resolve_model_artifacts, snapshot_fingerprint, snapshot_lock_path,
+    snapshot_marker_path, ArtifactBody, ArtifactDownloadError, ArtifactError, ArtifactFetchError,
+    ArtifactFetchResponse, ArtifactFetcher, ArtifactTimeouts, DownloadProgressReporter,
+    EmbeddingProgress, FailureKind, ModelArtifact, ModelArtifactDownloadProgress,
+    ModelArtifactSource, ReqwestArtifactFetcher, ResolveArtifactsOptions, ResolvedModelArtifacts,
+    SourceKind,
+};
+pub use artifact_lock::{
+    acquire_artifact_cache_lock, local_hostname, ArtifactCacheLock, LockError, LockOptions,
+};
 pub use backend::{
     BackendCaps, BackendError, BackendLoader, ContextProfile, EntityLinkScorer,
     InferenceBackend, InferenceCapability, InferenceRegistry, NamedContexts, OverlayContribution,
@@ -53,13 +82,34 @@ pub use client::{
     is_malformed_response, model_name, strip_preamble, ChatBackend, LlmClient,
 };
 pub use constants::MAX_EMBEDDING_DIMENSIONS;
+pub use catalog::{
+    get_embedding_model_catalog_entry, list_embedding_models, ArtifactMirror, ArtifactSources,
+    CatalogEntry, EmbeddingBackend, PinnedArtifact, EMBEDDING_MODEL_CATALOG,
+    DEFAULT_LOCAL_EMBEDDING, DEFAULT_QWEN3_VL_EMBEDDING_ENDPOINT,
+    DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT,
+};
 pub use context_packer::ContextPacker;
 pub use decomposer::{Decomposer, DecomposerConfig, LocalDecomposer};
 pub use embeddings::{
-    create_embedding_provider, BatchEmbedding, EmbeddingError, EmbeddingProvider, NoopEmbedding,
-    OllamaEmbedding, OpenAiEmbedding,
+    create_embedding_provider, check_embed_batch_output, validate_embed_batch, BatchEmbedding,
+    EmbeddingError, EmbeddingProvider, NoopEmbedding, OllamaEmbedding, OpenAiEmbedding,
 };
 pub use error::EmbedError;
+pub use factory::{
+    create_embedding_model, require_compatible_embedding, CreateModelOptions, EmbeddingIdentity,
+    RebuildField, RebuildMismatch,
+};
+pub use gguf::{
+    Device, EmbedPurpose, GgufArtifactRequest, GgufArtifactResolver, GgufContextOptions,
+    GgufDependencies, GgufEmbedResult, GgufEmbedding, GgufEmbeddingContext, GgufFormat,
+    GgufLlamaInstance, GgufModel, GgufModelOptions, GgufModelSpec, GgufResolvedArtifacts,
+    GgufRuntimeLoader, GgufRuntimeModule, GpuSelection, ProductionGgufResolver, UnboundGgufRuntime,
+};
+pub use grants::{
+    ensure_remote_embedding_authorized, ElicitationDecision, ElicitationRequest, Elicitor,
+    GrantError, RemoteAuthorization, RemoteEmbeddingAuthorizationStore, RemoteEmbeddingTarget,
+    RemoteEmbeddingWorkspaceGrant, REMOTE_EMBEDDING_CAPABILITY,
+};
 pub use http_class::{classify_http_status, FailureClass, HttpClass};
 pub use parse::{parse_json_response, parse_typed, repair_json, strip_json_fence, JsonParseError};
 pub use telemetry::{

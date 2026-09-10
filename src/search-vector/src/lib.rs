@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! search-vector: SQLite hybrid search engine — KNN vector search,
 //! keyword search, RRF merge, quantized embeddings, and semantic aliases.
 //!

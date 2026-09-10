@@ -519,3 +519,50 @@ fn openai_embed_params_cannot_override_model_or_input() {
     assert_eq!(vec.len(), 3);
     mock.assert();
 }
+
+#[test]
+fn batch_size_validation_rejects_oversize_batches() {
+    validate_embed_batch(0, 8).unwrap();
+    validate_embed_batch(8, 8).unwrap();
+    let error = validate_embed_batch(9, 8).unwrap_err();
+    assert!(error.to_string().contains("batch size"), "{error}");
+    assert!(matches!(
+        error,
+        EmbeddingError::BatchTooLarge { size: 9, max: 8 }
+    ));
+}
+
+#[test]
+fn batch_output_validation_checks_shape_values_and_truncation() {
+    let good = BatchEmbedding {
+        flat: vec![1.0, 0.0, 0.0, 1.0],
+        count: 2,
+        dims: 2,
+    };
+    check_embed_batch_output(&good, 2, 2, &[]).unwrap();
+    check_embed_batch_output(&good, 2, 2, &[1]).unwrap();
+
+    let error = check_embed_batch_output(&good, 1, 2, &[]).unwrap_err();
+    assert!(error.to_string().contains("wrong number"), "{error}");
+    let error = check_embed_batch_output(&good, 2, 3, &[]).unwrap_err();
+    assert!(error.to_string().contains("wrong dimension"), "{error}");
+    let ragged = BatchEmbedding {
+        flat: vec![1.0, 0.0, 0.0],
+        count: 2,
+        dims: 2,
+    };
+    let error = check_embed_batch_output(&ragged, 2, 2, &[]).unwrap_err();
+    assert!(error.to_string().contains("flat length"), "{error}");
+    let non_finite = BatchEmbedding {
+        flat: vec![1.0, f32::NAN, 0.0, 1.0],
+        count: 2,
+        dims: 2,
+    };
+    let error = check_embed_batch_output(&non_finite, 2, 2, &[]).unwrap_err();
+    assert!(error.to_string().contains("non-finite"), "{error}");
+    for bad_truncation in [vec![2], vec![1, 1]] {
+        let error =
+            check_embed_batch_output(&good, 2, 2, &bad_truncation).unwrap_err();
+        assert!(error.to_string().contains("truncated"), "{error}");
+    }
+}

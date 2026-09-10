@@ -1,6 +1,3 @@
-use std::path::Path;
-
-use fluent_knowledge::word_index::WordIndex;
 use fluent_types::GuidanceDoc;
 use thiserror::Error;
 
@@ -11,14 +8,15 @@ use crate::memory::MemoryBridge;
 use crate::query::formatter::{
     CompactFormatter, DebugFormatter, Formatter, JsonFormatter, MarkdownFormatter,
 };
+use crate::query::hybrid::{plan_from_query, stages_from_hits};
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
+use crate::query::recall::{run_recall, RecallStorage};
 use crate::query::search_backend::{
     ConceptBackend, FilePathBackend, GeneralBackend, IdentifierBackend, KeywordBackend,
     SearchBackend, SearchContext,
 };
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
-use crate::walk;
 use search_vector::GuidanceDb;
 use search_vector::SemanticAliases;
 
@@ -46,7 +44,6 @@ common_core::impl_from_io_error!(QueryEngineError);
 
 pub struct QueryEngine {
     pub llm_filter: LlmFilter,
-    pub word_index: Option<WordIndex>,
     pub aliases: Option<SemanticAliases>,
     pub no_llm: bool,
     backends: Vec<Box<dyn SearchBackend>>,
@@ -63,7 +60,6 @@ impl QueryEngine {
     pub fn new() -> Self {
         Self {
             llm_filter: LlmFilter::new(Some(Box::new(NoopLlmFilter))),
-            word_index: None,
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
@@ -74,7 +70,6 @@ impl QueryEngine {
     pub fn new_with_filter(backend: Box<dyn LlmFilterBackend>) -> Self {
         Self {
             llm_filter: LlmFilter::new(Some(backend)),
-            word_index: None,
             aliases: None,
             no_llm: false,
             backends: Self::default_backends(),
@@ -99,12 +94,6 @@ impl QueryEngine {
     }
 
     #[must_use]
-    pub fn with_word_index(mut self, wi: WordIndex) -> Self {
-        self.word_index = Some(wi);
-        self
-    }
-
-    #[must_use]
     pub fn with_aliases(mut self, aliases: SemanticAliases) -> Self {
         self.aliases = Some(aliases);
         self
@@ -112,6 +101,9 @@ impl QueryEngine {
 
     /// Register a custom search backend. Backends are tried in registration
     /// order; the first one whose `matches` returns true handles the query.
+    /// Index-backed backends (`FtsBackend`, `VectorBackend`, `LemmaBackend`)
+    /// can be registered here with a storage seam; without storage they
+    /// decline and the legacy doc backends serve.
     #[must_use]
     pub fn with_backend(mut self, backend: Box<dyn SearchBackend>) -> Self {
         self.backends.push(backend);
@@ -143,34 +135,6 @@ impl QueryEngine {
         }
     }
 
-    pub fn load_word_index(&mut self, guidance_dir: &Path) -> Result<(), QueryEngineError> {
-        let src_dir = guidance_dir.join("src");
-        if !src_dir.is_dir() {
-            return Ok(());
-        }
-        let mut wi = WordIndex::new();
-        let root = src_dir.clone();
-        walk::walk_files(&src_dir, walk::SOURCE_EXTENSIONS, |path| {
-            let rel = path
-                .strip_prefix(&root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string();
-            if let Ok(content) = common_core::io::read_to_string_err(path) {
-                wi.index_file(&rel, &content);
-            }
-        });
-        self.word_index = Some(wi);
-        Ok(())
-    }
-
-    pub fn update_word_index(&mut self, file_path: &str, content: &str) {
-        if let Some(ref mut wi) = self.word_index {
-            wi.remove_file(file_path);
-            wi.index_file(file_path, content);
-        }
-    }
-
     /// Dispatch a query through the tiered search pipeline.
     ///
     /// G1: Uses `FsmEngine` for richer classification (intent + domain + confidence)
@@ -195,7 +159,9 @@ impl QueryEngine {
         llm_filter: &LlmFilter,
     ) -> Result<Vec<Stage>, QueryEngineError> {
         let ctx = SearchContext {
-            word_index: self.word_index.as_ref(),
+            storage: None,
+            embedder: None,
+            nlp: None,
             llm_filter,
         };
 
@@ -264,6 +230,38 @@ impl QueryEngine {
         };
 
         self.dispatch_search(&expanded_query, doc)
+    }
+
+    /// Fuse-always hybrid explain over the fragment index (P1): builds a
+    /// two-route plan from the query, runs FTS + vector + lemma recall with
+    /// RRF fusion, and converts hits to trace-carrying stages. The legacy
+    /// doc path (`explain`) is preserved for in-memory documents (R.4).
+    pub fn hybrid_explain(
+        &self,
+        query: &str,
+        storage: &dyn RecallStorage,
+        embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
+        nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
+        limit: usize,
+    ) -> Result<Vec<Stage>, QueryEngineError> {
+        let expanded_query = if let Some(ref aliases) = self.aliases {
+            aliases
+                .expand_query(query)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| query.to_string())
+        } else {
+            query.to_string()
+        };
+        let mut fsm = strategy::FsmEngine::new();
+        let intent = fsm.run(&expanded_query).intent;
+        let plan = plan_from_query(&expanded_query, intent, limit);
+        let output = run_recall(&plan, storage, embedder, nlp)
+            .map_err(|error| QueryEngineError::Db(error.to_string()))?;
+        if output.hits.is_empty() {
+            return Err(QueryEngineError::NoResults);
+        }
+        Ok(stages_from_hits(&output.hits))
     }
 
     /// Format stages into the specified output format.
@@ -380,8 +378,6 @@ fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser)
 mod tests {
     use super::*;
     use crate::tests::common::make_test_doc;
-    use fluent_knowledge::word_index::WordIndex;
-    use fluent_wvr_testutil::tempdir;
 
     #[test]
     fn test_explain_identifier() {
@@ -416,63 +412,9 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_word_index_identifier_fallback() {
-        let mut wi = WordIndex::new();
-        wi.index_file("src/test.zig", "pub fn helloWorld() void {}");
-        let engine = QueryEngine::new().with_word_index(wi);
-        let doc = make_test_doc();
-        // helloWorld is already in doc, so direct match works
-        let stages = engine.explain("helloWorld", &doc).expect("explain");
-        assert!(!stages.is_empty());
-    }
-
-    #[test]
-    fn test_word_index_identifier_fallback_not_found() {
-        let mut wi = WordIndex::new();
-        wi.index_file("src/test.zig", "pub fn unknownFn() void {}");
-        let engine = QueryEngine::new().with_word_index(wi);
-        let doc = make_test_doc();
-        // The member "unknownFn" doesn't exist in the doc, so WordIndex
-        // hits won't produce results either
-        let result = engine.explain("unknownFn", &doc);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_word_index_update() {
-        let mut engine = QueryEngine::new();
-        let mut wi = WordIndex::new();
-        wi.index_file("src/test.zig", "pub fn oldName() void {}");
-        engine.word_index = Some(wi);
-
-        // Update the word index
-        engine.update_word_index("src/test.zig", "pub fn newName() void {}");
-
-        // Verify the old name is gone
-        let old_hits = engine.word_index.as_ref().unwrap().search("oldName");
-        assert!(old_hits.is_empty());
-
-        // Verify the new name is indexed
-        let new_hits = engine.word_index.as_ref().unwrap().search("newName");
-        assert!(!new_hits.is_empty());
-    }
-
-    #[test]
-    fn test_load_word_index_from_dir() {
-        let dir = tempdir();
-        let src_dir = dir.path().join("src");
-        std::fs::create_dir_all(&src_dir).expect("create src dir");
-        std::fs::write(src_dir.join("test.zig"), "pub fn hello_world() void {}").expect("write");
-
-        let mut engine = QueryEngine::new();
-        engine.load_word_index(dir.path()).expect("load word index");
-
-        assert!(engine.word_index.is_some());
-        // The sub-token "hello" should be indexed from hello_world
-        let hits = engine.word_index.as_ref().unwrap().search("hello");
-        assert!(!hits.is_empty(), "should find hello in word index");
-    }
+    // ── R.1 (P1): WordIndex fallback arms deleted — lexical recall lives
+    // in the fragment index. The fragment-index equivalents are covered by
+    // the query::recall verbatim ports (tests/query_recall.rs).
 
     // ── M0 characterization: dispatch_with_filter parity harness ──────────────
 
@@ -520,6 +462,7 @@ mod tests {
             source: "src/test.zig".into(),
             member_name: Some("helloWorld".into()),
             member_type: Some(fluent_types::MemberType::FnDecl),
+            trace: None,
             line: Some(1),
             end_line: None,
         }]

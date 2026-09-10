@@ -236,6 +236,58 @@ impl SyncEngine {
         guidance_json_path(source_path, &self.source_dir, &self.guidance_dir)
     }
 
+    /// Path-scoped generation (P2): generate docs for every source file
+    /// under `path` (file or directory), returning `(generated, failed)`.
+    /// Per-file isolation holds — a failed file is counted, never thrown.
+    pub fn gen_scoped(&mut self, path: &Path) -> Result<(usize, usize), SyncEngineError> {
+        use crate::selection::{select_files, FileSelection};
+        let mut diag = crate::selection::ScanDiagnostics::default();
+        let selection = FileSelection {
+            roots: vec![path.to_path_buf()],
+            include_globs: Vec::new(),
+            exclude_globs: Vec::new(),
+            extra_skip_dirs: Vec::new(),
+            honor_gitignore: false,
+            max_bytes_override: None,
+        };
+        let files = select_files(&selection, &mut diag)
+            .map_err(|e| SyncEngineError::Parse(e.to_string()))?;
+        let mut generated = 0;
+        let mut failed = 0;
+        for file in files {
+            // The legacy member pipeline parses zig/zon/py/rs only.
+            let parseable = file
+                .path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| matches!(ext, "zig" | "zon" | "py" | "rs"));
+            if !parseable {
+                continue;
+            }
+            match self.gen_if_stale(&file.path) {
+                Ok(true) => generated += 1,
+                Ok(false) => {} // Up to date: hash wins over mtime (Gate 0 §6).
+                Err(_) => failed += 1,
+            }
+        }
+        Ok((generated, failed))
+    }
+
+    /// Embedding-schema gate (P2): the fragment index and embedding cache
+    /// tables must exist before any wave commits. Version mismatches
+    /// surface here (never as a mid-run commit failure).
+    pub fn check_store(db: &search_vector::GuidanceDb) -> Result<(), SyncEngineError> {
+        for table in ["zg_files", "zg_fragments", "embedding_cache"] {
+            if !db.has_table(table) {
+                return Err(SyncEngineError::Parse(format!(
+                    "index schema gate: missing table {table} (expected schema v{})",
+                    crate::index_pipeline::INDEX_SCHEMA_VERSION
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn walk_source_files<F>(&self, mut callback: F)
     where
         F: FnMut(&Path),
@@ -320,6 +372,34 @@ mod tests {
 
         let status = engine.status().expect("status");
         assert_eq!(status.total_files, 1);
+    }
+
+    #[test]
+    fn test_gen_scoped_covers_subtree() {
+        let dir = tempdir();
+        let source_dir = dir.path().join("src");
+        std::fs::create_dir_all(source_dir.join("sub")).expect("mkdir");
+        std::fs::write(source_dir.join("a.zig"), "pub fn a() void {}\n").expect("write");
+        std::fs::write(source_dir.join("sub").join("b.zig"), "pub fn b() void {}\n")
+            .expect("write");
+
+        let guidance_dir = dir.path().join(".guidance");
+        let mut engine = SyncEngine::new(guidance_dir, source_dir.clone());
+        let (generated, failed) = engine.gen_scoped(&source_dir).expect("scoped");
+        assert_eq!(generated, 2, "both files generated");
+        assert_eq!(failed, 0);
+
+        // Path-scoped to the subtree only.
+        let guidance_dir2 = dir.path().join(".guidance2");
+        let mut engine2 = SyncEngine::new(guidance_dir2, source_dir.clone());
+        let (generated, _) = engine2.gen_scoped(&source_dir.join("sub")).expect("scoped");
+        assert_eq!(generated, 1);
+    }
+
+    #[test]
+    fn test_check_store_gates_schema() {
+        let db = search_vector::GuidanceDb::open_in_memory().expect("db");
+        assert!(SyncEngine::check_store(&db).is_ok());
     }
 
     #[test]

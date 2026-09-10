@@ -1,0 +1,609 @@
+//! P3 dependency graph (L4): file-layer `DependencyGraph` over import
+//! edges (harvested by the P2 adapters — never a second parser) plus
+//! symbol-level call edges, with deterministic graph re-rank and
+//! role-coverage tiebreak over fused candidates.
+
+use crate::ast_parser::AstParser;
+use crate::extractor::adapter::format_for_extension;
+use crate::extractor::code::harvest_file_entities;
+use crate::extractor::ExtractSource;
+use crate::query::fusion::RecallCandidate;
+use crate::zg_types::{EntityMetadata, FileKind};
+use fluent_dag::dep_graph::{DependencyGraph, GraphError};
+use spacy_rs::routing::RoutingSignal;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use thiserror::Error;
+
+/// Graph build failure.
+#[derive(Debug, Error)]
+pub enum GraphIndexError {
+    /// Dependency graph bookkeeping failed.
+    #[error("graph error: {0}")]
+    Graph(String),
+    /// Harvest failed (parse errors are per-file data, never fatal here).
+    #[error("harvest error: {0}")]
+    Harvest(String),
+}
+
+impl From<GraphError> for GraphIndexError {
+    fn from(error: GraphError) -> Self {
+        Self::Graph(error.to_string())
+    }
+}
+
+/// One file's harvest inputs (bytes owned by the caller).
+#[derive(Debug, Clone)]
+pub struct HarvestInput {
+    /// Normalized absolute path.
+    pub path: String,
+    /// Extractor format (`rust`, `typescript`, …).
+    pub format: String,
+    /// Full file text.
+    pub text: String,
+}
+
+/// A resolved symbol definition site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolDef {
+    /// Defining file (normalized absolute path).
+    pub file: String,
+    /// Declared symbol name.
+    pub symbol: String,
+}
+
+/// A caller → callee-name edge (callee resolved at build).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallEdge {
+    /// Calling file.
+    pub caller_file: String,
+    /// Calling symbol, if named.
+    pub caller_symbol: Option<String>,
+    /// Raw callee name.
+    pub callee: String,
+    /// Files defining the callee (empty when unresolved).
+    pub callee_files: Vec<String>,
+}
+
+/// An importer → specifier edge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportEdge {
+    /// Importing file.
+    pub importer: String,
+    /// Raw specifier text.
+    pub specifier: String,
+    /// Resolved target file, if any.
+    pub resolved_file: Option<String>,
+}
+
+/// Query-side graph signals: routing-signal lemmas (predicate + roles),
+/// lowercased. Built from `extract_routing_signals` — no new NLP.
+#[derive(Debug, Clone, Default)]
+pub struct GraphQuerySignals {
+    /// Predicate lemmas.
+    pub predicate: Vec<String>,
+    /// Role lemmas (subject, objects, modifiers, qualifiers).
+    pub roles: Vec<String>,
+}
+
+/// Build query signals from routing signals (predicate + role lemmas).
+#[must_use]
+pub fn signals_from_routing(signals: &[RoutingSignal]) -> GraphQuerySignals {
+    let mut predicate = Vec::new();
+    let mut roles = Vec::new();
+    for signal in signals {
+        push_lower(&mut predicate, &signal.predicate);
+        if let Some(subject) = &signal.subject {
+            push_lower(&mut roles, subject);
+        }
+        if let Some(object) = &signal.direct_object {
+            push_lower(&mut roles, object);
+        }
+        if let Some(object) = &signal.indirect_object {
+            push_lower(&mut roles, object);
+        }
+        for modifier in &signal.modifiers {
+            push_lower(&mut roles, modifier);
+        }
+        for qualifier in &signal.qualifiers {
+            push_lower(&mut roles, qualifier);
+        }
+    }
+    GraphQuerySignals { predicate, roles }
+}
+
+fn push_lower(out: &mut Vec<String>, value: &str) {
+    let lowered = value.to_lowercase();
+    if !lowered.is_empty() && !out.contains(&lowered) {
+        out.push(lowered);
+    }
+}
+
+/// L4 boost weights (additive over fused RRF scores; deterministic).
+/// Source: roadmap L4 (dependents/call-graph/scope boost + role tiebreak).
+pub const L4_CALL_BOOST: f64 = 0.5;
+/// Boost for files in the dependents closure of an anchor file.
+pub const L4_DEPENDENT_BOOST: f64 = 0.3;
+/// Boost for candidates sharing an anchor file.
+pub const L4_SAME_FILE_BOOST: f64 = 0.2;
+/// Boost for candidates sharing an anchor scope prefix.
+pub const L4_SCOPE_BOOST: f64 = 0.1;
+/// Role-coverage overlap is tiebreak-scale by construction.
+pub const L4_ROLE_EPSILON: f64 = 1e-4;
+
+/// Dependency graph over indexed files + symbol call edges (L4 re-rank).
+pub struct GraphIndex {
+    files: DependencyGraph<String>,
+    symbol_defs: HashMap<String, Vec<SymbolDef>>,
+    call_edges: Vec<CallEdge>,
+    import_edges: Vec<ImportEdge>,
+}
+
+impl GraphIndex {
+    /// Build from harvested file inputs (pure; the DB-backed constructor
+    /// feeds the same path).
+    pub fn build(files: &[HarvestInput], roots: &[String]) -> Result<Self, GraphIndexError> {
+        let mut parser = AstParser::new();
+        let mut per_file: Vec<(String, crate::extractor::code::HarvestedFile)> = Vec::new();
+        for file in files {
+            let harvested = harvest_file_entities(
+                &mut parser,
+                &ExtractSource {
+                    file_id: file.path.clone(),
+                    text: file.text.clone(),
+                    format: file.format.clone(),
+                    kind: FileKind::Code,
+                },
+            )
+            .map_err(|e| GraphIndexError::Harvest(e.to_string()))?;
+            per_file.push((file.path.clone(), harvested));
+        }
+        Self::assemble(&per_file, roots)
+    }
+
+    /// Build from an indexed database: symbol defs seed from stored
+    /// fragments, file bytes re-harvest imports + calls through the P2
+    /// adapters (single linear read pass, no embeddings).
+    pub fn build_from_db(
+        db: &search_vector::db::GuidanceDb,
+        roots: &[String],
+    ) -> Result<Self, GraphIndexError> {
+        let records = db
+            .zg_list_files()
+            .map_err(|e| GraphIndexError::Harvest(e.to_string()))?;
+        let mut parser = AstParser::new();
+        let mut per_file = Vec::new();
+        for record in records {
+            let Ok(text) = std::fs::read_to_string(&record.absolute_path) else {
+                continue;
+            };
+            let ext = Path::new(&record.absolute_path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or_default();
+            let Some(format) = format_for_extension(ext) else {
+                continue;
+            };
+            let harvested = harvest_file_entities(
+                &mut parser,
+                &ExtractSource {
+                    file_id: record.id.clone(),
+                    text,
+                    format: format.to_string(),
+                    kind: FileKind::Code,
+                },
+            )
+            .map_err(|e| GraphIndexError::Harvest(e.to_string()))?;
+            per_file.push((record.absolute_path.clone(), harvested));
+        }
+        Self::assemble(&per_file, roots)
+    }
+
+    fn assemble(
+        per_file: &[(String, crate::extractor::code::HarvestedFile)],
+        roots: &[String],
+    ) -> Result<Self, GraphIndexError> {
+        let mut symbol_defs: HashMap<String, Vec<SymbolDef>> = HashMap::new();
+        for (path, harvested) in per_file {
+            for symbol in &harvested.symbols {
+                if let Some(name) = &symbol.name {
+                    symbol_defs.entry(name.clone()).or_default().push(SymbolDef {
+                        file: path.clone(),
+                        symbol: name.clone(),
+                    });
+                }
+            }
+        }
+        let mut import_edges = Vec::new();
+        let mut file_deps: HashMap<String, HashSet<String>> = HashMap::new();
+        for (path, harvested) in per_file {
+            file_deps.entry(path.clone()).or_default();
+            for specifier in &harvested.imports {
+                let resolved = resolve_import(path, specifier, roots, &per_file_paths(per_file));
+                if let Some(target) = &resolved {
+                    file_deps
+                        .entry(path.clone())
+                        .or_default()
+                        .insert(target.clone());
+                }
+                import_edges.push(ImportEdge {
+                    importer: path.clone(),
+                    specifier: specifier.clone(),
+                    resolved_file: resolved,
+                });
+            }
+        }
+        let mut call_edges = Vec::new();
+        for (path, harvested) in per_file {
+            for symbol in &harvested.symbols {
+                for callee in &symbol.calls {
+                    let callee_files: Vec<String> = symbol_defs
+                        .get(callee)
+                        .map(|defs| {
+                            defs.iter()
+                                .map(|def| def.file.clone())
+                                .filter(|file| file != path)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    for target in &callee_files {
+                        file_deps
+                            .entry(path.clone())
+                            .or_default()
+                            .insert(target.clone());
+                    }
+                    call_edges.push(CallEdge {
+                        caller_file: path.clone(),
+                        caller_symbol: symbol.name.clone(),
+                        callee: callee.clone(),
+                        callee_files,
+                    });
+                }
+            }
+        }
+        let mut files = DependencyGraph::new();
+        let mut ordered: Vec<&String> = file_deps.keys().collect();
+        ordered.sort();
+        for path in ordered {
+            let mut deps: Vec<String> = file_deps[path].iter().cloned().collect();
+            deps.sort();
+            files.register(path, &deps, std::slice::from_ref(path))?;
+        }
+        Ok(Self {
+            files,
+            symbol_defs,
+            call_edges,
+            import_edges,
+        })
+    }
+
+    /// Transitive dependents closure including the seeds (sorted). Unit of
+    /// staleness: touching a file invalidates its dependents, not the
+    /// workspace.
+    #[must_use]
+    pub fn dependents_closure(&self, paths: &[String]) -> Vec<String> {
+        let mut closure: HashSet<String> = paths.iter().cloned().collect();
+        for path in paths {
+            closure.extend(self.files.dependents_of(path));
+        }
+        let mut ordered: Vec<String> = closure.into_iter().collect();
+        ordered.sort();
+        ordered
+    }
+
+    /// Direct file dependencies (imports + call targets).
+    #[must_use]
+    pub fn file_dependencies(&self, path: &str) -> Vec<String> {
+        self.files
+            .deps_of(&path.to_string())
+            .map(|deps| {
+                let mut ordered = deps.to_vec();
+                ordered.sort();
+                ordered
+            })
+            .unwrap_or_default()
+    }
+
+    /// Symbol definitions for a name.
+    #[must_use]
+    pub fn definitions_of(&self, symbol: &str) -> &[SymbolDef] {
+        self.symbol_defs.get(symbol).map_or(&[], Vec::as_slice)
+    }
+
+    /// All call edges.
+    #[must_use]
+    pub fn call_edges(&self) -> &[CallEdge] {
+        &self.call_edges
+    }
+
+    /// All import edges (resolved and unresolved).
+    #[must_use]
+    pub fn import_edges(&self) -> &[ImportEdge] {
+        &self.import_edges
+    }
+
+    /// L4 re-rank: boost fused candidates by graph proximity to the fused
+    /// anchors (top-3 by score), then role-coverage overlap as a
+    /// tiebreak-scale epsilon. Deterministic for identical inputs.
+    /// Skipped (RRF order preserved) when no graph edge touches the
+    /// candidate set — layered-search skip discipline.
+    pub fn rerank(&self, candidates: &mut [RecallCandidate], signals: &GraphQuerySignals) {
+        if candidates.is_empty() {
+            return;
+        }
+        let candidate_files: HashSet<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.file.absolute_path.as_str())
+            .collect();
+        let touches = self.call_edges.iter().any(|edge| {
+            candidate_files.contains(edge.caller_file.as_str())
+                || edge.callee_files.iter().any(|file| candidate_files.contains(file.as_str()))
+        }) || self.import_edges.iter().any(|edge| {
+            candidate_files.contains(edge.importer.as_str())
+                || edge.resolved_file.as_deref().is_some_and(|file| candidate_files.contains(file))
+        });
+        if !touches {
+            return;
+        }
+        let mut anchors: Vec<usize> = (0..candidates.len()).collect();
+        anchors.sort_by(|&a, &b| {
+            candidates[b]
+                .score
+                .partial_cmp(&candidates[a].score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| candidates[a].id.cmp(&candidates[b].id))
+        });
+        anchors.truncate(3);
+        let anchor_files: HashSet<&str> = anchors
+            .iter()
+            .map(|&index| candidates[index].file.absolute_path.as_str())
+            .collect();
+        let anchor_symbols: HashSet<String> = anchors
+            .iter()
+            .filter_map(|&index| candidate_symbol(&candidates[index]))
+            .collect();
+        let mut anchor_closure = HashSet::new();
+        for file in &anchor_files {
+            anchor_closure.insert((*file).to_string());
+            for dependent in self.files.dependents_of(&(*file).to_string()) {
+                anchor_closure.insert(dependent);
+            }
+        }
+        let mut scored: Vec<(usize, f64, usize)> = Vec::with_capacity(candidates.len());
+        for (index, candidate) in candidates.iter().enumerate() {
+            let mut boost = 0.0;
+            let file = candidate.file.absolute_path.as_str();
+            if anchor_files.contains(file) {
+                boost += L4_SAME_FILE_BOOST;
+            } else if anchor_closure.contains(file) {
+                boost += L4_DEPENDENT_BOOST;
+            }
+            if let Some(symbol) = candidate_symbol(candidate) {
+                if self.calls_anchor(candidate, &symbol, &anchors, candidates, &anchor_symbols) {
+                    boost += L4_CALL_BOOST;
+                }
+            }
+            if Self::shares_anchor_scope(&anchors, candidates, candidate) {
+                boost += L4_SCOPE_BOOST;
+            }
+            let overlap = role_overlap(candidate, signals);
+            scored.push((index, candidate.score + boost, overlap));
+        }
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| candidates[a.0].id.cmp(&candidates[b.0].id))
+        });
+        // Reorder by the sorted permutation (candidates are few; the
+        // clone keeps the rotation obviously correct and deterministic).
+        let reordered: Vec<RecallCandidate> =
+            scored.iter().map(|(index, _, _)| candidates[*index].clone()).collect();
+        candidates.clone_from_slice(&reordered);
+    }
+
+    fn calls_anchor(
+        &self,
+        candidate: &RecallCandidate,
+        symbol: &str,
+        anchors: &[usize],
+        candidates: &[RecallCandidate],
+        anchor_symbols: &HashSet<String>,
+    ) -> bool {
+        let file = &candidate.file.absolute_path;
+        // Candidate calls an anchor symbol, or an anchor calls the candidate.
+        for edge in &self.call_edges {
+            if &edge.caller_file == file
+                && edge.caller_symbol.as_deref() == Some(symbol)
+                && anchor_symbols.contains(&edge.callee)
+            {
+                return true;
+            }
+        }
+        for &anchor in anchors {
+            let anchor_file = &candidates[anchor].file.absolute_path;
+            let Some(anchor_symbol) = candidate_symbol(&candidates[anchor]) else {
+                continue;
+            };
+            for edge in &self.call_edges {
+                if &edge.caller_file == anchor_file
+                    && edge.caller_symbol.as_deref() == Some(anchor_symbol.as_str())
+                    && edge.callee == symbol
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn shares_anchor_scope(anchors: &[usize], candidates: &[RecallCandidate], candidate: &RecallCandidate) -> bool {
+        let Some(scope) = candidate_scope(candidate) else {
+            return false;
+        };
+        anchors.iter().any(|&anchor| {
+            candidate_scope(&candidates[anchor])
+                .is_some_and(|anchor_scope| anchor_scope == scope)
+        })
+    }
+}
+
+fn candidate_symbol(candidate: &RecallCandidate) -> Option<String> {
+    match &candidate.entity.metadata {
+        Some(EntityMetadata::Code { symbol_name, .. }) => symbol_name.clone(),
+        _ => None,
+    }
+}
+
+fn candidate_scope(candidate: &RecallCandidate) -> Option<String> {
+    match &candidate.entity.metadata {
+        Some(EntityMetadata::Code { scope, .. } | EntityMetadata::Markdown { scope, .. }) => {
+            scope.clone()
+        }
+        _ => None,
+    }
+}
+
+/// Role-coverage overlap: query predicate/role lemmas ∩ candidate
+/// symbol/scope/file-stem tokens (tiebreak scale).
+fn role_overlap(candidate: &RecallCandidate, signals: &GraphQuerySignals) -> usize {
+    let mut tokens = HashSet::new();
+    if let Some(symbol) = candidate_symbol(candidate) {
+        extend_tokens(&mut tokens, &symbol);
+    }
+    if let Some(scope) = candidate_scope(candidate) {
+        extend_tokens(&mut tokens, &scope);
+    }
+    if let Some(stem) = Path::new(&candidate.file.absolute_path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+    {
+        extend_tokens(&mut tokens, stem);
+    }
+    signals
+        .predicate
+        .iter()
+        .chain(signals.roles.iter())
+        .filter(|lemma| tokens.contains(lemma.as_str()))
+        .count()
+}
+
+fn extend_tokens(tokens: &mut HashSet<String>, text: &str) {
+    for token in text.split(|c: char| !c.is_alphanumeric()) {
+        let lowered = token.to_lowercase();
+        if !lowered.is_empty() {
+            tokens.insert(lowered);
+        }
+    }
+}
+
+fn per_file_paths(per_file: &[(String, crate::extractor::code::HarvestedFile)]) -> HashSet<String> {
+    per_file.iter().map(|(path, _)| path.clone()).collect()
+}
+
+/// Resolve an import specifier to a workspace file (best effort):
+/// `mod:` declarations, relative paths with extension/index probing,
+/// then root-anchored and dotted-module probing. `None` records the edge
+/// as unresolved (never dropped).
+fn resolve_import(
+    importer: &str,
+    specifier: &str,
+    roots: &[String],
+    known_files: &HashSet<String>,
+) -> Option<String> {
+    if let Some(module) = specifier.strip_prefix("mod:") {
+        return probe_module_file(importer, module, known_files);
+    }
+    let cleaned = specifier.trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+    // Relative specifiers resolve against the importer directory.
+    if cleaned.starts_with("./") || cleaned.starts_with("../") || cleaned == "." || cleaned == ".." {
+        let base = Path::new(importer).parent().unwrap_or(Path::new("/"));
+        return probe_path(&base.join(cleaned), known_files);
+    }
+    // Dotted modules (`pkg.sub`) probe as relative segments first.
+    if cleaned.contains('.') && !cleaned.contains('/') && Path::new(cleaned).extension().is_none_or(std::ffi::OsStr::is_empty) {
+        let relative = cleaned.replace('.', "/");
+        let base = Path::new(importer).parent().unwrap_or(Path::new("/"));
+        if let Some(found) = probe_path(&base.join(&relative), known_files) {
+            return Some(found);
+        }
+    }
+    // Root-anchored probing (importer-relative dotted, roots, bare name).
+    let importer_dir = Path::new(importer).parent().unwrap_or(Path::new("/"));
+    for root in std::iter::once(&importer_dir.to_string_lossy().into_owned()).chain(roots.iter()) {
+        let base = PathBuf::from(root);
+        for candidate in [
+            base.join(cleaned),
+            base.join(cleaned.replace('.', "/")),
+            base.join(cleaned.replace("::", "/")),
+        ] {
+            if let Some(found) = probe_path(&candidate, known_files) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Rust `mod child;` (or `crate::a::b` paths) to sibling files.
+fn probe_module_file(importer: &str, module: &str, known_files: &HashSet<String>) -> Option<String> {
+    let dir = Path::new(importer).parent().unwrap_or(Path::new("/"));
+    for candidate in [
+        dir.join(format!("{module}.rs")),
+        dir.join(module).join("mod.rs"),
+    ] {
+        if let Some(found) = probe_path(&candidate, known_files) {
+            return Some(found);
+        }
+    }
+    // `crate::a::b` paths resolve from the file's topmost module dir is
+    // undecidable without the crate root; record unresolved.
+    None
+}
+
+/// Probe a path with extension and index variants against known files.
+fn probe_path(candidate: &Path, known_files: &HashSet<String>) -> Option<String> {
+    let normalized = normalize_separators(&candidate.to_string_lossy());
+    if known_files.contains(&normalized) {
+        return Some(normalized);
+    }
+    [
+        format!("{normalized}.ts"),
+        format!("{normalized}.tsx"),
+        format!("{normalized}.js"),
+        format!("{normalized}.py"),
+        format!("{normalized}.rs"),
+        format!("{normalized}.go"),
+        format!("{normalized}.java"),
+        format!("{normalized}.c"),
+        format!("{normalized}/index.ts"),
+        format!("{normalized}/index.js"),
+        format!("{normalized}/mod.rs"),
+        format!("{normalized}/__init__.py"),
+    ]
+    .into_iter()
+    .find(|suffixed| known_files.contains(suffixed))
+}
+
+fn normalize_separators(path: &str) -> String {
+    // Lexical clean (no I/O): collapse `.`/`..` and `/` separators.
+    let slashed = path.replace('\\', "/");
+    let mut parts: Vec<&str> = Vec::new();
+    for part in slashed.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
+#[cfg(test)]
+#[path = "../tests/graph_index.rs"]
+mod tests;

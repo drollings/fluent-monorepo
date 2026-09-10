@@ -14,6 +14,10 @@ const DEFAULT_CACHE_LIMIT: usize = 1024;
 pub enum EmbeddingError {
     #[error("unknown provider: {0}")]
     UnknownProvider(String),
+    #[error("unknown embedding model reference: {0}")]
+    CatalogNotFound(String),
+    #[error("invalid ZVEC_GREP_EMBEDDING: unsupported model {0}")]
+    InvalidEmbeddingReference(String),
     #[error("embedding request failed: {0}")]
     RequestFailed(String),
     #[error("invalid API URL")]
@@ -26,6 +30,16 @@ pub enum EmbeddingError {
     NoApiKey,
     #[error("parse error: {0}")]
     ParseError(String),
+    #[error("embedding batch size {size} exceeds model limit {max}")]
+    BatchTooLarge { size: usize, max: usize },
+    #[error("invalid embedding batch output: {0}")]
+    InvalidBatchOutput(String),
+    #[error("embedding catalog entry is not usable here: {0}")]
+    InvalidCatalogEntry(String),
+    #[error("embedding backend '{backend}' for '{reference}' has no factory constructor")]
+    BackendNotWired { reference: String, backend: &'static str },
+    #[error("unknown embedding device: {0}")]
+    InvalidDevice(String),
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +78,84 @@ pub trait EmbeddingProvider: Send + Sync {
 
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
         self.embed_batch(texts)
+    }
+
+    /// Batch embedding with per-input truncation indexes. The default impl
+    /// reports no truncation; providers that shorten over-limit inputs
+    /// override this and return the sorted indexes they truncated.
+    fn embed_batch_with_truncation(
+        &self,
+        texts: &[&str],
+    ) -> Result<(BatchEmbedding, Vec<usize>), EmbeddingError> {
+        Ok((self.embed_batch(texts)?, Vec::new()))
+    }
+}
+
+/// Reject batches larger than the model's `maxBatchSize` before any runtime
+/// use. Callers pack cross-file batches; providers enforce the per-model cap.
+pub fn validate_embed_batch(
+    batch_size: usize,
+    max_batch_size: usize,
+) -> Result<(), EmbeddingError> {
+    if batch_size > max_batch_size {
+        return Err(EmbeddingError::BatchTooLarge {
+            size: batch_size,
+            max: max_batch_size,
+        });
+    }
+    Ok(())
+}
+
+/// Validate a provider-produced batch: vector count, flat length, dimension
+/// agreement, finite values, and truncation-index range. Mirrors the base
+/// embedding-model validation contract.
+pub fn check_embed_batch_output(
+    batch: &BatchEmbedding,
+    expected_count: usize,
+    expected_dims: usize,
+    truncated: &[usize],
+) -> Result<(), EmbeddingError> {
+    let invalid = |message: String| EmbeddingError::InvalidBatchOutput(message);
+    if batch.count != expected_count {
+        return Err(invalid(format!(
+            "wrong number of vectors: expected {expected_count}, got {}",
+            batch.count
+        )));
+    }
+    if batch.dims != expected_dims {
+        return Err(invalid(format!(
+            "wrong dimension: expected {expected_dims}, got {}",
+            batch.dims
+        )));
+    }
+    if batch.flat.len() != expected_count * expected_dims {
+        return Err(invalid(format!(
+            "flat length {} does not match {expected_count}x{expected_dims}",
+            batch.flat.len()
+        )));
+    }
+    if !batch.flat.iter().all(|value| value.is_finite()) {
+        return Err(invalid("non-finite vector value".to_string()));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for index in truncated {
+        if *index >= expected_count || !seen.insert(index) {
+            return Err(invalid(format!("invalid truncated input index {index}")));
+        }
+    }
+    Ok(())
+}
+
+/// Sync adapter over an async provider core: `block_in_place` inside a
+/// runtime, process-wide fallback runtime outside one. Shared by providers
+/// whose inference core is async-only.
+pub(crate) fn block_on_provider<F>(future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => tokio::task::block_in_place(move || handle.block_on(future)),
+        Err(_) => fallback_runtime().block_on(future),
     }
 }
 

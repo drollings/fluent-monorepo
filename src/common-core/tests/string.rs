@@ -445,3 +445,25 @@ fn identifier_kind_snake_allows_digits_but_not_upper() {
             "an uppercase start with underscores is not snake (guidance parity)"
         );
 }
+
+#[test]
+fn cjk_detection_covers_han_hiragana_katakana_hangul() {
+        assert!(is_cjk_char('日'));
+        assert!(is_cjk_char('あ'));
+        assert!(is_cjk_char('ア'));
+        assert!(is_cjk_char('한'));
+        assert!(!is_cjk_char('a'));
+        assert!(!is_cjk_char('。'));
+}
+
+#[test]
+fn cjk_bigrams_expand_runs_without_dictionary() {
+        assert_eq!(cjk_bigrams("日本語"), vec!["日本", "本語"]);
+        assert_eq!(
+            cjk_bigrams("日本語テスト"),
+            vec!["日本", "本語", "語テ", "テス", "スト"]
+        );
+        assert!(cjk_bigrams("hello").is_empty());
+        assert_eq!(cjk_bigrams("a日本b"), vec!["日本"]);
+        assert!(cjk_bigrams("日").is_empty());
+}

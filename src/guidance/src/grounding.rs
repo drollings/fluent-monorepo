@@ -102,6 +102,7 @@ mod tests {
             end_line: None,
             member_name: Some("test".to_string()),
             member_type: None,
+            trace: None,
         }
     }
 
@@ -114,6 +115,7 @@ mod tests {
             end_line: None,
             member_name: None,
             member_type: None,
+            trace: None,
         }
     }
 
@@ -142,6 +144,7 @@ mod tests {
             end_line: None,
             member_name: None,
             member_type: None,
+            trace: None,
         }];
         assert!(!can_synthesize(&stages));
     }

@@ -11,7 +11,11 @@ fn regex_detector_reports_pattern_matches_with_offsets() {
     assert!(labels.contains(&"email"), "email matched: {labels:?}");
     assert!(labels.contains(&"ssn"), "ssn matched: {labels:?}");
     for span in &spans {
-        assert_eq!(span.score, 1.0);
+        assert!(
+            (span.score - 1.0).abs() < f64::EPSILON,
+            "regex hit is exact: {}",
+            span.score
+        );
         assert!(span.end > span.start);
     }
 }

@@ -327,14 +327,26 @@ mod tests {
     fn extract_skills_matches_only_available_skills() {
         let doc = GuidanceDoc {
             skills: vec![
-                Skill { ref_path: "skills/zig-current/SKILL.md".into(), context: None },
-                Skill { ref_path: "skills/gof-patterns/SKILL.md".into(), context: None },
-                Skill { ref_path: "skills/unknown/SKILL.md".into(), context: None },
+                Skill {
+                    ref_path: "skills/zig-current/SKILL.md".into(),
+                    context: None,
+                },
+                Skill {
+                    ref_path: "skills/gof-patterns/SKILL.md".into(),
+                    context: None,
+                },
+                Skill {
+                    ref_path: "skills/unknown/SKILL.md".into(),
+                    context: None,
+                },
             ],
             ..GuidanceDoc::default()
         };
         let available = vec!["zig-current".to_string(), "gof-patterns".to_string()];
-        assert_eq!(extract_skills(&doc, &available), vec!["zig-current", "gof-patterns"]);
+        assert_eq!(
+            extract_skills(&doc, &available),
+            vec!["zig-current", "gof-patterns"]
+        );
     }
 
     #[test]
@@ -395,6 +407,9 @@ mod tests {
 
         std::env::set_current_dir(&old).expect("restore cwd");
         let output = result.expect("generate");
-        assert!(output.contains("main.zig"), "tree must include the tracked file:\n{output}");
+        assert!(
+            output.contains("main.zig"),
+            "tree must include the tracked file:\n{output}"
+        );
     }
 }

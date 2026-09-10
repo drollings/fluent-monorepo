@@ -82,9 +82,9 @@ inline `mod tests {`.
 
 * Any implementation without review of relevant documents including, but not limited to:
 
-  - ./doc/common-core/USAGE.md
-  - ./doc/fluent-wvr/USAGE.md
-  - ./doc/fluent-concurrency/USAGE.md
+  - ./doc/skills/common-core/SKILL.md
+  - ./doc/skills/fluent-wvr/SKILL.md
+  - ./doc/skills/fluent-concurrency/SKILL.md
 
 * Any implementation without reviewing shared primitives in shared libraries, and any removal of code from without human approval from these libraries:
 

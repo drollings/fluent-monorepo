@@ -2,6 +2,20 @@
 name = "guidance"
 version.workspace = true
 edition.workspace = true
+autotests = false
+autobenches = false
+
+[[test]]
+name = "cli_e2e"
+path = "tests/cli_e2e.rs"
+
+[[test]]
+name = "mcp_contract"
+path = "tests/mcp_contract.rs"
+
+[[test]]
+name = "rg_cli"
+path = "tests/rg_cli.rs"
 
 [dependencies]
 common-core = { path = "../../common-core" }
@@ -25,5 +39,6 @@ ptree = "0.5"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+serde_json = { workspace = true }
 fluent-wvr-testutil = { path = "../../fluent-wvr-testutil" }
 httpmock = { workspace = true }

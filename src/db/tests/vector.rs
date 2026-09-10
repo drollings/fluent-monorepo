@@ -212,3 +212,106 @@ fn rrf_merge_empty_inputs() {
     let merged: Vec<(f64, &str)> = rrf_merge(Vec::new(), Vec::new(), 60.0);
     assert!(merged.is_empty());
 }
+
+#[test]
+fn rrf_merge_breaks_score_ties_by_ascending_id() {
+    // Both ids score identically (each alone at rank 0 of its list);
+    // lexicographic id order is deterministic (old HashMap order was not).
+    let kw = vec![(2i64, "b")];
+    let vec_results = vec![(1i64, "a")];
+    let merged = rrf_merge(kw, vec_results, 60.0);
+    assert_eq!(merged.len(), 2);
+    assert_eq!(merged[0].1, "a");
+    assert_eq!(merged[1].1, "b");
+}
+
+#[test]
+fn rrf_merge_n_fuses_n_lists_over_string_ids() {
+    // x: ranks 0,0,0 → 3/60 · y: rank 1 → 1/61 · z: rank 0 → 1/60.
+    let postings = vec![
+        ("x".to_string(), 0, "x"),
+        ("x".to_string(), 0, "x"),
+        ("x".to_string(), 0, "x"),
+        ("y".to_string(), 1, "y"),
+        ("z".to_string(), 0, "z"),
+    ];
+    let merged = rrf_merge_n(postings, 60.0);
+    let ids: Vec<&str> = merged.iter().map(|(_, id, _)| id.as_str()).collect();
+    assert_eq!(ids, vec!["x", "z", "y"]);
+    assert!((merged[0].0 - 3.0 / 60.0).abs() < 1e-12);
+}
+
+#[test]
+fn rrf_merge_n_uses_explicit_one_based_ranks() {
+    // zvec storage ranks are 1-based: first hit contributes 1/(K+1).
+    let postings = vec![("a".to_string(), 1, "a"), ("b".to_string(), 2, "b")];
+    let merged = rrf_merge_n(postings, 60.0);
+    assert!((merged[0].0 - 1.0 / 61.0).abs() < 1e-12);
+    assert!((merged[1].0 - 1.0 / 62.0).abs() < 1e-12);
+}
+
+#[test]
+fn rrf_term_matches_kernel() {
+    assert!((rrf_term(60.0, 0) - 1.0 / 60.0).abs() < 1e-12);
+    assert!((rrf_term(60.0, 1) - 1.0 / 61.0).abs() < 1e-12);
+}
+
+#[test]
+fn quantized_codec_round_trips() {
+    let original = QuantizedEmbedding::from_f32(&[1.5, -2.5, 3.0, 0.0, -0.5]);
+    let bytes = quantized_to_bytes(&original);
+    assert_eq!(bytes.len(), 5 + 8, "dims + 8 header bytes");
+    let restored = quantized_from_bytes(&bytes).expect("decode");
+    assert_eq!(restored.dimensions, 5);
+    assert_eq!(restored.values, original.values);
+    assert!((restored.scale - original.scale).abs() < 1e-6);
+}
+
+#[test]
+fn quantized_codec_rejects_truncation_and_mismatch() {
+    assert!(quantized_from_bytes(&[0u8; 7]).is_none());
+    let mut bytes = quantized_to_bytes(&QuantizedEmbedding::from_f32(&[1.0, 2.0]));
+    bytes.push(0xFF);
+    assert!(quantized_from_bytes(&bytes).is_none());
+}
+
+#[test]
+fn quantized_bytes_beat_fp32_four_to_one() {
+    let dims = 768;
+    let vec: Vec<f32> = (0..dims).map(|i| (i as f32).sin() * 0.5).collect();
+    let fp32_len = vec_to_bytes(&vec).len();
+    let q8_len = quantized_to_bytes(&QuantizedEmbedding::from_f32(&vec)).len();
+    assert_eq!(fp32_len, dims * 4);
+    assert_eq!(q8_len, dims + 8);
+    assert!(q8_len * 3 < fp32_len, "q8 must use < 1/3 of fp32 bytes");
+}
+
+#[test]
+fn q8_knn_orders_like_fp32() {
+    // Deterministic pseudo-vectors: q8 recall order must match fp32 order.
+    let query: Vec<f32> = (0..64).map(|i| ((i * 37) % 11) as f32 / 11.0 - 0.5).collect();
+    let candidates: Vec<Vec<f32>> = (0..20)
+        .map(|c| (0..64).map(|i| (((i + c) * 53) % 13) as f32 / 13.0 - 0.5).collect())
+        .collect();
+    let fp32 = knn_brute_force(&query, candidates.iter().enumerate().map(|(i, v)| (i, v.as_slice())), 5);
+    let q_query = QuantizedEmbedding::from_f32(&query);
+    let q_candidates: Vec<QuantizedEmbedding> =
+        candidates.iter().map(|v| QuantizedEmbedding::from_f32(v)).collect();
+    let q8 = knn_brute_force_q8(&q_query, q_candidates.iter().enumerate().map(|(i, v)| (i, v)), 5);
+    let fp32_ids: Vec<usize> = fp32.iter().map(|(id, _)| *id).collect();
+    let q8_ids: Vec<usize> = q8.iter().map(|(id, _)| *id).collect();
+    assert_eq!(q8_ids, fp32_ids, "q8 must preserve fp32 rank order here");
+    for ((_, fp_d), (_, q_d)) in fp32.iter().zip(q8.iter()) {
+        assert!((fp_d - q_d).abs() < 0.05, "q8 distance within tolerance");
+    }
+}
+
+#[test]
+fn q8_knn_skips_dimension_mismatches() {
+    let query = QuantizedEmbedding::from_f32(&[1.0, 2.0]);
+    let good = QuantizedEmbedding::from_f32(&[1.0, 2.0]);
+    let bad = QuantizedEmbedding::from_f32(&[1.0, 2.0, 3.0]);
+    let hits = knn_brute_force_q8(&query, vec![("bad", &bad), ("good", &good)].into_iter(), 5);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].0, "good");
+}

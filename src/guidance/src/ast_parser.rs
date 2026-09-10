@@ -19,6 +19,14 @@ pub struct AstParser {
     zig: tree_sitter::Parser,
     python: tree_sitter::Parser,
     rust: tree_sitter::Parser,
+    c: tree_sitter::Parser,
+    cpp: tree_sitter::Parser,
+    go: tree_sitter::Parser,
+    java: tree_sitter::Parser,
+    javascript: tree_sitter::Parser,
+    typescript: tree_sitter::Parser,
+    tsx: tree_sitter::Parser,
+    jsx: tree_sitter::Parser,
 }
 
 impl Default for AstParser {
@@ -27,22 +35,32 @@ impl Default for AstParser {
     }
 }
 
+/// Build a parser for one grammar. Takes ownership because
+/// `tree_sitter::Language` handles are moved into `set_language`.
+#[allow(clippy::needless_pass_by_value)]
+fn parser_for(language: tree_sitter::Language) -> tree_sitter::Parser {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&language)
+        .expect("tree-sitter language should be valid");
+    parser
+}
+
 impl AstParser {
     pub fn new() -> Self {
-        let mut zig = tree_sitter::Parser::new();
-        zig.set_language(&tree_sitter_zig::LANGUAGE.into())
-            .expect("tree-sitter-zig language should be valid");
-
-        let mut python = tree_sitter::Parser::new();
-        python
-            .set_language(&tree_sitter_python::LANGUAGE.into())
-            .expect("tree-sitter-python language should be valid");
-
-        let mut rust = tree_sitter::Parser::new();
-        rust.set_language(&tree_sitter_rust::LANGUAGE.into())
-            .expect("tree-sitter-rust language should be valid");
-
-        Self { zig, python, rust }
+        Self {
+            zig: parser_for(tree_sitter_zig::LANGUAGE.into()),
+            python: parser_for(tree_sitter_python::LANGUAGE.into()),
+            rust: parser_for(tree_sitter_rust::LANGUAGE.into()),
+            c: parser_for(tree_sitter_c::LANGUAGE.into()),
+            cpp: parser_for(tree_sitter_cpp::LANGUAGE.into()),
+            go: parser_for(tree_sitter_go::LANGUAGE.into()),
+            java: parser_for(tree_sitter_java::LANGUAGE.into()),
+            javascript: parser_for(tree_sitter_javascript::LANGUAGE.into()),
+            typescript: parser_for(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            tsx: parser_for(tree_sitter_typescript::LANGUAGE_TSX.into()),
+            jsx: parser_for(tree_sitter_javascript::LANGUAGE.into()),
+        }
     }
 
     /// Map file extension to language name.
@@ -53,6 +71,37 @@ impl AstParser {
             "rs" => Some("rust"),
             _ => None,
         }
+    }
+
+    /// Parse source in the given extractor format (`rust`, `tsx`, …) into
+    /// a concrete syntax tree (P2 fragment extraction; the legacy
+    /// `parse_file` member pipeline is untouched).
+    pub fn parse_tree(&mut self, format: &str, source: &str) -> Result<tree_sitter::Tree, ParseError> {
+        let parser = match format {
+            "rust" => &mut self.rust,
+            "python" => &mut self.python,
+            "c" => &mut self.c,
+            "cpp" => &mut self.cpp,
+            "go" => &mut self.go,
+            "java" => &mut self.java,
+            "javascript" => &mut self.javascript,
+            "jsx" => &mut self.jsx,
+            "typescript" => &mut self.typescript,
+            "tsx" => &mut self.tsx,
+            _ => return Err(ParseError::UnsupportedLanguage(format.to_string())),
+        };
+        parser
+            .parse(source, None)
+            .ok_or_else(|| ParseError::Syntax("tree-sitter returned no tree".into()))
+    }
+
+    /// Whether the extractor has a grammar for `format`.
+    #[must_use]
+    pub fn has_grammar(format: &str) -> bool {
+        matches!(
+            format,
+            "rust" | "python" | "c" | "cpp" | "go" | "java" | "javascript" | "jsx" | "typescript" | "tsx"
+        )
     }
 
     pub fn parse_file(&mut self, path: &Path, source: &str) -> Result<GuidanceDoc, ParseError> {

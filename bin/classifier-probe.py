@@ -91,6 +91,7 @@ general_routes = routing_metrics.general_routes
 
 # ── Classifier prompt + response_format mirror ───────────────────────────────
 
+/// ── Classifier prompt + response_format mirror ───────────────────────────────
 def route_order(cfg: Dict[str, Any]) -> List[str]:
     """The route keys in the order `build_system_prompt` lists them (sorted)."""
     return sorted(cfg.get("routes", {}))
@@ -190,6 +191,7 @@ def classifier_response_format() -> Dict[str, Any]:
 
 # ── Decision mirror (derive_action + check_thresholds) ──────────────────────
 
+/// ── Decision mirror (derive_action + check_thresholds) ──────────────────────
 def derive_action(
     domain: str,
     confidence: float,
@@ -458,6 +460,7 @@ def build_corpus(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 # ── Metrics ─────────────────────────────────────────────────────────────────
 
+/// ── Metrics ─────────────────────────────────────────────────────────────────
 def compute_metrics(probe_results: List[Dict[str, Any]], cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Compute the classifier calibration metric set over probe results."""
     routes = cfg.get("routes", {})
@@ -597,6 +600,7 @@ def compute_metrics(probe_results: List[Dict[str, Any]], cfg: Dict[str, Any]) ->
 
 # ── threshold search ──────────────────────────────────────────────────────
 
+/// ── threshold search ──────────────────────────────────────────────────────
 def rederive_verdicts(probes: List[Dict[str, Any]], threshold: float,
                       cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Re-derive each probe's verdict at a candidate respond threshold over the
@@ -691,6 +695,7 @@ def print_threshold_search(curve: Dict[str, Any], operating: Optional[Dict[str, 
 
 # ── Real / mock drivers ──────────────────────────────────────────────────────
 
+/// ── Real / mock drivers ──────────────────────────────────────────────────────
 def parse_classifier_response(raw: str) -> Optional[Dict[str, Any]]:
     """Parse the classifier's JSON envelope (the same `parse_classifier_response`
     surface the stage applies — direct-deserialize fast path)."""
@@ -842,6 +847,7 @@ def _discover_served_models(endpoint: str) -> List[str]:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+/// ── CLI ──────────────────────────────────────────────────────────────────────
 def print_report(metrics: Dict[str, Any], mode: str) -> None:
     print("=" * 74)
     print("CLASSIFIER PROBE REPORT  (calibration)")

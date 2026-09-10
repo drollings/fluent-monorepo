@@ -12,6 +12,37 @@ pub struct Stage {
     pub member_name: Option<String>,
     #[serde(skip)]
     pub member_type: Option<MemberType>,
+    /// Hybrid recall provenance (P1): `None` on legacy doc-built stages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<StageTrace>,
+}
+
+/// Hybrid recall provenance carried on index-built stages.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StageTrace {
+    /// zvec `matchedBy` vocabulary (`fts` / `vector` / `fts+vector`).
+    pub matched_by: String,
+    /// Fused RRF score.
+    pub score: f64,
+    /// 1-based fused rank.
+    pub rank: usize,
+    /// Per-route recall entries.
+    pub recall: Vec<StageRecall>,
+}
+
+/// One route recall entry on a stage trace.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StageRecall {
+    /// Recall path (`fts` / `vector` / `lemma`).
+    pub path: String,
+    /// Route id, when routed.
+    pub route_id: Option<String>,
+    /// 1-based recall rank, when found.
+    pub rank: Option<u32>,
+    /// Raw recall score, when found.
+    pub score: Option<f64>,
+    /// Whether the route found this candidate.
+    pub found: bool,
 }
 
 pub struct Synthesizer;
@@ -26,6 +57,7 @@ impl Stage {
             end_line: None,
             member_name: None,
             member_type: None,
+            trace: None,
         }
     }
 
@@ -42,6 +74,7 @@ impl Stage {
             end_line: None,
             member_name: Some(member.name.as_str().to_string()),
             member_type: Some(member.type_name),
+            trace: None,
         }
     }
 
@@ -59,6 +92,7 @@ impl Stage {
             end_line: None,
             member_name: Some(member.name.as_str().to_string()),
             member_type: Some(member.type_name),
+            trace: None,
         }
     }
 
@@ -71,6 +105,7 @@ impl Stage {
             end_line: None,
             member_name: None,
             member_type: None,
+            trace: None,
         }
     }
 }
@@ -102,6 +137,7 @@ impl Synthesizer {
                 end_line: None,
                 member_name: None,
                 member_type: None,
+                trace: None,
             });
         }
 
