@@ -66,6 +66,9 @@ pub struct FragmentIngestStats {
     /// Files ingested into `zg_*` (FTS + lemmas; embeddings skipped without
     /// a configured backend).
     pub files: usize,
+    /// Files skipped because the committed fragment row is unchanged
+    /// (size + mtime match; embedded when a backend is configured).
+    pub skipped_unchanged: usize,
     /// Fragments written.
     pub fragments: usize,
     /// Image files discovered + kind-tagged but skipped (text-only parity,
@@ -90,6 +93,12 @@ pub fn ingest_workspace_fragments(
     // Rule-lemmatizer pipeline (no model): L2 inflections collapse at
     // index time at zero embedding cost. Built once per sync.
     let nlp = default_en_pipeline();
+    // L3 embedder from the workspace project config (offline
+    // construction; absent backend degrades to unembedded fragments,
+    // counted in stats — same contract as before, now actually usable).
+    let cfg =
+        guidance_core::config::load_config(workspace).unwrap_or_default();
+    let embedder = crate::embed::embedder_from_config(&cfg);
     let mut stats = FragmentIngestStats::default();
     for src_dir in src_dirs {
         if !src_dir.is_dir() {
@@ -111,6 +120,24 @@ pub fn ingest_workspace_fragments(
                 stats.skipped_images += 1;
                 continue;
             }
+            // Change gate: an unchanged file keeps its committed row —
+            // skip the read + lemmatize + embed + upsert entirely. The
+            // probe fails open (ingest as before) so a read error here
+            // can never lose index content. A configured embedder still
+            // re-ingests unembedded rows to backfill vectors.
+            let file_id = selected.path.to_string_lossy().into_owned();
+            let unchanged = match db.fragment_freshness(&file_id) {
+                Ok(Some(fresh)) => {
+                    fresh.size_bytes == selected.size_bytes
+                        && fresh.last_modified_time == selected.modified_ms
+                        && (embedder.is_none() || fresh.embedded)
+                }
+                _ => false,
+            };
+            if unchanged {
+                stats.skipped_unchanged += 1;
+                continue;
+            }
             let text = match std::fs::read_to_string(&selected.path) {
                 Ok(text) => text,
                 Err(_) => {
@@ -125,7 +152,7 @@ pub fn ingest_workspace_fragments(
                 .unwrap_or("")
                 .to_string();
             let file = FileInfo {
-                id: selected.path.to_string_lossy().into_owned(),
+                id: file_id,
                 absolute_path: selected.path.to_string_lossy().into_owned(),
                 relative_path: selected.relative.clone(),
                 root_path: workspace.to_string_lossy().into_owned(),
@@ -136,7 +163,7 @@ pub fn ingest_workspace_fragments(
                 format,
                 index_status: None,
             };
-            match ingest_text_file(&db, &file, &text, None, nlp.as_ref()) {
+            match ingest_text_file(&db, &file, &text, embedder.as_deref(), nlp.as_ref()) {
                 Ok(ingested) => {
                     stats.files += 1;
                     stats.fragments += ingested.fragments;

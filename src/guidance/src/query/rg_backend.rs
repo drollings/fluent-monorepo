@@ -198,6 +198,13 @@ impl RgBackend {
                 }
             }
         }
+        // Deterministic order: parallel rg streams files in scheduling
+        // order, so arrival order varies run to run. Sorting here (before
+        // the mtime post-filter, which preserves order) makes every
+        // consumer — CLI render, coverage, tests — byte-stable. The
+        // explicit-limit kill still fires on arrival count above; only
+        // the surviving subset is ordered.
+        sort_rg_hits(&mut hits);
         // Early-kill past the limit, then reap (exit status: 0 match, 1
         // none, 2 error — only 2 fails).
         let _ = child.kill();
@@ -303,6 +310,15 @@ fn parse_stream_line(line: &str) -> Result<StreamLine, RgError> {
         }
         _ => Ok(StreamLine::Other),
     }
+}
+
+/// Sort hits into deterministic `(path, line, column)` order (stable —
+/// fully-equal hits keep arrival order). Whole structs move, so context
+/// lines stay glued to their own match.
+fn sort_rg_hits(hits: &mut [RgHit]) {
+    hits.sort_by(|a, b| {
+        (a.path.as_str(), a.line, a.column).cmp(&(b.path.as_str(), b.line, b.column))
+    });
 }
 
 /// Mtime post-filter: drop hits whose file mtime falls outside

@@ -239,6 +239,13 @@ fn select_walk_entry(
             diag.skipped_ignored += 1;
             return;
         }
+        // Hidden files are skipped unless explicitly included (rg parity —
+        // hidden dirs are already skipped by the walker; without this the
+        // index ingests its own dotfiles, e.g. `.guidance.db-wal`).
+        if is_hidden_file(&entry.path) {
+            diag.skipped_ignored += 1;
+            return;
+        }
         if matches_default_file_pattern(&relative) {
             diag.skipped_ignored += 1;
             return;
@@ -301,6 +308,15 @@ fn is_binary_extensionless(path: &Path) -> bool {
         return false;
     };
     common_core::walk::sniff_is_binary(&buf[..n])
+}
+
+/// Hidden-file check mirroring the walker's hidden-directory rule
+/// (`common_core::walk::should_skip_dir`): a leading `.` on the file
+/// name. Explicit `include_globs` bypass this (discoverability).
+fn is_hidden_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.'))
 }
 
 /// Directory rules apply to the root-relative path (never the absolute

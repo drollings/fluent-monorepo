@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 mod benchmark;
 mod commit;
 mod editor;
+mod embed;
 mod index_cmd;
 mod mcp;
 mod search;
@@ -884,8 +885,8 @@ async fn cmd_sync(
                 &src_dirs.iter().filter(|dir| dir.is_dir()).cloned().collect::<Vec<_>>(),
             ) {
                 Ok(stats) => println!(
-                    "Ingested {} files ({} fragments, {} images skipped, {} failed) to {db_path}",
-                    stats.files, stats.fragments, stats.skipped_images, stats.failed
+                    "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
+                    stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
                 ),
                 Err(e) => eprintln!("Warning: fragment ingestion failed: {e}"),
             }

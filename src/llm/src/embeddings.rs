@@ -751,6 +751,21 @@ pub fn create_embedding_provider(
                     OllamaEmbedding::new(Some(ollama_model), base_url, dims)?,
                     limit,
                 ))
+            } else if let Some(llama_model) = name.strip_prefix("llama:") {
+                // llama-server speaks OpenAI-compatible `/v1/embeddings`;
+                // local servers ignore auth, so a missing key defaults
+                // instead of declining (remote OpenAI use goes through
+                // the `openai:` scheme, which still requires a key).
+                Box::new(CachedEmbeddingProvider::new_with_limit(
+                    OpenAiEmbedding::new_with_params(
+                        Some(llama_model),
+                        base_url,
+                        api_key.or(Some("local")),
+                        dims,
+                        params.cloned(),
+                    )?,
+                    limit,
+                ))
             } else if let Some(custom_url) = name.strip_prefix("custom:") {
                 Box::new(CachedEmbeddingProvider::new_with_limit(
                     OpenAiEmbedding::new_with_params(

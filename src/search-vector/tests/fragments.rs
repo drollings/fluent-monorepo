@@ -346,3 +346,41 @@ fn vector_search_reads_legacy_fp32_rows() {
         .expect("search");
     assert!(hits.iter().any(|h| h.id == "legacy"), "legacy fp32 row found");
 }
+
+#[test]
+fn fragment_freshness_none_for_unknown_file() {
+    // No committed row → no fingerprint (caller must ingest).
+    let db = GuidanceDb::open_in_memory().expect("db");
+    assert_eq!(db.fragment_freshness("never-ingested").expect("query"), None);
+}
+
+#[test]
+fn fragment_freshness_matches_committed_fingerprint() {
+    // The fingerprint mirrors exactly what `upsert_fragments` stores.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    db.upsert_fragments(&file_a(), &[frag("f1", None, "F1", "body")], &[])
+        .expect("upsert");
+    assert_eq!(
+        db.fragment_freshness("file-a").expect("query"),
+        Some(FragmentFreshness {
+            size_bytes: 100,
+            last_modified_time: 100,
+            embedded: false,
+        })
+    );
+}
+
+#[test]
+fn fragment_freshness_reports_embedded_flag() {
+    // A caller with a newly configured embedder must see that vectors
+    // still need backfilling, even when size+mtime match.
+    let db = GuidanceDb::open_in_memory().expect("db");
+    let mut plain = frag("plain-row", None, "Plain", "plain body");
+    plain.embedding = None;
+    db.upsert_fragments(&file_a(), &[plain], &[]).expect("upsert");
+    assert!(!db.fragment_freshness("file-a").expect("query").expect("row").embedded);
+    let mut with_vec = frag("vec-row", None, "VecRow", "vector body");
+    with_vec.embedding = Some(vec![0.5, -0.5]);
+    db.upsert_fragments(&file_a(), &[with_vec], &[]).expect("upsert");
+    assert!(db.fragment_freshness("file-a").expect("query").expect("row").embedded);
+}

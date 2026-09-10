@@ -188,3 +188,62 @@ fn rg_missing_root_is_a_named_diagnostic() {
         "missing root must diagnose, got {result:?}"
     );
 }
+
+fn hit(path: &str, line: u32, column: u32, before: &[&str]) -> RgHit {
+    RgHit {
+        path: path.to_string(),
+        line,
+        column,
+        text: format!("match at {path}:{line}\n"),
+        context_before: before.iter().map(|s| format!("{s}\n")).collect(),
+        context_after: Vec::new(),
+    }
+}
+
+#[test]
+fn rg_hits_sort_by_path_then_line_then_column() {
+    // Finding: parallel-rg arrival order flows through unsorted, so
+    // byte-level output varies run to run (F3/S2/S3 stable=False).
+    // Shuffled input must come out in (path, line, column) order with
+    // context lines still glued to their own hit.
+    let mut hits = vec![
+        hit("web/svc_2.ts", 1, 30, &[]),
+        hit("docs/overview.md", 7, 39, &["ctx"]),
+        hit("web/svc_1.ts", 2, 30, &[]),
+        hit("web/svc_1.ts", 1, 30, &["first"]),
+        hit("web/svc_1.ts", 1, 12, &[]),
+    ];
+    sort_rg_hits(&mut hits);
+    let order: Vec<(&str, u32, u32)> = hits
+        .iter()
+        .map(|h| (h.path.as_str(), h.line, h.column))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            ("docs/overview.md", 7, 39),
+            ("web/svc_1.ts", 1, 12),
+            ("web/svc_1.ts", 1, 30),
+            ("web/svc_1.ts", 2, 30),
+            ("web/svc_2.ts", 1, 30),
+        ]
+    );
+    assert_eq!(hits[0].context_before, vec!["ctx\n".to_string()]);
+    assert_eq!(hits[2].context_before, vec!["first\n".to_string()]);
+}
+
+#[test]
+fn rg_explicit_limit_still_bounds_match_lines() {
+    // Must-NOT-fire control: the sort must not defeat the explicit
+    // `--limit` bound — the kill still fires on arrival count.
+    let dir = tempfile::tempdir().expect("tempdir");
+    for name in ["m1.rs", "m2.rs", "m3.rs"] {
+        std::fs::write(
+            dir.path().join(name),
+            "let ManyNeedle = 1;\nlet ManyNeedle = 2;\n",
+        )
+        .expect("write");
+    }
+    let hits = with_caps(|| backend_for(dir.path()).search("ManyNeedle", 2)).expect("search");
+    assert_eq!(hits.len(), 2, "explicit limit still bounds output");
+}

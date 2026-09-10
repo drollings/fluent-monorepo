@@ -20,6 +20,17 @@ pub struct Provider {
     pub chat_endpoint: String,
 }
 
+/// The top-level `"embed": {"dims", "cache_limit"}` object the default
+/// config writes. (The flat `embedding_dims` / `embedding_cache_limit`
+/// fields below are the legacy alternative shape; the object wins.)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EmbedConfig {
+    #[serde(default)]
+    pub dims: Option<usize>,
+    #[serde(default)]
+    pub cache_limit: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 pub struct ProjectConfig {
     #[serde(default = "default_guidance_dir")]
@@ -82,6 +93,11 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub embedding_cache_limit: Option<usize>,
 
+    /// Top-level `"embed"` object (`dims`, `cache_limit`). Preferred over
+    /// the flat legacy `embedding_*` fields when both are present.
+    #[serde(default)]
+    pub embed: Option<EmbedConfig>,
+
     /// Deserializes the `"models"` map from the JSON config.
     /// Keys are role names ("default", "fast", "thinking", "batch", "embed"),
     /// values are model references like `"llama:code"`.
@@ -115,6 +131,7 @@ impl Default for ProjectConfig {
             lint_commands: HashMap::new(),
             fmt_commands: HashMap::new(),
             embedding_cache_limit: None,
+            embed: None,
             models: HashMap::new(),
         }
     }
@@ -316,6 +333,30 @@ mod tests {
         let config = load_config(dir.path()).expect("should load");
         assert_eq!(config.embedding_model.as_deref(), Some("ollama:llama3"));
         assert_eq!(config.embedding_dims, Some(4096));
+    }
+
+    #[test]
+    fn test_embed_object_parses_dims_and_cache() {
+        // The default config writes `"embed": {"dims", "cache_limit"}` —
+        // it must round-trip instead of being silently ignored.
+        let dir = tempdir();
+        let guidance_dir = dir.path().join(".guidance");
+        std::fs::create_dir_all(&guidance_dir).expect("create");
+        let config_path = guidance_dir.join("guidance-config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"models": {"embed": "llama:embed"}, "embed": {"dims": 768, "cache_limit": 400}}"#,
+        )
+        .expect("write");
+
+        let config = load_config(dir.path()).expect("should load");
+        assert_eq!(
+            config.models.get("embed").map(String::as_str),
+            Some("llama:embed")
+        );
+        let embed = config.embed.expect("embed object must parse");
+        assert_eq!(embed.dims, Some(768));
+        assert_eq!(embed.cache_limit, Some(400));
     }
 
     #[test]

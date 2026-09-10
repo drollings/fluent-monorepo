@@ -313,3 +313,45 @@ async fn rg_route_searches_without_an_index() {
     .expect("rg route");
     assert!(rendered.contains("a.rs:1:"), "{rendered}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn embedder_builder_returns_none_without_backend() {
+    // No config in a fresh workspace: no embedder, no dial, no panic.
+    // (Compile-red first: the builder does not exist yet.)
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cfg = guidance_core::config::load_config(dir.path()).expect("default config");
+    assert!(crate::embed::embedder_from_config(&cfg).is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vector_mode_declines_without_embedder() {
+    // `--vector` documents "declines without an embedder" — today it
+    // silently answers from the lemma route instead. Must be a named
+    // error naming the missing backend.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("a.rs"), "fn needle_fn() {}\n").expect("write");
+    let workspace = dir.path().to_str().unwrap().to_string();
+    let unused_db = dir.path().join("unused.db");
+    let unused_db = unused_db.to_str().unwrap().to_string();
+    let error = run_search(
+        "needle_fn",
+        &workspace,
+        &unused_db,
+        None,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        &[],
+        &[],
+        &rg_opts(),
+    )
+    .expect_err("vector mode without a backend must decline");
+    assert!(
+        error.contains("embed"),
+        "decline must name the missing backend, got: {error}"
+    );
+}

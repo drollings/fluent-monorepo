@@ -53,6 +53,74 @@ fn fragment_ingestion_populates_fts_and_skips_image_noise() {
 }
 
 #[test]
+fn fragment_ingest_skips_unchanged_files_on_second_pass() {
+    // Warm sync must not pay read + lemmatize + upsert per file again:
+    // a second ingest over untouched files ingests nothing and says so.
+    // (Sources live under `src/` with the db beside the roots: the db's
+    // own `-shm`/`-wal` sidecars must never be selection candidates.)
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(src.join("a.rs"), "pub fn steady_one() {}\n").expect("write");
+    std::fs::write(src.join("b.rs"), "pub fn steady_two() {}\n").expect("write");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    let first = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(first.files, 2, "{first:?}");
+    let second = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(second.files, 0, "{second:?}");
+    assert_eq!(second.skipped_unchanged, 2, "{second:?}");
+    assert_eq!(second.failed, 0, "{second:?}");
+    // The index itself is intact — skipping is a read shortcut, not a wipe.
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open");
+    let hits = db
+        .search_fts(
+            "steady_one",
+            5,
+            &search_vector::db::ZgFragmentFilter::default(),
+        )
+        .expect("fts");
+    assert!(!hits.is_empty(), "skipped files must stay FTS-visible");
+}
+
+#[test]
+fn fragment_ingest_reingests_modified_files() {
+    // Must-NOT-fire control for the skip above: changed content (size
+    // differs) re-ingests exactly that file; the untouched file skips.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(src.join("a.rs"), "pub fn edited() {}\n").expect("write");
+    std::fs::write(src.join("b.rs"), "pub fn calm() {}\n").expect("write");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    std::fs::write(src.join("a.rs"), "pub fn edited() {}\n// another line\n").expect("write");
+    let second = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(second.files, 1, "{second:?}");
+    assert_eq!(second.skipped_unchanged, 1, "{second:?}");
+}
+
+#[test]
+fn fragment_ingest_reingests_same_size_edits() {
+    // Must-NOT-fire control for the mtime arm: same byte length but
+    // newer mtime is still a change (mtime-only staleness is real —
+    // size alone would keep a stale row forever).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).expect("mkdir src");
+    std::fs::write(src.join("a.rs"), "pub fn v1aa() {}\n").expect("write");
+    let db_path = dir.path().join("frag.db");
+    let roots = [src.clone()];
+    ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::write(src.join("a.rs"), "pub fn v2bb() {}\n").expect("write");
+    let second = ingest_workspace_fragments(&db_path, dir.path(), &roots).expect("ingest");
+    assert_eq!(second.files, 1, "{second:?}");
+    assert_eq!(second.skipped_unchanged, 0, "{second:?}");
+}
+
+#[test]
 fn missing_workspace_is_a_named_error() {
     let error = run_index("/no/such/workspace", "/tmp/g", None).expect_err("must fail");
     assert!(error.contains("workspace not found"), "{error}");

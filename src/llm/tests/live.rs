@@ -12,3 +12,6 @@ mod smoke_live;
 
 #[path = "live/p4b_live.rs"]
 mod p4b_live;
+
+#[path = "live/embed_live.rs"]
+mod embed_live;

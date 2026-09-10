@@ -566,3 +566,21 @@ fn batch_output_validation_checks_shape_values_and_truncation() {
         assert!(error.to_string().contains("truncated"), "{error}");
     }
 }
+
+#[test]
+fn create_provider_llama_prefix_builds_offline() {
+    // The repo config declares `models.embed = "llama:embed"` (OpenAI-
+    // compatible embeddings at the provider base URL). Construction must
+    // be pure offline (no dial) — the network only happens at embed time.
+    let result = create_embedding_provider(
+        "llama:embed",
+        None,
+        Some("http://localhost:8080"),
+        None,
+        768,
+        None,
+        None,
+    );
+    let provider = result.expect("llama: scheme must build");
+    assert_eq!(provider.dimensions(), 768);
+}

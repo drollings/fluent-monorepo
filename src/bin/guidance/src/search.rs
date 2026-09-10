@@ -273,6 +273,27 @@ pub fn run_search(
     for name in symbol_type_names {
         symbol_types.push(parse_symbol_type(name)?);
     }
+    // L3 embedder: resolved from the workspace project config
+    // (`models.embed`, provider table, dims). Construction is offline;
+    // absence degrades through the existing embedder-absent paths.
+    // Explicit `--vector` without a backend is a named decline, never
+    // a silent lemma fallback.
+    let embedder = match mode {
+        SearchMode::Fuse | SearchMode::Vector => {
+            let cfg = guidance_core::config::load_config(std::path::Path::new(workspace))
+                .unwrap_or_default();
+            crate::embed::embedder_from_config(&cfg)
+        }
+        SearchMode::Fts | SearchMode::Rg => None,
+    };
+    if mode == SearchMode::Vector && embedder.is_none() {
+        return Err(
+            "search --vector needs an embedding backend: set models.embed \
+             (e.g. \"llama:embed\") with its provider base_url and embed dims \
+             in .guidance/guidance-config.json"
+                .to_string(),
+        );
+    }
     // Per-mode limit default: L0 drains the sweep unless the caller
     // bounds it explicitly (line-budgeted early-kill dropped files
     // nondeterministically under parallel rg); recall modes keep the
@@ -311,7 +332,7 @@ pub fn run_search(
     // Rule-lemmatizer pipeline (no model): the L2 route collapses
     // inflections at zero embedding cost; `None` degrades to L1-only.
     let nlp = default_en_pipeline();
-    match run_recall(&plan, &storage, None, nlp.as_ref()) {
+    match run_recall(&plan, &storage, embedder.as_deref(), nlp.as_ref()) {
         Ok(output) => {
             if output.hits.is_empty() {
                 return Ok("No results found.\n".to_string());

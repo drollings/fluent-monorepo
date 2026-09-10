@@ -166,3 +166,57 @@ fn explicit_globs_still_match_per_call() {
     assert!(crate::query::glob::path_pattern_matches("src/*.rs", "src/main.rs"));
     assert!(!crate::query::glob::path_pattern_matches("src/*.rs", "src/nested/main.rs"));
 }
+
+#[test]
+fn select_files_skips_hidden_files_by_default() {
+    // Apples-to-apples: rg/zg skip hidden files unless asked. guidance
+    // ingested its own `.guidance.db-wal` as a fragment (161 vs 160
+    // files on the scale corpus) because only hidden DIRS were skipped.
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join("visible.rs"), "fn visible() {}\n").expect("write");
+    std::fs::write(dir.path().join(".hidden.rs"), "fn hidden() {}\n").expect("write");
+    let sel = FileSelection {
+        roots: vec![dir.path().to_path_buf()],
+        include_globs: Vec::new(),
+        exclude_globs: Vec::new(),
+        extra_skip_dirs: Vec::new(),
+        honor_gitignore: false,
+        max_bytes_override: None,
+    };
+    let mut diag = ScanDiagnostics::default();
+    let files = select_files(&sel, &mut diag).expect("select");
+    let names: Vec<String> = files
+        .iter()
+        .map(|f| {
+            f.path
+                .file_name()
+                .expect("name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert!(names.contains(&"visible.rs".to_string()), "{names:?}");
+    assert!(!names.contains(&".hidden.rs".to_string()), "{names:?}");
+}
+
+#[test]
+fn select_files_explicit_glob_restores_hidden_files() {
+    // Must-NOT-fire control: explicit includes bypass the hidden skip,
+    // mirroring the raster precedent (skipped by default, discoverable).
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join(".hidden.rs"), "fn hidden() {}\n").expect("write");
+    let sel = FileSelection {
+        roots: vec![dir.path().to_path_buf()],
+        include_globs: vec!["*.rs".to_string()],
+        exclude_globs: Vec::new(),
+        extra_skip_dirs: Vec::new(),
+        honor_gitignore: false,
+        max_bytes_override: None,
+    };
+    let mut diag = ScanDiagnostics::default();
+    let files = select_files(&sel, &mut diag).expect("select");
+    assert!(
+        files.iter().any(|f| f.path.ends_with(".hidden.rs")),
+        "explicit include restores hidden files"
+    );
+}

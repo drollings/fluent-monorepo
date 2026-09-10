@@ -83,6 +83,10 @@ impl GuidanceDb {
                  CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
                  CREATE INDEX IF NOT EXISTS idx_nodes_name_source ON guidance_nodes(name, source);
                  CREATE INDEX IF NOT EXISTS idx_cache_query_hash ON embedding_cache(query_hash);
+                 CREATE TABLE IF NOT EXISTS sync_state (
+                     key TEXT PRIMARY KEY,
+                     value TEXT NOT NULL
+                 );
                  CREATE TABLE IF NOT EXISTS zg_files (
                      id TEXT PRIMARY KEY,
                      absolute_path TEXT NOT NULL,
@@ -472,16 +476,30 @@ impl GuidanceDb {
             return Ok(0);
         }
 
+        let mut json_files = Vec::new();
+        common_core::walk::walk_files(json_dir, &["json"], |path| {
+            json_files.push(path.to_path_buf());
+        });
+        let fingerprint = node_sync_fingerprint(&json_files);
+        // Change gate: member docs untouched since the last successful
+        // sync rebuild nothing. Count-zero always runs (an emptied doc
+        // dir must still clear stale nodes — never a false-fresh skip
+        // over a clear). A corrupt/missing watermark fails open toward
+        // the rebuild: wasted time, never stale rows.
+        let fresh = self
+            .read_node_sync_watermark()
+            .ok()
+            .flatten()
+            .is_some_and(|mark| mark == fingerprint);
+        if fingerprint.file_count > 0 && fresh {
+            return Ok(0);
+        }
+
         let synced = {
             let mut synced = 0;
 
             // Clear existing nodes before re-sync to avoid stale duplicates.
             self.store.execute("DELETE FROM guidance_nodes", &[])?;
-
-            let mut json_files = Vec::new();
-            common_core::walk::walk_files(json_dir, &["json"], |path| {
-                json_files.push(path.to_path_buf());
-            });
 
             for path in &json_files {
                 let content = common_core::io::read_to_string_err(path).map_err(|e| {
@@ -547,8 +565,55 @@ impl GuidanceDb {
         if synced > 0 {
             let _ = self.rebuild_hnsw();
         }
+        // The watermark advances only on success: a crash anywhere
+        // above leaves the old mark, so the next sync rebuilds and the
+        // rows always converge. Written even when `synced == 0` — an
+        // all-empty doc dir is a converged state, not a failure.
+        if fingerprint.file_count > 0 {
+            self.write_node_sync_watermark(&fingerprint)?;
+        }
 
         Ok(synced)
+    }
+
+    /// Read the last successful node-sync watermark, if any. Corrupt
+    /// values read as absent (the caller fails open toward a rebuild).
+    fn read_node_sync_watermark(
+        &self,
+    ) -> Result<Option<NodeSyncFingerprint>, VectorDbError> {
+        let value: Option<String> = self
+            .store
+            .query_row(
+                "SELECT value FROM sync_state WHERE key = 'node_sync'",
+                &[],
+                |row| row.get(0),
+            )
+            .map_err(VectorDbError::from)?;
+        Ok(value.and_then(|value| {
+            let (mtime, count) = value.split_once(':')?;
+            Some(NodeSyncFingerprint {
+                max_mtime_ms: mtime.parse().ok()?,
+                file_count: count.parse().ok()?,
+            })
+        }))
+    }
+
+    /// Persist the node-sync watermark after a successful rebuild.
+    fn write_node_sync_watermark(
+        &self,
+        fingerprint: &NodeSyncFingerprint,
+    ) -> Result<(), VectorDbError> {
+        let value = format!(
+            "{}:{}",
+            fingerprint.max_mtime_ms, fingerprint.file_count
+        );
+        self.store
+            .execute(
+                "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('node_sync', ?1)",
+                rusqlite::params![value],
+            )
+            .map_err(VectorDbError::from)?;
+        Ok(())
     }
 
     /// Check if the HNSW index is built.
@@ -652,6 +717,44 @@ impl GuidanceDb {
                 Ok(fragments.len())
             })
             .map_err(VectorDbError::from)
+    }
+
+    /// Freshness fingerprint of a file's committed fragment row.
+    ///
+    /// Mirrors exactly what [`GuidanceDb::upsert_fragments`] stores
+    /// (`size_bytes`, `last_modified_time`) plus whether any fragment
+    /// already carries an embedding — so callers can skip re-ingesting
+    /// unchanged files, but still re-ingest when a newly configured
+    /// embedder has vectors to backfill. `None` when the file was never
+    /// ingested. One indexed-PK row read; no allocation beyond the id.
+    ///
+    /// Caveat (shared with member-gen staleness): the fingerprint is
+    /// size+mtime, not a content hash — a same-size rewrite inside one
+    /// mtime tick still re-ingests (mtime moves), but a content swap
+    /// that preserves both size and mtime (`cp -p` of different bytes)
+    /// reads as fresh. Change detection, not content addressing.
+    pub fn fragment_freshness(
+        &self,
+        file_id: &str,
+    ) -> Result<Option<FragmentFreshness>, VectorDbError> {
+        let row: Option<(i64, i64, i64)> = self
+            .store
+            .query_row(
+                "SELECT size_bytes, last_modified_time,
+                  EXISTS(SELECT 1 FROM zg_fragments WHERE file_id = zg_files.id
+                         AND (embedding IS NOT NULL OR embedding_q8 IS NOT NULL))
+                 FROM zg_files WHERE id = ?1",
+                rusqlite::params![file_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(VectorDbError::from)?;
+        Ok(row.map(|(size, mtime, embedded)| FragmentFreshness {
+            // A corrupt negative size can never match a real file:
+            // fail open toward re-ingest, never toward a stale skip.
+            size_bytes: u64::try_from(size).unwrap_or(u64::MAX),
+            last_modified_time: mtime,
+            embedded: embedded != 0,
+        }))
     }
 
     /// Insert or replace lemma rows without touching fragments.
@@ -1080,6 +1183,51 @@ impl ZgFileRecord {
     }
 }
 
+/// Freshness fingerprint of a file's committed fragment row (see
+/// [`GuidanceDb::fragment_freshness`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FragmentFreshness {
+    /// File size in bytes at ingest time.
+    pub size_bytes: u64,
+    /// Last-modified time (ms epoch) at ingest time.
+    pub last_modified_time: i64,
+    /// Whether any committed fragment carries an embedding.
+    pub embedded: bool,
+}
+
+/// Change fingerprint for the node-sync gate (see
+/// [`GuidanceDb::sync_from_dir`]): the doc set is unchanged iff both
+/// the file count and the newest mtime match the last successful sync.
+/// Same risk class as all mtime discipline here — a delete+add pair
+/// that keeps the count with an older-or-equal max mtime reads as
+/// fresh (change detection, not content addressing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NodeSyncFingerprint {
+    /// Newest member-doc mtime (ms epoch), 0 when unreadable.
+    max_mtime_ms: i64,
+    /// Member-doc file count.
+    file_count: usize,
+}
+
+fn node_sync_fingerprint(json_files: &[std::path::PathBuf]) -> NodeSyncFingerprint {
+    let mut max_mtime_ms = 0i64;
+    for path in json_files {
+        let ms = common_core::io::mtime(path)
+            .and_then(|mtime| {
+                mtime
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|elapsed| elapsed.as_millis() as i64)
+                    .ok()
+            })
+            .unwrap_or(0);
+        max_mtime_ms = max_mtime_ms.max(ms);
+    }
+    NodeSyncFingerprint {
+        max_mtime_ms,
+        file_count: json_files.len(),
+    }
+}
+
 /// Fragment row for ingestion (mirrors the P0 `EntityFragment` contract;
 /// `cjk_text` is the space-joined bigram expansion computed by the
 /// guidance-core ingestion helper).
@@ -1305,6 +1453,10 @@ mod file_status;
 #[cfg(test)]
 #[path = "../tests/fragments.rs"]
 mod fragments;
+
+#[cfg(test)]
+#[path = "../tests/node_sync.rs"]
+mod node_sync;
 
 #[cfg(test)]
 mod tests {

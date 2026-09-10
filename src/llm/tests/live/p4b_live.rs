@@ -97,7 +97,7 @@ fn live_qwen_text_embedding_structural() {
         return;
     };
     let endpoint = std::env::var("QWEN_ENDPOINT").ok();
-    let model = fluent_llm::QwenTextEmbeddingV4::new(fluent_llm::QwenTextOptions {
+    let model = fluent_llm::QwenTextEmbeddingV4::new(&fluent_llm::QwenTextOptions {
         api_key: Some(api_key),
         endpoint,
         extra_headers: HashMap::new(),
