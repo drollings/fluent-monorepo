@@ -311,10 +311,32 @@ fn matches_default_dir(relative: &str) -> bool {
         .any(|name| DEFAULT_SKIP_DIRS.contains(&name))
 }
 
+/// Default ignore patterns, compiled once and shared by every file
+/// match (per-file recompilation cost ~39 ms/file in debug builds).
+static DEFAULT_IGNORED_MATCHERS: std::sync::OnceLock<Vec<regex::Regex>> =
+    std::sync::OnceLock::new();
+
 fn matches_default_file_pattern(relative: &str) -> bool {
-    DEFAULT_IGNORED_FILE_PATTERNS
-        .iter()
-        .any(|pattern| path_pattern_matches(pattern, relative))
+    let matchers = DEFAULT_IGNORED_MATCHERS.get_or_init(|| {
+        DEFAULT_IGNORED_FILE_PATTERNS
+            .iter()
+            .map(|pattern| crate::query::glob::compile_path_glob(pattern, false))
+            .collect()
+    });
+    let candidate = crate::query::glob::normalize_path_for_match(relative);
+    // The defaults all carry glob metacharacters, so the per-call path
+    // (`path_pattern_matches`) always took the regex branch — the cached
+    // equivalent below matches it exactly, compiled once.
+    matchers.iter().any(|matcher| matcher.is_match(&candidate))
+}
+
+#[cfg(test)]
+pub(crate) fn default_ignored_matchers_initialized() -> bool {
+    // Probe for the regression test: the shared matcher set is populated
+    // after any match call, never recompiled per file.
+    DEFAULT_IGNORED_MATCHERS
+        .get()
+        .is_some_and(|matchers| matchers.len() == DEFAULT_IGNORED_FILE_PATTERNS.len())
 }
 
 /// `.zvec-grep` state is never indexed (G0.4); `.git` is covered by the

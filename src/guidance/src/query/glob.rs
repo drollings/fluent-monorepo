@@ -107,6 +107,13 @@ fn glob_pattern_matches(pattern: &str, path: &str, case_insensitive: bool) -> bo
     glob_to_regex(pattern, case_insensitive).is_match(path)
 }
 
+/// Precompile a glob pattern for repeated matching (same semantics as
+/// the per-call path: normalized pattern, case flag fixed at build).
+/// Used for static pattern lists matched once per file.
+pub(crate) fn compile_path_glob(pattern: &str, case_insensitive: bool) -> regex::Regex {
+    glob_to_regex(&normalize_path_pattern(pattern), case_insensitive)
+}
+
 fn glob_to_regex(pattern: &str, case_insensitive: bool) -> regex::Regex {
     let prefix = if pattern.contains('/') {
         "^"

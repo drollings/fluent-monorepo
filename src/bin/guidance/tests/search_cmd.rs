@@ -129,7 +129,7 @@ fn missing_index_is_a_named_error() {
         "needle",
         dir.path().to_str().unwrap(),
         missing.to_str().unwrap(),
-        5,
+        Some(5),
         false,
         false,
         false,
@@ -151,7 +151,7 @@ fn invalid_symbol_type_is_a_named_error() {
         "needle",
         ".",
         ".guidance.db",
-        5,
+        Some(5),
         false,
         false,
         false,
@@ -188,7 +188,7 @@ async fn rg_route_reports_context_and_symbols() {
         "CtxNeedle",
         &workspace,
         &unused_db,
-        10,
+        Some(10),
         false,
         false,
         true,
@@ -208,6 +208,86 @@ async fn rg_route_reports_context_and_symbols() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rg_absent_limit_returns_every_match_line() {
+    // Finding 2 (default line-budgeted early-kill dropped files): an
+    // absent `--limit` on the L0 route must drain the sweep — 3 files ×
+    // 2 match lines each, well past the old default budget of 10.
+    let dir = tempfile::tempdir().expect("tempdir");
+    for name in ["m1.rs", "m2.rs", "m3.rs"] {
+        std::fs::write(
+            dir.path().join(name),
+            "let ManyNeedle = 1;\nlet ManyNeedle = 2;\n",
+        )
+        .expect("write");
+    }
+    let workspace = dir.path().to_str().unwrap().to_string();
+    let unused_db = dir.path().join("unused.db");
+    let unused_db = unused_db.to_str().unwrap().to_string();
+    let rendered = run_search(
+        "ManyNeedle",
+        &workspace,
+        &unused_db,
+        None,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        &[],
+        &[],
+        &rg_opts(),
+    )
+    .expect("rg route");
+    for name in ["m1.rs", "m2.rs", "m3.rs"] {
+        assert!(rendered.contains(&format!("{name}:1:")), "{rendered}");
+        assert!(rendered.contains(&format!("{name}:2:")), "{rendered}");
+    }
+    assert!(rendered.contains("coverage: rg_exhaustive"), "{rendered}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rg_explicit_limit_still_truncates() {
+    // Must-NOT-fire control: an explicit `--limit` keeps the bounded
+    // contract — the bound is preserved, only the default changes.
+    let dir = tempfile::tempdir().expect("tempdir");
+    for name in ["m1.rs", "m2.rs", "m3.rs"] {
+        std::fs::write(
+            dir.path().join(name),
+            "let ManyNeedle = 1;\nlet ManyNeedle = 2;\n",
+        )
+        .expect("write");
+    }
+    let workspace = dir.path().to_str().unwrap().to_string();
+    let unused_db = dir.path().join("unused.db");
+    let unused_db = unused_db.to_str().unwrap().to_string();
+    let rendered = run_search(
+        "ManyNeedle",
+        &workspace,
+        &unused_db,
+        Some(2),
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        &[],
+        &[],
+        &rg_opts(),
+    )
+    .expect("rg route");
+    assert!(rendered.contains("coverage: rg_truncated"), "{rendered}");
+    let matches = rendered
+        .lines()
+        .filter(|line| line.contains("ManyNeedle ="))
+        .count();
+    assert_eq!(matches, 2, "{rendered}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rg_route_searches_without_an_index() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("a.rs"), "fn needle_fn() {}\n").expect("write");
@@ -218,7 +298,7 @@ async fn rg_route_searches_without_an_index() {
         "needle_fn",
         &workspace,
         &unused_db,
-        10,
+        Some(10),
         false,
         false,
         true,

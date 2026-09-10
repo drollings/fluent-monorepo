@@ -129,3 +129,40 @@ fn validate_roots_rejects_missing_and_overlapping() {
 
     assert!(validate_roots(&selection(dir.path())).is_ok());
 }
+
+
+#[test]
+fn default_file_patterns_match_without_recompiling_per_file() {
+    // Finding 3 (index wall-clock): `matches_default_file_pattern`
+    // compiled 24 fresh regexes per file (~39 ms/file in debug). The
+    // compiled set must be built once and reused — this pins the cache.
+    for name in [
+        "a.min.js",
+        "b.bundle.css",
+        "c.generated.ts",
+        "go.sum",
+        "Cargo.lock",
+        "x.map",
+        "y.designer.cs",
+    ] {
+        assert!(matches_default_file_pattern(name), "{name} must be ignored");
+    }
+    for name in ["main.rs", "notes.md", "diagram.svg", "app.ts"] {
+        assert!(
+            !matches_default_file_pattern(name),
+            "{name} must stay visible"
+        );
+    }
+    assert!(
+        default_ignored_matchers_initialized(),
+        "default matchers must be compiled once and cached"
+    );
+}
+
+#[test]
+fn explicit_globs_still_match_per_call() {
+    // Must-NOT-fire control: user-supplied globs keep per-call
+    // semantics — the cache covers the static default list only.
+    assert!(crate::query::glob::path_pattern_matches("src/*.rs", "src/main.rs"));
+    assert!(!crate::query::glob::path_pattern_matches("src/*.rs", "src/nested/main.rs"));
+}

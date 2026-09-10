@@ -231,8 +231,10 @@ enum Commands {
         #[arg(short = 'o', long, default_value = ".guidance.db")]
         db: String,
 
-        #[arg(short = 'l', long, default_value_t = 10)]
-        limit: usize,
+        /// Result limit. Absent = mode default (L0 drains the sweep;
+        /// recall modes use 10). Present values clamp to [1, 50].
+        #[arg(short = 'l', long)]
+        limit: Option<usize>,
 
         #[arg(long)]
         fts: bool,
@@ -498,7 +500,7 @@ async fn main() {
                     query,
                     ".",
                     ".guidance.db",
-                    10,
+                    None,
                     false,
                     false,
                     false,

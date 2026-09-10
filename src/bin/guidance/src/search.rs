@@ -125,6 +125,10 @@ pub fn build_search_plan(
 /// MCP cap: fused/CLI limits clamp to 50 results.
 pub const MAX_LIMIT: usize = 50;
 
+/// CLI default limit when `--limit` is absent and the mode is not L0
+/// (today's CLI default, preserved).
+pub const CLI_DEFAULT_LIMIT: usize = 10;
+
 /// Clamp a requested limit into `[1, MAX_LIMIT]`.
 #[must_use]
 pub fn clamp_limit(limit: usize) -> usize {
@@ -194,13 +198,16 @@ pub fn render_rg_hits(hits: &[EnrichedRgHit], limit: usize) -> String {
 }
 
 /// Run the `search` command: recall shell (fused/single-route) or L0 rg.
-/// Thin exit-wrapper over [`run_search`].
+/// Thin exit-wrapper over [`run_search`]. An absent limit (`None`) means
+/// the mode default: exhaustive for L0 (zg parity — the full sweep is
+/// millisecond-scale; an explicit `--limit` keeps the bounded contract),
+/// [`CLI_DEFAULT_LIMIT`] for recall modes.
 #[allow(clippy::too_many_arguments)]
 pub fn cmd_search(
     query: &str,
     workspace: &str,
     db_path: &str,
-    limit: usize,
+    limit: Option<usize>,
     fts: bool,
     vector: bool,
     rg: bool,
@@ -243,7 +250,7 @@ pub fn run_search(
     query: &str,
     workspace: &str,
     db_path: &str,
-    limit: usize,
+    limit: Option<usize>,
     fts: bool,
     vector: bool,
     rg: bool,
@@ -266,7 +273,16 @@ pub fn run_search(
     for name in symbol_type_names {
         symbol_types.push(parse_symbol_type(name)?);
     }
-    let limit = clamp_limit(limit);
+    // Per-mode limit default: L0 drains the sweep unless the caller
+    // bounds it explicitly (line-budgeted early-kill dropped files
+    // nondeterministically under parallel rg); recall modes keep the
+    // CLI default. `usize::MAX` never trips the backend's
+    // `hits.len() >= limit` kill, and renders as `rg_exhaustive`.
+    let limit = match (mode, limit) {
+        (SearchMode::Rg, None) => usize::MAX,
+        (_, None) => CLI_DEFAULT_LIMIT,
+        (_, Some(requested)) => clamp_limit(requested),
+    };
 
     if mode == SearchMode::Rg {
         return run_rg_search(query, workspace, limit, rg_options);
