@@ -65,24 +65,15 @@ Then you you must read
 ├── data/
 │   └── yamake.json
 ├── doc/
-│   ├── common-core/
-│   │   └── USAGE.md
 │   ├── coral/
 │   │   ├── CHANGELOG.md  # # Changelog
 │   │   ├── DETAILS.md  # # Coral Context: Detailed Engineering Sp
 │   │   ├── OVERVIEW.md  # # Coral Context: Architectural Design Do
 │   │   └── VISION.md  # # Coral Context: Architectural Vision
 │   ├── dag/
-│   │   ├── USAGE.md
 │   │   └── VISION.md  # # Unified Dependency Resolver — Fro...
-│   ├── db/
-│   │   └── USAGE.md
-│   ├── fluent-concurrency/
-│   │   └── USAGE.md
 │   ├── fluent-onnx/
 │   │   └── ARCHITECTURE.md  # # fluent-onnx — Architecture
-│   ├── fluent-wvr/
-│   │   └── USAGE.md
 │   ├── guidance/
 │   │   ├── ARCHITECTURE.md  # # Architecture Overview
 │   │   ├── DESIGN.md  # Comprehensive Analysis: Agentic Document
@@ -90,8 +81,6 @@ Then you you must read
 │   │   ├── VISION.md  # # guidance: Vision Document
 │   │   └── schemas/
 │   │       └── guidance.schema.json
-│   ├── interlingua/
-│   │   └── USAGE.md
 │   ├── memory-plugin/
 │   │   └── ARCHITECTURE.md  # # Memory Plugin Architecture — Clea...
 │   ├── router/
@@ -150,13 +139,22 @@ Then you you must read
     │   │       └── main.rs  # //! coral-router — LLM Router & Age...
     │   ├── guidance/
     │   │   ├── Cargo.toml
-    │   │   └── src/
-    │   │       ├── benchmark.rs  # //! `guidance benchmark` — query ac...
-    │   │       ├── commit.rs  # //! Commit message generation — LLM...
-    │   │       ├── editor.rs  # //! Editor interaction utilities for hum
-    │   │       ├── main.rs  # use std::path::{Path, PathBuf};
-    │   │       ├── mcp.rs  # //! MCP (Model Context Protocol) server 
-    │   │       └── structure.rs  # use std::collections::BTreeMap;
+    │   │   ├── src/
+    │   │   │   ├── benchmark.rs  # //! `guidance benchmark` — query ac...
+    │   │   │   ├── commit.rs  # //! Commit message generation — LLM...
+    │   │   │   ├── editor.rs  # //! Editor interaction utilities for hum
+    │   │   │   ├── index_cmd.rs  # //! `index` command (P5): thin shell ove
+    │   │   │   ├── main.rs  # #![forbid(unsafe_code)]
+    │   │   │   ├── mcp.rs  # //! MCP (Model Context Protocol) server 
+    │   │   │   ├── search.rs  # //! `search` command (P5): thin shell ov
+    │   │   │   └── structure.rs  # use std::collections::BTreeMap;
+    │   │   └── tests/
+    │   │       ├── cli_e2e.rs  # //! P5 acceptance: `cli.test.
+    │   │       ├── index_cmd.rs  # //! Unit tests for the `index` command s
+    │   │       ├── mcp_contract.rs  # //! P5 `mcp-contract` port: toolsets, ba
+    │   │       ├── mcp_explain.rs  # //! Unit tests for the MCP `guidance_exp
+    │   │       ├── rg_cli.rs  # //! P5 `rg-cli` port: the managed-rg byp
+    │   │       └── search_cmd.rs  # //! Unit tests for the `search` command 
     │   └── yamake-coral/
     │       ├── Cargo.toml
     │       └── src/
@@ -327,7 +325,7 @@ Then you you must read
     │   │   ├── capability.rs  # //! The capability-gated async database 
     │   │   ├── error.rs  # //! The single database error taxonomy f
     │   │   ├── hnsw.rs  # //! The canonical HNSW-backed vector ind
-    │   │   ├── lib.rs  # //! # fluent-db — the canonical dat...
+    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── migrate.rs  # //! Idempotent schema migrations.
     │   │   ├── pool.rs  # //! The canonical pooled SQLite store (D
     │   │   ├── query.rs  # //! Typed statement helpers shared by `S
@@ -480,27 +478,55 @@ Then you you must read
     │       └── lib.rs  # //! Test utilities for Fluent WVR crates
     ├── guidance/
     │   ├── Cargo.toml
+    │   ├── benches/
+    │   │   └── recall_depth_sweep.rs  # //! P6 recall-depth sweep: fused recall 
     │   ├── src/
     │   │   ├── ast_parser.rs  # use std::path::Path;
+    │   │   ├── change_set.rs  # //! P3 change tracking (port of zvec-gre
     │   │   ├── config.rs  # use std::collections::HashMap;
+    │   │   ├── coordinator.rs  # //! P3 index coordinator: watcher batche
+    │   │   ├── diff.rs  # //! P2 diff: scanned files vs stored rec
     │   │   ├── enhancer.rs  # use fluent_llm::client::LlmClient;
+    │   │   ├── extractor/
+    │   │   │   ├── adapter.rs  # //! P2 language adapters (port of `extra
+    │   │   │   ├── code.rs  # //! P2 code extraction (port of `extract
+    │   │   │   ├── markdown.rs  # //! P2 markdown extraction (port of `ext
+    │   │   │   ├── mod.rs  # //! P2 extraction core: shared fragment 
+    │   │   │   ├── text.rs  # //! P2 plain-text extraction (port of `e
+    │   │   │   └── vector_content.rs  # //! P2 metadata-prefixed embedding text 
+    │   │   ├── freshness.rs  # //! P3 freshness contract (port of zvec-
+    │   │   ├── graph_index.rs  # //! P3 dependency graph (L4): file-layer
     │   │   ├── grounding.rs  # //! Grounding enforcement — ensures...
+    │   │   ├── index_pipeline.rs  # //! P2 incremental index pipeline: scan 
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── memory.rs  # //! Memory integration for the guidance 
     │   │   ├── plugin.rs  # use std::path::{Path, PathBuf};
     │   │   ├── query/
+    │   │   │   ├── db_storage.rs  # //! `GuidanceDb` as recall storage: conv
     │   │   │   ├── formatter.rs  # use std::fmt::Write;
+    │   │   │   ├── fts_backend.rs  # //! Lexical backend: single-route FTS re
+    │   │   │   ├── fusion.rs  # //! Candidate fusion: score sums, orderi
+    │   │   │   ├── glob.rs  # //! rg-style glob + path + file-type mat
+    │   │   │   ├── hybrid.rs  # //! Hybrid orchestration: query → p...
     │   │   │   ├── identifier.rs  # use common_core::string::{contains_ignor
+    │   │   │   ├── ingest.rs  # //! P1 minimal ingestion: whole-file fra
+    │   │   │   ├── lemma_backend.rs  # //! Lemma backend: query lemmas looked u
     │   │   │   ├── llm_filter.rs  # use common_core::string::contains_ignore
     │   │   │   ├── llm_filter_batch.rs  # use super::llm_filter::{LlmFilterBackend
     │   │   │   ├── mod.rs  # pub mod db_storage;
+    │   │   │   ├── recall.rs  # //! Hybrid recall pipeline: plan validat
+    │   │   │   ├── rg_backend.rs  # //! L0 minimal: capability-gated managed
     │   │   │   ├── search_backend.rs  # use common_core::string::contains_ignore
     │   │   │   ├── snapshot.rs  # use std::path::Path;
     │   │   │   ├── strategy.rs  # use fluent_types::GuidanceDoc;
-    │   │   │   └── synthesize.rs  # use fluent_types::{GuidanceDoc, Member, 
+    │   │   │   ├── structure_enrich.rs  # //! Structure enrichment (P5): lexical h
+    │   │   │   ├── synthesize.rs  # use fluent_types::{GuidanceDoc, Member, 
+    │   │   │   └── vector_backend.rs  # //! Vector backend: single-route embeddi
     │   │   ├── query_engine.rs  # use fluent_types::GuidanceDoc;
     │   │   ├── runtime.rs  # use std::path::PathBuf;
     │   │   ├── scanner.rs  # use common_core::string::{contains_any, 
+    │   │   ├── scheduler.rs  # //! P3 reconcile job queue: the coalesci
+    │   │   ├── selection.rs  # //! P2 file selection: `FileSelection` (
     │   │   ├── sync/
     │   │   │   ├── comments.rs  # use std::path::Path;
     │   │   │   ├── json_store.rs  # use std::path::{Path, PathBuf};
@@ -508,17 +534,49 @@ Then you you must read
     │   │   │   ├── mod.rs  # pub mod comments;
     │   │   │   └── staleness.rs  # use std::path::Path;
     │   │   ├── sync_engine.rs  # use std::path::{Path, PathBuf};
-    │   │   └── tests/
-    │   │       ├── common.rs  # //! Crate-typed test fixtures shared by 
-    │   │       └── mod.rs  # //! Tier-1 test suites for guidance-core
+    │   │   ├── tests/
+    │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by 
+    │   │   │   └── mod.rs  # //! Tier-1 test suites for guidance-core
+    │   │   ├── watcher.rs  # //! P3 file watcher (port of zvec-grep `
+    │   │   ├── zg_constants.rs  # //! zvec-grep tested constants, ported v
+    │   │   └── zg_types.rs  # //! zvec-grep value types + pure search 
     │   └── tests/
+    │       ├── change_set.rs  # //! P3 `change_set` tests (port of zvec-
     │       ├── common/
     │       │   └── mod.rs  # //! Tier-2 (crate-root `tests/`) shared 
+    │       ├── coordinator.rs  # //! P3 coordinator tests (port of zvec-g
     │       ├── e2e_gen_roundtrip.rs  # use fluent_types::MemberType;
+    │       ├── extract_code.rs  # //! P2 code-extraction tests (ports `tes
+    │       ├── extract_markdown.rs  # //! P2 markdown-extraction tests: headin
+    │       ├── extract_text.rs  # //! P2 text-extraction tests: window bud
+    │       ├── extract_vector_content.rs  # //! P2 `vector_content` tests: metadata 
+    │       ├── freshness.rs  # //! P3 freshness-matrix tests: `fresh` /
+    │       ├── graph_index.rs  # //! P3 `graph_index` tests: per-language
+    │       ├── hybrid_parity.rs  # //! Hermetic known-item parity matrix (P
+    │       ├── index_diff.rs  # //! P2 diff tests: added/modified/pendin
+    │       ├── index_pipeline.rs  # //! P2 pipeline tests (ports `service.
+    │       ├── index_selection.rs  # //! P2.4 scanner-utils port: discovery r
+    │       ├── l2_probe.rs  # //! P6 target (4) probe: inflected-query
     │       ├── live/
     │       │   ├── README.md  # # guidance-core — Live-AI tests
     │       │   └── smoke_live.rs  # //! Opt-in live-AI smoke test for the gu
-    │       └── live.rs  # //! Live-AI integration test crate for g
+    │       ├── live.rs  # //! Live-AI integration test crate for g
+    │       ├── query_fts_backend.rs  # use super::*;
+    │       ├── query_fusion.rs  # use super::*;
+    │       ├── query_glob.rs  # use super::*;
+    │       ├── query_hybrid.rs  # use super::*;
+    │       ├── query_lemma_backend.rs  # use super::*;
+    │       ├── query_recall.rs  # use super::*;
+    │       ├── query_rg_backend.rs  # use super::*;
+    │       ├── query_structure_enrich.rs  # //! Ported `structure-enrichment.test.
+    │       ├── query_vector_backend.rs  # use super::*;
+    │       ├── scheduler.rs  # //! P3 scheduler tests: the coalescing c
+    │       ├── watcher.rs  # //! P3 watcher tests (port of zvec-grep 
+    │       ├── zg_constants.rs  # use super::*;
+    │       ├── zg_parity/
+    │       │   ├── corpus_cjk.rs  # //! CJK-heavy fixture corpus (Gate 0 ...
+    │       │   └── mod.rs  # //! P0 fixture corpora for zvec-grep par
+    │       └── zg_types.rs  # use super::*;
     ├── knowledge/
     │   ├── Cargo.toml
     │   ├── src/
@@ -543,8 +601,11 @@ Then you you must read
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── anonymize.rs  # /// The ONE request-path anonymize entry
+    │   │   ├── artifact.rs  # //! Pinned model-artifact plane: cache-f
+    │   │   ├── artifact_lock.rs  # //! Directory-based mutual exclusion for
     │   │   ├── backend.rs  # //! Backend plugin layer: one base trait
     │   │   ├── cache.rs  # //! LLM response cache — the single...
+    │   │   ├── catalog.rs  # //! Pinned embedding-model catalog: the 
     │   │   ├── client.rs  # use std::sync::Arc;
     │   │   ├── constants.rs  # //! LLM-domain constants — the sing...
     │   │   ├── context_packer.rs  # use crate::ChatMessage;
@@ -552,8 +613,11 @@ Then you you must read
     │   │   ├── embeddings.rs  # use std::num::NonZeroUsize;
     │   │   ├── embeddings_cache.rs  # //! Embedding-cache DDL — the singl...
     │   │   ├── error.rs  # use crate::embeddings::EmbeddingError;
+    │   │   ├── factory.rs  # //! Catalog-backed embedding-model facto
+    │   │   ├── gguf.rs  # //! Local GGUF embedding backend behind 
+    │   │   ├── grants.rs  # //! Workspace grants for remote embeddin
     │   │   ├── http_class.rs  # /// HTTP status classification for LLM A
-    │   │   ├── lib.rs  # //! fluent-llm: LLM HTTP client provider
+    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── llm_queue.rs  # //! Default LLM request handler — w...
     │   │   ├── onnx_config.rs  # //! ONNX model configuration types ...
     │   │   ├── onnx_error.rs  # //! Error type for `fluent-onnx`.
@@ -562,6 +626,8 @@ Then you you must read
     │   │   ├── parse.rs  # //! Tolerant JSON parsing for LLM output
     │   │   ├── pii_patterns.rs  # use std::sync::LazyLock;
     │   │   ├── protocol.rs  # //! LLM protocol + request queue — ...
+    │   │   ├── qwen.rs  # //! Remote Qwen embedding backends behin
+    │   │   ├── resolution.rs  # //! Model-reference resolution order: ex
     │   │   ├── runtime.rs  # //! `fluent-llm::runtime` — the sha...
     │   │   ├── sse.rs  # //! SSE line framing — the single o...
     │   │   ├── telemetry.rs  # //! LLM telemetry vocabulary + structure
@@ -572,9 +638,12 @@ Then you you must read
     │   └── tests/
     │       ├── anonymize.rs  # use super::*;
     │       ├── anonymize_map.rs  # use super::*;
+    │       ├── artifact.rs  # //! Ported from zvec-grep `test/unit/mod
+    │       ├── artifact_lock.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── backend.rs  # //! Backend plugin layer tests: registry
     │       ├── cache.rs  # //! ROADMAP_20260903_LLM M4.
     │       ├── calibration.rs  # //! ROADMAP_20260903_LLM M10 — cali...
+    │       ├── catalog.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── client.rs  # use super::*;
     │       ├── constants.rs  # //! ROADMAP_20260903_LLM M6.
     │       ├── context_packer.rs  # use super::*;
@@ -582,9 +651,13 @@ Then you you must read
     │       ├── embeddings.rs  # use super::*;
     │       ├── embeddings_cache.rs  # //! ROADMAP_20260903_LLM M5.
     │       ├── error.rs  # use super::*;
+    │       ├── factory.rs  # //! Ported from zvec-grep `test/unit/mod
+    │       ├── gguf.rs  # //! Ported from zvec-grep `test/unit/mod
+    │       ├── grants.rs  # //! Ported from zvec-grep authorization 
     │       ├── http_class.rs  # use super::*;
     │       ├── live/
     │       │   ├── README.md  # # fluent-llm — Live-AI tests
+    │       │   ├── p4b_live.rs  # //! Live artifact-plane + remote-embeddi
     │       │   └── smoke_live.rs  # //! Opt-in live-AI smoke test for the fl
     │       ├── live.rs  # //! Live-AI integration test crate for f
     │       ├── llm_queue.rs  # use super::*;
@@ -596,6 +669,8 @@ Then you you must read
     │       ├── pii.rs  # use super::*;
     │       ├── pii_patterns.rs  # use super::*;
     │       ├── protocol_parity.rs  # //! ROADMAP_20260903_LLM M9.
+    │       ├── qwen.rs  # //! Ported from zvec-grep `test/unit/mod
+    │       ├── resolution.rs  # //! Ported from zvec-grep `resolution.
     │       ├── runtime.rs  # use super::*;
     │       ├── sse.rs  # //! ROADMAP_20260903_LLM M2.
     │       ├── telemetry.rs  # //! ROADMAP_20260903_LLM M8.
@@ -955,12 +1030,16 @@ Then you you must read
     │       └── views.rs  # use super::*;
     ├── search-vector/
     │   ├── Cargo.toml
+    │   ├── benches/
+    │   │   └── hnsw_vs_brute.rs  # //! P6 calibration bench: HNSW vs int8 b
     │   ├── src/
     │   │   ├── aliases.rs  # use std::collections::HashMap;
     │   │   ├── db.rs  # use std::collections::HashMap;
-    │   │   └── lib.rs  # //! search-vector: SQLite hybrid search 
+    │   │   └── lib.rs  # #![forbid(unsafe_code)]
     │   └── tests/
-    │       └── error_hops.rs  # //! Error-hop tests (M7): every `rusqlit
+    │       ├── error_hops.rs  # //! Error-hop tests (M7): every `rusqlit
+    │       ├── file_status.rs  # //! P2 file-status tests: `replace_file`
+    │       └── fragments.rs  # use super::*;
     ├── spacy-rs/
     │   ├── Cargo.toml
     │   ├── build.rs  # //! Compiles `../../env/en_lemmatizer.
