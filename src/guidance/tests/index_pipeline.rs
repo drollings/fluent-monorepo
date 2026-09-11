@@ -101,7 +101,7 @@ fn lifecycle_index_search_refresh_drop_rebuild() {
     assert_eq!(stats.files_failed, 0);
 
     // Search finds the content.
-    let hits = db.search_fts("GoodNeedle", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search");
+    let hits = db.search_fts("GoodNeedle", 10, &search_vector::db::FragmentFilter::default()).expect("search");
     assert!(!hits.is_empty(), "indexed content must be searchable");
 
     // Immediate re-run indexes zero files.
@@ -122,14 +122,14 @@ fn lifecycle_index_search_refresh_drop_rebuild() {
     let stats = index_workspace(Arc::clone(&db), provider.clone(), &selection_for(root), &default_options(), None, &AtomicBool::new(false), &mut |_| {})
         .expect("drop");
     assert_eq!(stats.files_deleted, 1, "{stats:?}");
-    assert!(db.search_fts("GoodNeedle", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search").is_empty());
+    assert!(db.search_fts("GoodNeedle", 10, &search_vector::db::FragmentFilter::default()).expect("search").is_empty());
 
     // Drop the whole workspace index.
     write(root, "good.ts", "export const GoodNeedle = 3;\n");
     index_workspace(Arc::clone(&db), provider.clone(), &selection_for(root), &default_options(), None, &AtomicBool::new(false), &mut |_| {}).expect("re-index");
     db.drop_index().expect("drop");
-    assert!(db.zg_list_files().expect("list").is_empty());
-    assert!(db.search_fts("GoodNeedle", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search").is_empty());
+    assert!(db.list_files().expect("list").is_empty());
+    assert!(db.search_fts("GoodNeedle", 10, &search_vector::db::FragmentFilter::default()).expect("search").is_empty());
 
     // Rebuild re-adds everything.
     write(root, "good.ts", "export const GoodNeedle = 3;\n");
@@ -176,7 +176,7 @@ fn failed_files_record_retry_and_rebuild() {
 
     // Status: 1 failed, 1 indexed; failure is stored data.
     assert_eq!(db.failed_file_ids().expect("failed").len(), 1);
-    assert!(!db.search_fts("GoodNeedle", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search").is_empty());
+    assert!(!db.search_fts("GoodNeedle", 10, &search_vector::db::FragmentFilter::default()).expect("search").is_empty());
 
     // Fix the file: the failed record retries via pending and recovers.
     write(root, "failing.ts", "export const RecoveredNeedle = 3;\n");
@@ -185,7 +185,7 @@ fn failed_files_record_retry_and_rebuild() {
     assert_eq!(stats.files_failed, 0, "{stats:?}");
     assert!(stats.files_pending + stats.files_modified >= 1, "{stats:?}");
     assert!(db.failed_file_ids().expect("failed").is_empty());
-    assert!(!db.search_fts("RecoveredNeedle", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search").is_empty());
+    assert!(!db.search_fts("RecoveredNeedle", 10, &search_vector::db::FragmentFilter::default()).expect("search").is_empty());
 }
 
 #[test]
@@ -222,8 +222,8 @@ fn per_file_isolation_keeps_siblings() {
         attempts: Arc::new(AtomicUsize::new(0)),
     };
     let _ = index_workspace(Arc::clone(&db), provider.clone(), &selection_for(root), &default_options(), None, &AtomicBool::new(false), &mut |_| {});
-    assert!(!db.search_fts("OkOne", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search").is_empty());
-    assert!(!db.search_fts("OkTwo", 10, &search_vector::db::ZgFragmentFilter::default()).expect("search").is_empty());
+    assert!(!db.search_fts("OkOne", 10, &search_vector::db::FragmentFilter::default()).expect("search").is_empty());
+    assert!(!db.search_fts("OkTwo", 10, &search_vector::db::FragmentFilter::default()).expect("search").is_empty());
 }
 
 #[test]

@@ -4,7 +4,7 @@
 //! Resolution never trusts a partial download: every artifact is streamed to
 //! a unique `.part-*` file, hashed on the fly, size-capped, and atomically
 //! renamed only after its sha256 matches the catalog pin. A fingerprint
-//! completion marker (`.zvec-grep-artifacts-<fp>.complete`) short-circuits
+//! completion marker (`.guidance-artifacts-<fp>.complete`) short-circuits
 //! re-hashing; a directory lock serializes concurrent writers for one
 //! snapshot. Network access goes through the injected [`ArtifactFetcher`]
 //! seam, so hermetic tests serve stub mirrors.
@@ -728,7 +728,7 @@ pub fn snapshot_fingerprint(
 pub fn snapshot_marker_path(source: &ModelArtifactSource, fingerprint: &str) -> PathBuf {
     source
         .cache_directory
-        .join(format!(".zvec-grep-artifacts-{fingerprint}.complete"))
+        .join(format!(".guidance-artifacts-{fingerprint}.complete"))
 }
 
 /// Lock path serializing writers of one snapshot recipe.
@@ -736,7 +736,7 @@ pub fn snapshot_marker_path(source: &ModelArtifactSource, fingerprint: &str) -> 
 pub fn snapshot_lock_path(source: &ModelArtifactSource, fingerprint: &str) -> PathBuf {
     source
         .cache_directory
-        .join(format!(".zvec-grep-artifacts-{fingerprint}.lock"))
+        .join(format!(".guidance-artifacts-{fingerprint}.lock"))
 }
 
 fn resolved_result(

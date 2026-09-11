@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::extractor::FragmentMetadata;
-use crate::zg_types::CodeSymbolType;
+use crate::search_types::CodeSymbolType;
 
 fn code_meta() -> FragmentMetadata {
     FragmentMetadata::Code {

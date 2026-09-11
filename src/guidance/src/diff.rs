@@ -3,7 +3,7 @@
 //! Freshness authority (G0.7): size+mtime is the fast path, the sha256
 //! content hash is the tiebreak — hash wins on disagreement.
 
-use search_vector::db::ZgFileRecord;
+use search_vector::db::FileRecord;
 
 /// A scanned file with its content hash (when computed).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,9 +66,9 @@ pub fn hash_file(path: &std::path::Path) -> Option<String> {
 
 /// Sort `scanned` against `existing` into the five buckets.
 #[must_use]
-pub fn compute_diff(scanned: &[ScannedFile], existing: &[ZgFileRecord]) -> DiffResult {
+pub fn compute_diff(scanned: &[ScannedFile], existing: &[FileRecord]) -> DiffResult {
     let mut diff = DiffResult::default();
-    let by_id: std::collections::HashMap<&str, &ZgFileRecord> =
+    let by_id: std::collections::HashMap<&str, &FileRecord> =
         existing.iter().map(|file| (file.id.as_str(), file)).collect();
     let mut seen = std::collections::HashSet::new();
     for file in scanned {

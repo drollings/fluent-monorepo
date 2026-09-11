@@ -11,7 +11,7 @@ use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::ingest_text_file;
 use guidance_core::query::recall::run_recall;
 use guidance_core::query::strategy::QueryIntent;
-use guidance_core::zg_types::FileInfo;
+use guidance_core::search_types::FileInfo;
 use search_vector::db::GuidanceDb;
 use std::time::Instant;
 
@@ -24,7 +24,7 @@ fn file_info(id: &str, relative: &str, format: &str) -> FileInfo {
         size_bytes: 128,
         last_modified_time: 100,
         content_hash: None,
-        kind: Some(guidance_core::zg_types::FileKind::Code),
+        kind: Some(guidance_core::search_types::FileKind::Code),
         format: format.to_string(),
         index_status: None,
     }
@@ -75,7 +75,7 @@ fn top_path(
     let lemma_evidence = output.hits[0]
         .evidence
         .iter()
-        .any(|evidence| evidence.path == guidance_core::zg_types::RecallPath::Lemma);
+        .any(|evidence| evidence.path == guidance_core::search_types::RecallPath::Lemma);
     (output.hits[0].file.relative_path.clone(), elapsed_ms, lemma_evidence)
 }
 

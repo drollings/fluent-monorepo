@@ -4,7 +4,7 @@
 //! Best-effort and capability-gated like all serving I/O: unparsable files,
 //! unsupported languages, and unreadable files keep raw hits, with a
 //! per-file diagnostic. At most [`RG_STRUCTURE_ENRICH_FILE_LIMIT`] files
-//! are parsed per call (zvec `RG_STRUCTURE_ENRICH_FILE_LIMIT=100`).
+//! are parsed per call (budget [`STRUCTURE_ENRICH_FILE_LIMIT`]).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,8 +14,8 @@ use fluent_types::{GuidanceDoc, Member};
 use crate::ast_parser::AstParser;
 use crate::query::rg_backend::RgHit;
 
-/// Maximum files parsed per enrichment call (preserved zvec budget).
-pub const RG_STRUCTURE_ENRICH_FILE_LIMIT: usize = 100;
+/// Maximum files parsed per enrichment call (preserved budget).
+pub const STRUCTURE_ENRICH_FILE_LIMIT: usize = 100;
 
 /// An L0 hit with its enclosing symbol, when the file parsed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +53,7 @@ pub fn enrich_hits(root: &Path, hits: &[RgHit]) -> (Vec<EnrichedRgHit>, Vec<Stri
     let mut members_by_file: HashMap<&str, Option<Vec<Member>>> = HashMap::new();
     let mut diagnostics = Vec::new();
     let mut parser = AstParser::new();
-    for path in order.into_iter().take(RG_STRUCTURE_ENRICH_FILE_LIMIT) {
+    for path in order.into_iter().take(STRUCTURE_ENRICH_FILE_LIMIT) {
         match parse_members(root, path, &mut parser) {
             Ok(doc) => {
                 members_by_file.insert(path, Some(doc.members));

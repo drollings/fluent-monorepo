@@ -2,7 +2,7 @@
 //!
 //! Lifecycle parity through the built binary on a hermetic temp workspace.
 //! Note (honest scope): `sync --db` ingests member docs into the legacy
-//! `guidance_nodes` table; the `zg_*` fragment index has no bin ingestion
+//! `guidance_nodes` table; the fragment index has no bin ingestion
 //! caller yet, so fused `search` after `sync` exits 0 with "No results
 //! found." until fragment ingestion lands. The fused recall path itself is
 //! covered hermetically by `query_recall` / `hybrid_parity` in

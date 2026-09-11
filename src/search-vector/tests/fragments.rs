@@ -1,11 +1,11 @@
 use super::*;
 
 // P1 fragment tables: FTS5 + group collapse + filter pushdown +
-// `fragment_lemmas` + brute-force KNN over `zg_fragments`. The legacy
+// `fragment_lemmas` + brute-force KNN over `fragments`. The legacy
 // `guidance_nodes` behavior is untouched (P5 regression gate).
 
-fn file_a() -> ZgFileRecord {
-    ZgFileRecord {
+fn file_a() -> FileRecord {
+    FileRecord {
         id: "file-a".to_string(),
         absolute_path: "/repo/src/a.ts".to_string(),
         relative_path: "src/a.ts".to_string(),
@@ -21,8 +21,8 @@ fn file_a() -> ZgFileRecord {
     }
 }
 
-fn frag(id: &str, group: Option<&str>, symbol: &str, text: &str) -> ZgFragmentRecord {
-    ZgFragmentRecord {
+fn frag(id: &str, group: Option<&str>, symbol: &str, text: &str) -> FragmentRecord {
+    FragmentRecord {
         id: id.to_string(),
         group: group.map(str::to_string),
         file_id: "file-a".to_string(),
@@ -63,7 +63,7 @@ fn fts_finds_symbol_text() {
     let db = GuidanceDb::open_in_memory().expect("db");
     seed_alpha(&db);
     let hits = db
-        .search_fts("AlphaSymbol", 10, &ZgFragmentFilter::default())
+        .search_fts("AlphaSymbol", 10, &FragmentFilter::default())
         .expect("search");
     assert!(!hits.is_empty());
     assert!(hits.iter().any(|h| h.id == "entity-a"));
@@ -75,7 +75,7 @@ fn fts_empty_query_never_matches_all() {
     seed_alpha(&db);
     for query in ["", "   ", "!!!"] {
         let hits = db
-            .search_fts(query, 10, &ZgFragmentFilter::default())
+            .search_fts(query, 10, &FragmentFilter::default())
             .expect("search");
         assert!(hits.is_empty(), "query {query:?} must match nothing");
     }
@@ -88,7 +88,7 @@ fn fts_matches_cjk_substring_via_bigram_column() {
     f.cjk_text = "日本 本語 語の の検 検索 索テ テス スト".to_string();
     db.upsert_fragments(&file_a(), &[f], &[]).expect("upsert");
     let hits = db
-        .search_fts("日本語", 10, &ZgFragmentFilter::default())
+        .search_fts("日本語", 10, &FragmentFilter::default())
         .expect("search");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].id, "entity-cjk");
@@ -99,36 +99,36 @@ fn fts_respects_filter_pushdown() {
     let db = GuidanceDb::open_in_memory().expect("db");
     seed_alpha(&db);
     // Wrong file allow-list → nothing.
-    let filter = ZgFragmentFilter {
+    let filter = FragmentFilter {
         file_ids: Some(vec!["file-missing".to_string()]),
         ..Default::default()
     };
     assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
     // Right file → hits.
-    let filter = ZgFragmentFilter {
+    let filter = FragmentFilter {
         file_ids: Some(vec!["file-a".to_string()]),
         ..Default::default()
     };
     assert!(!db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
     // Symbol-name allow-list.
-    let filter = ZgFragmentFilter {
+    let filter = FragmentFilter {
         symbol_names: vec!["Nope".to_string()],
         ..Default::default()
     };
     assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
     // Symbol-type allow-list.
-    let filter = ZgFragmentFilter {
+    let filter = FragmentFilter {
         symbol_types: vec!["class".to_string()],
         ..Default::default()
     };
     assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
     // mtime window excludes file-a (mtime 100).
-    let filter = ZgFragmentFilter {
+    let filter = FragmentFilter {
         modified_after: Some(200),
         ..Default::default()
     };
     assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
-    let filter = ZgFragmentFilter {
+    let filter = FragmentFilter {
         modified_after: Some(50),
         modified_before: Some(250),
         ..Default::default()
@@ -146,7 +146,7 @@ fn upsert_replaces_file_fragments_and_fts_rows() {
         &[],
     )
     .expect("re-upsert");
-    let filter = ZgFragmentFilter::default();
+    let filter = FragmentFilter::default();
     assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
     let hits = db.search_fts("BetaSymbol", 10, &filter).expect("search");
     assert_eq!(hits.len(), 1);
@@ -257,7 +257,7 @@ fn vector_search_orders_by_similarity_and_skips_dim_mismatch() {
     wrong_dim.embedding = Some(vec![1.0, 0.0, 0.0]);
     db.upsert_fragments(&file_a(), &[near, far, wrong_dim], &[]).expect("upsert");
     let hits = db
-        .search_vector_fragments(&[1.0, 0.0], 10, &ZgFragmentFilter::default())
+        .search_vector_fragments(&[1.0, 0.0], 10, &FragmentFilter::default())
         .expect("search");
     let ids: Vec<&str> = hits.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, vec!["near", "far"]);
@@ -281,7 +281,7 @@ fn match_expression_quotes_specials_and_splits_axes() {
 fn files_and_group_diagnostics_round_trip() {
     let db = GuidanceDb::open_in_memory().expect("db");
     seed_alpha(&db);
-    let files = db.zg_list_files().expect("files");
+    let files = db.list_files().expect("files");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].relative_path, "src/a.ts");
     let groups = db.group_ids_for_files(&["file-a".to_string()]).expect("groups");
@@ -298,7 +298,7 @@ fn vector_search_prefers_q8_and_matches_fp32_order() {
     far.embedding = Some(vec![0.0, 1.0]);
     db.upsert_fragments(&file_a(), &[near, far], &[]).expect("upsert");
     let hits = db
-        .search_vector_fragments(&[1.0, 0.0], 10, &ZgFragmentFilter::default())
+        .search_vector_fragments(&[1.0, 0.0], 10, &FragmentFilter::default())
         .expect("search");
     let ids: Vec<&str> = hits.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, vec!["near", "far"]);
@@ -315,7 +315,7 @@ fn upsert_stores_q8_only_and_saves_bytes() {
     let (fp32_blob, q8_blob): (Option<Vec<u8>>, Option<Vec<u8>>) = db
         .store
         .query_row(
-            "SELECT embedding, embedding_q8 FROM zg_fragments WHERE id = 'vec-row'",
+            "SELECT embedding, embedding_q8 FROM fragments WHERE id = 'vec-row'",
             &[],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -337,12 +337,12 @@ fn vector_search_reads_legacy_fp32_rows() {
     let fp32_blob = fluent_db::vector::vec_to_bytes(&[1.0f32, 0.0]);
     db.store
         .execute(
-            "UPDATE zg_fragments SET embedding = ?1, embedding_q8 = NULL WHERE id = 'legacy'",
+            "UPDATE fragments SET embedding = ?1, embedding_q8 = NULL WHERE id = 'legacy'",
             &[&fp32_blob],
         )
         .expect("legacy fp32 row");
     let hits = db
-        .search_vector_fragments(&[1.0, 0.0], 10, &ZgFragmentFilter::default())
+        .search_vector_fragments(&[1.0, 0.0], 10, &FragmentFilter::default())
         .expect("search");
     assert!(hits.iter().any(|h| h.id == "legacy"), "legacy fp32 row found");
 }

@@ -17,11 +17,11 @@ intelligence.
 
 ## **Attention**: Skills needed to understand files
 
-Skills are referenced per-file in comments below.  The lookup path for the skills is: 
+Skills are referenced per-file in comments below.  The lookup path for the skills is:
 `{guidance_dir}/skills/{skill}/SKILL.md`
 
 So if you find a file you're looking for named file.rs:
-`file.rs      # [zig-current, gof-patterns] Summary of files' contents` , 
+`file.rs      # [zig-current, gof-patterns] Summary of files' contents` ,
 Then you you must read
 
 ```
@@ -41,7 +41,7 @@ Then you you must read
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
-├── README.md  # # Fluent Monorepo - deterministic-first 
+├── README.md  # # Fluent Monorepo - deterministic-first
 ├── STRUCTURE.md  # # AST-Guidance Project Structure
 ├── bin/
 │   ├── classifier-probe.py  # #!/usr/bin/env python3
@@ -143,18 +143,22 @@ Then you you must read
     │   │   │   ├── benchmark.rs  # //! `guidance benchmark` — query ac...
     │   │   │   ├── commit.rs  # //! Commit message generation — LLM...
     │   │   │   ├── editor.rs  # //! Editor interaction utilities for hum
+    │   │   │   ├── embed.rs  # //! Embedding-backend resolution from pr
     │   │   │   ├── index_cmd.rs  # //! `index` command (P5): thin shell ove
     │   │   │   ├── main.rs  # #![forbid(unsafe_code)]
-    │   │   │   ├── mcp.rs  # //! MCP (Model Context Protocol) server 
+    │   │   │   ├── mcp.rs  # //! MCP (Model Context Protocol) server
     │   │   │   ├── search.rs  # //! `search` command (P5): thin shell ov
     │   │   │   └── structure.rs  # use std::collections::BTreeMap;
     │   │   └── tests/
     │   │       ├── cli_e2e.rs  # //! P5 acceptance: `cli.test.
+    │   │       ├── common.rs  # //! Shared hermetic scaffold for the bin
+    │   │       ├── explain_cli.rs  # //! M4 compat: explain not-found + `--he
     │   │       ├── index_cmd.rs  # //! Unit tests for the `index` command s
     │   │       ├── mcp_contract.rs  # //! P5 `mcp-contract` port: toolsets, ba
     │   │       ├── mcp_explain.rs  # //! Unit tests for the MCP `guidance_exp
     │   │       ├── rg_cli.rs  # //! P5 `rg-cli` port: the managed-rg byp
-    │   │       └── search_cmd.rs  # //! Unit tests for the `search` command 
+    │   │       ├── search_cmd.rs  # //! Unit tests for the `search` command
+    │   │       └── sync_propagate.rs  # //! M3 acceptance: stale-dependent propa
     │   └── yamake-coral/
     │       ├── Cargo.toml
     │       └── src/
@@ -169,7 +173,7 @@ Then you you must read
     │   │   ├── config.rs  # //! JSON config loaders: `load_json_or_d
     │   │   ├── constants.rs  # //! Cross-crate magic numbers (size caps
     │   │   ├── drift.rs  # //! Bit-set drift analysis: compute "mis
-    │   │   ├── error.rs  # //! Shared leaf error types: `IoError`, 
+    │   │   ├── error.rs  # //! Shared leaf error types: `IoError`,
     │   │   ├── error_context.rs  # //! Contextual error wrappers: `ErrorCon
     │   │   ├── format.rs  # //! Human-readable output: `format_json`
     │   │   ├── git.rs  # //! Git operations — thin wrappers ...
@@ -179,14 +183,14 @@ Then you you must read
     │   │   ├── io.rs  # use std::fs;
     │   │   ├── jsonrpc.rs  # //! Shared JSON-RPC 2.
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── metrics.rs  # //! Lock-free latency histogram with 12 
+    │   │   ├── metrics.rs  # //! Lock-free latency histogram with 12
     │   │   ├── prelude.rs  # //! The common-core prelude — impor...
     │   │   ├── registry.rs  # //! Generic keyed registry — the ca...
     │   │   ├── retry.rs  # //! Retry and backoff primitives — ...
     │   │   ├── runtime.rs  # //! Sync→async runtime bridge: run ...
     │   │   ├── score.rs  # use std::collections::HashMap;
     │   │   ├── shell.rs  # //! Subprocess helpers: `run_capture`, `
-    │   │   ├── shell_parser.rs  # //! Safe shell parser: whitespace+quote 
+    │   │   ├── shell_parser.rs  # //! Safe shell parser: whitespace+quote
     │   │   ├── sqlite.rs  # //! Shared SQLite helpers — connect...
     │   │   ├── string.rs  # //! 20+ string utilities: case-insensiti
     │   │   ├── sync.rs  # //! Poison-safe locking helpers for `std
@@ -199,7 +203,7 @@ Then you you must read
     │   │   └── yago_taxonomy.rs  # //! YaGO TTL → JSON taxonomy pipeli...
     │   └── tests/
     │       ├── blob_spec.rs  # use common_core::blob_spec::*;
-    │       ├── cache.rs  # // NOTE (ROADMAP_20260903_LLM M11): the 
+    │       ├── cache.rs  # // NOTE (ROADMAP_20260903_LLM M11): the
     │       ├── calibration.rs  # use common_core::calibration::*;
     │       ├── cite.rs  # use common_core::cite::*;
     │       ├── config.rs  # use common_core::config::*;
@@ -212,7 +216,7 @@ Then you you must read
     │       ├── format.rs  # use common_core::format::*;
     │       ├── git.rs  # use common_core::git::*;
     │       ├── hash.rs  # use common_core::hash::*;
-    │       ├── http.rs  # // NOTE (ROADMAP_20260903_LLM M11): the 
+    │       ├── http.rs  # // NOTE (ROADMAP_20260903_LLM M11): the
     │       ├── interner.rs  # use common_core::interner::*;
     │       ├── io.rs  # use common_core::io::*;
     │       ├── jsonrpc.rs  # use common_core::jsonrpc::*;
@@ -227,7 +231,7 @@ Then you you must read
     │       ├── sqlite.rs  # #[cfg(feature = "sqlite")]
     │       ├── string.rs  # use common_core::string::*;
     │       ├── sync.rs  # use common_core::sync::*;
-    │       ├── telemetry.rs  # // NOTE (ROADMAP_20260903_LLM M11): the 
+    │       ├── telemetry.rs  # // NOTE (ROADMAP_20260903_LLM M11): the
     │       ├── vector_math.rs  # use common_core::vector_math::cosine_sim
     │       ├── walk.rs  # use common_core::walk::{
     │       ├── watchdog.rs  # use common_core::watchdog::*;
@@ -238,7 +242,7 @@ Then you you must read
     │   ├── src/
     │   │   ├── concept_store.rs  # //! The single source of truth for conce
     │   │   ├── concept_store_mem.rs  # //! The **hermetic in-memory** [`Concept
-    │   │   ├── lib.rs  # //! The neutral shared home for concept 
+    │   │   ├── lib.rs  # //! The neutral shared home for concept
     │   │   └── plausibility.rs  # //! Text-half / knowledge-half bridge fo
     │   └── tests/
     │       ├── concept_store.rs  # use super::*;
@@ -278,7 +282,7 @@ Then you you must read
     │   │   ├── packer.rs  # use fluent_types::{ContentNode, NodeId};
     │   │   ├── test_stubs.rs  # //! Test stubs for coral cache reactor t
     │   │   ├── tests/
-    │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by 
+    │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by
     │   │   │   └── mod.rs  # //! Tier-1 test support for coral-contex
     │   │   ├── tier_units.rs  # use std::sync::Arc;
     │   │   ├── wasm_runtime.rs  # use std::path::Path;
@@ -288,7 +292,7 @@ Then you you must read
     ├── dag/
     │   ├── Cargo.toml
     │   ├── src/
-    │   │   ├── adapter.rs  # //! Re-export of `ComponentAdapter` and 
+    │   │   ├── adapter.rs  # //! Re-export of `ComponentAdapter` and
     │   │   ├── checkpointed.rs  # //! Checkpoint/rewind over an ordered de
     │   │   ├── closure.rs  # use std::collections::HashSet;
     │   │   ├── dep_graph.rs  # //! Pure dependency-graph algorithms sha
@@ -306,11 +310,11 @@ Then you you must read
     │   └── tests/
     │       ├── checkpointed.rs  # use super::*;
     │       ├── closure.rs  # use super::*;
-    │       ├── common.rs  # //! Crate-typed test fixtures shared by 
+    │       ├── common.rs  # //! Crate-typed test fixtures shared by
     │       ├── dep_graph.rs  # use super::*;
     │       ├── error.rs  # use super::*;
     │       ├── middleware.rs  # use super::*;
-    │       ├── mod.rs  # //! Tier-1 test support for fluent-dag, 
+    │       ├── mod.rs  # //! Tier-1 test support for fluent-dag,
     │       ├── narrowing.rs  # use super::*;
     │       ├── resolver.rs  # use super::*;
     │       ├── target.rs  # use super::*;
@@ -322,7 +326,7 @@ Then you you must read
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── cache.rs  # //! Generic TTL/LRU key-value cache stor
-    │   │   ├── capability.rs  # //! The capability-gated async database 
+    │   │   ├── capability.rs  # //! The capability-gated async database
     │   │   ├── error.rs  # //! The single database error taxonomy f
     │   │   ├── hnsw.rs  # //! The canonical HNSW-backed vector ind
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
@@ -335,7 +339,7 @@ Then you you must read
     │   └── tests/
     │       ├── cache.rs  # use super::*;
     │       ├── capability.rs  # use super::*;
-    │       ├── common.rs  # //! Crate-typed test fixtures shared by 
+    │       ├── common.rs  # //! Crate-typed test fixtures shared by
     │       ├── error.rs  # use super::*;
     │       ├── hnsw.rs  # use super::*;
     │       ├── migrate.rs  # use super::*;
@@ -351,7 +355,7 @@ Then you you must read
     │   │   ├── affinity.rs  # //! Affinity-aware priority scheduler.
     │   │   ├── batch.rs  # //! Supervised batch runner with async r
     │   │   ├── capability.rs  # //! Concrete capability tokens for files
-    │   │   ├── credit_pool.rs  # //! Credit-gated bounded worker pool: a 
+    │   │   ├── credit_pool.rs  # //! Credit-gated bounded worker pool: a
     │   │   ├── feed_worker.rs  # //! `CreditedFeedWorker<Item>` — a ...
     │   │   ├── flow.rs  # //! Credit-based backpressure flow contr
     │   │   ├── io/
@@ -363,12 +367,12 @@ Then you you must read
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── pool.rs  # //! Bounded async queue, worker pool, an
     │   │   ├── queue.rs  # //! A priority queue with a fast path fo
-    │   │   ├── reserve.rs  # //! Available primitive: RAII permit on 
+    │   │   ├── reserve.rs  # //! Available primitive: RAII permit on
     │   │   ├── router.rs  # //! A partitioned router that distribute
     │   │   ├── runtime/
     │   │   │   ├── mod.rs  # //! Pluggable `Runtime` backends (produc
     │   │   │   ├── test.rs  # //! Test `Runtime` implementation with p
-    │   │   │   └── tokio.rs  # //! Production `Runtime` implementation 
+    │   │   │   └── tokio.rs  # //! Production `Runtime` implementation
     │   │   ├── scope.rs  # //! Structured concurrency via `Scope...
     │   │   ├── stream.rs  # //! Cooperative cancellation for long-li
     │   │   └── thread_resource.rs  # //! Per-thread lazy-initialized resource
@@ -394,10 +398,10 @@ Then you you must read
     │   ├── Cargo.toml
     │   ├── src/
     │   │   ├── align.rs  # //! LFM ↔ spacy-rs token alignment ...
-    │   │   ├── annotate.rs  # //! The trained-encoder annotation rung 
+    │   │   ├── annotate.rs  # //! The trained-encoder annotation rung
     │   │   ├── colbert.rs  # //! ColBERT late-interaction retrieve...
     │   │   ├── config.rs  # //! ONNX model configuration schema ...
-    │   │   ├── context.rs  # //! The per-context KV surface (ROADMAP 
+    │   │   ├── context.rs  # //! The per-context KV surface (ROADMAP
     │   │   ├── context_pool.rs  # //! `OnnxContextPool` — the onnx ha...
     │   │   ├── encoder.rs  # //! `OrtEncoder` — the base Encoder...
     │   │   ├── error.rs  # //! Error type for `fluent-onnx` — ...
@@ -406,7 +410,7 @@ Then you you must read
     │   │   ├── llm.rs  # //! The generative `CausalLm` decoder...
     │   │   ├── ort_loader.rs  # //! Real session loader backed by ONNX R
     │   │   ├── overlay.rs  # //! Overlay data types and the `Residual
-    │   │   ├── pii.rs  # //! PII detection (ROADMAP_20260827_ORT 
+    │   │   ├── pii.rs  # //! PII detection (ROADMAP_20260827_ORT
     │   │   ├── session.rs  # //! ONNX session registry — re-expo...
     │   │   ├── tokenizer.rs  # //! LFM tokenizer wrapper — the fir...
     │   │   └── two_tower.rs  # //! Two-tower zero-shot worker: the shar
@@ -427,7 +431,7 @@ Then you you must read
     │       │   ├── gpu_probe.rs  # //! Live-AI probe for the ONNX Runtime e
     │       │   ├── llm_live.rs  # //! Live-AI probe for the LFM2.5-2.
     │       │   ├── pii_live.rs  # //! Live-AI tests for the PII-Detector (
-    │       │   ├── policy_linter_live.rs  # //! Live-AI tests for the Policy-Linter 
+    │       │   ├── policy_linter_live.rs  # //! Live-AI tests for the Policy-Linter
     │       │   └── two_tower_live.rs  # //! Live-AI tests for the two-tower Prom
     │       ├── live.rs  # //! Live-AI integration test crate for f
     │       ├── llm.rs  # use super::*;
@@ -479,7 +483,7 @@ Then you you must read
     ├── guidance/
     │   ├── Cargo.toml
     │   ├── benches/
-    │   │   └── recall_depth_sweep.rs  # //! P6 recall-depth sweep: fused recall 
+    │   │   └── recall_depth_sweep.rs  # //! P6 recall-depth sweep: fused recall
     │   ├── src/
     │   │   ├── ast_parser.rs  # use std::path::Path;
     │   │   ├── change_set.rs  # //! P3 change tracking (port of zvec-gre
@@ -491,15 +495,15 @@ Then you you must read
     │   │   │   ├── adapter.rs  # //! P2 language adapters (port of `extra
     │   │   │   ├── code.rs  # //! P2 code extraction (port of `extract
     │   │   │   ├── markdown.rs  # //! P2 markdown extraction (port of `ext
-    │   │   │   ├── mod.rs  # //! P2 extraction core: shared fragment 
+    │   │   │   ├── mod.rs  # //! P2 extraction core: shared fragment
     │   │   │   ├── text.rs  # //! P2 plain-text extraction (port of `e
-    │   │   │   └── vector_content.rs  # //! P2 metadata-prefixed embedding text 
+    │   │   │   └── vector_content.rs  # //! P2 metadata-prefixed embedding text
     │   │   ├── freshness.rs  # //! P3 freshness contract (port of zvec-
     │   │   ├── graph_index.rs  # //! P3 dependency graph (L4): file-layer
     │   │   ├── grounding.rs  # //! Grounding enforcement — ensures...
-    │   │   ├── index_pipeline.rs  # //! P2 incremental index pipeline: scan 
+    │   │   ├── index_pipeline.rs  # //! P2 incremental index pipeline: scan
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
-    │   │   ├── memory.rs  # //! Memory integration for the guidance 
+    │   │   ├── memory.rs  # //! Memory integration for the guidance
     │   │   ├── plugin.rs  # use std::path::{Path, PathBuf};
     │   │   ├── query/
     │   │   │   ├── db_storage.rs  # //! `GuidanceDb` as recall storage: conv
@@ -520,11 +524,11 @@ Then you you must read
     │   │   │   ├── snapshot.rs  # use std::path::Path;
     │   │   │   ├── strategy.rs  # use fluent_types::GuidanceDoc;
     │   │   │   ├── structure_enrich.rs  # //! Structure enrichment (P5): lexical h
-    │   │   │   ├── synthesize.rs  # use fluent_types::{GuidanceDoc, Member, 
+    │   │   │   ├── synthesize.rs  # use fluent_types::{GuidanceDoc, Member,
     │   │   │   └── vector_backend.rs  # //! Vector backend: single-route embeddi
     │   │   ├── query_engine.rs  # use fluent_types::GuidanceDoc;
     │   │   ├── runtime.rs  # use std::path::PathBuf;
-    │   │   ├── scanner.rs  # use common_core::string::{contains_any, 
+    │   │   ├── scanner.rs  # use common_core::string::{contains_any,
     │   │   ├── scheduler.rs  # //! P3 reconcile job queue: the coalesci
     │   │   ├── selection.rs  # //! P2 file selection: `FileSelection` (
     │   │   ├── sync/
@@ -535,21 +539,21 @@ Then you you must read
     │   │   │   └── staleness.rs  # use std::path::Path;
     │   │   ├── sync_engine.rs  # use std::path::{Path, PathBuf};
     │   │   ├── tests/
-    │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by 
+    │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by
     │   │   │   └── mod.rs  # //! Tier-1 test suites for guidance-core
     │   │   ├── watcher.rs  # //! P3 file watcher (port of zvec-grep `
-    │   │   ├── zg_constants.rs  # //! zvec-grep tested constants, ported v
-    │   │   └── zg_types.rs  # //! zvec-grep value types + pure search 
+    │   │   ├── zg_constants.rs
+    │   │   └── zg_types.rs
     │   └── tests/
     │       ├── change_set.rs  # //! P3 `change_set` tests (port of zvec-
     │       ├── common/
-    │       │   └── mod.rs  # //! Tier-2 (crate-root `tests/`) shared 
+    │       │   └── mod.rs  # //! Tier-2 (crate-root `tests/`) shared
     │       ├── coordinator.rs  # //! P3 coordinator tests (port of zvec-g
     │       ├── e2e_gen_roundtrip.rs  # use fluent_types::MemberType;
     │       ├── extract_code.rs  # //! P2 code-extraction tests (ports `tes
     │       ├── extract_markdown.rs  # //! P2 markdown-extraction tests: headin
     │       ├── extract_text.rs  # //! P2 text-extraction tests: window bud
-    │       ├── extract_vector_content.rs  # //! P2 `vector_content` tests: metadata 
+    │       ├── extract_vector_content.rs  # //! P2 `vector_content` tests: metadata
     │       ├── freshness.rs  # //! P3 freshness-matrix tests: `fresh` /
     │       ├── graph_index.rs  # //! P3 `graph_index` tests: per-language
     │       ├── hybrid_parity.rs  # //! Hermetic known-item parity matrix (P
@@ -565,18 +569,19 @@ Then you you must read
     │       ├── query_fusion.rs  # use super::*;
     │       ├── query_glob.rs  # use super::*;
     │       ├── query_hybrid.rs  # use super::*;
+    │       ├── query_ingest.rs  # //! Lazy lemma-pipeline boundary tests (
     │       ├── query_lemma_backend.rs  # use super::*;
     │       ├── query_recall.rs  # use super::*;
     │       ├── query_rg_backend.rs  # use super::*;
     │       ├── query_structure_enrich.rs  # //! Ported `structure-enrichment.test.
     │       ├── query_vector_backend.rs  # use super::*;
     │       ├── scheduler.rs  # //! P3 scheduler tests: the coalescing c
-    │       ├── watcher.rs  # //! P3 watcher tests (port of zvec-grep 
-    │       ├── zg_constants.rs  # use super::*;
+    │       ├── watcher.rs  # //! P3 watcher tests (port of zvec-grep
+    │       ├── zg_constants.rs
     │       ├── zg_parity/
-    │       │   ├── corpus_cjk.rs  # //! CJK-heavy fixture corpus (Gate 0 ...
-    │       │   └── mod.rs  # //! P0 fixture corpora for zvec-grep par
-    │       └── zg_types.rs  # use super::*;
+    │       │   ├── corpus_cjk.rs
+    │       │   └── mod.rs
+    │       └── zg_types.rs
     ├── knowledge/
     │   ├── Cargo.toml
     │   ├── src/
@@ -605,7 +610,7 @@ Then you you must read
     │   │   ├── artifact_lock.rs  # //! Directory-based mutual exclusion for
     │   │   ├── backend.rs  # //! Backend plugin layer: one base trait
     │   │   ├── cache.rs  # //! LLM response cache — the single...
-    │   │   ├── catalog.rs  # //! Pinned embedding-model catalog: the 
+    │   │   ├── catalog.rs  # //! Pinned embedding-model catalog: the
     │   │   ├── client.rs  # use std::sync::Arc;
     │   │   ├── constants.rs  # //! LLM-domain constants — the sing...
     │   │   ├── context_packer.rs  # use crate::ChatMessage;
@@ -614,7 +619,7 @@ Then you you must read
     │   │   ├── embeddings_cache.rs  # //! Embedding-cache DDL — the singl...
     │   │   ├── error.rs  # use crate::embeddings::EmbeddingError;
     │   │   ├── factory.rs  # //! Catalog-backed embedding-model facto
-    │   │   ├── gguf.rs  # //! Local GGUF embedding backend behind 
+    │   │   ├── gguf.rs  # //! Local GGUF embedding backend behind
     │   │   ├── grants.rs  # //! Workspace grants for remote embeddin
     │   │   ├── http_class.rs  # /// HTTP status classification for LLM A
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
@@ -653,10 +658,11 @@ Then you you must read
     │       ├── error.rs  # use super::*;
     │       ├── factory.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── gguf.rs  # //! Ported from zvec-grep `test/unit/mod
-    │       ├── grants.rs  # //! Ported from zvec-grep authorization 
+    │       ├── grants.rs  # //! Ported from zvec-grep authorization
     │       ├── http_class.rs  # use super::*;
     │       ├── live/
     │       │   ├── README.md  # # fluent-llm — Live-AI tests
+    │       │   ├── embed_live.rs  # //! Opt-in live-AI test for the `llama:`
     │       │   ├── p4b_live.rs  # //! Live artifact-plane + remote-embeddi
     │       │   └── smoke_live.rs  # //! Opt-in live-AI smoke test for the fl
     │       ├── live.rs  # //! Live-AI integration test crate for f
@@ -687,7 +693,7 @@ Then you you must read
     │       │   ├── hindsight/
     │       │   │   └── mod.rs  # //! Hindsight memory plugin — struc...
     │       │   ├── holographic/
-    │       │   │   ├── hrr.rs  # //! Holographic Reduced Representations 
+    │       │   │   ├── hrr.rs  # //! Holographic Reduced Representations
     │       │   │   ├── mod.rs  # //! Holographic memory plugin — loc...
     │       │   │   └── store.rs  # //! SQLite-backed fact store with entity
     │       │   ├── honcho/
@@ -738,12 +744,12 @@ Then you you must read
     ├── router/
     │   ├── Cargo.toml
     │   ├── src/
-    │   │   ├── audit.rs  # //! Canonical durable-audit surface for 
+    │   │   ├── audit.rs  # //! Canonical durable-audit surface for
     │   │   ├── charts/
     │   │   │   ├── binding.rs  # //! Entity binding layer — the dete...
     │   │   │   ├── compile.rs  # //! Chart compiler — turns a valida...
     │   │   │   ├── execute.rs  # //! SupervisedBatch-supervised execution
-    │   │   │   ├── extract.rs  # //! Chart auto-extraction from dispatch 
+    │   │   │   ├── extract.rs  # //! Chart auto-extraction from dispatch
     │   │   │   ├── mod.rs  # //! Chart content model — a library...
     │   │   │   ├── render.rs  # //! Chart template rendering — mini...
     │   │   │   ├── rubric.rs  # //! Rubric acceptance gate for chart tar
@@ -793,11 +799,11 @@ Then you you must read
     │   │   │   ├── mod.rs  # pub mod modes;
     │   │   │   └── modes.rs  # //! Frontier escalation ladder — VI...
     │   │   ├── instances/
-    │   │   │   ├── api.rs  # //! The public `/instances` aggregation 
-    │   │   │   ├── client.rs  # //! The typed management client against 
+    │   │   │   ├── api.rs  # //! The public `/instances` aggregation
+    │   │   │   ├── client.rs  # //! The typed management client against
     │   │   │   ├── manager.rs  # //! The sidecar owner of instance lifecy
     │   │   │   ├── mod.rs  # //! Instance-pool grammar generation, ma
-    │   │   │   ├── pool.rs  # //! The router's aggregate `/instances` 
+    │   │   │   ├── pool.rs  # //! The router's aggregate `/instances`
     │   │   │   └── traits.rs  # //! The llama half of the shared `LlmWei
     │   │   ├── knowledge.rs  # //! `KnowledgeCapability` implementation
     │   │   ├── kv_cache.rs  # //! KV cache snapshot management - two-t
@@ -816,7 +822,7 @@ Then you you must read
     │   │   │   ├── tiering.rs  # //! `LedgerTierWorker` — continuous...
     │   │   │   ├── workflow.rs  # // M12 stub
     │   │   │   └── workflow_store.rs  # //! Workflow extraction store (M8) ...
-    │   │   ├── ledger.rs  # //! Full-detail content ledger with LOD 
+    │   │   ├── ledger.rs  # //! Full-detail content ledger with LOD
     │   │   ├── ledger_guard.rs  # //! Irreversible write-path scrubber for
     │   │   ├── lib.rs  # //! LLM Router & Agent Orchestration Fra
     │   │   ├── logging.rs  # //! Structured logging infrastructure fo
@@ -866,7 +872,7 @@ Then you you must read
     │   │   │       ├── decisions.rs  # //! Tree evaluation outcome types and th
     │   │   │       ├── engine.rs  # //! The classification-tree engine walk:
     │   │   │       ├── mod.rs  # //! Classification-tree engine
-    │   │   │       └── verdict.rs  # //! The three-axis verdict a classifier 
+    │   │   │       └── verdict.rs  # //! The three-axis verdict a classifier
     │   │   ├── streaming.rs  # //! SSE streaming handler — transla...
     │   │   ├── summarization.rs  # //! Summarization and result acceptance.
     │   │   ├── supervisor/
@@ -890,7 +896,7 @@ Then you you must read
     │   │   │   ├── decompose_hypothetical.rs  # use fluent_llm::anonymize;
     │   │   │   ├── decompose_subtasks.rs  # use fluent_llm::Decomposer;
     │   │   │   ├── mod.rs  # pub mod codeword_anonymize;
-    │   │   │   ├── none.rs  # use crate::transforms::{TransformError, 
+    │   │   │   ├── none.rs  # use crate::transforms::{TransformError,
     │   │   │   ├── pii_anonymize.rs  # use std::collections::HashMap;
     │   │   │   ├── sanitize.rs  # use common_core::string::{filter_unsafe_
     │   │   │   └── secret_mask.rs  # use std::sync::LazyLock;
@@ -1039,7 +1045,9 @@ Then you you must read
     │   └── tests/
     │       ├── error_hops.rs  # //! Error-hop tests (M7): every `rusqlit
     │       ├── file_status.rs  # //! P2 file-status tests: `replace_file`
-    │       └── fragments.rs  # use super::*;
+    │       ├── fragments.rs  # use super::*;
+    │       ├── graph_edges.rs  # use super::*;
+    │       └── node_sync.rs  # //! Node-sync change-gate goldens: `sync
     ├── spacy-rs/
     │   ├── Cargo.toml
     │   ├── build.rs  # //! Compiles `../../env/en_lemmatizer.
@@ -1049,7 +1057,7 @@ Then you you must read
     │   ├── src/
     │   │   ├── arc_eager.rs  # //! The deterministic transition parser
     │   │   ├── attrs.rs  # //! The attribute-id space and the `get_
-    │   │   ├── cache.rs  # //! Span-level detail cache for refiner 
+    │   │   ├── cache.rs  # //! Span-level detail cache for refiner
     │   │   ├── doc.rs  # //! The doc model: contiguous `TokenReco
     │   │   ├── error.rs  # //! Error taxonomy for the spaCy core.
     │   │   ├── frame.rs  # //! Frame extraction — spacy-rs as ...
@@ -1079,16 +1087,16 @@ Then you you must read
     │   │   ├── ortho.rs  # //! Tagger orthography: the string fragm
     │   │   ├── pipeline.rs  # //! The pipeline composition (walkthroug
     │   │   ├── retrieval.rs  # //! Pure lemma-grep helpers over a parse
-    │   │   ├── review.rs  # //! The async review mechanism (ROADMAP 
+    │   │   ├── review.rs  # //! The async review mechanism (ROADMAP
     │   │   ├── routing.rs  # //! DEP-as-routing-signal extraction (wa
-    │   │   ├── sentencizer.rs  # //! The deterministic, punctuation-rule 
+    │   │   ├── sentencizer.rs  # //! The deterministic, punctuation-rule
     │   │   ├── strings.rs  # //! Bidirectional string ↔ hash sto...
     │   │   ├── tag_map.rs  # //! The fine-grained tag → UPOS der...
     │   │   ├── taxonomy_blob.rs  # //! LemmaView — compile-time embedd...
     │   │   ├── tokenizer.rs  # //! The deterministic two-pass tokenizer
-    │   │   ├── triple.rs  # //! Deterministic RDF triple extraction 
+    │   │   ├── triple.rs  # //! Deterministic RDF triple extraction
     │   │   ├── validate.rs  # //! The deterministic annotation validat
-    │   │   ├── vocab.rs  # //! The vocabulary: the shared owner of 
+    │   │   ├── vocab.rs  # //! The vocabulary: the shared owner of
     │   │   └── yago_resolve.rs  # //! YagoResolveStage — Alt C, inser...
     │   ├── tests/
     │   │   ├── arc_eager.rs  # use super::*;

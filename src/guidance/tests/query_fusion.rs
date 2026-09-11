@@ -1,5 +1,5 @@
 use super::*;
-use crate::zg_types::{public_entity_id, RecallPath, SearchMatchedBy};
+use crate::search_types::{public_entity_id, RecallPath, SearchMatchedBy};
 
 // Fusion unit pins: score sums, lexicographic ties, forced flags,
 // evidence ordering, limit/track cut, trace shape.
@@ -7,30 +7,30 @@ use crate::zg_types::{public_entity_id, RecallPath, SearchMatchedBy};
 fn candidate(id: &str) -> RecallCandidate {
     RecallCandidate {
         id: id.to_string(),
-        entity: crate::zg_types::Entity {
+        entity: crate::search_types::Entity {
             id: id.to_string(),
             file_id: "file-a".to_string(),
-            range: crate::zg_types::ZgRange::File,
-            content: crate::zg_types::ZgContent::Text {
+            range: crate::search_types::FragmentSpan::File,
+            content: crate::search_types::FragmentContent::Text {
                 text: "x".to_string(),
             },
             metadata: None,
         },
-        file: crate::zg_types::FileInfo {
+        file: crate::search_types::FileInfo {
             id: "file-a".to_string(),
             ..Default::default()
         },
         sources: Vec::new(),
         recall: Vec::new(),
         evidence: Vec::new(),
-        score: crate::zg_types::RrfScore::new(0.0),
+        score: crate::search_types::RrfScore::new(0.0),
         rank: 0,
         forced: false,
     }
 }
 
-fn found(path: RecallPath, route: &str, rank: usize) -> crate::zg_types::SearchRecallTrace {
-    crate::zg_types::SearchRecallTrace {
+fn found(path: RecallPath, route: &str, rank: usize) -> crate::search_types::SearchRecallTrace {
+    crate::search_types::SearchRecallTrace {
         path,
         route_id: Some(route.to_string()),
         query: Some("q".to_string()),
@@ -75,7 +75,7 @@ fn fuse_breaks_ties_lexicographically_and_marks_forced() {
 #[test]
 fn fuse_ignores_unfound_recalls() {
     let mut a = candidate("a");
-    a.recall.push(crate::zg_types::SearchRecallTrace {
+    a.recall.push(crate::search_types::SearchRecallTrace {
         path: RecallPath::Fts,
         route_id: Some("fts".to_string()),
         query: None,
@@ -92,12 +92,12 @@ fn fuse_ignores_unfound_recalls() {
 
 #[test]
 fn evidence_sorts_by_rank_then_path_then_id() {
-    let frag = |id: &str| crate::zg_types::EntityFragment {
+    let frag = |id: &str| crate::search_types::EntityFragment {
         id: id.to_string(),
         group: None,
         file_id: "file-a".to_string(),
-        range: crate::zg_types::ZgRange::File,
-        content: crate::zg_types::ZgContent::Text {
+        range: crate::search_types::FragmentSpan::File,
+        content: crate::search_types::FragmentContent::Text {
             text: "x".to_string(),
         },
         metadata: None,
@@ -146,12 +146,12 @@ fn build_hit_derives_provenance_and_entity_flag() {
     let mut major = candidate("entity-a");
     major.sources = vec![RecallPath::Fts, RecallPath::Vector];
     major.evidence.push(RecallEvidence {
-        fragment: crate::zg_types::EntityFragment {
+        fragment: crate::search_types::EntityFragment {
             id: "entity-a".to_string(),
             group: Some("entity-a".to_string()),
             file_id: "file-a".to_string(),
-            range: crate::zg_types::ZgRange::File,
-            content: crate::zg_types::ZgContent::Text {
+            range: crate::search_types::FragmentSpan::File,
+            content: crate::search_types::FragmentContent::Text {
                 text: "x".to_string(),
             },
             metadata: None,
@@ -184,7 +184,7 @@ fn fuse_candidates_is_deterministic_across_runs() {
                 let mut candidate = candidate(id);
                 candidate.rank = rank;
                 candidate.score =
-                    crate::zg_types::RrfScore::new(1.0 / (rank as f64 + 1.0));
+                    crate::search_types::RrfScore::new(1.0 / (rank as f64 + 1.0));
                 candidate.sources = vec![RecallPath::Fts, RecallPath::Vector];
                 candidate
             })
@@ -214,7 +214,7 @@ fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
     // normalization or lemma-route attachment fails this pin.
     let nlp = spacy_rs::pipeline::NlpPipeline::en_default().expect("pipeline");
     let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
-    let file = crate::zg_types::FileInfo {
+    let file = crate::search_types::FileInfo {
         id: "file-a".to_string(),
         absolute_path: "/repo/src/a.ts".to_string(),
         relative_path: "src/a.ts".to_string(),
@@ -222,7 +222,7 @@ fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
         size_bytes: 64,
         last_modified_time: 100,
         content_hash: None,
-        kind: Some(crate::zg_types::FileKind::Code),
+        kind: Some(crate::search_types::FileKind::Code),
         format: "typescript".to_string(),
         index_status: None,
     };
@@ -235,9 +235,9 @@ fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
     )
     .expect("ingest");
     let storage = crate::query::db_storage::GuidanceDbStorage::new(&db);
-    let plan = crate::zg_types::SearchPlan {
-        routes: vec![crate::zg_types::SearchPlanRoute {
-            mode: crate::zg_types::SearchPlanRouteMode::Fts,
+    let plan = crate::search_types::SearchPlan {
+        routes: vec![crate::search_types::SearchPlanRoute {
+            mode: crate::search_types::SearchPlanRouteMode::Fts,
             query: "functions".to_string(),
         }],
         trace: true,
@@ -301,7 +301,7 @@ fn rank_only_rrf_boundary_two_mid_ranks_outvote_one_top_rank() {
 
 #[test]
 fn rrf_score_orders_like_its_magnitude_and_reads_through_value() {
-    use crate::zg_types::RrfScore;
+    use crate::search_types::RrfScore;
     use std::cmp::Ordering;
     let low = RrfScore::new(1.0 / 61.0);
     let high = RrfScore::new(2.0 / 65.0);
@@ -315,7 +315,7 @@ fn rrf_score_orders_like_its_magnitude_and_reads_through_value() {
 fn rrf_score_serializes_as_a_bare_number() {
     // Transparent on the wire: byte-identical JSON to the bare f64 it
     // replaces (contract outputs never see the type).
-    use crate::zg_types::RrfScore;
+    use crate::search_types::RrfScore;
     let score = RrfScore::new(0.03278688524590164);
     assert_eq!(
         serde_json::to_string(&score).expect("serialize"),

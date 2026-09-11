@@ -32,7 +32,7 @@ async fn grant_then_has_grant_with_fingerprint_isolation() {
     let dir = TempDir::new().unwrap();
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
-    std::fs::create_dir_all(root.join(".zvec-grep")).unwrap();
+    std::fs::create_dir_all(root.join(".guidance")).unwrap();
 
     let granted = target(&[root.clone()]);
     assert!(!store.has_grant(&granted).unwrap());
@@ -63,12 +63,12 @@ async fn tampered_documents_do_not_authorize() {
     let dir = TempDir::new().unwrap();
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
-    std::fs::create_dir_all(root.join(".zvec-grep")).unwrap();
+    std::fs::create_dir_all(root.join(".guidance")).unwrap();
     let granted = target(&[root.clone()]);
     store.grant(&granted).await.unwrap();
     assert!(store.has_grant(&granted).unwrap());
 
-    let document_path = root.join(".zvec-grep").join("authorization.json");
+    let document_path = root.join(".guidance").join("authorization.json");
     let mut document: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&document_path).unwrap()).unwrap();
     document["grants"][0]["model"] = serde_json::json!("tampered-model");
@@ -94,7 +94,7 @@ async fn revoke_and_revoke_all() {
     let dir = TempDir::new().unwrap();
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
-    std::fs::create_dir_all(root.join(".zvec-grep")).unwrap();
+    std::fs::create_dir_all(root.join(".guidance")).unwrap();
     let first = target(&[root.clone()]);
     let second = RemoteEmbeddingTarget::new(
         vec![root.clone()],
@@ -117,12 +117,12 @@ async fn grant_files_are_owner_only() {
     let dir = TempDir::new().unwrap();
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
-    std::fs::create_dir_all(root.join(".zvec-grep")).unwrap();
+    std::fs::create_dir_all(root.join(".guidance")).unwrap();
     store.grant(&target(&[root.clone()])).await.unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        let mode = std::fs::metadata(root.join(".zvec-grep").join("authorization.json"))
+        let mode = std::fs::metadata(root.join(".guidance").join("authorization.json"))
             .unwrap()
             .permissions()
             .mode()
@@ -161,7 +161,7 @@ async fn one_shot_allow_remote_bypasses_the_store_without_writing() {
     let dir = TempDir::new().unwrap();
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
-    std::fs::create_dir_all(root.join(".zvec-grep")).unwrap();
+    std::fs::create_dir_all(root.join(".guidance")).unwrap();
     let granted = target(&[root.clone()]);
     let outcome = ensure_remote_embedding_authorized(&store, &granted, true, None).await.unwrap();
     assert!(matches!(
@@ -169,7 +169,7 @@ async fn one_shot_allow_remote_bypasses_the_store_without_writing() {
         fluent_llm::grants::RemoteAuthorization::OneShot
     ));
     assert!(
-        !root.join(".zvec-grep").join("authorization.json").exists(),
+        !root.join(".guidance").join("authorization.json").exists(),
         "one-shot approval must not persist"
     );
 }
@@ -179,7 +179,7 @@ async fn elicitation_approval_persists_a_grant_and_denial_names_the_path() {
     let dir = TempDir::new().unwrap();
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
-    std::fs::create_dir_all(root.join(".zvec-grep")).unwrap();
+    std::fs::create_dir_all(root.join(".guidance")).unwrap();
     let granted = target(&[root.clone()]);
 
     let approver = StubElicitor {

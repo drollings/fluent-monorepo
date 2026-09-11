@@ -3,7 +3,7 @@
 //! Ports the `index-status` diff-count cases + `computeDiffFromFiles`.
 
 use super::*;
-use search_vector::db::ZgFileRecord;
+use search_vector::db::FileRecord;
 
 fn scanned(id: &str, size: u64, mtime: i64, hash: Option<&str>) -> ScannedFile {
     ScannedFile {
@@ -19,8 +19,8 @@ fn scanned(id: &str, size: u64, mtime: i64, hash: Option<&str>) -> ScannedFile {
     }
 }
 
-fn stored(id: &str, size: u64, mtime: i64, hash: Option<&str>, status: Option<&str>) -> ZgFileRecord {
-    ZgFileRecord {
+fn stored(id: &str, size: u64, mtime: i64, hash: Option<&str>, status: Option<&str>) -> FileRecord {
+    FileRecord {
         id: id.to_string(),
         absolute_path: format!("/repo/{id}"),
         relative_path: id.to_string(),

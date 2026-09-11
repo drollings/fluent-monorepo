@@ -14,11 +14,11 @@ use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::recall::run_recall;
 use guidance_core::query::strategy::QueryIntent;
 use search_vector::GuidanceDb;
-use search_vector::db::{ZgFileRecord, ZgFragmentRecord};
+use search_vector::db::{FileRecord, FragmentRecord};
 use std::hint::black_box;
 
-fn file_record() -> ZgFileRecord {
-    ZgFileRecord {
+fn file_record() -> FileRecord {
+    FileRecord {
         id: "file-sweep".to_string(),
         absolute_path: "/bench/lib.rs".to_string(),
         relative_path: "lib.rs".to_string(),
@@ -34,8 +34,8 @@ fn file_record() -> ZgFileRecord {
     }
 }
 
-fn fragment_record(index: usize) -> ZgFragmentRecord {
-    ZgFragmentRecord {
+fn fragment_record(index: usize) -> FragmentRecord {
+    FragmentRecord {
         id: format!("frag-{index}"),
         group: None,
         file_id: "file-sweep".to_string(),
@@ -59,7 +59,7 @@ fn fragment_record(index: usize) -> ZgFragmentRecord {
 
 fn seed(size: usize) -> GuidanceDb {
     let db = GuidanceDb::open_in_memory().expect("db");
-    let fragments: Vec<ZgFragmentRecord> = (0..size).map(fragment_record).collect();
+    let fragments: Vec<FragmentRecord> = (0..size).map(fragment_record).collect();
     db.upsert_fragments(&file_record(), &fragments, &[]).expect("upsert");
     db
 }

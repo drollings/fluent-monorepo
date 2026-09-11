@@ -16,7 +16,7 @@ pub enum EmbeddingError {
     UnknownProvider(String),
     #[error("unknown embedding model reference: {0}")]
     CatalogNotFound(String),
-    #[error("invalid ZVEC_GREP_EMBEDDING: unsupported model {0}")]
+    #[error("invalid GUIDANCE_EMBEDDING: unsupported model {0}")]
     InvalidEmbeddingReference(String),
     #[error("embedding request failed: {0}")]
     RequestFailed(String),

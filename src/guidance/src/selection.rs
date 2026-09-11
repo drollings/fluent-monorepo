@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use common_core::walk::{SkipReason, WalkEntry, WalkFilter, walk_files_filtered};
 
 use crate::query::glob::path_pattern_matches;
-use crate::zg_constants::{
+use crate::search_constants::{
     MAX_CODE_FILE_SIZE_BYTES, MAX_DATA_FILE_SIZE_BYTES, MAX_IMAGE_FILE_SIZE_BYTES,
     MAX_TEXT_FILE_SIZE_BYTES,
 };
-use crate::zg_types::FileKind;
+use crate::search_types::FileKind;
 
 /// Selection roots + filters for one index pass.
 #[derive(Debug, Clone)]
@@ -160,7 +160,7 @@ pub fn select_files(
                 .iter()
                 .cloned()
                 .chain(DEFAULT_SKIP_DIRS.iter().map(ToString::to_string))
-                .chain([HARD_SKIP_ZVEC.to_string()])
+                .chain([HARD_SKIP_STATE_DIR.to_string()])
                 .collect(),
             honor_gitignore: selection.honor_gitignore,
         };
@@ -355,9 +355,9 @@ pub(crate) fn default_ignored_matchers_initialized() -> bool {
         .is_some_and(|matchers| matchers.len() == DEFAULT_IGNORED_FILE_PATTERNS.len())
 }
 
-/// `.zvec-grep` state is never indexed (G0.4); `.git` is covered by the
+/// The `.guidance` state directory is never indexed; `.git` is covered by the
 /// hidden-directory rule in `walk`.
-const HARD_SKIP_ZVEC: &str = ".zvec-grep";
+const HARD_SKIP_STATE_DIR: &str = ".guidance";
 
 /// Generated-dependency directory names (port of
 /// `DEFAULT_IGNORED_DIRECTORY_NAMES`).

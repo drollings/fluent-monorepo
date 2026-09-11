@@ -1,7 +1,7 @@
 use super::*;
-use crate::zg_types::{
+use crate::search_types::{
     CodeSymbolType, Entity, EntityFragment, FileInfo, RecallPath, SearchPlan, SearchPlanRoute,
-    SearchPlanRouteMode, StorageFilter, StorageHit, ZgContent, ZgRange,
+    SearchPlanRouteMode, StorageFilter, StorageHit, FragmentContent, FragmentSpan,
 };
 use std::sync::Mutex;
 
@@ -68,7 +68,7 @@ fn fixture_file(file: &FixtureFile) -> FileInfo {
         size_bytes: 10,
         last_modified_time: file.mtime,
         content_hash: None,
-        kind: Some(crate::zg_types::FileKind::Code),
+        kind: Some(crate::search_types::FileKind::Code),
         format: "typescript".to_string(),
         index_status: None,
     }
@@ -78,23 +78,23 @@ fn fixture_entity(entity: &FixtureEntity) -> Entity {
     Entity {
         id: entity.id.to_string(),
         file_id: entity.file_id.to_string(),
-        range: ZgRange::Text {
+        range: FragmentSpan::Text {
             start_line: 1,
             end_line: 3,
             start_offset: 0,
             end_offset: 30,
         },
-        content: ZgContent::Text {
+        content: FragmentContent::Text {
             text: format!("export function {}() {{}}", entity.symbol),
         },
-        metadata: Some(crate::zg_types::EntityMetadata::Code {
+        metadata: Some(crate::search_types::EntityMetadata::Code {
             symbol_type: CodeSymbolType::Function,
             symbol_name: Some(entity.symbol.to_string()),
             scope: None,
             node_type: Some("function_declaration".to_string()),
             signature: Some(format!("function {}()", entity.symbol)),
             doc: None,
-            modifiers: vec![crate::zg_types::CodeEntityModifier::Exported],
+            modifiers: vec![crate::search_types::CodeEntityModifier::Exported],
         }),
     }
 }
@@ -109,23 +109,23 @@ fn fixture_fragment(entity: &FixtureEntity, path: RecallPath) -> EntityFragment 
         id: id.to_string(),
         group: group.map(str::to_string),
         file_id: entity.file_id.to_string(),
-        range: ZgRange::Text {
+        range: FragmentSpan::Text {
             start_line: 1,
             end_line: 3,
             start_offset: 0,
             end_offset: 30,
         },
-        content: ZgContent::Text {
+        content: FragmentContent::Text {
             text: format!("export function {}() {{}}", entity.symbol),
         },
-        metadata: Some(crate::zg_types::EntityMetadata::Code {
+        metadata: Some(crate::search_types::EntityMetadata::Code {
             symbol_type: CodeSymbolType::Function,
             symbol_name: Some(entity.symbol.to_string()),
             scope: None,
             node_type: Some("function_declaration".to_string()),
             signature: Some(format!("function {}()", entity.symbol)),
             doc: None,
-            modifiers: vec![crate::zg_types::CodeEntityModifier::Exported],
+            modifiers: vec![crate::search_types::CodeEntityModifier::Exported],
         }),
     }
 }
@@ -395,7 +395,7 @@ fn hybrid_search_filters_dedupes_fuses_traces_prefers_symbols_and_tracks() {
     assert_eq!(output.hits[0].entity.id, "entity-a");
     assert_eq!(
         output.hits[0].matched_by,
-        crate::zg_types::SearchMatchedBy::FtsAndVector
+        crate::search_types::SearchMatchedBy::FtsAndVector
     );
     assert!(output.hits[0].evidence.len() >= 2);
     let trace = output.hits[0].trace.as_ref().expect("trace");

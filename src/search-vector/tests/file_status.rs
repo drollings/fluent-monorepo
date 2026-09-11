@@ -1,10 +1,10 @@
 //! P2 file-status tests: `replace_file` / `mark_file_failed` /
 //! `delete_file` lifecycle (ports `service.test.mjs:957` storage half).
 
-use crate::db::{GuidanceDb, ZgFileRecord};
+use crate::db::{FileRecord, GuidanceDb};
 
-fn file(id: &str) -> ZgFileRecord {
-    ZgFileRecord {
+fn file(id: &str) -> FileRecord {
+    FileRecord {
         id: id.to_string(),
         absolute_path: format!("/repo/{id}"),
         relative_path: id.to_string(),
@@ -24,7 +24,7 @@ fn file(id: &str) -> ZgFileRecord {
 fn replace_file_upserts_status_columns() {
     let db = GuidanceDb::open_in_memory().expect("db");
     db.replace_file(&file("a.rs"), &[], &[]).expect("replace");
-    let got = db.zg_get_file("a.rs").expect("get").expect("present");
+    let got = db.get_file("a.rs").expect("get").expect("present");
     assert_eq!(got.content_hash.as_deref(), Some("hash-1"));
     assert_eq!(got.index_status.as_deref(), Some("indexed"));
     assert_eq!(got.fail_count, 0);
@@ -35,12 +35,12 @@ fn mark_file_failed_records_error_and_counts() {
     let db = GuidanceDb::open_in_memory().expect("db");
     db.replace_file(&file("f.rs"), &[], &[]).expect("replace");
     db.mark_file_failed(&file("f.rs"), "boom").expect("mark");
-    let got = db.zg_get_file("f.rs").expect("get").expect("present");
+    let got = db.get_file("f.rs").expect("get").expect("present");
     assert_eq!(got.index_status.as_deref(), Some("failed"));
     assert_eq!(got.last_error.as_deref(), Some("boom"));
     assert_eq!(got.fail_count, 1);
     db.mark_file_failed(&file("f.rs"), "boom again").expect("mark");
-    let got = db.zg_get_file("f.rs").expect("get").expect("present");
+    let got = db.get_file("f.rs").expect("get").expect("present");
     assert_eq!(got.fail_count, 2);
 }
 
@@ -49,8 +49,8 @@ fn delete_file_removes_fragments_and_record() {
     let db = GuidanceDb::open_in_memory().expect("db");
     db.replace_file(&file("d.rs"), &[], &[]).expect("replace");
     db.delete_file("d.rs").expect("delete");
-    assert!(db.zg_get_file("d.rs").expect("get").is_none());
-    assert!(db.zg_list_files().expect("list").is_empty());
+    assert!(db.get_file("d.rs").expect("get").is_none());
+    assert!(db.list_files().expect("list").is_empty());
 }
 
 #[test]

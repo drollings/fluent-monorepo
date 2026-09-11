@@ -324,7 +324,7 @@ impl SyncEngine {
     /// tables must exist before any wave commits. Version mismatches
     /// surface here (never as a mid-run commit failure).
     pub fn check_store(db: &search_vector::GuidanceDb) -> Result<(), SyncEngineError> {
-        for table in ["zg_files", "zg_fragments", "embedding_cache"] {
+        for table in ["files", "fragments", "embedding_cache"] {
             if !db.has_table(table) {
                 return Err(SyncEngineError::Parse(format!(
                     "index schema gate: missing table {table} (expected schema v{})",

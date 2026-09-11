@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use guidance_core::graph_index::GraphIndex;
 use guidance_core::query::ingest::{ingest_text_file, LazyNlp};
+use guidance_core::search_types::{FileInfo, FileKind};
 use guidance_core::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 use guidance_core::sync_engine::SyncEngine;
-use guidance_core::zg_types::{FileInfo, FileKind};
 use search_vector::GuidanceDb;
 
 /// Run the `index` command over `path` (file or directory; defaults to the
@@ -64,7 +64,7 @@ pub fn run_index(
 /// Fragment-ingestion counts (stored data, never thrown).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FragmentIngestStats {
-    /// Files ingested into `zg_*` (FTS + lemmas; embeddings skipped without
+    /// Files ingested into the fragment index (FTS + lemmas; embeddings skipped without
     /// a configured backend).
     pub files: usize,
     /// Files skipped because the committed fragment row is unchanged
@@ -97,7 +97,7 @@ fn selected_paths(files: &[SelectedFile]) -> std::collections::HashSet<String> {
         .collect()
 }
 
-/// Ingest workspace source files into the fragment index (`zg_*` FTS5 +
+/// Ingest workspace source files into the fragment index (FTS5 +
 /// `fragment_lemmas`; no embedder, no NLP pipeline — L1+L2 only, L3 arrives
 /// with a configured embedding backend). Thin shell over
 /// `ingest_text_file`; selection honors `.gitignore` (search-index noise
@@ -236,7 +236,7 @@ pub fn ingest_workspace_fragments(
     // via `deleted_dependents`; the doomed paths themselves stay in
     // `deleted` for sidecar removal.
     let mut doomed: Vec<(String, String)> = Vec::new();
-    match db.zg_list_files() {
+    match db.list_files() {
         Ok(rows) => {
             for row in rows {
                 let under_scope = src_dirs
@@ -308,7 +308,7 @@ pub fn affected_for_sync(
 /// propagation and the explain port (one hydration helper, two callers).
 pub fn hydrated_graph(db: &GuidanceDb, roots: &[String]) -> Result<GraphIndex, String> {
     let files =
-        db.zg_list_files().map_err(|error| format!("list files: {error}"))?;
+        db.list_files().map_err(|error| format!("list files: {error}"))?;
     let known: Vec<String> =
         files.into_iter().map(|file| file.absolute_path).collect();
     let edges: Vec<(String, String)> = db

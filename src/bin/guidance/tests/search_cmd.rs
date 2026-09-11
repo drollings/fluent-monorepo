@@ -5,7 +5,7 @@
 use super::*;
 use guidance_core::query::rg_backend::RgHit;
 use guidance_core::query::structure_enrich::EnrichedRgHit;
-use guidance_core::zg_types::SearchPlanRouteMode;
+use guidance_core::search_types::SearchPlanRouteMode;
 
 fn rg_opts() -> RgDisplayOptions {
     RgDisplayOptions::default()
@@ -329,7 +329,7 @@ async fn fuse_search_output_is_byte_stable() {
     ] {
         guidance_core::query::ingest::ingest_text_file(
             &db,
-            &guidance_core::zg_types::FileInfo {
+            &guidance_core::search_types::FileInfo {
                 id: id.to_string(),
                 absolute_path: dir.path().join(rel).to_string_lossy().into_owned(),
                 relative_path: rel.to_string(),
@@ -337,7 +337,7 @@ async fn fuse_search_output_is_byte_stable() {
                 size_bytes: text.len() as u64,
                 last_modified_time: 100,
                 content_hash: None,
-                kind: Some(guidance_core::zg_types::FileKind::Code),
+                kind: Some(guidance_core::search_types::FileKind::Code),
                 format: "rust".to_string(),
                 index_status: None,
             },
@@ -414,15 +414,15 @@ async fn vector_mode_declines_without_embedder() {
 }
 
 use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
-use guidance_core::zg_types::{
+use guidance_core::search_types::{
     Entity, EntityMetadata, FileInfo, SearchHit, SearchHitEvidence, SearchMatchedBy,
-    ZgContent, ZgRange,
+    FragmentContent, FragmentSpan,
 };
 
 fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> SearchHit {
     let metadata = symbol.map(|name| {
         EntityMetadata::Code {
-            symbol_type: guidance_core::zg_types::CodeSymbolType::Function,
+            symbol_type: guidance_core::search_types::CodeSymbolType::Function,
             symbol_name: Some(name.to_string()),
             scope: None,
             node_type: None,
@@ -435,8 +435,8 @@ fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> Sear
         entity: Entity {
             id: id.to_string(),
             file_id: abs.to_string(),
-            range: ZgRange::File,
-            content: ZgContent::Text { text: String::new() },
+            range: FragmentSpan::File,
+            content: FragmentContent::Text { text: String::new() },
             metadata: None,
         },
         file: FileInfo {
@@ -452,11 +452,11 @@ fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> Sear
             index_status: None,
         },
         evidence: vec![SearchHitEvidence {
-            range: ZgRange::File,
-            content: ZgContent::Text { text: String::new() },
+            range: FragmentSpan::File,
+            content: FragmentContent::Text { text: String::new() },
             metadata,
             is_entity: true,
-            path: guidance_core::zg_types::RecallPath::Fts,
+            path: guidance_core::search_types::RecallPath::Fts,
             route_id: None,
             query: None,
             rank: None,
@@ -464,7 +464,7 @@ fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> Sear
             forced: None,
         }],
         rank: 1,
-        score: guidance_core::zg_types::RrfScore::new(score),
+        score: guidance_core::search_types::RrfScore::new(score),
         matched_by: SearchMatchedBy::Fts,
         trace: None,
     }

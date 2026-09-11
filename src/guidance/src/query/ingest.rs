@@ -1,5 +1,5 @@
 //! P1 minimal ingestion: whole-file fragments + lemma rows + optional
-//! embeddings into the `zg_*` tables. Segmentation stays crude on purpose —
+//! embeddings into the fragment tables. Segmentation stays crude on purpose —
 //! P2 extraction replaces the fragmenter, reusing this commit seam
 //! (`upsert_fragments`) unchanged.
 //!
@@ -8,8 +8,8 @@
 
 use search_vector::db::GuidanceDb;
 
-use crate::query::db_storage::{fragment_lemma, zg_file_record, zg_fragment_record};
-use crate::zg_types::{EntityFragment, FileInfo, ZgContent, ZgRange};
+use crate::query::db_storage::{file_record, fragment_lemma, fragment_record};
+use crate::search_types::{EntityFragment, FileInfo, FragmentContent, FragmentSpan};
 
 /// Ingestion outcome counts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -54,13 +54,13 @@ pub fn ingest_text_file(
         id: file.id.clone(),
         group: None,
         file_id: file.id.clone(),
-        range: ZgRange::File,
-        content: ZgContent::Text {
+        range: FragmentSpan::File,
+        content: FragmentContent::Text {
             text: text.to_string(),
         },
         metadata: None,
     };
-    let mut record = zg_fragment_record(&fragment);
+    let mut record = fragment_record(&fragment);
     record.cjk_text = common_core::string::cjk_bigrams(text).join(" ");
     let mut stats = IngestStats::default();
     match embedder {
@@ -79,7 +79,7 @@ pub fn ingest_text_file(
         .collect();
     stats.lemmas = lemmas.len();
     stats.fragments = db
-        .upsert_fragments(&zg_file_record(file), &[record], &lemmas)
+        .upsert_fragments(&file_record(file), &[record], &lemmas)
         .map_err(|error| IngestError::Db(error.to_string()))?;
     Ok(stats)
 }

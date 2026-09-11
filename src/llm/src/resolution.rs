@@ -1,5 +1,5 @@
 //! Model-reference resolution order: explicit flag > existing index >
-//! `ZVEC_GREP_EMBEDDING` environment > global default > builtin local
+//! `GUIDANCE_EMBEDDING` environment > global default > builtin local
 //! fallback. An environment value naming no catalog entry is a hard error,
 //! never a silent fallback.
 
@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::catalog::get_embedding_model_catalog_entry;
 use crate::embeddings::EmbeddingError;
 
-pub const EMBEDDING_ENVIRONMENT_VARIABLE: &str = "ZVEC_GREP_EMBEDDING";
+pub const EMBEDDING_ENVIRONMENT_VARIABLE: &str = "GUIDANCE_EMBEDDING";
 
 /// Inputs to [`resolve_embedding_reference`]. `environment` carries the
 /// process environment explicitly so hermetic callers pass a fixed map;

@@ -1,4 +1,4 @@
-//! zvec-grep tested constants, ported verbatim (P0 contracts, no I/O).
+//! Tested search/index constants (P0 contracts, no I/O).
 //!
 //! Every value below is a behavior-preserving port of a zvec-grep constant or
 //! pure helper. Sources are cited per item. Values change only with measured
@@ -244,27 +244,27 @@ pub const EMBEDDING_RETRY_JITTER_MS: u64 = 500;
 
 /// Storage upsert batch size (1024 docs).
 /// Source: `storage/zvec.ts` (`ZVEC_UPSERT_BATCH_SIZE = 1024`).
-pub const ZVEC_UPSERT_BATCH_SIZE: usize = 1024;
+pub const UPSERT_BATCH_SIZE: usize = 1024;
 
 /// Storage open retry attempts (8).
 /// Source: `storage/zvec.ts` (`ZVEC_OPEN_RETRY_ATTEMPTS = 8`).
-pub const ZVEC_OPEN_RETRY_ATTEMPTS: u32 = 8;
+pub const OPEN_RETRY_ATTEMPTS: u32 = 8;
 
 /// Storage open retry base delay (100 ms).
 /// Source: `storage/zvec.ts`.
-pub const ZVEC_OPEN_RETRY_BASE_DELAY_MS: u64 = 100;
+pub const OPEN_RETRY_BASE_DELAY_MS: u64 = 100;
 
 /// Storage open retry delay cap (1000 ms).
 /// Source: `storage/zvec.ts`.
-pub const ZVEC_OPEN_RETRY_MAX_DELAY_MS: u64 = 1_000;
+pub const OPEN_RETRY_MAX_DELAY_MS: u64 = 1_000;
 
 /// Storage open backoff: `min(100 × 2^attempt, 1000)` ms.
 /// Source: `storage/zvec.ts` (`zvecOpenRetryDelayMs`).
 #[must_use]
-pub fn zvec_open_retry_delay_ms(attempt: u32) -> u64 {
-    ZVEC_OPEN_RETRY_BASE_DELAY_MS
+pub fn open_retry_delay_ms(attempt: u32) -> u64 {
+    OPEN_RETRY_BASE_DELAY_MS
         .saturating_mul(2_u64.saturating_pow(attempt.min(31)))
-        .min(ZVEC_OPEN_RETRY_MAX_DELAY_MS)
+        .min(OPEN_RETRY_MAX_DELAY_MS)
 }
 
 /// Type-aware size cap: code files (1 MiB).
@@ -296,7 +296,7 @@ pub const BINARY_CONTROL_CHAR_RATIO_PERCENT: u64 = 30;
 /// zvec-grep uses jieba + lowercase. SQLite FTS5 has no jieba tokenizer;
 /// the P0 decision is FTS5 `unicode61` with diacritics removed (case folding
 /// is inherent), plus application-level CJK bigram expansion (see
-/// [`crate::zg_types::cjk_bigrams`]) so CJK substring queries match without
+/// [`crate::search_types::cjk_bigrams`]) so CJK substring queries match without
 /// a dictionary. Spelling is the space-separated FTS5 directive form
 /// (verified against bundled SQLite — the quoted `=` form does not parse).
 /// Revisit only with A/B evidence in P1.
@@ -306,5 +306,5 @@ pub const FTS_TEXT_TOKENIZER: &str = "unicode61 remove_diacritics 2";
 pub const FTS_CJK_STRATEGY: &str = "cjk-bigram-expansion";
 
 #[cfg(test)]
-#[path = "../tests/zg_constants.rs"]
+#[path = "../tests/search_constants.rs"]
 mod tests;

@@ -78,7 +78,7 @@ fn duplicate_symbol_names_union_calls() {
 #[test]
 fn delete_file_removes_graph_rows() {
     let db = graph_db();
-    let file = ZgFileRecord {
+    let file = FileRecord {
         id: "file-a".to_string(),
         absolute_path: "/repo/src/a.ts".to_string(),
         relative_path: "src/a.ts".to_string(),

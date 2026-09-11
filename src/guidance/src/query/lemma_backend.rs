@@ -9,7 +9,7 @@ use crate::query::search_backend::{SearchBackend, SearchContext};
 use crate::query::strategy::QueryIntent;
 use crate::query::synthesize::Stage;
 use crate::query_engine::QueryEngineError;
-use crate::zg_types::StorageFilter;
+use crate::search_types::StorageFilter;
 use fluent_types::GuidanceDoc;
 
 /// Lemma recall backend over `RecallStorage`.

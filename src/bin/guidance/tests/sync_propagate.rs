@@ -61,7 +61,7 @@ fn fragment_texts(dir: &Path, file: &str) -> Vec<String> {
         .args([
             db.to_str().unwrap(),
             &format!(
-                "SELECT content_text FROM zg_fragments WHERE file_id = '{file_id}' ORDER BY id"
+                "SELECT content_text FROM fragments WHERE file_id = '{file_id}' ORDER BY id"
             ),
         ])
         .output();
@@ -169,7 +169,7 @@ fn deleted_file_drops_rows_sidecar_and_reprocesses_dependents() {
     let db = root.join(".sync.db");
     let importee_id = root.join("importee.rs").to_string_lossy().into_owned();
     assert_eq!(
-        db_count(&db, "zg_fragments", &importee_id),
+        db_count(&db, "fragments", &importee_id),
         0,
         "deleted file's fragment rows must be gone"
     );

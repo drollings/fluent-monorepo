@@ -8,7 +8,7 @@ use crate::extractor::ExtractSource;
 use crate::graph_index::{
     ContextDirection, ContextFamily, GraphIndex, GraphQuerySignals, HarvestInput,
 };
-use crate::zg_types::{FileKind, RrfScore};
+use crate::search_types::{FileKind, RrfScore};
 use crate::ast_parser::AstParser;
 
 fn harvest(format: &str, text: &str) -> crate::extractor::code::HarvestedFile {
@@ -154,7 +154,7 @@ fn unresolved_specifiers_are_recorded_not_dropped() {
 #[test]
 fn rerank_is_deterministic_and_boosts_graph_neighbors() {
     use crate::query::fusion::RecallCandidate;
-    use crate::zg_types::{Entity, EntityMetadata, FileInfo, ZgContent, ZgRange};
+    use crate::search_types::{Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan};
 
     fn candidate(id: &str, file: &str, symbol: &str, score: f64) -> RecallCandidate {
         RecallCandidate {
@@ -162,10 +162,10 @@ fn rerank_is_deterministic_and_boosts_graph_neighbors() {
             entity: Entity {
                 id: id.to_string(),
                 file_id: file.to_string(),
-                range: ZgRange::File,
-                content: ZgContent::Text { text: String::new() },
+                range: FragmentSpan::File,
+                content: FragmentContent::Text { text: String::new() },
                 metadata: Some(EntityMetadata::Code {
-                    symbol_type: crate::zg_types::CodeSymbolType::Function,
+                    symbol_type: crate::search_types::CodeSymbolType::Function,
                     symbol_name: Some(symbol.to_string()),
                     scope: None,
                     node_type: None,
@@ -226,7 +226,7 @@ fn rerank_is_deterministic_and_boosts_graph_neighbors() {
 #[test]
 fn role_coverage_breaks_ties_toward_query_roles() {
     use crate::query::fusion::RecallCandidate;
-    use crate::zg_types::{Entity, EntityMetadata, FileInfo, ZgContent, ZgRange};
+    use crate::search_types::{Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan};
 
     fn candidate(id: &str, file: &str, symbol: &str, scope: Option<&str>, score: f64) -> RecallCandidate {
         RecallCandidate {
@@ -234,10 +234,10 @@ fn role_coverage_breaks_ties_toward_query_roles() {
             entity: Entity {
                 id: id.to_string(),
                 file_id: file.to_string(),
-                range: ZgRange::File,
-                content: ZgContent::Text { text: String::new() },
+                range: FragmentSpan::File,
+                content: FragmentContent::Text { text: String::new() },
                 metadata: Some(EntityMetadata::Code {
-                    symbol_type: crate::zg_types::CodeSymbolType::Function,
+                    symbol_type: crate::search_types::CodeSymbolType::Function,
                     symbol_name: Some(symbol.to_string()),
                     scope: scope.map(str::to_string),
                     node_type: None,
@@ -285,7 +285,7 @@ fn role_coverage_breaks_ties_toward_query_roles() {
 #[test]
 fn rerank_skips_rrf_order_when_no_edge_touches_candidates() {
     use crate::query::fusion::RecallCandidate;
-    use crate::zg_types::{Entity, EntityMetadata, FileInfo, ZgContent, ZgRange};
+    use crate::search_types::{Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan};
 
     fn candidate(id: &str, file: &str, symbol: &str, score: f64) -> RecallCandidate {
         RecallCandidate {
@@ -293,10 +293,10 @@ fn rerank_skips_rrf_order_when_no_edge_touches_candidates() {
             entity: Entity {
                 id: id.to_string(),
                 file_id: file.to_string(),
-                range: ZgRange::File,
-                content: ZgContent::Text { text: String::new() },
+                range: FragmentSpan::File,
+                content: FragmentContent::Text { text: String::new() },
                 metadata: Some(EntityMetadata::Code {
-                    symbol_type: crate::zg_types::CodeSymbolType::Function,
+                    symbol_type: crate::search_types::CodeSymbolType::Function,
                     symbol_name: Some(symbol.to_string()),
                     scope: None,
                     node_type: None,

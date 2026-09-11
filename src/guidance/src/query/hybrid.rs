@@ -4,8 +4,9 @@
 
 use crate::query::strategy::QueryIntent;
 use crate::query::synthesize::{Stage, StageRecall, StageTrace};
-use crate::zg_types::{
-    EntityMetadata, SearchHit, SearchMatchedBy, SearchPlan, SearchPlanRoute, ZgContent, ZgRange,
+use crate::search_types::{
+    EntityMetadata, FragmentContent, FragmentSpan, SearchHit, SearchMatchedBy, SearchPlan,
+    SearchPlanRoute,
 };
 
 /// Build a two-route hybrid plan from a query string. `FsmEngine` feeds
@@ -13,7 +14,7 @@ use crate::zg_types::{
 /// symbol-filtered recall downstream.
 #[must_use]
 pub fn plan_from_query(query: &str, intent: QueryIntent, limit: usize) -> SearchPlan {
-    use crate::zg_types::SearchPlanRouteMode::{Fts, Vector};
+    use crate::search_types::SearchPlanRouteMode::{Fts, Vector};
     SearchPlan {
         routes: vec![
             SearchPlanRoute {
@@ -66,11 +67,11 @@ pub fn stage_from_hit(hit: &SearchHit) -> Stage {
         content,
         source: hit.file.relative_path.clone(),
         line: match &hit.entity.range {
-            ZgRange::Text { start_line, .. } => Some(*start_line),
+            FragmentSpan::Text { start_line, .. } => Some(*start_line),
             _ => None,
         },
         end_line: match &hit.entity.range {
-            ZgRange::Text { end_line, .. } => Some(*end_line),
+            FragmentSpan::Text { end_line, .. } => Some(*end_line),
             _ => None,
         },
         member_name: match &hit.entity.metadata {
@@ -109,15 +110,15 @@ pub fn matched_by_name(matched_by: SearchMatchedBy) -> &'static str {
 
 fn hit_text(hit: &SearchHit) -> String {
     match &hit.entity.content {
-        ZgContent::Text { text } => text.clone(),
-        ZgContent::Image { .. } => "[image]".to_string(),
+        FragmentContent::Text { text } => text.clone(),
+        FragmentContent::Image { .. } => "[image]".to_string(),
     }
 }
 
 /// Convert one storage-level hit into a stage (lemma / single-route paths
 /// that skip full fusion).
 #[must_use]
-pub fn stage_from_storage_hit(hit: &crate::zg_types::StorageHit) -> Stage {
+pub fn stage_from_storage_hit(hit: &crate::search_types::StorageHit) -> Stage {
     let (kind, content, member_name) = match &hit.fragment.metadata {
         Some(EntityMetadata::Code {
             signature,
@@ -135,11 +136,11 @@ pub fn stage_from_storage_hit(hit: &crate::zg_types::StorageHit) -> Stage {
         content,
         source: hit.file.relative_path.clone(),
         line: match &hit.fragment.range {
-            ZgRange::Text { start_line, .. } => Some(*start_line),
+            FragmentSpan::Text { start_line, .. } => Some(*start_line),
             _ => None,
         },
         end_line: match &hit.fragment.range {
-            ZgRange::Text { end_line, .. } => Some(*end_line),
+            FragmentSpan::Text { end_line, .. } => Some(*end_line),
             _ => None,
         },
         member_name,
@@ -148,10 +149,10 @@ pub fn stage_from_storage_hit(hit: &crate::zg_types::StorageHit) -> Stage {
     }
 }
 
-fn storage_text(hit: &crate::zg_types::StorageHit) -> String {
+fn storage_text(hit: &crate::search_types::StorageHit) -> String {
     match &hit.fragment.content {
-        ZgContent::Text { text } => text.clone(),
-        ZgContent::Image { .. } => "[image]".to_string(),
+        FragmentContent::Text { text } => text.clone(),
+        FragmentContent::Image { .. } => "[image]".to_string(),
     }
 }
 

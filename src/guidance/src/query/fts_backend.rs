@@ -7,7 +7,7 @@ use crate::query::search_backend::{SearchBackend, SearchContext};
 use crate::query::strategy::QueryIntent;
 use crate::query::synthesize::Stage;
 use crate::query_engine::QueryEngineError;
-use crate::zg_types::{SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
+use crate::search_types::{SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
 use fluent_types::GuidanceDoc;
 
 /// FTS recall backend over `RecallStorage`.

@@ -414,7 +414,7 @@ fn is_ignored_under(
 }
 
 fn has_system_segment(path: &Path) -> bool {    path.components().any(|component| {
-        matches!(component.as_os_str().to_str(), Some(".git" | ".zvec-grep"))
+        matches!(component.as_os_str().to_str(), Some(".git" | ".guidance"))
     })
 }
 

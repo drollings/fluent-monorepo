@@ -386,7 +386,7 @@ async fn loads_gguf_formats_truncates_parallelizes_caches_and_disposes() {
         fix.dependencies,
     )
     .unwrap();
-    // Parallelism override plays the ZVEC_GREP_LLAMA_CONTEXT_PARALLELISM role.
+    // Parallelism override caps concurrent embedding contexts.
     let model = model.with_parallelism_override(Some(2));
 
     let progress: Arc<Mutex<Vec<EmbeddingProgress>>> = Arc::new(Mutex::new(Vec::new()));

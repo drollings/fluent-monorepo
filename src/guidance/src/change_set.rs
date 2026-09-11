@@ -53,7 +53,7 @@ impl Default for ChangeSetOptions {
     fn default() -> Self {
         Self {
             root: None,
-            max_changed_paths: crate::zg_constants::CHANGE_SET_PATH_BUDGET,
+            max_changed_paths: crate::search_constants::CHANGE_SET_PATH_BUDGET,
         }
     }
 }

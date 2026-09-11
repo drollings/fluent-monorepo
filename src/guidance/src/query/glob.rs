@@ -11,7 +11,7 @@ use thiserror::Error;
 
 /// Glob / file-type selection failure.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ZgGlobError {
+pub enum GlobError {
     /// Unknown ripgrep file-type name.
     #[error("unknown ripgrep file type: {0}")]
     UnknownFileType(String),
@@ -313,14 +313,14 @@ fn rule_matches(pattern: &str, path: &str, case_insensitive: bool) -> bool {
 pub fn resolve_file_type_patterns(
     included: &[String],
     excluded: &[String],
-) -> Result<FileTypePatterns, ZgGlobError> {
+) -> Result<FileTypePatterns, GlobError> {
     Ok(FileTypePatterns {
         include: resolve_type_names(included)?,
         exclude: resolve_type_names(excluded)?,
     })
 }
 
-fn resolve_type_names(names: &[String]) -> Result<Vec<String>, ZgGlobError> {
+fn resolve_type_names(names: &[String]) -> Result<Vec<String>, GlobError> {
     let mut patterns = Vec::new();
     for raw in names {
         let name = raw.trim().to_lowercase();
@@ -333,7 +333,7 @@ fn resolve_type_names(names: &[String]) -> Result<Vec<String>, ZgGlobError> {
         }
         let canonical = canonical_type_name(&name);
         let Some(globs) = type_globs(canonical) else {
-            return Err(ZgGlobError::UnknownFileType(raw.clone()));
+            return Err(GlobError::UnknownFileType(raw.clone()));
         };
         patterns.extend(globs.iter().map(ToString::to_string));
     }

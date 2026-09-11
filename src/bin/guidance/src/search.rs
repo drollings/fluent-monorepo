@@ -16,7 +16,7 @@ use guidance_core::query::strategy::FsmEngine;
 use guidance_core::query::structure_enrich::{enrich_hits, EnrichedRgHit};
 use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
 use guidance_core::query_engine::{OutputFormat, QueryEngine};
-use guidance_core::zg_types::{
+use guidance_core::search_types::{
     CodeSymbolType, SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
 };
 use search_vector::GuidanceDb;

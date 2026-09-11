@@ -3,8 +3,8 @@ use crate::query::db_storage::GuidanceDbStorage;
 use crate::query::ingest::ingest_text_file;
 use crate::query::llm_filter::{LlmFilter, NoopLlmFilter};
 use crate::query::search_backend::SearchContext;
+use crate::search_types::FileInfo;
 use crate::tests::common::make_test_doc;
-use crate::zg_types::FileInfo;
 
 fn file_info(id: &str, relative: &str) -> FileInfo {
     FileInfo {
@@ -15,7 +15,7 @@ fn file_info(id: &str, relative: &str) -> FileInfo {
         size_bytes: 64,
         last_modified_time: 100,
         content_hash: None,
-        kind: Some(crate::zg_types::FileKind::Code),
+        kind: Some(crate::search_types::FileKind::Code),
         format: "typescript".to_string(),
         index_status: None,
     }

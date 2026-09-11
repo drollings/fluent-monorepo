@@ -14,11 +14,11 @@ use super::{
     vector_content::chunk_options_for_metadata,
 };
 use crate::ast_parser::AstParser;
-use crate::zg_constants::{
+use crate::search_constants::{
     OUTLINE_HEADER_MAX_CHARS, OUTLINE_HEADER_MAX_LINES, OUTLINE_MAX_CALLS, OUTLINE_MAX_LINE_CHARS,
     OUTLINE_MAX_MEMBERS, OUTLINE_WALK_MAX_DEPTH,
 };
-use crate::zg_types::{CodeEntityModifier, FileKind};
+use crate::search_types::{CodeEntityModifier, FileKind};
 
 /// Code fragment extractor (one impl; formats dispatch via the adapter
 /// registry, never a match).
@@ -173,7 +173,7 @@ struct StmtSpan {
 /// tree walk; fragments render from owned data).
 struct OwnedEntity {
     name: Option<String>,
-    symbol_type: crate::zg_types::CodeSymbolType,
+    symbol_type: crate::search_types::CodeSymbolType,
     breadcrumb: Vec<String>,
     signature: Option<String>,
     doc: Option<String>,
@@ -190,7 +190,7 @@ struct OwnedEntity {
 }
 
 struct OutlineMember {
-    symbol_type: crate::zg_types::CodeSymbolType,
+    symbol_type: crate::search_types::CodeSymbolType,
     name: Option<String>,
     signature: Option<String>,
 }
@@ -366,7 +366,7 @@ fn code_entity_outline(entity: &OwnedEntity, max_chars: usize) -> String {
                 lines.push(format!("- {}", format_outline_member(member)));
             }
         }
-    } else if entity.symbol_type == crate::zg_types::CodeSymbolType::Function && !entity.calls.is_empty() {
+    } else if entity.symbol_type == crate::search_types::CodeSymbolType::Function && !entity.calls.is_empty() {
         lines.push(String::new());
         lines.push(format!("calls: {}", entity.calls.join(", ")));
     }
@@ -409,14 +409,14 @@ fn format_outline_member(member: &OutlineMember) -> String {
     symbol_type_name(member.symbol_type).to_string()
 }
 
-fn symbol_type_name(symbol: crate::zg_types::CodeSymbolType) -> &'static str {
+fn symbol_type_name(symbol: crate::search_types::CodeSymbolType) -> &'static str {
     match symbol {
-        crate::zg_types::CodeSymbolType::Module => "module",
-        crate::zg_types::CodeSymbolType::Class => "class",
-        crate::zg_types::CodeSymbolType::Interface => "interface",
-        crate::zg_types::CodeSymbolType::Function => "function",
-        crate::zg_types::CodeSymbolType::Value => "value",
-        crate::zg_types::CodeSymbolType::Alias => "alias",
+        crate::search_types::CodeSymbolType::Module => "module",
+        crate::search_types::CodeSymbolType::Class => "class",
+        crate::search_types::CodeSymbolType::Interface => "interface",
+        crate::search_types::CodeSymbolType::Function => "function",
+        crate::search_types::CodeSymbolType::Value => "value",
+        crate::search_types::CodeSymbolType::Alias => "alias",
     }
 }
 

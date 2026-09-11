@@ -3,7 +3,7 @@ use crate::query::db_storage::GuidanceDbStorage;
 use crate::query::ingest::ingest_text_file;
 use crate::query::recall::run_recall;
 use crate::query::strategy::QueryIntent;
-use crate::zg_types::FileInfo;
+use crate::search_types::FileInfo;
 
 // Search-only slice of `cli.test.mjs:602`: an indexed workspace answers a
 // symbol query with the right file. Full CLI parity arrives in P5.
@@ -17,7 +17,7 @@ fn file_info(id: &str, relative: &str) -> FileInfo {
         size_bytes: 64,
         last_modified_time: 100,
         content_hash: None,
-        kind: Some(crate::zg_types::FileKind::Code),
+        kind: Some(crate::search_types::FileKind::Code),
         format: "typescript".to_string(),
         index_status: None,
     }
@@ -66,17 +66,17 @@ fn indexed_workspace_answers_symbol_search() {
 #[test]
 fn uncitable_code_hits_never_reach_render() {
     use crate::query::hybrid::stages_from_hits;
-    use crate::zg_types::{Entity, FileInfo, SearchHit, SearchMatchedBy, ZgContent, ZgRange};
+    use crate::search_types::{Entity, FileInfo, SearchHit, SearchMatchedBy, FragmentContent, FragmentSpan};
     let hit = SearchHit {
         entity: Entity {
             id: "e".to_string(),
             file_id: "f".to_string(),
-            range: ZgRange::File,
-            content: ZgContent::Text {
+            range: FragmentSpan::File,
+            content: FragmentContent::Text {
                 text: "x".to_string(),
             },
-            metadata: Some(crate::zg_types::EntityMetadata::Code {
-                symbol_type: crate::zg_types::CodeSymbolType::Function,
+            metadata: Some(crate::search_types::EntityMetadata::Code {
+                symbol_type: crate::search_types::CodeSymbolType::Function,
                 symbol_name: Some("f".to_string()),
                 scope: None,
                 node_type: None,
@@ -91,7 +91,7 @@ fn uncitable_code_hits_never_reach_render() {
         },
         evidence: vec![],
         rank: 1,
-        score: crate::zg_types::RrfScore::new(1.0),
+        score: crate::search_types::RrfScore::new(1.0),
         matched_by: SearchMatchedBy::Fts,
         trace: None,
     };
@@ -109,7 +109,7 @@ fn plan_from_query_marks_identifier_intent_for_symbols() {
 }
 
 #[test]
-fn stages_carry_zvec_provenance_vocabulary() {
+fn stages_carry_provenance_vocabulary() {
     let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
     seed_workflow_repo(&db);
     let storage = GuidanceDbStorage::new(&db);

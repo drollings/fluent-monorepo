@@ -136,7 +136,7 @@ impl IndexCoordinator {
         let pending_root = runtime.canonical_root();
         let pending = ChangeSet::new(ChangeSetOptions {
             root: Some(pending_root.clone()),
-            max_changed_paths: crate::zg_constants::CHANGE_SET_PATH_BUDGET,
+            max_changed_paths: crate::search_constants::CHANGE_SET_PATH_BUDGET,
         });
         Self {
             runtime,
@@ -229,7 +229,7 @@ impl IndexCoordinator {
                             *pending = ChangeSet::new(ChangeSetOptions {
                                 root: Some(pending_root.clone()),
                                 max_changed_paths:
-                                    crate::zg_constants::CHANGE_SET_PATH_BUDGET,
+                                    crate::search_constants::CHANGE_SET_PATH_BUDGET,
                             });
                             *guard = Some((snapshot.clone(), job_revision));
                             (snapshot, job_revision)

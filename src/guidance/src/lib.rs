@@ -21,8 +21,8 @@
 //! | `query_engine` | Explain/query orchestration | `fluent-types`, `search-vector`, `fluent-knowledge`, `query/*` |
 //! | `query` sub-modules | Query pipeline: identifier, strategy, filters, synthesizer, snapshot | `fluent-types`, `regex` |
 //! | `sync` sub-modules | JSON store, staleness, comment management | `fluent-types`, `common-core` |
-//! | `zg_types` | zvec-grep value types + pure search helpers (P0 contracts) | `serde`, `thiserror` |
-//! | `zg_constants` | Ported zvec-grep tested constants + pure budget helpers | none |
+//! | `search_types` | Index/search value types + pure search helpers (P0 contracts) | `serde`, `thiserror` |
+//! | `search_constants` | Tested search/index constants + pure budget helpers | none |
 //!
 //! ## Extraction Candidates (when other consumers exist)
 //! - `scanner` — pure pattern detection, zero domain coupling
@@ -51,8 +51,8 @@ pub mod selection;
 pub mod sync_engine;
 pub mod watcher;
 pub use common_core::walk;
-pub mod zg_constants;
-pub mod zg_types;
+pub mod search_constants;
+pub mod search_types;
 
 pub mod query;
 

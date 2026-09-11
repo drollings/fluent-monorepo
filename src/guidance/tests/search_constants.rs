@@ -12,7 +12,7 @@ fn recall_target_is_max_limit_times_five_or_fifty() {
 }
 
 #[test]
-fn recall_walk_constants_match_zvec() {
+fn recall_walk_constants_match_legacy() {
     assert_eq!(RECALL_INITIAL_DEPTH, 200);
     assert_eq!(RECALL_MAX_DEPTH, 2000);
     assert_eq!(RECALL_GROWTH_FACTOR, 2);
@@ -24,7 +24,7 @@ fn recall_walk_constants_match_zvec() {
 }
 
 #[test]
-fn chunk_and_outline_constants_match_zvec() {
+fn chunk_and_outline_constants_match_legacy() {
     assert_eq!(CODE_CHUNK_CHARS, 3600);
     assert_eq!(CODE_CHUNK_OVERLAP_CHARS, 540);
     assert_eq!(CHUNK_OVERLAP_PERCENT, 15);
@@ -105,19 +105,19 @@ fn metadata_budget_is_quarter_floor_with_none_passthrough() {
 
 #[test]
 fn open_retry_backoff_is_capped_exponential() {
-    assert_eq!(zvec_open_retry_delay_ms(0), 100);
-    assert_eq!(zvec_open_retry_delay_ms(1), 200);
-    assert_eq!(zvec_open_retry_delay_ms(2), 400);
-    assert_eq!(zvec_open_retry_delay_ms(3), 800);
-    assert_eq!(zvec_open_retry_delay_ms(4), 1000);
-    assert_eq!(zvec_open_retry_delay_ms(7), 1000);
-    assert_eq!(zvec_open_retry_delay_ms(100), 1000);
-    assert_eq!(ZVEC_OPEN_RETRY_ATTEMPTS, 8);
-    assert_eq!(ZVEC_UPSERT_BATCH_SIZE, 1024);
+    assert_eq!(open_retry_delay_ms(0), 100);
+    assert_eq!(open_retry_delay_ms(1), 200);
+    assert_eq!(open_retry_delay_ms(2), 400);
+    assert_eq!(open_retry_delay_ms(3), 800);
+    assert_eq!(open_retry_delay_ms(4), 1000);
+    assert_eq!(open_retry_delay_ms(7), 1000);
+    assert_eq!(open_retry_delay_ms(100), 1000);
+    assert_eq!(OPEN_RETRY_ATTEMPTS, 8);
+    assert_eq!(UPSERT_BATCH_SIZE, 1024);
 }
 
 #[test]
-fn freshness_and_retry_constants_match_zvec() {
+fn freshness_and_retry_constants_match_legacy() {
     assert_eq!(CHANGE_SET_PATH_BUDGET, 1000);
     assert_eq!(WATCH_DEBOUNCE_MS, 750);
     assert_eq!(WATCH_MAX_WAIT_MS, 5_000);
@@ -135,7 +135,7 @@ fn freshness_and_retry_constants_match_zvec() {
 }
 
 #[test]
-fn size_and_binary_caps_match_zvec() {
+fn size_and_binary_caps_match_legacy() {
     assert_eq!(MAX_CODE_FILE_SIZE_BYTES, 1_048_576);
     assert_eq!(MAX_TEXT_FILE_SIZE_BYTES, 268_435_456);
     assert_eq!(MAX_DATA_FILE_SIZE_BYTES, 16_777_216);

@@ -2,7 +2,7 @@
 //! width arithmetic (zvec counts UTF-16 code units; chunking parity
 //! requires the same unit here, with char-boundary-safe slicing).
 
-use crate::zg_types::{CodeSymbolType, FileKind};
+use crate::search_types::{CodeSymbolType, FileKind};
 
 /// Default code chunk budget (port of `DEFAULT_CODE_CHUNK_CHARS`).
 pub const DEFAULT_CHUNK_CHARS: usize = 3600;

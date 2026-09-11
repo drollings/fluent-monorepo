@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::extractor::{ExtractSource, FragmentMetadata};
-use crate::zg_types::FileKind;
+use crate::search_types::FileKind;
 
 fn source(text: &str) -> ExtractSource {
     ExtractSource {

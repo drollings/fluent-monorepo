@@ -8,7 +8,7 @@ use crate::extractor::adapter::format_for_extension;
 use crate::extractor::code::harvest_file_entities;
 use crate::extractor::ExtractSource;
 use crate::query::fusion::RecallCandidate;
-use crate::zg_types::{EntityMetadata, FileKind};
+use crate::search_types::{EntityMetadata, FileKind};
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
 use spacy_rs::routing::RoutingSignal;
 use std::collections::{HashMap, HashSet};

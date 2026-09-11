@@ -1,15 +1,15 @@
-//! `GuidanceDb` as recall storage: converts between the P0 `zg_types`
-//! contracts and the `zg_*` fragment tables. P2 indexing writes through the
+//! `GuidanceDb` as recall storage: converts between the P0 `search_types`
+//! contracts and the fragment tables. P2 indexing writes through the
 //! same seam (`upsert_fragments`); P1 ingestion and recall share it.
 
 use search_vector::db::{
-    FragmentLemma, GuidanceDb, ZgFileRecord, ZgFragmentFilter, ZgFragmentRecord, ZgFragmentRow,
+    FragmentLemma, GuidanceDb, FileRecord, FragmentFilter, FragmentRecord, FragmentRow,
 };
 
 use crate::query::recall::{symbol_type_name, RecallError, RecallStorage};
-use crate::zg_types::{
+use crate::search_types::{
     CodeEntityModifier, CodeSymbolType, Entity, EntityFragment, EntityMetadata, FileInfo, FileKind,
-    ImageFormat, StorageFilter, StorageHit, ZgContent, ZgRange,
+    ImageFormat, StorageFilter, StorageHit, FragmentContent, FragmentSpan,
 };
 
 /// Recall storage over a `GuidanceDb` fragment index.
@@ -45,7 +45,7 @@ impl<'a> GuidanceDbStorage<'a> {
         };
         let Some(file) = self
             .db
-            .zg_get_file(file_id)
+            .get_file(file_id)
             .map_err(|error| db_error(&error))?
         else {
             return Ok(None);
@@ -67,7 +67,7 @@ impl RecallStorage for GuidanceDbStorage<'_> {
     fn list_files(&self) -> Result<Vec<FileInfo>, RecallError> {
         Ok(self
             .db
-            .zg_list_files()
+            .list_files()
             .map_err(|error| db_error(&error))?
             .iter()
             .map(file_info)
@@ -82,7 +82,7 @@ impl RecallStorage for GuidanceDbStorage<'_> {
     ) -> Result<Vec<StorageHit>, RecallError> {
         let hits = self
             .db
-            .search_fts(query, limit, &zg_filter(filter))
+            .search_fts(query, limit, &fragment_filter(filter))
             .map_err(|error| db_error(&error))?;
         hits.into_iter()
             .enumerate()
@@ -101,7 +101,7 @@ impl RecallStorage for GuidanceDbStorage<'_> {
     ) -> Result<Vec<StorageHit>, RecallError> {
         let hits = self
             .db
-            .search_vector_fragments(embedding, limit, &zg_filter(filter))
+            .search_vector_fragments(embedding, limit, &fragment_filter(filter))
             .map_err(|error| db_error(&error))?;
         hits.into_iter()
             .enumerate()
@@ -142,7 +142,7 @@ impl RecallStorage for GuidanceDbStorage<'_> {
             }
             let Some(file) = self
                 .db
-                .zg_get_file(&major.file_id)
+                .get_file(&major.file_id)
                 .map_err(|error| db_error(&error))?
             else {
                 continue;
@@ -167,7 +167,7 @@ impl RecallStorage for GuidanceDbStorage<'_> {
         };
         let Some(file) = self
             .db
-            .zg_get_file(&major.file_id)
+            .get_file(&major.file_id)
             .map_err(|error| db_error(&error))?
         else {
             return Ok(None);
@@ -190,8 +190,8 @@ impl RecallStorage for GuidanceDbStorage<'_> {
     }
 }
 
-fn zg_filter(filter: &StorageFilter) -> ZgFragmentFilter {
-    ZgFragmentFilter {
+fn fragment_filter(filter: &StorageFilter) -> FragmentFilter {
+    FragmentFilter {
         file_ids: filter.file_ids.clone(),
         group_ids: filter.group_ids.clone(),
         symbol_names: filter.symbol_names.clone(),
@@ -203,8 +203,8 @@ fn zg_filter(filter: &StorageFilter) -> ZgFragmentFilter {
 
 /// Convert a P0 `FileInfo` into a file row for ingestion.
 #[must_use]
-pub fn zg_file_record(file: &FileInfo) -> ZgFileRecord {
-    ZgFileRecord {
+pub fn file_record(file: &FileInfo) -> FileRecord {
+    FileRecord {
         id: file.id.clone(),
         absolute_path: file.absolute_path.clone(),
         relative_path: file.relative_path.clone(),
@@ -231,7 +231,7 @@ pub fn zg_file_record(file: &FileInfo) -> ZgFileRecord {
 /// Convert a P0 `EntityFragment` into a fragment row (`cjk_text` and
 /// `embedding` filled by the ingestion helper, not here).
 #[must_use]
-pub fn zg_fragment_record(fragment: &EntityFragment) -> ZgFragmentRecord {
+pub fn fragment_record(fragment: &EntityFragment) -> FragmentRecord {
     let (symbol_type, symbol_name, scope, signature, doc, modifiers, heading, heading_level) =
         match &fragment.metadata {
             Some(EntityMetadata::Code {
@@ -281,10 +281,10 @@ pub fn zg_fragment_record(fragment: &EntityFragment) -> ZgFragmentRecord {
             None => (None, None, None, None, None, String::new(), None, None),
         };
     let (content_kind, content_text) = match &fragment.content {
-        ZgContent::Text { text } => ("text".to_string(), Some(text.clone())),
-        ZgContent::Image { .. } => ("image".to_string(), None),
+        FragmentContent::Text { text } => ("text".to_string(), Some(text.clone())),
+        FragmentContent::Image { .. } => ("image".to_string(), None),
     };
-    ZgFragmentRecord {
+    FragmentRecord {
         id: fragment.id.clone(),
         group: fragment.group.clone(),
         file_id: fragment.file_id.clone(),
@@ -314,7 +314,7 @@ pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> Fragme
     }
 }
 
-fn file_info(file: &ZgFileRecord) -> FileInfo {
+fn file_info(file: &FileRecord) -> FileInfo {
     FileInfo {
         id: file.id.clone(),
         absolute_path: file.absolute_path.clone(),
@@ -335,15 +335,15 @@ fn file_info(file: &ZgFileRecord) -> FileInfo {
     }
 }
 
-fn entity_fragment(row: &ZgFragmentRow) -> EntityFragment {
+fn entity_fragment(row: &FragmentRow) -> EntityFragment {
     EntityFragment {
         id: row.id.clone(),
         group: row.group.clone(),
         file_id: row.file_id.clone(),
-        range: serde_json::from_str(&row.range_json).unwrap_or(ZgRange::File),
+        range: serde_json::from_str(&row.range_json).unwrap_or(FragmentSpan::File),
         content: match &row.content_text {
-            Some(text) => ZgContent::Text { text: text.clone() },
-            None => ZgContent::Image {
+            Some(text) => FragmentContent::Text { text: text.clone() },
+            None => FragmentContent::Image {
                 data: Vec::new(),
                 format: ImageFormat::Png,
             },
@@ -352,7 +352,7 @@ fn entity_fragment(row: &ZgFragmentRow) -> EntityFragment {
     }
 }
 
-fn entity_from_row(row: &ZgFragmentRow) -> Entity {
+fn entity_from_row(row: &FragmentRow) -> Entity {
     Entity {
         id: row
             .group
@@ -360,10 +360,10 @@ fn entity_from_row(row: &ZgFragmentRow) -> Entity {
             .filter(|group| !group.is_empty())
             .unwrap_or_else(|| row.id.clone()),
         file_id: row.file_id.clone(),
-        range: serde_json::from_str(&row.range_json).unwrap_or(ZgRange::File),
+        range: serde_json::from_str(&row.range_json).unwrap_or(FragmentSpan::File),
         content: match &row.content_text {
-            Some(text) => ZgContent::Text { text: text.clone() },
-            None => ZgContent::Image {
+            Some(text) => FragmentContent::Text { text: text.clone() },
+            None => FragmentContent::Image {
                 data: Vec::new(),
                 format: ImageFormat::Png,
             },
@@ -372,7 +372,7 @@ fn entity_from_row(row: &ZgFragmentRow) -> Entity {
     }
 }
 
-fn row_metadata(row: &ZgFragmentRow) -> Option<EntityMetadata> {
+fn row_metadata(row: &FragmentRow) -> Option<EntityMetadata> {
     if let Some(symbol_type) = row.symbol_type.as_deref().and_then(parse_symbol_type) {
         return Some(EntityMetadata::Code {
             symbol_type,

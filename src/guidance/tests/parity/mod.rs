@@ -1,4 +1,4 @@
-//! P0 fixture corpora for zvec-grep parity (`zg_parity/*.rs` per roadmap
+//! P0 fixture corpora for legacy parity (`parity/*.rs` per roadmap
 //! P0.1). Self-consistency goldens live here; behavior goldens live with
 //! their owning suites.
 

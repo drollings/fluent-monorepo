@@ -21,7 +21,7 @@ use fluent_wvr::{
     impl_component,
 };
 use internment::ArcIntern;
-use search_vector::db::{FragmentLemma, GuidanceDb, ZgFileRecord};
+use search_vector::db::{FragmentLemma, GuidanceDb, FileRecord};
 
 use crate::ast_parser::AstParser;
 use crate::diff::{ScannedFile, compute_diff, hash_file, make_file_id};
@@ -29,11 +29,11 @@ use crate::extractor::{
     ChunkOptions, ExtractSource, FragmentMetadata, PreparedFragment,
 };
 use crate::extractor::code::{CodeExtractor, HarvestedFile};
-use crate::query::db_storage::{fragment_lemma, zg_fragment_record};
+use crate::query::db_storage::{fragment_lemma, fragment_record};
 use crate::query::ingest::query_lemmas;
 use crate::selection::{FileSelection, ScanDiagnostics, SelectedFile, select_files};
-use crate::zg_types::{
-    CodeEntityModifier, EntityFragment, EntityMetadata, FileKind, ZgContent, ZgRange,
+use crate::search_types::{
+    CodeEntityModifier, EntityFragment, EntityMetadata, FileKind, FragmentContent, FragmentSpan,
 };
 
 /// Files per bounded wave (named constant, tuned in P6).
@@ -169,7 +169,7 @@ where
     let scanned: Vec<ScannedFile> = selected.iter().map(scan_selected).collect();
     stats.files_scanned = scanned.len();
 
-    let mut existing = db.zg_list_files().map_err(|e| IndexError::Db(e.to_string()))?;
+    let mut existing = db.list_files().map_err(|e| IndexError::Db(e.to_string()))?;
     if options.rebuild {
         for file in &existing {
             db.delete_file(&file.id).map_err(|e| IndexError::Db(e.to_string()))?;
@@ -184,7 +184,7 @@ where
 
     // Scoped runs only delete stored files under the selection scope:
     // out-of-scope files are untouched, never reaped (P3 reconcile).
-    let by_id: HashMap<&str, &search_vector::db::ZgFileRecord> =
+    let by_id: HashMap<&str, &search_vector::db::FileRecord> =
         existing.iter().map(|file| (file.id.as_str(), file)).collect();
     let in_scope = |id: &str| {
         by_id.get(id).is_some_and(|record| {
@@ -832,8 +832,8 @@ fn is_fail_fast(error: &EmbeddingError) -> bool {
     )
 }
 
-fn scanned_record(file: &ScannedFile) -> ZgFileRecord {
-    ZgFileRecord {
+fn scanned_record(file: &ScannedFile) -> FileRecord {
+    FileRecord {
         id: file.id.clone(),
         absolute_path: file.absolute_path.clone(),
         relative_path: file.relative_path.clone(),
@@ -876,7 +876,7 @@ fn commit_file(
     let mut lemmas: Vec<FragmentLemma> = Vec::new();
     for (fragment, vector) in fragments.iter().zip(vectors.iter()) {
         let entity = prepared_to_entity(file, fragment);
-        let mut row = zg_fragment_record(&entity);
+        let mut row = fragment_record(&entity);
         row.cjk_text = common_core::string::cjk_bigrams(&fragment.content_text).join(" ");
         row.embedding = Some(vector.clone());
         fragment_records.push(row);
@@ -909,13 +909,13 @@ fn prepared_to_entity(file: &ScannedFile, fragment: &PreparedFragment) -> Entity
         id: fragment.id.clone(),
         group: fragment.group.clone(),
         file_id: file.id.clone(),
-        range: ZgRange::Text {
+        range: FragmentSpan::Text {
             start_line: fragment.range.start_line as u32,
             end_line: fragment.range.end_line as u32,
             start_offset: fragment.range.start_offset as u64,
             end_offset: fragment.range.end_offset as u64,
         },
-        content: ZgContent::Text { text: fragment.content_text.clone() },
+        content: FragmentContent::Text { text: fragment.content_text.clone() },
         metadata: fragment.metadata.as_ref().map(prepared_metadata),
     }
 }

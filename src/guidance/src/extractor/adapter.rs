@@ -5,7 +5,7 @@
 //! trait. Node-type strings mirror the grammar versions pinned in the
 //! workspace (tree-sitter 0.24–0.25 generation).
 
-use crate::zg_types::{CodeEntityModifier, CodeSymbolType, LanguageAdapter};
+use crate::search_types::{CodeEntityModifier, CodeSymbolType, LanguageAdapter};
 
 /// A borrowed tree-sitter node with its source text.
 #[derive(Clone, Copy)]

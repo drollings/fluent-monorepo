@@ -68,7 +68,7 @@ fn temp_repo(name: &str) -> tempfile::TempDir {
 
 #[tokio::test]
 async fn debounces_file_changes_and_reports_overflow_reconciliation() {
-    let temp = temp_repo("zvec-grep-watch-");
+    let temp = temp_repo("guidance-watch-");
     let root = temp.path().join("repo");
     std::fs::create_dir_all(root.join("src")).unwrap();
     std::fs::write(root.join("src").join("a.ts"), "export const a = 1;\n").unwrap();
@@ -91,7 +91,7 @@ async fn debounces_file_changes_and_reports_overflow_reconciliation() {
 
 #[tokio::test]
 async fn scheduled_reconciliation_does_not_count_as_activity() {
-    let temp = temp_repo("zvec-grep-watch-activity-");
+    let temp = temp_repo("guidance-watch-activity-");
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("a.ts"), "export const a = 1;\n").unwrap();
@@ -122,7 +122,7 @@ async fn scheduled_reconciliation_does_not_count_as_activity() {
 
 #[tokio::test]
 async fn uses_per_directory_watchers_on_linux() {
-    let temp = temp_repo("zvec-grep-watch-fallback-");
+    let temp = temp_repo("guidance-watch-fallback-");
     let root = temp.path().join("repo");
     let nested = root.join("src");
     std::fs::create_dir_all(&nested).unwrap();
@@ -147,7 +147,7 @@ async fn uses_per_directory_watchers_on_linux() {
 
 #[tokio::test]
 async fn drops_ignored_file_events_before_creating_a_batch() {
-    let temp = temp_repo("zvec-grep-watch-ignore-");
+    let temp = temp_repo("guidance-watch-ignore-");
     let root = temp.path().join("repo");
     let dependency = root.join("node_modules").join("pkg");
     std::fs::create_dir_all(&dependency).unwrap();
@@ -180,7 +180,7 @@ async fn drops_ignored_file_events_before_creating_a_batch() {
 
 #[tokio::test]
 async fn fallback_prunes_ignored_directories_and_restores_included_ones() {
-    let temp = temp_repo("zvec-grep-watch-ignore-fallback-");
+    let temp = temp_repo("guidance-watch-ignore-fallback-");
     let root = temp.path().join("repo");
     let source = root.join("src");
     let dependencies = root.join("node_modules");
@@ -205,7 +205,7 @@ async fn fallback_prunes_ignored_directories_and_restores_included_ones() {
 
 #[tokio::test]
 async fn fallback_honors_no_ignore_when_selecting_directories() {
-    let temp = temp_repo("zvec-grep-watch-no-ignore-");
+    let temp = temp_repo("guidance-watch-no-ignore-");
     let root = temp.path().join("repo");
     let dependencies = root.join("node_modules");
     std::fs::create_dir_all(&dependencies).unwrap();
@@ -230,13 +230,13 @@ async fn fallback_honors_no_ignore_when_selecting_directories() {
 
 #[tokio::test]
 async fn fallback_mirrors_scanner_hidden_directory_selection() {
-    let temp = temp_repo("zvec-grep-watch-hidden-");
+    let temp = temp_repo("guidance-watch-hidden-");
     let root = temp.path().join("repo");
     let source = root.join("src");
     let idea = root.join(".idea");
     let vscode = root.join(".vscode");
     let git = root.join(".git");
-    let metadata = root.join(".zvec-grep");
+    let metadata = root.join(".guidance");
     for directory in [&source, &idea, &vscode, &git, &metadata] {
         std::fs::create_dir_all(directory).unwrap();
     }
@@ -288,7 +288,7 @@ async fn fallback_mirrors_scanner_hidden_directory_selection() {
 
 #[tokio::test]
 async fn compacts_an_exact_event_storm_into_one_directory_scan() {
-    let temp = temp_repo("zvec-grep-watch-storm-");
+    let temp = temp_repo("guidance-watch-storm-");
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     for index in 0..4 {
@@ -318,7 +318,7 @@ async fn compacts_an_exact_event_storm_into_one_directory_scan() {
 
 #[tokio::test]
 async fn fallback_reattaches_after_directory_deleted_and_recreated() {
-    let temp = temp_repo("zvec-grep-watch-recreate-");
+    let temp = temp_repo("guidance-watch-recreate-");
     let root = temp.path().join("repo");
     let nested = root.join("src");
     std::fs::create_dir_all(&nested).unwrap();
@@ -338,7 +338,7 @@ async fn fallback_reattaches_after_directory_deleted_and_recreated() {
 
 #[tokio::test]
 async fn resume_drift_requests_reconciliation_and_pending_spans_debounce() {
-    let temp = temp_repo("zvec-grep-watch-resume-");
+    let temp = temp_repo("guidance-watch-resume-");
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("a.ts"), "export const a = 1;\n").unwrap();
@@ -374,7 +374,7 @@ async fn resume_drift_requests_reconciliation_and_pending_spans_debounce() {
 
 #[tokio::test]
 async fn errors_trigger_reconciliation_and_replace_the_failed_watcher() {
-    let temp = temp_repo("zvec-grep-watch-error-");
+    let temp = temp_repo("guidance-watch-error-");
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     let backend = ManualBackend::new();
@@ -400,7 +400,7 @@ async fn errors_trigger_reconciliation_and_replace_the_failed_watcher() {
 
 #[tokio::test]
 async fn directory_watcher_retries_are_independent() {
-    let temp = temp_repo("zvec-grep-watch-multi-error-");
+    let temp = temp_repo("guidance-watch-multi-error-");
     let root = temp.path().join("repo");
     let first = root.join("first");
     let second = root.join("second");
@@ -422,7 +422,7 @@ async fn directory_watcher_retries_are_independent() {
 
 #[tokio::test]
 async fn close_waits_for_an_in_flight_async_change_callback() {
-    let temp = temp_repo("zvec-grep-watch-close-");
+    let temp = temp_repo("guidance-watch-close-");
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("a.ts"), "export const a = 1;\n").unwrap();

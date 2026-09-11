@@ -35,7 +35,7 @@ pub struct SearchResult {
 /// index.
 ///
 /// Two table families coexist: the legacy `guidance_nodes` member index
-/// (untouched — P5 regression gate) and the P1 `zg_*` fragment index
+/// (untouched — P5 regression gate) and the P1 fragment index
 /// (FTS5 + vectors + lemmas) that the hybrid recall path queries.
 pub struct GuidanceDb {
     store: SqliteStore,
@@ -89,7 +89,7 @@ impl GuidanceDb {
                      key TEXT PRIMARY KEY,
                      value TEXT NOT NULL
                  );
-                 CREATE TABLE IF NOT EXISTS zg_files (
+                 CREATE TABLE IF NOT EXISTS files (
                      id TEXT PRIMARY KEY,
                      absolute_path TEXT NOT NULL,
                      relative_path TEXT NOT NULL,
@@ -99,7 +99,7 @@ impl GuidanceDb {
                      kind TEXT,
                      format TEXT NOT NULL DEFAULT ''
                  );
-                 CREATE TABLE IF NOT EXISTS zg_fragments (
+                 CREATE TABLE IF NOT EXISTS fragments (
                      id TEXT PRIMARY KEY,
                      grp TEXT,
                      file_id TEXT NOT NULL,
@@ -118,25 +118,25 @@ impl GuidanceDb {
                       embedding BLOB,
                       embedding_q8 BLOB
                   );
-                 CREATE INDEX IF NOT EXISTS idx_zg_frag_file ON zg_fragments(file_id);
-                 CREATE INDEX IF NOT EXISTS idx_zg_frag_group ON zg_fragments(grp);
-                 CREATE INDEX IF NOT EXISTS idx_zg_frag_symbol ON zg_fragments(symbol_name);
-                 CREATE VIRTUAL TABLE IF NOT EXISTS zg_fragments_fts USING fts5(
+                 CREATE INDEX IF NOT EXISTS idx_frag_file ON fragments(file_id);
+                 CREATE INDEX IF NOT EXISTS idx_frag_group ON fragments(grp);
+                 CREATE INDEX IF NOT EXISTS idx_frag_symbol ON fragments(symbol_name);
+                 CREATE VIRTUAL TABLE IF NOT EXISTS fragments_fts USING fts5(
                      content_text, symbol_name, cjk_text,
                      tokenize='unicode61 remove_diacritics 2',
-                     content='zg_fragments', content_rowid='rowid');
-                 CREATE TRIGGER IF NOT EXISTS zg_fragments_ai AFTER INSERT ON zg_fragments BEGIN
-                     INSERT INTO zg_fragments_fts(rowid, content_text, symbol_name, cjk_text)
+                     content='fragments', content_rowid='rowid');
+                 CREATE TRIGGER IF NOT EXISTS fragments_ai AFTER INSERT ON fragments BEGIN
+                     INSERT INTO fragments_fts(rowid, content_text, symbol_name, cjk_text)
                      VALUES (new.rowid, new.content_text, new.symbol_name, new.cjk_text);
                  END;
-                 CREATE TRIGGER IF NOT EXISTS zg_fragments_ad AFTER DELETE ON zg_fragments BEGIN
-                     INSERT INTO zg_fragments_fts(zg_fragments_fts, rowid, content_text, symbol_name, cjk_text)
+                 CREATE TRIGGER IF NOT EXISTS fragments_ad AFTER DELETE ON fragments BEGIN
+                     INSERT INTO fragments_fts(fragments_fts, rowid, content_text, symbol_name, cjk_text)
                      VALUES ('delete', old.rowid, old.content_text, old.symbol_name, old.cjk_text);
                  END;
-                 CREATE TRIGGER IF NOT EXISTS zg_fragments_au AFTER UPDATE ON zg_fragments BEGIN
-                     INSERT INTO zg_fragments_fts(zg_fragments_fts, rowid, content_text, symbol_name, cjk_text)
+                 CREATE TRIGGER IF NOT EXISTS fragments_au AFTER UPDATE ON fragments BEGIN
+                     INSERT INTO fragments_fts(fragments_fts, rowid, content_text, symbol_name, cjk_text)
                      VALUES ('delete', old.rowid, old.content_text, old.symbol_name, old.cjk_text);
-                     INSERT INTO zg_fragments_fts(rowid, content_text, symbol_name, cjk_text)
+                     INSERT INTO fragments_fts(rowid, content_text, symbol_name, cjk_text)
                      VALUES (new.rowid, new.content_text, new.symbol_name, new.cjk_text);
                  END;
                 CREATE TABLE IF NOT EXISTS fragment_lemmas (
@@ -642,15 +642,15 @@ impl GuidanceDb {
         self.hnsw.len()
     }
 
-    // -- P1 fragment index (zg_* tables) ----------------------------------
+    // -- P1 fragment index (fragment tables) ----------------------------------
 
     /// Replace a file's fragments: delete-by-file (fragments, lemmas, FTS
     /// rows via triggers) then insert the file row, fragments, and lemmas
     /// atomically. Returns the fragment count.
     pub fn upsert_fragments(
         &self,
-        file: &ZgFileRecord,
-        fragments: &[ZgFragmentRecord],
+        file: &FileRecord,
+        fragments: &[FragmentRecord],
         lemmas: &[FragmentLemma],
     ) -> Result<usize, VectorDbError> {
         self.store
@@ -658,17 +658,17 @@ impl GuidanceDb {
                 use rusqlite::params;
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM zg_fragments WHERE file_id = ?1)",
+                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM fragments WHERE file_id = ?1)",
                     params![file.id],
                 )?;
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM zg_fragments WHERE file_id = ?1",
+                    "DELETE FROM fragments WHERE file_id = ?1",
                     params![file.id],
                 )?;
                 fluent_db::query::execute(
                     tx,
-                    "INSERT OR REPLACE INTO zg_files
+                    "INSERT OR REPLACE INTO files
                      (id, absolute_path, relative_path, root_path, size_bytes, last_modified_time, kind, format,
                       content_hash, index_status, fail_count, last_error, indexed_time)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, NULL,
@@ -697,7 +697,7 @@ impl GuidanceDb {
                         .map(|quantized| vector::quantized_to_bytes(&quantized));
                     fluent_db::query::execute(
                         tx,
-                        "INSERT INTO zg_fragments
+                        "INSERT INTO fragments
                          (id, grp, file_id, range_json, content_kind, content_text, cjk_text,
                           symbol_type, symbol_name, scope, signature, doc, modifiers,
                           heading, heading_level, embedding, embedding_q8)
@@ -757,9 +757,9 @@ impl GuidanceDb {
             .store
             .query_row(
                 "SELECT size_bytes, last_modified_time,
-                  EXISTS(SELECT 1 FROM zg_fragments WHERE file_id = zg_files.id
+                  EXISTS(SELECT 1 FROM fragments WHERE file_id = files.id
                          AND (embedding IS NOT NULL OR embedding_q8 IS NOT NULL))
-                 FROM zg_files WHERE id = ?1",
+                 FROM files WHERE id = ?1",
                 rusqlite::params![file_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
@@ -797,16 +797,16 @@ impl GuidanceDb {
         &self,
         query: &str,
         limit: usize,
-        filter: &ZgFragmentFilter,
-    ) -> Result<Vec<ZgScoredFragment>, VectorDbError> {
+        filter: &FragmentFilter,
+    ) -> Result<Vec<ScoredFragment>, VectorDbError> {
         let Some(match_expr) = build_fts_match(query) else {
             return Ok(Vec::new());
         };
         let mut sql = String::from(
-            "SELECT f.id, f.file_id, bm25(zg_fragments_fts) AS r FROM zg_fragments_fts \
-             JOIN zg_fragments f ON f.rowid = zg_fragments_fts.rowid \
-             LEFT JOIN zg_files fl ON fl.id = f.file_id \
-             WHERE zg_fragments_fts MATCH ?1",
+            "SELECT f.id, f.file_id, bm25(fragments_fts) AS r FROM fragments_fts \
+             JOIN fragments f ON f.rowid = fragments_fts.rowid \
+             LEFT JOIN files fl ON fl.id = f.file_id \
+             WHERE fragments_fts MATCH ?1",
         );
         let mut values = vec![rusqlite::types::Value::Text(match_expr)];
         let mut param = 2;
@@ -817,7 +817,7 @@ impl GuidanceDb {
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| {
                     let rank_value: f64 = row.get(2)?;
-                    Ok(ZgScoredFragment {
+                    Ok(ScoredFragment {
                         id: row.get(0)?,
                         file_id: row.get(1)?,
                         score: -rank_value,
@@ -835,11 +835,11 @@ impl GuidanceDb {
         &self,
         embedding: &[f32],
         limit: usize,
-        filter: &ZgFragmentFilter,
-    ) -> Result<Vec<ZgScoredFragment>, VectorDbError> {
+        filter: &FragmentFilter,
+    ) -> Result<Vec<ScoredFragment>, VectorDbError> {
         let mut sql = String::from(
-            "SELECT f.id, f.file_id, f.embedding, f.embedding_q8 FROM zg_fragments f \
-             LEFT JOIN zg_files fl ON fl.id = f.file_id \
+            "SELECT f.id, f.file_id, f.embedding, f.embedding_q8 FROM fragments f \
+             LEFT JOIN files fl ON fl.id = f.file_id \
              WHERE (f.embedding IS NOT NULL OR f.embedding_q8 IS NOT NULL)",
         );
         let mut values: Vec<rusqlite::types::Value> = Vec::new();
@@ -884,7 +884,7 @@ impl GuidanceDb {
             limit,
         )
         .into_iter()
-        .map(|(id, distance)| ZgScoredFragment {
+        .map(|(id, distance)| ScoredFragment {
             file_id: files.get(id).unwrap_or(&"").to_string(),
             id: id.to_string(),
             score: f64::from(vector::distance_to_similarity(distance)),
@@ -893,15 +893,15 @@ impl GuidanceDb {
     }
 
     /// All rows for an entity: the major plus its group minors.
-    pub fn fragments_for_entity(&self, entity_id: &str) -> Result<Vec<ZgFragmentRow>, VectorDbError> {
+    pub fn fragments_for_entity(&self, entity_id: &str) -> Result<Vec<FragmentRow>, VectorDbError> {
         self.store
             .query_rows(
                 "SELECT id, grp, file_id, range_json, content_kind, content_text,
                         symbol_type, symbol_name, scope, signature, doc, modifiers,
                         heading, heading_level
-                 FROM zg_fragments WHERE id = ?1 OR grp = ?2 ORDER BY id",
+                 FROM fragments WHERE id = ?1 OR grp = ?2 ORDER BY id",
                 params![entity_id, entity_id],
-                ZgFragmentRow::from_row,
+                FragmentRow::from_row,
             )
             .map_err(VectorDbError::from)
     }
@@ -939,34 +939,34 @@ impl GuidanceDb {
     }
 
     /// One indexed file by id.
-    pub fn zg_get_file(&self, file_id: &str) -> Result<Option<ZgFileRecord>, VectorDbError> {
+    pub fn get_file(&self, file_id: &str) -> Result<Option<FileRecord>, VectorDbError> {
         self.store
             .query_row(
                 "SELECT id, absolute_path, relative_path, root_path, size_bytes,
                         last_modified_time, kind, format, content_hash,
                         index_status, fail_count, last_error
-                 FROM zg_files WHERE id = ?1",
+                 FROM files WHERE id = ?1",
                 params![file_id],
-                ZgFileRecord::from_row,
+                FileRecord::from_row,
             )
             .map_err(VectorDbError::from)
     }
 
     /// All indexed files (filter resolution input).
-    pub fn zg_list_files(&self) -> Result<Vec<ZgFileRecord>, VectorDbError> {
+    pub fn list_files(&self) -> Result<Vec<FileRecord>, VectorDbError> {
         self.store
             .query_rows(
                 "SELECT id, absolute_path, relative_path, root_path, size_bytes,
                         last_modified_time, kind, format, content_hash,
                         index_status, fail_count, last_error
-                 FROM zg_files ORDER BY id",
+                 FROM files ORDER BY id",
                 &[],
-                ZgFileRecord::from_row,
+                FileRecord::from_row,
             )
             .map_err(VectorDbError::from)
     }
 
-    /// Stored source-content hashes (`zg_files.content_hash`) for the
+    /// Stored source-content hashes (`files.content_hash`) for the
     /// member-JSON clock gate: absolute path → sha256 of the source bytes
     /// at ingest time. Empty when no row carries a hash — the gate then
     /// falls back to mtime behavior, never to a stale skip.
@@ -974,7 +974,7 @@ impl GuidanceDb {
         let rows: Vec<(String, Option<String>)> = self
             .store
             .query_rows(
-                "SELECT absolute_path, content_hash FROM zg_files WHERE content_hash IS NOT NULL",
+                "SELECT absolute_path, content_hash FROM files WHERE content_hash IS NOT NULL",
                 &[],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -1002,8 +1002,8 @@ impl GuidanceDb {
     /// (P2 commit primitive; failure is stored data via `mark_file_failed`).
     pub fn replace_file(
         &self,
-        file: &ZgFileRecord,
-        fragments: &[ZgFragmentRecord],
+        file: &FileRecord,
+        fragments: &[FragmentRecord],
         lemmas: &[FragmentLemma],
     ) -> Result<usize, VectorDbError> {
         self.upsert_fragments(file, fragments, lemmas)
@@ -1012,10 +1012,10 @@ impl GuidanceDb {
     /// Record a per-file failure (stored data, never an aborted run).
     /// Upserts the file row so files that fail before their first commit
     /// (embed/prepare) are still tracked for the failed-retry pass.
-    pub fn mark_file_failed(&self, file: &ZgFileRecord, reason: &str) -> Result<(), VectorDbError> {
+    pub fn mark_file_failed(&self, file: &FileRecord, reason: &str) -> Result<(), VectorDbError> {
         self.store
             .execute(
-                "INSERT INTO zg_files
+                "INSERT INTO files
                  (id, absolute_path, relative_path, root_path, size_bytes, last_modified_time,
                   kind, format, content_hash, index_status, fail_count, last_error)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'failed', 1, ?10)
@@ -1045,8 +1045,8 @@ impl GuidanceDb {
             .transaction(|tx| {
                 for table in [
                     "fragment_lemmas",
-                    "zg_fragments",
-                    "zg_files",
+                    "fragments",
+                    "files",
                     "graph_edges",
                     "graph_symbols",
                 ] {
@@ -1068,7 +1068,7 @@ impl GuidanceDb {
         let path: Option<String> = self
             .store
             .query_row(
-                "SELECT absolute_path FROM zg_files WHERE id = ?1",
+                "SELECT absolute_path FROM files WHERE id = ?1",
                 params![file_id],
                 |row| row.get(0),
             )
@@ -1077,17 +1077,17 @@ impl GuidanceDb {
             .transaction(|tx| {
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM zg_fragments WHERE file_id = ?1)",
+                    "DELETE FROM fragment_lemmas WHERE fragment_id IN (SELECT id FROM fragments WHERE file_id = ?1)",
                     rusqlite::params![file_id],
                 )?;
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM zg_fragments WHERE file_id = ?1",
+                    "DELETE FROM fragments WHERE file_id = ?1",
                     rusqlite::params![file_id],
                 )?;
                 fluent_db::query::execute(
                     tx,
-                    "DELETE FROM zg_files WHERE id = ?1",
+                    "DELETE FROM files WHERE id = ?1",
                     rusqlite::params![file_id],
                 )?;
                 if let Some(path) = &path {
@@ -1197,7 +1197,7 @@ impl GuidanceDb {
     pub fn failed_file_ids(&self) -> Result<Vec<String>, VectorDbError> {
         self.store
             .query_rows(
-                "SELECT id FROM zg_files WHERE index_status = 'failed' ORDER BY id",
+                "SELECT id FROM files WHERE index_status = 'failed' ORDER BY id",
                 &[],
                 |row| row.get(0),
             )
@@ -1209,7 +1209,7 @@ impl GuidanceDb {
     pub fn entity_ids_for_file(&self, file_id: &str) -> Result<Vec<String>, VectorDbError> {
         self.store
             .query_rows(
-                "SELECT id FROM zg_fragments WHERE file_id = ?1 \
+                "SELECT id FROM fragments WHERE file_id = ?1 \
                  AND (grp = id OR grp IS NULL OR grp = '') ORDER BY rowid",
                 params![file_id],
                 |row| row.get(0),
@@ -1223,7 +1223,7 @@ impl GuidanceDb {
             return Ok(Vec::new());
         }
         let sql = format!(
-            "SELECT DISTINCT grp FROM zg_fragments WHERE file_id IN ({}) \
+            "SELECT DISTINCT grp FROM fragments WHERE file_id IN ({}) \
              AND grp IS NOT NULL AND grp != '' ORDER BY grp",
             common_core::sqlite::in_clause(file_ids.len())
         );
@@ -1291,7 +1291,7 @@ impl GraphSymbolRow {
 fn ensure_file_status_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     use rusqlite::params;
     let mut existing = std::collections::HashSet::new();
-    let mut stmt = conn.prepare("PRAGMA table_info(zg_files)")?;
+    let mut stmt = conn.prepare("PRAGMA table_info(files)")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     for name in rows.flatten() {
         existing.insert(name);
@@ -1305,7 +1305,7 @@ fn ensure_file_status_columns(conn: &rusqlite::Connection) -> rusqlite::Result<(
     ] {
         if !existing.contains(column) {
             conn.execute(
-                &format!("ALTER TABLE zg_files ADD COLUMN {column} {ddl}"),
+                &format!("ALTER TABLE files ADD COLUMN {column} {ddl}"),
                 params![],
             )?;
         }
@@ -1313,27 +1313,27 @@ fn ensure_file_status_columns(conn: &rusqlite::Connection) -> rusqlite::Result<(
     Ok(())
 }
 
-/// P6 int8 rollout: nullable `embedding_q8` on `zg_fragments` (scale plus
+/// P6 int8 rollout: nullable `embedding_q8` on `fragments` (scale plus
 /// dims plus i8 values: `dims + 8` bytes vs `4 * dims` FP32). Guarded like
 /// the file status columns — old databases gain the column on open, old
 /// FP32 rows keep working through the read fallback.
 fn ensure_fragment_q8_column(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     use rusqlite::params;
     let mut existing = std::collections::HashSet::new();
-    let mut stmt = conn.prepare("PRAGMA table_info(zg_fragments)")?;
+    let mut stmt = conn.prepare("PRAGMA table_info(fragments)")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     for name in rows.flatten() {
         existing.insert(name);
     }
     if !existing.contains("embedding_q8") {
-        conn.execute("ALTER TABLE zg_fragments ADD COLUMN embedding_q8 BLOB", params![])?;
+        conn.execute("ALTER TABLE fragments ADD COLUMN embedding_q8 BLOB", params![])?;
     }
     Ok(())
 }
 
 /// Indexed file row (mirrors the P0 `FileInfo` contract).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZgFileRecord {
+pub struct FileRecord {
     /// Stable file id.
     pub id: String,
     /// Absolute workspace path.
@@ -1360,7 +1360,7 @@ pub struct ZgFileRecord {
     pub last_error: Option<String>,
 }
 
-impl ZgFileRecord {
+impl FileRecord {
     fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get(0)?,
@@ -1428,7 +1428,7 @@ fn node_sync_fingerprint(json_files: &[std::path::PathBuf]) -> NodeSyncFingerpri
 /// `cjk_text` is the space-joined bigram expansion computed by the
 /// guidance-core ingestion helper).
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZgFragmentRecord {
+pub struct FragmentRecord {
     /// Fragment id (unique per file).
     pub id: String,
     /// Group id; the major carries its own id.
@@ -1476,7 +1476,7 @@ pub struct FragmentLemma {
 
 /// Full fragment row for hit materialization.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZgFragmentRow {
+pub struct FragmentRow {
     /// Fragment id.
     pub id: String,
     /// Group id, if any.
@@ -1507,7 +1507,7 @@ pub struct ZgFragmentRow {
     pub heading_level: Option<i64>,
 }
 
-impl ZgFragmentRow {
+impl FragmentRow {
     fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get(0)?,
@@ -1530,7 +1530,7 @@ impl ZgFragmentRow {
 
 /// Recall filter pushed into fragment queries.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ZgFragmentFilter {
+pub struct FragmentFilter {
     /// File allow-list (`None` = no path selection; `Some([])` = no files).
     pub file_ids: Option<Vec<String>>,
     /// Group allow-list (force-track targeting).
@@ -1547,7 +1547,7 @@ pub struct ZgFragmentFilter {
 
 /// One ranked recall hit (rank assignment stays with the recall loop).
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZgScoredFragment {
+pub struct ScoredFragment {
     /// Fragment id.
     pub id: String,
     /// Owning file id.
@@ -1560,11 +1560,11 @@ pub struct ZgScoredFragment {
 type FragmentVectorRow = (String, String, Option<Vec<u8>>, Option<Vec<u8>>);
 
 /// Shared pushdown: file allow-list, symbol allow-lists, mtime window.
-/// `frag_alias`/`file_alias` qualify the joined `zg_fragments`/`zg_files`.
+/// `frag_alias`/`file_alias` qualify the joined `fragments`/`files`.
 fn append_fragment_filter(
     sql: &mut String,
     values: &mut Vec<rusqlite::types::Value>,
-    filter: &ZgFragmentFilter,
+    filter: &FragmentFilter,
     param: &mut usize,
 ) {
     use rusqlite::types::Value;

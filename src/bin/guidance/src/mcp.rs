@@ -13,11 +13,11 @@ use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::LazyNlp;
 use guidance_core::query::recall::run_recall;
 use guidance_core::query::strategy::FsmEngine;
-use guidance_core::sync_engine::SyncEngine;
-use guidance_core::zg_types::{
-    CodeSymbolType, SearchHit, SearchMatchedBy, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
-    ZgContent, ZgRange,
+use guidance_core::search_types::{
+    CodeSymbolType, FragmentContent, FragmentSpan, SearchHit, SearchMatchedBy, SearchPlan,
+    SearchPlanRoute, SearchPlanRouteMode,
 };
+use guidance_core::sync_engine::SyncEngine;
 use search_vector::GuidanceDb;
 use thiserror::Error;
 
@@ -334,28 +334,28 @@ fn matched_by_name(matched_by: &SearchMatchedBy) -> &'static str {
     }
 }
 
-fn range_suffix(range: &ZgRange) -> Option<String> {
+fn range_suffix(range: &FragmentSpan) -> Option<String> {
     match range {
-        ZgRange::Text {
+        FragmentSpan::Text {
             start_line,
             end_line,
             ..
         } => Some(format!("{start_line}-{end_line}")),
-        ZgRange::File
-        | ZgRange::Byte { .. }
-        | ZgRange::Page { .. }
-        | ZgRange::PageText { .. }
-        | ZgRange::PageRegion { .. } => None,
+        FragmentSpan::File
+        | FragmentSpan::Byte { .. }
+        | FragmentSpan::Page { .. }
+        | FragmentSpan::PageText { .. }
+        | FragmentSpan::PageRegion { .. } => None,
     }
 }
 
-fn evidence_text(content: &ZgContent) -> Option<String> {
+fn evidence_text(content: &FragmentContent) -> Option<String> {
     match content {
-        ZgContent::Text { text } => {
+        FragmentContent::Text { text } => {
             let first = text.lines().next().unwrap_or("").trim();
             (!first.is_empty()).then(|| truncate_chars(first, 200))
         }
-        ZgContent::Image { .. } => None,
+        FragmentContent::Image { .. } => None,
     }
 }
 
@@ -374,12 +374,12 @@ pub fn hit_title(hit: &SearchHit) -> String {
     for evidence in &hit.evidence {
         if let Some(metadata) = &evidence.metadata {
             match metadata {
-                guidance_core::zg_types::EntityMetadata::Code { symbol_name, .. } => {
+                guidance_core::search_types::EntityMetadata::Code { symbol_name, .. } => {
                     if let Some(name) = symbol_name {
                         return name.clone();
                     }
                 }
-                guidance_core::zg_types::EntityMetadata::Markdown { heading, .. } => {
+                guidance_core::search_types::EntityMetadata::Markdown { heading, .. } => {
                     if let Some(heading) = heading {
                         return heading.clone();
                     }

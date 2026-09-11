@@ -3,7 +3,7 @@
 //! convention.
 
 use super::*;
-use guidance_core::zg_types::{
+use guidance_core::search_types::{
     Entity, EntityMetadata, FileInfo, SearchHit, SearchHitEvidence, SearchPlanRouteMode,
 };
 
@@ -109,13 +109,13 @@ fn synthetic_hit() -> SearchHit {
         entity: Entity {
             id: "entity-1".to_string(),
             file_id: "file-1".to_string(),
-            range: ZgRange::Text {
+            range: FragmentSpan::Text {
                 start_line: 10,
                 end_line: 12,
                 start_offset: 0,
                 end_offset: 30,
             },
-            content: ZgContent::Text {
+            content: FragmentContent::Text {
                 text: "fn needle() {}".to_string(),
             },
             metadata: None,
@@ -133,13 +133,13 @@ fn synthetic_hit() -> SearchHit {
             index_status: None,
         },
         evidence: vec![SearchHitEvidence {
-            range: ZgRange::Text {
+            range: FragmentSpan::Text {
                 start_line: 10,
                 end_line: 10,
                 start_offset: 0,
                 end_offset: 14,
             },
-            content: ZgContent::Text {
+            content: FragmentContent::Text {
                 text: "fn needle() {}".to_string(),
             },
             metadata: Some(EntityMetadata::Code {
@@ -152,7 +152,7 @@ fn synthetic_hit() -> SearchHit {
                 modifiers: Vec::new(),
             }),
             is_entity: true,
-            path: guidance_core::zg_types::RecallPath::Fts,
+            path: guidance_core::search_types::RecallPath::Fts,
             route_id: None,
             query: None,
             rank: None,
@@ -160,7 +160,7 @@ fn synthetic_hit() -> SearchHit {
             forced: None,
         }],
         rank: 1,
-        score: guidance_core::zg_types::RrfScore::new(12.5),
+        score: guidance_core::search_types::RrfScore::new(12.5),
         matched_by: SearchMatchedBy::Fts,
         trace: None,
     }

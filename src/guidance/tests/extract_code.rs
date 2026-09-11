@@ -2,7 +2,7 @@
 //! metadata/scope/ranges, language symbols, outlines, remap, surrogates).
 
 use crate::extractor::{ChunkOptions, ExtractSource};
-use crate::zg_types::FileKind;
+use crate::search_types::FileKind;
 
 fn code_source(format: &str, text: &str) -> ExtractSource {
     ExtractSource {
@@ -65,7 +65,7 @@ fn typescript_metadata_scope_and_ranges() {
     assert_source_backed(&source, create);
     match &add.metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, doc, modifiers }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Function);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("add"));
             assert!(scope.is_none(), "{scope:?}");
             assert_eq!(node_type, "function_declaration");
@@ -83,7 +83,7 @@ fn typescript_metadata_scope_and_ranges() {
     }
     match &create.metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, doc, modifiers }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Function);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("create"));
             assert_eq!(scope.as_deref(), Some("Box"));
             assert_eq!(node_type, "method_definition");
@@ -110,7 +110,7 @@ fn language_specific_symbols_and_scopes() {
 
     match &named(&c, "Widget").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, doc, modifiers }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Class);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
             assert_eq!(symbol_name.as_deref(), Some("Widget"));
             assert!(scope.is_none());
             assert_eq!(node_type, "type_definition");
@@ -128,7 +128,7 @@ fn language_specific_symbols_and_scopes() {
     }
     match &named(&go, "Value").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, modifiers, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Function);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("Value"));
             assert_eq!(scope.as_deref(), Some("Widget"));
             assert_eq!(node_type, "method_declaration");
@@ -139,7 +139,7 @@ fn language_specific_symbols_and_scopes() {
     }
     match &named(&go, "Reader").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Interface);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Interface);
         }
         other => panic!("{other:?}"),
     }
@@ -151,7 +151,7 @@ fn language_specific_symbols_and_scopes() {
     }
     match &named(&python, "fetch").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, signature, modifiers, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Function);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("fetch"));
             assert_eq!(scope.as_deref(), Some("Service"));
             assert_eq!(signature.as_deref(), Some("async def fetch(value: str) -> str:"));
@@ -305,7 +305,7 @@ fn rust_struct_impl_and_functions() {
     let widget = named(&frags, "Widget");
     match &widget.metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, scope, node_type, doc, modifiers, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Class);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
             assert!(scope.is_none(), "{scope:?}");
             assert_eq!(node_type, "struct_item");
             assert_eq!(doc.as_deref(), Some("A widget.\n\nDetails."));
@@ -316,7 +316,7 @@ fn rust_struct_impl_and_functions() {
     let create = named(&frags, "create");
     match &create.metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, scope, signature, doc, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Function);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(scope.as_deref(), Some("Widget"));
             assert_eq!(signature.as_deref(), Some("pub fn create(value: i32) -> Self"));
             assert_eq!(doc.as_deref(), Some("Create one."));
@@ -336,14 +336,14 @@ fn java_and_cpp_smoke() {
     );
     match &named(&java, "Maker").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, doc, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Class);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
             assert_eq!(doc.as_deref(), Some("Makes things."));
         }
         other => panic!("{other:?}"),
     }
     match &named(&java, "create").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, scope, modifiers, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Function);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(scope.as_deref(), Some("Maker"));
             assert!(modifiers.contains(&"public".to_string()), "{modifiers:?}");
             assert!(modifiers.contains(&"static".to_string()), "{modifiers:?}");
@@ -358,7 +358,7 @@ fn java_and_cpp_smoke() {
     );
     match &named(&cpp, "Widget").metadata {
         Some(crate::extractor::FragmentMetadata::Code { symbol_type, .. }) => {
-            assert_eq!(*symbol_type, crate::zg_types::CodeSymbolType::Class);
+            assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
         }
         other => panic!("{other:?}"),
     }

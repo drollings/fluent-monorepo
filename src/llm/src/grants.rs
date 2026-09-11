@@ -1,6 +1,6 @@
 //! Workspace grants for remote embedding.
 //!
-//! A grant is an HMAC-signed document at `<root>/.zvec-grep/authorization.json`
+//! A grant is an HMAC-signed document at `<root>/.guidance/authorization.json`
 //! binding one remote target (provider/model/endpoint fingerprint) to one
 //! workspace. `has_grant` gates every remote call; without a stored grant
 //! the caller needs a one-shot `--allow-remote` or an approved elicitation —
@@ -118,13 +118,13 @@ impl RemoteEmbeddingAuthorizationStore {
         }
     }
 
-    /// Document path for a target: `<first-root>/.zvec-grep/authorization.json`.
+    /// Document path for a target: `<first-root>/.guidance/authorization.json`.
     pub fn grant_path(&self, target: &RemoteEmbeddingTarget) -> Result<PathBuf, GrantError> {
         let root = target
             .workspace_roots
             .first()
             .ok_or(GrantError::NoWorkspaceRoots)?;
-        Ok(root.join(".zvec-grep").join(GRANT_FILE))
+        Ok(root.join(".guidance").join(GRANT_FILE))
     }
 
     /// Whether a valid signed grant covers this exact target.
@@ -194,7 +194,7 @@ impl RemoteEmbeddingAuthorizationStore {
             signature,
         };
         for root in &target.workspace_roots {
-            let path = root.join(".zvec-grep").join(GRANT_FILE);
+            let path = root.join(".guidance").join(GRANT_FILE);
             self.with_document_write(&path, |document: &mut Document| {
                 document.grants.retain(|candidate| {
                     candidate.target_fingerprint != grant.target_fingerprint
@@ -212,7 +212,7 @@ impl RemoteEmbeddingAuthorizationStore {
     pub async fn revoke(&self, target: &RemoteEmbeddingTarget) -> Result<bool, GrantError> {
         let mut revoked = false;
         for root in &target.workspace_roots {
-            let path = root.join(".zvec-grep").join(GRANT_FILE);
+            let path = root.join(".guidance").join(GRANT_FILE);
             self.with_document_write(&path, |document: &mut Document| {
                 let before = document.grants.len();
                 document
@@ -228,7 +228,7 @@ impl RemoteEmbeddingAuthorizationStore {
 
     /// Remove every grant under one root. Returns the removal count.
     pub async fn revoke_all(&self, root: &Path) -> Result<usize, GrantError> {
-        let path = root.join(".zvec-grep").join(GRANT_FILE);
+        let path = root.join(".guidance").join(GRANT_FILE);
         let mut removed = 0;
         self.with_document_write(&path, |document: &mut Document| {
             removed = document.grants.len();

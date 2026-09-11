@@ -1,4 +1,4 @@
-//! zvec-grep value types + pure search helpers (P0 contracts, no I/O).
+//! Search value types + pure search helpers (P0 contracts, no I/O).
 //!
 //! Wire shapes mirror `src/engine/types.ts` kinds (`serde` renames carry the
 //! exact `"file"`/`"text"`/`"code"`/`"fts+vector"` tags). Pure helpers are
@@ -18,7 +18,7 @@ use thiserror::Error;
 /// Fragment range. `serde` tags carry the exact zvec `kind` strings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ZgRange {
+pub enum FragmentSpan {
     /// Whole-file range.
     File,
     /// Line/offset range.
@@ -71,7 +71,7 @@ pub enum ZgRange {
 /// Fragment content payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ZgContent {
+pub enum FragmentContent {
     /// UTF-8 text.
     Text {
         /// Fragment text.
@@ -260,9 +260,9 @@ pub struct Entity {
     /// Owning file id.
     pub file_id: String,
     /// Entity range.
-    pub range: ZgRange,
+    pub range: FragmentSpan,
     /// Entity content.
-    pub content: ZgContent,
+    pub content: FragmentContent,
     /// Entity metadata, if any.
     pub metadata: Option<EntityMetadata>,
 }
@@ -281,9 +281,9 @@ pub struct EntityFragment {
     /// Owning file id.
     pub file_id: String,
     /// Fragment range.
-    pub range: ZgRange,
+    pub range: FragmentSpan,
     /// Fragment content.
-    pub content: ZgContent,
+    pub content: FragmentContent,
     /// Fragment metadata, if any.
     pub metadata: Option<EntityMetadata>,
 }
@@ -512,9 +512,9 @@ pub struct SearchHitTrace {
 #[serde(rename_all = "camelCase")]
 pub struct SearchHitEvidence {
     /// Evidence range.
-    pub range: ZgRange,
+    pub range: FragmentSpan,
     /// Evidence content.
-    pub content: ZgContent,
+    pub content: FragmentContent,
     /// Evidence metadata, if any.
     pub metadata: Option<EntityMetadata>,
     /// Whether the fragment is the group major.
@@ -638,12 +638,12 @@ pub struct StorageHit {
 }
 
 // ---------------------------------------------------------------------------
-// Errors (zvec ENGINE.STORAGE codes, preserved verbatim)
+// Errors (GUIDANCE ENGINE.STORAGE codes)
 // ---------------------------------------------------------------------------
 
 /// Machine-readable group/storage failure codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ZgErrorCode {
+pub enum FragmentErrorCode {
     /// Fragment belongs to a different file.
     FragmentFileMismatch,
     /// Duplicate fragment id within a file.
@@ -652,21 +652,21 @@ pub enum ZgErrorCode {
     InvalidFragmentGroup,
 }
 
-impl ZgErrorCode {
-    /// The `ZVEC_GREP.ENGINE.STORAGE.*` code string.
+impl FragmentErrorCode {
+    /// The `GUIDANCE.ENGINE.STORAGE.*` code string.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::FragmentFileMismatch => "ZVEC_GREP.ENGINE.STORAGE.FRAGMENT_FILE_MISMATCH",
-            Self::DuplicateFragmentId => "ZVEC_GREP.ENGINE.STORAGE.DUPLICATE_FRAGMENT_ID",
-            Self::InvalidFragmentGroup => "ZVEC_GREP.ENGINE.STORAGE.INVALID_FRAGMENT_GROUP",
+            Self::FragmentFileMismatch => "GUIDANCE.ENGINE.STORAGE.FRAGMENT_FILE_MISMATCH",
+            Self::DuplicateFragmentId => "GUIDANCE.ENGINE.STORAGE.DUPLICATE_FRAGMENT_ID",
+            Self::InvalidFragmentGroup => "GUIDANCE.ENGINE.STORAGE.INVALID_FRAGMENT_GROUP",
         }
     }
 }
 
 /// Group-discipline failure (per-file isolation: failure is stored data).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ZgError {
+pub enum FragmentError {
     /// Fragment belongs to a different file.
     #[error("entity fragment belongs to the wrong file: {context}")]
     FragmentFileMismatch {
@@ -687,14 +687,14 @@ pub enum ZgError {
     },
 }
 
-impl ZgError {
+impl FragmentError {
     /// Machine-readable code for the failure.
     #[must_use]
-    pub fn code(&self) -> ZgErrorCode {
+    pub fn code(&self) -> FragmentErrorCode {
         match self {
-            Self::FragmentFileMismatch { .. } => ZgErrorCode::FragmentFileMismatch,
-            Self::DuplicateFragmentId { .. } => ZgErrorCode::DuplicateFragmentId,
-            Self::InvalidFragmentGroup { .. } => ZgErrorCode::InvalidFragmentGroup,
+            Self::FragmentFileMismatch { .. } => FragmentErrorCode::FragmentFileMismatch,
+            Self::DuplicateFragmentId { .. } => FragmentErrorCode::DuplicateFragmentId,
+            Self::InvalidFragmentGroup { .. } => FragmentErrorCode::InvalidFragmentGroup,
         }
     }
 }
@@ -738,12 +738,12 @@ pub fn public_entity_ids(fragments: &[EntityFragment]) -> Vec<String> {
 pub fn validate_fragment_groups(
     file_id: &str,
     fragments: &[EntityFragment],
-) -> Result<(), ZgError> {
+) -> Result<(), FragmentError> {
     let mut ids = HashSet::new();
     let mut groups: HashMap<&str, Vec<&EntityFragment>> = HashMap::new();
     for fragment in fragments {
         if fragment.file_id != file_id {
-            return Err(ZgError::FragmentFileMismatch {
+            return Err(FragmentError::FragmentFileMismatch {
                 context: format!(
                     "fileId={file_id} fragmentId={} fragmentFileId={}",
                     fragment.id, fragment.file_id
@@ -751,7 +751,7 @@ pub fn validate_fragment_groups(
             });
         }
         if !ids.insert(fragment.id.as_str()) {
-            return Err(ZgError::DuplicateFragmentId {
+            return Err(FragmentError::DuplicateFragmentId {
                 context: format!("fileId={file_id} fragmentId={}", fragment.id),
             });
         }
@@ -762,7 +762,7 @@ pub fn validate_fragment_groups(
     for (group_id, group) in &groups {
         let major_count = group.iter().filter(|f| f.id == *group_id).count();
         if major_count != 1 {
-            return Err(ZgError::InvalidFragmentGroup {
+            return Err(FragmentError::InvalidFragmentGroup {
                 context: format!(
                     "fileId={file_id} group={group_id} majorCount={major_count}"
                 ),
@@ -932,18 +932,18 @@ pub trait WorkspaceIndexStorage: Send + Sync {
         query: &str,
         filter: &StorageFilter,
         limit: usize,
-    ) -> Result<Vec<StorageHit>, ZgError>;
+    ) -> Result<Vec<StorageHit>, FragmentError>;
     /// Ranked vector recall over a query embedding.
     fn search_vector(
         &self,
         embedding: &[f32],
         filter: &StorageFilter,
         limit: usize,
-    ) -> Result<Vec<StorageHit>, ZgError>;
+    ) -> Result<Vec<StorageHit>, FragmentError>;
     /// Entity + file lookup by public entity id.
-    fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, ZgError>;
+    fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, FragmentError>;
     /// All indexed files.
-    fn list_files(&self) -> Result<Vec<FileInfo>, ZgError>;
+    fn list_files(&self) -> Result<Vec<FileInfo>, FragmentError>;
 }
 
 /// Per-language extraction adapter. One impl per language (P2); the
@@ -958,5 +958,5 @@ pub trait LanguageAdapter: Send + Sync {
 }
 
 #[cfg(test)]
-#[path = "../tests/zg_types.rs"]
+#[path = "../tests/search_types.rs"]
 mod tests;

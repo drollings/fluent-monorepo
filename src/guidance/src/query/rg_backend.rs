@@ -1,7 +1,7 @@
 //! L0 minimal: capability-gated managed-`rg` subprocess (P1).
 //!
 //! Always `--json --line-number --column --with-filename --color never`
-//! with hard excludes (`!.git/**`, `!.zvec-grep/**`), NDJSON match-only
+//! with hard excludes (`!.git/**`, `!.guidance/**`), NDJSON match-only
 //! parsing, and limit early-kill. Queries run as literals
 //! (`--fixed-strings`; full patterns arrive in P5). Independent of index
 //! state from day one; never fused (exhaustive/standalone, as in zvec).
@@ -125,7 +125,7 @@ impl RgBackend {
             "--glob",
             "!.git/**",
             "--glob",
-            "!.zvec-grep/**",
+            "!.guidance/**",
         ]);
         if options.context_before > 0 {
             command.args(["--before-context", &options.context_before.to_string()]);

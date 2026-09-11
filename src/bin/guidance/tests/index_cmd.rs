@@ -46,7 +46,7 @@ fn fragment_ingestion_populates_fts_and_skips_image_noise() {
         .search_fts(
             "ingested_anchor",
             5,
-            &search_vector::db::ZgFragmentFilter::default(),
+            &search_vector::db::FragmentFilter::default(),
         )
         .expect("fts");
     assert!(!hits.is_empty(), "ingested text must be FTS-visible");
@@ -77,7 +77,7 @@ fn fragment_ingest_skips_unchanged_files_on_second_pass() {
         .search_fts(
             "steady_one",
             5,
-            &search_vector::db::ZgFragmentFilter::default(),
+            &search_vector::db::FragmentFilter::default(),
         )
         .expect("fts");
     assert!(!hits.is_empty(), "skipped files must stay FTS-visible");
@@ -138,13 +138,13 @@ fn missing_path_is_a_named_error() {
 
 fn propagation_db() -> GuidanceDb {
     let db = GuidanceDb::open_in_memory().expect("db");
-    // zg_files rows seed the hydration's known-file set (paths resolve
+    // `files` rows seed the hydration's known-file set (paths resolve
     // against indexed files, never rows alone).
     for (id, path) in
         [("a", "/repo/a.rs"), ("b", "/repo/b.rs"), ("c", "/repo/c.rs")]
     {
         db.replace_file(
-            &search_vector::db::ZgFileRecord {
+            &search_vector::db::FileRecord {
                 id: id.to_string(),
                 absolute_path: path.to_string(),
                 relative_path: path.to_string(),
@@ -232,7 +232,7 @@ fn ingest_reports_changed_and_purges_deleted() {
     // Purged rows are gone from every table (fragments + graph).
     let db = GuidanceDb::open(&db_path).expect("open");
     let files: Vec<String> = db
-        .zg_list_files()
+        .list_files()
         .expect("files")
         .into_iter()
         .map(|f| f.absolute_path)

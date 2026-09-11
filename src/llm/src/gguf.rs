@@ -322,7 +322,7 @@ pub struct GgufEmbedResult {
 }
 
 const DEFAULT_PARALLELISM_CAP: usize = 8;
-const MODEL_CACHE_ENVIRONMENT_VARIABLE: &str = "ZVEC_GREP_MODEL_CACHE";
+const MODEL_CACHE_ENVIRONMENT_VARIABLE: &str = "GUIDANCE_MODEL_CACHE";
 const GGUF_MAGIC: [u8; 4] = *b"GGUF";
 
 struct LoadedState {
@@ -695,7 +695,7 @@ async fn ensure_contexts(
                 return Err(error);
             }
             eprintln!(
-                "zvec-grep warning: llama.cpp GPU embedding context failed ({error}), falling back to CPU."
+                "guidance warning: llama.cpp GPU embedding context failed ({error}), falling back to CPU."
             );
             state.using_cpu_fallback = true;
             dispose_loaded_runtime(state).await;
@@ -827,7 +827,7 @@ fn default_model_cache_dir() -> PathBuf {
 }
 
 fn default_home() -> PathBuf {
-    if let Ok(home) = std::env::var("ZVEC_GREP_HOME") {
+    if let Ok(home) = std::env::var("GUIDANCE_HOME") {
         if !home.trim().is_empty() {
             return PathBuf::from(home);
         }
@@ -835,16 +835,16 @@ fn default_home() -> PathBuf {
     #[cfg(unix)]
     if let Ok(home) = std::env::var("HOME") {
         if !home.trim().is_empty() {
-            return PathBuf::from(home).join(".zvec-grep");
+            return PathBuf::from(home).join(".guidance");
         }
     }
     #[cfg(windows)]
     if let Ok(profile) = std::env::var("USERPROFILE") {
         if !profile.trim().is_empty() {
-            return PathBuf::from(profile).join(".zvec-grep");
+            return PathBuf::from(profile).join(".guidance");
         }
     }
-    PathBuf::from(".zvec-grep")
+    PathBuf::from(".guidance")
 }
 
 fn format_text_for_embedding(text: &str, purpose: EmbedPurpose, format: GgufFormat) -> String {
@@ -947,7 +947,7 @@ fn validate_gguf_file(path: &Path, model_uri: &str) -> Result<(), EmbeddingError
 
 fn report_warning(reporter: &DownloadProgressReporter<'_>, message: &str) {
     if !reporter.warning(message) {
-        eprintln!("zvec-grep warning: {message}");
+        eprintln!("guidance warning: {message}");
     }
 }
 

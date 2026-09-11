@@ -26,12 +26,12 @@ pub fn metadata_lines(metadata: &Option<FragmentMetadata>) -> Vec<String> {
             ..
         } => {
             let type_name = match symbol_type {
-                crate::zg_types::CodeSymbolType::Module => "module",
-                crate::zg_types::CodeSymbolType::Class => "class",
-                crate::zg_types::CodeSymbolType::Interface => "interface",
-                crate::zg_types::CodeSymbolType::Function => "function",
-                crate::zg_types::CodeSymbolType::Value => "value",
-                crate::zg_types::CodeSymbolType::Alias => "alias",
+                crate::search_types::CodeSymbolType::Module => "module",
+                crate::search_types::CodeSymbolType::Class => "class",
+                crate::search_types::CodeSymbolType::Interface => "interface",
+                crate::search_types::CodeSymbolType::Function => "function",
+                crate::search_types::CodeSymbolType::Value => "value",
+                crate::search_types::CodeSymbolType::Alias => "alias",
             };
             let mut lines = vec![match symbol_name {
                 Some(name) => format!("symbol: {type_name} {name}"),

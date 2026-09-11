@@ -1,8 +1,8 @@
 use super::*;
-use crate::zg_constants::RRF_K;
+use crate::search_constants::RRF_K;
 
-#[path = "zg_parity/mod.rs"]
-pub mod zg_parity;
+#[path = "parity/mod.rs"]
+pub mod parity;
 
 // Ported P0 contract tests: RRF tie-break + N-route fusion (zvec
 // `fuseCandidates` semantics), `extractSymbolNames` + `symbolNameFromToken`,
@@ -14,8 +14,8 @@ fn fragment(id: &str, group: Option<&str>) -> EntityFragment {
         id: id.to_string(),
         group: group.map(str::to_string),
         file_id: "file-a".to_string(),
-        range: ZgRange::File,
-        content: ZgContent::Text {
+        range: FragmentSpan::File,
+        content: FragmentContent::Text {
             text: "fn f() {}".to_string(),
         },
         metadata: None,
@@ -71,7 +71,7 @@ fn fusion_ignores_empty_lists_and_dedupes_within_a_list() {
 }
 
 #[test]
-fn matched_by_provenance_matches_zvec_default() {
+fn matched_by_provenance_matches_default() {
     assert_eq!(derive_matched_by(&[RecallPath::Fts]), SearchMatchedBy::Fts);
     assert_eq!(
         derive_matched_by(&[RecallPath::Vector]),
@@ -151,14 +151,14 @@ fn group_validation_rejects_wrong_file() {
         ..fragment("x", None)
     };
     let err = validate_fragment_groups("file-a", &[stray]).unwrap_err();
-    assert_eq!(err.code(), ZgErrorCode::FragmentFileMismatch);
+    assert_eq!(err.code(), FragmentErrorCode::FragmentFileMismatch);
 }
 
 #[test]
 fn group_validation_rejects_duplicate_ids() {
     let fragments = vec![fragment("dup", None), fragment("dup", None)];
     let err = validate_fragment_groups("file-a", &fragments).unwrap_err();
-    assert_eq!(err.code(), ZgErrorCode::DuplicateFragmentId);
+    assert_eq!(err.code(), FragmentErrorCode::DuplicateFragmentId);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn group_validation_requires_exactly_one_major() {
     // No major: group members without the id==group fragment.
     let orphan = vec![fragment("entity-a#1", Some("entity-a"))];
     let err = validate_fragment_groups("file-a", &orphan).unwrap_err();
-    assert_eq!(err.code(), ZgErrorCode::InvalidFragmentGroup);
+    assert_eq!(err.code(), FragmentErrorCode::InvalidFragmentGroup);
     // Two groups each with their own major are fine.
     let two_groups = vec![
         fragment("entity-a", Some("entity-a")),
@@ -204,7 +204,7 @@ fn public_entity_ids_collect_majors_and_ungrouped() {
 
 #[test]
 fn range_and_content_kinds_round_trip() {
-    let range = ZgRange::Text {
+    let range = FragmentSpan::Text {
         start_line: 1,
         end_line: 2,
         start_offset: 0,
@@ -212,16 +212,16 @@ fn range_and_content_kinds_round_trip() {
     };
     let json = serde_json::to_string(&range).expect("serialize");
     assert!(json.contains("\"kind\":\"text\""));
-    let back: ZgRange = serde_json::from_str(&json).expect("deserialize");
+    let back: FragmentSpan = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, range);
 
-    let content = ZgContent::Image {
+    let content = FragmentContent::Image {
         data: vec![0x89, 0x50],
         format: ImageFormat::Png,
     };
     let json = serde_json::to_string(&content).expect("serialize");
     assert!(json.contains("\"kind\":\"image\""));
-    let back: ZgContent = serde_json::from_str(&json).expect("deserialize");
+    let back: FragmentContent = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, content);
 }
 
@@ -262,7 +262,7 @@ fn cjk_bigrams_expand_runs_without_dictionary() {
 }
 
 #[test]
-fn search_plan_value_types_carry_zvec_wire_shape() {
+fn search_plan_value_types_carry_wire_shape() {
     let plan = SearchPlan {
         routes: vec![SearchPlanRoute {
             mode: SearchPlanRouteMode::Fts,

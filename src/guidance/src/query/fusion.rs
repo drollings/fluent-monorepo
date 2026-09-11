@@ -28,8 +28,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::zg_constants::RRF_K;
-use crate::zg_types::{
+use crate::search_constants::RRF_K;
+use crate::search_types::{
     derive_matched_by, public_entity_id, Entity, FileInfo, RecallPath, RrfScore, SearchFinalTrace,
     SearchHit, SearchHitEvidence, SearchHitTrace, SearchRecallTrace, SearchStageTrace,
 };
@@ -38,7 +38,7 @@ use crate::zg_types::{
 #[derive(Debug, Clone)]
 pub struct RecallEvidence {
     /// Hit fragment.
-    pub fragment: crate::zg_types::EntityFragment,
+    pub fragment: crate::search_types::EntityFragment,
     /// Recall path.
     pub path: RecallPath,
     /// Route id.
@@ -68,8 +68,8 @@ pub struct RecallCandidate {
     pub recall: Vec<SearchRecallTrace>,
     /// Rank-ordered evidence (sorted at materialization).
     pub evidence: Vec<RecallEvidence>,
-    /// Fused RRF score (ordinal composite — see [`crate::zg_types::RrfScore`]).
-    pub score: crate::zg_types::RrfScore,
+    /// Fused RRF score (ordinal composite — see [`crate::search_types::RrfScore`]).
+    pub score: crate::search_types::RrfScore,
     /// 1-based fused rank (0 until fused).
     pub rank: usize,
     /// Force-append flag.
@@ -212,7 +212,7 @@ pub fn build_hit(candidate: &RecallCandidate, limit: usize, trace: bool) -> Sear
 pub struct TimingCollector {
     start: Instant,
     last: Instant,
-    entries: Vec<crate::zg_types::TimingEntry>,
+    entries: Vec<crate::search_types::TimingEntry>,
 }
 
 impl TimingCollector {
@@ -232,7 +232,7 @@ impl TimingCollector {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last).as_secs_f64() * 1000.0;
         self.last = now;
-        self.entries.push(crate::zg_types::TimingEntry {
+        self.entries.push(crate::search_types::TimingEntry {
             name: name.to_string(),
             duration_ms: elapsed,
             count: None,
@@ -241,9 +241,9 @@ impl TimingCollector {
 
     /// Finish with a `search_total` stamp and take the entries.
     #[must_use]
-    pub fn finish(mut self) -> Vec<crate::zg_types::TimingEntry> {
+    pub fn finish(mut self) -> Vec<crate::search_types::TimingEntry> {
         let total = self.start.elapsed().as_secs_f64() * 1000.0;
-        self.entries.push(crate::zg_types::TimingEntry {
+        self.entries.push(crate::search_types::TimingEntry {
             name: "search_total".to_string(),
             duration_ms: total,
             count: None,

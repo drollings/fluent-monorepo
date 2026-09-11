@@ -87,7 +87,7 @@ fn one_parse_serves_many_hits_in_a_file() {
 
 #[test]
 fn file_budget_is_100() {
-    assert_eq!(RG_STRUCTURE_ENRICH_FILE_LIMIT, 100);
+    assert_eq!(STRUCTURE_ENRICH_FILE_LIMIT, 100);
 }
 
 #[test]

@@ -2,13 +2,13 @@
 //! diagnostics. Mirrors `scanner-utils.test.mjs` discovery cases.
 
 use super::*;
-use crate::zg_types::FileKind;
+use crate::search_types::FileKind;
 use tempfile::TempDir;
 
 fn tree() -> TempDir {
     let dir = TempDir::new().expect("tempdir");
     let root = dir.path();
-    for d in ["src", "node_modules", ".zvec-grep", "assets"] {
+    for d in ["src", "node_modules", ".guidance", "assets"] {
         std::fs::create_dir_all(root.join(d)).expect("mkdir");
     }
     std::fs::write(root.join("src/main.rs"), "fn main() {}\n").expect("write");
@@ -19,7 +19,7 @@ fn tree() -> TempDir {
     std::fs::write(root.join("src/app.zip"), vec![0x50u8, 0x4b]).expect("write");
     std::fs::write(root.join("src/Cargo.lock"), "lock").expect("write");
     std::fs::write(root.join("node_modules/dep.js"), "dep").expect("write");
-    std::fs::write(root.join(".zvec-grep/manifest.json"), "{}").expect("write");
+    std::fs::write(root.join(".guidance/manifest.json"), "{}").expect("write");
     std::fs::write(root.join("assets/logo.jpg"), vec![0xffu8, 0xd8]).expect("write");
     let mut blob = vec![0x00u8; 3000];
     blob.extend(vec![b'a'; 7000]);

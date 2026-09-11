@@ -18,14 +18,14 @@ use crate::query::glob::{
     matches_file_selection, normalize_path_pattern, path_pattern_matches,
     resolve_file_type_patterns, FileTypePatterns,
 };
-use crate::zg_constants::{
+use crate::search_constants::{
     recall_target_candidate_count, DEFAULT_LIMIT, RECALL_GROWTH_FACTOR, RECALL_INITIAL_DEPTH,
     RECALL_MAX_DEPTH,
 };
-use crate::zg_types::{
+use crate::search_types::{
     extract_symbol_names, public_entity_id, CodeSymbolType, Entity, EntityFragment, FileInfo,
     RecallPath, ResolvedSearchPlan, ResolvedSearchPlanRoute, RrfScore, SearchHit, SearchPlan,
-    SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry, ZgError,
+    SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry, FragmentError,
 };
 use thiserror::Error;
 
@@ -52,10 +52,10 @@ pub enum RecallError {
     InvalidModifiedTimeRange,
     /// Unknown file-type name.
     #[error(transparent)]
-    UnknownFileType(#[from] crate::query::glob::ZgGlobError),
+    UnknownFileType(#[from] crate::query::glob::GlobError),
     /// Storage failure.
     #[error(transparent)]
-    Storage(#[from] ZgError),
+    Storage(#[from] FragmentError),
     /// Database failure.
     #[error("database error: {0}")]
     Db(String),
@@ -67,15 +67,15 @@ pub enum RecallError {
     EntityNotFound(String),
 }
 
-/// Engine error codes, preserved verbatim for trace parity.
+/// Engine error codes for trace diagnostics.
 pub mod codes {
-    /// `ZVEC_GREP.ENGINE.SEARCH_PLAN.EMPTY_ROUTES`.
-    pub const EMPTY_ROUTES: &str = "ZVEC_GREP.ENGINE.SEARCH_PLAN.EMPTY_ROUTES";
-    /// `ZVEC_GREP.ENGINE.SEARCH_PLAN.EMPTY_ROUTE_QUERY`.
-    pub const EMPTY_ROUTE_QUERY: &str = "ZVEC_GREP.ENGINE.SEARCH_PLAN.EMPTY_ROUTE_QUERY";
-    /// `ZVEC_GREP.ENGINE.SEARCH_PLAN.INVALID_MODIFIED_TIME_RANGE`.
+    /// `GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTES`.
+    pub const EMPTY_ROUTES: &str = "GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTES";
+    /// `GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTE_QUERY`.
+    pub const EMPTY_ROUTE_QUERY: &str = "GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTE_QUERY";
+    /// `GUIDANCE.ENGINE.SEARCH_PLAN.INVALID_MODIFIED_TIME_RANGE`.
     pub const INVALID_MODIFIED_TIME_RANGE: &str =
-        "ZVEC_GREP.ENGINE.SEARCH_PLAN.INVALID_MODIFIED_TIME_RANGE";
+        "GUIDANCE.ENGINE.SEARCH_PLAN.INVALID_MODIFIED_TIME_RANGE";
 }
 
 impl RecallError {
@@ -838,11 +838,11 @@ pub fn diagnose_entity(
     };
     let plan = SearchPlan {
         routes: vec![
-            crate::zg_types::SearchPlanRoute {
+            crate::search_types::SearchPlanRoute {
                 mode: SearchPlanRouteMode::Fts,
                 query: query.to_string(),
             },
-            crate::zg_types::SearchPlanRoute {
+            crate::search_types::SearchPlanRoute {
                 mode: SearchPlanRouteMode::Vector,
                 query: query.to_string(),
             },
@@ -879,11 +879,11 @@ pub fn diagnose_file(
     let search = run_recall(
         &SearchPlan {
             routes: vec![
-                crate::zg_types::SearchPlanRoute {
+                crate::search_types::SearchPlanRoute {
                     mode: SearchPlanRouteMode::Fts,
                     query: query.to_string(),
                 },
-                crate::zg_types::SearchPlanRoute {
+                crate::search_types::SearchPlanRoute {
                     mode: SearchPlanRouteMode::Vector,
                     query: query.to_string(),
                 },

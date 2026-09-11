@@ -1,6 +1,6 @@
 //! Ported from zvec-grep `resolution.ts` semantics
 //! (`resolveEmbeddingReference`): the model-reference resolution order
-//! flag > existing index > `ZVEC_GREP_EMBEDDING` > global default > builtin
+//! flag > existing index > `GUIDANCE_EMBEDDING` > global default > builtin
 //! local fallback. An environment value naming no catalog entry is a hard
 //! error, never a silent fallback.
 
@@ -26,7 +26,7 @@ fn explicit_wins_over_everything() {
     opts.existing = Some("local/bge-small-en-v1.5".to_string());
     opts.global_default = Some("local/all-minilm-l6-v2".to_string());
     opts.environment = Some(HashMap::from([(
-        "ZVEC_GREP_EMBEDDING".to_string(),
+        "GUIDANCE_EMBEDDING".to_string(),
         "local/gte-modernbert-base".to_string(),
     )]));
     opts.fallback = Some("local/potion-code-16m-v2".to_string());
@@ -41,7 +41,7 @@ fn existing_index_beats_environment_and_defaults() {
     let mut opts = options();
     opts.existing = Some("local/bge-small-en-v1.5".to_string());
     opts.environment = Some(HashMap::from([(
-        "ZVEC_GREP_EMBEDDING".to_string(),
+        "GUIDANCE_EMBEDDING".to_string(),
         "local/gte-modernbert-base".to_string(),
     )]));
     opts.global_default = Some("local/all-minilm-l6-v2".to_string());
@@ -56,7 +56,7 @@ fn existing_index_beats_environment_and_defaults() {
 fn environment_beats_global_default_and_fallback() {
     let mut opts = options();
     opts.environment = Some(HashMap::from([(
-        "ZVEC_GREP_EMBEDDING".to_string(),
+        "GUIDANCE_EMBEDDING".to_string(),
         "  local/gte-modernbert-base  ".to_string(),
     )]));
     opts.global_default = Some("local/all-minilm-l6-v2".to_string());
@@ -71,7 +71,7 @@ fn environment_beats_global_default_and_fallback() {
 fn blank_environment_value_is_ignored() {
     let mut opts = options();
     opts.environment = Some(HashMap::from([(
-        "ZVEC_GREP_EMBEDDING".to_string(),
+        "GUIDANCE_EMBEDDING".to_string(),
         "   ".to_string(),
     )]));
     opts.fallback = Some("local/potion-code-16m-v2".to_string());
@@ -85,7 +85,7 @@ fn blank_environment_value_is_ignored() {
 fn invalid_environment_reference_is_a_hard_error() {
     let mut opts = options();
     opts.environment = Some(HashMap::from([(
-        "ZVEC_GREP_EMBEDDING".to_string(),
+        "GUIDANCE_EMBEDDING".to_string(),
         "bogus/model".to_string(),
     )]));
     opts.fallback = Some("local/potion-code-16m-v2".to_string());
@@ -124,7 +124,7 @@ fn every_resolution_result_names_a_catalog_entry() {
     ] {
         let mut opts = options();
         opts.environment = Some(HashMap::from([(
-            "ZVEC_GREP_EMBEDDING".to_string(),
+            "GUIDANCE_EMBEDDING".to_string(),
             reference.to_string(),
         )]));
         let resolved = resolve_embedding_reference(&opts).unwrap();

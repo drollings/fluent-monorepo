@@ -13,7 +13,7 @@ use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::{default_en_pipeline, ingest_text_file};
 use guidance_core::query::recall::{RecallStorage, run_recall};
 use guidance_core::query::strategy::QueryIntent;
-use guidance_core::zg_types::{FileInfo, SearchPlan, StorageFilter};
+use guidance_core::search_types::{FileInfo, SearchPlan, StorageFilter};
 use search_vector::GuidanceDb;
 
 const PROBES: &[(&str, &str, &str)] = &[
