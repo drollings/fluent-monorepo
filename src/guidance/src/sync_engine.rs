@@ -54,6 +54,8 @@ struct SyncContext {
 
 impl SyncEngine {
     pub fn new(guidance_dir: PathBuf, source_dir: PathBuf) -> Self {
+        let guidance_dir = absolute_or(guidance_dir);
+        let source_dir = absolute_or(source_dir);
         let workspace_root = guidance_dir
             .parent()
             .map_or_else(|| source_dir.clone(), Path::to_path_buf);
@@ -67,6 +69,8 @@ impl SyncEngine {
     }
 
     pub fn with_parser(guidance_dir: PathBuf, source_dir: PathBuf, ast_parser: AstParser) -> Self {
+        let guidance_dir = absolute_or(guidance_dir);
+        let source_dir = absolute_or(source_dir);
         let workspace_root = guidance_dir
             .parent()
             .map_or_else(|| source_dir.clone(), Path::to_path_buf);
@@ -94,11 +98,16 @@ impl SyncEngine {
         source_path: &Path,
         config: &GenConfig,
     ) -> Result<GuidanceDoc, SyncEngineError> {
-        let source = common_core::io::read_to_string_err(source_path)?;
+        // Absolutize up front: discovery may hand us a relative path
+        // while `source_dir`/`workspace_root` are absolute (or the
+        // reverse) — relativization must compare like with like, or
+        // `meta` carries the raw prefix spelling (`./lib.rs`, `..lib`).
+        let source_path = absolute_or(source_path.to_path_buf());
+        let source = common_core::io::read_to_string_err(&source_path)?;
 
         let module_rel = source_path
             .strip_prefix(&self.source_dir)
-            .unwrap_or(source_path);
+            .unwrap_or(&source_path);
         let module_name = module_rel
             .to_string_lossy()
             .strip_suffix(&format!(
@@ -113,13 +122,13 @@ impl SyncEngine {
 
         let source_path_str = source_path
             .strip_prefix(&self.workspace_root)
-            .unwrap_or(source_path)
+            .unwrap_or(&source_path)
             .to_string_lossy()
             .to_string();
 
         let mut doc = self
             .ast_parser
-            .parse_file(source_path, &source)
+            .parse_file(&source_path, &source)
             .map_err(|e| SyncEngineError::Parse(e.to_string()))?;
 
         doc.meta.module = module_name.as_str().into();
@@ -127,7 +136,7 @@ impl SyncEngine {
 
         let mut ctx = SyncContext {
             doc,
-            source_path: source_path.to_path_buf(),
+            source_path,
             source,
             config: config.clone(),
             source_dir: self.source_dir.clone(),
@@ -296,14 +305,25 @@ impl SyncEngine {
     }
 }
 
+/// Lexical absolutization (no I/O, no symlink resolution): relative
+/// roots compare equal with the absolute paths discovery yields, so
+/// `strip_prefix` relativization and `meta` derivation agree no matter
+/// how the caller spelled the workspace. Falls back to the input when
+/// the working directory is unreadable — never a construction failure.
+fn absolute_or(path: PathBuf) -> PathBuf {
+    std::path::absolute(&path).unwrap_or(path)
+}
+
 /// Compute the guidance JSON path for a source file: the path relative to
 /// `source_dir`, suffixed `.json`, under `guidance_dir/src`. The single shared
 /// implementation behind both `SyncEngine::guidance_json_path` and the
 /// pipeline step.
 fn guidance_json_path(source_path: &Path, source_dir: &Path, guidance_dir: &Path) -> PathBuf {
-    let relative = source_path.strip_prefix(source_dir).unwrap_or(source_path);
+    let source_path = absolute_or(source_path.to_path_buf());
+    let source_dir = absolute_or(source_dir.to_path_buf());
+    let relative = source_path.strip_prefix(&source_dir).unwrap_or(&source_path);
     let json_name = format!("{}.json", relative.display());
-    guidance_dir.join("src").join(&json_name)
+    absolute_or(guidance_dir.to_path_buf()).join("src").join(&json_name)
 }
 
 #[derive(Debug, Clone)]
@@ -419,5 +439,47 @@ mod tests {
 
         let source_after = std::fs::read_to_string(&zig_file).expect("read");
         assert!(source_after.contains("pub fn hello() void {}"));
+    }
+}
+
+
+#[cfg(test)]
+mod regen_determinism_tests {
+    use super::*;
+    use fluent_wvr_testutil::tempdir;
+
+    #[test]
+    fn test_regen_is_byte_identical_and_mtime_neutral() {
+        // The M3 propagation contract: reprocessing an unchanged file
+        // (e.g. via a fresh pool-regen engine, as the single-file path
+        // does) must neither change bytes nor bump the mtime — otherwise
+        // every sync would flap downstream fingerprints.
+        let dir = tempdir();
+        let source_dir = dir.path().join("src");
+        std::fs::create_dir(&source_dir).expect("mkdir");
+        let file = source_dir.join("m.rs");
+        std::fs::write(&file, "pub fn f() {}\n").expect("write");
+        let guidance_dir = dir.path().join(".guidance");
+
+        let mut first = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
+        first.gen(&file).expect("first gen");
+        let json = guidance_dir.join("src").join("m.rs.json");
+        let bytes = std::fs::read(&json).expect("read");
+        let mtime = std::fs::metadata(&json).expect("stat").modified().expect("mtime");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        // Fresh engine, as the pool path constructs per regen.
+        let mut second = SyncEngine::with_parser(
+            guidance_dir.clone(),
+            source_dir.clone(),
+            AstParser::new(),
+        );
+        second.gen(&file).expect("second gen");
+        assert_eq!(std::fs::read(&json).expect("read"), bytes, "regen must be byte-identical");
+        assert_eq!(
+            std::fs::metadata(&json).expect("stat").modified().expect("mtime"),
+            mtime,
+            "identical regen must not bump the mtime"
+        );
     }
 }

@@ -307,3 +307,98 @@ fn test_nodes_preserves_insertion_order() {
 
     assert_eq!(g.nodes(), &["c", "a", "b"]);
 }
+
+#[test]
+fn test_unregister_drops_edges_both_directions() {
+    // Linear chain a -x-> b -y-> c (b provides y, c needs y).
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &[], &["x"]).unwrap();
+    g.register(&"b", &["x"], &["y"]).unwrap();
+    g.register(&"c", &["y"], &[]).unwrap();
+    assert_eq!(g.dependents_of(&"a").len(), 2);
+
+    assert!(g.unregister(&"b"));
+    assert!(!g.contains(&"b"));
+    assert_eq!(g.len(), 2);
+    assert_eq!(g.deps_of(&"b"), None);
+    assert_eq!(g.provides_of(&"b"), None);
+    // Forward reachability is gone: nothing depends through b anymore.
+    assert!(g.dependents_of(&"a").is_empty());
+    // Backward reachability is gone too: b no longer resolves c's dep.
+    assert!(g.unresolved_deps().contains(&"y"));
+    // Survivors keep their own rows untouched.
+    assert_eq!(g.deps_of(&"c"), Some(&["y"][..]));
+    assert_eq!(g.nodes(), &["a", "c"]);
+}
+
+#[test]
+fn test_unregister_absent_is_noop() {
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &[], &["x"]).unwrap();
+
+    assert!(!g.unregister(&"missing"));
+    assert_eq!(g.len(), 1);
+    assert!(g.contains(&"a"));
+    assert_eq!(g.dependents_of(&"missing"), Vec::<&str>::new());
+}
+
+#[test]
+fn test_reregister_after_unregister_succeeds() {
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &[], &["x"]).unwrap();
+    g.register(&"b", &["x"], &["y"]).unwrap();
+
+    assert!(g.unregister(&"b"));
+    // Re-registering the same node must not see a stale DuplicateNode.
+    g.register(&"b", &["x"], &["z"]).unwrap();
+    assert!(g.contains(&"b"));
+    assert_eq!(g.provides_of(&"b"), Some(&["z"][..]));
+    assert!(g.dependents_of(&"a").contains(&"b"));
+}
+
+#[test]
+fn test_unregister_cycle_member_stays_answerable() {
+    // a provides x needs y; b provides y needs x: a real cycle.
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &["y"], &["x"]).unwrap();
+    g.register(&"b", &["x"], &["y"]).unwrap();
+    // Reachability must terminate despite the cycle.
+    assert!(g.dependents_of(&"a").contains(&"b"));
+
+    assert!(g.unregister(&"a"));
+    assert!(g.dependents_of(&"b").is_empty());
+    // Ordering over the remainder still works.
+    assert_eq!(g.topo_sort().unwrap(), vec!["b"]);
+}
+
+#[test]
+fn test_direct_dependents_is_single_hop() {
+    // Chain a -x-> b -y-> c plus a second direct dependent d -x-> a.
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &[], &["x"]).unwrap();
+    g.register(&"b", &["x"], &["y"]).unwrap();
+    g.register(&"c", &["y"], &[]).unwrap();
+    g.register(&"d", &["x"], &[]).unwrap();
+
+    assert_eq!(g.direct_dependents(&"a"), vec!["b", "d"]);
+    assert_eq!(g.direct_dependents(&"b"), vec!["c"]);
+    assert!(g.direct_dependents(&"c").is_empty());
+}
+
+#[test]
+fn test_direct_dependents_absent_and_self() {
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &["x"], &["x"]).unwrap();
+    assert!(g.direct_dependents(&"missing").is_empty());
+    // Self-loop: the node itself is never its own direct dependent.
+    assert!(g.direct_dependents(&"a").is_empty());
+}
+
+#[test]
+fn test_direct_dependents_survive_unregister() {
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"a", &[], &["x"]).unwrap();
+    g.register(&"b", &["x"], &[]).unwrap();
+    assert!(g.unregister(&"b"));
+    assert!(g.direct_dependents(&"a").is_empty());
+}

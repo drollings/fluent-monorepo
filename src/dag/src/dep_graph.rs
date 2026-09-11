@@ -129,6 +129,55 @@ impl<K: Eq + Hash + Clone> DependencyGraph<K> {
         Ok(())
     }
 
+    /// Remove a node and every edge referencing it: the node's own dep
+    /// row, its entries in both inverted indices, and any index entry
+    /// left with no members (so [`unresolved_deps`](Self::unresolved_deps)
+    /// observes the removal). Other nodes' dep rows are untouched —
+    /// their now-unsatisfied assets surface via `unresolved_deps`.
+    ///
+    /// Returns `true` when the node was present. Removing an absent
+    /// node is a no-op returning `false`; queries on absent nodes keep
+    /// their empty/`None`/`false` semantics.
+    pub fn unregister(&mut self, node: &K) -> bool {
+        let Some(deps) = self.deps.remove(node) else {
+            return false;
+        };
+        let provides = self.provides.remove(node).unwrap_or_default();
+        self.nodes.retain(|n| n != node);
+        for dep in &deps {
+            scrub_index(&mut self.provides_to_dependents, dep, node);
+        }
+        for prov in &provides {
+            scrub_index(&mut self.asset_to_providers, prov, node);
+        }
+        true
+    }
+
+    /// Direct (single-hop) dependents of `node`: registered nodes, other
+    /// than `node` itself, that depend on an asset `node` provides.
+    /// Sorted for deterministic rendering. Empty for absent nodes.
+    /// Depth bound for query-time closure (transitive reachability stays
+    /// in [`dependents_of`](Self::dependents_of)).
+    pub fn direct_dependents(&self, node: &K) -> Vec<K>
+    where
+        K: Ord,
+    {
+        let mut out: Vec<K> = Vec::new();
+        if let Some(provides) = self.provides.get(node) {
+            for provided in provides {
+                if let Some(dependents) = self.provides_to_dependents.get(provided) {
+                    for dependent in dependents {
+                        if dependent != node && !out.contains(dependent) {
+                            out.push(dependent.clone());
+                        }
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
     /// Returns `true` if `node` has been registered.
     pub fn contains(&self, node: &K) -> bool {
         self.deps.contains_key(node)
@@ -444,6 +493,18 @@ pub(crate) fn kahn_sort<K: Ord + Clone + Hash>(
     }
 
     Ok(order)
+}
+
+/// Drop `node` from the member list under `asset`, removing the asset
+/// key itself when no members remain (a lingering empty entry would
+/// read as "provided" to [`DependencyGraph::unresolved_deps`]).
+fn scrub_index<K: Eq + Hash + Clone>(index: &mut HashMap<K, Vec<K>>, asset: &K, node: &K) {
+    if let Some(members) = index.get_mut(asset) {
+        members.retain(|m| m != node);
+        if members.is_empty() {
+            index.remove(asset);
+        }
+    }
 }
 
 impl<K: Eq + Hash + Clone> Default for DependencyGraph<K> {

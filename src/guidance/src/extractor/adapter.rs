@@ -889,6 +889,18 @@ fn import_specifier_texts(family: AdapterFamily, node: NodeView<'_>) -> Vec<Stri
             .into_iter()
             .collect();
     }
+    // JS/TS re-export (`export ... from "mod"`): only the `source`
+    // field is an edge. A plain `export function/class/const` has no
+    // source — its body strings (literals, never modules) must not
+    // become edges.
+    if family == AdapterFamily::JsTs && node.kind() == "export_statement" {
+        return node
+            .field("source")
+            .map(|source| unquote(source.text()))
+            .filter(|text| !text.is_empty())
+            .into_iter()
+            .collect();
+    }
     // JS/TS — only the module source string is an edge.
     if family == AdapterFamily::JsTs {
         let mut stack = vec![node];

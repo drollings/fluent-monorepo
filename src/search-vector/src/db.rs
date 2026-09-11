@@ -17,6 +17,8 @@ pub enum VectorDbError {
     Db(#[from] DbError),
     #[error("embedding dimension mismatch: expected {expected}, got {got}")]
     DimensionMismatch { expected: usize, got: usize },
+    #[error("serialization error: {0}")]
+    Serialization(String),
 }
 
 #[derive(Debug, Clone)]
@@ -137,12 +139,26 @@ impl GuidanceDb {
                      INSERT INTO zg_fragments_fts(rowid, content_text, symbol_name, cjk_text)
                      VALUES (new.rowid, new.content_text, new.symbol_name, new.cjk_text);
                  END;
-                 CREATE TABLE IF NOT EXISTS fragment_lemmas (
-                     fragment_id TEXT NOT NULL,
-                     lemma TEXT NOT NULL,
-                     confidence REAL NOT NULL DEFAULT 1.0,
-                     PRIMARY KEY (fragment_id, lemma));
-                 CREATE INDEX IF NOT EXISTS idx_lemmas_lemma ON fragment_lemmas(lemma);",
+                CREATE TABLE IF NOT EXISTS fragment_lemmas (
+                    fragment_id TEXT NOT NULL,
+                    lemma TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    PRIMARY KEY (fragment_id, lemma));
+                CREATE INDEX IF NOT EXISTS idx_lemmas_lemma ON fragment_lemmas(lemma);
+                CREATE TABLE IF NOT EXISTS graph_edges (
+                    importer TEXT NOT NULL,
+                    specifier TEXT NOT NULL,
+                    resolved TEXT,
+                    PRIMARY KEY (importer, specifier));
+                CREATE INDEX IF NOT EXISTS idx_graph_edges_importer ON graph_edges(importer);
+                CREATE INDEX IF NOT EXISTS idx_graph_edges_resolved ON graph_edges(resolved);
+                CREATE TABLE IF NOT EXISTS graph_symbols (
+                    name TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    calls_json TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (name, file));
+                CREATE INDEX IF NOT EXISTS idx_graph_symbols_name ON graph_symbols(name);
+                CREATE INDEX IF NOT EXISTS idx_graph_symbols_file ON graph_symbols(file);",
             )
             .map_err(DbError::from)?;
             ensure_file_status_columns(conn).map_err(DbError::from)?;
@@ -1008,7 +1024,13 @@ impl GuidanceDb {
     pub fn drop_index(&self) -> Result<(), VectorDbError> {
         self.store
             .transaction(|tx| {
-                for table in ["fragment_lemmas", "zg_fragments", "zg_files"] {
+                for table in [
+                    "fragment_lemmas",
+                    "zg_fragments",
+                    "zg_files",
+                    "graph_edges",
+                    "graph_symbols",
+                ] {
                     fluent_db::query::execute(
                         tx,
                         &format!("DELETE FROM {table}"),
@@ -1020,8 +1042,18 @@ impl GuidanceDb {
             .map_err(VectorDbError::from)
     }
 
-    /// Delete a file record and all its fragments/lemmas (P2 diff `deleted`).
+    /// Delete a file record and all its fragments/lemmas (P2 diff `deleted`),
+    /// plus its persisted graph inputs (edges it imports, edges resolved
+    /// to it, symbols it defines).
     pub fn delete_file(&self, file_id: &str) -> Result<(), VectorDbError> {
+        let path: Option<String> = self
+            .store
+            .query_row(
+                "SELECT absolute_path FROM zg_files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .map_err(VectorDbError::from)?;
         self.store
             .transaction(|tx| {
                 fluent_db::query::execute(
@@ -1039,8 +1071,106 @@ impl GuidanceDb {
                     "DELETE FROM zg_files WHERE id = ?1",
                     rusqlite::params![file_id],
                 )?;
+                if let Some(path) = &path {
+                    fluent_db::query::execute(
+                        tx,
+                        "DELETE FROM graph_edges WHERE importer = ?1 OR resolved = ?1",
+                        rusqlite::params![path],
+                    )?;
+                    fluent_db::query::execute(
+                        tx,
+                        "DELETE FROM graph_symbols WHERE file = ?1",
+                        rusqlite::params![path],
+                    )?;
+                }
                 Ok(())
             })
+            .map_err(VectorDbError::from)
+    }
+
+    /// Replace one file's persisted graph inputs (delete + insert in one
+    /// transaction). `specifiers` are raw import texts; `resolved` stays
+    /// NULL here — specifiers resolve at hydration time against the
+    /// workspace file set, never per file. Same-name definitions
+    /// (overloads) share one row with unioned calls.
+    pub fn replace_file_graph(
+        &self,
+        importer: &str,
+        specifiers: &[String],
+        symbols: &[(String, Vec<String>)],
+    ) -> Result<(), VectorDbError> {
+        let mut merged_names: Vec<String> = Vec::new();
+        let mut merged_calls: HashMap<String, Vec<String>> = HashMap::new();
+        for (name, calls) in symbols {
+            let entry = merged_calls.entry(name.clone()).or_insert_with(|| {
+                merged_names.push(name.clone());
+                Vec::new()
+            });
+            for call in calls {
+                if !entry.contains(call) {
+                    entry.push(call.clone());
+                }
+            }
+        }
+        let mut calls_json: HashMap<String, String> = HashMap::new();
+        for name in &merged_names {
+            let json = serde_json::to_string(&merged_calls[name])
+                .map_err(|e| VectorDbError::Serialization(e.to_string()))?;
+            calls_json.insert(name.clone(), json);
+        }
+        self.store
+            .transaction(|tx| {
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM graph_edges WHERE importer = ?1",
+                    rusqlite::params![importer],
+                )?;
+                fluent_db::query::execute(
+                    tx,
+                    "DELETE FROM graph_symbols WHERE file = ?1",
+                    rusqlite::params![importer],
+                )?;
+                for specifier in specifiers {
+                    fluent_db::query::execute(
+                        tx,
+                        "INSERT INTO graph_edges (importer, specifier, resolved)
+                         VALUES (?1, ?2, NULL)",
+                        rusqlite::params![importer, specifier],
+                    )?;
+                }
+                for name in &merged_names {
+                    fluent_db::query::execute(
+                        tx,
+                        "INSERT INTO graph_symbols (name, file, calls_json)
+                         VALUES (?1, ?2, ?3)",
+                        rusqlite::params![name, importer, calls_json[name]],
+                    )?;
+                }
+                Ok(())
+            })
+            .map_err(VectorDbError::from)
+    }
+
+    /// All persisted import edges, ordered for deterministic hydration.
+    pub fn graph_edge_rows(&self) -> Result<Vec<GraphEdgeRow>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT importer, specifier, resolved FROM graph_edges
+                 ORDER BY importer, specifier",
+                &[],
+                GraphEdgeRow::from_row,
+            )
+            .map_err(VectorDbError::from)
+    }
+
+    /// All persisted symbol rows, ordered for deterministic hydration.
+    pub fn graph_symbol_rows(&self) -> Result<Vec<GraphSymbolRow>, VectorDbError> {
+        self.store
+            .query_rows(
+                "SELECT name, file, calls_json FROM graph_symbols ORDER BY file, name",
+                &[],
+                GraphSymbolRow::from_row,
+            )
             .map_err(VectorDbError::from)
     }
 
@@ -1085,6 +1215,53 @@ impl GuidanceDb {
                 fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| row.get(0))
             })
             .map_err(VectorDbError::from)
+    }
+}
+
+/// One persisted import edge: the importing file, the raw specifier text,
+/// and the resolved target (NULL until hydration resolves it against the
+/// workspace file set).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphEdgeRow {
+    /// Importing file (absolute path; the graph node key).
+    pub importer: String,
+    /// Raw specifier text.
+    pub specifier: String,
+    /// Resolved target file, if any.
+    pub resolved: Option<String>,
+}
+
+impl GraphEdgeRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            importer: row.get(0)?,
+            specifier: row.get(1)?,
+            resolved: row.get(2)?,
+        })
+    }
+}
+
+/// One persisted symbol site: the defined name, its file, and the raw
+/// names it calls. The empty name marks an unnamed scope's calls (kept
+/// for call edges, never a definition).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphSymbolRow {
+    /// Defined symbol name ("" = unnamed scope).
+    pub name: String,
+    /// Defining file (absolute path).
+    pub file: String,
+    /// Raw callee names.
+    pub calls: Vec<String>,
+}
+
+impl GraphSymbolRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let raw: String = row.get(2)?;
+        Ok(Self {
+            name: row.get(0)?,
+            file: row.get(1)?,
+            calls: serde_json::from_str(&raw).unwrap_or_default(),
+        })
     }
 }
 
@@ -1453,6 +1630,10 @@ mod file_status;
 #[cfg(test)]
 #[path = "../tests/fragments.rs"]
 mod fragments;
+
+#[cfg(test)]
+#[path = "../tests/graph_edges.rs"]
+mod graph_edges;
 
 #[cfg(test)]
 #[path = "../tests/node_sync.rs"]

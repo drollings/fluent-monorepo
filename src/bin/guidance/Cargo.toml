@@ -17,6 +17,14 @@ path = "tests/mcp_contract.rs"
 name = "rg_cli"
 path = "tests/rg_cli.rs"
 
+[[test]]
+name = "sync_propagate"
+path = "tests/sync_propagate.rs"
+
+[[test]]
+name = "explain_cli"
+path = "tests/explain_cli.rs"
+
 [dependencies]
 common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }

@@ -135,3 +135,113 @@ fn missing_path_is_a_named_error() {
     let error = run_index(&workspace, &json_dir, Some("/no/such/file.rs")).expect_err("must fail");
     assert!(error.contains("path not found"), "{error}");
 }
+
+fn propagation_db() -> GuidanceDb {
+    let db = GuidanceDb::open_in_memory().expect("db");
+    // zg_files rows seed the hydration's known-file set (paths resolve
+    // against indexed files, never rows alone).
+    for (id, path) in
+        [("a", "/repo/a.rs"), ("b", "/repo/b.rs"), ("c", "/repo/c.rs")]
+    {
+        db.replace_file(
+            &search_vector::db::ZgFileRecord {
+                id: id.to_string(),
+                absolute_path: path.to_string(),
+                relative_path: path.to_string(),
+                root_path: "/repo".to_string(),
+                size_bytes: 10,
+                last_modified_time: 10,
+                kind: Some("code".to_string()),
+                format: "rust".to_string(),
+                content_hash: None,
+                index_status: Some("indexed".to_string()),
+                fail_count: 0,
+                last_error: None,
+            },
+            &[],
+            &[],
+        )
+        .expect("file row");
+    }
+    // b declares `mod a` (resolves to /repo/a.rs at hydration).
+    db.replace_file_graph("/repo/a.rs", &[], &[("alpha".to_string(), Vec::new())])
+        .expect("rows");
+    db.replace_file_graph(
+        "/repo/b.rs",
+        &["mod:a".to_string()],
+        &[("beta".to_string(), vec!["alpha".to_string()])],
+    )
+    .expect("rows");
+    db.replace_file_graph("/repo/c.rs", &[], &[("gamma".to_string(), Vec::new())])
+        .expect("rows");
+    db
+}
+
+fn roots() -> Vec<String> {
+    vec!["/repo".to_string()]
+}
+
+#[test]
+fn affected_expands_changed_through_dependents() {
+    let db = propagation_db();
+    let mut affected = affected_for_sync(&db, &["/repo/a.rs".to_string()], &[], &roots());
+    affected.sort();
+    assert_eq!(affected, vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]);
+}
+
+#[test]
+fn affected_expands_deleted_seeds() {
+    let db = propagation_db();
+    let mut affected = affected_for_sync(&db, &[], &["/repo/a.rs".to_string()], &roots());
+    affected.sort();
+    assert_eq!(affected, vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]);
+}
+
+#[test]
+fn affected_leaf_change_touches_only_itself() {
+    let db = propagation_db();
+    let affected = affected_for_sync(&db, &["/repo/c.rs".to_string()], &[], &roots());
+    assert_eq!(affected, vec!["/repo/c.rs".to_string()]);
+}
+
+#[test]
+fn affected_empty_seeds_is_empty() {
+    let db = propagation_db();
+    assert!(affected_for_sync(&db, &[], &[], &roots()).is_empty());
+}
+
+#[test]
+fn ingest_reports_changed_and_purges_deleted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("a.rs"), "pub fn seed_fn() {}\n").expect("write");
+    std::fs::write(dir.path().join("gone.rs"), "pub fn gone_fn() {}\n").expect("write");
+    // Dotfile db: its -wal/-shm sidecars skip selection (the db must not
+    // ingest itself when it lives inside the roots).
+    let db_path = dir.path().join(".frag.db");
+    let srcs = vec![dir.path().to_path_buf()];
+    let first = ingest_workspace_fragments(&db_path, dir.path(), &srcs).expect("ingest");
+    assert_eq!(first.changed.len(), 2);
+    assert!(first.deleted.is_empty());
+
+    std::fs::remove_file(dir.path().join("gone.rs")).expect("delete");
+    let second = ingest_workspace_fragments(&db_path, dir.path(), &srcs).expect("ingest");
+    assert!(second.changed.is_empty(), "nothing changed: {:?}", second.changed);
+    assert_eq!(second.deleted.len(), 1);
+    assert!(second.deleted[0].ends_with("gone.rs"));
+
+    // Purged rows are gone from every table (fragments + graph).
+    let db = GuidanceDb::open(&db_path).expect("open");
+    let files: Vec<String> = db
+        .zg_list_files()
+        .expect("files")
+        .into_iter()
+        .map(|f| f.absolute_path)
+        .collect();
+    assert!(!files.iter().any(|f| f.ends_with("gone.rs")), "{files:?}");
+    assert!(
+        !db.graph_symbol_rows()
+            .expect("symbols")
+            .iter()
+            .any(|r| r.file.ends_with("gone.rs"))
+    );
+}

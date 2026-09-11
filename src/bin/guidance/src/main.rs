@@ -545,17 +545,14 @@ fn load_project_config(workspace: &Path) -> config::ProjectConfig {
 #[allow(clippy::too_many_arguments)]
 async fn cmd_explain(
     query: &str,
-    guidance_dir: &str,
+    _guidance_dir: &str,
     db_path: &str,
-    _workspace: &str,
+    workspace: &str,
     limit: usize,
     _no_llm: bool,
     _filter: &str,
     memory: Option<&MemoryBridge>,
 ) {
-    let gdir = PathBuf::from(guidance_dir);
-    let db = PathBuf::from(db_path);
-
     // Pre-fetch memory context for injection into the system prompt
     let memory_context = if let Some(bridge) = memory {
         bridge.prefetch_context(query).await
@@ -563,111 +560,72 @@ async fn cmd_explain(
         String::new()
     };
 
-    let mut results: Vec<search_vector::db::SearchResult> = Vec::new();
+    // Fused recall (the M1 port: the legacy `hybrid_search` + member-JSON
+    // fallback legs are gone — explain reads the same fused index as
+    // `search --fuse`). Any recall failure degrades to empty, never a
+    // hard error — the empty state below is the stable contract.
+    let hits = match search::fused_hits(query, workspace, db_path, limit) {
+        Ok(hits) => hits,
+        Err(error) => {
+            eprintln!("Warning: explain recall failed ({error})");
+            Vec::new()
+        }
+    };
 
-    if db.exists() {
-        if let Ok(gdb) = GuidanceDb::open(&db) {
-            if let Ok(hybrid) = gdb.hybrid_search(query, None, limit) {
-                results = hybrid;
+    // Query-time closure expansion over the hydrated graph (no rebuild):
+    // top-N fused files seed the depth-1 expansion; context renders as
+    // an additive section with provenance (the hits table is never
+    // perturbed). Hydration failure degrades to hits only.
+    let anchors = search::anchor_files(
+        &hits,
+        guidance_core::graph_index::CLOSURE_ANCHOR_FILES,
+    );
+    let mut edges: Vec<guidance_core::graph_index::ContextEdge> = Vec::new();
+    if !anchors.is_empty() {
+        let roots = vec![workspace.to_string()];
+        match GuidanceDb::open(Path::new(db_path))
+            .map_err(|error| error.to_string())
+            .and_then(|db| index_cmd::hydrated_graph(&db, &roots))
+        {
+            Ok(graph) => {
+                edges = graph.expand_shallow(&anchors);
+                // Table-dedup: context names only files the table does
+                // not already cover — the budget pays for new files,
+                // never repeats (sweep assumption, pinned by test).
+                let covered: std::collections::HashSet<&str> = hits
+                    .iter()
+                    .map(|hit| hit.file.absolute_path.as_str())
+                    .collect();
+                edges.retain(|edge| !covered.contains(edge.file.as_str()));
+            }
+            Err(error) => {
+                eprintln!("Warning: explain expansion failed ({error}); hits only");
             }
         }
     }
 
-    if results.is_empty() {
-        let src_dir = gdir.join("src");
-        if src_dir.is_dir() {
-            let lower_query = query.to_lowercase();
-            let tokens: Vec<&str> = query.split_whitespace().collect();
-            collect_json_results(&src_dir, &lower_query, &tokens, &mut results);
-        }
-    }
+    let rows = search::build_explain_rows(&hits);
+    let context =
+        search::build_context_lines(&edges, search::EXPLAIN_CONTEXT_BUDGET, workspace);
 
-    results.truncate(limit);
-
-    println!("## Explain: {query}");
+    print!("{}", search::render_explain_table(query, &rows, &context));
     if !memory_context.is_empty() {
-        println!();
+        // Memory context renders after the table (legacy order placed it
+        // before results — declared move, keeps one header).
         println!("### Memory Context");
         println!("{memory_context}");
-    }
-    println!();
-    if results.is_empty() {
-        println!("No results found.");
-        return;
-    }
-    println!("| Name | Source | Score |");
-    println!("|------|--------|-------|");
-    for r in &results {
-        println!("| {} | {} | {:.2} |", r.name, r.source, r.similarity);
     }
 
     // Sync turn with memory plugin after synthesis
     if let Some(bridge) = memory {
         let assistant_output = format!(
             "Explain: {query}\n\nResults:\n{}",
-            results
-                .iter()
+            rows.iter()
                 .map(|r| format!("- {} ({})", r.name, r.source))
                 .collect::<Vec<_>>()
                 .join("\n")
         );
         bridge.sync_turn(query, &assistant_output).await;
-    }
-}
-
-fn collect_json_results(
-    dir: &Path,
-    lower_query: &str,
-    tokens: &[&str],
-    results: &mut Vec<search_vector::db::SearchResult>,
-) {
-    for (_path, doc) in walk_guidance_docs(dir) {
-        for member in &doc.members {
-            let name_lower = member.name.as_str().to_lowercase();
-            let sig_lower = member
-                .signature
-                .as_ref()
-                .map(|s| s.as_str().to_lowercase())
-                .unwrap_or_default();
-            let comment_lower = member
-                .comment
-                .as_ref()
-                .map(|c| c.as_str().to_lowercase())
-                .unwrap_or_default();
-
-            let exact = name_lower == *lower_query;
-            let name_match = name_lower.contains(lower_query);
-            let token_match = tokens.iter().any(|t| {
-                let tl = t.to_lowercase();
-                name_lower.contains(&tl) || sig_lower.contains(&tl) || comment_lower.contains(&tl)
-            });
-
-            if exact {
-                results.push(search_vector::db::SearchResult {
-                    id: 0,
-                    name: member.name.as_str().to_string(),
-                    source: doc.meta.source.as_str().to_string(),
-                    signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
-                    similarity: 1.0,
-                });
-            } else if name_match {
-                results.push(search_vector::db::SearchResult {
-                    id: 0,
-                    name: member.name.as_str().to_string(),
-                    source: doc.meta.source.as_str().to_string(),
-                    signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
-                    similarity: 0.8,
-                });
-            } else if token_match {
-                results.push(search_vector::db::SearchResult {
-                    id: 0,
-                    name: member.name.as_str().to_string(),
-                    source: doc.meta.source.as_str().to_string(),
-                    signature: member.signature.as_ref().map(|s| s.as_str().to_string()),
-                    similarity: 0.5,
-                });
-            }
-        }
     }
 }
 
@@ -754,7 +712,6 @@ async fn cmd_sync(
 ) {
     let workspace_path = PathBuf::from(workspace);
     let guidance_dir = PathBuf::from(json_dir);
-    let db = PathBuf::from(db_path);
     let cfg = load_project_config(&workspace_path);
 
     if dry_run {
@@ -853,17 +810,95 @@ async fn cmd_sync(
         }
 
         println!("Syncing {total_files} total files ({stale_files} stale)...");
-        if generated > 0 {
-            println!("Generated {generated} files.");
-        }
 
         if !no_db && !dry_run {
+            // Fragment ingestion first: its change gate reports the
+            // fingerprint-changed set (plus files missing on disk) that
+            // seeds dependent propagation below.
+            let existing_dirs: Vec<PathBuf> =
+                src_dirs.iter().filter(|dir| dir.is_dir()).cloned().collect();
+            let frag_stats = match index_cmd::ingest_workspace_fragments(
+                Path::new(db_path),
+                &workspace_path,
+                &existing_dirs,
+            ) {
+                Ok(stats) => {
+                    println!(
+                        "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
+                        stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
+                    );
+                    stats
+                }
+                Err(e) => {
+                    eprintln!("Warning: fragment ingestion failed: {e}");
+                    index_cmd::FragmentIngestStats::default()
+                }
+            };
+            // Propagation: seeds (changed + deleted) expand through the
+            // hydrated dependents closure; affected files re-process via
+            // the existing single-file regen path (forced, so
+            // dependency-derived state reconverges even when the
+            // dependent's own bytes are unchanged). Deleted files drop
+            // their JSON sidecars with the existing deleter.
+            if !frag_stats.changed.is_empty() || !frag_stats.deleted.is_empty() {
+                let roots: Vec<String> = existing_dirs
+                    .iter()
+                    .map(|dir| dir.to_string_lossy().into_owned())
+                    .collect();
+                let affected = match GuidanceDb::open(Path::new(db_path)) {
+                    Ok(db) => index_cmd::affected_for_sync(
+                        &db,
+                        &frag_stats.changed,
+                        &frag_stats.deleted,
+                        &roots,
+                    ),
+                    Err(error) => {
+                        eprintln!("Warning: graph hydration failed ({error}); re-processing seeds only");
+                        let mut seeds = frag_stats.changed.clone();
+                        seeds.extend(frag_stats.deleted.iter().cloned());
+                        seeds.sort();
+                        seeds.dedup();
+                        seeds
+                    }
+                };
+                if !affected.is_empty() {
+                    let pool = runtime::ast_pool();
+                    for path in &affected {
+                        let candidate = PathBuf::from(path);
+                        if !candidate.is_file() {
+                            continue;
+                        }
+                        let ext =
+                            candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        if !walk::SOURCE_EXTENSIONS.contains(&ext) {
+                            continue;
+                        }
+                        regen_single_file(
+                            &pool,
+                            candidate,
+                            &existing_dirs,
+                            &workspace_path,
+                            &guidance_dir,
+                            verbose,
+                        )
+                        .await;
+                        generated += 1;
+                    }
+                }
+                for prefix in &frag_stats.deleted {
+                    remove_sidecars(&guidance_dir, &existing_dirs, Path::new(prefix));
+                }
+            }
+            if generated > 0 {
+                println!("Generated {generated} files.");
+            }
+
             let json_src = guidance_dir.join("src");
             if json_src.is_dir() {
                 match runtime::db_pool()
                     .submit(runtime::DbSyncPayload {
                         json_dir: json_src,
-                        db_path: db,
+                        db_path: PathBuf::from(db_path),
                     })
                     .await
                 {
@@ -877,21 +912,13 @@ async fn cmd_sync(
                     }
                 }
             }
-            // Fragment ingestion (FTS + lemmas; embeddings need a backend):
-            // populates the `zg_*` index the fused shell queries.
-            match index_cmd::ingest_workspace_fragments(
-                Path::new(db_path),
-                &workspace_path,
-                &src_dirs.iter().filter(|dir| dir.is_dir()).cloned().collect::<Vec<_>>(),
-            ) {
-                Ok(stats) => println!(
-                    "Ingested {} files ({} fragments, {} unchanged skipped, {} images skipped, {} failed) to {db_path}",
-                    stats.files, stats.fragments, stats.skipped_unchanged, stats.skipped_images, stats.failed
-                ),
-                Err(e) => eprintln!("Warning: fragment ingestion failed: {e}"),
+            println!("Sync complete.");
+        } else {
+            if generated > 0 {
+                println!("Generated {generated} files.");
             }
+            println!("Sync complete.");
         }
-        println!("Sync complete.");
     }
 
     if watch {

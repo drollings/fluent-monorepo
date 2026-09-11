@@ -14,8 +14,11 @@ use guidance_core::query::recall::run_recall;
 use guidance_core::query::rg_backend::{RgBackend, RgOptions};
 use guidance_core::query::strategy::FsmEngine;
 use guidance_core::query::structure_enrich::{enrich_hits, EnrichedRgHit};
+use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
 use guidance_core::query_engine::{OutputFormat, QueryEngine};
-use guidance_core::zg_types::{CodeSymbolType, SearchPlan, SearchPlanRoute, SearchPlanRouteMode};
+use guidance_core::zg_types::{
+    CodeSymbolType, SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
+};
 use search_vector::GuidanceDb;
 
 /// Recall route selection. At most one non-default mode flag may be set
@@ -124,6 +127,12 @@ pub fn build_search_plan(
 
 /// MCP cap: fused/CLI limits clamp to 50 results.
 pub const MAX_LIMIT: usize = 50;
+
+/// Explain context budget (max `### Context` lines): calibrated by the
+/// M4c sweep — 12 is the smallest cap with full marginal gain on the
+/// calibration split (uncapped/12: +0.923; 10: +0.769; 8: +0.615;
+/// 5: +0.385; 3: +0.231; seeded distractors absent at every cap).
+pub const EXPLAIN_CONTEXT_BUDGET: usize = 12;
 
 /// CLI default limit when `--limit` is absent and the mode is not L0
 /// (today's CLI default, preserved).
@@ -351,8 +360,198 @@ pub fn run_search(
     }
 }
 
+/// Fused recall hits for programmatic consumers (the explain port):
+/// the same plan/storage/nlp assembly as the Fuse CLI route
+/// (`build_search_plan` + [`run_recall`]), no rendering. `run_search`
+/// keeps its own assembly untouched so search output stays
+/// byte-identical; the shared core is `run_recall`, reused here, never
+/// reimplemented.
+pub fn fused_hits(
+    query: &str,
+    workspace: &str,
+    db_path: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    let db_file = PathBuf::from(db_path);
+    if !db_file.exists() {
+        return Err(format!(
+            "index not found at {db_path} (run `guidance index` first)"
+        ));
+    }
+    let db = match GuidanceDb::open(&db_file) {
+        Ok(db) => db,
+        Err(error) => return Err(format!("cannot open index at {db_path}: {error}")),
+    };
+    let cfg =
+        guidance_core::config::load_config(std::path::Path::new(workspace)).unwrap_or_default();
+    let embedder = crate::embed::embedder_from_config(&cfg);
+    let storage = GuidanceDbStorage::new(&db);
+    let plan = build_search_plan(query, SearchMode::Fuse, limit, false, false, &[], &[]);
+    let nlp = default_en_pipeline();
+    match run_recall(&plan, &storage, embedder.as_deref(), nlp.as_ref()) {
+        Ok(output) => Ok(output.hits),
+        Err(error) => Err(format!("search failed: {error}")),
+    }
+}
+
+/// Top-N distinct fused files (hit order) seeding the closure.
+/// Pure; the cap is [`CLOSURE_ANCHOR_FILES`](guidance_core::graph_index::CLOSURE_ANCHOR_FILES).
+#[must_use]
+pub fn anchor_files(hits: &[SearchHit], count: usize) -> Vec<String> {
+    let mut anchors = Vec::new();
+    for hit in hits {
+        let path = hit.file.absolute_path.clone();
+        if !anchors.contains(&path) {
+            anchors.push(path);
+        }
+        if anchors.len() >= count {
+            break;
+        }
+    }
+    anchors
+}
+
+/// Build explain rows: one per fused hit, rank order. The table carries
+/// hits only — expansion never perturbs it (additive default); context
+/// renders separately below. Pure.
+#[must_use]
+pub fn build_explain_rows(hits: &[SearchHit]) -> Vec<ExplainRow> {
+    hits
+        .iter()
+        .map(|hit| {
+            // File-level fragments carry no symbol metadata, so the
+            // shared title rule falls back to the entity id (the
+            // absolute path). Render those as basenames — CLI-only
+            // fallback, the MCP title rule itself stays untouched.
+            let title = crate::mcp::hit_title(hit);
+            let name = if title == hit.file.absolute_path {
+                basename_of(&hit.file.relative_path)
+            } else {
+                title
+            };
+            ExplainRow {
+                name,
+                source: hit.file.relative_path.clone(),
+                score: hit.score,
+            }
+        })
+        .collect()
+}
+
+/// Grouped context provenance: one line per (file, anchor, direction),
+/// families merged. Keeps the builder below within type-complexity bounds.
+type ContextGroup<'a> = (
+    (&'a str, &'a str, ContextDirection),
+    Vec<(ContextFamily, &'a str)>,
+);
+
+/// Build ranked context lines from depth-1 expansion edges: one line
+/// per (file, anchor, direction), families merged (`import "s", call
+/// "c"`) so provenance stays complete without doubling lines. Sorted
+/// edge order, capped at `cap` lines. Pure.
+#[must_use]
+pub fn build_context_lines(
+    edges: &[ContextEdge],
+    cap: usize,
+    workspace: &str,
+) -> Vec<String> {
+    // Group by (file, anchor, direction), merging families in sort order.
+    let mut groups: Vec<ContextGroup<'_>> = Vec::new();
+    for edge in edges {
+        let key = (edge.file.as_str(), edge.anchor.as_str(), edge.direction);
+        match groups.iter_mut().find(|(group, _)| *group == key) {
+            Some((_, members)) => members.push((edge.family, edge.via.as_str())),
+            None => groups.push((key, vec![(edge.family, edge.via.as_str())])),
+        }
+    }
+    groups
+        .into_iter()
+        .take(cap)
+        .map(|((file, anchor, direction), mut members)| {
+            members.sort();
+            let direction = match direction {
+                ContextDirection::Dependent => "dependent of",
+                ContextDirection::Dependency => "dependency of",
+            };
+            let vias: Vec<String> = members
+                .iter()
+                .map(|(family, via)| {
+                    let family = match family {
+                        ContextFamily::Import => "import",
+                        ContextFamily::Call => "call",
+                    };
+                    format!("{family} \"{via}\"")
+                })
+                .collect();
+            format!(
+                "- {} — {direction} {} via {}",
+                relativize(file, workspace),
+                relativize(anchor, workspace),
+                vias.join(", ")
+            )
+        })
+        .collect()
+}
+
+/// Workspace-relative rendering (absolute fallback when the file escapes
+/// the workspace — never a panic on prefixes).
+fn relativize(path: &str, workspace: &str) -> String {
+    std::path::Path::new(path)
+        .strip_prefix(workspace)
+        .map(|rel| rel.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.to_string())
+}
+
+fn basename_of(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// One rendered explain row: member/symbol title, file path, score.
+/// Score is a fused RRF magnitude for recall rows, `0.0` for
+/// graph-closure rows (graph signal, not a recall score — see M5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExplainRow {
+    /// Symbol/member title (entity id fallback).
+    pub name: String,
+    /// Workspace-relative file path (absolute fallback).
+    pub source: String,
+    /// Row score.
+    pub score: f64,
+}
+
+/// Render explain output: stable header + hits table, then the additive
+/// context section (present only when non-empty). The table section is
+/// byte-identical with and without expansion — pinned by test. Pure.
+#[must_use]
+pub fn render_explain_table(
+    query: &str,
+    rows: &[ExplainRow],
+    context: &[String],
+) -> String {
+    let mut out = format!("## Explain: {query}\n\n");
+    if rows.is_empty() {
+        out.push_str("No results found.\n");
+        return out;
+    }
+    out.push_str("| Name | Source | Score |\n");
+    out.push_str("|------|--------|-------|\n");
+    for row in rows {
+        out.push_str(&format!("| {} | {} | {:.2} |\n", row.name, row.source, row.score));
+    }
+    if !context.is_empty() {
+        out.push_str("\n### Context\n");
+        for line in context {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Standalone L0 search: managed rg under an `FsCapability` scope, rendered
-/// `path:line:col: text` with optional context and symbol enrichment.
 /// Operator CLI enters the scope explicitly — backends stay fail-closed.
 fn run_rg_search(
     query: &str,

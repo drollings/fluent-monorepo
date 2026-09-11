@@ -54,8 +54,7 @@ pub struct SymbolDef {
 
 /// A caller → callee-name edge (callee resolved at build).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallEdge {
-    /// Calling file.
+pub struct CallEdge {    /// Calling file.
     pub caller_file: String,
     /// Calling symbol, if named.
     pub caller_symbol: Option<String>,
@@ -74,6 +73,47 @@ pub struct ImportEdge {
     pub specifier: String,
     /// Resolved target file, if any.
     pub resolved_file: Option<String>,
+}
+
+/// Anchor-file cap for query-time closure expansion: the top-N fused
+/// files seed the depth-1 expansion (mirrors the L4 re-rank's top-3
+/// anchors — one anchor convention, two consumers). Bounds the flood
+/// axis before the expansion runs.
+pub const CLOSURE_ANCHOR_FILES: usize = 3;
+
+/// Direction of a context edge toward its anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ContextDirection {
+    /// The file depends on the anchor (importer/caller of the anchor).
+    Dependent,
+    /// The anchor depends on the file (import/call target of the anchor).
+    Dependency,
+}
+
+/// Family of the edge carrying a context relation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ContextFamily {
+    /// Import/specifier edge.
+    Import,
+    /// Call edge.
+    Call,
+}
+
+/// One depth-1 context edge: an anchor's graph neighbor with provenance
+/// (which anchor, which direction, which edge). Ordered for
+/// deterministic rendering.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ContextEdge {
+    /// Neighbor file.
+    pub file: String,
+    /// Anchor file.
+    pub anchor: String,
+    /// Direction toward the anchor.
+    pub direction: ContextDirection,
+    /// Edge family.
+    pub family: ContextFamily,
+    /// Raw edge detail (specifier text or callee name).
+    pub via: String,
 }
 
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
@@ -139,6 +179,45 @@ pub struct GraphIndex {
     import_edges: Vec<ImportEdge>,
 }
 
+/// Harvest one file's persistable graph inputs with a caller-provided
+/// parser (one parser per sync, never per file). This is the same
+/// harvest `assemble` consumes — the ingest path reuses it rather than
+/// a second parser. Non-code files and unknown extensions yield empty
+/// inputs (persisting empty clears rows a kind-changed file left).
+/// Unnamed scopes persist under "" (calls only, never a definition).
+/// Parse failure yields empty inputs: fragments stay authoritative for
+/// content, the graph simply has no edges for the file.
+pub fn harvest_graph_inputs(
+    parser: &mut AstParser,
+    format_ext: &str,
+    kind: FileKind,
+    text: &str,
+) -> (Vec<String>, Vec<(String, Vec<String>)>) {
+    if kind != FileKind::Code {
+        return (Vec::new(), Vec::new());
+    }
+    let Some(format) = format_for_extension(format_ext) else {
+        return (Vec::new(), Vec::new());
+    };
+    let Ok(harvested) = harvest_file_entities(
+        parser,
+        &ExtractSource {
+            file_id: String::new(),
+            text: text.to_string(),
+            format: format.to_string(),
+            kind: FileKind::Code,
+        },
+    ) else {
+        return (Vec::new(), Vec::new());
+    };
+    let symbols = harvested
+        .symbols
+        .into_iter()
+        .map(|symbol| (symbol.name.unwrap_or_default(), symbol.calls))
+        .collect();
+    (harvested.imports, symbols)
+}
+
 impl GraphIndex {
     /// Build from harvested file inputs (pure; the DB-backed constructor
     /// feeds the same path).
@@ -161,42 +240,46 @@ impl GraphIndex {
         Self::assemble(&per_file, roots)
     }
 
-    /// Build from an indexed database: symbol defs seed from stored
-    /// fragments, file bytes re-harvest imports + calls through the P2
-    /// adapters (single linear read pass, no embeddings).
-    pub fn build_from_db(
-        db: &search_vector::db::GuidanceDb,
+    /// Build from persisted rows (no file reads, no parsing): every known
+    /// file contributes an entry — even with no edges or symbols, so
+    /// specifier resolution probes the full workspace — then the shared
+    /// `assemble` registration loop runs over the reconstituted inputs.
+    /// Rows for unknown files are ignored (stale by definition).
+    /// Scopes are not persisted (no consumer reads them); calls ride
+    /// along so call edges reconstitute exactly.
+    pub fn build_from_rows(
+        known_files: &[String],
+        edges: &[(String, String)],
+        symbols: &[(String, String, Vec<String>)],
         roots: &[String],
     ) -> Result<Self, GraphIndexError> {
-        let records = db
-            .zg_list_files()
-            .map_err(|e| GraphIndexError::Harvest(e.to_string()))?;
-        let mut parser = AstParser::new();
-        let mut per_file = Vec::new();
-        for record in records {
-            let Ok(text) = std::fs::read_to_string(&record.absolute_path) else {
-                continue;
-            };
-            let ext = Path::new(&record.absolute_path)
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .unwrap_or_default();
-            let Some(format) = format_for_extension(ext) else {
-                continue;
-            };
-            let harvested = harvest_file_entities(
-                &mut parser,
-                &ExtractSource {
-                    file_id: record.id.clone(),
-                    text,
-                    format: format.to_string(),
-                    kind: FileKind::Code,
-                },
-            )
-            .map_err(|e| GraphIndexError::Harvest(e.to_string()))?;
-            per_file.push((record.absolute_path.clone(), harvested));
+        use crate::extractor::code::{HarvestedFile, HarvestedSymbol};
+        let known: HashSet<&String> = known_files.iter().collect();
+        let mut per_file: HashMap<String, HarvestedFile> = HashMap::new();
+        for path in known_files {
+            per_file.entry(path.clone()).or_default();
         }
-        Self::assemble(&per_file, roots)
+        for (importer, specifier) in edges {
+            if known.contains(importer) {
+                per_file
+                    .entry(importer.clone())
+                    .or_default()
+                    .imports
+                    .push(specifier.clone());
+            }
+        }
+        for (name, file, calls) in symbols {
+            if known.contains(file) {
+                per_file.entry(file.clone()).or_default().symbols.push(HarvestedSymbol {
+                    name: if name.is_empty() { None } else { Some(name.clone()) },
+                    scope: Vec::new(),
+                    calls: calls.clone(),
+                });
+            }
+        }
+        let mut ordered: Vec<(String, HarvestedFile)> = per_file.into_iter().collect();
+        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+        Self::assemble(&ordered, roots)
     }
 
     fn assemble(
@@ -308,6 +391,69 @@ impl GraphIndex {
     #[must_use]
     pub fn definitions_of(&self, symbol: &str) -> &[SymbolDef] {
         self.symbol_defs.get(symbol).map_or(&[], Vec::as_slice)
+    }
+
+    /// Depth-1 context expansion over the hydrated graph: for each
+    /// anchor, its direct dependents (single hop — never transitive)
+    /// plus its direct dependencies (resolved import targets and call
+    /// targets), each with provenance. Unresolved specifiers name no
+    /// file and contribute nothing. Deterministic (sorted); empty
+    /// anchors expand to empty.
+    #[must_use]
+    pub fn expand_shallow(&self, anchors: &[String]) -> Vec<ContextEdge> {
+        let mut edges: Vec<ContextEdge> = Vec::new();
+        for anchor in anchors {
+            for dependent in self.files.direct_dependents(anchor) {
+                for edge in self.import_edges.iter().filter(|edge| {
+                    edge.importer == dependent && edge.resolved_file.as_deref() == Some(anchor)
+                }) {
+                    edges.push(ContextEdge {
+                        file: dependent.clone(),
+                        anchor: anchor.clone(),
+                        direction: ContextDirection::Dependent,
+                        family: ContextFamily::Import,
+                        via: edge.specifier.clone(),
+                    });
+                }
+                for edge in self.call_edges.iter().filter(|edge| {
+                    edge.caller_file == dependent
+                        && edge.callee_files.iter().any(|file| file == anchor)
+                }) {
+                    edges.push(ContextEdge {
+                        file: dependent.clone(),
+                        anchor: anchor.clone(),
+                        direction: ContextDirection::Dependent,
+                        family: ContextFamily::Call,
+                        via: edge.callee.clone(),
+                    });
+                }
+            }
+            for edge in self.import_edges.iter().filter(|edge| {
+                edge.importer.as_str() == anchor.as_str() && edge.resolved_file.is_some()
+            }) {
+                edges.push(ContextEdge {
+                    file: edge.resolved_file.clone().unwrap_or_default(),
+                    anchor: anchor.clone(),
+                    direction: ContextDirection::Dependency,
+                    family: ContextFamily::Import,
+                    via: edge.specifier.clone(),
+                });
+            }
+            for edge in self.call_edges.iter().filter(|edge| edge.caller_file == *anchor) {
+                for callee_file in &edge.callee_files {
+                    edges.push(ContextEdge {
+                        file: callee_file.clone(),
+                        anchor: anchor.clone(),
+                        direction: ContextDirection::Dependency,
+                        family: ContextFamily::Call,
+                        via: edge.callee.clone(),
+                    });
+                }
+            }
+        }
+        edges.sort();
+        edges.dedup();
+        edges
     }
 
     /// All call edges.
@@ -607,3 +753,4 @@ fn normalize_separators(path: &str) -> String {
 #[cfg(test)]
 #[path = "../tests/graph_index.rs"]
 mod tests;
+

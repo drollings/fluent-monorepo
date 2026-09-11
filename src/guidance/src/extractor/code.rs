@@ -32,21 +32,33 @@ impl CodeExtractor {
         source: &ExtractSource,
         options: ChunkOptions,
     ) -> Result<Vec<PreparedFragment>, ExtractError> {
+        Ok(self.extract_with_harvest(parser, source, options)?.0)
+    }
+
+    /// Extract fragments plus the file's graph inputs from a single
+    /// parse and walk (one tree, one entity pass — never a second parse
+    /// for the graph tables).
+    pub fn extract_with_harvest(
+        &self,
+        parser: &mut AstParser,
+        source: &ExtractSource,
+        options: ChunkOptions,
+    ) -> Result<(Vec<PreparedFragment>, HarvestedFile), ExtractError> {
         if source.kind != FileKind::Code {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), HarvestedFile::default()));
         }
         if super::adapter::COMPONENT_CODE_FORMATS.contains(&source.format.as_str()) {
             let blocks = extract_script_blocks(parser, source, options)?;
             if !blocks.is_empty() {
-                return Ok(blocks);
+                return Ok((blocks, HarvestedFile::default()));
             }
-            return fallback_fragments(source, options);
+            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
         }
         let Some(adapter) = resolve_adapter(&source.format) else {
-            return fallback_fragments(source, options);
+            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
         };
         if !AstParser::has_grammar(&source.format) {
-            return fallback_fragments(source, options);
+            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
         }
         let tree = parser
             .parse_tree(&source.format, &source.text)
@@ -55,17 +67,34 @@ impl CodeExtractor {
         let root = NodeView { node: tree.root_node(), source: source_bytes };
         let mut entities = Vec::new();
         walk_code_node(root, adapter, &[], &mut entities);
+        // Imports ride the same tree — an entity-less file (pure
+        // re-exports) still contributes its edges on the fallback path.
+        let imports = adapter.import_specifiers(root);
         if entities.is_empty() {
-            return fallback_fragments(source, options);
+            return Ok((
+                fallback_fragments(source, options)?,
+                HarvestedFile { symbols: Vec::new(), imports },
+            ));
         }
         let mut fragments = Vec::new();
         for entity in &entities {
             append_entity(source, adapter, entity, options, &mut fragments);
         }
         if fragments.is_empty() {
-            return fallback_fragments(source, options);
+            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
         }
-        Ok(fragments)
+        let harvested = HarvestedFile {
+            symbols: entities
+                .into_iter()
+                .map(|entity| HarvestedSymbol {
+                    name: entity.name,
+                    scope: entity.breadcrumb,
+                    calls: entity.calls,
+                })
+                .collect(),
+            imports,
+        };
+        Ok((fragments, harvested))
     }
 }
 

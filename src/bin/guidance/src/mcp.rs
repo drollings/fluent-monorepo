@@ -364,7 +364,9 @@ fn truncate_chars(text: &str, max: usize) -> String {
 }
 
 /// Display title for a hit: symbol name, section heading, or entity id.
-fn hit_title(hit: &SearchHit) -> String {
+/// Shared with the CLI explain table (one title rule, two renderers).
+#[must_use]
+pub fn hit_title(hit: &SearchHit) -> String {
     for evidence in &hit.evidence {
         if let Some(metadata) = &evidence.metadata {
             match metadata {

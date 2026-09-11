@@ -203,3 +203,27 @@ fn fuse_candidates_is_deterministic_across_runs() {
     let permuted = fused_ids(&["d", "b", "a", "c"]);
     assert_eq!(fused_ids(&["d", "b", "a", "c"]), permuted);
 }
+
+#[test]
+fn rank_only_rrf_boundary_two_mid_ranks_outvote_one_top_rank() {
+    // M5 boundary pin (landed red, resolved by decision (a) keep-rank-only):
+    // X=[Fts#1] scores 1/61 ≈ 0.0164, Y=[Lemma#5, Vector#5] scores 2/65
+    // ≈ 0.0308, so Y fuses first. Proven stance: RRF sums are an
+    // ordinal composite over incommensurable within-route orders, NOT
+    // confidence — precise-hit-wins is not guaranteed at 3 routes, and
+    // no consumer may read fused scores as magnitudes. Any future
+    // scoring route (L4 especially) re-opens this decision; changing
+    // this pin without the M5b blast-radius re-meter is a violation.
+    let mut x = candidate("precise");
+    x.recall.push(found(RecallPath::Fts, "fts", 1));
+    let mut y = candidate("diffuse");
+    y.recall.push(found(RecallPath::Lemma, "lemma", 5));
+    y.recall.push(found(RecallPath::Vector, "vector", 5));
+    let fused = fuse_candidates(vec![x, y]);
+    assert_eq!(fused[0].id, "diffuse");
+    assert_eq!(fused[1].id, "precise");
+    let one = 1.0 / 61.0;
+    let two = 2.0 / 65.0;
+    assert!((fused[0].score - two).abs() < 1e-12, "{}", fused[0].score);
+    assert!((fused[1].score - one).abs() < 1e-12, "{}", fused[1].score);
+}

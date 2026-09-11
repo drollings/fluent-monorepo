@@ -296,6 +296,9 @@ pub fn merge_doc(existing: &GuidanceDoc, new: &mut GuidanceDoc) {
 }
 
 /// Save guidance doc, preserving existing metadata when hashes are unchanged.
+/// Byte-identical content skips the write: regen is mtime-neutral when
+/// nothing changed, so staleness gates and content fingerprints downstream
+/// never flap on a no-op reprocessing pass.
 pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
     if let Some(parent) = path.parent() {
         common_core::io::ensure_dir(parent)?;
@@ -306,6 +309,9 @@ pub fn save_guidance(path: &Path, doc: &GuidanceDoc) -> Result<(), JsonError> {
         merge_doc(&existing, &mut doc_to_save);
     }
     let json_str = super::json_writer::doc_to_json_string(&doc_to_save);
+    if common_core::io::read_to_string_err(path).as_deref().ok() == Some(json_str.as_str()) {
+        return Ok(());
+    }
     common_core::io::write_atomic(path, json_str.as_bytes())?;
     Ok(())
 }
@@ -491,5 +497,38 @@ mod tests {
         assert_eq!(loaded.meta.module.as_str(), "roundtrip");
         assert_eq!(loaded.members.len(), 1);
         assert_eq!(loaded.members[0].name.as_str(), "foo");
+    }
+}
+
+#[cfg(test)]
+mod identical_write_tests {
+    use super::*;
+    use fluent_wvr_testutil::tempdir;
+
+    #[test]
+    fn test_save_guidance_skips_identical_write() {
+        // Idempotent regen: byte-identical content must not bump the
+        // file mtime (the staleness gate reads mtime — a spurious bump
+        // would shift every downstream fingerprint).
+        let dir = tempdir();
+        let path = dir.path().join("idem.json");
+        let doc = GuidanceDoc {
+            meta: Meta {
+                module: "idem".into(),
+                source: "src/idem.zig".into(),
+                language: "zig".into(),
+            },
+            ..GuidanceDoc::default()
+        };
+        save_guidance(&path, &doc).expect("first save");
+        let before =
+            std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+        // Ensure the clock could advance: without the skip, the atomic
+        // rewrite lands on a new timestamp.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        save_guidance(&path, &doc).expect("second save");
+        let after =
+            std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+        assert_eq!(before, after, "identical content must not rewrite the file");
     }
 }

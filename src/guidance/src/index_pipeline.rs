@@ -28,7 +28,7 @@ use crate::diff::{ScannedFile, compute_diff, hash_file, make_file_id};
 use crate::extractor::{
     ChunkOptions, ExtractSource, FragmentMetadata, PreparedFragment,
 };
-use crate::extractor::code::CodeExtractor;
+use crate::extractor::code::{CodeExtractor, HarvestedFile};
 use crate::query::db_storage::{fragment_lemma, zg_fragment_record};
 use crate::query::ingest::query_lemmas;
 use crate::selection::{FileSelection, ScanDiagnostics, SelectedFile, select_files};
@@ -523,6 +523,8 @@ struct PreparedFile {
     file: ScannedFile,
     fragments: Vec<PreparedFragment>,
     texts: Vec<String>,
+    /// Graph inputs harvested from the same extract pass (no second parse).
+    harvest: HarvestedFile,
 }
 
 enum PrepareOutcome {
@@ -543,9 +545,16 @@ where
     if file.kind.as_deref() == Some("image") {
         // Images are discovered and kind-tagged with an (empty) stored
         // record, never embedded (G0.5); the record keeps re-runs clean.
+        // Graph rows clear with the same replace semantic as fragments.
         let record = scanned_record(file);
         return PrepareOutcome::Done(match shared.db.replace_file(&record, &[], &[]) {
-            Ok(_) => FileOutcome::ImageSkipped,
+            Ok(_) => match shared.db.replace_file_graph(&file.absolute_path, &[], &[]) {
+                Ok(()) => FileOutcome::ImageSkipped,
+                Err(e) => FileOutcome::Failed {
+                    file: file.clone(),
+                    reason: format!("graph: {e}"),
+                },
+            },
             Err(e) => FileOutcome::Failed {
                 file: file.clone(),
                 reason: format!("commit: {e}"),
@@ -581,8 +590,8 @@ where
             });
         }
     };
-    let fragments = match prepare_fragments(parser, &source, chunk_options) {
-        Ok(fragments) => fragments,
+    let (fragments, harvest) = match prepare_fragments(parser, &source, chunk_options) {
+        Ok(prepared) => prepared,
         Err(e) => {
             return PrepareOutcome::Done(FileOutcome::Failed {
                 file: file.clone(),
@@ -605,6 +614,7 @@ where
         file: file.clone(),
         fragments,
         texts,
+        harvest,
     })
 }
 
@@ -724,6 +734,7 @@ where
         &prepared.file,
         &prepared.fragments,
         vectors,
+        &prepared.harvest,
     );
     shared.histogram_commit.observe_duration(commit_started);
     match result {
@@ -736,16 +747,27 @@ fn prepare_fragments(
     parser: &mut AstParser,
     source: &ExtractSource,
     options: ChunkOptions,
-) -> Result<Vec<PreparedFragment>, crate::extractor::ExtractError> {
+) -> Result<(Vec<PreparedFragment>, HarvestedFile), crate::extractor::ExtractError> {
     // Extractor dispatch rides the sync fallback ladder (N.ladder): code,
     // then markdown, then text. Each rung declines sources outside its
     // contract (`Ok(None)`); an empty rung is skipped, never an error.
+    // The code rung additionally yields its graph inputs from the same
+    // parse — set only when the code rung wins, so the harvest always
+    // describes the fragments it accompanies.
     let rungs = ["code", "markdown", "text"];
+    let mut code_harvest: Option<HarvestedFile> = None;
     let found = fluent_concurrency::ladder::first_accept_in_order_sync(
         rungs,
         |rung| -> Result<Option<Vec<PreparedFragment>>, crate::extractor::ExtractError> {
             let fragments = match rung {
-                "code" => CodeExtractor.extract_for_indexing(parser, source, options)?,
+                "code" => {
+                    let (fragments, harvest) =
+                        CodeExtractor.extract_with_harvest(parser, source, options)?;
+                    if !fragments.is_empty() {
+                        code_harvest = Some(harvest);
+                    }
+                    fragments
+                }
                 "markdown" => {
                     crate::extractor::markdown::extract_markdown_fragments(source, options)?
                 }
@@ -756,8 +778,8 @@ fn prepare_fragments(
         |_: &crate::extractor::ExtractError| true,
     );
     match found {
-        Ok(Some(fragments)) => Ok(fragments),
-        Ok(None) => Ok(Vec::new()),
+        Ok(Some(fragments)) => Ok((fragments, code_harvest.unwrap_or_default())),
+        Ok(None) => Ok((Vec::new(), HarvestedFile::default())),
         Err(e) => Err(e),
     }
 }
@@ -833,6 +855,7 @@ fn commit_file(
     file: &ScannedFile,
     fragments: &[PreparedFragment],
     vectors: &[Vec<f32>],
+    harvest: &HarvestedFile,
 ) -> Result<usize, String> {
     let record = scanned_record(file);
     let mut fragment_records = Vec::with_capacity(fragments.len());
@@ -847,8 +870,24 @@ fn commit_file(
             lemmas.push(fragment_lemma(&fragment.id, &lemma, 1.0));
         }
     }
-    db.replace_file(&record, &fragment_records, &lemmas)
-        .map_err(|e| format!("commit: {e}"))
+    let count = db
+        .replace_file(&record, &fragment_records, &lemmas)
+        .map_err(|e| format!("commit: {e}"))?;
+    commit_graph(db, &file.absolute_path, harvest)?;
+    Ok(count)
+}
+
+/// Persist one file's graph inputs from the extract pass's harvest (the
+/// same inputs `assemble` consumes — never a second parse). Unnamed
+/// scopes persist under "" (calls only, never a definition).
+fn commit_graph(db: &GuidanceDb, path: &str, harvest: &HarvestedFile) -> Result<(), String> {
+    let symbols: Vec<(String, Vec<String>)> = harvest
+        .symbols
+        .iter()
+        .map(|symbol| (symbol.name.clone().unwrap_or_default(), symbol.calls.clone()))
+        .collect();
+    db.replace_file_graph(path, &harvest.imports, &symbols)
+        .map_err(|e| format!("graph: {e}"))
 }
 
 fn prepared_to_entity(file: &ScannedFile, fragment: &PreparedFragment) -> EntityFragment {

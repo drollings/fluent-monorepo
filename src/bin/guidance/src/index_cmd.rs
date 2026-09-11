@@ -7,8 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
+use guidance_core::graph_index::GraphIndex;
 use guidance_core::query::ingest::{default_en_pipeline, ingest_text_file};
-use guidance_core::selection::{select_files, FileSelection, ScanDiagnostics};
+use guidance_core::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 use guidance_core::sync_engine::SyncEngine;
 use guidance_core::zg_types::{FileInfo, FileKind};
 use search_vector::GuidanceDb;
@@ -76,6 +77,19 @@ pub struct FragmentIngestStats {
     pub skipped_images: usize,
     /// Files that failed to read or ingest (stored count, run continues).
     pub failed: usize,
+    /// Absolute paths ingested this run (seeds for dependent propagation).
+    pub changed: Vec<String>,
+    /// Absolute paths purged this run (in the index but missing on disk).
+    pub deleted: Vec<String>,
+}
+
+/// Absolute paths the selection yielded (every kind, including skipped
+/// images — presence on disk is what matters, not ingestibility).
+fn selected_paths(files: &[SelectedFile]) -> std::collections::HashSet<String> {
+    files
+        .iter()
+        .map(|f| f.path.to_string_lossy().into_owned())
+        .collect()
 }
 
 /// Ingest workspace source files into the fragment index (`zg_*` FTS5 +
@@ -100,6 +114,14 @@ pub fn ingest_workspace_fragments(
         guidance_core::config::load_config(workspace).unwrap_or_default();
     let embedder = crate::embed::embedder_from_config(&cfg);
     let mut stats = FragmentIngestStats::default();
+    // One parser for the whole sync: per-file graph harvest reuses the
+    // harvest `assemble` consumes (never a second parser, never per-file
+    // parser construction).
+    let mut parser = guidance_core::ast_parser::AstParser::new();
+    // Every path selection yields, across all src dirs: presence on disk
+    // is what the deleted purge below diffs against (images included —
+    // they exist even though they never ingest).
+    let mut present: std::collections::HashSet<String> = std::collections::HashSet::new();
     for src_dir in src_dirs {
         if !src_dir.is_dir() {
             continue;
@@ -115,6 +137,7 @@ pub fn ingest_workspace_fragments(
         let mut diag = ScanDiagnostics::default();
         let files = select_files(&selection, &mut diag)
             .map_err(|error| format!("selection failed: {error}"))?;
+        present.extend(selected_paths(&files));
         for selected in files {
             if selected.kind == FileKind::Image {
                 stats.skipped_images += 1;
@@ -165,14 +188,110 @@ pub fn ingest_workspace_fragments(
             };
             match ingest_text_file(&db, &file, &text, embedder.as_deref(), nlp.as_ref()) {
                 Ok(ingested) => {
+                    // Persist the file's graph inputs from the same bytes
+                    // (changed files only — unchanged files keep their
+                    // committed rows via the gate above). A graph-write
+                    // failure rolls the fragment rows back so the next
+                    // sync re-ingests the file instead of going stale.
+                    let (specifiers, symbols) =
+                        guidance_core::graph_index::harvest_graph_inputs(
+                            &mut parser,
+                            &file.format,
+                            file.kind.unwrap_or(FileKind::Text),
+                            &text,
+                        );
+                    if let Err(error) =
+                        db.replace_file_graph(&file.absolute_path, &specifiers, &symbols)
+                    {
+                        eprintln!("graph persist failed for {}: {error}", file.absolute_path);
+                        let _ = db.delete_file(&file.id);
+                        stats.failed += 1;
+                        continue;
+                    }
                     stats.files += 1;
                     stats.fragments += ingested.fragments;
+                    stats.changed.push(file.absolute_path.clone());
                 }
                 Err(_) => stats.failed += 1,
             }
         }
     }
+    // Deleted purge: rows under the selection roots but missing on disk
+    // go stale with no other signal (no fingerprint can fire for a file
+    // that is gone). Reuses the fragment deleter — never a second one —
+    // which also drops the file's graph rows.
+    match db.zg_list_files() {
+        Ok(rows) => {
+            for row in rows {
+                let under_scope = src_dirs
+                    .iter()
+                    .any(|dir| Path::new(&row.absolute_path).starts_with(dir));
+                if under_scope
+                    && !present.contains(&row.absolute_path)
+                    && db.delete_file(&row.id).is_ok()
+                {
+                    stats.deleted.push(row.absolute_path);
+                }
+            }
+        }
+        Err(error) => {
+            eprintln!("deleted scan failed: {error}");
+        }
+    }
     Ok(stats)
+}
+
+/// Propagation seeds → affected set over the hydrated graph (the same
+/// `dependents_closure` the watch path calls — one traversal, two
+/// callers). Seeds are fingerprint-changed files plus files missing on
+/// disk; the closure conservatively over-approximates on the correctness
+/// axis (over-invalidation costs time, under-invalidation costs silent
+/// staleness). Fail-open: when hydration fails, the seeds themselves
+/// still re-process — direct changes never silently skip.
+pub fn affected_for_sync(
+    db: &GuidanceDb,
+    changed: &[String],
+    deleted: &[String],
+    roots: &[String],
+) -> Vec<String> {
+    let mut seeds: Vec<String> = changed.to_vec();
+    seeds.extend(deleted.iter().cloned());
+    seeds.sort();
+    seeds.dedup();
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+    match hydrated_graph(db, roots) {
+        Ok(graph) => graph.dependents_closure(&seeds),
+        Err(error) => {
+            eprintln!("graph hydration failed ({error}); re-processing seeds only");
+            seeds
+        }
+    }
+}
+
+/// Row-read the persisted graph inputs into a `GraphIndex` (no file
+/// reads, no parsing — the M2 hydrated constructor). Shared by sync
+/// propagation and the explain port (one hydration helper, two callers).
+pub fn hydrated_graph(db: &GuidanceDb, roots: &[String]) -> Result<GraphIndex, String> {
+    let files =
+        db.zg_list_files().map_err(|error| format!("list files: {error}"))?;
+    let known: Vec<String> =
+        files.into_iter().map(|file| file.absolute_path).collect();
+    let edges: Vec<(String, String)> = db
+        .graph_edge_rows()
+        .map_err(|error| format!("edge rows: {error}"))?
+        .into_iter()
+        .map(|row| (row.importer, row.specifier))
+        .collect();
+    let symbols: Vec<(String, String, Vec<String>)> = db
+        .graph_symbol_rows()
+        .map_err(|error| format!("symbol rows: {error}"))?
+        .into_iter()
+        .map(|row| (row.name, row.file, row.calls))
+        .collect();
+    GraphIndex::build_from_rows(&known, &edges, &symbols, roots)
+        .map_err(|error| format!("assemble: {error}"))
 }
 
 #[cfg(test)]
