@@ -849,6 +849,20 @@ fn scanned_record(file: &ScannedFile) -> ZgFileRecord {
     }
 }
 
+/// Commit one file's extractor chunks: per-symbol fragments with line
+/// ranges, code metadata, per-fragment lemmas and REQUIRED per-fragment
+/// vectors (a count mismatch fails the file — this path never writes
+/// unembedded rows), plus graph rows from the same extract pass.
+/// This is the embedding batch pipeline's writer; it is intentionally
+/// NOT the sync writer. The live sync path
+/// (`query::ingest::ingest_text_file`) stores one whole-file fragment
+/// per file (file id, whole-file range, no metadata, vectors optional)
+/// so recall works with no embedding backend. Same fixture through
+/// both writers yields different fragment rows (chunked/ranged/meta vs
+/// whole-file) with agreeing file-level retrieval — unifying them
+/// would rewrite every stored row, range, and entity id the live path
+/// serves, for no retrieval gain. Keep the split; see the pointer at
+/// `ingest_text_file`.
 fn commit_file(
     db: &GuidanceDb,
     nlp: Option<&spacy_rs::pipeline::NlpPipeline>,

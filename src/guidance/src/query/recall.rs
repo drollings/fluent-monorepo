@@ -24,7 +24,7 @@ use crate::zg_constants::{
 };
 use crate::zg_types::{
     extract_symbol_names, public_entity_id, CodeSymbolType, Entity, EntityFragment, FileInfo,
-    RecallPath, ResolvedSearchPlan, ResolvedSearchPlanRoute, SearchHit, SearchPlan,
+    RecallPath, ResolvedSearchPlan, ResolvedSearchPlanRoute, RrfScore, SearchHit, SearchPlan,
     SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry, ZgError,
 };
 use thiserror::Error;
@@ -572,7 +572,7 @@ fn add_recall_hits(
                     sources: Vec::new(),
                     recall: Vec::new(),
                     evidence: Vec::new(),
-                    score: 0.0,
+                    score: RrfScore::new(0.0),
                     rank: 0,
                     forced: false,
                 },
@@ -684,7 +684,7 @@ fn force_track_entity(
             sources: Vec::new(),
             recall: Vec::new(),
             evidence: Vec::new(),
-            score: 0.0,
+            score: RrfScore::new(0.0),
             rank: 0,
             forced: false,
         });

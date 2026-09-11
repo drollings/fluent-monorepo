@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use guidance_core::graph_index::GraphIndex;
-use guidance_core::query::ingest::{default_en_pipeline, ingest_text_file};
+use guidance_core::query::ingest::{ingest_text_file, LazyNlp};
 use guidance_core::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 use guidance_core::sync_engine::SyncEngine;
 use guidance_core::zg_types::{FileInfo, FileKind};
@@ -81,6 +81,11 @@ pub struct FragmentIngestStats {
     pub changed: Vec<String>,
     /// Absolute paths purged this run (in the index but missing on disk).
     pub deleted: Vec<String>,
+    /// Dependents of the purged paths, resolved while their graph rows
+    /// still existed (extra propagation seeds for the caller — the
+    /// post-purge closure cannot expand deleted seeds, so without this
+    /// the dependents of a deletion would silently miss re-processing).
+    pub deleted_dependents: Vec<String>,
 }
 
 /// Absolute paths the selection yielded (every kind, including skipped
@@ -105,8 +110,9 @@ pub fn ingest_workspace_fragments(
     let db = GuidanceDb::open(db_path)
         .map_err(|error| format!("cannot open index at {}: {error}", db_path.display()))?;
     // Rule-lemmatizer pipeline (no model): L2 inflections collapse at
-    // index time at zero embedding cost. Built once per sync.
-    let nlp = default_en_pipeline();
+    // index time at zero embedding cost. Built lazily on the first
+    // file that actually ingests — fully-skipped syncs never pay it.
+    let nlp = LazyNlp::new();
     // L3 embedder from the workspace project config (offline
     // construction; absent backend degrades to unembedded fragments,
     // counted in stats — same contract as before, now actually usable).
@@ -181,12 +187,15 @@ pub fn ingest_workspace_fragments(
                 root_path: workspace.to_string_lossy().into_owned(),
                 size_bytes: selected.size_bytes,
                 last_modified_time: selected.modified_ms,
-                content_hash: None,
+                // Stored source hash for the member-JSON clock gate (the
+                // ambiguity-window tiebreak reads it back next sync).
+                // Free: the bytes are already in hand — no extra read.
+                content_hash: Some(common_core::hash::sha256_hex(text.as_bytes())),
                 kind: Some(selected.kind),
                 format,
                 index_status: None,
             };
-            match ingest_text_file(&db, &file, &text, embedder.as_deref(), nlp.as_ref()) {
+            match ingest_text_file(&db, &file, &text, embedder.as_deref(), nlp.get()) {
                 Ok(ingested) => {
                     // Persist the file's graph inputs from the same bytes
                     // (changed files only — unchanged files keep their
@@ -219,23 +228,47 @@ pub fn ingest_workspace_fragments(
     // Deleted purge: rows under the selection roots but missing on disk
     // go stale with no other signal (no fingerprint can fire for a file
     // that is gone). Reuses the fragment deleter — never a second one —
-    // which also drops the file's graph rows.
+    // which also drops the file's graph rows. Dependents of the doomed
+    // set are resolved BEFORE purging: the purge drops the graph rows
+    // the dependents closure traverses, so a post-purge hydration cannot
+    // expand deleted seeds (their dependents would silently miss
+    // re-processing). The resolved dependents join the caller's seed set
+    // via `deleted_dependents`; the doomed paths themselves stay in
+    // `deleted` for sidecar removal.
+    let mut doomed: Vec<(String, String)> = Vec::new();
     match db.zg_list_files() {
         Ok(rows) => {
             for row in rows {
                 let under_scope = src_dirs
                     .iter()
                     .any(|dir| Path::new(&row.absolute_path).starts_with(dir));
-                if under_scope
-                    && !present.contains(&row.absolute_path)
-                    && db.delete_file(&row.id).is_ok()
-                {
-                    stats.deleted.push(row.absolute_path);
+                if under_scope && !present.contains(&row.absolute_path) {
+                    doomed.push((row.id, row.absolute_path));
                 }
             }
         }
         Err(error) => {
             eprintln!("deleted scan failed: {error}");
+        }
+    }
+    if !doomed.is_empty() {
+        let doomed_paths: Vec<String> =
+            doomed.iter().map(|(_, path)| path.clone()).collect();
+        let roots: Vec<String> = src_dirs
+            .iter()
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .collect();
+        let pre = affected_for_sync(&db, &stats.changed, &doomed_paths, &roots);
+        let doomed_set: std::collections::HashSet<&str> =
+            doomed_paths.iter().map(String::as_str).collect();
+        stats.deleted_dependents = pre
+            .into_iter()
+            .filter(|path| !doomed_set.contains(path.as_str()))
+            .collect();
+        for (id, path) in &doomed {
+            if db.delete_file(id).is_ok() {
+                stats.deleted.push(path.clone());
+            }
         }
     }
     Ok(stats)

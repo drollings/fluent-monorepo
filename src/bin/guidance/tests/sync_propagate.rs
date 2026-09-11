@@ -1,5 +1,13 @@
 //! M3 acceptance: stale-dependent propagation in one-shot sync.
 //!
+//! Enforced invariant: propagation recall is 1.0 — every changed or
+//! deleted seed plus all of its transitive dependents re-processes, or
+//! the build fails. Over-invalidation is recorded, never tuned away;
+//! under-invalidation (a silent miss) is always a failure, never a
+//! judgment call. The deletion case below extends the invariant to
+//! removal: a deleted file's fragment rows and sidecar disappear and its
+//! dependents re-process.
+//!
 //! Fixture (hermetic temp workspace): importer→importee (`mod importee`
 //! resolves at hydration; the `fee` call edge doubles the linkage) plus
 //! an unrelated leaf. Editing the importee's signature with a same-size
@@ -8,24 +16,13 @@
 //! Pre-registered bound: affected-set recall 1.0 required (any miss fails
 //! the milestone); over-invalidation is recorded, not tuned.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
-fn guidance_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_guidance"))
-}
+#[path = "common.rs"]
+#[allow(dead_code)]
+mod common;
 
-fn run(dir: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(guidance_bin())
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("spawn guidance")
-}
-
-fn stdout(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
+use common::sync;
 
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -42,40 +39,6 @@ fn fixture() -> tempfile::TempDir {
     std::fs::write(dir.path().join("leaf.rs"), "pub fn leaf() -> u64 {\n    42\n}\n")
         .expect("write");
     dir
-}
-
-fn sync(dir: &Path, verbose: bool) -> String {
-    let root = dir.to_str().unwrap().to_string();
-    let json_dir = dir.join(".guidance");
-    let json_dir = json_dir.to_str().unwrap().to_string();
-    let db = dir.join(".sync.db");
-    let db = db.to_str().unwrap().to_string();
-    let mut args = vec![
-        "sync".to_string(),
-        "--workspace".to_string(),
-        root,
-        "--json-dir".to_string(),
-        json_dir,
-        "--db".to_string(),
-        db,
-    ];
-    if verbose {
-        args.push("--verbose".to_string());
-    }
-    let out = run(dir, &args.iter().map(String::as_str).collect::<Vec<_>>());
-    assert!(out.status.success(), "sync failed: {out:?}");
-    stdout(&out)
-}
-
-fn index(dir: &Path) {
-    let root = dir.to_str().unwrap().to_string();
-    let json_dir = dir.join(".guidance");
-    let json_dir = json_dir.to_str().unwrap().to_string();
-    let out = run(
-        dir,
-        &["index", &root, "--workspace", &root, "--json-dir", &json_dir],
-    );
-    assert!(out.status.success(), "index failed: {out:?}");
 }
 
 /// Verbose `regenerated:` lines → sorted affected set (absolute paths).
@@ -116,15 +79,14 @@ fn fragment_texts(dir: &Path, file: &str) -> Vec<String> {
 fn importee_signature_edit_reprocesses_importer() {
     let dir = fixture();
     let root = dir.path();
-    index(root);
-    sync(root, false);
+    sync(root, ".sync.db", false);
 
     let before = fragment_texts(root, "importer.rs");
 
     // Same-size edit pins the size arm; the mtime arm must fire.
     std::fs::write(root.join("importee.rs"), "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n")
         .expect("write");
-    let out = sync(root, true);
+    let out = sync(root, ".sync.db", true);
 
     let measured = regenerated(&out);
     let oracle = vec![
@@ -147,12 +109,11 @@ fn importee_signature_edit_reprocesses_importer() {
 fn leaf_edit_reprocesses_only_itself() {
     let dir = fixture();
     let root = dir.path();
-    index(root);
-    sync(root, false);
+    sync(root, ".sync.db", false);
 
     std::fs::write(root.join("leaf.rs"), "pub fn leaf() -> u64 {\n    43\n}\n")
         .expect("write");
-    let out = sync(root, true);
+    let out = sync(root, ".sync.db", true);
 
     let measured = regenerated(&out);
     let leaf = root.join("leaf.rs").to_string_lossy().into_owned();
@@ -163,4 +124,70 @@ fn leaf_edit_reprocesses_only_itself() {
         "must-NOT-fire: importer untouched by a leaf edit: {measured:?}"
     );
     assert_eq!(measured.len(), 1, "affected is exactly the leaf: {measured:?}");
+}
+
+fn db_count(db: &Path, table: &str, file_id: &str) -> usize {
+    let out = std::process::Command::new("sqlite3")
+        .args([
+            db.to_str().unwrap(),
+            &format!("SELECT COUNT(*) FROM {table} WHERE file_id = '{file_id}'"),
+        ])
+        .output()
+        .expect("sqlite3");
+    assert!(out.status.success(), "sqlite3 failed: {out:?}");
+    String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(usize::MAX)
+}
+
+#[test]
+fn deleted_file_drops_rows_sidecar_and_reprocesses_dependents() {
+    // Deletion closure: removing the importee must drop its fragment
+    // rows, drop its member-JSON sidecar, and re-process the importer
+    // (its dependent) — while the unrelated leaf stays quiet.
+    let dir = fixture();
+    let root = dir.path();
+    sync(root, ".sync.db", false);
+    assert!(
+        root.join(".guidance/src/importee.rs.json").is_file(),
+        "importee sidecar must exist after the first sync"
+    );
+
+    std::fs::remove_file(root.join("importee.rs")).expect("delete");
+    let out = sync(root, ".sync.db", true);
+
+    let measured = regenerated(&out);
+    let importer = root.join("importer.rs").to_string_lossy().into_owned();
+    let leaf = root.join("leaf.rs").to_string_lossy().into_owned();
+    assert!(
+        measured.contains(&importer),
+        "dependent must re-process after the importee is deleted: {measured:?}"
+    );
+    assert!(
+        !measured.contains(&leaf),
+        "must-NOT-fire: leaf untouched by the deletion: {measured:?}"
+    );
+
+    let db = root.join(".sync.db");
+    let importee_id = root.join("importee.rs").to_string_lossy().into_owned();
+    assert_eq!(
+        db_count(&db, "zg_fragments", &importee_id),
+        0,
+        "deleted file's fragment rows must be gone"
+    );
+    assert!(
+        !root.join(".guidance/src/importee.rs.json").exists(),
+        "deleted file's sidecar must be gone"
+    );
+    let out = std::process::Command::new("sqlite3")
+        .args([
+            db.to_str().unwrap(),
+            "SELECT COUNT(*) FROM guidance_nodes WHERE source LIKE '%importee.rs'",
+        ])
+        .output()
+        .expect("sqlite3");
+    assert!(out.status.success(), "sqlite3 failed: {out:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "0",
+        "deleted file's node rows must be gone"
+    );
 }

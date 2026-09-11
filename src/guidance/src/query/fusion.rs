@@ -4,14 +4,34 @@
 //!
 //! Scoring runs through the single generalized kernel
 //! (`fluent_db::vector::rrf_merge_n`) with zvec 1-based storage ranks.
+//!
+//! Score stance — read before touching this module: the fused score is an
+//! ordinal composite over incommensurable within-route orders, not a
+//! confidence. Each route ranks by its own private scale (unbounded BM25
+//! magnitudes on FTS, constant weights on the lemma route, embedding
+//! distances on the vector route); the kernel sums `1/(K + rank)` terms and
+//! therefore compares positions, never magnitudes. Consequences:
+//!
+//! - A single top-rank hit does not outvote two mid-rank hits. With three
+//!   routes, `[Fts#1]` scores `1/61` while `[Lemma#5, Vector#5]` scores
+//!   `2/65` — the diffuse candidate fuses first. Precise-hit-wins is not
+//!   guaranteed; the boundary pin below (`…_two_mid_ranks_outvote_one_top_rank`)
+//!   asserts the exact arithmetic.
+//! - No consumer may read fused scores as magnitudes: display rounding is
+//!   lossy, cross-route score arithmetic is unsound (constant lemma weights
+//!   alone prove the scales do not commute), and rank ties break
+//!   lexicographically by id.
+//! - Adding a scoring route re-opens this stance. A fourth route changes
+//!   every composite sum, so it ships only with a blast-radius re-meter
+//!   over the full quality matrix — never as a silent kernel tweak.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::zg_constants::RRF_K;
 use crate::zg_types::{
-    derive_matched_by, public_entity_id, Entity, FileInfo, RecallPath, SearchFinalTrace, SearchHit,
-    SearchHitEvidence, SearchHitTrace, SearchRecallTrace, SearchStageTrace,
+    derive_matched_by, public_entity_id, Entity, FileInfo, RecallPath, RrfScore, SearchFinalTrace,
+    SearchHit, SearchHitEvidence, SearchHitTrace, SearchRecallTrace, SearchStageTrace,
 };
 
 /// One recall evidence: the fragment plus where it surfaced.
@@ -48,8 +68,8 @@ pub struct RecallCandidate {
     pub recall: Vec<SearchRecallTrace>,
     /// Rank-ordered evidence (sorted at materialization).
     pub evidence: Vec<RecallEvidence>,
-    /// Fused RRF score.
-    pub score: f64,
+    /// Fused RRF score (ordinal composite — see [`crate::zg_types::RrfScore`]).
+    pub score: crate::zg_types::RrfScore,
     /// 1-based fused rank (0 until fused).
     pub rank: usize,
     /// Force-append flag.
@@ -75,7 +95,11 @@ pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandid
         .map(|(score, id, ())| (id, score))
         .collect();
     for candidate in &mut candidates {
-        candidate.score = scores.get(&candidate.id).copied().unwrap_or(0.0);
+        // The single sanctioned composite wrap: kernel output in,
+        // ordinal out. Nothing else in the tree constructs this type
+        // from a magnitude except explicit test fixtures.
+        candidate.score =
+            RrfScore::new(scores.get(&candidate.id).copied().unwrap_or(0.0));
         candidate.forced = candidate
             .recall
             .iter()

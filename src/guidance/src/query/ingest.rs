@@ -33,6 +33,16 @@ pub enum IngestError {
 }
 
 /// Ingest one text file as a single fragment (id = file id).
+///
+/// This is the live sync writer: whole-file range, no metadata,
+/// vectors optional, so recall works with no embedding backend. It is
+/// intentionally NOT the embedding pipeline's writer — `commit_file`
+/// in `index_pipeline` stores extractor chunks (per-symbol ranges,
+/// code metadata, mandatory per-fragment vectors) for the batch
+/// embedding path. Same fixture through both writers yields different
+/// fragment rows with agreeing file-level retrieval; unifying them
+/// would rewrite every stored row the live path serves, for no
+/// retrieval gain. Keep the split; see the pointer at `commit_file`.
 pub fn ingest_text_file(
     db: &GuidanceDb,
     file: &FileInfo,
@@ -122,6 +132,51 @@ pub fn query_lemmas(nlp: Option<&spacy_rs::pipeline::NlpPipeline>, text: &str) -
 pub fn default_en_pipeline() -> Option<spacy_rs::pipeline::NlpPipeline> {
     spacy_rs::pipeline::NlpPipeline::en_default().ok()
 }
+
+/// Lazily-built lemma pipeline: construction (the dominant fixed
+/// per-invocation cost) happens at most once, on first actual lemma
+/// need — never on paths that never lemmatize. The stock constructor
+/// above is untouched; this only moves call sites behind the need
+/// boundary. Need is task correctness (a lemma route will run, a file
+/// will ingest), never a confidence judgment.
+pub struct LazyNlp {
+    cell: std::sync::OnceLock<Option<spacy_rs::pipeline::NlpPipeline>>,
+}
+
+impl LazyNlp {
+    /// Empty holder: builds nothing until asked.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            cell: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Borrow the pipeline, constructing once on first need via the
+    /// stock constructor.
+    pub fn get(&self) -> Option<&spacy_rs::pipeline::NlpPipeline> {
+        self.get_with(default_en_pipeline)
+    }
+
+    /// Borrow with an injectable constructor (tests count builds;
+    /// production enters through [`LazyNlp::get`]).
+    pub fn get_with(
+        &self,
+        build: impl FnOnce() -> Option<spacy_rs::pipeline::NlpPipeline>,
+    ) -> Option<&spacy_rs::pipeline::NlpPipeline> {
+        self.cell.get_or_init(build).as_ref()
+    }
+}
+
+impl Default for LazyNlp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+#[path = "../../tests/query_ingest.rs"]
+mod tests;
 
 fn fallback_tokens(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();

@@ -109,7 +109,9 @@ impl Formatter for DebugFormatter {
                 let _ = writeln!(
                     out,
                     "  Trace: {} rank {} score {:.6}",
-                    trace.matched_by, trace.rank, trace.score
+                    trace.matched_by,
+                    trace.rank,
+                    trace.score.value()
                 );
                 for recall in &trace.recall {
                     let _ = writeln!(

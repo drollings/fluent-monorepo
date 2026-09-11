@@ -8,7 +8,7 @@ use crate::extractor::ExtractSource;
 use crate::graph_index::{
     ContextDirection, ContextFamily, GraphIndex, GraphQuerySignals, HarvestInput,
 };
-use crate::zg_types::FileKind;
+use crate::zg_types::{FileKind, RrfScore};
 use crate::ast_parser::AstParser;
 
 fn harvest(format: &str, text: &str) -> crate::extractor::code::HarvestedFile {
@@ -182,7 +182,7 @@ fn rerank_is_deterministic_and_boosts_graph_neighbors() {
             sources: Vec::new(),
             recall: Vec::new(),
             evidence: Vec::new(),
-            score,
+            score: RrfScore::new(score),
             rank: 0,
             forced: false,
         }
@@ -254,7 +254,7 @@ fn role_coverage_breaks_ties_toward_query_roles() {
             sources: Vec::new(),
             recall: Vec::new(),
             evidence: Vec::new(),
-            score,
+            score: RrfScore::new(score),
             rank: 0,
             forced: false,
         }
@@ -313,7 +313,7 @@ fn rerank_skips_rrf_order_when_no_edge_touches_candidates() {
             sources: Vec::new(),
             recall: Vec::new(),
             evidence: Vec::new(),
-            score,
+            score: RrfScore::new(score),
             rank: 0,
             forced: false,
         }

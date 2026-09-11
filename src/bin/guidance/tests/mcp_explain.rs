@@ -77,6 +77,17 @@ fn freshness_and_mtime_validate() {
 }
 
 #[test]
+fn context_flag_defaults_off_and_parses() {
+    assert!(!args(serde_json::json!({"query": "a"})).unwrap().context);
+    assert!(!args(serde_json::json!({"query": "a", "context": false}))
+        .unwrap()
+        .context);
+    assert!(args(serde_json::json!({"query": "a", "context": true}))
+        .unwrap()
+        .context);
+}
+
+#[test]
 fn fuse_is_the_default_plan() {
     let params = args(serde_json::json!({"query": "needle"})).unwrap();
     let plans = build_explain_plans(&params);
@@ -149,7 +160,7 @@ fn synthetic_hit() -> SearchHit {
             forced: None,
         }],
         rank: 1,
-        score: 12.5,
+        score: guidance_core::zg_types::RrfScore::new(12.5),
         matched_by: SearchMatchedBy::Fts,
         trace: None,
     }

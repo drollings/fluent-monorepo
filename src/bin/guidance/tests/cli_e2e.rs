@@ -8,34 +8,13 @@
 //! covered hermetically by `query_recall` / `hybrid_parity` in
 //! `guidance-core`; the `--rg` route below proves end-to-end retrieval.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
-fn guidance_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_guidance"))
-}
+#[path = "common.rs"]
+#[allow(dead_code)]
+mod common;
 
-fn workspace() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(
-        dir.path().join("lib.rs"),
-        "/// Adds one.\npub fn e2e_anchor_fn(x: u64) -> u64 {\n    x + 1\n}\n",
-    )
-    .expect("write");
-    dir
-}
-
-fn run(dir: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(guidance_bin())
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("spawn guidance")
-}
-
-fn stdout(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
+use common::{run, stdout, workspace};
 
 #[test]
 fn index_search_refresh_status_rg_full_flow() {

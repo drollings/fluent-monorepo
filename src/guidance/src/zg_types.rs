@@ -292,6 +292,41 @@ pub struct EntityFragment {
 // Search plans, traces, hits (mirror types.ts search section)
 // ---------------------------------------------------------------------------
 
+/// Fused RRF composite score: an ordinal over within-route positions,
+/// not a confidence and not a magnitude. The fusion kernel sums
+/// `1/(K + rank)` terms across routes whose private scales do not
+/// commute (unbounded BM25 magnitudes, constant lemma weights,
+/// embedding distances), so composites compare positions only.
+/// Consequences, enforced by the shape of this type rather than by
+/// prose: no arithmetic (`Add`/`Sub`/`Mul`/`Div`/`Sum` are deliberately
+/// absent — a composite never combines with anything, and a raw route
+/// score cannot flow here without an explicit wrap); ordering through
+/// the derived `PartialOrd` (same `partial_cmp` semantics as the bare
+/// `f64` it replaces); magnitude reads only through [`RrfScore::value`]
+/// for lossy display. Serialization is transparent: on the wire this
+/// is still a JSON number, byte-identical to before.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RrfScore(pub f64);
+
+impl RrfScore {
+    /// Wrap a kernel-produced composite. The single sanctioned call
+    /// site is the fusion kernel boundary (`fuse_candidates`); every
+    /// other construction (tests, fixtures) is explicit and auditable.
+    #[must_use]
+    pub fn new(score: f64) -> Self {
+        Self(score)
+    }
+
+    /// Magnitude read for lossy display only (`{:.2}` rendering, trace
+    /// text). Rounds away information by design — never feed back into
+    /// ranking.
+    #[must_use]
+    pub fn value(self) -> f64 {
+        self.0
+    }
+}
+
 /// Recall route mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -442,8 +477,8 @@ pub struct SearchRecallTrace {
 pub struct SearchStageTrace {
     /// 1-based stage rank.
     pub rank: usize,
-    /// Stage score.
-    pub score: f64,
+    /// Stage score (fused composite — ordinal, see [`RrfScore`]).
+    pub score: RrfScore,
     /// Force-append flag.
     pub forced: Option<bool>,
 }
@@ -524,8 +559,8 @@ pub struct SearchHit {
     pub evidence: Vec<SearchHitEvidence>,
     /// 1-based fused rank.
     pub rank: usize,
-    /// Fused RRF score.
-    pub score: f64,
+    /// Fused RRF score (ordinal composite — see [`RrfScore`]).
+    pub score: RrfScore,
     /// Recall provenance.
     pub matched_by: SearchMatchedBy,
     /// Trace, when requested.

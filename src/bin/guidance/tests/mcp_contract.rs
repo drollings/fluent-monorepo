@@ -6,6 +6,12 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command};
 
+#[path = "common.rs"]
+#[allow(dead_code)]
+mod common;
+
+use common::{run, stdout, sync};
+
 fn guidance_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_guidance"))
 }
@@ -77,6 +83,35 @@ impl McpClient {
             serde_json::json!({"name": "guidance_explain", "arguments": arguments}),
         )
     }
+
+    /// Write a raw stdio line, read exactly one raw response line.
+    fn raw(&mut self, line: &str) -> String {
+        writeln!(self.stdin, "{line}").expect("write");
+        self.stdin.flush().expect("flush");
+        let mut out = String::new();
+        self.stdout.read_line(&mut out).expect("read");
+        out
+    }
+}
+
+/// Every server stdout line is a JSON-RPC 2.0 response: versioned
+/// envelope, exactly one of `result`/`error`, and never a
+/// server-initiated request (no `method` member — the server cannot
+/// elicit, prompt, or expect a client reply).
+fn assert_response_envelope(value: &serde_json::Value, context: &str) {
+    assert_eq!(value["jsonrpc"], "2.0", "{context}");
+    assert!(
+        value.get("method").is_none(),
+        "server-initiated request: {context}"
+    );
+    let has_result = value.get("result").is_some();
+    let has_error = value
+        .get("error")
+        .is_some_and(serde_json::Value::is_object);
+    assert!(
+        has_result ^ has_error,
+        "result/error exclusivity: {context}"
+    );
 }
 
 impl Drop for McpClient {
@@ -171,6 +206,156 @@ fn explain_hybrid_routes_accepted() {
             content_text(&response).contains("freshness: "),
             "{response}"
         );
+    }
+}
+
+/// Two-file import fixture: `a_main` depends on `b_mod`, so an
+/// explain for `foo` carries exactly one uncovered context line.
+fn graph_workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("b_mod.rs"),
+        "pub fn b_helper() -> u64 {\n    1\n}\n",
+    )
+    .expect("write");
+    std::fs::write(
+        dir.path().join("a_main.rs"),
+        "mod b_mod;\nuse b_mod::b_helper;\npub fn foo() -> u64 {\n    b_helper()\n}\n",
+    )
+    .expect("write");
+    dir
+}
+
+/// Context section of the CLI `explain` output: lines after
+/// `### Context` starting with `- ` (workspace-relative, verbatim).
+fn cli_context_lines(dir: &std::path::Path) -> Vec<String> {
+    let root = dir.to_str().unwrap().to_string();
+    let json_dir = dir.join(".guidance").to_str().unwrap().to_string();
+    let db = dir.join("mcp.db").to_str().unwrap().to_string();
+    let out = run(
+        dir,
+        &[
+            "explain",
+            "where is foo defined",
+            "--workspace",
+            &root,
+            "--guidance",
+            &json_dir,
+            "--db",
+            &db,
+            "--limit",
+            "10",
+        ],
+    );
+    assert!(out.status.success(), "cli explain failed: {out:?}");
+    let text = stdout(&out);
+    let mut lines = Vec::new();
+    let mut in_context = false;
+    for line in text.lines() {
+        if line.strip_prefix("### Context").is_some() {
+            in_context = true;
+            continue;
+        }
+        if in_context && line.starts_with("- ") {
+            lines.push(line.to_string());
+        }
+    }
+    lines
+}
+
+#[test]
+fn explain_context_flag_off_is_byte_identical_and_on_matches_cli() {
+    let dir = graph_workspace();
+    sync(dir.path(), "mcp.db", false);
+    let cli_lines = cli_context_lines(dir.path());
+    assert!(!cli_lines.is_empty(), "fixture must carry context");
+    let mut client = McpClient::spawn(dir.path(), "full");
+    let unset = client.explain(serde_json::json!({"query": "where is foo defined"}));
+    let off = client.explain(
+        serde_json::json!({"query": "where is foo defined", "context": false}),
+    );
+    // Flag-off is byte-identical to today: same result object, no
+    // `context` key either way.
+    assert_eq!(unset["result"], off["result"], "{unset} vs {off}");
+    assert!(unset["result"].get("context").is_none(), "{unset}");
+    let on = client.explain(
+        serde_json::json!({"query": "where is foo defined", "context": true}),
+    );
+    // Hits text untouched by the flag; context arrives as a separate
+    // array beside — never inside — the hits payload.
+    assert_eq!(
+        on["result"]["content"], unset["result"]["content"],
+        "{on} vs {unset}"
+    );
+    let context: Vec<String> = on["result"]["context"]
+        .as_array()
+        .expect("context array")
+        .iter()
+        .map(|value| value.as_str().expect("line").to_string())
+        .collect();
+    assert_eq!(context, cli_lines, "shared-builder proof");
+}
+
+#[test]
+fn stdio_transport_frames_one_response_per_line_with_id_echo() {
+    let dir = workspace();
+    let mut client = McpClient::spawn(dir.path(), "full");
+    // Distinct id shapes echo back on their own single lines.
+    let line = client.raw(r#"{"jsonrpc":"2.0","method":"initialize","id":7,"params":{}}"#);
+    assert_eq!(line.trim().lines().count(), 1, "one line");
+    let first: serde_json::Value = serde_json::from_str(line.trim()).expect("valid JSON");
+    assert_response_envelope(&first, "initialize");
+    assert_eq!(first["id"], 7, "numeric id echoes");
+    let line = client.raw(r#"{"jsonrpc":"2.0","method":"tools/list","id":"abc","params":{}}"#);
+    let second: serde_json::Value = serde_json::from_str(line.trim()).expect("valid JSON");
+    assert_response_envelope(&second, "tools/list");
+    assert_eq!(second["id"], "abc", "string id echoes");
+    // Blank lines earn silence: blank, then two valid requests, must
+    // read back exactly those two responses in order (a phantom blank
+    // response would shift every subsequent read).
+    writeln!(client.stdin).expect("blank line");
+    client.stdin.flush().expect("flush");
+    let line = client.raw(
+        r#"{"jsonrpc":"2.0","method":"tools/call","id":21,"params":{"name":"guidance_status","arguments":{}}}"#,
+    );
+    let third: serde_json::Value = serde_json::from_str(line.trim()).expect("valid JSON");
+    assert_response_envelope(&third, "post-blank status");
+    assert_eq!(third["id"], 21);
+    let line = client.raw(
+        r#"{"jsonrpc":"2.0","method":"tools/call","id":22,"params":{"name":"guidance_status","arguments":{}}}"#,
+    );
+    let fourth: serde_json::Value = serde_json::from_str(line.trim()).expect("valid JSON");
+    assert_eq!(fourth["id"], 22);
+    // Malformed JSON earns a structured error with null id — still
+    // exactly one framed line, still an envelope.
+    let line = client.raw("{not json");
+    assert_eq!(line.trim().lines().count(), 1, "one line");
+    let bad: serde_json::Value = serde_json::from_str(line.trim()).expect("valid JSON");
+    assert_response_envelope(&bad, "malformed");
+    assert!(bad["id"].is_null(), "unparseable id is null: {bad}");
+    assert!(bad["error"].is_object(), "{bad}");
+}
+
+#[test]
+fn server_never_initiates_requests_or_elicitations() {
+    // A session across every response shape — valid result, tool
+    // argument error, unknown method, malformed frame. No server line
+    // may carry `method`: the server answers, never asks (no
+    // elicitation, no prompt, no server-to-client notification).
+    let dir = workspace();
+    let mut client = McpClient::spawn(dir.path(), "full");
+    let frames = [
+        r#"{"jsonrpc":"2.0","method":"initialize","id":31,"params":{}}"#.to_string(),
+        r#"{"jsonrpc":"2.0","method":"tools/call","id":32,"params":{"name":"guidance_explain","arguments":{"query":"mcp_anchor_fn"}}}"#.to_string(),
+        r#"{"jsonrpc":"2.0","method":"tools/call","id":33,"params":{"name":"guidance_explain","arguments":{}}}"#.to_string(),
+        r#"{"jsonrpc":"2.0","method":"no_such_tool","id":34}"#.to_string(),
+        "{broken".to_string(),
+    ];
+    for frame in &frames {
+        let line = client.raw(frame);
+        let value: serde_json::Value =
+            serde_json::from_str(line.trim()).expect("framed JSON");
+        assert_response_envelope(&value, frame);
     }
 }
 

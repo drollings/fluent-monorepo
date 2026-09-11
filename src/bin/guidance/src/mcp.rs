@@ -10,7 +10,7 @@ use common_core::jsonrpc::{JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpc
 use guidance_core::memory::MemoryBridge;
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
-use guidance_core::query::ingest::default_en_pipeline;
+use guidance_core::query::ingest::LazyNlp;
 use guidance_core::query::recall::run_recall;
 use guidance_core::query::strategy::FsmEngine;
 use guidance_core::sync_engine::SyncEngine;
@@ -155,6 +155,9 @@ pub struct ExplainParams {
     pub freshness: FreshnessMode,
     /// Refresh stale files before serving (only with `wait_for_fresh`).
     pub auto_update: bool,
+    /// Attach depth-1 graph context lines (explicit user intent; off
+    /// by default so the response shape is unchanged unless asked).
+    pub context: bool,
 }
 
 fn arg_str(arguments: &serde_json::Value, name: &str) -> Option<String> {
@@ -256,6 +259,7 @@ pub fn parse_explain_params(arguments: &serde_json::Value) -> Result<ExplainPara
         mtime_before,
         freshness,
         auto_update: arg_bool(arguments, "autoUpdate"),
+        context: arg_bool(arguments, "context"),
     })
 }
 
@@ -422,7 +426,7 @@ pub fn render_explain(
             location,
             hit_title(hit),
             index + 1,
-            hit.score,
+            hit.score.value(),
             matched_by_name(&hit.matched_by)
         ));
         for evidence in hit.evidence.iter().take(3) {
@@ -566,6 +570,10 @@ impl McpServer {
                     "autoUpdate": {
                         "type": "boolean",
                         "description": "Refresh stale files before serving (with wait_for_fresh)"
+                    },
+                    "context": {
+                        "type": "boolean",
+                        "description": "Include depth-1 graph context lines (provenance, same format as the explain output) as a separate context array beside the hits (default: false)"
                     }
                 },
                 "required": ["query"]
@@ -683,12 +691,13 @@ impl McpServer {
         let storage = GuidanceDbStorage::new(&self.db);
         let plans = build_explain_plans(&params);
         // Rule-lemmatizer pipeline (no model): L2 inflections collapse at
-        // zero embedding cost; `None` degrades to L1-only.
-        let nlp = default_en_pipeline();
+        // zero embedding cost; `None` degrades to L1-only. Built lazily
+        // on first lemma need, shared across the merged plans.
+        let nlp = LazyNlp::new();
         // Multi-query merge: best rank wins per entity id, provenance kept.
         let mut merged: Vec<SearchHit> = Vec::new();
         for plan in &plans {
-            match run_recall(plan, &storage, None, nlp.as_ref()) {
+            match run_recall(plan, &storage, None, nlp.get()) {
                 Ok(output) => {
                     for hit in output.hits {
                         if let Some(existing) = merged
@@ -734,15 +743,33 @@ impl McpServer {
             Coverage::RankedSample,
             note.as_deref(),
         );
+        // Optional graph context through the shared context assembly
+        // (same builder the CLI explain uses): anchors from the merged
+        // hits, provenance lines verbatim, no fabricated hits, no score
+        // invention — the renderer above never sees them. Off by
+        // default; hydration failure degrades to no lines.
+        let mut result = serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": text
+            }]
+        });
+        if params.context {
+            let lines = match self.workspace.as_ref() {
+                Some(workspace) => crate::search::context_lines_for_hits(
+                    &merged,
+                    &self.db,
+                    &workspace.to_string_lossy(),
+                )
+                .unwrap_or_default(),
+                None => Vec::new(),
+            };
+            result["context"] = serde_json::json!(lines);
+        }
         JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: request.id.clone(),
-            result: Some(serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": text
-                }]
-            })),
+            result: Some(result),
             error: None,
         }
     }

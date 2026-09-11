@@ -315,6 +315,63 @@ async fn rg_route_searches_without_an_index() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn fuse_search_output_is_byte_stable() {
+    // Byte-parity pin for the Fuse recall assembly: the rendered output
+    // on this hermetic fixture is recorded verbatim; unifying the recall
+    // assembly must reproduce it byte-for-byte (golden-string, not fuzzy).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().to_str().unwrap().to_string();
+    let db_path = dir.path().join("parity.db");
+    let db = search_vector::GuidanceDb::open(&db_path).expect("open db");
+    for (id, rel, text) in [
+        ("file-a", "a.rs", "the alpha needle sleeps here\n"),
+        ("file-b", "b.rs", "the beta stone rests here\n"),
+    ] {
+        guidance_core::query::ingest::ingest_text_file(
+            &db,
+            &guidance_core::zg_types::FileInfo {
+                id: id.to_string(),
+                absolute_path: dir.path().join(rel).to_string_lossy().into_owned(),
+                relative_path: rel.to_string(),
+                root_path: workspace.clone(),
+                size_bytes: text.len() as u64,
+                last_modified_time: 100,
+                content_hash: None,
+                kind: Some(guidance_core::zg_types::FileKind::Code),
+                format: "rust".to_string(),
+                index_status: None,
+            },
+            text,
+            None,
+            None,
+        )
+        .expect("ingest");
+    }
+    drop(db);
+    let rendered = run_search(
+        "needle",
+        &workspace,
+        db_path.to_str().unwrap(),
+        Some(10),
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        &[],
+        &[],
+        &rg_opts(),
+    )
+    .expect("fuse route");
+    assert_eq!(
+        rendered,
+        "## Prose\n\n*Source: a.rs:0*\n\nthe alpha needle sleeps here\n\n\n---\n\n"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn embedder_builder_returns_none_without_backend() {
     // No config in a fresh workspace: no embedder, no dial, no panic.
     // (Compile-red first: the builder does not exist yet.)
@@ -407,7 +464,7 @@ fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> Sear
             forced: None,
         }],
         rank: 1,
-        score,
+        score: guidance_core::zg_types::RrfScore::new(score),
         matched_by: SearchMatchedBy::Fts,
         trace: None,
     }
@@ -505,6 +562,15 @@ fn explain_rows_fall_back_to_basename_for_file_hits() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].name, "a.rs");
     assert_eq!(rows[0].source, "a.rs");
+}
+
+#[test]
+fn context_helper_degrades_to_empty_without_anchors() {
+    // No hits means no anchors: empty lines, never an error — the
+    // caller renders hits only.
+    let db = GuidanceDb::open_in_memory().expect("memory db");
+    let lines = context_lines_for_hits(&[], &db, "/repo").expect("empty");
+    assert!(lines.is_empty());
 }
 
 #[test]

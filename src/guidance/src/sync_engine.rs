@@ -41,6 +41,10 @@ pub struct SyncEngine {
     pub workspace_root: PathBuf,
     pub source_dir: PathBuf,
     pub enhancer: Option<Enhancer>,
+    /// Stored source-content hashes (absolute path → sha256 at last
+    /// ingest) feeding the member-JSON clock gate. Empty disables the
+    /// gate: staleness falls back to mtime behavior exactly as before.
+    pub source_hashes: std::collections::HashMap<String, String>,
 }
 
 struct SyncContext {
@@ -65,6 +69,7 @@ impl SyncEngine {
             workspace_root,
             source_dir,
             enhancer: None,
+            source_hashes: std::collections::HashMap::new(),
         }
     }
 
@@ -80,7 +85,28 @@ impl SyncEngine {
             workspace_root,
             source_dir,
             enhancer: None,
+            source_hashes: std::collections::HashMap::new(),
         }
+    }
+
+    /// Attach stored source-content hashes for the member-JSON clock
+    /// gate (absolute path → sha256 at last ingest). Absent entries
+    /// keep today's mtime behavior for those files.
+    #[must_use]
+    pub fn with_source_hashes(
+        mut self,
+        source_hashes: std::collections::HashMap<String, String>,
+    ) -> Self {
+        self.source_hashes = source_hashes;
+        self
+    }
+
+    /// Stored hash for `source_path`, if the gate knows it.
+    fn stored_hash(&self, source_path: &Path) -> Option<&str> {
+        let absolute = absolute_or(source_path.to_path_buf());
+        self.source_hashes
+            .get(absolute.to_string_lossy().as_ref())
+            .map(String::as_str)
     }
 
     #[must_use]
@@ -205,12 +231,24 @@ impl SyncEngine {
     pub fn gen_if_stale(&mut self, source_path: &Path) -> Result<bool, SyncEngineError> {
         let json_path = self.guidance_json_path(source_path);
 
-        if !staleness::should_generate(&json_path, source_path) {
+        if !self.should_generate_for(source_path, &json_path) {
             return Ok(false);
         }
 
         self.gen(source_path)?;
         Ok(true)
+    }
+
+    /// Staleness for one source file: the mtime gate, with the
+    /// content-aware clock fallback when stored source hashes are
+    /// attached (files without stored evidence keep mtime behavior).
+    fn should_generate_for(&self, source_path: &Path, json_path: &Path) -> bool {
+        let Some(stored) = self.stored_hash(source_path) else {
+            return staleness::should_generate(json_path, source_path);
+        };
+        staleness::should_generate_with_stored(json_path, source_path, Some(stored), || {
+            crate::diff::hash_file(source_path)
+        })
     }
 
     pub fn load_doc(&self, source_path: &Path) -> Result<Option<GuidanceDoc>, SyncEngineError> {
@@ -227,7 +265,7 @@ impl SyncEngine {
         self.walk_source_files(|source_path| {
             total_files += 1;
             let json_path = self.guidance_json_path(source_path);
-            if staleness::should_generate(&json_path, source_path) {
+            if self.should_generate_for(source_path, &json_path) {
                 stale_files += 1;
             } else {
                 up_to_date += 1;
@@ -310,7 +348,11 @@ impl SyncEngine {
 /// `strip_prefix` relativization and `meta` derivation agree no matter
 /// how the caller spelled the workspace. Falls back to the input when
 /// the working directory is unreadable — never a construction failure.
-fn absolute_or(path: PathBuf) -> PathBuf {
+/// Lexically absolutize `path` against the process working directory,
+/// returning it unchanged when absolutization fails. Shared path-key
+/// normalization for stored-hash lookups (DB keys are absolute).
+#[must_use]
+pub fn absolute_or(path: PathBuf) -> PathBuf {
     std::path::absolute(&path).unwrap_or(path)
 }
 
@@ -481,5 +523,84 @@ mod regen_determinism_tests {
             mtime,
             "identical regen must not bump the mtime"
         );
+    }
+}
+
+#[cfg(test)]
+mod clock_gate_calibration_tests {
+    use super::*;
+    use fluent_wvr_testutil::tempdir;
+
+    #[test]
+    fn test_ambiguity_window_calibration_five_unchanged_five_edited() {
+        // Clock-gate calibration on a hermetic fixture, everything inside
+        // the 1s ambiguity window: 5 touched-but-identical files must NOT
+        // re-process (precision) and 5 sub-second real edits MUST
+        // re-process (recall). Pre-registered bar: 5/5 on both arms.
+        let dir = tempdir();
+        let source_dir = dir.path().join("src");
+        std::fs::create_dir(&source_dir).expect("mkdir");
+        let guidance_dir = dir.path().join(".guidance");
+        let mut paths = Vec::new();
+        for i in 0..10 {
+            let file = source_dir.join(format!("c{i:02}.rs"));
+            std::fs::write(&file, format!("pub fn cal{i:02}() -> u64 {{ {i} }}\n"))
+                .expect("write");
+            paths.push(file);
+        }
+        let mut engine = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
+        for file in &paths {
+            engine.gen(file).expect("gen");
+        }
+        // Stored evidence: sha256 of the v1 bytes, as last-ingest records.
+        let hashes: std::collections::HashMap<String, String> = paths
+            .iter()
+            .map(|file| {
+                let bytes = std::fs::read(file).expect("read");
+                (
+                    absolute_or(file.clone()).to_string_lossy().into_owned(),
+                    common_core::hash::sha256_hex(&bytes),
+                )
+            })
+            .collect();
+        // Control arm first (read-only): without stored evidence the gate
+        // keeps today's mtime behavior — inside-window edits skip. The
+        // stored map is the evidence channel that enables firing.
+        let mut bare = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
+        for file in &paths[5..] {
+            std::fs::write(
+                file,
+                format!(
+                    "pub fn edited{}() -> u64 {{ 999 }}\n",
+                    file.file_stem().unwrap().to_string_lossy()
+                ),
+            )
+            .expect("edit");
+        }
+        for file in &paths[..5] {
+            let bytes = std::fs::read(file).expect("read");
+            std::fs::write(file, &bytes).expect("touch");
+        }
+        for file in &paths[5..] {
+            assert!(
+                !bare.gen_if_stale(file).expect("gate"),
+                "control: no stored evidence means mtime behavior (skip): {file:?}"
+            );
+        }
+        // Gated arms: precision then recall.
+        let mut gated = SyncEngine::new(guidance_dir.clone(), source_dir.clone())
+            .with_source_hashes(hashes);
+        for file in &paths[..5] {
+            assert!(
+                !gated.gen_if_stale(file).expect("gate"),
+                "touched-identical must NOT re-process: {file:?}"
+            );
+        }
+        for file in &paths[5..] {
+            assert!(
+                gated.gen_if_stale(file).expect("gate"),
+                "sub-second edit MUST re-process: {file:?}"
+            );
+        }
     }
 }

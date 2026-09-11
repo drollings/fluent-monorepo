@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::{plan_from_query, stages_from_hits};
-use guidance_core::query::ingest::default_en_pipeline;
+use guidance_core::query::ingest::LazyNlp;
 use guidance_core::query::recall::run_recall;
 use guidance_core::query::rg_backend::{RgBackend, RgOptions};
 use guidance_core::query::strategy::FsmEngine;
@@ -318,6 +318,37 @@ pub fn run_search(
         return run_rg_search(query, workspace, limit, rg_options);
     }
 
+    let plan = build_search_plan(
+        query,
+        mode,
+        limit,
+        trace,
+        prefer_symbol,
+        globs,
+        &symbol_types,
+    );
+    // The Fuse route runs the shared recall assembly below; single-route
+    // modes keep their explicit embedder wiring (Fts: none, Vector: required).
+    if mode == SearchMode::Fuse {
+        return match recall_on_index(workspace, db_path, &plan) {
+            Ok(hits) => {
+                if hits.is_empty() {
+                    return Ok("No results found.\n".to_string());
+                }
+                let stages = stages_from_hits(&hits);
+                let format = if trace {
+                    OutputFormat::Debug
+                } else if compact {
+                    OutputFormat::Compact
+                } else {
+                    OutputFormat::Markdown
+                };
+                Ok(QueryEngine::format_stages(&stages, format))
+            }
+            Err(error) => Err(error),
+        };
+    }
+
     let db_file = PathBuf::from(db_path);
     if !db_file.exists() {
         return Err(format!(
@@ -340,8 +371,9 @@ pub fn run_search(
     );
     // Rule-lemmatizer pipeline (no model): the L2 route collapses
     // inflections at zero embedding cost; `None` degrades to L1-only.
-    let nlp = default_en_pipeline();
-    match run_recall(&plan, &storage, embedder.as_deref(), nlp.as_ref()) {
+    // Built lazily on lemma need — recall always needs it here.
+    let nlp = LazyNlp::new();
+    match run_recall(&plan, &storage, embedder.as_deref(), nlp.get()) {
         Ok(output) => {
             if output.hits.is_empty() {
                 return Ok("No results found.\n".to_string());
@@ -360,17 +392,15 @@ pub fn run_search(
     }
 }
 
-/// Fused recall hits for programmatic consumers (the explain port):
-/// the same plan/storage/nlp assembly as the Fuse CLI route
-/// (`build_search_plan` + [`run_recall`]), no rendering. `run_search`
-/// keeps its own assembly untouched so search output stays
-/// byte-identical; the shared core is `run_recall`, reused here, never
-/// reimplemented.
-pub fn fused_hits(
-    query: &str,
+/// Shared Fuse recall assembly: open the index at `db_path`, resolve the
+/// embedder from the workspace config, and run a caller-built plan through
+/// [`run_recall`]. Both `run_search` (Fuse path) and [`fused_hits`] enter
+/// here — one assembly, one set of error strings — while plan construction
+/// and rendering stay with the caller.
+fn recall_on_index(
     workspace: &str,
     db_path: &str,
-    limit: usize,
+    plan: &SearchPlan,
 ) -> Result<Vec<SearchHit>, String> {
     let db_file = PathBuf::from(db_path);
     if !db_file.exists() {
@@ -382,16 +412,63 @@ pub fn fused_hits(
         Ok(db) => db,
         Err(error) => return Err(format!("cannot open index at {db_path}: {error}")),
     };
+    // L3 embedder: resolved from the workspace project config
+    // (`models.embed`, provider table, dims). Construction is offline;
+    // absence degrades through the existing embedder-absent paths.
     let cfg =
         guidance_core::config::load_config(std::path::Path::new(workspace)).unwrap_or_default();
     let embedder = crate::embed::embedder_from_config(&cfg);
     let storage = GuidanceDbStorage::new(&db);
-    let plan = build_search_plan(query, SearchMode::Fuse, limit, false, false, &[], &[]);
-    let nlp = default_en_pipeline();
-    match run_recall(&plan, &storage, embedder.as_deref(), nlp.as_ref()) {
+    // Rule-lemmatizer pipeline (no model): the L2 route collapses
+    // inflections at zero embedding cost; `None` degrades to L1-only.
+    // Built lazily on lemma need — recall always needs it here.
+    let nlp = LazyNlp::new();
+    match run_recall(plan, &storage, embedder.as_deref(), nlp.get()) {
         Ok(output) => Ok(output.hits),
         Err(error) => Err(format!("search failed: {error}")),
     }
+}
+
+/// Fused recall hits for programmatic consumers (the explain port):
+/// the caller-default plan through the shared [`recall_on_index`]
+/// assembly, no rendering.
+pub fn fused_hits(
+    query: &str,
+    workspace: &str,
+    db_path: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    let plan = build_search_plan(query, SearchMode::Fuse, limit, false, false, &[], &[]);
+    recall_on_index(workspace, db_path, &plan)
+}
+
+/// Context lines for programmatic consumers of fused hits (the
+/// explain command and the MCP explain tool): the top-N fused files
+/// seed the depth-1 expansion over the hydrated graph, and lines name
+/// only files the hits table does not already cover — the budget pays
+/// for new files, never repeats — capped at [`EXPLAIN_CONTEXT_BUDGET`].
+/// Pure composition of [`anchor_files`], the shared hydration helper,
+/// [`ContextEdge`] expansion, and [`build_context_lines`]: the one
+/// context assembly, never a second builder. An empty anchor set
+/// yields no lines; hydration failure is the caller's to report (the
+/// CLI warns, the MCP tool degrades silently).
+pub fn context_lines_for_hits(
+    hits: &[SearchHit],
+    db: &GuidanceDb,
+    workspace: &str,
+) -> Result<Vec<String>, String> {
+    let anchors = anchor_files(hits, guidance_core::graph_index::CLOSURE_ANCHOR_FILES);
+    if anchors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let graph = crate::index_cmd::hydrated_graph(db, &[workspace.to_string()])?;
+    let mut edges = graph.expand_shallow(&anchors);
+    let covered: std::collections::HashSet<&str> = hits
+        .iter()
+        .map(|hit| hit.file.absolute_path.as_str())
+        .collect();
+    edges.retain(|edge| !covered.contains(edge.file.as_str()));
+    Ok(build_context_lines(&edges, EXPLAIN_CONTEXT_BUDGET, workspace))
 }
 
 /// Top-N distinct fused files (hit order) seeding the closure.
@@ -432,7 +509,9 @@ pub fn build_explain_rows(hits: &[SearchHit]) -> Vec<ExplainRow> {
             ExplainRow {
                 name,
                 source: hit.file.relative_path.clone(),
-                score: hit.score,
+                // Lossy by design (see `ExplainRow`): the ordinal leaves
+                // the ranking pipeline here and becomes display text.
+                score: hit.score.value(),
             }
         })
         .collect()
@@ -510,15 +589,17 @@ fn basename_of(path: &str) -> String {
 }
 
 /// One rendered explain row: member/symbol title, file path, score.
-/// Score is a fused RRF magnitude for recall rows, `0.0` for
-/// graph-closure rows (graph signal, not a recall score — see M5).
+/// Score is the fused RRF ordinal (positions, not a magnitude — see
+/// `RrfScore`) for recall rows, `0.0` for graph-closure rows (graph
+/// signal, not a recall score — see M5). Table rendering rounds to two
+/// decimals, which is lossy by design: never feed back into ranking.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExplainRow {
     /// Symbol/member title (entity id fallback).
     pub name: String,
     /// Workspace-relative file path (absolute fallback).
     pub source: String,
-    /// Row score.
+    /// Row score (lossy display value — see above).
     pub score: f64,
 }
 

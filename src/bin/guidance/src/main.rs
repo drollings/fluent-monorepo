@@ -572,32 +572,21 @@ async fn cmd_explain(
         }
     };
 
-    // Query-time closure expansion over the hydrated graph (no rebuild):
-    // top-N fused files seed the depth-1 expansion; context renders as
-    // an additive section with provenance (the hits table is never
+    // Query-time closure expansion over the hydrated graph (no rebuild)
+    // through the shared context assembly; context renders as an
+    // additive section with provenance (the hits table is never
     // perturbed). Hydration failure degrades to hits only.
     let anchors = search::anchor_files(
         &hits,
         guidance_core::graph_index::CLOSURE_ANCHOR_FILES,
     );
-    let mut edges: Vec<guidance_core::graph_index::ContextEdge> = Vec::new();
+    let mut context = Vec::new();
     if !anchors.is_empty() {
-        let roots = vec![workspace.to_string()];
         match GuidanceDb::open(Path::new(db_path))
             .map_err(|error| error.to_string())
-            .and_then(|db| index_cmd::hydrated_graph(&db, &roots))
+            .and_then(|db| search::context_lines_for_hits(&hits, &db, workspace))
         {
-            Ok(graph) => {
-                edges = graph.expand_shallow(&anchors);
-                // Table-dedup: context names only files the table does
-                // not already cover — the budget pays for new files,
-                // never repeats (sweep assumption, pinned by test).
-                let covered: std::collections::HashSet<&str> = hits
-                    .iter()
-                    .map(|hit| hit.file.absolute_path.as_str())
-                    .collect();
-                edges.retain(|edge| !covered.contains(edge.file.as_str()));
-            }
+            Ok(lines) => context = lines,
             Err(error) => {
                 eprintln!("Warning: explain expansion failed ({error}); hits only");
             }
@@ -605,8 +594,6 @@ async fn cmd_explain(
     }
 
     let rows = search::build_explain_rows(&hits);
-    let context =
-        search::build_context_lines(&edges, search::EXPLAIN_CONTEXT_BUDGET, workspace);
 
     print!("{}", search::render_explain_table(query, &rows, &context));
     if !memory_context.is_empty() {
@@ -746,7 +733,34 @@ async fn cmd_sync(
                     .unwrap_or(source_path)
                     .display()
             ));
-            if !force && !guidance_core::sync::staleness::should_generate(&json_path, source_path) {
+            // Stored source hashes for the member-JSON clock gate (empty on
+            // any failure — the gate then keeps mtime behavior).
+            let stored_hash: Option<String> =
+                search_vector::GuidanceDb::open(Path::new(db_path))
+                    .ok()
+                    .and_then(|db| db.source_content_hashes().ok())
+                    .and_then(|map| {
+                        map.get(
+                            guidance_core::sync_engine::absolute_or(source_path.to_path_buf())
+                                .to_string_lossy()
+                                .as_ref(),
+                        )
+                        .cloned()
+                    });
+            let fresh = match stored_hash.as_deref() {
+                Some(stored) => {
+                    !guidance_core::sync::staleness::should_generate_with_stored(
+                        &json_path,
+                        source_path,
+                        Some(stored),
+                        || guidance_core::diff::hash_file(source_path),
+                    )
+                }
+                None => {
+                    !guidance_core::sync::staleness::should_generate(&json_path, source_path)
+                }
+            };
+            if !force && fresh {
                 if verbose {
                     println!("  skip (up to date): {path}");
                 }
@@ -783,7 +797,7 @@ async fn cmd_sync(
         let scan_path = PathBuf::from(scan_dir);
         ensure_dir_or_panic(&guidance_dir);
         let generated =
-            walk_and_gen_async(guidance_dir.clone(), scan_path, force, verbose, &[]).await;
+            walk_and_gen_async(guidance_dir.clone(), scan_path, force, verbose, &[], None).await;
         println!("Scanned {scan_dir}: generated {generated} files");
     } else {
         let src_dirs = src_dirs_from_config_with(&workspace_path, &cfg);
@@ -804,7 +818,7 @@ async fn cmd_sync(
 
             if stale_files > 0 || force {
                 generated +=
-                    walk_and_gen_async(guidance_dir.clone(), src_dir.clone(), force, verbose, &[])
+                    walk_and_gen_async(guidance_dir.clone(), src_dir.clone(), force, verbose, &[], Some(db_path))
                         .await;
             }
         }
@@ -834,27 +848,36 @@ async fn cmd_sync(
                     index_cmd::FragmentIngestStats::default()
                 }
             };
-            // Propagation: seeds (changed + deleted) expand through the
-            // hydrated dependents closure; affected files re-process via
+            // Propagation: seeds (changed + deleted + pre-resolved
+            // deleted-dependents) expand through the hydrated dependents
+            // closure; affected files re-process via
             // the existing single-file regen path (forced, so
             // dependency-derived state reconverges even when the
             // dependent's own bytes are unchanged). Deleted files drop
             // their JSON sidecars with the existing deleter.
-            if !frag_stats.changed.is_empty() || !frag_stats.deleted.is_empty() {
+            if !frag_stats.changed.is_empty()
+                || !frag_stats.deleted.is_empty()
+                || !frag_stats.deleted_dependents.is_empty()
+            {
                 let roots: Vec<String> = existing_dirs
                     .iter()
                     .map(|dir| dir.to_string_lossy().into_owned())
                     .collect();
+                // Dependents resolved pre-purge (their graph rows are gone
+                // by now) re-enter as seeds so the post-purge closure can
+                // still expand transitively through surviving nodes.
+                let mut changed = frag_stats.changed.clone();
+                changed.extend(frag_stats.deleted_dependents.iter().cloned());
                 let affected = match GuidanceDb::open(Path::new(db_path)) {
                     Ok(db) => index_cmd::affected_for_sync(
                         &db,
-                        &frag_stats.changed,
+                        &changed,
                         &frag_stats.deleted,
                         &roots,
                     ),
                     Err(error) => {
                         eprintln!("Warning: graph hydration failed ({error}); re-processing seeds only");
-                        let mut seeds = frag_stats.changed.clone();
+                        let mut seeds = changed;
                         seeds.extend(frag_stats.deleted.iter().cloned());
                         seeds.sort();
                         seeds.dedup();
@@ -957,6 +980,7 @@ async fn walk_and_gen_async(
     force: bool,
     verbose: bool,
     filter_exts: &[&str],
+    db_path: Option<&str>,
 ) -> usize {
     let exts: Vec<&str> = if filter_exts.is_empty() {
         walk::SOURCE_EXTENSIONS.to_vec()
@@ -968,8 +992,26 @@ async fn walk_and_gen_async(
     if files.is_empty() {
         return 0;
     }
+    // Stored source hashes for the member-JSON clock gate (one small
+    // listing; empty on any failure — the gate then keeps mtime behavior).
+    let source_hashes: std::collections::HashMap<String, String> = db_path
+        .and_then(|path| search_vector::GuidanceDb::open(Path::new(path)).ok())
+        .and_then(|db| db.source_content_hashes().ok())
+        .unwrap_or_default();
 
-    let pool = runtime::ast_pool();
+    // AST pool built lazily on the first stale file: no-work walks
+    // (warm syncs, quiet watch cycles) build zero workers instead of
+    // parking a full complement for nothing. Owned per call as before;
+    // no statics, no lifecycle change when work exists.
+    let mut pool: Option<
+        Arc<
+            fluent_concurrency::pool::ResultPool<
+                runtime::AstGenPayload,
+                fluent_types::GuidanceDoc,
+                guidance_core::sync_engine::SyncEngineError,
+            >,
+        >,
+    > = None;
     let mut handles = Vec::with_capacity(files.len());
     let mut generated = 0usize;
 
@@ -978,7 +1020,18 @@ async fn walk_and_gen_async(
         let json_path = guidance_dir
             .join("src")
             .join(format!("{}.json", rel.display()));
-        let should_gen = force || guidance_core::sync::staleness::should_generate(&json_path, path);
+        let should_gen = force || match source_hashes
+            .get(path.to_string_lossy().as_ref())
+            .map(String::as_str)
+        {
+            Some(stored) => guidance_core::sync::staleness::should_generate_with_stored(
+                &json_path,
+                path,
+                Some(stored),
+                || guidance_core::diff::hash_file(path),
+            ),
+            None => guidance_core::sync::staleness::should_generate(&json_path, path),
+        };
         if !should_gen {
             if verbose {
                 println!("  skip: {}", rel.display());
@@ -986,7 +1039,7 @@ async fn walk_and_gen_async(
             continue;
         }
 
-        let pool = Arc::clone(&pool);
+        let pool = Arc::clone(pool.get_or_insert_with(runtime::ast_pool));
         let source_path = path.clone();
         let src_dir = source_dir.clone();
         let gd = guidance_dir.clone();
@@ -1216,6 +1269,7 @@ async fn start_watcher(
                                     false,
                                     verbose,
                                     &[],
+                                    None,
                                 )
                                 .await;
                             }
@@ -1343,12 +1397,16 @@ fn remove_sidecars(guidance_dir: &Path, src_dirs: &[PathBuf], prefix: &Path) {
         return;
     };
     let sidecar_base = guidance_dir.join("src").join(relative);
-    if prefix.is_file() || !prefix.exists() && sidecar_base.with_extension("json").is_file() {
-        let sidecar = if relative.extension().is_some() {
-            PathBuf::from(format!("{}.json", sidecar_base.display()))
-        } else {
-            sidecar_base
-        };
+    // Creation-side naming appends `.json` (`importee.rs.json`), so the
+    // existence probe must use that same shape: `with_extension` would
+    // probe `importee.json`, which never exists, and a deleted file's
+    // sidecar would silently survive.
+    let sidecar = if relative.extension().is_some() {
+        PathBuf::from(format!("{}.json", sidecar_base.display()))
+    } else {
+        sidecar_base.clone()
+    };
+    if prefix.is_file() || !prefix.exists() && sidecar.is_file() {
         let _ = std::fs::remove_file(&sidecar);
         return;
     }

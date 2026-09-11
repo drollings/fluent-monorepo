@@ -966,6 +966,25 @@ impl GuidanceDb {
             .map_err(VectorDbError::from)
     }
 
+    /// Stored source-content hashes (`zg_files.content_hash`) for the
+    /// member-JSON clock gate: absolute path → sha256 of the source bytes
+    /// at ingest time. Empty when no row carries a hash — the gate then
+    /// falls back to mtime behavior, never to a stale skip.
+    pub fn source_content_hashes(&self) -> Result<HashMap<String, String>, VectorDbError> {
+        let rows: Vec<(String, Option<String>)> = self
+            .store
+            .query_rows(
+                "SELECT absolute_path, content_hash FROM zg_files WHERE content_hash IS NOT NULL",
+                &[],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(VectorDbError::from)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(path, hash)| hash.map(|hash| (path, hash)))
+            .collect())
+    }
+
     /// Whether a table exists (schema-gate input).
     pub fn has_table(&self, table: &str) -> bool {
         self.store

@@ -23,7 +23,7 @@ fn candidate(id: &str) -> RecallCandidate {
         sources: Vec::new(),
         recall: Vec::new(),
         evidence: Vec::new(),
-        score: 0.0,
+        score: crate::zg_types::RrfScore::new(0.0),
         rank: 0,
         forced: false,
     }
@@ -86,7 +86,7 @@ fn fuse_ignores_unfound_recalls() {
         reason: Some("No files matched the path filters".to_string()),
     });
     let fused = fuse_candidates(vec![a]);
-    assert_eq!(fused[0].score.to_bits(), 0f64.to_bits());
+    assert_eq!(fused[0].score.value().to_bits(), 0f64.to_bits());
     assert!(fused[0].forced);
 }
 
@@ -183,14 +183,15 @@ fn fuse_candidates_is_deterministic_across_runs() {
             .map(|(rank, id)| {
                 let mut candidate = candidate(id);
                 candidate.rank = rank;
-                candidate.score = 1.0 / (rank as f64 + 1.0);
+                candidate.score =
+                    crate::zg_types::RrfScore::new(1.0 / (rank as f64 + 1.0));
                 candidate.sources = vec![RecallPath::Fts, RecallPath::Vector];
                 candidate
             })
             .collect();
         fuse_candidates(candidates)
             .into_iter()
-            .map(|hit| (hit.id, hit.score.to_bits()))
+            .map(|hit| (hit.id, hit.score.value().to_bits()))
             .collect()
     }
     let baseline = fused_ids(&["c", "a", "b", "d"]);
@@ -202,6 +203,67 @@ fn fuse_candidates_is_deterministic_across_runs() {
     // agrees exactly.
     let permuted = fused_ids(&["d", "b", "a", "c"]);
     assert_eq!(fused_ids(&["d", "b", "a", "c"]), permuted);
+}
+
+#[test]
+fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
+    // Inflection pin: the literal query token occurs in no indexed text,
+    // so the FTS route contributes no trace while the lemma route reports
+    // found at rank 1 — fused recall stays 1.0 on the lemma trace alone.
+    // Exact assertions, not thresholds: any regression in lemma
+    // normalization or lemma-route attachment fails this pin.
+    let nlp = spacy_rs::pipeline::NlpPipeline::en_default().expect("pipeline");
+    let db = search_vector::db::GuidanceDb::open_in_memory().expect("db");
+    let file = crate::zg_types::FileInfo {
+        id: "file-a".to_string(),
+        absolute_path: "/repo/src/a.ts".to_string(),
+        relative_path: "src/a.ts".to_string(),
+        root_path: "/repo".to_string(),
+        size_bytes: 64,
+        last_modified_time: 100,
+        content_hash: None,
+        kind: Some(crate::zg_types::FileKind::Code),
+        format: "typescript".to_string(),
+        index_status: None,
+    };
+    crate::query::ingest::ingest_text_file(
+        &db,
+        &file,
+        "the function executes every morning\n",
+        None,
+        Some(&nlp),
+    )
+    .expect("ingest");
+    let storage = crate::query::db_storage::GuidanceDbStorage::new(&db);
+    let plan = crate::zg_types::SearchPlan {
+        routes: vec![crate::zg_types::SearchPlanRoute {
+            mode: crate::zg_types::SearchPlanRouteMode::Fts,
+            query: "functions".to_string(),
+        }],
+        trace: true,
+        ..Default::default()
+    };
+    let output =
+        crate::query::recall::run_recall(&plan, &storage, None, Some(&nlp)).expect("recall");
+    assert_eq!(output.hits.len(), 1);
+    assert_eq!(output.hits[0].entity.id, "file-a");
+    let trace = output.hits[0].trace.as_ref().expect("trace");
+    // FTS found nothing: it contributes no recall trace at all.
+    assert!(
+        trace
+            .recall
+            .iter()
+            .all(|item| item.path != RecallPath::Fts)
+    );
+    // The lemma route carries the full recall at rank 1.
+    let lemma = trace
+        .recall
+        .iter()
+        .find(|item| item.path == RecallPath::Lemma)
+        .expect("lemma trace");
+    assert!(lemma.found);
+    assert_eq!(lemma.rank, Some(1));
+    assert_eq!(lemma.route_id.as_deref(), Some("lemma"));
 }
 
 #[test]
@@ -224,6 +286,41 @@ fn rank_only_rrf_boundary_two_mid_ranks_outvote_one_top_rank() {
     assert_eq!(fused[1].id, "precise");
     let one = 1.0 / 61.0;
     let two = 2.0 / 65.0;
-    assert!((fused[0].score - two).abs() < 1e-12, "{}", fused[0].score);
-    assert!((fused[1].score - one).abs() < 1e-12, "{}", fused[1].score);
+    assert!(
+        (fused[0].score.value() - two).abs() < 1e-12,
+        "{}",
+        fused[0].score.value()
+    );
+    assert!(
+        (fused[1].score.value() - one).abs() < 1e-12,
+        "{}",
+        fused[1].score.value()
+    );
+}
+
+
+#[test]
+fn rrf_score_orders_like_its_magnitude_and_reads_through_value() {
+    use crate::zg_types::RrfScore;
+    use std::cmp::Ordering;
+    let low = RrfScore::new(1.0 / 61.0);
+    let high = RrfScore::new(2.0 / 65.0);
+    assert_eq!(low.partial_cmp(&high), Some(Ordering::Less));
+    assert_eq!(high.partial_cmp(&low), Some(Ordering::Greater));
+    assert_eq!(low.partial_cmp(&low), Some(Ordering::Equal));
+    assert!((high.value() - 2.0 / 65.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn rrf_score_serializes_as_a_bare_number() {
+    // Transparent on the wire: byte-identical JSON to the bare f64 it
+    // replaces (contract outputs never see the type).
+    use crate::zg_types::RrfScore;
+    let score = RrfScore::new(0.03278688524590164);
+    assert_eq!(
+        serde_json::to_string(&score).expect("serialize"),
+        "0.03278688524590164"
+    );
+    let back: RrfScore = serde_json::from_str("0.03278688524590164").expect("parse");
+    assert_eq!(back.value().to_bits(), 0.03278688524590164f64.to_bits());
 }

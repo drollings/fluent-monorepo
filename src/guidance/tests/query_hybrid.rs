@@ -91,7 +91,7 @@ fn uncitable_code_hits_never_reach_render() {
         },
         evidence: vec![],
         rank: 1,
-        score: 1.0,
+        score: crate::zg_types::RrfScore::new(1.0),
         matched_by: SearchMatchedBy::Fts,
         trace: None,
     };

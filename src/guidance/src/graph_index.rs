@@ -533,7 +533,10 @@ impl GraphIndex {
                 boost += L4_SCOPE_BOOST;
             }
             let overlap = role_overlap(candidate, signals);
-            scored.push((index, candidate.score + boost, overlap));
+            // Local ordering key only: the composite magnitude plus the
+            // structural boosts, sorted here and never stored back into
+            // the candidate (composites never combine — see `RrfScore`).
+            scored.push((index, candidate.score.value() + boost, overlap));
         }
         scored.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)

@@ -22,8 +22,8 @@ pub struct Stage {
 pub struct StageTrace {
     /// zvec `matchedBy` vocabulary (`fts` / `vector` / `fts+vector`).
     pub matched_by: String,
-    /// Fused RRF score.
-    pub score: f64,
+    /// Fused RRF score (ordinal composite — see [`crate::zg_types::RrfScore`]).
+    pub score: crate::zg_types::RrfScore,
     /// 1-based fused rank.
     pub rank: usize,
     /// Per-route recall entries.
