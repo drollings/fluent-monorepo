@@ -63,7 +63,7 @@ fn hash_file_nonexistent() {
 
 #[test]
 fn hash_batch_mixed_results() {
-        let dir = tempfile::TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new().unwrap();
         let p1 = dir.path().join("a.txt");
         let p2 = dir.path().join("b.txt");
         std::fs::write(&p1, b"data1").unwrap();
@@ -74,6 +74,32 @@ fn hash_batch_mixed_results() {
         let results = hash_batch(&[p1, p_missing], HashAlgorithm::Sha256);
         assert!(results[0].hash.is_some());
         assert!(results[1].hash.is_none());
+}
+
+#[test]
+fn sha256_str_known_vectors() {
+        assert_eq!(
+            sha256_str(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_str("hello"),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+        assert_eq!(sha256_str("hello"), sha256_hex(b"hello"));
+}
+
+#[test]
+fn sha256_file_matches_hex_and_fails_open() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("hello.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        assert_eq!(sha256_file(&path).as_deref(), Some(sha256_hex(b"hello").as_str()));
+        let empty = dir.path().join("empty.txt");
+        std::fs::write(&empty, b"").unwrap();
+        assert_eq!(sha256_file(&empty).as_deref(), Some(sha256_hex(b"").as_str()));
+        assert_eq!(sha256_file(Path::new("/nonexistent/file.txt")), None);
+        assert_eq!(sha256_file(&dir.path().join("missing.txt")), None);
 }
 
 

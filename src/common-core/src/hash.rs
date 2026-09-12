@@ -28,6 +28,43 @@ pub fn sha256_hex(data: &[u8]) -> String {
     hex_encode(&result)
 }
 
+/// sha256 hex of a string's bytes (file-id domain: ids hash path strings,
+/// not file contents).
+///
+/// # Examples
+///
+/// ```
+/// use common_core::hash::sha256_str;
+///
+/// assert_eq!(
+///     sha256_str("hello"),
+///     "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+/// );
+/// ```
+#[must_use]
+pub fn sha256_str(data: &str) -> String {
+    sha256_hex(data.as_bytes())
+}
+
+/// sha256 hex of a file's bytes; `None` when the file cannot be read
+/// (fail-open: callers treat unreadable files as changed, never as
+/// current). Streams through the shared [`hash_file`] engine, so the
+/// digest is byte-identical to [`sha256_hex`] over the full contents.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+/// use common_core::hash::sha256_file;
+///
+/// let hash = sha256_file(Path::new("Cargo.toml"));
+/// assert!(hash.is_some());
+/// ```
+#[must_use]
+pub fn sha256_file(path: &Path) -> Option<String> {
+    hash_file(path, HashAlgorithm::Sha256).ok()
+}
+
 pub fn blake3_hash(data: &[u8]) -> [u8; 32] {
     blake3::hash(data).into()
 }

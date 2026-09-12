@@ -3,6 +3,22 @@
 //! close). The full daemon `job-scheduler` (priority, progress fan-out,
 //! logger) ports in P5; this core carries the coordinator's tested
 //! semantics: `followupIfRunning` coalescing + same-snapshot retry.
+//!
+//! M11.3: the driver stays bespoke; it does not migrate onto
+//! `SupervisedBatch` or `ResultPool`. `SupervisedBatch` is structurally
+//! incompatible — job bodies are async `BoxFuture` closures and
+//! `WorkUnit::execute` is synchronous and non-blocking by contract, so
+//! the bodies cannot run inside units; completion is batch-end summary
+//! while the scheduler needs per-job waiters plus followup promotion;
+//! `register` takes `&mut` while submits arrive through `Clone`-shared
+//! handles. A `ResultPool` execution swap would leave two queues (driver
+//! queue for close-cancel plus pool queue) and change slot occupancy
+//! (backoff currently frees the slot; a pool handler sleep would hold
+//! it) and close semantics (no per-job cancel). The shell already
+//! composes the shared primitives (`backoff_ms` for retry math,
+//! `StreamAbort` for cancellation, `common_core::sync::lock`). Stays —
+//! pinned by the scheduler/coordinator suites (coalescing, same-snapshot
+//! retry, exhaustion, close fail-fast/cancel, idle, followup merge).
 
 use fluent_concurrency::stream::StreamAbort;
 use std::collections::{HashMap, VecDeque};
@@ -458,7 +474,14 @@ impl JobScheduler {
             guard.running = guard.running.saturating_sub(1);
             let (retry, run, abort, attempt, base_delay_ms) = planned;
             if retry {
-                let delay_ms = base_delay_ms * 2u64.pow(attempt.saturating_sub(1).min(8));
+                // Historical schedule `base * 2^min(attempt-1, 8)` (2^8
+                // ceiling), composed through the shared helper with jitter
+                // 0: `backoff_ms(base, min(attempt, 9), 0)` is exactly
+                // equal on the whole u32 domain (attempt ≥ 1 on this path;
+                // the clamp preserves the ceiling). Pinned by
+                // `m4_scheduler_delay_matches_backoff_composition`.
+                let delay_ms =
+                    common_core::retry::backoff_ms(base_delay_ms, attempt.min(9), 0);
                 if let Some(record) = guard.jobs.get_mut(&id) {
                     record.attempt = attempt + 1;
                 }

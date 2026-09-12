@@ -76,6 +76,10 @@ impl AstParser {
     /// Parse source in the given extractor format (`rust`, `tsx`, …) into
     /// a concrete syntax tree (P2 fragment extraction; the legacy
     /// `parse_file` member pipeline is untouched).
+    /// M5: single dispatch on `format`, not a fallback walk — exactly one
+    /// parser applies and unknown is terminal. A ladder here would be one
+    /// rung (obfuscation), and `&mut self` field selection does not fit
+    /// `FnMut` rungs. Stays.
     pub fn parse_tree(&mut self, format: &str, source: &str) -> Result<tree_sitter::Tree, ParseError> {
         let parser = match format {
             "rust" => &mut self.rust,
@@ -1036,6 +1040,22 @@ class MyClass:
             Err(ParseError::UnsupportedLanguage(_)) => {}
             _ => panic!("expected UnsupportedLanguage error"),
         }
+    }
+
+    #[test]
+    fn m5_dispatch_misses_are_terminal_not_fallback() {
+        // M5.1: the format/language matches are single dispatch, not a
+        // fallback walk — a miss is terminal, never "try the next parser".
+        let mut parser = AstParser::new();
+        match parser.parse_tree("bogus", "fn f() {}") {
+            Err(ParseError::UnsupportedLanguage(_)) => {}
+            other => panic!("expected UnsupportedLanguage, got {other:?}"),
+        }
+        assert!(!AstParser::has_grammar("bogus"));
+        assert!(AstParser::has_grammar("rust"));
+        // Unknown language degrades to "has errors" (fail-closed), not to
+        // another grammar.
+        assert!(parser.has_errors("fn f() {}", "bogus"));
     }
 
     #[test]

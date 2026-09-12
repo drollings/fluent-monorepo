@@ -142,13 +142,12 @@ impl ChangeSet {
     #[must_use]
     pub fn snapshot(&mut self) -> ChangeSetSnapshot {
         self.collapse_paths();
-        let mut touched_files: Vec<String> = self.touched_files.iter().cloned().collect();
-        let mut rescan_directories: Vec<String> =
-            self.rescan_directories.iter().cloned().collect();
-        let mut deleted_prefixes: Vec<String> = self.deleted_prefixes.iter().cloned().collect();
-        touched_files.sort();
-        rescan_directories.sort();
-        deleted_prefixes.sort();
+        let touched_files =
+            common_core::sort::sorted_vec(self.touched_files.iter().cloned().collect());
+        let rescan_directories =
+            common_core::sort::sorted_vec(self.rescan_directories.iter().cloned().collect());
+        let deleted_prefixes =
+            common_core::sort::sorted_vec(self.deleted_prefixes.iter().cloned().collect());
         ChangeSetSnapshot {
             touched_files,
             rescan_directories,
@@ -239,8 +238,10 @@ fn parent_scope(root: &str, path: &str) -> String {
 }
 
 fn collapse_set(paths: &mut HashSet<String>) {
-    let mut sorted: Vec<String> = paths.iter().cloned().collect();
-    sorted.sort_by_key(String::len);
+    let sorted: Vec<String> = common_core::sort::sorted_by_vec(
+        paths.iter().cloned().collect(),
+        |left, right| left.len().cmp(&right.len()),
+    );
     for path in sorted {
         if has_ancestor(paths, &path) {
             paths.remove(&path);
@@ -267,44 +268,23 @@ fn has_ancestor(paths: &HashSet<String>, target: &str) -> bool {
     false
 }
 
-fn is_absolute_path(path: &str) -> bool {
-    path.starts_with('/') || (path.len() >= 3 && path.as_bytes()[1] == b':' && (path.as_bytes()[2] == b'/' || path.as_bytes()[2] == b'\\'))
+pub(crate) fn is_absolute_path(path: &str) -> bool {
+    common_core::path::is_absolute_lexical(path)
 }
 
 /// Normalize separators to `/` and clean `.`/`..` lexically (zvec
 /// `normalizePath`; no I/O so deleted paths stay representable).
-fn normalize_path(path: &str) -> String {
-    let slashed = path.replace('\\', "/");
-    let mut parts: Vec<&str> = Vec::new();
-    let absolute = slashed.starts_with('/');
-    for part in slashed.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            _ => parts.push(part),
-        }
-    }
-    let joined = parts.join("/");
-    if absolute {
-        format!("/{joined}")
-    } else {
-        joined
-    }
+/// Delegates to the canonical `common_core::path::normalize_lexical`.
+pub(crate) fn normalize_path(path: &str) -> String {
+    common_core::path::normalize_lexical(path)
 }
 
-fn parent_dir(path: &str) -> Option<String> {
-    let trimmed = path.trim_end_matches('/');
-    let index = trimmed.rfind('/')?;
-    if index == 0 {
-        return Some("/".to_string());
-    }
-    Some(trimmed[..index].to_string())
+pub(crate) fn parent_dir(path: &str) -> Option<String> {
+    common_core::path::parent_lexical(path)
 }
 
-fn file_name(path: &str) -> Option<&str> {
-    path.trim_end_matches('/').rsplit('/').next()
+pub(crate) fn file_name(path: &str) -> Option<&str> {
+    common_core::path::file_name_lexical(path)
 }
 
 #[cfg(test)]

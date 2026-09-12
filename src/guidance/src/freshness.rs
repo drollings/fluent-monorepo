@@ -5,6 +5,14 @@
 //! stale read triggers a background reconcile, waits for it, or serves
 //! stale directly. Server default is `Background`, direct CLI reads are
 //! `Off` (P5 wiring).
+//!
+//! Single decision home (M12): this module owns every freshness decision —
+//! the revision matrix ([`FreshnessGate`]), the mtime skew table
+//! ([`mtime_skew`]), and the content tiebreak ([`hash_decides_fresh`]).
+//! The `sync::staleness` sidecar helpers are I/O shells over this core
+//! (mtime fetching); they add no decision logic of their own.
+
+use std::time::SystemTime;
 
 /// Serving mode for stale reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -93,6 +101,61 @@ impl FreshnessGate {
             },
         }
     }
+}
+
+/// Mtime skew classification: the single decision table for the 1-second
+/// timestamp-resolution rule (M12). Pure over `SystemTime` pairs — the
+/// `sync::staleness` shells fetch the mtimes, this table classifies them,
+/// so the stale/ambiguous partition cannot drift between two mirrored
+/// predicates.
+///
+/// The window measures *producer self-doubt* (filesystem timestamp
+/// granularity), never task value. Inside it the clock is evidence-free,
+/// so the content hash ([`hash_decides_fresh`]) decides instead. The
+/// threshold gates which evidence to consult, never the conclusion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MtimeSkew {
+    /// Source strictly older than the sidecar: no work (both legacy
+    /// predicates read false).
+    SourceOlder,
+    /// Source at-or-newer but within the resolution window: the clock is
+    /// evidence-free, consult the content hash.
+    Ambiguous,
+    /// Source newer beyond the window: stale, regenerate.
+    SourceNewer,
+}
+
+/// Classify one `(sidecar, source)` mtime pair. Equal mtimes land
+/// [`MtimeSkew::Ambiguous`] (zero skew is evidence-free, matching the
+/// legacy window predicate exactly).
+#[must_use]
+pub fn mtime_skew(json_mtime: SystemTime, source_mtime: SystemTime) -> MtimeSkew {
+    match source_mtime.duration_since(json_mtime) {
+        Err(_) => MtimeSkew::SourceOlder,
+        Ok(skew)
+            if skew.as_secs() > 1 || (skew.as_secs() == 1 && skew.subsec_nanos() > 0) =>
+        {
+            MtimeSkew::SourceNewer
+        }
+        Ok(_) => MtimeSkew::Ambiguous,
+    }
+}
+
+/// Content tiebreak for the ambiguity window: the fresh source sha256
+/// against the stored one (the `compute_diff` precedent — same hasher,
+/// `common_core::hash::sha256_hex` — never a second hasher). `None`
+/// stored means no evidence: fail open (not fresh — regenerate), never
+/// serve ambiguous content as fresh.
+///
+/// Axis statement: the hash measures *task correctness* (bytes changed),
+/// the complement of the window's self-doubt. It gates a regen decision
+/// only — never cached, never persisted, never served as data.
+///
+/// Moved verbatim from `sync::staleness` (M12 single home); that module
+/// re-resolves it for its inline tests.
+#[must_use]
+pub fn hash_decides_fresh(current_hash: &str, stored_hash: Option<&str>) -> bool {
+    stored_hash.is_some_and(|want| want == current_hash)
 }
 
 #[cfg(test)]

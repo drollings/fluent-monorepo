@@ -98,6 +98,17 @@ fn format_lookup_covers_all_six_families() {
     }
 }
 
+#[test]
+fn m5_adapter_lookup_misses_are_none_not_fallback() {
+    // M5.1: adapter resolution is a registry find, not a fallback walk —
+    // a miss is `None` (terminal), never "try the next adapter". Case
+    // folds through the canonical table (`RS` hits); unknown stays miss.
+    assert_eq!(format_for_extension("xyz"), None);
+    assert_eq!(format_for_extension(""), None);
+    assert_eq!(format_for_extension("RS"), Some("rust"));
+    assert!(resolve_adapter("bogus").is_none());
+}
+
 fn harvest_input(path: &str, format: &str, text: &str) -> HarvestInput {
     HarvestInput {
         path: path.to_string(),
@@ -339,6 +350,230 @@ fn rerank_skips_rrf_order_when_no_edge_touches_candidates() {
     graph.rerank(&mut candidates, &signals);
     assert_eq!(candidates[0].id, "a.py::alpha");
     assert_eq!(candidates[1].id, "b.py::beta");
+}
+
+// --- M13.1 characterization: token helpers (verbatim current behavior) ---
+
+fn routing_signal(
+    predicate: &str,
+    subject: Option<&str>,
+    direct_object: Option<&str>,
+    modifiers: &[&str],
+    qualifiers: &[&str],
+) -> spacy_rs::routing::RoutingSignal {
+    spacy_rs::routing::RoutingSignal {
+        sentence: String::new(),
+        predicate: predicate.to_string(),
+        subject: subject.map(str::to_string),
+        direct_object: direct_object.map(str::to_string),
+        indirect_object: None,
+        modifiers: modifiers.iter().map(|s| s.to_string()).collect(),
+        qualifiers: qualifiers.iter().map(|s| s.to_string()).collect(),
+        arguments: Vec::new(),
+        dependents: Vec::new(),
+        tokens: Vec::new(),
+        lemmas: Vec::new(),
+        pos: Vec::new(),
+        deps: Vec::new(),
+        heads: Vec::new(),
+        interlingua: None,
+    }
+}
+
+#[test]
+fn m13_signals_from_routing_lower_dedup_order() {
+    use crate::graph_index::signals_from_routing;
+    let signals = signals_from_routing(&[
+        routing_signal("Find", Some("Beta"), Some("beta"), &["BETA", "gamma"], &[""]),
+        routing_signal("find", Some("delta"), None, &[], &[]),
+    ]);
+    // Lowercased, first-seen order; case-variant repeats and empties collapse.
+    assert_eq!(signals.predicate, vec!["find".to_string()]);
+    assert_eq!(
+        signals.roles,
+        vec![
+            "beta".to_string(),
+            "gamma".to_string(),
+            "delta".to_string()
+        ]
+    );
+    // Empty input yields empty signals (never a construction failure).
+    let empty = signals_from_routing(&[]);
+    assert!(empty.predicate.is_empty());
+    assert!(empty.roles.is_empty());
+}
+
+fn m13_candidate(id: &str, file: &str, symbol: &str, score: f64) -> crate::query::fusion::RecallCandidate {
+    use crate::query::fusion::RecallCandidate;
+    use crate::search_types::{Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan};
+    RecallCandidate {
+        id: id.to_string(),
+        entity: Entity {
+            id: id.to_string(),
+            file_id: file.to_string(),
+            range: FragmentSpan::File,
+            content: FragmentContent::Text { text: String::new() },
+            metadata: Some(EntityMetadata::Code {
+                symbol_type: crate::search_types::CodeSymbolType::Function,
+                symbol_name: Some(symbol.to_string()),
+                scope: None,
+                node_type: None,
+                signature: None,
+                doc: None,
+                modifiers: Vec::new(),
+            }),
+        },
+        file: FileInfo {
+            id: file.to_string(),
+            absolute_path: file.to_string(),
+            ..Default::default()
+        },
+        sources: Vec::new(),
+        recall: Vec::new(),
+        evidence: Vec::new(),
+        score: RrfScore::new(score),
+        rank: 0,
+        forced: false,
+    }
+}
+
+#[test]
+fn m13_overlap_splits_on_separators_case_insensitively() {
+    // Both candidates share one file (identical boosts + stem): only the
+    // symbol-token split decides. `Foo-Bar` → {foo, bar} (overlap 2);
+    // `FooBar` stays one token (overlap 0). Lowercasing is pinned by the
+    // uppercase input matching lowercase roles.
+    let files = vec![
+        harvest_input("/repo/x.py", "python", "def alpha():\n    shared()\n"),
+        harvest_input("/repo/shared.py", "python", "def shared():\n    pass\n"),
+    ];
+    let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
+    let signals = GraphQuerySignals {
+        predicate: vec!["find".to_string()],
+        roles: vec!["foo".to_string(), "bar".to_string()],
+    };
+    let mut candidates = vec![
+        m13_candidate("x.py::FooBar", "/repo/x.py", "FooBar", 0.10),
+        m13_candidate("x.py::Foo-Bar", "/repo/x.py", "Foo-Bar", 0.10),
+    ];
+    graph.rerank(&mut candidates, &signals);
+    assert_eq!(candidates[0].id, "x.py::Foo-Bar");
+    assert_eq!(candidates[1].id, "x.py::FooBar");
+}
+
+#[test]
+fn m13_overlap_counts_file_stem_tokens() {
+    // Symbol `zzz` never matches; the `parser.py` stem token does.
+    let files = vec![
+        harvest_input("/repo/x.py", "python", "def alpha():\n    shared()\n"),
+        harvest_input("/repo/shared.py", "python", "def shared():\n    pass\n"),
+        harvest_input("/repo/parser.py", "python", "def zzz():\n    pass\n"),
+    ];
+    let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
+    let signals = GraphQuerySignals {
+        predicate: Vec::new(),
+        roles: vec!["parser".to_string()],
+    };
+    let mut candidates = vec![
+        m13_candidate("x.py::aaa", "/repo/x.py", "aaa", 0.10),
+        m13_candidate("parser.py::zzz", "/repo/parser.py", "zzz", 0.10),
+    ];
+    graph.rerank(&mut candidates, &signals);
+    assert_eq!(candidates[0].id, "parser.py::zzz");
+    assert_eq!(candidates[1].id, "x.py::aaa");
+}
+
+// --- M6.1 characterization: boost additivity, epsilon scale, skip (verbatim) ---
+
+#[test]
+fn m6_boost_constants_pinned() {
+    use crate::graph_index::{
+        L4_CALL_BOOST, L4_DEPENDENT_BOOST, L4_ROLE_EPSILON, L4_SAME_FILE_BOOST,
+        L4_SCOPE_BOOST,
+    };
+    assert_eq!(L4_CALL_BOOST.to_bits(), 0.5f64.to_bits());
+    assert_eq!(L4_DEPENDENT_BOOST.to_bits(), 0.3f64.to_bits());
+    assert_eq!(L4_SAME_FILE_BOOST.to_bits(), 0.2f64.to_bits());
+    assert_eq!(L4_SCOPE_BOOST.to_bits(), 0.1f64.to_bits());
+    assert_eq!(L4_ROLE_EPSILON.to_bits(), 1e-4f64.to_bits());
+}
+
+#[test]
+fn m6_rerank_empty_is_noop() {
+    let files = vec![harvest_input("/repo/a.py", "python", "def alpha():\n    pass\n")];
+    let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
+    let signals = GraphQuerySignals {
+        predicate: Vec::new(),
+        roles: Vec::new(),
+    };
+    let mut candidates: Vec<crate::query::fusion::RecallCandidate> = Vec::new();
+    graph.rerank(&mut candidates, &signals);
+    assert!(candidates.is_empty());
+}
+
+#[test]
+fn m6_rerank_never_writes_scores_back() {
+    // Composites never combine: rerank reorders by a local
+    // (boosted, overlap) key but `candidate.score` stays bit-identical.
+    let files = vec![
+        harvest_input("/repo/caller.py", "python", "from util import helper\ndef run():\n    helper()\n"),
+        harvest_input("/repo/util.py", "python", "def helper():\n    pass\n"),
+        harvest_input("/repo/unrelated.py", "python", "def other():\n    pass\n"),
+    ];
+    let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
+    let signals = GraphQuerySignals {
+        predicate: vec!["helper".to_string()],
+        roles: Vec::new(),
+    };
+    let mut candidates = vec![
+        m13_candidate("util.py::helper", "/repo/util.py", "helper", 0.30),
+        m13_candidate("unrelated.py::other", "/repo/unrelated.py", "other", 0.20),
+        m13_candidate("caller.py::run", "/repo/caller.py", "run", 0.10),
+    ];
+    let before: Vec<u64> = candidates
+        .iter()
+        .map(|c| c.score.value().to_bits())
+        .collect();
+    graph.rerank(&mut candidates, &signals);
+    let after: Vec<u64> = candidates
+        .iter()
+        .map(|c| c.score.value().to_bits())
+        .collect();
+    let mut sorted_before = before.clone();
+    sorted_before.sort_unstable();
+    let mut sorted_after = after.clone();
+    sorted_after.sort_unstable();
+    assert_eq!(sorted_before, sorted_after);
+    // And the promoted order matches the deterministic pin above.
+    let order: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(
+        order,
+        vec!["util.py::helper", "caller.py::run", "unrelated.py::other"]
+    );
+}
+
+#[test]
+fn m6_equal_boost_equal_overlap_falls_back_to_id() {
+    // Same file, same base score, no scopes, no matching roles: boosted
+    // scores tie and overlaps tie at 0, so lexicographic id owns the order.
+    // (Overlap is an ordinal second key — never epsilon-added into the
+    // score, which the write-back pin above proves separately.)
+    let files = vec![
+        harvest_input("/repo/x.py", "python", "def alpha():\n    shared()\n"),
+        harvest_input("/repo/shared.py", "python", "def shared():\n    pass\n"),
+    ];
+    let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
+    let signals = GraphQuerySignals {
+        predicate: Vec::new(),
+        roles: Vec::new(),
+    };
+    let mut candidates = vec![
+        m13_candidate("x.py::zzz", "/repo/x.py", "zzz", 0.10),
+        m13_candidate("x.py::aaa", "/repo/x.py", "aaa", 0.10),
+    ];
+    graph.rerank(&mut candidates, &signals);
+    assert_eq!(candidates[0].id, "x.py::aaa");
+    assert_eq!(candidates[1].id, "x.py::zzz");
 }
 
 fn persist_harvest(
@@ -597,4 +832,148 @@ fn shallow_expansion_without_edges_is_empty() {
     let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
     assert!(!graph.import_edges().is_empty());
     assert!(graph.expand_shallow(&["/repo/u.rs".to_string()]).is_empty());
+}
+
+// M1.1 characterization: `normalize_separators` + `probe_path` pinned verbatim
+// before the `common_core::path` extraction. `normalize_separators` always
+// roots the result at `/` (unlike `change_set::normalize_path`, which
+// preserves relative inputs) — that difference is load-bearing for the M1.4
+// migration and pinned here.
+
+#[test]
+fn m1_normalize_separators_matrix() {
+    use crate::graph_index::normalize_separators;
+    assert_eq!(normalize_separators("/a//b/./c/../d"), "/a/b/d");
+    assert_eq!(normalize_separators("C:\\a\\b"), "/C:/a/b");
+    assert_eq!(normalize_separators("/../a"), "/a");
+    assert_eq!(normalize_separators("/.."), "/");
+    assert_eq!(normalize_separators("/a/b/"), "/a/b");
+    assert_eq!(normalize_separators("/"), "/");
+    assert_eq!(normalize_separators(""), "/");
+    // Relative inputs are rooted — the deliberate divergence from change_set.
+    assert_eq!(normalize_separators("a/b"), "/a/b");
+    assert_eq!(normalize_separators("a//b"), "/a/b");
+}
+
+#[test]
+fn m1_probe_path_matrix() {
+    use crate::graph_index::probe_path;
+    use std::collections::HashSet;
+    use std::path::Path;
+    let known: HashSet<String> = [
+        "/r/b.ts",
+        "/r/b.py",
+        "/r/mod.rs",
+        "/r/dir/index.ts",
+        "/r/dir/__init__.py",
+        "/r/a/b.rs",
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    // Exact hit, including through `.`/`..` and separator runs.
+    assert_eq!(
+        probe_path(Path::new("/r/./b.ts"), &known),
+        Some("/r/b.ts".to_string())
+    );
+    assert_eq!(
+        probe_path(Path::new("/r/sub/../b.ts"), &known),
+        Some("/r/b.ts".to_string())
+    );
+    assert_eq!(
+        probe_path(Path::new("/r//b.ts"), &known),
+        Some("/r/b.ts".to_string())
+    );
+    // Extension probing in fixed table order (.ts wins over .py).
+    assert_eq!(
+        probe_path(Path::new("/r/b"), &known),
+        Some("/r/b.ts".to_string())
+    );
+    assert_eq!(
+        probe_path(Path::new("/r/dir"), &known),
+        Some("/r/dir/index.ts".to_string())
+    );
+    assert_eq!(
+        probe_path(Path::new("/r/a/b"), &known),
+        Some("/r/a/b.rs".to_string())
+    );
+    // Misses stay None (unresolved edges are recorded, never dropped).
+    assert_eq!(probe_path(Path::new("/r/missing"), &known), None);
+    assert_eq!(probe_path(Path::new("/elsewhere/b"), &known), None);
+}
+
+// M2.1 characterization: rerank tiebreak order pinned verbatim before the
+// `common_core::sort` extraction. Anchor pick and composite sort both break
+// score ties by id ascending; NaN scores compare `Equal` (`partial_cmp`
+// fallback) so id order alone decides.
+
+#[test]
+fn m2_rerank_breaks_score_ties_by_id() {
+    use crate::query::fusion::RecallCandidate;
+    use crate::search_types::{Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan};
+
+    fn candidate(id: &str, file: &str, symbol: &str, score: f64) -> RecallCandidate {
+        RecallCandidate {
+            id: id.to_string(),
+            entity: Entity {
+                id: id.to_string(),
+                file_id: file.to_string(),
+                range: FragmentSpan::File,
+                content: FragmentContent::Text { text: String::new() },
+                metadata: Some(EntityMetadata::Code {
+                    symbol_type: crate::search_types::CodeSymbolType::Function,
+                    symbol_name: Some(symbol.to_string()),
+                    scope: None,
+                    node_type: None,
+                    signature: None,
+                    doc: None,
+                    modifiers: Vec::new(),
+                }),
+            },
+            file: FileInfo {
+                id: file.to_string(),
+                absolute_path: file.to_string(),
+                ..Default::default()
+            },
+            sources: Vec::new(),
+            recall: Vec::new(),
+            evidence: Vec::new(),
+            score: RrfScore::new(score),
+            rank: 0,
+            forced: false,
+        }
+    }
+
+    let files = vec![
+        harvest_input("/repo/caller.py", "python", "from util import helper\ndef run():\n    helper()\n"),
+        harvest_input("/repo/util.py", "python", "def helper():\n    pass\n"),
+    ];
+    let graph = GraphIndex::build(&files, &["/repo".to_string()]).expect("build");
+    // Empty signals: no role overlap, so ties fall through to id order.
+    let signals = GraphQuerySignals::default();
+    // Equal scores, reverse-id input: output must be id-ascending.
+    let mut tied = vec![
+        candidate("util.py::helper", "/repo/util.py", "helper", 0.10),
+        candidate("caller.py::run", "/repo/caller.py", "run", 0.10),
+    ];
+    graph.rerank(&mut tied, &signals);
+    let order: Vec<&str> = tied.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(order, vec!["caller.py::run", "util.py::helper"], "{order:?}");
+
+    // NaN scores compare Equal: id order alone decides, deterministically.
+    let mut nan = vec![
+        candidate("util.py::helper", "/repo/util.py", "helper", f64::NAN),
+        candidate("caller.py::run", "/repo/caller.py", "run", f64::NAN),
+    ];
+    graph.rerank(&mut nan, &signals);
+    let order: Vec<&str> = nan.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(order, vec!["caller.py::run", "util.py::helper"], "{order:?}");
+    // And the NaN walk is input-order independent.
+    let mut nan_flipped = vec![
+        candidate("caller.py::run", "/repo/caller.py", "run", f64::NAN),
+        candidate("util.py::helper", "/repo/util.py", "helper", f64::NAN),
+    ];
+    graph.rerank(&mut nan_flipped, &signals);
+    let flipped: Vec<&str> = nan_flipped.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(order, flipped);
 }

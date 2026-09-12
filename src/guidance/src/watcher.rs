@@ -5,6 +5,24 @@
 //! The OS seam is the `WatchBackend` trait: `NotifyBackend` serves
 //! production (`notify`), `ManualBackend` scripts events in tests (the
 //! `watchFactory` role).
+//!
+//! M11.4: lifecycle stays on the bespoke loop + pending-counter scheme;
+//! it does not migrate onto `Scope` or `CreditFlow`. `Scope::spawn`
+//! needs `&mut` (the manager is `Clone`-shared) and `Scope` panics on
+//! drop-if-unclosed, while `close()` here waits for the in-flight drain
+//! (`Scope::close` aborts instead — a semantic change pinned against by
+//! `close_waits_for_an_in_flight_async_change_callback`). There is no
+//! bounded producer/consumer backlog for `CreditFlow` to gate —
+//! debounce/max-wait timers are the backpressure — so a credit pair
+//! would be speculative. `spawn_tracked` tasks perform no
+//! capability-gated I/O and are handle-tracked (pending count + idle
+//! `Notify` awaited by `close`/`flush_pending`), which is the ownership
+//! discipline. Production closes the chain on Ctrl-C: `manager.close`,
+//! then `coordinator.close`, which calls `scheduler.close`. Stays —
+//! pinned by the
+//! watcher suite (debounce, max-wait, storm, reattach, resume, error
+//! escalation, independent retries, close-drain) and the `WATCH_*`
+//! constant pins.
 
 use crate::change_set::{ChangeKind, ChangeSet, ChangeSetOptions, ChangeSetSnapshot};
 use crate::scheduler::BoxFuture;

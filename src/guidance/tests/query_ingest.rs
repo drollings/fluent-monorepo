@@ -37,7 +37,6 @@ fn failed_construction_is_cached_not_rebuilt() {
     assert!(lazy.get_with(counting_factory(&builds)).is_none());
     assert_eq!(builds.load(Ordering::SeqCst), 1);
 }
-
 #[test]
 fn untouched_holder_builds_nothing() {
     // The holder is inert until asked: paths that never ask (rg,
@@ -48,4 +47,34 @@ fn untouched_holder_builds_nothing() {
     drop(factory);
     drop(lazy);
     assert_eq!(builds.load(Ordering::SeqCst), 0);
+}
+
+// --- M14.1: no-NLP fail-open characterization -------------------------------
+// `query_lemmas(None, …)` is the pipeline-absent path: deterministic
+// lowercase alphanumeric tokens, order-preserving dedup. Old rows carry
+// exactly these tokens, so this output is the compatibility anchor every
+// query must share.
+
+#[test]
+fn query_lemmas_without_pipeline_is_deterministic_fallback() {
+    assert_eq!(
+        query_lemmas(None, "Hello World hello!"),
+        vec!["hello".to_string(), "world".to_string()]
+    );
+    assert_eq!(
+        query_lemmas(None, "export function AlphaSymbol() { return 1; }"),
+        vec![
+            "export".to_string(),
+            "function".to_string(),
+            "alphasymbol".to_string(),
+            "return".to_string(),
+            "1".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn query_lemmas_without_pipeline_empty_in_empty_out() {
+    assert!(query_lemmas(None, "").is_empty());
+    assert!(query_lemmas(None, "!!!").is_empty());
 }

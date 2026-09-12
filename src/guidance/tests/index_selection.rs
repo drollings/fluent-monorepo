@@ -59,6 +59,174 @@ fn detect_file_type_covers_kinds() {
     }
 }
 
+// M7.1 characterization: the extension matrix across all five tables,
+// pinned verbatim before the `fluent_types::file_kind` extraction. This
+// is the shared fixture M7.3 migrates against — including the three live
+// divergences (documented, never silently unified):
+//   D1 `h`: adapter format `c`, selection format `cpp` (both load-bearing).
+//   D2 `mts`/`cts`: adapter knows `typescript`, selection falls back to text.
+//   D3 `"image"` tag: ingest parse falls back to `Text`, DB parse keeps `Image`.
+
+#[test]
+fn m7_extension_matrix_across_tables() {
+    use crate::extractor::adapter::format_for_extension;
+
+    // Table 1 — adapter formats (tree-sitter authority).
+    let adapter: &[(&str, Option<&str>)] = &[
+        ("rs", Some("rust")),
+        ("py", Some("python")),
+        ("ts", Some("typescript")),
+        ("mts", Some("typescript")),
+        ("cts", Some("typescript")),
+        ("tsx", Some("tsx")),
+        ("js", Some("javascript")),
+        ("mjs", Some("javascript")),
+        ("cjs", Some("javascript")),
+        ("jsx", Some("jsx")),
+        ("go", Some("go")),
+        ("java", Some("java")),
+        ("c", Some("c")),
+        ("h", Some("c")),
+        ("cc", Some("cpp")),
+        ("cpp", Some("cpp")),
+        ("cxx", Some("cpp")),
+        ("hpp", Some("cpp")),
+        ("RS", Some("rust")),
+        ("zig", None),
+        ("md", None),
+        ("json", None),
+        ("", None),
+    ];
+    for (ext, expected) in adapter {
+        assert_eq!(format_for_extension(ext), *expected, "adapter:{ext}");
+    }
+
+    // Table 2 — selection detect (ingest authority: kind + format).
+    let selection: &[(&str, Option<(FileKind, &str)>)] = &[
+        ("a.rs", Some((FileKind::Code, "rust"))),
+        ("a.py", Some((FileKind::Code, "python"))),
+        ("a.ts", Some((FileKind::Code, "typescript"))),
+        ("a.mts", Some((FileKind::Text, "mts"))),
+        ("a.cts", Some((FileKind::Text, "cts"))),
+        ("a.tsx", Some((FileKind::Code, "tsx"))),
+        ("a.js", Some((FileKind::Code, "javascript"))),
+        ("a.jsx", Some((FileKind::Code, "jsx"))),
+        ("a.go", Some((FileKind::Code, "go"))),
+        ("a.java", Some((FileKind::Code, "java"))),
+        ("a.c", Some((FileKind::Code, "c"))),
+        ("a.h", Some((FileKind::Code, "cpp"))),
+        ("a.cc", Some((FileKind::Code, "cpp"))),
+        ("a.rb", Some((FileKind::Code, "ruby"))),
+        ("a.php", Some((FileKind::Code, "php"))),
+        ("a.zig", Some((FileKind::Text, "zig"))),
+        ("a.zon", Some((FileKind::Text, "zon"))),
+        ("a.md", Some((FileKind::Text, "markdown"))),
+        ("a.mdx", Some((FileKind::Text, "markdown"))),
+        ("a.txt", Some((FileKind::Text, "text"))),
+        ("a.json", Some((FileKind::Data, "json"))),
+        ("a.jsonc", Some((FileKind::Data, "json"))),
+        ("a.yaml", Some((FileKind::Data, "yaml"))),
+        ("a.yml", Some((FileKind::Data, "yaml"))),
+        ("a.toml", Some((FileKind::Data, "toml"))),
+        ("a.csv", Some((FileKind::Data, "csv"))),
+        ("a.png", Some((FileKind::Image, "png"))),
+        ("a.jpg", Some((FileKind::Image, "jpeg"))),
+        ("a.gif", Some((FileKind::Image, "gif"))),
+        ("a.webp", Some((FileKind::Image, "webp"))),
+        ("a.zip", None),
+        ("a.exe", None),
+        ("a.pdf", None),
+        ("a.mp3", None),
+        ("Dockerfile", Some((FileKind::Code, "dockerfile"))),
+        ("Makefile", Some((FileKind::Code, "makefile"))),
+        ("a.xyz", Some((FileKind::Text, "xyz"))),
+    ];
+    for (name, expected) in selection {
+        let got = detect_file_type(std::path::Path::new(name));
+        assert_eq!(
+            got,
+            expected.map(|(k, f)| (k, f.to_string())),
+            "selection:{name}"
+        );
+    }
+    // Case-insensitivity rides the extension lowercasing.
+    assert_eq!(
+        detect_file_type(std::path::Path::new("A.RS")),
+        Some((FileKind::Code, "rust".to_string()))
+    );
+
+    // Table 3 — ingest kind tags (round-trip through the scan boundary).
+    use crate::index_pipeline::{kind_name, parse_scan_kind};
+    assert_eq!(kind_name(FileKind::Text), "text");
+    assert_eq!(kind_name(FileKind::Code), "code");
+    assert_eq!(kind_name(FileKind::Data), "data");
+    assert_eq!(kind_name(FileKind::Image), "image");
+    assert_eq!(parse_scan_kind(Some("code")), FileKind::Code);
+    assert_eq!(parse_scan_kind(Some("data")), FileKind::Data);
+    assert_eq!(parse_scan_kind(Some("text")), FileKind::Text);
+    assert_eq!(parse_scan_kind(Some("image")), FileKind::Text);
+    assert_eq!(parse_scan_kind(Some("bogus")), FileKind::Text);
+    assert_eq!(parse_scan_kind(None), FileKind::Text);
+
+    // Table 4 — DB kind tags (persisted-record boundary).
+    use crate::query::db_storage::{file_info, file_record};
+    use crate::search_types::FileInfo;
+    for (kind, tag) in [
+        (FileKind::Text, "text"),
+        (FileKind::Code, "code"),
+        (FileKind::Data, "data"),
+        (FileKind::Image, "image"),
+    ] {
+        let info = FileInfo {
+            kind: Some(kind),
+            ..Default::default()
+        };
+        assert_eq!(file_record(&info).kind.as_deref(), Some(tag), "{tag}");
+    }
+    assert_eq!(file_record(&FileInfo::default()).kind, None);
+    for (tag, expected) in [
+        ("text", Some(FileKind::Text)),
+        ("code", Some(FileKind::Code)),
+        ("data", Some(FileKind::Data)),
+        ("image", Some(FileKind::Image)),
+        ("bogus", None),
+    ] {
+        let mut record = file_record(&FileInfo::default());
+        record.kind = Some(tag.to_string());
+        assert_eq!(file_info(&record).kind, expected, "db:{tag}");
+    }
+    // D3: the two parse directions disagree on `"image"` — pinned.
+    assert_eq!(parse_scan_kind(Some("image")), FileKind::Text);
+    let mut record = file_record(&FileInfo::default());
+    record.kind = Some("image".to_string());
+    assert_eq!(file_info(&record).kind, Some(FileKind::Image));
+
+    // Table 5 — walk scope (discovery authority).
+    assert_eq!(
+        common_core::walk::SOURCE_EXTENSIONS,
+        &["zig", "zon", "py", "rs", "md"]
+    );
+    // The walker's zero-domain default cannot depend on fluent-types, so
+    // the two lists are pinned together here instead of unified.
+    let mut walker = common_core::walk::SOURCE_EXTENSIONS.to_vec();
+    let mut canonical = fluent_types::file_kind::SOURCE_EXTENSIONS.to_vec();
+    walker.sort();
+    canonical.sort();
+    assert_eq!(walker, canonical);
+
+    // D1/D2 restated as cross-table assertions so no migration can blur them.
+    assert_eq!(format_for_extension("h"), Some("c"));
+    assert_eq!(
+        detect_file_type(std::path::Path::new("a.h")),
+        Some((FileKind::Code, "cpp".to_string()))
+    );
+    assert_eq!(format_for_extension("mts"), Some("typescript"));
+    assert_eq!(
+        detect_file_type(std::path::Path::new("a.mts")),
+        Some((FileKind::Text, "mts".to_string()))
+    );
+}
+
 #[test]
 fn select_files_applies_discovery_rules() {
     let dir = tree();

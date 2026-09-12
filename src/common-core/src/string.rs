@@ -709,3 +709,31 @@ pub fn cjk_bigrams(text: &str) -> Vec<String> {
     out
 }
 
+/// Extract the first `<tag>...</tag>` body, trimmed (`None` when either
+/// delimiter is missing or the body trims to empty). Callers fall back to
+/// the raw response on `None` — the tag is advisory, never load-bearing.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::extract_tag;
+///
+/// assert_eq!(extract_tag("<comment> hi </comment>", "comment"), Some("hi"));
+/// assert_eq!(extract_tag("no tags", "comment"), None);
+/// assert_eq!(extract_tag("<comment></comment>", "comment"), None);
+/// ```
+#[must_use]
+pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = text.find(open.as_str())?;
+    let after = &text[start + open.len()..];
+    let end = after.find(close.as_str())?;
+    let content = after[..end].trim();
+    if content.is_empty() {
+        None
+    } else {
+        Some(content)
+    }
+}
+

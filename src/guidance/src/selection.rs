@@ -107,7 +107,7 @@ pub fn detect_file_type(path: &Path) -> Option<(FileKind, String)> {
     if let Some(format) = image_format(&ext) {
         return Some((FileKind::Image, format));
     }
-    if BINARY_EXTENSIONS.contains(&ext.as_str()) {
+    if fluent_types::file_kind::is_binary_extension(&ext) {
         return None;
     }
     Some((FileKind::Text, ext))
@@ -427,85 +427,26 @@ const DEFAULT_IGNORED_FILE_PATTERNS: &[&str] = &[
     "*.webp",
 ];
 
-fn named_file_type(name: &str) -> Option<(FileKind, String)> {
-    match name {
-        "Dockerfile" => Some((FileKind::Code, "dockerfile".to_string())),
-        "Makefile" => Some((FileKind::Code, "makefile".to_string())),
-        _ => None,
-    }
+pub(crate) fn named_file_type(name: &str) -> Option<(FileKind, String)> {
+    fluent_types::file_kind::named_file_kind(name)
+        .map(|(kind, format)| (kind, format.to_string()))
 }
 
-fn code_format(ext: &str) -> Option<String> {
-    match ext {
-        "c" => Some("c"),
-        "cc" | "cpp" | "cxx" | "h" | "hpp" => Some("cpp"),
-        "go" => Some("go"),
-        "java" => Some("java"),
-        "js" | "mjs" | "cjs" => Some("javascript"),
-        "jsx" => Some("jsx"),
-        "ts" => Some("typescript"),
-        "tsx" => Some("tsx"),
-        "py" => Some("python"),
-        "rs" => Some("rust"),
-        "rb" => Some("ruby"),
-        "php" => Some("php"),
-        "swift" => Some("swift"),
-        "kt" | "kts" => Some("kotlin"),
-        "cs" => Some("csharp"),
-        "scala" => Some("scala"),
-        "sh" | "bash" | "zsh" => Some("bash"),
-        "sql" => Some("sql"),
-        "css" => Some("css"),
-        "scss" => Some("scss"),
-        "less" => Some("less"),
-        "vue" => Some("vue"),
-        "svelte" => Some("svelte"),
-        _ => None,
-    }
-    .map(ToString::to_string)
+pub(crate) fn code_format(ext: &str) -> Option<String> {
+    fluent_types::file_kind::code_kind_format(ext).map(ToString::to_string)
 }
 
-fn data_format(ext: &str) -> Option<String> {
-    match ext {
-        "csv" => Some("csv"),
-        "json" | "jsonc" => Some("json"),
-        "toml" => Some("toml"),
-        "yaml" | "yml" => Some("yaml"),
-        _ => None,
-    }
-    .map(ToString::to_string)
+pub(crate) fn data_format(ext: &str) -> Option<String> {
+    fluent_types::file_kind::data_kind_format(ext).map(ToString::to_string)
 }
 
-fn text_format(ext: &str) -> Option<String> {
-    match ext {
-        "md" | "mdx" => Some("markdown"),
-        "rst" => Some("rst"),
-        "txt" => Some("text"),
-        "html" | "htm" => Some("html"),
-        "xml" => Some("xml"),
-        _ => None,
-    }
-    .map(ToString::to_string)
+pub(crate) fn text_format(ext: &str) -> Option<String> {
+    fluent_types::file_kind::text_kind_format(ext).map(ToString::to_string)
 }
 
-fn image_format(ext: &str) -> Option<String> {
-    match ext {
-        "gif" => Some("gif"),
-        "jpeg" | "jpg" => Some("jpeg"),
-        "png" => Some("png"),
-        "webp" => Some("webp"),
-        _ => None,
-    }
-    .map(ToString::to_string)
+pub(crate) fn image_format(ext: &str) -> Option<String> {
+    fluent_types::file_kind::image_kind_format(ext).map(ToString::to_string)
 }
-
-/// Extension groups whose files are never classified (port of
-/// `BINARY_EXTENSION_GROUPS`).
-const BINARY_EXTENSIONS: &[&str] = &[
-    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "exe", "dll", "dylib", "so", "a", "o",
-    "obj", "wasm", "class", "jar", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
-    "mp3", "mp4", "mov", "avi", "mkv", "db", "sqlite",
-];
 
 #[cfg(test)]
 #[path = "../tests/index_selection.rs"]

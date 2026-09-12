@@ -88,3 +88,46 @@ fn empty_pattern_never_matches() {
     assert!(!ripgrep_glob_matches("", "src/a.ts"));
     assert!(!ripgrep_glob_matches("   ", "src/a.ts"));
 }
+
+// M1.1 characterization: glob normalizers pinned verbatim. These are
+// *pattern* cleaners, not lexical path cleaners: they collapse separator
+// runs and strip leading `./` but deliberately preserve `.`/`..` segments,
+// trailing slashes, and glob metacharacters for the matcher. That
+// divergence from `change_set::normalize_path` is pinned here so the M1.5
+// migration cannot silently change match behavior.
+
+#[test]
+fn m1_glob_normalizer_matrix() {
+    // Separator runs collapse; leading `./` strips (repeatedly).
+    assert_eq!(normalize_path_pattern("src//a.ts"), "src/a.ts");
+    assert_eq!(normalize_path_pattern("src\\\\a.ts"), "src/a.ts");
+    assert_eq!(normalize_path_pattern("./src/a.ts"), "src/a.ts");
+    assert_eq!(normalize_path_pattern("././src/a.ts"), "src/a.ts");
+    // Dot segments in the middle are PRESERVED (not lexically resolved).
+    assert_eq!(normalize_path_pattern("a/./b"), "a/./b");
+    assert_eq!(normalize_path_pattern("a//b/./c/../d"), "a/b/./c/../d");
+    // Trailing slashes are PRESERVED.
+    assert_eq!(normalize_path_pattern("src/"), "src/");
+    // Absolute patterns pass through untouched.
+    assert_eq!(normalize_path_pattern("/abs//x"), "/abs/x");
+    // Candidate normalization: separators only, no dot handling.
+    assert_eq!(normalize_path_for_match("src\\\\a.ts"), "src/a.ts");
+    assert_eq!(normalize_path_for_match("src//a.ts"), "src/a.ts");
+    assert_eq!(normalize_path_for_match("./src/a.ts"), "./src/a.ts");
+    assert_eq!(normalize_path_for_match("a/./b"), "a/./b");
+}
+
+#[test]
+fn m1_glob_absolute_detection_matrix() {
+    assert!(is_absolute_path_pattern("/x"));
+    assert!(is_absolute_path_pattern("/"));
+    assert!(is_absolute_path_pattern("C:/x"));
+    assert!(is_absolute_path_pattern("c:/x"));
+    // Backslash drives and non-alpha drives are NOT absolute here
+    // (diverges from `change_set::is_absolute_path` — pinned).
+    assert!(!is_absolute_path_pattern("C:\\x"));
+    assert!(!is_absolute_path_pattern("1:/x"));
+    assert!(!is_absolute_path_pattern("relative/x"));
+    assert!(!is_absolute_path_pattern("C:x"));
+    assert!(!is_absolute_path_pattern(""));
+}

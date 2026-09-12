@@ -339,7 +339,11 @@ impl SyncEngine {
     where
         F: FnMut(&Path),
     {
-        walk::walk_files(&self.source_dir, walk::SOURCE_EXTENSIONS, &mut callback);
+        walk::walk_files(
+            &self.source_dir,
+            fluent_types::file_kind::SOURCE_EXTENSIONS,
+            &mut callback,
+        );
     }
 }
 

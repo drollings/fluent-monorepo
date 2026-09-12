@@ -46,12 +46,14 @@ pub struct DiffResult {
 /// Stable file id: the absolute path alone. Selection roots are scan
 /// scope, never identity — a scoped reconcile must reproduce the full
 /// run's ids or every file looks deleted+added (P3 gate finding).
+/// Delegates to the canonical `common_core::hash::sha256_str`.
 #[must_use]
 pub fn make_file_id(absolute_path: &str) -> String {
-    common_core::hash::sha256_hex(absolute_path.as_bytes())
+    common_core::hash::sha256_str(absolute_path)
 }
 
-/// sha256 hex of file bytes (content-hash tiebreak).
+/// sha256 hex of file bytes (content-hash tiebreak). Already on the
+/// canonical helper — `common_core::hash::sha256_hex` — unchanged.
 #[must_use]
 pub fn hash_file_bytes(bytes: &[u8]) -> String {
     common_core::hash::sha256_hex(bytes)
@@ -59,9 +61,11 @@ pub fn hash_file_bytes(bytes: &[u8]) -> String {
 
 /// Hash the file at `path`; `None` when the file cannot be read
 /// (the caller treats unreadable files as modified, never as unchanged).
+/// Delegates to the canonical `common_core::hash::sha256_file`
+/// (streaming read, fail-open `None` — same contract as before).
 #[must_use]
 pub fn hash_file(path: &std::path::Path) -> Option<String> {
-    std::fs::read(path).ok().map(|bytes| hash_file_bytes(&bytes))
+    common_core::hash::sha256_file(path)
 }
 
 /// Sort `scanned` against `existing` into the five buckets.

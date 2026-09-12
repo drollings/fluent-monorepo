@@ -139,10 +139,9 @@ impl Default for ProjectConfig {
 
 /// Strip provider prefix from model reference.
 /// e.g. "ollama:llama3" -> "llama3", "model" -> "model"
+/// Delegates to the canonical `fluent_types::model_ref::model_name`.
 pub fn model_name(model_ref: &str) -> &str {
-    model_ref
-        .split_once(':')
-        .map_or(model_ref, |(_, name)| name)
+    fluent_types::model_ref::model_name(model_ref)
 }
 
 /// Resolve a model reference for a given role.
@@ -184,11 +183,11 @@ pub fn resolve_model_url(config: &ProjectConfig, model_ref: &str) -> (String, St
 
     let is_thinking = thinking_ref.is_some_and(|tr| tr == model_ref);
 
-    let (provider_name, model) = model_ref.split_once(':').unwrap_or(("default", model_ref));
+    let parsed = fluent_types::model_ref::ModelRef::parse(model_ref);
 
     let url = config
         .providers
-        .get(provider_name)
+        .get(parsed.provider.as_str())
         .map(|p| {
             format!(
                 "{}/{}",
@@ -198,27 +197,20 @@ pub fn resolve_model_url(config: &ProjectConfig, model_ref: &str) -> (String, St
         })
         .unwrap_or_default();
 
-    (url, model.to_string(), is_thinking)
+    (url, parsed.model, is_thinking)
 }
 
 /// Find config file with 3-level fallback:
 /// 1. {workspace}/.guidance/guidance-config.json
 /// 2. ~/.config/guidance/guidance-config.json
-/// 3. None
+/// 3. None (precedence delegates to
+///    `common_core::config::find_hierarchical`).
 pub fn find_config_file(workspace: &Path) -> Option<PathBuf> {
-    let project = workspace.join(".guidance/guidance-config.json");
-    if project.is_file() {
-        return Some(project);
-    }
-
+    let mut candidates = vec![workspace.join(".guidance/guidance-config.json")];
     if let Some(config_dir) = dirs::config_dir() {
-        let user = config_dir.join("guidance/guidance-config.json");
-        if user.is_file() {
-            return Some(user);
-        }
+        candidates.push(config_dir.join("guidance/guidance-config.json"));
     }
-
-    None
+    common_core::config::find_hierarchical(&candidates)
 }
 
 /// Load config with 3-level fallback: project -> user -> default.
@@ -231,8 +223,9 @@ pub fn load_config(workspace: &Path) -> Result<ProjectConfig, ConfigError> {
 }
 
 /// Resolve a model reference to its provider URL and model name.
+/// Delegates to the canonical `fluent_types::model_ref::parse_model_ref`.
 pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
-    model_ref.split_once(':')
+    fluent_types::model_ref::parse_model_ref(model_ref)
 }
 
 #[cfg(test)]
@@ -254,6 +247,68 @@ mod tests {
         assert_eq!(provider, "ollama");
         assert_eq!(model, "llama3");
         assert!(parse_model_ref("plain").is_none());
+    }
+
+    // M8.1 characterization: model-ref behavior pinned verbatim before the
+    // `fluent_types::model_ref` extraction. Forecast drift note: the
+    // roadmap's `normalize_model_ref`, markdown model mentions, and
+    // knowledge provenance parsers do not exist — this trio
+    // (`model_name`, `parse_model_ref`, `resolve_model_url`) plus the
+    // enhancer `<comment>` tag are the actual duplication surface.
+
+    #[test]
+    fn m8_model_name_edge_matrix() {
+        assert_eq!(model_name(""), "");
+        assert_eq!(model_name(":"), "");
+        assert_eq!(model_name(":x"), "x");
+        assert_eq!(model_name("x:"), "");
+        assert_eq!(model_name("a:b:c"), "b:c");
+        assert_eq!(model_name("ollama:llama3"), "llama3");
+    }
+
+    #[test]
+    fn m8_parse_model_ref_edge_matrix() {
+        assert_eq!(parse_model_ref("a:b:c"), Some(("a", "b:c")));
+        assert_eq!(parse_model_ref(":"), Some(("", "")));
+        assert_eq!(parse_model_ref(""), None);
+        assert_eq!(parse_model_ref("plain"), None);
+    }
+
+    #[test]
+    fn m8_resolve_model_url_edge_matrix() {
+        let config = ProjectConfig::builder().build();
+        // No provider segment: default provider, empty URL, model untouched.
+        assert_eq!(
+            resolve_model_url(&config, "m"),
+            (String::new(), "m".to_string(), false)
+        );
+        // Unknown provider: empty URL, model is the post-colon half.
+        assert_eq!(
+            resolve_model_url(&config, "nope:m"),
+            (String::new(), "m".to_string(), false)
+        );
+        // Endpoint slashes collapse to exactly one.
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "p".into(),
+            Provider {
+                base_url: "http://h/".into(),
+                chat_endpoint: "/api/chat".into(),
+            },
+        );
+        let config = ProjectConfig::builder().providers(providers).build();
+        let (url, model, thinking) = resolve_model_url(&config, "p:m");
+        assert_eq!(url, "http://h/api/chat");
+        assert_eq!(model, "m");
+        assert!(!thinking);
+        // Thinking via the models map (third clause).
+        let mut models = std::collections::HashMap::new();
+        models.insert("thinking".to_string(), "p:deep".to_string());
+        let config = ProjectConfig::builder().models(models).build();
+        let (_, _, thinking) = resolve_model_url(&config, "p:deep");
+        assert!(thinking);
+        let (_, _, thinking) = resolve_model_url(&config, "p:other");
+        assert!(!thinking);
     }
 
     #[test]
@@ -309,6 +364,37 @@ mod tests {
         let dir = tempdir();
         let found = find_config_file(dir.path());
         assert!(found.is_none(), "should not find config");
+    }
+
+    // M9.1 characterization: hierarchy precedence pinned before the
+    // `common_core::config::find_hierarchical` extraction. Deterministic
+    // subset only — the ambient user level (`~/.config`) cannot be
+    // controlled hermetically here; full precedence (project beats user
+    // beats absent) is pinned at the primitive in M9.2 with tempdirs.
+    #[test]
+    fn m9_project_config_wins_and_returns_exact_path() {
+        let dir = tempdir();
+        let guidance_dir = dir.path().join(".guidance");
+        std::fs::create_dir_all(&guidance_dir).expect("create");
+        let config_path = guidance_dir.join("guidance-config.json");
+        std::fs::write(&config_path, r#"{"guidance_dir": ".guidance"}"#).expect("write");
+        // A present project file always wins, regardless of ambient state.
+        assert_eq!(find_config_file(dir.path()).as_deref(), Some(config_path.as_path()));
+    }
+
+    #[test]
+    fn m9_load_config_is_strict_on_invalid_json() {
+        // `load_config` uses strict `load_json` (NOT load-or-default): an
+        // existing-but-broken project file errors instead of defaulting.
+        let dir = tempdir();
+        let guidance_dir = dir.path().join(".guidance");
+        std::fs::create_dir_all(&guidance_dir).expect("create");
+        std::fs::write(
+            guidance_dir.join("guidance-config.json"),
+            r#"{"embedding_model": "#,
+        )
+        .expect("write");
+        assert!(load_config(dir.path()).is_err());
     }
 
     #[test]

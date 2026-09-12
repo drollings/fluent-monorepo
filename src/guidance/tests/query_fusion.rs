@@ -122,6 +122,85 @@ fn evidence_sorts_by_rank_then_path_then_id() {
     assert_eq!(ids, vec!["a", "b", "c", "z"]);
 }
 
+// M2.1 characterization: `sort_evidence` edge matrix pinned verbatim before
+// the `common_core::sort` extraction — empty, single, sorted, reverse,
+// duplicates, all-missing ranks (sink last, id order), and the full
+// path ladder (`fts` < `vector` < `lemma`).
+
+#[test]
+fn m2_evidence_sort_edge_matrix() {
+    let frag = |id: &str| crate::search_types::EntityFragment {
+        id: id.to_string(),
+        group: None,
+        file_id: "file-a".to_string(),
+        range: crate::search_types::FragmentSpan::File,
+        content: crate::search_types::FragmentContent::Text {
+            text: "x".to_string(),
+        },
+        metadata: None,
+    };
+    let ev = |id: &str, path: RecallPath, rank: Option<usize>| RecallEvidence {
+        fragment: frag(id),
+        path,
+        route_id: "r".to_string(),
+        query: "q".to_string(),
+        rank,
+        score: None,
+        forced: None,
+    };
+    let ids = |evidence: &[RecallEvidence]| -> Vec<String> {
+        evidence.iter().map(|e| e.fragment.id.clone()).collect()
+    };
+
+    // Empty and single are fixed points.
+    let mut empty: Vec<RecallEvidence> = Vec::new();
+    sort_evidence(&mut empty);
+    assert!(empty.is_empty());
+    let mut single = vec![ev("a", RecallPath::Fts, Some(1))];
+    sort_evidence(&mut single);
+    assert_eq!(ids(&single), vec!["a".to_string()]);
+
+    // Already-sorted input is stable; reverse input restores key order.
+    let mut sorted = vec![
+        ev("a", RecallPath::Fts, Some(1)),
+        ev("b", RecallPath::Vector, Some(2)),
+    ];
+    sort_evidence(&mut sorted);
+    assert_eq!(ids(&sorted), vec!["a".to_string(), "b".to_string()]);
+    let mut reversed = vec![
+        ev("b", RecallPath::Vector, Some(2)),
+        ev("a", RecallPath::Fts, Some(1)),
+    ];
+    sort_evidence(&mut reversed);
+    assert_eq!(ids(&reversed), vec!["a".to_string(), "b".to_string()]);
+
+    // Duplicates are preserved (sort only — no dedup at this layer).
+    let mut dupes = vec![
+        ev("a", RecallPath::Fts, Some(1)),
+        ev("a", RecallPath::Fts, Some(1)),
+    ];
+    sort_evidence(&mut dupes);
+    assert_eq!(ids(&dupes), vec!["a".to_string(), "a".to_string()]);
+
+    // Full path ladder with missing ranks sinking last in id order.
+    let mut ladder = vec![
+        ev("z", RecallPath::Lemma, None),
+        ev("y", RecallPath::Vector, None),
+        ev("x", RecallPath::Fts, None),
+        ev("l", RecallPath::Lemma, Some(1)),
+        ev("v", RecallPath::Vector, Some(1)),
+        ev("f", RecallPath::Fts, Some(1)),
+    ];
+    sort_evidence(&mut ladder);
+    assert_eq!(
+        ids(&ladder),
+        vec!["f", "v", "l", "x", "y", "z"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn limit_cut_appends_track_and_trace_marks_cutoff() {
     let mut a = candidate("a");
@@ -323,4 +402,50 @@ fn rrf_score_serializes_as_a_bare_number() {
     );
     let back: RrfScore = serde_json::from_str("0.03278688524590164").expect("parse");
     assert_eq!(back.value().to_bits(), 0.03278688524590164f64.to_bits());
+}
+
+// --- M6.1 characterization: fuse edge cases (verbatim current outputs) ---
+
+#[test]
+fn m6_fuse_empty_candidates_is_empty() {
+    assert!(fuse_candidates(Vec::new()).is_empty());
+}
+
+#[test]
+fn m6_fuse_all_unfound_scores_zero_in_id_order() {
+    // No found recall anywhere: every score is exactly 0.0 and the
+    // lexicographic id tie-break owns the order; ranks still assign 1-based.
+    let mut b = candidate("b");
+    b.recall.push(found(RecallPath::Fts, "fts", 1));
+    // Rank present but unfound → filtered, contributes nothing.
+    b.recall[0].found = false;
+    let mut a = candidate("a");
+    a.recall.push(crate::search_types::SearchRecallTrace {
+        path: RecallPath::Vector,
+        route_id: Some("vector".to_string()),
+        query: None,
+        found: false,
+        forced: None,
+        rank: None,
+        score: None,
+        reason: None,
+    });
+    let fused = fuse_candidates(vec![b, a]);
+    assert_eq!(fused[0].id, "a");
+    assert_eq!(fused[1].id, "b");
+    assert_eq!(fused[0].score.value().to_bits(), 0f64.to_bits());
+    assert_eq!(fused[1].score.value().to_bits(), 0f64.to_bits());
+    assert_eq!(fused[0].rank, 1);
+    assert_eq!(fused[1].rank, 2);
+}
+
+#[test]
+fn m6_fuse_duplicate_ranks_across_routes_sum() {
+    // Same candidate found twice at rank 1 across two routes: 2/61.
+    let mut a = candidate("a");
+    a.recall.push(found(RecallPath::Fts, "fts", 1));
+    a.recall.push(found(RecallPath::Vector, "vector", 1));
+    let fused = fuse_candidates(vec![a]);
+    assert!((fused[0].score.value() - 2.0 / 61.0).abs() < 1e-12);
+    assert_eq!(fused[0].rank, 1);
 }

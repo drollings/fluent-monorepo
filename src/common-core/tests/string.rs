@@ -467,3 +467,23 @@ fn cjk_bigrams_expand_runs_without_dictionary() {
         assert_eq!(cjk_bigrams("a日本b"), vec!["日本"]);
         assert!(cjk_bigrams("日").is_empty());
 }
+
+#[test]
+fn extract_tag_first_trimmed_body_or_none() {
+        assert_eq!(extract_tag("<comment> hi </comment>", "comment"), Some("hi"));
+        assert_eq!(
+            extract_tag("prose\n<comment>body</comment>\ntail", "comment"),
+            Some("body")
+        );
+        assert_eq!(
+            extract_tag("<comment>first</comment> <comment>second</comment>", "comment"),
+            Some("first")
+        );
+        assert_eq!(extract_tag("no tags", "comment"), None);
+        assert_eq!(extract_tag("<comment>unclosed", "comment"), None);
+        assert_eq!(extract_tag("unopened</comment>", "comment"), None);
+        assert_eq!(extract_tag("<comment></comment>", "comment"), None);
+        assert_eq!(extract_tag("<comment>   </comment>", "comment"), None);
+        assert_eq!(extract_tag("", "comment"), None);
+        assert_eq!(extract_tag("<other>x</other>", "comment"), None);
+}

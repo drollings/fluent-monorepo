@@ -13,6 +13,7 @@ sqlite = ["dep:rusqlite", "dep:hnsw_rs", "dep:anndists"]
 http = { workspace = true }
 bitvec = { workspace = true }
 blake3 = { workspace = true }
+dirs = { workspace = true }
 fastrand = { workspace = true }
 internment = { workspace = true, features = ["arc"] }
 lru = { workspace = true }

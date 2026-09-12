@@ -78,22 +78,23 @@ pub struct RecallCandidate {
 
 /// Score, order, and rank candidates: `score = Σ 1/(K + rank)` over found
 /// recalls, lexicographic id tie-break. Source: `fuseCandidates`.
+/// Scoring composes the shared seam
+/// (`search_vector::fusion::score_postings` — the one kernel-call site);
+/// the trace filtering, composite wrap, and rank assignment stay here
+/// (domain logic, not math).
 #[must_use]
 pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandidate> {
-    let postings: Vec<(String, usize, ())> = candidates
+    let postings: Vec<(String, usize)> = candidates
         .iter()
         .flat_map(|candidate| {
             candidate
                 .recall
                 .iter()
                 .filter(|trace| trace.found && trace.rank.is_some())
-                .map(|trace| (candidate.id.clone(), trace.rank.unwrap_or(usize::MAX), ()))
+                .map(|trace| (candidate.id.clone(), trace.rank.unwrap_or(usize::MAX)))
         })
         .collect();
-    let scores: HashMap<String, f64> = fluent_db::vector::rrf_merge_n(postings, RRF_K)
-        .into_iter()
-        .map(|(score, id, ())| (id, score))
-        .collect();
+    let scores: HashMap<String, f64> = search_vector::fusion::score_postings(postings, RRF_K);
     for candidate in &mut candidates {
         // The single sanctioned composite wrap: kernel output in,
         // ordinal out. Nothing else in the tree constructs this type
@@ -118,15 +119,23 @@ pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandid
 }
 
 /// Sort evidence by rank (missing last), path (`fts` < `vector`), fragment
-/// id. Source: `sortEvidence`.
+/// id. Source: `sortEvidence`. The key order lives in [`evidence_order`]
+/// (single source of truth); owned call sites compose it with
+/// `common_core::sort::sorted_by_vec`, this slice form keeps the in-place
+/// spelling for borrowed data.
 pub fn sort_evidence(evidence: &mut [RecallEvidence]) {
-    evidence.sort_by(|left, right| {
-        left.rank
-            .unwrap_or(usize::MAX)
-            .cmp(&right.rank.unwrap_or(usize::MAX))
-            .then_with(|| path_order(left.path).cmp(&path_order(right.path)))
-            .then_with(|| left.fragment.id.cmp(&right.fragment.id))
-    });
+    evidence.sort_by(evidence_order);
+}
+
+/// Evidence ordering key: rank, then route path, then fragment id.
+/// Shared by [`sort_evidence`] and the owned `build_hit` path so the
+/// tiebreak order cannot drift between the two spellings.
+fn evidence_order(left: &RecallEvidence, right: &RecallEvidence) -> std::cmp::Ordering {
+    left.rank
+        .unwrap_or(usize::MAX)
+        .cmp(&right.rank.unwrap_or(usize::MAX))
+        .then_with(|| path_order(left.path).cmp(&path_order(right.path)))
+        .then_with(|| left.fragment.id.cmp(&right.fragment.id))
 }
 
 fn path_order(path: RecallPath) -> u8 {
@@ -179,8 +188,7 @@ pub fn candidate_trace(candidate: &RecallCandidate, limit: usize) -> SearchHitTr
 /// derived). Source: `candidateToHit`.
 #[must_use]
 pub fn build_hit(candidate: &RecallCandidate, limit: usize, trace: bool) -> SearchHit {
-    let mut evidence = candidate.evidence.clone();
-    sort_evidence(&mut evidence);
+    let evidence = common_core::sort::sorted_by_vec(candidate.evidence.clone(), evidence_order);
     SearchHit {
         entity: candidate.entity.clone(),
         file: candidate.file.clone(),

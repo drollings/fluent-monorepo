@@ -103,6 +103,15 @@ impl MemoryBridge {
     }
 }
 
+/// Default memory DB path: `$HOME/.guidance/memory.db` (`.` when the
+/// home directory is unreadable — never a construction failure).
+/// Home resolution delegates to `common_core::config::home_or_dot`.
+pub(crate) fn default_memory_db_path() -> std::path::PathBuf {
+    common_core::config::home_or_dot()
+        .join(".guidance")
+        .join("memory.db")
+}
+
 /// Initialize the memory plugin system and return a bridge for the query pipeline.
 ///
 /// Creates a registry, registers the holographic memory plugin (the primary
@@ -115,10 +124,7 @@ pub fn init_memory_bridge() -> Option<MemoryBridge> {
 
     // Register the holographic memory plugin (deterministic-first, SQLite-backed)
     let config = HolographicConfig {
-        db_path: dirs::home_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join(".guidance")
-            .join("memory.db"),
+        db_path: default_memory_db_path(),
         ..HolographicConfig::default()
     };
     let plugin = std::sync::Arc::new(HolographicMemory::new(config));
@@ -195,5 +201,21 @@ mod tests {
     #[test]
     fn session_id_is_preserved() {
         assert_eq!(empty_bridge().session_id.as_str(), "test-session");
+    }
+
+    // M9.1 characterization: the memory DB default pinned before the
+    // `common_core::config` extraction — home-anchored, `.guidance`
+    // namespaced, `.`-fallback when home is unreadable.
+    #[test]
+    fn m9_default_memory_db_path_shape() {
+        let path = default_memory_db_path();
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("memory.db")
+        );
+        assert_eq!(
+            path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
+            Some(".guidance")
+        );
     }
 }

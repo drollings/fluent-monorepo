@@ -1,6 +1,15 @@
 //! `GuidanceDb` as recall storage: converts between the P0 `search_types`
 //! contracts and the fragment tables. P2 indexing writes through the
 //! same seam (`upsert_fragments`); P1 ingestion and recall share it.
+//!
+//! M14.2: the `file_record` / `fragment_record` / `fragment_lemma`
+//! translators stay here, not in `search-vector::db`. Both sides are
+//! visible only in guidance: `search-vector` cannot import `guidance-core`
+//! (it would close a dependency cycle — guidance already depends on
+//! `search-vector` — and shared crates must never import guidance), and
+//! moving the P0 domain types out to a shared crate is out of scope for
+//! a thin-seam milestone. Single consumer, no promotion. Stays — pinned
+//! by the `query_db_storage` round-trip tests.
 
 use search_vector::db::{
     FragmentLemma, GuidanceDb, FileRecord, FragmentFilter, FragmentRecord, FragmentRow,
@@ -211,15 +220,7 @@ pub fn file_record(file: &FileInfo) -> FileRecord {
         root_path: file.root_path.clone(),
         size_bytes: file.size_bytes,
         last_modified_time: file.last_modified_time,
-        kind: file.kind.map(|kind| {
-            match kind {
-                FileKind::Text => "text",
-                FileKind::Code => "code",
-                FileKind::Data => "data",
-                FileKind::Image => "image",
-            }
-            .to_string()
-        }),
+        kind: file.kind.map(|kind| kind.as_str().to_string()),
         format: file.format.clone(),
         content_hash: file.content_hash.clone(),
         index_status: Some("indexed".to_string()),
@@ -314,7 +315,7 @@ pub fn fragment_lemma(fragment_id: &str, lemma: &str, confidence: f64) -> Fragme
     }
 }
 
-fn file_info(file: &FileRecord) -> FileInfo {
+pub(crate) fn file_info(file: &FileRecord) -> FileInfo {
     FileInfo {
         id: file.id.clone(),
         absolute_path: file.absolute_path.clone(),
@@ -323,13 +324,7 @@ fn file_info(file: &FileRecord) -> FileInfo {
         size_bytes: file.size_bytes,
         last_modified_time: file.last_modified_time,
         content_hash: None,
-        kind: file.kind.as_deref().and_then(|kind| match kind {
-            "text" => Some(FileKind::Text),
-            "code" => Some(FileKind::Code),
-            "data" => Some(FileKind::Data),
-            "image" => Some(FileKind::Image),
-            _ => None,
-        }),
+        kind: FileKind::parse_stored(file.kind.as_deref()),
         format: file.format.clone(),
         index_status: None,
     }
@@ -422,3 +417,7 @@ fn parse_modifier(name: &str) -> Option<CodeEntityModifier> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/query_db_storage.rs"]
+mod tests;

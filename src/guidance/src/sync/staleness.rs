@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use crate::freshness::{hash_decides_fresh, mtime_skew, MtimeSkew};
+
 pub fn is_stale(json_path: &Path, source_path: &Path) -> bool {
     let Some(json_mtime) = common_core::io::mtime(json_path) else {
         return true;
@@ -7,11 +9,10 @@ pub fn is_stale(json_path: &Path, source_path: &Path) -> bool {
     let Some(source_mtime) = common_core::io::mtime(source_path) else {
         return false;
     };
-
-    match source_mtime.duration_since(json_mtime) {
-        Ok(dur) => dur.as_secs() > 1 || (dur.as_secs() == 1 && dur.subsec_nanos() > 0),
-        Err(_) => false,
-    }
+    // Decision delegates to the single home (`crate::freshness`); this
+    // shell only fetches mtimes and preserves the missing-file edges
+    // (absent sidecar regenerates; absent source has nothing newer).
+    mtime_skew(json_mtime, source_mtime) == MtimeSkew::SourceNewer
 }
 
 pub fn should_generate(json_path: &Path, source_path: &Path) -> bool {
@@ -29,6 +30,9 @@ pub fn should_generate(json_path: &Path, source_path: &Path) -> bool {
 /// timestamp granularity), never task value. Inside it the clock is
 /// evidence-free, so the content hash decides instead. The threshold
 /// gates which evidence to consult, never the conclusion.
+///
+/// Decision delegates to the single home (`crate::freshness::mtime_skew`);
+/// this shell only fetches mtimes (either missing → not ambiguous).
 #[must_use]
 pub fn in_ambiguity_window(json_path: &Path, source_path: &Path) -> bool {
     let (Some(json_mtime), Some(source_mtime)) = (
@@ -37,24 +41,7 @@ pub fn in_ambiguity_window(json_path: &Path, source_path: &Path) -> bool {
     ) else {
         return false;
     };
-    match source_mtime.duration_since(json_mtime) {
-        Ok(dur) => dur.as_secs() == 0 || (dur.as_secs() == 1 && dur.subsec_nanos() == 0),
-        Err(_) => false,
-    }
-}
-
-/// Content tiebreak for the ambiguity window: the fresh source sha256
-/// against the stored one (the `compute_diff` precedent — same hasher,
-/// `common_core::hash::sha256_hex` — never a second hasher). `None`
-/// stored means no evidence: fail open (not fresh — regenerate), never
-/// serve ambiguous content as fresh.
-///
-/// Axis statement: the hash measures *task correctness* (bytes changed),
-/// the complement of the window's self-doubt. It gates a regen decision
-/// only — never cached, never persisted, never served as data.
-#[must_use]
-pub fn hash_decides_fresh(current_hash: &str, stored_hash: Option<&str>) -> bool {
-    stored_hash.is_some_and(|want| want == current_hash)
+    mtime_skew(json_mtime, source_mtime) == MtimeSkew::Ambiguous
 }
 
 /// Staleness with a content-aware clock gate: outside the ambiguity

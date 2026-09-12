@@ -1,3 +1,16 @@
+//! Chunked synchronous scoring over one `LlmFilterBackend`.
+//!
+//! M11.2: stays sequential and stays here, not on `ResultPool`. This is a
+//! chunking helper, not an execution batch — chunks run in order through a
+//! synchronous backend with first-error-wins (`?` stops at the first
+//! failing chunk) and a final relevance sort. `ResultPool` is async and
+//! concurrent: migration would async-ify the API, parallelize backend
+//! calls (changing error precedence), and add worker machinery for zero
+//! production callers (only the unit tests below construct it). If a
+//! production caller ever needs concurrent scoring, that caller composes
+//! `ResultPool` directly with `NoopLlmFilter` as fail-open. Stays — pinned
+//! by the empty/single/multi-batch tests.
+
 use super::llm_filter::{LlmFilterBackend, LlmFilterError, RelevanceScore};
 
 pub struct BatchLlmFilter {

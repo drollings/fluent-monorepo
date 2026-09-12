@@ -1,5 +1,6 @@
 use common_core::string::contains_ignore_case;
 use fluent_types::GuidanceDoc;
+use fluent_wvr::{ArcIntern, Component, Describable, WorkContext, WorkError, WorkOutput, WorkUnit};
 
 use super::identifier;
 use super::llm_filter::LlmFilter;
@@ -30,6 +31,16 @@ pub struct SearchContext<'a> {
 ///
 /// Each backend handles one `QueryIntent`. The orchestrator iterates registered
 /// backends and calls `matches` + `search` without branching on implementation.
+///
+/// M10.3: owned backends are also `fluent_wvr::Component`s and register
+/// through `RegisteredBackend` (native dispatch view + uniform handle, one
+/// allocation). Invocation stays native (`matches` + `search` through the
+/// ladder): `search` needs a live `SearchContext` (storage/embedder/NLP/
+/// filter refs) that no handoff channel can carry, and a `GuidanceDoc`
+/// JSON round-trip per dispatch would buy nothing. Borrowed index backends
+/// (`Lemma`/`Fts`/`Vector`) implement this trait natively only — uniform
+/// handles require `'static` (`as_any`); they gain handles via an owned
+/// adapter if a registrar ever appears (no speculative wrapper today).
 pub trait SearchBackend: Send + Sync {
     /// Returns true if this backend handles the given intent.
     fn matches(&self, intent: QueryIntent) -> bool;
@@ -223,6 +234,91 @@ impl SearchBackend for GeneralBackend {
     }
 }
 
+// --- M10.2: uniform handles (additive; native `search` untouched) ----------
+//
+// Each backend is a `fluent_wvr::Component` so the orchestrator can hold
+// `Arc<dyn Component>` handles. Unlike formatters, search backends cannot
+// run standalone: `search` needs a live `SearchContext` (storage,
+// embedder, NLP, LLM filter refs) that no handoff channel can carry, so
+// `execute` documents the native entry point and the orchestrator
+// downcasts to `SearchBackend` for dispatch (zero round-trip cost,
+// byte-identical arbitration).
+
+macro_rules! impl_search_backend_component {
+    ($type:ty, $name:literal, $backend:literal) => {
+        impl WorkUnit for $type {
+            fn name(&self) -> &str {
+                $name
+            }
+            fn depends(&self) -> &[ArcIntern<str>] {
+                &[]
+            }
+            fn provides(&self) -> &[ArcIntern<str>] {
+                &[]
+            }
+            fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+                Err(WorkError::Execution(
+                    concat!(
+                        $name,
+                        " runs through QueryEngine dispatch: downcast the",
+                        " handle to SearchBackend and call search natively"
+                    )
+                    .into(),
+                ))
+            }
+        }
+
+        impl Describable for $type {
+            fn describe(&self) -> serde_json::Value {
+                serde_json::json!({
+                    "kind": "search_backend",
+                    "backend": $backend,
+                    "name": $name,
+                })
+            }
+        }
+
+        fluent_wvr::impl_fieldless!($type);
+        fluent_wvr::impl_component!($type);
+    };
+}
+
+impl_search_backend_component!(IdentifierBackend, "backend.identifier", "identifier");
+impl_search_backend_component!(KeywordBackend, "backend.keyword", "keyword");
+impl_search_backend_component!(ConceptBackend, "backend.concept", "concept");
+impl_search_backend_component!(FilePathBackend, "backend.filepath", "filepath");
+impl_search_backend_component!(GeneralBackend, "backend.general", "general");
+
+/// One registered backend: native dispatch view + uniform control-plane view.
+///
+/// Built only from owned `T: SearchBackend + Component` (one `Arc<T>`
+/// shared as two fat pointers), so both views always agree. The
+/// orchestrator dispatches through `backend` (ladder, byte-identical) and
+/// inventories through `component`. Borrowed backends cannot register
+/// (uniform handles require `'static`); custom owned backends implement
+/// `Component` alongside `SearchBackend` (see `CountingBackend` in the
+/// engine tests for the minimal shape).
+pub struct RegisteredBackend {
+    /// Native dispatch (`matches` + `search` through the ladder).
+    pub backend: std::sync::Arc<dyn SearchBackend>,
+    /// Uniform control-plane handle (inventory, supervision, config).
+    pub component: std::sync::Arc<dyn Component>,
+}
+
+impl RegisteredBackend {
+    /// Register one owned backend behind both views.
+    pub fn new<T>(backend: T) -> Self
+    where
+        T: SearchBackend + Component + 'static,
+    {
+        let shared: std::sync::Arc<T> = std::sync::Arc::new(backend);
+        Self {
+            backend: shared.clone(),
+            component: shared,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +400,37 @@ mod tests {
             Ok(self.0.clone())
         }
     }
+
+    // M10.3: test stub joins the uniform contract (native-only execute).
+    impl WorkUnit for StubFilter {
+        fn name(&self) -> &str {
+            "filter.stub"
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            Err(WorkError::Execution(
+                "filter.stub runs natively: call score_relevance directly".into(),
+            ))
+        }
+    }
+
+    impl Describable for StubFilter {
+        fn describe(&self) -> serde_json::Value {
+            serde_json::json!({
+                "kind": "llm_filter_backend",
+                "backend": "stub",
+                "name": "filter.stub",
+            })
+        }
+    }
+
+    fluent_wvr::impl_fieldless!(StubFilter);
+    fluent_wvr::impl_component!(StubFilter);
 
     #[test]
     fn concept_backend_matches_and_filters_by_score() {
@@ -484,5 +611,64 @@ mod tests {
             report_at_05.fpr,
             common_core::calibration::render_markdown_table(&reports)
         );
+    }
+
+    // --- M10.2: uniform-handle contract ------------------------------------
+
+    use fluent_wvr::{Component, FieldAccess, WorkContext};
+
+    #[test]
+    fn m10_search_backend_handles_carry_names_and_schema() {
+        let handles: Vec<(&str, &str, std::sync::Arc<dyn Component>)> = vec![
+            ("backend.identifier", "identifier", std::sync::Arc::new(IdentifierBackend)),
+            ("backend.keyword", "keyword", std::sync::Arc::new(KeywordBackend)),
+            ("backend.concept", "concept", std::sync::Arc::new(ConceptBackend)),
+            ("backend.filepath", "filepath", std::sync::Arc::new(FilePathBackend)),
+            ("backend.general", "general", std::sync::Arc::new(GeneralBackend)),
+        ];
+        for (name, backend, handle) in &handles {
+            assert_eq!(handle.name(), *name);
+            assert_eq!(
+                fluent_wvr::Describable::describe(handle.as_ref())["backend"],
+                serde_json::json!(*backend)
+            );
+        }
+    }
+
+    #[test]
+    fn m10_search_backend_execute_documents_native_dispatch() {
+        // No live SearchContext travels the handoff: execute guides back to
+        // downcast-native dispatch instead of failing opaquely.
+        let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
+        let err = handle.execute(&WorkContext::default()).expect_err("native-only");
+        match err {
+            fluent_wvr::WorkError::Execution(message) => {
+                assert!(message.contains("downcast"), "{message}");
+            }
+            other => panic!("expected Execution, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m10_search_backend_handle_downcasts_to_native_dispatch() {
+        // The uniform handle recovers the native backend: arbitration and
+        // outputs stay byte-identical (no serialize round-trip).
+        let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
+        let native =
+            fluent_wvr::component_downcast_ref::<IdentifierBackend>(handle.as_ref())
+                .expect("downcast");
+        assert!(native.matches(QueryIntent::IdentifierLookup));
+        let stages = native
+            .search("helloWorld", &make_test_doc(), &ctx_with_filter(&noop_filter()))
+            .expect("search");
+        assert!(!stages.is_empty());
+    }
+
+    #[test]
+    fn m10_search_backends_are_fieldless() {
+        let mut handle = KeywordBackend;
+        assert_eq!(handle.field_names(), &[] as &[&str]);
+        assert!(handle.get_field("intent").is_err());
+        assert!(handle.set_field("intent", "x").is_err());
     }
 }

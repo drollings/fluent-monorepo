@@ -97,6 +97,49 @@ fn hashing_is_deterministic() {
     assert_eq!(hash_file_bytes(b"hello").len(), 64);
 }
 
+// M3.1 characterization: file-hash behavior pinned verbatim before the
+// `common_core::hash::{sha256_file, sha256_str}` extraction — known
+// vectors (algorithm lock, not just determinism), empty file, missing
+// file → `None` (fail-open: callers treat unreadable as modified).
+
+#[test]
+fn m3_hash_known_vectors() {
+    assert_eq!(
+        hash_file_bytes(b""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        hash_file_bytes(b"hello"),
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    );
+    assert_eq!(
+        hash_file_bytes(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}
+
+#[test]
+fn m3_hash_file_empty_and_missing() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let empty = dir.path().join("empty.txt");
+    std::fs::write(&empty, b"").expect("write empty");
+    assert_eq!(hash_file(&empty), hash_file_bytes(b"").into());
+    assert_eq!(
+        hash_file(&empty).as_deref(),
+        Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    );
+    let missing = dir.path().join("missing.txt");
+    assert_eq!(hash_file(&missing), None);
+}
+
+#[test]
+fn m3_hash_file_matches_bytes() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let path = dir.path().join("hello.txt");
+    std::fs::write(&path, b"hello").expect("write hello");
+    assert_eq!(hash_file(&path), hash_file_bytes(b"hello").into());
+}
+
 fn ids(files: &[ScannedFile]) -> Vec<&str> {
     files.iter().map(|f| f.relative_path.as_str()).collect()
 }

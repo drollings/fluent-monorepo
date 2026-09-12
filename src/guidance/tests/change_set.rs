@@ -125,3 +125,132 @@ fn rejects_relative_paths_at_the_boundary() {
     let error = changes.add("relative/path.ts", ChangeKind::Changed, false).unwrap_err();
     assert!(matches!(error, crate::change_set::ChangeSetError::NotAbsolute(_)));
 }
+
+// M1.1 characterization: lexical path helpers pinned verbatim before the
+// `common_core::path` extraction. These call the real implementations
+// (now `pub(crate)`) so any semantic drift fails the gate.
+
+#[test]
+fn m1_normalize_path_matrix() {
+    use crate::change_set::normalize_path;
+    // Roadmap cases first.
+    assert_eq!(normalize_path("a//b/./c/../d"), "a/b/d");
+    assert_eq!(normalize_path("C:\\a\\b"), "C:/a/b");
+    assert_eq!(normalize_path("C:/x"), "C:/x");
+    // Dotdot never climbs above root `/`.
+    assert_eq!(normalize_path("/../a"), "/a");
+    assert_eq!(normalize_path("/.."), "/");
+    assert_eq!(normalize_path("/a/../../b"), "/b");
+    // Relative dotdot that would climb above cwd collapses to empty/remainder.
+    assert_eq!(normalize_path(".."), "");
+    assert_eq!(normalize_path("../a"), "a");
+    assert_eq!(normalize_path("a/../.."), "");
+    // Trailing slashes strip except root.
+    assert_eq!(normalize_path("/a/b/"), "/a/b");
+    assert_eq!(normalize_path("a/b/"), "a/b");
+    assert_eq!(normalize_path("/"), "/");
+    // Empty and dot-only inputs.
+    assert_eq!(normalize_path(""), "");
+    assert_eq!(normalize_path("."), "");
+    assert_eq!(normalize_path("./a"), "a");
+    // Absolute basics and separator runs.
+    assert_eq!(normalize_path("/x"), "/x");
+    assert_eq!(normalize_path("/a//b"), "/a/b");
+    assert_eq!(normalize_path("/a/./b"), "/a/b");
+    assert_eq!(normalize_path("a/b"), "a/b");
+}
+
+#[test]
+fn m1_parent_dir_matrix() {
+    use crate::change_set::parent_dir;
+    assert_eq!(parent_dir("/"), None);
+    assert_eq!(parent_dir("/a"), Some("/".to_string()));
+    assert_eq!(parent_dir("/a/b"), Some("/a".to_string()));
+    assert_eq!(parent_dir("/a/b/"), Some("/a".to_string()));
+    assert_eq!(parent_dir("a"), None);
+    assert_eq!(parent_dir("a/b"), Some("a".to_string()));
+}
+
+#[test]
+fn m1_file_name_matrix() {
+    use crate::change_set::file_name;
+    assert_eq!(file_name("/a/b.ts"), Some("b.ts"));
+    assert_eq!(file_name("/a/b/"), Some("b"));
+    assert_eq!(file_name("a"), Some("a"));
+    assert_eq!(file_name("/"), Some(""));
+    assert_eq!(file_name(".gitignore"), Some(".gitignore"));
+    assert_eq!(file_name("/x/.gitignore"), Some(".gitignore"));
+}
+
+#[test]
+fn m1_is_absolute_path_matrix() {
+    use crate::change_set::is_absolute_path;
+    assert!(is_absolute_path("/x"));
+    assert!(is_absolute_path("/"));
+    assert!(is_absolute_path("C:/x"));
+    assert!(is_absolute_path("C:\\x"));
+    assert!(!is_absolute_path("relative/path.ts"));
+    assert!(!is_absolute_path(""));
+    assert!(!is_absolute_path("C:x"));
+}
+
+#[test]
+fn m1_add_observes_normalization() {
+    // Normalization is observable through the public `add`/`snapshot` path:
+    // separators collapse and `.`/`..` resolve before storage.
+    let root = join(&std::env::temp_dir().to_string_lossy(), &["m1-normalize-repo"]);
+    let mut changes = ChangeSet::new(ChangeSetOptions::default());
+    changes
+        .add(&format!("{root}//src/./a.ts"), ChangeKind::Changed, false)
+        .unwrap();
+    changes
+        .add(&format!("{root}/src/../src/b.ts"), ChangeKind::Changed, false)
+        .unwrap();
+    let snapshot = changes.snapshot();
+    assert_eq!(
+        snapshot.touched_files,
+        vec![format!("{root}/src/a.ts"), format!("{root}/src/b.ts")]
+    );
+}
+
+// M2.1 characterization: snapshot/collapse ordering pinned verbatim before
+// the `common_core::sort` extraction. Snapshots sort byte-wise; collapse
+// prunes by ascending path length (shortest scope wins).
+
+#[test]
+fn m2_snapshot_sorts_reverse_insertions_and_dedups() {
+    let root = join(&std::env::temp_dir().to_string_lossy(), &["m2-order-repo"]);
+    let mut changes = ChangeSet::new(ChangeSetOptions::default());
+    for name in ["c.ts", "a.ts", "b.ts", "a.ts"] {
+        changes
+            .add(&join(&root, &[name]), ChangeKind::Changed, false)
+            .unwrap();
+    }
+    let snapshot = changes.snapshot();
+    assert_eq!(
+        snapshot.touched_files,
+        vec![
+            join(&root, &["a.ts"]),
+            join(&root, &["b.ts"]),
+            join(&root, &["c.ts"]),
+        ]
+    );
+}
+
+#[test]
+fn m2_collapse_prunes_nested_prefixes_shortest_first() {
+    let root = join(&std::env::temp_dir().to_string_lossy(), &["m2-collapse-repo"]);
+    let mut changes = ChangeSet::new(ChangeSetOptions {
+        root: Some(root.clone()),
+        max_changed_paths: 100,
+    });
+    changes
+        .add(&join(&root, &["src", "nested", "deep.ts"]), ChangeKind::Deleted, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["src", "nested"]), ChangeKind::Deleted, true)
+        .unwrap();
+    changes.add(&join(&root, &["src"]), ChangeKind::Deleted, true).unwrap();
+    let snapshot = changes.snapshot();
+    assert_eq!(snapshot.deleted_prefixes, vec![join(&root, &["src"])]);
+}

@@ -9,6 +9,8 @@ pub mod instance_id;
 pub mod interlingua;
 pub mod knowledge;
 pub mod provenance;
+pub mod file_kind;
+pub mod model_ref;
 
 pub use interlingua::{
     id_for_namespace, lemma_id_for_str, local_id_of, property_id_for_iri,
@@ -17,6 +19,7 @@ pub use interlingua::{
 };
 pub use knowledge::{KnowledgeCapability, KnowledgeError};
 pub use provenance::{AnnotationClaim, ClaimStatus, ProvenanceTier};
+pub use file_kind::FileKind;
 
 pub const LOD_COUNT: usize = 6;
 

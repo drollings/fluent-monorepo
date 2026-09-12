@@ -160,3 +160,144 @@ async fn close_cancels_queued_followups() {
     let snapshot = scheduler.wait(second.job.id).await.expect("wait");
     assert_eq!(snapshot.state, JobState::Cancelled, "{snapshot:?}");
 }
+
+// --- M4.3 pin: scheduler delay composes backoff_ms exactly ---
+#[test]
+fn m4_scheduler_delay_matches_backoff_composition() {
+    // Historical formula `base * 2^min(attempt-1, 8)` vs the migrated
+    // `backoff_ms(base, min(attempt, 9), 0)`: bit-equal on the whole u32
+    // domain, so the M4.3 migration is behavior-preserving by construction.
+    // If this ever diverges, behavior wins: revert, do not "fix" the pin.
+    for base in [0u64, 1, 100, 500] {
+        for attempt in (0u32..=20).chain([21, 100, u32::MAX]) {
+            let historical = base.saturating_mul(
+                2u64.pow(attempt.saturating_sub(1).min(8)),
+            );
+            let composed =
+                common_core::retry::backoff_ms(base, attempt.min(9), 0);
+            assert_eq!(historical, composed, "base {base} attempt {attempt}");
+        }
+    }
+}
+
+// --- M11.1 characterization: exhaustion, close fail-fast, followup merge ---
+
+#[tokio::test]
+async fn retryable_exhaustion_fails_at_max_attempts() {
+    // Always-retryable body with max_attempts=3: exactly 3 runs, then
+    // Failed (no fourth attempt, no success).
+    let scheduler = JobScheduler::new(1, 3, 1);
+    let runs = Arc::new(AtomicUsize::new(0));
+    let run_count = Arc::clone(&runs);
+    let submitted = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Watch,
+        followup_if_running: true,
+        run: Arc::new(move |_: JobContext| {
+            let run_count = Arc::clone(&run_count);
+            Box::pin(async move {
+                run_count.fetch_add(1, Ordering::SeqCst);
+                Err(JobError::retryable("busy"))
+            }) as BoxFuture<Result<(), JobError>>
+        }),
+    });
+    let snapshot = scheduler.wait(submitted.job.id).await.expect("wait");
+    assert_eq!(snapshot.state, JobState::Failed);
+    assert_eq!(snapshot.attempt, 3);
+    assert_eq!(runs.load(Ordering::SeqCst), 3);
+    scheduler.close();
+}
+
+#[tokio::test]
+async fn post_close_submit_fails_fast_cancelled() {
+    // After close, submits never queue: Cancelled snapshot, not reused,
+    // attempt 0 — and idle resolves immediately.
+    let scheduler = JobScheduler::new(1, 1, 1);
+    scheduler.close();
+    let submitted = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Manual,
+        followup_if_running: false,
+        run: run_ok(),
+    });
+    assert!(!submitted.reused);
+    assert_eq!(submitted.job.state, JobState::Cancelled);
+    assert_eq!(submitted.job.attempt, 0);
+    scheduler.wait_for_root_idle("/repo").await;
+}
+
+#[tokio::test]
+async fn wait_on_unknown_id_returns_none() {
+    let scheduler = JobScheduler::new(1, 1, 1);
+    assert_eq!(scheduler.wait(999_999).await, None);
+    scheduler.close();
+}
+
+#[tokio::test]
+async fn wait_for_root_idle_resolves_when_idle() {
+    // No jobs ever submitted: must resolve without hanging.
+    let scheduler = JobScheduler::new(1, 1, 1);
+    tokio::time::timeout(
+        Duration::from_millis(100),
+        scheduler.wait_for_root_idle("/repo"),
+    )
+    .await
+    .expect("idle resolves");
+    scheduler.close();
+}
+
+#[tokio::test]
+async fn followup_merges_latest_run_and_escalates_reason() {
+    // First job blocks; two followups merge into ONE followup id, the
+    // latest run wins, and a Manual merge escalates the queued reason.
+    let scheduler = JobScheduler::new(1, 3, 1);
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let ran = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mk_run = |marker: &'static str| {
+        let entered = Arc::clone(&entered);
+        let release = Arc::clone(&release);
+        let ran = Arc::clone(&ran);
+        let first = marker == "first";
+        Arc::new(move |_: JobContext| {
+            let entered = Arc::clone(&entered);
+            let release = Arc::clone(&release);
+            let ran = Arc::clone(&ran);
+            Box::pin(async move {
+                if first {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+                ran.lock().expect("ran").push(marker);
+                Ok(())
+            }) as BoxFuture<Result<(), JobError>>
+        })
+    };
+    let _first = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Watch,
+        followup_if_running: true,
+        run: mk_run("first"),
+    });
+    entered.notified().await;
+    let second = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Watch,
+        followup_if_running: true,
+        run: mk_run("stale"),
+    });
+    assert!(second.reused);
+    let third = scheduler.submit(SubmitJob {
+        root: "/repo".to_string(),
+        reason: JobReason::Manual,
+        followup_if_running: true,
+        run: mk_run("latest"),
+    });
+    assert!(third.reused);
+    assert_eq!(third.job.id, second.job.id, "one followup slot");
+    assert_eq!(third.job.reason, JobReason::Manual, "reason escalates");
+    release.notify_one();
+    scheduler.wait_for_root_idle("/repo").await;
+    assert_eq!(ran.lock().expect("ran").as_slice(), &["first", "latest"]);
+    scheduler.close();
+}

@@ -51,9 +51,7 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
         .iter()
         .filter(|s| s.kind == fluent_types::StageKind::Code && s.line.is_some())
         .map(|s| {
-            let file = std::path::Path::new(&s.source)
-                .file_name()
-                .map_or_else(|| s.source.clone(), |f| f.to_string_lossy().to_string());
+            let file = common_core::path::file_name_lexical(&s.source).unwrap_or(&s.source);
             format!("{file}:{}", s.line.unwrap())
         })
         .collect();
@@ -65,9 +63,8 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
 
     for citation in &citations {
         let citation_str = citation_to_string(citation);
-        let citation_file = std::path::Path::new(&citation.file)
-            .file_name()
-            .map_or_else(|| citation.file.clone(), |f| f.to_string_lossy().to_string());
+        let citation_file =
+            common_core::path::file_name_lexical(&citation.file).unwrap_or(&citation.file);
         let is_grounded = grounded_refs.iter().any(|ref_str| {
             let ref_file = ref_str.split(':').next().unwrap_or("");
             ref_file == citation_file
@@ -215,5 +212,33 @@ mod tests {
         let stages = vec![make_code_stage("src/main.rs", 42)];
         let result = verify_citations("", &stages);
         assert!(result.is_grounded());
+    }
+
+    // M1.1 characterization: basename extraction pinned verbatim before the
+    // `common_core::path::file_name_lexical` migration. Basenames compare by
+    // final `/` segment only — both sides go through the same extraction, so
+    // the relation is symmetric.
+    #[test]
+    fn m1_basename_trailing_slash_and_nesting() {
+        let stages = vec![make_code_stage("src/nested/main.rs", 7)];
+        let grounded = verify_citations("see main.rs:7", &stages);
+        assert!(grounded.is_grounded());
+        let unverified = verify_citations("see nested.rs:7", &stages);
+        assert!(!unverified.is_grounded());
+    }
+
+    #[test]
+    fn m1_basename_backslash_input() {
+        // `file_name_lexical` splits `/` only (like the `std` extraction
+        // before it — backslash splitting lives in `normalize_lexical`,
+        // which callers apply first). A raw backslash source therefore
+        // keeps the whole string as its basename both pre- and post-M1.6:
+        // no behavior change at this call site.
+        let stages = vec![make_code_stage("src\\main.rs", 7)];
+        let result = verify_citations("see main.rs:7", &stages);
+        assert!(
+            !result.is_grounded(),
+            "backslash basename does not match: {result:?}"
+        );
     }
 }

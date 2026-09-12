@@ -337,17 +337,20 @@ static ADAPTERS: &[TsAdapter] = &[
 /// Resolve the adapter for a format id (registry search, never a match).
 #[must_use]
 pub fn resolve_adapter(format: &str) -> Option<&'static TsAdapter> {
+    // M5: registry find, not a fallback walk — one lookup, a miss is
+    // terminal `None` (never "try the next adapter"). Stays.
     ADAPTERS.iter().find(|adapter| adapter.format == format)
 }
 
 /// Resolve the format id for a file extension (registry scan).
+/// Delegates to the canonical `fluent_types::file_kind` adapter map
+/// (`h` parses as C here — the ingest tagger maps it to C++ instead;
+/// that divergence is documented at the canonical home, never unified
+/// implicitly).
 #[must_use]
 pub fn format_for_extension(ext: &str) -> Option<&'static str> {
     let lowered = ext.to_ascii_lowercase();
-    ADAPTERS
-        .iter()
-        .find(|adapter| adapter.extensions.contains(&lowered.as_str()))
-        .map(|adapter| adapter.format)
+    fluent_types::file_kind::code_format_for_extension(&lowered)
 }
 
 /// Structured code formats with grammars (port of `STRUCTURED_CODE_FORMATS`).

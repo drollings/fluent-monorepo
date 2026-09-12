@@ -444,6 +444,9 @@ fn collect_adaptive_recall(
     storage: &dyn RecallStorage,
     candidates: &mut HashMap<String, RecallCandidate>,
 ) -> Result<usize, RecallError> {
+    // M5: fan-out, not a first-accept walk — every route contributes hits
+    // each depth (results merge for fusion). The ladder combinator
+    // (first-Ok-wins) would drop recalls. Stays.
     let routes = build_recall_routes(plan, filter, nlp);
     let target = recall_target_candidate_count(limit);
     let mut previous_depth = 0;

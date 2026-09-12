@@ -100,19 +100,10 @@ pub enum ImageFormat {
     Gif,
 }
 
-/// Source file kinds (closed set from types.ts).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FileKind {
-    /// Plain text / markdown.
-    Text,
-    /// Source code.
-    Code,
-    /// Structured data.
-    Data,
-    /// Raster image.
-    Image,
-}
+/// Source file kinds (closed set from types.ts). Canonical home:
+/// `fluent_types::file_kind::FileKind` — re-exported here so existing
+/// `search_types::FileKind` paths keep working during the migration.
+pub use fluent_types::file_kind::FileKind;
 
 /// Code symbol types — the closed 6-set (roadmap C.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -293,39 +284,12 @@ pub struct EntityFragment {
 // ---------------------------------------------------------------------------
 
 /// Fused RRF composite score: an ordinal over within-route positions,
-/// not a confidence and not a magnitude. The fusion kernel sums
-/// `1/(K + rank)` terms across routes whose private scales do not
-/// commute (unbounded BM25 magnitudes, constant lemma weights,
-/// embedding distances), so composites compare positions only.
-/// Consequences, enforced by the shape of this type rather than by
-/// prose: no arithmetic (`Add`/`Sub`/`Mul`/`Div`/`Sum` are deliberately
-/// absent — a composite never combines with anything, and a raw route
-/// score cannot flow here without an explicit wrap); ordering through
-/// the derived `PartialOrd` (same `partial_cmp` semantics as the bare
-/// `f64` it replaces); magnitude reads only through [`RrfScore::value`]
-/// for lossy display. Serialization is transparent: on the wire this
-/// is still a JSON number, byte-identical to before.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct RrfScore(pub f64);
-
-impl RrfScore {
-    /// Wrap a kernel-produced composite. The single sanctioned call
-    /// site is the fusion kernel boundary (`fuse_candidates`); every
-    /// other construction (tests, fixtures) is explicit and auditable.
-    #[must_use]
-    pub fn new(score: f64) -> Self {
-        Self(score)
-    }
-
-    /// Magnitude read for lossy display only (`{:.2}` rendering, trace
-    /// text). Rounds away information by design — never feed back into
-    /// ranking.
-    #[must_use]
-    pub fn value(self) -> f64 {
-        self.0
-    }
-}
+/// not a confidence and not a magnitude. Canonical home is
+/// `search_vector::fusion::RrfScore` (M6) — this re-export keeps the P0
+/// contract surface stable. See the canonical item for the full stance
+/// (no arithmetic, `PartialOrd` ordering, [`RrfScore::value`] display
+/// reads, transparent wire serialization).
+pub use search_vector::fusion::RrfScore;
 
 /// Recall route mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -774,104 +738,32 @@ pub fn validate_fragment_groups(
 
 /// Query tokens that name code symbols, minus the keyword stoplist.
 /// Source: `pipeline/search/index.ts` (`extractSymbolNames`).
+/// Canonical implementation lives in `search_vector::tokens` (M13); this
+/// wrapper keeps the P0 contract surface stable.
 #[must_use]
 pub fn extract_symbol_names(query: &str) -> Vec<String> {
-    const KEYWORDS: &[&str] = &[
-        "class", "struct", "enum", "interface", "function", "method", "type", "const", "let",
-        "var", "namespace", "where", "find", "explain",
-    ];
-    let mut names = HashSet::new();
-    let mut ordered = Vec::new();
-    let bytes = query.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let is_start = |b: u8| b.is_ascii_alphabetic() || b == b'_' || b == b'~';
-        if !is_start(bytes[i]) {
-            i += 1;
-            continue;
-        }
-        let mut j = i + 1;
-        while j < bytes.len()
-            && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'_' | b'~' | b':'))
-        {
-            j += 1;
-        }
-        let token = &query[i..j];
-        if !KEYWORDS.contains(&token.to_ascii_lowercase().as_str()) {
-            if let Some(name) = symbol_name_from_token(token) {
-                if names.insert(name.clone()) {
-                    ordered.push(name);
-                }
-            }
-        }
-        i = j;
-    }
-    ordered
+    search_vector::tokens::symbol_names(query)
 }
 
 /// Owner-aware symbol name: keeps `Owner::name` only for uppercase owners.
 /// Source: `pipeline/search/index.ts` (`symbolNameFromToken`).
+/// Canonical implementation lives in `search_vector::tokens` (M13); this
+/// wrapper keeps the P0 contract surface stable.
 #[must_use]
 pub fn symbol_name_from_token(token: &str) -> Option<String> {
-    let parts: Vec<&str> = token.split("::").filter(|p| !p.is_empty()).collect();
-    let name = parts.last().copied().unwrap_or(token);
-    let valid = |s: &str| {
-        let mut chars = s.chars();
-        matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '~')
-            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '~')
-    };
-    if !valid(name) {
-        return None;
-    }
-    if parts.len() < 2 {
-        return Some(name.to_string());
-    }
-    let owner = parts[parts.len() - 2];
-    if owner.starts_with(|c: char| c.is_ascii_uppercase() || c == '_' || c == '~') {
-        return Some(format!("{owner}::{name}"));
-    }
-    Some(name.to_string())
+    search_vector::tokens::symbol_name_from_token(token)
 }
 
-/// One fused candidate: id + RRF score + 1-based rank.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FusedHit {
-    /// Candidate id.
-    pub id: String,
-    /// Summed RRF score.
-    pub score: f64,
-    /// 1-based fused rank.
-    pub rank: usize,
-}
+/// One fused candidate: id + RRF score + 1-based rank. Canonical home is
+/// `search_vector::fusion::FusedHit` (M6) — re-exported here for surface
+/// stability.
+pub use search_vector::fusion::FusedHit;
 
 /// N-route RRF fusion: `score = Σ 1/(K + rank)` over every found recall,
-/// lexicographic id tie-break, 1-based ranks.
-/// Source: `pipeline/search/index.ts` (`fuseCandidates`; storage recall
-/// ranks are 1-based positions, so list position `pos` fuses at rank
-/// `pos + 1`). Scores through the single generalized kernel
-/// (`fluent_db::vector::rrf_merge_n`); this helper is the string-id
-/// contract surface over it.
-#[must_use]
-pub fn rrf_fuse(lists: &[Vec<String>], k: f64) -> Vec<FusedHit> {
-    let mut postings: Vec<(String, usize, ())> = Vec::new();
-    for list in lists {
-        let mut seen = HashSet::new();
-        for (pos, id) in list.iter().enumerate() {
-            if seen.insert(id.as_str()) {
-                postings.push((id.clone(), pos + 1, ()));
-            }
-        }
-    }
-    fluent_db::vector::rrf_merge_n(postings, k)
-        .into_iter()
-        .enumerate()
-        .map(|(index, (score, id, ()))| FusedHit {
-            id,
-            score,
-            rank: index + 1,
-        })
-        .collect()
-}
+/// lexicographic id tie-break, 1-based ranks. Canonical implementation
+/// lives in `search_vector::fusion::rrf_fuse` (M6); this re-export keeps
+/// the P0 contract surface stable.
+pub use search_vector::fusion::rrf_fuse;
 
 /// Recall provenance from the contributing paths.
 /// Source: `pipeline/search/index.ts` (`deriveMatchedBy`; empty defaults
@@ -889,17 +781,12 @@ pub fn derive_matched_by(paths: &[RecallPath]) -> SearchMatchedBy {
     }
 }
 
-/// Greatest byte index ≤ `index` on a UTF-8 boundary (surrogate-pair safe
-/// chunking; zvec `code.test.mjs:327` pins the behavior, Rust enforces it
-/// via `is_char_boundary`).
-#[must_use]
-pub fn floor_char_boundary(text: &str, index: usize) -> usize {
-    let mut at = index.min(text.len());
-    while at > 0 && !text.is_char_boundary(at) {
-        at -= 1;
-    }
-    at
-}
+// NOTE (M13): the bespoke `floor_char_boundary` helper lived here and
+// duplicated `str::floor_char_boundary` (std) exactly — the M13.1 battery
+// proved them equal on every input — so it is deleted. Call
+// `text.floor_char_boundary(index)` (the bin crate already did). The zvec
+// `code.test.mjs:327` provenance stays pinned by the golden in
+// `tests/search_types.rs`.
 
 /// Whether a char is CJK (Han, Hiragana, Katakana, Hangul syllables + Jamo).
 /// Canonical home is `common_core::string` (second consumer: the

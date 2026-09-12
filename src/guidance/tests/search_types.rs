@@ -116,19 +116,34 @@ fn symbol_name_from_token_keeps_uppercase_owner_only() {
     assert_eq!(symbol_name_from_token("a-b"), None);
 }
 
-// --- char boundaries (surrogate-pair safety) ---
+// --- char boundaries (surrogate-pair safety; zvec `code.test.mjs:327`) ---
+//
+// NOTE (M13): the bespoke `floor_char_boundary` free fn duplicated
+// `str::floor_char_boundary` (std) exactly and is deleted; these goldens
+// pin the std method directly.
 
 #[test]
 fn floor_char_boundary_never_splits_a_char() {
     let text = "a😀b";
     assert_eq!(text.len(), 6);
-    assert_eq!(floor_char_boundary(text, 0), 0);
-    assert_eq!(floor_char_boundary(text, 1), 1);
-    assert_eq!(floor_char_boundary(text, 2), 1);
-    assert_eq!(floor_char_boundary(text, 4), 1);
-    assert_eq!(floor_char_boundary(text, 5), 5);
-    assert_eq!(floor_char_boundary(text, 6), 6);
-    assert_eq!(floor_char_boundary(text, 100), 6);
+    assert_eq!(text.floor_char_boundary(0), 0);
+    assert_eq!(text.floor_char_boundary(1), 1);
+    assert_eq!(text.floor_char_boundary(2), 1);
+    assert_eq!(text.floor_char_boundary(4), 1);
+    assert_eq!(text.floor_char_boundary(5), 5);
+    assert_eq!(text.floor_char_boundary(6), 6);
+    assert_eq!(text.floor_char_boundary(100), 6);
+}
+
+#[test]
+fn m13_floor_char_boundary_std_goldens() {
+    // M13.1 battery corpus, pinned verbatim against std.
+    assert_eq!("".floor_char_boundary(0), 0);
+    assert_eq!("".floor_char_boundary(100), 0);
+    assert_eq!("café".floor_char_boundary(4), 3);
+    assert_eq!("日本語".floor_char_boundary(4), 3);
+    assert_eq!("日本語".floor_char_boundary(100), 9);
+    assert_eq!("x::y".floor_char_boundary(2), 2);
 }
 
 // --- group discipline (zvec-storage validation codes) ---
@@ -275,4 +290,98 @@ fn search_plan_value_types_carry_wire_shape() {
     let json = serde_json::to_string(&plan).expect("serialize");
     let back: SearchPlan = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, plan);
+}
+
+// --- M13.1 characterization: symbol-token edges (verbatim current outputs) ---
+
+#[test]
+fn m13_extract_symbol_names_edge_cases() {
+    // Empty input yields nothing.
+    assert!(extract_symbol_names("").is_empty());
+    // First-seen order wins; repeats collapse.
+    assert_eq!(
+        extract_symbol_names("foo bar foo"),
+        vec!["foo".to_string(), "bar".to_string()]
+    );
+    // `~` starts a token and survives validation.
+    assert_eq!(
+        extract_symbol_names("~temp"),
+        vec!["~temp".to_string()]
+    );
+    // Single colons fail token validation (only `::` splits).
+    assert!(extract_symbol_names("a:b:c").is_empty());
+    // Non-ASCII bytes terminate the ASCII token scan.
+    assert_eq!(extract_symbol_names("café"), vec!["caf".to_string()]);
+    // Mixed keywords + symbols keep symbols in order.
+    assert_eq!(
+        extract_symbol_names("find Foo where Bar"),
+        vec!["Foo".to_string(), "Bar".to_string()]
+    );
+}
+
+#[test]
+fn m13_symbol_name_from_token_edges() {
+    // Trailing / leading `::` empties collapse away.
+    assert_eq!(symbol_name_from_token("foo::"), Some("foo".to_string()));
+    assert_eq!(symbol_name_from_token("::foo"), Some("foo".to_string()));
+    // Deep chains keep the last pair when the owner is uppercase.
+    assert_eq!(
+        symbol_name_from_token("Foo::Bar::baz"),
+        Some("Bar::baz".to_string())
+    );
+    assert_eq!(
+        symbol_name_from_token("foo::Bar::baz"),
+        Some("Bar::baz".to_string())
+    );
+    assert_eq!(
+        symbol_name_from_token("foo::bar::baz"),
+        Some("baz".to_string())
+    );
+    // Degenerate inputs.
+    assert_eq!(symbol_name_from_token(""), None);
+    assert_eq!(symbol_name_from_token("::"), None);
+    assert_eq!(symbol_name_from_token("a_b"), Some("a_b".to_string()));
+    assert_eq!(
+        symbol_name_from_token("A::~x"),
+        Some("A::~x".to_string())
+    );
+}
+
+// --- M6.1 characterization: RRF goldens (verbatim current outputs, K=60) ---
+
+#[test]
+fn m6_rrf_empty_inputs_yield_empty() {
+    assert!(rrf_fuse(&[], RRF_K).is_empty());
+    assert!(rrf_fuse(&[Vec::new()], RRF_K).is_empty());
+    assert!(rrf_fuse(&[Vec::new(), Vec::new()], RRF_K).is_empty());
+}
+
+#[test]
+fn m6_rrf_single_list_rank_math_is_exact() {
+    // Single route: position `pos` fuses at 1-based rank `pos + 1`.
+    let fused = rrf_fuse(&[vec!["a".to_string(), "b".to_string()]], RRF_K);
+    assert_eq!(fused.len(), 2);
+    assert_eq!(fused[0].id, "a");
+    assert_eq!(fused[0].rank, 1);
+    assert!((fused[0].score - 1.0 / 61.0).abs() < 1e-12);
+    assert_eq!(fused[1].id, "b");
+    assert_eq!(fused[1].rank, 2);
+    assert!((fused[1].score - 1.0 / 62.0).abs() < 1e-12);
+}
+
+#[test]
+fn m6_rrf_k_shifts_magnitude_not_order() {
+    let lists = vec![
+        vec!["a".to_string(), "b".to_string()],
+        vec!["b".to_string(), "c".to_string()],
+    ];
+    let small = rrf_fuse(&lists, 1.0);
+    let big = rrf_fuse(&lists, 60.0);
+    let ids_small: Vec<&str> = small.iter().map(|h| h.id.as_str()).collect();
+    let ids_big: Vec<&str> = big.iter().map(|h| h.id.as_str()).collect();
+    assert_eq!(ids_small, vec!["b", "a", "c"]);
+    assert_eq!(ids_big, vec!["b", "a", "c"]);
+    // Same order, strictly smaller magnitudes at larger K.
+    assert!(big[0].score < small[0].score);
+    assert!((small[0].score - (1.0 / 3.0 + 1.0 / 2.0)).abs() < 1e-12);
 }

@@ -893,7 +893,7 @@ async fn cmd_sync(
                         }
                         let ext =
                             candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        if !walk::SOURCE_EXTENSIONS.contains(&ext) {
+                        if !fluent_types::file_kind::SOURCE_EXTENSIONS.contains(&ext) {
                             continue;
                         }
                         regen_single_file(
@@ -983,7 +983,7 @@ async fn walk_and_gen_async(
     db_path: Option<&str>,
 ) -> usize {
     let exts: Vec<&str> = if filter_exts.is_empty() {
-        walk::SOURCE_EXTENSIONS.to_vec()
+        fluent_types::file_kind::SOURCE_EXTENSIONS.to_vec()
     } else {
         filter_exts.to_vec()
     };
@@ -1148,7 +1148,7 @@ fn harvest_watch_inputs(src_dirs: &[PathBuf]) -> Vec<guidance_core::graph_index:
     let mut inputs = Vec::new();
     for dir in src_dirs {
         let mut files = Vec::new();
-        walk::walk_files(dir, walk::SOURCE_EXTENSIONS, |p| {
+        walk::walk_files(dir, fluent_types::file_kind::SOURCE_EXTENSIONS, |p| {
             files.push(p.to_path_buf());
         });
         for path in files {
@@ -1299,7 +1299,7 @@ async fn start_watcher(
                     let mut seeds: Vec<String> = snapshot.touched_files.clone();
                     for dir in &snapshot.rescan_directories {
                         let mut files = Vec::new();
-                        walk::walk_files(&PathBuf::from(dir), walk::SOURCE_EXTENSIONS, |p| {
+                        walk::walk_files(&PathBuf::from(dir), fluent_types::file_kind::SOURCE_EXTENSIONS, |p| {
                             files.push(p.to_path_buf())
                         });
                         seeds.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
@@ -1312,7 +1312,7 @@ async fn start_watcher(
                             continue;
                         }
                         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        if !walk::SOURCE_EXTENSIONS.contains(&ext) {
+                        if !fluent_types::file_kind::SOURCE_EXTENSIONS.contains(&ext) {
                             continue;
                         }
                         regen_single_file(

@@ -150,3 +150,48 @@ fn fts_tokenizer_decision_is_recorded() {
     assert_eq!(FTS_TEXT_TOKENIZER, "unicode61 remove_diacritics 2");
     assert_eq!(FTS_CJK_STRATEGY, "cjk-bigram-expansion");
 }
+
+// --- M4.1 characterization: open-retry schedule (verbatim current outputs) ---
+
+#[test]
+fn m4_open_retry_schedule_table() {
+    // `min(100 × 2^attempt, 1000)`, 0-based attempt. Cap binds at attempt 4.
+    let expected = [100, 200, 400, 800, 1000, 1000, 1000, 1000, 1000];
+    for (attempt, want) in expected.iter().enumerate() {
+        assert_eq!(open_retry_delay_ms(attempt as u32), *want, "attempt {attempt}");
+    }
+    // Cap tail: saturation holds for large attempts (no overflow, no growth).
+    for attempt in [9u32, 10, 20, 31, 100, u32::MAX] {
+        assert_eq!(open_retry_delay_ms(attempt), 1_000, "attempt {attempt}");
+    }
+    assert_eq!(OPEN_RETRY_ATTEMPTS, 8);
+    assert_eq!(OPEN_RETRY_BASE_DELAY_MS, 100);
+    assert_eq!(OPEN_RETRY_MAX_DELAY_MS, 1_000);
+}
+
+#[test]
+fn m4_open_retry_matches_backoff_composition() {
+    // M4.2 license: the bespoke schedule equals
+    // `backoff_ms(100, attempt + 1, 0).min(1000)` (jitter 0, 1-based shift)
+    // on every attempt — including the capped tail and `u32::MAX`.
+    // If this ever diverges, behavior wins: stop, do not unify.
+    use common_core::retry::backoff_ms;
+    for attempt in (0u32..=20).chain([31, 100, u32::MAX]) {
+        let composed = backoff_ms(OPEN_RETRY_BASE_DELAY_MS, attempt.saturating_add(1), 0)
+            .min(OPEN_RETRY_MAX_DELAY_MS);
+        assert_eq!(open_retry_delay_ms(attempt), composed, "attempt {attempt}");
+    }
+}
+
+#[test]
+fn m4_embed_retry_constants_unchanged() {
+    // index_pipeline's retry fields already compose `backoff_ms` (M4 keeps);
+    // pin the values so no migration may drift them.
+    use crate::index_pipeline::{EMBED_RETRY_ATTEMPTS, EMBED_RETRY_BASE_MS, EMBED_RETRY_JITTER_PCT};
+    assert_eq!(EMBED_RETRY_ATTEMPTS, 3);
+    assert_eq!(EMBED_RETRY_BASE_MS, 500);
+    assert_eq!(EMBED_RETRY_JITTER_PCT, 50);
+    let defaults = crate::index_pipeline::IndexOptions::default();
+    assert_eq!(defaults.retry_max_attempts, EMBED_RETRY_ATTEMPTS);
+    assert_eq!(defaults.retry_base_ms, EMBED_RETRY_BASE_MS);
+}

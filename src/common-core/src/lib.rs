@@ -37,12 +37,14 @@ pub mod interner;
 pub mod io;
 pub mod jsonrpc;
 pub mod metrics;
+pub mod path;
 pub mod prelude;
 pub mod registry;
 pub mod retry;
 pub mod runtime;
 pub mod shell;
 pub mod shell_parser;
+pub mod sort;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 pub mod string;
@@ -54,7 +56,7 @@ pub mod watchdog;
 pub mod yago_normalize;
 pub mod yago_taxonomy;
 
-pub use config::{load_json, load_json_or_default};
+pub use config::{find_hierarchical, home_or_dot, load_json, load_json_or_default};
 pub use constants::{
     default_true, HnswParams, MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN,
 };
@@ -66,7 +68,8 @@ pub use error_context::{ErrorContext, HeapErrorContext};
 pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
 pub use hash::{
     blake3_hash, blake3_hex, content_hash_with_model, fnv1a64, hash_batch, hash_file, hex_encode,
-    sha256_digest, sha256_hex, uuid_v4, BatchHashResult, HashAlgorithm, HashState,
+    sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, BatchHashResult, HashAlgorithm,
+    HashState,
 };
 pub use interner::CapabilityRegistry;
 pub use io::{
@@ -78,17 +81,22 @@ pub use jsonrpc::{
     METHOD_NOT_FOUND,
 };
 pub use metrics::LatencyHistogram;
+pub use path::{
+    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical,
+    parent_lexical,
+};
 pub use registry::{ConcurrentRegistry, KeyedRegistry};
 pub use retry::{backoff_ms, capped_backoff_ms, retry_async, PollResult, PollWithBackoff};
 pub use runtime::block_on;
 pub use shell::{run_capture, run_command, run_shell_capture, shell_cmd, CommandOutput};
+pub use sort::{dedup_sorted, sorted_by_vec, sorted_vec};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
     make_hnsw, open_in_memory, open_shared_in_memory, open_wal, run_batch,
 };
 pub use string::{
     contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
-    detect_identifier_kind, filter_unsafe_chars, find_subseq, first_comment_line,
+    detect_identifier_kind, extract_tag, filter_unsafe_chars, find_subseq, first_comment_line,
     first_sentence, has_extension, is_noisy_comment, is_path_token, is_test_path,
     looks_like_identifier, lower_into, skill_name_from_ref, slugify, strip_boilerplate,
     strip_nl_prefix, trim_doc_prefix, trim_left, trim_right, truncate_at_sentence, AnsiStripper,

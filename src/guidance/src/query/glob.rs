@@ -28,13 +28,13 @@ pub struct FileTypePatterns {
 
 /// Normalize a path pattern: backslashes and runs collapse to one `/`,
 /// leading `./` segments strip (absolute patterns pass through).
-/// Source: `normalizePathPattern`.
+/// Source: `normalizePathPattern`. Composes the canonical
+/// `common_core::path::collapse_separators` for the separator step; dot
+/// segments intentionally survive (pattern syntax, not a path — pinned by
+/// `m1_glob_normalizer_matrix`).
 #[must_use]
 pub fn normalize_path_pattern(pattern: &str) -> String {
-    let mut normalized = pattern.trim().replace('\\', "/");
-    while normalized.contains("//") {
-        normalized = normalized.replace("//", "/");
-    }
+    let mut normalized = common_core::path::collapse_separators(pattern.trim());
     if is_absolute_path_pattern(&normalized) {
         return normalized;
     }
@@ -44,17 +44,17 @@ pub fn normalize_path_pattern(pattern: &str) -> String {
     normalized
 }
 
-/// Normalize a candidate path for matching.
+/// Normalize a candidate path for matching (separators only; no dot
+/// handling). Composes `common_core::path::collapse_separators`.
 #[must_use]
 pub fn normalize_path_for_match(path: &str) -> String {
-    let mut normalized = path.replace('\\', "/");
-    while normalized.contains("//") {
-        normalized = normalized.replace("//", "/");
-    }
-    normalized
+    common_core::path::collapse_separators(path)
 }
 
-/// Absolute patterns (`/…` or `X:/…`) match from the root.
+/// Absolute patterns (`/…` or `X:/…`) match from the root. Stays local by
+/// design: unlike `common_core::path::is_absolute_lexical` it rejects
+/// backslash drives (`C:\x`) and non-alpha drives (`1:/x`) — glob-pattern
+/// semantics pinned by `m1_glob_absolute_detection_matrix`.
 #[must_use]
 pub fn is_absolute_path_pattern(pattern: &str) -> bool {
     if pattern.starts_with('/') {

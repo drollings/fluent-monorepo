@@ -305,13 +305,14 @@ fn scan_selected(selected: &SelectedFile) -> ScannedFile {
     }
 }
 
-fn kind_name(kind: FileKind) -> &'static str {
-    match kind {
-        FileKind::Text => "text",
-        FileKind::Code => "code",
-        FileKind::Data => "data",
-        FileKind::Image => "image",
-    }
+pub(crate) fn kind_name(kind: FileKind) -> &'static str {
+    kind.as_str()
+}
+
+/// Parse a stored kind tag back to a `FileKind` (ingest direction:
+/// unknown tags — including `"image"` — fall back to `Text`).
+pub(crate) fn parse_scan_kind(kind: Option<&str>) -> FileKind {
+    FileKind::parse_scan(kind)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -570,11 +571,7 @@ where
             });
         }
     };
-    let kind = match file.kind.as_deref() {
-        Some("code") => FileKind::Code,
-        Some("data") => FileKind::Data,
-        _ => FileKind::Text,
-    };
+    let kind = parse_scan_kind(file.kind.as_deref());
     let source = ExtractSource {
         file_id: file.id.clone(),
         text,

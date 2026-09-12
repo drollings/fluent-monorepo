@@ -9,6 +9,7 @@ common-core = { path = "../common-core", features = ["sqlite"] }
 fluent-db = { path = "../db" }
 fluent-llm = { path = "../llm" }
 rusqlite = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 

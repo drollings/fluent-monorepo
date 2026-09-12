@@ -248,6 +248,9 @@ pub const UPSERT_BATCH_SIZE: usize = 1024;
 
 /// Storage open retry attempts (8).
 /// Source: `storage/zvec.ts` (`ZVEC_OPEN_RETRY_ATTEMPTS = 8`).
+/// M4.4 audit: no live open-retry loop consumes this — db opens are
+/// single-shot (`search_vector::db::GuidanceDb::open`). The schedule in
+/// `open_retry_delay_ms` above is the unified home if one ever lands.
 pub const OPEN_RETRY_ATTEMPTS: u32 = 8;
 
 /// Storage open retry base delay (100 ms).
@@ -260,11 +263,19 @@ pub const OPEN_RETRY_MAX_DELAY_MS: u64 = 1_000;
 
 /// Storage open backoff: `min(100 × 2^attempt, 1000)` ms.
 /// Source: `storage/zvec.ts` (`zvecOpenRetryDelayMs`).
+/// Composes the shared schedule (`common_core::retry::backoff_ms` with
+/// jitter 0, 0-based `attempt` shifted 1-based); the cap stays here —
+/// constants own caps, helpers own loop math. Proven equal by
+/// `m4_open_retry_matches_backoff_composition` (behavior wins: if that
+/// pin ever diverges, revert to the bespoke formula, do not "fix" it).
 #[must_use]
 pub fn open_retry_delay_ms(attempt: u32) -> u64 {
-    OPEN_RETRY_BASE_DELAY_MS
-        .saturating_mul(2_u64.saturating_pow(attempt.min(31)))
-        .min(OPEN_RETRY_MAX_DELAY_MS)
+    common_core::retry::backoff_ms(
+        OPEN_RETRY_BASE_DELAY_MS,
+        attempt.saturating_add(1),
+        0,
+    )
+    .min(OPEN_RETRY_MAX_DELAY_MS)
 }
 
 /// Type-aware size cap: code files (1 MiB).

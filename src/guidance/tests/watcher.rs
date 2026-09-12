@@ -457,3 +457,45 @@ async fn close_waits_for_an_in_flight_async_change_callback() {
     closing.await.expect("close");
     assert!(closed.load(std::sync::atomic::Ordering::SeqCst));
 }
+
+// --- M11.1 characterization: max-wait forced flush under steady events ---
+//
+// With events arriving faster than the debounce delay, the debounce timer
+// alone would never fire; the max-wait deadline forces exactly the
+// observed behavior: a flush lands while the stream is still emitting.
+
+#[tokio::test]
+async fn max_wait_forces_a_flush_while_events_still_arrive() {
+    let temp = temp_repo("guidance-watch-maxwait-");
+    let root = temp.path().join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.ts"), "export const a = 1;\n").unwrap();
+    let backend = ManualBackend::new();
+    let (batches, sink) = collect_sink();
+    let manager = WatchManager::new(WatchOptions {
+        debounce_ms: 50,
+        max_wait_ms: 100,
+        ..test_options(root.clone(), backend.clone(), sink)
+    });
+    manager.start();
+    let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let done_emit = Arc::clone(&done);
+    let root_emit = root.clone();
+    let emitter = tokio::spawn(async move {
+        for _ in 0..20 {
+            backend.emit(&root_emit, "a.ts", FileEventKind::Changed);
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        }
+        done_emit.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    // The forced flush must land before the emitter finishes (~300 ms):
+    // without max-wait the first batch would wait for 50 ms of silence
+    // after the LAST event.
+    wait_for(|| !batches.lock().unwrap().is_empty()).await;
+    assert!(
+        !done.load(std::sync::atomic::Ordering::SeqCst),
+        "max-wait flush lands mid-stream"
+    );
+    emitter.await.expect("emitter");
+    manager.close().await;
+}

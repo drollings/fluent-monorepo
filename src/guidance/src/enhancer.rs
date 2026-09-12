@@ -1,6 +1,7 @@
 use fluent_llm::client::LlmClient;
 use fluent_llm::ChatMessage;
 use fluent_types::GuidanceDoc;
+use fluent_wvr::{ArcIntern, Describable, WorkContext, WorkError, WorkOutput, WorkUnit};
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
@@ -18,7 +19,13 @@ pub enum EnhancerError {
 /// Language-specific comment generation — the fluent-wvr control plane for
 /// LLM prompting. Each language implements its own system prompt and
 /// member/file prompt templates.
-pub trait CommentGenerator: Send + Sync {
+///
+/// M10.3: uniformity is compiler-enforced — every generator is a
+/// `fluent_wvr::Component`. The `Enhancer` holds one generator and calls it
+/// natively per member (hot loop: no dual-view allocation, no handoff
+/// round-trip); the bound keeps the single registration uniformly
+/// inventoried.
+pub trait CommentGenerator: fluent_wvr::Component {
     /// System message for the LLM conversation.
     fn system_prompt(&self, language: &str) -> String;
 
@@ -77,6 +84,73 @@ impl CommentGenerator for DefaultCommentGenerator {
         )
     }
 }
+
+// --- M10.2: uniform handle (additive; native prompts untouched) -------------
+//
+// `DefaultCommentGenerator` is a `fluent_wvr::Component` so the
+// orchestrator can hold an `Arc<dyn Component>` handle. Prompt building is
+// pure string work, so `execute` runs it for real through the structured
+// handoff (`ctx.structured["prompt"]` = `system` | `member` | `file`, plus
+// the prompt fields as JSON strings).
+
+/// Read one required string field from the structured handoff.
+fn structured_str(ctx: &WorkContext, key: &str) -> Result<String, WorkError> {
+    ctx.structured
+        .get(key)
+        .and_then(|value| value.as_str().map(str::to_string))
+        .ok_or_else(|| {
+            WorkError::Execution(format!("generator execute needs ctx.structured[\"{key}\"]"))
+        })
+}
+
+impl WorkUnit for DefaultCommentGenerator {
+    fn name(&self) -> &str {
+        "generator.default_comment"
+    }
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let language = structured_str(ctx, "language")?;
+        let prompt = match structured_str(ctx, "prompt")?.as_str() {
+            "system" => self.system_prompt(&language),
+            "member" => self.member_prompt(
+                &structured_str(ctx, "name")?,
+                &structured_str(ctx, "signature")?,
+                &structured_str(ctx, "module_context")?,
+                &structured_str(ctx, "kind_label")?,
+                &language,
+            ),
+            "file" => self.file_prompt(
+                &structured_str(ctx, "rel_path")?,
+                &structured_str(ctx, "source_preview")?,
+                &language,
+            ),
+            other => {
+                return Err(WorkError::Execution(format!(
+                    "generator execute: unknown prompt kind {other:?}"
+                )));
+            }
+        };
+        Ok(WorkOutput::ok(prompt))
+    }
+}
+
+impl Describable for DefaultCommentGenerator {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "comment_generator",
+            "generator": "default_comment",
+            "name": "generator.default_comment",
+        })
+    }
+}
+
+fluent_wvr::impl_fieldless!(DefaultCommentGenerator);
+fluent_wvr::impl_component!(DefaultCommentGenerator);
 
 /// AI comment enhancer for guidance generation.
 ///
@@ -236,15 +310,10 @@ impl Enhancer {
             return Err(EnhancerError::NoResponse);
         }
 
-        // Extract <comment>...</comment> tag
-        if let Some(start) = response.find("<comment>") {
-            let after_start = &response[start + 9..];
-            if let Some(end) = after_start.find("</comment>") {
-                let content = after_start[..end].trim().to_string();
-                if !content.is_empty() {
-                    return Ok(Some(content));
-                }
-            }
+        // Extract <comment>...</comment> tag (canonical helper; a
+        // missing or empty tag falls through to the raw response below).
+        if let Some(content) = common_core::string::extract_tag(&response, "comment") {
+            return Ok(Some(content.to_string()));
         }
 
         // Fallback: return the raw response (trimmed)
@@ -405,14 +474,55 @@ mod tests {
 
     #[test]
     fn test_comment_tag_extraction_logic() {
+        // Now a direct pin of the canonical helper (the pre-M8.4 replica
+        // re-implemented the extraction inline — removed with the migration).
         let response = "Some reasoning text\n<comment>Parses input and produces output.</comment>";
-        let start = response.find("<comment>");
-        assert!(start.is_some());
-        if let Some(s) = start {
-            if let Some(end) = response[s + 9..].find("</comment>") {
-                let content = response[s + 9..s + 9 + end].trim();
-                assert_eq!(content, "Parses input and produces output.");
-            }
+        assert_eq!(
+            common_core::string::extract_tag(response, "comment"),
+            Some("Parses input and produces output.")
+        );
+    }
+
+    // M8.1 characterization: `<comment>` tag behavior pinned verbatim
+    // through the real `enhance_function` path (canned LLM responses)
+    // before the `common_core::string::extract_tag` extraction. Rules:
+    // first tag wins, content trims, empty/missing/unclosed tags fall back
+    // to the raw trimmed response.
+    #[test]
+    fn m8_comment_tag_matrix_through_llm_path() {
+        fn canned(body: &str) -> httpmock::MockServer {
+            let server = httpmock::MockServer::start();
+            server.mock(|when, then| {
+                when.method(httpmock::Method::POST)
+                    .path("/chat/completions");
+                then.status(200).body(format!(
+                    "{{\"choices\":[{{\"message\":{{\"content\":{}}}}}]}}",
+                    serde_json::to_string(body).expect("escape")
+                ));
+            });
+            server
+        }
+        let cases = [
+            (
+                "Reasoning...\n<comment>  Trimmed.  </comment>\ntrailing",
+                "Trimmed.",
+            ),
+            ("no tags here", "no tags here"),
+            ("<comment></comment>", "<comment></comment>"),
+            ("<comment>   </comment>", "<comment>   </comment>"),
+            (
+                "<comment>first</comment> <comment>second</comment>",
+                "first",
+            ),
+            ("<comment>unclosed", "<comment>unclosed"),
+        ];
+        for (body, expected) in cases {
+            let server = canned(body);
+            let enhancer = Enhancer::new(&server.base_url(), "test");
+            let got = enhancer
+                .enhance_function("foo", "fn foo()", "mod", "zig")
+                .expect("llm path");
+            assert_eq!(got.as_deref(), Some(expected), "{body:?}");
         }
     }
 
@@ -425,6 +535,41 @@ mod tests {
         let prompt = gen.member_prompt("foo", "fn foo()", "mod", "Function", "rust");
         assert!(prompt.contains("foo"), "should contain the name");
         assert!(prompt.contains("Function"), "should contain the kind label");
+    }
+
+    // --- M10.1 characterization: prompt byte goldens (verbatim outputs) ---
+
+    #[test]
+    fn m10_comment_generator_prompts_byte_identical() {
+        // M10.3's uniform-handle switch must preserve these bytes exactly —
+        // prompts are LLM inputs; any drift changes model behavior.
+        let gen = DefaultCommentGenerator;
+        assert_eq!(
+            gen.system_prompt("python"),
+            "You are a technical documentation assistant for python code."
+        );
+        assert_eq!(
+            gen.member_prompt("foo", "fn foo()", "mod", "Function", "rust"),
+            "Function in mod:\n  fn foo()\n\n\
+             Write a single-line comment for this Function.\n\
+             Rules:\n\
+             - Plain English, technically specific\n\
+             - Max 200 characters\n\
+             - No boilerplate openers\n\n\
+             Wrap your answer in <comment> tags. Example:\n\
+             <comment>Parses a null-terminated C string into an owned slice.</comment>\n\n\
+             Name: foo"
+        );
+        assert_eq!(
+            gen.file_prompt("src/main.rs", "fn main() {}", "rust"),
+            "Source:\nfn main() {}\n\nFile: src/main.rs\n\n\
+             Write a single-line description for this file.\n\
+             Rules:\n\
+             - Plain English, technically specific\n\
+             - Max 200 chars\n\
+             - No boilerplate openers\n\n\
+             Wrap your answer in <comment> tags."
+        );
     }
 
     #[test]
@@ -493,5 +638,83 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(hist.count(), 1, "one LLM call recorded");
         assert!(hist.sum_ms() > 0, "latency recorded");
+    }
+
+    // --- M10.2: uniform-handle contract ------------------------------------
+
+    use fluent_wvr::{Component, FieldAccess, WorkContext};
+
+    fn ctx_with_prompt(fields: &[(&str, &str)]) -> WorkContext {
+        let mut ctx = WorkContext::default();
+        for (key, value) in fields {
+            ctx.structured.insert(
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+        }
+        ctx
+    }
+
+    #[test]
+    fn m10_generator_handle_executes_byte_identical_to_native() {
+        let gen = DefaultCommentGenerator;
+        let handle: std::sync::Arc<dyn Component> =
+            std::sync::Arc::new(DefaultCommentGenerator);
+        assert_eq!(handle.name(), "generator.default_comment");
+        let member_ctx = ctx_with_prompt(&[
+            ("prompt", "member"),
+            ("language", "rust"),
+            ("name", "foo"),
+            ("signature", "fn foo()"),
+            ("module_context", "mod"),
+            ("kind_label", "Function"),
+        ]);
+        let out = handle.execute(&member_ctx).expect("execute");
+        assert_eq!(
+            out.message,
+            gen.member_prompt("foo", "fn foo()", "mod", "Function", "rust")
+        );
+        let system_ctx = ctx_with_prompt(&[("prompt", "system"), ("language", "python")]);
+        let out = handle.execute(&system_ctx).expect("execute");
+        assert_eq!(out.message, gen.system_prompt("python"));
+        let file_ctx = ctx_with_prompt(&[
+            ("prompt", "file"),
+            ("language", "rust"),
+            ("rel_path", "src/main.rs"),
+            ("source_preview", "fn main() {}"),
+        ]);
+        let out = handle.execute(&file_ctx).expect("execute");
+        assert_eq!(
+            out.message,
+            gen.file_prompt("src/main.rs", "fn main() {}", "rust")
+        );
+    }
+
+    #[test]
+    fn m10_generator_execute_rejects_bad_handoff() {
+        let handle: std::sync::Arc<dyn Component> =
+            std::sync::Arc::new(DefaultCommentGenerator);
+        // Missing prompt kind.
+        let err = handle
+            .execute(&WorkContext::default())
+            .expect_err("missing prompt");
+        assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
+        // Unknown prompt kind.
+        let err = handle
+            .execute(&ctx_with_prompt(&[("prompt", "bogus"), ("language", "rust")]))
+            .expect_err("unknown prompt");
+        assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
+    }
+
+    #[test]
+    fn m10_generator_handle_is_fieldless_with_schema() {
+        let mut handle = DefaultCommentGenerator;
+        assert_eq!(handle.field_names(), &[] as &[&str]);
+        assert!(handle.get_field("language").is_err());
+        assert!(handle.set_field("language", "rust").is_err());
+        assert_eq!(
+            fluent_wvr::Describable::describe(&handle)["generator"],
+            serde_json::json!("default_comment")
+        );
     }
 }

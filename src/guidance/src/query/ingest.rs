@@ -139,6 +139,17 @@ pub fn default_en_pipeline() -> Option<spacy_rs::pipeline::NlpPipeline> {
 /// above is untouched; this only moves call sites behind the need
 /// boundary. Need is task correctness (a lemma route will run, a file
 /// will ingest), never a confidence judgment.
+///
+/// M14.4: `LazyNlp` already composes the shared NLP seam —
+/// `spacy_rs::pipeline::NlpPipeline` via `default_en_pipeline`
+/// (`NlpPipeline::en_default()`), the same constructor the router's
+/// retrieval/overlay paths build on. There is no narrower shared holder
+/// to collapse onto: guidance must not import the router (shared-crate
+/// import boundary), and the laziness itself is load-bearing (rg and
+/// fully-skipped sync paths must never pay construction — an eager
+/// `Arc<NlpPipeline>` would bill them). Stays — pinned by the
+/// `query_ingest` construct-once / failure-cached / inert-holder tests
+/// plus the `query_lemmas(None, …)` fallback goldens.
 pub struct LazyNlp {
     cell: std::sync::OnceLock<Option<spacy_rs::pipeline::NlpPipeline>>,
 }

@@ -10,6 +10,7 @@ use crate::extractor::ExtractSource;
 use crate::query::fusion::RecallCandidate;
 use crate::search_types::{EntityMetadata, FileKind};
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
+use search_vector::tokens::{lower_dedup_push, split_tokens};
 use spacy_rs::routing::RoutingSignal;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -132,44 +133,34 @@ pub fn signals_from_routing(signals: &[RoutingSignal]) -> GraphQuerySignals {
     let mut predicate = Vec::new();
     let mut roles = Vec::new();
     for signal in signals {
-        push_lower(&mut predicate, &signal.predicate);
+        lower_dedup_push(&mut predicate, &signal.predicate);
         if let Some(subject) = &signal.subject {
-            push_lower(&mut roles, subject);
+            lower_dedup_push(&mut roles, subject);
         }
         if let Some(object) = &signal.direct_object {
-            push_lower(&mut roles, object);
+            lower_dedup_push(&mut roles, object);
         }
         if let Some(object) = &signal.indirect_object {
-            push_lower(&mut roles, object);
+            lower_dedup_push(&mut roles, object);
         }
         for modifier in &signal.modifiers {
-            push_lower(&mut roles, modifier);
+            lower_dedup_push(&mut roles, modifier);
         }
         for qualifier in &signal.qualifiers {
-            push_lower(&mut roles, qualifier);
+            lower_dedup_push(&mut roles, qualifier);
         }
     }
     GraphQuerySignals { predicate, roles }
 }
 
-fn push_lower(out: &mut Vec<String>, value: &str) {
-    let lowered = value.to_lowercase();
-    if !lowered.is_empty() && !out.contains(&lowered) {
-        out.push(lowered);
-    }
-}
-
 /// L4 boost weights (additive over fused RRF scores; deterministic).
-/// Source: roadmap L4 (dependents/call-graph/scope boost + role tiebreak).
-pub const L4_CALL_BOOST: f64 = 0.5;
-/// Boost for files in the dependents closure of an anchor file.
-pub const L4_DEPENDENT_BOOST: f64 = 0.3;
-/// Boost for candidates sharing an anchor file.
-pub const L4_SAME_FILE_BOOST: f64 = 0.2;
-/// Boost for candidates sharing an anchor scope prefix.
-pub const L4_SCOPE_BOOST: f64 = 0.1;
-/// Role-coverage overlap is tiebreak-scale by construction.
-pub const L4_ROLE_EPSILON: f64 = 1e-4;
+/// Canonical home is `search_vector::fusion` (M6) — re-exported here with
+/// identical values so the L4 contract surface stays stable.
+pub use search_vector::fusion::{
+    CALL_BOOST as L4_CALL_BOOST, DEPENDENT_BOOST as L4_DEPENDENT_BOOST,
+    ROLE_EPSILON as L4_ROLE_EPSILON, SAME_FILE_BOOST as L4_SAME_FILE_BOOST,
+    SCOPE_BOOST as L4_SCOPE_BOOST,
+};
 
 /// Dependency graph over indexed files + symbol call edges (L4 re-rank).
 pub struct GraphIndex {
@@ -277,8 +268,8 @@ impl GraphIndex {
                 });
             }
         }
-        let mut ordered: Vec<(String, HarvestedFile)> = per_file.into_iter().collect();
-        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+        let ordered: Vec<(String, HarvestedFile)> = per_file.into_iter().collect();
+        let ordered = common_core::sort::sorted_by_vec(ordered, |a, b| a.0.cmp(&b.0));
         Self::assemble(&ordered, roots)
     }
 
@@ -345,11 +336,11 @@ impl GraphIndex {
             }
         }
         let mut files = DependencyGraph::new();
-        let mut ordered: Vec<&String> = file_deps.keys().collect();
-        ordered.sort();
+        let ordered: Vec<&String> =
+            common_core::sort::sorted_vec(file_deps.keys().collect());
         for path in ordered {
-            let mut deps: Vec<String> = file_deps[path].iter().cloned().collect();
-            deps.sort();
+            let deps: Vec<String> =
+                common_core::sort::sorted_vec(file_deps[path].iter().cloned().collect());
             files.register(path, &deps, std::slice::from_ref(path))?;
         }
         Ok(Self {
@@ -369,9 +360,7 @@ impl GraphIndex {
         for path in paths {
             closure.extend(self.files.dependents_of(path));
         }
-        let mut ordered: Vec<String> = closure.into_iter().collect();
-        ordered.sort();
-        ordered
+        common_core::sort::sorted_vec(closure.into_iter().collect())
     }
 
     /// Direct file dependencies (imports + call targets).
@@ -379,11 +368,7 @@ impl GraphIndex {
     pub fn file_dependencies(&self, path: &str) -> Vec<String> {
         self.files
             .deps_of(&path.to_string())
-            .map(|deps| {
-                let mut ordered = deps.to_vec();
-                ordered.sort();
-                ordered
-            })
+            .map(|deps| common_core::sort::sorted_vec(deps.to_vec()))
             .unwrap_or_default()
     }
 
@@ -451,9 +436,7 @@ impl GraphIndex {
                 }
             }
         }
-        edges.sort();
-        edges.dedup();
-        edges
+        common_core::sort::dedup_sorted(edges)
     }
 
     /// All call edges.
@@ -491,14 +474,16 @@ impl GraphIndex {
         if !touches {
             return;
         }
-        let mut anchors: Vec<usize> = (0..candidates.len()).collect();
-        anchors.sort_by(|&a, &b| {
-            candidates[b]
-                .score
-                .partial_cmp(&candidates[a].score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| candidates[a].id.cmp(&candidates[b].id))
-        });
+        let mut anchors: Vec<usize> = common_core::sort::sorted_by_vec(
+            (0..candidates.len()).collect(),
+            |&a, &b| {
+                candidates[b]
+                    .score
+                    .partial_cmp(&candidates[a].score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| candidates[a].id.cmp(&candidates[b].id))
+            },
+        );
         anchors.truncate(3);
         let anchor_files: HashSet<&str> = anchors
             .iter()
@@ -517,28 +502,33 @@ impl GraphIndex {
         }
         let mut scored: Vec<(usize, f64, usize)> = Vec::with_capacity(candidates.len());
         for (index, candidate) in candidates.iter().enumerate() {
-            let mut boost = 0.0;
+            // Structural applicability stays here (anchor/closure/scope are
+            // graph-discipline decisions); the addition itself composes the
+            // shared algebra (`search_vector::fusion::apply_boosts`).
+            let mut boosts = Vec::with_capacity(3);
             let file = candidate.file.absolute_path.as_str();
             if anchor_files.contains(file) {
-                boost += L4_SAME_FILE_BOOST;
+                boosts.push(L4_SAME_FILE_BOOST);
             } else if anchor_closure.contains(file) {
-                boost += L4_DEPENDENT_BOOST;
+                boosts.push(L4_DEPENDENT_BOOST);
             }
             if let Some(symbol) = candidate_symbol(candidate) {
                 if self.calls_anchor(candidate, &symbol, &anchors, candidates, &anchor_symbols) {
-                    boost += L4_CALL_BOOST;
+                    boosts.push(L4_CALL_BOOST);
                 }
             }
             if Self::shares_anchor_scope(&anchors, candidates, candidate) {
-                boost += L4_SCOPE_BOOST;
+                boosts.push(L4_SCOPE_BOOST);
             }
             let overlap = role_overlap(candidate, signals);
             // Local ordering key only: the composite magnitude plus the
             // structural boosts, sorted here and never stored back into
             // the candidate (composites never combine — see `RrfScore`).
-            scored.push((index, candidate.score.value() + boost, overlap));
+            let boosted =
+                search_vector::fusion::apply_boosts(candidate.score.value(), boosts);
+            scored.push((index, boosted, overlap));
         }
-        scored.sort_by(|a, b| {
+        let scored = common_core::sort::sorted_by_vec(scored, |a, b| {
             b.1.partial_cmp(&a.1)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| b.2.cmp(&a.2))
@@ -618,16 +608,16 @@ fn candidate_scope(candidate: &RecallCandidate) -> Option<String> {
 fn role_overlap(candidate: &RecallCandidate, signals: &GraphQuerySignals) -> usize {
     let mut tokens = HashSet::new();
     if let Some(symbol) = candidate_symbol(candidate) {
-        extend_tokens(&mut tokens, &symbol);
+        tokens.extend(split_tokens(&symbol));
     }
     if let Some(scope) = candidate_scope(candidate) {
-        extend_tokens(&mut tokens, &scope);
+        tokens.extend(split_tokens(&scope));
     }
     if let Some(stem) = Path::new(&candidate.file.absolute_path)
         .file_stem()
         .and_then(|stem| stem.to_str())
     {
-        extend_tokens(&mut tokens, stem);
+        tokens.extend(split_tokens(stem));
     }
     signals
         .predicate
@@ -635,15 +625,6 @@ fn role_overlap(candidate: &RecallCandidate, signals: &GraphQuerySignals) -> usi
         .chain(signals.roles.iter())
         .filter(|lemma| tokens.contains(lemma.as_str()))
         .count()
-}
-
-fn extend_tokens(tokens: &mut HashSet<String>, text: &str) {
-    for token in text.split(|c: char| !c.is_alphanumeric()) {
-        let lowered = token.to_lowercase();
-        if !lowered.is_empty() {
-            tokens.insert(lowered);
-        }
-    }
 }
 
 fn per_file_paths(per_file: &[(String, crate::extractor::code::HarvestedFile)]) -> HashSet<String> {
@@ -714,7 +695,7 @@ fn probe_module_file(importer: &str, module: &str, known_files: &HashSet<String>
 }
 
 /// Probe a path with extension and index variants against known files.
-fn probe_path(candidate: &Path, known_files: &HashSet<String>) -> Option<String> {
+pub(crate) fn probe_path(candidate: &Path, known_files: &HashSet<String>) -> Option<String> {
     let normalized = normalize_separators(&candidate.to_string_lossy());
     if known_files.contains(&normalized) {
         return Some(normalized);
@@ -737,20 +718,20 @@ fn probe_path(candidate: &Path, known_files: &HashSet<String>) -> Option<String>
     .find(|suffixed| known_files.contains(suffixed))
 }
 
-fn normalize_separators(path: &str) -> String {
+pub(crate) fn normalize_separators(path: &str) -> String {
     // Lexical clean (no I/O): collapse `.`/`..` and `/` separators.
-    let slashed = path.replace('\\', "/");
-    let mut parts: Vec<&str> = Vec::new();
-    for part in slashed.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            _ => parts.push(part),
-        }
+    // Delegates to the canonical `common_core::path::normalize_lexical`,
+    // then re-roots relative inputs at `/` — the historical shape of this
+    // helper (probe candidates are absolute, so this only pins the
+    // relative/empty edge). Byte-for-byte with the pre-extraction body.
+    let normalized = common_core::path::normalize_lexical(path);
+    if normalized.starts_with('/') {
+        normalized
+    } else if normalized.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{normalized}")
     }
-    format!("/{}", parts.join("/"))
 }
 
 #[cfg(test)]

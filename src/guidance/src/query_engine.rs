@@ -2,18 +2,19 @@ use fluent_types::GuidanceDoc;
 use thiserror::Error;
 
 use fluent_concurrency::ladder::first_accept_in_order_sync;
+use fluent_wvr::{Component, WorkContext, WorkUnit};
 
 use crate::ast_parser;
 use crate::memory::MemoryBridge;
 use crate::query::formatter::{
-    CompactFormatter, DebugFormatter, Formatter, JsonFormatter, MarkdownFormatter,
+    CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter,
 };
 use crate::query::hybrid::{plan_from_query, stages_from_hits};
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::recall::{run_recall, RecallStorage};
 use crate::query::search_backend::{
     ConceptBackend, FilePathBackend, GeneralBackend, IdentifierBackend, KeywordBackend,
-    SearchBackend, SearchContext,
+    RegisteredBackend, SearchBackend, SearchContext,
 };
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
@@ -46,7 +47,7 @@ pub struct QueryEngine {
     pub llm_filter: LlmFilter,
     pub aliases: Option<SemanticAliases>,
     pub no_llm: bool,
-    backends: Vec<Box<dyn SearchBackend>>,
+    backends: Vec<RegisteredBackend>,
     memory: Option<MemoryBridge>,
 }
 
@@ -77,13 +78,13 @@ impl QueryEngine {
         }
     }
 
-    fn default_backends() -> Vec<Box<dyn SearchBackend>> {
+    fn default_backends() -> Vec<RegisteredBackend> {
         vec![
-            Box::new(IdentifierBackend),
-            Box::new(KeywordBackend),
-            Box::new(ConceptBackend),
-            Box::new(FilePathBackend),
-            Box::new(GeneralBackend),
+            RegisteredBackend::new(IdentifierBackend),
+            RegisteredBackend::new(KeywordBackend),
+            RegisteredBackend::new(ConceptBackend),
+            RegisteredBackend::new(FilePathBackend),
+            RegisteredBackend::new(GeneralBackend),
         ]
     }
 
@@ -104,9 +105,15 @@ impl QueryEngine {
     /// Index-backed backends (`FtsBackend`, `VectorBackend`, `LemmaBackend`)
     /// can be registered here with a storage seam; without storage they
     /// decline and the legacy doc backends serve.
+    ///
+    /// M10.3: registration takes an owned `T: SearchBackend + Component`
+    /// and stores both views (`RegisteredBackend`); dispatch stays native.
     #[must_use]
-    pub fn with_backend(mut self, backend: Box<dyn SearchBackend>) -> Self {
-        self.backends.push(backend);
+    pub fn with_backend<T>(mut self, backend: T) -> Self
+    where
+        T: SearchBackend + Component + 'static,
+    {
+        self.backends.push(RegisteredBackend::new(backend));
         self
     }
 
@@ -170,10 +177,12 @@ impl QueryEngine {
 
         // Build owned rungs: (intent, &dyn SearchBackend) pairs that match — primary first,
         // then fallbacks deduped by construction (no `tried` set needed).
+        // Native dispatch views out of the uniform registrations.
         let mut rungs: Vec<(QueryIntent, &dyn SearchBackend)> = Vec::new();
-        for b in &self.backends {
-            if b.matches(primary_intent) {
-                rungs.push((primary_intent, b.as_ref()));
+        for registration in &self.backends {
+            let backend = registration.backend.as_ref();
+            if backend.matches(primary_intent) {
+                rungs.push((primary_intent, backend));
             }
         }
         for intent in [
@@ -189,9 +198,10 @@ impl QueryEngine {
             if intent == primary_intent {
                 continue;
             }
-            for b in &self.backends {
-                if b.matches(intent) {
-                    rungs.push((intent, b.as_ref()));
+            for registration in &self.backends {
+                let backend = registration.backend.as_ref();
+                if backend.matches(intent) {
+                    rungs.push((intent, backend));
                 }
             }
         }
@@ -265,17 +275,30 @@ impl QueryEngine {
     }
 
     /// Format stages into the specified output format.
+    ///
+    /// M10.3: uniform presentation handle — the match only constructs the
+    /// `Arc<dyn Component>`; invocation is one `execute` through the
+    /// structured `stages` handoff (byte-identical per the M10.1 goldens).
+    /// The handoff is infallible (encoded from `Serialize` stages here).
     pub fn format_stages(stages: &[Stage], format: OutputFormat) -> String {
         let mut resolved = stages.to_vec();
         let mut parser = ast_parser::AstParser::new();
         resolve_stage_lines(&mut resolved, &mut parser);
-        let formatter: Box<dyn Formatter> = match format {
-            OutputFormat::Markdown => Box::new(MarkdownFormatter),
-            OutputFormat::Json => Box::new(JsonFormatter),
-            OutputFormat::Compact => Box::new(CompactFormatter),
-            OutputFormat::Debug => Box::new(DebugFormatter),
+        let handle: std::sync::Arc<dyn Component> = match format {
+            OutputFormat::Markdown => std::sync::Arc::new(MarkdownFormatter),
+            OutputFormat::Json => std::sync::Arc::new(JsonFormatter),
+            OutputFormat::Compact => std::sync::Arc::new(CompactFormatter),
+            OutputFormat::Debug => std::sync::Arc::new(DebugFormatter),
         };
-        formatter.format(&resolved)
+        let mut ctx = WorkContext::default();
+        ctx.structured.insert(
+            "stages".to_string(),
+            serde_json::to_value(&resolved).expect("stages serialize"),
+        );
+        handle
+            .execute(&ctx)
+            .expect("formatter execute is infallible on its own encoding")
+            .message
     }
 
     /// Explain with no-llm support: when no_llm is set, skip LLM filter phase
@@ -455,6 +478,39 @@ mod tests {
         }
     }
 
+    // M10.3: test stub joins the uniform contract (native-only execute).
+    impl WorkUnit for CountingBackend {
+        fn name(&self) -> &str {
+            "backend.counting"
+        }
+        fn depends(&self) -> &[fluent_wvr::ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[fluent_wvr::ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<fluent_wvr::WorkOutput, fluent_wvr::WorkError> {
+            Err(fluent_wvr::WorkError::Execution(
+                "backend.counting runs through QueryEngine dispatch: downcast the handle to \
+                 SearchBackend and call search natively"
+                    .into(),
+            ))
+        }
+    }
+
+    impl fluent_wvr::Describable for CountingBackend {
+        fn describe(&self) -> serde_json::Value {
+            serde_json::json!({
+                "kind": "search_backend",
+                "backend": "counting",
+                "name": "backend.counting",
+            })
+        }
+    }
+
+    fluent_wvr::impl_fieldless!(CountingBackend);
+    fluent_wvr::impl_component!(CountingBackend);
+
     fn dummy_stages() -> Vec<Stage> {
         vec![Stage {
             kind: fluent_types::StageKind::Code,
@@ -488,12 +544,12 @@ mod tests {
         let calls_fallback = Arc::new(AtomicUsize::new(0));
         let mut engine = QueryEngine::new();
         engine.backends = vec![
-            Box::new(CountingBackend {
+            RegisteredBackend::new(CountingBackend {
                 intent: QueryIntent::SingleIdentifier,
                 calls: Arc::clone(&calls_primary),
                 result: Ok(dummy_stages()),
             }),
-            Box::new(CountingBackend {
+            RegisteredBackend::new(CountingBackend {
                 intent: QueryIntent::GeneralSearch,
                 calls: Arc::clone(&calls_fallback),
                 result: Ok(dummy_stages()),
@@ -514,12 +570,12 @@ mod tests {
         let calls_second = Arc::new(AtomicUsize::new(0));
         let mut engine = QueryEngine::new();
         engine.backends = vec![
-            Box::new(CountingBackend {
+            RegisteredBackend::new(CountingBackend {
                 intent: QueryIntent::SingleIdentifier,
                 calls: Arc::clone(&calls_first),
                 result: Err(QueryEngineError::NoResults),
             }),
-            Box::new(CountingBackend {
+            RegisteredBackend::new(CountingBackend {
                 intent: QueryIntent::GeneralSearch,
                 calls: Arc::clone(&calls_second),
                 result: Ok(dummy_stages()),
@@ -538,12 +594,12 @@ mod tests {
         let calls_second = Arc::new(AtomicUsize::new(0));
         let mut engine = QueryEngine::new();
         engine.backends = vec![
-            Box::new(CountingBackend {
+            RegisteredBackend::new(CountingBackend {
                 intent: QueryIntent::SingleIdentifier,
                 calls: Arc::clone(&calls_first),
                 result: Err(QueryEngineError::LlmFilter("hard".into())),
             }),
-            Box::new(CountingBackend {
+            RegisteredBackend::new(CountingBackend {
                 intent: QueryIntent::GeneralSearch,
                 calls: Arc::clone(&calls_second),
                 result: Ok(dummy_stages()),
@@ -562,7 +618,7 @@ mod tests {
         let doc = make_test_doc();
         let calls = Arc::new(AtomicUsize::new(0));
         let mut engine = QueryEngine::new();
-        engine.backends = vec![Box::new(CountingBackend {
+        engine.backends = vec![RegisteredBackend::new(CountingBackend {
             intent: QueryIntent::SingleIdentifier,
             calls: Arc::clone(&calls),
             result: Ok(dummy_stages()),
@@ -608,5 +664,118 @@ mod tests {
         let empty_db = search_vector::GuidanceDb::open_in_memory().expect("db2");
         let res = engine.vector_explain("zzzz", &[0.9, 0.9, 0.9], &empty_db, &doc, 5);
         assert!(matches!(res, Err(QueryEngineError::NoResults)));
+    }
+
+    // --- M10.1 characterization: intent → backend dispatch contract --------
+
+    #[test]
+    fn m10_format_stages_serves_every_format_through_uniform_handles() {
+        // M10.3 gate: the uniform `execute` path renders every format
+        // without branching past construction; JSON stays machine-readable.
+        let stages = vec![Stage {
+            kind: fluent_types::StageKind::Code,
+            content: "fn hello() void".to_string(),
+            source: "src/test.zig".to_string(),
+            line: Some(1),
+            end_line: None,
+            member_name: None,
+            member_type: None,
+            trace: None,
+        }];
+        let markdown = QueryEngine::format_stages(&stages, OutputFormat::Markdown);
+        assert!(markdown.contains("## Code"));
+        let json = QueryEngine::format_stages(&stages, OutputFormat::Json);
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("json parses");
+        assert_eq!(parsed["count"], serde_json::json!(1));
+        let compact = QueryEngine::format_stages(&stages, OutputFormat::Compact);
+        assert!(compact.contains("preview"));
+        let debug = QueryEngine::format_stages(&stages, OutputFormat::Debug);
+        assert!(debug.contains("=== Query Debug ==="));
+    }
+
+    #[test]
+    fn m10_dispatch_contract_which_backend_matches_which_intent() {
+        // Verbatim `matches` table: exactly one default backend family owns
+        // each intent (Identifier owns two). M10.3's uniform-handle switch
+        // must preserve this arbitration — no intent may gain or lose a
+        // backend.
+        let backends: Vec<(&str, Box<dyn SearchBackend>)> = vec![
+            ("identifier", Box::new(IdentifierBackend)),
+            ("keyword", Box::new(KeywordBackend)),
+            ("concept", Box::new(ConceptBackend)),
+            ("filepath", Box::new(FilePathBackend)),
+            ("general", Box::new(GeneralBackend)),
+        ];
+        let intents = [
+            QueryIntent::IdentifierLookup,
+            QueryIntent::SingleIdentifier,
+            QueryIntent::CapabilityQuery,
+            QueryIntent::FilePath,
+            QueryIntent::HowTo,
+            QueryIntent::Conceptual,
+            QueryIntent::MultiKeyword,
+            QueryIntent::GeneralSearch,
+        ];
+        let table: Vec<(&str, Vec<&str>)> = intents
+            .into_iter()
+            .map(|intent| {
+                let owners = backends
+                    .iter()
+                    .filter(|(_, backend)| backend.matches(intent))
+                    .map(|(name, _)| *name)
+                    .collect();
+                (match intent {
+                    QueryIntent::IdentifierLookup => "IdentifierLookup",
+                    QueryIntent::SingleIdentifier => "SingleIdentifier",
+                    QueryIntent::CapabilityQuery => "CapabilityQuery",
+                    QueryIntent::FilePath => "FilePath",
+                    QueryIntent::HowTo => "HowTo",
+                    QueryIntent::Conceptual => "Conceptual",
+                    QueryIntent::MultiKeyword => "MultiKeyword",
+                    QueryIntent::GeneralSearch => "GeneralSearch",
+                }, owners)
+            })
+            .collect();
+        assert_eq!(
+            table,
+            vec![
+                ("IdentifierLookup", vec!["identifier"]),
+                ("SingleIdentifier", vec!["identifier"]),
+                ("CapabilityQuery", vec!["keyword"]),
+                ("FilePath", vec!["filepath"]),
+                ("HowTo", vec!["concept"]),
+                ("Conceptual", vec!["concept"]),
+                ("MultiKeyword", vec!["keyword"]),
+                ("GeneralSearch", vec!["general"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn m10_default_registrations_carry_both_views() {
+        // M10.3 gate: every default registration exposes the native
+        // dispatch view and the uniform handle with matching identity.
+        let engine = QueryEngine::new();
+        assert_eq!(engine.backends.len(), 5);
+        let intents = [
+            QueryIntent::IdentifierLookup,
+            QueryIntent::SingleIdentifier,
+            QueryIntent::CapabilityQuery,
+            QueryIntent::FilePath,
+            QueryIntent::HowTo,
+            QueryIntent::Conceptual,
+            QueryIntent::MultiKeyword,
+            QueryIntent::GeneralSearch,
+        ];
+        for registration in &engine.backends {
+            let name = registration.component.name();
+            assert!(name.starts_with("backend."), "{name}");
+            assert!(
+                intents
+                    .iter()
+                    .any(|intent| registration.backend.matches(*intent)),
+                "{name} matches no intent"
+            );
+        }
     }
 }
