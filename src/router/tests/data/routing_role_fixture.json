@@ -1,0 +1,147 @@
+{
+  "_comment": "Test-owned fixture for routing_role_golden: exercises role pools, per-model selection, and group expansion WITHOUT coupling any test to the operator-editable env/coral-router.json. Values here are arbitrary; only the resolution mechanics are pinned by the golden.",
+  "roles": {
+    "default": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "params": {
+          "temperature": 0.1
+        }
+      },
+      "instances": {
+        "default": {
+          "num_ctx": 8192,
+          "max_ctx": 262144,
+          "pinned": false,
+          "default": true,
+          "params": {
+            "temperature": 0.6,
+            "top_k": 40,
+            "top_p": 0.9
+          }
+        },
+        "scout": {
+          "num_ctx": 4096,
+          "max_ctx": 32000,
+          "pinned": false,
+          "default": false
+        }
+      }
+    },
+    "classifier": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144
+      },
+      "instances": {}
+    },
+    "code": {
+      "models": [
+        "code:default"
+      ],
+      "instance": "default",
+      "params": {
+        "num_ctx": 8192,
+        "max_ctx": 262144
+      },
+      "instances": {}
+    }
+  },
+  "models": {
+    "scout-1b": {
+      "name": "scout/scout-1b",
+      "endpoint": "http://localhost:8181/v1/chat/completions",
+      "intelligence": 1,
+      "cost_input": 0.000001,
+      "cost_output": 0.000006,
+      "cost_cached_read": 4e-7,
+      "speed": 8,
+      "total_timeout_ms": 50000,
+      "idle_timeout_ms": 3000,
+      "stream": true,
+      "filter_thinking": true,
+      "retry_count": 1,
+      "retry_base_interval_s": 1,
+      "instances": {
+        "default": {
+          "select": "scout"
+        }
+      }
+    },
+    "code": {
+      "name": "code",
+      "endpoint": "http://localhost:8181/v1/chat/completions",
+      "intelligence": 4,
+      "cost_input": 0.000003,
+      "cost_output": 0.000018,
+      "cost_cached_read": 1.2e-6,
+      "speed": 4,
+      "total_timeout_ms": 150000,
+      "idle_timeout_ms": 30000,
+      "stream": true,
+      "filter_thinking": true,
+      "retry_count": 1,
+      "retry_base_interval_s": 2,
+      "instances": {
+        "default": {
+          "select": "default"
+        }
+      }
+    }
+  },
+  "model_groups": {
+    "default": [
+      "default",
+      "last",
+      "any"
+    ],
+    "code": [
+      "code",
+      "last",
+      "any"
+    ]
+  },
+  "classification": {
+    "root": {
+      "type": "classifier",
+      "description": "Fixture request router",
+      "model": "code:default",
+      "coherence_threshold": 0.5,
+      "safety_threshold": 0.3,
+      "children": [
+        {
+          "key": "local",
+          "description": "General questions answered directly.",
+          "node": {
+            "type": "terminal",
+            "route": "local",
+            "group": "default",
+            "description": "General Q&A",
+            "always_route": false
+          }
+        },
+        {
+          "key": "code",
+          "description": "Programming and technical implementation.",
+          "node": {
+            "type": "terminal",
+            "route": "code",
+            "group": "code",
+            "description": "Code",
+            "always_route": true
+          }
+        }
+      ]
+    }
+  },
+  "default_route": "local"
+}

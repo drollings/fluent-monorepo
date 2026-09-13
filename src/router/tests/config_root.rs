@@ -906,23 +906,40 @@ fn inherited_profile_expands_count_and_clamps_max_ctx() {
 }
 
 #[test]
-fn migrated_live_config_expands_effective_profiles() {
-    // The role pools compose into each model's effective pool: `code`
-    // selects the fleet `default` profile (sampling composes role-base under
-    // the profile knobs), and `lfm2.5-2.6b` selects its capped override
-    // (group-pinned to `default`, role base composed in). (Covers the
-    // earlier expansion test it replaces alongside the role golden.)
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../env/coral-router.json");
-    let raw = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let cfg: RouterConfig = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("live config must deserialize: {e}"));
-    let roles = &cfg.roles;
-    let code = &cfg.models["code"];
-    let profiles = crate::config::materialize_effective_pool("code", code, roles);
+fn role_selection_narrows_pool_and_composes_sampling() {
+    // The role pools compose into each model's effective pool: one model
+    // selects the fleet `base` profile (sampling composes role-base under
+    // the profile knobs), and another selects its capped override (its own
+    // group, role base composed in). Synthetic roles — never the shipped
+    // file, which is an operator artifact, not a test oracle.
+    let roles = role_table(serde_json::json!({
+        "fleet": {
+            "models": ["base-svc", "scout-svc"],
+            "params": {"params": {"temperature": 0.1}},
+            "instances": {
+                "base": {
+                    "num_ctx": 8192, "max_ctx": 262144, "default": true,
+                    "params": {"temperature": 0.6}
+                },
+                "scout": {"num_ctx": 4096, "max_ctx": 32768}
+            }
+        }
+    }));
+    fn selecting_entry(select: &str) -> ModelEntry {
+        serde_json::from_value(serde_json::json!({
+            "endpoint": "http://x/v1/chat/completions",
+            "intelligence": 1,
+            "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
+            "speed": 1,
+            "instances": {"fleet": {"select": select}}
+        }))
+        .unwrap()
+    }
+    let mut base = selecting_entry("base");
+    materialize("base-svc", &mut base, &roles);
+    let profiles = base.effective_pool();
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].name.as_deref(), Some("default"));
+    assert_eq!(profiles[0].name.as_deref(), Some("base"));
     assert_eq!(profiles[0].num_ctx, 8192);
     assert_eq!(profiles[0].max_ctx, Some(262144));
     assert!(profiles[0].default, "selection designates the dispatch point");
@@ -935,12 +952,14 @@ fn migrated_live_config_expands_effective_profiles() {
         "profile knobs win over the role base"
     );
     // The override narrows to its own profile with the role base composed.
-    let lfm = &cfg.models["lfm2.5-2.6b"];
-    let profiles = crate::config::materialize_effective_pool("lfm2.5-2.6b", lfm, roles);
+    let mut scout = selecting_entry("scout");
+    materialize("scout-svc", &mut scout, &roles);
+    let profiles = scout.effective_pool();
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].group.as_deref(), Some("default"));
-    assert_eq!(profiles[0].max_ctx, Some(128000), "distinct cap survives");
-    assert_eq!(profiles[0].num_ctx, 8192);
+    assert_eq!(profiles[0].name.as_deref(), Some("scout"));
+    assert_eq!(profiles[0].group.as_deref(), Some("scout"));
+    assert_eq!(profiles[0].max_ctx, Some(32768), "distinct cap survives");
+    assert_eq!(profiles[0].num_ctx, 4096);
     assert!(profiles[0].default, "selection designates the dispatch point");
     assert_eq!(
         profiles[0]
@@ -1552,6 +1571,37 @@ fn router_config_env_coral_router_json_round_trip() {
 }
 
 #[test]
+fn boot_inherited_pool_with_colliding_group_fails_grammar() {
+    // Boot-path regression for the startup fatal: a model that inherits a
+    // role pool as authored receives every profile in it — when one
+    // profile's group collides with a sibling's name, `validate_instances`
+    // (the `build_instance_managers` gate) must reject the pool instead of
+    // POSTing a grammar the fork refuses. The fork itself rejects the same
+    // shape; the pool here is synthetic, never the shipped file.
+    let colliding = default_role_with(fleet_defaults(serde_json::json!({
+        "alpha": {"num_ctx": 8192, "default": true},
+        "beta": {"num_ctx": 4096, "group": "alpha"}
+    })));
+    let mut entry = bare_entry();
+    materialize("inheritor", &mut entry, &colliding);
+    let profiles = entry.effective_pool();
+    assert_eq!(profiles.len(), 2, "pool inherited as authored");
+    assert!(
+        crate::instances::validate_instances(profiles).is_err(),
+        "beta's group collides with sibling instance alpha"
+    );
+    // The same pool with each profile in its own group validates.
+    let fixed = default_role_with(fleet_defaults(serde_json::json!({
+        "alpha": {"num_ctx": 8192, "default": true},
+        "beta": {"num_ctx": 4096}
+    })));
+    let mut entry = bare_entry();
+    materialize("inheritor", &mut entry, &fixed);
+    crate::instances::validate_instances(entry.effective_pool())
+        .expect("namesake groups validate");
+}
+
+#[test]
 fn shipped_and_fixture_tree_views_agree() {
     // M3c: both env files are tree-only; their derived views agree route by
     // route (the M3cal parity lock, restated without flat arms).
@@ -1693,22 +1743,54 @@ fn legacy_config_without_routing_additions_loads_inert() {
 }
 
 #[test]
-fn migrated_live_config_declares_role_vocabulary() {
-    // The shipped config carries the role-first vocabulary: the five roles,
-    // the hoisted fleet-default profile, and role-referencing groups.
-    // (Covers the R0 absence test it replaces alongside the role golden.)
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../env/coral-router.json");
-    let raw = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let cfg: RouterConfig = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("live config must deserialize: {e}"));
-    for role in ["default", "classifier", "code", "reasoning", "ledger"] {
+fn role_vocabulary_references_roles_and_sentinels() {
+    // The role-first vocabulary mechanics on a synthetic config: declared
+    // roles, a hoisted fleet-default profile, per-model selections, the
+    // classifier head candidate, and groups built from roles + sentinels.
+    // (Covers the R0 absence test alongside the role golden — on owned
+    // data, never the operator-editable shipped file.)
+    let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "default": {
+                "models": ["code:default"],
+                "instance": "default",
+                "params": {"num_ctx": 8192},
+                "instances": {
+                    "default": {"num_ctx": 8192, "default": true},
+                    "scout": {"num_ctx": 4096}
+                }
+            },
+            "classifier": {"models": ["code:default"]},
+            "code": {"models": ["code:default"]}
+        },
+        "models": {
+            "code": {
+                "endpoint": "http://x/v1/chat/completions",
+                "intelligence": 4,
+                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
+                "speed": 1,
+                "instances": {"default": {"select": "default"}}
+            },
+            "scout-svc": {
+                "endpoint": "http://x/v1/chat/completions",
+                "intelligence": 1,
+                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
+                "speed": 1,
+                "instances": {"default": {"select": "scout"}}
+            }
+        },
+        "model_groups": {
+            "default": ["default", "last", "any"],
+            "code": ["code", "last", "any"]
+        }
+    }))
+    .expect("synthetic role vocabulary deserializes");
+    for role in ["default", "classifier", "code"] {
         let entry = cfg.roles.get(role).unwrap_or_else(|| panic!("role '{role}' declared"));
         assert_eq!(
             entry.models,
             vec!["code:default"],
-            "role '{role}' serves today's fleet target"
+            "role '{role}' serves the fleet target"
         );
     }
     let fleet = cfg.default_role_params();
@@ -1718,10 +1800,10 @@ fn migrated_live_config_declares_role_vocabulary() {
     assert_eq!(hoisted.num_ctx, 8192);
     assert!(hoisted.default, "fleet profile is the default point");
     assert!(
-        pool.contains_key("lfm"),
-        "lfm's capped override lives in the default pool"
+        pool.contains_key("scout"),
+        "the capped override lives in the default pool"
     );
-    for role in ["classifier", "code", "reasoning", "ledger"] {
+    for role in ["classifier", "code"] {
         assert!(
             cfg.roles[role].instances.is_empty(),
             "role '{role}' defines no extra pool"
@@ -1734,17 +1816,17 @@ fn migrated_live_config_declares_role_vocabulary() {
         "code selects the fleet default profile"
     );
     assert_eq!(
-        cfg.models["lfm2.5-2.6b"].instances.as_ref().expect("lfm selection").get("default")
+        cfg.models["scout-svc"].instances.as_ref().expect("scout selection").get("default")
             .and_then(|s| s.select.as_deref()),
-        Some("lfm"),
-        "lfm selects its capped override"
+        Some("scout"),
+        "scout selects its capped override"
     );
     assert_eq!(
         cfg.classifier_role_key(),
         Some("code:default"),
         "the classifier is the classifier role's head candidate"
     );
-    // Every shipped group resolves through roles + sentinels only.
+    // Every group resolves through roles + sentinels only.
     for (group, members) in &cfg.model_groups {
         let models = members.models();
         assert!(
@@ -1921,27 +2003,30 @@ fn session_profile_keeps_resume_semantics() {
 }
 
 #[test]
-fn live_config_materializes_all_one_shot_without_resume() {
-    // The shipped config declares no `session` flags: every materialized
-    // profile is one-shot with `resume: false` (matching current use — no
-    // snapshots flow today).
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../env/coral-router.json");
-    let raw = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let mut cfg: RouterConfig = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("live config must deserialize: {e}"));
-    // Boot composition, as production boot runs it.
-    cfg.apply_defaults();
-    let mut count = 0;
-    for entry in cfg.models.values() {
-        for profile in entry.effective_pool() {
-            count += 1;
-            assert!(!profile.session, "live config has no session profiles");
-            assert!(!profile.resume, "one-shot materializes resume:false");
+fn boot_materializes_one_shot_without_resume_by_default() {
+    // A pool declaring no `session` flags materializes every profile
+    // one-shot with `resume: false` (no snapshots flow); a `session: true`
+    // profile keeps its declared `resume`. Synthetic pool — the shipped
+    // file's contents are not a test oracle.
+    let roles = role_table(serde_json::json!({
+        "fleet": {
+            "models": ["m"],
+            "instances": {
+                "work": {"num_ctx": 8192},
+                "stateful": {"num_ctx": 8192, "session": true, "resume": true}
+            }
         }
-    }
-    assert!(count > 0, "live config declares instance profiles");
+    }));
+    let mut entry = bare_entry();
+    materialize("m", &mut entry, &roles);
+    let profiles = entry.effective_pool();
+    assert_eq!(profiles.len(), 2);
+    let work = profiles.iter().find(|p| p.name.as_deref() == Some("work")).expect("work profile");
+    assert!(!work.session, "undeclared session defaults to one-shot");
+    assert!(!work.resume, "one-shot materializes resume:false");
+    let stateful = profiles.iter().find(|p| p.name.as_deref() == Some("stateful")).expect("session profile");
+    assert!(stateful.session);
+    assert!(stateful.resume, "session profile keeps declared resume");
 }
 
 fn tree_only_snapshot() -> Vec<(&'static str, &'static str)> {

@@ -31,28 +31,6 @@
         "params": {
           "temperature": 0.1
         }
-      },
-      "instances": {
-        "default": {
-          "num_ctx": 8192,
-          "max_ctx": 262144,
-          "pinned": false,
-          "default": true,
-          "params": {
-            "sleep_idle_seconds": 7200,
-            "repeat_penalty": 1.0,
-            "temperature": 0.6,
-            "top_k": 40,
-            "top_p": 0.9
-          }
-        },
-        "lfm": {
-          "num_ctx": 8192,
-          "max_ctx": 128000,
-          "pinned": false,
-          "default": false,
-          "group": "default"
-        }
       }
     },
     "classifier": {
@@ -95,7 +73,22 @@
         "stream": true,
         "filter_thinking": true
       },
-      "instances": {}
+      "instances": {
+        "default": {
+          "num_ctx": 8192,
+          "max_ctx": 262144,
+          "pinned": true,
+          "default": true,
+          "params": {
+            "sleep-idle-seconds": 7200,
+            "n-cpu-moe": 10,
+            "repeat-penalty": 1.01,
+            "temperature": 0.6,
+            "top-k": 40,
+            "top-p": 0.9
+          }
+        }
+      }
     },
     "reasoning": {
       "models": [
@@ -194,12 +187,7 @@
       "stream": true,
       "filter_thinking": true,
       "retry_count": 1,
-      "retry_base_interval_s": 1,
-      "instances": {
-        "default": {
-          "select": "lfm"
-        }
-      }
+      "retry_base_interval_s": 1
     },
     "qwen3.6-27b": {
       "name": "vinpix/ternary-bonsai-27b-stock-mtp",
@@ -237,6 +225,11 @@
       "filter_thinking": true,
       "retry_count": 1,
       "retry_base_interval_s": 2,
+      "params": {
+        "num_ctx": 65536,
+        "repeat_penalty": 1.05,
+        "temperature": 0.7
+      },
       "instances": {
         "default": {
           "select": "default"

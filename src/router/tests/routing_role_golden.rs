@@ -1,20 +1,25 @@
 //! Role-first resolved-target golden.
 //!
-//! Pins the dispatch-relevant resolution of the shipped `env/coral-router.json`
-//! as the role-first config change lands: every model group (via a
+//! Pins the dispatch-relevant resolution of the test-owned fixture
+//! (`tests/data/routing_role_fixture.json`): every model group (via a
 //! representative route at several complexities), every qualifier spelling
-//! the config's keys admit, and backend resolvability per member. The corpus
+//! the fixture's keys admit, and backend resolvability per member. The corpus
 //! lives in `tests/data/routing_role_golden.json`; the test fails on any
 //! deviation, so the role-first config must resolve byte-identically.
 //!
-//! Regeneration is explicit (`UPDATE_GOLDEN=1`), and only meaningful while
-//! recording the baseline — after it, the file is frozen and any diff is a
-//! regression.
+//! The fixture is test-owned and deliberately NOT `env/coral-router.json`:
+//! the shipped config is an operator-editable deployment artifact, so no
+//! test may freeze its resolution. Regeneration is explicit (`UPDATE_GOLDEN=1`),
+//! and only meaningful while recording the baseline — after it, the file is
+//! frozen and any diff is a regression.
 
 use crate::config::RouterConfig;
 
 fn config_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../env/coral-router.json")
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("routing_role_fixture.json")
 }
 
 fn golden_path() -> std::path::PathBuf {
@@ -24,25 +29,18 @@ fn golden_path() -> std::path::PathBuf {
         .join("routing_role_golden.json")
 }
 
-fn load_live_config() -> RouterConfig {
+fn load_fixture_config() -> RouterConfig {
     let path = config_path();
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("live config must deserialize: {e}"))
+        .unwrap_or_else(|e| panic!("fixture config must deserialize: {e}"))
 }
 
 /// Representative route per model group (the tree derives one route per group,
 //  `local` rides the `default` group).
 fn group_routes() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("default", "local"),
-        ("code", "code"),
-        ("summarize", "summarize"),
-        ("explore", "explore"),
-        ("explain", "explain"),
-        ("prose", "prose"),
-    ]
+    vec![("default", "local"), ("code", "code")]
 }
 
 fn complexities() -> Vec<(String, Option<u8>)> {
@@ -59,27 +57,27 @@ fn qualifier_keys() -> Vec<&'static str> {
         "code:default",
         "code:latest",
         "code",
-        "lfm2.5-2.6b:default",
-        "lfm2.5-2.6b",
+        "scout-1b:scout",
+        "scout-1b",
         "code:missing",
         "nope:default",
     ]
 }
 
 fn backend_keys() -> Vec<&'static str> {
-    vec!["code:default", "code", "lfm2.5-2.6b", "nope", "last", "any"]
+    vec!["code:default", "code", "scout-1b", "nope", "last", "any"]
 }
 
 fn build_corpus() -> serde_json::Value {
-    let config = load_live_config();
+    let config = load_fixture_config();
     let routing = config.routing_config();
 
     let mut cases = Vec::new();
     for (group, route) in group_routes() {
-        // The group must resolve in the live config, or the corpus is stale.
+        // The group must resolve in the fixture config, or the corpus is stale.
         assert!(
             routing.model_groups.contains_key(group),
-            "shipped config must declare group '{group}'"
+            "fixture config must declare group '{group}'"
         );
         for (label, complexity) in complexities() {
             let target = routing.routing_target(route, complexity);
@@ -168,12 +166,12 @@ fn golden_spot_checks_dispatch_contract() {    // The golden is opaque by design
 }
 
 #[test]
-fn role_vocabulary_serves_shipped_groups() {
+fn role_vocabulary_serves_fixture_groups() {
     // Groups reference roles, and role keys build backends. The frozen
     // corpus above proves the resolved targets are byte-identical; this pins
-    // the vocabulary mechanics on the live config.
-    let config = load_live_config();
-    assert!(!config.roles.is_empty(), "shipped config declares roles");
+    // the vocabulary mechanics on the fixture config.
+    let config = load_fixture_config();
+    assert!(!config.roles.is_empty(), "fixture config declares roles");
     let routing = config.routing_config();
 
     assert_eq!(
@@ -184,10 +182,6 @@ fn role_vocabulary_serves_shipped_groups() {
     assert_eq!(
         routing.role_expanded_members("code"),
         vec!["code:default", "last", "any"],
-    );
-    assert_eq!(
-        routing.role_expanded_members("summarize"),
-        vec!["code:default", "last", "any"],
         "role-less groups ride the fleet-default role"
     );
 
@@ -197,7 +191,7 @@ fn role_vocabulary_serves_shipped_groups() {
     );
     assert!(
         config.local_backend("classifier").is_some(),
-        "every shipped role builds"
+        "every fixture role builds"
     );
     let backends = config.target_backends();
     assert!(
