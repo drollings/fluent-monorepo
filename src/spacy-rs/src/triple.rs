@@ -20,8 +20,7 @@
 use std::sync::Arc;
 
 use fluent_concept::{PlausibilityTriple, ScoredLemma};
-use crate::doc::{Doc, SentStart};
-use crate::hash::hash_utf8;
+use crate::doc::{dep_in, sentence_root, sentence_spans, Doc};
 use crate::interlingua::InterlinguaResolver;
 
 /// The knowledge-half scoring seam (M5): given the scorable triples the
@@ -52,7 +51,6 @@ pub struct Triple {
 /// router's `routing.rs` and the frame extractor).
 const SUBJECT_DEPS: &[&str] = &["nsubj", "nsubjpass", "csubj", "csubjpass"];
 const OBJECT_DEPS: &[&str] = &["dobj"];
-const ROOT_DEP: &str = "root";
 
 /// Extract triples deterministically from an **attached** doc (deps/heads set).
 /// One triple per sentence — the predicate is always the root, arguments are the
@@ -62,21 +60,10 @@ pub fn extract_triples(doc: &Doc) -> Vec<Triple> {
     if doc.is_empty() {
         return Vec::new();
     }
-    let len = doc.len();
-    let mut starts: Vec<usize> = (0..len)
-        .filter(|&i| doc.token(i).sent_start == SentStart::Start)
-        .collect();
-    if starts.is_empty() || starts[0] != 0 {
-        starts.insert(0, 0);
-    }
-    starts.push(len);
+    // Shared sentence walk (M8): partition + per-sentence root/roles.
     let mut out = Vec::new();
-    for w in starts.windows(2) {
-        let (s, e) = (w[0], w[1]);
-        if s >= e {
-            continue;
-        }
-        let root = (s..e).find(|&i| dep_is(doc.token(i), ROOT_DEP)).unwrap_or(s);
+    for (s, e) in sentence_spans(doc) {
+        let root = sentence_root(doc, s, e);
         let mut subject = None;
         let mut object = None;
         for &child in &doc.children(root) {
@@ -152,15 +139,6 @@ pub fn semantic_plausibility_via_fetch(
     let fetch = fetch?;
     let inputs = build_plausibility_inputs(doc, triples, resolver);
     fetch(&inputs)
-}
-
-fn dep_in(token: &crate::doc::TokenRecord, labels: &[&str]) -> bool {
-    let hash = token.dep;
-    labels.iter().any(|l| hash_utf8(l) == hash)
-}
-
-fn dep_is(token: &crate::doc::TokenRecord, label: &str) -> bool {
-    hash_utf8(label) == token.dep
 }
 
 #[cfg(test)]

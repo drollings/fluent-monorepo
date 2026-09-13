@@ -16,6 +16,6 @@ pub use crate::{
     },
     Capability, CapabilitySet, Component, Describable, DynamicComponent, DynamicExecutor,
     FieldAccess, FieldError, MetadataValue, OutputStore, WorkContext, WorkError, WorkOutput,
-    WorkUnit,
+    WorkUnit, describe_work_unit,
 };
 pub use internment::ArcIntern;

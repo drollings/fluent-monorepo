@@ -517,4 +517,39 @@ mod tests {
             InterlinguaNamespace::Reserved
         );
     }
+
+    /// M12.1: `local_id_of` keeps the bottom 48 bits and drops the top 16 —
+    /// the single truncation discipline every namespace helper shares.
+    /// Masking twice is the identity (no second truncation site may narrow
+    /// further), and all-ones / negative inputs truncate identically.
+    #[test]
+    fn local_id_of_keeps_bottom_48_bits() {
+        assert_eq!(local_id_of(0), 0);
+        assert_eq!(
+            local_id_of(0xFFFF_FFFF_FFFF_FFFFu64 as i64),
+            0x0000_FFFF_FFFF_FFFFu64 as i64
+        );
+        assert_eq!(local_id_of(-1), 0x0000_FFFF_FFFF_FFFFu64 as i64);
+        // Low 48 bits survive verbatim; high 16 never leak into the local id.
+        assert_eq!(local_id_of(0x1234_5678_9ABC_DEF0u64 as i64) as u64, 0x5678_9ABC_DEF0);
+        let once = local_id_of(example_hash("report"));
+        assert_eq!(local_id_of(once), once, "masking is idempotent");
+    }
+
+    /// M12.1: namespace placement — top 16 bits carry the namespace, bottom
+    /// 48 the truncated local id, round-tripping through both accessors.
+    #[test]
+    fn namespace_occupies_top_16_bits() {
+        let id = InterlinguaId::new(InterlinguaNamespace::SpacyLemma, local_id_of(-1));
+        assert_eq!(id.namespace(), InterlinguaNamespace::SpacyLemma);
+        assert_eq!(id.local_id() as u64, 0x0000_FFFF_FFFF_FFFF);
+        assert_eq!(id.as_u64() >> LOCAL_BITS, 0x0300);
+        // A full-width local is truncated by construction, never stored raw.
+        let wide = InterlinguaId::new(
+            InterlinguaNamespace::YagoEntity,
+            0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+        );
+        assert_eq!(wide.local_id() as u64, 0x0000_FFFF_FFFF_FFFF);
+        assert_eq!(wide.namespace(), InterlinguaNamespace::YagoEntity);
+    }
 }

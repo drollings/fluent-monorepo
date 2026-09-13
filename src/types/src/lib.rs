@@ -8,6 +8,7 @@ use smol_str::SmolStr;
 pub mod instance_id;
 pub mod interlingua;
 pub mod knowledge;
+pub mod label_enum;
 pub mod provenance;
 pub mod file_kind;
 pub mod model_ref;

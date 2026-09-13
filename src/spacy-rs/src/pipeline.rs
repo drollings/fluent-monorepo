@@ -40,6 +40,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use bon::Builder;
+use common_core::score::{is_above_threshold, is_below_threshold};
 use fluent_concurrency::batch::{SupervisedBatch, SupervisedBatchEvent};
 use fluent_concurrency::ladder::{first_accept_in_order, first_accept_in_order_sync};
 use fluent_concurrency::pool::ResultPool;
@@ -48,7 +49,6 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::Runtime;
 use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use thiserror::Error;
 
 use crate::arc_eager::{ArcEagerAnnotator, ArcEagerRung};
@@ -188,12 +188,12 @@ impl WorkUnit for AnnotateStage {
 impl_fieldless!(AnnotateStage);
 impl Describable for AnnotateStage {
     fn describe(&self) -> serde_json::Value {
-        json!({
-            "name": "annotate",
-            "depends": ["tokens"],
-            "provides": ["annotations"],
-            "purity": "pure predict: parse the ladder winner's JSON into annotations"
-        })
+        describe_work_unit(
+            self.name(),
+            self.depends(),
+            self.provides(),
+            Some("pure predict: parse the ladder winner's JSON into annotations"),
+        )
     }
 }
 impl_component!(AnnotateStage);
@@ -249,12 +249,12 @@ impl WorkUnit for ValidateStage {
 impl_fieldless!(ValidateStage);
 impl Describable for ValidateStage {
     fn describe(&self) -> serde_json::Value {
-        json!({
-            "name": "validate",
-            "depends": ["annotations"],
-            "provides": ["validated"],
-            "purity": "pure predict: the §10.2 deterministic gate"
-        })
+        describe_work_unit(
+            self.name(),
+            self.depends(),
+            self.provides(),
+            Some("pure predict: the §10.2 deterministic gate"),
+        )
     }
 }
 impl_component!(ValidateStage);
@@ -297,12 +297,12 @@ impl WorkUnit for AttachStage {
 impl_fieldless!(AttachStage);
 impl Describable for AttachStage {
     fn describe(&self) -> serde_json::Value {
-        json!({
-            "name": "attach",
-            "depends": ["validated"],
-            "provides": ["annotated_doc"],
-            "purity": "set_annotations mutate step: write records + rebuild the tree"
-        })
+        describe_work_unit(
+            self.name(),
+            self.depends(),
+            self.provides(),
+            Some("set_annotations mutate step: write records + rebuild the tree"),
+        )
     }
 }
 impl_component!(AttachStage);
@@ -371,12 +371,12 @@ impl WorkUnit for FrameStage {
 impl_fieldless!(FrameStage);
 impl Describable for FrameStage {
     fn describe(&self) -> serde_json::Value {
-        json!({
-            "name": "frame",
-            "depends": ["annotated_doc"],
-            "provides": ["framed"],
-            "purity": "deterministic: derive frames + ambiguities, mint keys (boot-only concept store)"
-        })
+        describe_work_unit(
+            self.name(),
+            self.depends(),
+            self.provides(),
+            Some("deterministic: derive frames + ambiguities, mint keys (boot-only concept store)"),
+        )
     }
 }
 impl_component!(FrameStage);
@@ -435,12 +435,12 @@ fn depends(&self) -> &[ArcIntern<str>] {
 impl_fieldless!(ResolveStage);
 impl Describable for ResolveStage {
     fn describe(&self) -> serde_json::Value {
-        json!({
-            "name": "resolve",
-            "depends": ["framed"],
-            "provides": ["interlingua_resolved"],
-            "purity": "read-only: stamp interlingua ids + confidence (boot-only registration, C2)"
-        })
+        describe_work_unit(
+            self.name(),
+            self.depends(),
+            self.provides(),
+            Some("read-only: stamp interlingua ids + confidence (boot-only registration, C2)"),
+        )
     }
 }
 impl_component!(ResolveStage);
@@ -498,12 +498,17 @@ impl WorkUnit for SentencizeStage {
 impl_fieldless!(SentencizeStage);
 impl Describable for SentencizeStage {
     fn describe(&self) -> serde_json::Value {
-        json!({
-            "name": "sentencize",
-            "depends": ["annotated_doc"],
-            "provides": ["sents"],
-            "purity": "deterministic sentencizer: punctuation-rule sent_start"
-        })
+        // Pinned divergence (see the M5.1 test): the audit document names the
+        // conceptual input `annotated_doc`, while the DAG edge (`depends`)
+        // reads `interlingua_resolved`. The literal below preserves the
+        // document byte-for-byte; do not "fix" it to `self.depends()`.
+        let documented: [ArcIntern<str>; 1] = [ArcIntern::from("annotated_doc")];
+        describe_work_unit(
+            self.name(),
+            &documented,
+            self.provides(),
+            Some("deterministic sentencizer: punctuation-rule sent_start"),
+        )
     }
 }
 impl_component!(SentencizeStage);
@@ -952,10 +957,10 @@ fn refine_reason_inner(
         RefineMode::Always => RefineReason::AlwaysPolicy,
         RefineMode::OnUncertain => {
             if let Some(ref pc) = base.parse_confidence {
-                if pc.overall < policy.min_overall {
+                if is_below_threshold(pc.overall, policy.min_overall) {
                     return RefineReason::Confidence(ConfidenceReason::Overall);
                 }
-                if pc.role_coverage < policy.min_role_coverage {
+                if is_below_threshold(pc.role_coverage, policy.min_role_coverage) {
                     return RefineReason::Confidence(ConfidenceReason::RoleCoverage);
                 }
                 if policy.refine_on_ties && pc.oracle_tie_count > 0 {
@@ -982,7 +987,11 @@ fn refine_reason_inner(
                     .flat_map(|(_, s)| s.token_ids.iter())
                     .filter(|id| id.as_u64() == 0)
                     .count();
-                if n > 0 && (unresolved as f64 / n as f64) > policy.unresolved_token_threshold {
+                if n > 0
+                    && is_above_threshold(
+                        unresolved as f64 / n as f64,
+                        policy.unresolved_token_threshold,
+                    ) {
                     return RefineReason::TaskValue(TaskValueReason::UnresolvedPropn);
                 }
             }
@@ -1068,7 +1077,7 @@ fn refine_focus_inner(
     let mut focus = Vec::new();
     if let Some(ref pc) = base.parse_confidence {
         for (i, &score) in pc.token_scores.iter().enumerate() {
-            if score < policy.min_token_score {
+            if is_below_threshold(score, policy.min_token_score) {
                 focus.push(i);
             }
         }
@@ -1085,7 +1094,11 @@ fn refine_focus_inner(
             .flat_map(|(_, s)| s.token_ids.iter())
             .filter(|id| id.as_u64() == 0)
             .count();
-        let above_threshold = n > 0 && (unresolved as f64 / n as f64) > policy.unresolved_token_threshold;
+        let above_threshold = n > 0
+            && is_above_threshold(
+                unresolved as f64 / n as f64,
+                policy.unresolved_token_threshold,
+            );
         if above_threshold {
             let mut offset = 0;
             for (_, signal) in signals {
@@ -1484,50 +1497,6 @@ pub struct RefineSeams {
     pub span_cache: Option<crate::cache::SpanCacheSeam>,
 }
 
-/// Amend `base` with review-shaped `corrections`, restricted to `focus`
-/// tokens, gated through the 7-check validator, and re-stamped to the
-/// producing `source`. `None` when the correction set is empty, nothing
-/// lands inside the focus, nothing actually applies, or the gate rejects —
-/// so the caller keeps the base (fallback — never worse).
-///
-/// The base's `token_confidence` / `parse_confidence` / `oracle_margins`
-/// ride onto the amended result untouched: the refiner improves only what it
-/// touched (M2.2), and confidence vectors stay aligned with the token
-/// indices (which never change — only field values do).
-fn adopt_corrections(
-    doc: &Doc,
-    base: &AnnotationResult,
-    focus: &[usize],
-    corrections: &[crate::review::Correction],
-    validator: &AnnotationValidator,
-    source: AnnotationSource,
-) -> Option<AnnotationResult> {
-    if corrections.is_empty() {
-        return None;
-    }
-    let scoped: Vec<crate::review::Correction> = corrections
-        .iter()
-        .filter(|c| focus.contains(&c.token_index))
-        .cloned()
-        .collect();
-    if scoped.is_empty() {
-        return None;
-    }
-    let mut records = base.records().records().to_vec();
-    if crate::review::apply_edits(&mut records, &scoped) == 0 {
-        return None;
-    }
-    let set = AnnotationSet(records);
-    if validator.validate(doc, &set).is_err() {
-        return None;
-    }
-    let mut result = AnnotationResult::new(set, source)
-        .with_confidence(base.token_confidence.clone(), base.parse_confidence.clone());
-    result.oracle_margins = base.oracle_margins.clone();
-    result.collision_count = base.collision_count;
-    Some(result)
-}
-
 /// The span-scoped LLM refinement rung (M2.2): shows the base parse and the
 /// focus indices, asks for corrections only for the focused tokens, amends
 /// the base, and gates the result. Any fetch/parse/gate failure — or an
@@ -1617,7 +1586,7 @@ fn refine_llm_scoped_with_cache(
     if let Some(cache) = span_cache {
         let key = crate::cache::span_key(doc, focus);
         if let Some(cached) = cache.get(key) {
-            if let Some(hit) = adopt_corrections(doc, base, focus, &cached, validator, AnnotationSource::Llm) {
+            if let Some(hit) = crate::review::apply_scoped(doc, base, focus, &cached, validator, AnnotationSource::Llm) {
                 return Some(hit);
             }
         }
@@ -1631,7 +1600,7 @@ fn refine_llm_scoped_with_cache(
     })
     .ok()?;
     let review = crate::review::ParseReview::parse_json(&reply).ok()?;
-    let result = adopt_corrections(
+    let result = crate::review::apply_scoped(
         doc,
         base,
         focus,
@@ -1698,7 +1667,7 @@ impl AnnotationRefiner for EncoderResidualRung {
                 let key = crate::cache::span_key(doc, focus);
                 if let Some(cached) = cache.get(key) {
                     if let Some(hit) =
-                        adopt_corrections(doc, base, focus, &cached, &self.validator, AnnotationSource::Encoder)
+                        crate::review::apply_scoped(doc, base, focus, &cached, &self.validator, AnnotationSource::Encoder)
                     {
                         return Ok(Some(hit));
                     }
@@ -1708,7 +1677,7 @@ impl AnnotationRefiner for EncoderResidualRung {
                 Ok(c) => c,
                 Err(_) => return Ok(None),
             };
-            let result = adopt_corrections(
+            let result = crate::review::apply_scoped(
                 doc,
                 base,
                 focus,
@@ -2600,36 +2569,28 @@ impl NlpPipeline {
 ///
 /// For multi-sentence documents, the `unresolved_token_threshold` is evaluated
 /// **aggregated across the whole document** via [`parse_views`] + the
-/// `*_aggregated` helpers — `parse_view` remains the single-sentence view used
-/// for the `frame_coverage` regression gate.
+/// `*_aggregated` helpers — `parse_view` is exactly the first [`parse_views`]
+/// element (same collisions), kept as the single-sentence view for the
+/// `frame_coverage` regression gate.
 fn parse_view(
     doc: &Doc,
     result: &AnnotationResult,
     rule: &RuleAnnotator,
     resolver: Option<&Arc<InterlinguaResolver>>,
 ) -> (RoutingSignal, InterlinguaSignal, usize) {
-    let mut scratch = doc.clone();
-    if crate::llm::attach(&mut scratch, result.records()).is_err() {
-        return (default_routing_signal(), default_interlingua_signal(), 0);
-    }
-    rule.sentencizer().process(&mut scratch);
-    let collisions = match resolver {
-        Some(r) => r
-            .resolve_doc(&mut scratch, result.token_confidence())
-            .iter()
-            .filter(|n| matches!(n, crate::interlingua::CollisionNote::Collision { .. }))
-            .count(),
-        None => 0,
-    };
-    match crate::routing::extract_routing_signals(&scratch).into_iter().next() {
-        Some(signal) => {
-            let interlingua = signal
-                .interlingua
-                .clone()
-                .unwrap_or_else(default_interlingua_signal);
-            (signal, interlingua, collisions)
-        }
-        None => (default_routing_signal(), default_interlingua_signal(), collisions),
+    // M6: single-sentence view as the one-element case of the all-sentences
+    // implementation — one attach/sentencize/resolve path, not two. The
+    // attach-failure default case falls out identically: `parse_views`
+    // returns no signals with zero collisions, and the `None` arm below
+    // substitutes the same defaults the historical body returned.
+    let (signals, collisions) = parse_views(doc, result, rule, resolver);
+    match signals.into_iter().next() {
+        Some((signal, interlingua)) => (signal, interlingua, collisions),
+        None => (
+            default_routing_signal(),
+            default_interlingua_signal(),
+            collisions,
+        ),
     }
 }
 
@@ -2827,24 +2788,139 @@ async fn run_ladder_for(
         return Ok(base);
     }
 
-    for refiner in refiners {
-        if let Some(refined) = refiner
-            .refine(doc, &base, &focus)
-            .await
-            .map_err(|e| PipelineError::Ladder(e.to_string()))?
-        {
-            let (_, refined_interlingua, _) = parse_view(doc, &refined, rule, resolver);
-            // A5a: compare against base routing presence — dropping a
-            // structurally present role must be a regression even if the
-            // refined parse no longer declares that role (denominator would
-            // otherwise shrink and mask the regression).
-            if frame_coverage(&signal, &refined_interlingua) < base_coverage {
-                continue; // routing regression — try next refiner, then base
+    // First-success walk over the refiners (M6): `Ok(None)` skips to the
+    // next refiner, the first adopted result wins, exhaustion keeps the
+    // base. The adoption gate lives in the `run` closure so the walk
+    // itself is the shared combinator, not a bespoke loop.
+    let adopted = first_accept_in_order(
+        refiners,
+        |refiner| async {
+            let refined = refiner
+                .refine(doc, &base, &focus)
+                .await
+                .map_err(|e| PipelineError::Ladder(e.to_string()))?;
+            match refined {
+                None => Ok(None),
+                Some(candidate) => {
+                    let (_, refined_interlingua, _) =
+                        parse_view(doc, &candidate, rule, resolver);
+                    // A5a: compare against base routing presence — dropping a
+                    // structurally present role must be a regression even if the
+                    // refined parse no longer declares that role (denominator would
+                    // otherwise shrink and mask the regression).
+                    if frame_coverage(&signal, &refined_interlingua) < base_coverage {
+                        Ok(None) // routing regression — try next refiner, then base
+                    } else {
+                        Ok(Some(candidate))
+                    }
+                }
             }
-            return Ok(refined);
+        },
+        // A refiner error is terminal (the historical loop's fail-closed `?`;
+        // the error propagates unchanged, never wrapped): abort the walk with
+        // `Err`. This is deliberately NOT the base phase's fail-open
+        // `|_| false` — every current refiner maps rung failures to `Ok(None)`
+        // instead, so this arm is unreachable today; preserved, not relaxed.
+        |_: &PipelineError| true,
+    )
+    .await?;
+    Ok(adopted.unwrap_or(base)) // fallback keeps the base
+}
+
+/// One ordered rung of the sync ladder, owned (each walk step consumes it —
+/// no per-rung clones). Module-level (M6) so the refine-phase body lives in
+/// [`run_sync_refiner`] while both walks share the type.
+enum SyncRung {
+    Llm(LlmFetchSync),
+    LlmFocused(LlmRefineFetchSync),
+    Encoder(EncoderFetchSync),
+    EncoderResidual(EncoderResidualFetch),
+    Eager(Arc<ArcEagerAnnotator>),
+    Rule(Arc<RuleAnnotator>),
+}
+
+/// Run one sync refine rung to an optional candidate (M6): the per-rung
+/// bodies of the sync refine walk, extracted so the walk itself is the
+/// shared `first_accept_in_order_sync` combinator rather than a bespoke
+/// loop. Behavior-identical to the historical inline match (only borrow
+/// shapes adjusted for the new signature), including the fail-open
+/// rung-error swallowing (`.ok()` / `Err(_) => None`): sync rungs never
+/// produce `Err`, only `None`.
+#[allow(clippy::too_many_arguments)]
+fn run_sync_refiner(
+    rung: SyncRung,
+    doc: &Doc,
+    base: &AnnotationResult,
+    focus: &[usize],
+    validator: &AnnotationValidator,
+    span_cache: Option<&crate::cache::SpanCacheSeam>,
+) -> Option<AnnotationResult> {
+    match rung {
+        SyncRung::Llm(fetch) => {
+            let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
+            let accepted = fetch(tokens)
+                .ok()
+                .and_then(|json| AnnotationSet::parse_json(&json).ok())
+                .and_then(|set| validator.validate(doc, &set).ok().map(|()| set));
+            accepted.map(|set| AnnotationResult::new(set, AnnotationSource::Llm))
         }
+        SyncRung::LlmFocused(fetch) => {
+            refine_llm_scoped_with_cache(doc, base, focus, &fetch, validator, span_cache)
+        }
+        SyncRung::Encoder(encoder) => {
+            let accepted = encoder(doc)
+                .ok()
+                .and_then(|set| validator.validate(doc, &set).ok().map(|()| set));
+            accepted.map(|set| AnnotationResult::new(set, AnnotationSource::Encoder))
+        }
+        SyncRung::EncoderResidual(fetch) => {
+            if focus.is_empty() {
+                None
+            } else if let Some(cache) = span_cache {
+                let key = crate::cache::span_key(doc, focus);
+                if let Some(cached) = cache.get(key) {
+                    crate::review::apply_scoped(
+                        doc, base, focus, &cached, validator, AnnotationSource::Encoder,
+                    )
+                } else {
+                    let corrections = match (fetch)(doc, focus) {
+                        Ok(c) => Some(c),
+                        Err(_) => None,
+                    };
+                    corrections.and_then(|corrections| {
+                        let result = crate::review::apply_scoped(
+                            doc, base, focus, &corrections, validator,
+                            AnnotationSource::Encoder,
+                        );
+                        if result.is_some() {
+                            let key = crate::cache::span_key(doc, focus);
+                            cache.put(key, corrections.clone());
+                        }
+                        result
+                    })
+                }
+            } else {
+                let corrections = match (fetch)(doc, focus) {
+                    Ok(c) => Some(c),
+                    Err(_) => None,
+                };
+                corrections.and_then(|corrections| {
+                    let result = crate::review::apply_scoped(
+                        doc, base, focus, &corrections, validator,
+                        AnnotationSource::Encoder,
+                    );
+                    if let Some(cache) = span_cache {
+                        if result.is_some() {
+                            let key = crate::cache::span_key(doc, focus);
+                            cache.put(key, corrections.clone());
+                        }
+                    }
+                    result
+                })
+            }
+        }
+        _ => unreachable!("refine phase only has model rungs"),
     }
-    Ok(base) // fallback keeps the base
 }
 
 /// The synchronous two-phase ladder walk (ROADMAP_20260831_ARCEAGER §2.3):
@@ -2870,17 +2946,6 @@ fn run_ladder_sync(
     resolver: Option<&Arc<InterlinguaResolver>>,
     policy: RefinePolicy,
 ) -> (AnnotationResult, RefineReason) {
-    /// One ordered rung of the sync ladder, owned (each closure invocation
-    /// consumes it — no per-rung clones).
-    enum SyncRung {
-        Llm(LlmFetchSync),
-        LlmFocused(LlmRefineFetchSync),
-        Encoder(EncoderFetchSync),
-        EncoderResidual(EncoderResidualFetch),
-        Eager(Arc<ArcEagerAnnotator>),
-        Rule(Arc<RuleAnnotator>),
-    }
-
     let annotator = Arc::clone(eager);
 
     // ── Base phase: deterministic, unconditional ──
@@ -2979,89 +3044,43 @@ fn run_ladder_sync(
     }
 
     let span_cache = seams.span_cache.clone();
-    for rung in sync_refiners {
-        let maybe_refined: Option<AnnotationResult> = match rung {
-            SyncRung::Llm(fetch) => {
-                let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-                let accepted = fetch(tokens)
-                    .ok()
-                    .and_then(|json| AnnotationSet::parse_json(&json).ok())
-                    .and_then(|set| validator.validate(doc, &set).ok().map(|()| set));
-                accepted.map(|set| AnnotationResult::new(set, AnnotationSource::Llm))
-            }
-            SyncRung::LlmFocused(fetch) => refine_llm_scoped_with_cache(
+    // First-success walk over the sync refiners (M6): the per-rung bodies
+    // live in `run_sync_refiner`, the adoption gate in the closure, the
+    // walk itself in the shared combinator. `Ok(None)` skips, the first
+    // adopted result wins with its reason, exhaustion keeps the base.
+    // The walk cannot error (rungs only skip) — the `expect` documents the
+    // same invariant the historical loop relied on implicitly.
+    let adopted = first_accept_in_order_sync(
+        sync_refiners,
+        |rung| {
+            let candidate = run_sync_refiner(
+                rung,
                 doc,
                 &base,
                 &focus,
-                &fetch,
                 validator,
                 span_cache.as_ref(),
-            ),
-            SyncRung::Encoder(encoder) => {
-                let accepted = encoder(doc)
-                    .ok()
-                    .and_then(|set| validator.validate(doc, &set).ok().map(|()| set));
-                accepted.map(|set| AnnotationResult::new(set, AnnotationSource::Encoder))
-            }
-            SyncRung::EncoderResidual(fetch) => {
-                if focus.is_empty() {
-                    None
-                } else if let Some(cache) = &span_cache {
-                    let key = crate::cache::span_key(doc, &focus);
-                    if let Some(cached) = cache.get(key) {
-                        adopt_corrections(
-                            doc, &base, &focus, &cached, validator, AnnotationSource::Encoder,
-                        )
+            );
+            match candidate {
+                None => Ok(None),
+                Some(refined_result) => {
+                    let (_, refined_interlingua, _) =
+                        parse_view(doc, &refined_result, rule, resolver);
+                    if frame_coverage(&signal, &refined_interlingua) < base_coverage {
+                        Ok(None) // routing regression — try next refiner, then base
                     } else {
-                        let corrections = match (fetch)(doc, &focus) {
-                            Ok(c) => Some(c),
-                            Err(_) => None,
-                        };
-                        corrections.and_then(|corrections| {
-                            let result = adopt_corrections(
-                                doc, &base, &focus, &corrections, validator,
-                                AnnotationSource::Encoder,
-                            );
-                            if let Some(cache) = &span_cache {
-                                if result.is_some() {
-                                    let key = crate::cache::span_key(doc, &focus);
-                                    cache.put(key, corrections.clone());
-                                }
-                            }
-                            result
-                        })
+                        Ok(Some(refined_result))
                     }
-                } else {
-                    let corrections = match (fetch)(doc, &focus) {
-                        Ok(c) => Some(c),
-                        Err(_) => None,
-                    };
-                    corrections.and_then(|corrections| {
-                        let result = adopt_corrections(
-                            doc, &base, &focus, &corrections, validator,
-                            AnnotationSource::Encoder,
-                        );
-                        if let Some(cache) = &span_cache {
-                            if result.is_some() {
-                                let key = crate::cache::span_key(doc, &focus);
-                                cache.put(key, corrections.clone());
-                            }
-                        }
-                        result
-                    })
                 }
             }
-            _ => unreachable!("refine phase only has model rungs"),
-        };
-        if let Some(refined_result) = maybe_refined {
-            let (_, refined_interlingua, _) = parse_view(doc, &refined_result, rule, resolver);
-            if frame_coverage(&signal, &refined_interlingua) < base_coverage {
-                continue;
-            }
-            return (refined_result, reason);
-        }
+        },
+        |_: &PipelineError| true,
+    )
+    .expect("the sync refine walk never errors — rungs only skip (Ok(None))");
+    match adopted {
+        Some(refined_result) => (refined_result, reason),
+        None => (base, reason),
     }
-    (base, reason)
 }
 
 /// Collapse a `ResultPoolError<PipelineError>` into a pipeline error.

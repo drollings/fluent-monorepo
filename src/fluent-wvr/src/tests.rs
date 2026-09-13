@@ -921,3 +921,50 @@ fn scaffold_sunset_doc_has_five_rows() {
     assert!(content.contains("PartitionedRouter"));
     assert!(content.contains("Reserve"));
 }
+
+#[test]
+fn describe_work_unit_matches_hand_written_shape() {
+    // The exact document shape the pipeline stages historically hand-wrote:
+    // name + depends/provides arrays in slice order + purity note.
+    let deps = [ArcIntern::from("annotations")];
+    let provs = [ArcIntern::from("validated")];
+    assert_eq!(
+        describe_work_unit("validate", &deps, &provs, Some("pure predict: gate")),
+        serde_json::json!({
+            "name": "validate",
+            "depends": ["annotations"],
+            "provides": ["validated"],
+            "purity": "pure predict: gate"
+        })
+    );
+}
+
+#[test]
+fn describe_work_unit_without_purity_omits_the_key() {
+    // Audit-only stages describe {name, depends, provides} with no purity
+    // claim — the key must be absent, not null.
+    let deps = [ArcIntern::from("annotated_doc")];
+    let provs = [ArcIntern::from("yago_resolved")];
+    let doc = describe_work_unit("yago_resolve", &deps, &provs, None);
+    assert_eq!(
+        doc,
+        serde_json::json!({
+            "name": "yago_resolve",
+            "depends": ["annotated_doc"],
+            "provides": ["yago_resolved"]
+        })
+    );
+    assert!(doc.get("purity").is_none());
+}
+
+#[test]
+fn describe_work_unit_handles_empty_and_multi_edges() {
+    let empty: [ArcIntern<str>; 0] = [];
+    let doc = describe_work_unit("source", &empty, &empty, Some("origin"));
+    assert_eq!(doc["depends"], serde_json::json!([]));
+    assert_eq!(doc["provides"], serde_json::json!([]));
+    let deps = [ArcIntern::from("a"), ArcIntern::from("b")];
+    let provs = [ArcIntern::from("c")];
+    let doc = describe_work_unit("multi", &deps, &provs, Some("fan"));
+    assert_eq!(doc["depends"], serde_json::json!(["a", "b"]));
+}

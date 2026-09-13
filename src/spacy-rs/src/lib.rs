@@ -67,7 +67,8 @@ pub use arc_eager::{
 };
 pub use attrs::Attribute;
 pub use doc::{
-    get_token_attr, set_children_from_heads, set_token_attr, Doc, SentStart, TokenRecord,
+    dep_in, dep_is, get_token_attr, lemma_of, sentence_root, sentence_spans,
+    set_children_from_heads, set_token_attr, Doc, SentStart, TokenRecord,
 };
 pub use error::SpacyError;
 pub use frame::{

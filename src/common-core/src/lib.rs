@@ -36,6 +36,7 @@ pub mod http;
 pub mod interner;
 pub mod io;
 pub mod jsonrpc;
+pub mod label_match;
 pub mod metrics;
 pub mod path;
 pub mod prelude;

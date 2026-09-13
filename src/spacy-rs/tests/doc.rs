@@ -248,3 +248,53 @@ fn read_only_attributes_rejected() {
         .expect_err("orth is lexeme-derived");
     assert_eq!(err, SpacyError::ReadOnlyAttribute(Attribute::Orth.id()));
 }
+
+// ── M8.2: shared sentence-walk unit tests (call-site independent) ──────────
+use crate::doc::{lemma_of, sentence_root, sentence_spans};
+
+fn marked_doc(marks: &[bool]) -> Doc {
+    const WORDS: &[&str] = &["w0", "w1", "w2", "w3", "w4"];
+    let mut doc = Doc::new(vocab());
+    for (i, w) in WORDS.iter().take(marks.len()).enumerate() {
+        doc.push_back(w, true).expect("push");
+        // `push_back` marks only token 0; apply `marks` exactly.
+        doc.token_mut(i).sent_start = SentStart::Unset;
+        if marks[i] {
+            doc.token_mut(i).sent_start = SentStart::Start;
+        }
+    }
+    doc
+}
+
+#[test]
+fn sentence_spans_partitions_marks_in_order() {
+    assert!(sentence_spans(&Doc::new(vocab())).is_empty(), "empty doc");
+    // No marks at all → single fallback span.
+    let doc = marked_doc(&[false, false, false]);
+    assert_eq!(sentence_spans(&doc), vec![(0, 3)]);
+    // Marks mid-doc → ordered windows; no leading 0 inserted twice.
+    let doc = marked_doc(&[true, false, true, false, false]);
+    assert_eq!(sentence_spans(&doc), vec![(0, 2), (2, 5)]);
+    // First mark not at 0 → 0 inserted, never duplicated.
+    let doc = marked_doc(&[false, true, false]);
+    assert_eq!(sentence_spans(&doc), vec![(0, 1), (1, 3)]);
+    // Consecutive marks → adjacent non-empty windows.
+    let doc = marked_doc(&[true, true, false]);
+    assert_eq!(sentence_spans(&doc), vec![(0, 1), (1, 3)]);
+}
+
+#[test]
+fn sentence_root_falls_back_to_span_start() {
+    // Unattached doc: no ROOT anywhere → span start (the M1.1 contract).
+    let doc = marked_doc(&[true, false, false]);
+    assert_eq!(sentence_root(&doc, 0, 3), 0);
+    // Degenerate span → start, never out of bounds.
+    assert_eq!(sentence_root(&doc, 2, 2), 2);
+}
+
+#[test]
+fn lemma_of_falls_back_to_lowercase_surface() {
+    // Fresh tokens carry `lemma == 0` (never interned) → surface fallback.
+    let doc = doc_with(&[("Show", true)]);
+    assert_eq!(lemma_of(&doc, 0), "show");
+}

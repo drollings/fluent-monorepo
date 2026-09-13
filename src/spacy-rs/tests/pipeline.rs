@@ -5,6 +5,7 @@ use fluent_concept::InMemoryConceptStore;
 use crate::interlingua::InterlinguaResolver;
 use crate::labels::Upos;
 use fluent_wvr::{CapabilitySet, Runtime};
+use serde_json::json;
 
 fn rt() -> Arc<dyn Runtime> {
     fluent_concurrency::tokio_runtime()
@@ -2146,6 +2147,27 @@ fn llm_refine_empty_corrections_keeps_base() {
     assert_eq!(calls.load(Ordering::SeqCst), 0, "empty focus → no model call");
 }
 
+/// M9.1: corrections that are all out of focus scope to the empty set, so
+/// nothing applies and the base is kept — even though the correction set
+/// itself is non-empty and individually valid.
+#[test]
+fn llm_refine_all_out_of_focus_keeps_base() {
+    let pipeline = en_pipeline();
+    let (doc, base) = arceager_base(&pipeline, "show me the report");
+    let reply = r#"{"corrections":[
+        {"token_index":0,"field":"lemma","new_value":"SHOWN"},
+        {"token_index":1,"field":"lemma","new_value":"ME"}
+    ]}"#;
+    let rung = LlmRefineRung::new(
+        focused_fetch(reply, Arc::new(AtomicUsize::new(0))),
+        Arc::new(pipeline.validator().clone()),
+    );
+    assert!(
+        block_on_refine(rung, &doc, &base, &[3]).is_none(),
+        "scoped set is empty → base kept"
+    );
+}
+
 #[test]
 fn llm_refine_frame_regression_keeps_base() {
     // M2.5: a focused correction that passes the 7-check gate but resolves a
@@ -3051,4 +3073,332 @@ fn eager_output_matches_pinned_golden() {
     }
     let golden = std::fs::read_to_string(&golden_path).expect("golden fixture readable");
     assert_eq!(rendered + "\n", golden, "annotation records drifted from golden");
+}
+
+// ── M5.1: pin every stage's name/depends/provides/describe ───────────────
+// The M5 migration replaces each hand-written `describe` JSON with the shared
+// helper; these pins prove the outputs are byte-identical before and after.
+// NOTE the pinned sentencize divergence: the trait `depends` is
+// `["interlingua_resolved"]` (the DAG edge) while `describe` documents
+// `["annotated_doc"]` (the conceptual input) — the migration must preserve
+// both values exactly as they are today.
+#[test]
+fn stage_metadata_and_describes_are_pinned() {
+    use crate::sentencizer::Sentencizer;
+    use crate::validate::AnnotationValidator;
+
+    let vocab = std::sync::Arc::new(crate::vocab::Vocab::new(
+        crate::lexeme::LexiconConfig::default(),
+    ));
+    let store: std::sync::Arc<InMemoryConceptStore> =
+        std::sync::Arc::new(InMemoryConceptStore::new());
+    let resolver = std::sync::Arc::new(InterlinguaResolver::new(
+        std::sync::Arc::clone(&store) as std::sync::Arc<dyn ConceptStore>,
+        std::sync::Arc::clone(vocab.strings()),
+    ));
+
+    let ascii = |deps: &[internment::ArcIntern<str>]| -> Vec<String> {
+        deps.iter().map(|d| d.to_string()).collect()
+    };
+
+    let annotate = AnnotateStage;
+    assert_eq!(annotate.name(), "annotate");
+    assert_eq!(ascii(annotate.depends()), vec!["tokens"]);
+    assert_eq!(ascii(annotate.provides()), vec!["annotations"]);
+    assert_eq!(
+        annotate.describe(),
+        serde_json::json!({
+            "name": "annotate",
+            "depends": ["tokens"],
+            "provides": ["annotations"],
+            "purity": "pure predict: parse the ladder winner's JSON into annotations"
+        })
+    );
+
+    let validate = ValidateStage::new(std::sync::Arc::new(AnnotationValidator::new()));
+    assert_eq!(validate.name(), "validate");
+    assert_eq!(ascii(validate.depends()), vec!["annotations"]);
+    assert_eq!(ascii(validate.provides()), vec!["validated"]);
+    assert_eq!(
+        validate.describe(),
+        serde_json::json!({
+            "name": "validate",
+            "depends": ["annotations"],
+            "provides": ["validated"],
+            "purity": "pure predict: the §10.2 deterministic gate"
+        })
+    );
+
+    let attach = AttachStage;
+    assert_eq!(attach.name(), "attach");
+    assert_eq!(ascii(attach.depends()), vec!["validated"]);
+    assert_eq!(ascii(attach.provides()), vec!["annotated_doc"]);
+    assert_eq!(
+        attach.describe(),
+        serde_json::json!({
+            "name": "attach",
+            "depends": ["validated"],
+            "provides": ["annotated_doc"],
+            "purity": "set_annotations mutate step: write records + rebuild the tree"
+        })
+    );
+
+    let frame = FrameStage::new(std::sync::Arc::clone(&resolver));
+    assert_eq!(frame.name(), "frame");
+    assert_eq!(ascii(frame.depends()), vec!["annotated_doc"]);
+    assert_eq!(ascii(frame.provides()), vec!["framed"]);
+    assert_eq!(
+        frame.describe(),
+        serde_json::json!({
+            "name": "frame",
+            "depends": ["annotated_doc"],
+            "provides": ["framed"],
+            "purity": "deterministic: derive frames + ambiguities, mint keys (boot-only concept store)"
+        })
+    );
+
+    let resolve = ResolveStage::new(resolver);
+    assert_eq!(resolve.name(), "resolve");
+    assert_eq!(ascii(resolve.depends()), vec!["framed"]);
+    assert_eq!(ascii(resolve.provides()), vec!["interlingua_resolved"]);
+    assert_eq!(
+        resolve.describe(),
+        serde_json::json!({
+            "name": "resolve",
+            "depends": ["framed"],
+            "provides": ["interlingua_resolved"],
+            "purity": "read-only: stamp interlingua ids + confidence (boot-only registration, C2)"
+        })
+    );
+
+    let sentencize = SentencizeStage::new(Sentencizer::new());
+    assert_eq!(sentencize.name(), "sentencize");
+    // Pinned divergence: the DAG edge reads `interlingua_resolved` …
+    assert_eq!(ascii(sentencize.depends()), vec!["interlingua_resolved"]);
+    assert_eq!(ascii(sentencize.provides()), vec!["sents"]);
+    // … while the audit document names the conceptual input.
+    assert_eq!(
+        sentencize.describe(),
+        serde_json::json!({
+            "name": "sentencize",
+            "depends": ["annotated_doc"],
+            "provides": ["sents"],
+            "purity": "deterministic sentencizer: punctuation-rule sent_start"
+        })
+    );
+}
+
+// ── M6.1: ladder first-success semantics through the public ladder ─────────
+// The combinator half (skip/stop/exhaustion × sync/async) is pinned in
+// `fluent-concurrency/tests/ladder.rs`; these pin the spacy side: all-skip
+// and empty-refiner exhaustion keep the base with `Ok`, and `parse_view`
+// is exactly the first `parse_views` element. Terminal-error behavior has
+// no public-API trigger today (every refiner maps rung errors to
+// `Ok(None)`); the M6.2 migration preserves the loop's `?` exactly via the
+// combinator's `stop = |_| true`.
+#[tokio::test]
+async fn async_refine_all_skip_and_empty_keep_base_without_error() {
+    let pipeline = en_pipeline();
+    let doc = pipeline
+        .process_sync("show me the report", None)
+        .expect("tokenize");
+    // Every refiner skipping (fetch Err → `Ok(None)` inside the refiner)
+    // keeps the base with `Ok` — never an error, never empty.
+    let failing: LlmFetch = Arc::new(|_tokens: Vec<String>| {
+        Box::pin(async move { Err(AnnotateError::Fetch("boom".into())) })
+    });
+    let result = pipeline
+        .run_ladder(
+            &doc,
+            Some(failing),
+            None,
+            &RefineSeams::default(),
+            llm_first_policy(),
+        )
+        .await
+        .expect("all-skip keeps base");
+    assert!(
+        matches!(
+            result.source(),
+            AnnotationSource::ArcEager | AnnotationSource::RuleRung
+        ),
+        "base kept, got {:?}",
+        result.source()
+    );
+    // Empty refiner set (no fetch, no encoder) under Always → base as well.
+    let result = pipeline
+        .run_ladder(&doc, None, None, &RefineSeams::default(), llm_first_policy())
+        .await
+        .expect("empty refiners keep base");
+    assert!(
+        matches!(
+            result.source(),
+            AnnotationSource::ArcEager | AnnotationSource::RuleRung
+        ),
+        "base kept, got {:?}",
+        result.source()
+    );
+}
+
+#[tokio::test]
+async fn parse_view_is_first_of_parse_views() {
+    // M6.1 (M6.3 prep): the single-sentence view is exactly the first
+    // all-sentences element with the same collision count — on a real
+    // parse and on the attach-failure default path.
+    let pipeline = en_pipeline();
+    let doc = pipeline
+        .process_sync("The cat sat. Dogs bark.", None)
+        .expect("tokenize");
+    let base = pipeline
+        .run_ladder(
+            &doc,
+            None,
+            None,
+            &RefineSeams::default(),
+            RefinePolicy::default(),
+        )
+        .await
+        .expect("base");
+    let rule = RuleAnnotator::en_default();
+    let (signal, interlingua, collisions) = parse_view(&doc, &base, &rule, None);
+    let (all, all_collisions) = parse_views(&doc, &base, &rule, None);
+    assert_eq!(collisions, all_collisions);
+    let (first_signal, first_interlingua) =
+        all.first().cloned().expect("at least one signal");
+    assert_eq!(signal, first_signal);
+    assert_eq!(interlingua, first_interlingua);
+
+    // Attach-failure path: an empty record set can never attach to a
+    // non-empty doc, so both views take their defaults consistently.
+    let bad = AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager);
+    let (signal, interlingua, collisions) = parse_view(&doc, &bad, &rule, None);
+    let (all, all_collisions) = parse_views(&doc, &bad, &rule, None);
+    assert!(all.is_empty());
+    assert_eq!(collisions, all_collisions);
+    assert_eq!(signal, default_routing_signal());
+    assert_eq!(interlingua, default_interlingua_signal());
+}
+
+// ── M7.1: threshold boundary values (strictness + NaN + empty) ────────────
+// Every float gate in `refine_reason_inner` / `refine_focus_inner` is strict
+// (`<` / `>`): equality never triggers, NaN never triggers (all comparisons
+// are false), and an empty `token_ids` never trips the fraction (the `n > 0`
+// guard). The M7.4 migration to the shared predicates must preserve each.
+fn m71_base(overall: f64, role_coverage: f64, token_scores: Vec<f64>) -> AnnotationResult {
+    AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager).with_confidence(
+        Some(token_scores.clone()),
+        Some(ParseConfidence {
+            overall,
+            token_scores,
+            role_coverage,
+            oracle_tie_count: 0,
+            oracle_margins: vec![0.5],
+            semantic_plausibility: None,
+        }),
+    )
+}
+
+fn m71_policy() -> RefinePolicy {
+    RefinePolicy {
+        mode: RefineMode::OnUncertain,
+        ..RefinePolicy::default()
+    }
+}
+
+fn m71_resolved() -> (InterlinguaSignal, RoutingSignal) {
+    (
+        signal_with_ids(
+            Some(InterlinguaId::from_u64(10)),
+            Some(InterlinguaId::from_u64(20)),
+            Some(InterlinguaId::from_u64(30)),
+        ),
+        routing_with(Some("cat"), Some("mat")),
+    )
+}
+
+#[test]
+fn refine_gates_are_strict_at_the_boundary() {
+    let policy = m71_policy();
+    let (signal, routing) = m71_resolved();
+    // overall == min_overall (0.7) does NOT trigger; just below does.
+    let base = m71_base(0.7, 1.0, vec![0.9]);
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::NoTrigger
+    );
+    let base = m71_base(0.699_999_9, 1.0, vec![0.9]);
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::Confidence(ConfidenceReason::Overall)
+    );
+    // role_coverage == min_role_coverage (0.5) does NOT trigger; below does.
+    let base = m71_base(0.9, 0.5, vec![0.9]);
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::NoTrigger
+    );
+    let base = m71_base(0.9, 0.499_999_9, vec![0.9]);
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::Confidence(ConfidenceReason::RoleCoverage)
+    );
+}
+
+#[test]
+fn refine_gates_ignore_nan_without_panicking() {
+    let policy = m71_policy();
+    let (signal, routing) = m71_resolved();
+    // NaN overall: `NaN < min` is false, so no confidence trigger — and no
+    // other trigger fires on a fully resolved base either.
+    let base = m71_base(f64::NAN, 1.0, vec![0.9]);
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::NoTrigger
+    );
+    // NaN token score: `NaN < min_token_score` is false, so the token is
+    // not focused (and the resolved signal adds no unresolved focus).
+    let focus = refine_focus(&base, &signal, policy);
+    assert!(focus.is_empty(), "NaN score must not focus, got {focus:?}");
+    // A genuinely low score still focuses the right index around the NaN.
+    let base = m71_base(0.9, 1.0, vec![0.9, f64::NAN, 0.1]);
+    let focus = refine_focus(&base, &signal, policy);
+    assert_eq!(focus, vec![2]);
+}
+
+#[test]
+fn unresolved_fraction_boundary_and_empty_signal() {
+    let mut policy = m71_policy();
+    policy.unresolved_token_threshold = 0.5;
+    let (_, routing) = m71_resolved();
+    // Exactly at threshold (1/2 == 0.5) does NOT trigger (strict `>`).
+    let mut signal = signal_with_ids(
+        Some(InterlinguaId::from_u64(10)),
+        Some(InterlinguaId::from_u64(20)),
+        Some(InterlinguaId::from_u64(30)),
+    );
+    signal.token_ids = vec![
+        InterlinguaId::from_u64(10),
+        InterlinguaId::from_u64(0),
+    ];
+    let base = m71_base(0.9, 1.0, vec![0.9]);
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::NoTrigger
+    );
+    // Empty token_ids: the `n > 0` guard holds the trigger off.
+    signal.token_ids = vec![];
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::NoTrigger
+    );
+    // Just above threshold (2/3 > 0.5) triggers UnresolvedPropn.
+    signal.token_ids = vec![
+        InterlinguaId::from_u64(0),
+        InterlinguaId::from_u64(0),
+        InterlinguaId::from_u64(10),
+    ];
+    assert_eq!(
+        refine_reason(&base, &signal, &routing, policy),
+        RefineReason::TaskValue(TaskValueReason::UnresolvedPropn)
+    );
 }

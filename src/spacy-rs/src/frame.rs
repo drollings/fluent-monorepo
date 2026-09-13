@@ -33,8 +33,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use fluent_concept::ConceptStore;
-use crate::doc::{Doc, SentStart};
-use crate::hash::hash_utf8;
+use crate::doc::{dep_in, dep_is, lemma_of, sentence_root, sentence_spans, Doc};
 use crate::interlingua::InterlinguaResolver;
 use fluent_types::InterlinguaId;
 
@@ -52,8 +51,6 @@ const INDIRECT_OBJECT_DEPS: &[&str] = &["iobj"];
 const MODIFIER_DEPS: &[&str] = &["compound", "amod", "nummod"];
 /// Dep labels that form the prepositional argument frame.
 const ARGUMENT_DEPS: &[&str] = &["prep", "pobj", "pcomp"];
-/// The dependency label of a sentence root.
-const ROOT_DEP: &str = "root";
 /// The negation dependency label.
 const NEG_DEP: &str = "neg";
 /// The auxiliary dependency label.
@@ -293,26 +290,15 @@ pub fn extract_frames(
     if doc.is_empty() {
         return FrameAnalysis::default();
     }
-    let len = doc.len();
-    let mut starts: Vec<usize> = (0..len)
-        .filter(|&i| doc.token(i).sent_start == SentStart::Start)
-        .collect();
-    if starts.is_empty() || starts[0] != 0 {
-        starts.insert(0, 0);
-    }
-    starts.push(len);
-
+    // Shared sentence walk (M8): partition + per-sentence root/roles.
+    // `classify_role` stays frame-specific (role-slot semantics).
     let attachment_tie = margins.is_some_and(|m| m.iter().any(|&x| x.abs() <= TIE_MARGIN_EPSILON));
 
     let mut frames = Vec::new();
     let mut ambiguities = Vec::new();
 
-    for w in starts.windows(2) {
-        let (s, e) = (w[0], w[1]);
-        if s >= e {
-            continue;
-        }
-        let root = (s..e).find(|&i| dep_is(doc.token(i), ROOT_DEP)).unwrap_or(s);
+    for (s, e) in sentence_spans(doc) {
+        let root = sentence_root(doc, s, e);
         let predicate_canonical = lemma_of(doc, root);
         let predicate_lemma_id = resolver.lemma_id(&predicate_canonical);
 
@@ -404,27 +390,6 @@ pub fn mint_frame_key(
     } else {
         FrameKey::permanent(frame.predicate_lemma_id, roles, frame.polarity, frame.modality)
     }
-}
-
-/// The lemma string for token `i` (through the shared store, falling back to
-/// the lowercase surface form).
-fn lemma_of(doc: &Doc, i: usize) -> String {
-    doc.vocab()
-        .strings()
-        .get(doc.token(i).lemma)
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| doc.token_text(i).to_ascii_lowercase())
-}
-
-/// Whether a token's dep label equals `label` (hash comparison).
-fn dep_is(token: &crate::doc::TokenRecord, label: &str) -> bool {
-    hash_utf8(label) == token.dep
-}
-
-/// Whether a token's dep label is one of `labels` (hash comparison).
-fn dep_in(token: &crate::doc::TokenRecord, labels: &[&str]) -> bool {
-    labels.iter().any(|l| hash_utf8(l) == token.dep)
 }
 
 /// Classify a non-root token's dep into a [`RoleType`], or `None` for a dep

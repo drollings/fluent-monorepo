@@ -740,6 +740,84 @@ pub fn set_children_from_heads(tokens: &mut [TokenRecord]) -> Result<(), SpacyEr
     Ok(())
 }
 
+/// Whether a token's dep label equals `label`.
+///
+/// The single canonical spelling shared by the frame, routing-signal, and
+/// triple extractors (primitives roadmap M1): `common_core::label_match`
+/// bound to spaCy's `hash_utf8` wire hash. The `MISSING_DEP` sentinel
+/// (`dep == 0`) matches no label — root/role searches over unattached docs
+/// fall back to the sentence start with empty roles.
+#[must_use]
+#[inline]
+pub fn dep_is(token: &TokenRecord, label: &str) -> bool {
+    common_core::label_match::label_eq(token.dep, label, crate::hash::hash_utf8)
+}
+
+/// Whether a token's dep label is one of `labels`.
+///
+/// Canonical shared spelling (M1); an empty table matches nothing.
+#[must_use]
+#[inline]
+pub fn dep_in(token: &TokenRecord, labels: &[&str]) -> bool {
+    common_core::label_match::label_in(token.dep, labels, crate::hash::hash_utf8)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shared sentence walk (M8): partition + root + lemma
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The dependency label marking a sentence root (the single spelling the
+/// frame, routing-signal, and triple extractors shared verbatim).
+const ROOT_DEP: &str = "root";
+
+/// Sentence spans of an attached doc from the `sent_start` marks: each
+/// `[start, end)` window in order, empty windows dropped. An empty doc, a
+/// doc with no marks, or marks not starting at 0 all yield the same shapes
+/// the three extractors historically produced inline (single `[(0, len)]`
+/// fallback, never empty windows).
+#[must_use]
+pub fn sentence_spans(doc: &Doc) -> Vec<(usize, usize)> {
+    let len = doc.len();
+    let mut starts: Vec<usize> = (0..len)
+        .filter(|&i| doc.token(i).sent_start == SentStart::Start)
+        .collect();
+    if starts.is_empty() || starts[0] != 0 {
+        starts.insert(0, 0);
+    }
+    starts.push(len);
+    starts
+        .windows(2)
+        .filter(|w| w[0] < w[1])
+        .map(|w| (w[0], w[1]))
+        .collect()
+}
+
+/// The sentence root: the first `root`-dep token in `[start, end)`, or
+/// `start` when no token carries the label (unattached docs, `dep == 0`
+/// everywhere — the M1.1 sentinel contract).
+#[must_use]
+pub fn sentence_root(doc: &Doc, start: usize, end: usize) -> usize {
+    (start..end)
+        .find(|&i| dep_is(doc.token(i), ROOT_DEP))
+        .unwrap_or(start)
+}
+
+/// The lemma string for token `i`: through the shared store, falling back
+/// to the lowercase surface form when the lemma was never interned
+/// (`lemma == 0` on tokens that bypassed `attach`). The canonical home of
+/// the frame `lemma_of` and the routing closure, which were verbatim
+/// identical; triple `scored_lemma` deliberately keeps its own `""`
+/// fallback (pinned in `tests/triple.rs`) and does NOT compose this.
+#[must_use]
+pub fn lemma_of(doc: &Doc, i: usize) -> String {
+    doc.vocab()
+        .strings()
+        .get(doc.token(i).lemma)
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| doc.token_text(i).to_ascii_lowercase())
+}
+
 /// One iteration of the left/right kid-and-edge propagation. Returns whether
 /// every head now lies within its current sentence segment.
 fn set_lr_kids_and_edges(tokens: &mut [TokenRecord], loop_count: usize) -> bool {

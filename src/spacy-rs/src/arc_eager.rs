@@ -77,7 +77,12 @@ fn copula_is_attached(state: &ArcEagerState, b: usize, cop: u64) -> bool {
 /// report`, `a saw`). The closed verb check in [`infer_pos`] fires before
 /// any nominal guard, so a determiner-led noun that shares a form with the
 /// list tags VERB, steals root, and strands the true predicate.
-fn refine_pos_det_closed_verb(_texts: &[String], pos: &mut [Upos], __flags: &[LexemeFlags]) {
+fn refine_pos_det_closed_verb(
+    _texts: &[String],
+    pos: &mut [Upos],
+    __flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Verb) {
         return;
     }
@@ -175,6 +180,7 @@ fn refine_pos_indefinite_pronouns(
     texts: &[String],
     pos: &mut [Upos],
     flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
 ) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
@@ -377,7 +383,12 @@ fn refine_pos_imperative_non_det_object(texts: &[String], pos: &mut [Upos], flag
 /// lexes both as AUX (passive/causative hosts), so a lexical main-verb
 /// `Get` strands as an aux-dependent and its object pronouns root the
 /// sentence.
-fn refine_pos_get_imperative(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_get_imperative(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if texts.is_empty() || pos[0] != Upos::Aux || !flags[0].is_get_word() {
         return;
     }
@@ -435,7 +446,12 @@ fn is_nominative_subject(flags: LexemeFlags) -> bool {
 /// after dual-class markers (`after she scored`) that lex as ADP, since the
 /// rule keys on the subject, never the marker. Upgrades an alpha-fallback
 /// NOUN to VERB only after a nominative pronoun.
-fn refine_pos_pronoun_subject_verb(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_pronoun_subject_verb(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -454,7 +470,12 @@ fn refine_pos_pronoun_subject_verb(texts: &[String], pos: &mut [Upos], flags: &[
 /// prepositional phrases: the Sconj-keyed mark arm never fires and the
 /// subject misattaches as `pobj`. Upgrades a sentence-initial `as` to
 /// SCONJ only with a nominal next (the comment subject).
-fn refine_pos_comment_as(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_comment_as(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if texts.len() < 2 || pos[0] != Upos::Adp || !flags[0].is_as_word() {
         return;
     }
@@ -634,7 +655,12 @@ fn refine_pos_comma_adverbial(texts: &[String], pos: &mut [Upos], __flags: &[Lex
 /// alpha-fallback NOUN directly after that PRON-`that` → VERB (the clause
 /// predicate, mirroring the pronoun-subject rule for a marker the closed
 /// list never pronounces).
-fn refine_pos_that_relative(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_that_relative(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| matches!(p, Upos::Det | Upos::Noun)) {
         return;
     }
@@ -670,6 +696,7 @@ fn refine_pos_interrogative_wh_adverbial(
     texts: &[String],
     pos: &mut [Upos],
     flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
 ) {
     if !pos.iter().any(|&p| matches!(p, Upos::Noun | Upos::Sconj)) {
         return;
@@ -697,7 +724,12 @@ fn refine_pos_interrogative_wh_adverbial(
 /// `when`/`because` — never sees it, and the anchor compounds onto it.
 /// Upgrades a NOUN `where` to SCONJ only with a nominal head (the relative
 /// anchor).
-fn refine_pos_where_marker(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_where_marker(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -718,7 +750,12 @@ fn refine_pos_where_marker(texts: &[String], pos: &mut [Upos], flags: &[LexemeFl
 /// `after` to SCONJ only with a clausal complement ahead — a nominal
 /// subject (PRON/NOUN/PROPN, or DET + NOUN/PROPN) directly followed by a
 /// VERB.
-fn refine_pos_clausal_after(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_clausal_after(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Adp) {
         return;
     }
@@ -830,7 +867,12 @@ fn refine_pos_final_adverbial(texts: &[String], pos: &mut [Upos], flags: &[Lexem
 /// (needs trailing punctuation/comma) nor the comma frame sees it.
 /// Upgrades NOUN → ADV only for closed-set members with a VERB host and
 /// CCONJ next.
-fn refine_pos_coordinated_adverbial(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_coordinated_adverbial(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -945,7 +987,12 @@ fn refine_pos_linking_predicate(texts: &[String], pos: &mut [Upos], flags: &[Lex
 /// the clause subject — never a determiner (determiners govern nominals:
 /// `that book`, `this morning`). Upgrades DET → PRON only for
 /// demonstrative/`that` flags with a VERB/AUX next.
-fn refine_pos_demonstrative_subject(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_demonstrative_subject(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Det) {
         return;
     }
@@ -1077,7 +1124,12 @@ fn is_noun_subject_verb_blocker(flags: LexemeFlags) -> bool {
 /// ended`, `The bus arrived`). The closed verb list misses these, so the
 /// sentence loses its root. Upgrades an alpha-fallback NOUN to VERB only in
 /// strict sentence-initial DET+NOUN+NOUN position (0–2).
-fn refine_pos_initial_noun_verb(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_initial_noun_verb(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if texts.len() < 3 || pos[2] != Upos::Noun {
         return;
     }
@@ -1097,7 +1149,12 @@ fn refine_pos_initial_noun_verb(texts: &[String], pos: &mut [Upos], flags: &[Lex
 /// Finite verb of a conjoined clause (`floods stayed`, `spirits rose`,
 /// `cats nap`, `rice fill`, `coffee helps`). The closed verb list misses
 /// these, so the second clause loses its predicate.
-fn refine_pos_conjoined_clause_verb(texts: &[String], pos: &mut [Upos], __flags: &[LexemeFlags]) {
+fn refine_pos_conjoined_clause_verb(
+    texts: &[String],
+    pos: &mut [Upos],
+    __flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -1270,7 +1327,12 @@ fn refine_pos_progressive_ing(texts: &[String], pos: &mut [Upos], flags: &[Lexem
 /// do-modal-hosted DET-led nominal subject is the finite verb of an
 /// inverted clause. Sequenced after the copular passes (ADJ outputs never
 /// match) and keyed on do-modal hosts (be-hosts never match).
-fn refine_pos_inversion_verb(texts: &[String], pos: &mut [Upos], flags: &[LexemeFlags]) {
+fn refine_pos_inversion_verb(
+    texts: &[String],
+    pos: &mut [Upos],
+    flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -1325,7 +1387,12 @@ fn refine_pos_modal_question_verb(texts: &[String], pos: &mut [Upos], flags: &[L
 /// First predicate of a clausal coordination (`Prices rose yet wages
 /// stalled`). Coordination joins likes: a CCONJ-headed second clause with
 /// an overt VERB predicate proves the first predicate verbal too.
-fn refine_pos_clausal_first_predicate(texts: &[String], pos: &mut [Upos], __flags: &[LexemeFlags]) {
+fn refine_pos_clausal_first_predicate(
+    texts: &[String],
+    pos: &mut [Upos],
+    __flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -1361,7 +1428,12 @@ fn refine_pos_clausal_first_predicate(texts: &[String], pos: &mut [Upos], __flag
 /// told apart by what follows: an elliptical predicate is clause-final
 /// (no finite verb ahead before any punctuation), while an overt subject
 /// is followed by its predicate.
-fn refine_pos_conjoined_predicate_agreement(texts: &[String], pos: &mut [Upos], __flags: &[LexemeFlags]) {
+fn refine_pos_conjoined_predicate_agreement(
+    texts: &[String],
+    pos: &mut [Upos],
+    __flags: &[LexemeFlags],
+    _ortho: &TaggerOrtho<'_>,
+) {
     if !pos.iter().any(|&p| p == Upos::Noun) {
         return;
     }
@@ -3103,6 +3175,170 @@ impl ParseConfidence {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// POS-refinement rule table (M3)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// One contextual POS-refinement pass over the lexeme-only tags: every rule
+/// takes `(texts, pos, flags, ortho)` (M3.3 — the sixteen rules whose frame
+/// never reads the blob take `ortho` as an ignored `_ortho`; bodies are
+/// otherwise untouched).
+///
+/// Shaped as a `(&str, rule)` table of plain fn pointers — never a trait
+/// object per token — so the runner stays a monomorphized `for` loop
+/// (fluent-wvr Pattern 8 discipline; the loop runs once per doc).
+type PosRefineRule = for<'a, 'b> fn(
+    &'a [String],
+    &'a mut [Upos],
+    &'a [LexemeFlags],
+    &'a TaggerOrtho<'b>,
+);
+
+/// The contextual refinement order — exactly the historical call sequence of
+/// `annotate_with_confidence`, comments included (M3.1 proves a
+/// non-commutative pair: bare-ed must crown its VERB before the imperative
+/// rule's VERB/AUX early-out reads it). **Never reorder**: append a new rule
+/// only where its frame comment justifies, carrying the sequencing rationale
+/// with it. Names exist for audit logs and failure attribution.
+const REFINE_RULES: &[(&str, PosRefineRule)] = &[
+    // Determiner-led nominals colliding with the closed verb list. Runs
+    // first so only infer_pos verbs are candidates and every VERB-upgrade
+    // below reads corrected tags.
+    ("det_closed_verb", refine_pos_det_closed_verb),
+    // Bare infinitive after a do-modal host. Runs before root-picking so
+    // the oracle sees verbs.
+    ("bare_infinitive", refine_pos_bare_infinitive),
+    // Bare-object: closed-verb s-form after a VERB at sentence end
+    // (`answer calls`) is a plural object noun. Sequenced after the
+    // infinitive pass (the VERB host must be visible).
+    ("bare_object_noun", refine_pos_bare_object_noun),
+    // Contracted-be: pronoun-hosted 's → AUX, then clitic-hosted -ing
+    // participle → VERB. Sequenced after the infinitive pass; disjoint
+    // contexts (aux-host vs. clitic-host).
+    ("contracted_be", refine_pos_contracted_be),
+    // Indefinite pronouns (`something`, `There is`, `Here is`). Sequenced
+    // with the retags; subject dynamics do the rest.
+    ("indefinite_pronouns", refine_pos_indefinite_pronouns),
+    // Directive: sentence-initial NOUN + DET + NOUN → VERB. Sequenced
+    // last (among the early crownings); disjoint from aux/clitic triggers.
+    ("directive_initial", refine_pos_directive_initial),
+    // Bare-ed-transitive (`John opened the door`, `Anna finished her
+    // lunch`). Sequenced after the directive pass (disjoint: DET+NOUN at
+    // 1-2 vs. an -ed word); dobj lands it.
+    ("bare_ed_transitive", refine_pos_bare_ed_transitive),
+    // Demonstrative object (`Translate this to French`): retags object
+    // pronouns so they take the pronoun frame in the imperative pass below.
+    ("demonstrative_object", refine_pos_demonstrative_object),
+    // Imperative with a non-determiner complement (`Remind me`,
+    // `Translate hello to French`). Sequenced after the bare-ed pass so
+    // its VERB output feeds the verbless-clause gate, and after the
+    // demonstrative pass so retagged pronouns take the pronoun frame.
+    ("imperative_non_det_object", refine_pos_imperative_non_det_object),
+    // Discourse-initial imperative (`Please confirm`, `Never mind`).
+    // Sequenced after the imperative pass (disjoint frames) so the crowned
+    // verb feeds the standard dobj dynamics.
+    ("discourse_initial_verb", refine_pos_discourse_initial_verb),
+    // Get-imperative (`Get me a coffee`). Sequenced after the discourse
+    // pass (disjoint: AUX-initial targets match no bare-noun frame).
+    ("get_imperative", refine_pos_get_imperative),
+    // Attributive -ly (`quarterly sales`). Sequenced after the discourse
+    // pass and every ADV tagger, so only stranded NOUNs are candidates.
+    ("attributive_ly", refine_pos_attributive_ly),
+    // Pronoun-subject: finite verb after a nominative pronoun. Disjoint
+    // from all above (PRON prev matches no earlier trigger).
+    ("pronoun_subject_verb", refine_pos_pronoun_subject_verb),
+    // That-relative: nominal-headed that → PRON, then NOUN after that-PRON
+    // → VERB. Sequenced after the pronoun pass and before the
+    // relative-matrix pass, whose VERB-host gate reads the verbs upgraded
+    // here.
+    ("that_relative", refine_pos_that_relative),
+    // Interrogative WH-adverbial (where/why/how, AUX-led `when`) → ADV.
+    // Sequenced immediately before the where-marker pass; the two gates
+    // mirror each other so no token matches both.
+    ("interrogative_wh_adverbial", refine_pos_interrogative_wh_adverbial),
+    // Where-marker: nominal-headed where → SCONJ so the mark arm fires.
+    ("where_marker", refine_pos_where_marker),
+    // Clausal-after: ADP after + subject + verb → SCONJ so the mark arm
+    // fires. Sequenced after the pronoun-subject pass (clause verbs
+    // upgraded there are the VERB host).
+    ("clausal_after", refine_pos_clausal_after),
+    // Predicative -ly (copular-hosted). Runs immediately before the final
+    // pass (disjoint ownership of -ly targets).
+    ("predicative_ly", refine_pos_predicative_ly),
+    // Final-adverbial: closed time/manner set + -ly finals → ADV.
+    ("final_adverbial", refine_pos_final_adverbial),
+    // Coordinated-adverbial (`Run fast or lose`). Sequenced right after
+    // the final pass (disjoint: CCONJ-next vs. punctuation/comma-next).
+    ("coordinated_adverbial", refine_pos_coordinated_adverbial),
+    // Linking-predicate: bare-initial sensory verb → VERB, then its NOUN
+    // complement → ADJ. ADJ outputs feed nothing upstream of be-predicate.
+    ("linking_predicate", refine_pos_linking_predicate),
+    // Demonstrative-subject (`That seems`, `This is`). Sequenced AFTER
+    // linking (the VERB-next gate reads verbs the linking pass crowns).
+    ("demonstrative_subject", refine_pos_demonstrative_subject),
+    // Medial-manner-ly (`spoke wittily at dinner`). Sequenced AFTER the
+    // linking pass (its freshly verbed sensory hosts are the VERB-prev
+    // this pass reads).
+    ("medial_manner_ly", refine_pos_medial_manner_ly),
+    // Post-comma: clause-initial NOUN after a parenthetical boundary →
+    // VERB. Sequenced after linking, before relative-matrix (disjoint:
+    // matrix needs a marker frame).
+    ("post_comma_verb", refine_pos_post_comma_verb),
+    // Participial-modifier: comma-framed -ing NOUN → VERB. Sequenced after
+    // the post-comma pass (disjoint: that pass excludes -ing).
+    ("comma_participle", refine_pos_comma_participle),
+    // Shifted-initial: comma + DET + NOUN + clause-final NOUN → VERB.
+    // Sequenced after post-comma, before relative-matrix (disjoint on both
+    // sides); the ADV trailer reads final-adverbial outputs.
+    ("shifted_det_noun_verb", refine_pos_shifted_det_noun_verb),
+    // Comment-As: sentence-initial as + nominal → SCONJ. First-token only,
+    // disjoint from every medial frame.
+    ("comment_as", refine_pos_comment_as),
+    // Relative-matrix: sentence-final NOUN after a relcl VERB. Sequenced
+    // after the pronoun pass so upgraded relcl verbs are visible as the
+    // VERB host.
+    ("relative_matrix_verb", refine_pos_relative_matrix_verb),
+    // Relative-matrix complement (`stands empty`). Sequenced right after
+    // the final matrix pass (disjoint: non-final targets only).
+    ("relcl_matrix_complement", refine_pos_relcl_matrix_complement),
+    // Comma-adverbial: comma-framed -ly NOUN → ADV. Sequenced after the
+    // verb passes; targets are disjoint from every verb/ADJ upgrade.
+    ("comma_adverbial", refine_pos_comma_adverbial),
+    // Initial noun-subject: DET+NOUN+NOUN / NOUN+NOUN at the start.
+    // Disjoint (positions the earlier passes leave as NOUN).
+    ("initial_noun_verb", refine_pos_initial_noun_verb),
+    // Conjoined-clause: CC + NOUN + NOUN → VERB. Disjoint (CC prev matches
+    // none of the above triggers).
+    ("conjoined_clause_verb", refine_pos_conjoined_clause_verb),
+    // Inverted-copular: be-AUX + subject + predicate-NOUN → ADJ. Sequenced
+    // just before be-predicate; disjoint from it and every verb trigger.
+    ("inverted_copular", refine_pos_inverted_copular),
+    // Copular-predicate: be + NOUN → ADJ. Disjoint (AUX prev + NOUN target
+    // matches no verb trigger above).
+    ("be_predicate", refine_pos_be_predicate),
+    // Progressive-participle: post-be -ing NOUN → VERB (overt complement)
+    // or ADJ (clause-final). Sequenced right after be-predicate.
+    ("progressive_ing", refine_pos_progressive_ing),
+    // Inversion-verb (`Did the report arrive`). Sequenced LAST among the
+    // interrogatives so upgraded copular predicates never match; keyed on
+    // do-modal hosts so be-hosts never match.
+    ("inversion_verb", refine_pos_inversion_verb),
+    // Modal-question (`Will this work`). Sequenced right after the
+    // DET-anchored inversion pass (disjoint: AUX at i-2 vs. DET at i-2).
+    ("modal_question_verb", refine_pos_modal_question_verb),
+    // Clausal-coordination predicate agreement (`Prices rose yet wages
+    // stalled`). Sequenced after every VERB-upgrade so the second-clause
+    // verb is visible.
+    ("clausal_first_predicate", refine_pos_clausal_first_predicate),
+    // Conjoined-predicate agreement (`ran but fell` vs. `milk and eggs`).
+    // Sequenced after every VERB-upgrade so the first conjunct is visible.
+    ("conjoined_predicate_agreement", refine_pos_conjoined_predicate_agreement),
+    // Temporal-`yet` (`She isn't ready yet`). Sequenced LAST (after the
+    // copular passes, so the ADJ host is visible). ADV outputs feed nothing
+    // downstream.
+    ("temporal_yet", refine_pos_temporal_yet),
+];
+
+// ─────────────────────────────────────────────────────────────────────────
 // The annotator
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -3205,238 +3441,12 @@ impl ArcEagerAnnotator {
         let texts: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
         let flags: Vec<LexemeFlags> = (0..doc.len()).map(|i| doc.token(i).lexeme.flags).collect();
         let mut pos: Vec<Upos> = flags.iter().map(|&f| infer_pos(f)).collect();
-        // Contextual pass over the lexeme-only tags: determiner-led nominals
-        // colliding with the closed verb list. Runs first so only infer_pos
-        // verbs are candidates and every VERB-upgrade below reads corrected
-        // tags.
-        refine_pos_det_closed_verb(&texts, &mut pos, &flags);
-        // Contextual pass over the lexeme-only tags: bare infinitive after a
-        // do-modal host. Runs before root-picking so the oracle sees verbs.
-        refine_pos_bare_infinitive(&texts, &mut pos, &flags, &self.ortho);
-        // Bare-object pass: closed-verb s-form after a VERB at sentence end
-        // (`answer calls`) is a plural object noun — English morphosyntax
-        // forbids a finite s-form after a bare verb. Sequenced after the
-        // infinitive pass (the VERB host must be visible); the existing
-        // dobj arm lands it.
-        refine_pos_bare_object_noun(&texts, &mut pos, &flags, &self.ortho);
-        // Contracted-be pass: pronoun-hosted 's → AUX, then clitic-hosted
-        // -ing participle → VERB. Sequenced after the infinitive pass; the
-        // two govern disjoint contexts (aux-host vs. clitic-host).
-        refine_pos_contracted_be(&texts, &mut pos, &flags, &self.ortho);
-        // Indefinite-pronoun pass (`something`, `There is`, `Here is`):
-        // closed-class pro-forms that never read as common nouns.
-        // Sequenced with the retags; subject dynamics do the rest.
-        refine_pos_indefinite_pronouns(&texts, &mut pos, &flags);
-        // Directive pass: sentence-initial NOUN + DET + NOUN → VERB.
-        // Sequenced last; disjoint from the aux/clitic triggers above.
-        refine_pos_directive_initial(&texts, &mut pos, &flags, &self.ortho);
-        // Bare-ed-transitive pass: initial nominal + -ed word + DET-led
-        // object (`John opened the door`, `Anna finished her lunch`) is a
-        // past-tense transitive clause. Past morphology plus the
-        // transitive frame identifies it: -ed adjectives are attributive
-        // (DET-led) or predicative after linking/be (AUX prev) — never
-        // bare-initial-subject position. Sequenced after the directive
-        // pass (disjoint: that pass needs DET+NOUN at 1-2, this one an
-        // -ed word); the pre-existing Verb–Det wait (which only excludes
-        // closed-list verbs) holds the object slot, and dobj lands it.
-        refine_pos_bare_ed_transitive(&texts, &mut pos, &flags, &self.ortho);
-        // Imperative pass with a non-determiner complement (`Remind me`,
-        // `Translate hello to French`, `Explain Bell's theorem`): the
-        // closed-list gap the directive pass (DET-led objects only) leaves
-        // behind. Sequenced after the bare-ed pass so its VERB output feeds
-        // the verbless-clause gate (`Anna finished` is verbal by now and
-        // never matches), and after the demonstrative pass so retagged
-        // object pronouns (`Translate this`) take the pronoun frame;
-        // targets (sentence-initial NOUN) are disjoint from both, and the
-        // DET-second shape stays with the directive pass.
-        refine_pos_demonstrative_object(&texts, &mut pos, &flags, &self.ortho);
-        refine_pos_imperative_non_det_object(&texts, &mut pos, &flags, &self.ortho);
-        // Discourse-initial imperative (`Please confirm`, `Never mind`):
-        // the marker frame the imperative pass cannot see (its seconds are
-        // verbs, never pronouns/PPs). Sequenced after it (disjoint:
-        // marker-initial words never match the bare-noun frames) so the
-        // crowned verb feeds the standard dobj dynamics below.
-        refine_pos_discourse_initial_verb(&texts, &mut pos, &flags, &self.ortho);
-        // Get-imperative pass: sentence-initial AUX-tagged get/got with a
-        // nominal complement → VERB (`Get me a coffee`). Sequenced after
-        // the discourse pass (disjoint: AUX-initial targets match none of
-        // the bare-noun frames); the crowned verb feeds the standard
-        // ditransitive dynamics below.
-        refine_pos_get_imperative(&texts, &mut pos, &flags);
-        // Attributive -ly (`quarterly sales`): adverbial by default, but
-        // adjectival directly before a nominal head. Sequenced after the
-        // discourse pass (Kindly is ADV by now) and after every ADV
-        // tagger, so only stranded NOUNs are candidates.
-        refine_pos_attributive_ly(&texts, &mut pos, &flags, &self.ortho);
-        // Pronoun-subject pass: finite verb after a nominative pronoun.
-        // Disjoint from all above (PRON prev never matches aux/clitic/
-        // initial triggers).
-        refine_pos_pronoun_subject_verb(&texts, &mut pos, &flags);
-        // That-relative pass: nominal-headed that → PRON, then the NOUN
-        // after that- PRON → VERB. Sequenced after the pronoun pass (whose
-        // nominative list never pronounces that) and before the
-        // relative-matrix pass, whose VERB-host gate reads the clause verbs
-        // upgraded here (cried → slept). Disjoint targets from both.
-        refine_pos_that_relative(&texts, &mut pos, &flags);
-        // Interrogative WH-adverbial pass: clause-initial where/why/how
-        // (and AUX-led `when`) → ADV. Sequenced immediately before the
-        // where-marker pass; the two gates mirror each other (nominal-prev
-        // vs. not) so no token can match both.
-        refine_pos_interrogative_wh_adverbial(&texts, &mut pos, &flags);
-        // Where-marker pass: nominal-headed where → SCONJ so the existing
-        // mark arm fires. Sequenced with the other frame passes; targets
-        // (NOUN-where) are disjoint from every verb/ADJ upgrade, and no
-        // refine reads SCONJ positionally (the initial-noun blocker keys on
-        // the word, order-free).
-        refine_pos_where_marker(&texts, &mut pos, &flags);
-        // Clausal-after pass: ADP after + subject + verb → SCONJ so the
-        // existing mark arm fires. Sequenced after the pronoun-subject pass
-        // (clause verbs upgraded there are the VERB host) with the other
-        // SCONJ-frame passes; nominal complements never match, so prep/pobj
-        // frames are untouched.
-        refine_pos_clausal_after(&texts, &mut pos, &flags);
-        // Final-adverbial pass: closed time/manner set + -ly finals →
-        // ADV. Targets are disjoint from the comma-adverbial pass (which
-        // owns comma -ly with its clause-edge host guard; this pass skips
-        // comma -ly), and ADV outputs feed no verb/ADJ upgrade. The
-        // predicative-ly pass runs immediately before (disjoint:
-        // predicative owns copular-hosted -ly, final owns the rest) —
-        // splitting them lets final steal predicative targets (`unlikely`
-        // read manner).
-        refine_pos_predicative_ly(&texts, &mut pos, &flags, &self.ortho);
-        refine_pos_final_adverbial(&texts, &mut pos, &flags, &self.ortho);
-        // Coordinated-adverbial pass: closed-set manner word between a
-        // VERB and a CCONJ → ADV (`Run fast or lose`). Sequenced right
-        // after the final pass (disjoint: that pass needs trailing
-        // punctuation or a comma next, this one CCONJ-next).
-        refine_pos_coordinated_adverbial(&texts, &mut pos, &flags);
-        // Linking-predicate pass: bare-initial sensory verb → VERB, then
-        // the NOUN after a sensory VERB → ADJ. Sequenced with the frame
-        // passes; targets (sensory words, their complements) are disjoint
-        // from every relativizer/adverbial trigger, and ADJ outputs feed
-        // nothing upstream of the be-predicate pass.
-        refine_pos_linking_predicate(&texts, &mut pos, &flags, &self.ortho);
-        // Demonstrative-subject pass: demonstrative DET + VERB/AUX →
-        // PRON (`That seems`, `This is`). Sequenced AFTER linking (the
-        // VERB-next gate reads verbs the linking pass itself crowns:
-        // `seems` tags NOUN until then); PRON outputs feed the
-        // standard subject dynamics below.
-        refine_pos_demonstrative_subject(&texts, &mut pos, &flags);
-        // Medial-manner-ly pass (`spoke wittily at dinner`, `tastes
-        // sweetly of oak`): -ly manner with a particle/conjunction after
-        // it matches neither the final nor the attributive shape.
-        // Sequenced AFTER the linking pass (disjoint: that pass -ly-skips
-        // its complements, and its freshly verbed sensory hosts are the
-        // VERB-prev this pass reads); ADV outputs feed the standard
-        // advmod dynamics below.
-        refine_pos_medial_manner_ly(&texts, &mut pos, &flags, &self.ortho);
-        // Post-comma pass: clause-initial NOUN after a parenthetical
-        // boundary → VERB. Sequenced after the linking pass (sensory verbs
-        // read first where both could apply — disjoint in practice: no
-        // bench sensory verb sits post-comma) and before the
-        // relative-matrix pass (disjoint: matrix needs a marker frame).
-        refine_pos_post_comma_verb(&texts, &mut pos, &flags, &self.ortho);
-        // Participial-modifier pass: comma-framed -ing NOUN → VERB (The
-        // CEO, smiling, took questions). The -ing morphology plus the
-        // comma frame identifies reduced-relative modifiers; bare -ing
-        // nouns (building, morning) and AUX-governed progressives (are
-        // coming) never match. Sequenced after the post-comma pass
-        // (disjoint: that pass excludes -ing) with the other frame
-        // passes; the amod-Right arm below and the guarded Left-nsubj
-        // do the rest.
-        refine_pos_comma_participle(&texts, &mut pos, &flags, &self.ortho);
-        // Shifted-initial pass: comma + DET + NOUN + clause-final NOUN →
-        // VERB. Sequenced after the post-comma pass (disjoint: that pass
-        // needs comma-adjacent targets, this one comma-distant) and before
-        // the relative-matrix pass (disjoint: matrix needs a marker
-        // frame). The ADV trailer reads final-adverbial outputs.
-        refine_pos_shifted_det_noun_verb(&texts, &mut pos, &flags, &self.ortho);
-        // Comment-As pass: sentence-initial as + nominal → SCONJ so the
-        // existing mark arm fires. First-token only, disjoint from every
-        // medial frame; SCONJ outputs feed no refine (waits and arms read
-        // them at transition time).
-        refine_pos_comment_as(&texts, &mut pos, &flags);
-        // Relative-matrix pass: sentence-final NOUN after a relcl VERB with
-        // a nominal-headed who/that/where earlier. Sequenced after the
-        // pronoun pass so relcl verbs upgraded there (wait, study, sang)
-        // are visible as the VERB host; disjoint targets (sentence-final
-        // only) from the initial-noun positions.
-        refine_pos_relative_matrix_verb(&texts, &mut pos, &flags, &self.ortho);
-        // Relative-matrix complement pass: matrix NOUN after a relcl VERB
-        // with a complement ahead (`stands empty`, `improve fast`, `ducks
-        // out …`). Sequenced right after the final matrix pass (whose
-        // sentence-final gate leaves exactly these targets); disjoint from
-        // it by construction (non-final targets only). VERB outputs feed
-        // the standard verbal dynamics below.
-        refine_pos_relcl_matrix_complement(&texts, &mut pos, &flags, &self.ortho);
-        // Adverbial pass: comma-framed -ly NOUN → ADV. Sequenced after the
-        // verb passes; targets (NOUN) are disjoint from every verb/ADJ
-        // upgrade above, and comma-framed adverbials never feed those
-        // triggers (no DET+NOUN initials, no PRON hosts, no be hosts).
-        refine_pos_comma_adverbial(&texts, &mut pos, &flags, &self.ortho);
-        // Initial noun-subject pass: DET+NOUN+NOUN / NOUN+NOUN at the start.
-        // Disjoint (targets positions the earlier passes leave as NOUN).
-        refine_pos_initial_noun_verb(&texts, &mut pos, &flags);
-        // Conjoined-clause pass: CC + NOUN + NOUN → VERB. Disjoint (CC prev
-        // matches none of the above triggers).
-        refine_pos_conjoined_clause_verb(&texts, &mut pos, &flags);
-        // Inverted-copular pass: be-AUX + subject + predicate-NOUN → ADJ.
-        // Sequenced just before be-predicate; disjoint from it (its
-        // direct/bridged shapes have no nominal between be and target) and
-        // from every verb trigger above (ADJ targets).
-        refine_pos_inverted_copular(&texts, &mut pos, &flags, &self.ortho);
-        // Copular-predicate pass: be + NOUN → ADJ. Disjoint (AUX prev with
-        // NOUN target matches none of the verb triggers above).
-        refine_pos_be_predicate(&texts, &mut pos, &flags, &self.ortho);
-        // Progressive-participle pass: post-be -ing NOUN → VERB with an
-        // overt complement ahead, ADJ when clause-final (genuinely
-        // ambiguous — the oracle tie below flags it). Sequenced right
-        // after be-predicate (whose -ing skip leaves exactly these
-        // targets); ADJ outputs feed the cop dynamics, VERB outputs the
-        // standard verbal ones, and the inversion-verb pass below never
-        // matches (targets are never NOUN by then, and be-hosts never
-        // match its do-modal key).
-        refine_pos_progressive_ing(&texts, &mut pos, &flags, &self.ortho);
-        // Inversion-verb pass: do-modal host + DET + nominal + NOUN → VERB
-        // (`Did the report arrive`: arrive is the finite verb of a
-        // question-inverted clause). Sequenced LAST so copular predicates
-        // upgraded above (`Is the sky blue`: blue is already ADJ) never
-        // match, and keyed on do-modal hosts (reusing
-        // `is_bare_infinitive_host`) so be-hosts never match either —
-        // copular inversion keeps its own dynamics.
-        refine_pos_inversion_verb(&texts, &mut pos, &flags);
-        // Modal-question pass: modal/do AUX + bare nominal subject +
-        // clause-final NOUN → VERB (`Will this work`). Sequenced right
-        // after the DET-anchored inversion pass (disjoint: AUX at i-2 vs.
-        // DET at i-2); VERB outputs feed the standard verbal dynamics, and
-        // the coordination-agreement passes below never match (no CCONJ).
-        refine_pos_modal_question_verb(&texts, &mut pos, &flags, &self.ortho);
-        // Clausal-coordination predicate agreement: a CCONJ-headed second
-        // clause with an overt VERB predicate proves the first predicate
-        // verbal (`Prices rose yet wages stalled`: stalled is VERB, so rose
-        // is VERB). Sequenced after every VERB-upgrade pass so the
-        // second-clause verb is visible; the existing nsubj arm and root
-        // selection do the rest.
-        refine_pos_clausal_first_predicate(&texts, &mut pos, &flags);
-        // Elliptical second predicate after a conjunction (`ran but fell`).
-        // The first conjunct's category decides (coordination joins likes):
-        // a VERB two back proves a verbal second conjunct, a nominal two
-        // back a nominal one (`milk and eggs` stays nominal). Sequenced
-        // after every VERB-upgrade so the first conjunct is visible; the
-        // (Verb, Verb) conj arm (overt- or shared-subject shape) does the
-        // rest.
-        refine_pos_conjoined_predicate_agreement(&texts, &mut pos, &flags);
-        // Temporal-`yet` pass: sentence-final `yet` after a predicate
-        // adjective (`She isn't ready yet`) is the aspectual adverb, not
-        // the adversative coordinator — coordinators always head a second
-        // clause (a finite verb follows before any punctuation). Sequenced
-        // LAST (after the copular passes, so the ADJ host is visible);
-        // gated on the closed-map CCONJ tag, final position, and an ADJ
-        // host, so clausal frames (`Prices rose yet wages stalled`: verb
-        // ahead) never match. ADV outputs feed nothing downstream. The
-        // (Adj, Adv) arm lands it.
-        refine_pos_temporal_yet(&texts, &mut pos, &flags, &self.ortho);
-
+        // Contextual refinement: the REFINE_RULES table above, in order.
+        // (Sequencing rationale lives beside each table entry; M3.1 pins
+        // the load-bearing bare-ed → imperative pair.)
+        for (_name, rule) in REFINE_RULES {
+            rule(&texts, &mut pos, &flags, &self.ortho);
+        }
         // Sentence boundaries from the sentencizer.
         let starts = self.sentencizer.predict(doc);
         let sentences = partition_sentences(&starts, doc.len());

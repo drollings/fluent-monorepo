@@ -217,6 +217,25 @@ fn interlingua_signal_confidence_none_when_unresolved() {
     assert!(il.confidence.is_none());
 }
 
+/// M1.1 characterization: the `MISSING_DEP` sentinel (`dep == 0`, never
+/// attached) matches no role label — root falls back to the sentence start
+/// and every non-root token lands in `dependents`.
+#[test]
+fn unattached_doc_falls_back_to_token_zero_with_empty_roles() {
+    let doc = doc_for(&["Show", "me"]);
+    let signals = extract_routing_signals(&doc);
+    assert_eq!(signals.len(), 1, "fallback sentence [0, len)");
+    let s = &signals[0];
+    assert!(!s.predicate.is_empty(), "fallback root still yields a lemma");
+    assert!(s.subject.is_none(), "dep 0 is not a subject");
+    assert!(s.direct_object.is_none(), "dep 0 is not an object");
+    assert!(s.indirect_object.is_none(), "dep 0 is not an indirect object");
+    assert!(s.modifiers.is_empty());
+    assert!(s.qualifiers.is_empty());
+    assert!(s.arguments.is_empty());
+    assert_eq!(s.dependents.len(), 1, "the non-root token is a residual");
+}
+
 #[test]
 fn interlingua_signal_serde_skips_none_confidence() {
     // The `default` + `skip_serializing_if` pair keeps already-persisted
@@ -228,4 +247,31 @@ fn interlingua_signal_serde_skips_none_confidence() {
     assert!(!json.contains("confidence"), "None confidence is skipped");
     let back: RoutingSignal = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.interlingua.as_ref().unwrap().confidence, None);
+}
+
+/// M8.1: a record without a `lemma` key still yields the lowercase surface
+/// (`attach` normalizes empty lemma to the surface at write time; the
+/// `lemma_of` fallback covers tokens that bypass attach).
+#[test]
+fn lemma_falls_back_to_lowercase_surface_without_lemma_record() {
+    const NO_LEMMA: &str = r#"[
+        {"text":"Show","pos":"verb","dep":"root","head":0},
+        {"text":"me","pos":"pron","dep":"iobj","head":-1}
+    ]"#;
+    let doc = attached(NO_LEMMA, &["Show", "me"]);
+    let signals = extract_routing_signals(&doc);
+    assert_eq!(signals.len(), 1);
+    assert_eq!(signals[0].predicate, "show");
+    assert_eq!(signals[0].indirect_object.as_deref(), Some("me"));
+}
+
+/// M8.1: an unattached token (`lemma == 0`, never interned) falls back to
+/// the lowercase surface — the `lemma_of` contract the shared helper must
+/// preserve. Contrast with triple `scored_lemma`, which yields `""` here.
+#[test]
+fn unattached_lemma_falls_back_to_lowercase_surface() {
+    let doc = doc_for(&["Show", "me"]);
+    let signals = extract_routing_signals(&doc);
+    assert_eq!(signals.len(), 1);
+    assert_eq!(signals[0].predicate, "show");
 }

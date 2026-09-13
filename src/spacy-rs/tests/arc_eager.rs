@@ -580,3 +580,64 @@ fn refine_early_out_no_candidate_no_write() {
         );
     }
 }
+
+// ── M3.1 order-sensitivity: bare-ed → imperative is load-bearing ─────────
+// "Morning mailed the forms to clients.": bare-ed crowns "mailed" VERB, whose
+// presence trips the imperative rule's VERB/AUX early-out. Run imperative
+// first and its PP branch ("... to clients") crowns "Morning" instead — while
+// bare-ed then early-outs on the VERB-first shape. The composition is
+// non-commutative; the table runner (M3.2) must preserve this exact order.
+#[test]
+fn refine_rule_order_bare_ed_before_imperative_is_load_bearing() {
+    let doc = tokenize("Morning mailed the forms to clients.");
+    let texts: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
+    let flags: Vec<LexemeFlags> =
+        (0..doc.len()).map(|i| doc.token(i).lexeme.flags).collect();
+    let base: Vec<Upos> = flags.iter().map(|&f| infer_pos(f)).collect();
+    assert!(
+        base.iter().all(|&p| p != Upos::Verb && p != Upos::Aux),
+        "precondition: no verbal tag before refinement, got {base:?}"
+    );
+
+    let mut current = base.clone();
+    refine_pos_bare_ed_transitive(&texts, &mut current, &flags, &ortho());
+    refine_pos_imperative_non_det_object(&texts, &mut current, &flags, &ortho());
+
+    let mut swapped = base.clone();
+    refine_pos_imperative_non_det_object(&texts, &mut swapped, &flags, &ortho());
+    refine_pos_bare_ed_transitive(&texts, &mut swapped, &flags, &ortho());
+
+    assert_ne!(current, swapped, "refine order must be load-bearing");
+    assert_eq!(current[0], Upos::Noun, "current order: imperative suppressed");
+    assert_eq!(current[1], Upos::Verb, "current order: bare-ed crowns 'mailed'");
+    assert_eq!(
+        swapped[0], Upos::Verb,
+        "swapped order: imperative crowns 'Morning' via the PP branch"
+    );
+    assert_eq!(
+        swapped[1], Upos::Noun,
+        "swapped order: bare-ed early-outs on the VERB-first shape"
+    );
+    assert_eq!(
+        &current[2..],
+        &[Upos::Det, Upos::Noun, Upos::Adp, Upos::Noun, Upos::Punct]
+    );
+    assert_eq!(
+        &swapped[2..],
+        &[Upos::Det, Upos::Noun, Upos::Adp, Upos::Noun, Upos::Punct]
+    );
+}
+
+// ── M3.1 golden pin: the order-sensitive sentence end to end ─────────────
+#[test]
+fn full_pipeline_pins_order_sensitive_sentence() {
+    // End-to-end pin of the M3.1 sentence through the real pipeline order:
+    // "mailed" governs as the predicate, "Morning" stays nominal.
+    let doc = tokenize("Morning mailed the forms to clients.");
+    let (result, _pc) = annotator().annotate_with_confidence(&doc).expect("parse");
+    let pos: Vec<&str> = result.records().records().iter().map(|r| r.pos.as_str()).collect();
+    assert_eq!(
+        pos,
+        vec!["noun", "verb", "det", "noun", "adp", "noun", "punct"]
+    );
+}

@@ -110,3 +110,98 @@ fn dep_label_set_fromstr_display_roundtrip() {
     assert_eq!(again.to_sorted_vec(), set.to_sorted_vec());
     assert!("nsubj,bogus".parse::<DepLabelSet>().is_err());
 }
+
+// ── M4.1 characterization: case/normalization edges the macro must preserve ──
+
+/// `EntIoB::from_str` is an EXACT match (no case folding, unlike Upos and
+/// NerType): lowercase singletons are rejected, not reinterpreted.
+#[test]
+fn ent_iob_exact_match_rejects_lowercase() {
+    for good in ["", "I", "O", "B"] {
+        assert!(good.parse::<EntIoB>().is_ok(), "{good:?} must parse");
+    }
+    for bad in ["i", "o", "b", "b_"] {
+        assert!(
+            matches!(
+                bad.parse::<EntIoB>(),
+                Err(SpacyError::InvalidEntIobText(_))
+            ),
+            "{bad:?} must be rejected"
+        );
+    }
+    assert_eq!("".parse::<EntIoB>().unwrap(), EntIoB::Missing);
+    assert_eq!("I".parse::<EntIoB>().unwrap(), EntIoB::Inside);
+    assert_eq!("O".parse::<EntIoB>().unwrap(), EntIoB::Outside);
+}
+
+/// Every NerType variant round-trips through its UPPERCASE text; unknown
+/// text is rejected (never defaulted).
+#[test]
+fn ner_type_full_roundtrip_and_unknown() {
+    for t in [
+        NerType::Person,
+        NerType::Norp,
+        NerType::Facility,
+        NerType::Org,
+        NerType::Gpe,
+        NerType::Loc,
+        NerType::Product,
+        NerType::Event,
+        NerType::WorkOfArt,
+        NerType::Language,
+        NerType::Law,
+        NerType::Date,
+        NerType::Time,
+        NerType::Percent,
+        NerType::Money,
+        NerType::Quantity,
+        NerType::Ordinal,
+        NerType::Cardinal,
+    ] {
+        let text = t.to_string();
+        assert_eq!(text, text.to_ascii_uppercase(), "NerType renders UPPER");
+        assert_eq!(text.parse::<NerType>().unwrap(), t, "roundtrip {text}");
+        assert_eq!(
+            text.to_ascii_lowercase().parse::<NerType>().unwrap(),
+            t,
+            "lowercase input folds up"
+        );
+    }
+    assert!(matches!(
+        "BOGUS".parse::<NerType>(),
+        Err(SpacyError::UnknownNerType(_))
+    ));
+}
+
+/// DepRel folds ASCII case like Upos; unknown labels are rejected.
+#[test]
+fn dep_rel_case_insensitive_and_unknown() {
+    assert_eq!("NSUBJ".parse::<DepRel>().unwrap(), DepRel::Nsubj);
+    assert_eq!("Nsubj".parse::<DepRel>().unwrap(), DepRel::Nsubj);
+    assert_eq!("ROOT".parse::<DepRel>().unwrap(), DepRel::Root);
+    assert!(matches!(
+        "bogus_relation".parse::<DepRel>(),
+        Err(SpacyError::UnknownDepLabel(_))
+    ));
+}
+
+/// The Upos unknown-label error carries the NORMALIZED (lowercased) text,
+/// not the raw input — the macro must reproduce this payload exactly.
+#[test]
+fn upos_error_carries_normalized_text() {
+    assert!(matches!(
+        "NOPE".parse::<Upos>(),
+        Err(SpacyError::UnknownPos(payload)) if payload == "nope"
+    ));
+}
+
+/// An empty/blank label list parses to the empty set (empties are filtered,
+/// never rejected).
+#[test]
+fn dep_label_set_empty_string_parses_empty() {
+    let set: DepLabelSet = "".parse().expect("empty parses");
+    assert!(set.is_empty());
+    assert_eq!(set.to_string(), "");
+    let set: DepLabelSet = "  , ,".parse().expect("blank parses");
+    assert!(set.is_empty());
+}

@@ -18,7 +18,6 @@ use std::sync::{Arc, Mutex};
 
 use fluent_wvr::prelude::*;
 use internment::ArcIntern;
-use serde_json::json;
 
 use fluent_concept::ConceptStore;
 use crate::pipeline::PipelineState;
@@ -159,7 +158,11 @@ impl WorkUnit for YagoResolveStage {
 }
 
 impl Describable for YagoResolveStage {
-    fn describe(&self) -> serde_json::Value { json!({"name":"yago_resolve","depends":["annotated_doc"],"provides":["yago_resolved"]}) }
+    fn describe(&self) -> serde_json::Value {
+        // No `purity` key today (audit-only spike shell): `None` preserves
+        // the document byte-for-byte.
+        describe_work_unit(self.name(), self.depends(), self.provides(), None)
+    }
 }
 impl FieldAccess for YagoResolveStage {
     fn set_field(&mut self, _n: &str, _v: &str) -> Result<(), FieldError> { Err(FieldError::NotFound(_n.into())) }
@@ -167,3 +170,7 @@ impl FieldAccess for YagoResolveStage {
     fn field_names(&self) -> &'static [&'static str] { &[] }
 }
 impl_component!(YagoResolveStage);
+
+#[cfg(test)]
+#[path = "../tests/yago_resolve.rs"]
+mod tests;

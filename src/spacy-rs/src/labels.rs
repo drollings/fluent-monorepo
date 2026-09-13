@@ -20,39 +20,50 @@ use std::str::FromStr;
 
 use crate::error::SpacyError;
 
-/// Universal part-of-speech tag. Discriminants are the `symbol_t` ids from
-/// `spacy/symbols.pxd` (which `univ_pos_t` aliases).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
-#[serde(rename_all = "lowercase")]
-pub enum Upos {
-    /// Unset / unknown tag; `pos_` renders as the empty string.
-    #[serde(rename = "no_tag")]
-    NoTag = 0,
-    Adj = 84,
-    Adp = 85,
-    Adv = 86,
-    Aux = 87,
-    /// Deprecated alias of `CCONJ` (Universal Dependencies 2.0); kept for id
-    /// parity but never produced by the validator.
-    Conj = 88,
-    Cconj = 89,
-    Det = 90,
-    Intj = 91,
-    Noun = 92,
-    Num = 93,
-    Part = 94,
-    Pron = 95,
-    Propn = 96,
-    Punct = 97,
-    Sconj = 98,
-    Sym = 99,
-    Verb = 100,
-    X = 101,
-    /// Internal end-of-line tag; not part of the 17-tag contract.
-    Eol = 102,
-    /// Internal whitespace-token tag; not part of the 17-tag contract.
-    Space = 103,
+fluent_types::label_enum! {
+    /// Universal part-of-speech tag. Discriminants are the `symbol_t` ids from
+    /// `spacy/symbols.pxd` (which `univ_pos_t` aliases).
+    ///
+    /// Declared via [`fluent_types::label_enum`]: the table below is the single
+    /// source of truth for the discriminants, the wire text (`as_str` /
+    /// `Display`), and the case-folding parser (`FromStr`). Numeric (`id` /
+    /// `from_id`), set (`UPOS`), and blob-key (`lemma_key`, which delegates to
+    /// `as_str`) helpers stay hand-written beside it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[repr(u8)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Upos {
+        /// Unset / unknown tag; `pos_` renders as the empty string.
+        #[serde(rename = "no_tag")]
+        NoTag = 0 => "",
+        Adj = 84 => "adj",
+        Adp = 85 => "adp",
+        Adv = 86 => "adv",
+        Aux = 87 => "aux",
+        /// Deprecated alias of `CCONJ` (Universal Dependencies 2.0); kept for id
+        /// parity but never produced by the validator.
+        Conj = 88 => "conj",
+        Cconj = 89 => "cconj",
+        Det = 90 => "det",
+        Intj = 91 => "intj",
+        Noun = 92 => "noun",
+        Num = 93 => "num",
+        Part = 94 => "part",
+        Pron = 95 => "pron",
+        Propn = 96 => "propn",
+        Punct = 97 => "punct",
+        Sconj = 98 => "sconj",
+        Sym = 99 => "sym",
+        Verb = 100 => "verb",
+        X = 101 => "x",
+        /// Internal end-of-line tag; not part of the 17-tag contract.
+        Eol = 102 => "eol",
+        /// Internal whitespace-token tag; not part of the 17-tag contract.
+        Space = 103 => "space",
+    }
+    err_ty SpacyError,
+    err_ctor SpacyError::UnknownPos,
+    normalize lowercase,
 }
 
 impl Upos {
@@ -113,110 +124,34 @@ impl Upos {
 
     /// The lemma-blob table key for this tag: the same lowercase label
     /// [`Display`](fmt::Display) renders, as a `&'static str` with no
-    /// allocation. Single source of truth — the lemmatizer matches on the
-    /// enum and keys the blob through this, never through `to_string()`
-    /// plus string literals (typo-impossible, zero-cost on the hot path).
+    /// allocation. Delegates to [`as_str`](Self::as_str) — the single source
+    /// of truth — so the lemmatizer can never disagree with the renderer.
     #[must_use]
     pub const fn lemma_key(self) -> &'static str {
-        match self {
-            Self::NoTag => "",
-            Self::Adj => "adj",
-            Self::Adp => "adp",
-            Self::Adv => "adv",
-            Self::Aux => "aux",
-            Self::Conj => "conj",
-            Self::Cconj => "cconj",
-            Self::Det => "det",
-            Self::Intj => "intj",
-            Self::Noun => "noun",
-            Self::Num => "num",
-            Self::Part => "part",
-            Self::Pron => "pron",
-            Self::Propn => "propn",
-            Self::Punct => "punct",
-            Self::Sconj => "sconj",
-            Self::Sym => "sym",
-            Self::Verb => "verb",
-            Self::X => "x",
-            Self::Eol => "eol",
-            Self::Space => "space",
-        }
+        self.as_str()
     }
 }
 
-impl fmt::Display for Upos {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::NoTag => "",
-            Self::Adj => "adj",
-            Self::Adp => "adp",
-            Self::Adv => "adv",
-            Self::Aux => "aux",
-            Self::Conj => "conj",
-            Self::Cconj => "cconj",
-            Self::Det => "det",
-            Self::Intj => "intj",
-            Self::Noun => "noun",
-            Self::Num => "num",
-            Self::Part => "part",
-            Self::Pron => "pron",
-            Self::Propn => "propn",
-            Self::Punct => "punct",
-            Self::Sconj => "sconj",
-            Self::Sym => "sym",
-            Self::Verb => "verb",
-            Self::X => "x",
-            Self::Eol => "eol",
-            Self::Space => "space",
-        };
-        f.write_str(s)
+fluent_types::label_enum! {
+    /// Named-entity IOB marker, matching spaCy's `IOB_STRINGS = ("", "I", "O", "B")`
+    /// (`spacy/attrs.pyx:4`). The transition parser works in BILUO internally, but
+    /// the stored `ent_iob` is classic IOB.
+    ///
+    /// Declared via [`fluent_types::label_enum`] with `normalize exact`: parsing
+    /// is a verbatim match (no case folding — `"i"` is rejected, unlike the
+    /// case-folding Upos/NerType/DepRel vocabularies).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[repr(u8)]
+    pub enum EntIoB {
+        /// No entity annotation.
+        Missing = 0 => "",
+        Inside = 1 => "I",
+        Outside = 2 => "O",
+        Begin = 3 => "B",
     }
-}
-
-impl FromStr for Upos {
-    type Err = SpacyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let lower = s.to_ascii_lowercase();
-        let tag = match lower.as_str() {
-            "" => Self::NoTag,
-            "adj" => Self::Adj,
-            "adp" => Self::Adp,
-            "adv" => Self::Adv,
-            "aux" => Self::Aux,
-            "conj" => Self::Conj,
-            "cconj" => Self::Cconj,
-            "det" => Self::Det,
-            "intj" => Self::Intj,
-            "noun" => Self::Noun,
-            "num" => Self::Num,
-            "part" => Self::Part,
-            "pron" => Self::Pron,
-            "propn" => Self::Propn,
-            "punct" => Self::Punct,
-            "sconj" => Self::Sconj,
-            "sym" => Self::Sym,
-            "verb" => Self::Verb,
-            "x" => Self::X,
-            "eol" => Self::Eol,
-            "space" => Self::Space,
-            other => return Err(SpacyError::UnknownPos(other.to_string())),
-        };
-        Ok(tag)
-    }
-}
-
-/// Named-entity IOB marker, matching spaCy's `IOB_STRINGS = ("", "I", "O", "B")`
-/// (`spacy/attrs.pyx:4`). The transition parser works in BILUO internally, but
-/// the stored `ent_iob` is classic IOB.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum EntIoB {
-    /// No entity annotation.
-    Missing = 0,
-    Inside = 1,
-    Outside = 2,
-    Begin = 3,
+    err_ty SpacyError,
+    err_ctor SpacyError::InvalidEntIobText,
+    normalize exact,
 }
 
 impl EntIoB {
@@ -239,56 +174,39 @@ impl EntIoB {
     }
 }
 
-impl fmt::Display for EntIoB {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Missing => "",
-            Self::Inside => "I",
-            Self::Outside => "O",
-            Self::Begin => "B",
-        };
-        f.write_str(s)
+fluent_types::label_enum! {
+    /// Named-entity type. Discriminants are the `symbol_t` ids for `PERSON` …
+    /// `CARDINAL` (`spacy/symbols.pxd`).
+    ///
+    /// Declared via [`fluent_types::label_enum`] with `normalize uppercase`:
+    /// lowercase input folds up before matching. The `symbol_t` id helper
+    /// stays hand-written beside it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[repr(u16)]
+    #[serde(rename_all = "UPPERCASE")]
+    pub enum NerType {
+        Person = 380 => "PERSON",
+        Norp = 381 => "NORP",
+        Facility = 382 => "FACILITY",
+        Org = 383 => "ORG",
+        Gpe = 384 => "GPE",
+        Loc = 385 => "LOC",
+        Product = 386 => "PRODUCT",
+        Event = 387 => "EVENT",
+        WorkOfArt = 388 => "WORK_OF_ART",
+        Language = 389 => "LANGUAGE",
+        Law = 390 => "LAW",
+        Date = 391 => "DATE",
+        Time = 392 => "TIME",
+        Percent = 393 => "PERCENT",
+        Money = 394 => "MONEY",
+        Quantity = 395 => "QUANTITY",
+        Ordinal = 396 => "ORDINAL",
+        Cardinal = 397 => "CARDINAL",
     }
-}
-
-impl FromStr for EntIoB {
-    type Err = SpacyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "" => Ok(Self::Missing),
-            "I" => Ok(Self::Inside),
-            "O" => Ok(Self::Outside),
-            "B" => Ok(Self::Begin),
-            other => Err(SpacyError::InvalidEntIobText(other.to_string())),
-        }
-    }
-}
-
-/// Named-entity type. Discriminants are the `symbol_t` ids for `PERSON` …
-/// `CARDINAL` (`spacy/symbols.pxd`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u16)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum NerType {
-    Person = 380,
-    Norp = 381,
-    Facility = 382,
-    Org = 383,
-    Gpe = 384,
-    Loc = 385,
-    Product = 386,
-    Event = 387,
-    WorkOfArt = 388,
-    Language = 389,
-    Law = 390,
-    Date = 391,
-    Time = 392,
-    Percent = 393,
-    Money = 394,
-    Quantity = 395,
-    Ordinal = 396,
-    Cardinal = 397,
+    err_ty SpacyError,
+    err_ctor SpacyError::UnknownNerType,
+    normalize uppercase,
 }
 
 impl NerType {
@@ -299,141 +217,93 @@ impl NerType {
     }
 }
 
-impl fmt::Display for NerType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Person => "PERSON",
-            Self::Norp => "NORP",
-            Self::Facility => "FACILITY",
-            Self::Org => "ORG",
-            Self::Gpe => "GPE",
-            Self::Loc => "LOC",
-            Self::Product => "PRODUCT",
-            Self::Event => "EVENT",
-            Self::WorkOfArt => "WORK_OF_ART",
-            Self::Language => "LANGUAGE",
-            Self::Law => "LAW",
-            Self::Date => "DATE",
-            Self::Time => "TIME",
-            Self::Percent => "PERCENT",
-            Self::Money => "MONEY",
-            Self::Quantity => "QUANTITY",
-            Self::Ordinal => "ORDINAL",
-            Self::Cardinal => "CARDINAL",
-        };
-        f.write_str(s)
+fluent_types::label_enum! {
+    /// Canonical dependency relation. Discriminants are the `symbol_t` ids for
+    /// `acomp` … `acl` (`spacy/symbols.pxd`), plus the modern Universal-Dependency
+    /// labels that a current model actually emits (`compound`, `case`, `flat`, …)
+    /// which have **no** spaCy symbol id — those get ids in the reserved
+    /// 2000+ range (the stored `dep` field is always the content hash, so the
+    /// numeric id is only for `to_array`/`from_array` interop on the symbol set).
+    /// The validator accepts open labels via [`crate::labels::DepLabelSet`].
+    ///
+    /// Declared via [`fluent_types::label_enum`] with `normalize lowercase`.
+    /// The `symbol_t` id helper stays hand-written beside it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[repr(u16)]
+    #[serde(rename_all = "lowercase")]
+    pub enum DepRel {
+        Acomp = 398 => "acomp",
+        Advcl = 399 => "advcl",
+        Advmod = 400 => "advmod",
+        Agent = 401 => "agent",
+        Amod = 402 => "amod",
+        Appos = 403 => "appos",
+        Attr = 404 => "attr",
+        Aux = 405 => "aux",
+        Auxpass = 406 => "auxpass",
+        Cc = 407 => "cc",
+        Ccomp = 408 => "ccomp",
+        Complm = 409 => "complm",
+        Conj = 410 => "conj",
+        Cop = 411 => "cop",
+        Csubj = 412 => "csubj",
+        Csubjpass = 413 => "csubjpass",
+        Dep = 414 => "dep",
+        Det = 415 => "det",
+        Dobj = 416 => "dobj",
+        Expl = 417 => "expl",
+        Hmod = 418 => "hmod",
+        Hyph = 419 => "hyph",
+        Infmod = 420 => "infmod",
+        Intj = 421 => "intj",
+        Iobj = 422 => "iobj",
+        Mark = 423 => "mark",
+        Meta = 424 => "meta",
+        Neg = 425 => "neg",
+        Nmod = 426 => "nmod",
+        Nn = 427 => "nn",
+        Npadvmod = 428 => "npadvmod",
+        Nsubj = 429 => "nsubj",
+        Nsubjpass = 430 => "nsubjpass",
+        Num = 431 => "num",
+        Number = 432 => "number",
+        Oprd = 433 => "oprd",
+        Obj = 434 => "obj",
+        Obl = 435 => "obl",
+        Parataxis = 436 => "parataxis",
+        Partmod = 437 => "partmod",
+        Pcomp = 438 => "pcomp",
+        Pobj = 439 => "pobj",
+        Poss = 440 => "poss",
+        Possessive = 441 => "possessive",
+        Preconj = 442 => "preconj",
+        Prep = 443 => "prep",
+        Prt = 444 => "prt",
+        Punct = 445 => "punct",
+        Quantmod = 446 => "quantmod",
+        Relcl = 447 => "relcl",
+        Rcmod = 448 => "rcmod",
+        Root = 449 => "root",
+        Xcomp = 450 => "xcomp",
+        Acl = 451 => "acl",
+        // Modern UD labels (no spaCy symbol id; reserved 2000+ range).
+        Compound = 2000 => "compound",
+        Case = 2001 => "case",
+        Fixed = 2002 => "fixed",
+        Flat = 2003 => "flat",
+        Discourse = 2004 => "discourse",
+        Dislocated = 2005 => "dislocated",
+        Goeswith = 2006 => "goeswith",
+        List = 2007 => "list",
+        Mixed = 2008 => "mixed",
+        Nummod = 2009 => "nummod",
+        Orphan = 2010 => "orphan",
+        Reparandum = 2011 => "reparandum",
+        Vocative = 2012 => "vocative",
     }
-}
-
-impl FromStr for NerType {
-    type Err = SpacyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let upper = s.to_ascii_uppercase();
-        let t = match upper.as_str() {
-            "PERSON" => Self::Person,
-            "NORP" => Self::Norp,
-            "FACILITY" => Self::Facility,
-            "ORG" => Self::Org,
-            "GPE" => Self::Gpe,
-            "LOC" => Self::Loc,
-            "PRODUCT" => Self::Product,
-            "EVENT" => Self::Event,
-            "WORK_OF_ART" => Self::WorkOfArt,
-            "LANGUAGE" => Self::Language,
-            "LAW" => Self::Law,
-            "DATE" => Self::Date,
-            "TIME" => Self::Time,
-            "PERCENT" => Self::Percent,
-            "MONEY" => Self::Money,
-            "QUANTITY" => Self::Quantity,
-            "ORDINAL" => Self::Ordinal,
-            "CARDINAL" => Self::Cardinal,
-            other => return Err(SpacyError::UnknownNerType(other.to_string())),
-        };
-        Ok(t)
-    }
-}
-
-/// Canonical dependency relation. Discriminants are the `symbol_t` ids for
-/// `acomp` … `acl` (`spacy/symbols.pxd`), plus the modern Universal-Dependency
-/// labels that a current model actually emits (`compound`, `case`, `flat`, …)
-/// which have **no** spaCy symbol id — those get ids in the reserved
-/// 2000+ range (the stored `dep` field is always the content hash, so the
-/// numeric id is only for `to_array`/`from_array` interop on the symbol set).
-/// The validator accepts open labels via [`crate::labels::DepLabelSet`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u16)]
-#[serde(rename_all = "lowercase")]
-pub enum DepRel {
-    Acomp = 398,
-    Advcl = 399,
-    Advmod = 400,
-    Agent = 401,
-    Amod = 402,
-    Appos = 403,
-    Attr = 404,
-    Aux = 405,
-    Auxpass = 406,
-    Cc = 407,
-    Ccomp = 408,
-    Complm = 409,
-    Conj = 410,
-    Cop = 411,
-    Csubj = 412,
-    Csubjpass = 413,
-    Dep = 414,
-    Det = 415,
-    Dobj = 416,
-    Expl = 417,
-    Hmod = 418,
-    Hyph = 419,
-    Infmod = 420,
-    Intj = 421,
-    Iobj = 422,
-    Mark = 423,
-    Meta = 424,
-    Neg = 425,
-    Nmod = 426,
-    Nn = 427,
-    Npadvmod = 428,
-    Nsubj = 429,
-    Nsubjpass = 430,
-    Num = 431,
-    Number = 432,
-    Oprd = 433,
-    Obj = 434,
-    Obl = 435,
-    Parataxis = 436,
-    Partmod = 437,
-    Pcomp = 438,
-    Pobj = 439,
-    Poss = 440,
-    Possessive = 441,
-    Preconj = 442,
-    Prep = 443,
-    Prt = 444,
-    Punct = 445,
-    Quantmod = 446,
-    Relcl = 447,
-    Rcmod = 448,
-    Root = 449,
-    Xcomp = 450,
-    Acl = 451,
-    // ── Modern UD labels (no spaCy symbol id; reserved 2000+ range) ──
-    Compound = 2000,
-    Case = 2001,
-    Fixed = 2002,
-    Flat = 2003,
-    Discourse = 2004,
-    Dislocated = 2005,
-    Goeswith = 2006,
-    List = 2007,
-    Mixed = 2008,
-    Nummod = 2009,
-    Orphan = 2010,
-    Reparandum = 2011,
-    Vocative = 2012,
+    err_ty SpacyError,
+    err_ctor SpacyError::UnknownDepLabel,
+    normalize lowercase,
 }
 
 impl DepRel {
@@ -441,160 +311,6 @@ impl DepRel {
     #[must_use]
     pub const fn id(self) -> u64 {
         self as u64
-    }
-}
-
-impl fmt::Display for DepRel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Acomp => "acomp",
-            Self::Advcl => "advcl",
-            Self::Advmod => "advmod",
-            Self::Agent => "agent",
-            Self::Amod => "amod",
-            Self::Appos => "appos",
-            Self::Attr => "attr",
-            Self::Aux => "aux",
-            Self::Auxpass => "auxpass",
-            Self::Cc => "cc",
-            Self::Ccomp => "ccomp",
-            Self::Complm => "complm",
-            Self::Conj => "conj",
-            Self::Cop => "cop",
-            Self::Csubj => "csubj",
-            Self::Csubjpass => "csubjpass",
-            Self::Dep => "dep",
-            Self::Det => "det",
-            Self::Dobj => "dobj",
-            Self::Expl => "expl",
-            Self::Hmod => "hmod",
-            Self::Hyph => "hyph",
-            Self::Infmod => "infmod",
-            Self::Intj => "intj",
-            Self::Iobj => "iobj",
-            Self::Mark => "mark",
-            Self::Meta => "meta",
-            Self::Neg => "neg",
-            Self::Nmod => "nmod",
-            Self::Nn => "nn",
-            Self::Npadvmod => "npadvmod",
-            Self::Nsubj => "nsubj",
-            Self::Nsubjpass => "nsubjpass",
-            Self::Num => "num",
-            Self::Number => "number",
-            Self::Oprd => "oprd",
-            Self::Obj => "obj",
-            Self::Obl => "obl",
-            Self::Parataxis => "parataxis",
-            Self::Partmod => "partmod",
-            Self::Pcomp => "pcomp",
-            Self::Pobj => "pobj",
-            Self::Poss => "poss",
-            Self::Possessive => "possessive",
-            Self::Preconj => "preconj",
-            Self::Prep => "prep",
-            Self::Prt => "prt",
-            Self::Punct => "punct",
-            Self::Quantmod => "quantmod",
-            Self::Relcl => "relcl",
-            Self::Rcmod => "rcmod",
-            Self::Root => "root",
-            Self::Xcomp => "xcomp",
-            Self::Acl => "acl",
-            Self::Compound => "compound",
-            Self::Case => "case",
-            Self::Fixed => "fixed",
-            Self::Flat => "flat",
-            Self::Discourse => "discourse",
-            Self::Dislocated => "dislocated",
-            Self::Goeswith => "goeswith",
-            Self::List => "list",
-            Self::Mixed => "mixed",
-            Self::Nummod => "nummod",
-            Self::Orphan => "orphan",
-            Self::Reparandum => "reparandum",
-            Self::Vocative => "vocative",
-        };
-        f.write_str(s)
-    }
-}
-
-impl FromStr for DepRel {
-    type Err = SpacyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let lower = s.to_ascii_lowercase();
-        let rel = match lower.as_str() {
-            "acomp" => Self::Acomp,
-            "advcl" => Self::Advcl,
-            "advmod" => Self::Advmod,
-            "agent" => Self::Agent,
-            "amod" => Self::Amod,
-            "appos" => Self::Appos,
-            "attr" => Self::Attr,
-            "aux" => Self::Aux,
-            "auxpass" => Self::Auxpass,
-            "cc" => Self::Cc,
-            "ccomp" => Self::Ccomp,
-            "complm" => Self::Complm,
-            "conj" => Self::Conj,
-            "cop" => Self::Cop,
-            "csubj" => Self::Csubj,
-            "csubjpass" => Self::Csubjpass,
-            "dep" => Self::Dep,
-            "det" => Self::Det,
-            "dobj" => Self::Dobj,
-            "expl" => Self::Expl,
-            "hmod" => Self::Hmod,
-            "hyph" => Self::Hyph,
-            "infmod" => Self::Infmod,
-            "intj" => Self::Intj,
-            "iobj" => Self::Iobj,
-            "mark" => Self::Mark,
-            "meta" => Self::Meta,
-            "neg" => Self::Neg,
-            "nmod" => Self::Nmod,
-            "nn" => Self::Nn,
-            "npadvmod" => Self::Npadvmod,
-            "nsubj" => Self::Nsubj,
-            "nsubjpass" => Self::Nsubjpass,
-            "num" => Self::Num,
-            "number" => Self::Number,
-            "oprd" => Self::Oprd,
-            "obj" => Self::Obj,
-            "obl" => Self::Obl,
-            "parataxis" => Self::Parataxis,
-            "partmod" => Self::Partmod,
-            "pcomp" => Self::Pcomp,
-            "pobj" => Self::Pobj,
-            "poss" => Self::Poss,
-            "possessive" => Self::Possessive,
-            "preconj" => Self::Preconj,
-            "prep" => Self::Prep,
-            "prt" => Self::Prt,
-            "punct" => Self::Punct,
-            "quantmod" => Self::Quantmod,
-            "relcl" => Self::Relcl,
-            "rcmod" => Self::Rcmod,
-            "root" => Self::Root,
-            "xcomp" => Self::Xcomp,
-            "acl" => Self::Acl,
-            "compound" => Self::Compound,
-            "case" => Self::Case,
-            "fixed" => Self::Fixed,
-            "flat" => Self::Flat,
-            "discourse" => Self::Discourse,
-            "dislocated" => Self::Dislocated,
-            "goeswith" => Self::Goeswith,
-            "list" => Self::List,
-            "mixed" => Self::Mixed,
-            "nummod" => Self::Nummod,
-            "orphan" => Self::Orphan,
-            "reparandum" => Self::Reparandum,
-            "vocative" => Self::Vocative,
-            other => return Err(SpacyError::UnknownDepLabel(other.to_string())),
-        };
-        Ok(rel)
     }
 }
 

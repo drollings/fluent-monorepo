@@ -278,3 +278,21 @@ fn property_random_parses_extract_frames_and_keep_one_root() {
         assert!(doc.len() == 0 || crate::validate::AnnotationValidator::new().validate(&doc, result.records()).is_ok());
     }
 }
+
+/// M1.1 characterization: the `MISSING_DEP` sentinel (`dep == 0`, never
+/// attached) matches neither ROOT nor any role slot — the frame keeps the
+/// sentence-start fallback predicate with empty roles, positive polarity,
+/// and declarative modality.
+#[test]
+fn unattached_doc_frame_has_fallback_predicate_and_no_roles() {
+    let store = Arc::new(InMemoryConceptStore::new());
+    let doc = doc_for(&["Show", "me"]);
+    let ex = extractor(Arc::clone(&store));
+    let analysis = ex.extract(&doc, None);
+    assert_eq!(analysis.frames.len(), 1, "fallback sentence [0, len)");
+    let frame = &analysis.frames[0];
+    assert_eq!(frame.sentence_span, (0, 2));
+    assert!(frame.roles.is_empty(), "dep 0 fills no frame slot");
+    assert_eq!(frame.polarity, Polarity::Positive, "no neg dep present");
+    assert_eq!(frame.modality, Modality::Declarative, "no ? or modal aux");
+}

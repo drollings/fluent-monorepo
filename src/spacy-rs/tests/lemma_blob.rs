@@ -64,3 +64,62 @@ fn rejects_bad_magic_and_version() {
     ];
     assert!(LemmaBlob::from_bytes(data).is_err());
 }
+
+/// M2.1 characterization: a short header (fewer than 4 bytes) fails as
+/// truncated magic, never panics.
+#[test]
+fn rejects_short_magic() {
+    let data: &'static [u8] = &[0x32, 0x4D];
+    assert!(LemmaBlob::from_bytes(data).is_err());
+    let empty: &'static [u8] = &[];
+    assert!(LemmaBlob::from_bytes(empty).is_err());
+}
+
+/// M2.1 characterization: truncation is monotone and trailing-tolerant —
+/// prefixes that still cover every consumed section parse (the lemma loader,
+/// unlike the ortho loader, ignores trailing bytes), while any shorter
+/// prefix fails loudly, never panics. The threshold below is bisected at
+/// test time so the test pins the *shape* (monotone + full parses), not a
+/// hard-coded layout offset; the migration must preserve trailing tolerance.
+#[test]
+fn truncation_is_monotone_and_trailing_tolerant() {
+    let full = crate::lang::en::LEMMAS_BLOB;
+    assert!(LemmaBlob::from_bytes(full).is_ok(), "full blob parses");
+    // Bisect the smallest prefix that still parses. Monotone: a longer
+    // input can only turn bounded `get` reads from `None` into `Some`.
+    let (mut lo, mut hi) = (0usize, full.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if LemmaBlob::from_bytes(&full[..mid]).is_ok() {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    let threshold = lo;
+    assert!(threshold > 0 && threshold <= full.len());
+    // Spot-check below the threshold: every cut fails loudly, none panics.
+    let mut lens: Vec<usize> = (0..64).collect();
+    lens.extend((0..threshold).step_by(65_536));
+    lens.push(threshold.saturating_sub(1));
+    for len in lens {
+        if len < threshold {
+            assert!(
+                LemmaBlob::from_bytes(&full[..len]).is_err(),
+                "prefix len {len} must fail"
+            );
+        }
+    }
+}
+
+/// M2.1 characterization: a section offset pointing past the end fails as
+/// out-of-range, never panics (the `slice` bounds check, not the parser).
+#[test]
+fn rejects_out_of_range_section() {
+    // SLM2 header: `section_off` is the u32 at bytes 20..24 (real value 44).
+    // Maxing its low byte pushes the directory past the mapped sections.
+    let mut bad = crate::lang::en::LEMMAS_BLOB.to_vec();
+    bad[20] = 0xFF;
+    let leaked: &'static [u8] = Box::leak(bad.into_boxed_slice());
+    assert!(LemmaBlob::from_bytes(leaked).is_err());
+}

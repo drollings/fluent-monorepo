@@ -22,8 +22,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::doc::{Doc, SentStart, TokenRecord};
-use crate::hash::hash_utf8;
+use crate::doc::{dep_in, lemma_of, sentence_root, sentence_spans, Doc};
 use fluent_types::InterlinguaId;
 
 /// Dep labels that name the sentence's subject argument.
@@ -40,8 +39,6 @@ const QUALIFIER_DEPS: &[&str] = &["aux", "auxpass", "neg", "advmod"];
 const PREP_DEPS: &[&str] = &["prep"];
 /// The objects of a `prep` that complete an argument frame.
 const POBJ_DEPS: &[&str] = &["pobj", "pcomp"];
-/// The dependency label of a sentence root.
-const ROOT_DEP: &str = "root";
 
 /// The interlingua frame of one sentence (ROADMAP §11.6): the content-
 /// addressed ids of the routing-relevant tokens. This is what lets Coral
@@ -125,35 +122,18 @@ pub fn extract_routing_signals(doc: &Doc) -> Vec<RoutingSignal> {
     if doc.is_empty() {
         return Vec::new();
     }
-    let len = doc.len();
-    let mut starts: Vec<usize> = (0..len)
-        .filter(|&i| doc.token(i).sent_start == SentStart::Start)
-        .collect();
-    if starts.is_empty() || starts[0] != 0 {
-        starts.insert(0, 0);
-    }
-    starts.push(len);
-    starts
-        .windows(2)
-        .filter(|w| w[0] < w[1])
-        .map(|w| signal_for_sentence(doc, w[0], w[1]))
+    // Shared sentence walk (M8): partition + per-sentence signal.
+    sentence_spans(doc)
+        .into_iter()
+        .map(|(start, end)| signal_for_sentence(doc, start, end))
         .collect()
 }
 
 /// Build the signal for the token span `[start, end)`.
 fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
-    let root = (start..end)
-        .find(|&i| dep_is(doc.token(i), ROOT_DEP))
-        .unwrap_or(start);
+    let root = sentence_root(doc, start, end);
 
     let strings = doc.vocab().strings();
-    let lemma_of = |i: usize| -> String {
-        strings
-            .get(doc.token(i).lemma)
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| doc.token_text(i).to_ascii_lowercase())
-    };
     let dep_of = |i: usize| -> String {
         strings
             .get(doc.token(i).dep)
@@ -179,30 +159,30 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
         }
         let token = doc.token(i);
         if dep_in(token, SUBJECT_DEPS) {
-            subject = Some(lemma_of(i));
+            subject = Some(lemma_of(doc, i));
             subject_idx = Some(i);
         } else if dep_in(token, DIRECT_OBJECT_DEPS) {
-            direct_object = Some(lemma_of(i));
+            direct_object = Some(lemma_of(doc, i));
             direct_object_idx = Some(i);
         } else if dep_in(token, INDIRECT_OBJECT_DEPS) {
-            indirect_object = Some(lemma_of(i));
+            indirect_object = Some(lemma_of(doc, i));
             indirect_object_idx = Some(i);
         } else if dep_in(token, MODIFIER_DEPS) {
-            modifiers.push(lemma_of(i));
+            modifiers.push(lemma_of(doc, i));
         } else if dep_in(token, QUALIFIER_DEPS) {
-            qualifiers.push(lemma_of(i));
+            qualifiers.push(lemma_of(doc, i));
         } else if dep_in(token, PREP_DEPS) {
-            let prep = lemma_of(i);
+            let prep = lemma_of(doc, i);
             for &c in &doc.children(i) {
                 if dep_in(doc.token(c), POBJ_DEPS) {
-                    arguments.push((prep.clone(), lemma_of(c)));
+                    arguments.push((prep.clone(), lemma_of(doc, c)));
                 }
             }
         } else if dep_in(token, POBJ_DEPS) {
             // A `pobj` is captured under its `prep`'s argument frame above;
             // not a standalone role.
         } else {
-            dependents.push(lemma_of(i));
+            dependents.push(lemma_of(doc, i));
         }
         if let Some(ent) = token.interlingua_entity_id {
             if ent.is_yago() {
@@ -213,7 +193,7 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
 
     let tokens: Vec<String> = (start..end).map(|i| doc.token_text(i)).collect();
     let sentence = tokens.join(" ");
-    let lemmas = (start..end).map(lemma_of).collect();
+    let lemmas = (start..end).map(|i| lemma_of(doc, i)).collect();
     let pos = (start..end).map(|i| doc.token(i).pos.to_string()).collect();
     let deps = (start..end).map(dep_of).collect();
     let heads = (start..end).map(|i| doc.token(i).head).collect();
@@ -249,7 +229,7 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
 
     RoutingSignal {
         sentence,
-        predicate: lemma_of(root),
+        predicate: lemma_of(doc, root),
         subject,
         direct_object,
         indirect_object,
@@ -264,17 +244,6 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
         heads,
         interlingua,
     }
-}
-
-/// Whether a token's dep label is one of the role labels (hash comparison).
-fn dep_in(token: &TokenRecord, labels: &[&str]) -> bool {
-    let hash = token.dep;
-    labels.iter().any(|l| hash_utf8(l) == hash)
-}
-
-/// Whether a token's dep label equals `label` (hash comparison).
-fn dep_is(token: &TokenRecord, label: &str) -> bool {
-    hash_utf8(label) == token.dep
 }
 
 #[cfg(test)]

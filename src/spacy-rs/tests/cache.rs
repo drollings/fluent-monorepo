@@ -80,3 +80,15 @@ fn lowercasing_is_case_insensitive() {
     let focus = vec![0];
     assert_eq!(span_key(&a, &focus), span_key(&b, &focus));
 }
+
+/// M12.1: the `0x1F` join is load-bearing — `"ab"+"c"` and `"a"+"bc"` must
+/// key differently (no boundary-merging collisions in the cache).
+#[test]
+fn separator_prevents_boundary_merging() {
+    let a = doc_from("ab c");
+    let b = doc_from("a bc");
+    // Focus covers both tokens in each doc: joined `"ab\x1Fc"` vs `"a\x1Fbc"`.
+    assert_ne!(span_key(&a, &[0, 1]), span_key(&b, &[0, 1]));
+    // And the joined form never equals either bare token's key.
+    assert_ne!(span_key(&a, &[0, 1]), span_key(&a, &[0]));
+}

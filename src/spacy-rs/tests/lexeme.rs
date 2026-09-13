@@ -128,3 +128,48 @@ fn norm_exceptions_override_lower() {
     let nt = lex.get_or_create("n't");
     assert_eq!(nt.norm, hash_utf8("not"));
 }
+
+/// M11.1: the 16 pure `lex_attrs` computations agree bit-for-bit with the
+/// stored `LexemeFlags` accessors over a battery of tokens — the
+/// compute↔store agreement pin. (`is_stop` is config-driven, not a pure
+/// computation, and is pinned separately by
+/// `stop_word_flag_matches_lowercased_orth`.)
+#[test]
+fn computed_flags_agree_with_lex_attrs() {
+    use crate::lex_attrs;
+    let lex = lexicon();
+    for text in [
+        "Apple", "hello", "HELLO", "123", "3rd", "!", " ", "can't", "(x)", "\"q\"",
+        "“q”", "$5", "https://example.com", "user@example.com", "4.5%", "—",
+    ] {
+        let flags = lex.get_or_create(text).flags;
+        assert_eq!(flags.is_alpha(), lex_attrs::is_alpha(text), "{text} alpha");
+        assert_eq!(flags.is_ascii(), lex_attrs::is_ascii(text), "{text} ascii");
+        assert_eq!(flags.is_digit(), lex_attrs::is_digit(text), "{text} digit");
+        assert_eq!(flags.is_lower(), lex_attrs::is_lower(text), "{text} lower");
+        assert_eq!(flags.is_punct(), lex_attrs::is_punct(text), "{text} punct");
+        assert_eq!(flags.is_space(), lex_attrs::is_space(text), "{text} space");
+        assert_eq!(flags.is_title(), lex_attrs::is_title(text), "{text} title");
+        assert_eq!(flags.is_upper(), lex_attrs::is_upper(text), "{text} upper");
+        assert_eq!(flags.like_url(), lex_attrs::like_url(text), "{text} url");
+        assert_eq!(flags.like_num(), lex_attrs::like_num(text), "{text} num");
+        assert_eq!(flags.like_email(), lex_attrs::like_email(text), "{text} email");
+        assert_eq!(flags.is_bracket(), lex_attrs::is_bracket(text), "{text} bracket");
+        assert_eq!(flags.is_quote(), lex_attrs::is_quote(text), "{text} quote");
+        assert_eq!(
+            flags.is_left_punct(),
+            lex_attrs::is_left_punct(text),
+            "{text} left_punct"
+        );
+        assert_eq!(
+            flags.is_right_punct(),
+            lex_attrs::is_right_punct(text),
+            "{text} right_punct"
+        );
+        assert_eq!(
+            flags.is_currency(),
+            lex_attrs::is_currency(text),
+            "{text} currency"
+        );
+    }
+}

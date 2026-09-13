@@ -243,6 +243,54 @@ pub fn apply_corrections(parse: &AnnotationResult, corrections: &[Correction]) -
         .with_confidence(parse.token_confidence.clone(), parse.parse_confidence.clone())
 }
 
+/// Amend `base` with review-shaped `corrections`, restricted to `focus`
+/// tokens, gated through the 7-check validator, and re-stamped to the
+/// producing `source` (M9: the single correction gate — moved here from the
+/// pipeline so the whole amend story, `apply_edits` + scope + gate +
+/// stamping, lives beside the [`Correction`] vocabulary).
+///
+/// `None` when the correction set is empty, nothing lands inside the focus,
+/// nothing actually applies, or the gate rejects — so the caller keeps the
+/// base (fallback — never worse).
+///
+/// The base's `token_confidence` / `parse_confidence` / `oracle_margins`
+/// ride onto the amended result untouched: the refiner improves only what it
+/// touched, and confidence vectors stay aligned with the token indices
+/// (which never change — only field values do).
+pub(crate) fn apply_scoped(
+    doc: &crate::doc::Doc,
+    base: &AnnotationResult,
+    focus: &[usize],
+    corrections: &[Correction],
+    validator: &crate::validate::AnnotationValidator,
+    source: AnnotationSource,
+) -> Option<AnnotationResult> {
+    if corrections.is_empty() {
+        return None;
+    }
+    let scoped: Vec<Correction> = corrections
+        .iter()
+        .filter(|c| focus.contains(&c.token_index))
+        .cloned()
+        .collect();
+    if scoped.is_empty() {
+        return None;
+    }
+    let mut records = base.records().records().to_vec();
+    if apply_edits(&mut records, &scoped) == 0 {
+        return None;
+    }
+    let set = crate::llm::AnnotationSet(records);
+    if validator.validate(doc, &set).is_err() {
+        return None;
+    }
+    let mut result = AnnotationResult::new(set, source)
+        .with_confidence(base.token_confidence.clone(), base.parse_confidence.clone());
+    result.oracle_margins = base.oracle_margins.clone();
+    result.collision_count = base.collision_count;
+    Some(result)
+}
+
 #[cfg(test)]
 #[path = "../tests/review.rs"]
 mod tests;

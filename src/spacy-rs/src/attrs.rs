@@ -398,6 +398,7 @@ impl Attribute {
             "IS_BE_CLITIC" => Self::IsBeClitic,
             "IS_THERE_WORD" => Self::IsThereWord,
             "IS_WH_ADVERBIAL" => Self::IsWhAdverbial,
+            "IS_GET_WORD" => Self::IsGetWord,
             "IS_HAVE_CLITIC" => Self::IsHaveClitic,
             "IS_WILL_CLITIC" => Self::IsWillClitic,
             "IS_INDEFINITE_PRONOUN" => Self::IsIndefinitePronoun,

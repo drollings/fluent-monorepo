@@ -135,3 +135,22 @@ fn filter_special_spans_prefers_longest() {
     assert_eq!(filtered[0].0.key, "cannot");
     assert_eq!((filtered[0].1, filtered[0].2), (0, 2));
 }
+
+/// M10.1: re-registering a special case OVERWRITES (last-wins `insert`,
+/// not insert-if-absent) — the tokenizer table is not a first-wins
+/// registry, which rules out the generic-registry unification (M10
+/// verdict: declined, behavior differs per table).
+#[test]
+fn reregistering_special_case_overwrites() {
+    let t = en_tokenizer();
+    t.add_special_case("gonna", &[("gon", None), ("na", None)])
+        .expect("first registration");
+    assert_eq!(orths(&t.tokenize("gonna").expect("tokenizes")), ["gon", "na"]);
+    t.add_special_case("gonna", &[("go", None), ("nna", None)])
+        .expect("second registration");
+    assert_eq!(
+        orths(&t.tokenize("gonna").expect("tokenizes")),
+        ["go", "nna"],
+        "re-registration replaces the rule"
+    );
+}

@@ -129,6 +129,22 @@ fn via_fetch_returns_stub_score_and_is_deterministic() {
     assert_eq!(a, b, "deterministic");
 }
 
+/// M1.1 characterization: the `MISSING_DEP` sentinel (`dep == 0`, never
+/// attached) matches neither ROOT nor any role — predicate falls back to the
+/// sentence start with no subject/object.
+#[test]
+fn unattached_doc_triple_has_fallback_predicate_and_no_roles() {
+    let mut doc = Doc::new(vocab());
+    doc.push_back("Show", true).expect("push");
+    doc.push_back("me", true).expect("push");
+    let triples = extract_triples(&doc);
+    assert_eq!(triples.len(), 1, "fallback sentence [0, len)");
+    assert_eq!(triples[0].predicate, 0, "root falls back to sentence start");
+    assert_eq!(triples[0].subject, None, "dep 0 is not a subject");
+    assert_eq!(triples[0].object, None, "dep 0 is not an object");
+    assert_eq!(triples[0].sentence_span, (0, 2));
+}
+
 #[test]
 fn via_fetch_without_fetch_is_fail_closed_none() {
     let store = Arc::new(InMemoryConceptStore::new());
@@ -146,4 +162,43 @@ fn via_fetch_empty_triples_is_none_even_with_fetch() {
     let empty: Vec<Triple> = Vec::new();
     let doc = attached(CAT_SAT_PARSE, &["The", "cat", "sat", "."]);
     assert!(semantic_plausibility_via_fetch(&doc, &empty, &resolver, Some(&fetch)).is_none());
+}
+
+/// M8.1 guard: on an unattached token (`lemma == 0`, never interned),
+/// `scored_lemma` falls back to `""` — intentionally different from
+/// frame/routing `lemma_of`, which falls back to the lowercase surface.
+/// A future traversal "unification" must not merge these fallbacks.
+#[test]
+fn scored_lemma_keeps_empty_fallback_distinct_from_surface() {
+    let store = Arc::new(InMemoryConceptStore::new());
+    let resolver = resolver_for(Arc::clone(&store));
+    let mut doc = Doc::new(vocab());
+    doc.push_back("Show", true).expect("push");
+    doc.push_back("me", true).expect("push");
+    let triples = extract_triples(&doc);
+    assert_eq!(triples.len(), 1);
+    let inputs = build_plausibility_inputs(&doc, &triples, &resolver);
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(inputs[0].predicate.lemma, "");
+}
+
+/// M8.1: two sentencized sentences partition into two ordered spans —
+/// the shared sentence walk must preserve span boundaries and order.
+#[test]
+fn two_sentences_partition_into_ordered_spans() {
+    const TWO: &str = r#"[
+        {"text":"Show","pos":"verb","dep":"root","head":0,"lemma":"show"},
+        {"text":"me","pos":"pron","dep":"iobj","head":-1,"lemma":"me"},
+        {"text":".","pos":"punct","dep":"punct","head":-2,"lemma":"."},
+        {"text":"Dogs","pos":"noun","dep":"nsubj","head":1,"lemma":"dog"},
+        {"text":"bark","pos":"verb","dep":"root","head":0,"lemma":"bark"},
+        {"text":".","pos":"punct","dep":"punct","head":-1,"lemma":"."}
+    ]"#;
+    let doc = attached(TWO, &["Show", "me", ".", "Dogs", "bark", "."]);
+    let triples = extract_triples(&doc);
+    assert_eq!(triples.len(), 2);
+    assert_eq!(triples[0].sentence_span, (0, 3));
+    assert_eq!(triples[1].sentence_span, (3, 6));
+    assert_eq!(triples[0].predicate, 0);
+    assert_eq!(triples[1].predicate, 4);
 }

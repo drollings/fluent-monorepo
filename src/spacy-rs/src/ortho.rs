@@ -23,6 +23,7 @@
 
 use std::sync::LazyLock;
 
+use common_core::blob_spec::BlobCursor;
 use crate::error::SpacyError;
 
 /// Magic bytes `"SOR1"` — tagger orthography artifact.
@@ -46,14 +47,6 @@ pub struct TaggerOrtho<'a> {
     comma: &'a str,
 }
 
-fn rd_u32(data: &[u8], o: usize) -> Option<u32> {
-    data.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-}
-
-fn rd_u16(data: &[u8], o: usize) -> Option<u16> {
-    data.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]))
-}
-
 fn split_list<'a>(body: &'a [u8], count: usize, what: &str) -> Result<Vec<&'a str>, SpacyError> {
     let err = |m: String| SpacyError::OrthoBlob(m);
     let text = std::str::from_utf8(body).map_err(|_| err(format!("{what} is not UTF-8")))?;
@@ -75,43 +68,42 @@ impl<'a> TaggerOrtho<'a> {
     /// scalars — every failure is loud, never a silent misparse.
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, SpacyError> {
         let err = |m: String| SpacyError::OrthoBlob(m);
-        let magic = rd_u32(data, 0).ok_or_else(|| err("truncated magic".to_string()))?;
+        // Absolute header reads + an advancing cursor for the list/scalar
+        // walk (M2): the same `blob_spec` spelling as the lemma loader.
+        let probe = BlobCursor::new(data);
+        let magic = probe.peek_u32(0).ok_or_else(|| err("truncated magic".to_string()))?;
         if magic != BLOB_MAGIC_SOR1 {
             return Err(err(format!("bad magic {magic:#x}")));
         }
-        let version = rd_u16(data, 4).ok_or_else(|| err("truncated version".to_string()))?;
+        let version = probe.peek_u16(4).ok_or_else(|| err("truncated version".to_string()))?;
         if version != BLOB_VERSION_SOR1 {
             return Err(err(format!("unsupported version {version}")));
         }
-        let mut o = 6usize;
+        let mut cur = BlobCursor::with_offset(data, 6);
         let mut lists = Vec::with_capacity(3);
         for what in ["trailing", "boundary", "bare_follow"] {
             let count =
-                rd_u32(data, o).ok_or_else(|| err(format!("{what} truncated count")))? as usize;
+                cur.u32_le().ok_or_else(|| err(format!("{what} truncated count")))? as usize;
             let len =
-                rd_u32(data, o + 4).ok_or_else(|| err(format!("{what} truncated length")))? as usize;
-            o += 8;
+                cur.u32_le().ok_or_else(|| err(format!("{what} truncated length")))? as usize;
             if count == 0 {
                 return Err(err(format!("{what} must not be empty")));
             }
-            let body = data.get(o..o + len).ok_or_else(|| err(format!("{what} truncated body")))?;
-            o += len;
+            let body = cur.take(len).ok_or_else(|| err(format!("{what} truncated body")))?;
             lists.push(split_list(body, count, what)?);
         }
         let mut scalars = Vec::with_capacity(5);
         for what in ["plural_s", "manner_ly", "past_ed", "part_ing", "comma"] {
             let len =
-                rd_u32(data, o).ok_or_else(|| err(format!("{what} truncated length")))? as usize;
-            o += 4;
-            let body = data.get(o..o + len).ok_or_else(|| err(format!("{what} truncated body")))?;
-            o += len;
+                cur.u32_le().ok_or_else(|| err(format!("{what} truncated length")))? as usize;
+            let body = cur.take(len).ok_or_else(|| err(format!("{what} truncated body")))?;
             let s = std::str::from_utf8(body).map_err(|_| err(format!("{what} is not UTF-8")))?;
             if s.is_empty() || s.contains('\0') {
                 return Err(err(format!("{what} must be non-empty NUL-free")));
             }
             scalars.push(s);
         }
-        if o != data.len() {
+        if cur.offset() != data.len() {
             return Err(err("trailing bytes after orthography blob".to_string()));
         }
         let mut lists = lists.into_iter();

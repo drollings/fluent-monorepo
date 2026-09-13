@@ -29,6 +29,36 @@ pub trait Describable {
     fn describe(&self) -> serde_json::Value;
 }
 
+/// Build the canonical [`Describable::describe`] document for a [`WorkUnit`]
+/// stage from its own `name`/`depends`/`provides` plus a purity note
+/// (primitives roadmap M5): the single spelling replacing hand-written JSON
+/// literals that each repeated the trait values verbatim.
+///
+/// `purity` is [`None`] for audit-only stages that describe
+/// `{name, depends, provides}` with no purity claim. Key set and value
+/// shapes match the historical literals exactly (`depends`/`provides` as
+/// string arrays in slice order); callers with a pinned documentation edge
+/// that differs from the trait edge pass that edge's values explicitly.
+#[must_use]
+pub fn describe_work_unit(
+    name: &str,
+    depends: &[ArcIntern<str>],
+    provides: &[ArcIntern<str>],
+    purity: Option<&str>,
+) -> serde_json::Value {
+    let deps: Vec<&str> = depends.iter().map(|d| &**d).collect();
+    let provs: Vec<&str> = provides.iter().map(|p| &**p).collect();
+    let mut doc = serde_json::json!({
+        "name": name,
+        "depends": deps,
+        "provides": provs,
+    });
+    if let Some(purity) = purity {
+        doc["purity"] = serde_json::Value::String(purity.to_string());
+    }
+    doc
+}
+
 /// Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
 #[doc(hidden)]
 #[allow(dead_code)]

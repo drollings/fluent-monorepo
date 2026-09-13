@@ -49,8 +49,9 @@ pub use metadata::MetadataValue;
 pub use runtime::{NoopRuntime, Runtime};
 pub use store::OutputStore;
 pub use traits::{
-    component_downcast_mut, component_downcast_ref, Component, ComponentArcExt, Describable,
-    FieldAccess, FieldError, FieldSchema, PersistableComponent, SchemaProvider, WorkUnit,
+    component_downcast_mut, component_downcast_ref, describe_work_unit, Component, ComponentArcExt,
+    Describable, FieldAccess, FieldError, FieldSchema, PersistableComponent, SchemaProvider,
+    WorkUnit,
 };
 pub use work::{WorkContext, WorkError, WorkOutput};
 
