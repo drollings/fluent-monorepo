@@ -1,49 +1,71 @@
 # Fluent Monorepo - deterministic-first agentic backbone
 
-This Rust monorepo is an incubator of projects meant to use and
-preserve uncompromisingly fast and flexible design patterns among its
-members.  Every crate in `src/` is built on the same foundation - the same
-design patterns, the same tested guardrails over asynchronous concurrency,
-the same dependency charts using Directed Acyclic Graphs, all written to be
-highly reusable, maximizing the chance that new work is composed from
-extant, battle-tested code instead of reinventing it.
+This Rust monorepo is an incubator for lightweight, native-compiled,
+hardened, fast agentic LLM projects built on a shared, composable
+infrastructure.  Concurrency and dependency tracking are pervasive and
+battle-tested.  Reflection and high degrees of polymorphism are available
+where they help, and zero-cost where they are not.
 
-It is written to seamlessly allow polymorphism to a degree that C++ and Python
-programmers take for granted, keep guardrails on fast WASM IPC, and sanitize
-input, because it is built from the start to have single sources of truth
-for its types and their metadata, which can be reflected at runtime.
+This provides a deterministic NLP baseline for agentic LLM tools.
 
-The flagship project is **Coral Router**: a deterministic-first LLM request
-router and process owner of a local inference fleet. Coral Context, Guidance,
-and the supporting libraries extend the same backbone.
+## Member Projects
 
-Its concurrent operations are built on **Fluent Concurrency**, a lightweight
-layer over Tokio, hyper, and reqwest that keeps async I/O and
-inference for agentic LLM applications fast, guardrailed, and rooted in the
-battle-tested Rust ecosystem.
+- **Coral Router** - LLM request router; two-stage deterministic-first
+  pipeline, escalation ladder, OpenAI-compatible API, owns and supervises the
+  local LLM fleet through llama-server and/or ONNX. → `doc/router/VISION.md`
+- **Coral Context** - deterministic-first knowledge graph library: 6-tier
+  "Level of Detail" pyramid, SQLite graph database, MCP server, WASM plugin
+  runtime. → `doc/coral/VISION.md`
+- **Guidance** - AST-guided code navigation subagent producing metadata
+  mirrors and SQLite vector search databases; sub-100ms deterministic queries
+  for AI-assisted development. → `doc/guidance/VISION.md`
+- **Fluent DAG** - dependency graphs, narrowing workflow, and checkpointed
+  step graph.  → `doc/skills/dag/SKILL.md`
+- **Fluent Concurrency** - a lightweight layer over Tokio, hyper, and
+  reqwest that keeps async I/O and inference for agentic LLM applications
+  fast, guardrailed, and rooted in the battle-tested Rust ecosystem.  →
+  `doc/skills/fluent-concurrency/SKILL.md`
+- **Fluent WVR** - the foundational lightweight component model:  `Fluent,
+  Wrapped, Verified, Reflected`  → `doc/skills/fluent-wvr/SKILL.md`
 
-Its foundational design patterns are a collection termed **Fluent WVR**:
+## Design philosophy
 
-`Fluent, Wrapped, Verified, Reflected`
+1. **Reflection at the control pane**: macros for polymorphism and
+   reflection where it counts.  Objects designed around Fluent WVR get a
+   single source of truth in metadata, which allows validated input
+   constraints, and composable control objects which allow for polymorphic
+   flexibility where it counts, and poses zero cost to the hot paths.
+2. **Deterministic-first, LLM-enabled**: prefer local computation over
+   probabilistic inference; LLM inference is firmly harnessed, additive to
+   deterministic flow
+3. **Dependency graphs as memory**: novel solutions are evaluated to become
+   nodes in cached Directed Acyclic Graphs - structured for easy reuse
+4. **Edge-deployable**: single-process SQLite, no external services, targets
+   Raspberry Pi class hardware
+5. **Capability-gated I/O**: DB and knowledge effects require explicit
+   capability tokens; operator CLI tooling is capability-exempt by design
+6. **Structured concurrency**: `Scope`-spawned tasks are awaited when the
+   scope closes and server-owned background tasks are awaited at graceful
+   shutdown; panics are contained within `SupervisedBatch`
+7. **Safe Rust by default**: the shared foundation crates carry
+   `#![forbid(unsafe_code)]`; the only `unsafe` in the workspace is boundary
+   IPC `read_unaligned`
 
-These are proven patterns from C++ and Python codebases, reinterpreted into
-idiomatic Rust.  They allow for single sources of truth for of metadata,  
-validated input constraints, and composable control objects which allow for 
-polymorphic flexibility where it counts, and poses zero cost to the hot paths.
+# Member projects in detail
 
 ## Coral Router - an agentic swarm orchestrator
 
-Coral Router exposes an OpenAI-compatible HTTP API and runs
-route-dispatched requests through a **multi-stage pipeline** - a deterministic
-pre-filter, then a classifier (see `src/router/src/pipeline_types.rs`) - that
-resolves to appropriate deterministic, LLM-optional workflows, or delegate to
-stronger LLMs at other OpenAI endpoints. Requests that route to a locally 
-managed model dispatch to that model while managing its VRAM footprint, allowing 
-efficient local agentic teams.
+Coral Router exposes an OpenAI-compatible HTTP API and runs route-dispatched
+requests through a **multi-stage pipeline** - a deterministic pre-filter,
+then a classifier (see `src/router/src/pipeline_types.rs`) - that resolves
+to appropriate deterministic, LLM-optional workflows, or delegate to
+stronger LLMs at other OpenAI endpoints.  Requests that route to a locally
+managed model dispatch to that model while managing its VRAM footprint,
+allowing efficient local agentic teams.
 
-It is built for use with a branch of llama.cpp that allows
-parallel inference across context windows with their own sizes, parameters,
-and lifetimes per request via HTTP parameters:
+It is built for use with a branch of llama.cpp that allows parallel
+inference across context windows with their own sizes, parameters, and
+lifetimes per request via HTTP parameters:
 
 https://github.com/drollings/llama.cpp/tree/_multi_context
 
@@ -61,11 +83,9 @@ it - never by default.
 - **Cheap before expensive.** Routing is an economic decision: the ladder runs
   deterministic filter → fast classifier → local model → frontier, and a
   request only reaches a rung after the previous one failed.
-- **Condensed context, not accumulated context.** The ledger compacts sessions
+- **Original context, parallel compaction.** The ledger compacts sessions
   rather than growing them; the orchestrator never reasons over noise, dead
   ends, or superseded exploration.
-
-→ `doc/router/VISION.md` · source in `src/router/`
 
 ## Fluent WVR - the design patterns
 
@@ -110,14 +130,7 @@ execution: dependency validation, ready-node selection, dependency-aware
 cancellation, and checkpoint/rewind - shared by every graph consumer in the
 workspace rather than re-implemented per crate. → `doc/dag/USAGE.md`
 
-## Safe Rust
-
-The workspace is near-total safe Rust: `fluent-wvr`, `fluent-concurrency`,
-`fluent-dag`, and `common-core` are `#![forbid(unsafe_code)]`, and the entire
-monorepo contains just three `unsafe` blocks, all of them `read_unaligned` for
-packed WASM IPC structs in `wasm_ipc`.
-
-## Quick start
+# Quick start
 
 ```bash
 make
@@ -128,45 +141,12 @@ Coral Router's own loop: `make router` (build), `make router-start` (build and
 restart on `:8079`), `make router-test` (tests), `make router-mock`
 (config-synced routing integration tests, derived from `env/coral-router.json`).
 
-## Projects
-
-- **Coral Router** - LLM request router; two-stage deterministic-first
-  pipeline, escalation ladder, OpenAI-compatible API, owns and supervises the
-  local llama-server fleet. → `doc/router/VISION.md`
-- **Coral Context** - deterministic-first context graph library: 6-tier LOD
-  pyramid, SQLite graph database, MCP server, WASM plugin runtime. Separates
-  deterministic lookups from probabilistic inference. → `doc/coral/VISION.md`
-- **Guidance** - AST-guided code navigation subagent producing metadata
-  mirrors and SQLite vector search databases; sub-100ms deterministic queries
-  for AI-assisted development. → `doc/guidance/VISION.md`
-- **Fluent WVR** - the unifying component model. → `doc/fluent-wvr/USAGE.md`
-- **Fluent Concurrency** - structured concurrency primitives. → `doc/fluent-concurrency/USAGE.md`
-- **Fluent DAG** - dependency graph and checkpointed step graph. → `doc/dag/USAGE.md`
-
-## Design philosophy
-
-1. **Deterministic-first**: prefer local computation over probabilistic
-   inference; LLM enhancement is additive, never authoritative
-2. **Cache over compute**: every novel solution becomes a permanent cached node
-3. **Edge-deployable**: single-process SQLite, no external services, targets
-   Raspberry Pi class hardware
-4. **Capability-gated I/O**: DB and knowledge effects require explicit
-   capability tokens; operator CLI tooling is capability-exempt by design
-5. **Structured concurrency**: `Scope`-spawned tasks are awaited when the
-   scope closes and server-owned background tasks are awaited at graceful
-   shutdown; panics are contained within `SupervisedBatch`
-6. **Uniform interface**: native Rust, WASM plugins, and DB-driven configs all
-   present `Arc<dyn Component>` - the orchestrator never branches on origin
-7. **Safe by default**: the shared foundation crates carry
-   `#![forbid(unsafe_code)]`; the only `unsafe` in the workspace is boundary
-   IPC `read_unaligned`
-
-## Authorship
+# Authorship
 
 Authored by Daniel Rollings, February 2026, based on conceptual transfer from
 projects in Python, C++, and Zig, ported to Rust.
 
-## License
+# License
 
 `fluent-monorepo` is **dual-licensed** under the terms of either:
 
