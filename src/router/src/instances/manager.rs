@@ -764,7 +764,7 @@ pub fn build_instance_managers(
         }
         let profiles = match &entry.effective_profiles {
             Some(profiles) => profiles.clone(),
-            None => crate::config::materialize_effective_pool(key, entry, &config.roles),
+            None => crate::config::materialize_effective_pool(key, &config.roles),
         };
         validate_instances(&profiles)
             .map_err(|e| format!("model {key}: invalid instance grammar: {e}"))?;

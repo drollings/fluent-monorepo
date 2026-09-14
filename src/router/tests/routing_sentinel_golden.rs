@@ -96,26 +96,28 @@ fn strings(value: &serde_json::Value, field: &str) -> Vec<String> {
 
 fn model_entry(_key: &str, intelligence: u8) -> ModelEntry {
     ModelEntry {
+        embedding: None,
         name: None,
         endpoint: "http://localhost:9/v1/chat/completions".into(),
         intelligence,
         cost_input: 1.0,
         cost_output: 6.0,
         cost_cached_read: 0.4,
-        speed: 8,
+        tok_s: 8.0,
         total_timeout_ms: 40_000,
         idle_timeout_ms: 8_000,
         stream: true,
         filter_thinking: false,
+        thinking: None,
         retry_count: 0,
         retry_base_interval_s: 1,
         params: None,
-        instances: None,
         effective_profiles: None,
-        sessions: None,
         weights: None,
         hf_repo: None,
         hf_file: None,
+        template: None,
+        role_params: None,
         api_key: None,
     }
 }
@@ -137,6 +139,7 @@ fn fixture_routing(case: &serde_json::Value, group: &str) -> RoutingConfig {
             "local".into(),
             RouteRef {
                 group: group.into(),
+                role: None,
                 pipelines: vec!["default".into()],
                 description: "local".into(),
                 always_route: false,
@@ -171,7 +174,7 @@ fn fixture_recency(routing: &RoutingConfig, case: &serde_json::Value) -> GroupRe
             } else {
                 panic!("bad recency reference {reference}");
             };
-            recency.record(group, &wire);
+            recency.record("fixture", group, &wire);
         }
     }
     recency
@@ -181,7 +184,7 @@ fn fixture_recency(routing: &RoutingConfig, case: &serde_json::Value) -> GroupRe
 /// test-side attribution for `last-miss` causes, reusing the production wire
 /// mapping (never a copy of the expansion walk itself).
 fn last_resolves(routing: &RoutingConfig, group: &str, recency: &GroupRecency) -> bool {
-    let Some(wire) = recency.last_for(group) else {
+    let Some(wire) = recency.last_for("fixture", group) else {
         return false;
     };
     let Some(group_cfg) = routing.model_groups.get(group) else {
@@ -331,6 +334,7 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
         &routing,
         group,
         Some(&recency),
+        Some("fixture"),
         &{
             let probes = Arc::clone(&probes);
             let loaded = loaded.clone();
@@ -349,7 +353,7 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
     let mut failures = Vec::new();
     let unfollowed = Vec::new();
     if has_last && !last_resolves(&routing, group, &recency) {
-        let reason = if recency.last_for(group).is_none() {
+        let reason = if recency.last_for("fixture", group).is_none() {
             "no-record"
         } else {
             "removed-member"
@@ -426,10 +430,10 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
     let routing = fixture_routing(case, group);
     let recency = fixture_recency(&routing, case);
     let loaded: Vec<String> = strings(case, "loaded");
-    let expanded = expand_group_keys(&routing, group, Some(&recency), &|base| {
+    let expanded = expand_group_keys(&routing, group, Some(&recency), Some("fixture"), &|base| {
         loaded.iter().any(|l| l == base)
     });
-    let candidates = expanded_candidates_for_group(&routing, group, Some(&recency), &|base| {
+    let candidates = expanded_candidates_for_group(&routing, group, Some(&recency), Some("fixture"), &|base| {
         loaded.iter().any(|l| l == base)
     });
     assert_eq!(

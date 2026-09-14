@@ -1,7 +1,6 @@
 use super::*;
 #[allow(unused_imports)]
 use crate::types::{RouterMessage, RouterMessageContent};
-
 fn make_test_request(content: &str) -> RouterRequest {
     RouterRequest {
         model: "test-model".into(),
@@ -726,5 +725,59 @@ async fn stream_abort_drops_upstream_and_finalizes_partial_answer() {
     assert!(
         content.is_empty() || content == "hello",
         "partial answer must be a prefix of the streamed content, got: {content:?}"
+    );
+}
+
+#[test]
+fn pin_filtering_forces_wire_switch_off() {
+    let params = serde_json::json!({"chat_template_kwargs": {"enable_thinking": true}});
+    let mut body = serde_json::json!({
+        "model": "m",
+        "chat_template_kwargs": {"enable_thinking": true},
+    });
+    pin_thinking_kwargs(&mut body, Some(&params), true);
+    assert_eq!(
+        body["chat_template_kwargs"]["enable_thinking"],
+        serde_json::Value::Bool(false),
+        "filtering pins the wire switch off despite params asking for thinking"
+    );
+}
+
+#[test]
+fn pin_live_translates_flat_enable_onto_wire_switch() {
+    let params = serde_json::json!({"enable_thinking": true});
+    let mut body = serde_json::json!({
+        "model": "m",
+        "chat_template_kwargs": {"enable_thinking": false},
+    });
+    pin_thinking_kwargs(&mut body, Some(&params), false);
+    assert_eq!(
+        body["chat_template_kwargs"]["enable_thinking"],
+        serde_json::Value::Bool(true),
+        "flat enable_thinking:true must reach the nested switch servers read"
+    );
+}
+
+#[test]
+fn pin_live_leaves_explicit_switch_and_defaults_alone() {
+    // Explicit true stays true without a flat bool.
+    let mut body = serde_json::json!({
+        "model": "m",
+        "chat_template_kwargs": {"enable_thinking": true},
+    });
+    pin_thinking_kwargs(&mut body, None, false);
+    assert_eq!(
+        body["chat_template_kwargs"]["enable_thinking"],
+        serde_json::Value::Bool(true)
+    );
+    // Absent thinking keys keep the canonical default (off).
+    let mut body = serde_json::json!({
+        "model": "m",
+        "chat_template_kwargs": {"enable_thinking": false},
+    });
+    pin_thinking_kwargs(&mut body, None, false);
+    assert_eq!(
+        body["chat_template_kwargs"]["enable_thinking"],
+        serde_json::Value::Bool(false)
     );
 }

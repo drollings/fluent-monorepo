@@ -19,7 +19,7 @@ use fluent_wvr::prelude::*;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-use crate::config::{ModelEntry, RoleEntry, RouteRef, ServerConfig};
+use crate::config::{ModelEntry, ModelGroup, RoleEntry, RouteRef, ServerConfig};
 use crate::dag_session::SessionRegistry;
 use crate::dispatch::escalation::Ladder;
 use crate::ledger::ContentNodeLedger;
@@ -39,6 +39,10 @@ pub struct RouterServer {
     /// in `models` arrive boot-materialized (effective pools composed), so no
     /// fleet-default map is carried — one code path, never a fork.
     roles: HashMap<String, RoleEntry>,
+    /// Model-group table (mirrors `RouterConfig.model_groups`): bare group
+    /// names in requests resolve through it (routes → groups → models).
+    /// Absent (the default) leaves group-named requests to the default route.
+    groups: HashMap<String, ModelGroup>,
     bind_addr: String,
     max_payload: usize,
     classifier: Option<(String, ModelEntry)>,
@@ -120,6 +124,7 @@ impl RouterServer {
             routes,
             models,
             roles: HashMap::new(),
+            groups: HashMap::new(),
             bind_addr: config.bind_addr.clone(),
             max_payload: config.max_payload,
             classifier,
@@ -155,6 +160,15 @@ impl RouterServer {
     #[must_use]
     pub fn with_roles(mut self, roles: HashMap<String, RoleEntry>) -> Self {
         self.roles = roles;
+        self
+    }
+
+    /// Attach the model-group table (`RouterConfig.model_groups`) so bare
+    /// group names resolve (routes → groups → models). Absent (the default)
+    /// leaves group-named requests to the default route.
+    #[must_use]
+    pub fn with_model_groups(mut self, groups: HashMap<String, ModelGroup>) -> Self {
+        self.groups = groups;
         self
     }
 
@@ -429,6 +443,7 @@ impl RouterServer {
             onnx_llm_backend: self.onnx_llm_backend.clone(),
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
+            groups: Arc::new(self.groups.clone()),
         };
 
         // Reconcile configured pinned instances at boot (retrying until the
@@ -569,6 +584,7 @@ impl WorkUnit for RouterServer {
             onnx_llm_backend: self.onnx_llm_backend.clone(),
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
+            groups: Arc::new(self.groups.clone()),
         };
         let rt = ctx.rt.clone();
 

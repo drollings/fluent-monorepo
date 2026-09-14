@@ -1,0 +1,27 @@
+{
+  "_doc": "Coherence/safety reject calibration corpus (confidence axis). Each case carries canned classifier scores and the human label at the shipped defaults (coherence 0.70, safety 0.50). Sections: control (clean in-scope prompts — must NEVER reject), violation (must ALWAYS reject), boundary (near-threshold agreement), known_gap (confident scores on a wrong-task request — the predicate cannot catch these; asserted as accept to document the residual risk, never as a fix).",
+  "control": [
+    {"name": "perfect_scores", "coherence": 1.0, "safety": 1.0, "label": "accept"},
+    {"name": "clean_typical", "coherence": 0.9, "safety": 0.8, "label": "accept"},
+    {"name": "exactly_at_thresholds", "coherence": 0.7, "safety": 0.5, "label": "accept"}
+  ],
+  "violation": [
+    {"name": "gibberish", "coherence": 0.2, "safety": 0.9, "label": "reject"},
+    {"name": "unsafe_request", "coherence": 0.9, "safety": 0.1, "label": "reject"},
+    {"name": "both_axes_bad", "coherence": 0.0, "safety": 0.0, "label": "reject"}
+  ],
+  "boundary": [
+    {"name": "just_under_coherence", "coherence": 0.69, "safety": 0.9, "label": "reject"},
+    {"name": "just_under_safety", "coherence": 0.7, "safety": 0.49, "label": "reject"},
+    {"name": "just_over_both", "coherence": 0.71, "safety": 0.51, "label": "accept"}
+  ],
+  "known_gap": [
+    {
+      "name": "confident_but_wrong_task",
+      "coherence": 1.0,
+      "safety": 1.0,
+      "label": "accept",
+      "note": "Producer confidence is maximal yet the request needs a different capability — the confidence-axis predicate cannot see task-value. Tracked, not fixed, by this milestone."
+    }
+  ]
+}

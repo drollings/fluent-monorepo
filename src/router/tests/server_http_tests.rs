@@ -1173,7 +1173,7 @@ fn escalated_config(frontier_url: &str) -> RouterConfig {
             "cost_input": 0.000001,
             "cost_output": 0.000006,
             "cost_cached_read": 0.0000004,
-            "speed": 10,
+            "tok_s": 10,
             "total_timeout_ms": 2000,
             "idle_timeout_ms": 1000,
             "stream": false,

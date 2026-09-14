@@ -108,16 +108,16 @@ fn managed_config() -> RouterConfig {
     let mut cfg: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["pinned-m"],
                 "instances": {
                     "swarm": {"group": "swarm", "num_ctx": 4096, "pinned": true}
-                }
+                },
+                "models": {"pinned-m": {}}
             },
             "rest": {
-                "models": ["lazy-m"],
                 "instances": {
                     "scratch": {"num_ctx": 4096}
-                }
+                },
+                "models": {"lazy-m": {}}
             }
         },
         "models": {
@@ -125,14 +125,14 @@ fn managed_config() -> RouterConfig {
                 "endpoint": "http://127.0.0.1:1/v1/chat/completions",
                 "name": "pinned-m", "intelligence": 1,
                 "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
-                "speed": 8,
+                "tok_s": 8,
                 "weights": "/models/pinned.gguf"
             },
             "lazy-m": {
                 "endpoint": "http://127.0.0.1:1/v1/chat/completions",
                 "name": "lazy-m", "intelligence": 1,
                 "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
-                "speed": 8,
+                "tok_s": 8,
                 "weights": "/models/lazy.gguf"
             }
         }

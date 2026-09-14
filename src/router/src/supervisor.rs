@@ -78,6 +78,10 @@ pub struct LlamaServerSpec {
     pub hf_repo: Option<String>,
     /// HuggingFace file within `hf_repo` (`-hff`), optional.
     pub hf_file: Option<String>,
+    /// Local chat-template file (`--chat-template-file`), from the model
+    /// entry's `template` (explicit config wins over GGUF-baked metadata).
+    /// `None` leaves the server default untouched.
+    pub template: Option<String>,
     /// Localhost port the server binds.
     pub port: u16,
     /// The declared instance pool (`--instance` grammar flags). Only pinned
@@ -94,8 +98,10 @@ pub struct LlamaServerSpec {
     pub api_key: Option<String>,
     /// `--instance-wait` (group wait seconds); `None` keeps the server default.
     pub instance_wait_s: Option<i64>,
-    /// `roles.default.params` run defaults: batch sizes, KV cache types, flash
-    /// attention, GPU offload, and the plain-model context size.
+    /// Per-model spawn defaults: the fleet run block overlaid with the
+    /// model's own launch knobs (`RouterConfig::spawn_defaults_for`) —
+    /// batch sizes, KV cache types, flash attention, GPU offload, and the
+    /// plain-model context size.
     pub defaults: crate::config::RoleParams,
     /// Additional raw args passed through verbatim.
     pub extra_args: Vec<String>,
@@ -119,6 +125,7 @@ impl LlamaServerSpec {
             weights: entry.weights.clone(),
             hf_repo: entry.hf_repo.clone(),
             hf_file: entry.hf_file.clone(),
+            template: entry.template.clone(),
             port,
             instances,
             boot,
@@ -159,10 +166,11 @@ pub fn prepend_library_path(dir: &Path, existing: Option<std::ffi::OsString>) ->
 /// Render the exact argv for a spawned server (unit-testable, no side effects).
 ///
 /// A model with a `weights` path loads it via `-m`; an `hf_repo` loads
-/// on-demand via `-hf`/`-hff`. Run defaults from `roles.default.params` (batch
-/// sizes, KV cache types, flash attention, GPU offload) are always emitted so
-/// every managed server runs identically; a plain model (no instance pool)
-/// also gets the default context size and idle-sleep timeout. Only **pinned**
+/// on-demand via `-hf`/`-hff`. A `template` path loads it via
+/// `--chat-template-file` (explicit config wins over GGUF-baked metadata). Per-model run defaults (the fleet block
+/// overlaid with the model's own launch knobs) are always emitted so every
+/// managed server runs identically; a plain model (no instance pool) also
+/// gets its resolved context size and idle-sleep timeout. Only **pinned**
 /// instance profiles are declared as `--instance` flags at spawn — unpinned
 /// instances are created on demand by the sidecar. `--slot-save-path` and
 /// `--api-key` enable snapshots and auth.
@@ -188,6 +196,10 @@ pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
     if let Some(file) = &spec.hf_file {
         args.push("-hff".into());
         args.push(file.clone());
+    }
+    if let Some(template) = &spec.template {
+        args.push("--chat-template-file".into());
+        args.push(template.clone());
     }
     // Role run defaults (the "how a model is run" contract).
     args.push("--batch-size".into());
@@ -222,8 +234,8 @@ pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
         args.push("--instance".into());
         args.push(instance_grammar_string(std::slice::from_ref(profile)));
     }
-    // A plain model (no instance pool) takes the default context size and
-    // idle-sleep timeout from `roles.default.params`.
+    // A plain model (no instance pool) takes its resolved context size and
+    // idle-sleep timeout from the per-model spawn defaults.
     if spec.instances.is_empty() {
         args.push("--ctx-size".into());
         args.push(spec.defaults.num_ctx.to_string());
@@ -1059,7 +1071,7 @@ impl LlamaServerSupervisor {
                 port,
                 slot_save_path.clone(),
                 api_key.clone(),
-                config.default_role_params(),
+                config.spawn_defaults_for(key),
             );
             servers.insert(
                 key.clone(),
@@ -1097,6 +1109,7 @@ impl LlamaServerSupervisor {
             weights: None,
             hf_repo: None,
             hf_file: None,
+            template: None,
             port: 1,
             instances: Vec::new(),
             boot: false,

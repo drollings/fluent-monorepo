@@ -190,7 +190,7 @@ mod onnx_golden {
                 total_timeout_ms: 0,
                 idle_timeout_ms: 0,
                 params: None,
-                instances: None,
+                roles: None,
                 model: OnnxConfig::new()
                     .model_path("/models/llm.onnx")
                     .tokenizer_path("/models/llm/tokenizer.json")

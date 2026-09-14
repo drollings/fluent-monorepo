@@ -6,7 +6,7 @@ use common_core::hash::uuid_v4;
 use fluent_llm::cache::ResponseCache;
 use http_body_util::BodyExt;
 
-use crate::config::{ModelEntry, RoleEntry, RouteRef};
+use crate::config::{ModelEntry, ModelGroup, RoleEntry, RouteRef};
 use crate::dag_session::{DependencySession, SessionRegistry, SessionStep, StepResult};
 use crate::dispatch::escalation::{EscalationContext, Ladder};
 use crate::ledger::ContentNodeLedger;
@@ -91,6 +91,9 @@ pub struct ServerDeps {
     /// for the single inference-point precedence and role expansion on paths
     /// that only carry the `models` map otherwise.
     pub roles: Arc<HashMap<String, RoleEntry>>,
+    /// Model-group table (mirrors `RouterConfig.model_groups`): bare group
+    /// names in requests resolve through it (routes → groups → models).
+    pub groups: Arc<HashMap<String, ModelGroup>>,
 }
 
 impl ServerDeps {
@@ -466,6 +469,7 @@ async fn handle_chat_completion(
         fleet: _,
         onnx_llm_backend,
         roles,
+        groups,
     } = deps;
     // The dispatch post-processing hook (workflow extraction), if the
     // operator configured it. Passed through to successful dispatches only.
@@ -531,7 +535,7 @@ async fn handle_chat_completion(
         }
     }
 
-    let router_request = match normalize::normalize_request(body_json) {
+    let mut router_request = match normalize::normalize_request(body_json) {
         Ok(r) => r,
         Err(e) => {
             stats.errors.fetch_add(1, Ordering::Relaxed);
@@ -564,6 +568,12 @@ async fn handle_chat_completion(
     stats.requests.fetch_add(1, Ordering::Relaxed);
 
     let session_id = router_request.session_id.clone().unwrap_or_else(uuid_v4);
+    // Stamp the effective session id into the request: the dispatch recency
+    // (`last`-sentinel expansion) and the availability view both key on it,
+    // so every served path agrees on one session identity.
+    router_request
+        .session_id
+        .get_or_insert_with(|| session_id.clone());
     let request_id = uuid_v4();
     let request_text = router_request
         .messages
@@ -648,6 +658,8 @@ async fn handle_chat_completion(
         &model_name,
         &routes,
         &models,
+        &groups,
+        &roles,
         &pipelines,
         &router_request,
         &stats,
@@ -824,6 +836,9 @@ async fn handle_chat_completion(
         session: session_step.as_ref().map(|s| s.session.clone()),
         instance_pool: instance_pool.map(|p| p.as_ref().clone()),
         onnx_llm_backend: onnx_llm_backend.clone(),
+        role_limiters: Arc::new(
+            crate::server::dispatch::RoleLimiters::from_roles(&roles),
+        ),
     };
 
     if let Some(ref rt) = pipeline_result.routing_target {
@@ -1344,6 +1359,8 @@ fn resolve_pipeline(
     model_name: &str,
     routes: &std::collections::HashMap<String, RouteRef>,
     models: &std::collections::HashMap<String, ModelEntry>,
+    groups: &std::collections::HashMap<String, ModelGroup>,
+    roles: &std::collections::HashMap<String, RoleEntry>,
     pipelines: &std::collections::HashMap<String, Arc<PipelineOrchestrator>>,
     router_request: &RouterRequest,
     stats: &Arc<ServerStats>,
@@ -1356,42 +1373,9 @@ fn resolve_pipeline(
     // agree with route-resolved ones through the same code path — no
     // request-time fallback, never a fork.
 
-    // The model id grammar `<model_id>[:<instance|group|latest>]`: a qualified
-    // id resolves directly to the owning model's server, bypassing the route
-    // table. `<id>:latest` means the pool's default instance.
-    // Canonical model-id split — zero-alloc callers use split_model_key (see pipeline.rs).
-    let (base_model, qual_opt) = crate::config::split_model_key(model_name);
-    if let Some(qualifier) = qual_opt {
-        if let Some(entry) = models.get(base_model) {
-            let rt = if qualifier == "latest" {
-                RoutingTarget::from_model_entry(base_model, entry)
-            } else {
-                RoutingTarget::from_model_entry_instance(base_model, entry, qualifier)
-            };
-            tracing::info!(
-                target: "router.server",
-                model = %model_name,
-                target = %rt.model,
-                "qualified model id resolved to owning server",
-            );
-            return crate::pipeline::PipelineResult {
-                decisions: vec![],
-                final_response: None,
-                rejected: false,
-                reject_reason: None,
-                routing_target: Some(rt),
-                classifier_response: None,
-            };
-        }
-    }
-
-    let route = routes.get(model_name).cloned();
-
-    let pipeline_names: Vec<String> = if let Some(ref r) = route {
-        r.pipelines.clone()
-    } else if let Some(model_entry) = models.get(model_name) {
-        let rt = RoutingTarget::from_model_entry(model_name, model_entry);
-        return crate::pipeline::PipelineResult {
+    // One constructor for every immediate (non-pipeline) resolution below.
+    let direct_result =
+        |rt: RoutingTarget| crate::pipeline::PipelineResult {
             decisions: vec![],
             final_response: None,
             rejected: false,
@@ -1399,6 +1383,92 @@ fn resolve_pipeline(
             routing_target: Some(rt),
             classifier_response: None,
         };
+    // One qualified-id constructor: `<base>[:<instance|group|latest>]`
+    // resolves directly to the owning model's server.
+    let qualified_target =
+        |base: &str, qualifier: Option<&str>| -> Option<RoutingTarget> {
+            let entry = models.get(base)?;
+            Some(match qualifier {
+                Some("latest") | None => RoutingTarget::from_model_entry(base, entry),
+                Some(point) => {
+                    RoutingTarget::from_model_entry_instance(base, entry, point)
+                }
+            })
+        };
+
+    // The `model:` hatch addresses the models table directly, past any
+    // route or group shadowing the same name. Intercepted before the key
+    // grammar runs — the split below would otherwise read `model` as the
+    // base. A hatch naming no entry warns and resolves the remainder
+    // through the normal order.
+    let mut requested: &str = model_name;
+    if let Some(rest) = crate::config::strip_model_prefix(model_name) {
+        let (base, qualifier) = crate::config::split_model_key(rest);
+        if let Some(rt) = qualified_target(base, qualifier) {
+            tracing::info!(
+                target: "router.server",
+                model = %model_name,
+                target = %rt.model,
+                "model hatch resolved to owning server",
+            );
+            return direct_result(rt);
+        }
+        tracing::warn!(
+            target: "router.server",
+            model = %model_name,
+            "model hatch names no models entry; resolving the remainder through the normal order",
+        );
+        requested = rest;
+    }
+
+    // The model id grammar `<model_id>[:<instance|group|latest>]`: a qualified
+    // id resolves directly to the owning model's server, bypassing the route
+    // table. `<id>:latest` means the pool's default instance.
+    // Canonical model-id split — zero-alloc callers use split_model_key (see pipeline.rs).
+    let (base_model, qual_opt) = crate::config::split_model_key(requested);
+    if let Some(qualifier) = qual_opt {
+        if let Some(rt) = qualified_target(base_model, Some(qualifier)) {
+            tracing::info!(
+                target: "router.server",
+                model = %model_name,
+                target = %rt.model,
+                "qualified model id resolved to owning server",
+            );
+            return direct_result(rt);
+        }
+    }
+
+    let route = routes.get(requested).cloned();
+
+    // Bare group name (routes → groups → models order): the cheapest static
+    // member serves directly, the group attached for the audit trail.
+    if route.is_none() && groups.contains_key(requested) {
+        let expanded =
+            crate::config::expanded_group_members(groups, roles, models, requested);
+        if let Some(member) =
+            crate::config::select_group_member(requested, &expanded, models, None)
+        {
+            let (base, qualifier) = crate::config::split_model_key(&member);
+            if let Some(mut rt) = qualified_target(base, qualifier) {
+                rt.group = Some(requested.to_string());
+                rt.target_name = Some(requested.to_string());
+                tracing::info!(
+                    target: "router.server",
+                    model = %model_name,
+                    target = %rt.model,
+                    group = %requested,
+                    "model group resolved to owning server",
+                );
+                return direct_result(rt);
+            }
+        }
+    }
+
+    let pipeline_names: Vec<String> = if let Some(ref r) = route {
+        r.pipelines.clone()
+    } else if let Some(model_entry) = models.get(requested) {
+        let rt = RoutingTarget::from_model_entry(requested, model_entry);
+        return direct_result(rt);
     } else {
         routes
             .get("local")

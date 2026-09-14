@@ -15,7 +15,7 @@ fn managed_entry() -> ModelEntry {
         "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
         "intelligence": 2,
         "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
-        "speed": 8,
+        "tok_s": 8,
         "weights": "/models/lfm2.6b.gguf"
     }))
     .expect("entry parses");
@@ -24,6 +24,7 @@ fn managed_entry() -> ModelEntry {
     // the role pool + this model's selection).
     entry.effective_profiles = Some(vec![
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("swarm-0".into()),
             group: Some("swarm".into()),
             count: 2,
@@ -39,6 +40,7 @@ fn managed_entry() -> ModelEntry {
             session: false,
         },
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("swarm-1".into()),
             group: Some("swarm".into()),
             count: 2,
@@ -54,6 +56,7 @@ fn managed_entry() -> ModelEntry {
             session: false,
         },
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("ledger".into()),
             group: Some("ledger".into()),
             count: 1,
@@ -208,6 +211,7 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
     let mut entry = managed_entry();
     entry.effective_profiles = Some(vec![
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("scratch".into()),
             group: Some("scratch".into()),
             count: 1,
@@ -223,6 +227,7 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
             session: false,
         },
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("ledger".into()),
             group: Some("ledger".into()),
             count: 1,
@@ -256,7 +261,6 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
 #[test]
 fn plain_model_gets_default_ctx_and_idle_sleep() {
     let mut entry = managed_entry();
-    entry.instances = None;
     entry.effective_profiles = None;
     let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
     assert!(!spec.boot, "no pinned instance -> lazy model");
@@ -283,17 +287,17 @@ fn server_args_use_hf_repo_when_no_weights() {
 
 #[test]
 fn model_entry_managed_detection() {
+    // Management is a weights question, never a roles question: only
+    // weights-backed models are spawned. A role-side binding for an
+    // endpoint-only model routes to its declared endpoint; the supervisor
+    // never spawns it.
     let mut entry = managed_entry();
     assert!(entry.is_managed(), "weights -> managed");
     entry.weights = None;
+    entry.hf_repo = Some("org/repo".into());
+    assert!(entry.is_managed(), "hf_repo -> managed");
+    entry.weights = None;
     entry.hf_repo = None;
-    entry.instances = Some(
-        [("work".to_string(), crate::config::ModelInstanceRef::default())]
-            .into_iter()
-            .collect(),
-    );
-    assert!(entry.is_managed(), "instances -> managed");
-    entry.instances = None;
     assert!(!entry.is_managed(), "nothing to load -> not managed");
 }
 
@@ -554,4 +558,29 @@ fn restart_backoff_schedule_is_exact_powers_of_two_capped_at_64s() {
     // Far beyond the cap: still 64s, never overflows.
     assert_eq!(restart_backoff(100), Duration::from_secs(64));
     assert_eq!(restart_backoff(u32::MAX), Duration::from_secs(64));
+}
+
+#[test]
+fn server_args_emit_chat_template_file_when_configured() {
+    let mut entry = managed_entry();
+    entry.template = Some("/models/qwen/template.txt".into());
+    let spec = LlamaServerSpec::from_entry("qwen", &entry, 18081, None, None, defaults());
+    let args = build_server_args(&spec);
+    let joined = args.join(" ");
+    assert!(
+        joined.contains("--chat-template-file /models/qwen/template.txt"),
+        "explicit template must reach the fork argv, got: {joined}"
+    );
+}
+
+#[test]
+fn server_args_omit_chat_template_file_when_absent() {
+    let entry = managed_entry();
+    assert!(entry.template.is_none());
+    let spec = LlamaServerSpec::from_entry("swarm", &entry, 18082, None, None, defaults());
+    let args = build_server_args(&spec);
+    assert!(
+        !args.iter().any(|a| a == "--chat-template-file"),
+        "no template configured means no flag (server default untouched)"
+    );
 }

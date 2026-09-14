@@ -531,10 +531,15 @@ fn resolve_speedtest_model(config: Option<&RouterConfig>, arg: &str) -> String {
     if let Some(cfg) = config {
         if let Some(route) = cfg.routes_view().get(&cfg.default_route) {
             if let Some(group) = cfg.model_groups.get(&route.group) {
-                if let Some(first) = group.models().first() {
-                    if let Some(role) = cfg.roles.get(first) {
-                        if let Some(head) = role.models.first() {
-                            return head.clone();
+                let effective = group.effective_models();
+                if let Some(first) = effective.first() {
+                    if cfg.roles.contains_key(first) {
+                        if let Some(head) =
+                            crate::config::models_serving_role(&cfg.roles, &cfg.models, first)
+                                .into_iter()
+                                .next()
+                        {
+                            return head;
                         }
                     }
                     return first.clone();

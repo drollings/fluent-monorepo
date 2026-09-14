@@ -1,0 +1,31 @@
+{
+  "roles": {
+    "default": {},
+    "quick": {
+      "context": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "pinned": true,
+        "count": 1
+      },
+      "params": {
+        "temperature": 0.6
+      },
+      "instances": {},
+      "models": {
+        "code": {}
+      }
+    }
+  },
+  "models": {
+    "code": {
+      "roles": {
+        "quick": {
+          "params": {
+            "temperature": 0.7
+          }
+        }
+      }
+    }
+  }
+}

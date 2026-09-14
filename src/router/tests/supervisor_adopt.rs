@@ -22,6 +22,7 @@ fn code_spec(port: u16) -> LlamaServerSpec {
         weights: Some("/app/ai/models/gguf/code/latest.gguf".to_string()),
         hf_repo: None,
         hf_file: None,
+        template: None,
         port,
         instances: vec![],
         boot: true,
@@ -221,6 +222,7 @@ async fn probe_identity_reports_the_grammar_verdict() {
 
 fn pinned_profile(name: &str) -> InstanceProfile {
     InstanceProfile {
+        embedding: None,
         name: Some(name.to_string()),
         group: Some(name.to_string()),
         count: 1,

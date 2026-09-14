@@ -120,16 +120,23 @@ fn candidates_for_keys(routing: &RoutingConfig, keys: &[String]) -> Vec<TargetCa
         .collect()
 }
 
-/// Per-group most-recently-successful dispatch, keyed by group name to the
-/// wire `model` id of the target that last served it. Written by the dispatch
-/// path on every `Ok` outcome, read by sentinel expansion at match time. A
-/// plain mutex map beside the server stats — not a subsystem — with no expiry:
-/// a failed `Last` target falls through to the next rung via the existing
-/// fallback combinator.
+/// Per-(session, group) most-recently-successful dispatch: the wire `model`
+/// id of the target that last served the group *in that session*. Written by
+/// the dispatch path on every `Ok` outcome (failed targets never record),
+/// read by sentinel expansion at match time. A plain mutex map beside the
+/// server stats — not a subsystem.
+///
+/// Sessions are unbounded over a server lifetime, so the map evicts the
+/// oldest-stamped entry past [`RECENCY_CAPACITY`] (scanned on insert only
+/// when full). A failed `Last` target falls through to the next rung via the
+/// existing fallback combinator.
 #[derive(Debug, Default)]
 pub struct GroupRecency {
-    inner: std::sync::Mutex<HashMap<String, (String, i64)>>,
+    inner: std::sync::Mutex<HashMap<(String, String), (String, i64)>>,
 }
+
+/// Maximum `(session, group)` recency entries (see [`GroupRecency`]).
+pub const RECENCY_CAPACITY: usize = 4096;
 
 impl GroupRecency {
     pub fn new() -> Self {
@@ -138,23 +145,52 @@ impl GroupRecency {
         }
     }
 
-    /// Record a successful dispatch of `group` served by the target whose wire
-    /// `model` id is `model_wire`.
-    pub fn record(&self, group: &str, model_wire: &str) {
+    /// Record a successful dispatch of `group` in `session`, served by the
+    /// target whose wire `model` id is `model_wire`. Lock-serialized with
+    /// reads — concurrent requests in one session observe one winner.
+    pub fn record(&self, session: &str, group: &str, model_wire: &str) {
         let now = i64::try_from(common_core::now_secs()).unwrap_or(i64::MAX);
-        self.inner
+        let mut inner = self
+            .inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(group.to_string(), (model_wire.to_string(), now));
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        inner.insert(
+            (session.to_string(), group.to_string()),
+            (model_wire.to_string(), now),
+        );
+        if inner.len() > RECENCY_CAPACITY {
+            if let Some(oldest) = inner
+                .iter()
+                .min_by_key(|(_, (_, stamped))| *stamped)
+                .map(|(key, _)| key.clone())
+            {
+                inner.remove(&oldest);
+            }
+        }
     }
 
-    /// The wire `model` id of the group's last successful dispatch, if any.
-    pub fn last_for(&self, group: &str) -> Option<String> {
+    /// The wire `model` id of the group's last successful dispatch in
+    /// `session`, if any. An unknown session resolves to nothing — the
+    /// caller falls back to the group head.
+    pub fn last_for(&self, session: &str, group: &str) -> Option<String> {
         self.inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(group)
+            .get(&(session.to_string(), group.to_string()))
             .map(|(model_wire, _)| model_wire.clone())
+    }
+
+    /// Entry count (bounded by [`RECENCY_CAPACITY`]).
+    pub fn len(&self) -> usize {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    /// Whether no dispatch has been recorded yet.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -180,12 +216,14 @@ impl LivenessProbe {
 
 /// Request-scoped availability view for sentinel expansion, assembled from
 /// the per-request context channels the handler populates. Absent channels
-/// (unit tests, paths that bypass the handler) degrade gracefully: no recency
-/// and an all-down fleet, so expansion is identity for sentinel-free groups.
+/// (unit tests, paths that bypass the handler) degrade gracefully: no recency,
+/// no session, and an all-down fleet, so expansion is identity for
+/// sentinel-free groups.
 #[derive(Clone, Default)]
 pub struct GroupExpansion {
     recency: Option<Arc<GroupRecency>>,
     liveness: LivenessProbe,
+    session: Option<String>,
 }
 
 /// The per-request context channels [`GroupExpansion::from_ctx`] reads.
@@ -200,11 +238,25 @@ impl GroupExpansion {
                 .get::<LivenessProbe>(LIVENESS_CTX_KEY)
                 .cloned()
                 .unwrap_or_default(),
+            // The handler stamps the effective session id into the request
+            // before the pipeline runs, so the structured request always
+            // carries it on served paths; `None` off those paths means
+            // "unknown session" (Last falls back to the head).
+            session: ctx
+                .structured("request")
+                .ok()
+                .and_then(|r: crate::types::RouterRequest| r.session_id),
         }
     }
 
     pub fn recency(&self) -> Option<&GroupRecency> {
         self.recency.as_deref()
+    }
+
+    /// Effective session id for `last`-sentinel expansion, if the request
+    /// carried one.
+    pub fn session(&self) -> Option<&str> {
+        self.session.as_deref()
     }
 
     /// Supervisor liveness for a base model key. Onnx roles never reach this
@@ -232,9 +284,11 @@ fn member_wire_id(routing: &RoutingConfig, member: &str) -> Option<String> {
 /// their candidate keys first; without roles or sentinels the expansion is
 /// identity, so role-free configs resolve byte-identically.
 ///
-/// - `Last` expands to the group's last-success key when it is still a member,
-///   else it is skipped (no expiry heuristic — a failed target falls to the
-///   next rung via the combinator).
+/// - `Last` expands to the session's last-success key when it is still a
+///   member, else it is skipped and a `last-empty-fallback` audit note is
+///   emitted once (unknown session, or a recorded wire id that no longer
+///   names a member — the group head serves). No expiry heuristic: a failed
+///   target falls to the next rung via the combinator.
 /// - `Any` expands, in config order, to the currently-loaded members first
 ///   (supervisor `is_running`, plus onnx-registry members via the existing
 ///   readiness), then the remaining members in config order (which load on
@@ -247,6 +301,7 @@ pub fn expand_group_keys(
     routing: &RoutingConfig,
     group: &str,
     recency: Option<&GroupRecency>,
+    session: Option<&str>,
     is_running: &dyn Fn(&str) -> bool,
 ) -> Vec<String> {
     use crate::config::GroupMember;
@@ -266,13 +321,17 @@ pub fn expand_group_keys(
         is_running(base)
     };
     let last_member: Option<&str> = recency
-        .and_then(|r| r.last_for(group))
+        .and_then(|r| session.and_then(|s| r.last_for(s, group)))
         .and_then(|wire| {
             literals
                 .iter()
                 .find(|m| member_wire_id(routing, m).as_deref() == Some(wire.as_str()))
                 .map(|m| m.as_str())
         });
+    let wants_last = raw
+        .iter()
+        .any(|m| matches!(GroupMember::parse(m), GroupMember::Last));
+    let mut fallback_audited = false;
     let mut out: Vec<String> = Vec::with_capacity(raw.len());
     let mut seen: HashSet<String> = HashSet::new();
     let push = |key: &str, out: &mut Vec<String>, seen: &mut HashSet<String>| {
@@ -286,6 +345,19 @@ pub fn expand_group_keys(
             GroupMember::Last => {
                 if let Some(last) = last_member {
                     push(last, &mut out, &mut seen);
+                } else if wants_last && !fallback_audited {
+                    // Unknown session (or a stale wire id): the head serves.
+                    // Audited once per expansion so the fallback stays
+                    // legible without one event per sentinel occurrence.
+                    fallback_audited = true;
+                    crate::audit::emit(
+                        "target_match",
+                        serde_json::json!({
+                            "stage": "expansion",
+                            "group": group,
+                            "reason": "last-empty-fallback",
+                        }),
+                    );
                 }
             }
             GroupMember::Any => {
@@ -303,16 +375,18 @@ pub fn expand_group_keys(
 }
 
 /// The expanded-candidate variant of [`candidates_for_group`]: sentinel
-/// members resolve to ordered literal keys first, then the same
-/// entry-resolution mapping runs (unknown keys skipped, onnx roles excluded —
-/// they carry no `models` entry and are served outside the climb, as today).
+/// members resolve to ordered literal keys first (session-scoped `last`
+/// included), then the same entry-resolution mapping runs (unknown keys
+/// skipped, onnx roles excluded — they carry no `models` entry and are
+/// served outside the climb, as today).
 pub fn expanded_candidates_for_group(
     routing: &RoutingConfig,
     group: &str,
     recency: Option<&GroupRecency>,
+    session: Option<&str>,
     is_running: &dyn Fn(&str) -> bool,
 ) -> Vec<TargetCandidate> {
-    let keys = expand_group_keys(routing, group, recency, is_running);
+    let keys = expand_group_keys(routing, group, recency, session, is_running);
     candidates_for_keys(routing, &keys)
 }
 
@@ -660,6 +734,7 @@ impl TargetMatcher {
                 model: candidate.model_name.clone(),
                 group: None,
                 target_name: Some(candidate.model_key.clone()),
+                role: None,
                 params: None,
                 instance: None,
                 snapshot: None,

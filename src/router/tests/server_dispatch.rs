@@ -6,6 +6,7 @@ fn base_target() -> RoutingTarget {
         model: "base:swarm".into(),
         group: None,
         target_name: Some("swarm".into()),
+        role: None,
         params: None,
         instance: None,
         snapshot: None,
@@ -90,6 +91,7 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
         None,
     );
     let profile = InstanceProfile {
+        embedding: None,
         name: Some("swarm0".into()),
         group: Some("swarm".into()),
         count: 1,
@@ -145,6 +147,7 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
         session: None,
         instance_pool: Some(pool),
         onnx_llm_backend: None,
+        role_limiters: Arc::new(RoleLimiters::default()),
     };
     let outcome = dispatch_real(&target, &request, "base", &deps, false, "hello")
         .await
@@ -213,5 +216,102 @@ fn dispatch_audit_emits_without_router_stage() {
     assert!(
         types.contains("\"Router\""),
         "the historical Router compat string must be kept in the deserializer"
+    );
+}
+
+fn gated_roles() -> std::collections::HashMap<String, crate::config::RoleEntry> {
+    serde_json::from_value(serde_json::json!({
+        "quick": {"concurrency": {"max_parallel": 2}},
+        "plain": {},
+    }))
+    .expect("roles parse")
+}
+
+#[test]
+fn role_limiters_cover_capped_roles_only() {
+    let gates = RoleLimiters::from_roles(&gated_roles());
+    assert!(
+        gates.limiter_for("quick").is_some(),
+        "capped role gets a gate"
+    );
+    assert!(
+        gates.limiter_for("plain").is_none(),
+        "uncapped role passes through unbounded"
+    );
+    assert!(
+        gates.limiter_for("missing").is_none(),
+        "unknown role passes through"
+    );
+}
+
+#[tokio::test]
+async fn role_limiter_bounds_concurrent_admissions() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+    let gates = RoleLimiters::from_roles(&gated_roles());
+    let limiter = gates.limiter_for("quick").expect("gate");
+    let live = std::sync::Arc::new(AtomicUsize::new(0));
+    let peak = std::sync::Arc::new(AtomicUsize::new(0));
+    let mut handles = Vec::new();
+    for _ in 0..8 {
+        let (limiter, live, peak) =
+            (std::sync::Arc::clone(&limiter), std::sync::Arc::clone(&live), std::sync::Arc::clone(&peak));
+        handles.push(tokio::spawn(async move {
+            limiter
+                .run(|| async {
+                    let n = live.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(n, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    live.fetch_sub(1, Ordering::SeqCst);
+                })
+                .await;
+        }));
+    }
+    for handle in handles {
+        handle.await.expect("no deadlock under contention");
+    }
+    assert_eq!(
+        peak.load(Ordering::SeqCst),
+        2,
+        "the cap bounds simultaneity, never more"
+    );
+}
+
+#[tokio::test]
+async fn role_limiter_releases_permit_on_task_panic() {
+    // A concurrency of one proves release: after a panicking holder, the
+    // next admission must still proceed (no wedged scope).
+    let one: std::collections::HashMap<String, crate::config::RoleEntry> =
+        serde_json::from_value(serde_json::json!({
+            "solo": {"concurrency": {"max_parallel": 1}},
+        }))
+        .expect("roles parse");
+    let gates = RoleLimiters::from_roles(&one);
+    let limiter = gates.limiter_for("solo").expect("gate");
+    let holder = tokio::spawn({
+        let limiter = std::sync::Arc::clone(&limiter);
+        async move {
+            limiter
+                .run(|| async {
+                    panic!("boom");
+                })
+                .await;
+        }
+    });
+    assert!(holder.await.is_err(), "holder panicked as staged");
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let thanked = std::sync::Arc::clone(&done);
+    tokio::spawn(async move {
+        limiter
+            .run(|| async {
+                thanked.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .await;
+    })
+    .await
+    .expect("no deadlock after panic");
+    assert!(
+        done.load(std::sync::atomic::Ordering::SeqCst),
+        "permit released on unwind"
     );
 }

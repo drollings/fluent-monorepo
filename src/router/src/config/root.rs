@@ -26,8 +26,9 @@ use crate::config::routing::{RoleEntry, RouteRef};
 /// The typed form is `crate::pipeline::QualifiedModelId` (router-local newtype,
 /// `pipeline.rs:12`) — this function is the low-level `&str` parser used by
 /// callers that need a zero-alloc split. Prefer `QualifiedModelId::parse` for
-/// owned values.
-pub(crate) fn split_model_key(key: &str) -> (&str, Option<&str>) {
+/// owned values. Also re-exported to the `coral-router` composition root,
+/// which resolves qualified instance keys for the embedding duty chain.
+pub fn split_model_key(key: &str) -> (&str, Option<&str>) {
     match key.split_once(':') {
         Some((base, qualifier)) if !base.is_empty() && !qualifier.is_empty() => {
             (base, Some(qualifier))
@@ -37,6 +38,7 @@ pub(crate) fn split_model_key(key: &str) -> (&str, Option<&str>) {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FieldAccess, Describable)]
+#[serde(deny_unknown_fields)]
 pub struct RouterConfig {
     /// Named pipeline stage tables (keyed by pipeline name). This is stage
     /// configuration — not flat route authoring — so it stays past M3c: the
@@ -59,8 +61,8 @@ pub struct RouterConfig {
     #[serde(default)]
     pub roles: HashMap<String, RoleEntry>,
     #[field(desc="safety threshold", min=0.0, max=1.0)]
-    #[serde(default)]
-    pub safety_threshold: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety_threshold: Option<f64>,
     #[field(desc="default route")]
     #[serde(default = "default_route")]
     pub default_route: String,
@@ -76,14 +78,6 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub logging: LoggingConfig,
-    /// There is no top-level `classifier_model` key: the classifier is a
-    /// role (`roles.classifier`, head candidate serves). See
-    /// [`RouterConfig::classifier_role_key`]. A retired key parses here so
-    /// old configs fail with a guided warning at boot instead of silently
-    /// losing their classifier — always `None` after load, never read.
-    #[field(skip)]
-    #[serde(default, skip_serializing)]
-    pub classifier_model: Option<String>,
     /// Chart-embedding model: a role name first (the `embedding` role
     /// mapping), else a literal `models` key. `None` falls back to
     /// `charts.selector_model`, then the classifier role head.
@@ -96,13 +90,6 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub reranker_model: Option<String>,
-    /// ColBERT late-interaction retrieval model key for two-stage retrieval.
-    /// Selects an entry from `models` with `task: LateInteraction`. `None`
-    /// skips ColBERT re-ranking; when set, HNSW coarse retrieval is
-    /// followed by ColBERT MaxSim re-ranking of top-k candidates.
-    #[field(skip)]
-    #[serde(default)]
-    pub retrieval_model: Option<String>,
     #[field(skip)]
     #[serde(default)]
     pub mock: Option<MockConfig>,
@@ -163,16 +150,6 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub session: Option<SessionConfig>,
-    /// Fleet run configuration. There is no top-level `default_params` block:
-    /// the fleet defaults live as `roles.default.params` (launch knobs +
-    /// base sampling) and `roles.default.instances` (the shared pool).
-    /// Models declaring no role selection inherit the `default` role's pool
-    /// through the same code path. Kept as a deserialization alias so
-    /// pre-R7 configs fail with a guided message instead of an unknown field
-    /// — always `None` after load; the materializer never reads it.
-    #[field(skip)]
-    #[serde(default, skip_serializing)]
-    pub default_params: Option<RoleParams>,
     /// In-process ONNX fleet: one optional role-scoped model declaration per
     /// role (Encoder / PII / Router / Policy / ColBERT). Every role is optional
     /// and the pipeline is fully functional (pure-deterministic) with none of
@@ -238,15 +215,13 @@ impl Default for RouterConfig {
             models: HashMap::new(),
             model_groups: HashMap::new(),
             roles: HashMap::new(),
-            safety_threshold: 0.5,
+            safety_threshold: None,
             default_route: "local".into(),
             classifier_failure_policy: ClassifierFailurePolicy::Reject,
             server: ServerConfig::default(),
             logging: LoggingConfig::default(),
-            classifier_model: None,
             embedding_model: None,
             reranker_model: None,
-            retrieval_model: None,
             mock: None,
             charts: ChartsConfig::default(),
             post_process: PostProcessConfig::default(),
@@ -257,7 +232,6 @@ impl Default for RouterConfig {
             review: None,
             overlay: None,
             session: None,
-            default_params: None,
             onnx_limiter_cap: common_core::constants::DEFAULT_ONNX_LIMITER_CAP,
             onnx_threads: common_core::constants::DEFAULT_ONNX_THREADS,
             gguf_dir: None,
@@ -272,75 +246,200 @@ impl Default for RouterConfig {
 }
 
 impl RouterConfig {
-    /// Boot composition: deserialize-then-compose the role params chain so
-    /// the rest of the crate sees fully-materialized entries. Call once after
-    /// config load:
+    /// Reserved `models` key: the fleet template, never a routable model.
+    /// Every other `models` entry sparse-inherits from it at parse (see
+    /// [`Self::from_json_value`]).
+    pub const DEFAULT_MODEL_KEY: &'static str = "default";
+
+    /// Parse a router config from its JSON text through the boot-equivalent
+    /// path. Two sparse-inheritance legs run **before** typing, so entries
+    /// declare only deltas:
     ///
-    /// 1. The `roles.default.params` sampling base is merged into every model
-    ///    entry that does not declare its own values (per-model values win —
-    ///    the entry top-level stays the final sparse layer).
-    /// 2. Every model's effective instance pool is composed
-    ///    ([`materialize_effective_pool`]: role-base ← pool profile ←
-    ///    per-model selection) and stored on the entry.
+    /// 1. `models.default` fills every absent top-level key of each sibling
+    ///    model entry (its `params` object shallow-fills the sibling's
+    ///    missing sampling keys); `roles.default.params` run knobs fill the
+    ///    same knobs of `models.default.params` first, so one fleet block
+    ///    serves both vocabularies.
+    /// 2. `roles.default.params` shallow-fills every other role's `params`
+    ///    (legacy nested `params`-inside-`params` objects are hoisted flat
+    ///    first and never interpreted as a layer).
     ///
-    /// A retired top-level `default_params` block is ignored with a loud
-    /// warning (its content now lives as `roles.default.params`); only the
-    /// server-launch knobs are read elsewhere — the supervisor consumes them
-    /// from `roles.default.params` (`build_server_args`).
+    /// Direct `serde_json::from_str::<RouterConfig>` skips both legs (absent
+    /// keys then read as struct defaults) — composition roots must use this
+    /// constructor; unit tests that need the inheritance use it too.
+    pub fn from_json_str(s: &str) -> serde_json::Result<Self> {
+        Self::from_json_value(serde_json::from_str(s)?)
+    }
+
+    /// [`Self::from_json_str`] over an already-parsed value.
+    pub fn from_json_value(mut value: serde_json::Value) -> serde_json::Result<Self> {
+        if let Err(msg) = reject_legacy_role_shapes(&value) {
+            return Err(<serde_json::Error as serde::de::Error>::custom(msg));
+        }
+        normalize_model_defaults(&mut value);
+        normalize_fleet_role_params(&mut value);
+        serde_json::from_value(value)
+    }
+
+    /// Boot composition: materialize every model's effective instance pool
+    /// so the rest of the crate resolves qualifiers and sampling through one
+    /// code path ([`ModelEntry::effective_pool`]). Call once after config
+    /// load (preferably loaded via [`Self::from_json_str`], which performs
+    /// the sparse-inheritance legs at parse).
+    ///
+    /// The single documented composition order, every leg through
+    /// [`overlay_params`] (shallow: each key wins wholesale, never
+    /// deep-merged):
+    /// `models.default` → model entry (parse time) → role run block →
+    /// pool profile → per-model selection (the last two at
+    /// [`materialize_effective_pool`]; the role side wins over the entry at
+    /// dispatch via [`ModelEntry::instance_params_for`]).
+    ///
+    /// Only the server-launch knobs are read elsewhere — the supervisor
+    /// consumes them from the fleet run block (`build_server_args` over
+    /// [`Self::default_role_params`], which itself inherits
+    /// `models.default` launch keys at parse).
     pub fn apply_defaults(&mut self) {
+        // `params` is valid on pool profiles, role-side model bindings, and
+        // model entries alike — every layer composes through `overlay_params`.
+        // Non-object values would vanish silently in the merge, so boot
+        // warns loudly over each one (fail-open: the merge itself is
+        // unchanged). Bindings naming undeclared models warn the same way.
+        warn_on_non_object_params(self);
+        warn_on_unknown_model_bindings(&self.models, &self.roles);
+        warn_on_unknown_role_overrides(&self.models, &self.roles);
+        warn_on_unknown_param_keys(self);
         // Merge top-level ONNX role keys into the `onnx` fleet when `onnx` is
         // absent. This supports the simplified config format where roles like
         // `encoder`, `pii`, `router`, `colbert` are declared at the root level
         // instead of nested under `onnx`.
         self.normalize_onnx();
+        warn_on_missing_endpoint(self);
+        for (key, entry) in &mut self.models {
+            entry.effective_profiles = Some(materialize_effective_pool(key, &self.roles));
+        }
+    }
 
-        if self.default_params.is_some() {
-            tracing::warn!(
-                target: "router.config",
-                "top-level `default_params` is retired; move its content to \
-                 `roles.default.params` (`instances` to `roles.<role>.instances`). \
-                 The block is ignored.",
-            );
+    /// The effective top-level safety default: the configured
+    /// `safety_threshold`, else the hard default. Per-classifier-node
+    /// thresholds win over this wherever set (node-over-top-over-hard) —
+    /// this is only the pipeline default the nodes fall back to.
+    pub fn effective_safety_threshold(&self) -> f64 {
+        self.safety_threshold
+            .unwrap_or_else(super::classification::default_safety_threshold)
+    }
+
+    /// Boot presence gate: every model serving traffic must be usable.
+    /// Deterministic: models visit in sorted key order, so the first
+    /// reported failure is stable. Fail-closed for referenced models, warn
+    /// for unreferenced ones:
+    /// - `weights` set: the path (absolute, or joined under `gguf_dir`)
+    ///   must exist. Referenced and missing stops boot; unreferenced and
+    ///   missing warns and continues.
+    /// - `hf_repo` set (no `weights`): remote — reaching it needs the
+    ///   network, so presence is not validated here.
+    /// - otherwise external: `endpoint` must be non-empty (same
+    ///   referenced-fail / unreferenced-warn split).
+    ///
+    /// The `default` key is always the sparse-inheritance template, never
+    /// a servable model — skipped. Referenced means: classifier duty keys,
+    /// group literal bases (role members fanned out), or role-bound
+    /// models.
+    pub fn validate_model_presence(&self, gguf_dir: &std::path::Path) -> Result<(), String> {
+        let mut referenced = std::collections::BTreeSet::new();
+        if let Some(tree) = self.classification.as_ref() {
+            referenced.extend(tree.classifier_model_keys());
         }
-        if self.classifier_model.is_some() {
-            tracing::warn!(
-                target: "router.config",
-                "top-level `classifier_model` is retired; the classifier is \
-                 the `classifier` role (its head candidate serves). \
-                 The key is ignored.",
-            );
-        }
-        if let Some(serde_json::Value::Object(defaults)) =
-            self.default_role_params().params.clone()
-        {
-            for entry in self.models.values_mut() {
-                let Some(serde_json::Value::Object(existing)) = entry.params.as_mut()
-                else {
-                    entry.params = Some(serde_json::Value::Object(defaults.clone()));
+        for cfg in self.model_groups.values() {
+            for member in cfg.effective_models() {
+                if member == "last" || member == "any" {
                     continue;
-                };
-                for (key, value) in &defaults {
-                    existing.entry(key.clone()).or_insert_with(|| value.clone());
+                }
+                let (base, _) = split_model_key(&member);
+                if self.roles.contains_key(base) {
+                    referenced.extend(models_serving_role(&self.roles, &self.models, base));
+                } else {
+                    referenced.insert(base.to_string());
                 }
             }
         }
-        for (key, entry) in &mut self.models {
-            if entry.sessions.is_some() {
+        for role in self.roles.values() {
+            referenced.extend(role.models.keys().cloned());
+        }
+        let mut keys: Vec<&String> = self.models.keys().collect();
+        keys.sort();
+        for key in keys {
+            if key == "default" {
+                continue;
+            }
+            let entry = &self.models[key];
+            let is_referenced = referenced.contains(key);
+            if let Some(weights) = entry.weights.as_deref() {
+                let raw = std::path::Path::new(weights);
+                let full = if raw.is_absolute() {
+                    raw.to_path_buf()
+                } else {
+                    gguf_dir.join(raw)
+                };
+                if !full.exists() {
+                    if is_referenced {
+                        return Err(format!(
+                            "model '{key}' weights not found at '{}'",
+                            full.display()
+                        ));
+                    }
+                    tracing::warn!(
+                        target: "router.config",
+                        model = %key,
+                        path = %full.display(),
+                        "unreferenced model weights missing; boot continues",
+                    );
+                }
+                continue;
+            }
+            if entry.hf_repo.is_some() {
+                continue;
+            }
+            if entry.endpoint.is_empty() {
+                if is_referenced {
+                    return Err(format!(
+                        "model '{key}' has no weights and no endpoint"
+                    ));
+                }
                 tracing::warn!(
                     target: "router.config",
                     model = %key,
-                    "retired `sessions` pool key is ignored; move its profiles to \
-                     `roles.<role>.instances` and select them per role",
+                    "unreferenced model has no weights or endpoint; boot continues",
                 );
             }
-            entry.effective_profiles =
-                Some(materialize_effective_pool(key, entry, &self.roles));
+            // Chat-template file: warn-only even when referenced — a missing
+            // template degrades to the GGUF-baked template (the supervisor
+            // omits `--chat-template-file`), never a boot fatal.
+            if let Some(template) = entry.template.as_deref() {
+                let raw = std::path::Path::new(template);
+                let full = if raw.is_absolute() {
+                    raw.to_path_buf()
+                } else {
+                    gguf_dir.join(raw)
+                };
+                if !full.exists() {
+                    tracing::warn!(
+                        target: "router.config",
+                        model = %key,
+                        path = %full.display(),
+                        "chat-template file missing; spawning without --chat-template-file",
+                    );
+                }
+            }
         }
+        Ok(())
     }
 
     /// The fleet run block: `roles.default.params`, or struct defaults when
     /// no `default` role is declared. The single source for spawn defaults
-    /// (supervisor) and the entry-params merge base above.
+    /// (supervisor). Parse-time inheritance fills its absent launch knobs
+    /// from `models.default.params`, so the models template is the fleet
+    /// base even when `roles.default` is an empty `{}`.
     pub fn default_role_params(&self) -> RoleParams {
         self.roles
             .get("default")
@@ -348,15 +447,60 @@ impl RouterConfig {
             .unwrap_or_default()
     }
 
+    /// Per-model spawn defaults for the supervisor: the fleet run block
+    /// overlaid with the model's own launch knobs from its
+    /// (template-inherited) `params`. A pool-less model therefore spawns
+    /// with its declared `num_ctx` instead of the fleet's, while instance
+    /// pools keep owning residency for bound models. Unknown models fall
+    /// back to the fleet block.
+    pub fn spawn_defaults_for(&self, model_key: &str) -> RoleParams {
+        let base = self.default_role_params();
+        let over = self.models.get(model_key).and_then(|e| e.params.as_ref());
+        base.with_model_launch_overrides(over)
+    }
+
     /// The classifier's serving key: the head candidate of the `classifier`
-    /// role (config order), else `None`. The single classifier-key source —
-    /// the retired top-level `classifier_model` is never read.
-    pub fn classifier_role_key(&self) -> Option<&str> {
-        self.roles
-            .get("classifier")?
-            .models
-            .first()
-            .map(String::as_str)
+    /// role (sorted model-key order over the role's bound models), else
+    /// `None`. The single classifier-key source.
+    pub fn classifier_role_key(&self) -> Option<String> {
+        models_serving_role(&self.roles, &self.models, "classifier")
+            .into_iter()
+            .next()
+    }
+
+    /// The ledger duty's serving key: the `ledger` section's `group`
+    /// (resolved through [`resolve_group_head_key`]), else its literal
+    /// `model`, else the classifier key. Group wins when set; the literal is
+    /// the legacy fallback.
+    pub fn ledger_head_key(&self) -> Option<String> {
+        if let Some(ledger) = &self.ledger {
+            if let Some(group) = ledger.group.as_deref() {
+                if let Some(key) =
+                    resolve_group_head_key(&self.models, &self.roles, &self.model_groups, group)
+                {
+                    return Some(key);
+                }
+            }
+            if let Some(model) = ledger.model.as_deref() {
+                return Some(model.to_string());
+            }
+        }
+        self.classifier_role_key()
+    }
+
+    /// The chart-selector duty's serving key: the `charts` section's
+    /// `selector_group` (resolved through [`resolve_group_head_key`]), else
+    /// its literal `selector_model`. Group wins when set; the literal is the
+    /// legacy fallback.
+    pub fn chart_selector_key(&self) -> Option<String> {
+        if let Some(group) = self.charts.selector_group.as_deref() {
+            if let Some(key) =
+                resolve_group_head_key(&self.models, &self.roles, &self.model_groups, group)
+            {
+                return Some(key);
+            }
+        }
+        self.charts.selector_model.clone()
     }
 
     /// Merge top-level ONNX role keys into the `onnx` fleet. When `onnx` is
@@ -414,11 +558,40 @@ impl RouterConfig {
         self.onnx = Some(fleet);
     }
 
-    /// Validate tree presence after `apply_defaults` (M3c): configs without a
-    /// `classification` tree are rejected fail-fast — flat-only JSON no
-    /// longer loads. (Name retained for call-site stability; the flat arms
-    /// are gone with the flat fields.)
+    /// Startup schema verification: the loaded config conforms to the derived
+    /// [`crate::config::config_schema`] document it will be served under.
+    /// Fail-closed (`Err` stops boot at the composition root) over three
+    /// structural legs — everything open-vocabulary underneath stays
+    /// warn-only (see [`warn_on_unknown_param_keys`]):
+    ///
+    /// 1. the `classification` tree is present (the schema's load-bearing
+    ///    section; flat-only configs are rejected);
+    /// 2. the `default` pipeline exists and `default_route` is non-empty
+    ///    (every fallback path assumes both);
+    /// 3. the config round-trips: serialize → [`Self::from_json_value`] —
+    ///    so the sparse-inheritance legs are idempotent and no loaded state
+    ///    is unrepresentable in the schema's vocabulary.
+    pub fn verify_schema_conformance(&self) -> Result<(), String> {
+        if self.classification.is_none() {
+            return Err("schema: missing required section `classification`".into());
+        }
+        if !self.pipelines.contains_key("default") {
+            return Err("schema: missing required pipeline `default`".into());
+        }
+        if self.default_route.is_empty() {
+            return Err("schema: `default_route` must not be empty".into());
+        }
+        let value = serde_json::to_value(self)
+            .map_err(|e| format!("schema: config does not serialize: {e}"))?;
+        Self::from_json_value(value)
+            .map_err(|e| format!("schema: config round-trip failed: {e}"))?;
+        Ok(())
+    }
     pub fn validate_flat_tree_coherence(&self) -> Result<(), String> {
+        // M3c: configs without a `classification` tree are rejected fail-fast —
+        // flat-only JSON no longer loads. (Name retained for call-site
+        // stability; the flat arms are gone with the flat fields. New code
+        // prefers `verify_schema_conformance`, which covers this leg.)
         if self.classification.is_none() {
             return Err("flat config removed, set classification.tree".into());
         }
@@ -430,7 +603,7 @@ impl RouterConfig {
     /// Derived solely from the classification tree's `terminal` nodes: each
     /// terminal synthesizes a `RouteRef` routed through its own `group` (or
     /// the route name when no group is given) carrying the terminal's
-    /// `always_route`, so `RoutingConfig::resolve_route` and
+    /// `always_route` and `role`, so `RoutingConfig::resolve_route` and
     /// `resolve_pipeline` work with no structural change to the server.
     pub fn routes_view(&self) -> HashMap<String, RouteRef> {
         let mut routes = HashMap::new();
@@ -440,6 +613,7 @@ impl RouterConfig {
                     route.clone(),
                     RouteRef {
                         group: group.unwrap_or_else(|| route.clone()),
+                        role: tree.terminal_role(&route),
                         pipelines: vec!["default".into()],
                         description,
                         always_route: tree.terminal_always_route(&route),
@@ -473,6 +647,7 @@ fn default_max_payload() -> usize {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelEntry {
     #[serde(default)]
     pub name: Option<String>,
@@ -488,11 +663,21 @@ pub struct ModelEntry {
     /// Coral Router spawns) ignores this. `None` sends no auth header.
     #[serde(default)]
     pub api_key: Option<String>,
+    /// Capability rating (0–10): the target-matching ladder routes prompts
+    /// assessed above a member's `intelligence` to the next member.
+    #[serde(default = "default_intelligence")]
     pub intelligence: u8,
+    #[serde(default)]
     pub cost_input: f64,
+    #[serde(default)]
     pub cost_output: f64,
+    #[serde(default)]
     pub cost_cached_read: f64,
-    pub speed: u8,
+    /// Observed mean throughput (tokens/s) for this model on this host.
+    /// Sparse-inherited from `models.default`; metadata for capacity
+    /// planning (the ladder orders by cost, never by speed).
+    #[serde(default = "default_tok_s")]
+    pub tok_s: f64,
     #[serde(default = "default_total_timeout_ms")]
     pub total_timeout_ms: u64,
     #[serde(default = "default_idle_timeout_ms")]
@@ -501,35 +686,35 @@ pub struct ModelEntry {
     pub stream: bool,
     #[serde(default)]
     pub filter_thinking: bool,
+    /// Explicit thinking level for this model (`off` | `on` | a
+    /// model-specific level such as `low`/`high`/`max`). Additive with
+    /// [`Self::filter_thinking`]: absent behaves exactly as today; present
+    /// resolves through [`Self::resolve_thinking`] (model → role → override)
+    /// and an explicit level wins over `filter_thinking: true` with a loud
+    /// warn (`filter_thinking: true` alone still means `off`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
     #[serde(default)]
     pub retry_count: u32,
     #[serde(default = "default_retry_interval")]
     pub retry_base_interval_s: u64,
     #[serde(default)]
     pub params: Option<serde_json::Value>,
-    /// Per-role instance selection for this model, keyed by role name. The
-    /// entry under a role's name is the model's selected instance for that
-    /// role: `select` names a profile in `roles.<role>.instances`, and
-    /// `params` is a sparse update composed over it at boot. A model that
-    /// declares no selection for a role it serves uses the pool as authored;
-    /// a model serving no role and declaring nothing inherits the `default`
-    /// role's pool (the fleet-inherit fallback, same code path).
+    /// Embedding-model reference for this model: a `models` key, a role
+    /// name, or a weights path. Sparse-inherited from `models.default` and
+    /// overridable per instance profile and per role-side model binding
+    /// ([`ModelEntry::embedding_for`]); the chart embedder resolves it as a
+    /// duty key and falls through fail-open when it names no servable model.
     #[serde(default)]
-    pub instances: Option<HashMap<String, ModelInstanceRef>>,
+    pub embedding: Option<String>,
     /// Boot-materialized effective pool: every profile the qualifier and
     /// params paths resolve against, with the role-base ← pool ← selection
     /// sampling chain already composed into each profile's `params`.
     /// `None` before boot composition runs. Not serialized (derived).
     #[serde(skip)]
     pub effective_profiles: Option<Vec<InstanceProfile>>,
-    /// Retired pre-R7 `sessions` pool key: parsed so old configs fail with a
-    /// guided warning instead of silently losing their pool (pools now live
-    /// in `roles.<role>.instances`). Always ignored after load; never
-    /// serialized.
-    #[serde(default, skip_serializing)]
-    pub sessions: Option<serde_json::Value>,
-    /// Local GGUF weights file path. When set (or when `hf_repo` or `instances`
-    /// is set), Coral Router is the process owner: it spawns and supervises a
+    /// Local GGUF weights file path. When set (or when `hf_repo` is set),
+    /// Coral Router is the process owner: it spawns and supervises a
     /// dedicated `llama-server` for this model on a free localhost port and
     /// rewrites `endpoint` to it at boot. Passed to the server as `--model`.
     #[serde(default)]
@@ -543,15 +728,34 @@ pub struct ModelEntry {
     /// the quant default.
     #[serde(default)]
     pub hf_file: Option<String>,
+    /// Local chat-template file passed to the spawned `llama-server` as
+    /// `--chat-template-file`. Takes precedence over the template baked into
+    /// the GGUF metadata (and over the `template.txt` companion convention
+    /// the `preset` CLI surface auto-detects — explicit wins). Sparse-inherited
+    /// from `models.default` like every other top-level model key. A path that
+    /// does not exist warns loudly at boot and the flag is omitted (fail-open:
+    /// the server still serves with its baked-in template).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    /// Sparse per-role sampling override for this model, keyed by role name
+    /// (serde name `roles`). Params-only: it carries a sampling update for
+    /// the named role and never confers membership — a model listed here but
+    /// in no role's `models` map is still served only through the `default`
+    /// role's pool. `None` (the default) contributes nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "roles")]
+    pub role_params: Option<HashMap<String, ModelRoleOverride>>,
 }
 
 impl ModelEntry {
     /// Whether Coral Router manages this model's lifecycle itself: a dedicated
-    /// `llama-server` process (weights/hf_repo/instances). In-process ONNX
-    /// models are NOT `ModelEntry`s — they are declared in the top-level
-    /// `onnx` role section and managed by the ort registry (see `RouterConfig::onnx`).
+    /// `llama-server` process per weights file or HuggingFace repo. Roles
+    /// never confer management — a role-side binding for an endpoint-only
+    /// model routes to its declared `endpoint`; only weights-backed models
+    /// are spawned. In-process ONNX models are NOT `ModelEntry`s — they are
+    /// declared in the top-level `onnx` role section and managed by the ort
+    /// registry (see `RouterConfig::onnx`).
     pub fn is_managed(&self) -> bool {
-        self.weights.is_some() || self.hf_repo.is_some() || self.instances.is_some()
+        self.weights.is_some() || self.hf_repo.is_some()
     }
 
     /// The model name handed to the spawned `llama-server` (`--alias`): the
@@ -564,26 +768,50 @@ impl ModelEntry {
     }
 }
 
-/// One model's selected instance for one role: the value type of
-/// `ModelEntry.instances`, keyed by role name.
+/// One role-side model binding: the value type of `RoleEntry.models`, keyed
+/// by model key. Roles and models stay separate tables; the binding is where
+/// they compose — a role names the models that serve it, never the reverse.
 ///
-/// `select` names a profile in `roles.<role>.instances` — the fleet pool for
-/// that role — and that profile IS the model's pool for the role (a selection
-/// narrows; unselected models use the pool as authored). Absent selects the
-/// pool's `default: true` profile (else the single profile, else nothing).
-/// `params` is a sparse sampling update composed over the selected profile's
-/// params at boot; absent contributes nothing. A wholly-absent selection
-/// (`select` and `params` both `None`) is "pool as authored" — no narrowing.
+/// `select` names a profile in the role's own `instances` pool, and that
+/// profile IS the model's pool contribution for the role (a binding narrows;
+/// a bound model with no `select` uses the pool as authored). Absent selects
+/// the pool's `default: true` profile (else the single profile, else
+/// nothing). `params` is a sparse sampling update composed over the bound
+/// profile's params at boot; absent contributes nothing. A wholly-absent
+/// binding (every field `None`) is "pool as authored" — no narrowing.
 ///
 /// Unknown fields are rejected: a legacy pool profile deserializes here only
 /// by accident, and silently dropping its keys would misroute — fail loud.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct ModelInstanceRef {
-    /// Pool profile name selected for the role; see above for the absent rule.
+pub struct ModelBinding {
+    /// Pool profile name selected for the model; see above for the absent rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<String>,
     /// Sparse sampling update over the selected profile's params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+    /// Sparse embedding-model override for the selected profile, composed
+    /// into it at boot (this binding wins over the profile's own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<String>,
+}
+
+/// One model-side per-role override: the value type of
+/// `ModelEntry.role_params` (serde name `roles`), keyed by role name.
+/// Params-only by construction — the struct carries a single sparse sampling
+/// update and has no membership fields, so a model can tune its behavior for
+/// a task without joining (or redefining) the role's serving set.
+///
+/// Unknown fields are rejected: `models`/`select` belong on the role-side
+/// binding (`roles.<role>.models.<model>`), and silently dropping them here
+/// would look like a per-task tune while actually being ignored — fail loud
+/// with a pointer at the role side instead.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ModelRoleOverride {
+    /// Sparse sampling update for the named role, composed last in the
+    /// params chain (absent contributes nothing).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
 }
@@ -638,6 +866,10 @@ pub struct InstanceProfile {
     /// instance.
     #[serde(default)]
     pub params: Option<serde_json::Value>,
+    /// Sparse embedding-model override for this profile: wins over the
+    /// owning model's entry (which itself inherits `models.default`).
+    #[serde(default)]
+    pub embedding: Option<String>,
     /// Per-profile context-size cap (tokens). `None` = inherit (the role's
     /// `max_ctx`, else no cap). A cap below this profile's
     /// `num_ctx` clamps the context window at materialization
@@ -739,62 +971,35 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
 /// every qualifier, sampling, backend, and supervision path reads composed
 /// values through `ModelEntry::effective_pool`.
 ///
-/// Contributing roles (deterministic sorted order): every role listing the
-/// model as a candidate, plus every role the model's `instances` selects
-/// for. A model serving no role and declaring nothing inherits the
-/// `default` role's pool (the fleet-inherit fallback). Selections naming an
-/// unknown role, or a `select` naming an unknown pool profile, warn loudly
-/// and resolve to the pool as authored.
+/// Contributing roles (deterministic sorted order): every role whose
+/// `models` binding names this model. A model listed in no role's `models`
+/// map inherits the `default` role's pool (the fleet-inherit fallback). A
+/// `select` naming an unknown pool profile warns loudly and resolves to the
+/// pool as authored.
 ///
 /// Per contributing role, the sampling chain composes role-base ← pool
-/// profile ← per-model selection into each profile's `params` (each sparser
-/// layer wins; the entry top-level stays the final layer, applied at
-/// dispatch). Profiles collide first-role-wins with a loud warn; a
-/// non-empty selection narrows the role's contribution to the resolved
-/// target (the selected instance IS the model's pool for that role) and
-/// designates it the dispatch point (`default: true`, displacing a pool
-/// default with a loud warn).
+/// profile ← per-model binding into each profile's `params` (each sparser
+/// layer wins; the role side is the final layer over the model entry
+/// top-level at dispatch — see [`ModelEntry::instance_params_for`]).
+/// A binding's `embedding` override composes into the chosen profile the
+/// same way (binding wins over the profile's own). Profiles collide
+/// first-role-wins with a loud warn; a non-empty binding narrows the
+/// role's contribution to the resolved target (the selected instance IS the
+/// model's pool for that role) and designates it the dispatch point
+/// (`default: true`, displacing a pool default with a loud warn).
 #[allow(clippy::implicit_hasher)]
 pub(crate) fn materialize_effective_pool(
     model_key: &str,
-    entry: &ModelEntry,
     roles: &HashMap<String, RoleEntry>,
 ) -> Vec<InstanceProfile> {
     let mut contributing: Vec<&str> = roles
         .iter()
-        .filter(|(name, role)| {
-            role.models
-                .iter()
-                .any(|m| split_model_key(m).0 == model_key)
-                || entry
-                    .instances
-                    .as_ref()
-                    .is_some_and(|s| s.contains_key(name.as_str()))
-        })
+        .filter(|(_, role)| role.models.contains_key(model_key))
         .map(|(name, _)| name.as_str())
         .collect();
     contributing.sort_unstable();
-    if contributing.is_empty()
-        && entry.instances.is_none()
-        && roles.contains_key("default")
-    {
+    if contributing.is_empty() && roles.contains_key("default") {
         contributing.push("default");
-    }
-    if let Some(selections) = &entry.instances {
-        let mut unknown: Vec<&str> = selections
-            .keys()
-            .filter(|k| !roles.contains_key(k.as_str()))
-            .map(String::as_str)
-            .collect();
-        unknown.sort_unstable();
-        if !unknown.is_empty() {
-            tracing::warn!(
-                target: "router.config",
-                model = %model_key,
-                roles = ?unknown,
-                "model selects instances for unknown roles; selections ignored",
-            );
-        }
     }
     let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
     for role_name in &contributing {
@@ -813,98 +1018,305 @@ pub(crate) fn materialize_effective_pool(
             }
             let mut composed = profile.clone();
             composed.params = Some(overlay_params(
-                role.params.params.as_ref(),
+                role.params.sampling_value().as_ref(),
                 composed.params.as_ref(),
             ));
             merged.insert(profile_name.clone(), composed);
         }
     }
-    if let Some(selections) = &entry.instances {
-        for role_name in &contributing {
-            let Some(selection) = selections.get(*role_name) else {
-                continue;
-            };
-            // A wholly-absent selection ("pool as authored") contributes
-            // nothing beyond the merge above.
-            if selection.select.is_none() && selection.params.is_none() {
-                continue;
-            }
-            let target = match &selection.select {
-                Some(name) => {
-                    if merged.contains_key(name) {
-                        Some(name.clone())
-                    } else {
-                        tracing::warn!(
-                            target: "router.config",
-                            model = %model_key,
-                            role = %role_name,
-                            select = %name,
-                            "selection names an unknown pool profile; \
-                             pool used as authored",
-                        );
-                        None
-                    }
-                }
-                None => {
-                    // Pool as authored: the pool default, else the single
-                    // profile, else nothing to designate.
-                    merged
-                        .iter()
-                        .find(|(_, p)| p.default)
-                        .map(|(k, _)| k.clone())
-                        .or_else(|| {
-                            if merged.len() == 1 {
-                                merged.keys().next().cloned()
-                            } else {
-                                None
-                            }
-                        })
-                }
-            };
-            let Some(target) = target else { continue };
-            // The selection narrows the role's contribution to the resolved
-            // target: the selected instance IS the model's pool for the role.
-            // Only profiles this role contributed are removed — another
-            // role's same-named profile (first-wins above) stays.
-            let role_names: Vec<String> = roles[*role_name]
-                .instances
-                .keys()
-                .cloned()
-                .collect();
-            merged.retain(|name, _| *name == target || !role_names.contains(name));
-            // The selection designates the role's dispatch point, displacing
-            // a pool default with a loud warn.
-            for (name, profile) in &mut merged {
-                if *name != target && profile.default {
+    for role_name in &contributing {
+        // Fleet-inherited models carry no binding on the role: pool as
+        // authored, nothing to narrow or designate.
+        let Some(binding) = roles[*role_name].models.get(model_key) else {
+            continue;
+        };
+        // A wholly-absent binding ("pool as authored") contributes
+        // nothing beyond the merge above.
+        if binding.select.is_none() && binding.params.is_none() && binding.embedding.is_none() {
+            continue;
+        }
+        let target = match &binding.select {
+            Some(name) => {
+                if merged.contains_key(name) {
+                    Some(name.clone())
+                } else {
                     tracing::warn!(
                         target: "router.config",
                         model = %model_key,
                         role = %role_name,
-                        profile = %name,
-                        "explicit selection displaces pool default profile",
+                        select = %name,
+                        "binding selects an unknown pool profile; \
+                         pool used as authored",
                     );
-                    profile.default = false;
+                    None
                 }
             }
-            if let Some(chosen) = merged.get_mut(&target) {
-                chosen.default = true;
-                if selection.params.is_some() {
-                    chosen.params = Some(overlay_params(
-                        chosen.params.as_ref(),
-                        selection.params.as_ref(),
-                    ));
-                }
+            None => {
+                // Pool as authored: the pool default, else the single
+                // profile, else nothing to designate.
+                merged
+                    .iter()
+                    .find(|(_, p)| p.default)
+                    .map(|(k, _)| k.clone())
+                    .or_else(|| {
+                        if merged.len() == 1 {
+                            merged.keys().next().cloned()
+                        } else {
+                            None
+                        }
+                    })
+            }
+        };
+        let Some(target) = target else { continue };
+        // The binding narrows the role's contribution to the resolved
+        // target: the selected instance IS the model's pool for the role.
+        // Only profiles this role contributed are removed — another
+        // role's same-named profile (first-wins above) stays.
+        let role_names: Vec<String> = roles[*role_name]
+            .instances
+            .keys()
+            .cloned()
+            .collect();
+        merged.retain(|name, _| *name == target || !role_names.contains(name));
+        // The binding designates the role's dispatch point, displacing
+        // a pool default with a loud warn.
+        for (name, profile) in &mut merged {
+            if *name != target && profile.default {
+                tracing::warn!(
+                    target: "router.config",
+                    model = %model_key,
+                    role = %role_name,
+                    profile = %name,
+                    "explicit binding displaces pool default profile",
+                );
+                profile.default = false;
+            }
+        }
+        if let Some(chosen) = merged.get_mut(&target) {
+            chosen.default = true;
+            if binding.params.is_some() {
+                chosen.params = Some(overlay_params(
+                    chosen.params.as_ref(),
+                    binding.params.as_ref(),
+                ));
+            }
+            if let Some(embedding) = binding.embedding.clone() {
+                chosen.embedding = Some(embedding);
             }
         }
     }
     expand_instance_map(&merged)
 }
 
+/// The open `params` vocabulary: every key a `params` map (model entry,
+/// pool profile, role-side binding, model-side override) or a flattened role
+/// run block may carry with a defined meaning. Anything else is forwarded to
+/// the request body verbatim — so a typo'd key (`reasoning-effort`,
+/// `temprature`) would sail silently to the server. The boot audit below
+/// reports unknown keys loudly (fail-open: forwarding is unchanged).
+pub const KNOWN_PARAM_KEYS: [&str; 48] = [
+    // Launch knobs (spawn + residency; stripped at the body boundary).
+    "num_ctx",
+    "ctx_size",
+    "max_ctx",
+    "batch_size",
+    "ubatch_size",
+    "cache_type_k",
+    "cache_type_v",
+    "flash_attn",
+    "n_gpu_layers",
+    "n_cpu_moe",
+    "sleep_idle_seconds",
+    "parallel",
+    "stream",
+    "filter_thinking",
+    "rope_freq_base",
+    // Sampling knobs (forwarded into dispatch bodies).
+    "temperature",
+    "top_p",
+    "top_k",
+    "min_p",
+    "typical_p",
+    "repeat_penalty",
+    "presence_penalty",
+    "frequency_penalty",
+    "mirostat",
+    "mirostat_tau",
+    "mirostat_eta",
+    "seed",
+    "max_tokens",
+    "n_predict",
+    "stop",
+    "cache_prompt",
+    "slot_id",
+    // Thinking vocabulary (resolved by `ModelEntry::resolve_thinking` /
+    // `filter_thinking_for`; `preserve_thinking` is router-local and stripped
+    // at the body boundary, the rest forward to the server).
+    "thinking",
+    "enable_thinking",
+    "reasoning_effort",
+    "reasoning_budget_tokens",
+    "preserve_thinking",
+    "chat_template_kwargs",
+    // Structured server knobs (nested objects, replaced wholesale per layer).
+    "samplers",
+    "logit_bias",
+    "response_format",
+    "tools",
+    "tool_choice",
+    "grammar",
+    "json_schema",
+    "chat_template",
+    "mmproj",
+    "model_alias",
+];
+
+/// Warn loudly over `params` keys outside [`KNOWN_PARAM_KEYS`]: the params
+/// maps are open-vocabulary (forwarded verbatim), so an unknown key is
+/// almost always a typo that would otherwise reach the server silently.
+/// Fail-open — forwarding is unchanged, boot continues. Runs in
+/// [`RouterConfig::apply_defaults`] beside the other boot audits, over every
+/// params-bearing position (model entries, model-side overrides, role run
+/// blocks, pool profiles, role-side bindings). Deterministic: positions
+/// visit in sorted order.
+pub fn warn_on_unknown_param_keys(cfg: &RouterConfig) {
+    fn unknown_in(value: Option<&serde_json::Value>) -> Vec<String> {
+        let mut out: Vec<String> = value
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.keys()
+                    .filter(|k| !KNOWN_PARAM_KEYS.contains(&k.as_str()))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort_unstable();
+        out
+    }
+    fn report(path: &str, keys: &[String]) {
+        if !keys.is_empty() {
+            tracing::warn!(
+                target: "router.config",
+                path = %path,
+                keys = ?keys,
+                "unknown params keys have no defined meaning and forward verbatim — likely typos, see KNOWN_PARAM_KEYS",
+            );
+        }
+    }
+    let mut model_keys: Vec<&String> = cfg.models.keys().collect();
+    model_keys.sort();
+    for model_key in model_keys {
+        let entry = &cfg.models[model_key];
+        report(
+            &format!("models.{model_key}.params"),
+            &unknown_in(entry.params.as_ref()),
+        );
+        if let Some(overrides) = entry.role_params.as_ref() {
+            let mut roles: Vec<&String> = overrides.keys().collect();
+            roles.sort();
+            for role in roles {
+                report(
+                    &format!("models.{model_key}.roles.{role}.params"),
+                    &unknown_in(overrides[role].params.as_ref()),
+                );
+            }
+        }
+    }
+    let mut role_names: Vec<&String> = cfg.roles.keys().collect();
+    role_names.sort();
+    for role_name in role_names {
+        let role = &cfg.roles[role_name];
+        let sampling = role.params.sampling_value();
+        report(
+            &format!("roles.{role_name}.params"),
+            &unknown_in(sampling.as_ref()),
+        );
+        let mut profiles: Vec<&String> = role.instances.keys().collect();
+        profiles.sort();
+        for profile in profiles {
+            report(
+                &format!("roles.{role_name}.instances.{profile}.params"),
+                &unknown_in(role.instances[profile].params.as_ref()),
+            );
+        }
+        let mut bound: Vec<&String> = role.models.keys().collect();
+        bound.sort();
+        for model in bound {
+            report(
+                &format!("roles.{role_name}.models.{model}.params"),
+                &unknown_in(role.models[model].params.as_ref()),
+            );
+        }
+    }
+}
+
+/// Warn loudly over model-side per-role overrides naming roles with no
+/// `roles` entry: an override for an undeclared role can never compose into
+/// a dispatch, so it is always a config bug (a renamed role, a typo).
+/// Fail-open — the override is kept, boot continues. The role-side
+/// counterpart is [`warn_on_unknown_model_bindings`]; the two run together
+/// in [`RouterConfig::apply_defaults`].
+#[allow(clippy::implicit_hasher)]
+pub fn warn_on_unknown_role_overrides(
+    models: &HashMap<String, ModelEntry>,
+    roles: &HashMap<String, RoleEntry>,
+) {
+    let mut model_names: Vec<&String> = models.keys().collect();
+    model_names.sort();
+    for model_name in model_names {
+        let Some(overrides) = models[model_name].role_params.as_ref() else {
+            continue;
+        };
+        let mut unknown: Vec<&String> = overrides
+            .keys()
+            .filter(|r| !roles.contains_key(*r))
+            .collect();
+        unknown.sort();
+        if !unknown.is_empty() {
+            tracing::warn!(
+                target: "router.config",
+                model = %model_name,
+                roles = ?unknown,
+                "model overrides unknown roles; overrides kept but never compose",
+            );
+        }
+    }
+}
+
+/// Warn loudly over role-side model bindings naming models with no `models`
+/// entry: a binding for an undeclared model can never contribute to a pool,
+/// so it is always a config bug (a renamed model key, a typo). Fail-open —
+/// the binding is ignored, boot continues.
+#[allow(clippy::implicit_hasher)]
+pub fn warn_on_unknown_model_bindings(
+    models: &HashMap<String, ModelEntry>,
+    roles: &HashMap<String, RoleEntry>,
+) {
+    let mut role_names: Vec<&String> = roles.keys().collect();
+    role_names.sort();
+    for role_name in role_names {
+        let mut unknown: Vec<&String> = roles[role_name]
+            .models
+            .keys()
+            .filter(|m| !models.contains_key(*m))
+            .collect();
+        unknown.sort();
+        if !unknown.is_empty() {
+            tracing::warn!(
+                target: "router.config",
+                role = %role_name,
+                models = ?unknown,
+                "role binds unknown models; bindings ignored",
+            );
+        }
+    }
+}
+
 /// The entry-default step of the inference-point precedence: the `default:
 /// true` profile's group, else the single shared group across all profiles,
 /// else `None` (bare `<base>`). `None` also when no pool was materialized.
-/// Runs over the boot-materialized effective pool, so entries declaring no
-/// selection inherit their roles' pools through the same code path. Shared by
+/// Runs over the boot-materialized effective pool, so unbound entries inherit
+/// the `default` role's pool through the same code path. Shared by
 /// the single precedence function below and `RoutingTarget` construction
 /// (whose entries arrive materialized) so backend model ids and dispatch wire
 /// ids agree; not a second path — the rule lives here once.
@@ -934,18 +1346,18 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
 ///
 /// 1. Explicit qualifier — embedded (`base:point`) or parametric — wins,
 ///    except `latest`, which normalizes away and falls through.
-/// 2. A role's named instance point (`roles[name].instance`).
-/// 3. The entry default over the boot-materialized effective pool (the
+/// 2. The entry default over the boot-materialized effective pool (the
 ///    `default: true` profile's group, else the single shared group —
 ///    [`default_inference_point`]).
-/// 4. Bare key (`None`): no pool materialized, or no rule matched.
+/// 3. Bare key (`None`): no pool materialized, or no rule matched.
 ///
-/// A bare role name resolves its qualifier through step 2; the role's model
-/// key itself (head candidate, config order) is resolved by the caller via
-/// [`role_head_key`]. Unknown roles and keys fail closed (`None`); a role
-/// with no instance point on a model without a pool stays bare. Entries are
-/// expected boot-materialized (pools composed); pre-boot entries resolve
-/// through step 4.
+/// A role carries no qualifier of its own: it resolves from the route, which
+/// selects a model from a group, and the selected model's entry default
+/// supplies the point (the caller resolves *what* serves via
+/// [`role_head_key`], then this function resolves *where* on it).
+/// Unknown roles and keys fail closed (`None`). Entries are expected
+/// boot-materialized (pools composed); pre-boot entries resolve through
+/// step 3.
 #[allow(clippy::implicit_hasher)]
 pub fn resolve_inference_point(
     models: &HashMap<String, ModelEntry>,
@@ -964,22 +1376,73 @@ pub fn resolve_inference_point(
             return Some(point.to_string());
         }
     }
-    if let Some(role) = roles.get(base) {
-        if let Some(point) = role.instance.as_deref() {
-            return Some(point.to_string());
-        }
-    }
-    models
-        .get(base)
-        .and_then(default_inference_point)
+    let _ = roles;
+    models.get(base).and_then(default_inference_point)
 }
 
-/// Resolve a role or model key to its serving model key: a role name fans out
-/// to its head candidate (config order), everything else passes through
-/// unchanged. `None` for unknown roles, roles with no candidates, and (when
-/// `require_entry` is set) keys with no `models` entry. The companion to
-/// [`resolve_inference_point`]: the key identifies *what* serves, the point
-/// identifies *where* on it.
+/// Model keys serving a role, in sorted model-key order: every model named
+/// in the role's `models` binding map that also declares a `models` entry.
+/// Membership lives on the role side — models never name roles. Empty when
+/// the role is unknown, binds nothing, or names only undeclared models (the
+/// last case warns loudly at boot via [`warn_on_unknown_model_bindings`]).
+/// The single membership source for every "who serves this role" question
+/// (`role_head_key`, `classifier_role_key`, `role_expanded_members`).
+/// Pools (`materialize_effective_pool`) deliberately resolve bindings
+/// through the same map rather than this helper: params composition stays
+/// on declared pools only.
+#[allow(clippy::implicit_hasher)]
+pub fn models_serving_role(
+    roles: &HashMap<String, RoleEntry>,
+    models: &HashMap<String, ModelEntry>,
+    role: &str,
+) -> Vec<String> {
+    let mut out: Vec<String> = roles
+        .get(role)
+        .map(|entry| {
+            entry
+                .models
+                .keys()
+                .filter(|key| models.contains_key(key.as_str()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort_unstable();
+    out
+}
+
+/// Resolve a model group to its serving model key: the first non-sentinel
+/// member, with bare role names fanned out to their head candidate.
+/// Qualified members (`base:point`) and unknown literals pass through
+/// unchanged. `None` for unknown groups and groups with no servable member.
+/// The single group-duty resolver: classifier, ledger, and chart-selector
+/// duties name groups, never models, and all three compose through this
+/// function.
+#[allow(clippy::implicit_hasher)]
+pub fn resolve_group_head_key(
+    models: &HashMap<String, ModelEntry>,
+    roles: &HashMap<String, RoleEntry>,
+    groups: &HashMap<String, ModelGroup>,
+    group: &str,
+) -> Option<String> {
+    groups
+        .get(group)?
+        .effective_models()
+        .iter()
+        .filter(|m| *m != "last" && *m != "any")
+        .find_map(|m| role_head_key(models, roles, m, false))
+}
+
+/// Resolve a role or model key to its serving model key: a bare role name
+/// fans out to its head candidate (sorted model-key order over the models
+/// binding to it — see [`models_serving_role`]), everything else passes
+/// through unchanged. `None` for unknown roles, roles with no bound models,
+/// and (when `require_entry` is set) keys with no `models` entry. A
+/// qualified key (`base:point`, other than `base:latest`) always passes
+/// through: it already names an instance of a concrete model, so a role
+/// sharing the base name must never swallow its qualifier. The companion
+/// to [`resolve_inference_point`]: the key identifies *what* serves, the
+/// point identifies *where* on it.
 #[allow(clippy::implicit_hasher)]
 pub fn role_head_key(
     models: &HashMap<String, ModelEntry>,
@@ -987,14 +1450,25 @@ pub fn role_head_key(
     role_or_key: &str,
     require_entry: bool,
 ) -> Option<String> {
-    let (base, _) = split_model_key(role_or_key);
-    if let Some(role) = roles.get(base) {
-        let head = role.models.first()?;
-        if require_entry {
-            let (head_base, _) = split_model_key(head);
-            models.get(head_base)?;
+    let (base, qualifier) = split_model_key(role_or_key);
+    if let Some(point) = qualifier {
+        if point != "latest" {
+            if require_entry {
+                models.get(base)?;
+            }
+            return Some(role_or_key.to_string());
         }
-        return Some(head.clone());
+    }
+    if roles.contains_key(base) {
+        let mut serving = models_serving_role(roles, models, base);
+        if serving.is_empty() {
+            return None;
+        }
+        let head = serving.remove(0);
+        if require_entry && !models.contains_key(&head) {
+            return None;
+        }
+        return Some(head);
     }
     if require_entry {
         models.get(base)?;
@@ -1007,9 +1481,18 @@ pub fn role_head_key(
 pub const DECLARATION_PARAM_KEYS: [&str; 4] =
     ["num_ctx", "parallel", "sleep_idle_seconds", "rope_freq_base"];
 
+/// Router-local params key selecting the response-side keep behavior for
+/// thinking blocks (see [`ModelEntry::preserve_thinking`]). Never a server
+/// knob — the body-boundary stripper below removes it, so it never reaches
+/// the wire (llama-server knows no such field).
+pub const PRESERVE_THINKING_KEY: &str = "preserve_thinking";
+
 /// Remove declaration-only keys from a params object, keeping sampling params
 /// (`temperature`, `repeat_penalty`, `chat_template_kwargs`, ...). Non-object
-/// params are returned unchanged.
+/// params are returned unchanged. Router-local control keys (currently only
+/// [`PRESERVE_THINKING_KEY` — consumed by the router, unknown to every
+/// server) are removed here too: this is the single body boundary every
+/// params path funnels through, including the bare-entry fallbacks.
 pub fn strip_declaration_params(params: serde_json::Value) -> serde_json::Value {
     let Some(obj) = params.as_object() else {
         return params;
@@ -1018,44 +1501,600 @@ pub fn strip_declaration_params(params: serde_json::Value) -> serde_json::Value 
     for k in DECLARATION_PARAM_KEYS {
         out.remove(k);
     }
+    out.remove(PRESERVE_THINKING_KEY);
     serde_json::Value::Object(out)
 }
 
+/// Flat residency keys that belong inside a role's typed `context` block,
+/// never at the role top level. A role entry carrying one is always the
+/// legacy flat shape — rejected with a migration pointer, never hoisted
+/// silently (a silent hoist would let a `num_ctx` typo inside `params`
+/// diverge from the top-level value with no error).
+const LEGACY_ROLE_CONTEXT_KEYS: [&str; 14] = [
+    "num_ctx",
+    "ctx_size",
+    "max_ctx",
+    "pinned",
+    "count",
+    "parallel",
+    "no_sleep",
+    "warm",
+    "sleep_idle_seconds",
+    "resume",
+    "session",
+    "default",
+    "group",
+    "name",
+];
+
+/// Membership keys that belong on the role-side binding
+/// (`roles.<role>.models.<model>`), never on a model-side per-role override
+/// (`models.<model>.roles.<role>`). A model-side override carrying one is
+/// always a membership declaration in the wrong table — rejected with a
+/// migration pointer instead of being dropped by `deny_unknown_fields`
+/// with no guidance.
+const LEGACY_MODEL_ROLE_MEMBERSHIP_KEYS: [&str; 3] = ["models", "select", "instance"];
+
+/// Reject legacy role shapes on the raw JSON, before typing, with migration
+/// pointers at the new locations. Runs first in
+/// [`RouterConfig::from_json_value`], so the error names the intended shape
+/// instead of surfacing as a bare `deny_unknown_fields` unknown-field error:
+///
+/// - `roles.<role>` carrying flat residency keys → `roles.<role>.context`;
+/// - `roles.<role>.max_parallel` → the per-role limiter table
+///   (`roles.<role>.concurrency.max_parallel`);
+/// - `models.<model>.roles.<role>` carrying membership keys →
+///   `roles.<role>.models`.
+///
+/// Deterministic: roles and models are visited in sorted key order, so the
+/// first reported shape is stable across runs.
+fn reject_legacy_role_shapes(value: &serde_json::Value) -> Result<(), String> {
+    let mut role_names: Vec<&str> = value
+        .get("roles")
+        .and_then(|roles| roles.as_object())
+        .map(|roles| roles.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    role_names.sort_unstable();
+    for role in role_names {
+        let entry = &value["roles"][role];
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
+        if obj.contains_key("max_parallel") {
+            return Err(format!(
+                "roles.{role}.max_parallel is not a role field; declare admission caps as roles.{role}.concurrency.max_parallel"
+            ));
+        }
+        let mut flat: Vec<&str> = LEGACY_ROLE_CONTEXT_KEYS
+            .iter()
+            .filter(|k| obj.contains_key(**k))
+            .copied()
+            .collect();
+        flat.sort_unstable();
+        if !flat.is_empty() {
+            return Err(format!(
+                "roles.{role} carries flat key(s) [{}]; move residency keys into roles.{role}.context (num_ctx/max_ctx/pinned/count)",
+                flat.join(", ")
+            ));
+        }
+    }
+    let mut model_names: Vec<&str> = value
+        .get("models")
+        .and_then(|models| models.as_object())
+        .map(|models| models.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    model_names.sort_unstable();
+    for model in model_names {
+        let mut override_roles: Vec<&str> = value["models"][model]["roles"]
+            .as_object()
+            .map(|overrides| overrides.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        override_roles.sort_unstable();
+        for role in override_roles {
+            let entry = &value["models"][model]["roles"][role];
+            let Some(obj) = entry.as_object() else {
+                continue;
+            };
+            let mut membership: Vec<&str> = LEGACY_MODEL_ROLE_MEMBERSHIP_KEYS
+                .iter()
+                .filter(|k| obj.contains_key(**k))
+                .copied()
+                .collect();
+            membership.sort_unstable();
+            if !membership.is_empty() {
+                return Err(format!(
+                    "models.{model}.roles.{role} carries membership key(s) [{}]; membership lives on the role side in roles.{role}.models (models.{model}.roles.{role} is a params-only override)",
+                    membership.join(", ")
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Sparse-inherit the `models.default` template over every sibling model
+/// entry on the raw JSON, before typing. Models declare only deltas: an
+/// absent top-level key inherits the template value, a declared key wins;
+/// when both template and sibling declare a `params` object, the template's
+/// missing sampling keys fill the sibling's (shallowly — nested objects are
+/// never recursed into). Runs before [`normalize_fleet_role_params`] so the
+/// fleet run block below observes the template-fed `roles.default.params`.
+/// No `models.default` object leaves the document untouched.
+fn normalize_model_defaults(value: &mut serde_json::Value) {
+    let Some(template) = value
+        .get("models")
+        .and_then(|models| models.get(RouterConfig::DEFAULT_MODEL_KEY))
+        .and_then(|default| default.as_object())
+        .cloned()
+    else {
+        return;
+    };
+    let Some(models) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("models"))
+        .and_then(|models| models.as_object_mut())
+    else {
+        return;
+    };
+    for (name, entry) in models.iter_mut() {
+        if name == RouterConfig::DEFAULT_MODEL_KEY {
+            continue;
+        }
+        let Some(entry_obj) = entry.as_object_mut() else {
+            continue;
+        };
+        for (key, template_value) in &template {
+            match entry_obj.get(key) {
+                None => {
+                    entry_obj.insert(key.clone(), template_value.clone());
+                }
+                Some(entry_value) if key == "params" => {
+                    // Both sides declare sampling maps: the template fills
+                    // only the sibling's missing keys, shallowly.
+                    if let (Some(base), Some(over)) =
+                        (template_value.as_object(), entry_value.as_object())
+                    {
+                        let mut merged = base.clone();
+                        for (k, v) in over {
+                            merged.insert(k.clone(), v.clone());
+                        }
+                        entry_obj.insert(key.clone(), serde_json::Value::Object(merged));
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+    }
+}
+
+/// Hoist a legacy nested `params`-inside-`params` sampling object one level
+/// up, in place. The nested form (`roles.<role>.params.params: {...}`) is no
+/// longer a composition layer: its keys move into the enclosing run block
+/// (enclosing keys win on collision) and the nested object is dropped. A
+/// non-object `params` value is left for the boot-time
+/// [`warn_on_non_object_params`] pass to report.
+fn hoist_nested_role_params(params: &mut serde_json::Value) {
+    let Some(obj) = params.as_object_mut() else {
+        return;
+    };
+    if let Some(nested) = obj.remove("params") {
+        if let Some(nested_obj) = nested.as_object() {
+            for (key, val) in nested_obj {
+                obj.entry(key.clone()).or_insert(val.clone());
+            }
+        } else {
+            obj.insert("params".to_string(), nested);
+        }
+    }
+}
+
+/// Sparse-merge the fleet run block (`roles.default.params`) over every
+/// other role's `params` on the raw JSON, before typing — then fill the
+/// fleet block's own absent launch knobs from `models.default.params`, so
+/// the models template is the fleet base even when `roles.default` is `{}`.
+/// Roles declare only deltas: absent keys inherit the fleet value, declared
+/// keys win, shallowly (nested objects are replaced wholesale, never
+/// deep-merged). A role without a `params` block inherits the fleet block
+/// whole. No `default` role, or no `params` on it, leaves sibling roles
+/// untouched (the models-template leg above still applies).
+fn normalize_fleet_role_params(value: &mut serde_json::Value) {
+    // The models template feeds the fleet block's absent launch knobs first.
+    if let Some(template_params) = value
+        .get("models")
+        .and_then(|models| models.get(RouterConfig::DEFAULT_MODEL_KEY))
+        .and_then(|default| default.get("params"))
+        .and_then(|params| params.as_object())
+        .cloned()
+    {
+        if let Some(default_role) = value
+            .as_object_mut()
+            .and_then(|root| root.get_mut("roles"))
+            .and_then(|roles| roles.as_object_mut())
+            .and_then(|roles| roles.get_mut("default"))
+            .and_then(|default| default.as_object_mut())
+        {
+            match default_role.get_mut("params") {
+                Some(params) => {
+                    // Declared run block: the template fills only absent keys.
+                    if let Some(fleet_params) = params.as_object_mut() {
+                        for (key, val) in &template_params {
+                            fleet_params.entry(key.clone()).or_insert(val.clone());
+                        }
+                    }
+                }
+                // No run block at all (`"default": {}`): the template's run
+                // block IS the fleet block.
+                None => {
+                    default_role.insert(
+                        "params".to_string(),
+                        serde_json::Value::Object(template_params),
+                    );
+                }
+            }
+        }
+    }
+    let Some(roles) = value
+        .as_object_mut()
+        .and_then(|root| root.get_mut("roles"))
+        .and_then(|roles| roles.as_object_mut())
+    else {
+        return;
+    };
+    // Legacy nesting hoists before any merge, per role: a role's own nested
+    // keys land in its own top level first (its own top-level keys win ties),
+    // so the fleet merge below cannot bury a declared nested key under a
+    // fleet value.
+    for role in roles.values_mut() {
+        if let Some(params) = role.get_mut("params") {
+            hoist_nested_role_params(params);
+        }
+    }
+    let Some(fleet) = roles
+        .get("default")
+        .and_then(|default| default.get("params"))
+        .cloned()
+    else {
+        return;
+    };
+    for (name, role) in roles.iter_mut() {
+        if name == "default" {
+            continue;
+        }
+        match role.get("params") {
+            None => {
+                if let Some(obj) = role.as_object_mut() {
+                    obj.insert("params".to_string(), fleet.clone());
+                }
+            }
+            Some(role_params) => {
+                let merged = overlay_params(Some(&fleet), Some(role_params));
+                role["params"] = merged;
+            }
+        }
+    }
+}
+
+/// Warn loudly over models the supervisor cannot assign an endpoint: no
+/// `endpoint` declared and no `weights`/`hf_repo` for the supervisor to
+/// spawn from. Managed models (spawned `llama-server`s) have their endpoint
+/// rewritten at boot, so an empty endpoint is only a bug on external models.
+/// The reserved [`RouterConfig::DEFAULT_MODEL_KEY`] template is skipped: it
+/// is never supervised, only inherited from.
+fn warn_on_missing_endpoint(cfg: &RouterConfig) {
+    let mut keys: Vec<&String> = cfg.models.keys().collect();
+    keys.sort();
+    for key in keys {
+        if *key == RouterConfig::DEFAULT_MODEL_KEY {
+            continue;
+        }
+        let entry = &cfg.models[key];
+        if !entry.endpoint.is_empty() {
+            continue;
+        }
+        if entry.weights.is_some() || entry.hf_repo.is_some() {
+            continue;
+        }
+        tracing::warn!(
+            target: "router.config",
+            model = %key,
+            "model has no endpoint and no weights/hf_repo — the supervisor \
+             cannot assign one; external models must declare `endpoint`",
+        );
+    }
+}
+
+/// Warn loudly over every `params` map in the config that is not a JSON
+/// object. `params` is valid on pool profiles, role-side model bindings, and
+/// model entries — role run blocks carry no nested `params` object (their
+/// sampling keys are flattened into `roles.<role>.params` itself) — and
+/// every layer composes through [`overlay_params`], which silently drops
+/// non-object sides. A string/number/array in any of these positions is
+/// therefore always a config bug that would otherwise vanish without a
+/// trace; the merge itself is unchanged (fail-open, non-objects contribute
+/// nothing).
+pub fn warn_on_non_object_params(cfg: &RouterConfig) {
+    fn check(value: Option<&serde_json::Value>, path: &str) {
+        if let Some(v) = value {
+            if !v.is_object() {
+                tracing::warn!(
+                    target: "router.config",
+                    path = %path,
+                    "params must be a JSON object; non-object value ignored \
+                     (role params are supplemented or overwritten per key, \
+                     never replaced wholesale)",
+                );
+            }
+        }
+    }
+    let mut role_names: Vec<&String> = cfg.roles.keys().collect();
+    role_names.sort();
+    for role_name in role_names {
+        let role = &cfg.roles[role_name];
+        let mut profile_names: Vec<&String> = role.instances.keys().collect();
+        profile_names.sort();
+        for profile_name in profile_names {
+            check(
+                role.instances[profile_name].params.as_ref(),
+                &format!("roles.{role_name}.instances.{profile_name}.params"),
+            );
+        }
+        let mut bound_models: Vec<&String> = role.models.keys().collect();
+        bound_models.sort();
+        for model_key in bound_models {
+            check(
+                role.models[model_key].params.as_ref(),
+                &format!("roles.{role_name}.models.{model_key}.params"),
+            );
+        }
+    }
+    let mut model_keys: Vec<&String> = cfg.models.keys().collect();
+    model_keys.sort();
+    for model_key in model_keys {
+        let entry = &cfg.models[model_key];
+        check(entry.params.as_ref(), &format!("models.{model_key}.params"));
+        if let Some(overrides) = entry.role_params.as_ref() {
+            let mut override_roles: Vec<&String> = overrides.keys().collect();
+            override_roles.sort();
+            for role in override_roles {
+                check(
+                    overrides[role].params.as_ref(),
+                    &format!("models.{model_key}.roles.{role}.params"),
+                );
+            }
+        }
+    }
+}
+
 /// Overlay one sampling `params` object over a base (the overlay wins),
-/// returning the merged object. Non-object sides degrade to an empty object
-/// (nothing to merge). This is the single canonical params merge: every layer
-/// of the role → per-model-instance chain composes through it, and the entry
-/// top-level is always the final (winning) layer. The matching profile is
-/// looked up by name-or-group so both the exact-instance and group dispatch
-/// paths reach the same value.
+/// returning the merged object. Objects merge per key at the top level
+/// only — a nested object on both sides is replaced wholesale, never
+/// deep-merged (there is no `params`-inside-`params` layer anywhere in the
+/// config); non-object sides degrade to an empty object (nothing to merge —
+/// the `warn_on_non_object_params` boot pass reports those loudly). This is
+/// the single canonical params merge: every layer of the
+/// `models.default` → model → role → pool profile → binding chain composes
+/// through it. The matching profile is looked up by name-or-group so both
+/// the exact-instance and group dispatch paths reach the same value.
 pub fn overlay_params(
     base: Option<&serde_json::Value>,
     over: Option<&serde_json::Value>,
 ) -> serde_json::Value {
-    let mut merged = serde_json::Map::new();
-    if let Some(v) = base.and_then(serde_json::Value::as_object) {
-        merged.extend(v.clone());
+    use serde_json::Value;
+    fn as_object_or_empty(v: &Value) -> Value {
+        v.as_object()
+            .map_or_else(empty_params_object, |m| Value::Object(m.clone()))
     }
-    if let Some(v) = over.and_then(serde_json::Value::as_object) {
-        merged.extend(v.clone());
+    match (base, over) {
+        (Some(b), Some(o)) => match (b.as_object(), o.as_object()) {
+            (Some(base_map), Some(over_map)) => {
+                let mut merged = base_map.clone();
+                for (key, over_value) in over_map {
+                    merged.insert(key.clone(), over_value.clone());
+                }
+                Value::Object(merged)
+            }
+            // A non-object side contributes nothing (reported loudly by
+            // `warn_on_non_object_params`); the object side survives whole.
+            (Some(base_map), None) => Value::Object(base_map.clone()),
+            (None, Some(over_map)) => Value::Object(over_map.clone()),
+            (None, None) => empty_params_object(),
+        },
+        (Some(b), None) => as_object_or_empty(b),
+        (None, Some(o)) => as_object_or_empty(o),
+        (None, None) => empty_params_object(),
     }
-    serde_json::Value::Object(merged)
+}
+
+fn empty_params_object() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
 }
 
 impl ModelEntry {
     /// Resolve the sampling params to send when dispatching to `qualifier`
     /// (an instance name or group of this model's boot-materialized pool):
-    /// the entry's top-level `params` overlaid onto the matching profile's
-    /// `params` (entry wins — it is the final sparse layer; the profile
-    /// already carries the role-base ← pool ← selection chain composed at
-    /// boot), declaration-only keys stripped. `None` when no profile matches
-    /// `qualifier` — callers fall back to the entry's bare params.
+    /// the qualifier-only shorthand for [`Self::answer_params_for`] with no
+    /// role, no role sampling, and no classification duty. `None` when no
+    /// profile matches `qualifier` — callers fall back to the entry's bare
+    /// params. The composition rule lives in `answer_params_for` once; this
+    /// stays so qualifier-only callers do not restate the chain.
     pub fn instance_params_for(&self, qualifier: &str) -> Option<serde_json::Value> {
-        let profile = self.effective_pool().iter().find(|p| {
-            p.name.as_deref() == Some(qualifier) || p.group.as_deref() == Some(qualifier)
-        })?;
-        let merged = overlay_params(profile.params.as_ref(), self.params.as_ref());
+        self.answer_params_for(Some(qualifier), None, None, None)
+    }
+
+    /// The single five-leg answer-params chain, every leg through
+    /// [`overlay_params`] (shallow: each key wins wholesale, never
+    /// deep-merged) with the role applied exactly once:
+    ///
+    /// 1. classification-duty params (the classifier serving key's params;
+    ///    `None` on paths without a classifier duty),
+    /// 2. the group-selected model's entry (`models.default`
+    ///    sparse-inheritance already applied at parse),
+    /// 3. `model.params`,
+    /// 4. `role.params` (the role run block's sampling, passed in as
+    ///    `role_sampling`),
+    /// 5. `models.<model>.roles.<role>.params` (the model-specific override
+    ///    for the task; wins when present, absent contributes nothing).
+    ///
+    /// The instance profile (`qualifier`) resolves *where* on the model and
+    /// reads through the boot-materialized [`Self::effective_pool`] — it is
+    /// the qualifier step underneath the chain, not a sixth leg. The
+    /// resolved thinking level (see [`Self::resolve_thinking`]) is written
+    /// into the composed object as `thinking`; declaration-only keys are
+    /// stripped at the body boundary. `None` when a named `qualifier`
+    /// matches no profile — callers fall back to the entry's bare params
+    /// (the `instance_params_for` contract, preserved).
+    pub fn answer_params_for(
+        &self,
+        qualifier: Option<&str>,
+        role: Option<&str>,
+        role_sampling: Option<&serde_json::Value>,
+        classification_params: Option<&serde_json::Value>,
+    ) -> Option<serde_json::Value> {
+        let profile = match qualifier {
+            Some(q) => self.effective_pool().iter().find(|p| {
+                p.name.as_deref() == Some(q) || p.group.as_deref() == Some(q)
+            }),
+            None => None,
+        };
+        if qualifier.is_some() && profile.is_none() {
+            return None;
+        }
+        let override_params: Option<&serde_json::Value> = role
+            .and_then(|r| self.role_params.as_ref()?.get(r))
+            .and_then(|o| o.params.as_ref());
+        let mut merged = overlay_params(classification_params, self.params.as_ref());
+        merged = overlay_params(Some(&merged), role_sampling);
+        if let Some(p) = profile {
+            merged = overlay_params(Some(&merged), p.params.as_ref());
+        }
+        merged = overlay_params(Some(&merged), override_params);
+        if let Some(level) = self.resolve_thinking(role_sampling, override_params) {
+            if let Some(obj) = merged.as_object_mut() {
+                obj.insert(
+                    "thinking".to_string(),
+                    serde_json::Value::String(level),
+                );
+            }
+        }
         Some(strip_declaration_params(merged))
+    }
+
+    /// Resolve the thinking level for a dispatch through `role`: the
+    /// model-side override wins, then the role sampling, then the entry's
+    /// explicit [`Self::thinking`]. Within one params layer the precedence is
+    /// `thinking` (explicit level string), then `enable_thinking` (bool →
+    /// `on`/`off`, the llama.cpp chat-template switch), then
+    /// `reasoning_effort` (a model-specific effort string such as
+    /// `low`/`medium`/`high`/`max`, passed through verbatim). `None` means no
+    /// level was declared anywhere (a `filter_thinking: true` entry with no
+    /// level still filters via [`Self::filter_thinking_for`] — the bool
+    /// alias). An explicit level wins over `filter_thinking: true` with a
+    /// loud warn; `off` always filters. Contradictory layers
+    /// (`enable_thinking: false` beside a `reasoning_effort`, `preserve`
+    /// beside `off`) warn loudly with the winner named.
+    pub fn resolve_thinking(
+        &self,
+        role_sampling: Option<&serde_json::Value>,
+        override_params: Option<&serde_json::Value>,
+    ) -> Option<String> {
+        fn level(params: Option<&serde_json::Value>) -> Option<String> {
+            let obj = params?.as_object()?;
+            if let Some(t) = obj.get("thinking").and_then(|t| t.as_str()) {
+                return Some(t.to_string());
+            }
+            if let Some(enabled) = obj.get("enable_thinking").and_then(serde_json::Value::as_bool) {
+                if !enabled && obj.contains_key("reasoning_effort") {
+                    tracing::warn!(
+                        target: "router.config",
+                        "enable_thinking:false beside reasoning_effort — effort ignored, level resolves off",
+                    );
+                }
+                return Some(if enabled { "on".to_string() } else { "off".to_string() });
+            }
+            obj.get("reasoning_effort")
+                .and_then(|e| e.as_str())
+                .map(str::to_string)
+        }
+        let explicit = level(override_params)
+            .or_else(|| level(role_sampling))
+            .or_else(|| self.thinking.clone());
+        if self.filter_thinking {
+            if let Some(ref set) = explicit {
+                if set != "off" {
+                    tracing::warn!(
+                        target: "router.config",
+                        thinking = %set,
+                        "explicit thinking level wins over filter_thinking:true",
+                    );
+                }
+            }
+        }
+        explicit
+    }
+
+    /// Whether `preserve_thinking` (see [`PRESERVE_THINKING_KEY`]) keeps
+    /// thinking blocks for a dispatch: the model-side override wins, then the
+    /// role sampling. Absent everywhere contributes nothing (`None`).
+    pub fn preserve_thinking(
+        role_sampling: Option<&serde_json::Value>,
+        override_params: Option<&serde_json::Value>,
+    ) -> Option<bool> {
+        fn keep(params: Option<&serde_json::Value>) -> Option<bool> {
+            params
+                ?.as_object()?
+                .get(PRESERVE_THINKING_KEY)?
+                .as_bool()
+        }
+        keep(override_params).or_else(|| keep(role_sampling))
+    }
+
+    /// Whether thinking blocks are stripped for a dispatch whose resolved
+    /// level is `resolved_thinking`: an explicit `off` always filters;
+    /// `preserve_thinking: true` (model-side override, then role sampling,
+    /// then the entry's own params) keeps the blocks for any live level,
+    /// beating the entry bool; otherwise the entry bool decides. A preserve
+    /// beside `off` warns loudly — there is nothing generated to keep, so
+    /// the filter wins. Instance-profile params carry pools, never thinking
+    /// policy — a profile-level `preserve_thinking` is not consulted.
+    pub fn filter_thinking_for(
+        &self,
+        resolved_thinking: Option<&str>,
+        role_sampling: Option<&serde_json::Value>,
+        override_params: Option<&serde_json::Value>,
+    ) -> bool {
+        let preserve = Self::preserve_thinking(role_sampling, override_params)
+            .or_else(|| Self::preserve_thinking(None, self.params.as_ref()));
+        if matches!(resolved_thinking, Some("off")) {
+            if preserve == Some(true) {
+                tracing::warn!(
+                    target: "router.config",
+                    "preserve_thinking:true beside thinking:off — nothing generated to keep, filter wins",
+                );
+            }
+            return true;
+        }
+        if preserve == Some(true) {
+            return false;
+        }
+        self.filter_thinking
+    }
+
+    /// Resolve the embedding-model reference serving `qualifier` (an
+    /// instance name or group of this model's boot-materialized pool): the
+    /// matching profile's override, else the entry's own (which inherits
+    /// `models.default`). `None` selects no embedding duty from this model.
+    /// `qualifier = None` resolves the entry default (the bare-model path).
+    pub fn embedding_for(&self, qualifier: Option<&str>) -> Option<String> {
+        if let Some(q) = qualifier {
+            if let Some(profile) = self.effective_pool().iter().find(|p| {
+                p.name.as_deref() == Some(q) || p.group.as_deref() == Some(q)
+            }) {
+                if let Some(embed) = profile.embedding.clone() {
+                    return Some(embed);
+                }
+            }
+        }
+        self.embedding.clone()
     }
 }
 
@@ -1194,8 +2233,14 @@ pub struct ChartsConfig {
     #[serde(default)]
     pub index_path: Option<String>,
     /// Chart-selection classifier model key (LLM adjudication step).
+    /// Legacy spelling: prefer `selector_group` (duties name groups); an
+    /// explicit `selector_model` still resolves when no group is set.
     #[serde(default)]
     pub selector_model: Option<String>,
+    /// Model group serving the chart-selector duty, resolved through
+    /// [`resolve_group_head_key`]. Wins over `selector_model` when set.
+    #[serde(default)]
+    pub selector_group: Option<String>,
     /// Max candidates surfaced to the selector's LLM adjudication.
     #[serde(default = "default_charts_max_candidates")]
     pub max_candidates: usize,
@@ -1213,6 +2258,7 @@ impl Default for ChartsConfig {
             dir: None,
             index_path: None,
             selector_model: None,
+            selector_group: None,
             max_candidates: default_charts_max_candidates(),
             min_score: default_charts_min_score(),
             entity_context: default_charts_entity_context(),
@@ -1296,9 +2342,15 @@ pub struct LedgerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     /// Model key for the ledger `Summarizer`. `None` falls back to the
-    /// classifier model key, then to no summarizer.
+    /// classifier model key, then to no summarizer. Legacy spelling: prefer
+    /// `group` (duties name groups); an explicit `model` still resolves when
+    /// no group is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Model group serving the ledger duty, resolved through
+    /// [`resolve_group_head_key`]. Wins over `model` when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     /// Max summary length (tokens) for LOD1-LOD4 derivation.
     #[serde(default = "default_ledger_max_summary_tokens")]
     pub max_summary_tokens: u32,
@@ -1373,6 +2425,7 @@ impl Default for LedgerConfig {
         Self {
             path: None,
             model: None,
+            group: None,
             max_summary_tokens: DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
             background_tiering: false,
             tier_model: None,
@@ -1391,9 +2444,6 @@ impl Default for LedgerConfig {
 /// disables the review worker and its endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReviewConfig {
-    /// Model key for the annotation rung (the parse-producing model).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotation_model: Option<String>,
     /// Model key for the review model — an **independent, more capable**
     /// tier so review is not self-review (§12.7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1404,14 +2454,6 @@ pub struct ReviewConfig {
     /// Credit granted up front to the review feed (backpressure, §12.6).
     #[serde(default = "default_review_credit_limit")]
     pub credit_limit: usize,
-    /// Model key whose onnx `TokenClassification` session backs the
-    /// `PiiSpanDetector` pre-filter (ROADMAP_20260827_ORT §3.2/§3.3). When set
-    /// and registered, the ort classifier annotates every review job's text
-    /// with PII spans (additive candidates only — never a job drop). `None`
-    /// falls back to the deterministic `RegexPiiDetector` when `auto_enqueue`
-    /// requires a pre-filter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pii_model: Option<String>,
     /// Opt-in PII auto-enqueue (ROADMAP_20260827_ORT §3.4): after a parse is
     /// recorded, PII-shaped spans detected on the request text enqueue a
     /// review candidate, bounded by the existing credit gate. `false` (the
@@ -1591,11 +2633,14 @@ impl Default for OrchestratorSection {
 /// Supplies the "how a model is run" configuration for everything serving
 /// the role: the `llama-server` launch knobs (`--batch-size`,
 /// `--ubatch-size`, `--cache-type-k/v`, `--flash-attn`, `--n-gpu-layers`,
-/// `--n-cpu-moe`, `--sleep-idle-seconds`, `--ctx-size`) and the base sampling
-/// `params` every selection for the role composes over (pool profile, then
-/// per-model selection, then the entry top-level — each sparser layer wins).
-/// The fleet-wide block lives as `roles.default.params`; the supervisor reads
-/// its launch knobs as the spawn defaults.
+/// `--n-cpu-moe`, `--sleep-idle-seconds`, `--ctx-size`) and flat sampling
+/// keys (e.g. `temperature`) every selection for the role composes over
+/// (role-base, then pool profile, then per-model selection — each sparser
+/// layer wins; the role side wins over the model entry top-level at
+/// dispatch). There is no nested `params` object inside a run block.
+/// The fleet-wide block lives as `roles.default.params` (itself fed by
+/// `models.default` at parse); the supervisor reads per-model spawn
+/// defaults through [`RouterConfig::spawn_defaults_for`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleParams {
     /// Default context size in tokens (`--ctx-size`; also `ctx_size` alias).
@@ -1635,9 +2680,13 @@ pub struct RoleParams {
     /// strip thinking blocks.
     #[serde(default)]
     pub filter_thinking: bool,
-    /// Default sampling params merged into dispatch bodies (per-model wins).
-    #[serde(default)]
-    pub params: Option<serde_json::Value>,
+    /// Flat open sampling extras merged into dispatch bodies (e.g.
+    /// `temperature`, `repeat_penalty`). Flattened into the run block itself —
+    /// there is deliberately no nested `params` object inside a role's
+    /// `params`: every sampling key lives at this level and composes
+    /// per key, shallowly, like every other `params` map in the config.
+    #[serde(flatten)]
+    pub sampling: HashMap<String, serde_json::Value>,
     /// Global context-size cap (tokens) applied to every managed model that
     /// does not declare its own `max_ctx`. `None` = no cap (existing behavior —
     /// a model's `num_ctx`/`ctx_size` is the sole bound).
@@ -1659,9 +2708,73 @@ impl Default for RoleParams {
             sleep_idle_seconds: default_sleep_idle_seconds(),
             stream: default_true(),
             filter_thinking: false,
-            params: None,
+            sampling: HashMap::new(),
             max_ctx: None,
         }
+    }
+}
+
+impl RoleParams {
+    /// The sampling extras as a params object (`None` when the role declares
+    /// no sampling keys): the single conversion from the flattened run block
+    /// to the `params`-map vocabulary every composition path speaks.
+    pub fn sampling_value(&self) -> Option<serde_json::Value> {
+        if self.sampling.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(
+                self.sampling.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            ))
+        }
+    }
+
+    /// Overlay a model's own launch knobs (its template-inherited `params`
+    /// object) over this run block: the per-model spawn view. Only the
+    /// closed launch-knob keys are honored (`num_ctx`/`ctx_size`,
+    /// `batch_size`, `ubatch_size`, `cache_type_k`/`cache_type_v`,
+    /// `flash_attn`, `n_gpu_layers`, `n_cpu_moe`, `sleep_idle_seconds`,
+    /// `stream`, `filter_thinking`, `max_ctx`); sampling keys in the same
+    /// object compose at dispatch, never at spawn. Unparseable values keep
+    /// the base loudly (fail-open, never a boot fatal).
+    #[must_use]
+    pub fn with_model_launch_overrides(
+        &self,
+        params: Option<&serde_json::Value>,
+    ) -> RoleParams {
+        let mut out = self.clone();
+        let Some(obj) = params.and_then(|p| p.as_object()) else {
+            return out;
+        };
+        fn set<T>(obj: &serde_json::Map<String, serde_json::Value>, key: &str, slot: &mut T)
+        where
+            T: serde::de::DeserializeOwned,
+        {
+            if let Some(value) = obj.get(key) {
+                match T::deserialize(value.clone()) {
+                    Ok(parsed) => *slot = parsed,
+                    Err(e) => tracing::warn!(
+                        target: "router.config",
+                        key = %key,
+                        error = %e,
+                        "model params launch knob unparseable — fleet value kept",
+                    ),
+                }
+            }
+        }
+        set(obj, "num_ctx", &mut out.num_ctx);
+        set(obj, "ctx_size", &mut out.num_ctx);
+        set(obj, "batch_size", &mut out.batch_size);
+        set(obj, "ubatch_size", &mut out.ubatch_size);
+        set(obj, "cache_type_k", &mut out.cache_type_k);
+        set(obj, "cache_type_v", &mut out.cache_type_v);
+        set(obj, "flash_attn", &mut out.flash_attn);
+        set(obj, "n_gpu_layers", &mut out.n_gpu_layers);
+        set(obj, "n_cpu_moe", &mut out.n_cpu_moe);
+        set(obj, "sleep_idle_seconds", &mut out.sleep_idle_seconds);
+        set(obj, "stream", &mut out.stream);
+        set(obj, "filter_thinking", &mut out.filter_thinking);
+        set(obj, "max_ctx", &mut out.max_ctx);
+        out
     }
 }
 
@@ -1935,6 +3048,18 @@ pub enum WorkflowExtractionMode {
 
 fn default_total_timeout_ms() -> u64 {
     fluent_llm::constants::DEFAULT_TOTAL_TIMEOUT_MS
+}
+
+/// Default capability rating for a sparse model entry that declares none
+/// (and no `models.default` template supplies one): the smallest tier.
+const fn default_intelligence() -> u8 {
+    1
+}
+
+/// Default observed throughput for a sparse model entry that declares none
+/// (and no `models.default` template supplies one).
+fn default_tok_s() -> f64 {
+    20.0
 }
 
 fn default_idle_timeout_ms() -> u64 {

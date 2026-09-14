@@ -20,6 +20,7 @@ fn apply_request_routing_overrides_target_fields() {
         model: "base:ledger".into(),
         group: None,
         target_name: None,
+        role: None,
         params: None,
         instance: Some("ledger".into()),
         snapshot: None,

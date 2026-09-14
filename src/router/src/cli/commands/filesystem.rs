@@ -10,6 +10,7 @@
 //! authority, not an ambient effect inside the serving request path.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -21,53 +22,177 @@ use serde_json::{json, Value};
 use super::{cli_err, sync_preset};
 use super::ShowFlags;
 use crate::cli::gguf::{
-    cached_entries, format_relative_time, format_size, quant_name, read_gguf_metadata,
-    resolve_model, scan_gguf_models, GgufEntry,
+    format_size, read_gguf_metadata, resolve_model, scan_gguf_models, GgufEntry,
 };
 use crate::cli::preset::{render_aichat_config, render_litellm_yaml, write_models_preset};
 use crate::cli::{CliContext, CliResult};
+use crate::config::RouterConfig;
 
-pub fn list(ctx: &CliContext) -> CliResult {
-    let mut entries = cached_entries(&ctx.gguf_dir);
-    if entries.is_empty() {
-        return Ok(());
+/// One config section listing: routes (route → group), model groups (group
+/// → members), and models (key, intelligence, weights path) — each sorted
+/// by key for deterministic output (serde maps are sorted; file order is
+/// not preserved). Built from the resolved config file, never synthesized.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigListing {
+    pub routes: Vec<(String, String)>,
+    pub groups: Vec<(String, Vec<String>)>,
+    pub models: Vec<(String, u8, Option<String>)>,
+}
+
+/// Escape a Markdown table cell: pipes break columns, newlines break rows.
+fn escape_cell(cell: &str) -> String {
+    cell.replace('|', "\\|").replace('\n', " ")
+}
+
+/// Render one header plus a single row — the compact shape for the routes
+/// section (one column per key). Empty sections render `(none)`
+/// (a zero-column table is unparseable, so the marker keeps the shape
+/// mechanical instead).
+fn render_single_row_table(headers: &[String], cells: &[String]) -> String {
+    if headers.is_empty() {
+        return "(none)\n".to_string();
     }
-    entries.sort_by(|a, b| a.display.cmp(&b.display));
-    let na_width = entries
-        .iter()
-        .map(|e| e.display.len())
-        .max()
-        .unwrap_or(4)
-        .clamp(4, 90);
-    println!(
-        "{:<width$}  {:>8}  {:12}  {:10}  {:14}",
-        "NAME",
-        "SIZE",
-        "QUANT",
-        "ARCH",
-        "MODIFIED",
-        width = na_width
+    let mut out = String::new();
+    let _ = writeln!(out, "| {} |", headers.join(" | "));
+    let _ = writeln!(
+        out,
+        "| {} |",
+        headers.iter().map(|_| "---").collect::<Vec<_>>().join(" | ")
     );
-    for e in entries {
-        let quant = if e.tag.is_empty() || e.tag == "latest" {
-            e.file_type.map_or_else(|| "-".to_string(), quant_name)
-        } else {
-            e.tag.clone()
-        };
-        let arch = if e.arch.is_empty() {
-            "?".to_string()
-        } else {
-            e.arch.clone()
-        };
-        println!(
-            "{:<width$}  {:>8}  {:12}  {:10}  {:14}",
-            e.display,
-            format_size(e.size),
-            quant,
-            arch,
-            format_relative_time(e.mtime),
-            width = na_width
+    let _ = writeln!(out, "| {} |", cells.join(" | "));
+    out
+}
+
+/// Render the full listing as Markdown: the routes row, one `group | models`
+/// row per model group (members comma-separated), then one row per model as
+/// found in the configuration file.
+pub fn render_config_listing(listing: &ConfigListing) -> String {
+    let mut out = String::new();
+    out.push_str("## Routes\n");
+    let route_headers: Vec<String> =
+        listing.routes.iter().map(|(r, _)| escape_cell(r)).collect();
+    let route_cells: Vec<String> =
+        listing.routes.iter().map(|(_, g)| escape_cell(g)).collect();
+    out.push_str(&render_single_row_table(&route_headers, &route_cells));
+    out.push('\n');
+    out.push_str("## Model groups\n");
+    if listing.groups.is_empty() {
+        out.push_str("(none)\n");
+    } else {
+        out.push_str("| group | models |\n");
+        out.push_str("| --- | --- |\n");
+        for (group, members) in &listing.groups {
+            let _ = writeln!(
+                out,
+                "| {} | {} |",
+                escape_cell(group),
+                members
+                    .iter()
+                    .map(|m| escape_cell(m))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+    out.push('\n');
+    out.push_str("## Models\n");
+    out.push_str("| model | intelligence | weights |\n");
+    out.push_str("| --- | --- | --- |\n");
+    for (key, intelligence, weights) in &listing.models {
+        let _ = writeln!(
+            out,
+            "| {} | {intelligence} | {} |",
+            escape_cell(key),
+            weights.as_deref().map_or_else(|| "-".to_string(), escape_cell)
         );
+    }
+    out
+}
+
+/// Render the listing losslessly for scripts: every section as data (null
+/// weights where the file declares none).
+pub fn render_config_json(listing: &ConfigListing) -> Value {
+    let routes: serde_json::Map<String, Value> = listing
+        .routes
+        .iter()
+        .map(|(route, group)| (route.clone(), Value::String(group.clone())))
+        .collect();
+    let groups: serde_json::Map<String, Value> = listing
+        .groups
+        .iter()
+        .map(|(group, members)| {
+            (
+                group.clone(),
+                Value::Array(members.iter().map(|m| Value::String(m.clone())).collect()),
+            )
+        })
+        .collect();
+    let models: Vec<Value> = listing
+        .models
+        .iter()
+        .map(|(key, intelligence, weights)| {
+            json!({
+                "key": key,
+                "intelligence": intelligence,
+                "weights": weights.as_deref().map_or(Value::Null, |s| Value::String(s.to_string())),
+            })
+        })
+        .collect();
+    json!({ "routes": routes, "groups": groups, "models": models })
+}
+
+/// Build the listing from a parsed config: tree-derived routes (route →
+/// group), groups with their declared members, and models with intelligence
+/// and weights as declared. Sorted by key throughout.
+pub fn listing_from_config(cfg: &RouterConfig) -> ConfigListing {
+    let mut routes: Vec<(String, String)> = cfg
+        .routes_view()
+        .into_iter()
+        .map(|(route, rref)| (route, rref.group))
+        .collect();
+    routes.sort();
+    let mut groups: Vec<(String, Vec<String>)> = cfg
+        .model_groups
+        .iter()
+        .map(|(group, members)| (group.clone(), members.models().to_vec()))
+        .collect();
+    groups.sort();
+    let mut models: Vec<(String, u8, Option<String>)> = cfg
+        .models
+        .iter()
+        .map(|(key, entry)| (key.clone(), entry.intelligence, entry.weights.clone()))
+        .collect();
+    models.sort();
+    ConfigListing {
+        routes,
+        groups,
+        models,
+    }
+}
+
+/// Load the listing from the resolved config file (parse errors surface the
+/// loader message, including migration pointers — same shapes boot accepts).
+pub fn load_listing(config_path: &Path) -> Result<ConfigListing, super::CliError> {
+    let text = std::fs::read_to_string(config_path)
+        .map_err(|e| cli_err(format!("cannot read {}: {e}", config_path.display())))?;
+    let cfg: RouterConfig = serde_json::from_str(&text)
+        .map_err(|e| cli_err(format!("cannot parse {}: {e}", config_path.display())))?;
+    Ok(listing_from_config(&cfg))
+}
+
+pub fn list(ctx: &CliContext, config_path: &Path, json: bool) -> CliResult {
+    // `ls` always reads the resolved config file; the GGUF-dir context only
+    // serves the filesystem commands.
+    let _ = ctx;
+    let listing = load_listing(config_path)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&render_config_json(&listing))
+                .expect("listing serializes")
+        );
+    } else {
+        print!("{}", render_config_listing(&listing));
     }
     Ok(())
 }

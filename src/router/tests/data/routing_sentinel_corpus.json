@@ -143,7 +143,10 @@
     "b",
     "a"
    ],
-   "expected_probes": [],
+   "expected_probes": [
+    "a",
+    "b"
+   ],
    "group": "g",
    "id": "F6",
    "kind": "fallback",
@@ -174,7 +177,10 @@
     "a",
     "b"
    ],
-   "expected_probes": [],
+   "expected_probes": [
+    "a",
+    "b"
+   ],
    "group": "g",
    "id": "F7",
    "kind": "fallback",
@@ -202,7 +208,9 @@
    "expected_order": [
     "a"
    ],
-   "expected_probes": [],
+   "expected_probes": [
+    "a"
+   ],
    "group": "g",
    "id": "F8",
    "kind": "fallback",
@@ -323,7 +331,9 @@
    "expected_order": [
     "a"
    ],
-   "expected_probes": [],
+   "expected_probes": [
+    "a"
+   ],
    "group": "g",
    "id": "F12",
    "kind": "fallback",
@@ -661,7 +671,11 @@
     "b"
    ],
    "op": "expand",
-   "recency": {}
+   "recency": {},
+   "expected_probes": [
+    "a",
+    "b"
+   ]
   },
   {
    "assess": {

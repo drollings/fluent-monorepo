@@ -158,17 +158,20 @@ fn build_chat_body(
         .map_err(|e| DispatchError::RequestBuild(e.to_string()))?;
 
     // Canonical body builder (fluent_llm::openai) supplies the
-    // AGENTS.md-mandated `chat_template_kwargs: {"enable_thinking": false}`
-    // default; `params` may override it. When `filter_thinking` is set we pin
-    // the request-side default (belt-and-suspenders with the response-side
-    // strip), so a contradictory `params` override cannot re-enable thinking.
+    // `chat_template_kwargs: {"enable_thinking": false}` default; `params`
+    // may override it. The two thinking guards below make the contract
+    // honest in both directions (see `pin_thinking_kwargs`):
+    // filtering pins the wire switch off (belt-and-suspenders with the
+    // response-side strip), while a live `enable_thinking: true` on an
+    // unfiltered path is translated onto the wire switch most servers read.
     let mut body = fluent_llm::openai::build_openai_chat_body(
         model,
         &Value::Array(messages),
         params,
         stream,
-        filter_thinking.then_some(false),
+        None,
     );
+    pin_thinking_kwargs(&mut body, params, filter_thinking);
 
     // Router-specific request defaults: temperature/max_tokens fall back to
     // the request fields when the model params don't set them.
@@ -195,6 +198,63 @@ fn build_chat_body(
 
 fn dispatch_url(endpoint_url: &str) -> String {
     fluent_llm::url::chat_completions_url(endpoint_url)
+}
+
+/// Enforce the thinking contract on a merged dispatch body: `params` arrive
+/// pre-merged (model → role → profile → override), so by here the body's
+/// `chat_template_kwargs` and top-level thinking keys are the composed
+/// intent. Two directions, exactly one writer each:
+///
+/// - filtering: the wire switch (`chat_template_kwargs.enable_thinking`) is
+///   pinned to `false` — a contradictory `params` override cannot re-enable
+///   server-side thinking while the response side strips it (that would burn
+///   thinking tokens for nothing). Contradictions warn loudly.
+/// - live: a top-level `enable_thinking: true` (the config vocabulary most
+///   operators write) is translated onto the wire switch when the switch
+///   itself doesn't already say `true` — most servers only honor the nested
+///   switch, so without this the flat bool would be silently dead config.
+///   `reasoning_effort` and friends forward untouched (already merged).
+fn pin_thinking_kwargs(body: &mut Value, params: Option<&Value>, filter_thinking: bool) {
+    let flat_enabled = params
+        .and_then(|p| p.as_object())
+        .and_then(|o| o.get("enable_thinking"))
+        .and_then(serde_json::Value::as_bool);
+    let wire_enabled = body
+        .get("chat_template_kwargs")
+        .and_then(|k| k.as_object())
+        .and_then(|o| o.get("enable_thinking"))
+        .and_then(serde_json::Value::as_bool);
+    if filter_thinking {
+        if wire_enabled == Some(true) || flat_enabled == Some(true) {
+            tracing::warn!(
+                target: "router.dispatch.backend",
+                "params request thinking while filter_thinking strips it — pinning chat_template_kwargs.enable_thinking to false",
+            );
+        }
+        if let Some(kwargs) = body
+            .get_mut("chat_template_kwargs")
+            .and_then(|k| k.as_object_mut())
+        {
+            kwargs.insert(
+                "enable_thinking".to_string(),
+                Value::Bool(false),
+            );
+        }
+        return;
+    }
+    if flat_enabled == Some(true) && wire_enabled != Some(true) {
+        if let Some(kwargs) = body
+            .get_mut("chat_template_kwargs")
+            .and_then(|k| k.as_object_mut())
+        {
+            kwargs.insert(
+                "enable_thinking".to_string(),
+                Value::Bool(true),
+            );
+        } else {
+            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": true});
+        }
+    }
 }
 
 /// Apply an optional `Authorization: Bearer` header to a request. `api_key_env`

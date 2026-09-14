@@ -8,7 +8,7 @@ fn test_entry() -> ModelEntry {
         "cost_input": 1e-6,
         "cost_output": 6e-6,
         "cost_cached_read": 4e-7,
-        "speed": 8,
+        "tok_s": 8,
         "total_timeout_ms": 40000,
         "idle_timeout_ms": 8000,
         "stream": true,
@@ -72,11 +72,12 @@ fn entry_with_effective_pool() -> ModelEntry {
         "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
         "intelligence": 2,
         "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7,
-        "speed": 8,
+        "tok_s": 8,
     }))
     .expect("valid ModelEntry");
     entry.effective_profiles = Some(vec![
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("ledger".into()),
             group: Some("ledger".into()),
             count: 1,
@@ -92,6 +93,7 @@ fn entry_with_effective_pool() -> ModelEntry {
             session: false,
         },
         crate::config::InstanceProfile {
+            embedding: None,
             name: Some("scratch".into()),
             group: Some("scratch".into()),
             count: 1,
@@ -193,6 +195,7 @@ fn routing_target_typed_preferred_over_json() {
         model: "typed-model".into(),
         group: None,
         target_name: Some("typed".into()),
+        role: None,
         params: None,
         instance: None,
         snapshot: None,
@@ -212,6 +215,7 @@ fn routing_target_typed_preferred_over_json() {
         model: "json-model".into(),
         group: None,
         target_name: Some("json".into()),
+        role: None,
         params: None,
         instance: None,
         snapshot: None,

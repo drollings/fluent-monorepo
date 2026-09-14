@@ -1,0 +1,138 @@
+{
+  "selection": [
+    {
+      "name": "trivial_stops_first",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen", "intelligence": 6}
+      ],
+      "classifier_complexity": 1,
+      "assessed": [{"complexity": 1, "reason": "trivial"}],
+      "expected_winner": "swarm",
+      "expected_assessments": 1
+    },
+    {
+      "name": "mid_matches_middle",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen3.5-9b", "intelligence": 4},
+        {"key": "qwen3.6-27b", "intelligence": 6}
+      ],
+      "classifier_complexity": 3,
+      "assessed": [{"complexity": 4, "reason": "mid"}],
+      "expected_winner": "qwen3.5-9b",
+      "expected_assessments": 1
+    },
+    {
+      "name": "escalate_once",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen3.5-9b", "intelligence": 4},
+        {"key": "qwen3.6-27b", "intelligence": 6}
+      ],
+      "classifier_complexity": 3,
+      "assessed": [
+        {"complexity": 7, "reason": "hard for 9b"},
+        {"complexity": 6, "reason": "ok for 27b"}
+      ],
+      "expected_winner": "qwen3.6-27b",
+      "expected_assessments": 2
+    },
+    {
+      "name": "classifier_absent_starts_cheap",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen", "intelligence": 6}
+      ],
+      "classifier_complexity": null,
+      "assessed": [{"complexity": 2, "reason": "cheap serves"}],
+      "expected_winner": "swarm",
+      "expected_assessments": 1
+    },
+    {
+      "name": "unqualified_classifier_starts_cheap",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen", "intelligence": 6}
+      ],
+      "classifier_complexity": 9,
+      "assessed": [{"complexity": 2, "reason": "cheap serves"}],
+      "expected_winner": "swarm",
+      "expected_assessments": 1
+    },
+    {
+      "name": "last_always_wins",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen3.5-9b", "intelligence": 4},
+        {"key": "qwen3.6-27b", "intelligence": 6}
+      ],
+      "classifier_complexity": 3,
+      "assessed": [
+        {"complexity": 9, "reason": "too hard"},
+        {"complexity": 9, "reason": "still too hard"}
+      ],
+      "expected_winner": "qwen3.6-27b",
+      "expected_assessments": 2
+    },
+    {
+      "name": "parse_failure_mid_climb_escalates",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen3.5-9b", "intelligence": 4},
+        {"key": "qwen3.6-27b", "intelligence": 6}
+      ],
+      "classifier_complexity": null,
+      "assessed": ["not json at all", {"complexity": 5, "reason": "mid"}],
+      "expected_winner": "qwen3.6-27b",
+      "expected_assessments": 3
+    }
+  ],
+  "control_no_escalate": [
+    {
+      "name": "trivial_prompt_single_rung",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen", "intelligence": 6}
+      ],
+      "classifier_complexity": 0,
+      "assessed": [{"complexity": 0, "reason": "trivial"}],
+      "expected_winner": "swarm",
+      "expected_assessments": 1
+    },
+    {
+      "name": "boundary_match_stays_cheap",
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen", "intelligence": 6}
+      ],
+      "classifier_complexity": 2,
+      "assessed": [{"complexity": 2, "reason": "exactly fits"}],
+      "expected_winner": "swarm",
+      "expected_assessments": 1
+    }
+  ],
+  "confidence_gap": [
+    {
+      "name": "overconfident_simple_assessment",
+      "label_truth_complexity": 8,
+      "ladder": [
+        {"key": "swarm", "intelligence": 2},
+        {"key": "qwen3.5-9b", "intelligence": 4},
+        {"key": "qwen3.6-27b", "intelligence": 6}
+      ],
+      "classifier_complexity": 1,
+      "assessed": [{"complexity": 2, "reason": "looks simple"}],
+      "expected_winner": "swarm",
+      "expected_assessments": 1
+    }
+  ],
+  "parse_responses": {
+    "valid": [
+      {"complexity": 4, "reason": "simple math"},
+      {"complexity": "6", "reason": "coerced"},
+      {}
+    ],
+    "invalid": ["not json at all", "", "{{{{"]
+  }
+}

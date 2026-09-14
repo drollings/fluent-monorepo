@@ -11,6 +11,7 @@ use serde_json::Value;
 
 fn profile(name: &str, group: &str) -> InstanceProfile {
     InstanceProfile {
+        embedding: None,
         name: Some(name.into()),
         group: Some(group.into()),
         count: 1,
@@ -66,6 +67,7 @@ impl Raw {
             .clone()
             .unwrap_or_else(|| self.name.clone());
         InstanceProfile {
+            embedding: None,
             name: Some(self.name),
             group: Some(group),
             count: 1,
@@ -114,6 +116,7 @@ fn parse_one(spec: &str) -> Raw {
 #[test]
 fn grammar_matches_reference_deployment() {
     let swarm = InstanceProfile {
+        embedding: None,
         name: Some("swarm".into()),
         group: Some("swarm".into()),
         count: 3,
@@ -566,6 +569,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
     // n_ctx 16384). swarm1 is unpinned -> deferred to on-demand creation.
     let profiles = vec![
         InstanceProfile {
+            embedding: None,
             name: Some("ledger".into()),
             group: Some("ledger".into()),
             count: 1,
@@ -581,6 +585,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
             session: false,
         },
         InstanceProfile {
+            embedding: None,
             name: Some("swarm0".into()),
             group: Some("swarm".into()),
             count: 1,
@@ -596,6 +601,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
             session: false,
         },
         InstanceProfile {
+            embedding: None,
             name: Some("swarm1".into()),
             group: Some("swarm".into()),
             count: 1,
@@ -654,6 +660,7 @@ async fn ensure_instance_creates_missing_unpinned_on_demand() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
+        embedding: None,
         name: Some("scratch".into()),
         group: Some("scratch".into()),
         count: 1,
@@ -696,6 +703,7 @@ async fn ensure_instance_skips_when_already_present_or_unknown() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
+        embedding: None,
         name: Some("scratch".into()),
         group: Some("scratch".into()),
         count: 1,
@@ -766,6 +774,7 @@ async fn reconcile_tolerates_duplicate_create() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
+        embedding: None,
         name: Some("swarm0".into()),
         group: Some("swarm".into()),
         count: 1,
@@ -994,6 +1003,7 @@ async fn ensure_group_allocates_fresh_instance_from_profile() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
+        embedding: None,
         name: Some("swarm0".into()),
         group: Some("swarm".into()),
         count: 1,
@@ -1047,6 +1057,7 @@ async fn ensure_group_ready_is_noop_when_member_present() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
+        embedding: None,
         name: Some("swarm".into()),
         group: Some("swarm".into()),
         count: 2,
@@ -1102,6 +1113,7 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![
         InstanceProfile {
+            embedding: None,
             name: Some("ledger".into()),
             group: Some("ledger".into()),
             count: 1,
@@ -1117,6 +1129,7 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
             session: false,
         },
         InstanceProfile {
+            embedding: None,
             name: Some("swarm".into()),
             group: Some("swarm".into()),
             count: 2,
@@ -1180,6 +1193,7 @@ async fn ensure_group_ready_allocates_unpinned_group_when_absent() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
+        embedding: None,
         name: Some("scratch".into()),
         group: Some("scratch".into()),
         count: 1,
@@ -1466,6 +1480,7 @@ async fn resize_to_demand_grows_within_max_ctx_and_refuses_beyond() {
     );
     let stub = StubServer::start(handler);
     let profile = crate::config::InstanceProfile {
+        embedding: None,
         name: Some("scratch".into()),
         group: Some("scratch".into()),
         count: 1,
@@ -1567,18 +1582,18 @@ fn build_instance_managers_rejects_duplicate_name_within_model() {
         serde_json::from_value(serde_json::json!({
             "roles": {
                 "work": {
-                    "models": ["a"],
                     "instances": {
                         "swarm0": { "num_ctx": 16384 },
                         "x": { "name": "swarm0", "num_ctx": 32768 }
-                    }
+                    },
+                    "models": {"a": {}}
                 }
             },
             "models": {
                 "a": {
                     "endpoint": "http://x/v1/chat/completions",
                     "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 1,
+                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
                     "weights": "/models/a.gguf"
                 }
             }
@@ -1614,15 +1629,15 @@ fn build_instance_managers_ok_on_valid_config() {
         serde_json::from_value(serde_json::json!({
             "roles": {
                 "work": {
-                    "models": ["a"],
-                    "instances": { "swarm": { "num_ctx": 16384, "count": 2 } }
+                    "instances": { "swarm": { "num_ctx": 16384, "count": 2 } },
+                    "models": {"a": {}}
                 }
             },
             "models": {
                 "a": {
                     "endpoint": "http://x/v1/chat/completions",
                     "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 1,
+                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
                     "weights": "/models/a.gguf"
                 }
             }
@@ -1642,7 +1657,7 @@ fn build_instance_managers_is_empty_without_instances() {
                 "a": {
                     "endpoint": "http://x/v1/chat/completions",
                     "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 1,
+                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
                 }
             }
         }))
@@ -2445,6 +2460,7 @@ async fn residency_all_pinned_over_budget_evicts_nothing() {
 
 fn session_profile(name: &str, group: &str, resume: bool) -> InstanceProfile {
     InstanceProfile {
+        embedding: None,
         name: Some(name.into()),
         group: Some(group.into()),
         count: 1,

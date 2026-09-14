@@ -29,7 +29,17 @@ pub enum ModelGroup {
         models: Vec<String>,
         #[serde(default)]
         escalation: Option<EscalationLadderConfig>,
+        /// Whether the `last`/`any` availability sentinels are appended
+        /// after the declared members (default `true`). The array form
+        /// always appends; declare the object form with
+        /// `"sentinels": false` to opt out.
+        #[serde(default = "default_sentinels")]
+        sentinels: bool,
     },
+}
+
+fn default_sentinels() -> bool {
+    true
 }
 
 /// One member of a `model_groups` list: either a literal model key or an
@@ -78,11 +88,50 @@ impl ModelGroup {
         }
     }
 
+    /// The effective member list: the duty members (see
+    /// [`Self::duty_members`]) plus the implicit `last`/`any` availability
+    /// suffix (each appended only when not already declared). Dispatch
+    /// expansion (`role_expanded_members`, route resolution) composes through
+    /// this; serialization keeps the declared form so configs round-trip
+    /// byte-identically.
+    pub fn effective_models(&self) -> Vec<String> {
+        let duty = self.duty_members();
+        let append = match self {
+            ModelGroup::Array(_) => true,
+            ModelGroup::Object { sentinels, .. } => *sentinels,
+        };
+        let mut out = duty;
+        if append {
+            for sentinel in ["last", "any"] {
+                if !out.iter().any(|m| m == sentinel) {
+                    out.push(sentinel.to_string());
+                }
+            }
+        }
+        out
+    }
+
+    /// The members a group dispatches through: the declared members — or,
+    /// when the group declares no role/model members (empty, or sentinels
+    /// only), the `default` role. An empty group rides the fleet default
+    /// instead of resolving to nothing.
+    pub fn duty_members(&self) -> Vec<String> {
+        if self.models().iter().any(|m| m != "last" && m != "any") {
+            self.models().to_vec()
+        } else {
+            vec!["default".to_string()]
+        }
+    }
+
     /// The members parsed into literal keys vs. availability sentinels, in
-    /// config order. Pure parsing — no registry or residency reads — so the
-    /// raw `models()` shape stays the dispatch-neutral source of truth.
+    /// config order — over the effective list, so the implicit suffix
+    /// participates in sentinel ordering exactly like a declared one. Pure
+    /// parsing — no registry or residency reads.
     pub fn members(&self) -> Vec<GroupMember> {
-        self.models().iter().map(|m| GroupMember::parse(m)).collect()
+        self.effective_models()
+            .iter()
+            .map(|m| GroupMember::parse(m))
+            .collect()
     }
 
     /// The escalation ladder configured for this group, if any. Array-form

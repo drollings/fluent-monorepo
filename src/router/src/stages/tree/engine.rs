@@ -149,22 +149,42 @@ impl ClassificationEngine {
             ClassificationNode::Classifier {
                 description,
                 model,
+                model_group,
                 coherence_threshold,
                 safety_threshold,
                 children,
-            } => self.evaluate_classifier(
-                description,
-                model,
-                *coherence_threshold,
-                *safety_threshold,
-                children,
-                node,
-                user_text,
-                interlingua,
-                route_hints,
-                visited,
-                expansion,
-            ),
+                ..
+            } => {
+                // The node's duty key: its group (first servable member)
+                // wins when set, else its literal model, else the pipeline's
+                // resolved classifier client serves (unknown keys behave as
+                // before — `call_classifier` falls back to the default).
+                let model_key: String = model_group
+                    .as_deref()
+                    .and_then(|group| {
+                        crate::config::resolve_group_head_key(
+                            &self.routing.models,
+                            &self.routing.roles,
+                            &self.routing.model_groups,
+                            group,
+                        )
+                    })
+                    .or_else(|| model.clone())
+                    .unwrap_or_default();
+                self.evaluate_classifier(
+                    description,
+                    &model_key,
+                    *coherence_threshold,
+                    *safety_threshold,
+                    children,
+                    node,
+                    user_text,
+                    interlingua,
+                    route_hints,
+                    visited,
+                    expansion,
+                )
+            }
             ClassificationNode::Terminal {
                 route,
                 group,
@@ -472,6 +492,7 @@ impl ClassificationEngine {
                     &self.routing,
                     group,
                     expansion.recency(),
+                    expansion.session(),
                     &|base| expansion.supervisor_loaded(base),
                 );
                 if candidates.len() >= 2 {
@@ -511,6 +532,7 @@ impl ClassificationEngine {
                 &self.routing,
                 group,
                 expansion.recency(),
+                expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
             );
             if candidates.len() >= 2 {

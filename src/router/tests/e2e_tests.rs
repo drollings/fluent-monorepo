@@ -64,7 +64,7 @@ fn make_test_config() -> RouterConfig {
     match serde_json::from_str::<RouterConfig>(
         r#"{
         "pipelines": {"default": {"deterministic_prefilter": true, "classifier": true, "blacklist": "env/pii-patterns.json"}},
-        "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.000001, "cost_output": 0.000006, "cost_cached_read": 0.0000004, "speed": 10, "total_timeout_ms": 5000, "idle_timeout_ms": 2000, "stream": false, "filter_thinking": false, "retry_count": 0, "retry_base_interval_s": 1}},
+        "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.000001, "cost_output": 0.000006, "cost_cached_read": 0.0000004, "tok_s": 10, "total_timeout_ms": 5000, "idle_timeout_ms": 2000, "stream": false, "filter_thinking": false, "retry_count": 0, "retry_base_interval_s": 1}},
         "model_groups": {"fast": ["fast"]},
         "classification": {"root": {
             "type": "classifier",
@@ -291,14 +291,10 @@ fn make_tree_config() -> RouterConfig {
         r#"{
             "pipelines": {"default": {"deterministic_prefilter": true, "classifier": true}},
             "models": {
-                "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "speed": 10},
-                "code-model": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 5e-6, "cost_output": 3e-5, "cost_cached_read": 2e-6, "speed": 5}
+                "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "tok_s": 10},
+                "code-model": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 5e-6, "cost_output": 3e-5, "cost_cached_read": 2e-6, "tok_s": 5}
             },
             "model_groups": {"fast": ["fast"], "code": ["code-model"]},
-            "routes": {
-                "code": {"group": "code", "pipelines": ["default"], "description": "code"},
-                "local": {"group": "fast", "pipelines": ["default"], "description": "local"}
-            },
             "default_route": "local",
             "classification": {
                 "root": {

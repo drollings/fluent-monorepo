@@ -1,3 +1,5 @@
+// Tests assert float threshold values against literal defaults - deliberate.
+#![allow(clippy::float_cmp)]
 use super::*;
 use crate::config::RouterConfig;
 
@@ -53,12 +55,13 @@ fn tree_json_parses_all_node_types() {
         coherence_threshold,
         safety_threshold,
         children,
+        ..
     } = &tree.root
     else {
         panic!("root should be a classifier")
     };
     assert_eq!(description, "request router");
-    assert_eq!(model, "fast");
+    assert_eq!(model.as_deref(), Some("fast"));
     assert_eq!(*coherence_threshold, Some(0.6));
     assert_eq!(*safety_threshold, Some(0.4));
     assert_eq!(children.len(), 4);
@@ -99,6 +102,7 @@ fn tree_round_trips() {
                     node: Box::new(ClassificationNode::Terminal {
                         route: "local".into(),
                         group: Some("question".into()),
+                        role: None,
                         description: String::new(),
                         always_route: false,
                     })
@@ -130,6 +134,42 @@ fn flat_config_without_classification_is_none() {
 fn root_classifier_model_resolved() {
     let tree: ClassificationTree = serde_json::from_str(tree_json()).unwrap();
     assert_eq!(tree.root_classifier_model(), Some("fast"));
+    assert_eq!(tree.root_classifier_group(), None);
+    assert!(!tree.has_nested_model_group());
+}
+
+#[test]
+fn root_classifier_group_resolved_and_nested_detected() {
+    // Duties name groups: the root's `model_group` resolves the duty while
+    // the literal stays as fallback; a nested `model_group` is detected so
+    // the builder can warn (only the root feeds the duty).
+    let tree: ClassificationTree = serde_json::from_str(
+        r#"{
+            "root": {
+                "type": "classifier",
+                "description": "root",
+                "model": "stale:literal",
+                "model_group": "code",
+                "children": [
+                    {
+                        "key": "sub",
+                        "description": "sub",
+                        "node": {
+                            "type": "classifier",
+                            "description": "nested",
+                            "model": "small",
+                            "model_group": "code",
+                            "children": []
+                        }
+                    }
+                ]
+            }
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(tree.root_classifier_group(), Some("code"));
+    assert_eq!(tree.root_classifier_model(), Some("stale:literal"));
+    assert!(tree.has_nested_model_group());
 }
 
 #[test]
@@ -286,4 +326,109 @@ fn fallback_node_parses_and_wraps() {
     )
     .unwrap();
     assert!(matches!(node, ClassificationNode::Fallback { .. }));
+}
+
+#[test]
+fn terminal_role_parses_and_defaults_none() {
+    let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+        "root": {
+            "type": "classifier",
+            "description": "d",
+            "model": "m",
+            "children": [
+                {"key": "code", "description": "", "node": {
+                    "type": "terminal", "route": "code", "group": "g",
+                    "role": "quick", "description": "",
+                }},
+                {"key": "chat", "description": "", "node": {
+                    "type": "terminal", "route": "chat", "description": "",
+                }},
+            ],
+        }
+    }))
+    .expect("tree with terminal role parses");
+    assert_eq!(tree.terminal_role("code").as_deref(), Some("quick"));
+    assert_eq!(tree.terminal_role("chat"), None, "absent role defaults to None");
+    assert_eq!(tree.terminal_role("nope"), None, "unknown route has no role");
+}
+
+#[test]
+fn top_safety_absent_means_hard_default() {
+    let cfg: RouterConfig =
+        serde_json::from_str(r#"{"models": {}, "model_groups": {}}"#).expect("parses");
+    assert_eq!(cfg.safety_threshold, None);
+    assert_eq!(cfg.effective_safety_threshold(), 0.5);
+}
+
+#[test]
+fn top_safety_present_is_the_default() {
+    let cfg: RouterConfig = serde_json::from_str(
+        r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#,
+    )
+    .expect("parses");
+    assert_eq!(cfg.safety_threshold, Some(0.4));
+    assert_eq!(cfg.effective_safety_threshold(), 0.4);
+}
+
+#[test]
+fn top_safety_omitted_when_unset() {
+    let cfg: RouterConfig =
+        serde_json::from_str(r#"{"models": {}, "model_groups": {}}"#).expect("parses");
+    let value = serde_json::to_value(&cfg).expect("serializes");
+    assert!(
+        value.get("safety_threshold").is_none(),
+        "unset default stays out of the serialized form"
+    );
+    let set: RouterConfig = serde_json::from_str(
+        r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#,
+    )
+    .expect("parses");
+    let back: RouterConfig =
+        serde_json::from_str(&serde_json::to_string(&set).expect("serializes"))
+            .expect("round trip");
+    assert_eq!(back.safety_threshold, Some(0.4));
+}
+
+#[test]
+fn prompt_thresholds_resolve_node_over_top_over_hard() {
+    let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+        "root": {
+            "type": "classifier",
+            "description": "d",
+            "model": "m",
+            "safety_threshold": 0.6,
+            "children": [
+                {"key": "a", "description": "aaa", "node": {
+                    "type": "terminal", "route": "a", "description": "",
+                }},
+            ],
+        }
+    }))
+    .expect("tree parses");
+    // Node wins over the top default.
+    let prompt = tree
+        .derive_system_prompt_with(None, Some(0.4))
+        .expect("prompt");
+    assert!(prompt.contains("0.60"), "node threshold shown, got: {prompt}");
+    // Top default fills an unset node.
+    let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+        "root": {
+            "type": "classifier",
+            "description": "d",
+            "model": "m",
+            "children": [
+                {"key": "a", "description": "aaa", "node": {
+                    "type": "terminal", "route": "a", "description": "",
+                }},
+            ],
+        }
+    }))
+    .expect("tree parses");
+    let prompt = tree
+        .derive_system_prompt_with(None, Some(0.4))
+        .expect("prompt");
+    assert!(prompt.contains("0.40"), "top default shown, got: {prompt}");
+    // Absent both: hard defaults (the legacy `derive_system_prompt` path).
+    let prompt = tree.derive_system_prompt().expect("prompt");
+    assert!(prompt.contains("0.50"), "hard default shown, got: {prompt}");
 }

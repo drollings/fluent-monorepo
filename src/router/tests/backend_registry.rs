@@ -20,17 +20,17 @@ fn golden_corpus_config() -> RouterConfig {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "tok_s": 8
             }
         },
         "roles": {
             "work": {
-                "models": ["swarm"],
                 "instances": {
                     "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
                     "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                }
+                },
+                "models": {"swarm": {}}
             }
         },
         "onnx": {

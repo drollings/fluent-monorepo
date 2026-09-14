@@ -33,7 +33,7 @@ fn load_fixture_config() -> RouterConfig {
     let path = config_path();
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    serde_json::from_str(&raw)
+    RouterConfig::from_json_str(&raw)
         .unwrap_or_else(|e| panic!("fixture config must deserialize: {e}"))
 }
 
@@ -128,9 +128,13 @@ fn resolved_targets_match_golden() {
 }
 
 #[test]
-fn golden_spot_checks_dispatch_contract() {    // The golden is opaque by design; these spot checks state its meaning:
-    // every group dispatches to the single qualified fleet model with the
-    // profile's sampling params, and unknown keys fail closed.
+fn golden_spot_checks_dispatch_contract() {
+    // The golden is opaque by design; these spot checks state its meaning:
+    // every group dispatches to its cheapest qualifying bound model with
+    // the profile's sampling params, and unknown keys fail closed.
+    // Membership lives on the roles: both fixture models are bound by
+    // `default`, so the `default` group serves the cheaper scout; only
+    // `code` is bound by the `code` role.
     let corpus = build_corpus();
     let by_id: std::collections::HashMap<&str, &serde_json::Value> = corpus["cases"]
         .as_array()
@@ -139,17 +143,18 @@ fn golden_spot_checks_dispatch_contract() {    // The golden is opaque by design
         .map(|c| (c["id"].as_str().expect("id"), &c["target"]))
         .collect();
 
-    for (group, route) in group_routes() {
-        let target = by_id
-            .get(format!("group.{group}.route.{route}.complexity.none").as_str())
-            .expect("group case");
-        assert_eq!(target["model"], "code:default", "group {group} serves code");
-        assert_eq!(
-            target["group"], group,
-            "resolved target carries its group"
-        );
-        assert_eq!(target["params"]["temperature"], 0.6);
-    }
+    let target = by_id
+        .get("group.default.route.local.complexity.none")
+        .expect("group case");
+    assert_eq!(target["model"], "scout/scout-1b:scout");
+    assert_eq!(target["group"], "default");
+    assert_eq!(target["params"]["temperature"], 0.1);
+    let target = by_id
+        .get("group.code.route.code.complexity.none")
+        .expect("group case");
+    assert_eq!(target["model"], "code:default", "group code serves code");
+    assert_eq!(target["group"], "code");
+    assert_eq!(target["params"]["temperature"], 0.6);
     assert!(
         by_id["target_for_key.nope:default"].is_null(),
         "unknown base fails closed"
@@ -176,13 +181,13 @@ fn role_vocabulary_serves_fixture_groups() {
 
     assert_eq!(
         routing.role_expanded_members("default"),
-        vec!["code:default", "last", "any"],
-        "role fans out, sentinels pass through"
+        vec!["code", "scout-1b", "last", "any"],
+        "role fans out to bound models, sentinels pass through"
     );
     assert_eq!(
         routing.role_expanded_members("code"),
-        vec!["code:default", "last", "any"],
-        "role-less groups ride the fleet-default role"
+        vec!["code", "last", "any"],
+        "role fans out to its bound model"
     );
 
     assert!(
@@ -195,11 +200,11 @@ fn role_vocabulary_serves_fixture_groups() {
     );
     let backends = config.target_backends();
     assert!(
-        backends.contains_key("code:default"),
+        backends.contains_key("code"),
         "matcher backends key on expanded candidates"
     );
     assert!(
-        !backends.contains_key("default") || backends.contains_key("code:default"),
+        !backends.contains_key("default") || backends.contains_key("code"),
         "no dangling role-keyed backend without its candidate"
     );
 }

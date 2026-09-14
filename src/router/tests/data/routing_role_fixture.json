@@ -1,17 +1,10 @@
 {
-  "_comment": "Test-owned fixture for routing_role_golden: exercises role pools, per-model selection, and group expansion WITHOUT coupling any test to the operator-editable env/coral-router.json. Values here are arbitrary; only the resolution mechanics are pinned by the golden.",
   "roles": {
     "default": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default",
       "params": {
         "num_ctx": 8192,
         "max_ctx": 262144,
-        "params": {
-          "temperature": 0.1
-        }
+        "temperature": 0.1
       },
       "instances": {
         "default": {
@@ -31,29 +24,25 @@
           "pinned": false,
           "default": false
         }
+      },
+      "models": {
+        "scout-1b": {
+          "select": "scout"
+        },
+        "code": {
+          "select": "default"
+        }
       }
     },
     "classifier": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default",
-      "params": {
-        "num_ctx": 8192,
-        "max_ctx": 262144
-      },
-      "instances": {}
+      "models": {
+        "code": {}
+      }
     },
     "code": {
-      "models": [
-        "code:default"
-      ],
-      "instance": "default",
-      "params": {
-        "num_ctx": 8192,
-        "max_ctx": 262144
-      },
-      "instances": {}
+      "models": {
+        "code": {}
+      }
     }
   },
   "models": {
@@ -64,18 +53,13 @@
       "cost_input": 0.000001,
       "cost_output": 0.000006,
       "cost_cached_read": 4e-7,
-      "speed": 8,
+      "tok_s": 8,
       "total_timeout_ms": 50000,
       "idle_timeout_ms": 3000,
       "stream": true,
       "filter_thinking": true,
       "retry_count": 1,
-      "retry_base_interval_s": 1,
-      "instances": {
-        "default": {
-          "select": "scout"
-        }
-      }
+      "retry_base_interval_s": 1
     },
     "code": {
       "name": "code",
@@ -84,37 +68,28 @@
       "cost_input": 0.000003,
       "cost_output": 0.000018,
       "cost_cached_read": 1.2e-6,
-      "speed": 4,
+      "tok_s": 4,
       "total_timeout_ms": 150000,
       "idle_timeout_ms": 30000,
       "stream": true,
       "filter_thinking": true,
       "retry_count": 1,
-      "retry_base_interval_s": 2,
-      "instances": {
-        "default": {
-          "select": "default"
-        }
-      }
+      "retry_base_interval_s": 2
     }
   },
   "model_groups": {
     "default": [
-      "default",
-      "last",
-      "any"
+      "default"
     ],
     "code": [
-      "code",
-      "last",
-      "any"
+      "code"
     ]
   },
   "classification": {
     "root": {
       "type": "classifier",
       "description": "Fixture request router",
-      "model": "code:default",
+      "model_group": "code",
       "coherence_threshold": 0.5,
       "safety_threshold": 0.3,
       "children": [

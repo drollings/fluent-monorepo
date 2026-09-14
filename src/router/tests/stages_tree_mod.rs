@@ -16,26 +16,28 @@ use super::*;
 
 fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
     ModelEntry {
+        embedding: None,
         name: Some(key.into()),
         endpoint: "http://localhost:8080/v1/chat/completions".into(),
         intelligence,
         cost_input: cost,
         cost_output: cost * 6.0,
         cost_cached_read: cost * 0.4,
-        speed: 8,
+        tok_s: 8.0,
         total_timeout_ms: 40_000,
         idle_timeout_ms: 8_000,
         stream: true,
         filter_thinking: true,
+        thinking: None,
         retry_count: 0,
         retry_base_interval_s: 1,
         params: None,
-        instances: None,
         effective_profiles: None,
-        sessions: None,
         weights: None,
         hf_repo: None,
         hf_file: None,
+        template: None,
+        role_params: None,
             api_key: None,
     }
 }
@@ -47,6 +49,7 @@ fn test_routing() -> RoutingConfig {
                 "code".into(),
                 RouteRef {
                     group: "code".into(),
+                    role: None,
                     pipelines: vec!["default".into()],
                     description: "code".into(),
         always_route: false,
@@ -56,6 +59,7 @@ fn test_routing() -> RoutingConfig {
                 "translation".into(),
                 RouteRef {
                     group: "translation".into(),
+                    role: None,
                     pipelines: vec!["default".into()],
                     description: "translation".into(),
         always_route: false,
@@ -65,6 +69,7 @@ fn test_routing() -> RoutingConfig {
                 "local".into(),
                 RouteRef {
                     group: "question".into(),
+                    role: None,
                     pipelines: vec!["default".into()],
                     description: "local".into(),
         always_route: false,
@@ -333,6 +338,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
         "fresh".into(),
         RouteRef {
             group: "fast".into(),
+            role: None,
             pipelines: vec!["default".into()],
             description: "fresh".into(),
         always_route: false,
@@ -1025,7 +1031,7 @@ fn final_decision_returns_same_target_both_channels() {
         "cost_input": 1e-6,
         "cost_output": 6e-6,
         "cost_cached_read": 4e-7,
-        "speed": 8,
+        "tok_s": 8,
     }))
     .expect("valid ModelEntry");
     let rt = RoutingTarget::from_model_entry("m1a-tree", &entry);

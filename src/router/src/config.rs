@@ -27,16 +27,36 @@ pub use self::filters::{
     CommandConfig, ConfidenceGate, FilterAction, FilterOutcome, FilterScope, MockConfig,
     PatternEntry, RejectPatterns,
 };
-pub use self::routing::{RoleEntry, RouteRef, RoutingConfig};
+pub use self::routing::{
+    expanded_group_members, select_group_member, strip_model_prefix, MODEL_PREFIX,
+    RequestedRef, RoleConcurrency, RoleContext, RoleEntry, RouteRef, RoutingConfig,
+};
 pub use common_core::constants::default_true;
 pub use self::root::{
     AuditLogConfig, ArcReadyConfig, ChartsConfig, ClassifierFailurePolicy, ClassifierOutput,
-    EvictionPolicy, InstanceProfile, LedgerConfig, ModelEntry, ModelInstanceRef,
+    EvictionPolicy, InstanceProfile, LedgerConfig, ModelBinding, ModelEntry, ModelRoleOverride,
     OrchestratorSection, OverlayConfig, PostProcessConfig, ReviewConfig, RigorConfig,
     RoleParams, RouterConfig, ServerConfig, SessionConfig, SidecarConfig,
     WorkflowExtractionMode, DECLARATION_PARAM_KEYS, DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
-    detect_device_vram_total, overlay_params, resolve_inference_point, role_head_key,
-    strip_declaration_params,
+    detect_device_vram_total, models_serving_role, overlay_params, resolve_group_head_key,
+    resolve_inference_point, role_head_key, strip_declaration_params, warn_on_non_object_params,
 };
 #[allow(unused_imports)]
-pub(crate) use self::root::{materialize_effective_pool, split_model_key};
+pub(crate) use self::root::materialize_effective_pool;
+pub use self::root::split_model_key;
+
+/// Derived config schema inventory: assembled from the config types'
+/// [`Describable`](fluent_wvr::Describable) documents — the single source of
+/// truth, never a hand-kept file. The `coral-router schema` subcommand
+/// prints this document; the boot gate validates through the same types, so
+/// the schema cannot drift from what the loader accepts.
+pub fn config_schema() -> serde_json::Value {
+    use fluent_wvr::Describable;
+    serde_json::json!({
+        "source": "derived from config types via Describable",
+        "sections": {
+            "config": RouterConfig::default().describe(),
+            "classifier_output": ClassifierOutput::default().describe(),
+        },
+    })
+}

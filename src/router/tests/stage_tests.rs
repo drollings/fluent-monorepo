@@ -569,6 +569,7 @@ mod tests {
             "test".into(),
             crate::config::RouteRef {
                 group: "fast".into(),
+                role: None,
                 pipelines: vec!["default".into()],
                 description: String::new(),
                 always_route: true,
@@ -649,16 +650,12 @@ mod tests {
             r#"{
                 "pipelines": {"default": {"deterministic_prefilter": false, "classifier": true}},
                 "models": {
-                    "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "speed": 8},
-                    "code-model": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 5e-6, "cost_output": 3e-5, "cost_cached_read": 2e-6, "speed": 5}
+                    "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "tok_s": 8},
+                    "code-model": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 5e-6, "cost_output": 3e-5, "cost_cached_read": 2e-6, "tok_s": 5}
                 },
                 "model_groups": {
                     "fast": ["fast"],
                     "code": ["code-model"]
-                },
-                "routes": {
-                    "code": {"group": "code", "pipelines": ["default"], "description": "code"},
-                    "local": {"group": "fast", "pipelines": ["default"], "description": "local"}
                 },
                 "default_route": "local",
                 "classification": {
@@ -817,6 +814,7 @@ mod tests {
                         (*route).to_string(),
                         RouteRef {
                             group: (*group).to_string(),
+                            role: None,
                             pipelines: vec!["default".into()],
                             description: String::new(),
                             always_route: false,
@@ -827,7 +825,7 @@ mod tests {
             models: config.models.clone(),
             model_groups: config.model_groups.clone(),
             system_prompt: String::new(),
-            safety_threshold: config.safety_threshold,
+            safety_threshold: config.effective_safety_threshold(),
             default_route: config.default_route.clone(),
             score_matrix: None,
             onnx_keys: BTreeSet::new(),
@@ -904,19 +902,14 @@ mod tests {
                         "score_matrix_authoritative": {authoritative}
                     }}
                 }},
-                "classifier_model": "fast",
                 "models": {{
-                    "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10 }},
-                    "code-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 5 }},
-                    "local-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "local-model", "intelligence": 3, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 8 }}
+                    "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10 }},
+                    "code-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 }},
+                    "local-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "local-model", "intelligence": 3, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 8 }}
                 }},
                 "model_groups": {{
                     "code": ["code-model"],
                     "local": ["local-model"]
-                }},
-                "routes": {{
-                    "code": {{ "group": "code", "pipelines": ["default"] }},
-                    "local": {{ "group": "local", "pipelines": ["default"] }}
                 }},
                 "default_route": "fast"
             }}"#
@@ -944,10 +937,11 @@ mod tests {
     }
 
     #[test]
-    fn root_score_matrix_key_ignored() {
-        // A root-level `"score_matrix"` key is ignored (no such field):
-        // the config deserializes, `routing_config().score_matrix` stays
-        // `None`, and the pipeline-level matrix is unaffected.
+    fn root_score_matrix_key_rejected() {
+        // No such field at the top level: a root-level `"score_matrix"` key
+        // fails at parse (`deny_unknown_fields`) instead of being silently
+        // ignored — the matrix lives on pipelines, where a typo would
+        // otherwise disable it without a trace.
         let mut value = serde_json::to_value(matrix_config(true, DEFAULT_MATRIX_ROUTES))
             .expect("config serializes");
         value["score_matrix"] = serde_json::json!({
@@ -955,32 +949,17 @@ mod tests {
             "weights": [1.0],
             "routes": {"plan": {"bands": {"completeness": [0.0, 1.0]}}}
         });
-        let config: crate::config::RouterConfig =
-            serde_json::from_value(value).expect("root score_matrix key ignored");
-        assert!(
-            config.routing_config().score_matrix.is_none(),
-            "root matrix must not leak into the routing config"
-        );
-        assert!(
-            config.pipelines["default"].score_matrix.is_some(),
-            "pipeline-level matrix unchanged"
-        );
+        let err = serde_json::from_value::<crate::config::RouterConfig>(value)
+            .expect_err("root score_matrix key must not parse");
+        assert!(err.to_string().contains("score_matrix"), "got: {err}");
     }
 
     #[test]
     fn pipeline_matrix_authoritative_unchanged() {
         // Pipeline-level `score_matrix` + `score_matrix_authoritative` still
-        // decide over the LLM target even when a (ignored) root-level key is
-        // present: the matrix top route is "local", not the LLM's "code".
-        let mut value = serde_json::to_value(matrix_config(true, DEFAULT_MATRIX_ROUTES))
-            .expect("config serializes");
-        value["score_matrix"] = serde_json::json!({
-            "dimensions": ["coherence"],
-            "weights": [1.0],
-            "routes": {"plan": {"bands": {"completeness": [0.0, 1.0]}}}
-        });
-        let config: crate::config::RouterConfig =
-            serde_json::from_value(value).expect("root score_matrix key ignored");
+        // decide over the LLM target: the matrix top route is "local", not
+        // the LLM's "code".
+        let config = matrix_config(true, DEFAULT_MATRIX_ROUTES);
         let result = run_matrix_pipeline(
             &config,
             &serde_json::json!({
@@ -1000,7 +979,7 @@ mod tests {
         assert_eq!(
             rt.target_name.as_deref(),
             Some("local"),
-            "pipeline matrix still authoritative with root key present"
+            "pipeline matrix still authoritative over the LLM target"
         );
         assert_eq!(rt.model, "local-model");
     }
@@ -1234,17 +1213,13 @@ mod tests {
                         "classifier_retry_prompts": ["corrective prompt 1", "corrective prompt 2"]
                     }}
                 }},
-                "classifier_model": "fast",
                 "models": {{
-                    "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10 }},
-                    "code-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 5 }}
+                    "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10 }},
+                    "code-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 }}
                 }},
                 "model_groups": {{
                     "fast": ["fast"],
                     "code": ["code-model"]
-                }},
-                "routes": {{
-                    "code": {{ "group": "code", "pipelines": ["default"] }}
                 }},
                 "default_route": "fast"
             }}"#
@@ -1396,12 +1371,10 @@ mod tests {
         let config: crate::config::RouterConfig = serde_json::from_str(
             r#"{
                 "pipelines": {"default": {"classifier": true, "classifier_model": "fast"}},
-                "classifier_model": "fast",
                 "models": {
-                    "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10}
+                    "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10}
                 },
                 "model_groups": {"fast": ["fast"]},
-                "routes": {},
                 "default_route": "fast"
             }"#,
         )
@@ -1498,17 +1471,13 @@ mod tests {
                         "target_match": "{target_match}"
                     }}
                 }},
-                "classifier_model": "fast",
                 "models": {{
-                    "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10 }},
-                    "swarm": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 9 }},
-                    "qwen3.6-27b": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "speed": 4 }}
+                    "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10 }},
+                    "swarm": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 9 }},
+                    "qwen3.6-27b": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "tok_s": 4 }}
                 }},
                 "model_groups": {{
                     "code": ["swarm", "qwen3.6-27b"]
-                }},
-                "routes": {{
-                    "code": {{ "group": "code", "pipelines": ["default"] }}
                 }},
                 "default_route": "fast"
             }}"#
@@ -1662,17 +1631,13 @@ mod tests {
                         "score_matrix_authoritative": true
                     }
                 },
-                "classifier_model": "fast",
                 "models": {
-                    "fast": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10 },
-                    "swarm": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 9 },
-                    "qwen3.6-27b": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "speed": 4 }
+                    "fast": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10 },
+                    "swarm": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 9 },
+                    "qwen3.6-27b": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "tok_s": 4 }
                 },
                 "model_groups": {
                     "code": ["swarm", "qwen3.6-27b"]
-                },
-                "routes": {
-                    "code": { "group": "code", "pipelines": ["default"] }
                 },
                 "default_route": "fast"
             }"#,
@@ -1730,8 +1695,8 @@ mod tests {
                 "local": { "group": "default", "pipelines": ["default"], "description": "qa" }
             },
             "models": {
-                "gemma": { "endpoint": "http://x/v1/chat/completions", "name": "gemma", "intelligence": 6, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 5 },
-                "swarm": { "endpoint": "http://y/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 8 }
+                "gemma": { "endpoint": "http://x/v1/chat/completions", "name": "gemma", "intelligence": 6, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 },
+                "swarm": { "endpoint": "http://y/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 8 }
             },
             "model_groups": {
                 "prose": ["gemma"],
@@ -1815,7 +1780,6 @@ mod tests {
         let config: crate::config::RouterConfig = serde_json::from_str(
             r#"{
                 "pipelines": {"default": {"deterministic_prefilter": false, "nlp": true, "classifier": false}},
-                "routes": {"local": {"group": "fast", "pipelines": ["default"], "description": "local"}},
                 "default_route": "local"
             }"#,
         )

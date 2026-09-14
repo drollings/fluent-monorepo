@@ -11,54 +11,98 @@
     {
       "id": "group.default.route.local.complexity.none",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "default",
-        "idle_timeout_ms": 30000,
-        "instance": "default",
+        "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "code:default",
+        "model": "scout/scout-1b:scout",
         "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
+          "temperature": 0.1
         },
-        "retry_base_interval_s": 2,
+        "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
         "target_name": "local",
-        "total_timeout_ms": 150000,
+        "total_timeout_ms": 50000,
         "url": "http://localhost:8181/v1/chat/completions"
       }
     },
     {
       "id": "group.default.route.local.complexity.zero",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "default",
-        "idle_timeout_ms": 30000,
-        "instance": "default",
+        "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "code:default",
+        "model": "scout/scout-1b:scout",
         "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
+          "temperature": 0.1
         },
-        "retry_base_interval_s": 2,
+        "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
         "target_name": "local",
-        "total_timeout_ms": 150000,
+        "total_timeout_ms": 50000,
         "url": "http://localhost:8181/v1/chat/completions"
       }
     },
     {
       "id": "group.default.route.local.complexity.four",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "default",
         "idle_timeout_ms": 30000,
-        "instance": "default",
         "is_onnx": false,
         "model": "code:default",
         "params": {
@@ -77,32 +121,62 @@
     {
       "id": "group.default.route.local.complexity.ten",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "default",
-        "idle_timeout_ms": 30000,
-        "instance": "default",
+        "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "code:default",
+        "model": "scout/scout-1b:scout",
         "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
+          "temperature": 0.1
         },
-        "retry_base_interval_s": 2,
+        "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
         "target_name": "local",
-        "total_timeout_ms": 150000,
+        "total_timeout_ms": 50000,
         "url": "http://localhost:8181/v1/chat/completions"
       }
     },
     {
       "id": "group.code.route.code.complexity.none",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "code",
         "idle_timeout_ms": 30000,
-        "instance": "default",
         "is_onnx": false,
         "model": "code:default",
         "params": {
@@ -121,10 +195,26 @@
     {
       "id": "group.code.route.code.complexity.zero",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "code",
         "idle_timeout_ms": 30000,
-        "instance": "default",
         "is_onnx": false,
         "model": "code:default",
         "params": {
@@ -143,10 +233,26 @@
     {
       "id": "group.code.route.code.complexity.four",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "code",
         "idle_timeout_ms": 30000,
-        "instance": "default",
         "is_onnx": false,
         "model": "code:default",
         "params": {
@@ -165,10 +271,26 @@
     {
       "id": "group.code.route.code.complexity.ten",
       "target": {
+        "fallbacks": [
+          {
+            "filter_thinking": true,
+            "idle_timeout_ms": 3000,
+            "is_onnx": false,
+            "model": "scout/scout-1b:scout",
+            "params": {
+              "temperature": 0.1
+            },
+            "retry_base_interval_s": 1,
+            "retry_count": 1,
+            "stream": true,
+            "target_name": "scout-1b",
+            "total_timeout_ms": 50000,
+            "url": "http://localhost:8181/v1/chat/completions"
+          }
+        ],
         "filter_thinking": true,
         "group": "code",
         "idle_timeout_ms": 30000,
-        "instance": "default",
         "is_onnx": false,
         "model": "code:default",
         "params": {

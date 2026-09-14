@@ -179,3 +179,46 @@ fn router_config_shipped_array_shape_still_parses() {
     assert_eq!(cfg.model_groups["fast"].models(), &["fast".to_string()]);
     assert!(cfg.model_groups["fast"].escalation().is_none());
 }
+
+#[test]
+fn implicit_sentinel_suffix_appends_once() {
+    // Dispatch lists gain `last`/`any` unless declared; declared sentinels
+    // are never duplicated. Serialization keeps the declared form.
+    let group: ModelGroup = serde_json::from_str(r#"["code"]"#).unwrap();
+    assert_eq!(
+        group.effective_models(),
+        vec!["code".to_string(), "last".to_string(), "any".to_string()]
+    );
+    let declared: ModelGroup = serde_json::from_str(r#"["code", "last", "any"]"#).unwrap();
+    assert_eq!(
+        declared.effective_models(),
+        vec!["code".to_string(), "last".to_string(), "any".to_string()],
+        "declared sentinels are not duplicated"
+    );
+    let opted_out: ModelGroup =
+        serde_json::from_value(serde_json::json!({"models": ["code"], "sentinels": false}))
+            .unwrap();
+    assert_eq!(opted_out.effective_models(), vec!["code".to_string()]);
+    let back = serde_json::to_string(&group).unwrap();
+    assert_eq!(back, r#"["code"]"#, "declared form round-trips");
+}
+
+#[test]
+fn empty_group_rides_default_role() {
+    // A group declaring no role/model members (empty, or sentinels only)
+    // dispatches through the `default` role instead of resolving to nothing.
+    let empty: ModelGroup = serde_json::from_str(r#"[]"#).unwrap();
+    assert_eq!(empty.duty_members(), vec!["default".to_string()]);
+    assert_eq!(
+        empty.effective_models(),
+        vec!["default".to_string(), "last".to_string(), "any".to_string()]
+    );
+    let sentinels_only: ModelGroup = serde_json::from_str(r#"["last", "any"]"#).unwrap();
+    assert_eq!(
+        sentinels_only.duty_members(),
+        vec!["default".to_string()],
+        "sentinels alone serve nothing"
+    );
+    let headed: ModelGroup = serde_json::from_str(r#"["code"]"#).unwrap();
+    assert_eq!(headed.duty_members(), vec!["code".to_string()]);
+}

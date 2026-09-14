@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use fluent_concurrency::ladder::first_accept_in_order;
+use fluent_concurrency::pool::Limiter;
 use fluent_llm::cache::ResponseCache;
 use http_body_util::BodyExt;
 
@@ -60,6 +61,59 @@ pub struct DispatchDeps {
     /// mode, no onnx fleet) leaves onnx targets unserved — the mock intercepts
     /// first in tests.
     pub onnx_llm_backend: Option<Arc<dyn fluent_llm::client::ChatBackend>>,
+    /// Per-role admission gates (see [`RoleLimiters`]): targets carrying a
+    /// capped role hold a permit for the attempt; uncapped roles and
+    /// role-less targets (direct/qualified) pass through unbounded.
+    pub role_limiters: Arc<RoleLimiters>,
+}
+
+/// Per-role admission gates for `roles.<role>.concurrency.max_parallel`:
+/// one shared [`Limiter`] per capped role, built once at boot from the
+/// roles table and cloned (cheap — [`Limiter`] is internally an `Arc`) into
+/// every dispatch. Scope is per-role globally: all models serving the role
+/// draw from the same gate, so the cap bounds simultaneous dispatches *in
+/// the role* however the group ladder spreads them. Targets without a role
+/// (direct-model and qualified requests) carry no role and bypass the gate —
+/// the documented scope boundary. Excess admissions queue with backpressure
+/// (the [`Limiter`] gate) rather than failing over: under load the same
+/// model answers late, never a weaker model early.
+#[derive(Default, Clone)]
+pub struct RoleLimiters {
+    limiters: HashMap<String, Arc<Limiter>>,
+}
+
+impl RoleLimiters {
+    /// Build the gates for every role declaring `concurrency.max_parallel`.
+    /// A zero cap cannot parse (fail-closed), but a default-constructed one
+    /// could smuggle zero in — skipped loudly here, defense in depth.
+    #[allow(clippy::implicit_hasher)]
+    pub fn from_roles(roles: &HashMap<String, crate::config::RoleEntry>) -> Self {
+        let mut limiters = HashMap::new();
+        let mut names: Vec<&String> = roles.keys().collect();
+        names.sort();
+        for name in names {
+            let cap = match roles[name].concurrency.as_ref() {
+                Some(concurrency) => concurrency.max_parallel,
+                None => continue,
+            };
+            if cap == 0 {
+                tracing::warn!(
+                    target: "router.server",
+                    role = %name,
+                    "role declares max_parallel 0; gate skipped (role unbounded)",
+                );
+                continue;
+            }
+            limiters.insert(name.clone(), Arc::new(Limiter::new(cap)));
+        }
+        Self { limiters }
+    }
+
+    /// The gate for `role`, if capped.
+    #[allow(clippy::implicit_hasher)]
+    pub fn limiter_for(&self, role: &str) -> Option<Arc<Limiter>> {
+        self.limiters.get(role).cloned()
+    }
 }
 
 #[allow(clippy::implicit_hasher)]
@@ -526,24 +580,45 @@ pub async fn dispatch_real(
                 }
 
                 let attempt_start = Instant::now();
-                match dispatch_to_single_target(
-                    target,
-                    router_request,
-                    stream,
-                    i == 0,
-                    i > 0,
-                    user_text,
-                    deps,
-                )
-                .await
+                // Per-role admission: targets carrying a capped role hold a
+                // permit for the attempt (queueing with backpressure past
+                // the cap); uncapped roles and role-less targets run bare.
+                let gate = target
+                    .role
+                    .as_deref()
+                    .and_then(|role| deps.role_limiters.limiter_for(role));
+                let dispatch = || {
+                    dispatch_to_single_target(
+                        target,
+                        router_request,
+                        stream,
+                        i == 0,
+                        i > 0,
+                        user_text,
+                        deps,
+                    )
+                };
+                let outcome = match gate {
+                    Some(limiter) => limiter.run(dispatch).await,
+                    None => dispatch().await,
+                };
+                match outcome
                 {
                     Ok(outcome) => {
                         // Recency for `last`-sentinel expansion: the serving
-                        // target's wire id, recorded behind the existing audit
-                        // path. Ordering only — the intelligence climb above
+                        // target's wire id, recorded per (session, group)
+                        // behind the existing audit path (failed targets
+                        // never record — this arm runs on `Ok` only).
+                        // Ordering only — the intelligence climb above
                         // still decides capability fit.
                         if let Some(group) = rt.group.as_deref() {
-                            deps.stats.recency.record(group, &target.model);
+                            // The handler stamps the effective session id
+                            // into the request; empty only off served paths.
+                            let session = router_request
+                                .session_id
+                                .as_deref()
+                                .unwrap_or("");
+                            deps.stats.recency.record(session, group, &target.model);
                         }
                         crate::audit::AuditRecord::route(
                             crate::pipeline_types::PipelineStage::Classifier,

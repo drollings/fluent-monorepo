@@ -1,0 +1,61 @@
+{
+  "_comment": "SKETCH ONLY (M0) — intended config shapes for the roles/groups/routing overhaul. Not referenced by any test and not parsed as RouterConfig. Each section names the milestone that implements it.",
+  "_m1_role_split": "One roles table, two typed blocks. Residency/KV-window keys live in role.context; sampling overlay in role.params. Membership stays on roles.<r>.models (role side); models never list roles for membership.",
+  "roles_sketch": {
+    "quick": {
+      "context": {
+        "num_ctx": 8192,
+        "max_ctx": 262144,
+        "pinned": true,
+        "count": 1
+      },
+      "params": {
+        "temperature": 0.6,
+        "top-k": 40
+      },
+      "instances": {},
+      "models": {
+        "code": {
+          "select": "default"
+        }
+      },
+      "concurrency": {
+        "max_parallel": 4
+      }
+    }
+  },
+  "_m1_model_override": "models.<m>.roles is params-only sparse override per role (never membership). Optional; wins when present.",
+  "models_sketch": {
+    "qwen3.6-27b": {
+      "roles": {
+        "quick": {
+          "params": {
+            "temperature": 0.7
+          }
+        }
+      }
+    }
+  },
+  "_m2_chain": "Single ordered chain, each leg through overlay_params (shallow, wholesale wins), role applied once: classification-duty params -> group-selected model -> model.params -> role.params -> models.<m>.roles.<r>.params. Declaration keys stripped at the body boundary.",
+  "_m2_thinking": "Additive thinking control: filter_thinking bool stays byte-identical; optional thinking (off | on | <model-specific string>) resolves model -> role -> model-role-override. Explicit thinking wins over the bool with a warn; filter_thinking:true === thinking:off.",
+  "thinking_sketch": {
+    "filter_thinking": false,
+    "thinking": "off"
+  },
+  "_m3_terminal": "Terminal assigns group (weights ladder) plus subordinate role (profile within the winning model's effective_pool). role None behaves as today. Classifier-duty role stays on the classifier path only.",
+  "terminal_sketch": {
+    "type": "terminal",
+    "route": "code",
+    "group": "code",
+    "role": "quick",
+    "description": "Code",
+    "always_route": true
+  },
+  "_m4_lookup": "Bare model resolves routes -> model_groups -> models, first hit wins. Boot warns naming every shadowed key. model:<key> bypasses the order.",
+  "_m5_last": "last is session-scoped recency: (session, group) -> wire id. Unknown session falls back to group head with audit reason last-empty-fallback. Static resolution keeps skipping sentinels.",
+  "_m6_safety": "Top-level safety_threshold is the optional default; per-classifier-node safety_threshold wins; absent both -> hard defaults (coherence 0.70, safety 0.5).",
+  "_m7_concurrency": "roles.<r>.concurrency.max_parallel enforced via shared Limiter/CreditGatedPool; absent means unbounded. Boot warns when max_parallel exceeds the sum of instance slots.",
+  "_m8_gate": "Schema derived from the types (never checked into env/); loader prints FATAL <file>:<line>:<col> <json-path> <what; expected>; run_start fails closed pre-spawn on (a) schema/defaults/coherence, (b) references/weights/self-routing, (c) per-route dry-run.",
+  "_m9_ls": "coral-router ls prints routes single-row table, then groups single-row table, then per-model rows; --json is the lossless path; ps untouched.",
+  "_m10_fixtures": "Hermetic unit/golden tests assert over checked-in fixtures only; make router-mock remains the single suite reading the operator's real file."
+}

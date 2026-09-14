@@ -17,7 +17,7 @@ fn dual_channel_equality() {
         "cost_input": 1e-6,
         "cost_output": 6e-6,
         "cost_cached_read": 4e-7,
-        "speed": 8,
+        "tok_s": 8,
     }))
     .expect("valid ModelEntry");
     let rt = RoutingTarget::from_model_entry("baseline", &entry);

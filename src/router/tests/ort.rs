@@ -3,26 +3,28 @@ use crate::config::ModelEntry;
 
 fn plain_entry() -> ModelEntry {
     ModelEntry {
+        embedding: None,
         name: None,
         endpoint: "http://127.0.0.1:1/v1/chat/completions".into(),
         intelligence: 1,
         cost_input: 0.0,
         cost_output: 0.0,
         cost_cached_read: 0.0,
-        speed: 1,
+        tok_s: 1.0,
         total_timeout_ms: 0,
         idle_timeout_ms: 0,
         stream: true,
         filter_thinking: false,
+        thinking: None,
         retry_count: 0,
         retry_base_interval_s: 0,
         params: None,
-        instances: None,
         effective_profiles: None,
-        sessions: None,
         weights: None,
         hf_repo: None,
         hf_file: None,
+        template: None,
+        role_params: None,
             api_key: None,
     }
 }
@@ -47,6 +49,9 @@ fn role_config(model_path: &str) -> fluent_llm::onnx_config::OnnxRoleConfig {
 
 #[test]
 fn is_managed_covers_only_llama_declarations() {
+    // Only weights-backed models are spawned: roles never confer
+    // management (a role-side binding for an endpoint-only model routes to
+    // its declared endpoint instead).
     assert!(!plain_entry().is_managed());
     let mut weights = plain_entry();
     weights.weights = Some("model.gguf".into());
@@ -54,9 +59,6 @@ fn is_managed_covers_only_llama_declarations() {
     let mut hf = plain_entry();
     hf.hf_repo = Some("author/model".into());
     assert!(hf.is_managed());
-    let mut inst = plain_entry();
-    inst.instances = Some(Default::default());
-    assert!(inst.is_managed());
 }
 
 #[test]
@@ -109,7 +111,6 @@ config.onnx = Some(fluent_llm::onnx_config::OnnxFleetConfig {
         total_timeout_ms: 120000,
         idle_timeout_ms: 0,
         params: None,
-        instances: None,
         model: fluent_llm::onnx_config::OnnxConfig::new()
             .model_path("/models/llm.onnx")
             .tokenizer_path("/models/llm/tokenizer.json")

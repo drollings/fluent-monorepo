@@ -67,7 +67,7 @@ fn load_config() -> RouterConfig {
     let path = config_path();
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let mut config: RouterConfig = serde_json::from_str(&raw)
+    let mut config: RouterConfig = RouterConfig::from_json_str(&raw)
         .unwrap_or_else(|e| panic!("cannot parse {} as RouterConfig: {e}", path.display()));
     let cfg_dir = config_path();
     let repo_root = cfg_dir
@@ -105,7 +105,7 @@ static ROUTE_PROBE_SEEDS: &[(&str, &str)] = &[
         "Extract the dates and amounts from this email as JSON: 'Q3 invoice for $12,400 due October 15.'",
     ),
     (
-        "explain",
+        "reasoning",
         "Explain the EPR paradox and Bell's theorem.",
     ),
 ];
@@ -171,7 +171,7 @@ fn varied_probes_for_route(route: &str) -> Vec<String> {
             ],
         ),
         (
-            "explain",
+            "reasoning",
             &[
                 "Translate 'Good morning' into French.",
                 "Explain what a tort is.",

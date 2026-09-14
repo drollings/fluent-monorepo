@@ -94,6 +94,11 @@ pub struct RoutingTarget {
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_name: Option<String>,
+    /// Context-profile role the answer serves in, subordinate to `group`
+    /// (the group picks the weights, the role picks the window). `None`
+    /// resolves the entry default point, exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
     /// Model inference params to merge into the request body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
@@ -151,9 +156,12 @@ fn base_target(entry: &ModelEntry, model_key: &str) -> (String, Option<serde_jso
     // Routing entries arrive boot-materialized.
     let qualifier = crate::config::root::default_inference_point(entry);
     let model = QualifiedModelId::new(base.clone(), qualifier.clone()).as_wire();
+    // The single answer-params chain with no role and no classifier duty
+    // (the role and duty legs arrive with the M3 target wiring); absent
+    // legs contribute nothing, so this resolves exactly as before.
     let params = qualifier
         .as_deref()
-        .and_then(|q| entry.instance_params_for(q))
+        .and_then(|q| entry.answer_params_for(Some(q), None, None, None))
         .or_else(|| entry.params.clone().map(strip_declaration_params));
     (model, params, base)
 }
@@ -168,16 +176,18 @@ impl RoutingTarget {
     /// instance grammar).
     pub fn from_model_entry(model_key: &str, entry: &ModelEntry) -> Self {
         let (model, params, _base) = base_target(entry, model_key);
+        let thinking = entry.resolve_thinking(None, None);
         Self {
             url: entry.endpoint.clone(),
             model,
             group: None,
             target_name: Some(model_key.to_string()),
+            role: None,
             params,
             instance: None,
             snapshot: None,
             id_slot: None,
-            filter_thinking: entry.filter_thinking,
+            filter_thinking: entry.filter_thinking_for(thinking.as_deref(), None, None),
             retry_count: entry.retry_count,
             retry_base_interval_s: entry.retry_base_interval_s,
             stream: entry.stream,
@@ -200,18 +210,20 @@ impl RoutingTarget {
     ) -> Self {
         let base = entry.name.clone().unwrap_or_else(|| model_key.to_string());
         let model = QualifiedModelId::qualified(base, instance_or_group).as_wire();
+        let thinking = entry.resolve_thinking(None, None);
         Self {
             url: entry.endpoint.clone(),
             model,
             group: None,
             target_name: Some(model_key.to_string()),
+            role: None,
             params: entry
-                .instance_params_for(instance_or_group)
+                .answer_params_for(Some(instance_or_group), None, None, None)
                 .or_else(|| entry.params.clone().map(strip_declaration_params)),
             instance: Some(instance_or_group.to_string()),
             snapshot: None,
             id_slot: None,
-            filter_thinking: entry.filter_thinking,
+            filter_thinking: entry.filter_thinking_for(thinking.as_deref(), None, None),
             retry_count: entry.retry_count,
             retry_base_interval_s: entry.retry_base_interval_s,
             stream: entry.stream,
@@ -237,6 +249,7 @@ impl RoutingTarget {
             model: model_key.to_string(),
             group: None,
             target_name: Some(model_key.to_string()),
+            role: None,
             params: None,
             instance: None,
             snapshot: None,

@@ -22,7 +22,6 @@ use std::sync::Arc;
 mod boot;
 
 use clap::{Args, Parser, Subcommand};
-use common_core::config::load_json_or_default;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::protocol::ChatMessage;
 use fluent_llm::{create_embedding_provider, EmbeddingProvider};
@@ -82,9 +81,9 @@ struct Cli {
 enum Command {
     /// Start the router server (spawns and supervises the managed llama-servers).
     Start(StartArgs),
-    /// List models in the GGUF directory.
+    /// List routes, model groups, and models from the resolved config file.
     #[command(alias = "ls")]
-    List,
+    List(ListArgs),
     /// List running models via the router's /v1/models and /instances API.
     Ps(ServerArgs),
     /// Pull a model from a registry (HuggingFace) or a local GGUF file.
@@ -99,6 +98,9 @@ enum Command {
     Stop(StopArgs),
     /// Measure generation throughput via /metrics.
     Speedtest(SpeedtestArgs),
+    /// Print the derived config schema inventory (from the config types via
+    /// Describable — never a hand-kept file). Needs no config file.
+    Schema,
 }
 
 #[derive(Args)]
@@ -139,6 +141,14 @@ struct ServerArgs {
     /// Router base URL (default: derived from config server.bind_addr).
     #[arg(short = 'u', long)]
     api_url: Option<String>,
+}
+
+/// Args for `ls`: the human Markdown view by default, machine JSON on `--json`.
+#[derive(Args)]
+struct ListArgs {
+    /// Emit the listing as JSON (routes/groups/models) instead of Markdown.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args)]
@@ -235,7 +245,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Best-effort config load so CLI defaults (e.g. the GGUF dir) come from
     // the config file instead of hardcoded paths. An explicit `--gguf-dir`
     // still wins.
-    let cli_config: RouterConfig = load_json_or_default(std::path::Path::new(&config_path));
+    let cli_config: RouterConfig =
+        load_router_config_file(std::path::Path::new(&config_path));
     let gguf_dir = cli
         .gguf_dir
         .clone()
@@ -244,7 +255,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Command::Start(args) => run_start(&config_path, args).await?,
-        Command::List => commands::list(&ctx)?,
+        Command::Schema => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&fluent_router::config::config_schema())
+                    .expect("schema serializes")
+            );
+        }
+        Command::List(args) => {
+            commands::list(&ctx, std::path::Path::new(&config_path), args.json)?
+        }
         Command::Ps(args) => {
             commands::ps(
                 &ctx,
@@ -315,10 +335,10 @@ fn resolve_config_path(explicit: &str) -> String {
 }
 
 /// Resolve the classifier model key for logging/attribution, entirely from
-/// config (never a hardcoded name): the `classifier` role's head candidate
-/// (the classifier is a role), else the first pipeline's `classifier_model`,
-/// else the default route's first model, else the first configured model
-/// key. Empty when nothing resolves.
+/// config (never a hardcoded name): the first pipeline's `classifier_model`,
+/// else the `classifier` role's head candidate (the classifier is a role),
+/// else the tree root's group/model, else the default route's first servable
+/// member, else the first configured model key. Empty when nothing resolves.
 fn resolve_classifier_model_name(config: &RouterConfig) -> String {
     if let Some(m) = config.classifier_role_key() {
         return m.to_string();
@@ -328,11 +348,29 @@ fn resolve_classifier_model_name(config: &RouterConfig) -> String {
             return m.clone();
         }
     }
-    if let Some(route) = config.routes_view().get(&config.default_route) {
-        if let Some(group) = config.model_groups.get(&route.group) {
-            if let Some(first) = group.models().first() {
-                return first.clone();
+    if let Some(tree) = config.classification.as_ref() {
+        if let Some(group) = tree.root_classifier_group() {
+            if let Some(key) = fluent_router::config::resolve_group_head_key(
+                &config.models,
+                &config.roles,
+                &config.model_groups,
+                group,
+            ) {
+                return key;
             }
+        }
+        if let Some(m) = tree.root_classifier_model() {
+            return m.to_string();
+        }
+    }
+    if let Some(route) = config.routes_view().get(&config.default_route) {
+        if let Some(key) = fluent_router::config::resolve_group_head_key(
+            &config.models,
+            &config.roles,
+            &config.model_groups,
+            &route.group,
+        ) {
+            return key;
         }
     }
     let mut keys: Vec<&String> = config.models.keys().collect();
@@ -343,19 +381,50 @@ fn resolve_classifier_model_name(config: &RouterConfig) -> String {
 /// Start the router server: build config, boot the llama-server supervisor,
 /// attach the pipeline/server, and serve until a shutdown signal.
 async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config: RouterConfig = load_json_or_default(config_path.as_ref());
-    config.apply_defaults();
+    let mut config = match load_router_config_strict(std::path::Path::new(config_path)) {
+        Ok(config) => config,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    };
+    // Startup schema verification: the loaded config conforms to the derived
+    // `coral-router schema` document (required sections present, normalize
+    // legs idempotent) — fail-closed before any spawn or serve.
+    if let Err(e) = config.verify_schema_conformance() {
+        eprintln!("FATAL: {config_path} {e}");
+        std::process::exit(1);
+    }
     // M7: flat vs tree coherence — fail fast on drift
     if let Err(e) = config.validate_flat_tree_coherence() {
         eprintln!("FATAL: {e}");
         std::process::exit(1);
+    }
+    // Boot reference gate: routes, groups, roles, and members resolve and
+    // every route dry-runs to a target — fail-closed before any spawn.
+    {
+        let view = config.routing_config();
+        if let Err(e) = view.validate_for_boot(config.classification.as_ref()) {
+            eprintln!("FATAL: {config_path} {e}");
+            std::process::exit(1);
+        }
+    }
+    // Boot presence gate: referenced models must exist (weights on disk or
+    // a live endpoint). Mock mode serves canned responses, so weights are
+    // irrelevant there and the gate is skipped.
+    let is_mock = args.mock.is_some() || config.mock.is_some();
+    if !is_mock {
+        let gguf_dir = config.gguf_dir.clone().unwrap_or_else(|| ".".into());
+        if let Err(e) = config.validate_model_presence(std::path::Path::new(&gguf_dir)) {
+            eprintln!("FATAL: {config_path} {e}");
+            std::process::exit(1);
+        }
     }
 
     // M4: wire default stays None, but CI/operator opt-in via flag/env synthesizes a ledger at the composition root.
     let ledger_default_env = std::env::var("CORAL_LEDGER_DEFAULT")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    let is_mock = args.mock.is_some() || config.mock.is_some();
     if config.ledger.is_none() && !is_mock && (ledger_default_env || args.ledger_default) {
         tracing::info!(target: "coral-router", path = "/tmp/coral-ledger.db", "CORAL_LEDGER_DEFAULT/--ledger-default synthesized ledger config");
         config.ledger = Some(fluent_router::config::LedgerConfig {
@@ -893,7 +962,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         let review_model_key = review_cfg
             .review_model
             .clone()
-            .or_else(|| config.classifier_role_key().map(str::to_string))
+            .or_else(|| config.classifier_role_key())
             .or_else(|| config.onnx_llm_key());
         let review_backend: Option<Arc<dyn ChatBackend>> = review_model_key
             .as_deref()
@@ -1198,6 +1267,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     let mut server =
         RouterServer::new(pipelines, routes, config.models, &config.server, classifier)
             .with_roles(config.roles.clone())
+            .with_model_groups(config.model_groups.clone())
             .with_plan_route(plan_route)
             .with_rigor_route(rigor_route)
             .with_ladders(ladders);
@@ -1489,8 +1559,10 @@ fn embeddings_base_url(endpoint: &str) -> String {
 
 /// Build the default chart embedder from the model config, if derivable.
 ///
-/// Uses the root-level `embedding_model` (falling back to the selector model,
-/// then the classifier model's). Two branches:
+/// Duty chain, first servable link wins: a per-model `embedding` reference
+/// on the duty entry/instance, else the root-level `embedding_model`
+/// (falling back to the selector model, then the classifier model's).
+/// Two branches:
 ///
 /// - **Onnx** (ROADMAP_20260827_ORT §0.6): when the resolved model declares an
 ///   `onnx` block with `task: FillMask`, build the ort encoder from the boot
@@ -1559,29 +1631,62 @@ fn default_chart_embedder(
     // role configured). An empty API key is sent (local llama.cpp servers
     // ignore the header).
     //
-    // `embedding_model` names a role first (the role mapping: today the
-    // `embedding` role serves the `embed` model); a literal model key still
-    // resolves directly. Role params compose under the entry's own params
-    // (per-model override wins) for the provider options.
-    let mut role_base: Option<serde_json::Value> = None;
-    let mut key = config.embedding_model.clone();
-    if let Some(name) = key.as_deref() {
-        if let Some(role) = config.roles.get(name) {
-            role_base = role.params.params.clone();
-            key = fluent_router::config::role_head_key(
-                &config.models,
-                &config.roles,
-                name,
-                false,
-            );
-        }
-    }
-    let key = key
-        .as_deref()
-        .or(config.charts.selector_model.as_deref())
+    // Duty chain, first servable link wins: a per-model `embedding`
+    // reference on the duty's own entry/instance, else the top-level
+    // `embedding_model`, else the chart selector, else the classifier.
+    let duty = config
+        .embedding_model
+        .clone()
+        .or_else(|| config.chart_selector_key())
         .or_else(|| config.classifier_role_key())?;
-    let entry = config.models.get(key)?;
+    if let Some(provider) = duty_entry_embedding_override(config, &duty) {
+        return Some(provider);
+    }
+    openai_embedding_provider(config, &duty)
+}
 
+/// The per-model `embedding` override link of the embedder duty chain: when
+/// `duty` resolves to a concrete entry whose instance/entry declares an
+/// `embedding` reference naming another servable role/model, build that
+/// instead. `None` otherwise — no entry, no override, or an unresolvable
+/// reference (the last case warns loudly via [`resolve_embedding_ref`] and
+/// falls through to the duty itself). Applies exactly one level: an
+/// override naming a model with its own override does not recurse.
+fn duty_entry_embedding_override(
+    config: &RouterConfig,
+    duty: &str,
+) -> Option<Arc<dyn EmbeddingProvider>> {
+    let head = if config.roles.contains_key(duty) {
+        fluent_router::config::role_head_key(&config.models, &config.roles, duty, false)?
+    } else {
+        duty.to_string()
+    };
+    let (base, qualifier) = fluent_router::config::split_model_key(&head);
+    let entry = config.models.get(base)?;
+    let embed_ref = entry.embedding_for(qualifier)?;
+    resolve_embedding_ref(config, &embed_ref)
+}
+
+/// Build an OpenAI-compatible `EmbeddingProvider` from a role-or-model duty
+/// key: a role fans out to its head candidate (with the role's sampling as
+/// the provider-options base under the entry's own params), a literal key
+/// resolves directly, and a qualified key (`base:point`) strips to the
+/// owning entry — the pool, not the instance, owns the endpoint. `None`
+/// when the key names nothing servable. The single provider-construction
+/// site behind both the chart embedder and the per-model `embedding`
+/// override.
+fn openai_embedding_provider(
+    config: &RouterConfig,
+    duty: &str,
+) -> Option<Arc<dyn EmbeddingProvider>> {
+    let mut role_base: Option<serde_json::Value> = None;
+    let mut key = duty.to_string();
+    if let Some(role) = config.roles.get(duty) {
+        role_base = role.params.sampling_value();
+        key = fluent_router::config::role_head_key(&config.models, &config.roles, duty, false)?;
+    }
+    let (base, _) = fluent_router::config::split_model_key(&key);
+    let entry = config.models.get(base)?;
     let base = embeddings_base_url(&entry.endpoint);
     let options = match fluent_router::config::overlay_params(
         role_base.as_ref(),
@@ -1605,35 +1710,45 @@ fn default_chart_embedder(
     Some(Arc::from(boxed))
 }
 
-/// Build the chart-selection adjudicator backend from the selector model, if
-/// configured. Mirrors `build_classifier_client` (the DIP factory: exactly one
-/// place constructs a concrete `LlmClient` for the selector).
-/// Build an `EmbeddingProvider` from a named `models` key (the arc_ready
-/// embedding overlay seam). Mirrors `default_chart_embedder`'s OpenAI-compatible
-/// path: one factory, no new transport. `None` when the key is absent → the
-/// embedding overlay is off (fail-open).
+/// Resolve a per-model `embedding` reference (a `models` key or role name)
+/// to a provider, built through the single site above. Weights paths and
+/// unknown names return `None` (fail-open: the caller falls through to the
+/// duty-chain entry) — loudly, so an operator typo is visible.
+fn resolve_embedding_ref(
+    config: &RouterConfig,
+    embed_ref: &str,
+) -> Option<Arc<dyn EmbeddingProvider>> {
+    match openai_embedding_provider(config, embed_ref) {
+        Some(provider) => Some(provider),
+        None => {
+            tracing::warn!(
+                target: "coral-router",
+                embedding = %embed_ref,
+                "per-model `embedding` reference names no servable role/model \
+                 (weights paths are recorded, not served) — falling through to \
+                 the embedding duty chain",
+            );
+            None
+        }
+    }
+}
+/// Build an `EmbeddingProvider` from a role-or-model duty key (the arc_ready
+/// embedding overlay seam). Built through the single OpenAI-compatible site
+/// above: one factory, no new transport. `None` when the key names nothing
+/// servable → the embedding overlay is off (fail-open).
 fn overlay_embedding_provider(
     config: &RouterConfig,
     key: &str,
 ) -> Option<Arc<dyn EmbeddingProvider>> {
-    let entry = config.models.get(key)?;
-    let base = embeddings_base_url(&entry.endpoint);
-    let boxed = create_embedding_provider(
-        "openai",
-        entry.name.as_deref(),
-        Some(&base),
-        Some(""),
-        CHART_EMBEDDING_DIMS,
-        None,
-        entry.params.as_ref(),
-    )
-    .ok()?;
-    Some(Arc::from(boxed))
+    openai_embedding_provider(config, key)
 }
 
+/// Build the chart-selection adjudicator backend from the selector model, if
+/// configured. Mirrors `build_classifier_client` (the DIP factory: exactly one
+/// place constructs a concrete `LlmClient` for the selector).
 fn default_adjudicator_backend(config: &RouterConfig) -> Option<Arc<dyn ChatBackend>> {
-    let key = config.charts.selector_model.as_deref()?;
-    config.local_backend(key)
+    let key = config.chart_selector_key()?;
+    config.local_backend(&key)
 }
 
 /// Build the chart-candidate reranker backend from the root-level
@@ -1718,12 +1833,54 @@ fn load_router_config() -> RouterConfig {
         env!("CARGO_MANIFEST_DIR"),
         "/../../../env/coral-router.json"
     );
-    let content = std::fs::read_to_string(config_path).unwrap();
-    serde_json::from_str(&content).unwrap()
+    load_router_config_file(std::path::Path::new(config_path))
+}
+
+/// Load the router config through the boot-equivalent parse path
+/// (`RouterConfig::from_json_str`, including fleet run-block inheritance).
+/// Missing or unparseable files warn and fall back to defaults, exactly like
+/// `common_core::config::load_json_or_default`.
+fn load_router_config_file(path: &std::path::Path) -> RouterConfig {
+    match std::fs::read_to_string(path) {
+        Ok(content) => RouterConfig::from_json_str(&content).unwrap_or_else(|e| {
+            eprintln!(
+                "WARNING: config file '{}' exists but failed to parse: {}. Falling back to default.",
+                path.display(),
+                e
+            );
+            RouterConfig::default()
+        }),
+        Err(_) => RouterConfig::default(),
+    }
+}
+
+/// Strict config load for server boot: parse errors fail closed with a
+/// `FATAL: <file>:<line>:<col> <what>` message (serde_json errors carry
+/// line/column; reference errors from the boot gate carry json-paths naming
+/// the route, group, member, or model instead). A missing file fails closed
+/// too — boot requires a usable configuration, unlike the best-effort CLI
+/// loader above. The caller prints the message and exits non-zero; no
+/// `llama-server` spawns before the gate passes.
+fn load_router_config_strict(path: &std::path::Path) -> Result<RouterConfig, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("FATAL: {} config file not readable: {e}", path.display()))?;
+    let mut config = RouterConfig::from_json_str(&content).map_err(|e| {
+        format!(
+            "FATAL: {}:{}:{} {e}",
+            path.display(),
+            e.line(),
+            e.column()
+        )
+    })?;
+    config.apply_defaults();
+    Ok(config)
 }
 
 #[cfg(test)]
 mod config_tests {
+    use crate::load_router_config_strict;
+    use fluent_router::config::RouterConfig;
+
     #[test]
     fn test_parse_config() {
         let config_path = concat!(
@@ -1737,15 +1894,50 @@ mod config_tests {
     }
 
     #[test]
-    fn test_embedding_model_key_derives_embedder() {
-        // The env config points `embedding_model` at the `embedding` role,
-        // which serves the `embed` model; the embedder must derive through
-        // that role mapping (and build against its endpoint).
-        let config = super::load_router_config();
-        let embedder = super::default_chart_embedder(&config, None);
+    fn strict_loader_fails_closed_with_location() {
+        let missing = std::path::Path::new("/nonexistent-dir-xyz/coral-router.json");
+        let err = load_router_config_strict(missing).expect_err("missing file fails");
+        assert!(err.starts_with("FATAL:"), "FATAL marker, got: {err}");
+
+        let dir = std::env::temp_dir().join("coral-strict-loader");
+        std::fs::create_dir_all(&dir).expect("tempdir");
+        let bad = dir.join("bad.json");
+        std::fs::write(&bad, "{invalid json").expect("fixture");
+        let err = load_router_config_strict(&bad).expect_err("bad JSON fails");
         assert!(
-            embedder.is_some(),
-            "embedding_model: \"embed\" must yield a working chart embedder"
+            err.starts_with("FATAL:") && err.contains(":1:"),
+            "FATAL with line:col, got: {err}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_embedding_model_key_derives_embedder() {
+        // The embedder duty chain through the `embedding` role, which the
+        // `embed` model serves; once an endpoint is assigned (post-rewrite,
+        // as boot does before building the embedder) the provider derives
+        // through that role mapping. Pre-assignment there is no URL to
+        // build against — fail-open `None`, never a panic. Fixture-only:
+        // this unit test must not read the operator's env/coral-router.json
+        // (the config-synced suites own the real file).
+        let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
+            "models": {
+                "embed": {"endpoint": "", "intelligence": 1}
+            },
+            "model_groups": {},
+            "roles": {"embedding": {"models": {"embed": {}}}},
+            "embedding_model": "embedding",
+        }))
+        .expect("fixture parses");
+        assert!(
+            super::default_chart_embedder(&config, None).is_none(),
+            "managed embed model has no endpoint before supervisor rewrite"
+        );
+        let entry = config.models.get_mut("embed").expect("embed model");
+        entry.endpoint = "http://127.0.0.1:1/v1/chat/completions".into();
+        assert!(
+            super::default_chart_embedder(&config, None).is_some(),
+            "embedding role + assigned endpoint must yield a chart embedder"
         );
     }
 
@@ -1773,7 +1965,7 @@ mod config_tests {
                 "cost_input": 0.0,
                 "cost_output": 0.0,
                 "cost_cached_read": 0.0,
-                "speed": 10
+                "tok_s": 10
             }"#)
             .unwrap();
         config

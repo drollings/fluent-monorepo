@@ -1,0 +1,26 @@
+{
+  "routes": {
+    "code": {"group": "dev", "role": "quick", "description": "code"},
+    "plain": {"group": "dev", "description": "plain"}
+  },
+  "models": {
+    "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
+             "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10,
+             "params": {"mp": "mv"}},
+    "big": {"endpoint": "http://b", "name": "big", "intelligence": 5,
+            "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 0.0, "tok_s": 10,
+            "params": {"mp": "mv"},
+            "roles": {"quick": {"params": {"oq": "ov"}}}}
+  },
+  "model_groups": {"dev": ["tiny", "big"]},
+  "roles": {
+    "quick": {
+      "params": {"rq": "rv"},
+      "instances": {"fast": {"num_ctx": 8192}},
+      "models": {"big": {"select": "fast"}, "tiny": {"select": "fast"}}
+    }
+  },
+  "system_prompt": "sys",
+  "safety_threshold": 0.5,
+  "default_route": "plain"
+}

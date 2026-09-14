@@ -68,7 +68,7 @@ fn config_with_onnx_llm() -> RouterConfig {
             total_timeout_ms: 0,
             idle_timeout_ms: 0,
             params: None,
-            instances: None,
+            roles: None,
             model: OnnxConfig::new()
                 .model_path("/models/llm.onnx")
                 .tokenizer_path("/models/llm/tokenizer.json")
@@ -319,7 +319,7 @@ async fn fleet_unload_releases_unloadable_onnx_role_and_refuses_always() {
             total_timeout_ms: 0,
             idle_timeout_ms: 0,
             params: None,
-            instances: None,
+            roles: None,
             model: OnnxConfig::new()
                 .model_path("/models/lazy.onnx")
                 .tokenizer_path("/models/lazy/tokenizer.json")

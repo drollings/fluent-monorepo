@@ -699,19 +699,23 @@ false — no pinned instance), so it is still absent until first use.
 names are internal. `ModelEntry::llama_model_name` resolves the server's
 `--alias`, and dispatch always sends the translated id (`<llama-name>[:<instance>]`).
 Roles are the routing vocabulary: `model_groups` members name roles (fanning
-out to candidate keys per request) or literal keys, plus the `last`/`any`
-availability sentinels. Each role owns its run configuration —
+out per request to the models bound to them) or literal keys, plus the
+`last`/`any` availability sentinels. Membership lives on the model side —
+`models.<model>.roles` names the roles a model serves (roles carry no
+candidate list). Each role owns its run configuration —
 `roles.<role>.params` (the full run block; the fleet block is
 `roles.default.params`, which also supplies the supervisor's spawn defaults)
-and `roles.<role>.instances` (the fleet named pool). A model's `instances`
-entry under a role's name selects that role's profile (`select`) with a
+and `roles.<role>.instances` (the fleet named pool). A model's `roles`
+entry under a role's name binds that role's profile (`select`) with a
 sparse `params` tweak; sampling composes role-base ← pool profile ←
-selection ← entry top-level (entry wins), materialized at boot into each
+binding ← entry top-level (entry wins), materialized at boot into each
 model's effective pool. One qualifier precedence serves every path
-(`resolve_inference_point`): explicit qualifier, else the role's instance
-point, else the entry default (the `default: true` profile's group, else the
-single shared group), else a bare key. Special-purpose roles ride the same
-machinery: `classifier` (head candidate serves classification;
+(`resolve_inference_point`): explicit qualifier, else the entry default
+(the `default: true` profile's group, else the single shared group), else a
+bare key — a role carries no qualifier of its own; it resolves from the
+route, which selects a model from a group, and the selected model's entry
+default supplies the point. Special-purpose roles ride the same
+machinery: `classifier` (bound model serves classification;
 `RouterConfig::classifier_role_key` is the single classifier-key source —
 there is no top-level `classifier_model`) and `embedding` (serves the chart
 embedder; role params compose under the entry's params for provider
@@ -1180,3 +1184,47 @@ field, never by a second dot-namespace. Configured via `env/coral-router.json`
 → `logging.audit_log`. The implementation uses `tracing_subscriber::fmt::Layer::boxed()`
 to erase concrete types per layer, with a 4-arm match (console yes/no × audit
 yes/no).
+
+## Config format (`env/coral-router.json`)
+
+The file is a deployment artifact, not a test oracle — no test freezes its
+contents. Its shape (see `env/coral-router.json.example`):
+
+- **Roles are the routing vocabulary.** Groups reference roles (expanded per
+  request to the models bound to them). Membership lives on the model side:
+  `models.<model>.roles` names the roles a model serves — roles carry no
+  candidate list. Each role owns its run block (`roles.<role>.params`; the
+  fleet block is `roles.default.params`) and its fleet named pool
+  (`roles.<role>.instances`). Roles other than `default` declare only deltas:
+  at parse, the fleet run block sparse-merges over every other role's
+  `params` (per key, at every depth). A role carries no qualifier: it
+  resolves from the route, which selects a model from a group, and the
+  selected model's entry default supplies the point.
+- **Params compose in one order through one merge** (`overlay_params`):
+  fleet → role → pool profile → per-model binding → model entry top-level.
+  A model's `roles` entry under a role's name binds that role's profile
+  (`select`) with a sparse `params` tweak. Every layer must be a JSON object;
+  boot warns loudly over non-objects. Declaration-only keys (`num_ctx`,
+  `parallel`, `sleep_idle_seconds`, `rope_freq_base`) never reach the request
+  body.
+- **Duties name groups, never models.** `pipelines.<p>.classifier_group`,
+  `ledger.group`, `charts.selector_group`, and the classification root's
+  `model_group` resolve through the groups table (first servable member
+  serves, sentinels skipped), so one group rebinding moves every duty
+  together. Literal model keys remain as legacy fallbacks where the schema
+  still carries them.
+- **Groups are escalation heads.** Members list in escalation order; the
+  `last`/`any` availability suffix is implicit (opt out per group with
+  `"sentinels": false`). A group declaring no role/model members rides the
+  `default` role.
+- **Endpoints are supervisor-assigned.** Managed models (`weights`/`hf_repo`)
+  omit `endpoint` — boot rewrites it to the spawned server's port. Only
+  external models must declare one (boot warns otherwise).
+- **Opt-in workers.** Review (async parse review), overlay (entity-link
+  plane), and in-process ONNX roles (declare under `onnx` or as top-level
+  role keys) are all absent by default; the router fails open without them.
+- **Strict schema.** Unknown top-level and model-entry fields fail at parse
+  (`deny_unknown_fields`) — typos and retired keys (`default_params`,
+  top-level `classifier_model`, per-model `sessions`, `retrieval_model`,
+  `review.annotation_model`, `review.pii_model`) are loud errors, not silent
+  misroutes.

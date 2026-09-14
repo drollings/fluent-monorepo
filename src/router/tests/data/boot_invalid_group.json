@@ -1,0 +1,15 @@
+{
+  "_doc": "M8 invalid-shape fixture: route 'code' names a model_group with no entry.",
+  "routes": {
+    "code": {"group": "no-such-group", "description": "code"}
+  },
+  "models": {
+    "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
+             "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10}
+  },
+  "model_groups": {"dev": ["tiny"]},
+  "roles": {},
+  "system_prompt": "sys",
+  "safety_threshold": 0.5,
+  "default_route": "code"
+}

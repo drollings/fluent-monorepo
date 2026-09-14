@@ -1,0 +1,29 @@
+{
+  "models": {
+    "m1": {"endpoint": "http://a", "intelligence": 1,
+           "params": {"mp": "mv"}},
+    "m2": {"weights": "/w/m2.gguf", "intelligence": 5,
+           "params": {"mp": "mv"},
+           "roles": {"quick": {"params": {"oq": "ov"}}}}
+  },
+  "model_groups": {"dev": ["m1", "m2"]},
+  "roles": {
+    "quick": {
+      "params": {"rq": "rv"},
+      "instances": {"fast": {"num_ctx": 8192}},
+      "models": {"m1": {"select": "fast"}, "m2": {"select": "fast"}}
+    }
+  },
+  "classification": {"root": {
+    "type": "classifier", "description": "d", "model": "m1",
+    "children": [
+      {"key": "code", "description": "", "node": {
+        "type": "terminal", "route": "code", "group": "dev", "description": ""
+      }},
+      {"key": "local", "description": "", "node": {
+        "type": "terminal", "route": "local", "group": "dev", "description": ""
+      }}
+    ]
+  }},
+  "default_route": "local"
+}

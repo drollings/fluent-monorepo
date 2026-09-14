@@ -343,6 +343,7 @@ fn resolve_via_matcher(
                 routing_config,
                 group,
                 expansion.recency(),
+                expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
             );
             if candidates.len() >= 2 {

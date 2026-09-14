@@ -535,7 +535,7 @@ fn build_decision_returns_same_target_both_channels() {
         "cost_input": 1e-6,
         "cost_output": 6e-6,
         "cost_cached_read": 4e-7,
-        "speed": 8,
+        "tok_s": 8,
     }))
     .expect("valid ModelEntry");
     let rt = RoutingTarget::from_model_entry("m1a", &entry);
@@ -570,7 +570,7 @@ fn metadata_has_no_routing_target_key() {
         "cost_input": 1e-6,
         "cost_output": 6e-6,
         "cost_cached_read": 4e-7,
-        "speed": 8,
+        "tok_s": 8,
     }))
     .expect("valid ModelEntry");
     let rt = crate::pipeline::RoutingTarget::from_model_entry("no-shim", &entry);
@@ -810,4 +810,142 @@ fn frozen_client_serves_when_no_resolver_installed() {
     let decision = stage.evaluate(&classifier_request_ctx(), &[]).expect("evaluate");
     assert_eq!(decision.verdict, StageVerdict::Passed);
     assert_eq!(*frozen.calls.lock().expect("lock"), 1);
+}
+
+// ── Coherence/safety reject calibration (confidence axis) ──────────────────
+// Measurement only: no threshold value changes, no verdict cached or
+// persisted. The corpus pins the contract at the shipped defaults — control
+// prompts never reject, violations always reject — and documents the
+// residual risk the confidence axis cannot see (known_gap).
+
+fn reject_corpus() -> serde_json::Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/coherence_safety_reject_corpus.json");
+    serde_json::from_str(&std::fs::read_to_string(&path).expect("corpus readable"))
+        .expect("corpus parses")
+}
+
+fn reject_predicted(case: &serde_json::Value, coherence_t: f64, safety_t: f64) -> bool {
+    let output = ClassifierOutput {
+        coherence_score: case["coherence"].as_f64().expect("coherence"),
+        safety_score: case["safety"].as_f64().expect("safety"),
+        ..ClassifierOutput::default()
+    };
+    super::check_thresholds(&output, coherence_t, safety_t).is_some()
+}
+
+#[test]
+fn reject_calibration_at_shipped_defaults() {
+    use crate::config::classification::{
+        default_coherence_threshold, default_safety_threshold,
+    };
+    let coherence_t = default_coherence_threshold();
+    let safety_t = default_safety_threshold();
+    assert_eq!((coherence_t, safety_t), (0.70, 0.5));
+    let corpus = reject_corpus();
+    let mut labeled = 0;
+    let mut agreed = 0;
+    for section in ["control", "violation", "boundary"] {
+        for case in corpus[section].as_array().expect("section array") {
+            labeled += 1;
+            let predicted = reject_predicted(case, coherence_t, safety_t);
+            let expected = case["label"] == "reject";
+            assert_eq!(
+                predicted, expected,
+                "case {} disagrees with its label",
+                case["name"]
+            );
+            if predicted == expected {
+                agreed += 1;
+            }
+        }
+    }
+    assert_eq!(
+        agreed, labeled,
+        "reject agreement over {agreed}/{labeled} labeled cases"
+    );
+}
+
+#[test]
+fn control_prompts_never_reject() {
+    use crate::config::classification::{
+        default_coherence_threshold, default_safety_threshold,
+    };
+    let corpus = reject_corpus();
+    let control = corpus["control"].as_array().expect("control array");
+    assert!(!control.is_empty(), "control group must not be empty");
+    let false_rejects = control
+        .iter()
+        .filter(|case| {
+            reject_predicted(
+                case,
+                default_coherence_threshold(),
+                default_safety_threshold(),
+            )
+        })
+        .count();
+    assert_eq!(
+        false_rejects, 0,
+        "control false-reject rate must be 0 before any threshold change"
+    );
+}
+
+#[test]
+fn reject_reason_names_the_failing_axis() {
+    use crate::config::classification::{
+        default_coherence_threshold, default_safety_threshold,
+    };
+    let coherence_case = ClassifierOutput {
+        coherence_score: 0.2,
+        safety_score: 0.9,
+        ..ClassifierOutput::default()
+    };
+    let decision = super::check_thresholds(
+        &coherence_case,
+        default_coherence_threshold(),
+        default_safety_threshold(),
+    )
+    .expect("rejects");
+    assert!(
+        decision.reason.contains("coherence"),
+        "reason names the axis, got: {}",
+        decision.reason
+    );
+    let safety_case = ClassifierOutput {
+        coherence_score: 0.9,
+        safety_score: 0.1,
+        ..ClassifierOutput::default()
+    };
+    let decision = super::check_thresholds(
+        &safety_case,
+        default_coherence_threshold(),
+        default_safety_threshold(),
+    )
+    .expect("rejects");
+    assert!(
+        decision.reason.contains("safety"),
+        "reason names the axis, got: {}",
+        decision.reason
+    );
+}
+
+#[test]
+fn confidence_gap_predicate_cannot_see_task_value() {
+    use crate::config::classification::{
+        default_coherence_threshold, default_safety_threshold,
+    };
+    let corpus = reject_corpus();
+    let gap = &corpus["known_gap"][0];
+    // Maximal confidence scores on a wrong-task request: the predicate
+    // accepts (it measures producer self-doubt, not task fit). Asserted as
+    // accept to pin the residual risk — tightening thresholds cannot close
+    // this gap, only the capability ladder can.
+    assert!(
+        !reject_predicted(
+            gap,
+            default_coherence_threshold(),
+            default_safety_threshold()
+        ),
+        "known gap stays visible: confidence fires nothing here"
+    );
 }

@@ -103,7 +103,7 @@ pub fn make_config(
             "cost_input": 0.000001,
             "cost_output": 0.000006,
             "cost_cached_read": 0.0000004,
-            "speed": 10,
+            "tok_s": 10,
             "total_timeout_ms": total_timeout_ms,
             "idle_timeout_ms": idle_timeout_ms,
             "stream": stream,
@@ -164,6 +164,7 @@ pub fn test_deps(
         fleet: None,
         onnx_llm_backend: None,
         roles: Arc::new(config.roles.clone()),
+        groups: Arc::new(config.model_groups.clone()),
     }
 }
 

@@ -146,8 +146,12 @@ pub struct PipelineParams {
     /// Defaults to `DEFAULT_TOTAL_TIMEOUT_MS` (the shared timeout constant).
     #[serde(default = "default_target_match_timeout_ms")]
     pub target_match_timeout_ms: u64,
-    /// Model keys whose onnx `ZeroShotRouting` sessions back the overlay
-    /// stage's disambiguation scoring. Non-empty enables the overlay stage.
+    /// Role (or literal registry key) whose onnx `ZeroShotRouting` sessions
+    /// back the overlay stage's disambiguation scoring. Each entry names a
+    /// role from the roles table — its head candidate serves (a
+    /// declared-but-empty role rides the fleet default) — or a literal
+    /// `onnx/<role>` registry key, which passes through unchanged.
+    /// Non-empty enables the overlay stage.
     /// A legacy `"overlay": true` key in JSON is ignored by serde (unknown
     /// field); the migration path is to set `overlay_models`.
     #[serde(default)]
@@ -170,11 +174,13 @@ pub struct PipelineParams {
     /// golden corpus lands (see ROADMAP_20260827_ORT §2.6a).
     #[serde(default)]
     pub overlay_redirect_threshold: Option<f64>,
-    /// The ort encoder model key for the trained-encoder annotation rung
-    /// (ROADMAP_20260827_ORT §4.4). When set and the model is registered in
-    /// the ort registry, the NlpStage runs the encoder between the LLM and
-    /// ArcEager rungs. `None` (default) disables the encoder rung — the
-    /// ladder is unchanged from today's behavior.
+    /// The `encoder` role (or literal registry key) for the trained-encoder
+    /// annotation rung (ROADMAP_20260827_ORT §4.4). Names a role from the
+    /// roles table — its head candidate serves — or a literal `onnx/<role>`
+    /// key. When set and the resolved key is registered in the ort registry,
+    /// the NlpStage runs the encoder between the LLM and ArcEager rungs.
+    /// `None` (default) disables the encoder rung — the ladder is unchanged
+    /// from today's behavior.
     #[serde(default)]
     pub encoder_model: Option<String>,
     /// Refinement policy for the deterministic-first annotation ladder
@@ -373,10 +379,13 @@ impl RouterConfig {
     pub fn routing_config(&self) -> super::RoutingConfig {
         // The system prompt is always derived from the root classifier
         // node's children (M3c: the flat `system_prompt` field is gone).
+        // Node thresholds win; the top-level safety default fills an unset
+        // node so the prompt matches pipeline enforcement.
+        let top_safety = self.safety_threshold;
         let system_prompt = self
             .classification
             .as_ref()
-            .and_then(super::ClassificationTree::derive_system_prompt)
+            .and_then(|tree| tree.derive_system_prompt_with(None, top_safety))
             .unwrap_or_default();
         // Effective instance pools: the role → per-model-instance chain
         // composed at boot (`materialize_effective_pool`), materialized into
@@ -390,22 +399,29 @@ impl RouterConfig {
             .map(|(key, entry)| {
                 let mut effective = entry.clone();
                 effective.effective_profiles = Some(
-                    super::materialize_effective_pool(key, entry, &self.roles),
+                    super::materialize_effective_pool(key, &self.roles),
                 );
                 (key.clone(), effective)
             })
             .collect();
-        super::RoutingConfig {
+        let routing = super::RoutingConfig {
             routes: self.routes_view(),
             models,
             model_groups: self.model_groups.clone(),
             system_prompt,
-            safety_threshold: self.safety_threshold,
+            safety_threshold: self.effective_safety_threshold(),
             default_route: self.default_route.clone(),
             score_matrix: None,
             onnx_keys: self.onnx_role_keys(),
             roles: self.roles.clone(),
-        }
+        };
+        // Boot-scoped shadow report: every requested name shadowed by an
+        // earlier namespace in the routes → groups → models order.
+        routing.warn_on_lookup_collisions();
+        // Boot-scoped capacity report: capped roles admitting more
+        // simultaneity than their counted instance slots.
+        routing.warn_on_role_capacity_mismatch();
+        routing
     }
 
     /// The registry keys of the configured in-process onnx roles (e.g.
@@ -576,17 +592,17 @@ impl RouterConfig {
                         .or_else(|| self.onnx_llm_backend())
                         .map(crate::stages::nlp::annotation_fetch);
                     let llm_rung = fetch.is_some();
-                    // Build the trained-encoder annotation seam: when the
-                    // `encoder_model` knob is set and the `encoder` role is
-                    // registered, the ladder attempts it between LLM and
-                    // ArcEager.
+                    // Build the trained-encoder annotation seam from the
+                    // `encoder` role: the `encoder_model` knob names a role
+                    // (its head candidate serves) or a literal registry key.
+                    // The ladder attempts it between LLM and ArcEager.
                     let encoder = nlp_cfg
                         .encoder_model
                         .as_deref()
-                        .map(|_| fluent_llm::onnx_config::OnnxRole::Encoder.registry_key())
+                        .map(|name| resolve_duty_key(self, name))
                         .and_then(|role_key| {
                             onnx.and_then(|reg| {
-                                match crate::ort::nlp_encoder_fetch(reg, role_key) {
+                                match crate::ort::nlp_encoder_fetch(reg, &role_key) {
                                     Ok(enc) => enc,
                                     Err(e) => {
                                         tracing::warn!(
@@ -639,17 +655,18 @@ impl RouterConfig {
         // parse residuals and publishes route hints the classifier merges.
         // Absent onnx config (or an unresolvable overlay model) skips the
         // stage with a warning — fail-open. The overlay disambiguation is
-        // served by the `router` role (a zero-shot two-tower model); the
+        // served by the `overlay` role (each `overlay_models` entry names a
+        // role whose head candidate serves, or a literal registry key); the
         // per-pipeline `overlay_models` knob (when non-empty) enables it (A1a).
         if params.overlay_enabled() {
-            let router_keys = [fluent_llm::onnx_config::OnnxRole::Router.registry_key().to_string()];
+            let router_keys: Vec<String> = params
+                .overlay_models
+                .iter()
+                .map(|name| resolve_duty_key(self, name))
+                .collect();
             let overlays = if let Some(registry) = onnx {
                 let routing = self.routing_config();
-                match crate::ort::disambiguation_overlays(
-                    registry,
-                    &router_keys,
-                    &routing.routes,
-                ) {
+                match crate::ort::disambiguation_overlays(registry, &router_keys, &routing.routes) {
                     Ok(overlays) => overlays,
                     Err(e) => {
                         tracing::warn!(
@@ -708,7 +725,7 @@ impl RouterConfig {
             let routing_config = self.routing_config();
             let classifier_intel = classifier_intelligence(self, params);
             let classifier_model = resolve_classifier_model_key(self, params)
-                .map_or_else(|| "unknown".into(), str::to_string);
+                .unwrap_or_else(|| "unknown".into());
             let client: Arc<dyn ChatBackend> = if let Some(backend) = classifier_backend {
                 tracing::info!(target: "router.config", pipeline = %name, backend = "mock/transcript", "classifier using injected backend");
                 backend
@@ -720,7 +737,7 @@ impl RouterConfig {
                     target: "router.config",
                     pipeline = %name,
                     classifier_model = resolve_classifier_model_key(self, params)
-                        .unwrap_or("(none)"),
+                        .unwrap_or_else(|| "(none)".into()),
                     "classifier enabled but no model resolved — classifier stage \
                      skipped (fail-open); pipeline runs without classification",
                 );
@@ -971,40 +988,71 @@ impl RouterConfig {
 }
 
 /// Resolve the classifier model key from config, following the priority:
-/// 1. Pipeline-level `classifier_model`
-/// 2. The `classifier` role's head candidate (the classifier is a role —
-///    the retired root-level `classifier_model` is never read)
-/// 3. Root `classification` classifier node's `model` (tree configs boot
-///    without a flat classifier key)
+/// 1. Pipeline-level `classifier_model` (literal per-pipeline override)
+/// 2. The `classifier` role's head candidate (the classifier is a role)
+/// 3. Root `classification` classifier node's `model_group`, then its
+///    literal `model` (tree configs boot without a flat classifier key)
 /// 4. First model in the `fast` model group
-fn resolve_classifier_model_key<'a>(
-    config: &'a RouterConfig,
-    params: &'a PipelineParams,
-) -> Option<&'a str> {
-    params
-        .classifier_model
-        .as_deref()
-        .or_else(|| config.classifier_role_key())
-        .or_else(|| {
-            config
-                .classification
-                .as_ref()
-                .and_then(super::ClassificationTree::root_classifier_model)
-        })
-        .or_else(|| {
-            config
-                .model_groups
-                .get("fast")
-                .and_then(|group| group.models().first())
-                .map(String::as_str)
-        })
+pub(crate) fn resolve_classifier_model_key(
+    config: &RouterConfig,
+    params: &PipelineParams,
+) -> Option<String> {
+    if let Some(model) = params.classifier_model.as_deref() {
+        return Some(model.to_string());
+    }
+    if let Some(key) = config.classifier_role_key() {
+        return Some(key);
+    }
+    if let Some(tree) = config.classification.as_ref() {
+        if let Some(group) = tree.root_classifier_group() {
+            if let Some(key) = super::resolve_group_head_key(
+                &config.models,
+                &config.roles,
+                &config.model_groups,
+                group,
+            ) {
+                return Some(key);
+            }
+        }
+        if let Some(model) = super::ClassificationTree::root_classifier_model(tree) {
+            return Some(model.to_string());
+        }
+    }
+    config
+        .model_groups
+        .get("fast")
+        .and_then(|group| group.effective_models().first().cloned())
+}
+
+/// Resolve an onnx-duty knob (`encoder_model`, each of `overlay_models`)
+/// through the roles table. A value naming a declared role resolves to its
+/// bound llama head when one binds, else to the role's in-process registry
+/// key (`onnx/<role>`) — `encoder` and `overlay` are roles like any other,
+/// served in-process. Any other value passes through as a literal registry
+/// key (`onnx/<role>`), preserving the documented literal spelling. Always
+/// returns a key; the caller warns and fails open when the registry has no
+/// such session.
+fn resolve_duty_key(config: &RouterConfig, name: &str) -> String {
+    if config.roles.contains_key(name) {
+        if let Some(head) = super::models_serving_role(&config.roles, &config.models, name)
+            .into_iter()
+            .next()
+        {
+            return head;
+        }
+        if !name.contains('/') {
+            return format!("onnx/{name}");
+        }
+    }
+    super::role_head_key(&config.models, &config.roles, name, false)
+        .unwrap_or_else(|| name.to_string())
 }
 
 /// Return the classifier model's intelligence rating, or 0 if not found.
 fn classifier_intelligence(config: &RouterConfig, params: &PipelineParams) -> u8 {
     resolve_classifier_model_key(config, params)
         .and_then(|k| {
-            let (base, _) = crate::config::split_model_key(k);
+            let (base, _) = crate::config::split_model_key(&k);
             config.models.get(base)
         })
         .map_or(0, |m| m.intelligence)
@@ -1036,7 +1084,7 @@ fn build_classifier_client(
     params: &PipelineParams,
 ) -> Option<Arc<dyn ChatBackend>> {
     let model_key = resolve_classifier_model_key(config, params)?;
-    config.local_backend(model_key)
+    config.local_backend(&model_key)
 }
 
 /// Build the classification-tree engine for a pipeline.
@@ -1058,12 +1106,20 @@ fn build_classification_engine(
     target_matcher: Option<TargetMatcher>,
     backend_resolver: Option<ClassifierBackendResolver>,
 ) -> crate::stages::tree::ClassificationEngine {
-    let default_params = PipelineParams::default();
-    let default_model_key = resolve_classifier_model_key(config, &default_params);
+    let default_pipeline_params = PipelineParams::default();
+    let default_model_key = resolve_classifier_model_key(config, &default_pipeline_params);
+    if tree.has_nested_model_group() {
+        tracing::warn!(
+            target: "router.config",
+            "model_group on a nested classifier node is ignored — only the \
+             tree root's group feeds the classifier duty; nested classifiers \
+             use their literal `model`",
+        );
+    }
     let mut clients = HashMap::new();
     if use_per_node_backends {
         for key in tree.classifier_model_keys() {
-            if default_model_key == Some(key.as_str()) {
+            if default_model_key.as_deref() == Some(key.as_str()) {
                 continue;
             }
             if let Some(backend) = config.local_backend(&key) {
@@ -1102,10 +1158,12 @@ pub(crate) fn llama_chat_backend_for_key(
     let entry = models.get(base)?;
     let base_name = entry.name.as_deref().unwrap_or(base);
     // One qualifier resolver for every path: explicit qualifier, else the
-    // role's instance point, else the entry default (over the
-    // boot-materialized effective pool), else bare. Entries are expected
+    // entry default (over the boot-materialized effective pool), else bare.
+    // The point resolves against the *resolved* key — a role fans out to its
+    // head model first, then the selected model's entry default supplies the
+    // point (roles carry no qualifier of their own). Entries are expected
     // boot-materialized; pre-boot entries resolve bare.
-    let qualifier = crate::config::resolve_inference_point(models, roles, key, None);
+    let qualifier = crate::config::resolve_inference_point(models, roles, &resolved, None);
     let model = match &qualifier {
         Some(qualifier) => format!("{base_name}:{qualifier}"),
         None => base_name.to_string(),
@@ -1285,11 +1343,12 @@ impl RouterConfig {
     /// scratch route (`<base>:scratch`), which must target a named instance
     /// rather than the entry's default dispatch point.
     ///
-    /// D4 param merging: the entry `params` are overlaid onto the matching
-    /// instance profile's `params` (entry wins — it is the final sparse
-    /// layer; the profile already carries the role-base ← pool ← selection
-    /// chain composed at boot) so instance-level sampling knobs (e.g.
-    /// `scratch`'s `temperature: 0.4`) actually reach the body; the merged
+    /// D4 param merging: the matching instance profile's `params` are
+    /// overlaid onto the entry `params` (the role side wins — it is the
+    /// final sparse layer of the `models.default` → model → role order; the
+    /// profile already carries the role-base ← pool ← selection chain
+    /// composed at boot) so instance-level sampling knobs (e.g. `scratch`'s
+    /// `temperature: 0.4`) actually reach the body; the merged
     /// object is then `strip_declaration_params`'d. Returns `None` when the
     /// key is unknown or the named instance does not exist.
     pub fn local_backend_for_instance(
@@ -1310,17 +1369,17 @@ impl RouterConfig {
     }
 
     /// Build the ledger `Summarizer`'s DIP backend - the ledger
-    /// Summarizer's only construction site. Resolves the ledger model key
-    /// (the `ledger` section's `model`, else the classifier model key), then
-    /// targets the named `ledger` instance via `local_backend_for_instance`.
+    /// Summarizer's only construction site. Resolves the ledger duty key
+    /// (the `ledger` section's `group`, else its literal `model`, else the
+    /// classifier model key), then targets the named `ledger` instance via
+    /// `local_backend_for_instance`.
     /// When no llama `ledger` instance resolves (or no explicit key is set),
     /// it falls back to the onnx LLM backend (ROADMAP M2.6) — the generative
     /// onnx model is the default enrichment backend, config-driven via
     /// `config.onnx.llm`. Returns `None` when no backend resolves.
     pub fn summarizer_for_ledger(&self) -> Option<crate::summarization::Summarizer> {
         let ledger = self.ledger.as_ref()?;
-        let backend = self
-            .ledger_enrichment_backend(ledger.model.as_deref().or_else(|| self.classifier_role_key()))?;
+        let backend = self.ledger_enrichment_backend(self.ledger_head_key().as_deref())?;
         Some(crate::summarization::Summarizer::new(
             backend,
             ledger.max_summary_tokens,
@@ -1330,18 +1389,15 @@ impl RouterConfig {
     /// Build the `LedgerTierWorker`'s DIP backend - the tier worker's only
     /// construction site. Reuses the same `LlmClient` factory and the same
     /// `<base>:ledger` named-instance target as `summarizer_for_ledger` (no
-    /// second HTTP client). `tier_model` (if given) wins over the ledger
-    /// section's `model`, then the classifier model key. Falls back to the onnx
+    /// second HTTP client). `tier_model` (if given) wins over the ledger duty
+    /// key, then the classifier model key. Falls back to the onnx
     /// LLM backend (ROADMAP M2.6) when no llama `ledger` instance resolves.
     /// Returns `None` when no backend resolves.
-    pub fn ledger_tier_backend(
-        &self,
-        tier_model: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
-        let ledger = self.ledger.as_ref()?;
-        let key = tier_model
-            .or(ledger.model.as_deref())
-            .or_else(|| self.classifier_role_key());
+    pub fn ledger_tier_backend(&self, tier_model: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
+        self.ledger.as_ref()?;
+        let duty = self.ledger_head_key();
+        let classifier = self.classifier_role_key();
+        let key = tier_model.or(duty.as_deref()).or(classifier.as_deref());
         self.ledger_enrichment_backend(key)
     }
 
@@ -1349,10 +1405,7 @@ impl RouterConfig {
     /// `<base>:ledger` named instance when one exists, else the onnx LLM
     /// backend (the default enrichment model, config-driven). `None` when
     /// neither resolves.
-    fn ledger_enrichment_backend(
-        &self,
-        explicit: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
+    fn ledger_enrichment_backend(&self, explicit: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         if let Some(key) = explicit {
             if let Some(backend) = self.local_backend_for_instance(key, "ledger") {
                 return Some(backend);

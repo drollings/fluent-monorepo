@@ -18,8 +18,7 @@ fn config_with_unresolvable_classifier() -> RouterConfig {
                 "default": {"deterministic_prefilter": true, "classifier": true}
             },
             "models": {},
-            "model_groups": {},
-            "routes": {}
+            "model_groups": {}
         }"#,
     )
     .expect("valid config")
@@ -49,7 +48,7 @@ fn resolvable_classifier_builds_pipeline_without_warnings() {
     let config: RouterConfig = serde_json::from_str(
         r#"{
             "pipelines": {"default": {"classifier": true}},
-            "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10}},
+            "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10}},
             "model_groups": {"fast": ["fast"]}
         }"#,
     )
@@ -101,7 +100,7 @@ fn overlay_config(
                 "fast": {{
                     "endpoint": "http://upstream.test:8080/v1/chat/completions",
                     "name": "fast", "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10
+                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10
                 }}
             }},
             "model_groups": {{"fast": ["fast"]}}
@@ -207,7 +206,7 @@ fn overlay_bool_key_ignored_without_warning() {
                 "fast": {
                     "endpoint": "http://upstream.test:8080/v1/chat/completions",
                     "name": "fast", "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "speed": 10
+                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10
                 }
             },
             "model_groups": {"fast": ["fast"]}
@@ -258,21 +257,20 @@ fn overlay_redirect_threshold_is_inert_without_the_golden_corpus_gate() {
 #[test]
 fn local_backend_single_resolver_with_role_work_point() {
     // One inference-point precedence for construction: an explicit qualifier
-    // wins, else the role's instance point, else the entry default. The work
-    // pool is named by a role — no largest-count guess — while the canonical
-    // target builder keeps resolving the fork's default instance (ledger).
+    // wins, else the entry default. The work pool is bound on the role —
+    // no largest-count guess — while the canonical target builder keeps
+    // resolving the fork's default instance (ledger).
     // (Covers the removed pool/default resolver pair alongside the role
     // golden.)
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["swarm"],
-                "instance": "swarm",
                 "instances": {
                     "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
                     "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                }
+                },
+                "models": {"swarm": {}}
             }
         },
         "models": {
@@ -281,11 +279,11 @@ fn local_backend_single_resolver_with_role_work_point() {
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8
+                "tok_s": 8
             }
         }
     })).expect("valid config");
-    // Boot composition, as production boot runs it (no per-model selection:
+    // Boot composition, as production boot runs it (no per-model binding:
     // pool as authored).
     config.apply_defaults();
 
@@ -302,10 +300,9 @@ fn local_backend_single_resolver_with_role_work_point() {
         "bare key serves the entry default"
     );
     assert_eq!(
-        crate::config::resolve_inference_point(&config.models, &config.roles, "work", None)
-            .as_deref(),
-        Some("swarm"),
-        "role serves its instance point"
+        crate::config::resolve_inference_point(&config.models, &config.roles, "work", None),
+        None,
+        "a bare role carries no qualifier — the route-selected model supplies it"
     );
     assert_eq!(
         crate::config::resolve_inference_point(
@@ -334,15 +331,15 @@ fn summarizer_for_ledger_builds_when_ledger_section_present() {
     // section and a swarm entry declaring a `ledger` instance, the backend
     // builds; without a ledger section it is `None`.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
-        "classifier_model": "swarm",
         "ledger": { "model": "swarm", "max_summary_tokens": 300 },
         "roles": {
+            "classifier": {"models": {"swarm": {}}},
             "work": {
-                "models": ["swarm"],
                 "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
                     "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
-                }
+                },
+                "models": {"swarm": {}}
             }
         },
         "models": {
@@ -351,7 +348,7 @@ fn summarizer_for_ledger_builds_when_ledger_section_present() {
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8
+                "tok_s": 8
             }
         }
     })).expect("valid config");
@@ -367,37 +364,37 @@ fn ledger_tier_backend_builds_when_ledger_section_present() {
     // The tier worker's DIP backend targets `<base>:ledger` via the
     // single LlmClient factory; tier_model wins over ledger.model.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
-        "classifier_model": "swarm",
         "ledger": {
             "model": "swarm",
             "tier_model": "qwen3.5-4b",
             "background_tiering": true
         },
         "roles": {
+            "classifier": {"models": {"swarm": {}}},
             "work": {
-                "models": ["swarm"],
                 "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
                     "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
-                }
+                },
+                "models": {"swarm": {}}
             },
             "tier": {
-                "models": ["qwen3.5-4b"],
-                "instances": {
+                                "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                }
+                },
+                "models": {"qwen3.5-4b": {}}
             }
         },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "tok_s": 8
             },
             "qwen3.5-4b": {
                 "endpoint": "http://y/v1/chat/completions",
                 "name": "qwen3.5-4b", "intelligence": 5,
-                "cost_input": 2.0, "cost_output": 2.0, "cost_cached_read": 0.8, "speed": 4
+                "cost_input": 2.0, "cost_output": 2.0, "cost_cached_read": 0.8, "tok_s": 4
             }
         }
     })).expect("valid config");
@@ -413,12 +410,14 @@ fn ledger_tier_backend_builds_when_ledger_section_present() {
 #[test]
 fn ledger_tier_backend_none_without_ledger_section() {
     let config: RouterConfig = serde_json::from_value(serde_json::json!({
-        "classifier_model": "swarm",
+        "roles": {
+            "classifier": {"models": {"swarm": {}}}
+        },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "tok_s": 8
             }
         }
     })).expect("valid config");
@@ -431,14 +430,16 @@ fn ledger_tier_backend_none_without_ledger_section() {
 #[test]
 fn summarizer_for_ledger_none_without_ledger_section() {
     let config: RouterConfig = serde_json::from_value(serde_json::json!({
-        "classifier_model": "swarm",
+        "roles": {
+            "classifier": {"models": {"swarm": {}}}
+        },
         "models": {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8
+                "tok_s": 8
             }
         }
     })).expect("valid config");
@@ -457,11 +458,11 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["swarm"],
                 "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
                     "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                }
+                },
+                "models": {"swarm": {}}
             }
         },
         "models": {
@@ -470,7 +471,7 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8
+                "tok_s": 8
             }
         }
     })).expect("valid config");
@@ -501,22 +502,23 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
 }
 
 #[test]
-fn local_backend_for_instance_entry_params_are_final_over_profile_params() {
-    // The entry top-level is the final sparse layer: its `temperature`
-    // wins over scratch's profile `params`, while keys only the profile
-    // sets survive underneath; declaration-only keys are stripped so the
-    // merged body carries sampling params and nothing else.
+fn local_backend_for_instance_role_params_win_over_entry_params() {
+    // The role side is the final sparse layer (`models.default` → model →
+    // role): the scratch profile's `temperature` wins over the entry
+    // top-level, while keys only the entry sets survive underneath;
+    // declaration-only keys are stripped so the merged body carries sampling
+    // params and nothing else.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["swarm"],
                 "instances": {
                     "scratch": {
                         "num_ctx": 131072,
                         "sleep_idle_seconds": 30,
                         "params": { "temperature": 0.4, "num_ctx": 99999 }
                     }
-                }
+                },
+                "models": {"swarm": {}}
             }
         },
         "models": {
@@ -525,7 +527,7 @@ fn local_backend_for_instance_entry_params_are_final_over_profile_params() {
                 "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
+                "tok_s": 8,
                 "params": { "temperature": 0.9, "repeat_penalty": 1.05, "num_ctx": 0 }
             }
         }
@@ -541,8 +543,8 @@ fn local_backend_for_instance_entry_params_are_final_over_profile_params() {
         .expect("scratch profile resolves");
     let stripped = strip_declaration_params(merged);
     let obj = stripped.as_object().expect("merged params object");
-    // Entry wins for temperature; profile-only key preserved underneath.
-    assert_eq!(obj["temperature"].as_f64(), Some(0.9));
+    // Role side wins for temperature; entry-only key preserved underneath.
+    assert_eq!(obj["temperature"].as_f64(), Some(0.4));
     assert_eq!(obj["repeat_penalty"].as_f64(), Some(1.05));
     // Declaration-only keys are stripped from the merged object.
     assert!(obj.get("num_ctx").is_none(), "declaration key stripped");
@@ -558,7 +560,7 @@ fn local_backend_for_instance_none_for_unknown_instance() {
                 "name": "swarm",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8
+                "tok_s": 8
             }
         }
     })).expect("valid config");
@@ -575,8 +577,8 @@ fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["swarm"],
-                "instances": { "scratch": { "num_ctx": 131072 } }
+                "instances": { "scratch": { "num_ctx": 131072 } },
+                "models": {"swarm": {}}
             }
         },
         "models": {
@@ -585,7 +587,7 @@ fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
                 "name": "swarm",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8,
+                "tok_s": 8,
                 "params": { "repeat_penalty": 1.05, "num_ctx": 0 }
             }
         }
@@ -612,9 +614,9 @@ fn target_backends_builds_every_group_member_key() {
     let config: RouterConfig = serde_json::from_str(
         r#"{
             "models": {
-                "swarm": {"endpoint": "http://a/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 8},
-                "qwen3.6-27b": {"endpoint": "http://b/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 3.0, "cost_output": 3.0, "cost_cached_read": 1.0, "speed": 4},
-                "unused": {"endpoint": "http://c/v1/chat/completions", "name": "unused", "intelligence": 9, "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 3.0, "speed": 2}
+                "swarm": {"endpoint": "http://a/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 8},
+                "qwen3.6-27b": {"endpoint": "http://b/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 3.0, "cost_output": 3.0, "cost_cached_read": 1.0, "tok_s": 4},
+                "unused": {"endpoint": "http://c/v1/chat/completions", "name": "unused", "intelligence": 9, "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 3.0, "tok_s": 2}
             },
             "model_groups": {
                 "default": ["swarm", "qwen3.6-27b"],
@@ -649,15 +651,12 @@ fn builder_threads_target_match_timeout_ms_into_matcher() {
                 }
             },
             "models": {
-                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 10},
-                "swarm": {"endpoint": "http://b/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 9},
-                "qwen3.6-27b": {"endpoint": "http://c/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "speed": 4}
+                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10},
+                "swarm": {"endpoint": "http://b/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 9},
+                "qwen3.6-27b": {"endpoint": "http://c/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "tok_s": 4}
             },
             "model_groups": {
                 "default": ["swarm", "qwen3.6-27b"]
-            },
-            "routes": {
-                "code": {"group": "default", "pipelines": ["default"]}
             },
             "default_route": "fast"
         }"#,
@@ -880,7 +879,6 @@ fn config_with_onnx_stub() -> RouterConfig {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["swarm"],
                 "instances": {
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
                 }
@@ -890,7 +888,7 @@ fn config_with_onnx_stub() -> RouterConfig {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "tok_s": 8
             }
         },
         "onnx": {
@@ -957,7 +955,7 @@ fn builder_refine_policy_from_ordering() {
                 }
             },
             "models": {
-                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 10}
+                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10}
             },
             "model_groups": {"fast": ["fast"]}
         }"#,
@@ -985,7 +983,7 @@ fn builder_refine_policy_from_ordering() {
                 }
             },
             "models": {
-                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 10}
+                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10}
             },
             "model_groups": {"fast": ["fast"]}
         }"#,
@@ -1013,7 +1011,7 @@ fn builder_refine_policy_from_ordering() {
                 }
             },
             "models": {
-                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "speed": 10}
+                "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10}
             },
             "model_groups": {"fast": ["fast"]}
         }"#,
@@ -1052,7 +1050,7 @@ fn summarizer_and_tier_fall_back_to_onnx_llm_when_no_llama_ledger_instance() {
             "swarm": {
                 "endpoint": "http://x/v1/chat/completions",
                 "name": "swarm", "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "speed": 8
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "tok_s": 8
             }
         }
     }))
@@ -1080,7 +1078,7 @@ fn late_bound_test_config(endpoint: &str) -> RouterConfig {
                 "endpoint": endpoint,
                 "intelligence": 2,
                 "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7,
-                "speed": 8,
+                "tok_s": 8,
                 "total_timeout_ms": 5000,
                 "idle_timeout_ms": 1000
             }
@@ -1145,14 +1143,13 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "models": ["swarm:default"],
-                "instance": "swarm",
                 "instances": {
                     "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
                     "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                }
+                },
+                "models": {"swarm": {}}
             },
-            "empty": {"models": []}
+            "empty": {}
         },
         "models": {
             "swarm": {
@@ -1160,12 +1157,13 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
                 "name": "swarm",
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "speed": 8
+                "tok_s": 8
             }
         }
     })).expect("valid config");
     // Boot composition, as production boot runs it (the role pool composes
-    // into the model's effective pool; the role point serves "swarm").
+    // into the model's effective pool; the bound model's entry default
+    // serves "ledger").
     config.apply_defaults();
 
     assert!(config.local_backend("work").is_some(), "role builds head candidate");
@@ -1180,5 +1178,51 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
     assert!(
         config.local_backend_for_instance("work", "missing").is_none(),
         "unknown instances still fail closed through roles"
+    );
+}
+
+#[test]
+fn duty_key_resolves_role_head_or_literal() {
+    // Onnx-duty knobs (`encoder_model`, `overlay_models`) resolve through
+    // the roles table: a role bound to a llama model fans out to its head;
+    // a declared-but-unbound role resolves to its in-process registry key
+    // (`onnx/<role>`); anything else passes through as a literal key.
+    let config: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "default": {"models": {"enc": {}}},
+            "encoder": {},
+            "spare": {},
+            "llama-overlay": {"models": {"enc": {}}}
+        },
+        "models": {
+            "enc": {
+                "endpoint": "http://x/v1/chat/completions",
+                "intelligence": 1,
+                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
+                "tok_s": 1
+            }
+        }
+    }))
+    .expect("synthetic roles deserialize");
+    assert_eq!(resolve_duty_key(&config, "encoder"), "onnx/encoder");
+    assert_eq!(
+        resolve_duty_key(&config, "llama-overlay"),
+        "enc",
+        "bound llama head wins for llama-served duties"
+    );
+    assert_eq!(
+        resolve_duty_key(&config, "spare"),
+        "onnx/spare",
+        "declared-but-unbound roles address the in-process registry"
+    );
+    assert_eq!(
+        resolve_duty_key(&config, "onnx/router"),
+        "onnx/router",
+        "literal registry keys pass through"
+    );
+    assert_eq!(
+        resolve_duty_key(&config, "ghost"),
+        "ghost",
+        "unknown names pass through"
     );
 }
