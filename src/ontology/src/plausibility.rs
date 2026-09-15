@@ -17,6 +17,8 @@
 
 use fluent_concept::{ConceptStore, ConceptStoreState, PlausibilityTriple, ScoredLemma};
 
+use crate::normalize::lemma_to_curies;
+
 /// Re-export of the shared scoring input for owner-side callers.
 pub use fluent_concept::{PlausibilityTriple as PlausibilityInput, ScoredLemma as PlausibilityLemma};
 
@@ -77,14 +79,11 @@ fn lemma_known(lemma: &ScoredLemma, store: &dyn ConceptStore) -> bool {
     }
     // YaGO curie fallback: a common noun lemma like "dog" is stored as
     // `yago:Dog` / `schema:Dog` when loaded from the taxonomy. Try the
-    // capitalized curie form.
-    let curie = format!("yago:{}", capitalize(&lemma.lemma));
-    if store.resolve_name(&curie).is_ok() {
-        return true;
-    }
-    let schema = format!("schema:{}", capitalize(&lemma.lemma));
-    if store.resolve_name(&schema).is_ok() {
-        return true;
+    // capitalized curie forms (shared prefix table in `normalize`).
+    for curie in lemma_to_curies(&lemma.lemma) {
+        if store.resolve_name(&curie).is_ok() {
+            return true;
+        }
     }
     // Hierarchy check: if the lemma id resolves to a class that is a subclass
     // of a known upper class, the store's `is_subclass_of` will surface via
@@ -93,14 +92,6 @@ fn lemma_known(lemma: &ScoredLemma, store: &dyn ConceptStore) -> bool {
     // `contains` covers the node itself and the subclass relationship is
     // transitive through the graph we built at insert time.
     false
-}
-
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_ascii_uppercase().to_string() + c.as_str(),
-    }
 }
 
 #[cfg(test)]

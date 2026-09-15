@@ -1,4 +1,4 @@
-//! Ort ONNX registry composition (ROADMAP_20260827_ORT §0.4/§0.5).
+//! Ort ONNX registry composition.
 //!
 //! The router is the composition root: it turns `ModelEntry.onnx` blocks into
 //! a boot-built `OrtSessionRegistry`, validates exclusivity and task-vs-model
@@ -26,8 +26,8 @@ use tracing::info;
 /// Convenience alias for the shared onnx registry.
 pub type OrtRegistry = Arc<OrtSessionRegistry>;
 
-/// Build the disambiguation overlays for the overlay stage
-/// (ROADMAP_20260827_ORT §2.5): one `PromptRouterOverlay` per `overlay_models`
+/// Build the disambiguation overlays for the overlay stage:
+/// one `PromptRouterOverlay` per `overlay_models`
 /// key whose registered onnx model is a `ZeroShotRouting` two-tower session,
 /// each scored against the given route descriptions. The router (composition
 /// root) supplies the route labels from `RoutingConfig`.
@@ -120,7 +120,7 @@ pub fn onnx_colbert_reranker(
     Ok(None)
 }
 
-/// The decode seam behind the onnx `ChatBackend` (ROADMAP M2.1). Decouples the
+/// The decode seam behind the onnx `ChatBackend`. Decouples the
 /// backend's grammar-wiring + limiter from the concrete `OrtLlmSession` decode
 /// so hermetic tests inject a fake decoder (no real model). `complete` runs one
 /// chat call: chat-template render → tokenize → prefill → (optionally
@@ -135,7 +135,7 @@ pub(crate) trait OnnxLlmRunner: Send + Sync {
         params: fluent_onnx::LlmParams,
     ) -> Result<String, fluent_llm::LlmError>;
 
-    /// Run the chat call onto a named context (ROADMAP M6): the same
+    /// Run the chat call onto a named context: the same
     /// template→decode flow, but the KV persists in `ctx` so a follow-up call
     /// continues from where the previous stopped. Default = single-shot.
     fn complete_on_context(
@@ -184,7 +184,7 @@ impl OnnxLlmRunner for RealOnnxRunner {
     }
 }
 
-/// The onnx generative `ChatBackend` (ROADMAP M2.1/M2.2): a `CausalLm` session
+/// The onnx generative `ChatBackend`: a `CausalLm` session
 /// served behind the `fluent_llm::client::ChatBackend` seam, with optional
 /// grammar-constrained structured decoding.
 ///
@@ -204,8 +204,8 @@ pub(crate) struct OnnxChatBackend {
     vocab: Arc<dyn fluent_onnx::TokenVocab>,
     params: fluent_onnx::LlmParams,
     limiter: fluent_concurrency::pool::Limiter,
-    /// The role's shared context pool, when this backend is context-bound
-    /// (ROADMAP M6). `None` keeps the single-shot decode — byte-identical for
+    /// The role's shared context pool, when this backend is context-bound.
+    /// `None` keeps the single-shot decode — byte-identical for
     /// an onnx role with no declared `instances` block.
     pool: Option<Arc<fluent_onnx::OnnxContextPool>>,
     /// The bound context name (the role's pool context). `extras["instance"]`
@@ -240,7 +240,7 @@ impl OnnxChatBackend {
         }
     }
 
-    /// Build a context-bound backend (ROADMAP M6): decodes run on the role's
+    /// Build a context-bound backend: decodes run on the role's
     /// named contexts (created on demand) so their KV persists across calls.
     pub(crate) fn with_contexts(
         runner: Arc<dyn OnnxLlmRunner>,
@@ -279,7 +279,7 @@ impl OnnxChatBackend {
         })
     }
 
-    /// Run a decode onto a named context through the limiter (ROADMAP M6).
+    /// Run a decode onto a named context through the limiter.
     fn run_on_context(
         &self,
         ctx: &Arc<fluent_onnx::OnnxContext>,
@@ -307,7 +307,7 @@ impl OnnxChatBackend {
             .or_else(|| self.context.clone())
     }
 
-    /// The extras-driven decode (ROADMAP M6): a targeted context gets its KV
+    /// The extras-driven decode: a targeted context gets its KV
     /// restored from `extras["snapshot"]` before decode and re-snapshotted when
     /// `resume`/`save_snapshot` asks, mirroring the llama `snapshot`/`instance`/
     /// `id_slot` request fields. Absent a pool/context → single-shot.
@@ -324,7 +324,7 @@ impl OnnxChatBackend {
             return self.run_limited(messages, grammar);
         };
         let ctx = pool.ensure_context(&name, (self.profile_for)(&name));
-        // ROADMAP M7 §1 resize-to-demand: a request that declares a bigger
+        // Resize-to-demand: a request that declares a bigger
         // context need than the context's allocated `n_ctx` grows the context
         // to fit (up to `max_ctx`); a need beyond `max_ctx` fails with the same
         // error shape a too-large llama request gets today (no new fail-open).
@@ -392,8 +392,8 @@ impl fluent_llm::client::ChatBackend for OnnxChatBackend {
     }
 }
 
-/// Build the onnx generative `ChatBackend` for `key` from the boot registry
-/// (ROADMAP M2.1). Returns `None` when `key` is not a registered `CausalLm`
+/// Build the onnx generative `ChatBackend` for `key` from the boot registry.
+/// Returns `None` when `key` is not a registered `CausalLm`
 /// session — fail-open, with a loud warning when the key *is* registered but
 /// mistyped (a mis-configured generative role is never silent).
 #[cfg(feature = "onnx")]
@@ -433,7 +433,7 @@ pub fn onnx_chat_backend(
 }
 
 /// Build a **context-bound** onnx `ChatBackend` for `weights`' named context
-/// `name` (ROADMAP M6). Loads the role's context pool on first use (the onnx
+/// `name`. Loads the role's context pool on first use (the onnx
 /// lazy-residency load point — `ensure_pool` calls `build_llm_session`, which
 /// loads the session through the registry) and binds the backend to that
 /// context, so decodes persist their KV there. `name == pool_context` for the
@@ -449,7 +449,7 @@ pub fn onnx_context_backend(
     let pool = weights
         .ensure_pool()
         .map_err(|e| {
-            // Supervisor-containment parity for onnx (ROADMAP M6 §4): a session
+            // Supervisor-containment parity for onnx: a session
             // that fails to load on first use is a LOUD error, not a silent
             // fall-through — the registry's own `ensure_loaded` already logged
             // the underlying load failure.
@@ -621,8 +621,8 @@ impl crate::charts::select::ColbertRerank for ColbertChartReranker {
     }
 }
 
-/// Build the trained-encoder annotation seam (ROADMAP_20260827_ORT §4.4 /
-/// ROADMAP_20260828_ORT_FIXES M2.3): an `EncoderFetchSync` closure that runs
+/// Build the trained-encoder annotation seam:
+/// an `EncoderFetchSync` closure that runs
 /// the trained-encoder annotation worker over the doc's orth/idx and produces
 /// an `AnnotationSet` aligned by construction (record `text` = spacy orth).
 ///
@@ -768,7 +768,7 @@ pub fn nlp_encoder_fetch(
     Ok(None)
 }
 
-/// Build the review worker's PII pre-filter (ROADMAP_20260827_ORT §3.2/§3.3):
+/// Build the review worker's PII pre-filter:
 /// the ort PII-Detector when `pii_model` names a registered
 /// `TokenClassification` session, else the deterministic `RegexPiiDetector`
 /// when `auto_enqueue` requires a pre-filter. Fail-open: a mis-declared or
@@ -847,8 +847,8 @@ pub fn pii_prefilter(
     Ok(regex_baseline_or_none(auto_enqueue))
 }
 
-/// Build the ColBERT-backed entity-link scorer (ROADMAP_20260828_ORT_FIXES
-/// M3.2): bakes an [`fluent_onnx::EntitySimilarityIndex`] over the concept
+/// Build the ColBERT-backed entity-link scorer:
+/// bakes an [`fluent_onnx::EntitySimilarityIndex`] over the concept
 /// store's labels at boot, then returns an [`EntityLinkScorer`] closure that
 /// encodes a span via the retriever, looks it up against the baked index, and
 /// resolves each hit's canonical → `InterlinguaId` through the store.
@@ -1044,7 +1044,7 @@ pub fn build_onnx_registry(
 /// `sleep_idle_seconds` (registered by `build_onnx_registry`).
 pub const DEFAULT_SLEEP_IDLE_SECONDS: i32 = 30;
 
-// ── ROADMAP M4: the onnx half of the shared LlmWeights contract ─────────────
+// ── The onnx half of the shared LlmWeights contract ─────────────
 //
 // `OnnxWeights` presents one in-process onnx role through the shared
 // `fluent_llm::runtime::LlmWeights` surface (the same contract the llama
@@ -1066,7 +1066,7 @@ fn map_ort_err(e: &OrtError) -> fluent_llm::runtime::LlmRuntimeError {
     }
 }
 
-/// The `LlmWeights` implementor for one onnx role (ROADMAP M4). Wraps the
+/// The `LlmWeights` implementor for one onnx role. Wraps the
 /// role's `OnnxContextPool` (generative roles) + the registry entry. A loaded
 /// generative role with no materialized contexts synthesizes the single
 /// `default` context row — the onnx analogue of a plain llama model's
@@ -1149,7 +1149,7 @@ impl OnnxWeights {
     }
 }
 
-/// Resolve an onnx role's named-context profile (ROADMAP M6): the role's
+/// Resolve an onnx role's named-context profile: the role's
 /// `instances` block (name-or-key match, `max_ctx` applied), else a default
 /// profile inheriting the role's global `max_ctx` and pin. Shared by
 /// `OnnxWeights::ensure_context` and the context-bound `OnnxChatBackend`.
@@ -1294,7 +1294,7 @@ impl fluent_llm::runtime::LlmWeights for OnnxWeights {
     }
 }
 
-/// Build one `OnnxWeights` per registered onnx role (ROADMAP M4). The role's
+/// Build one `OnnxWeights` per registered onnx role. The role's
 /// `instances` block (from `config.onnx`) drives `ensure_context` profiles;
 /// the registry supplies the lifecycle + residency data. Onnx rows appear on
 /// the unified `/instances`/`/v1/models` facades only when the onnx fleet is

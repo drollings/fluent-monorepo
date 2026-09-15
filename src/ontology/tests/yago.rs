@@ -145,3 +145,20 @@ fn whitelist_hash_matches_truncated_ids() {
         local_id_of(person_hash),
     )));
 }
+
+#[test]
+fn whitelist_iris_match_all_classes() {
+    // Single-source rule: the boot-visible `WHITELIST_IRIS` spelling and
+    // the `ALL_CLASSES` registry describe the same set; the precomputed
+    // lookup sets derive from `ALL_CLASSES`.
+    let from_classes: std::collections::HashSet<&str> =
+        ALL_CLASSES.iter().map(|cls| cls.iri).collect();
+    let listed: std::collections::HashSet<&str> =
+        WHITELIST_IRIS.iter().copied().collect();
+    assert_eq!(from_classes, listed);
+    for iri in WHITELIST_IRIS {
+        assert!(is_whitelisted(iri));
+        assert!(lookup_class(iri).is_some());
+    }
+    assert!(!is_whitelisted("http://example.org/NotAClass"));
+}

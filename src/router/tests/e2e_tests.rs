@@ -360,4 +360,4 @@ fn test_e2e_tree_config_unknown_route_uses_fallback() {
 // ── Checkpoint/Rewind Cycle (DAG session-level) ─────────────────────────
 // Note: the checkpoint→rewind→status-reset behavior is owned by the inline
 // `dag_session.rs` tests (`test_rewind_to_checkpoint`, `test_checkpoint_listing`),
-// which subsume this formerly-duplicated e2e coverage. See ROADMAP M2.4.
+// which subsume this formerly-duplicated e2e coverage.

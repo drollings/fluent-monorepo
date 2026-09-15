@@ -133,7 +133,7 @@ fn validate_io_rejects_missing_output_loudly() {
     assert!(validate_io(&io, &inputs, &[]).is_err());
 }
 
-// ── ROADMAP M2: the hermetic session stub + throwaway-generate regression ──
+// ── The hermetic session stub + throwaway-generate regression ──
 
 /// A hermetic session stub (no ort graph): echoes the input KV back as
 /// `present_*` outputs — with per-position markers derived from the prompt

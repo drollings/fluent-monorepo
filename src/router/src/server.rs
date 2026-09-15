@@ -72,26 +72,30 @@ pub struct RouterServer {
     /// Background `LedgerTierWorker` join handle. Held so the worker task
     /// lives for the process lifetime.
     tier_worker: Option<tokio::task::JoinHandle<()>>,
-    /// The `LedgerAgentCoordinator`, when the operator opts in. `None`
-    /// keeps dispatch unchanged.
+    /// The `LedgerAgentCoordinator`, attached by default wherever a ledger is
+    /// configured (M14c default-on). `None` keeps dispatch unchanged.
     coordinator: Option<Arc<crate::ledger::orchestrator::LedgerAgentCoordinator>>,
-    /// The async review worker (ROADMAP §12.6, C4). Owned by the server,
+    /// Runtime gate for the coordinator (M14c one-command rollback). Open at
+    /// boot; closing it (via `POST /admin/coordinator/rollback`) returns
+    /// dispatch to the pre-coordinator pipeline without a restart.
+    coordinator_gate: crate::ledger::orchestrator::CoordinatorGate,
+    /// The async review worker. Owned by the server,
     /// spawned into the tracked task set, drained on graceful shutdown.
     review_worker: Option<Arc<ReviewWorker>>,
     /// The review-model fetch seam for the review worker.
     review_fetch: Option<ReviewFetch>,
-    /// The async entity-link overlay worker (ROADMAP_20260827_ORT §6.2).
+    /// The async entity-link overlay worker.
     /// Owned by the server, drained on graceful shutdown.
     entity_link_worker: Option<Arc<crate::server::entity_link::EntityLinkWorker>>,
     /// The arc_ready annotation-overlay worker (OVERLAYS §7). Owned by the
     /// server, drained on graceful shutdown so in-flight derivations complete.
     overlay_worker: Option<Arc<crate::ledger::overlay_worker::OverlayWorker>>,
-    /// The ort ONNX session registry (ROADMAP_20260827_ORT §0.5): one session
+    /// The ort ONNX session registry: one session
     /// per onnx-declared model. The llama.cpp supervisor, sidecar, and
     /// `/instances` never touch onnx models; the registry backs
     /// `/models/unload` refusals for `Always`-resident models.
     onnx: Option<Arc<fluent_llm::onnx_session::OrtSessionRegistry>>,
-    /// The unified weights facade (ROADMAP M4): llama adapters + onnx
+    /// The unified weights facade: llama adapters + onnx
     /// implementors behind the shared `LlmWeights` surface. Backs the
     /// `/instances` + `/v1/models` aggregation (onnx rows), `ps`, and the
     /// onnx branch of `POST /models/unload`.
@@ -100,7 +104,7 @@ pub struct RouterServer {
     /// model). Routes whose `model_groups` resolve to an onnx role dispatch
     /// through it. Wired by the composition root alongside the onnx registry.
     onnx_llm_backend: Option<Arc<dyn fluent_llm::client::ChatBackend>>,
-    /// The shared residency engine (ROADMAP M5): ONE loop over the fleet's
+    /// The shared residency engine: ONE loop over the fleet's
     /// weights (llama adapters + onnx implementors), replacing both the llama
     /// sidecar task and the onnx residency sibling. Built in the composition
     /// root (where the sidecar knobs live), spawned in `serve`, aborted on
@@ -141,6 +145,7 @@ impl RouterServer {
             api_key_env_name: None,
             tier_worker: None,
             coordinator: None,
+            coordinator_gate: crate::ledger::orchestrator::CoordinatorGate::open(),
             review_worker: None,
             review_fetch: None,
             entity_link_worker: None,
@@ -284,7 +289,19 @@ impl RouterServer {
         self
     }
 
-    /// Attach the async review worker (ROADMAP §12.6, C4). The worker is
+    /// Attach a shared coordinator runtime gate (M14c). `Clone` bumps the
+    /// `Arc`, so the server and the operator (or tests) observe the same
+    /// state. Defaults to a fresh open gate.
+    #[must_use]
+    pub fn with_coordinator_gate(
+        mut self,
+        gate: crate::ledger::orchestrator::CoordinatorGate,
+    ) -> Self {
+        self.coordinator_gate = gate;
+        self
+    }
+
+    /// Attach the async review worker. The worker is
     /// spawned into the server's tracked task set and drained on graceful
     /// shutdown so in-flight corrections + status writes complete.
     #[must_use]
@@ -300,7 +317,7 @@ impl RouterServer {
         self
     }
 
-    /// Attach the async entity-link overlay worker (ROADMAP_20260827_ORT §6.2).
+    /// Attach the async entity-link overlay worker.
     /// Drained on graceful shutdown like the review worker.
     #[must_use]
     pub fn with_entity_link_worker(
@@ -349,7 +366,7 @@ impl RouterServer {
         self
     }
 
-    /// Attach the shared residency engine (ROADMAP M5). `None` (the default)
+    /// Attach the shared residency engine. `None` (the default)
     /// leaves both fleets resident until the process exits. When attached,
     /// `serve` spawns it as the single residency loop over the fleet's weights
     /// (llama adapters + onnx implementors) and aborts it on graceful shutdown.
@@ -362,7 +379,7 @@ impl RouterServer {
         self
     }
 
-    /// Attach the unified weights facade (ROADMAP M4): llama adapters + onnx
+    /// Attach the unified weights facade: llama adapters + onnx
     /// implementors behind the shared `LlmWeights` surface. Backs the
     /// `/instances` + `/v1/models` aggregation (onnx rows), `ps`, and the
     /// onnx branch of `POST /models/unload`.
@@ -436,6 +453,7 @@ impl RouterServer {
             api_key_env_name: self.api_key_env_name.clone(),
             supervisor: self.supervisor.clone(),
             coordinator: self.coordinator.clone(),
+            coordinator_gate: self.coordinator_gate.clone(),
             review_worker: self.review_worker.clone(),
             review_fetch: self.review_fetch.clone(),
             entity_link_worker: self.entity_link_worker.clone(),
@@ -577,6 +595,7 @@ impl WorkUnit for RouterServer {
             api_key_env_name: self.api_key_env_name.clone(),
             supervisor: self.supervisor.clone(),
             coordinator: self.coordinator.clone(),
+            coordinator_gate: self.coordinator_gate.clone(),
             review_worker: self.review_worker.clone(),
             review_fetch: self.review_fetch.clone(),
             entity_link_worker: self.entity_link_worker.clone(),

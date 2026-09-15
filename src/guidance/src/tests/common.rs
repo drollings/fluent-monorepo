@@ -6,7 +6,6 @@
 //! Tier-2 `tests/common` is a separate crate linked against the public API.
 //! So the shared fixtures live here (`src/tests/common.rs`, Tier 1) and the
 //! e2e-only SyncEngine setup lives in `tests/common/mod.rs` (Tier 2).
-//! See `ROADMAP_20260816_TESTS.md` §2.1.
 
 use fluent_types::{GuidanceDoc, Member, MemberType, Meta, Param};
 

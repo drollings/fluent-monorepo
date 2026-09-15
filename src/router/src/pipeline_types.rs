@@ -77,7 +77,7 @@ pub enum PipelineStage {
     /// gates the request). Parses the user text with `spacy-rs` and publishes
     /// the `RoutingSignal`s under the `"nlp_parse"` metadata handoff key.
     Nlp,
-    /// The overlay stage (ROADMAP_20260827_ORT §2.4): consumes the parse
+    /// The overlay stage: consumes the parse
     /// residuals a deterministic-first ordering leaves and scores them with a
     /// configured model overlay. Enrichment — it publishes route hints and
     /// never gates the request.
@@ -181,7 +181,7 @@ mod optional_flat_refine_reason {
     }
 }
 
-/// The NLP stage's confidence handoff (ROADMAP §14.5, C1): the producing rung
+/// The NLP stage's confidence handoff: the producing rung
 /// and the margin-aware parse confidence, plus how many interlingua collisions
 /// the resolve step surfaced. Consumed by the escalation ladder — a low
 /// confidence / ArcEager (or encoder) source marks the request "needs
@@ -215,8 +215,7 @@ pub struct NlpConfidenceSummary {
 }
 
 impl NlpConfidenceSummary {
-    /// Whether the parse is uncertain enough to route around (ROADMAP §14.5,
-    /// C1): a heuristic ArcEager (or trained-encoder) parse below `threshold`,
+    /// Whether the parse is uncertain enough to route around: a heuristic ArcEager (or trained-encoder) parse below `threshold`,
     /// or any surfaced interlingua collision. The ladder treats this as "needs
     /// disambiguation" and prefers a more capable model — never a rejection
     /// and never a vocabulary mutation (§9.4).
@@ -228,7 +227,7 @@ impl NlpConfidenceSummary {
 }
 
 /// A route hint the overlay stage publishes for the classifier: a route name
-/// and the two-tower score that recommends it (ROADMAP_20260827_ORT §2.6).
+/// and the two-tower score that recommends it.
 /// The classifier merges these as deterministic routing context; a redirect
 /// from a top hint is a separate opt-in behind `overlay_redirect_threshold`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -264,79 +263,69 @@ impl StageMetadata {
         self.0
     }
 
-    // ── Typed getters ────────────────────────────────────────────────────
+    /// Borrow the metadata stored in `value` without cloning it.
+    ///
+    /// The zero-copy reader for the hot path: checks like `response()`,
+    /// `fallback()`, or `nlp_confidence()` run directly against the stored
+    /// `Value` instead of cloning it into an owned wrapper first.
+    pub fn metadata_ref(value: &serde_json::Value) -> StageMetadataRef<'_> {
+        StageMetadataRef(value)
+    }
+
+    // ── Typed getters (all delegate to the borrowed reader) ─────────────
 
     pub fn response(&self) -> Option<&str> {
-        self.0.get("response").and_then(serde_json::Value::as_str)
+        Self::metadata_ref(&self.0).response()
     }
 
     pub fn rewritten_request(&self) -> Option<&str> {
-        self.0
-            .get("rewritten_request")
-            .and_then(serde_json::Value::as_str)
+        Self::metadata_ref(&self.0).rewritten_request()
     }
 
     pub fn command_result(&self) -> Option<&str> {
-        self.0
-            .get("command_result")
-            .and_then(serde_json::Value::as_str)
+        Self::metadata_ref(&self.0).command_result()
     }
 
     pub fn pii_filter(&self) -> Option<PiiVerdict> {
-        self.0
-            .get("pii_filter")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+        Self::metadata_ref(&self.0).pii_filter()
     }
 
     pub fn fallback(&self) -> Option<bool> {
-        self.0.get("fallback").and_then(serde_json::Value::as_bool)
+        Self::metadata_ref(&self.0).fallback()
     }
 
     /// The per-sentence routing signals parsed by the `Nlp` stage (§10.4).
     pub fn nlp_parse(&self) -> Option<Vec<spacy_rs::routing::RoutingSignal>> {
-        self.0
-            .get("nlp_parse")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+        Self::metadata_ref(&self.0).nlp_parse()
     }
 
-    /// The per-sentence interlingua frames (ROADMAP §14.5, C1).
+    /// The per-sentence interlingua frames.
     pub fn nlp_interlingua(&self) -> Option<Vec<spacy_rs::routing::InterlinguaSignal>> {
-        self.0
-            .get("nlp_interlingua")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+        Self::metadata_ref(&self.0).nlp_interlingua()
     }
 
     /// The NLP confidence summary (the escalation ladder's "needs
     /// disambiguation" signal, §14.5).
     pub fn nlp_confidence(&self) -> Option<NlpConfidenceSummary> {
-        self.0
-            .get("nlp_confidence")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+        Self::metadata_ref(&self.0).nlp_confidence()
     }
 
     /// The NLP stage's per-token confidence vector (L3 — the review endpoint
     /// reads it back so a rebuild keeps per-token fidelity). `None` when the
     /// producing rung filled none (LLM/rule rungs).
     pub fn nlp_token_confidence(&self) -> Option<Vec<f64>> {
-        self.0
-            .get("nlp_token_confidence")
-            .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(serde_json::Value::as_f64).collect())
+        Self::metadata_ref(&self.0).nlp_token_confidence()
     }
 
-    /// The overlay stage's route hints (ROADMAP_20260827_ORT §2.6) — the
+    /// The overlay stage's route hints — the
     /// classifier merges them into its routing context when present.
     pub fn overlay_route_hints(&self) -> Option<Vec<RouteHint>> {
-        self.0
-            .get("overlay_route_hints")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+        Self::metadata_ref(&self.0).overlay_route_hints()
     }
 
     /// The overlay stage's raw contributions (kind/score/payload) for audit.
     pub fn overlay_contributions(&self) -> Option<Vec<fluent_llm::backend::OverlayContribution>> {
-        self.0
-            .get("overlay_contributions")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+        Self::metadata_ref(&self.0).overlay_contributions()
     }
 
     // ── Typed setters (producers) ────────────────────────────────────────
@@ -413,6 +402,82 @@ impl StageMetadata {
 impl From<serde_json::Value> for StageMetadata {
     fn from(v: serde_json::Value) -> Self {
         Self(v)
+    }
+}
+
+/// A borrowed view of [`StageMetadata`]: the same typed getters, reading
+/// directly from a stored `serde_json::Value` with no clone.
+///
+/// Construct with [`StageMetadata::metadata_ref`]. Structured getters
+/// deserialize from the borrowed value (`T::deserialize(&Value)`) rather
+/// than cloning the subtree through `from_value` first.
+#[derive(Debug, Clone, Copy)]
+pub struct StageMetadataRef<'a>(&'a serde_json::Value);
+
+impl<'a> StageMetadataRef<'a> {
+    pub fn response(self) -> Option<&'a str> {
+        self.0.get("response").and_then(serde_json::Value::as_str)
+    }
+
+    pub fn rewritten_request(self) -> Option<&'a str> {
+        self.0
+            .get("rewritten_request")
+            .and_then(serde_json::Value::as_str)
+    }
+
+    pub fn command_result(self) -> Option<&'a str> {
+        self.0
+            .get("command_result")
+            .and_then(serde_json::Value::as_str)
+    }
+
+    pub fn pii_filter(self) -> Option<PiiVerdict> {
+        self.0
+            .get("pii_filter")
+            .and_then(|v| PiiVerdict::deserialize(v).ok())
+    }
+
+    pub fn fallback(self) -> Option<bool> {
+        self.0.get("fallback").and_then(serde_json::Value::as_bool)
+    }
+
+    pub fn nlp_parse(self) -> Option<Vec<spacy_rs::routing::RoutingSignal>> {
+        self.0
+            .get("nlp_parse")
+            .and_then(|v| <Vec<spacy_rs::routing::RoutingSignal>>::deserialize(v).ok())
+    }
+
+    pub fn nlp_interlingua(self) -> Option<Vec<spacy_rs::routing::InterlinguaSignal>> {
+        self.0
+            .get("nlp_interlingua")
+            .and_then(|v| <Vec<spacy_rs::routing::InterlinguaSignal>>::deserialize(v).ok())
+    }
+
+    pub fn nlp_confidence(self) -> Option<NlpConfidenceSummary> {
+        self.0
+            .get("nlp_confidence")
+            .and_then(|v| NlpConfidenceSummary::deserialize(v).ok())
+    }
+
+    pub fn nlp_token_confidence(self) -> Option<Vec<f64>> {
+        self.0
+            .get("nlp_token_confidence")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(serde_json::Value::as_f64).collect())
+    }
+
+    pub fn overlay_route_hints(self) -> Option<Vec<RouteHint>> {
+        self.0
+            .get("overlay_route_hints")
+            .and_then(|v| <Vec<RouteHint>>::deserialize(v).ok())
+    }
+
+    pub fn overlay_contributions(
+        self,
+    ) -> Option<Vec<fluent_llm::backend::OverlayContribution>> {
+        self.0
+            .get("overlay_contributions")
+            .and_then(|v| <Vec<fluent_llm::backend::OverlayContribution>>::deserialize(v).ok())
     }
 }
 

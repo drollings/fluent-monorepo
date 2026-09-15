@@ -39,7 +39,7 @@ pub mod tokens;
 pub mod url;
 
 // Re-export the LLM protocol + queue types from the owned `protocol` module
-// (ROADMAP_20260903_LLM M9) so existing
+// so existing
 // `use fluent_llm::{LlmConfig, LlmError, ...}` paths keep working unchanged.
 pub use protocol::{
     ChatMessage, LlmConfig, LlmError, LlmQueueConfig, LlmRequestQueue, LlmTask,

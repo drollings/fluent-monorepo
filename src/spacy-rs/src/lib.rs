@@ -24,7 +24,7 @@
 
 pub mod arc_eager;
 pub mod attrs;
-/// Neutral-home re-export (ROADMAP_20260903_SPACY_RS_SPLIT M3): the
+/// Neutral-home re-export: the
 /// `ConceptStore` trait, `TaxonomyHierarchy`, and the hermetic
 /// `InMemoryConceptStore` live in `fluent-concept`. spacy-rs keeps only a
 /// read-only view import — resolver/frame/triple/yago-stage read through it;

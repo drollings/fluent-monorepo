@@ -141,7 +141,7 @@ async fn test_batch_panic_propagates_as_join_error() {
 // Note: this assertion is owned by the e2e suite's
 // `test_e2e_panic_cascade_with_independent_neighbors`, which folds in the
 // "one panic cancels multiple sibling dependents" check and also asserts that
-// independent neighbors complete. See ROADMAP M2.5.
+// independent neighbors complete.
 
 #[tokio::test(start_paused = true)]
 async fn test_batch_normal_completion() {
@@ -272,7 +272,7 @@ async fn test_batch_real_panic() {
 
 /// A parent that provides a shared asset and then fails (permanent) or panics
 /// must cancel its dependent. The single assertion body is shared by the two
-/// parent-outcome tests below (see ROADMAP M2.5).
+/// parent-outcome tests below.
 async fn assert_parent_outcome_cancels_dependent(parent: StubComponent) {
     let parent_panics = parent.panic;
     let mut batch = make_batch();
@@ -319,7 +319,7 @@ async fn test_batch_dependency_cancellation() {
 /// Dropping a `SupervisedBatch` with in-flight, pending, or already-completed
 /// tasks must be safe — it aborts the tasks without hanging or panicking (and
 /// no orphaned task ever completes). Parametrized over the batch shapes that
-/// previously lived as five separate `test_batch_drop_*` fns (see ROADMAP M2.5).
+/// previously lived as five separate `test_batch_drop_*` fns.
 #[tokio::test(start_paused = true)]
 async fn test_batch_drop_is_safe() {
     tokio::time::resume();

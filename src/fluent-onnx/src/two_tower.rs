@@ -7,14 +7,14 @@
 //! with a mean) — the graph stays static and the host pools the projected
 //! per-token vectors over label/text regions. Regions are recovered from the
 //! tokenizer's **byte offsets** against the byte-exact prompt assembled by
-//! [`PromptBuilder`] (ROADMAP_20260827_ORT §2.1; the character arithmetic the
+//! [`PromptBuilder`] (the character arithmetic the
 //! model was trained on depends on that prompt byte for byte — risk #5).
 //!
 //! The pooling / scoring math is pure and unit-tested with no model; the
 //! session-facing glue lives behind the `onnx` feature.
 
 use std::path::Path;
-use common_core::vector_math::cosine_similarity_f32;
+use vector_math::cosine_similarity_f32;
 
 #[cfg(feature = "onnx")]
 use std::sync::{Arc, Mutex};
@@ -309,7 +309,7 @@ pub fn score_with_head(
         TwoTowerHead::Cosine { scale, bias } => {
             let q = l2_normalize(query);
             // `cosine_similarity_f32` is the single canonical similarity
-            // (`common-core::vector_math`); the f32→f64 widening here is
+            // (the dependency-free `vector-math` leaf crate); the f32→f64
             // lossless and keeps the softmax logits in f64, where the
             // exp/sum precision genuinely matters.
             let logits: Vec<f64> = rules
@@ -571,7 +571,7 @@ pub fn build_two_tower_from_registry(
 
 /// A single Policy-Linter hit: a text token whose score against a policy rule
 /// cleared the threshold. `start`/`end` are byte offsets into the linter's
-/// input text (ROADMAP_20260827_ORT §3.1).
+/// input text.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PolicyHit {
     /// The token surface.
@@ -622,7 +622,7 @@ pub fn policy_hits_from_matrix(
     hits
 }
 
-/// The Policy-Linter (ROADMAP_20260827_ORT §3.1): a [`TwoTowerWorker`]
+/// The Policy-Linter: a [`TwoTowerWorker`]
 /// (dot/sigmoid head) scoring every text token against the config's policy
 /// labels, emitting the tokens whose score clears the configured threshold.
 /// The label list is a data artifact (`OnnxConfig.policy_labels`, a JSON array

@@ -39,7 +39,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::closure::{self, ClosureCtx};
 use crate::narrowing;
-use crate::target::TargetRegistry;
+use crate::target::{Target, TargetRegistry};
 use common_core::error::ResolverError;
 use common_core::interner::CapabilityRegistry;
 use fluent_types::TargetType;
@@ -248,13 +248,13 @@ impl<'a> DependencyResolver<'a> {
                         }
                         let providers = self.registry.get_providers(cap_idx);
                         if providers.is_empty() {
-                            if let Some(cap_name) = caps.get_name(cap_idx) {
-                                if let Some(implicit) = self.registry.get(&cap_name) {
-                                    if resolved_set.insert(implicit.id as usize) {
-                                        changed = true;
-                                    }
-                                    continue;
+                            if let Some(p_bit) =
+                                closure::implicit_provider_bit(self.registry, Some(caps), cap_idx)
+                            {
+                                if resolved_set.insert(p_bit) {
+                                    changed = true;
                                 }
+                                continue;
                             }
                             if self.strict {
                                 return Err(narrowing::missing_provider_error(
@@ -272,33 +272,17 @@ impl<'a> DependencyResolver<'a> {
                             continue;
                         }
                         narrowed_caps.insert(cap_idx);
-                        let narrowed =
-                            narrowing::narrow_providers(providers.clone(), &full_provides);
-                        match narrowed.len() {
-                            0 => {
-                                return Err(narrowing::missing_provider_error(
-                                    Some(caps),
-                                    cap_idx,
-                                    &target.name,
-                                ));
-                            }
-                            1 => {
-                                if resolved_set.insert(narrowed[0].id as usize) {
-                                    changed = true;
-                                }
-                                for candidate in providers {
-                                    if candidate.id != narrowed[0].id {
-                                        rejected.insert(candidate.id as usize);
-                                    }
-                                }
-                            }
-                            _ => {
-                                return Err(narrowing::ambiguous_error(
-                                    Some(caps),
-                                    cap_idx,
-                                    &narrowed,
-                                ));
-                            }
+                        if apply_narrowed(
+                            target,
+                            Some(caps),
+                            cap_idx,
+                            providers,
+                            &full_provides,
+                            EmptyNarrowing::Error,
+                            &mut resolved_set,
+                            &mut rejected,
+                        )? {
+                            changed = true;
                         }
                     }
                 }
@@ -313,27 +297,17 @@ impl<'a> DependencyResolver<'a> {
                         let providers = self.registry.get_providers(ci);
                         if providers.len() > 1 {
                             narrowed_caps.insert(ci);
-                            let narrowed =
-                                narrowing::narrow_providers(providers.clone(), &full_provides);
-                            match narrowed.len() {
-                                1 => {
-                                    if resolved_set.insert(narrowed[0].id as usize) {
-                                        changed = true;
-                                    }
-                                    for candidate in providers {
-                                        if candidate.id != narrowed[0].id {
-                                            rejected.insert(candidate.id as usize);
-                                        }
-                                    }
-                                }
-                                0 => {}
-                                _ => {
-                                    return Err(narrowing::ambiguous_error(
-                                        Some(caps),
-                                        ci,
-                                        &narrowed,
-                                    ));
-                                }
+                            if apply_narrowed(
+                                target,
+                                Some(caps),
+                                ci,
+                                providers,
+                                &full_provides,
+                                EmptyNarrowing::Ignore,
+                                &mut resolved_set,
+                                &mut rejected,
+                            )? {
+                                changed = true;
                             }
                         }
                     }
@@ -403,6 +377,59 @@ impl<'a> DependencyResolver<'a> {
             order,
             target_names,
         })
+    }
+}
+
+/// How a contested capability with zero surviving providers resolves after
+/// narrowing. The two narrowing call sites differ exactly here: the
+/// dependency-driven branch treats it as a missing provider (strict error),
+/// while the abstract self-provision branch ignores it (the capability may
+/// simply have no other claimant).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmptyNarrowing {
+    Error,
+    Ignore,
+}
+
+/// Apply one narrowing outcome: run the shared `narrow_providers` pipeline
+/// over `providers`, insert a lone winner into `resolved_set`, record its
+/// rivals in `rejected`, and map zero/multiple survivors per `empty`.
+/// Returns whether `resolved_set` grew. Both narrowing branches (missing
+/// dependencies and abstract self-provision) delegate here — their only
+/// behavioral difference is the `empty` policy.
+fn apply_narrowed(
+    target: &Target,
+    caps: Option<&CapabilityRegistry>,
+    cap_idx: usize,
+    providers: Vec<&Target>,
+    full_provides: &HashSet<usize>,
+    empty: EmptyNarrowing,
+    resolved_set: &mut HashSet<usize>,
+    rejected: &mut HashSet<usize>,
+) -> Result<bool, ResolverError> {
+    let narrowed = narrowing::narrow_providers(providers.clone(), full_provides);
+    match narrowed.len() {
+        0 => match empty {
+            EmptyNarrowing::Error => Err(narrowing::missing_provider_error(
+                caps,
+                cap_idx,
+                &target.name,
+            )),
+            EmptyNarrowing::Ignore => Ok(false),
+        },
+        1 => {
+            let mut changed = false;
+            if resolved_set.insert(narrowed[0].id as usize) {
+                changed = true;
+            }
+            for candidate in providers {
+                if candidate.id != narrowed[0].id {
+                    rejected.insert(candidate.id as usize);
+                }
+            }
+            Ok(changed)
+        }
+        _ => Err(narrowing::ambiguous_error(caps, cap_idx, &narrowed)),
     }
 }
 

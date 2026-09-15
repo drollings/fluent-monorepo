@@ -3,7 +3,7 @@
 //! the existing request/result nodes. LOD0 (full text) and LOD5 (label) stay
 //! eager via the store; LOD1–LOD4 derive lazily from LOD0 as usual.
 //!
-//! ROADMAP §14.1 extends the metadata with the interlingua frame: per-sentence
+//! The metadata carries the interlingua frame: per-sentence
 //! content-addressed ids, the confidence summary (C1), and the review status.
 //! The same ids are mirrored into the durable `interlingua_index` table
 //! (migration 5) so the router can query which ids attached to which parse
@@ -101,7 +101,7 @@ pub fn record_parse_node(
 
 /// Persist a parse node with its C1 confidence summary + per-token confidence
 /// **and** mirror the interlingua ids into `interlingua_index` — the single
-/// consolidated write path (ROADMAP_20260828_ORT M1.3, DRY). The node's
+/// consolidated write path. The node's
 /// `review_status` is `unreviewed`; the durable index rows are written in the
 /// same ledger call so a live dispatch populates the index exactly as the
 /// test path (`record_parse_node`) does. `record_parse_node` is a thin wrapper
@@ -121,8 +121,8 @@ pub fn record_parse_node_with_confidence(
     Ok(id)
 }
 
-/// Populate the durable `interlingua_index` rows for a parse node (ROADMAP
-/// §14.3/13.3): one row per role id per sentence, mirroring the metadata.
+/// Populate the durable `interlingua_index` rows for a parse node:
+/// one row per role id per sentence, mirroring the metadata.
 /// Written in the same transaction as the node itself.
 pub fn populate_interlingua_index(
     ledger: &ContentNodeLedger,
@@ -179,8 +179,8 @@ pub fn is_parse_node(node: &ContentNode) -> bool {
         == Some(NLP_PARSE_KIND)
 }
 
-/// The metadata `kind` discriminator for parse-review nodes (ROADMAP §12.7,
-/// C7 — the corrections → workflow-extraction handoff).
+/// The metadata `kind` discriminator for parse-review nodes
+/// (the corrections → workflow-extraction handoff).
 pub const PARSE_REVIEW_KIND: &str = "parse_review";
 
 /// Build the `parse_review` ledger node persisted on a review **miss** (an LLM

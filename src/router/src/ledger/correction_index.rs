@@ -1,8 +1,7 @@
-//! The router's [`CorrectionIndex`] over the `interlingua_index` table
-//! (ROADMAP §12.5, F4).
+//! The router's [`CorrectionIndex`] over the `interlingua_index` table.
 //!
 //! `interlingua_index` is the router's durable **correction index** *and* the
-//! audit of which ids were attached to which parse node (§14.2). Pattern-cache
+//! audit of which ids were attached to which parse node. Pattern-cache
 //! rows (the `(lemma_id, entity_id) → corrections` map) use the sentinel
 //! [`PATTERN_NODE`] node id and `role = "correction"` so they never collide
 //! with real parse-node audit rows (which carry a real `node_id`).
@@ -21,7 +20,7 @@ pub const PATTERN_NODE: i64 = 0;
 /// Role discriminating correction-cache rows from per-node audit rows.
 const CORRECTION_ROLE: &str = "correction";
 
-/// One correction-pattern cache row (ROADMAP §12.5). `entity_id` is `0` when
+/// One correction-pattern cache row. `entity_id` is `0` when
 /// the pattern is not entity-scoped. Used by the atomic review write
 /// (`ContentNodeStore::apply_review`) so the correction + `review_status` +
 /// `parse_review` node commit in one SQLite transaction (§12.6).

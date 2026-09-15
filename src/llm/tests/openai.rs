@@ -1,13 +1,10 @@
-//! ROADMAP_20260903_LLM M7.3 — OpenAI envelope goldens (moved, not copied).
+//! OpenAI envelope goldens.
 //!
 //! Canonical home for the OpenAI wire-format goldens: request-body builder
 //! defaults, stream-delta parsing, normalization, and the error envelope.
 //! Converted from a `#[path]`-included unit-test module to an integration
 //! `[[test]]` target (M6 `constants` precedent; owner modules carry no test
-//! submodule). The `error_response == legacy error_value` parity lock lived
-//! here through M10 (`error_response(msg, "invalid_request_error")`
-//! byte-identical to the `common_core::http::error_value(msg)` shim — no
-//! behavior change, verified); M11 deleted it with the shim.
+//! submodule).
 
 use fluent_llm::openai::*;
 use serde_json::json;
@@ -244,10 +241,7 @@ fn error_response_format() {
     assert_eq!(out["error"]["type"], "invalid_request_error");
 }
 
-// NOTE (ROADMAP_20260903_LLM M11): the `parity_error_response_eq_legacy_
-// error_value` dual-path test died with the `common_core::http::error_value`
-// shim it pinned (M7 verified the shape identical, no behavior change).
-// The owner `error_response` goldens above are the lasting contract.
+// The `error_response` goldens above are the lasting contract.
 
 #[test]
 fn messages_to_json_passthrough() {

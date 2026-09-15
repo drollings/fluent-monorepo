@@ -326,3 +326,38 @@ async fn test_chat_complete_unreachable_endpoint_is_http_error() {
     assert!(matches!(err, LlmError::Http(_)));
     assert!(err.is_retryable());
 }
+
+#[tokio::test]
+async fn test_client_ctors_agree_on_base_and_model() {
+    // The single-construction seam: every constructor trims the trailing
+    // slash and carries model/config identically; no call site builds the
+    // struct literally.
+    let queue = std::sync::Arc::new(crate::protocol::LlmRequestQueue::new(
+        fluent_concurrency::tokio_runtime(),
+        &crate::protocol::LlmQueueConfig {
+            worker_count: 1,
+            queue_capacity: 4,
+        },
+        crate::llm_queue::default_handler(),
+    ));
+    let config = LlmConfig::new()
+        .api_url("http://localhost:11434/v1/".into())
+        .model("llama3".into())
+        .think(true)
+        .build();
+    let a = LlmClient::new("http://localhost:11434/v1/", "llama3");
+    let b = LlmClient::with_queue("http://localhost:11434/v1/", "llama3", std::sync::Arc::clone(&queue));
+    let c = LlmClient::with_config(config.clone());
+    let d = LlmClient::with_queue_and_config(std::sync::Arc::clone(&queue), config.clone());
+    for client in [&a, &b, &c, &d] {
+        assert_eq!(client.api_base, "http://localhost:11434/v1");
+        assert_eq!(client.model(), "llama3");
+    }
+    assert!(a.queue.is_none());
+    assert!(b.queue.is_some());
+    // `with_queue_and_config` preserves non-default fields that `with_queue`
+    // rebuilds away (the documented footgun).
+    assert_eq!(b.config.think, None);
+    assert_eq!(d.config.think, Some(true));
+    assert_eq!(c.config.think, Some(true));
+}

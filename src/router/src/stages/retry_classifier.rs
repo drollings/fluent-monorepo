@@ -133,7 +133,7 @@ impl RetryClassifier {
     /// `is_fallback` reads off the `WorkOutput` boundary, without the
     /// serialize round-trip).
     fn is_fallback_decision(decision: &crate::pipeline_types::StageDecision) -> bool {
-        crate::pipeline_types::StageMetadata::from(decision.metadata.clone())
+        crate::pipeline_types::StageMetadata::metadata_ref(&decision.metadata)
             .fallback()
             .unwrap_or(false)
     }

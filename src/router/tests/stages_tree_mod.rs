@@ -844,7 +844,7 @@ fn engine_sends_auto_generated_prompt_to_backend() {
         captured[0]
     );
 }
-// ── match_interlingua Filter nodes (ROADMAP §14.6, C6) ──────────────
+// ── match_interlingua Filter nodes ──────────────
 
 /// A tree whose root classifier carries a report-terminal and an
 /// interlingua filter that soft-redirects "show/display/get the report"

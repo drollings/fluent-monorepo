@@ -1,5 +1,5 @@
 use super::*;
-use common_core::vector_math::cosine_similarity_f32;
+use vector_math::cosine_similarity_f32;
 
 // ── PromptBuilder golden strings (risk #5: byte-for-byte contract) ──
 

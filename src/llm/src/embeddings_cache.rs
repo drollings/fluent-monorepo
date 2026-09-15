@@ -1,16 +1,12 @@
-//! Embedding-cache DDL — the single owner (ROADMAP_20260903_LLM M5).
+//! Embedding-cache DDL — the single owner.
 //!
-//! Moved verbatim from `common_core::sqlite` (`EMBEDDING_CACHE_SCHEMA` +
-//! `init_embedding_cache`). This schema was already deduped once (from
-//! `coral` + `search-vector` into `common-core`); this finishes the move to
-//! the domain owner, so the DDL string has exactly one source of truth.
+//! The `EMBEDDING_CACHE_SCHEMA` + `init_embedding_cache` schema was deduped
+//! from `coral` + `search-vector` into one source of truth here.
 //! Generic helpers (`open_wal`, `open_in_memory`, `open_shared_in_memory`,
-//! `run_batch`, `make_hnsw`, `is_unique_violation`, `in_clause`) stay in
-//! `common_core::sqlite`.
+//! `run_batch`, `make_hnsw`, `is_unique_violation`, `in_clause`) live in
+//! `fluent_db::sqlite`.
 //!
-//! M11 deleted the `common-core::sqlite` byte-identical shim copies (kept
-//! through M10 under `#[deprecated]`); the owner goldens in
-//! `tests/embeddings_cache.rs` are the lasting contract.
+//! The owner goldens in `tests/embeddings_cache.rs` are the lasting contract.
 //!
 //! Calibration (roadmap §1, M10): `UNIQUE(query_hash)` is identity, not
 //! quality — cached-embedding reuse is key-equality, never similarity.

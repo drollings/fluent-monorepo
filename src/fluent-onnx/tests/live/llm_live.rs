@@ -1,4 +1,4 @@
-//! Live-AI probe for the LFM2.5-2.6B `CausalLm` ONNX export (ROADMAP M1 §5).
+//! Live-AI probe for the LFM2.5-2.6B `CausalLm` ONNX export.
 //!
 //! This is the **empirical grounding** the M1 decoder is built against: it
 //! loads `onnx/model_q4.onnx`, prints the session's declared inputs/outputs
@@ -10,8 +10,8 @@
 //!
 //! Compiled only under the `live-ai` feature, `#[ignore]`d, run via
 //! `make ort-test-live` / `make test-live`. Env contract:
-//! `ORT_LIVE_LLM_MODEL` — the model directory (defaults to the ROADMAP wiring
-//! point `/ai/models/lfm2/2.6b/LiquidAI/LFM2.5-2.6B-ONNX`). When absent the
+//! `ORT_LIVE_LLM_MODEL` — the model directory (defaults to
+//! `/ai/models/lfm2/2.6b/LiquidAI/LFM2.5-2.6B-ONNX`). When absent the
 //! test skips cleanly.
 
 use std::collections::BTreeMap;

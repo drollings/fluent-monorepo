@@ -1,4 +1,4 @@
-//! Span-level detail cache for refiner output (ROADMAP_20260831_ARCEAGER M6.1).
+//! Span-level detail cache for refiner output.
 //!
 //! A repeated span need not re-consult a model: the corrections produced for
 //! a focus span are cached content-addressably and replayed on the next

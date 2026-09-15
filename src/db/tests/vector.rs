@@ -315,3 +315,18 @@ fn q8_knn_skips_dimension_mismatches() {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].0, "good");
 }
+
+#[test]
+fn brute_force_index_resolves_names_first_wins() {
+    let index = BruteForceIndex {
+        entries: vec![
+            (fluent_types::NodeId(1), vec![1.0, 0.0], "first".to_string()),
+            (fluent_types::NodeId(1), vec![1.0, 0.0], "second".to_string()),
+            (fluent_types::NodeId(2), vec![0.0, 1.0], "other".to_string()),
+        ],
+    };
+    let hits = index.knn(&[1.0, 0.0], 2);
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].node_id, fluent_types::NodeId(1));
+    assert_eq!(hits[0].name.as_str(), "first");
+}

@@ -1,4 +1,4 @@
-//! CORS headers — the single owner (ROADMAP_20260903_LLM M7).
+//! CORS headers — the single owner.
 //!
 //! Moved verbatim from `common_core::http` (`CORS_ALLOW_ORIGIN`,
 //! `CORS_ALLOW_METHODS`, `CORS_ALLOW_HEADERS`, `add_cors_headers`). CORS

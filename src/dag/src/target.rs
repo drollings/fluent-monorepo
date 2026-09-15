@@ -2,7 +2,7 @@ use bitvec::vec::BitVec;
 use bon::Builder;
 pub use fluent_types::{ExecutorKind, TargetType};
 use internment::ArcIntern;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::error::RegistryError;
 
@@ -88,12 +88,46 @@ impl TargetRegistry {
     }
 
     pub fn find_providers(&self, required: &BitVec) -> Vec<&Target> {
+        // Intersect the `providers` posting lists (smallest first) instead of
+        // scanning every target: the work is proportional to the candidate
+        // set, and no `BitVec` is cloned. An empty requirement matches every
+        // target (vacuous superset). A required bit with no posting list is
+        // unsatisfiable (strict superset semantics — out-of-range bits
+        // disqualify rather than being silently dropped).
+        let mut bits: Vec<usize> = required.iter_ones().collect();
+        if bits.is_empty() {
+            return self.targets.iter().collect();
+        }
+        if bits
+            .iter()
+            .any(|b| self.providers.get(b).is_none_or(Vec::is_empty))
+        {
+            return Vec::new();
+        }
+        bits.sort_by_key(|b| self.providers.get(b).map_or(0, Vec::len));
+        let mut candidates: HashSet<usize> = self.providers
+            .get(&bits[0])
+            .map(|post| post.iter().copied().collect())
+            .unwrap_or_default();
+        for b in &bits[1..] {
+            if let Some(post) = self.providers.get(b) {
+                candidates.retain(|c| post.contains(c));
+            }
+            if candidates.is_empty() {
+                return Vec::new();
+            }
+        }
+        // Insertion order (as before); the per-candidate superset check is a
+        // zero-alloc verification of the posting-list invariant that also
+        // tolerates provides vectors shorter than the requirement (`get`
+        // returns `None` instead of panicking).
         self.targets
             .iter()
             .filter(|t| {
-                let prov = &t.provides;
-                let missing: BitVec = required.clone() & !prov.clone();
-                missing.not_any()
+                candidates.contains(&(t.id as usize))
+                    && bits
+                        .iter()
+                        .all(|b| t.provides.get(*b).is_some_and(|x| *x))
             })
             .collect()
     }

@@ -93,10 +93,18 @@ impl WorkOutput {
         }
     }
 
-    /// Deserialize the `data` field back to a typed value (borrowed).
-    pub fn data_as<T: for<'de> Deserialize<'de>>(&self) -> Result<T, WorkError> {
-        serde_json::from_value(self.data.clone())
+    /// Deserialize the `data` field back to a typed value, borrowing it.
+    ///
+    /// Identical errors to [`WorkOutput::data_as`], without the intermediate
+    /// `Value` clone: deserialization reads directly from the stored value.
+    pub fn data_ref<'a, T: serde::Deserialize<'a>>(&'a self) -> Result<T, WorkError> {
+        T::deserialize(&self.data)
             .map_err(|e| WorkError::Execution(format!("deserialize data: {e}")))
+    }
+
+    /// Deserialize the `data` field back to a typed value (borrowed).
+    pub fn data_as<T: for<'de> serde::Deserialize<'de>>(&self) -> Result<T, WorkError> {
+        self.data_ref()
     }
 
     /// Deserialize the `data` field back to a typed value, consuming `self`.
@@ -250,14 +258,37 @@ impl WorkContext {
         self.outputs.get::<T>(key)
     }
 
+    /// Borrow a structured value by key, without cloning or deserializing.
+    ///
+    /// Returns `None` when the key is absent. This is the zero-copy reader
+    /// for the channel; [`WorkContext::structured`] (owned, deserializing)
+    /// delegates to it.
+    pub fn structured_ref(&self, key: &str) -> Option<&serde_json::Value> {
+        self.structured.get(key)
+    }
+
     /// Read a structured value by key, deserializing it to a typed value.
     /// The single place that does `serde_json::from_value` for the channel.
     pub fn structured<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<T, WorkError> {
-        let value = self.structured.get(key).ok_or_else(|| {
+        let value = self.structured_ref(key).ok_or_else(|| {
             WorkError::Execution(format!("structured metadata key not found: {key}"))
         })?;
-        serde_json::from_value(value.clone())
+        T::deserialize(value)
             .map_err(|e| WorkError::Execution(format!("structured metadata key {key:?}: {e}")))
+    }
+
+    /// Write a structured value by key, serializing a typed value.
+    /// The single place that does `serde_json::to_value` for the channel.
+    /// Returns `false` (leaving any previous value intact) when the value
+    /// has no JSON representation instead of silently skipping the write.
+    pub fn try_set_structured<T: serde::Serialize>(&mut self, key: &str, value: &T) -> bool {
+        match serde_json::to_value(value) {
+            Ok(v) => {
+                self.structured.insert(key.to_string(), v);
+                true
+            }
+            Err(_) => false,
+        }
     }
 
     /// Write a structured value by key, serializing a typed value.
@@ -265,9 +296,7 @@ impl WorkContext {
     /// A serialization failure is silently skipped (matches the typed-setter
     /// convention of `StageMetadata`).
     pub fn set_structured<T: serde::Serialize>(&mut self, key: &str, value: &T) {
-        if let Ok(v) = serde_json::to_value(value) {
-            self.structured.insert(key.to_string(), v);
-        }
+        let _ = self.try_set_structured(key, value);
     }
 
     /// Returns a new `WorkContext` with `rt` and `caps` cloned from the

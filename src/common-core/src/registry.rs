@@ -125,10 +125,14 @@ where
 /// hot paths. Values are shared as `Arc<V>` so callers hold a cheap clone that
 /// keeps the value alive independent of the registry.
 ///
+/// `Clone` shares the registry (the standard concurrent-handle semantic,
+/// like `Arc` itself): mutations through either handle are visible through
+/// both. For an independent key-set snapshot, use [`snapshot`].
+///
 /// Zero-domain: `K` and `V` are fully generic; no router/guidance/coral type
 /// leaks into `common-core`.
 pub struct ConcurrentRegistry<K, V> {
-    inner: RwLock<HashMap<K, Arc<V>>>,
+    inner: Arc<RwLock<HashMap<K, Arc<V>>>>,
 }
 
 impl<K, V> ConcurrentRegistry<K, V>
@@ -138,7 +142,21 @@ where
     /// Create an empty registry.
     pub fn new() -> Self {
         Self {
-            inner: RwLock::new(HashMap::new()),
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// An independent snapshot: a new registry with the same key-set and
+    /// shared values (`Arc`-cloned, so no value is duplicated), decoupled
+    /// for subsequent mutation. This is the previous `Clone` behavior,
+    /// now explicit — prefer shared `Clone` unless fork isolation is
+    /// actually required.
+    pub fn snapshot(&self) -> Self
+    where
+        K: Clone,
+    {
+        Self {
+            inner: Arc::new(RwLock::new(lock_read(&self.inner).clone())),
         }
     }
 
@@ -172,6 +190,12 @@ where
     /// infallible by design — fallible construction belongs at the call site
     /// (resolve first, then `remove`+insert on failure), matching the shared
     /// `Arc<V>` immutable-sharing contract.
+    ///
+    /// The constructor must not re-enter the registry (no `get`/`insert`/
+    /// `resolve_or_create` on this handle from inside `ctor`): it runs while
+    /// the write lock is held, so re-entry deadlocks. Debug builds assert
+    /// this with a thread-local re-entrancy guard; release builds rely on
+    /// the contract stated here.
     pub fn resolve_or_create(
         &self,
         key: K,
@@ -180,6 +204,7 @@ where
         if let Some(existing) = self.get(&key) {
             return existing;
         }
+        let _guard = ResolveGuard::enter(self);
         let mut guard = lock_write(&self.inner);
         if let Some(existing) = guard.get(&key) {
             return Arc::clone(existing);
@@ -209,14 +234,66 @@ where
     }
 }
 
-impl<K, V> Clone for ConcurrentRegistry<K, V>
-where
-    K: Clone,
-{
+impl<K, V> Clone for ConcurrentRegistry<K, V> {
+    /// Cheap shared-handle clone: both handles observe the same key-set
+    /// (like `Arc::clone`). For an independent key-set, use [`snapshot`].
     fn clone(&self) -> Self {
         Self {
-            inner: RwLock::new(lock_read(&self.inner).clone()),
+            inner: Arc::clone(&self.inner),
         }
     }
+}
+
+/// Debug-only re-entrancy guard for `resolve_or_create`: the constructor
+/// runs under the registry's write lock, so direct re-entry into the same
+/// registry self-deadlocks. The guard tracks active resolutions per
+/// registry address on a thread-local set and debug-asserts on re-entry;
+/// release builds compile it away entirely (zero cost, contract documented
+/// on the method). Panic-safe: the flag clears on unwind via `Drop`.
+struct ResolveGuard {
+    #[cfg(debug_assertions)]
+    addr: usize,
+}
+
+impl ResolveGuard {
+    fn enter<K, V>(reg: &ConcurrentRegistry<K, V>) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            let addr = std::ptr::from_ref(reg) as usize;
+            ACTIVE_RESOLVES.with(|active| {
+                let mut active = active.borrow_mut();
+                debug_assert!(
+                    !active.contains(&addr),
+                    "re-entrant resolve_or_create on the same registry deadlocks \
+                     (the constructor runs while the write lock is held)"
+                );
+                active.push(addr);
+            });
+            Self { addr }
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = reg;
+            Self {}
+        }
+    }
+}
+
+impl Drop for ResolveGuard {
+    fn drop(&mut self) {
+        #[cfg(debug_assertions)]
+        ACTIVE_RESOLVES.with(|active| {
+            let mut active = active.borrow_mut();
+            if let Some(pos) = active.iter().position(|a| *a == self.addr) {
+                active.remove(pos);
+            }
+        });
+    }
+}
+
+#[cfg(debug_assertions)]
+std::thread_local! {
+    static ACTIVE_RESOLVES: std::cell::RefCell<Vec<usize>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 

@@ -59,7 +59,7 @@ pub fn describe_work_unit(
     doc
 }
 
-/// Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
+/// Compatibility surface (scaffold).
 #[doc(hidden)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +88,7 @@ pub struct FieldSchema {
     pub parse: Option<String>,
 }
 
-/// Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
+/// Compatibility surface (scaffold).
 #[doc(hidden)]
 #[allow(dead_code)]
 pub trait SchemaProvider {
@@ -207,7 +207,7 @@ pub trait Component: FieldAccess + Describable + WorkUnit + Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-/// Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
+/// Compatibility surface (scaffold).
 /// Optional trait for components that can be persisted to storage.
 ///
 /// **Deferred:** This trait is a design placeholder — no blanket impl exists,

@@ -1,8 +1,8 @@
-//! Live subagent retrieval service — the M5/M6 live-dispatch seam (ROADMAP
+//! Live subagent retrieval service — the live-dispatch seam
 //! "Subagent tool surface" + "Ranking pipeline" follow-up).
 //!
-//! This module is the agent/subagent **tool owner** (ROADMAP_20260903_SPACY_RS_SPLIT
-//! M4 — moved here from `spacy-rs`): the hit tagging ([`RetrievalSource`] /
+//! This module is the agent/subagent **tool owner** (moved here from
+//! `spacy-rs`): the hit tagging ([`RetrievalSource`] /
 //! [`RetrievalHit`]), the embedding-driven fuzzy axis ([`EmbeddingProvider`] /
 //! [`FuzzyRetrieval`] / [`InMemoryFuzzyIndex`]), and the [`cross_check`]
 //! combiner live beside the [`NodeRetrievalService`] that wires them.
@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use common_core::score::top_k_by_score;
-use common_core::vector_math::cosine_similarity_f32;
+use search_vector::math::cosine_similarity_f32;
 use fluent_types::{ContentNode, NodeId};
 use spacy_rs::doc::SentStart;
 use spacy_rs::pipeline::NlpPipeline;

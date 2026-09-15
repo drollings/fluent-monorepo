@@ -45,6 +45,7 @@ fn llm_first_policy() -> RefinePolicy {
     }
 }
 
+#[ignore = "heavy (~2s): sqlite restart round-trip; run via `make test-heavy`"]
 #[test]
 fn strings_persist_across_restart() {
     let dir = tempfile::tempdir().expect("tmpdir");
@@ -432,7 +433,7 @@ fn signals_of(doc: &Doc) -> Vec<crate::routing::RoutingSignal> {
     crate::routing::extract_routing_signals(doc)
 }
 
-// ── Trained-encoder rung (ROADMAP_20260827_ORT §4.2) ──
+// ── Trained-encoder rung ──
 
 /// A stub encoder seam: given the doc, produce a valid star `AnnotationSet`
 /// whose records use the doc's own orth (check 1 passes by construction).
@@ -673,6 +674,7 @@ async fn frame_stage_runs_between_attach_and_resolve_in_the_dag() {
     assert!(doc.token(0).interlingua_lemma_id.is_some());
 }
 
+#[ignore = "heavy (~2s): full pipeline build per case; run via `make test-heavy`"]
 #[tokio::test]
 async fn resolver_stage_graph_includes_the_frame_stage() {
     let (pipe, _store) = en_pipeline_with_resolver();
@@ -793,7 +795,7 @@ fn encoder_source_rides_like_arc_eager() {
     assert_eq!(pc.overall, 0.6);
 }
 
-// ── M0.4 / M1.6 (ROADMAP_20260831_ARCEAGER): deterministic-first contract ──
+// ── Deterministic-first contract ──
 
 #[test]
 fn ladder_is_deterministic_first_base_wins() {
@@ -3045,6 +3047,7 @@ fn eager_annotator_is_shared_across_calls() {
     assert_eq!(before, after, "no rebuild across process_sync calls");
 }
 
+#[ignore = "heavy (~2s): full eager parse over the golden doc; run via `make test-heavy`"]
 #[test]
 fn eager_output_matches_pinned_golden() {
     // Per-item records snapshot over the parse-bench corpus. The fixture is

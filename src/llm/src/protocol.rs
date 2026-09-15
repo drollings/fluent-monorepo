@@ -1,4 +1,4 @@
-//! LLM protocol + request queue — the single owner (ROADMAP_20260903_LLM M9).
+//! LLM protocol + request queue — the single owner.
 //!
 //! Moved verbatim from `fluent_concurrency::llm_queue`: the protocol data
 //! types (`ChatMessage`, `LlmConfig` + `bon` builder, `LlmError` +

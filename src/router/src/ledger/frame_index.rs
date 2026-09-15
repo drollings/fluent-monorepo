@@ -1,6 +1,5 @@
 //! Frame resolution — the router's implementation of the spacy-rs
 //! [`PreferredSenseIndex`] seam and the wave-batched [`FrameResolutionWorker`]
-//! (ROADMAP M3, G7/G8).
 //!
 //! **Sense promotion** reuses the `interlingua_index` pattern-cache rows
 //! exactly like `SqliteCorrectionIndex` (the golden-corpus rule-genesis flow),

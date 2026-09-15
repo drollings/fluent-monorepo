@@ -28,10 +28,9 @@ getrandom = { workspace = true }
 [dev-dependencies]
 httpmock = { workspace = true }
 tempfile = { workspace = true }
-# Test-only unification: the `embeddings_cache` parity test exercises the
-# M5–M10 deprecated `common_core::sqlite` shims, which need the `sqlite`
-# feature. Normal builds keep `common-core` at `["http"]` only.
-common-core = { path = "../common-core", features = ["sqlite"] }
+# Test-only: the `embeddings_cache` suite composes `fluent_db::sqlite`.
+# Normal builds keep `common-core` at `["http"]` only.
+fluent-db = { path = "../db" }
 [features]
 live-ai = []
 

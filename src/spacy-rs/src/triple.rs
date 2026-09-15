@@ -1,5 +1,5 @@
-//! Deterministic RDF triple extraction (ROADMAP M3) + the knowledge-half
-//! seam for YaGO taxonomy plausibility (ROADMAP_20260903_SPACY_RS_SPLIT M5).
+//! Deterministic RDF triple extraction + the knowledge-half
+//! seam for YaGO taxonomy plausibility.
 //!
 //! Derives `(subject, predicate, object)` triples from the ArcEager roles
 //! (`nsubj`/`dobj` filling `role_coverage`) — the same dependency-tree

@@ -169,7 +169,7 @@ impl InstancePool {
         }
     }
 
-    /// ROADMAP M7 resize-to-demand: when the dispatch path targets a named
+    /// Resize-to-demand: when the dispatch path targets a named
     /// context and the caller's declared context need (`num_ctx`) exceeds the
     /// profile's allocated `n_ctx` but stays under its `max_ctx`, resize the
     /// instance via the fork's `client.resize` before dispatching. A need

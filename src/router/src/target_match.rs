@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common_core::registry::ConcurrentRegistry;
-use fluent_concurrency::pool::Limiter;
+use fluent_concurrency::pool::{Limiter, ResultPool};
 use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
 use fluent_wvr::prelude::*;
@@ -526,6 +526,27 @@ impl TargetMatcher {
     /// assessment (including non-matching ones) emits an `AssessmentRecord`
     /// plus an audit event, not just the winner.
     ///
+    /// Concurrency shape: the reachable suffix (`candidates[start..]`) is
+    /// assessed concurrently through a `ResultPool` (the same primitive
+    /// team mode uses for fan-out), bounded by the existing `Limiter` — no
+    /// new concurrency knob. The completed assessments are then walked
+    /// **in candidate order**, so match decisions, the `assessments`
+    /// vector, and audit content + order are byte-identical to the old
+    /// sequential walk.
+    ///
+    /// Accepted tradeoff: every reachable candidate is assessed even when
+    /// an early one matches — the sequential walk short-circuited the
+    /// later LLM calls, the fan-out spends them. With typical group sizes
+    /// (2–4 members) the wasted calls are bounded and the latency win
+    /// (slowest assessment, not the sum) dominates. Later results are
+    /// computed but discarded, never recorded or audited.
+    ///
+    /// Signal status: the assessed `complexity` is the candidate model's
+    /// self-reported doubt about the prompt — producer self-doubt, not a
+    /// measurement of answer correctness. Failure (call error or
+    /// unparseable reply) escalates conservatively and is never cached or
+    /// promoted into any persistent index as a correctness label.
+    ///
     /// `route` is the resolved route name (the primary's `target_name`),
     /// `group` its model group. `candidates` is the group's ordered member
     /// list. `routing` supplies the `ModelEntry`s for fallback construction and
@@ -550,11 +571,17 @@ impl TargetMatcher {
         }
 
         let start = start_index(candidates, classifier_complexity);
+        let suffix = &candidates[start..];
+        // Positional: `results[i]` is the assessment of `suffix[i]`. The
+        // fan-out only reorders *completion*; this vector restores candidate
+        // order before anything observable happens.
+        let results = self.assess_suffix(suffix, user_text);
         let mut assessments: Vec<AssessmentRecord> = Vec::with_capacity(candidates.len());
         let mut matched_index = candidates.len() - 1;
 
-        for (i, candidate) in candidates.iter().enumerate().skip(start) {
-            let assessed = self.assess(candidate, user_text);
+        for (offset, candidate) in suffix.iter().enumerate() {
+            let i = start + offset;
+            let assessed = &results[offset];
             let reason = assessed
                 .as_ref()
                 .ok()
@@ -631,6 +658,98 @@ impl TargetMatcher {
             primary: match_target,
             assessments,
         })
+    }
+
+    /// Assess the reachable suffix concurrently, returning one outcome per
+    /// candidate in suffix order. Single-candidate suffixes take the direct
+    /// path (exactly one backend call, no runtime needed); longer suffixes
+    /// fan out over a `ResultPool` whose workers run the same `assess`
+    /// (same limiter, same timeout, same conservative-error mapping).
+    /// Pool-level failures (queue full/closed, cancelled submit) degrade
+    /// to per-candidate assessment errors — the walk escalates past them
+    /// exactly as it does a failed LLM call.
+    fn assess_suffix(
+        &self,
+        suffix: &[TargetCandidate],
+        user_text: &str,
+    ) -> Vec<Result<SelfAssessment, WorkError>> {
+        if suffix.len() <= 1 {
+            return suffix
+                .iter()
+                .map(|candidate| self.assess(candidate, user_text))
+                .collect();
+        }
+        let jobs: Vec<(TargetCandidate, String)> = suffix
+            .iter()
+            .map(|candidate| (candidate.clone(), user_text.to_owned()))
+            .collect();
+        let fanout = Self::fanout_assessments(self.clone(), jobs);
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle)
+                if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread =>
+            {
+                tokio::task::block_in_place(|| handle.block_on(fanout))
+            }
+            // No ambient runtime (unit tests, CLI paths): a throwaway
+            // multi-thread runtime drives the same fan-out. Sized to the
+            // suffix — groups are 2–4 members, never a thread farm.
+            Err(_) => tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(suffix.len())
+                .enable_all()
+                .build()
+                .expect("build fan-out runtime for target self-assessment")
+                .block_on(fanout),
+            // Current-thread runtime: `block_on` cannot run here (and the
+            // pool workers' own `run_sync` bridge needs multi-thread to
+            // re-enter), so fall back to the sequential walk. Timing only —
+            // decisions, records, and audit order are identical.
+            Ok(_) => suffix
+                .iter()
+                .map(|candidate| self.assess(candidate, user_text))
+                .collect(),
+        }
+    }
+
+    /// Drive one `ResultPool` over the suffix jobs and collect outcomes in
+    /// job order. One submitter task per job (so all submits overlap), one
+    /// worker per job (so no submit ever blocks on pool capacity), then an
+    /// in-order join — completion order never leaks into the results.
+    async fn fanout_assessments(
+        matcher: TargetMatcher,
+        jobs: Vec<(TargetCandidate, String)>,
+    ) -> Vec<Result<SelfAssessment, WorkError>> {
+        let pool = Arc::new(ResultPool::new(
+            fluent_concurrency::tokio_runtime(),
+            jobs.len(),
+            jobs.len(),
+            move |job: (TargetCandidate, String)| {
+                let matcher = matcher.clone();
+                async move {
+                    Ok::<Result<SelfAssessment, WorkError>, std::convert::Infallible>(
+                        matcher.assess(&job.0, &job.1),
+                    )
+                }
+            },
+        ));
+        let mut submitters = Vec::with_capacity(jobs.len());
+        for job in jobs {
+            let pool = Arc::clone(&pool);
+            submitters.push(tokio::spawn(async move { pool.submit(job).await }));
+        }
+        let mut results = Vec::with_capacity(submitters.len());
+        for submitter in submitters {
+            let assessed = match submitter.await {
+                Ok(Ok(assessed)) => assessed,
+                Ok(Err(_)) | Err(_) => Err(WorkError::Execution(
+                    "self-assessment fan-out submit failed — escalating".into(),
+                )),
+            };
+            results.push(assessed);
+        }
+        if let Ok(pool) = Arc::try_unwrap(pool) {
+            pool.shutdown().await;
+        }
+        results
     }
 
     /// One self-assessment call: build the fixed prompt, run through the
@@ -797,6 +916,10 @@ impl TargetMatcher {
 #[cfg(test)]
 #[path = "../tests/target_match.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/target_match_order.rs"]
+mod target_match_order_tests;
 
 #[cfg(test)]
 #[path = "../tests/routing_sentinel_golden.rs"]

@@ -12,6 +12,23 @@ pub(crate) struct ClosureCtx<'a> {
     pub strict: bool,
 }
 
+/// The shared implicit-name fallback: a capability with no registered
+/// providers resolves to the target whose name matches the capability name
+/// (NarrowOne only — callers pass `caps` through only in that mode).
+/// Returns the provider's bit index, or `None` when there is no name match.
+/// Pure lookup — rejection/visited guards and strict-error policy stay with
+/// the callers (`transitive_closure` below and the resolver's narrowing
+/// loop), whose control flow differs.
+pub(crate) fn implicit_provider_bit(
+    registry: &TargetRegistry,
+    caps: Option<&CapabilityRegistry>,
+    cap_idx: usize,
+) -> Option<usize> {
+    let caps = caps?;
+    let cap_name = caps.get_name(cap_idx)?;
+    registry.get(&cap_name).map(|t| t.id as usize)
+}
+
 /// DFS over `depends` edges pushing all non-rejected, non-visited providers.
 ///
 /// For each required capability:
@@ -50,17 +67,12 @@ pub(crate) fn transitive_closure(
             let providers = ctx.registry.get_providers(cap_idx);
 
             if providers.is_empty() {
-                if let Some(caps) = ctx.caps {
-                    if let Some(cap_name) = caps.get_name(cap_idx) {
-                        if let Some(implicit) = ctx.registry.get(&cap_name) {
-                            let p_bit = implicit.id as usize;
-                            let skip = rejected.is_some_and(|r| r.contains(&p_bit));
-                            if !visited.contains(&p_bit) && !skip {
-                                stack.push(p_bit);
-                            }
-                            continue;
-                        }
+                if let Some(p_bit) = implicit_provider_bit(ctx.registry, ctx.caps, cap_idx) {
+                    let skip = rejected.is_some_and(|r| r.contains(&p_bit));
+                    if !visited.contains(&p_bit) && !skip {
+                        stack.push(p_bit);
                     }
+                    continue;
                 }
                 if ctx.strict {
                     return Err(narrowing::missing_provider_error(

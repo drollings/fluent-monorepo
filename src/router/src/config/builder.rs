@@ -58,7 +58,7 @@ pub enum TargetMatchMode {
     Static,
 }
 
-/// NLP annotation ordering (ROADMAP_20260827_ORT §2.7). `LlmFirst` (the
+/// NLP annotation ordering. `LlmFirst` (the
 /// default) preserves today's behavior: the LLM annotation rung runs first
 /// when a fetch is wired, with ArcEager/rule beneath. `DeterministicFirst`
 /// skips the up-front annotation LLM call and lets the `overlay` stage consult
@@ -171,11 +171,11 @@ pub struct PipelineParams {
     /// Optional redirect gate (OFF by default): when set AND the zero-shot
     /// eval corpus gate passes, a top overlay hint at/above the threshold can
     /// turn into a `Rerouted` classifier verdict. Inert until the ≥100-case
-    /// golden corpus lands (see ROADMAP_20260827_ORT §2.6a).
+    /// golden corpus lands.
     #[serde(default)]
     pub overlay_redirect_threshold: Option<f64>,
     /// The `encoder` role (or literal registry key) for the trained-encoder
-    /// annotation rung (ROADMAP_20260827_ORT §4.4). Names a role from the
+    /// annotation rung. Names a role from the
     /// roles table — its head candidate serves — or a literal `onnx/<role>`
     /// key. When set and the resolved key is registered in the ort registry,
     /// the NlpStage runs the encoder between the LLM and ArcEager rungs.
@@ -183,8 +183,8 @@ pub struct PipelineParams {
     /// from today's behavior.
     #[serde(default)]
     pub encoder_model: Option<String>,
-    /// Refinement policy for the deterministic-first annotation ladder
-    /// (ROADMAP_20260831_ARCEAGER M4.1). When `Some`, this DTO is converted
+    /// Refinement policy for the deterministic-first annotation ladder.
+    /// When `Some`, this DTO is converted
     /// `Into<spacy_rs::RefinePolicy>` verbatim; when `None` (default), the
     /// effective policy follows `nlp_ordering` — `LlmFirst` ⇒ `Always`,
     /// `DeterministicFirst` ⇒ `OnUncertain` with default thresholds — so
@@ -287,7 +287,7 @@ fn default_classifier_concurrency() -> usize {
 }
 
 /// NLP dependencies threaded into the pipeline builder from the composition
-/// root (ROADMAP_20260828_ORT M1.1/M1.2). The concept store (built over the
+/// root. The concept store (built over the
 /// shared ledger connection **before** pipeline build) backs the interlingua
 /// resolver; the optional strings path wires the durable `StringStore` (G9).
 /// `Default` is fully fail-open: no resolver, in-memory strings — byte-identical
@@ -453,7 +453,7 @@ impl RouterConfig {
     }
 
     /// Build a named pipeline with an injected classifier backend and the boot
-    /// ort registry (ROADMAP_20260827_ORT §2.5). The registry supplies the
+    /// ort registry. The registry supplies the
     /// overlay `Arc`s for `PipelineParams.overlay_models`; `None` (or absent
     /// onnx config) is fully fail-open — the overlay stage is skipped.
     ///
@@ -491,8 +491,8 @@ impl RouterConfig {
     }
 
     /// [`Self::build_named_pipeline_with_backend_and_onnx`] plus the NLP
-    /// dependencies (concept store + optional durable strings path,
-    /// ROADMAP_20260828_ORT M1.2). When `nlp: true` and a concept store is
+    /// dependencies (concept store + optional durable strings path).
+    /// When `nlp: true` and a concept store is
     /// present, the NLP pipeline is built with an `InterlinguaResolver` so the
     /// `NlpStage` stamps interlingua ids; otherwise it fails open with a
     /// `warn!`.
@@ -546,7 +546,7 @@ impl RouterConfig {
         }
 
         if nlp_cfg.enabled {
-            // The NLP parse stage (ROADMAP_20260831_ARCEAGER M4): the pipeline
+            // The NLP parse stage: the pipeline
             // is built with an `InterlinguaResolver` when the boot supplied a
             // concept store (M1.2); with `None` it fails open to `en_default()`.
             // The annotation LLM call is now a **refiner** gated by a
@@ -590,7 +590,7 @@ impl RouterConfig {
                         .clone()
                         .or_else(|| build_classifier_client(self, name, params))
                         .or_else(|| self.onnx_llm_backend())
-                        .map(crate::stages::nlp::annotation_fetch);
+                        .map(crate::stages::nlp::chat_backend_to_fetch_sync);
                     let llm_rung = fetch.is_some();
                     // Build the trained-encoder annotation seam from the
                     // `encoder` role: the `encoder_model` knob names a role
@@ -906,7 +906,7 @@ impl RouterConfig {
     }
 
     /// Build every pipeline, supplying the boot ort registry to the overlay
-    /// wiring (ROADMAP_20260827_ORT §2.5).
+    /// wiring.
     pub fn build_all_pipelines_with_backend_and_onnx(
         &self,
         classifier_backend: Option<&Arc<dyn ChatBackend>>,
@@ -930,7 +930,7 @@ impl RouterConfig {
     }
 
     /// [`Self::build_all_pipelines_with_backend_and_onnx`] plus the NLP
-    /// dependencies (ROADMAP_20260828_ORT M1.2). Composition roots that built a
+    /// dependencies. Composition roots that built a
     /// concept store before pipeline build thread it here so `nlp: true`
     /// pipelines resolve interlingua ids end-to-end.
     pub fn build_all_pipelines_with_backend_onnx_and_nlp(
@@ -1374,7 +1374,7 @@ impl RouterConfig {
     /// classifier model key), then targets the named `ledger` instance via
     /// `local_backend_for_instance`.
     /// When no llama `ledger` instance resolves (or no explicit key is set),
-    /// it falls back to the onnx LLM backend (ROADMAP M2.6) — the generative
+    /// it falls back to the onnx LLM backend — the generative
     /// onnx model is the default enrichment backend, config-driven via
     /// `config.onnx.llm`. Returns `None` when no backend resolves.
     pub fn summarizer_for_ledger(&self) -> Option<crate::summarization::Summarizer> {
@@ -1391,7 +1391,7 @@ impl RouterConfig {
     /// `<base>:ledger` named-instance target as `summarizer_for_ledger` (no
     /// second HTTP client). `tier_model` (if given) wins over the ledger duty
     /// key, then the classifier model key. Falls back to the onnx
-    /// LLM backend (ROADMAP M2.6) when no llama `ledger` instance resolves.
+    /// LLM backend when no llama `ledger` instance resolves.
     /// Returns `None` when no backend resolves.
     pub fn ledger_tier_backend(&self, tier_model: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         self.ledger.as_ref()?;
@@ -1401,7 +1401,7 @@ impl RouterConfig {
         self.ledger_enrichment_backend(key)
     }
 
-    /// Resolve a ledger enrichment backend (ROADMAP M2.6): the explicit key's
+    /// Resolve a ledger enrichment backend: the explicit key's
     /// `<base>:ledger` named instance when one exists, else the onnx LLM
     /// backend (the default enrichment model, config-driven). `None` when
     /// neither resolves.
@@ -1433,8 +1433,9 @@ impl RouterConfig {
 
     /// Build the `LedgerAgentCoordinator` from the `ledger.orchestrator`
     /// section — the coordinator's only construction site. `None` when the
-    /// coordinator is not enabled (or no ledger section is present), so the
-    /// server's dispatch path is untouched unless a deployment opts in.
+    /// coordinator is opted out (`enabled = false`) or no ledger section is
+    /// present, so the server's dispatch path is untouched unless a deployment
+    /// carries a ledger without opting out (M14c default-on).
     ///
     /// Takes the already-composed shared dependencies (`store`, `sessions`,
     /// `kv`, `tiers`, `backend`) — the composition root (`main.rs`) owns their

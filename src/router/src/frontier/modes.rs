@@ -5,7 +5,8 @@
 //! modes" enum, which never matched the VISION ladder).  Stages are tried
 //! in order (filter → question → team → turnover) after every local model
 //! in a `model_group` fails.  The ladder *runtime* lives in
-//! `crate::dispatch::escalation`; this module owns the taxonomy plus the
+//! `crate::dispatch::escalation` (mode implementations in
+//! `dispatch/escalation/modes.rs`); this module owns the taxonomy plus the
 //! audit types it writes to.
 
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,4 @@
-//! LLM-domain constants — the single owner (ROADMAP_20260903_LLM M6).
+//! LLM-domain constants — the single owner.
 //!
 //! Moved verbatim from `common_core::constants`: `MAX_EMBEDDING_DIMENSIONS`
 //! (the embedding width every provider and HNSW store agrees on) and the

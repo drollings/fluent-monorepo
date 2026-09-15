@@ -10,7 +10,13 @@ fluent-types = { path = "../types" }
 # M3 (spacy-rs split): the neutral ConceptStore/TaxonomyHierarchy home.
 fluent-concept = { path = "../concept" }
 guidance-rdf = { path = "../rdf" }
+# Shared layers: generic registries/sync/string/score (common-core) and the
+# dependency-graph + transitive-closure index (fluent-dag) replace the local
+# hand-rolled graph, registry, and lock helpers.
+common-core = { path = "../common-core" }
+fluent-dag = { path = "../dag" }
 blake3 = { workspace = true }
+regex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

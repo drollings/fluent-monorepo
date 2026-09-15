@@ -1507,6 +1507,49 @@ mod tests {
         output.data_as().expect("pipeline result")
     }
 
+    /// A backend that replays `responses` in order (the classifier verdict
+    /// first), then repeats `fallback` for every later call. The ladder
+    /// assesses its reachable suffix concurrently, so a shared queue cannot
+    /// deterministically map assessment responses to candidates — every
+    /// suffix member instead receives the same `fallback`, and the test
+    /// asserts the routing outcome that mapping determines.
+    struct QueueThenBackend {
+        queue: std::sync::Mutex<std::collections::VecDeque<String>>,
+        fallback: String,
+    }
+
+    impl fluent_llm::client::ChatBackend for QueueThenBackend {
+        fn chat_complete(
+            &self,
+            _messages: &[fluent_llm::ChatMessage],
+        ) -> Result<String, fluent_llm::LlmError> {
+            let mut queue = self.queue.lock().expect("backend queue");
+            Ok(queue.pop_front().unwrap_or_else(|| self.fallback.clone()))
+        }
+    }
+
+    fn run_ladder_pipeline_with_fallback(
+        config: &crate::config::RouterConfig,
+        responses: Vec<String>,
+        fallback: String,
+    ) -> crate::pipeline::PipelineResult {
+        let backend: Arc<dyn fluent_llm::client::ChatBackend> =
+            Arc::new(QueueThenBackend {
+                queue: std::sync::Mutex::new(responses.into()),
+                fallback,
+            });
+        let pipeline = flat_engine_pipeline(config, &[("code", "code")], backend);
+        let mut ctx = WorkContext::default();
+        ctx.set_structured(
+            "request",
+            &serde_json::json!({
+                "model": "test",
+                "messages": [{"role": "user", "content": "help me write a sort"}],
+            }),
+        );
+        let output = pipeline.execute(&ctx).expect("pipeline executes");
+        output.data_as().expect("pipeline result")
+    }
     fn classifier_verdict(complexity: u8, target: &str) -> String {
         serde_json::json!({
             "action": "route",
@@ -1531,18 +1574,15 @@ mod tests {
 
     #[test]
     fn target_match_ladder_climbs_to_more_intelligent_member() {
-        // Classifier routes to "code" with complexity 1 (start index 0 →
-        // swarm self-assesses first). Swarm reports 7 > its intelligence 2 →
-        // escalate; qwen3.6-27b reports 5 <= 6 → match. The matched target is
-        // the more-intelligent member, exactly 2 self-assessment calls made.
+        // Classifier routes to "code" with complexity 1 (start index 0).
+        // Both suffix members assess 7: swarm 7 > 2 → escalate, qwen3.6-27b
+        // 7 > 6 → no match but last-always-wins terminates there. The
+        // matched target is the more-intelligent member.
         let config = ladder_config("self_assess");
-        let result = run_ladder_pipeline(
+        let result = run_ladder_pipeline_with_fallback(
             &config,
-            vec![
-                classifier_verdict(1, "code"),
-                assessment(7, "hard"),
-                assessment(5, "ok"),
-            ],
+            vec![classifier_verdict(1, "code")],
+            assessment(7, "hard"),
         );
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
@@ -1559,14 +1599,14 @@ mod tests {
 
     #[test]
     fn target_match_ladder_matches_first_qualifying_member() {
-        // Swarm self-assesses 1 <= 2 → matches immediately. The single
-        // assessment is enough to prove exactly one self-assessment call: an
-        // unexpected second call would pop `None` from the queue and escalate
-        // conservatively to qwen (last member), changing the result.
+        // Both suffix members assess 1: swarm 1 <= 2 → matches immediately.
+        // qwen's concurrent assessment is computed but discarded by the
+        // early match — the walk (and the audit trail) stops at swarm.
         let config = ladder_config("self_assess");
-        let result = run_ladder_pipeline(
+        let result = run_ladder_pipeline_with_fallback(
             &config,
-            vec![classifier_verdict(1, "code"), assessment(1, "easy")],
+            vec![classifier_verdict(1, "code")],
+            assessment(1, "easy"),
         );
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
@@ -1665,8 +1705,7 @@ mod tests {
     // (the system prompt teaches "ALWAYS dispatch"). The end-to-end,
     // config-derived always_route probe (that every declared always_route
     // route in env/coral-router.json actually dispatches) is owned by
-    // `config_route_tests.rs::always_route_routes_force_dispatch_over_classifier_respond`
-    // (see ROADMAP M2.4).
+    // `config_route_tests.rs::always_route_routes_force_dispatch_over_classifier_respond`.
 
     #[test]
     fn always_route_forces_dispatch_over_classifier_respond() {

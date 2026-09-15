@@ -1,5 +1,10 @@
+//! Consumer-perspective coverage for the raw SQLite helpers, now owned by
+//! `fluent_db::sqlite`. Complements the owner-side suite at
+//! `fluent-db --test ... ` (`src/db/tests/sqlite.rs`): this file pins the
+//! exact behaviors downstream crates rely on (pragma modes, shared-cache
+//! isolation, violation classification, placeholder shapes).
 #[cfg(feature = "sqlite")]
-use common_core::sqlite::*;
+use fluent_db::sqlite::*;
 #[cfg(feature = "sqlite")]
 
 
@@ -81,12 +86,9 @@ fn run_batch_executes_ddl() {
         conn.execute_batch("INSERT INTO t (id) VALUES (1)").unwrap();
 }
 
-// NOTE (ROADMAP_20260903_LLM M11): the `embedding_cache` DDL goldens moved to
-// `fluent-llm --test embeddings_cache` (canonical owner
-// `fluent_llm::embeddings_cache`) in M5, and M11 deleted the
-// `common_core::sqlite` shims (with the shim-lock test that pinned them).
-// The generic suites below (`open_*`, `run_batch`, `is_unique_violation`,
-// `in_clause`) stay.
+// The `embedding_cache` DDL goldens live with their canonical owner
+// (`fluent_llm::embeddings_cache`). The generic suites below (`open_*`,
+// `run_batch`, `is_unique_violation`, `in_clause`) pin the shared helpers.
 
 #[cfg(feature = "sqlite")]
 #[test]

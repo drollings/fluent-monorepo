@@ -393,7 +393,7 @@ fn borrowed_execute_and_query_rows_use_borrowed_params() {
 
     // `query_rows_from_iter_borrowed` — the dynamic-arity IN-clause path
     // the async helpers lack.
-    use common_core::sqlite::in_clause;
+    use crate::sqlite::in_clause;
     let names = vec!["alpha", "gamma"];
     let sql = format!(
         "SELECT name FROM t WHERE name IN ({})",

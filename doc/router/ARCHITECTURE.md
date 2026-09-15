@@ -92,11 +92,12 @@ The pipeline is an **ordered list** of `Arc<dyn Component>` stages built from
 config (`config/builder.rs::build_named_pipeline_*`). The two decision stages
 that resolve a request — the deterministic pre-filter and the classifier —
 are the load-bearing core; the NLP and overlay stages are opt-in **enrichment**
-between them (they publish parse/route context, never a verdict). The
-`PipelineStage::Router` enum variant (in `pipeline_types.rs`) is retained as a
-taxonomy slot; today it is only emitted by `PipelineOrchestrator` when a
-stage's `execute` returns an `Err` (the orchestrator records the failure as a
-`Router`-stage error decision before propagating).
+between them (they publish parse/route context, never a verdict). The removed
+`PipelineStage::Router` variant no longer exists (historical `"Router"` stage
+labels deserialize to `PipelineStage::Classifier` with a `warn!`; fresh
+telemetry never emits `"Router"`). Stage failures surface as
+`PipelineError::Stage` (`pipeline_types.rs`), which names the failing
+`PipelineStage` and carries the stage's `WorkError`.
 
 | Stage | File | Model call? | Produces |
 |-------|------|-------------|----------|

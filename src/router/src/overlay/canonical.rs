@@ -1,4 +1,4 @@
-//! The versioned canonical-form table (ROADMAP_20260827_ORT §6.3).
+//! The versioned canonical-form table.
 //!
 //! Predicate canonicalization maps surface verb lemmas to a canonical lemma so
 //! the content-addressed predicate id is stable across inflection ("ran",

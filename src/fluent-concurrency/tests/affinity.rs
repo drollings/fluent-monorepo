@@ -90,8 +90,7 @@ async fn test_aging_increases_priority_for_starved_tasks() {
 
     scheduler.age_now();
 
-    let prios = sync_lock::lock(&scheduler.base_priorities);
-    assert_eq!(prios.peek(&"session-b".to_string()), Some(&5));
+    assert_eq!(scheduler.recorded_base("session-b"), Some(5));
 }
 
 #[tokio::test]
@@ -174,10 +173,7 @@ async fn affinity_virtual_time_deterministic() {
     };
     scheduler.submit(task, 0).await.unwrap();
     // No aging yet because interval not elapsed
-    {
-        let prios = sync_lock::lock(&scheduler.base_priorities);
-        assert_eq!(prios.peek(&"b".to_string()), Some(&0));
-    }
+    assert_eq!(scheduler.recorded_base("b"), Some(0));
     tokio::time::advance(Duration::from_millis(500)).await;
     // Submit again should not age yet
     let task2 = ScheduledTask {
@@ -186,12 +182,9 @@ async fn affinity_virtual_time_deterministic() {
         enqueued_at: runtime.now(),
     };
     scheduler.submit(task2, 0).await.unwrap();
-    {
-        let prios = sync_lock::lock(&scheduler.base_priorities);
-        // Still 0 because aging hasn't fired (maybe_age checked, but interval not elapsed; plus enqueued_at bonus capped)
-        // enqueued_at bonus is 0 because just created
-        assert!(prios.peek(&"b".to_string()).is_some());
-    }
+    // Still recorded because aging hasn't fired (interval not elapsed;
+    // enqueued_at bonus is 0 because just created).
+    assert!(scheduler.recorded_base("b").is_some());
     tokio::time::advance(Duration::from_millis(600)).await;
     // Now interval elapsed, next submit should trigger aging
     let task3 = ScheduledTask {
@@ -200,12 +193,9 @@ async fn affinity_virtual_time_deterministic() {
         enqueued_at: runtime.now(),
     };
     scheduler.submit(task3, 0).await.unwrap();
-    {
-        let prios = sync_lock::lock(&scheduler.base_priorities);
-        // b should have been aged by 2
-        let v = prios.peek(&"b".to_string()).copied().unwrap();
-        assert!(v >= 2, "aging should have fired exactly once, got {v}");
-    }
+    // b should have been aged by 2
+    let v = scheduler.recorded_base("b").unwrap();
+    assert!(v >= 2, "aging should have fired exactly once, got {v}");
 }
 
 #[tokio::test]
@@ -290,24 +280,29 @@ async fn affinity_bonus_is_task_value_not_confidence() {
         enqueued_at: runtime.now(),
     };
     let prio_affine_fresh = scheduler.effective_priority(&affine_fresh, 0);
-    // Non-affine old task with 20s age: age_bonus capped at 2, plus many aging ticks? But effective_priority only adds one age_bonus.
-    // To simulate starvation, age the map
+    // Non-affine old task with 20s age: age_bonus capped at 2, plus many aging ticks.
+    // To simulate starvation, age the map.
     // Seed starved identity then age multiple times
-    let starved = ScheduledTask {
+    // Seed B with base 0 via submit (submit records; the pure
+    // effective_priority helper never does).
+    let starved_submit = ScheduledTask {
         identity: "B".into(),
         task: "starved".into(),
         enqueued_at: runtime.now() - Duration::from_secs(20),
     };
-    // Insert B with base 0
-    let _ = scheduler.effective_priority(&starved, 0);
+    scheduler.submit(starved_submit, 0).await.unwrap();
     // Age 10 ticks
     for _ in 0..10 {
         scheduler.age_now();
     }
-    let prio_starved_aged = {
-        let guard = sync_lock::lock(&scheduler.base_priorities);
-        guard.peek(&"B".to_string()).copied().unwrap_or(0)
+    // Read the recorded base through a fresh (age-zero) query: the pure
+    // helper never records, so this observes the aged value exactly.
+    let probe = ScheduledTask {
+        identity: "B".into(),
+        task: "probe".into(),
+        enqueued_at: runtime.now(),
     };
+    let prio_starved_aged = scheduler.effective_priority(&probe, 0);
     // Starved's base after aging should exceed affine's fresh bonus if aging is confidence
     assert!(prio_starved_aged > prio_affine_fresh || prio_starved_aged + 2 > prio_affine_fresh, "aged starved B should eventually outrank fresh affine A");
 }

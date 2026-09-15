@@ -41,7 +41,7 @@ pub use colbert::{
     l2_normalize, maxsim_score, maxsim_score_normalized, ConceptEncoding, EntitySimilarityHit,
     EntitySimilarityIndex,
 };
-pub use common_core::vector_math::cosine_similarity_f32;
+pub use vector_math::cosine_similarity_f32;
 pub use config::{
     AnnotationHeads, AnnotationLabels, LlmIo, OnnxConfig, OnnxFleetConfig, OnnxRole,
     OnnxRoleConfig, OnnxTask, Quant, ResidencyPolicy,

@@ -1463,7 +1463,7 @@ async fn pool_residency_no_eviction_within_budget() {
     );
 }
 
-/// ROADMAP M7 resize-to-demand: a dispatch that declares a `num_ctx` need
+/// Resize-to-demand: a dispatch that declares a `num_ctx` need
 /// above the targeted instance's allocated window (but within `max_ctx`)
 /// resizes the instance via the fork's `/resize`; a need beyond `max_ctx`
 /// is a loud rejection, and no need / no profile is a no-op.

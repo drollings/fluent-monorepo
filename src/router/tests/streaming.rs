@@ -1,7 +1,7 @@
 use super::*;
 use crate::types::{RouterChoice, RouterMessage, RouterMessageContent};
-// NOTE (ROADMAP_20260903_LLM M1): free-function think-block goldens moved to
-// `fluent-llm --test thinking`; this file keeps the handler-level behavior
+// Free-function think-block goldens live in `fluent-llm --test thinking`;
+// this file keeps the handler-level behavior
 // (`filtered_content` through `StreamingHandler`).
 
 #[test]

@@ -96,6 +96,10 @@ enum Command {
     Show(ShowArgs),
     /// Stop a running model.
     Stop(StopArgs),
+    /// Roll back the ledger-agent coordinator on a running router (M14c):
+    /// close its runtime gate so dispatch returns to the pre-coordinator
+    /// pipeline without a restart. Idempotent; loopback-only server side.
+    CoordinatorRollback(ServerArgs),
     /// Measure generation throughput via /metrics.
     Speedtest(SpeedtestArgs),
     /// Print the derived config schema inventory (from the config types via
@@ -299,6 +303,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(std::path::Path::new(&config_path)),
                 &args.model,
                 args.force,
+            )
+            .await?
+        }
+        Command::CoordinatorRollback(args) => {
+            commands::coordinator_rollback(
+                &ctx,
+                args.api_url.as_deref(),
+                Some(std::path::Path::new(&config_path)),
             )
             .await?
         }
@@ -589,7 +601,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         tracing::info!(target: "coral-router", except_models = ?args.mock_except, "mock-except models configured");
     }
 
-    // ONNX registry (ROADMAP_20260827_ORT §0.5): one session per onnx-declared
+    // ONNX registry: one session per onnx-declared
     // model. `Always`-resident models load here (a missing model file is a
     // loud, actionable boot error); `Unloadable` models load on first use.
     // Absent onnx config yields `None` (fully fail-open). The llama.cpp
@@ -647,7 +659,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             },
     );
 
-    // ROADMAP_20260828_ORT M1.1: when any pipeline needs interlingua ids
+    // When any pipeline needs interlingua ids
     // (`nlp: true`) or a durable concept store (`review` configured,
     // `overlay.entity_link_enabled`), open the ledger and build the shared
     // `SqliteConceptStore` + `SqliteCorrectionIndex` + YaGO reconcile BEFORE
@@ -838,7 +850,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     // exclusion) while the engine owns the eviction ordering.
     instance_pool.set_admission_engine(Arc::clone(&residency_engine));
 
-    // The unified weights facade (ROADMAP M4): llama adapters + onnx
+    // The unified weights facade: llama adapters + onnx
     // implementors behind the shared `LlmWeights` surface. Backs the
     // `/instances` + `/v1/models` aggregation (onnx rows), `ps`, and the
     // onnx branch of `POST /models/unload`. The llama rows stay byte-identical
@@ -911,8 +923,10 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         }
     }
 
-    // The `LedgerAgentCoordinator` (the ledger-as-synchronization point). 
-    // Opt-in via `ledger.orchestrator.enabled`; requires a ledger, a
+    // The `LedgerAgentCoordinator` (the ledger-as-synchronization point).
+    // Default-on since M14c wherever a ledger is configured; opt out with
+    // `ledger.orchestrator.enabled = false`, or roll back at runtime via
+    // `POST /admin/coordinator/rollback`. Requires a ledger, a
     // session registry, and a tier worker.  Reuses the single `LlmClient`
     // factory (`ledger_tier_backend`) — no second HTTP client.
     let mut coordinator: Option<Arc<fluent_router::ledger::orchestrator::LedgerAgentCoordinator>> =
@@ -950,15 +964,15 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     }
 
     // Boot reconciliation: load YaGO taxonomy into both coral's content-addressed
-    // graph and the router's SqliteConceptStore, then assert they match (ROADMAP
-    // §11.10/§13.10 — C3). Requires both a ledger (for the shared SQLite
+    // graph and the router's SqliteConceptStore, then assert they match.
+    // Requires both a ledger (for the shared SQLite
     // connection) and a review config (which implies the concept store is needed).
     let mut review_worker: Option<Arc<ReviewWorker>> = None;
     let mut review_fetch: Option<ReviewFetch> = None;
     if let (Some(ledger_arc), Some(review_cfg)) = (&ledger, &config.review) {
         // Build the review model backend (ChatBackend) from the review_model
-        // key, else the classifier key, else the onnx LLM key (ROADMAP M2.6 —
-        // the generative onnx model is the default review backend).
+        // key, else the classifier key, else the onnx LLM key (the
+        // generative onnx model is the default review backend).
         let review_model_key = review_cfg
             .review_model
             .clone()
@@ -968,7 +982,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             .as_deref()
             .and_then(|key| config.local_backend(key));
 
-        // Reuse the M1.1 early-built shared store (ROADMAP_20260828_ORT M1.1):
+        // Reuse the early-built shared store:
         // review configured ⇒ `needs_concept_store` ⇒ the `SqliteConceptStore`
         // + `SqliteCorrectionIndex` were built and YaGO reconciled **before**
         // the pipeline build. One shared store, not one per consumer (DRY).
@@ -987,7 +1001,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 }];
                 // ChatBackend::chat_complete_with_extras is synchronous. The
                 // ParseReview schema travels as `response_format.schema`
-                // (ROADMAP M2.5) so a grammar-constrained backend (the onnx
+                // so a grammar-constrained backend (the onnx
                 // LLM) prevents structurally-invalid review output; a backend
                 // without the extras seam ignores it (post-hoc serde parsing
                 // of `ParseReview` remains the backstop).
@@ -1070,7 +1084,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         );
     }
 
-    // Async entity-link overlay worker (ROADMAP_20260827_ORT §6.2): opt-in
+    // Async entity-link overlay worker: opt-in
     // (`overlay.entity_link_enabled`), fail-open. It scores unresolved PROPN
     // spans against boot-cached concept-label embeddings and writes `EntityLink`
     // candidates to `overlay_candidates` — never a doc-id write. Requires a
@@ -1544,7 +1558,7 @@ fn build_plan_route(
 /// The actual vector length is whatever the endpoint returns (the embeddings
 /// HTTP client parses the response); this only sets the declared capacity.
 /// Onnx-declared embedding models derive their dims from config/metadata
-/// instead (ROADMAP_20260827_ORT §0.6).
+/// instead.
 const CHART_EMBEDDING_DIMS: u32 = 768;
 
 /// Max concurrent chart-target LLM calls during server-side execution.
@@ -1564,7 +1578,7 @@ fn embeddings_base_url(endpoint: &str) -> String {
 /// (falling back to the selector model, then the classifier model's).
 /// Two branches:
 ///
-/// - **Onnx** (ROADMAP_20260827_ORT §0.6): when the resolved model declares an
+/// - **Onnx**: when the resolved model declares an
 ///   `onnx` block with `task: FillMask`, build the ort encoder from the boot
 ///   registry's session (dims model-derived), wrapped in
 ///   `CachedEmbeddingProvider`. A declared-but-broken onnx encoder returns

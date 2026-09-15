@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M4.3 — LLM response-cache goldens (moved, not copied).
+//! LLM response-cache goldens.
 //!
 //! Canonical home for every `ResponseCache` golden: the TTL hit/miss,
 //! unknown-key miss, per-model isolation, and lazy-eviction assertions

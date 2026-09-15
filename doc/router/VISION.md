@@ -126,7 +126,10 @@ routed onward after the local ladder has failed.
 > the four node types, and the JSON verdict grammar exist and are tested. The
 > fully self-updating loop (auto-reconstruction of prompt descriptions from
 > child nodes, tree editing at runtime) is Design-only — the config is loaded
-> once at boot and statically assembled.
+> once at boot and statically assembled. Tuning-only runtime reload
+> (description/threshold regeneration with rebootless, versioned, topology
+> guarded swap — `config/tree_reload.rs`, M14b) is live; topology edits remain
+> excluded.
 
 The central configuration structure for Coral Router is a **nested
 classification tree** — not a flat list of routes, a separate score matrix,
@@ -472,11 +475,15 @@ backend drops in behind the same seam without touching the consumers.
 
 > **Status: Implemented (core) + Partial (agent layer).** The store, LOD
 > lifecycle, views, and scrub path are live. The background tier worker and
-> agent coordinator (`ledger/{tiering,prompt,orchestrator}.rs`) exist but are
-> opt-in via config; the arc_ready annotation overlays (spacy annotation, LLM
-> enrichment, embedding — `ledger/overlay_worker.rs`, opt-in via
-> `overlay.arc_ready`) are live; the workflow-learning replay from recorded
-> `node_plan` metadata is Design-only. See ARCHITECTURE.md §Ledger.
+> agent coordinator (`ledger/{tiering,prompt,orchestrator}.rs`) are live; the
+> tier worker is opt-in via config, the coordinator is default-on behind its
+> runtime gate (M14c — `ledger.orchestrator.enabled = false` opts out,
+> `POST /admin/coordinator/rollback` rolls back without a restart); the
+> arc_ready annotation overlays (spacy annotation, LLM enrichment, embedding —
+> `ledger/overlay_worker.rs`, opt-in via `overlay.arc_ready`) are live; the
+> workflow-learning replay from recorded `node_plan` metadata is implemented
+> behind its flag (M14a — `ledger::workflow_replay`, default off, calibrated
+> gate). See ARCHITECTURE.md §Ledger.
 
 Every paragraph, prompt, tool result, or intermediate artifact is stored as a
 **Content Node** — the game-engine concept of level-of-detail applied to
@@ -672,8 +679,8 @@ model:
 
 > **Status: Partial.** The serving layer, ladder, and ledger store in this
 > walk-through are live; the agent-coordination walk (a request driving an
-> orchestrated multi-agent session over shared ledgers) is the opt-in
-> coordinator and remains the forward target.
+> orchestrated multi-agent session over shared ledgers) runs through the
+> default-on coordinator (M14c) and remains the forward target.
 
 A request arrives and passes through a strict escalation ladder, spending as
 little as possible at each rung before the next is even considered.

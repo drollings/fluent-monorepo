@@ -1,0 +1,8 @@
+[package]
+name = "vector-math"
+version.workspace = true
+edition.workspace = true
+description = "Zero-dependency scalar embedding-vector math (cosine similarity)"
+
+[lints]
+workspace = true

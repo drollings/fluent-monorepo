@@ -1,6 +1,6 @@
 //! The disambiguated interlingua: a portable, content-addressed 64-bit ID
 //! system bridging annotated text (spaCy lemmas/deps), RDF knowledge stores
-//! (YaGO classes), and deterministic routing actions (ROADMAP §2).
+//! (YaGO classes), and deterministic routing actions.
 //!
 //! Layout: 16-bit namespace + 48-bit local id. Every id is a **pure function
 //! of content** — `trunc48(hash(content))` — so the same content yields the
@@ -42,7 +42,7 @@ pub enum InterlinguaNamespace {
 }
 
 /// The namespace occupies the top 16 bits (48–63); the local id the bottom
-/// 48 bits (0–47), per the layout diagram in ROADMAP §2.1.
+/// 48 bits (0–47), per the layout diagram above.
 pub const NAMESPACE_BITS: u64 = 16;
 pub const LOCAL_BITS: u64 = 48;
 pub const LOCAL_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;

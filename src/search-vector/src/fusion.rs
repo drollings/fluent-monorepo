@@ -1,7 +1,7 @@
 //! Score fusion: RRF kernel surface, boost algebra, and the fused-score
 //! ordinal type.
 //!
-//! Canonical home (ROADMAP_20260911_PRIMITIVES M6) for the fusion math
+//! Canonical home for the fusion math
 //! previously spread across `guidance-core` (`search_types::{RrfScore,
 //! FusedHit, rrf_fuse}`, the `fuse_candidates` postings step, and the
 //! `graph_index::rerank` boosts). Pure, no guidance types: ids are

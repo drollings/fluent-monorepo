@@ -1,4 +1,4 @@
-//! The per-context KV surface (ROADMAP M2): `PastState`, `OnnxContext`, and the
+//! The per-context KV surface: `PastState`, `OnnxContext`, and the
 //! RAM `OnnxKVCache` — the onnx half of the shared `LlmContext`/`LlmKVCache`
 //! contracts in `fluent_llm::runtime`.
 //!
@@ -82,7 +82,7 @@ impl PastState {
     }
 }
 
-/// The declarative shape of a named onnx context (ROADMAP M2). M3 maps the
+/// The declarative shape of a named onnx context. Maps the
 /// llama `InstanceProfile` vocabulary onto this; until then the pool's
 /// `ensure_context` uses it directly.
 #[derive(Debug, Clone)]
@@ -111,7 +111,7 @@ impl Default for OnnxContextProfile {
     }
 }
 
-/// The "save to RAM" half of [`LlmKVCache`] (ROADMAP M2): saves/restores a
+/// The "save to RAM" half of [`LlmKVCache`]: saves/restores a
 /// context's `PastState` by cloning it into/from a named in-process map. The
 /// llama fork persists snapshots through the fork API; onnx keeps them in RAM
 /// (the roadmap's per-runtime snapshot choice — a real "save to RAM").
@@ -140,7 +140,7 @@ impl OnnxKVCache {
         })
     }
 
-    /// Synchronous "save to RAM" (ROADMAP M6): the sync chat-decode path
+    /// Synchronous "save to RAM": the sync chat-decode path
     /// snapshots the context's KV before it can be evicted, without an await.
     pub fn save_sync(&self, name: &str) -> Result<(), LlmRuntimeError> {
         let past = lock(&self.state).clone();
@@ -154,7 +154,7 @@ impl OnnxKVCache {
         Ok(())
     }
 
-    /// Synchronous "restore from RAM" (ROADMAP M6): rehydrate the context's KV
+    /// Synchronous "restore from RAM": rehydrate the context's KV
     /// from a named snapshot before a continued decode.
     pub fn restore_sync(&self, name: &str) -> Result<(), LlmRuntimeError> {
         let past = lock(&self.snapshots).get(name).cloned().ok_or_else(|| {
@@ -196,7 +196,7 @@ impl LlmKVCache for OnnxKVCache {
     }
 }
 
-/// One named context window with its own KV cache (ROADMAP M2), allocated from
+/// One named context window with its own KV cache, allocated from
 /// a shared [`crate::llm::OrtLlmSession`]. Owns the KV slot + lifecycle knobs;
 /// the decode loop (`prefill`/`decode_step`) reads and advances it, so contexts
 /// interleave on the shared session without sharing KV.

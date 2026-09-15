@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use tokio::sync::Notify;
 
 use crate::pool::PoolError;
+use crate::sync::lock;
 
 /// A priority queue combining O(1) fast path for priority-0 items
 /// with a `BTreeMap`-backed ordered queue for non-zero priorities.
@@ -206,7 +207,7 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
         if self.closed.load(Ordering::SeqCst) {
             return Err(PoolError::Closed);
         }
-        let mut inner = common_core::sync::lock(&self.inner);
+        let mut inner = lock(&self.inner);
         if inner.len() >= self.capacity {
             return Err(PoolError::Full);
         }
@@ -225,7 +226,7 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
             }
             let waited = self.space_notify.notified();
             {
-                let mut inner = common_core::sync::lock(&self.inner);
+                let mut inner = lock(&self.inner);
                 if inner.len() < self.capacity {
                     inner.push(item.take().unwrap(), priority);
                     self.notify.notify_one();
@@ -243,7 +244,7 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
         loop {
             let notified = self.notify.notified();
             {
-                let mut inner = common_core::sync::lock(&self.inner);
+                let mut inner = lock(&self.inner);
                 if let Some(item) = inner.pop() {
                     self.space_notify.notify_one();
                     return Some(item);
@@ -265,7 +266,7 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
 
     /// Returns the number of items currently queued.
     pub fn len(&self) -> usize {
-        common_core::sync::lock(&self.inner).len()
+        lock(&self.inner).len()
     }
 
     /// Returns true if the queue holds no items.

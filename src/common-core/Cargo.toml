@@ -7,7 +7,7 @@ edition.workspace = true
 default = []
 test-util = []
 http = ["dep:reqwest"]
-sqlite = ["dep:rusqlite", "dep:hnsw_rs", "dep:anndists"]
+sqlite = ["dep:rusqlite"]
 
 [dependencies]
 http = { workspace = true }
@@ -18,8 +18,6 @@ fastrand = { workspace = true }
 internment = { workspace = true, features = ["arc"] }
 lru = { workspace = true }
 reqwest = { workspace = true, optional = true }
-anndists = { workspace = true, optional = true }
-hnsw_rs = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -33,6 +31,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+fluent-db = { path = "../db" }
 
 [lints]
 workspace = true

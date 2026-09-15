@@ -5,7 +5,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use common_core::sync as sync_lock;
+use crate::sync as sync_lock;
 use fluent_wvr::Runtime;
 use thiserror::Error;
 use tokio::sync::{Notify, Semaphore};
@@ -93,7 +93,7 @@ struct QueueInner<T> {
 /// The queue's backing store is a `std::sync::Mutex` — never held across an
 /// `.await` (every guard is scoped so it drops before the future yields), so
 /// the async mutex's waker bookkeeping would be pure overhead. Poisoned
-/// mutexes are recovered via `common_core::sync::lock` rather than panicking
+/// mutexes are recovered via `crate::sync::lock` rather than panicking
 /// the caller. Contrast `CreditSender` in `flow.rs`, whose mutex guards the
 /// bump receiver across `recv().await` and therefore must stay a
 /// `tokio::sync::Mutex`.

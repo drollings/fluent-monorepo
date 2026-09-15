@@ -1,18 +1,16 @@
-//! ROADMAP_20260903_LLM M8.2 — LLM telemetry-vocabulary goldens (moved, not copied).
+//! LLM telemetry-vocabulary goldens.
 //!
 //! Canonical home for the `ToolName` / `ProviderCategory` / `FeatureName`
-//! label snapshots (moved from `src/common-core/tests/telemetry.rs`); M11
-//! also moved the structured event contract (`TelemetryEvent` / sinks) here
-//! and deleted the `common_core` copies with the dual-path parity test.
+//! label snapshots.
 //!
 //! What stays behind in `common_core::telemetry`: `FailureClass` + `label()`
 //! (the generic taxonomy); the `classify_http_status` mapping tests stay in
 //! `tests/http_class.rs` and there is exactly one `FailureClass` definition
 //! (locked below).
 //!
-//! Calibration (roadmap §1, M10): these are task-value routing/usage labels,
+//! Calibration: these are task-value routing/usage labels,
 //! not producer confidence — a `llm_complete` label on an event never endorses
-//! the output's correctness, and the labels move unchanged here.
+//! the output's correctness.
 
 use fluent_llm::telemetry::{FeatureName, ProviderCategory, ToolName};
 
@@ -161,7 +159,5 @@ fn failure_class_has_single_definition() {
     }
 }
 
-// NOTE (ROADMAP_20260903_LLM M11): the `parity_new_eq_old` dual-path test
-// died with the `common_core::telemetry` vocabulary shims it pinned. The
-// label snapshots + single-`FailureClass` lock above are the lasting
+// The label snapshots + single-`FailureClass` lock above are the lasting
 // contract.

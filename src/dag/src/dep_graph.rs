@@ -18,7 +18,8 @@
 //! transitive dependent set; the caller decides what to do with it
 //! (abort a task, mark a step cancelled, etc.).
 
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::hash::Hash;
 
 use thiserror::Error;
@@ -163,11 +164,12 @@ impl<K: Eq + Hash + Clone> DependencyGraph<K> {
         K: Ord,
     {
         let mut out: Vec<K> = Vec::new();
+        let mut seen: HashSet<K> = HashSet::new();
         if let Some(provides) = self.provides.get(node) {
             for provided in provides {
                 if let Some(dependents) = self.provides_to_dependents.get(provided) {
                     for dependent in dependents {
-                        if dependent != node && !out.contains(dependent) {
+                        if dependent != node && seen.insert(dependent.clone()) {
                             out.push(dependent.clone());
                         }
                     }
@@ -342,8 +344,8 @@ impl<K: Eq + Hash + Clone> DependencyGraph<K> {
     /// provides an asset it also depends on) are skipped to avoid
     /// deadlocks.
     ///
-    /// Output is deterministic: the Kahn queue is sorted on each
-    /// insertion so that ties break by `Ord` order.
+    /// Output is deterministic: a min-heap always pops the smallest ready
+    /// node, so ties break by `Ord` order.
     pub fn topo_sort(&self) -> Result<Vec<K>, GraphError>
     where
         K: Ord + std::fmt::Debug,
@@ -460,28 +462,26 @@ pub(crate) fn kahn_sort<K: Ord + Clone + Hash>(
     adj: &HashMap<K, Vec<K>>,
     total: usize,
 ) -> Result<Vec<K>, Vec<K>> {
-    // Initial queue: all nodes with in_degree 0, sorted for
-    // deterministic output.
-    let mut queue: Vec<K> = in_degree
+    // Min-heap of ready nodes: every pop yields the smallest ready node, so
+    // ties break by `Ord` order exactly as the old sorted-`Vec` queue did
+    // (it re-sorted `queue[head..]` after each insertion, making `queue[head]`
+    // the minimum of the ready set at every step). Same pop sequence, O((V +
+    // E) log V) instead of O(V² log V).
+    let mut queue: BinaryHeap<Reverse<K>> = in_degree
         .iter()
         .filter(|(_, &deg)| deg == 0)
-        .map(|(k, _)| k.clone())
+        .map(|(k, _)| Reverse(k.clone()))
         .collect();
-    queue.sort_unstable();
 
     let mut order = Vec::with_capacity(total);
-    let mut head = 0;
-    while head < queue.len() {
-        let current = queue[head].clone();
-        head += 1;
+    while let Some(Reverse(current)) = queue.pop() {
         order.push(current.clone());
         if let Some(dependents) = adj.get(&current) {
             for dep in dependents {
                 if let Some(deg) = in_degree.get_mut(dep) {
                     *deg -= 1;
                     if *deg == 0 {
-                        queue.push(dep.clone());
-                        queue[head..].sort_unstable();
+                        queue.push(Reverse(dep.clone()));
                     }
                 }
             }

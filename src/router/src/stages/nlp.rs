@@ -27,43 +27,87 @@ use crate::pipeline_types::{
 };
 use crate::stages::common::extract_user_message;
 
-/// Build the spacy-rs synchronous annotation fetch from a fluent-llm backend:
-/// prompts with the canonical [`spacy_rs::AnnotationRecord::prompt`] contract
-/// and returns the raw §10.1 JSON array (or an error the sync ladder swallows
-/// in favor of the rule rung).
+/// The single `ChatBackend` → spacy-rs annotation-fetch adapter (+ sync
+/// twin): prompts with the canonical [`spacy_rs::AnnotationRecord::prompt`]
+/// contract and returns the raw §10.1 JSON array (or an error the ladders
+/// swallow in favor of the rule rung). Both twins share the prompt contract
+/// below, so async and sync callers always send identical requests.
 ///
-/// The call goes through `chat_complete_with_extras` carrying the
-/// `AnnotationSet` JSON schema as `response_format.schema` (ROADMAP M2.4), so a
+/// The async twin bridges the sync backend seam through `spawn_blocking`
+/// (the `ChatBackend` trait is sync-only by design — spacy-rs owns no
+/// runtime); the blocking pool is the correct sync→async direction, never
+/// `block_on` inside a task.
+///
+/// The call goes through the extras seam carrying the `AnnotationSet` JSON
+/// schema as `response_format.schema` (ROADMAP M2.4), so a
 /// grammar-constrained backend (the onnx LLM) cannot emit a structurally
 /// invalid annotation array — `parse_json` cannot structurally fail. A backend
 /// without the extras seam (HTTP, stubs) ignores the extras unchanged, leaving
 /// the post-hoc validator as the backstop.
-pub(crate) fn annotation_fetch(
+///
+/// spacy-rs seams are untouched: this only *constructs* its closure types,
+/// adding no dependency in either direction.
+///
+/// The async twin has no production caller yet (the sync ladder is the only
+/// wired consumer) — it is the async seam with twin-agreement tests, waiting
+/// on an async-ladder wiring that does not exist today.
+#[allow(dead_code)]
+pub(crate) fn chat_backend_to_fetch(
+    backend: Arc<dyn fluent_llm::client::ChatBackend>,
+) -> spacy_rs::pipeline::LlmFetch {
+    Arc::new(move |tokens: Vec<String>| {
+        let backend = Arc::clone(&backend);
+        Box::pin(async move {
+            let (messages, extras) = annotation_request(&tokens);
+            tokio::task::spawn_blocking(move || {
+                backend
+                    .chat_complete_with_extras(&messages, &extras)
+                    .map_err(|e| spacy_rs::pipeline::AnnotateError::Fetch(e.to_string()))
+            })
+            .await
+            .unwrap_or_else(|e| Err(spacy_rs::pipeline::AnnotateError::Fetch(e.to_string())))
+        })
+    })
+}
+
+/// Sync twin of [`chat_backend_to_fetch`] — same prompt contract, same
+/// error mapping, over the blocking backend seam.
+pub(crate) fn chat_backend_to_fetch_sync(
     backend: Arc<dyn fluent_llm::client::ChatBackend>,
 ) -> spacy_rs::pipeline::LlmFetchSync {
     Arc::new(move |tokens: Vec<String>| {
-        use fluent_llm::ChatMessage;
-        let system = spacy_rs::AnnotationRecord::prompt(&tokens);
-        let messages = vec![
-            ChatMessage {
-                role: "system".into(),
-                content: system,
-            },
-            ChatMessage {
-                role: "user".into(),
-                content: "Annotate the given tokens.".into(),
-            },
-        ];
-        let extras = serde_json::json!({
-            "response_format": {
-                "type": "json_object",
-                "schema": spacy_rs::AnnotationRecord::contract(),
-            }
-        });
+        let (messages, extras) = annotation_request(&tokens);
         backend
             .chat_complete_with_extras(&messages, &extras)
             .map_err(|e| spacy_rs::pipeline::AnnotateError::Fetch(e.to_string()))
     })
+}
+
+/// The shared prompt contract for both fetch twins: system prompt from the
+/// canonical record contract, the fixed user line, and the grammar extras.
+/// One function so the twins cannot drift apart.
+fn annotation_request(
+    tokens: &[String],
+) -> (Vec<fluent_llm::ChatMessage>, serde_json::Value) {
+    use fluent_llm::ChatMessage;
+    let system = spacy_rs::AnnotationRecord::prompt(tokens);
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: system,
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: "Annotate the given tokens.".into(),
+        },
+    ];
+    let extras = serde_json::json!({
+        "response_format": {
+            "type": "json_object",
+            "schema": spacy_rs::AnnotationRecord::contract(),
+        }
+    });
+    (messages, extras)
 }
 
 /// The NLP enrichment stage: parses the request text with `spacy-rs` and
@@ -398,3 +442,7 @@ impl_component!(NlpStage);
 #[cfg(test)]
 #[path = "../../tests/stages_nlp.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/seam_adapter.rs"]
+mod seam_adapter_tests;

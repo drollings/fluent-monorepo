@@ -1,5 +1,5 @@
 //! `OnnxContextPool` — the onnx half of "one weights load, N named context
-//! windows" (ROADMAP M2).
+//! windows."
 //!
 //! Wraps one loaded [`crate::llm::OrtLlmSession`] (the shared
 //! `Arc<Mutex<Session>>` + tokenizer + [`crate::config::LlmIo`]) with a

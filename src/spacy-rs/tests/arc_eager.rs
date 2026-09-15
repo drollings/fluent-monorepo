@@ -7,16 +7,33 @@ fn en_vocab() -> Arc<Vocab> {
     Arc::new(Vocab::new(lang::en::lexicon_config()))
 }
 
-fn tokenize(text: &str) -> Doc {
-    let vocab = en_vocab();
-    lang::en::tokenizer(vocab)
-        .expect("tokenizer")
-        .tokenize(text)
-        .expect("tokenize")
+/// Shared parse stack: one vocab + tokenizer + annotator for the whole file.
+/// Construction (regex compiles) dominates per-case time; sharing is safe
+/// (content-addressed caches, deterministic annotator — outputs identical
+/// to fresh construction).
+struct SharedStack {
+    vocab: Arc<Vocab>,
+    tokenizer: crate::tokenizer::Tokenizer,
+    annotator: Arc<ArcEagerAnnotator>,
 }
 
-fn annotator() -> ArcEagerAnnotator {
-    ArcEagerAnnotator::en_default(en_vocab())
+static SHARED: std::sync::LazyLock<SharedStack> = std::sync::LazyLock::new(|| {
+    let vocab = en_vocab();
+    let tokenizer = lang::en::tokenizer(vocab.clone()).expect("tokenizer");
+    let annotator = Arc::new(ArcEagerAnnotator::en_default(vocab.clone()));
+    SharedStack {
+        vocab,
+        tokenizer,
+        annotator,
+    }
+});
+
+fn tokenize(text: &str) -> Doc {
+    SHARED.tokenizer.tokenize(text).expect("tokenize")
+}
+
+fn annotator() -> Arc<ArcEagerAnnotator> {
+    Arc::clone(&SHARED.annotator)
 }
 
 fn label_hashes(vocab: &Arc<Vocab>) -> DepLabels {
@@ -371,9 +388,8 @@ fn annotate_reports_sane_confidence() {
 
 #[test]
 fn rung_returns_parse_with_source_and_confidence() {
-    let vocab = en_vocab();
     let rung = ArcEagerRung::new(
-        Arc::new(ArcEagerAnnotator::en_default(Arc::clone(&vocab))),
+        Arc::new(ArcEagerAnnotator::en_default(Arc::clone(&SHARED.vocab))),
         Arc::new(AnnotationValidator::new()),
     );
     let doc = tokenize("The cat sat.");
@@ -388,7 +404,7 @@ fn rung_returns_parse_with_source_and_confidence() {
 fn rung_returns_none_only_on_structural_failure() {
     let vocab = en_vocab();
     let rung = ArcEagerRung::new(
-        Arc::new(ArcEagerAnnotator::en_default(Arc::clone(&vocab))),
+        Arc::new(ArcEagerAnnotator::en_default(Arc::clone(&SHARED.vocab))),
         Arc::new(AnnotationValidator::new()),
     );
     let empty = Doc::new(vocab);
@@ -421,7 +437,7 @@ fn random_pos_sequences_produce_valid_trees() {
         (Upos::Num, "5"),
         (Upos::Pron, "it"),
     ];
-    let vocab = en_vocab();
+    let vocab = Arc::clone(&SHARED.vocab);
     let annotator = ArcEagerAnnotator::en_default(Arc::clone(&vocab));
     let validator = AnnotationValidator::new();
     for _ in 0..120 {

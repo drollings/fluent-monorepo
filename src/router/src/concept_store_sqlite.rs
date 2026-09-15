@@ -1,5 +1,5 @@
 //! The router's durable [`ConceptStore`] over the shared ledger SQLite
-//! connection (ROADMAP §14.3, C3).
+//! connection.
 //!
 //! `interlingua_concepts` is the materialized runtime index of the YaGO
 //! taxonomy — the **second home** of the one-loader/two-consumers design: the

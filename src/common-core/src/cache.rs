@@ -2,11 +2,74 @@
 
 use lru::LruCache;
 use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex};
+
+use crate::sync::lock;
 
 type LruLoadFn<K, V, E> = Box<dyn Fn(&K) -> Result<V, E> + Send + Sync>;
+
+/// Outcome of one in-flight `load`.
+///
+/// Waiters share successes (`Ready`) and re-run the load individually on
+/// `Failed` (errors are never cached, so error sharing would require an
+/// `E: Clone` bound the API does not impose — the fallback is exactly the
+/// pre-change behavior). `Pending` with no map entry means the loader
+/// vanished (panic path cleaned up); waiters then fall back as well.
+enum SlotState<V> {
+    Pending,
+    Ready(Arc<V>),
+    Failed,
+}
+
+/// Per-key rendezvous for coalescing concurrent misses.
+struct Slot<V> {
+    state: Mutex<SlotState<V>>,
+    ready: Condvar,
+}
+
+impl<V> Slot<V> {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(SlotState::Pending),
+            ready: Condvar::new(),
+        }
+    }
+
+    fn publish(&self, state: SlotState<V>) {
+        *lock(&self.state) = state;
+        self.ready.notify_all();
+    }
+}
+
+/// Removes one in-flight entry (and wakes its waiters) on scope exit —
+/// normal return and loader panic alike. Panic-safety matters: without
+/// cleanup, waiters on a dead loader's slot would block forever, which is
+/// strictly worse than the pre-change behavior (where a panicking loader
+/// affected no other thread).
+struct Retire<'m, K, V>
+where
+    K: Eq + Hash,
+{
+    inflight: &'m Mutex<HashMap<K, Arc<Slot<V>>>>,
+    slot: Arc<Slot<V>>,
+    key: Option<K>,
+}
+
+impl<K, V> Drop for Retire<'_, K, V>
+where
+    K: Eq + Hash,
+{
+    fn drop(&mut self) {
+        if let Some(key) = self.key.take() {
+            lock(self.inflight).remove(&key);
+            self.slot.ready.notify_all();
+        }
+    }
+}
 
 /// A bounded, thread-safe get-or-load LRU cache.
 ///
@@ -15,11 +78,19 @@ type LruLoadFn<K, V, E> = Box<dyn Fn(&K) -> Result<V, E> + Send + Sync>;
 /// hit; on a miss it drops the lock, runs `load`, and re-acquires only to
 /// insert the freshly loaded value.
 ///
+/// Concurrent misses for one key coalesce: the first thread loads while the
+/// rest wait on a per-key slot and share its success (no lock is ever held
+/// across `load`, so distinct keys load in parallel). Loader errors are not
+/// shared — each waiter falls back to its own load, exactly the pre-change
+/// behavior — because errors are never cached and sharing them would impose
+/// an `E: Clone` bound the API does not have.
+///
 /// Write-through consumers (caches filled explicitly via `insert`, never via
 /// load-on-miss) can use the plain `get`/`insert`/`remove`/`contains`
 /// accessors; the `load` closure is only ever invoked by `get_or_load`.
 pub struct LoadCache<K, V, E> {
     inner: Mutex<LruCache<K, V>>,
+    inflight: Mutex<HashMap<K, Arc<Slot<V>>>>,
     load: LruLoadFn<K, V, E>,
 }
 
@@ -40,6 +111,7 @@ where
             .ok_or_else(|| format!("cache capacity must be non-zero, got {capacity}"))?;
         Ok(Self {
             inner: Mutex::new(LruCache::new(cap)),
+            inflight: Mutex::new(HashMap::new()),
             load: Box::new(load),
         })
     }
@@ -51,7 +123,7 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.inner.lock().unwrap().get(key).cloned()
+        lock(&self.inner).get(key).cloned()
     }
 
     /// `true` when `key` is present in the cache (never loads on a miss).
@@ -65,7 +137,7 @@ where
 
     /// Insert `value` under `key`, replacing any existing entry.
     pub fn insert(&self, key: K, value: V) {
-        self.inner.lock().unwrap().put(key, value);
+        lock(&self.inner).put(key, value);
     }
 
     /// Remove `key`, returning the evicted value if present.
@@ -74,22 +146,105 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.inner.lock().unwrap().pop(key)
+        lock(&self.inner).pop(key)
     }
 
     /// Look up `key`, loading and caching it on a miss via the `load` closure.
+    ///
+    /// Concurrent misses for one key run exactly one `load`: the election
+    /// winner loads (re-checking the cache first, in case a staggered
+    /// arrival populated it) while losers wait on the key's slot and share
+    /// its success. Losers observe loader errors — or a vanished loader —
+    /// as a fallback to their own individual load, the pre-change
+    /// behavior. No lock is held across `load`, so distinct keys proceed
+    /// in parallel and re-entrant `load` closures cannot self-deadlock on
+    /// the cache mutex (they behave like concurrent misses).
     pub fn get_or_load(&self, key: K) -> Result<V, E> {
         if let Some(value) = self.get(&key) {
             return Ok(value);
         }
-        let value = (self.load)(&key)?;
-        self.insert(key, value.clone());
+        // Elect exactly one loader per key via the in-flight map. The
+        // election scope ends before any waiting/loading, so no guard is
+        // held across the blocking sections below.
+        enum Arrival<V> {
+            Loader(Arc<Slot<V>>),
+            Waiter(Arc<Slot<V>>),
+        }
+        let arrival = {
+            let mut inflight = lock(&self.inflight);
+            match inflight.entry(key.clone()) {
+                Entry::Vacant(entry) => {
+                    let slot = Arc::new(Slot::new());
+                    entry.insert(Arc::clone(&slot));
+                    Arrival::Loader(slot)
+                }
+                Entry::Occupied(entry) => Arrival::Waiter(Arc::clone(entry.get())),
+            }
+        };
+        let slot = match arrival {
+            Arrival::Waiter(slot) => return self.wait_for_slot(&key, &slot),
+            Arrival::Loader(slot) => slot,
+        };
+        // Loader path. The retire guard removes the entry (and wakes
+        // stragglers) on every exit, including a panicking `load`.
+        let _retire = Retire {
+            inflight: &self.inflight,
+            slot: Arc::clone(&slot),
+            key: Some(key.clone()),
+        };
+        // A staggered arrival may have populated the cache between the
+        // outer miss and the election win — share it instead of reloading.
+        if let Some(value) = self.get(&key) {
+            slot.publish(SlotState::Ready(Arc::new(value.clone())));
+            return Ok(value);
+        }
+        match (self.load)(&key) {
+            Ok(value) => {
+                self.insert(key, value.clone());
+                let shared = Arc::new(value);
+                slot.publish(SlotState::Ready(Arc::clone(&shared)));
+                // Sole-owner fast path: no waiter cloned the outcome, so
+                // return it without a second clone.
+                Ok(Arc::try_unwrap(shared).unwrap_or_else(|s| s.as_ref().clone()))
+            }
+            Err(e) => {
+                slot.publish(SlotState::Failed);
+                Err(e)
+            }
+        }
+    }
+
+    /// Waiter path: share the in-flight load's success, or fall back to an
+    /// individual load when the loader failed or vanished.
+    fn wait_for_slot(&self, key: &K, slot: &Arc<Slot<V>>) -> Result<V, E> {
+        let mut state = lock(&slot.state);
+        loop {
+            match &*state {
+                SlotState::Ready(shared) => return Ok(shared.as_ref().clone()),
+                SlotState::Failed => break,
+                SlotState::Pending => {
+                    let loader_gone = lock(&self.inflight)
+                        .get(key)
+                        .is_none_or(|s| !Arc::ptr_eq(s, slot));
+                    if loader_gone {
+                        break;
+                    }
+                    state = slot
+                        .ready
+                        .wait(state)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                }
+            }
+        }
+        drop(state);
+        let value = (self.load)(key)?;
+        self.insert(key.clone(), value.clone());
         Ok(value)
     }
 
     /// Number of entries currently held.
     pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().len()
+        lock(&self.inner).len()
     }
 
     /// `true` when the cache holds no entries.
@@ -100,7 +255,7 @@ where
     /// The maximum number of entries before the least-recently-used entry is
     /// evicted.
     pub fn capacity(&self) -> usize {
-        self.inner.lock().unwrap().cap().get()
+        lock(&self.inner).cap().get()
     }
 }
 

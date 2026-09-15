@@ -1,8 +1,7 @@
 //! The pipeline composition (walkthrough §5, §10.3-10.5; roadmap §4).
 //!
 //! A single [`NlpPipeline`] runs the deterministic tokenizer head, then walks
-//! the **annotation ladder** — a two-phase design (ROADMAP_20260831_ARCEAGER
-//! §2.3):
+//! the **annotation ladder** — a two-phase design:
 //!
 //! 1. **Base phase** (deterministic, unconditional): `first_accept_in_order`
 //!    over `[ArcEagerRung, RuleRung]`. Always produces a validated
@@ -97,8 +96,8 @@ static ATTACH_DEPS: std::sync::LazyLock<[ArcIntern<str>; 1]> =
     std::sync::LazyLock::new(|| [VALIDATED.clone()]);
 static ATTACH_PROVIDES: std::sync::LazyLock<[ArcIntern<str>; 1]> =
     std::sync::LazyLock::new(|| [ANNOTATED_DOC.clone()]);
-/// The resolve stage runs only after frames are available (ROADMAP M3 — the
-/// DAG is `annotate → validate → attach → frame → resolve → sentencize`).
+/// The resolve stage runs only after frames are available — the
+/// DAG is `annotate → validate → attach → frame → resolve → sentencize`.
 static RESOLVE_DEPS: std::sync::LazyLock<[ArcIntern<str>; 1]> =
     std::sync::LazyLock::new(|| [FRAMED.clone()]);
 static RESOLVE_PROVIDES: std::sync::LazyLock<[ArcIntern<str>; 1]> =
@@ -134,7 +133,7 @@ pub struct PipelineState {
     pub validated: bool,
     /// Collision notes surfaced by the resolve stage (for audit metadata).
     pub interlingua_notes: Vec<crate::interlingua::CollisionNote>,
-    /// The deterministic frames extracted by the frame stage (ROADMAP M3).
+    /// The deterministic frames extracted by the frame stage.
     pub frames: Vec<crate::frame::Frame>,
     /// The typed ambiguities surfaced by the frame stage.
     pub ambiguities: Vec<crate::frame::AmbiguityEntry>,
@@ -307,7 +306,7 @@ impl Describable for AttachStage {
 }
 impl_component!(AttachStage);
 
-/// Stage 3.5 — deterministic frame extraction (ROADMAP M3). Reads the attached
+/// Stage 3.5 — deterministic frame extraction. Reads the attached
 /// doc and the ladder's oracle margins, derives the [`crate::frame::Frame`]s +
 /// ambiguities, and mints provisional-vs-permanent [`crate::frame::FrameKey`]s
 /// into the shared state. PURE over the concept store (boot-only registration
@@ -382,7 +381,7 @@ impl Describable for FrameStage {
 impl_component!(FrameStage);
 
 /// Stage 4 — resolve each token's lemma hash into an [`InterlinguaId`] and
-/// stamp per-token confidence (ROADMAP §11.2). **PURE and read-only** over
+/// stamp per-token confidence. **PURE and read-only** over
 /// the [`ConceptStore`](fluent_concept::ConceptStore) (C2): all
 /// registration happens at boot; corrections happen in the review worker. The
 /// only shared-state writes are the `TokenRecord` fields this stage owns.
@@ -539,7 +538,7 @@ impl StagePipeline {
     /// The stage graph, optionally extended with the deterministic `frame`
     /// stage and the read-only `resolve` stage
     /// (`annotate → validate → attach → frame → resolve → sentencize`) when a
-    /// resolver is supplied (ROADMAP §11.2, M3). The frame stage mints the
+    /// resolver is supplied. The frame stage mints the
     /// structural frames/keys between attach and resolve.
     pub fn new_with_resolver(
         validator: AnnotationValidator,
@@ -735,7 +734,7 @@ pub type LlmFetch = Arc<
 pub type LlmFetchSync =
     Arc<dyn Fn(Vec<String>) -> Result<String, AnnotateError> + Send + Sync>;
 
-/// The **trained-encoder** annotation seam (ROADMAP_20260827_ORT §4.2) —
+/// The **trained-encoder** annotation seam —
 /// symmetric to [`LlmFetchSync`] but consuming the whole [`Doc`]: the encoder
 /// needs the deterministic orth list *and* its `idx` byte offsets to align LFM
 /// predictions onto the spacy-rs baseline. Returns an [`AnnotationSet`] whose
@@ -764,7 +763,7 @@ pub trait AnnotationRung: Send + Sync {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Refine policy (ROADMAP_20260831_ARCEAGER §2.1)
+// Refine policy
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Whether (and when) the model refiners are consulted after the
@@ -1343,7 +1342,7 @@ impl RefineMetrics {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// The refiner interface (ROADMAP_20260831_ARCEAGER §2.2)
+// The refiner interface
 // ─────────────────────────────────────────────────────────────────────────
 
 /// A model rung that refines an EXISTING validated base parse.
@@ -1438,7 +1437,7 @@ impl AnnotationRefiner for EncoderRefiner {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Span-scoped refinement (ROADMAP_20260831_ARCEAGER M2)
+// Span-scoped refinement
 // ─────────────────────────────────────────────────────────────────────────
 
 /// The payload handed to a span-scoped refine seam: the canonical
@@ -1786,7 +1785,7 @@ impl AnnotationRung for LlmRung {
     }
 }
 
-/// The trained-encoder rung (ROADMAP_20260827_ORT §4.2): the injected encoder
+/// The trained-encoder rung: the injected encoder
 /// closure maps the doc's orth/idx onto LFM predictions and returns an
 /// [`AnnotationSet`] aligned by construction. Accepted only if it passes the
 /// gate; any failure falls through to the deterministic rungs (never empty).
@@ -2129,7 +2128,7 @@ impl NlpPipeline {
 
     /// Build a pipeline optionally wired to an [`InterlinguaResolver`]: when
     /// present, the stage DAG gains the read-only `resolve` stage and the sync
-    /// path stamps interlingua ids + confidence (ROADMAP §10.4/§11.8).
+    /// path stamps interlingua ids + confidence.
     pub fn new_with_resolver(
         vocab: Arc<Vocab>,
         tokenizer: Tokenizer,
@@ -2270,7 +2269,7 @@ impl NlpPipeline {
     /// to publish the parse's confidence alongside the doc (C1). The doc is
     /// resolved (interlingua ids stamped) when a resolver is wired.
     ///
-    /// `encoder` (ROADMAP_20260827_ORT §4.2) is the trained-encoder seam:
+    /// `encoder` is the trained-encoder seam:
     /// when present, the refine phase attempts it before the LLM. Its output
     /// must pass the same 7-check gate; any failure falls back to the
     /// deterministic base (never empty).
@@ -2292,7 +2291,7 @@ impl NlpPipeline {
     }
 
     /// [`Self::process_sync_with_confidence`] plus the span-scoped refine
-    /// seams (ROADMAP_20260831_ARCEAGER M2.4) and an explicit `resolver`
+    /// seams and an explicit `resolver`
     /// override (used by the batch path; `None` uses the pipeline's own).
     pub fn process_sync_with_refine(
         &self,
@@ -2424,8 +2423,7 @@ impl NlpPipeline {
     /// Fan out the ladder over N docs via `ResultPool` (the §10.5 parallel
     /// annotation path), then attach each validated set. The `fetch` seam is
     /// shared by all workers; the pool bounds concurrent LLM calls. The
-    /// optional `encoder` seam is forwarded to the ladder (ROADMAP_20260827_ORT
-    /// §4.4).
+    /// optional `encoder` seam is forwarded to the ladder.
     pub async fn annotate_batch_async(
         &self,
         texts: &[&str],
@@ -2449,8 +2447,8 @@ impl NlpPipeline {
         .await
     }
 
-    /// [`Self::annotate_batch_async`] plus the span-scoped refine seams
-    /// (ROADMAP_20260831_ARCEAGER M2.4). The seams are shared `Arc`s across
+    /// [`Self::annotate_batch_async`] plus the span-scoped refine seams.
+    /// The seams are shared `Arc`s across
     /// the pool workers (same pattern as the fetch/encoder seams).
     pub async fn annotate_batch_with_refine(
         &self,
@@ -2717,7 +2715,7 @@ fn refiner_order(
     refiners
 }
 
-/// The two-phase annotation ladder (ROADMAP_20260831_ARCEAGER §2.3):
+/// The two-phase annotation ladder:
 ///
 /// 1. **Base phase** (deterministic, unconditional): `first_accept_in_order`
 ///    over `[ArcEager, Rule]`. Always produces a validated `AnnotationResult`.
@@ -2923,7 +2921,7 @@ fn run_sync_refiner(
     }
 }
 
-/// The synchronous two-phase ladder walk (ROADMAP_20260831_ARCEAGER §2.3):
+/// The synchronous two-phase ladder walk:
 ///
 /// 1. **Base phase**: `first_accept_in_order_sync` over `[ArcEager, Rule]`.
 /// 2. **Refine phase** (conditional): when `should_refine`, tries model

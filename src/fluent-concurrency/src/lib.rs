@@ -12,18 +12,21 @@ pub mod flow;
 #[cfg(feature = "db")]
 pub mod io;
 pub mod ladder;
-// NOTE (ROADMAP_20260903_LLM M11): `llm_queue` (LLM protocol types +
-// `LlmRequestQueue`, owned by `fluent_llm::protocol` since M9) lived here
-// through M10 as deprecated byte-identical shims; M11 deleted the module.
+// The LLM protocol types (`ChatMessage`, `LlmConfig`, `LlmError`, `LlmTask`,
+// `LlmQueueConfig`) and `LlmRequestQueue` are owned by
+// `fluent_llm::protocol` — a thin wrapper over this crate's generic
+// `ResultPool`. Import LLM queue types from `fluent_llm`, never from here.
 // The generic executor (`pool::ResultPool`, `stream::StreamAbort`,
 // `runtime::TestRuntime`) stays and is composed by the protocol owner.
 pub mod pool;
 pub mod queue;
 pub mod reserve;
+pub mod retry;
 pub mod router;
 pub mod runtime;
 pub mod scope;
 pub mod stream;
+pub mod sync;
 pub mod thread_resource;
 pub mod batch;
 

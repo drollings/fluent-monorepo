@@ -758,7 +758,7 @@ pub fn build_instance_managers(
     let mut managers = HashMap::new();
     for (key, entry) in &config.models {
         // Onnx models are served by the ort registry, never by a llama-server
-        // instance pool (ROADMAP_20260827_ORT §0.5).
+        // instance pool.
         if !entry.is_managed() {
             continue;
         }

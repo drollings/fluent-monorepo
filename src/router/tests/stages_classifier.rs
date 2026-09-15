@@ -325,7 +325,7 @@ fn classifier_sends_response_format_through_extras_seam() {
         "schema must cover the classifier output shape"
     );
 }
-/// ROADMAP §14.5 (C1): the parsed-grammar context folded into the
+/// The parsed-grammar context folded into the
 /// classifier prompt is deterministic and id-exact (13.7).
 #[test]
 fn interlingua_prompt_context_is_id_exact() {
@@ -344,7 +344,7 @@ fn interlingua_prompt_context_is_id_exact() {
     assert!(ctx.contains("subject_id=null"));
 }
 
-/// ROADMAP_20260827_ORT §2.6: the overlay route-hints context is a
+/// The overlay route-hints context is a
 /// deterministic, score-ordered routing signal the classifier merges.
 #[test]
 fn route_hints_prompt_context_lists_hints_with_scores() {
@@ -405,7 +405,7 @@ impl fluent_llm::client::ChatBackend for SystemPromptRecordingBackend {
     }
 }
 
-/// ROADMAP_20260827_ORT §2.6: the overlay stage's route hints reach the
+/// The overlay stage's route hints reach the
 /// classifier as deterministic routing context (feed-first, no redirect).
 #[test]
 fn classifier_merges_overlay_route_hints_into_the_prompt() {

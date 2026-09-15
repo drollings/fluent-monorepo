@@ -283,7 +283,7 @@ fn all_mode_preserves_blanket_extraction() {
         "mode \"all\" keeps distilling primary-target successes"
     );
 }
-/// ROADMAP §12.7 (C7): a `parse_review` ledger node becomes a first-class
+/// A `parse_review` ledger node becomes a first-class
 /// step the chart extractor can replay; non-review nodes are ignored.
 #[test]
 fn parse_review_step_adapter() {

@@ -157,6 +157,7 @@ fn restore_llama_server(restore: Option<std::ffi::OsString>) {
     }
 }
 
+#[ignore = "heavy (~6s): boots stub servers with real-timer residency; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn supervisor_boot_rewrite_and_on_demand_residency() {
     // The fake llama-server is a python3 http server; skip cleanly when python

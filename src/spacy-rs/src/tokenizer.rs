@@ -15,12 +15,13 @@
 //! (recomputing `idx` in-span, preserving `spacy` of the final token).
 //!
 //! The tokenizer is immutable after construction and `Sync`: the affix regexes
-//! are compiled once, and the specials / matcher / cache live behind mutexes
-//! so a shared tokenizer can serve concurrent docs.
+//! are compiled once, the rule tables freeze into lock-free snapshots at the
+//! end of `Tokenizer::new`, and the span cache is lock-striped so concurrent
+//! docs share a tokenizer without serializing on a lock.
 
 use fancy_regex::Regex;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::doc::{Doc, TokenRecord};
 use crate::error::SpacyError;
@@ -88,8 +89,9 @@ impl Default for TokenizerConfig {
     }
 }
 
-/// The deterministic tokenizer. Interior mutability keeps the rule stores and
-/// caches synchronized while `tokenize` takes `&self`.
+/// The deterministic tokenizer. The span path (`tokenize` and everything it
+/// calls) only reads immutable snapshots, so a shared tokenizer serves
+/// concurrent docs with no lock held across spans.
 pub struct Tokenizer {
     vocab: Arc<Vocab>,
     prefixes: Option<Regex>,
@@ -99,15 +101,55 @@ pub struct Tokenizer {
     url_match: Option<Regex>,
     faster_heuristics: bool,
     max_cache_size: usize,
+    /// Rule tables staging area: written only by `add_special_case` before
+    /// the freeze at the end of `new`, drained into `frozen`, never read by
+    /// the span path.
+    staged_specials: Mutex<HashMap<u64, Arc<SpecialRule>>>,
+    /// Rules keyed by text (`_rules`), for the matcher / validation.
+    staged_rules: Mutex<HashMap<String, Arc<SpecialRule>>>,
+    /// Matcher-eligible rules (`_special_matcher`), in registration order.
+    staged_matcher: Mutex<Vec<Arc<SpecialRule>>>,
+    /// Frozen rule snapshots, published once at the end of `new`. The span
+    /// path reads these without locking.
+    frozen: OnceLock<Arc<FrozenTables>>,
+    /// Per-span tokenization cache (`_cache`), lock-striped by span hash so
+    /// concurrent docs contend only within a shard. Pure memo: same key and
+    /// values as the old single map, only the capacity accounting is
+    /// per-shard (total bound = shards × per-shard cap).
+    cache: [CacheShard; CACHE_SHARDS],
+}
+
+/// The frozen rule tables: every rule the constructor registered, published
+/// once and read lock-free by the span path.
+#[derive(Default)]
+struct FrozenTables {
     /// Special-case rules keyed by span hash (`_specials`).
-    specials: Mutex<HashMap<u64, Arc<SpecialRule>>>,
+    specials: HashMap<u64, Arc<SpecialRule>>,
     /// Rules keyed by text (`_rules`), for the matcher / validation.
     #[allow(dead_code)]
-    rules: Mutex<HashMap<String, Arc<SpecialRule>>>,
+    rules: HashMap<String, Arc<SpecialRule>>,
     /// Matcher-eligible rules (`_special_matcher`), in registration order.
-    matcher: Mutex<Vec<Arc<SpecialRule>>>,
-    /// Per-span tokenization cache (`_cache`): span hash → token lexemes.
-    cache: Mutex<HashMap<u64, Arc<Vec<Arc<Lexeme>>>>>,
+    matcher: Vec<Arc<SpecialRule>>,
+    /// Exact first-orth index over matcher-eligible rules with non-empty
+    /// phrases, in registration order per orth: phrase matching only compares
+    /// rules whose first token can match at a position. Exact (orth equality),
+    /// not heuristic — same matches as the full scan, fewer comparisons.
+    first_orth: HashMap<u64, Vec<Arc<SpecialRule>>>,
+}
+
+/// Lock-striping shard count for the span cache. Pure contention tuning —
+/// any count preserves the exact key-equality memo semantics, so this is a
+/// constant, not a threshold: no tuning pass reads it, no behavioral gate
+/// depends on it.
+const CACHE_SHARDS: usize = 16;
+
+/// One lock-striping shard of the span cache: span hash → token lexemes.
+type CacheShard = Mutex<HashMap<u64, Arc<Vec<Arc<Lexeme>>>>>;
+
+/// Shard for `key`: the span hash already mixes well (MurmurHash64A), so the
+/// low bits stripe uniformly.
+fn shard_of(key: u64) -> usize {
+    (key as usize) % CACHE_SHARDS
 }
 
 /// `(&key, &[(orth, norm)])` — the exception data shape the language modules
@@ -129,13 +171,17 @@ impl Tokenizer {
     /// Build a tokenizer from a vocabulary, a configuration, and the language's
     /// special-case rules. Regexes are compiled first, then rules are loaded
     /// (each validated, phrase-tokenized, and cached), mirroring
-    /// `Tokenizer.__init__` (`tokenizer.pyx:31-73`).
+    /// `Tokenizer.__init__` (`tokenizer.pyx:31-73`). The rule tables freeze
+    /// when the builder returns: later `add_special_case` calls fail instead
+    /// of mutating tables under concurrent readers (rule genesis rebuilds
+    /// the tokenizer). This is the one intentional behavior change.
     pub fn new(
         vocab: Arc<Vocab>,
         config: &TokenizerConfig,
         exceptions: &[SpecialCaseData<'_>],
     ) -> Result<Self, SpacyError> {
         let compile = |p: &str| Regex::new(p).map_err(|e| SpacyError::Regex(e.to_string()));
+        let cache: [CacheShard; CACHE_SHARDS] = std::array::from_fn(|_| Mutex::new(HashMap::new()));
         let tokenizer = Self {
             vocab,
             prefixes: config.prefix_pattern.as_deref().map(compile).transpose()?,
@@ -145,15 +191,57 @@ impl Tokenizer {
             url_match: config.url_match.as_deref().map(compile).transpose()?,
             faster_heuristics: config.faster_heuristics,
             max_cache_size: config.max_cache_size,
-            specials: Mutex::new(HashMap::new()),
-            rules: Mutex::new(HashMap::new()),
-            matcher: Mutex::new(Vec::new()),
-            cache: Mutex::new(HashMap::new()),
+            staged_specials: Mutex::new(HashMap::new()),
+            staged_rules: Mutex::new(HashMap::new()),
+            staged_matcher: Mutex::new(Vec::new()),
+            frozen: OnceLock::new(),
+            cache,
         };
         for (key, tokens) in exceptions {
             tokenizer.add_special_case(key, tokens)?;
         }
+        tokenizer.freeze();
         Ok(tokenizer)
+    }
+
+    /// Drain the staged tables into the immutable snapshots and publish them.
+    /// Runs once at the end of `new`; afterwards the span path reads the
+    /// snapshots without locking.
+    fn freeze(&self) {
+        let specials = std::mem::take(&mut *common_core::sync::lock(&self.staged_specials));
+        let rules = common_core::sync::lock(&self.staged_rules)
+            .drain()
+            .collect::<HashMap<_, _>>();
+        let staged = std::mem::take(&mut *common_core::sync::lock(&self.staged_matcher));
+        let mut tables = FrozenTables {
+            specials,
+            rules,
+            matcher: Vec::with_capacity(staged.len()),
+            first_orth: HashMap::new(),
+        };
+        // Registration order is preserved in both the matcher vec and each
+        // first-orth bucket, so phrase-match resolution (including same-span
+        // ties) agrees with the pre-freeze scan order.
+        for rule in staged {
+            if let Some(first) = rule.phrase.first() {
+                tables
+                    .first_orth
+                    .entry(*first)
+                    .or_default()
+                    .push(Arc::clone(&rule));
+            }
+            tables.matcher.push(rule);
+        }
+        let _ = self.frozen.set(Arc::new(tables));
+    }
+
+    /// The frozen rule tables. During construction (before `freeze`)
+    /// `add_special_case` stages rules without reading them, and phrase
+    /// tokenization runs with special cases disabled, so every span-path
+    /// read lands here only after publication.
+    fn tables(&self) -> &FrozenTables {
+        static EMPTY: std::sync::LazyLock<FrozenTables> = std::sync::LazyLock::new(FrozenTables::default);
+        self.frozen.get().map(|t| &**t).unwrap_or(&EMPTY)
     }
 
     /// Tokenize `text` into a `Doc` (`__call__` — `tokenizer.pyx:152-162`):
@@ -165,6 +253,11 @@ impl Tokenizer {
     }
 
     /// Pass 1 — `_tokenize_affixes` (`tokenizer.pyx:164-210`).
+    ///
+    /// The text is walked on byte ranges at char boundaries: spans borrow
+    /// from `text` (no `Vec<char>`, no per-span `String`), and `idx` stays
+    /// char-based exactly as before — `Doc` derives it from lexeme lengths,
+    /// untouched here.
     fn tokenize_affixes(&self, text: &str, with_special_cases: bool) -> Result<Doc, SpacyError> {
         if text.len() >= (1 << 30) {
             return Err(SpacyError::TextTooLong(text.len()));
@@ -173,18 +266,17 @@ impl Tokenizer {
         if text.is_empty() {
             return Ok(doc);
         }
-        let chars: Vec<char> = text.chars().collect();
-        let n = chars.len();
-        let mut i = 0usize;
-        let mut start = 0usize;
         let mut has_special = false;
-        let mut in_ws = chars[0].is_whitespace();
-        while i < n {
-            let uc = chars[i];
-            if uc.is_whitespace() != in_ws {
-                if start < i {
-                    let span: String = chars[start..i].iter().collect();
-                    let key = hash_utf8(&span);
+        let mut run_start = 0usize;
+        let mut run_is_ws = text
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_whitespace());
+        for (i, c) in text.char_indices() {
+            if c.is_whitespace() != run_is_ws {
+                if run_start < i {
+                    let span = &text[run_start..i];
+                    let key = hash_utf8(span);
                     if !self.try_specials_and_cache(
                         key,
                         &mut doc,
@@ -193,45 +285,46 @@ impl Tokenizer {
                     ) {
                         self.tokenize_span(
                             &mut doc,
-                            &span,
+                            span,
                             key,
                             &mut has_special,
                             with_special_cases,
                         )?;
                     }
                 }
-                if uc == ' ' {
+                if c == ' ' {
                     let last = doc
                         .tokens_mut()
                         .last_mut()
                         .ok_or_else(|| SpacyError::Annotation("no token before space".into()))?;
                     last.spacy = true;
-                    start = i + 1;
+                    run_start = i + 1;
                 } else {
-                    start = i;
+                    run_start = i;
                 }
-                in_ws = !in_ws;
+                run_is_ws = !run_is_ws;
             }
-            i += 1;
         }
-        if start < n {
-            let span: String = chars[start..].iter().collect();
-            let key = hash_utf8(&span);
-            if !self.try_specials_and_cache(key, &mut doc, &mut has_special, with_special_cases) {
-                self.tokenize_span(&mut doc, &span, key, &mut has_special, with_special_cases)?;
+        if run_start < text.len() {
+            let span = &text[run_start..];
+            let key = hash_utf8(span);
+            if !self.try_specials_and_cache(key, &mut doc, &mut has_special, with_special_cases)
+            {
+                self.tokenize_span(&mut doc, span, key, &mut has_special, with_special_cases)?;
             }
             let last = doc
                 .tokens_mut()
                 .last_mut()
                 .ok_or_else(|| SpacyError::Annotation("no token after final span".into()))?;
-            last.spacy = text.ends_with(' ') && !in_ws;
+            last.spacy = text.ends_with(' ') && !run_is_ws;
         }
         Ok(doc)
     }
 
     /// `_try_specials_and_cache` (`tokenizer.pyx:364-391`): push a cached
     /// special-case expansion (setting `has_special`) or a cached affix
-    /// tokenization; `true` on hit.
+    /// tokenization; `true` on hit. Reads the frozen snapshots without
+    /// locking; only the shard owning `key` is locked for the cache probe.
     fn try_specials_and_cache(
         &self,
         key: u64,
@@ -240,13 +333,7 @@ impl Tokenizer {
         with_special_cases: bool,
     ) -> bool {
         if with_special_cases {
-            if let Some(rule) = self
-                .specials
-                .lock()
-                .expect("specials lock poisoned")
-                .get(&key)
-                .cloned()
-            {
+            if let Some(rule) = self.tables().specials.get(&key) {
                 for st in &rule.tokens {
                     let mut record = TokenRecord::new(st.orth.clone());
                     record.norm = st.norm;
@@ -256,10 +343,7 @@ impl Tokenizer {
                 return true;
             }
         }
-        if let Some(cached) = self
-            .cache
-            .lock()
-            .expect("cache lock poisoned")
+        if let Some(cached) = common_core::sync::lock(&self.cache[shard_of(key)])
             .get(&key)
             .cloned()
         {
@@ -297,83 +381,88 @@ impl Tokenizer {
             with_special_cases,
         )?;
         let n = doc.len() - orig_size;
-        let mut cache = self.cache.lock().expect("cache lock poisoned");
-        if !*has_special && n > 0 && cache.len() < self.max_cache_size {
+        // Add-only-once-full memo, matching spaCy — accounted per shard so
+        // the total bound stays shards × per-shard cap.
+        let mut shard = common_core::sync::lock(&self.cache[shard_of(key)]);
+        if !*has_special && n > 0 && shard.len() < self.shard_cap() {
             let lexemes: Vec<Arc<Lexeme>> = doc.tokens()[orig_size..]
                 .iter()
                 .map(|t| t.lexeme.clone())
                 .collect();
-            cache.insert(key, Arc::new(lexemes));
+            shard.insert(key, Arc::new(lexemes));
         }
         Ok(())
     }
 
+    /// Per-shard cache capacity: the total stays bounded by
+    /// shards × per-shard cap (≤ `max_cache_size`, exact when divisible).
+    fn shard_cap(&self) -> usize {
+        self.max_cache_size.div_ceil(CACHE_SHARDS)
+    }
+
     /// `_split_affixes` (`tokenizer.pyx:406-452`): peel prefixes/suffixes off
     /// the span, stopping early when a `token_match` or special-case hit
-    /// covers the remainder.
+    /// covers the remainder. Works on byte ranges into `span` — the peel
+    /// points are regex byte offsets, so no intermediate `String` is built;
+    /// only the surviving core is copied once for the owned return value.
     fn split_affixes(
         &self,
-        string: &str,
+        span: &str,
         _has_special: &mut bool,
         with_special_cases: bool,
     ) -> Result<AffixSplit, SpacyError> {
-        let mut string = string.to_string();
+        let mut lo = 0usize;
+        let mut hi = span.len();
         let mut prefixes: Vec<Arc<Lexeme>> = Vec::new();
         let mut suffixes: Vec<Arc<Lexeme>> = Vec::new();
         let mut last_size = 0usize;
-        while !string.is_empty() && string.len() != last_size {
+        while lo < hi && hi - lo != last_size {
+            let string = &span[lo..hi];
             if let Some(tm) = &self.token_match {
                 if tm
-                    .is_match(&string)
+                    .is_match(string)
                     .map_err(|e| SpacyError::Regex(e.to_string()))?
                 {
                     break;
                 }
             }
-            if with_special_cases && self.has_special(&string) {
+            if with_special_cases && self.has_special(string) {
                 break;
             }
             last_size = string.len();
-            let pre_len = self.find_prefix(&string)?;
+            let pre_len = self.find_prefix(string)?;
             if pre_len != 0 {
-                let prefix = string[..pre_len].to_string();
-                let minus_pre = string[pre_len..].to_string();
-                if !minus_pre.is_empty() && with_special_cases && self.has_special(&minus_pre) {
-                    string = minus_pre;
-                    prefixes.push(self.lex(&prefix));
+                let minus_pre = &string[pre_len..];
+                if !minus_pre.is_empty() && with_special_cases && self.has_special(minus_pre) {
+                    prefixes.push(self.lex(&string[..pre_len]));
+                    lo += pre_len;
                     break;
                 }
             }
             let suf_len = self.find_suffix(&string[pre_len..])?;
             if suf_len != 0 {
-                let byte_start = string.len() - suf_len;
-                let suffix = string[byte_start..].to_string();
-                let minus_suf = string[..byte_start].to_string();
-                if !minus_suf.is_empty() && with_special_cases && self.has_special(&minus_suf) {
-                    string = minus_suf;
-                    suffixes.push(self.lex(&suffix));
+                let minus_suf = &string[..string.len() - suf_len];
+                if !minus_suf.is_empty() && with_special_cases && self.has_special(minus_suf) {
+                    suffixes.push(self.lex(&string[string.len() - suf_len..]));
+                    hi -= suf_len;
                     break;
                 }
             }
             if pre_len != 0 && suf_len != 0 && pre_len + suf_len <= string.len() {
-                let prefix = string[..pre_len].to_string();
-                let suffix = string[string.len() - suf_len..].to_string();
-                string = string[pre_len..string.len() - suf_len].to_string();
-                prefixes.push(self.lex(&prefix));
-                suffixes.push(self.lex(&suffix));
+                prefixes.push(self.lex(&string[..pre_len]));
+                suffixes.push(self.lex(&string[string.len() - suf_len..]));
+                lo += pre_len;
+                hi -= suf_len;
             } else if pre_len != 0 {
-                let prefix = string[..pre_len].to_string();
-                string = string[pre_len..].to_string();
-                prefixes.push(self.lex(&prefix));
+                prefixes.push(self.lex(&string[..pre_len]));
+                lo += pre_len;
             } else if suf_len != 0 {
-                let byte_start = string.len() - suf_len;
-                let suffix = string[byte_start..].to_string();
-                string = string[..byte_start].to_string();
-                suffixes.push(self.lex(&suffix));
+                suffixes.push(self.lex(&string[string.len() - suf_len..]));
+                hi -= suf_len;
             }
         }
         Ok(AffixSplit {
-            remaining: string,
+            remaining: span[lo..hi].to_string(),
             prefixes,
             suffixes,
         })
@@ -486,22 +575,27 @@ impl Tokenizer {
     /// `PhraseMatcher.find_matches` over the doc: every occurrence of every
     /// matcher-eligible rule's affix-tokenized orth sequence in the doc's
     /// token orth sequence (matcher runs on `ORTH`, `PhraseMatcher` default).
+    /// Positions consult the exact first-orth index, so only rules whose
+    /// first token matches at a position are compared — same matches as the
+    /// full rule scan, fewer comparisons. Spans are visited start-ascending
+    /// with rules in registration order per start, which resolves to the same
+    /// spans as the old rule-major scan (including same-span ties).
     fn find_phrase_matches(&self, doc: &Doc) -> Vec<(Arc<SpecialRule>, usize, usize)> {
-        let matcher = self.matcher.lock().expect("matcher lock poisoned");
-        if matcher.is_empty() {
+        let tables = self.tables();
+        if tables.matcher.is_empty() {
             return Vec::new();
         }
         let orth: Vec<u64> = doc.tokens().iter().map(|t| t.lexeme.orth).collect();
         let n = orth.len();
         let mut out = Vec::new();
-        for rule in matcher.iter() {
-            let phrase = &rule.phrase;
-            let plen = phrase.len();
-            if plen == 0 || plen > n {
+        for start in 0..n {
+            let Some(rules) = tables.first_orth.get(&orth[start]) else {
                 continue;
-            }
-            for start in 0..=(n - plen) {
-                if orth[start] != phrase[0] {
+            };
+            for rule in rules {
+                let phrase = &rule.phrase;
+                let plen = phrase.len();
+                if plen == 0 || start + plen > n {
                     continue;
                 }
                 if orth[start..start + plen] == phrase[..] {
@@ -558,11 +652,9 @@ impl Tokenizer {
     }
 
     /// Whether `s` has a loaded special-case rule (`_specials` lookup).
+    /// Reads the frozen snapshot without locking.
     fn has_special(&self, s: &str) -> bool {
-        self.specials
-            .lock()
-            .expect("specials lock poisoned")
-            .contains_key(&hash_utf8(s))
+        self.tables().specials.contains_key(&hash_utf8(s))
     }
 
     /// The lexeme for `text` (`vocab.get(mem, ...)`), interning on sight.
@@ -570,14 +662,21 @@ impl Tokenizer {
         self.vocab.lexicon().get_or_create(text)
     }
 
-    /// `add_special_case` (`tokenizer.pyx:600-624`): validate the rule, store
-    /// it in `specials`/`rules`, decide matcher membership, tokenize its
-    /// phrase, and flush the span cache.
+    /// `add_special_case` (`tokenizer.pyx:600-624`): validate the rule, stage
+    /// it for the freeze, decide matcher membership, tokenize its phrase.
+    /// Only the constructor may call this: after the freeze it returns
+    /// `TokenizerFrozen` instead of mutating live tables (the one intentional
+    /// behavior change — rule genesis rebuilds the tokenizer).
     fn add_special_case(
         &self,
         key: &str,
         tokens: &[(&str, Option<&str>)],
     ) -> Result<(), SpacyError> {
+        if self.frozen.get().is_some() {
+            return Err(SpacyError::TokenizerFrozen {
+                key: key.to_string(),
+            });
+        }
         let concat: String = tokens.iter().map(|(orth, _)| *orth).collect();
         if concat != key {
             return Err(SpacyError::SpecialCase {
@@ -611,21 +710,14 @@ impl Tokenizer {
             tokens: special_tokens,
             phrase,
         });
-        self.specials
-            .lock()
-            .expect("specials lock poisoned")
-            .insert(hash_utf8(key), Arc::clone(&rule));
-        self.rules
-            .lock()
-            .expect("rules lock poisoned")
-            .insert(key.to_string(), Arc::clone(&rule));
+        common_core::sync::lock(&self.staged_specials).insert(hash_utf8(key), Arc::clone(&rule));
+        common_core::sync::lock(&self.staged_rules).insert(key.to_string(), Arc::clone(&rule));
         if in_matcher {
-            self.matcher
-                .lock()
-                .expect("matcher lock poisoned")
-                .push(rule);
+            common_core::sync::lock(&self.staged_matcher).push(rule);
         }
-        self.cache.lock().expect("cache lock poisoned").clear();
+        for shard in &self.cache {
+            common_core::sync::lock(shard).clear();
+        }
         Ok(())
     }
 }
@@ -656,3 +748,7 @@ fn filter_special_spans(
 #[cfg(test)]
 #[path = "../tests/tokenizer.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/tokenizer_snapshot.rs"]
+mod tokenizer_snapshot_tests;

@@ -1935,7 +1935,7 @@ fn review_signal() -> spacy_rs::routing::RoutingSignal {
 }
 
 /// Build `ServerDeps` with a live review worker + a durable parse node for the
-/// session (the ROADMAP §12.8 endpoint path). Returns the fetch-call counter so
+/// session (the review-parse endpoint path). Returns the fetch-call counter so
 /// a test can assert the review model was actually consulted (H1 regression).
 fn review_deps(
     config: &RouterConfig,
@@ -1989,7 +1989,7 @@ fn review_deps(
     (deps, ledger, parse_id, fetched)
 }
 
-/// ROADMAP §12.8: `POST /v1/sessions/{id}/review-parse` enqueues a job (202 +
+/// `POST /v1/sessions/{id}/review-parse` enqueues a job (202 +
 /// job id) and `GET` reads the review status back — the endpoint seam end to
 /// end (no ledger, no worker → explicit 501/404, never a crash).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2073,7 +2073,7 @@ async fn review_parse_endpoints_enqueue_and_read_back_status() {
     );
 }
 
-/// ROADMAP §12.8: without a review worker the endpoint is 501; without a parse
+/// Without a review worker the endpoint is 501; without a parse
 /// node for the session it is 404 — never a crash.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn review_parse_endpoint_degrades_gracefully() {

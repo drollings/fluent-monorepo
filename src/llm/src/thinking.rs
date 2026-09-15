@@ -1,4 +1,4 @@
-//! Think-block stripping — the single owner (ROADMAP_20260903_LLM M1).
+//! Think-block stripping — the single owner.
 //!
 //! Moved verbatim from `common_core::string` (`THINKING_PAIRS`,
 //! `strip_tag_pairs`, `strip_plain_thinking`, `strip_thinking_blocks`,

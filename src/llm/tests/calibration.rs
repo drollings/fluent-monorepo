@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M10 — calibration gate (tests + measurements).
+//! Calibration gate (tests + measurements).
 //!
 //! This milestone writes NO production code: it measures the moved
 //! heuristics, locks the numbers, and records them in

@@ -135,7 +135,7 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub review: Option<ReviewConfig>,
-    /// Async overlay composition section (ROADMAP_20260827_ORT §6). `Some`
+    /// Async overlay composition section. `Some`
     /// opts the boot path into the entity-link overlay worker — the async
     /// plane that writes `EntityLink` candidates to `overlay_candidates` (never
     /// a doc-id write). `None` (the default) leaves today's behavior — no
@@ -2390,6 +2390,12 @@ pub struct LedgerConfig {
     /// Default-absent so existing deployments are untouched.
     #[serde(default)]
     pub orchestrator: OrchestratorSection,
+    /// Workflow replay loop (M14a): record solved runs as `Target` DAGs and
+    /// replay near-neighbor runs without frontier calls. Default-off
+    /// (`enabled = false`) so existing deployments are untouched; thresholds
+    /// arrive pre-set from calibration.
+    #[serde(default)]
+    pub replay: crate::ledger::workflow_replay::ReplayConfig,
 }
 
 const fn default_ledger_max_summary_tokens() -> u32 {
@@ -2436,11 +2442,12 @@ impl Default for LedgerConfig {
             tier_credit_limit: default_tier_credit_limit(),
             tier_credit_more_after: default_tier_credit_more_after(),
             orchestrator: OrchestratorSection::default(),
+            replay: crate::ledger::workflow_replay::ReplayConfig::default(),
         }
     }
 }
 
-/// Async review configuration (ROADMAP §12.7, C4). `None` (the default)
+/// Async review configuration. `None` (the default)
 /// disables the review worker and its endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReviewConfig {
@@ -2454,7 +2461,7 @@ pub struct ReviewConfig {
     /// Credit granted up front to the review feed (backpressure, §12.6).
     #[serde(default = "default_review_credit_limit")]
     pub credit_limit: usize,
-    /// Opt-in PII auto-enqueue (ROADMAP_20260827_ORT §3.4): after a parse is
+    /// Opt-in PII auto-enqueue: after a parse is
     /// recorded, PII-shaped spans detected on the request text enqueue a
     /// review candidate, bounded by the existing credit gate. `false` (the
     /// default) keeps today's behavior — review jobs only come from the
@@ -2480,7 +2487,7 @@ fn default_review_pii_threshold() -> f64 {
     0.5
 }
 
-/// Async overlay configuration (ROADMAP_20260827_ORT §6). `None` (the default)
+/// Async overlay configuration. `None` (the default)
 /// disables the overlay worker and its request-path hook.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct OverlayConfig {
@@ -2578,11 +2585,17 @@ fn default_overlay_credit_limit() -> usize {
 /// The `ledger.orchestrator` section: configures the
 /// `LedgerAgentCoordinator`'s restore-vs-re-prefill policy, its prompt budget,
 /// and the default role recorded for agent output nodes.
+///
+/// Default-on since M14c (M14-CAL projects a net frontier decrease):
+/// a present `ledger` section attaches the coordinator unless the operator
+/// opts out with `enabled = false` or rolls back at runtime via
+/// `POST /admin/coordinator/rollback` (`coral-router coordinator-rollback`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchestratorSection {
-    /// Whether to attach the coordinator at boot (opt-in). `false` (the
-    /// default) leaves the server's dispatch path unchanged.
-    #[serde(default)]
+    /// Whether to attach the coordinator at boot. `true` (the default)
+    /// attaches it wherever a ledger is configured; `false` opts out and
+    /// leaves the server's dispatch path on the pre-coordinator pipeline.
+    #[serde(default = "default_orchestrator_enabled")]
     pub enabled: bool,
     /// The restore-vs-re-prefill decision rule for per-model KV snapshots.
     #[serde(default)]
@@ -2603,6 +2616,10 @@ pub struct OrchestratorSection {
     pub affinity_cap: Option<usize>,
 }
 
+const fn default_orchestrator_enabled() -> bool {
+    true
+}
+
 const fn default_orchestrator_prompt_budget_chars() -> usize {
     32768
 }
@@ -2614,7 +2631,7 @@ fn default_orchestrator_role() -> String {
 impl Default for OrchestratorSection {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: default_orchestrator_enabled(),
             kv_policy: crate::dag_session::KvSnapshotPolicy::RestoreIfSameModel,
             prompt_budget_chars: default_orchestrator_prompt_budget_chars(),
             role: default_orchestrator_role(),

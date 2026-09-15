@@ -1,5 +1,4 @@
-//! Pure lemma-grep helpers over a parsed [`Doc`] (ROADMAP_20260903_SPACY_RS_SPLIT
-//! M4 — the remainder after the split).
+//! Pure lemma-grep helpers over a parsed [`Doc`].
 //!
 //! This module keeps only the bare pure helpers a caller needs without the
 //! tool envelope: byte-offset [`Span`]s, [`LemmaGrepHit`]s, and [`lemma_grep`]

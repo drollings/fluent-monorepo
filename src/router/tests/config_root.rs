@@ -36,7 +36,7 @@ fn review_config_defaults_and_new_m3_keys() {
     assert_eq!(round_trip.review_model, cfg.review_model);
 }
 
-// -- Async overlay configuration (ROADMAP_20260827_ORT §6) -----------
+// -- Async overlay configuration -----------
 
 #[test]
 fn overlay_config_defaults_are_fail_open() {
@@ -1797,19 +1797,32 @@ fn ledger_background_tiering_fields_round_trip() {
 // -- Ledger orchestrator section --------------------------------
 
 #[test]
-fn orchestrator_section_default_absent() {
-    // Existing ledger configs without an `orchestrator` section keep the
-    // coordinator disabled (opt-in) and today's defaults.
+fn orchestrator_section_default_on() {
+    // M14c default-on (M14-CAL projects a net frontier decrease): a ledger
+    // section without an `orchestrator` block attaches the coordinator with
+    // today's other defaults. Opt-out is explicit `enabled = false`.
     let cfg: RouterConfig =
         serde_json::from_value(serde_json::json!({ "ledger": { "model": "swarm" } })).unwrap();
     let orch = &cfg.ledger.as_ref().unwrap().orchestrator;
-    assert!(!orch.enabled, "coordinator is opt-in");
+    assert!(orch.enabled, "coordinator is default-on");
     assert_eq!(
         orch.kv_policy,
         crate::dag_session::KvSnapshotPolicy::RestoreIfSameModel
     );
     assert_eq!(orch.prompt_budget_chars, 32768);
     assert_eq!(orch.role, "agent");
+}
+
+#[test]
+fn orchestrator_section_opt_out() {
+    let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
+        "ledger": { "model": "swarm", "orchestrator": { "enabled": false } }
+    }))
+    .unwrap();
+    assert!(
+        !cfg.ledger.as_ref().unwrap().orchestrator.enabled,
+        "explicit opt-out is honored"
+    );
 }
 
 #[test]

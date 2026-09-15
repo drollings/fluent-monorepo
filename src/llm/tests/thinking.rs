@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M1.3 — think-block stripping goldens (moved, not copied).
+//! Think-block stripping goldens.
 //!
 //! Canonical home for every think-block golden: the free-function assertions
 //! moved from `src/router/tests/streaming.rs:141-238` plus the

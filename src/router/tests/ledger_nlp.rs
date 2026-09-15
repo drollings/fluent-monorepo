@@ -126,7 +126,7 @@ fn record_populates_interlingua_index() {
     assert!(rows.contains(&(0x0100_0000_0000_0001, "concept".into())));
 }
 
-/// M1.3 (ROADMAP_20260828_ORT, G2): the consolidated write path
+/// The consolidated write path
 /// (`record_parse_node_with_confidence`) — the helper the live request path
 /// (`record_parse_ledger`) now calls — writes one `interlingua_index` row
 /// per (sentence × role id) with `review_status='unreviewed'`, exactly like

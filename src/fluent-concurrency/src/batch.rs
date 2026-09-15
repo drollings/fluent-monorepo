@@ -58,11 +58,11 @@ pub struct SupervisedBatchConfig {
     /// `WorkError::Execution` (e.g. chart targets whose LLM call failed).
     pub is_retryable: fn(&WorkError) -> bool,
     /// Base delay (ms) of the jittered-exponential backoff between retry
-    /// attempts, forwarded to `common_core::retry::retry_async` as `base_ms`.
+    /// attempts, forwarded to `crate::retry::retry_async` as `base_ms`.
     /// Default `100` — the schedule before this was configurable.
     pub backoff_base_ms: u64,
     /// Jitter of the backoff, forwarded to
-    /// `common_core::retry::retry_async` as `jitter_pct`: a percentage (0–100)
+    /// `crate::retry::retry_async` as `jitter_pct`: a percentage (0–100)
     /// of the current backoff delay added on top of it. Default `50`.
     pub backoff_jitter_ms: u64,
 }

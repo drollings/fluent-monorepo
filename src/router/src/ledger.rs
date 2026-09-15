@@ -50,6 +50,7 @@ pub mod overlay_worker;
 pub mod prompt;
 pub mod tiering;
 pub mod workflow;
+pub mod workflow_replay;
 pub mod workflow_store;
 
 #[cfg(test)]
@@ -261,7 +262,7 @@ impl ContentNodeLedger {
         self.store.update_node_metadata(node_id, metadata)
     }
 
-    /// Atomic review write (ROADMAP §12.6/§12.7, C4): the parse node's
+    /// Atomic review write: the parse node's
     /// `review_status` metadata update, the `parse_review` node (on a miss),
     /// and the `interlingua_index` correction rows all commit in **one SQLite
     /// transaction**, so a crash mid-review never half-applies. See
@@ -278,7 +279,7 @@ impl ContentNodeLedger {
     }
 
     /// Write a tiered annotation claim against a node's **current content
-    /// hash** (ROADMAP M4). The public writer surface for the frame / review /
+    /// hash**. The public writer surface for the frame / review /
     /// enrichment producers: it resolves the node's hash and routes the claim
     /// to the `AnnotationStore`, so a later content mutation (new hash) makes
     /// the claim unreachable — invalidation is keying, never a scheduler.
@@ -447,7 +448,7 @@ impl Migration for LedgerContentJsonColumn {
     }
 }
 
-/// Migration 5 (ROADMAP §14.2/§14.3): the interlingua tables.
+/// Migration 5: the interlingua tables.
 ///
 /// - `interlingua_index` — the router's durable **correction index** (the
 ///   `CorrectionIndex` impl, §12.5) and the audit of which ids were attached
@@ -592,7 +593,7 @@ impl Migration for LedgerInterlinguaSchemaV2 {
     }
 }
 
-/// Migration 7 (ROADMAP_20260827_ORT §6.1): the overlay/candidate plane.
+/// Migration 7: the overlay/candidate plane.
 ///
 /// `overlay_candidates` is the durable surface for async overlay outputs —
 /// entity links, PII-shaped spans, parse corrections, concept summaries. The
@@ -642,7 +643,7 @@ impl Migration for LedgerOverlayCandidatesSchema {
     }
 }
 
-/// Migration 8 (ROADMAP M4): the tiered annotation table.
+/// Migration 8: the tiered annotation table.
 ///
 /// `ledger_annotations` is the durable surface for `AnnotationStore` claims —
 /// every annotation keyed to the node's `content_hash` (the version identity)

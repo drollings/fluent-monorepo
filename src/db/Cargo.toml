@@ -7,12 +7,15 @@ edition.workspace = true
 
 [features]
 default = ["sqlite"]
+# `common-core/sqlite` is kept solely for the `SqliteError` leaf error type
+# (shared with `dag`); the raw helpers live in `fluent_db::sqlite`.
 sqlite = ["dep:rusqlite", "dep:hnsw_rs", "dep:anndists", "common-core/sqlite"]
 
 [dependencies]
 fluent-types = { path = "../types" }
 fluent-wvr = { path = "../fluent-wvr" }
 common-core = { path = "../common-core" }
+vector-math = { path = "../vector-math" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

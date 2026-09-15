@@ -207,3 +207,74 @@ fn concurrent_default_is_empty() {
         let reg: ConcurrentRegistry<&'static str, i32> = ConcurrentRegistry::default();
         assert!(reg.is_empty());
 }
+
+#[test]
+fn concurrent_clone_shares_handles() {
+        // `Clone` is the cheap shared-handle semantic (like `Arc` itself):
+        // mutations through either handle are visible through both.
+        let reg = ConcurrentRegistry::new();
+        reg.insert("a".to_string(), 1);
+        let shared = reg.clone();
+        shared.insert("b".to_string(), 2);
+        assert_eq!(reg.get(&"b".to_string()).map(|v| *v), Some(2));
+        reg.insert("c".to_string(), 3);
+        assert_eq!(shared.get(&"c".to_string()).map(|v| *v), Some(3));
+        assert!(Arc::ptr_eq(
+            &reg.get(&"a".to_string()).unwrap(),
+            &shared.get(&"a".to_string()).unwrap()
+        ));
+}
+
+#[test]
+fn concurrent_snapshot_isolates_key_sets() {
+        // `snapshot` preserves the old fork semantics: an independent
+        // key-set over shared values.
+        let reg = ConcurrentRegistry::new();
+        reg.insert("a".to_string(), 1);
+        let fork = reg.snapshot();
+        fork.insert("b".to_string(), 2);
+        assert!(reg.get(&"b".to_string()).is_none());
+        assert_eq!(fork.get(&"b".to_string()).map(|v| *v), Some(2));
+        // Values are shared (one allocation), key-sets are independent.
+        assert!(Arc::ptr_eq(
+            &reg.get(&"a".to_string()).unwrap(),
+            &fork.get(&"a".to_string()).unwrap()
+        ));
+        reg.remove(&"a".to_string());
+        assert!(fork.get(&"a".to_string()).is_some());
+}
+
+#[test]
+fn concurrent_resolve_or_create_exactly_once_under_32_threads() {
+        let reg = Arc::new(ConcurrentRegistry::new());
+        let constructions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let start = Arc::new(std::sync::Barrier::new(32));
+        let mut handles = Vec::new();
+        for _ in 0..32 {
+            let reg = Arc::clone(&reg);
+            let constructions = Arc::clone(&constructions);
+            let start = Arc::clone(&start);
+            handles.push(std::thread::spawn(move || {
+                start.wait();
+                reg.resolve_or_create("shared".to_string(), |_| {
+                    constructions.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    vec![1, 2, 3]
+                })
+            }));
+        }
+        let mut first: Option<Arc<Vec<i32>>> = None;
+        for h in handles {
+            let v = h.join().unwrap();
+            assert_eq!(v.as_slice(), &[1, 2, 3]);
+            if let Some(f) = &first {
+                assert!(Arc::ptr_eq(f, &v));
+            } else {
+                first = Some(v);
+            }
+        }
+        assert_eq!(
+            constructions.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "constructor must run exactly once under contention"
+        );
+}

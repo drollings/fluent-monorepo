@@ -350,11 +350,15 @@ impl PipelineOrchestrator {
         PipelineOrchestratorBuilder::default()
     }
 
-    fn build_stage_context(base: &WorkContext, current_request: &serde_json::Value) -> WorkContext {
-        let mut ctx = base.clone();
-        ctx.structured
-            .insert("request".into(), current_request.clone());
-        ctx
+    /// Swap the live request into the accumulator's structured slot so the
+    /// next stage reads it by reference, and swap it back afterwards.
+    /// `execute` is `&self` + shared `&ctx` by contract, so no stage can
+    /// retain the reference past its return — the swap is sound and clones
+    /// nothing per stage.
+    fn swap_request_in(running: &mut WorkContext, current_request: &mut serde_json::Value) {
+        if let Some(slot) = running.structured.get_mut("request") {
+            std::mem::swap(slot, current_request);
+        }
     }
 
     /// Apply a stage verdict to the running pipeline state, reading the
@@ -372,7 +376,7 @@ impl PipelineOrchestrator {
         // Typed handoff: the orchestrator published the decision to the store,
         // so we read it by reference — no per-stage JSON round-trip.
         let decision = ctx.get::<StageDecision>(STAGE_DECISION_KEY)?;
-        let metadata = StageMetadata::from(decision.metadata.clone());
+        let metadata = StageMetadata::metadata_ref(&decision.metadata);
         match decision.verdict {
             StageVerdict::Passed | StageVerdict::Skipped => {
                 if stage_name == PipelineStage::Classifier {
@@ -539,14 +543,20 @@ impl WorkUnit for PipelineOrchestrator {
         let mut routing_target: Option<RoutingTarget> = None;
         let mut classifier_response: Option<String> = None;
 
-        // The running accumulator clones the caller's context so each stage's
-        // decision can be published to the typed store (`outputs`) and read by
-        // reference — by `handle_stage_verdict` and by later stages. The typed
-        // store, not `WorkOutput.data`, is the in-process handoff channel.
+        // The running accumulator is cloned once from the caller's context
+        // and mutated in place across stages — never re-cloned per stage.
+        // Each stage's decision is published to the typed store (`outputs`)
+        // and read back by reference, and the live request is swapped into
+        // the accumulator's structured slot around each stage (see
+        // `swap_request_in`) instead of deep-cloning the context per stage.
         let mut running = ctx.clone();
+        running
+            .structured
+            .entry("request".to_owned())
+            .or_insert(serde_json::Value::Null);
 
         for (idx, stage) in self.stages.iter().enumerate() {
-            let stage_ctx = Self::build_stage_context(&running, &current_request);
+            Self::swap_request_in(&mut running, &mut current_request);
             let start = Instant::now();
 
             let stage_name_human = stage.name().to_string();
@@ -559,10 +569,10 @@ impl WorkUnit for PipelineOrchestrator {
             // carries no target.
             let outcome: Result<(StageDecision, Option<RoutingTarget>), WorkError> =
                 if let Some(prod) = self.producers.get(idx).and_then(|p| p.as_ref()) {
-                    prod(&stage_ctx, &decisions)
+                    prod(&running, &decisions)
                 } else {
                     stage
-                        .execute(&stage_ctx)
+                        .execute(&running)
                         .and_then(|output| {
                             output
                                 .data_take()
@@ -570,6 +580,7 @@ impl WorkUnit for PipelineOrchestrator {
                         })
                         .map(|decision| (decision, None))
                 };
+            Self::swap_request_in(&mut running, &mut current_request);
 
             match outcome {
                 Ok((mut decision, target)) => {
@@ -579,7 +590,7 @@ impl WorkUnit for PipelineOrchestrator {
                     let stage_name = decision.stage;
 
                     let fallback = stage_name == PipelineStage::Classifier
-                        && StageMetadata::from(decision.metadata.clone())
+                        && StageMetadata::metadata_ref(&decision.metadata)
                             .fallback()
                             .unwrap_or(false);
                     tracing::info!(target: "router.pipeline",
@@ -677,6 +688,10 @@ impl_component!(PipelineOrchestrator);
 #[cfg(test)]
 #[path = "../tests/pipeline.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/stage_context.rs"]
+mod stage_context_tests;
 #[cfg(test)]
 #[path = "../tests/qualified_model_id_roundtrip.rs"]
 mod qualified_model_id_roundtrip;

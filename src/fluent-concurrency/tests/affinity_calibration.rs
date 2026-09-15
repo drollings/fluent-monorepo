@@ -101,6 +101,16 @@ async fn control_group_fresh_non_affine_vs_affine_ticks() {
         "fresh non-affine ({prio_fresh_non_affine}) must NOT overtake fresh affine ({prio_affine_fresh})"
     );
 
+    // Seed non-affine with base 0 via submit (submit records; the pure
+    // effective_priority helper never does). Age 6 ticks total below:
+    // 0 + 2*6 = 12 > 10, so it overtakes.
+    let seed_non_affine = ScheduledTask {
+        identity: "non-affine".into(),
+        task: "seed".into(),
+        enqueued_at: rt2.now(),
+    };
+    scheduler2.submit(seed_non_affine, 0).await.unwrap();
+
     // Starve non-affine for >10 ticks: each age_now adds +2, cap 100
     // After 1 tick, non-affine base = 0 + 2 =2, still <10
     scheduler2.age_now();
@@ -136,7 +146,7 @@ async fn control_group_fresh_non_affine_vs_affine_ticks() {
     }
 
     // Actually exercise scheduler2: insert non-affine then age 6 ticks to exceed affine
-    // We already inserted non-affine (0). Age 6 more ticks: 2*6=12 via 6 ticks? But first age already done.
+    // The seed submit above recorded base 0. Five more ticks: 2 + 2*5 = 12.
     // Priority after 6 ticks from 0: 0 + 2*6 =12 >10, so it should overtake.
     for _ in 0..5 {
         scheduler2.age_now();
@@ -211,13 +221,14 @@ async fn golden_trace_synthetic_workload_precision_recall() {
     let rt2 = crate::tokio_runtime();
     let scheduler2 = make_scheduler(rt2.clone(), AgingConfig::default());
     scheduler2.set_affinity(Some("sess-0".into()));
-    // Seed starved identity
+    // Seed starved identity via submit (submit records; the pure helper
+    // never does).
     let starved_task = ScheduledTask {
         identity: "sess-1".into(),
         task: "seed".into(),
         enqueued_at: rt2.now(),
     };
-    scheduler2.effective_priority(&starved_task, 0);
+    scheduler2.submit(starved_task, 0).await.unwrap();
     let affine_task = ScheduledTask {
         identity: "sess-0".into(),
         task: "affine".into(),

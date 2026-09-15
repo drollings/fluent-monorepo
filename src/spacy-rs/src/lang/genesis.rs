@@ -1,4 +1,4 @@
-//! Rule genesis for POS/NER (ROADMAP_20260831_ARCEAGER M6.2).
+//! Rule genesis for POS/NER.
 //!
 //! The tokenizer's "rule genesis" pattern (LLM proposes → golden corpus
 //! accepts → data absorbs as a version-pinned deterministic rule) is extended

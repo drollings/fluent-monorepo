@@ -4,9 +4,12 @@ use crate::vocab::Vocab;
 use crate::lang;
 
 fn doc_from(text: &str) -> Doc {
-    let vocab = std::sync::Arc::new(Vocab::new(lang::en::lexicon_config()));
-    let tok = lang::en::tokenizer(vocab.clone()).expect("tokenizer");
-    tok.tokenize(text).expect("tokenize")
+    static SHARED: std::sync::LazyLock<crate::tokenizer::Tokenizer> =
+        std::sync::LazyLock::new(|| {
+            let vocab = std::sync::Arc::new(Vocab::new(lang::en::lexicon_config()));
+            lang::en::tokenizer(vocab).expect("tokenizer")
+        });
+    SHARED.tokenize(text).expect("tokenize")
 }
 
 /// A hermetic [`SpanCacheSeam`] over a shared map (test-only double).

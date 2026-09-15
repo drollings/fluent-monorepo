@@ -75,7 +75,7 @@ async fn handler_runs_once_and_releases_credit_per_job() {
     for i in 0..3 {
         pool.submit(i).await.expect("submit");
         for _ in 0..100 {
-            if counter.load(Ordering::SeqCst) >= i + 1 {
+            if counter.load(Ordering::SeqCst) > i {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;

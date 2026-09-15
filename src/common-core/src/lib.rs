@@ -46,16 +46,12 @@ pub mod runtime;
 pub mod shell;
 pub mod shell_parser;
 pub mod sort;
-#[cfg(feature = "sqlite")]
-pub mod sqlite;
 pub mod string;
 pub mod sync;
+pub use sync::{lock, lock_read, lock_write};
 pub mod time;
-pub mod vector_math;
 pub mod walk;
 pub mod watchdog;
-pub mod yago_normalize;
-pub mod yago_taxonomy;
 
 pub use config::{find_hierarchical, home_or_dot, load_json, load_json_or_default};
 pub use constants::{
@@ -87,14 +83,12 @@ pub use path::{
     parent_lexical,
 };
 pub use registry::{ConcurrentRegistry, KeyedRegistry};
-pub use retry::{backoff_ms, capped_backoff_ms, retry_async, PollResult, PollWithBackoff};
+pub use retry::{
+    backoff_ms, capped_backoff_ms, capped_exp_backoff_ms, retry_async, PollResult, PollWithBackoff,
+};
 pub use runtime::block_on;
 pub use shell::{run_capture, run_command, run_shell_capture, shell_cmd, CommandOutput};
 pub use sort::{dedup_sorted, sorted_by_vec, sorted_vec};
-#[cfg(feature = "sqlite")]
-pub use sqlite::{
-    make_hnsw, open_in_memory, open_shared_in_memory, open_wal, run_batch,
-};
 pub use string::{
     contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
     detect_identifier_kind, extract_tag, filter_unsafe_chars, find_subseq, first_comment_line,

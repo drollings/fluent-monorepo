@@ -555,7 +555,7 @@ pub async fn dispatch_real(
                     pool.ensure_target_ready(&target.url, target.instance.as_deref())
                         .await;
                 }
-                // ROADMAP M7 resize-to-demand: a caller that declares a bigger
+                // Resize-to-demand: a caller that declares a bigger
                 // context window than the targeted instance is allocated gets
                 // the instance resized to fit (bounded by `max_ctx`); a need
                 // beyond `max_ctx` fails loudly with the same shape a too-large

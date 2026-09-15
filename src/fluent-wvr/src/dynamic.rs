@@ -27,7 +27,7 @@ use crate::{impl_component, WorkUnit};
 pub type DynamicExecutor =
     Arc<dyn Fn(&WorkContext, &HashMap<String, String>) -> Result<WorkOutput, WorkError> + Send + Sync>;
 
-/// Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
+/// Compatibility surface (scaffold).
 /// A runtime-assembled `Component`.
 ///
 /// Fields are stored in an interior `Mutex<HashMap<String, String>>` so

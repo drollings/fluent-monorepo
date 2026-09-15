@@ -17,6 +17,7 @@
 //! guard is held across an LLM call.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use fluent_concurrency::affinity::{AffinityScheduler, ScheduledTask};
@@ -46,6 +47,45 @@ pub enum CoordinatorError {
     Backend(#[from] LlmError),
     #[error("session lock poisoned")]
     LockPoisoned,
+}
+
+/// Runtime gate for the `LedgerAgentCoordinator` (M14c): the coordinator is
+/// default-on behind config, and this gate is the one-command rollback —
+/// closing it returns dispatch to the pre-coordinator pipeline without a
+/// restart, without a config edit, and without touching the attached
+/// coordinator (reopening restores; a restart also restores, since the gate
+/// boots open). `Clone` bumps the `Arc`, so every holder observes the same
+/// state.
+#[derive(Debug, Clone)]
+pub struct CoordinatorGate {
+    open: Arc<AtomicBool>,
+}
+
+impl CoordinatorGate {
+    /// A fresh gate admits coordinator traffic (boot default).
+    pub fn open() -> Self {
+        Self {
+            open: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Whether coordinator traffic is currently admitted.
+    pub fn is_open(&self) -> bool {
+        self.open.load(Ordering::SeqCst)
+    }
+
+    /// Admit (`true`) or refuse (`false`) coordinator traffic. `false` is
+    /// the rollback direction: in-flight turns finish, new requests fall
+    /// through to the pipeline.
+    pub fn set_open(&self, open: bool) {
+        self.open.store(open, Ordering::SeqCst);
+    }
+}
+
+impl Default for CoordinatorGate {
+    fn default() -> Self {
+        Self::open()
+    }
 }
 
 /// Coordinator configuration: the KV restore policy, the prompt budget, the

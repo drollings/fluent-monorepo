@@ -2,8 +2,7 @@
 //!
 //! **Why this cannot live in `fluent-wvr-testutil`:** testutil depends on
 //! `fluent-wvr`; moving these stubs there would create a dependency cycle.
-//! This module is the sanctioned exception (ROADMAP_20260816_TESTS.md §2.4 /
-//! M1.5) — the stubs deliberately match the testutil API (`StubComponent`
+//! This module is the sanctioned exception — the stubs deliberately match the testutil API (`StubComponent`
 //! semantics: `ok_unit` / `failing_unit` shorthands) so the seam stays thin
 //! and documented, and so reviewers don't "fix" it into a cycle.
 //!

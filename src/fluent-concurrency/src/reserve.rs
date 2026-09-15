@@ -1,6 +1,6 @@
 //! Available primitive: RAII permit on a shared `AtomicUsize`.
 //!
-//! Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
+//! Compatibility surface (scaffold).
 //! Currently not on the critical path — no in-tree consumer outside its own
 //! tests. Use `Limiter` for "run this with a permit" patterns and `Reserve`
 //! for "acquire now, release later" patterns.

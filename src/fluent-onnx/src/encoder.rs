@@ -1,5 +1,4 @@
-//! `OrtEncoder` — the base Encoder session as an `EmbeddingProvider`
-//! (ROADMAP_20260827_ORT §1).
+//! `OrtEncoder` — the base Encoder session as an `EmbeddingProvider`.
 //!
 //! Mean-pools `last_hidden_state` over non-pad tokens (mask-aware). The
 //! pooling math is a pure host-side function (`mean_pool`), so its correctness
@@ -19,7 +18,7 @@
 //! The crate does NOT license a quantization globally. The live test records
 //! the q8-vs-reference cosine drift band on a fixed sample; each consumer
 //! (chart/ledger retrieval vs entity-similarity) gates its own q8 decision in
-//! its own acceptance test (ROADMAP_20260827_ORT §1.4).
+//! its own acceptance test.
 
 /// Mask-aware mean-pool of `last_hidden_state` over non-pad tokens.
 ///

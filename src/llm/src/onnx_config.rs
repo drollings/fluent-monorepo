@@ -33,7 +33,7 @@ pub enum OnnxTask {
     MaskedDiffusion,
     /// Causal language modeling (autoregressive decode): `input_ids` +
     /// `attention_mask` + position/KV inputs → `logits` over the vocab. This
-    /// is the generative path (ROADMAP M1): the `chat_template.jinja` applied
+    /// is the generative path: the `chat_template.jinja` applied
     /// before tokenization, a prefill pass, then a per-token decode loop with
     /// grammar-constrained sampling. It is the one non-encoder task — the
     /// fleet's general-purpose local LLM behind the `ChatBackend` seam.
@@ -85,8 +85,8 @@ pub enum Quant {
 }
 
 impl Quant {
-    /// The quantization the roadmap recommends for a task
-    /// (ROADMAP_20260827_ORT §1.6): `q8` where available, but **`fp32` for
+    /// The quantization recommended for a task
+    /// (`q8` where available, but **`fp32` for
     /// binary gates** — the PII-Detector and the Policy-Linter make binary
     /// decisions (span/no-span, flag/no-flag), and the README-documented q8
     /// flip rates (PII spans, 3/6 Policy-Linter threshold flips) are
@@ -183,7 +183,7 @@ fn default_io_conv_layers() -> Vec<usize> {
     ]
 }
 
-/// The generative `CausalLm` IO contract (ROADMAP §5 / M1): the input/output
+/// The generative `CausalLm` IO contract: the input/output
 /// tensor names, KV-cache dtype, and the per-layer conv/KV structure of the
 /// transformers.js-style causal-LM export, so the decoder knows exactly which
 /// graph inputs to build and which output to read — one place to edit, one
@@ -274,7 +274,7 @@ pub struct LlmIo {
     pub conv_layers: Vec<usize>,
 }
 
-/// The trained-encoder annotation-heads contract (ROADMAP_20260828_ORT_FIXES §4).
+/// The trained-encoder annotation-heads contract.
 ///
 /// A finetuned `FillMask` Encoder export carries three per-token heads — UPOS,
 /// dependency label, and head position — in the **same graph** as the base
@@ -620,7 +620,7 @@ impl OnnxConfig {
         // A binary gate (PII-Detector, Policy-Linter) declared non-fp32 is a
         // loud warning, not a silent acceptance: the README-documented q8 flip
         // rates mean the quantization only ships with a golden-gated threshold
-        // and the flip rate recorded (ROADMAP_20260827_ORT §1.6/§3.1).
+        // and the flip rate recorded.
         let is_gate = matches!(
             self.task,
             OnnxTask::TokenClassification | OnnxTask::ZeroShotTokenMatching
@@ -741,7 +741,7 @@ pub enum OnnxRole {
     /// Late-interaction retriever.
     Colbert,
     /// General-purpose generative causal-LM — the ONNX LLM behind the
-    /// `fluent_llm::client::ChatBackend` seam (ROADMAP M1/M2). Nothing
+    /// `fluent_llm::client::ChatBackend` seam. Nothing
     /// task-specific; the single enrichment/annotation model.
     Llm,
 }

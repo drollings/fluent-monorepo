@@ -37,7 +37,7 @@ async fn test_e2e_batch_mixed_outcomes() {
 /// transitive dependents while independent neighbors continue unhindered.
 /// This is the single owner of the panic-cascade-with-neighbors assertion; it
 /// folds in the former m2 `test_batch_panic_cancels_transitive_dependents`
-/// check that one panic cancels several sibling dependents (see ROADMAP M2.5).
+/// check that one panic cancels several sibling dependents.
 #[tokio::test(start_paused = true)]
 async fn test_e2e_panic_cascade_with_independent_neighbors() {
     let mut batch = make_batch();

@@ -29,13 +29,14 @@
 //! primitives (`CURRENT_CAPS`, `check_capability`, `CapabilityError`) live in
 //! `fluent-wvr` so both crates read the same task-local.
 //!
-//! ## Zero-domain mechanics stay put
+//! ## Raw SQLite mechanics live here
 //!
-//! `common-core::sqlite` remains the zero-domain home of *raw* SQLite helpers
-//! (`open_wal`, `open_in_memory`, `run_batch`, `in_clause`,
-//! `is_unique_violation`, `make_hnsw`, `embedding_cache` DDL). `fluent-db` is the
-//! *policy* layer (pooling, typing, orchestration) above the *mechanics* layer; it
-//! composes `common-core`, it does not move or duplicate it.
+//! `fluent_db::sqlite` is the canonical home of the *raw* SQLite helpers
+//! (`open_wal`, `open_in_memory`, `open_shared_in_memory`, `run_batch`,
+//! `in_clause`, `is_unique_violation`, `make_hnsw`). `fluent-db` is both the
+//! mechanics layer (these functions) and the policy layer (pooling, typing,
+//! orchestration) above it. The previous home, `common-core::sqlite`, was
+//! removed after callers migrated.
 //!
 //! ## Zero-cost and optional
 //!
@@ -58,11 +59,19 @@ pub mod pool;
 #[cfg(feature = "sqlite")]
 pub mod query;
 #[cfg(feature = "sqlite")]
+pub mod sqlite;
+#[cfg(feature = "sqlite")]
 pub mod store;
 #[cfg(feature = "sqlite")]
 pub mod vector;
 #[cfg(feature = "sqlite")]
 pub mod wvr;
+
+#[cfg(feature = "sqlite")]
+pub use sqlite::{
+    in_clause, is_unique_violation, make_hnsw, open_in_memory, open_shared_in_memory, open_wal,
+    run_batch,
+};
 
 #[cfg(all(test, feature = "sqlite"))]
 #[path = "../tests/mod.rs"]

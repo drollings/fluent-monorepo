@@ -6,6 +6,9 @@ pub const NS_XSD: &str = "http://www.w3.org/2001/XMLSchema#";
 pub const NS_SCHEMA: &str = "http://schema.org/";
 pub const NS_SKOS: &str = "http://www.w3.org/2004/02/skos/core#";
 
+use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
+
 use fluent_types::{local_id_of, property_id_for_iri, InterlinguaId};
 use guidance_rdf::normalize::hash_iri;
 
@@ -119,7 +122,9 @@ pub const ALL_CLASSES: &[&OntologyClass] = &[
 ];
 
 pub fn lookup_class(iri: &str) -> Option<&'static OntologyClass> {
-    ALL_CLASSES.iter().copied().find(|cls| cls.iri == iri)
+    static BY_IRI: LazyLock<HashMap<&'static str, &'static OntologyClass>> =
+        LazyLock::new(|| ALL_CLASSES.iter().map(|cls| (cls.iri, *cls)).collect());
+    BY_IRI.get(iri).copied()
 }
 
 pub fn superclass_chain(iri: &str) -> Vec<String> {
@@ -163,18 +168,30 @@ pub const WHITELIST_IRIS: &[&str] = &[
     "http://yago-knowledge.org/resource/Concept",
 ];
 
+/// Whitelist membership, precomputed once from [`ALL_CLASSES`] (the single
+/// source — `WHITELIST_IRIS` above is the boot-visible spelling of the same
+/// set, pinned equal by test).
+static WHITELIST_SET: LazyLock<HashSet<&'static str>> =
+    LazyLock::new(|| ALL_CLASSES.iter().map(|cls| cls.iri).collect());
+
+/// Truncated 48-bit locals of the whitelist, precomputed once for the
+/// id/hash checks below (no per-call rehash of the whitelist).
+static WHITELIST_LOCALS: LazyLock<HashSet<i64>> = LazyLock::new(|| {
+    WHITELIST_SET
+        .iter()
+        .map(|iri| local_id_of(hash_iri(iri)))
+        .collect()
+});
+
 pub fn is_whitelisted(iri: &str) -> bool {
-    WHITELIST_IRIS.contains(&iri)
+    WHITELIST_SET.contains(iri)
 }
 
 /// Whether an [`InterlinguaId`] names a whitelisted YaGO class (ROADMAP
 /// §13.6 — namespace-aware, truncation-correct). Compares the **48-bit local**
 /// against the truncated whitelist hashes.
 pub fn is_whitelisted_id(id: InterlinguaId) -> bool {
-    id.is_yago()
-        && WHITELIST_IRIS
-            .iter()
-            .any(|iri| id.local_id() == local_id_of(hash_iri(iri)))
+    id.is_yago() && WHITELIST_LOCALS.contains(&id.local_id())
 }
 
 /// Truncation-aware hash whitelist check. Legacy callers pass a full-width
@@ -182,8 +199,7 @@ pub fn is_whitelisted_id(id: InterlinguaId) -> bool {
 /// interlingua id, so both sides are reduced to the 48-bit local (DRY — the
 /// same truncation `is_whitelisted_id` uses).
 pub fn is_whitelisted_hash(hash: i64) -> bool {
-    let local = local_id_of(hash);
-    WHITELIST_IRIS.iter().any(|iri| local == local_id_of(hash_iri(iri)))
+    WHITELIST_LOCALS.contains(&local_id_of(hash))
 }
 
 /// The deterministic `RDF_PROPERTY` interlingua id for an ontology property

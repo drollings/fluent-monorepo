@@ -533,7 +533,7 @@ pub struct ContentNode {
     pub name: SmolStr,
     pub source: String,
     /// A stable hash of LOD0 (the full text), the **keying domain** for ledger
-    /// annotations (ROADMAP M4). Computed by the node store's single write
+    /// annotations. Computed by the node store's single write
     /// funnel; a mutation of LOD0 changes this hash and thereby invalidates the
     /// node's cached annotations — no staleness scheduler. `0` when the node
     /// has no LOD0 content (or has not yet been stamped).

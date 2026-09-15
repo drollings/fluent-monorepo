@@ -1,5 +1,5 @@
 //! Span-level detail cache as a **read-through view over the shared ledger
-//! sqlite** (ROADMAP_20260831_ARCEAGER M6.1).
+//! sqlite**.
 //!
 //! No parallel store: the same `interlingua_index` table that backs
 //! `SqliteCorrectionIndex` backs the span cache, with `role = 'span_cache'`

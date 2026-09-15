@@ -142,7 +142,7 @@ pub enum Attribute {
     EntId = 86,
     Idx = 87,
     SentEnd = 88,
-    /// The token lemma's interlingua id as a u64 (ROADMAP §10.2; 0 = None).
+    /// The token lemma's interlingua id as a u64 (0 = None).
     InterlinguaLemmaId = 89,
     /// The token's entity interlingua id as a u64 (0 = None).
     InterlinguaEntityId = 90,

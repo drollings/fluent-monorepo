@@ -635,8 +635,8 @@ impl ClassifierStage {
         }
     }
 
-    /// The deterministic parsed-grammar context folded into the classifier prompt
-/// (ROADMAP §14.5, C1): the per-sentence interlingua ids, so the router LLM is
+    /// The deterministic parsed-grammar context folded into the classifier prompt:
+    /// the per-sentence interlingua ids, so the router LLM is
 /// given the parse rather than re-deriving it. Additive; never a gate.
 fn interlingua_prompt_context(
     interlingua: &[spacy_rs::routing::InterlinguaSignal],
@@ -662,8 +662,8 @@ fn interlingua_prompt_context(
     out
 }
 
-/// The overlay stage's route hints as deterministic routing context
-    /// (ROADMAP_20260827_ORT §2.6): scored route recommendations the classifier
+/// The overlay stage's route hints as deterministic routing context:
+    /// scored route recommendations the classifier
     /// merges like the interlingua frames — a deterministic input, never a gate.
     /// Hints are already sorted highest-score-first by the overlay stage.
     pub(crate) fn route_hints_prompt_context(hints: &[crate::pipeline_types::RouteHint]) -> String {
@@ -1215,14 +1215,14 @@ impl ClassifierStage {
         // absent or skipped — interlingua filters then pass through.
         let interlingua = prior
             .iter()
-            .filter_map(|d| StageMetadata::from(d.metadata.clone()).nlp_interlingua())
+            .filter_map(|d| StageMetadata::metadata_ref(&d.metadata).nlp_interlingua())
             .flatten()
             .collect::<Vec<_>>();
         // The OverlayStage ran between nlp and classifier; its route hints are
         // merged as deterministic routing context (§2.6).
         let route_hints = prior
             .iter()
-            .filter_map(|d| StageMetadata::from(d.metadata.clone()).overlay_route_hints())
+            .filter_map(|d| StageMetadata::metadata_ref(&d.metadata).overlay_route_hints())
             .flatten()
             .collect::<Vec<_>>();
         let (_, decision, target) = self.decide(

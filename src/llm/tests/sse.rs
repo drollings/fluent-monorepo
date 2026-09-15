@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M2.3 — SSE framing goldens (moved, not copied).
+//! SSE framing goldens.
 //!
 //! Canonical home for the `drain_sse_lines` framing goldens: the CJK
 //! split-across-chunks + partial-tail cases moved from

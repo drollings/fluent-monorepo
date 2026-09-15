@@ -108,6 +108,7 @@ fn sweep_confidence_vs_task_value_gates_are_independent() {
     assert!(complexity_needs_route(complexity, intelligence), "confident but high-complexity must still route");
 }
 
+#[ignore = "heavy (~13s): HNSW-at-scale recall benchmark; run via `make test-heavy`"]
 #[test]
 fn m5a_hnsw_recall_at_scale_and_brute_force_control() {
     // 5a [B: cost/recall]: recall HNSW-vs-brute-force at N ∈ {256,512,1024,2048}
@@ -182,6 +183,7 @@ fn m5a_hnsw_recall_at_scale_and_brute_force_control() {
     assert_eq!(hits.len(), 3, "M5a control: brute-force fallback must serve top-3");
 }
 
+#[ignore = "heavy (~9s): ef sweep over a scale corpus; run via `make test-heavy`"]
 #[test]
 fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
     // 5b [B]: sweep ef ∈ {k*2, k*4, k*8} at fixed k on the raw HNSW graph
@@ -223,7 +225,7 @@ fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
         })
         .collect();
     for ef in [k * 2, k * 4, k * 8] {
-        let h = common_core::sqlite::make_hnsw(
+        let h = fluent_db::sqlite::make_hnsw(
             &common_core::constants::HnswParams::default(),
             n,
         );

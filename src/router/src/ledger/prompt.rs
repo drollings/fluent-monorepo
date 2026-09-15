@@ -28,7 +28,7 @@
 //! The [`AssembledPrompt::node_plan`] output is the key testable artifact: the
 //! per-node fidelity decision, independent of the rendered text.
 
-use common_core::vector_math::cosine_similarity_f32;
+use search_vector::math::cosine_similarity_f32;
 use fluent_types::NodeId;
 
 use crate::ledger::{LOD0_FULL_TEXT, LOD5_LABEL};

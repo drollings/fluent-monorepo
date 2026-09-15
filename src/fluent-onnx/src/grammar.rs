@@ -4,9 +4,9 @@
 //! decoded so far, yields the set of token ids that are valid to emit next.
 //! Because the automaton is a pure function of the already-decoded tokens, a
 //! *structurally invalid* object is impossible to emit — it is never rejected
-//! after the fact, it cannot be produced in the first place (ROADMAP G3).
+//! after the fact, it cannot be produced in the first place.
 //!
-//! The two shapes the ROADMAP needs:
+//! The two shapes the grammar needs:
 //!
 //! - [`JsonObjectGrammar`] — a single JSON object whose keys are a declared
 //!   `JsonSchema` and whose values are checked against each field's type. Only

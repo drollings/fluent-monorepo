@@ -1,5 +1,4 @@
-//! Overlay data types and the `ResidualOverlay` seam (ROADMAP_20260827_ORT
-//! §2.2).
+//! Overlay data types and the `ResidualOverlay` seam.
 //!
 //! The **overlay plane** is the residual-consultation machinery behind
 //! `NlpOrdering::DeterministicFirst`: a deterministic parse leaves *residuals*

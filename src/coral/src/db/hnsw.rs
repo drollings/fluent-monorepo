@@ -50,7 +50,7 @@ impl super::Library {
         // Resolve every neighbour's name in a single parameterized
         // `WHERE id IN (...)` query instead of one query per neighbour.
         let name_by_id: HashMap<i64, String> = {
-            let placeholders = common_core::sqlite::in_clause(node_ids.len());
+            let placeholders = fluent_db::sqlite::in_clause(node_ids.len());
             let sql = format!("SELECT id, name FROM context_nodes WHERE id IN ({placeholders})");
             let rows = self
                 .store

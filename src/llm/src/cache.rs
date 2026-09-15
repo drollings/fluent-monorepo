@@ -1,4 +1,4 @@
-//! LLM response cache — the single owner (ROADMAP_20260903_LLM M4).
+//! LLM response cache — the single owner.
 //!
 //! Moved verbatim from `common_core::cache` (`CachedResponse`,
 //! `ResponseCache` with TTL lazy-eviction and the

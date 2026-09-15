@@ -446,7 +446,7 @@ async fn every_declared_model_answers_directly() {
 /// The *mechanism* and *prompt-rule* internals (respond→route override +
 /// "ALWAYS dispatch" in the system prompt) are owned by the unit tier in
 /// `stage_tests.rs::always_route_forces_dispatch_over_classifier_respond`
-/// (see ROADMAP M2.4); flag carriage through the tree is locked by
+///; flag carriage through the tree is locked by
 /// `config_root.rs::shipped_config_routes_view_key_set`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn always_route_routes_force_dispatch_over_classifier_respond() {

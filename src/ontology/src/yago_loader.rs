@@ -50,16 +50,10 @@ pub struct LoadStats {
 
 /// The compact canonical name for a class IRI: `schema:Person` for
 /// schema.org, `yago:Person` for the YaGO resource namespace, else the IRI.
+/// Delegates to [`crate::normalize::iri_to_curie`], the single shared
+/// prefix table (kept under this historic name for the public API).
 pub fn canonical_class_name(iri: &str) -> String {
-    const SCHEMA: &str = "http://schema.org/";
-    const YAGO: &str = "http://yago-knowledge.org/resource/";
-    if let Some(local) = iri.strip_prefix(SCHEMA) {
-        format!("schema:{local}")
-    } else if let Some(local) = iri.strip_prefix(YAGO) {
-        format!("yago:{local}")
-    } else {
-        iri.to_string()
-    }
+    crate::normalize::iri_to_curie(iri)
 }
 
 /// The deterministic YagoClass id for a class IRI.
@@ -120,11 +114,13 @@ impl YaGoLoader {
             .map_err(|e| OntologyError::Mapping(format!("parse yago_classes: {e}")))?;
         for entry in &entries {
             let meta = to_metadata(entry);
-            self.class_iri_to_id.entry(entry.iri.clone()).or_insert(meta.id);
             // First-wins: a repeated IRI does not duplicate the concept.
-            if !self.concepts.iter().any(|c| c.id == meta.id) {
-                self.concepts.push(meta.clone());
+            // The map lookup is the duplicate check (no scan over `concepts`).
+            if self.class_iri_to_id.contains_key(&entry.iri) {
+                continue;
             }
+            self.class_iri_to_id.insert(entry.iri.clone(), meta.id);
+            self.concepts.push(meta.clone());
             if let Some(superclass) = &entry.superclass {
                 self.edges.push((meta.id, yago_class_id(superclass)));
             }
@@ -183,3 +179,7 @@ impl YaGoLoader {
 #[cfg(test)]
 #[path = "../tests/yago_loader.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/loader.rs"]
+mod loader_tests;

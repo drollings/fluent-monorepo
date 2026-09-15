@@ -1,5 +1,4 @@
-//! Ledger annotation provenance — the producing tier of every annotation
-//! (ROADMAP M4).
+//! Ledger annotation provenance — the producing tier of every annotation.
 //!
 //! Every annotation a ledger carries is stamped with **who produced it**: a
 //! `ProvenanceTier` ordered by authority. A higher tier strictly overrides a

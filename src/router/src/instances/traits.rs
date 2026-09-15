@@ -1,5 +1,5 @@
 //! The llama half of the shared `LlmWeights`/`LlmContext`/`LlmKVCache`
-//! contracts (ROADMAP_20260830_LLMS M4), plus the unified `LlmFleet` facade
+//! contracts, plus the unified `LlmFleet` facade
 //! the server builds from both the llama pool and the onnx registry.
 //!
 //! These are **thin adapters** (roadmap §3.3): every method is a one-line
@@ -923,7 +923,7 @@ impl LlmFleet {
         Err(LlmRuntimeError::NotLoaded(format!("unknown model: {key}")))
     }
 
-    /// Resize an onnx context through `LlmContext::resize` (ROADMAP M7 §3): the
+    /// Resize an onnx context through `LlmContext::resize`: the
     /// onnx half of `POST /instances/:name/resize`. Only onnx weights
     /// implementors (the `LruLargest` policy) serve named contexts in-process;
     /// llama contexts stay on the pool's `client.resize` path. An unknown model

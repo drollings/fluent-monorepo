@@ -73,7 +73,7 @@ impl super::Library {
         if names.is_empty() {
             return Ok(HashMap::new());
         }
-        let placeholders = common_core::sqlite::in_clause(names.len());
+        let placeholders = fluent_db::sqlite::in_clause(names.len());
         let sql = format!("SELECT id, name FROM context_nodes WHERE name IN ({placeholders})");
         let rows = self.store.with_conn(|conn| {
             fluent_db::query::query_rows_from_iter(conn, &sql, names.iter().copied(), |row| {

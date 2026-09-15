@@ -279,7 +279,7 @@ fn nlp_encoder_fetch_noop_without_onnx_feature() {
     assert!(result.is_none());
 }
 
-/// The full entity-link loop (ROADMAP_20260828_ORT_FIXES M3.2): the
+/// The full entity-link loop: the
 /// scorer's canonical→id mapping (baked index + store) feeds an
 /// `EntityLinkWorker`, and a PROPN-span candidate lands on
 /// `overlay_candidates` (never a doc-id write). The ColBERT encode step is
@@ -419,7 +419,7 @@ fn score_span_resolves_canonical_and_respects_threshold() {
     assert!(cold.is_empty(), "below threshold → no candidates");
 }
 
-/// ROADMAP M2: the onnx `ChatBackend` seam — grammar wiring + fail-open.
+/// The onnx `ChatBackend` seam — grammar wiring + fail-open.
 #[cfg(feature = "onnx")]
 mod onnx_backend_tests {
     use super::*;
@@ -551,7 +551,7 @@ fn stub_registry() -> Arc<OrtSessionRegistry> {
     Arc::new(OrtSessionRegistry::new(Arc::new(StubLoader::default())))
 }
 
-/// ROADMAP M6: an `Unloadable`+unpinned onnx role stays unloaded at boot
+/// An `Unloadable`+unpinned onnx role stays unloaded at boot
 /// and loads on first `ensure_loaded` (the onnx lazy-residency rule);
 /// `unload` releases it. Registry-level (no real pool/session needed).
 /// Onnx-gated: exercises the real `OnnxWeights` lifecycle (needs `ort`).

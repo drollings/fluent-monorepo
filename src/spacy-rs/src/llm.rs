@@ -113,8 +113,7 @@ impl AnnotationRecord {
     }
 }
 
-/// The span-scoped refinement prompt contract (ROADMAP_20260831_ARCEAGER
-/// M2.2): given the deterministic base parse and the focused token indices,
+/// The span-scoped refinement prompt contract: given the deterministic base parse and the focused token indices,
 /// the model reconsiders **only** those tokens and replies with a corrections
 /// object — the same shape the review contract already uses, minus
 /// `old_value`. Like [`AnnotationRecord::prompt`], this is the single source
@@ -230,7 +229,7 @@ impl AnnotationSet {
     }
 }
 
-/// Which rung of the annotation ladder produced a parse (ROADMAP §9.1). The
+/// Which rung of the annotation ladder produced a parse. The
 /// wire `AnnotationSet` is provenance-blind; this rides alongside it through
 /// the typed channel so downstream routing can see how trustworthy a parse is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,7 +243,7 @@ pub enum AnnotationSource {
     RuleRung,
     /// A parse that was corrected by human/reviewer feedback.
     HumanReview,
-    /// A trained-encoder rung (ROADMAP_20260827_ORT §2.7/§4): hidden states →
+    /// A trained-encoder rung: hidden states →
     /// small heads produce the annotations. Confidence rides per-token like
     /// ArcEager, so a low encoder confidence is treated the same way.
     Encoder,
@@ -256,7 +255,7 @@ pub enum AnnotationSource {
 }
 
 impl AnnotationSource {
-    /// The ledger provenance tier this producing rung maps to (ROADMAP M4).
+    /// The ledger provenance tier this producing rung maps to.
     /// Deterministic rungs → `Deterministic`, local-model rungs →
     /// `LocalModel`, human review → `HumanReview`, frontier → `Frontier`.
     /// Exhaustive by design: a new source is a compile error, never a silent
@@ -280,8 +279,8 @@ impl AnnotationSource {
     ///
     /// The match is exhaustive by design — adding a variant breaks the build
     /// instead of silently compiling a `_ => false` wildcard that would treat
-    /// a future confidence-bearing rung as fail-open (the bug class that
-    /// already bit once, ROADMAP_20260829 §1.5).
+    /// a future confidence-bearing rung as fail-open (a bug class that
+    /// already bit once).
     #[must_use]
     pub fn is_confidence_bearing(self) -> bool {
         match self {
@@ -295,7 +294,7 @@ impl AnnotationSource {
 }
 
 /// The ladder handoff: an [`AnnotationSet`] plus provenance and confidence
-/// (ROADMAP §9.1 — F7 keeps low-confidence parses flowing forward; confidence
+/// (low-confidence parses keep flowing forward; confidence
 /// gates downstream *routing*, never rung fallthrough).
 #[derive(Debug, Clone)]
 pub struct AnnotationResult {
@@ -307,7 +306,7 @@ pub struct AnnotationResult {
     pub parse_confidence: Option<ParseConfidence>,
     /// Per-oracle-step margins (ArcEager); `None` otherwise. A near-zero
     /// margin is an attachment near-tie — the frame stage's
-    /// `AmbiguityKind::AttachmentNearTie` signal (ROADMAP M3).
+    /// `AmbiguityKind::AttachmentNearTie` signal.
     pub oracle_margins: Option<Vec<f64>>,
     /// Interlingua collisions surfaced by the resolve step (G9): the number of
     /// `CollisionNote::Collision` entries `InterlinguaResolver::resolve_doc`

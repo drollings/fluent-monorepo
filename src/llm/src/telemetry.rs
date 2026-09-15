@@ -1,17 +1,15 @@
-//! LLM telemetry vocabulary + structured events — the single owner
-//! (ROADMAP_20260903_LLM M8, completed by M11).
+//! LLM telemetry vocabulary + structured events — the single owner.
 //!
-//! M8 moved `ToolName` (the router-relevant tool names, including the LLM
+//! This module owns `ToolName` (the router-relevant tool names, including the LLM
 //! spells `Embed`, `LlmComplete`, `LlmStream`, `Classify`, `Summarize`),
 //! `ProviderCategory` (routing-decision categories — never a provider name),
-//! and `FeatureName` (usage-tracking features) verbatim out of
-//! `common_core::telemetry`. M11 moved the structured event contract with
-//! them — `TelemetryEvent`, `TelemetrySink`, `TracingSink`, `NoopSink` —
+//! and `FeatureName` (usage-tracking features), plus the structured event
+//! contract — `TelemetryEvent`, `TelemetrySink`, `TracingSink`, `NoopSink` —
 //! because the event type is typed over the vocabulary and could not stay
 //! behind without either a second vocabulary definition or a
-//! `common-core → fluent-llm` dependency cycle (invariant 8: `fluent-llm →
-//! `common-core` already exists). M11 then deleted the `common-core`
-//! copies. Dependencies are `serde`/`serde_json`/`tracing` only.
+//! `common-core → fluent-llm` dependency cycle (dependencies flow
+//! `fluent-llm → common-core`, never the reverse). Dependencies are
+//! `serde`/`serde_json`/`tracing` only.
 //!
 //! What stays in `common_core::telemetry`: the generic failure taxonomy —
 //! `FailureClass` + `label()` — which `llm::http_class` composes via its
@@ -19,9 +17,9 @@
 //! module owns the LLM/router vocabulary: the one `snake_case` label set
 //! in the workspace, plus the PII-free event envelope over it.
 //!
-//! Calibration (roadmap §1, M10): these are task-value routing/usage labels,
+//! Calibration: these are task-value routing/usage labels,
 //! not producer confidence — a `llm_complete` event label never endorses the
-//! output's correctness. The labels moved unchanged; trusting them is M10.
+//! output's correctness.
 
 use serde::Serialize;
 
@@ -67,10 +65,9 @@ pub enum FeatureName {
     DiscoveryPoll,
 }
 
-// ─── Structured events (moved verbatim from `common_core::telemetry`) ───────
-// M11: the event contract follows the vocabulary — it is typed over the
-// three enums above, so deleting the common-core vocabulary copies would
-// have stranded it. `FailureClass` (the one generic piece) stays in
+// ─── Structured events ───────
+// The event contract follows the vocabulary — it is typed over the
+// three enums above. `FailureClass` (the one generic piece) stays in
 // `common-core`; the variants below reference it through the single
 // `http_class` re-export, never a duplicate definition.
 

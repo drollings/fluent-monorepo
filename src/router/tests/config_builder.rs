@@ -241,7 +241,7 @@ fn overlay_models_empty_never_inserts_stage() {
 #[test]
 fn overlay_redirect_threshold_is_inert_without_the_golden_corpus_gate() {
     // The redirect threshold field deserializes but is inert until the
-    // ≥100-case zero-shot eval corpus gates it (ROADMAP §2.6a) — M2 ships
+    // ≥100-case zero-shot eval corpus gates it — only the smoke ships
     // feed-first with no redirect wiring.
     let config = overlay_config(
         true,

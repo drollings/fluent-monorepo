@@ -3142,7 +3142,7 @@ pub struct ParseConfidence {
     pub token_scores: Vec<f64>,
     pub role_coverage: f64,
     pub oracle_tie_count: usize,
-    /// The per-oracle-step margins (ROADMAP M3): a near-zero margin is an
+    /// The per-oracle-step margins: a near-zero margin is an
     /// attachment near-tie — the frame extractor's
     /// `AmbiguityKind::AttachmentNearTie` signal. Empty for rungs that carry
     /// no margins.
@@ -3512,7 +3512,7 @@ impl ArcEagerAnnotator {
         let mut result = AnnotationResult::new(AnnotationSet(records), AnnotationSource::ArcEager)
             .with_confidence(Some(token_scores), Some(confidence.clone()));
         // Thread the oracle margins for the frame stage's attachment near-tie
-        // signal (ROADMAP M3). `margins` is still owned here — `compute` took
+        // signal. `margins` is still owned here — `compute` took
         // it by reference.
         result.oracle_margins = Some(margins);
         Ok((result, confidence))

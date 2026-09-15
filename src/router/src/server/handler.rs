@@ -61,7 +61,7 @@ pub struct ServerDeps {
     /// The ort ONNX session registry. Onnx-declared models are listed by
     /// `/v1/models`; `Always`-resident ones are refused by `/models/unload`.
     pub onnx: Option<Arc<fluent_llm::onnx_session::OrtSessionRegistry>>,
-    /// The unified weights facade (ROADMAP M4): llama adapters + onnx
+    /// The unified weights facade: llama adapters + onnx
     /// implementors behind the shared `LlmWeights` surface. When present, the
     /// `/instances` + `/v1/models` handlers aggregate through it (onnx rows
     /// appear); `POST /models/unload` routes onnx roles through it.
@@ -70,11 +70,16 @@ pub struct ServerDeps {
     /// model). Routes whose `model_groups` resolve to an onnx role dispatch
     /// through it. `None` when no onnx LLM is wired (mock mode / no fleet).
     pub onnx_llm_backend: Option<Arc<dyn fluent_llm::client::ChatBackend>>,
-    /// The `LedgerAgentCoordinator`, when the operator opts in. `None`
-    /// (the default) leaves dispatch unchanged — requests fall through to the
-    /// existing pipeline.
+    /// The `LedgerAgentCoordinator`, attached by default wherever a ledger is
+    /// configured (M14c default-on; opt out with `ledger.orchestrator.enabled
+    /// = false`). `None` leaves dispatch unchanged — requests fall through to
+    /// the existing pipeline.
     pub coordinator: Option<Arc<crate::ledger::orchestrator::LedgerAgentCoordinator>>,
-    /// The async review worker (ROADMAP §12.6). `None` (the default) leaves
+    /// Runtime gate for the coordinator (M14c one-command rollback). Open at
+    /// boot; closing it returns dispatch to the pre-coordinator pipeline
+    /// without a restart even while a coordinator is attached.
+    pub coordinator_gate: crate::ledger::orchestrator::CoordinatorGate,
+    /// The async review worker. `None` (the default) leaves
     /// review disabled — requests to `/v1/sessions/{id}/review-parse` return
     /// 501 Not Implemented.
     pub review_worker: Option<Arc<ReviewWorker>>,
@@ -82,7 +87,7 @@ pub struct ServerDeps {
     /// corrections JSON. Injected so the review worker is hermetic and
     /// unit-testable without a real endpoint.
     pub review_fetch: Option<ReviewFetch>,
-    /// The async entity-link overlay worker (ROADMAP_20260827_ORT §6.2). `None`
+    /// The async entity-link overlay worker. `None`
     /// (the default) leaves the overlay plane idle — no entity-link candidates
     /// are produced.
     pub entity_link_worker: Option<Arc<crate::server::entity_link::EntityLinkWorker>>,
@@ -155,7 +160,7 @@ pub(crate) async fn record_ledger_result(
 /// the confidence summary + review status in the metadata, §14.1). Off the
 /// async handler, swallowing errors like `record_ledger_request`. Returns the
 /// allocated node id when the write landed — the PII auto-enqueue path
-/// (ROADMAP_20260827_ORT §3.4) needs it to reference the parse it flags.
+/// needs it to reference the parse it flags.
 pub(crate) async fn record_parse_ledger(
     ledger: Option<&Arc<ContentNodeLedger>>,
     session_id: String,
@@ -170,7 +175,7 @@ pub(crate) async fn record_parse_ledger(
     let confidence = confidence.cloned();
     let token_confidence = token_confidence.map(<[f64]>::to_vec);
     tokio::task::spawn_blocking(move || {
-        // The single consolidated parse write (ROADMAP_20260828_ORT M1.3): the
+        // The single consolidated parse write: the
         // node AND its `interlingua_index` rows land in one ledger call, so the
         // durable index is populated by the live request path (G2).
         crate::ledger::nlp::record_parse_node_with_confidence(
@@ -196,11 +201,11 @@ fn nlp_signals_from(
     decisions
         .iter()
         .find(|d| d.stage == crate::pipeline_types::PipelineStage::Nlp)
-        .and_then(|d| crate::pipeline_types::StageMetadata::from(d.metadata.clone()).nlp_parse())
+        .and_then(|d| crate::pipeline_types::StageMetadata::metadata_ref(&d.metadata).nlp_parse())
 }
 
 /// Pull the `Nlp` stage's confidence summary from a finished pipeline result
-/// (ROADMAP §14.5, C1 — the escalation ladder's "needs disambiguation" signal).
+/// (the escalation ladder's "needs disambiguation" signal).
 fn nlp_confidence_from(
     decisions: &[crate::pipeline_types::StageDecision],
 ) -> Option<crate::pipeline_types::NlpConfidenceSummary> {
@@ -208,7 +213,7 @@ fn nlp_confidence_from(
         .iter()
         .find(|d| d.stage == crate::pipeline_types::PipelineStage::Nlp)
         .and_then(|d| {
-            crate::pipeline_types::StageMetadata::from(d.metadata.clone()).nlp_confidence()
+            crate::pipeline_types::StageMetadata::metadata_ref(&d.metadata).nlp_confidence()
         })
 }
 
@@ -221,22 +226,27 @@ fn nlp_token_confidence_from(
         .iter()
         .find(|d| d.stage == crate::pipeline_types::PipelineStage::Nlp)
         .and_then(|d| {
-            crate::pipeline_types::StageMetadata::from(d.metadata.clone()).nlp_token_confidence()
+            crate::pipeline_types::StageMetadata::metadata_ref(&d.metadata).nlp_token_confidence()
         })
 }
 
-/// Opt-in: run a request through the `LedgerAgentCoordinator`'s
-/// synchronization loop when one is attached. Returns `Some(response)` when the
-/// coordinator handled the request; `None` when no coordinator is attached (or
-/// it produced no response), so the caller falls through to the existing
+/// Default-on (M14c): run a request through the `LedgerAgentCoordinator`'s
+/// synchronization loop when one is attached **and the runtime gate is open**.
+/// Returns `Some(response)` when the coordinator handled the request; `None`
+/// when no coordinator is attached, the gate is closed (rolled back), or it
+/// produced no response — so the caller falls through to the existing
 /// pipeline unchanged. Strictly additive — a deployment without a coordinator
-/// is byte-identical to today.
+/// (or with a closed gate) is byte-identical to today.
 async fn coordinator_dispatch(
     coordinator: Option<&Arc<crate::ledger::orchestrator::LedgerAgentCoordinator>>,
+    gate: &crate::ledger::orchestrator::CoordinatorGate,
     session_id: &str,
     model: &str,
     user_text: &str,
 ) -> Option<HyperResponse> {
+    if !gate.is_open() {
+        return None;
+    }
     let coord = coordinator.as_ref()?;
     let worker = crate::ledger::prompt::WorkerContext::new(
         model,
@@ -462,6 +472,7 @@ async fn handle_chat_completion(
         api_key_env_name: _,
         supervisor,
         coordinator,
+        coordinator_gate,
         review_worker: _,
         review_fetch: _,
         entity_link_worker: _,
@@ -582,11 +593,18 @@ async fn handle_chat_completion(
         .map(|m| m.content.to_string_lossy())
         .unwrap_or_default();
 
-    // Opt-in: when a coordinator is attached, route the request through its
-    // run loop (restore-or-assemble → execute → record → snapshot → enqueue).
-    // `None` falls through to the existing pipeline unchanged.
-    if let Some(resp) =
-        coordinator_dispatch(coordinator.as_ref(), &session_id, &model_name, &request_text).await
+    // Default-on (M14c): when a coordinator is attached and the runtime gate
+    // is open, route the request through its run loop (restore-or-assemble
+    // → execute → record → snapshot → enqueue). `None` (or a closed gate)
+    // falls through to the existing pipeline unchanged.
+    if let Some(resp) = coordinator_dispatch(
+        coordinator.as_ref(),
+        &coordinator_gate,
+        &session_id,
+        &model_name,
+        &request_text,
+    )
+    .await
     {
         return Ok(resp);
     }
@@ -730,7 +748,7 @@ async fn handle_chat_completion(
         }
     }
 
-    // ROADMAP §14.5 (C1): a low-confidence / colliding ArcEager parse marks
+    // A low-confidence / colliding ArcEager parse marks
     // the request "needs disambiguation". Deterministic routing policy —
     // additive audit signal, never a rejection (§9.4). The ladder's
     // escalate-don't-loop consumes it to prefer a more capable model.
@@ -1012,7 +1030,7 @@ async fn handle_request_inner(
             stats.requests.fetch_add(1, Ordering::Relaxed);
             crate::routes::rigor::handle_rigor_request(req, deps).await
         }
-        // -- Async parse review (ROADMAP §12.8) -------------------------------
+        // -- Async parse review -----------------------------------------------
         ("POST", path) if path.starts_with("/v1/sessions/") && path.ends_with("/review-parse") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
             handle_review_parse_post(req, deps, path).await
@@ -1056,6 +1074,16 @@ async fn handle_request_inner(
         ("POST", "/models/unload" | "/v1/models/unload") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
             Ok(crate::server::admin::handle_unload_model(req, &deps).await)
+        }
+        // One-command coordinator rollback (M14c): loopback-only, closes the
+        // runtime gate so dispatch returns to the pre-coordinator pipeline
+        // without a restart. Audit-logged; idempotent.
+        ("POST", "/admin/coordinator/rollback") => {
+            stats.requests.fetch_add(1, Ordering::Relaxed);
+            if !is_local_request(&req) {
+                return Ok(crate::server::responses::forbidden_response());
+            }
+            Ok(crate::server::admin::handle_coordinator_rollback(&deps.coordinator_gate))
         }
         ("GET", "/metrics") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
@@ -1571,3 +1599,7 @@ fn resolve_pipeline(
     final_result.decisions = all_decisions;
     final_result
 }
+
+#[cfg(test)]
+#[path = "../../tests/coordinator_gate.rs"]
+mod coordinator_gate_tests;

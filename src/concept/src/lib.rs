@@ -1,5 +1,4 @@
-//! The neutral shared home for concept lookup (ROADMAP_20260903_SPACY_RS_SPLIT
-//! M3 — moved here from `spacy-rs`).
+//! The neutral shared home for concept lookup (moved here from `spacy-rs`).
 //!
 //! [`ConceptStore`](crate::concept_store::ConceptStore) is the seam between the
 //! pure resolver (`spacy-rs` `InterlinguaResolver`) and whatever backend serves

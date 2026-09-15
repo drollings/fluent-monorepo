@@ -40,7 +40,7 @@ const PREP_DEPS: &[&str] = &["prep"];
 /// The objects of a `prep` that complete an argument frame.
 const POBJ_DEPS: &[&str] = &["pobj", "pcomp"];
 
-/// The interlingua frame of one sentence (ROADMAP §11.6): the content-
+/// The interlingua frame of one sentence: the content-
 /// addressed ids of the routing-relevant tokens. This is what lets Coral
 /// Router dispatch deterministically on the parse — the same phrasing
 /// collapses to the same predicate/object ids regardless of surface words.
@@ -105,7 +105,7 @@ pub struct RoutingSignal {
     /// Per-token relative head offsets.
     pub heads: Vec<i32>,
     /// The interlingua frame (ids), when the doc carries resolved ids
-    /// (ROADMAP §11.6). `None` for an unresolveable sentence.
+    /// `None` for an unresolveable sentence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interlingua: Option<InterlinguaSignal>,
 }

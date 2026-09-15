@@ -1,6 +1,5 @@
-//! The **hermetic in-memory** [`ConceptStore`] — the test double of ROADMAP
-//! §6.4 (C3; neutral home `fluent-concept` per ROADMAP_20260903_SPACY_RS_SPLIT
-//! M3 — moved here from `spacy-rs`). Never the production store: the router's
+//! The **hermetic in-memory** [`ConceptStore`] — the test double (neutral home
+//! `fluent-concept` — moved here from `spacy-rs`). Never the production store: the router's
 //! `SqliteConceptStore` and coral's durable graph are the real homes, and boot
 //! reconciliation locks them equal. This store exists so resolver/pipeline
 //! unit tests run with no SQLite and no disk.

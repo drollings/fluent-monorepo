@@ -1,5 +1,5 @@
 use super::*;
-use common_core::sqlite::in_clause;
+use crate::sqlite::in_clause;
 use crate::tests::common::conn;
 
 fn seed(conn: &Connection) {

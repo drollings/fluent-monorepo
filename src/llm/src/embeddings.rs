@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::OnceLock;
 
 use crate::url::validate_https_or_local_http;
 use async_trait::async_trait;
 use common_core::hash::{content_hash_with_model, hex_encode};
+use common_core::http::shared_http_client;
 use lru::LruCache;
 
 const DEFAULT_CACHE_LIMIT: usize = 1024;
@@ -146,17 +146,15 @@ pub fn check_embed_batch_output(
     Ok(())
 }
 
-/// Sync adapter over an async provider core: `block_in_place` inside a
-/// runtime, process-wide fallback runtime outside one. Shared by providers
-/// whose inference core is async-only.
+/// Sync adapter over an async provider core: the workspace's single
+/// canonical sync→async bridge (`client::block_on`, itself delegating to
+/// `common_core::runtime::block_on`). Shared by providers whose inference
+/// core is async-only.
 pub(crate) fn block_on_provider<F>(future: F) -> F::Output
 where
     F: std::future::Future,
 {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => tokio::task::block_in_place(move || handle.block_on(future)),
-        Err(_) => fallback_runtime().block_on(future),
-    }
+    crate::client::block_on(future)
 }
 
 pub struct NoopEmbedding {
@@ -283,12 +281,37 @@ impl EmbeddingProvider for OllamaEmbedding {
     }
 }
 
+/// One lock-striping shard of the embedding cache: exact key-equality map
+/// from content-hash hex to the shared vector allocation.
+type CacheShard = Arc<Mutex<LruCache<String, Arc<Vec<f32>>>>>;
+
 /// Generic caching wrapper around any EmbeddingProvider.
 /// Uses content_hash_with_model for cache keys.
-/// Bounded by an LRU cache (default 1024 entries).
+/// Bounded near `limit` entries total (see `CACHE_SHARDS`).
+///
+/// Values are `Arc`-shared: repeat hits clone the pointer, not the vector,
+/// and one batch fans the same allocation out to every duplicate input.
+/// A poisoned shard is treated as a miss (best-effort cache, matching the
+/// batch path) — inference is always re-runnable, so availability beats
+/// erroring on cache state.
 pub struct CachedEmbeddingProvider<T: EmbeddingProvider> {
     inner: T,
-    cache: Arc<Mutex<LruCache<String, Vec<f32>>>>,
+    shards: [CacheShard; CACHE_SHARDS],
+}
+
+/// Lock-striping shard count. Pure concurrency tuning — NOT a quality,
+/// recall, or correctness threshold: every key routes to exactly one shard
+/// and lookup is exact key-equality, so any count preserves identical
+/// hit/miss semantics (M11.5). Sixteen keeps per-shard contention negligible
+/// while keeping the total bound tight (`shards × per-shard cap`).
+const CACHE_SHARDS: usize = 16;
+
+fn shard_of(key: &str) -> usize {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    (hasher.finish() % CACHE_SHARDS as u64) as usize
 }
 
 impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
@@ -297,18 +320,33 @@ impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
     }
 
     pub fn new_with_limit(inner: T, limit: usize) -> Self {
-        let capacity = NonZeroUsize::new(limit)
-            .or_else(|| NonZeroUsize::new(DEFAULT_CACHE_LIMIT))
+        let per_shard = NonZeroUsize::new(limit.div_ceil(CACHE_SHARDS).max(1))
             .unwrap_or(NonZeroUsize::MIN);
         Self {
             inner,
-            cache: Arc::new(Mutex::new(LruCache::new(capacity))),
+            shards: [(); CACHE_SHARDS].map(|()| {
+                Arc::new(Mutex::new(LruCache::new(per_shard)))
+            }),
         }
     }
 
     fn cache_key(&self, text: &str) -> String {
         let bytes = content_hash_with_model(text, self.inner.name());
         hex_encode(&bytes)
+    }
+
+    fn cached(&self, key: &str) -> Option<Arc<Vec<f32>>> {
+        self.shards[shard_of(key)]
+            .lock()
+            .ok()?
+            .get(key)
+            .cloned()
+    }
+
+    fn store(&self, key: String, vec: Arc<Vec<f32>>) {
+        if let Ok(mut map) = self.shards[shard_of(&key)].lock() {
+            map.put(key, vec);
+        }
     }
 }
 
@@ -329,33 +367,22 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
             return Ok(Vec::new());
         }
         let key = self.cache_key(text);
-        {
-            let mut map = self
-                .cache
-                .lock()
-                .map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
-            if let Some(cached) = map.get(&key) {
-                return Ok(cached.clone());
-            }
+        if let Some(cached) = self.cached(&key) {
+            return Ok(cached.as_slice().to_vec());
         }
         let result = self.inner.embed(text)?;
-        if let Ok(mut map) = self.cache.lock() {
-            map.put(key, result.clone());
+        // The no-op path is passthrough: empty vectors occupy no LRU slots.
+        if !result.is_empty() {
+            self.store(key, Arc::new(result.clone()));
         }
         Ok(result)
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
         // The sync variant is a thin runtime shim over the single async
-        // core — the cache loop lives in exactly one place. Uses the canonical
-        // `block_in_place` / fallback-runtime pattern from `do_http_post`
-        // (which mirrors `client.rs::chat_complete`).
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                tokio::task::block_in_place(move || handle.block_on(self.embed_batch_async(texts)))
-            }
-            Err(_) => fallback_runtime().block_on(self.embed_batch_async(texts)),
-        }
+        // core — the cache loop lives in exactly one place, driven through
+        // the canonical bridge (`block_on_provider`).
+        crate::embeddings::block_on_provider(self.embed_batch_async(texts))
     }
 
     async fn embed_async(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
@@ -363,18 +390,13 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
             return Ok(Vec::new());
         }
         let key = self.cache_key(text);
-        {
-            let mut map = self
-                .cache
-                .lock()
-                .map_err(|_| EmbeddingError::RequestFailed("cache lock".into()))?;
-            if let Some(cached) = map.get(&key) {
-                return Ok(cached.clone());
-            }
+        if let Some(cached) = self.cached(&key) {
+            return Ok(cached.as_slice().to_vec());
         }
         let result = self.inner.embed_async(text).await?;
-        if let Ok(mut map) = self.cache.lock() {
-            map.put(key, result.clone());
+        // The no-op path is passthrough: empty vectors occupy no LRU slots.
+        if !result.is_empty() {
+            self.store(key, Arc::new(result.clone()));
         }
         Ok(result)
     }
@@ -382,54 +404,69 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
     async fn embed_batch_async(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
         let dims = self.dimensions() as usize;
         let mut flat = Vec::with_capacity(texts.len().saturating_mul(dims));
-        let mut uncached_texts: Vec<&str> = Vec::new();
-        let mut uncached_positions: Vec<usize> = Vec::new();
-        let mut results: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+        let mut results: Vec<Option<Arc<Vec<f32>>>> = vec![None; texts.len()];
 
+        // Exact in-batch dedup: group positions by distinct text so one
+        // inner vector serves every duplicate input (single inner call,
+        // single shard put per key).
+        let mut group_of: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        let mut groups: Vec<(&str, Vec<usize>)> = Vec::new();
         for (i, text) in texts.iter().enumerate() {
             if text.is_empty() {
-                results[i] = Some(Vec::new());
+                results[i] = Some(Arc::new(Vec::new()));
                 continue;
             }
-            let key = self.cache_key(text);
-            if let Ok(mut map) = self.cache.lock() {
-                if let Some(cached) = map.get(&key) {
-                    results[i] = Some(cached.clone());
-                    continue;
-                }
+            if let Some(&g) = group_of.get(text) {
+                groups[g].1.push(i);
+            } else {
+                group_of.insert(text, groups.len());
+                groups.push((text, vec![i]));
             }
-            uncached_texts.push(text);
-            uncached_positions.push(i);
+        }
+
+        let mut uncached_texts: Vec<&str> = Vec::new();
+        let mut uncached_groups: Vec<usize> = Vec::new();
+        for (g, (text, positions)) in groups.iter().enumerate() {
+            let key = self.cache_key(text);
+            if let Some(cached) = self.cached(&key) {
+                for &pos in positions {
+                    results[pos] = Some(Arc::clone(&cached));
+                }
+            } else {
+                uncached_texts.push(text);
+                uncached_groups.push(g);
+            }
         }
 
         if !uncached_texts.is_empty() {
             let batch = self.inner.embed_batch_async(&uncached_texts).await?;
-            for (j, &pos) in uncached_positions.iter().enumerate() {
+            for (j, &g) in uncached_groups.iter().enumerate() {
                 let vec = batch
                     .try_vector(j)
                     .ok_or_else(|| {
                         EmbeddingError::ParseError(format!(
                             "batch returned fewer vectors than requested (requested {j})"
                         ))
-                    })?
-                    .to_vec();
-                let key = self.cache_key(uncached_texts[j]);
-                // Move the fresh vector into the result slot; the cache
-                // receives a clone (the result slot must keep its value).
-                if let Ok(mut map) = self.cache.lock() {
-                    map.put(key, vec.clone());
+                    })?;
+                let vec = Arc::new(vec.to_vec());
+                // Empty vectors stay uncached (no-op passthrough).
+                if !vec.is_empty() {
+                    let key = self.cache_key(groups[g].0);
+                    self.store(key, Arc::clone(&vec));
                 }
-                results[pos] = Some(vec);
+                for &pos in &groups[g].1 {
+                    results[pos] = Some(Arc::clone(&vec));
+                }
             }
         }
 
         for v in results.iter().flatten() {
-            flat.extend_from_slice(v);
+            flat.extend_from_slice(v.as_slice());
         }
 
         let count = results.len();
         let actual_dims = if count > 0 {
-            results[0].as_ref().map_or(0, Vec::len)
+            results[0].as_ref().map_or(0, |v| v.len())
         } else {
             0
         };
@@ -566,17 +603,20 @@ impl EmbeddingProvider for OpenAiEmbedding {
     }
 }
 
-fn async_http_client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(reqwest::Client::new)
-}
-
+/// Embedding POST over the workspace's shared HTTP client (connection
+/// pooling, 10s connect / 30s total timeouts — the same envelope as every
+/// other workspace HTTP call).
+///
+/// Timeout note: the previous private client was unbounded, so a stalled
+/// embedding server hung forever; the shared client bounds that at 30s.
+/// Status→error and body-byte mapping are unchanged (pinned by the HTTP
+/// parity tests in `tests/embeddings.rs`).
 async fn do_http_post_async(
     url: &str,
     body: &serde_json::Value,
     auth_header: Option<&str>,
 ) -> Result<Vec<u8>, EmbeddingError> {
-    let client = async_http_client();
+    let client = shared_http_client();
     let mut req = client.post(url);
     req = req.header("Content-Type", "application/json");
     if let Some(token) = auth_header {
@@ -600,37 +640,15 @@ async fn do_http_post_async(
         .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))
 }
 
-/// Sync HTTP POST adapter for embedding calls.
-///
-/// Uses `tokio::task::block_in_place` when called from inside a tokio runtime
-/// (which the coral L4 tier does) so it does not panic with
-/// "Cannot start a runtime from within a runtime"; falls back to the
-/// process-wide runtime when no runtime is active. The `client.rs`
-/// `chat_complete` adapter owns the canonical pattern.
+/// Sync HTTP POST adapter for embedding calls: the canonical bridge
+/// (`client::block_on` — `block_in_place` inside a multi-thread runtime,
+/// the process-wide fallback runtime outside one).
 fn do_http_post(
     url: &str,
     body: &serde_json::Value,
     auth_header: Option<&str>,
 ) -> Result<Vec<u8>, EmbeddingError> {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => tokio::task::block_in_place(move || {
-            handle.block_on(do_http_post_async(url, body, auth_header))
-        }),
-        Err(_) => fallback_runtime().block_on(do_http_post_async(url, body, auth_header)),
-    }
-}
-
-/// Fallback runtime used when the sync adapter is called with no active tokio
-/// runtime (e.g. a plain `fn main()`). Mirrors `client.rs::fallback_runtime`.
-fn fallback_runtime() -> &'static tokio::runtime::Runtime {
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("failed to build fallback tokio runtime for embeddings")
-    })
+    crate::client::block_on(do_http_post_async(url, body, auth_header))
 }
 
 fn parse_float_array(arr: &[serde_json::Value]) -> Result<Vec<f32>, EmbeddingError> {
@@ -788,3 +806,7 @@ pub fn create_embedding_provider(
 #[cfg(test)]
 #[path = "../tests/embeddings.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/embed_cache.rs"]
+mod embed_cache_tests;

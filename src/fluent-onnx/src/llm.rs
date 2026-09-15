@@ -1,4 +1,4 @@
-//! The generative `CausalLm` decoder — `OrtLlmSession` (ROADMAP M1/M2, feature
+//! The generative `CausalLm` decoder — `OrtLlmSession` (feature
 //! `onnx`).
 //!
 //! This is the one non-encoder path in `fluent-onnx`: an autoregressive
@@ -30,7 +30,7 @@
 //! [`OrtLlmSession::generate`] is a thin wrapper over the two entry points that
 //! allocates a throwaway context — byte-identical output for every existing
 //! caller, with the KV now owned by the context rather than a per-call local.
-//! The KV lives per-context (ROADMAP M2), so named contexts interleave on one
+//! The KV lives per-context, so named contexts interleave on one
 //! loaded session without sharing state.
 
 use std::collections::{BTreeMap, HashSet};
@@ -81,7 +81,7 @@ impl LlmParams {
     }
 }
 
-/// The minimal "run the graph" seam (ROADMAP M2). The real impl wraps an
+/// The minimal "run the graph" seam. The real impl wraps an
 /// `ort::session::Session`; hermetic tests inject a stub that returns canned
 /// owned outputs, so the context/pool decode mechanics (context interleaving,
 /// the rolling window) are testable without a model. Inputs/outputs are owned
@@ -120,7 +120,7 @@ impl OnnxRun for RealSessionRun {
 }
 
 /// The generative decoder: an ort session run seam, a tokenizer, and the
-/// resolved [`LlmIo`] contract. The KV state lives per-context (ROADMAP M2) —
+/// resolved [`LlmIo`] contract. The KV state lives per-context —
 /// `prefill`/`decode_step` read and advance a caller's [`OnnxContext`].
 pub struct OrtLlmSession {
     runner: Arc<dyn OnnxRun>,
@@ -364,7 +364,7 @@ impl OrtLlmSession {
         self.generate_on_context(&ctx, prompt_ids, grammar, max_tokens, stop_ids, params)
     }
 
-    /// Decode onto a **named** context (ROADMAP M6): the same token-selection
+    /// Decode onto a **named** context: the same token-selection
     /// loop as [`Self::generate`], but the KV lives in `ctx` and persists
     /// between calls — the "one weights load, N named context windows" decode
     /// the onnx fleet gains. The context's `n_ctx` rolling window is honored.
@@ -544,7 +544,7 @@ impl OnnxChatCompletion {
         self.complete_inner(None, messages, grammar, max_tokens, params)
     }
 
-    /// Run a chat call onto a **named** context (ROADMAP M6): the same
+    /// Run a chat call onto a **named** context: the same
     /// template → tokenize → decode flow as [`Self::complete`], but the KV
     /// lives in and advances `ctx`, so a follow-up call on the same context
     /// continues from where the previous one stopped. `ctx` must belong to the

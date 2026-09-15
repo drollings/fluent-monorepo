@@ -26,7 +26,7 @@ use crate::error::DbError;
 /// Pool sizing and busy-timeout configuration.
 ///
 /// Defaults preserve the historical pool shape: 5 connections and a 5s busy
-/// timeout (matching `common_core::sqlite::open_wal`'s `busy_timeout=5000`).
+/// timeout (matching `crate::sqlite::open_wal`'s `busy_timeout=5000`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PoolConfig {
     /// Number of `Connection`s to open up front. Defaults to `5`.
@@ -61,7 +61,7 @@ enum Backing {
     /// A file-backed database (WAL mode).
     File(PathBuf),
     /// A named shared-cache in-memory database (all `config.size` connections
-    /// share one DB — see `common_core::sqlite::open_shared_in_memory`).
+    /// share one DB — see `crate::sqlite::open_shared_in_memory`).
     Memory(Arc<str>),
 }
 
@@ -135,7 +135,7 @@ impl SqlitePool {
 
     /// Open a single WAL connection to `path` with the pool's busy timeout.
     fn open_wal_configured(path: &Path, config: &PoolConfig) -> Result<Connection, DbError> {
-        let conn = common_core::sqlite::open_wal(path).map_err(DbError::from)?;
+        let conn = crate::sqlite::open_wal(path).map_err(DbError::from)?;
         if config.busy_timeout_ms > 0 {
             conn.busy_timeout(Duration::from_millis(config.busy_timeout_ms))
                 .map_err(DbError::from)?;
@@ -149,7 +149,7 @@ impl SqlitePool {
         name: &str,
         config: &PoolConfig,
     ) -> Result<Connection, DbError> {
-        let conn = common_core::sqlite::open_shared_in_memory(name).map_err(DbError::from)?;
+        let conn = crate::sqlite::open_shared_in_memory(name).map_err(DbError::from)?;
         if config.busy_timeout_ms > 0 {
             conn.busy_timeout(Duration::from_millis(config.busy_timeout_ms))
                 .map_err(DbError::from)?;
@@ -256,20 +256,20 @@ impl SqlitePool {
     }
 
     /// Execute a DML statement on a blocking worker thread; returns rows
-    /// affected. `params` is an owned iterator of `ToSql` values (a `Vec`, an
-    /// array, …) — borrowed `rusqlite::params![]` slices cannot cross the
+    /// affected. `params` is an owned iterator of values convertible to
+    /// [`crate::query::OwnedValue`] (a `Vec`, an array, …) — one small enum
+    /// per param instead of one `Box<dyn ToSql>` trait object per param.
+    /// Borrowed `rusqlite::params![]` slices cannot cross the
     /// `spawn_blocking` boundary, so capture them in a `with_conn` closure
     /// instead when the parameter list is heterogeneous.
     pub async fn execute<I>(self: &Arc<Self>, sql: &str, params: I) -> Result<usize, DbError>
     where
         I: IntoIterator + Send + 'static,
-        I::Item: rusqlite::ToSql + Send + Sync + 'static,
+        I::Item: Into<crate::query::OwnedValue> + Send + 'static,
     {
         let sql = sql.to_string();
-        let params: Vec<Box<dyn rusqlite::ToSql + Send + Sync>> = params
-            .into_iter()
-            .map(|p| Box::new(p) as Box<dyn rusqlite::ToSql + Send + Sync>)
-            .collect();
+        let params: Vec<crate::query::OwnedValue> =
+            params.into_iter().map(Into::into).collect();
         self.with_conn(move |conn| {
             crate::query::execute(conn, &sql, rusqlite::params_from_iter(params))
         })
@@ -296,13 +296,11 @@ impl SqlitePool {
         T: Send + 'static,
         M: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T> + Send + 'static,
         I: IntoIterator + Send + 'static,
-        I::Item: rusqlite::ToSql + Send + Sync + 'static,
+        I::Item: Into<crate::query::OwnedValue> + Send + 'static,
     {
         let sql = sql.to_string();
-        let params: Vec<Box<dyn rusqlite::ToSql + Send + Sync>> = params
-            .into_iter()
-            .map(|p| Box::new(p) as Box<dyn rusqlite::ToSql + Send + Sync>)
-            .collect();
+        let params: Vec<crate::query::OwnedValue> =
+            params.into_iter().map(Into::into).collect();
         self.with_conn(move |conn| {
             crate::query::query_row(conn, &sql, rusqlite::params_from_iter(params), map)
         })
@@ -322,13 +320,11 @@ impl SqlitePool {
         T: Send + 'static,
         M: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T> + Send + 'static,
         I: IntoIterator + Send + 'static,
-        I::Item: rusqlite::ToSql + Send + Sync + 'static,
+        I::Item: Into<crate::query::OwnedValue> + Send + 'static,
     {
         let sql = sql.to_string();
-        let params: Vec<Box<dyn rusqlite::ToSql + Send + Sync>> = params
-            .into_iter()
-            .map(|p| Box::new(p) as Box<dyn rusqlite::ToSql + Send + Sync>)
-            .collect();
+        let params: Vec<crate::query::OwnedValue> =
+            params.into_iter().map(Into::into).collect();
         self.with_conn(move |conn| {
             crate::query::query_rows(conn, &sql, rusqlite::params_from_iter(params), map)
         })
@@ -360,16 +356,16 @@ impl SqlitePool {
 
     // ── Borrowed-connection helpers ───────────────────────────────
     //
-    // The async helpers above box each parameter as
-    // `Box<dyn ToSql + Send + Sync>` so an owned `IntoIterator` can cross the
-    // `spawn_blocking` boundary. Callers who are *already* inside a blocking op
-    // — a `with_conn`/`transaction` closure, a `PooledConnection` deref, or a
-    // `DbWorkUnit` store op — hold a `&Connection` on the current thread and
-    // should not pay that per-query allocation. These borrowed variants run the
-    // canonical `crate::query` helpers against such a connection with borrowed
-    // `rusqlite::Params` (`rusqlite::params![...]`, `[]`, a `ParamsFromIter`).
-    // No capability token is re-checked: the connection was already checked out
-    // through a gated path (`acquire`/`with_conn`/`transaction`).
+    // The async helpers above collect one `OwnedValue` per param so an owned
+    // `IntoIterator` can cross the `spawn_blocking` boundary. Callers who are
+    // *already* inside a blocking op — a `with_conn`/`transaction` closure, a
+    // `PooledConnection` deref, or a `DbWorkUnit` store op — hold a
+    // `&Connection` on the current thread and should not pay that per-query
+    // allocation. These borrowed variants run the canonical `crate::query`
+    // helpers against such a connection with borrowed `rusqlite::Params`
+    // (`rusqlite::params![...]`, `[]`, a `ParamsFromIter`). No capability
+    // token is re-checked: the connection was already checked out through a
+    // gated path (`acquire`/`with_conn`/`transaction`).
 
     /// Query at most one row against an already-borrowed connection.
     /// A statement that matches no rows returns `Ok(None)` (not an error).
@@ -481,3 +477,7 @@ impl Drop for PooledConnection {
 #[cfg(all(test, feature = "sqlite"))]
 #[path = "../tests/pool.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "sqlite"))]
+#[path = "../tests/bind_path.rs"]
+mod bind_path_tests;

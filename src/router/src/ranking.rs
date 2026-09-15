@@ -1,4 +1,4 @@
-//! Deterministic salience prefilter + model-ranks-shortlist (ROADMAP M6).
+//! Deterministic salience prefilter + model-ranks-shortlist.
 //!
 //! The local model ranks only a **deterministic shortlist** — never the full
 //! session context. Four salience signals, each a pure function of ledger data
@@ -408,7 +408,7 @@ impl LedgerSnapshot {
 
     /// The derived reference count: parent in-degree plus distinct
     /// co-referencing nodes (there is no durable ref-count column on
-    /// `ContentNode` — ROADMAP M6).
+    /// `ContentNode`).
     fn reference_count(&self, node: i64) -> usize {
         let parents = self.parent_indegree.get(&node).copied().unwrap_or(0);
         let co = self.co_ref.get(&node).map_or(0, BTreeSet::len);

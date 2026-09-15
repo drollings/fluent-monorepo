@@ -74,6 +74,12 @@ pub enum SpacyError {
     #[error("invalid special case for {key:?}: {detail}")]
     SpecialCase { key: String, detail: String },
 
+    /// A special-case rule was registered after the tokenizer's rule tables
+    /// froze at the end of construction. Rule genesis rebuilds the tokenizer
+    /// instead of mutating live tables, so concurrent readers never lock.
+    #[error("tokenizer rule tables are frozen: cannot add special case for {key:?} after build")]
+    TokenizerFrozen { key: String },
+
     /// A versioned lemma blob (`build.rs` output) failed to parse: bad
     /// magic/version, a truncated or out-of-range section, or invalid UTF-8.
     #[error("invalid lemma blob: {0}")]

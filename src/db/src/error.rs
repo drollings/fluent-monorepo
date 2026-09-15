@@ -46,7 +46,7 @@ impl From<rusqlite::Error> for DbError {
     fn from(e: rusqlite::Error) -> Self {
         // A UNIQUE/PRIMARY KEY constraint violation is a typed duplicate-key
         // error, not a raw sqlite failure — consumers surface it as such.
-        if common_core::sqlite::is_unique_violation(&e) {
+        if crate::sqlite::is_unique_violation(&e) {
             return DbError::DuplicateEntry(e.to_string());
         }
         // `SQLITE_BUSY` means a lock could not be acquired; classify it so

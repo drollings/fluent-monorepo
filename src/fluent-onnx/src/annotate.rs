@@ -1,4 +1,4 @@
-//! The trained-encoder annotation rung (ROADMAP_20260828_ORT_FIXES §4 / M2).
+//! The trained-encoder annotation rung.
 //!
 //! A finetuned `FillMask` Encoder export carries three per-token heads — UPOS,
 //! dependency label, and head position — in the **same graph** as the base
@@ -24,7 +24,7 @@
 //!
 //! A spacy token whose LFM subword range is empty (`None` in the returned
 //! `Vec<Option<TokenAnnotation>>`) makes the whole rung fall through to the
-//! deterministic ArcEager — never a partial mix (ROADMAP §4 alignment).
+//! deterministic ArcEager — never a partial mix.
 
 use std::ops::Range;
 
@@ -129,7 +129,7 @@ pub fn decode_heads(
 }
 
 /// Pure argmax-of-mean over a contiguous range of per-token logit rows
-/// (ROADMAP §4 alignment: "argmax of the mean logit"). `range` is the LFM
+/// ("argmax of the mean logit"). `range` is the LFM
 /// subword range covering one spacy token; the logits are averaged across the
 /// range's rows and the argmax class index is returned.
 #[must_use]

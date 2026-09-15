@@ -20,3 +20,7 @@ pub mod yamake_loader;
 #[cfg(test)]
 #[path = "../tests/mod.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/scan_sort_equiv.rs"]
+mod scan_sort_equiv_tests;

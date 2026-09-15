@@ -1,4 +1,4 @@
-//! The async review mechanism (ROADMAP §12 — F4).
+//! The async review mechanism.
 //!
 //! LLM agents and users review deterministic-parser output: correct dep/head/
 //! lemma/POS, link entities through the YaGO taxonomy, mark ambiguities.
@@ -29,7 +29,7 @@ pub enum CorrectionField {
 
 /// One token-level correction. `old_value` is reviewer context only — the
 /// amend step never reads it — and defaults to empty so the span-scoped
-/// refine contract (ROADMAP_20260831_ARCEAGER M2.2, which omits it) parses
+/// refine contract (which omits it) parses
 /// into the same type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Correction {
@@ -52,7 +52,7 @@ pub struct LinkedEntity {
 }
 
 /// The outcome of a review pass over one parse. Also the wire shape of the
-/// span-scoped refine reply (ROADMAP_20260831_ARCEAGER M2.2): the refine
+/// span-scoped refine reply: the refine
 /// contract carries `corrections` + `note` only, so every field is defaulted
 /// on deserialize.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -92,7 +92,7 @@ pub enum ReviewStatus {
 }
 
 impl ReviewStatus {
-    /// The ledger provenance tier this review lifecycle maps to (ROADMAP M4):
+    /// The ledger provenance tier this review lifecycle maps to:
     /// `HumanReviewed` is the strongest provenance; a model `Reviewed` (or
     /// parser-authored `Unreviewed`) claim is below it.
     #[must_use]
@@ -169,7 +169,7 @@ pub fn review_prompt(text: &str, parse: &AnnotationResult, candidate_concepts: &
 /// return the number of edits actually landed (out-of-range indices are
 /// skipped, unparseable `head` values are rejected). One amendment vocabulary
 /// for both the review path ([`apply_corrections`]) and the span-scoped
-/// refine rungs (ROADMAP_20260831_ARCEAGER M2.2) — DRY.
+/// refine rungs — DRY.
 pub fn apply_edits(records: &mut [AnnotationRecord], edits: &[Correction]) -> usize {
     let mut applied = 0usize;
     for c in edits {

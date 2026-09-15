@@ -21,9 +21,9 @@ use crate::store::SqliteStore;
 /// async (`SqlitePool`) drivers uniformly.
 type BoxedFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-/// An open in-memory `Connection` (via `common_core::sqlite::open_in_memory`).
+/// An open in-memory `Connection` (via `crate::sqlite::open_in_memory`).
 pub fn conn() -> Connection {
-    common_core::sqlite::open_in_memory().unwrap()
+    crate::sqlite::open_in_memory().unwrap()
 }
 
 /// A `CapabilitySet` carrying a `DbCapability` token. The pool's `acquire`

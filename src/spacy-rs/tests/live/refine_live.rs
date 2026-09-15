@@ -1,5 +1,4 @@
-//! Opt-in live-AI test for the span-scoped refine seam (ROADMAP_20260831
-//! _ARCEAGER M2.5).
+//! Opt-in live-AI test for the span-scoped refine seam.
 //!
 //! This test performs a REAL model call. It is compiled only when the
 //! `live-ai` feature is enabled and is `#[ignore]`d so it can never run under

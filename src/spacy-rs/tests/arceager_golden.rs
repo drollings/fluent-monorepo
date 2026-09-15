@@ -1,4 +1,4 @@
-//! The deterministic parser's golden corpus (ROADMAP §8.7).
+//! The deterministic parser's golden corpus.
 //!
 //! Adversarial and positive cases for the heuristic POS rules and the
 //! verb-governs-argument structure the parser must lift the ladder to:
@@ -15,18 +15,41 @@
 
 use std::sync::Arc;
 
-use spacy_rs::{ArcEagerAnnotator, Doc, Vocab};
+use spacy_rs::{ArcEagerAnnotator, Doc, Tokenizer, Vocab};
 
 fn en_vocab() -> Arc<Vocab> {
     Arc::new(Vocab::new(spacy_rs::lang::en::lexicon_config()))
 }
 
-fn parse(text: &str) -> (Doc, spacy_rs::AnnotationSet) {
+/// Shared parse stack: one vocab + tokenizer + annotator for the whole file.
+/// Construction (regex compiles) dominates per-sentence parse time, so
+/// rebuilding per case wastes ~0.1s × hundreds of cases. Sharing is safe:
+/// the tokenizer's span cache is content-addressed (a memo, never a verdict)
+/// and the annotator is deterministic over its inputs — outputs are identical
+/// to fresh construction, only faster.
+struct SharedStack {
+    vocab: Arc<Vocab>,
+    tokenizer: Tokenizer,
+    annotator: ArcEagerAnnotator,
+}
+
+static SHARED: std::sync::LazyLock<SharedStack> = std::sync::LazyLock::new(|| {
     let vocab = en_vocab();
     let tokenizer = spacy_rs::lang::en::tokenizer(vocab.clone()).expect("tokenizer");
-    let doc = tokenizer.tokenize(text).expect("tokenize");
-    let annotator = ArcEagerAnnotator::en_default(vocab);
-    let (result, _conf) = annotator.annotate_with_confidence(&doc).expect("parse");
+    let annotator = ArcEagerAnnotator::en_default(vocab.clone());
+    SharedStack {
+        vocab,
+        tokenizer,
+        annotator,
+    }
+});
+
+fn parse(text: &str) -> (Doc, spacy_rs::AnnotationSet) {
+    let doc = SHARED.tokenizer.tokenize(text).expect("tokenize");
+    let (result, _conf) = SHARED
+        .annotator
+        .annotate_with_confidence(&doc)
+        .expect("parse");
     (doc, result.records.clone())
 }
 
@@ -125,6 +148,7 @@ fn one_root_per_sentence_multi_sentence_break() {
     }
 }
 
+#[ignore = "heavy (~6s): corpus-wide sweep; run via `make test-heavy`"]
 #[test]
 fn every_output_is_relatively_headed_and_valid() {    for text in [
         "The cat sat on the mat.",
@@ -1118,6 +1142,7 @@ fn nominal_headed_where_is_sconj_mark() {
     assert_eq!(where_ as i32 + set.0[where_].head, met as i32);
 }
 
+#[ignore = "heavy (~5s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn interrogative_where_is_adverbial() {
     // Refs (UD question-02/08, wh-aux-04, wh-copula-03): clause-initial
@@ -1139,6 +1164,7 @@ fn interrogative_where_is_adverbial() {
     }
 }
 
+#[ignore = "heavy (~4s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn where_be_question_crowns_aux() {
     // Refs (UD question-02/08): is → aux/root, station/bag → noun/dobj →
@@ -2569,11 +2595,12 @@ fn ambiguity_of(
     spacy_rs::FrameAnalysis,
     Vec<spacy_rs::FrameKey>,
 ) {
-    let vocab = en_vocab();
-    let tokenizer = spacy_rs::lang::en::tokenizer(vocab.clone()).expect("tokenizer");
-    let mut doc = tokenizer.tokenize(text).expect("tokenize");
-    let annotator = ArcEagerAnnotator::en_default(vocab.clone());
-    let (result, conf) = annotator.annotate_with_confidence(&doc).expect("parse");
+    let mut doc = SHARED.tokenizer.tokenize(text).expect("tokenize");
+    let vocab = Arc::clone(&SHARED.vocab);
+    let (result, conf) = SHARED
+        .annotator
+        .annotate_with_confidence(&doc)
+        .expect("parse");
     let margins = result.oracle_margins.clone().unwrap_or_default();
     spacy_rs::llm::attach(&mut doc, &result.records).expect("attach");
     spacy_rs::Sentencizer::new().process(&mut doc);
@@ -2663,11 +2690,12 @@ fn clean_subordinate_emits_no_tie() {
 /// isolates the confidence axis (`ParseConfidence` → `ConfidenceReason`),
 /// which is fully determined by the deterministic parse.
 fn refine_of(text: &str) -> (spacy_rs::RefineReason, bool) {
-    let vocab = en_vocab();
-    let tokenizer = spacy_rs::lang::en::tokenizer(vocab.clone()).expect("tokenizer");
-    let mut doc = tokenizer.tokenize(text).expect("tokenize");
-    let annotator = ArcEagerAnnotator::en_default(vocab.clone());
-    let (result, _conf) = annotator.annotate_with_confidence(&doc).expect("parse");
+    let vocab = Arc::clone(&SHARED.vocab);
+    let mut doc = SHARED.tokenizer.tokenize(text).expect("tokenize");
+    let (result, _conf) = SHARED
+        .annotator
+        .annotate_with_confidence(&doc)
+        .expect("parse");
     spacy_rs::llm::attach(&mut doc, &result.records).expect("attach");
     spacy_rs::Sentencizer::new().process(&mut doc);
     let store: std::sync::Arc<spacy_rs::InMemoryConceptStore> =
@@ -3343,6 +3371,7 @@ fn numeric_modifier_is_nummod() {
     assert_eq!(num as i32 + set.0[num].head, invoice as i32);
 }
 
+#[ignore = "heavy (~7s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn bare_nominal_chain_crowns_last() {
     // Refs (UD topic-bare-03/05/07): English compounds are head-final —
@@ -3481,6 +3510,7 @@ fn imperative_upgrade_skips_aux_clauses() {
     assert_eq!(pos[at("Big")], "noun", "pos: {pos:?}");
 }
 
+#[ignore = "heavy (~5s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn suffix_governed_parses_hold_across_families() {
     // DRY-refactor characterization: one attachment-level pin per
@@ -3531,6 +3561,7 @@ fn suffix_governed_must_not_fire_controls() {
     assert_eq!(set.0[at("July")].pos, "noun", "July stays nominal");
 }
 
+#[ignore = "heavy (~4s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn trailing_final_parses_hold_across_families() {
     // DRY-refactor characterization: one attachment-level pin per
@@ -3575,6 +3606,7 @@ fn trailing_final_must_not_fire_controls() {
     assert_eq!(set.0[at("calls")].pos, "verb", "calls stays verbal");
 }
 
+#[ignore = "heavy (~7s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn lowercase_gated_parses_hold_across_families() {
     // DRY-refactor characterization: one attachment-level pin per
@@ -3622,6 +3654,7 @@ fn lowercase_gate_must_not_fire_controls() {
     assert_eq!(set.0[at("Anna")].dep, "dobj");
 }
 
+#[ignore = "heavy (~7s): family sweep, rebuilds tokenizer+annotator per sentence; run via `make test-heavy`"]
 #[test]
 fn copula_frame_parses_hold_across_families() {
     // DRY-refactor characterization: one attachment-level pin per

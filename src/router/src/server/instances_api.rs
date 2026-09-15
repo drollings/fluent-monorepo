@@ -355,7 +355,7 @@ pub async fn handle_instance_op(
                 .get("ctx_size")
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or(0);
-            // ROADMAP M7 §3: an onnx context resizes through `LlmContext::resize`
+            // An onnx context resizes through `LlmContext::resize`
             // (the onnx half of the unified facade). Llama contexts stay on the
             // pool's `client.resize` path (byte-identical).
             if let Some(fleet) = deps.fleet.as_ref() {

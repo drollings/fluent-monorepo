@@ -1,4 +1,4 @@
-//! SSE line framing — the single owner (ROADMAP_20260903_LLM M2).
+//! SSE line framing — the single owner.
 //!
 //! Moved verbatim from `common_core::string::drain_sse_lines`. It lives with
 //! its sole protocol consumer (`parse_openai_stream_delta` in

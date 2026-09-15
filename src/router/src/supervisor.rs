@@ -1059,7 +1059,7 @@ impl LlamaServerSupervisor {
         for key in keys {
             let entry = &config.models[key];
             // Onnx models are router-managed but NOT llama-managed: the ort
-            // registry serves them (ROADMAP_20260827_ORT §0.5), so the
+            // registry serves them, so the
             // supervisor must never spawn a llama-server for one.
             if !entry.is_managed() {
                 continue;

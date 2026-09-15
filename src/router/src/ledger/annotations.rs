@@ -1,4 +1,4 @@
-//! `AnnotationStore` — the ledger's tiered annotation store (ROADMAP M4).
+//! `AnnotationStore` — the ledger's tiered annotation store.
 //!
 //! Every annotation a node carries is keyed to that node's **content hash**
 //! (the version identity) and stamped with a producing [`ProvenanceTier`].

@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M3.3 — token-budget goldens (moved, not copied).
+//! Token-budget goldens.
 //!
 //! Canonical home for every token-budget golden: the estimation / budget /
 //! chunking assertions moved from `src/common-core/tests/tokens.rs`, plus

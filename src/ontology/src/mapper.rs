@@ -129,11 +129,14 @@ impl TripleMapper {
 
         self.get_or_create_node(&triple.subject, subj_id)?;
 
-        let rdf_type = yago::NS_RDF.to_owned() + "type";
-        let rdfs_label = yago::NS_RDFS.to_owned() + "label";
-        let skos_pref = yago::NS_SKOS.to_owned() + "prefLabel";
-        let rdfs_comment = yago::NS_RDFS.to_owned() + "comment";
-        let schema_desc = yago::NS_SCHEMA.to_owned() + "description";
+        // Predicate dispatch against the shared `yago` property constants
+        // (no per-triple allocation — the old code concatenated namespace
+        // + local into five fresh `String`s per triple).
+        let rdf_type = yago::PROP_TYPE.iri;
+        let rdfs_label = yago::PROP_LABEL.iri;
+        let skos_pref = yago::PROP_PREF_LABEL.iri;
+        let rdfs_comment = yago::PROP_COMMENT.iri;
+        let schema_desc = yago::PROP_DESCRIPTION.iri;
 
         if pred_iri == rdf_type {
             if let Term::Iri(_) = &triple.object {

@@ -1,4 +1,4 @@
-//! The pure hash→ID bridge (ROADMAP §7 — F3, F9).
+//! The pure hash→ID bridge.
 //!
 //! [`InterlinguaResolver`] is **stateless in the common path**: every ID is a
 //! pure function of content, so there is no `Mutex`, no mutable probe state,

@@ -12,8 +12,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::RwLock;
 
+use common_core::sync::{lock_read, lock_write};
 use fluent_types::{yago_class_id_for_iri, InterlinguaId};
 
+use crate::normalize::iri_to_curie;
 use crate::OntologyError;
 
 /// CSR parents: `indptr` len `n+1`, `indices` variable.
@@ -79,8 +81,8 @@ impl YagoView {
                 let o_iri = expand_curie(&o_curie, &prefixes);
                 let s_id = yago_class_id(&s_iri);
                 let o_id = yago_class_id(&o_iri);
-                let s_key = curie_of(&s_iri);
-                let o_key = curie_of(&o_iri);
+                let s_key = iri_to_curie(&s_iri);
+                let o_key = iri_to_curie(&o_iri);
                 classes.entry(s_key).or_insert(s_id);
                 classes.entry(o_key).or_insert(o_id);
                 edges.push((s_id, o_id));
@@ -118,9 +120,10 @@ impl YagoView {
 
     /// `ancestors_of` via CSR + OnceLock memo, O(depth) amortized O(1) after first.
     pub fn ancestors_of(&self, id: InterlinguaId) -> Vec<InterlinguaId> {
-        // Check memo
-        if let Ok(m) = self.ancestors_memo.read() {
-            if let Some(v) = m.get(&id) { return v.clone(); }
+        // Check memo (poison-recovering: a poisoned memo must not wedge
+        // reads — recompute instead).
+        if let Some(v) = lock_read(&self.ancestors_memo).get(&id) {
+            return v.clone();
         }
         let mut out = Vec::new();
         let mut stack = vec![id];
@@ -139,7 +142,7 @@ impl YagoView {
             }
         }
         // nearest first already (direct parents first due to stack LIFO but close enough)
-        if let Ok(mut m) = self.ancestors_memo.write() { m.insert(id, out.clone()); }
+        lock_write(&self.ancestors_memo).insert(id, out.clone());
         out
     }
 
@@ -155,11 +158,6 @@ impl YagoView {
 
 fn yago_class_id(iri: &str) -> InterlinguaId {
     yago_class_id_for_iri(iri)
-}
-fn curie_of(iri: &str) -> String {
-    if let Some(local) = iri.strip_prefix("http://schema.org/") { return format!("schema:{local}"); }
-    if let Some(local) = iri.strip_prefix("http://yago-knowledge.org/resource/") { return format!("yago:{local}"); }
-    iri.to_string()
 }
 fn parse_prefix(line: &str) -> Option<(String, String)> {
     // @prefix yago: <http://...>

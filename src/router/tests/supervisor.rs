@@ -400,6 +400,7 @@ async fn wait_for_spawn_count(counter: &Path, expected: usize, timeout: Duration
     );
 }
 
+#[ignore = "heavy (~3s): real-timer liveness polls; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn liveness_restarts_hung_server_but_leaves_healthy_one() {
     let up = Arc::new(AtomicBool::new(true));
@@ -473,6 +474,7 @@ async fn liveness_never_restarts_during_shutdown() {
     supervise.abort();
 }
 
+#[ignore = "heavy (~7s): real-timer restart backoffs; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn crash_loop_is_contained_after_max_restarts() {
     // A llama-server that dies immediately (e.g. a missing weights file)

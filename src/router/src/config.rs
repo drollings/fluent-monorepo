@@ -16,6 +16,7 @@ pub mod rounds;
 pub mod routing;
 pub mod runtime;
 pub mod serving;
+pub mod tree_reload;
 
 pub use self::addr::{hosts_equivalent, parse_bind_addr, validate_no_self_routing};
 pub use self::builder::{NlpConfig, NlpOrdering, PipelineParams, TargetMatchMode};

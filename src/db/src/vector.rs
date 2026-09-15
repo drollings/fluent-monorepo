@@ -1,11 +1,10 @@
 //! Embedding vector math.
 //!
-//! The canonical home for cosine similarity, brute-force KNN, vector↔byte
-//! encoding, and int8 quantization. This module was moved verbatim from
-//! `search-vector::math` so that the dependency direction stays acyclic:
-//! `search-vector` and `coral` depend on `fluent-db`, never the reverse
-//! (M4 deleted the `search-vector::math` / `search-vector::error` shims;
-//! consume this module directly).
+//! The canonical home for brute-force KNN, vector↔byte encoding, and int8
+//! quantization. The scalar cosine kernel re-exports from the
+//! dependency-free `vector_math` leaf crate (shared with `search-vector`
+//! and weight-sensitive consumers — no sqlite/HNSW weight travels with
+//! the kernel).
 //!
 //! The generic scored top-K select lives in `common-core::score`
 //! (spacy-rs composes it from there — `fluent-db`'s sqlite/HNSW weight must
@@ -13,7 +12,7 @@
 //! `fluent-db` consumers have one import surface.
 
 pub use common_core::score::top_k_by_score;
-pub use common_core::vector_math::cosine_similarity_f32;
+pub use vector_math::cosine_similarity_f32;
 
 /// Vector index abstraction (M7) — `knn` via cosine distance.
 pub trait VectorIndex {
@@ -26,9 +25,17 @@ pub struct BruteForceIndex {
 }
 impl VectorIndex for BruteForceIndex {
     fn knn(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit> {
+        // One `HashMap` built per call instead of one linear `find` per hit
+        // (`O(N·k)`): first entry wins on duplicate ids, matching the old
+        // `find` (which returned the first match).
+        let mut names: std::collections::HashMap<fluent_types::NodeId, &str> =
+            std::collections::HashMap::with_capacity(self.entries.len());
+        for (id, _, name) in &self.entries {
+            names.entry(*id).or_insert(name.as_str());
+        }
         let results = knn_brute_force(query, self.entries.iter().map(|(id, emb, _)| (*id, emb.as_slice())), k);
         results.into_iter().map(|(id, dist)| {
-            let name = self.entries.iter().find(|(nid,_,_)| *nid==id).map(|(_,_,n)| n.clone()).unwrap_or_default();
+            let name = names.get(&id).copied().unwrap_or_default();
             fluent_types::KnnHit { node_id: id, distance: dist, name: name.into() }
         }).collect()
     }

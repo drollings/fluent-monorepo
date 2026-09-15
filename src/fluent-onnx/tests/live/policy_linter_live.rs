@@ -1,4 +1,4 @@
-//! Live-AI tests for the Policy-Linter (`PolicyLinter`, ROADMAP §3.1).
+//! Live-AI tests for the Policy-Linter (`PolicyLinter`).
 //!
 //! Performs REAL ONNX inference. Compiled only under the `live-ai` feature,
 //! `#[ignore]`d, run via `make ort-test-live` / `make test-live`.

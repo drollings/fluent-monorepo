@@ -1,4 +1,4 @@
-//! The overlay/candidate plane (ROADMAP_20260827_ORT §6.1/§6.5).
+//! The overlay/candidate plane.
 //!
 //! `overlay_candidates` is the durable surface for async overlay outputs —
 //! entity links, PII-shaped spans, parse corrections, concept summaries. It is

@@ -290,7 +290,7 @@ fn encoder_plus_fetch_both_provided_ladder_tries_in_order() {
     );
 }
 
-/// M1.2 (ROADMAP_20260828_ORT): a pipeline built *through the builder* with
+/// A pipeline built *through the builder* with
 /// a concept store (fail-open default absent) stamps real interlingua ids —
 /// the boot-wiring guarantee, exercised end-to-end. Previously the resolver
 /// was constructed only in direct `NlpStage` tests (G1).
@@ -335,7 +335,7 @@ fn builder_built_pipeline_publishes_interlingua_ids() {
     assert_eq!(conf.source, spacy_rs::AnnotationSource::ArcEager);
 }
 
-/// M1.2 (ROADMAP_20260828_ORT): with a concept store absent the builder
+/// With a concept store absent the builder
 /// fails open (a `warn!`) and the pipeline still builds — the NlpStage
 /// publishes a parse, but no interlingua ids (resolver `None`).
 #[test]
@@ -366,7 +366,7 @@ fn builder_built_pipeline_fails_open_without_concept_store() {
     );
 }
 
-/// G9 (ROADMAP_20260828_ORT): the confidence summary reports the resolver's
+/// The confidence summary reports the resolver's
 /// surfaced collision count, not a hardcoded zero. A collision is forced by
 /// registering a second canonical under a taken id.
 #[test]

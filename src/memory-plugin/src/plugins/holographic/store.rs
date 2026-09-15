@@ -329,7 +329,7 @@ impl HolographicStore {
                 // Increment retrieval counts
                 if !results.is_empty() {
                     let ids: Vec<i64> = results.iter().map(|f| f.fact_id).collect();
-                    let placeholders = common_core::sqlite::in_clause(ids.len());
+                    let placeholders = fluent_db::sqlite::in_clause(ids.len());
                     let sql = format!(
                         "UPDATE facts SET retrieval_count = retrieval_count + 1 WHERE fact_id IN ({placeholders})"
                     );

@@ -8,8 +8,8 @@ use internment::ArcIntern;
 use tracing::info;
 
 use crate::{
-    impl_component, impl_fieldless, Component, Describable, FieldAccess, FieldError, WorkContext,
-    WorkError, WorkOutput, WorkUnit,
+    impl_component, impl_fieldless, Component, Describable, FieldAccess, FieldError, MetadataValue,
+    WorkContext, WorkError, WorkOutput, WorkUnit,
 };
 
 pub struct RetryResult<T> {
@@ -543,17 +543,21 @@ impl<'a, T: 'a, E> Default for Pipeline<'a, T, E> {
 ///
 /// `execute` merges the batch-supplied runtime (`ctx.rt`) with per-task
 /// configuration from `self.ctx`, so the task gets the live runtime but
-/// retains its own capabilities and metadata.
+/// retains its own capabilities and metadata. The scatter suffix additionally
+/// travels in the merged context's metadata under `"task_suffix"`, so the
+/// inner unit can observe which shard it runs as without any extra channel.
 pub struct SuffixedComponent {
     inner: Arc<dyn Component>,
     name: String,
+    suffix: String,
     ctx: WorkContext,
 }
 
 impl SuffixedComponent {
     pub fn new(inner: Arc<dyn Component>, suffix: impl AsRef<str>, ctx: WorkContext) -> Self {
-        let name = format!("{}:{}", inner.name(), suffix.as_ref());
-        Self { inner, name, ctx }
+        let suffix = suffix.as_ref().to_owned();
+        let name = format!("{}:{suffix}", inner.name());
+        Self { inner, name, suffix, ctx }
     }
 }
 
@@ -568,10 +572,13 @@ impl WorkUnit for SuffixedComponent {
         self.inner.provides()
     }
     fn execute(&self, batch_ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let merged = WorkContext {
+        let mut merged = WorkContext {
             rt: Arc::clone(&batch_ctx.rt),
             ..self.ctx.clone()
         };
+        merged
+            .metadata
+            .insert("task_suffix".to_owned(), MetadataValue::from(self.suffix.as_str()));
         self.inner.execute(&merged)
     }
     fn default_timeout_ms(&self) -> u64 {

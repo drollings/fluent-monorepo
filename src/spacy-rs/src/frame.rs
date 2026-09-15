@@ -1,4 +1,4 @@
-//! Frame extraction — spacy-rs as a structural index (ROADMAP M3, G6).
+//! Frame extraction — spacy-rs as a structural index.
 //!
 //! Per predicate, a [`Frame`] is a typed argument structure derived
 //! deterministically from the attached [`DependencyGraph`] tree (`Doc::children`

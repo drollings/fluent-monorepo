@@ -198,6 +198,32 @@ fn matcher_with(default_response: Vec<String>) -> TargetMatcher {
     )
 }
 
+/// A matcher whose stub backend answers per candidate key instead of from
+/// one shared queue. The ladder assesses the reachable suffix concurrently,
+/// so call order is nondeterministic — a shared queue cannot deterministically
+/// map responses to candidates, but a per-key backend can (mirroring
+/// production, where every model key has its own backend). Keys without an
+/// entry fall through to a benign always-9 default; tests pinning failure
+/// map those keys to empty queues explicitly.
+fn matcher_with_per_key(by_key: Vec<(&str, Vec<String>)>) -> TargetMatcher {
+    TargetMatcher::new(
+        TargetBackends::new(
+            by_key
+                .into_iter()
+                .map(|(key, responses)| {
+                    (
+                        key.to_string(),
+                        Arc::new(StubChatBackend::new(responses)) as Arc<dyn ChatBackend>,
+                    )
+                })
+                .collect(),
+            Arc::new(StubChatBackend::always(assessment(9, "default fan-out tail"))),
+        ),
+        Arc::new(Limiter::new(4)),
+        0,
+    )
+}
+
 #[test]
 fn target_backends_get_prefers_dedicated_then_default() {
     let dedicated: Arc<dyn ChatBackend> =
@@ -227,7 +253,10 @@ fn climb_matches_first_candidate_within_intelligence() {
         ("qwen3.6-27b", 6, 5.0),
     ]);
     let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-    let matcher = matcher_with(vec![assessment(4, "mid"), assessment(6, "hard")]);
+    let matcher = matcher_with_per_key(vec![
+        ("qwen3.5-9b", vec![assessment(4, "mid")]),
+        ("qwen3.6-27b", vec![assessment(6, "hard")]),
+    ]);
 
     let tm = matcher
         .match_target("local", "default", &routing, &cands, Some(3), "hello")
@@ -253,9 +282,9 @@ fn climb_escalates_to_more_intelligent_member() {
         ("qwen3.6-27b", 6, 5.0),
     ]);
     let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-    let matcher = matcher_with(vec![
-        assessment(7, "hard for qwen3.5"),
-        assessment(6, "ok for 27b"),
+    let matcher = matcher_with_per_key(vec![
+        ("qwen3.5-9b", vec![assessment(7, "hard for qwen3.5")]),
+        ("qwen3.6-27b", vec![assessment(6, "ok for 27b")]),
     ]);
 
     let tm = matcher
@@ -279,7 +308,10 @@ fn climb_starts_at_classifier_seed() {
         ("qwen3.6-27b", 6, 5.0),
     ]);
     let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-    let matcher = matcher_with(vec![assessment(1, "easy"), assessment(3, "ok")]);
+    let matcher = matcher_with_per_key(vec![
+        ("swarm", vec![assessment(1, "easy")]),
+        ("qwen3.5-9b", vec![assessment(3, "ok")]),
+    ]);
 
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
@@ -298,10 +330,10 @@ fn parse_failure_escalates_conservatively() {
     ]);
     let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
     // swarm's response is unparseable → treated as can't-confirm → escalate.
-    let matcher = matcher_with(vec![
-        "not json".into(),
-        assessment(4, "ok for qwen3.5"),
-        assessment(6, "ok for 27b"),
+    let matcher = matcher_with_per_key(vec![
+        ("swarm", vec!["not json".into()]),
+        ("qwen3.5-9b", vec![assessment(4, "ok for qwen3.5")]),
+        ("qwen3.6-27b", vec![assessment(6, "ok for 27b")]),
     ]);
 
     let tm = matcher
@@ -318,10 +350,10 @@ fn parse_failure_escalates_conservatively() {
 fn llm_error_escalates_conservatively() {
     let cands = candidates(&[("swarm", 2, 1.0), ("qwen3.6-27b", 6, 3.0)]);
     let routing = routing_with("default", &["swarm", "qwen3.6-27b"]);
-    // Empty queue → both self-assessment calls fail with NoResponse.
+    // Empty per-key queues → every self-assessment call fails with NoResponse.
     // Conservative escalation: a candidate that cannot confirm (LLM error)
     // is skipped; the last member still matches (terminate-don't-loop).
-    let matcher = matcher_with(vec![]);
+    let matcher = matcher_with_per_key(vec![("swarm", vec![]), ("qwen3.6-27b", vec![])]);
 
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
@@ -338,7 +370,10 @@ fn last_member_always_matches() {
     let cands = candidates(&[("swarm", 2, 1.0), ("qwen3.6-27b", 6, 3.0)]);
     let routing = routing_with("default", &["swarm", "qwen3.6-27b"]);
     // The last member self-assesses 9 > 6 — still matches (terminate).
-    let matcher = matcher_with(vec![assessment(3, "ok for swarm"), assessment(9, "hard")]);
+    let matcher = matcher_with_per_key(vec![
+        ("swarm", vec![assessment(3, "ok for swarm")]),
+        ("qwen3.6-27b", vec![assessment(9, "hard")]),
+    ]);
 
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
@@ -357,7 +392,10 @@ fn exact_call_count_two_assessments() {
         ("qwen3.6-27b", 6, 5.0),
     ]);
     let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-    let matcher = matcher_with(vec![assessment(7, "too hard"), assessment(6, "match")]);
+    let matcher = matcher_with_per_key(vec![
+        ("qwen3.5-9b", vec![assessment(7, "too hard")]),
+        ("qwen3.6-27b", vec![assessment(6, "match")]),
+    ]);
 
     let tm = matcher
         .match_target("local", "default", &routing, &cands, Some(3), "hello")
@@ -376,7 +414,7 @@ fn fallbacks_are_group_tail_then_cross_group() {
         ("qwen3.6-27b", 6, 5.0),
     ]);
     let routing = routing_with("default", &["swarm", "qwen3.5-9b", "qwen3.6-27b"]);
-    let matcher = matcher_with(vec![assessment(1, "easy")]);
+    let matcher = matcher_with_per_key(vec![("swarm", vec![assessment(1, "easy")])]);
 
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
@@ -549,16 +587,11 @@ fn corpus_candidates(ladder: &serde_json::Value) -> Vec<TargetCandidate> {
         .collect()
 }
 
-fn corpus_responses(assessed: &serde_json::Value) -> Vec<String> {
-    assessed
-        .as_array()
-        .expect("assessed is an array")
-        .iter()
-        .map(|a| match a {
-            serde_json::Value::String(s) => s.clone(),
-            obj => serde_json::to_string(obj).expect("response serializes"),
-        })
-        .collect()
+fn corpus_response(entry: &serde_json::Value) -> String {
+    match entry {
+        serde_json::Value::String(s) => s.clone(),
+        obj => serde_json::to_string(obj).expect("response serializes"),
+    }
 }
 
 fn run_case(case: &serde_json::Value) -> TargetMatch {
@@ -566,11 +599,31 @@ fn run_case(case: &serde_json::Value) -> TargetMatch {
     let keys: Vec<String> = cands.iter().map(|c| c.model_key.clone()).collect();
     let key_refs: Vec<&str> = keys.iter().map(String::as_str).collect();
     let routing = routing_with("default", &key_refs);
-    let matcher = matcher_with(corpus_responses(&case["assessed"]));
     let complexity = case
         .get("classifier_complexity")
         .and_then(serde_json::Value::as_u64)
         .map(|c| c as u8);
+    // The corpus `assessed` array aligns with the walked rungs from the
+    // start index: rung `j` answers with `assessed[j - start]`. Map each
+    // ladder key to its rung response (empty queue past the array end
+    // preserves the old queue-exhaustion `NoResponse`), so the mapping is
+    // deterministic under any assessment schedule.
+    let start = start_index(&cands, complexity);
+    let assessed = case["assessed"].as_array().expect("assessed array");
+    let by_key: Vec<(&str, Vec<String>)> = cands
+        .iter()
+        .enumerate()
+        .map(|(j, cand)| {
+            let responses = assessed
+                .get(j.saturating_sub(start))
+                .filter(|_| j >= start)
+                .map(corpus_response)
+                .map(|response| vec![response])
+                .unwrap_or_default();
+            (cand.model_key.as_str(), responses)
+        })
+        .collect();
+    let matcher = matcher_with_per_key(by_key);
     matcher
         .match_target("local", "default", &routing, &cands, complexity, "probe")
         .expect("non-empty ladder always terminates with a winner")
@@ -922,9 +975,9 @@ fn ordering_never_outranks_capability() {
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
     let cands = candidates(&[("b", 5, 1.0), ("a", 1, 1.0)]);
     for _ in 0..2 {
-        let matcher = matcher_with(vec![
-            assessment(9, "too hard for b"),
-            assessment(1, "fits a"),
+        let matcher = matcher_with_per_key(vec![
+            ("b", vec![assessment(9, "too hard for b")]),
+            ("a", vec![assessment(1, "fits a")]),
         ]);
         let tm = matcher
             .match_target("local", "g", &routing, &cands, None, "probe")

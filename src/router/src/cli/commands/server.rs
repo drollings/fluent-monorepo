@@ -1,5 +1,5 @@
-//! Server admin commands (`ps`, `stop`, `speedtest`) driving a running Coral
-//! Router through its HTTP API.
+//! Server admin commands (`ps`, `stop`, `speedtest`, `coordinator-rollback`)
+//! driving a running Coral Router through its HTTP API.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -392,6 +392,41 @@ pub async fn stop(
     Err(cli_err(format!(
         "Model '{model_key}' still listed as loaded after unload"
     )))
+}
+
+/// One-command coordinator rollback (M14c): close the running router's
+/// coordinator runtime gate so dispatch returns to the pre-coordinator
+/// pipeline without a restart. Loopback-only server side; idempotent.
+pub async fn coordinator_rollback(
+    ctx: &CliContext,
+    api_url: Option<&str>,
+    config_path: Option<&Path>,
+) -> CliResult {
+    let base = router_base_url(api_url, config_path);
+    ctx.log_debug("coordinator-rollback: closing the coordinator runtime gate");
+    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
+    let resp = client
+        .post(format!("{base}/admin/coordinator/rollback"))
+        .send()
+        .await
+        .map_err(|e| cli_err(format!("Cannot connect to {base}: {e}")))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(cli_err(format!(
+            "/admin/coordinator/rollback failed: HTTP {status}: {text}"
+        )));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| cli_err(format!("rollback reply unreadable: {e}")))?;
+    if body.get("status").and_then(Value::as_str) == Some("rolled_back") {
+        println!("Coordinator rolled back: dispatch is on the pre-coordinator pipeline");
+    } else {
+        println!("Rollback reply: {body}");
+    }
+    Ok(())
 }
 
 async fn loaded_model_ids(client: &Client, base: &str) -> Vec<String> {

@@ -1,5 +1,4 @@
-//! Text-half / knowledge-half bridge for taxonomy plausibility
-//! (ROADMAP_20260903_SPACY_RS_SPLIT M5).
+//! Text-half / knowledge-half bridge for taxonomy plausibility.
 //!
 //! [`PlausibilityTriple`] is the neutral input to taxonomy scoring: the
 //! text half (`spacy-rs` `triple::build_plausibility_inputs`) fills one per

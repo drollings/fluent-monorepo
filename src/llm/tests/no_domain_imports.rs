@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M0.4 — no-domain-imports guard.
+//! No-domain-imports guard.
 //!
 //! Compile-time + source-level assertion that `fluent-llm` (and
 //! `common-core`) never import domain crates:

@@ -79,7 +79,7 @@ impl GuidanceDb {
         )?;
         self.store.with_conn(|conn| {
             fluent_llm::embeddings_cache::init_embedding_cache(conn).map_err(DbError::from)?;
-            common_core::sqlite::run_batch(
+            fluent_db::sqlite::run_batch(
                 conn,
                 "CREATE INDEX IF NOT EXISTS idx_nodes_name ON guidance_nodes(name);
                  CREATE INDEX IF NOT EXISTS idx_nodes_source ON guidance_nodes(source);
@@ -262,21 +262,15 @@ impl GuidanceDb {
 
     /// HNSW approximate nearest neighbor search.
     fn hnsw_search(&self, query_vec: &[f32], k: usize) -> Option<Vec<SearchResult>> {
-        let neighbours = self.hnsw.search(query_vec, k);
-        if neighbours.is_empty() {
-            return None;
-        }
-        // Resolve HNSW `d_id` indices through the external-id map, then touch
-        // the connection. The `hnsw → id_map → conn` order is preserved.
-        let id_map = self.hnsw.id_map_snapshot();
+        // One generation-checked traverse-and-resolve episode: the returned
+        // keys always belong to the traversed generation (a concurrent
+        // rebuild degrades to `None`, i.e. the brute-force path below).
+        // The connection is touched only after both index guards release,
+        // preserving the `index → map → conn` ordering.
+        let resolved = self.hnsw.search_with_ids(query_vec, k)?;
 
-        let mut results = Vec::with_capacity(neighbours.len());
-        for (d_id, distance) in neighbours {
-            if d_id >= id_map.len() {
-                continue;
-            }
-            let node_id = id_map[d_id];
-
+        let mut results = Vec::with_capacity(resolved.len());
+        for (node_id, distance) in resolved {
             // Convert cosine distance to similarity via the canonical kernel.
             let similarity = vector::distance_to_similarity(distance);
 
@@ -1225,7 +1219,7 @@ impl GuidanceDb {
         let sql = format!(
             "SELECT DISTINCT grp FROM fragments WHERE file_id IN ({}) \
              AND grp IS NOT NULL AND grp != '' ORDER BY grp",
-            common_core::sqlite::in_clause(file_ids.len())
+            fluent_db::sqlite::in_clause(file_ids.len())
         );
         let values: Vec<rusqlite::types::Value> =
             file_ids.iter().map(|id| rusqlite::types::Value::Text(id.clone())).collect();

@@ -22,7 +22,7 @@ pub mod filesystem;
 pub mod server;
 
 pub use filesystem::{list, pull, rm, scan, show};
-pub use server::{ps, speedtest, stop};
+pub use server::{coordinator_rollback, ps, speedtest, stop};
 
 use std::path::Path;
 

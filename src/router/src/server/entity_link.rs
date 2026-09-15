@@ -1,4 +1,4 @@
-//! The async entity-link overlay worker (ROADMAP_20260827_ORT §6.2).
+//! The async entity-link overlay worker.
 //!
 //! A credit-gated bounded worker pool (the shared
 //! [`fluent_concurrency::credit_pool::CreditGatedPool`] primitive, mirroring

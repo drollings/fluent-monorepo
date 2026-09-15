@@ -89,8 +89,8 @@ pub struct TokenRecord {
     pub ent_kb_id: u64,
     /// Entity id hash.
     pub ent_id: u64,
-    /// The token lemma's interlingua id, stamped by the resolver (ROADMAP
-    /// §10.1 — additive, `None` until the resolve stage runs).
+    /// The token lemma's interlingua id, stamped by the resolver
+    /// (additive, `None` until the resolve stage runs).
     pub interlingua_lemma_id: Option<InterlinguaId>,
     /// The token lemma's entity interlingua id (PROPN tokens with a YaGO
     /// match), stamped by the resolver.

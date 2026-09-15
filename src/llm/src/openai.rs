@@ -293,9 +293,9 @@ pub fn normalize_response_with_id(response: &serde_json::Value, id: &str) -> ser
 
 /// Build an error response in OpenAI-compatible format.
 ///
-/// Canonical owner of the `{"error":{"message","type"}}` envelope
-/// (ROADMAP_20260903_LLM M7). M11 deleted the `common_core::http`
-/// byte-identical `error_value` shim (kept through M10) with its parity
+/// Canonical owner of the `{"error":{"message","type"}}` envelope.
+/// The shared-client migration deleted the `common_core::http`
+/// byte-identical `error_value` shim with its parity
 /// test; the `error_response` goldens in `tests/openai.rs` are the lasting
 /// contract (shape verified identical, no behavior change).
 pub fn error_response(message: &str, error_type: &str) -> serde_json::Value {

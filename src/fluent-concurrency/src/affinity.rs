@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use lru::LruCache;
 
 use crate::pool::{PriorityResultPool, ResultPoolError};
-use common_core::sync as sync_lock;
+use crate::sync as sync_lock;
 
 /// Configuration for aging behaviour.
 #[derive(Debug, Clone)]
@@ -61,11 +61,20 @@ pub struct ScheduledTask<T> {
 /// sits between the pipeline and agent dispatch.
 pub struct AffinityScheduler<T: Send + 'static, R: Send + 'static, E: Send + 'static> {
     pool: Arc<PriorityResultPool<T, R, E>>,
-    current_affinity: Mutex<Option<String>>,
     aging: AgingConfig,
-    base_priorities: Mutex<LruCache<String, i32>>,
-    last_aging: Mutex<Instant>,
+    /// The whole scheduler state behind one lock: affinity session,
+    /// per-identity base priorities (bounded LRU), and the last aging
+    /// timestamp. One guard per submit — compute reads, aging mutates, and
+    /// the record step writes, all under the same critical section, so no
+    /// lock ordering exists to get wrong.
+    state: Mutex<State>,
     runtime: Arc<dyn fluent_wvr::Runtime>,
+}
+
+struct State {
+    affinity: Option<String>,
+    base: LruCache<String, i32>,
+    last_aging: Instant,
 }
 
 const DEFAULT_MAX_IDENTITIES: usize = 1024;
@@ -84,12 +93,15 @@ where
     /// Create a new affinity scheduler with an explicit runtime (for virtual-time tests).
     pub fn new_with_runtime(pool: Arc<PriorityResultPool<T, R, E>>, runtime: Arc<dyn fluent_wvr::Runtime>) -> Self {
         let cap = NonZeroUsize::new(DEFAULT_MAX_IDENTITIES).unwrap();
+        let now = runtime.now();
         Self {
             pool,
-            current_affinity: Mutex::new(None),
             aging: AgingConfig::default(),
-            base_priorities: Mutex::new(LruCache::new(cap)),
-            last_aging: Mutex::new(runtime.now()),
+            state: Mutex::new(State {
+                affinity: None,
+                base: LruCache::new(cap),
+                last_aging: now,
+            }),
             runtime,
         }
     }
@@ -102,12 +114,15 @@ where
         aging: AgingConfig,
     ) -> Self {
         let cap = NonZeroUsize::new(cap.max(1)).unwrap();
+        let now = runtime.now();
         Self {
             pool,
-            current_affinity: Mutex::new(None),
             aging,
-            base_priorities: Mutex::new(LruCache::new(cap)),
-            last_aging: Mutex::new(runtime.now()),
+            state: Mutex::new(State {
+                affinity: None,
+                base: LruCache::new(cap),
+                last_aging: now,
+            }),
             runtime,
         }
     }
@@ -122,122 +137,125 @@ where
     /// Submit a task with a base priority. If the task's identity matches
     /// the current affinity session, an affinity bonus is added.
     ///
-    /// Also runs aging if the configured interval has elapsed.
+    /// Also runs aging if the configured interval has elapsed — all under
+    /// one guard, so the aging check costs no extra lock on any submit.
+    ///
+    /// [task-value]: the affinity bonus measures session-history value
+    /// (stickiness reduces context switching), not parse confidence. A
+    /// confident-but-wrong-session task still earns the bonus, and a
+    /// correct task in a cold session earns none — never read the bonus
+    /// as a correctness signal.
     pub async fn submit(
         &self,
         task: ScheduledTask<T>,
         base_priority: i32,
     ) -> Result<R, ResultPoolError<E>> {
-        self.maybe_age();
-        let priority = self.compute_priority_with_base(&task, base_priority);
+        let priority = {
+            let mut state = sync_lock::lock(&self.state);
+            let State { affinity, base, last_aging } = &mut *state;
+            let now = self.runtime.now();
+            if now.duration_since(*last_aging) >= self.aging.aging_interval {
+                age_locked(base, affinity.as_deref(), &self.aging);
+                *last_aging = now;
+            }
+            let cached = base.peek(&task.identity).copied();
+            let (record, priority) = Self::compute_priority(
+                affinity.as_deref(),
+                cached,
+                &task,
+                base_priority,
+                now,
+                &self.aging,
+            );
+            base.put(task.identity.clone(), record);
+            priority
+        };
         self.pool.submit(task.task, priority).await
     }
 
-    fn compute_priority_with_base(&self, task: &ScheduledTask<T>, base_priority: i32) -> i32 {
-        // Canonical lock order via helper
-        let (affinity_guard, mut prio_guard, _last_guard) = self.lock_in_order_for_compute();
-        let affinity = affinity_guard.clone();
-        // drop last_guard early? Keep order but we hold it.
-        let effective_base = prio_guard.get(&task.identity).copied().unwrap_or(base_priority);
-        // Blend enqueued_at age: per-task starvation, capped at aging_rate
-        let now = self.runtime.now();
+    /// Pure priority math over a state snapshot: cached base (or the call
+    /// argument), per-task age bonus capped at `aging_rate`, then the
+    /// affinity bonus for the affine session. Returns `(record, return)`:
+    /// the value to store in the LRU (base + age, bonus excluded) and the
+    /// priority to submit with. No locks, no mutation, no clones of the
+    /// affinity string (compared by reference).
+    fn compute_priority(
+        affinity: Option<&str>,
+        cached_base: Option<i32>,
+        task: &ScheduledTask<T>,
+        base_priority: i32,
+        now: Instant,
+        aging: &AgingConfig,
+    ) -> (i32, i32) {
+        let effective_base = cached_base.unwrap_or(base_priority);
         let age_secs = now
             .checked_duration_since(task.enqueued_at)
             .unwrap_or(Duration::ZERO)
             .as_secs() as i32;
-        let age_bonus = age_secs.min(self.aging.aging_rate).max(0);
+        let age_bonus = age_secs.min(aging.aging_rate).max(0);
         let with_age = effective_base.saturating_add(age_bonus);
-        // Insert/update LRU
-        prio_guard.put(task.identity.clone(), with_age);
-        if affinity.as_deref() == Some(task.identity.as_str()) {
-            with_age.saturating_add(self.aging.affinity_bonus)
+        let out = if affinity == Some(task.identity.as_str()) {
+            with_age.saturating_add(aging.affinity_bonus)
         } else {
             with_age
-        }
+        };
+        (with_age, out)
     }
 
     /// Public helper for tests: compute effective priority without submitting.
+    ///
+    /// Compute-only and LRU-clean: reads through `peek` (no recency churn)
+    /// and never `put`s, so repeated calls leave the scheduler exactly as
+    /// found. (The pre-change helper recorded into the LRU as a side
+    /// effect; only the returned values are preserved.)
     pub fn effective_priority(&self, task: &ScheduledTask<T>, base_priority: i32) -> i32 {
-        self.compute_priority_with_base(task, base_priority)
+        let state = sync_lock::lock(&self.state);
+        let now = self.runtime.now();
+        let cached = state.base.peek(&task.identity).copied();
+        let (_, priority) = Self::compute_priority(
+            state.affinity.as_deref(),
+            cached,
+            task,
+            base_priority,
+            now,
+            &self.aging,
+        );
+        priority
     }
 
-    /// Helper enforcing canonical lock order: current_affinity -> base_priorities -> last_aging
-    #[allow(clippy::type_complexity)]
-    fn lock_in_order_for_compute(
-        &self,
-    ) -> (
-        std::sync::MutexGuard<'_, Option<String>>,
-        std::sync::MutexGuard<'_, LruCache<String, i32>>,
-        std::sync::MutexGuard<'_, Instant>,
-    ) {
-        let a = sync_lock::lock(&self.current_affinity);
-        let b = sync_lock::lock(&self.base_priorities);
-        let c = sync_lock::lock(&self.last_aging);
-        (a, b, c)
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn lock_all_for_age(
-        &self,
-    ) -> (
-        std::sync::MutexGuard<'_, Option<String>>,
-        std::sync::MutexGuard<'_, LruCache<String, i32>>,
-        std::sync::MutexGuard<'_, Instant>,
-    ) {
-        let a = sync_lock::lock(&self.current_affinity);
-        let b = sync_lock::lock(&self.base_priorities);
-        let c = sync_lock::lock(&self.last_aging);
-        (a, b, c)
+    /// Test-only introspection: the recorded base for one identity (bonus
+    /// excluded), without touching recency.
+    #[cfg(test)]
+    fn recorded_base(&self, identity: &str) -> Option<i32> {
+        sync_lock::lock(&self.state).base.peek(identity).copied()
     }
 
     /// Set the current affinity session.
     pub fn set_affinity(&self, identity: Option<String>) {
-        let mut aff = sync_lock::lock(&self.current_affinity);
-        *aff = identity;
+        sync_lock::lock(&self.state).affinity = identity;
     }
 
     /// Get the current affinity session.
     pub fn current_affinity(&self) -> Option<String> {
-        sync_lock::lock(&self.current_affinity).clone()
+        sync_lock::lock(&self.state).affinity.clone()
     }
 
     /// Remove an identity from the bounded map (session close).
     pub fn remove_identity(&self, identity: &str) {
-        let mut prios = sync_lock::lock(&self.base_priorities);
-        prios.pop(identity);
+        sync_lock::lock(&self.state).base.pop(identity);
     }
 
     /// For testing: current map length.
     pub fn base_priorities_len(&self) -> usize {
-        sync_lock::lock(&self.base_priorities).len()
-    }
-
-    fn maybe_age(&self) {
-        let should_age = {
-            let last = sync_lock::lock(&self.last_aging);
-            self.runtime.now().duration_since(*last) >= self.aging.aging_interval
-        };
-
-        if should_age {
-            self.age_priorities();
-        }
-    }
-
-    fn age_priorities(&self) {
-        // Canonical order: current_affinity -> base_priorities -> last_aging
-        let (affinity, mut priorities, mut last) = self.lock_all_for_age();
-        let affinity = affinity.clone();
-        for (identity, prio) in priorities.iter_mut() {
-            if Some(identity.as_str()) != affinity.as_deref() {
-                *prio = (*prio + self.aging.aging_rate).min(self.aging.max_priority);
-            }
-        }
-        *last = self.runtime.now();
+        sync_lock::lock(&self.state).base.len()
     }
 
     /// Run aging immediately (useful for testing).
     pub fn age_now(&self) {
-        self.age_priorities();
+        let mut state = sync_lock::lock(&self.state);
+        let State { affinity, base, last_aging } = &mut *state;
+        age_locked(base, affinity.as_deref(), &self.aging);
+        *last_aging = self.runtime.now();
     }
 
     /// Access the underlying pool.
@@ -246,6 +264,25 @@ where
     }
 }
 
+/// One aging tick over the base map: every non-affine identity gains
+/// `aging_rate`, capped at `max_priority`. Pure over explicit borrows —
+/// the caller holds the single state guard.
+fn age_locked(
+    base: &mut LruCache<String, i32>,
+    affinity: Option<&str>,
+    aging: &AgingConfig,
+) {
+    for (identity, prio) in base.iter_mut() {
+        if Some(identity.as_str()) != affinity {
+            *prio = (*prio + aging.aging_rate).min(aging.max_priority);
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/affinity.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/m-affinity-purity.rs"]
+mod m_affinity_purity_tests;

@@ -1,4 +1,4 @@
-//! Pure overlay-plane data (ROADMAP_20260827_ORT §6.3).
+//! Pure overlay-plane data.
 //!
 //! The overlay plane's deterministic, model-free helpers: the versioned
 //! canonical-form table used for predicate canonicalization. Unlike the async

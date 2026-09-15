@@ -34,7 +34,7 @@ pub struct SqliteStore {
 impl SqliteStore {
     /// Open (or create) the database at `path` with WAL mode enabled.
     pub fn open(path: &Path) -> Result<Self, DbError> {
-        let conn = common_core::sqlite::open_wal(path).map_err(DbError::from)?;
+        let conn = crate::sqlite::open_wal(path).map_err(DbError::from)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -42,7 +42,7 @@ impl SqliteStore {
 
     /// Open an in-memory database with WAL mode enabled.
     pub fn open_in_memory() -> Result<Self, DbError> {
-        let conn = common_core::sqlite::open_in_memory().map_err(DbError::from)?;
+        let conn = crate::sqlite::open_in_memory().map_err(DbError::from)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -50,7 +50,7 @@ impl SqliteStore {
 
     /// Execute a multi-statement DDL batch (schema init) on the connection.
     pub fn init_schema(&self, ddl: &str) -> Result<(), DbError> {
-        common_core::sqlite::run_batch(&lock(&self.conn), ddl).map_err(DbError::from)
+        crate::sqlite::run_batch(&lock(&self.conn), ddl).map_err(DbError::from)
     }
 
     /// Run a closure against the shared connection.

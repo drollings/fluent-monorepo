@@ -1,14 +1,14 @@
 //! `fluent-llm::runtime` — the shared, runtime-agnostic LLM lifecycle +
-//! residency control plane (ROADMAP_20260830_LLMS M1).
+//! residency control plane.
 //!
 //! This module is the single home of the "one loaded weights instance serving
-//! N named context windows, each with its own KV cache" abstraction. It is a
-//! **scaffold with zero production callers in M1** (per fluent-wvr, scaffold /
-//! compatibility-surface traits are intentional and must not be pruned as dead
-//! code): the llama fleet (`fluent-router`'s `instances/*` + `supervisor.rs` +
-//! `kv_cache.rs`) and the in-process ONNX fleet (`fluent-onnx`'s `session.rs` +
-//! `residency.rs` + `llm.rs`) both gain thin adapters over these traits in M4,
-//! and the shared residency engine replaces both sibling loops in M5.
+//! N named context windows, each with its own KV cache" abstraction. It is the
+//! **live engine**: the llama fleet (`fluent-router`'s `instances/*` +
+//! `supervisor.rs` + `kv_cache.rs`) and the in-process ONNX fleet
+//! (`fluent-onnx`'s `session.rs` + `residency.rs` + `llm.rs`) serve through
+//! thin adapters over these traits, and the shared residency engine replaced
+//! both sibling loops — the staging notes below
+//! are history, not current state.
 //!
 //! Design notes (load-bearing):
 //!
@@ -20,8 +20,7 @@
 //!   `runtime` field from `LlmResidencyRow.runtime`; no code branches on it to
 //!   dispatch.
 //! - **Per-weights eviction policy.** The two eviction orderings
-//!   (llama footprint×coldness vs onnx LRU-largest) are **not** unified
-//!   (`ROADMAP_20260830_PRIMITIVES` §"What is NOT being extracted").
+//!   (llama footprint×coldness vs onnx LRU-largest) are **not** unified.
 //!   `EvictionPolicy` is an injected ordering chosen by each `LlmWeights`
 //!   implementor so the engine's single loop preserves each fleet's exact
 //!   semantics.

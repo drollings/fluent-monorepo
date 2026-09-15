@@ -1,5 +1,5 @@
 use super::*;
-use common_core::vector_math::cosine_similarity_f32;
+use vector_math::cosine_similarity_f32;
 
 #[cfg(feature = "onnx")]
 use crate::tokenizer::LfmEncoding;

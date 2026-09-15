@@ -8,7 +8,7 @@ fn temp_ledger() -> ContentNodeLedger {
     ContentNodeLedger::open_in_memory().unwrap()
 }
 
-/// The `ContentNodeLedger::write_annotation` writer surface (ROADMAP M4) — a
+/// The `ContentNodeLedger::write_annotation` writer surface — a
 /// HumanReview-tier claim supersedes a LocalModel one on the same node
 /// version through the durable facade, and a later lower-tier write is
 /// recorded provisional.

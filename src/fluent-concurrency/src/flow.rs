@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
 
 /// Configuration for a credit flow pair.
 #[derive(Debug, Clone)]
@@ -28,6 +29,13 @@ pub struct CreditSender {
     credit: AtomicIsize,
     bump_rx: Mutex<mpsc::UnboundedReceiver<usize>>,
     blocked: AtomicBool,
+    /// Tripped on every credit increase. Parked waiters select on this
+    /// alongside the bump message: credit can be available with no message
+    /// pending and none coming (leftover from another waiter's bump with
+    /// no jobs in flight), and parking on the message alone strands
+    /// forever in that state. `notify_waiters` (not one) wakes every
+    /// parker — one +4 bump must release up to four waiters, not one.
+    credit_wake: Notify,
 }
 
 impl CreditSender {
@@ -51,12 +59,34 @@ impl CreditSender {
             } else {
                 // Release pairs with Acquire in is_blocked/current_credit observers
                 self.blocked.store(true, Ordering::Release);
-                // Wait for a bump from the receiver
-                let mut rx = self.bump_rx.lock().await;
-                if let Some(amount) = rx.recv().await {
-                    // AcqRel: Release pairs with Acquire load above; Acquire would miss the bump
-                    self.credit.fetch_add(amount as isize, Ordering::AcqRel);
+                // Register for credit-change wakeups BEFORE re-checking:
+                // a bump processed between the loop's load and this
+                // registration must not strand this task (registration
+                // first, check second, park last).
+                let woken = self.credit_wake.notified();
+                tokio::pin!(woken);
+                woken.as_mut().enable();
+                if self.credit.load(Ordering::Acquire) > 0 {
                     self.blocked.store(false, Ordering::Release);
+                    continue;
+                }
+                // Park until a bump message arrives or credit otherwise
+                // appears. `rx` drops at scope end on every path (the
+                // mutex is not reentrant — the next loop iteration
+                // re-locks).
+                let mut rx = self.bump_rx.lock().await;
+                tokio::select! {
+                    res = rx.recv() => {
+                        if let Some(amount) = res {
+                            // AcqRel: Release pairs with Acquire load above; Acquire would miss the bump
+                            self.credit.fetch_add(amount as isize, Ordering::AcqRel);
+                            self.credit_wake.notify_waiters();
+                            self.blocked.store(false, Ordering::Release);
+                        }
+                    }
+                    () = &mut woken => {
+                        self.blocked.store(false, Ordering::Release);
+                    }
                 }
             }
         }
@@ -100,6 +130,7 @@ pub fn new(spec: CreditSpec) -> (CreditSender, CreditReceiver) {
             credit: AtomicIsize::new(spec.initial as isize),
             bump_rx: Mutex::new(bump_rx),
             blocked: AtomicBool::new(false),
+            credit_wake: Notify::new(),
         },
         CreditReceiver {
             spec,

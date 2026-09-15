@@ -1,4 +1,4 @@
-//! ROADMAP_20260903_LLM M6.2 — LLM constants goldens.
+//! LLM constants goldens.
 //!
 //! Canonical home for the four LLM-domain constant goldens: the locked
 //! values plus calibration notes (see `src/llm/CALIBRATION.md`).

@@ -10,8 +10,33 @@ use http_body_util::BodyExt;
 use http_body_util::Full;
 use hyper::body::Incoming;
 
+use crate::ledger::orchestrator::CoordinatorGate;
 use crate::server::handler::ServerDeps;
 use crate::server::responses::{add_cors_headers, error_response, json_response, HyperResponse};
+
+/// `POST /admin/coordinator/rollback` — the M14c one-command rollback: close
+/// the coordinator runtime gate so dispatch returns to the pre-coordinator
+/// pipeline without a restart. Loopback-guarded by the caller; audit-logged;
+/// idempotent (a second call reports the already-closed state). The attached
+/// coordinator is untouched — reopening the gate (or restarting, which boots
+/// it open) restores coordinator traffic.
+pub fn handle_coordinator_rollback(gate: &CoordinatorGate) -> HyperResponse {
+    let was_open = gate.is_open();
+    gate.set_open(false);
+    crate::audit::emit(
+        "coordinator_rollback",
+        serde_json::json!({ "was_open": was_open }),
+    );
+    tracing::warn!(
+        target: "router.audit",
+        was_open = was_open,
+        "coordinator runtime gate closed by operator rollback"
+    );
+    json_response(
+        hyper::StatusCode::OK,
+        &serde_json::json!({ "status": "rolled_back", "coordinator_open": false }),
+    )
+}
 
 /// `POST /models/unload` — unload a managed model's `llama-server` (frees its
 /// VRAM). The spec stays registered so a later dispatch reloads it on demand.

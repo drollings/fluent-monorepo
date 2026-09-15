@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn unique_violation_maps_to_duplicate_entry() {
-    let conn = common_core::sqlite::open_in_memory().unwrap();
+    let conn = crate::sqlite::open_in_memory().unwrap();
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)")
         .unwrap();
     conn.execute(
@@ -24,7 +24,7 @@ fn unique_violation_maps_to_duplicate_entry() {
 
 #[test]
 fn unique_name_violation_maps_to_duplicate_entry() {
-    let conn = common_core::sqlite::open_in_memory().unwrap();
+    let conn = crate::sqlite::open_in_memory().unwrap();
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)")
         .unwrap();
     conn.execute(

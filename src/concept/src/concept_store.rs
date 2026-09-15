@@ -1,6 +1,5 @@
-//! The single source of truth for concept lookup (ROADMAP §6 — pulled forward
-//! by F9; neutral home `fluent-concept` per ROADMAP_20260903_SPACY_RS_SPLIT
-//! M3 — moved here from `spacy-rs`).
+//! The single source of truth for concept lookup (neutral home
+//! `fluent-concept` — moved here from `spacy-rs`).
 //!
 //! [`InterlinguaResolver`](https://docs.rs/spacy-rs) (in `spacy-rs`) consumes
 //! it; `YaGoLoader` (in `guidance-ontology`) feeds it; the router implements

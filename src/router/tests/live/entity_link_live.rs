@@ -1,4 +1,4 @@
-//! Live-AI-gated entity-link overlay threshold sweep (ROADMAP_20260827_ORT §6.2).
+//! Live-AI-gated entity-link overlay threshold sweep.
 //!
 //! Compiled only when the `live-ai` feature is enabled and `#[ignore]`d so it
 //! never runs under `make test` / `make router-test` / `make router-mock` / CI

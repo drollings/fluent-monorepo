@@ -136,21 +136,23 @@ fn filter_special_spans_prefers_longest() {
     assert_eq!((filtered[0].1, filtered[0].2), (0, 2));
 }
 
-/// M10.1: re-registering a special case OVERWRITES (last-wins `insert`,
-/// not insert-if-absent) — the tokenizer table is not a first-wins
-/// registry, which rules out the generic-registry unification (M10
-/// verdict: declined, behavior differs per table).
+/// Rule tables freeze at build: post-freeze registration is refused and the
+/// decided output is unchanged — the tokenizer table is append-at-build,
+/// never last-wins at runtime (rule genesis rebuilds the tokenizer).
 #[test]
-fn reregistering_special_case_overwrites() {
+fn post_freeze_registration_is_refused_and_output_unchanged() {
     let t = en_tokenizer();
-    t.add_special_case("gonna", &[("gon", None), ("na", None)])
-        .expect("first registration");
-    assert_eq!(orths(&t.tokenize("gonna").expect("tokenizes")), ["gon", "na"]);
-    t.add_special_case("gonna", &[("go", None), ("nna", None)])
-        .expect("second registration");
+    let before = orths(&t.tokenize("gonna").expect("tokenizes"));
+    let err = t
+        .add_special_case("gonna", &[("gon", None), ("na", None)])
+        .expect_err("post-freeze registration must fail");
+    assert!(
+        err.to_string().contains("frozen"),
+        "error names the freeze: {err}"
+    );
     assert_eq!(
         orths(&t.tokenize("gonna").expect("tokenizes")),
-        ["go", "nna"],
-        "re-registration replaces the rule"
+        before,
+        "refused registration changes nothing"
     );
 }

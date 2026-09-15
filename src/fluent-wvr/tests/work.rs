@@ -153,3 +153,68 @@ fn field_error_partial_eq() {
     let b = FieldError::NotFound("x".into());
     assert_eq!(a, b);
 }
+
+#[test]
+fn structured_ref_borrows_without_clone() {
+    let mut ctx = WorkContext::default();
+    ctx.set_structured("request", &serde_json::json!({"q": "hi"}));
+    let borrowed = ctx.structured_ref("request").expect("present");
+    assert!(std::ptr::eq(
+        borrowed,
+        ctx.structured.get("request").expect("stored")
+    ));
+    assert_eq!(borrowed, &serde_json::json!({"q": "hi"}));
+    assert!(ctx.structured_ref("absent").is_none());
+}
+
+#[test]
+fn structured_owned_delegates_to_borrowed() {
+    let mut ctx = WorkContext::default();
+    ctx.set_structured("n", &42_u32);
+    let owned: u32 = ctx.structured("n").expect("reads");
+    assert_eq!(owned, 42);
+    let missing = ctx.structured::<u32>("absent").unwrap_err().to_string();
+    assert!(missing.contains("absent"), "missing-key error names the key");
+    ctx.set_structured("s", &"not-a-number");
+    assert!(ctx.structured::<u32>("s").is_err());
+}
+
+#[test]
+fn try_set_structured_reports_inserts() {
+    struct Unserializable;
+    impl serde::Serialize for Unserializable {
+        fn serialize<S: serde::Serializer>(&self, _s: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("no representation"))
+        }
+    }
+    let mut ctx = WorkContext::default();
+    assert!(ctx.try_set_structured("a", &1_u32));
+    assert_eq!(ctx.structured::<u32>("a").expect("inserted"), 1);
+    // A value with no JSON representation is refused and the previous
+    // value survives.
+    assert!(!ctx.try_set_structured("a", &Unserializable));
+    assert_eq!(ctx.structured::<u32>("a").expect("previous intact"), 1);
+    assert!(!ctx.try_set_structured("never-stored", &Unserializable));
+    assert!(ctx.structured_ref("never-stored").is_none());
+    // The void setter keeps its signature and delegates.
+    ctx.set_structured("b", &"x");
+    assert_eq!(ctx.structured::<String>("b").expect("inserted"), "x");
+}
+
+#[test]
+fn data_ref_agrees_with_owned_paths() {
+    #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+    struct Payload {
+        n: u32,
+    }
+    let out = WorkOutput::typed("ok", &Payload { n: 7 }).expect("typed");
+    assert_eq!(out.data_ref::<Payload>().expect("borrowed"), Payload { n: 7 });
+    assert_eq!(out.data_as::<Payload>().expect("owned"), Payload { n: 7 });
+    let borrowed_err = out.data_ref::<Vec<u8>>().unwrap_err().to_string();
+    let owned_err = out
+        .clone()
+        .data_take::<Vec<u8>>()
+        .unwrap_err()
+        .to_string();
+    assert_eq!(borrowed_err, owned_err, "identical error text on all paths");
+}

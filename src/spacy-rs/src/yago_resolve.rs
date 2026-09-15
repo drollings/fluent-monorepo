@@ -26,7 +26,7 @@ use crate::triple::PlausibilityFetch;
 const STATE_KEY: &str = "spacy.pipeline_state";
 
 /// Stage `yago_resolve`: consults the injected knowledge-half fetch over the
-/// text-half triple derivation (ROADMAP M3 — guarded spike, default **off**).
+/// text-half triple derivation (guarded spike, default **off**).
 /// When disabled, or when no fetch is wired, the stage leaves
 /// `semantic_plausibility` as `None` (the pre-M3 behavior); when enabled with
 /// a fetch it fills the field from the owner's score (never blended into

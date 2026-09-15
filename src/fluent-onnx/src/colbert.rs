@@ -1,5 +1,5 @@
 //! ColBERT late-interaction retriever — per-token 128-d vectors with MaxSim
-//! scoring (ROADMAP_20260827_ORT §5.2).
+//! scoring.
 //!
 //! The model produces per-token embeddings (after a dense projection from the
 //! base encoder's hidden states), and scoring uses **MaxSim**: for each query
@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use common_core::vector_math::cosine_similarity_f32;
+use vector_math::cosine_similarity_f32;
 
 /// Default ColBERT per-token dimension (after the Dense projection: 1024 → 128).
 #[cfg(feature = "onnx")]
@@ -433,8 +433,7 @@ mod ort_colbert {
         build_colbert(&config, model_key, &handle).map(Some)
     }
 
-    /// Bake an [`EntitySimilarityIndex`] over concept labels (ROADMAP
-    /// 20260828_ORT_FIXES M3.1). **Data-time:** each concept's **label** is
+    /// Bake an [`EntitySimilarityIndex`] over concept labels. **Data-time:** each concept's **label** is
     /// encoded once via batched [`ColbertRetriever::encode_docs`] (which L2-
     /// normalizes per token and strips [CLS]/[SEP]/[PAD]); the resulting
     /// `(namespace, canonical, token_embeddings)` triples are stored and the

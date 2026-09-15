@@ -1,5 +1,5 @@
 //! Stage: `OverlayStage` — the deterministic-first residual-consultation
-//! stage (ROADMAP_20260827_ORT §2.3/§2.4).
+//! stage.
 //!
 //! Under `NlpOrdering::DeterministicFirst`, the deterministic parse leaves
 //! *residuals* (sentences the heuristic parser was unsure about). The overlay
@@ -372,12 +372,12 @@ impl StageDecisionProducer for OverlayStage {
         // The NlpStage ran first; its parse handoff drives residual selection.
         let signals: Vec<RoutingSignal> = prior
             .iter()
-            .filter_map(|d| StageMetadata::from(d.metadata.clone()).nlp_parse())
+            .filter_map(|d| StageMetadata::metadata_ref(&d.metadata).nlp_parse())
             .flatten()
             .collect();
         let confidence = prior
             .iter()
-            .find_map(|d| StageMetadata::from(d.metadata.clone()).nlp_confidence());
+            .find_map(|d| StageMetadata::metadata_ref(&d.metadata).nlp_confidence());
         Ok(self
             .decide(
                 if signals.is_empty() {

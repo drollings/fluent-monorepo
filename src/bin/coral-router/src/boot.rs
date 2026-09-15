@@ -1,5 +1,4 @@
-//! Boot-time YaGO taxonomy load + two-store reconciliation (ROADMAP
-//! §11.7/§13.7/§13.8 — C3).
+//! Boot-time YaGO taxonomy load + two-store reconciliation.
 //!
 //! **One loader, two homes, same ids.** [`YaGoLoader`] produces the taxonomy
 //! once; both durable stores are fed from that same `Vec<ConceptMetadata>`:
@@ -25,7 +24,7 @@ use guidance_ontology::yago::WHITELIST_IRIS;
 use guidance_ontology::yago_loader::YaGoLoader;
 use fluent_concept::{ConceptStore, TaxonomyHierarchy};
 
-/// Open the ledger the way the boot wants it (ROADMAP_20260828_ORT M1.1): a
+/// Open the ledger the way the boot wants it: a
 /// configured `ledger` section opens its durable path (with a `warn!` for the
 /// in-memory fallback) and attaches the summarizer; when no `ledger` section is
 /// configured the boot still opens an in-memory ledger so nlp/review/overlay
@@ -78,7 +77,7 @@ pub fn open_ledger(config: &RouterConfig) -> Result<Arc<ContentNodeLedger>, Stri
     Ok(ledger)
 }
 
-/// The early-boot shared concept-store bundle (ROADMAP_20260828_ORT M1.1):
+/// The early-boot shared concept-store bundle:
 /// the `SqliteConceptStore` + `SqliteCorrectionIndex` over the shared ledger
 /// connection and the reconciliation stats. Built **before** the pipeline build
 /// so a resolver can be threaded into the NLP pipeline; reused by the
@@ -403,7 +402,7 @@ mod tests {
         let _ = Arc::new(());
     }
 
-    /// M1.1 (ROADMAP_20260828_ORT, G3): the concept store exists **before** the
+    /// The concept store exists **before** the
     /// pipeline build when nlp is on. Reproduces the boot ordering — open the
     /// ledger, build the shared store + reconcile, then build the pipeline with
     /// a resolver threaded through `NlpDeps` — and asserts the store is live and

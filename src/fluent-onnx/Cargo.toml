@@ -20,6 +20,8 @@ live-ai = []
 [dependencies]
 fluent-llm = { path = "../llm" }
 common-core = { path = "../common-core" }
+# Scalar cosine kernel (dependency-free leaf — no sqlite/HNSW weight).
+vector-math = { path = "../vector-math" }
 # `Runtime` (the injected async-runtime seam) for the onnx residency loop —
 # the loop is a sibling of the llama sidecar and must compose the shared
 # primitive, never ambient `tokio::spawn`.

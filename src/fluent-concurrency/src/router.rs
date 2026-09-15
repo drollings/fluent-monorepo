@@ -1,5 +1,5 @@
 //! A partitioned router that distributes jobs across sharded worker pools.
-//! Compatibility surface (scaffold) — see ROADMAP_20260901_FIXES_4.md M0
+//! Compatibility surface (scaffold).
 
 use crate::pool::{PoolError, WorkerPool};
 

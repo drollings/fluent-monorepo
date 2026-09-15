@@ -4,7 +4,7 @@
 //! `serve_http` accept loop, which is `pub(crate)` (`server.rs`), and build
 //! `ServerDeps` from crate-internal pipeline/config types — a Tier-2 `tests/`
 //! directory is a separate crate linked against the public API and cannot
-//! reach them. Per `ROADMAP_20260816_TESTS.md` §2.1, crate-internal e2e
+//! reach them. Crate-internal e2e
 //! fixtures live in a Tier-1 module. (A Tier-2 `tests/common` would only be
 //! appropriate for fixtures using exclusively public API.)
 //!
@@ -157,6 +157,7 @@ pub fn test_deps(
         api_key_env_name: None,
         supervisor: None,
         coordinator: None,
+        coordinator_gate: crate::ledger::orchestrator::CoordinatorGate::open(),
         review_worker: None,
         review_fetch: None,
         entity_link_worker: None,

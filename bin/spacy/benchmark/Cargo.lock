@@ -231,6 +231,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
+dependencies = [
+ "memchr",
+ "serde_core",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -299,15 +309,18 @@ dependencies = [
 
 [[package]]
 name = "common-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
- "anndists",
  "bitvec",
  "blake3",
+ "crc32fast",
+ "dirs",
  "fastrand",
- "hnsw_rs",
+ "http",
+ "ignore",
  "internment",
  "lru",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
@@ -349,6 +362,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "crc32fast"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -475,6 +497,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -578,8 +621,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
 
 [[package]]
+name = "fluent-concept"
+version = "0.2.0"
+dependencies = [
+ "fluent-dag",
+ "fluent-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "fluent-concurrency"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bon",
  "bytes",
@@ -590,6 +642,7 @@ dependencies = [
  "fluent-wvr",
  "futures-util",
  "internment",
+ "lru",
  "reqwest",
  "serde",
  "serde_json",
@@ -600,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "fluent-dag"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitvec",
  "bon",
@@ -616,11 +669,12 @@ dependencies = [
 
 [[package]]
 name = "fluent-db"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anndists",
  "bon",
  "common-core",
+ "fluent-types",
  "fluent-wvr",
  "hnsw_rs",
  "internment",
@@ -630,12 +684,14 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "vector-math",
 ]
 
 [[package]]
 name = "fluent-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "blake3",
  "internment",
  "serde",
  "serde_json",
@@ -644,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "fluent-wvr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "common-core",
  "fastrand",
@@ -659,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "fluent-wvr-macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -794,6 +850,19 @@ dependencies = [
  "r-efi 6.0.0",
  "rand_core 0.10.1",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "globset"
+version = "0.4.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c34a9410465b45bd9787443bc7370f37735bad04b0f0cd57ff1a3186c98988"
+dependencies = [
+ "aho-corasick",
+ "bstr",
+ "log",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -1074,6 +1143,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignore"
+version = "0.4.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00b69833ed729dc5aa7d19541d96d6cf8e9137194207a04916d658e43168402f"
+dependencies = [
+ "crossbeam-deque",
+ "globset",
+ "log",
+ "memchr",
+ "regex-automata",
+ "same-file",
+ "walkdir",
+ "winapi-util",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1172,6 +1257,15 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+
+[[package]]
+name = "libredox"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6480ccc157a1389bb2e4891b24751b0f798ba640d22386f23143fbcc89da195a"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "libsqlite3-sys"
@@ -1305,6 +1399,12 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "parking_lot"
@@ -1564,6 +1664,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags 2.13.1",
+]
+
+[[package]]
+name = "redox_users"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
+dependencies = [
+ "getrandom 0.2.17",
+ "libredox",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1857,10 +1968,14 @@ dependencies = [
 
 [[package]]
 name = "spacy-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "blake3",
  "bon",
+ "common-core",
+ "crc32fast",
  "fancy-regex",
+ "fluent-concept",
  "fluent-concurrency",
  "fluent-dag",
  "fluent-types",
@@ -1868,7 +1983,9 @@ dependencies = [
  "internment",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
+ "tracing",
  "unicode-properties",
 ]
 
@@ -2203,6 +2320,10 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "vector-math"
+version = "0.2.0"
 
 [[package]]
 name = "version_check"

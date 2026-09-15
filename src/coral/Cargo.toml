@@ -12,7 +12,7 @@ hnsw-bench = []
 fluent-wvr = { path = "../fluent-wvr" }
 fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-db = { path = "../db" }
-common-core = { path = "../common-core", features = ["sqlite"] }
+common-core = { path = "../common-core" }
 fluent-types = { path = "../types" }
 fluent-llm = { path = "../llm" }
 guidance-ontology = { path = "../ontology" }

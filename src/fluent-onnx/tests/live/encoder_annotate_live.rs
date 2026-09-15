@@ -1,5 +1,5 @@
 //! Live-AI tests for the trained-encoder annotation worker
-//! (`OrtAnnotationWorker`, ROADMAP_20260828_ORT_FIXES §4 / M2.2).
+//! (`OrtAnnotationWorker`).
 //!
 //! Performs REAL ONNX inference. Compiled only under the `live-ai` feature,
 //! `#[ignore]`d, run via `make ort-test-live` / `make test-live`.
@@ -15,7 +15,7 @@
 //! When the model/labels vars are absent the tests skip cleanly (early
 //! `return`, never panic). Assertions: bit-determinism (intra_op_threads=1),
 //! `is_total()` alignment (every spacy token covered), and the recorded
-//! q8-vs-fp32 head drift band — the exact guarantees ROADMAP §5/D5 requires.
+//! q8-vs-fp32 head drift band.
 
 use std::path::{Path, PathBuf};
 

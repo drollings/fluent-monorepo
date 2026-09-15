@@ -1,4 +1,4 @@
-//! Token budgets — the single owner (ROADMAP_20260903_LLM M3).
+//! Token budgets — the single owner.
 //!
 //! Moved verbatim from `common_core::tokens` (`estimate_tokens`,
 //! `estimate_tokens_floor`, `estimate_tokens_with`,

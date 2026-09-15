@@ -16,7 +16,7 @@ pub use fluent_llm::openai::NormalizeError;
 /// re-attached from the original body so they survive into the dispatch target.
 /// `num_ctx` (the caller's declared context window) is preserved into
 /// `metadata["num_ctx"]` so the dispatch path's resize-to-demand can size a
-/// targeted context to the request's needs (ROADMAP M7).
+/// targeted context to the request's needs.
 pub fn normalize_request(body: serde_json::Value) -> Result<RouterRequest, NormalizeError> {
     let num_ctx = body
         .get("num_ctx")

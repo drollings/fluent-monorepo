@@ -640,7 +640,7 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
                 let mut node = node;
                 // Rows written before the `content_hash` field default to 0;
                 // stamp the hash from LOD0 so the annotation keying domain is
-                // correct even for pre-M4 rows (ROADMAP M4).
+                // correct even for rows written before the field existed.
                 node.content_hash = content_hash_of(node.lod.get(LOD0_FULL_TEXT as usize).map(String::as_str).unwrap_or_default());
                 let session_key = node.session_id.as_deref().map(ArcIntern::from);
                 let role_key = node.role.as_ref().map(|r| ArcIntern::from(r.as_str()));
@@ -771,7 +771,7 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
     }
 
     /// Write a tiered annotation claim against a node's **current content
-    /// hash** (ROADMAP M4). This is the single wiring point for annotation
+    /// hash**. This is the single wiring point for annotation
     /// writers: it resolves the node's `content_hash` and routes the claim to
     /// the `AnnotationStore` over the shared ledger connection. A mutation of
     /// LOD0 (a new hash) makes old claims unreachable — invalidation is a
@@ -911,7 +911,7 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
         .map(|_| ())
     }
 
-    /// Atomic review write (ROADMAP §12.6/§12.7, C4): the parse node's
+    /// Atomic review write: the parse node's
     /// `review_status` metadata update, the `parse_review` node (on a miss),
     /// and the `interlingua_index` correction rows all commit in **one SQLite
     /// transaction** (the ledger's existing connection), so a crash mid-review
@@ -1569,7 +1569,7 @@ fn ensure_lod_eager(node: &mut ContentNode) {
         node.lod.push(String::new());
     }
     let content = node.lod[LOD0_FULL_TEXT as usize].clone();
-    // The content hash is the annotation keying domain (ROADMAP M4): it tracks
+    // The content hash is the annotation keying domain: it tracks
     // LOD0 exactly, recomputed in this single write funnel so a mutation that
     // changes LOD0 changes the hash and thereby invalidates cached annotations
     // — no staleness scheduler. Empty content maps to the stable `0` sentinel.

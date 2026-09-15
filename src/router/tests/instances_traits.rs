@@ -347,7 +347,7 @@ async fn fleet_unload_releases_unloadable_onnx_role_and_refuses_always() {
     assert!(matches!(err, LlmRuntimeError::UnloadRefused(_)), "got {err:?}");
 }
 
-/// ROADMAP M7 §3: `LlmFleet::resize_context` routes an onnx context through
+/// `LlmFleet::resize_context` routes an onnx context through
 /// `LlmContext::resize`; unknown models/contexts are loud errors, and the
 /// fleet's onnx id grammar resolves `<onnx_key>:<context>`.
 #[tokio::test]

@@ -49,7 +49,7 @@ pub struct ChartAuditTranscript {
     pub steps: Vec<ChartAuditStep>,
 }
 
-/// ROADMAP §12.7 (C7): adapt a `parse_review` ledger node into a
+/// Adapt a `parse_review` ledger node into a
 /// [`ChartAuditStep`], so a session whose transcript chains `parse → review →
 /// dispatch` folds the review into [`ChartAuditTranscript`] and
 /// [`extract_chart_from_audit`] distils the whole chain as a draft chart.

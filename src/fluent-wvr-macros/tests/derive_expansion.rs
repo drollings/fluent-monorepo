@@ -6,7 +6,7 @@
 //! depend on `fluent-wvr` and expand `#[derive(FieldAccess, Describable)]`,
 //! `fluent_wvr::impl_fieldless!`, and `fluent_wvr::impl_component!`
 //! (concrete + generic) on real fixture types, then assert the generated
-//! behavior. Covers ROADMAP_20260816_TESTS M3.7.
+//! behavior.
 
 use fluent_wvr::prelude::*;
 use fluent_wvr::FieldError;

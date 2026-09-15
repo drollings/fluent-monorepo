@@ -1,4 +1,4 @@
-//! Live-AI tests for the two-tower Prompt-Router (ROADMAP_20260827_ORT §2.1).
+//! Live-AI tests for the two-tower Prompt-Router.
 //!
 //! Performs REAL ONNX inference on the Prompt-Router export. Compiled only
 //! under the `live-ai` feature, `#[ignore]`d, run via `make ort-test-live` /
@@ -14,7 +14,7 @@
 //!
 //! When the model var is absent the tests skip cleanly (early `return`, never
 //! panic). The top-1 assertions are a **smoke baseline** — the redirect
-//! evidence requires the ≥100-case zero-shot eval corpus (ROADMAP §2.6a), not
+//! evidence requires the ≥100-case zero-shot eval corpus, not
 //! these 4 cases.
 
 use std::path::{Path, PathBuf};

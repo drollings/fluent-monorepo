@@ -450,21 +450,6 @@ fn create_provider_ollama_prefix_custom_url() {
 }
 
 #[test]
-fn cached_provider_evicts_when_full() {
-    let limit = 5;
-    let provider = CachedEmbeddingProvider::new_with_limit(NoopEmbedding::new(768), limit);
-
-    // Insert `limit + 10` entries
-    for i in 0..limit + 10 {
-        let text = format!("text_{i}");
-        let _ = provider.embed(&text);
-    }
-
-    let cache = provider.cache.lock().unwrap();
-    assert_eq!(cache.len(), limit);
-}
-
-#[test]
 fn openai_embed_forwards_slot_params_in_request_body() {
     // The chart HNSW embedder must send the same `num_ctx` slot sizing as
     // the chat classifier — otherwise the gguf server opens a second

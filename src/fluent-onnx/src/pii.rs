@@ -1,4 +1,4 @@
-//! PII detection (ROADMAP_20260827_ORT §3.2): the BILUO decode, the label-map
+//! PII detection: the BILUO decode, the label-map
 //! loading, and the onnx PII-Detector behind the [`PiiSpanDetector`] seam.
 //!
 //! Two implementations justify the trait: [`fluent_llm::backend::RegexPiiDetector`]

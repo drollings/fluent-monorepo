@@ -1,4 +1,4 @@
-//! The async review worker (ROADMAP §12.6 — C4).
+//! The async review worker.
 //!
 //! `ReviewWorker` owns a [`fluent_concurrency::credit_pool::CreditGatedPool`]
 //! of [`ReviewJob`]s (the shared credit-gated `WorkerPool` primitive) — the
@@ -50,8 +50,8 @@ pub struct ReviewJob {
     /// `entity_id` is `None` until entity linking lands (today always `None`).
     pub patterns: Vec<(InterlinguaId, Option<InterlinguaId>)>,
     pub review_model: String,
-    /// PII spans detected on `text` by the review pre-filter
-    /// (ROADMAP_20260827_ORT §3.3). Additive candidates — the pre-filter only
+    /// PII spans detected on `text` by the review pre-filter.
+    /// Additive candidates — the pre-filter only
     /// *adds* these, never drops a manually enqueued job. Empty when no
     /// pre-filter is configured or nothing matched.
     pub pii_spans: Vec<PiiSpan>,
@@ -86,7 +86,7 @@ pub enum ReviewError {
 pub struct ReviewWorker {
     pool: CreditGatedPool<ReviewJob>,
     review_model: String,
-    /// The PII pre-filter seam (ROADMAP_20260827_ORT §3.3): additive only —
+    /// The PII pre-filter seam: additive only —
     /// it annotates job texts with `PiiSpan`s, never drops a job, never
     /// rejects, never blocks the hot path (an error surfaces as an empty set).
     ///
@@ -99,7 +99,7 @@ pub struct ReviewWorker {
     /// scrubbing (`[TYPE]` placeholders) are different shapes for different
     /// consumers. Documented seam — do not force-merge.
     prefilter: Option<Arc<dyn PiiSpanDetector>>,
-    /// Opt-in PII auto-enqueue (ROADMAP_20260827_ORT §3.4): when `true`, the
+    /// Opt-in PII auto-enqueue: when `true`, the
     /// request path enqueues a review candidate after a parse whose text the
     /// pre-filter flags with PII spans. Credit-gated like every other job.
     auto_enqueue: bool,
@@ -197,7 +197,7 @@ impl ReviewWorker {
         }
     }
 
-    /// The opt-in PII auto-enqueue path (ROADMAP_20260827_ORT §3.4): when
+    /// The opt-in PII auto-enqueue path: when
     /// enabled AND the pre-filter flags PII spans on `job.text`, the job is
     /// enqueued (bounded by the existing credit gate). `false` when disabled,
     /// nothing was flagged, or the enqueue failed (logged — the hot path is
@@ -267,7 +267,7 @@ impl ReviewWorker {
 /// Process one job: reuse-check → (miss) LLM review → apply → persist.
 /// Best-effort by design — a review failure logs and never blocks the pool.
 #[allow(clippy::too_many_arguments)]
-/// A HumanReview-tier claim recording an applied review (ROADMAP M4): the
+/// A HumanReview-tier claim recording an applied review: the
 /// authoritative human-verified outcome for the parse node's current content
 /// hash. Best-effort side effect, keyed to the node's hash — a later content
 /// mutation invalidates it automatically.
@@ -600,7 +600,7 @@ pub(crate) fn build_annotation_result_from_signals(
 /// are the aligned `(lemma_id, entity_id)` pairs from the sentinel-filtered
 /// token ids; `entity_id` is `None` until entity linking lands. Shared by the
 /// manual `POST /v1/sessions/{id}/review-parse` path and the PII auto-enqueue
-/// path (ROADMAP_20260827_ORT §3.4).
+/// path.
 pub(crate) fn build_review_job(
     review_model: &str,
     node_id: NodeId,

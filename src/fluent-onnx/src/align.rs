@@ -1,4 +1,4 @@
-//! LFM ↔ spacy-rs token alignment (ROADMAP_20260827_ORT §4.1).
+//! LFM ↔ spacy-rs token alignment.
 //!
 //! The trained-encoder annotation rung must map LFM-token predictions back
 //! onto the spacy-rs orth baseline (validator check 1 anchors every record's

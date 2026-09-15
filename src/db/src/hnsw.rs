@@ -9,13 +9,16 @@
 //!
 //! ## Lock ordering (R9)
 //!
-//! **`hnsw` → `id_map`, never inverted.** The index guard is acquired first,
-//! the id-map guard second. This mirrors the documented discipline in
-//! `coral/src/db/hnsw.rs`; the database connection lock, when held, is taken
-//! *after* both (`hnsw → id_map → conn`). The `search` method returns
-//! `(external idx, distance)` pairs after releasing both index guards, so
-//! consumers resolve ids through `id_map` and then touch the connection
-//! without ever inverting the order.
+//! **Never nested.** `insert` reserves the external id under the id-map
+//! guard first, releases it, then takes the index write guard for the point
+//! insert; `rebuild_from` builds off-guard and swaps each finished structure
+//! in under its own guard in turn; `search`/`search_with_ids` hold only the
+//! index read guard across the traversal. A `generation` seqlock (even =
+//! stable) spans every multi-structure mutation so readers detect a swap
+//! that landed mid-episode and retry once instead of resolving hits against
+//! the wrong map. The database connection lock, when held, is taken *after*
+//! both index guards (`index → map → conn`). This mirrors the documented
+//! discipline in `coral/src/db/hnsw.rs`.
 
 use std::sync::{Mutex, RwLock};
 
@@ -93,10 +96,18 @@ pub struct HnswIndexHandle {
 ///
 /// The index is built lazily on first `insert` (mirroring the historical
 /// `get_or_insert_with` behavior) and wholesale-rebuilt by `rebuild_from`.
+///
+/// Concurrency: a `generation` seqlock (even = stable) guards torn reads.
+/// Writers bump it odd before mutating either structure and even after both
+/// are swapped; readers (`search_with_ids`) snapshot it around the
+/// traverse-then-resolve episode and retry once on a mismatch, degrading to
+/// the caller's brute-force fallback (`None`) when the race persists. No
+/// lock is ever held across the index traversal.
 #[derive(Default)]
 pub struct HnswIndex {
     hnsw: RwLock<Option<Hnsw<'static, f32, DistCosine>>>,
     id_map: Mutex<Vec<i64>>,
+    generation: std::sync::atomic::AtomicU64,
 }
 
 impl std::fmt::Debug for HnswIndex {
@@ -117,14 +128,14 @@ impl HnswIndex {
     /// Insert `node_id` with embedding `embedding`, creating the index on
     /// first use. Returns the external index (`d_id`) assigned to the point.
     ///
-    /// Lock order: `hnsw` (write) → `id_map`.
+    /// Lock order: `id_map`, then `hnsw` (write) — briefly, never nested.
+    /// The external id is reserved under the `id_map` lock first so the
+    /// point insert never holds one guard while acquiring the other; the
+    /// generation seqlock spans both mutations so concurrent readers retry
+    /// instead of resolving a half-inserted point.
     pub fn insert(&self, node_id: i64, embedding: &[f32]) -> usize {
-        let mut guard = lock_write(&self.hnsw);
-        let hnsw = guard.get_or_insert_with(|| {
-            let p = HnswParams::default();
-            common_core::sqlite::make_hnsw(&p, p.initial_capacity)
-        });
-
+        use std::sync::atomic::Ordering;
+        self.generation.fetch_add(1, Ordering::AcqRel);
         let external_id = {
             let mut id_map = lock(&self.id_map);
             let idx = id_map.len();
@@ -132,7 +143,16 @@ impl HnswIndex {
             idx
         };
 
-        hnsw.insert((embedding, external_id));
+        {
+            let mut guard = lock_write(&self.hnsw);
+            let hnsw = guard.get_or_insert_with(|| {
+                let p = HnswParams::default();
+                crate::sqlite::make_hnsw(&p, p.initial_capacity)
+            });
+            hnsw.insert((embedding, external_id));
+        }
+
+        self.generation.fetch_add(1, Ordering::AcqRel);
         external_id
     }
     /// Rebuild the index from a table scan of `(node_id, embedding_blob)`
@@ -140,20 +160,24 @@ impl HnswIndex {
     /// `None` (or an empty vector) skips the row. Returns the total number of
     /// rows examined (matching the historical `rows.len()` return).
     ///
-    /// Lock order: `hnsw` (write) → `id_map`.
+    /// Rows stream straight from the caller's iterator — decoded inline, no
+    /// intermediate collection (the index grows from `initial_capacity` as
+    /// points arrive). Lock order: neither guard is held during the build;
+    /// the finished structures swap in under each guard in turn, inside one
+    /// generation-seqlock episode.
     pub fn rebuild_from(
         &self,
         rows: impl Iterator<Item = (i64, Vec<u8>)>,
         decode: fn(&[u8]) -> Option<Vec<f32>>,
     ) -> Result<usize, DbError> {
-        let rows: Vec<(i64, Vec<u8>)> = rows.collect();
-        let count = rows.len();
-
+        use std::sync::atomic::Ordering;
         let p = HnswParams::default();
-        let hnsw = common_core::sqlite::make_hnsw(&p, count.max(p.initial_capacity));
+        let hnsw = crate::sqlite::make_hnsw(&p, p.initial_capacity);
 
-        let mut id_map = Vec::with_capacity(count);
+        let mut id_map = Vec::new();
+        let mut examined = 0;
         for (node_id, blob) in rows {
+            examined += 1;
             if let Some(embedding) = decode(&blob) {
                 if !embedding.is_empty() {
                     hnsw.insert((&embedding, id_map.len()));
@@ -162,34 +186,76 @@ impl HnswIndex {
             }
         }
 
+        self.generation.fetch_add(1, Ordering::AcqRel);
         *lock_write(&self.hnsw) = Some(hnsw);
         *lock(&self.id_map) = id_map;
+        self.generation.fetch_add(1, Ordering::AcqRel);
 
-        Ok(count)
+        Ok(examined)
     }
 
     /// Approximate nearest-neighbour search. Returns `(external idx, distance)`
     /// pairs — resolve each `idx` through `id_map` to recover the caller's
     /// node id.
     ///
-    /// Lock order: `hnsw` (read) → `id_map`. Both guards are released before
-    /// the caller touches its connection, so the `hnsw → id_map → conn`
-    /// ordering is preserved.
+    /// Only the index read guard is held, and only for the traversal itself
+    /// — never the id-map guard alongside it. Pairs from a bare `search`
+    /// are therefore generation-qualified: a concurrent `rebuild_from` may
+    /// have swapped the map they resolve against. Prefer
+    /// [`HnswIndex::search_with_ids`] (or [`hnsw_lookup`]), which re-checks
+    /// the generation and retries, when the ids must belong to one
+    /// generation.
     pub fn search(&self, query: &[f32], k: usize) -> Vec<(usize, f32)> {
         let guard = lock_read(&self.hnsw);
         let Some(hnsw) = guard.as_ref() else {
             return Vec::new();
         };
-        // Hold the id-map guard for the duration of the index traversal so a
-        // concurrent rebuild cannot swap the index out from under the id
-        // resolution. Lock order: hnsw (read) → id_map.
-        let _id_map = lock(&self.id_map);
 
         let ef = (k * 4).max(64);
         hnsw.search(query, k, ef)
             .into_iter()
             .map(|n| (n.d_id, n.distance))
             .collect()
+    }
+
+    /// Traverse the index and resolve hits to caller keys in one
+    /// generation-checked episode: snapshot the generation, traverse under
+    /// the index read guard, snapshot the id map, and re-check the
+    /// generation. On a mismatch (a rebuild or insert landed mid-episode)
+    /// retry once, then return `None` — the caller takes its exact
+    /// brute-force fallback through the existing `None` semantics, with no
+    /// new fallback protocol. `None` also covers the unbuilt/empty index
+    /// and fully unresolvable hits, exactly as before.
+    pub fn search_with_ids(&self, query: &[f32], k: usize) -> Option<Vec<(i64, f32)>> {
+        use std::sync::atomic::Ordering;
+        for _ in 0..2 {
+            let generation = self.generation.load(Ordering::Acquire);
+            if generation % 2 != 0 {
+                continue; // a writer is mid-mutation; retry once
+            }
+            let hits: Vec<(usize, f32)> = {
+                let guard = lock_read(&self.hnsw);
+                let hnsw = guard.as_ref()?;
+                let ef = (k * 4).max(64);
+                hnsw.search(query, k, ef)
+                    .into_iter()
+                    .map(|n| (n.d_id, n.distance))
+                    .collect()
+            };
+            let id_map = lock(&self.id_map).clone();
+            if self.generation.load(Ordering::Acquire) != generation {
+                continue; // swapped mid-episode; retry once
+            }
+            let resolved: Vec<(i64, f32)> = hits
+                .into_iter()
+                .filter_map(|(d_id, distance)| id_map.get(d_id).map(|key| (*key, distance)))
+                .collect();
+            if resolved.is_empty() {
+                return None;
+            }
+            return Some(resolved);
+        }
+        None
     }
 
     /// Whether the index has been built (any `insert`/`rebuild_from` ran).
@@ -238,18 +304,16 @@ pub fn hnsw_lookup(hnsw: &HnswIndex, query: &[f32], k: usize) -> Option<Vec<(i64
         // signal instead of touching the index.
         return None;
     }
-    let hits = hnsw.search(query, k);
-    if hits.is_empty() {
-        return None;
-    }
-    let id_map = hnsw.id_map_snapshot();
-    let resolved: Vec<(i64, f32)> = hits
-        .into_iter()
-        .filter_map(|(d_id, distance)| id_map.get(d_id).map(|key| (*key, distance)))
-        .collect();
-    if resolved.is_empty() { None } else { Some(resolved) }
+    // One generation-checked traverse-and-resolve episode (no second full
+    // `id_map_snapshot` clone): the lookup resolves against the same map
+    // generation it traversed.
+    hnsw.search_with_ids(query, k)
 }
 
 #[cfg(all(test, feature = "sqlite"))]
 #[path = "../tests/hnsw.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "sqlite"))]
+#[path = "../tests/hnsw_concurrent.rs"]
+mod hnsw_concurrent_tests;

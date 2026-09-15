@@ -1,4 +1,4 @@
-//! Calibration control-group helpers (ROADMAP M1).
+//! Calibration control-group helpers.
 //!
 //! Distinguishes **confidence (self-doubt)** from **task-value (correctness)**.
 //! Control groups are synthetic but deterministic — no model, no I/O, no

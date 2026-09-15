@@ -1,15 +1,11 @@
-//! ROADMAP_20260903_LLM M9.3 — protocol-ownership parity (tests first).
+//! Protocol-ownership parity.
 //!
-//! Locks the `fluent_llm::protocol` contract that M9.1 moves out of
-//! `fluent_concurrency::llm_queue`: `bon`-builder defaults (`timeout_ms`
+//! Locks the `fluent_llm::protocol` contract: `bon`-builder defaults (`timeout_ms`
 //! 2000, `extra_body_params` merge ignoring `model`/`messages`/`stream`),
 //! the four `LlmError` variants (+ `is_retryable`), and a queue smoke via
-//! `TestRuntime` (mirroring `tests/llm_queue.rs` + the concurrency queue
-//! tests) proving the moved executor still dispatches.
+//! `TestRuntime` proving the executor dispatches.
 //!
-//! The dual-path section that pinned the deprecated
-//! `fluent_concurrency::llm_queue` copies died with those shims in M11.
-//! `LlmClient` stays the sole constructor surface (M9.2) and
+//! `LlmClient` stays the sole constructor surface and
 //! `llm_queue::build_default_queue` the one-step wiring — both covered by
 //! the existing `tests/llm_queue.rs` + `tests/client.rs` suites.
 
@@ -187,6 +183,4 @@ async fn queue_propagates_handler_errors() {
     );
 }
 
-// NOTE (ROADMAP_20260903_LLM M11): the `parity_new_eq_old` dual-path test
-// died with the `fluent_concurrency::llm_queue` shims it pinned. The
-// builder/merge/variant/smoke goldens above are the lasting contract.
+// The builder/merge/variant/smoke goldens above are the lasting contract.

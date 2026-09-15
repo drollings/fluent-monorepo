@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::filters::FilterOutcome;
 
-/// The interlingua match for a `Filter` node (ROADMAP §14.6, C6): a
+/// The interlingua match for a `Filter` node: a
 /// deterministic dispatch on the request's parsed predicate/subject/object
 /// ids. Same phrasing → same ids → same route, zero tokens.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

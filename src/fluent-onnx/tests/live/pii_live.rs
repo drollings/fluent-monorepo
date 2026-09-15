@@ -1,4 +1,4 @@
-//! Live-AI tests for the PII-Detector (`OrtPiiClassifier`, ROADMAP §3.2/§3.4).
+//! Live-AI tests for the PII-Detector (`OrtPiiClassifier`).
 //!
 //! Performs REAL ONNX inference. Compiled only under the `live-ai` feature,
 //! `#[ignore]`d, run via `make ort-test-live` / `make test-live`.
@@ -152,7 +152,7 @@ fn pii_quant_flip_rate_is_recorded() {
     // `ORT_LIVE_PII_REFERENCE` directory when given. The flip rate is the
     // fraction of corpus spans the two disagree on — RECORDED here, never
     // asserted against a global threshold (the review pre-filter gates its
-    // own acceptance with the recorded rate, ROADMAP §3.2).
+    // own acceptance with the recorded rate).
     let q8 = build_pii(&dir, Quant::Q8).expect("build q8 classifier");
     let reference = match live_reference_dir() {
         Some(reference_dir) => {

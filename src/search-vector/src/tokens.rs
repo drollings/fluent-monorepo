@@ -1,7 +1,7 @@
 //! Token helpers for the search pipeline: lowercase/dedup collectors,
 //! separator splitting, and code-symbol name extraction.
 //!
-//! Canonical home (ROADMAP_20260911_PRIMITIVES M13) for the bespoke
+//! Canonical home for the bespoke
 //! tokenizers previously duplicated in `guidance-core` (`graph_index`,
 //! `search_types`). Deliberately non-canonical here:
 //! - CJK bigrams/predicates live in `common_core::string` (shared by the
