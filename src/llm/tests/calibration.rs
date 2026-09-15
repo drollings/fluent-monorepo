@@ -22,6 +22,9 @@
 //! quiet behavior change). The shared `common_core::calibration` harness is
 //! composed, never re-implemented.
 
+// Exact asserts on harness outputs are deliberate: the reports are exact ratios.
+#![allow(clippy::float_cmp)]
+
 use common_core::calibration::{calibrate_threshold, CalibrationReport};
 use fluent_llm::cache::{CachedResponse, ResponseCache};
 use fluent_llm::openai::drain_sse_lines;
@@ -382,10 +385,10 @@ fn think_report(cases: &[ThinkCase], controls: &[&str]) -> CalibrationReport {
 }
 
 fn fired(input: &&str) -> f64 {
-    if strip_thinking_blocks(input) != *input {
-        1.0
-    } else {
+    if strip_thinking_blocks(input) == *input {
         0.0
+    } else {
+        1.0
     }
 }
 
@@ -471,8 +474,10 @@ fn m10_3_sse_arbitrary_splits_reassemble() {
 
 // ─── M10.4: cache identity ──────────────────────────────────────────────────
 
+type MemCache = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, CachedResponse>>>;
+
 fn mem_store() -> (
-    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, CachedResponse>>>,
+    MemCache,
     impl Fn(&str) -> Option<CachedResponse>,
     impl Fn(&str, &CachedResponse),
 ) {

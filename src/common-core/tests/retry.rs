@@ -39,14 +39,14 @@ fn backoff_clamps_jitter_pct() {
         // unchanged and the jitter stays within `base_ms`.
         for _ in 0..50 {
             let delay = backoff_ms(100, 2, 500);
-            assert!(delay >= 200 && delay <= 300, "unclamped jitter: {delay}");
+            assert!((200..=300).contains(&delay), "unclamped jitter: {delay}");
         }
         assert_eq!(backoff_ms(100, 2, 0), 200);
 }
 
     #[tokio::test]
     async fn retry_async_succeeds_on_first_attempt() {
-        let result = retry_async(3, 1, 0, |_: &()| true, || async { Ok::<_, ()>(42) }).await;
+        let result = retry_async(3, 1, 0, |(): &()| true, || async { Ok::<_, ()>(42) }).await;
         assert_eq!(result.unwrap(), 42);
 }
 

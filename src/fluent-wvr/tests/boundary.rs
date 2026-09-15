@@ -1,4 +1,6 @@
 #![allow(unused_imports)]
+// Exact asserts on parsed JSON scores are deliberate: the values round-trip exactly.
+#![allow(clippy::float_cmp)]
 #[allow(unused_imports)]
 use fluent_wvr::boundary::*;
 use fluent_wvr::prelude::*;
@@ -103,7 +105,7 @@ fn repair_trailing_commas() {
 #[test]
 fn repair_quotes_bare_keys_and_values() {
     assert_eq!(
-        repaired(r#"{action: route, target: code}"#),
+        repaired(r"{action: route, target: code}"),
         r#"{"action": "route", "target": "code"}"#
     );
 }

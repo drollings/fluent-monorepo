@@ -167,9 +167,7 @@ async fn malformed_and_foreign_owners_retain_the_ttl() {
         (
             "foreign-host",
             ".owner-foreign",
-            &format!(
-                "{{\"token\":\"foreign\",\"pid\":1,\"hostname\":\"some-other-host\",\"createdAt\":0}}\n"
-            ),
+            "{\"token\":\"foreign\",\"pid\":1,\"hostname\":\"some-other-host\",\"createdAt\":0}\n",
         ),
         (
             "token-mismatch",

@@ -111,9 +111,9 @@ async fn wait_for_audit(capture: &Arc<Mutex<Vec<String>>>, base: usize, nid: &st
                         joined.lines().filter(|l| l.contains("audit")).count(),
                     );
                 }
-                Err(_) => panic!(
+                Err(e) => panic!(
                     "overlay audit never flushed for node {nid}: GLOBAL_CAPTURE mutex POISONED \
-                     (the LogCapture writer silently drops on poison)"
+                     (the LogCapture writer silently drops on poison): {e}"
                 ),
             }
         }

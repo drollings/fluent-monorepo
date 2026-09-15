@@ -28,6 +28,8 @@ struct ToolConfig {
     pub endpoint: String,
     #[field(desc = "Display name", sanitize = "lowercase")]
     pub name: String,
+    // Never read by design: exists to pin `skip` behavior in the expansion.
+    #[allow(dead_code)]
     #[field(skip)]
     pub internal: u64,
 }

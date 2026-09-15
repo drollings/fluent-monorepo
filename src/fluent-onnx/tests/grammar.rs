@@ -8,7 +8,7 @@ struct TestVocab {
 impl TestVocab {
     fn from_list(tokens: &[&str]) -> Arc<Self> {
         Arc::new(Self {
-            tokens: tokens.iter().map(|s| s.to_string()).collect(),
+            tokens: tokens.iter().map(std::string::ToString::to_string).collect(),
         })
     }
 }

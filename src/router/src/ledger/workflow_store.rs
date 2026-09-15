@@ -148,12 +148,40 @@ impl WorkflowStore for InMemoryWorkflowStore {
     }
 }
 
-/// Decide whether an entry may be inserted: confidence ≥ 0.85, novelty distance >0.15, verified must be true.
-/// `assembler_confidence` is the self-doubt signal; `distance_to_nearest` is `1 - cosine` to nearest existing entry.
+/// Calibration date for the write-gate numbers below: the labeled
+/// should-store vs should-NOT-store corpus the floors were measured on.
+/// Matches the replay-side date; the gate tests pin these constants and the
+/// date, so re-calibration updates both together.
+pub const CALIBRATION_DATE: &str = "2026-09-15";
+
+/// Minimum assembler confidence for a write (**[A] producer self-doubt** —
+/// the assembler reporting a well-formed, reusable decomposition, never a
+/// claim about task correctness). Measured knee: the confident-but-wrong
+/// control band tops at 0.80, the should-store band starts at 0.90 — 0.85
+/// clears the control band with margin.
+pub const CALIBRATED_WRITE_CONFIDENCE: f64 = 0.85;
+
+/// Minimum novelty distance (`1 - cosine` to the nearest stored entry) for a
+/// write (**[B] task-value/duplication** — whether the library gains
+/// anything, even when the producer is confident). Measured knee: the
+/// near-duplicate control band tops at 0.14, the should-store band starts at
+/// 0.20 — 0.15 clears the control band with margin.
+pub const CALIBRATED_WRITE_NOVELTY: f64 = 0.15;
+
+/// Decide whether an entry may be inserted: confidence floor (**[A]**),
+/// novelty floor (**[B]**), and `verified` provenance (not a number — human
+/// review or paraphrase self-consistency, never inferred from confidence).
+/// `assembler_confidence` is the self-doubt signal; `distance_to_nearest` is
+/// `1 - cosine` to nearest existing entry.
 /// Returns `true` when the gated write path may insert.
 pub fn gated_insert_allowed(assembler_confidence: f64, distance_to_nearest: f64, verified: bool) -> bool {
-    assembler_confidence >= 0.85 && distance_to_nearest > 0.15 && verified
+    assembler_confidence >= CALIBRATED_WRITE_CONFIDENCE
+        && distance_to_nearest > CALIBRATED_WRITE_NOVELTY
+        && verified
 }
 #[cfg(test)]
 #[path = "../../tests/ledger_workflow_store.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "../../tests/workflow_store_cal.rs"]
+mod workflow_store_cal_tests;

@@ -109,7 +109,11 @@ fn hex_encode_matches_format_reference_all_bytes() {
         // The shared encoder must render exactly what `format!("{b:02x}")`
         // produces, for every byte value (including a multi-byte sequence).
         let all: Vec<u8> = (0u8..=255u8).collect();
-        let reference: String = all.iter().map(|b| format!("{b:02x}")).collect();
+        let reference: String = all.iter().fold(String::new(), |mut acc, b| {
+            use std::fmt::Write;
+            write!(acc, "{b:02x}").expect("write to String");
+            acc
+        });
         assert_eq!(hex_encode(&all), reference);
         assert_eq!(hex_encode(&[]), "");
         assert_eq!(hex_encode(&[0x00, 0x0f, 0xf0, 0xff]), "000ff0ff");

@@ -147,9 +147,9 @@ fn stage_with(overlays: Vec<Arc<dyn ResidualOverlay>>) -> OverlayStage {
     OverlayStage::new(ResidualSelector::new(0.5), overlays, Some(2))
 }
 
-fn nlp_prior(signals: Vec<RoutingSignal>, conf: Option<NlpConfidenceSummary>) -> Vec<StageDecision> {
+fn nlp_prior(signals: &[RoutingSignal], conf: Option<NlpConfidenceSummary>) -> Vec<StageDecision> {
     let mut meta = StageMetadata::new(serde_json::json!({}));
-    meta.set_nlp_parse(&signals);
+    meta.set_nlp_parse(signals);
     if let Some(c) = conf {
         meta.set_nlp_confidence(&c);
     }
@@ -168,7 +168,7 @@ fn hints_reach_classifier_metadata_with_stub_overlay() {
     let signals = vec![signal("show me the report", Some(0.2))];
     let conf = confidence(spacy_rs::AnnotationSource::ArcEager, 0.3);
     let decision = stage
-        .evaluate(&ctx, &nlp_prior(signals, Some(conf)))
+        .evaluate(&ctx, &nlp_prior(&signals, Some(conf)))
         .expect("decision");
     assert_eq!(decision.stage, PipelineStage::Overlay);
     assert_eq!(decision.verdict, StageVerdict::Passed);
@@ -187,7 +187,7 @@ fn no_residuals_skips() {
     let signals = vec![signal("show me the report", Some(0.9))];
     let conf = confidence(spacy_rs::AnnotationSource::ArcEager, 0.9);
     let decision = stage
-        .evaluate(&ctx, &nlp_prior(signals, Some(conf)))
+        .evaluate(&ctx, &nlp_prior(&signals, Some(conf)))
         .expect("decision");
     assert_eq!(decision.verdict, StageVerdict::Skipped);
 }
@@ -198,7 +198,7 @@ fn no_overlays_skips_with_warning() {
     let ctx = WorkContext::default();
     let signals = vec![signal("show me the report", Some(0.2))];
     let decision = stage
-        .evaluate(&ctx, &nlp_prior(signals, None))
+        .evaluate(&ctx, &nlp_prior(&signals, None))
         .expect("decision");
     assert_eq!(decision.verdict, StageVerdict::Skipped);
 }
@@ -218,7 +218,7 @@ fn overlay_failure_is_fail_open() {
     let ctx = WorkContext::default();
     let signals = vec![signal("show me the report", Some(0.2))];
     let decision = stage
-        .evaluate(&ctx, &nlp_prior(signals, None))
+        .evaluate(&ctx, &nlp_prior(&signals, None))
         .expect("decision");
     assert_eq!(decision.verdict, StageVerdict::Skipped);
 }
@@ -268,7 +268,7 @@ fn request_context_round_trip() {
 #[tokio::test]
 async fn overlay_concurrent_scores_all_residuals() {
     let stage = OverlayStage::new(ResidualSelector::new(0.5), vec![hint_overlay()], Some(2));
-    let signals: Vec<RoutingSignal> = (0..4).map(|i| signal(&format!("sentence {}", i), Some(0.1))).collect();
+    let signals: Vec<RoutingSignal> = (0..4).map(|i| signal(&format!("sentence {i}"), Some(0.1))).collect();
     let conf = confidence(spacy_rs::AnnotationSource::ArcEager, 0.1);
     let (msg, decision) = stage.decide_async(Some(&signals), Some(&conf)).await;
     assert_eq!(msg, "overlaid");
@@ -298,7 +298,7 @@ async fn overlay_peak_concurrency_equals_cap() {
     }
     let overlay: std::sync::Arc<dyn ResidualOverlay> = std::sync::Arc::new(SlowOverlay { in_flight: in_flight.clone(), peak: peak.clone() });
     let stage = OverlayStage::new(ResidualSelector::new(0.5), vec![overlay], Some(2));
-    let signals: Vec<RoutingSignal> = (0..8).map(|i| signal(&format!("s {}", i), Some(0.1))).collect();
+    let signals: Vec<RoutingSignal> = (0..8).map(|i| signal(&format!("s {i}"), Some(0.1))).collect();
     let conf = confidence(spacy_rs::AnnotationSource::ArcEager, 0.1);
     let _ = stage.decide_async(Some(&signals), Some(&conf)).await;
     assert_eq!(peak.load(Ordering::SeqCst), 2, "peak should equal cap 2");

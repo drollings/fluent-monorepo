@@ -2,7 +2,7 @@ use super::*;
 use crate::filters::RegexMatch;
 
 fn output_decision(
-    action: FilterAction,
+    action: &FilterAction,
     pattern: &str,
     matches: Vec<(usize, usize)>,
 ) -> FilterDecision {
@@ -66,7 +66,7 @@ fn api_key_is_rejected() {
 
 #[test]
 fn adjacent_matches_replaced_rightmost_first_without_index_corruption() {
-    let decision = output_decision(FilterAction::Redact, "p1", vec![(0, 3), (3, 6), (6, 9)]);
+    let decision = output_decision(&FilterAction::Redact, "p1", vec![(0, 3), (3, 6), (6, 9)]);
     let s = apply_filter_decision("aaaBBBccc", &decision);
     assert_eq!(s.text, "[REDACTED:p1][REDACTED:p1][REDACTED:p1]");
     assert!(s.flagged);
@@ -74,7 +74,7 @@ fn adjacent_matches_replaced_rightmost_first_without_index_corruption() {
 
 #[test]
 fn omit_action_deletes_the_span() {
-    let decision = output_decision(FilterAction::Omit, "secret", vec![(7, 18)]);
+    let decision = output_decision(&FilterAction::Omit, "secret", vec![(7, 18)]);
     let s = apply_filter_decision("prefix SECRETVALUE suffix", &decision);
     assert_eq!(s.text, "prefix  suffix");
     assert!(s.flagged);
@@ -83,7 +83,7 @@ fn omit_action_deletes_the_span() {
 #[test]
 fn anonymize_collapses_to_redact_marker() {
     // Anonymize is irreversible on the write path: same marker as Redact.
-    let decision = output_decision(FilterAction::Anonymize, "email", vec![(8, 24)]);
+    let decision = output_decision(&FilterAction::Anonymize, "email", vec![(8, 24)]);
     let s = apply_filter_decision("Contact user@example.com for help.", &decision);
     assert_eq!(s.text, "Contact [REDACTED:email] for help.");
 }

@@ -140,10 +140,12 @@ fn instance_aliases(model_key: &str, instance_id: &str, group: &str, is_default:
 /// handler closure `(method, path, body) -> (status, body)`. Used to exercise
 /// `InstanceClient`/`InstanceManager` (and the dispatch allocate-on-503 path)
 /// against fixture `/instances`, `/memory`, and `/chat/completions` JSON
-
 #[cfg(test)]
 pub(crate) mod stub {
     use std::sync::Arc;
+
+    /// The stub HTTP handler shape: `(method, path, body) -> (status, body)`.
+    pub type StubHandler = Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync>;
 
     pub struct StubServer {
         #[allow(dead_code)]
@@ -153,9 +155,7 @@ pub(crate) mod stub {
     }
 
     impl StubServer {
-        pub fn start(
-            handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync>,
-        ) -> Self {
+        pub fn start(handler: StubHandler) -> Self {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             listener.set_nonblocking(true).unwrap();
             let addr = listener.local_addr().unwrap();
@@ -164,9 +164,8 @@ pub(crate) mod stub {
             let handle = tokio::spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).unwrap();
                 loop {
-                    let (mut stream, _) = match listener.accept().await {
-                        Ok(v) => v,
-                        Err(_) => continue,
+                    let Ok((mut stream, _)) = listener.accept().await else {
+                        continue;
                     };
                     let handler = handler.clone();
                     let reqs = reqs.clone();

@@ -724,6 +724,9 @@ pub async fn dispatch_real(
             model_name,
             context_cache: deps.context_cache.as_ref(),
             session: deps.session.as_ref(),
+            // No embedding source is threaded to dispatch yet: the loop
+            // stays inert until boot composes a recorder with one.
+            recorder: None,
         };
         if let Some(resp) = ladder.try_escalate(&esc_ctx).await {
             return Ok(DispatchOutcome {

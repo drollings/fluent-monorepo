@@ -495,6 +495,18 @@ async fn test_batch_config_custom_budget() {
     assert_eq!(summary.completed.len(), 1);
 }
 
+#[tokio::test(start_paused = true)]
+async fn poll_budget_zero_does_not_panic() {
+    let config = SupervisedBatchConfig {
+        poll_budget: 0,
+        ..SupervisedBatchConfig::default()
+    };
+    let mut batch = make_batch_with_config(config);
+    batch.register(Arc::new(StubComponent::ok("task"))).unwrap();
+    let summary: SupervisedBatchSummary = (&mut batch).await;
+    assert_eq!(summary.completed.len(), 1);
+}
+
 /// Verify that Execution failures go to `summary.failed` and real panics
 /// go to `summary.panicked` — they are distinct paths.
 #[tokio::test(start_paused = true)]

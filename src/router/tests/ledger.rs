@@ -156,7 +156,7 @@ fn record_content_node_stores_canonical_type() {
     let id = ledger.record_content_node(&node).unwrap();
 
     let fetched = ledger.get_node(id).unwrap();
-    assert_eq!(fetched.role.as_ref().map(|r| r.as_str()), Some("assistant"));
+    assert_eq!(fetched.role.as_ref().map(fluent_types::OriginRole::as_str), Some("assistant"));
     assert_eq!(fetched.acceptance_score, Some(0.9));
     assert_eq!(fetched.step_id.as_deref(), Some("step-1"));
     assert_eq!(fetched.lod[5], "An accepted assistant answer.");
@@ -413,7 +413,7 @@ fn migration_6_fresh_db_creates_v2_schema() {
 
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn, &crate::ledger::ledger_migrations()).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 9);
+    assert_eq!(schema_version(&conn).unwrap(), 10);
 
     // Two canonicals that collide on the truncated 48-bit id are BOTH
     // storable: the PK is (namespace, canonical_name), `id` is a column.
@@ -485,7 +485,7 @@ fn migration_6_maps_overloaded_review_status_to_entity_id() {
 
     // Run migration 6 on top of the migrated 1–5 state.
     migrate(&conn, &crate::ledger::ledger_migrations()).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 9);
+    assert_eq!(schema_version(&conn).unwrap(), 10);
 
     // The correction row moved its entity id into the real column and is
     // now `'cached'` (status-only semantics restored).
@@ -574,7 +574,7 @@ fn migration_9_span_cache_hex_correct_for_negative_i64() {
 
     // Run migration 9 (printf('%016x', interlingua_id) for span_cache).
     migrate(&conn, &crate::ledger::ledger_migrations()).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 9);
+    assert_eq!(schema_version(&conn).unwrap(), 10);
 
     // Verify the u64 reinterpretation via SQL printf produced the
     // correct unsigned hex (version-dependent behavior — this test

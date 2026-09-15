@@ -458,8 +458,7 @@ async fn falls_back_once_for_retryable_http_and_uses_the_mirror_url() {
         assert_eq!(calls.len(), 2, "HTTP {status} must try HF then ModelScope");
         assert!(
             calls[1].starts_with(&format!("https://{MS_ORIGIN}/models/")),
-            "HTTP {status} must fall back to the mirror URL, got {:?}",
-            calls
+            "HTTP {status} must fall back to the mirror URL, got {calls:?}"
         );
         assert_eq!(warning_count, 1, "HTTP {status} must warn exactly once");
         assert_eq!(kind, Some(SourceKind::ModelScope));
@@ -596,7 +595,9 @@ async fn preserves_both_source_failures_in_a_resolution_error() {
             assert_eq!(primary.status, Some(500));
             assert_eq!(fallback.status, Some(404));
         }
-        other => panic!("expected a resolution error, got {other:?}"),
+        other @ ArtifactError::Download(_) => {
+            panic!("expected a resolution error, got {other:?}")
+        }
     }
     let _ = dir.keep();
 }
@@ -690,7 +691,7 @@ async fn read_idle_deadline_resets_per_chunk_with_no_total_deadline() {
     // Five chunks, each just inside the 100ms idle budget: the total (~250ms)
     // exceeds any single idle window, proving no total deadline applies.
     let chunk = b"0123456789abcdef";
-    let bytes: Vec<u8> = chunk.repeat(5).iter().copied().collect::<Vec<u8>>();
+    let bytes: Vec<u8> = chunk.repeat(5);
     let chunks: Vec<StubChunk> = (0..5)
         .map(|_| StubChunk {
             bytes: chunk.to_vec(),

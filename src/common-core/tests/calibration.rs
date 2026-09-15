@@ -1,3 +1,6 @@
+// Exact asserts on harness outputs are deliberate: the reports are exact ratios.
+#![allow(clippy::float_cmp)]
+
 use common_core::calibration::*;
 
 
@@ -123,6 +126,6 @@ fn emit_calibration_artifact_smoke() {
         assert!(md.contains("0.50"));
         // If running with --nocapture, the eprintln from emit will be visible.
         if std::env::var("CALIBRATION_EMIT").is_ok() {
-            eprintln!("{}", md);
+            eprintln!("{md}");
         }
 }

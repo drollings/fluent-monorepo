@@ -1,10 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use content_node::doc_node::DocumentContentNode;
-use content_node::file_node::FileContentNode;
-use content_node::node::{ContentNode, LodLevel};
-use content_node::source_node::SourceCodeContentNode;
 use fluent_types::{FileType, GuidanceDoc};
 use guidance_core::sync::json_store::load_guidance;
 use ptree::{PrintConfig, TreeBuilder};
@@ -121,24 +117,18 @@ fn annotate_file(rel_path: &str, name: &str, json_dir: &Path, skills: &[String])
 
     let json_path = json_dir.join("src").join(rel_path).with_extension("json");
     if let Some(doc) = load_guidance(&json_path).ok().flatten() {
-        let (inode, hash) = file_metadata(&path);
-        let file_node = FileContentNode::new(path, inode, hash);
-        let source_node = SourceCodeContentNode::new(file_node).with_ast(doc.clone());
-        if let Some(summary) = source_node.lod(LodLevel::Summary) {
-            if !summary.is_empty() {
-                desc = first_line(summary);
-            }
+        let summary = source_summary(&doc);
+        if !summary.is_empty() {
+            desc = first_line(summary);
         }
         file_skills = extract_skills(&doc, skills);
     } else if is_annotatable(&path) && path.exists() {
         if let Ok(content) = common_core::io::read_to_string_err(&path) {
-            let (inode, hash) = file_metadata(&path);
-            let file_node = FileContentNode::new(path, inode, hash);
-            let doc_node = DocumentContentNode::new(file_node, &content);
-            if let Some(summary) = doc_node.lod(LodLevel::Tiny) {
-                if !summary.is_empty() {
-                    desc = first_line(summary);
-                }
+            let tiny = tiny_summary(&content);
+            if !tiny.is_empty() {
+                desc = first_line(&tiny);
+            } else {
+                desc = first_line(rel_path);
             }
         }
     }
@@ -173,28 +163,16 @@ fn extract_skills(doc: &GuidanceDoc, available: &[String]) -> Vec<String> {
     matched
 }
 
-fn file_metadata(path: &Path) -> (u64, [u8; 32]) {
-    let meta = std::fs::metadata(path).ok();
-    let inode = meta
-        .as_ref()
-        .map(|m| {
-            #[cfg(unix)]
-            {
-                std::os::unix::fs::MetadataExt::ino(m)
-            }
-            #[cfg(not(unix))]
-            {
-                0
-            }
-        })
-        .unwrap_or(0);
-    let content = std::fs::read(path).unwrap_or_default();
-    let hash = common_core::hash::blake3_hash(&content);
-    (inode, hash)
-}
-
 fn first_line(s: &str) -> String {
     s.lines().next().unwrap_or(s).to_string()
+}
+
+fn tiny_summary(text: &str) -> String {
+    common_core::string::truncate_at_sentence(text, 40)
+}
+
+fn source_summary(doc: &GuidanceDoc) -> &str {
+    doc.comment.as_deref().unwrap_or("")
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -380,6 +358,145 @@ mod tests {
             _ => panic!("src should be a dir node"),
         }
         assert!(matches!(root["README.md"], Node::File { .. }));
+    }
+
+    fn write_doc(json_dir: &Path, rel_path: &str, comment: Option<&str>, skills: &[&str]) {
+        let json_path = json_dir
+            .join("src")
+            .join(rel_path)
+            .with_extension("json");
+        std::fs::create_dir_all(json_path.parent().expect("parent")).expect("mkdir");
+        let skills_json: Vec<serde_json::Value> = skills
+            .iter()
+            .map(|s| serde_json::json!({"ref": s}))
+            .collect();
+        let body = serde_json::json!({
+            "meta": {"module": "app", "source": rel_path},
+            "comment": comment,
+            "skills": skills_json,
+        });
+        std::fs::write(&json_path, serde_json::to_string(&body).expect("serialize"))
+            .expect("write doc");
+    }
+
+    #[test]
+    fn annotate_file_source_comment() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_doc(dir.path(), "app.rs", Some("Does things well"), &[]);
+        assert_eq!(
+            annotate_file("app.rs", "app.rs", dir.path(), &[]),
+            "app.rs  # Does things well"
+        );
+    }
+
+    #[test]
+    fn annotate_file_source_no_comment() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_doc(dir.path(), "app.rs", None, &[]);
+        assert_eq!(annotate_file("app.rs", "app.rs", dir.path(), &[]), "app.rs");
+    }
+
+    #[test]
+    fn annotate_file_text_sentence_boundary_before_limit() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let old = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(tmp.path()).expect("set cwd to tempdir");
+        let result = {
+            std::fs::write(
+                "notes.md",
+                "1234567890123456789012345. Rest of text goes on and on and on.",
+            )
+            .expect("write");
+            annotate_file("notes.md", "notes.md", tmp.path(), &[])
+        };
+        std::env::set_current_dir(&old).expect("restore cwd");
+        assert_eq!(result, "notes.md  # 1234567890123456789012345.");
+    }
+
+    #[test]
+    fn annotate_file_text_no_sentence_boundary_before_limit() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let old = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(tmp.path()).expect("set cwd to tempdir");
+        let result = {
+            std::fs::write(
+                "plain.md",
+                "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ rest of text",
+            )
+            .expect("write");
+            annotate_file("plain.md", "plain.md", tmp.path(), &[])
+        };
+        std::env::set_current_dir(&old).expect("restore cwd");
+        assert_eq!(
+            result,
+            "plain.md  # abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+        );
+    }
+
+    #[test]
+    fn annotate_file_empty_falls_back_to_path() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let old = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(tmp.path()).expect("set cwd to tempdir");
+        let result = {
+            std::fs::write("empty.md", "").expect("write");
+            annotate_file("empty.md", "empty.md", tmp.path(), &[])
+        };
+        std::env::set_current_dir(&old).expect("restore cwd");
+        assert_eq!(result, "empty.md  # empty.md");
+    }
+
+    #[test]
+    fn annotate_file_skills_block_with_description() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_doc(
+            dir.path(),
+            "app.rs",
+            Some("Does things well"),
+            &["skills/zig-current/SKILL.md"],
+        );
+        assert_eq!(
+            annotate_file("app.rs", "app.rs", dir.path(), &["zig-current".to_string()]),
+            "app.rs  # [zig-current] Does things well"
+        );
+    }
+
+    #[test]
+    fn annotate_file_long_description_uses_final_truncation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_doc(
+            dir.path(),
+            "app.rs",
+            Some("abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ rest of text"),
+            &[],
+        );
+        assert_eq!(
+            annotate_file("app.rs", "app.rs", dir.path(), &[]),
+            "app.rs  # abcdefghijklmnopqrstuvwxyz0123456789A..."
+        );
+    }
+
+    #[test]
+    fn tiny_summary_short_text_unchanged() {
+        assert_eq!(tiny_summary("Hello"), "Hello");
+    }
+
+    #[test]
+    fn tiny_summary_long_text_truncated_to_limit() {
+        let long = "A. ".repeat(500);
+        let text = &long[..long.len() - 2];
+        assert!(tiny_summary(text).len() <= 40);
+    }
+
+    #[test]
+    fn tiny_summary_prefers_sentence_boundary() {
+        assert_eq!(
+            tiny_summary("1234567890123456789012345. Rest of text goes on."),
+            "1234567890123456789012345."
+        );
     }
 
     #[test]

@@ -34,10 +34,10 @@ fn sorted_by_vec_length_and_stability() {
     assert_eq!(order, vec![(0, "zero"), (1, "first"), (1, "second")]);
     // Empty and single are fixed points.
     assert_eq!(
-        sorted_by_vec(Vec::<i32>::new(), |x, y| x.cmp(y)),
+        sorted_by_vec(Vec::<i32>::new(), std::cmp::Ord::cmp),
         Vec::<i32>::new()
     );
-    assert_eq!(sorted_by_vec(vec![7], |x, y| x.cmp(y)), vec![7]);
+    assert_eq!(sorted_by_vec(vec![7], std::cmp::Ord::cmp), vec![7]);
 }
 
 #[test]

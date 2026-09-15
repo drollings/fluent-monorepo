@@ -6,9 +6,6 @@
 #[cfg(feature = "sqlite")]
 use fluent_db::sqlite::*;
 #[cfg(feature = "sqlite")]
-
-
-#[cfg(feature = "sqlite")]
 #[test]
 fn open_wal_sets_pragmas() {
         let dir = tempfile::tempdir().unwrap();

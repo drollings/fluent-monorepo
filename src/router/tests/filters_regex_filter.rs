@@ -12,7 +12,7 @@ fn entry(name: &str, outcome: FilterOutcome, regexes: &[&str]) -> PatternEntry {
         scope: vec![FilterScope::Any],
         http_code: 403,
         error_message: None,
-        regexes: regexes.iter().map(|s| s.to_string()).collect(),
+        regexes: regexes.iter().map(std::string::ToString::to_string).collect(),
     }
 }
 

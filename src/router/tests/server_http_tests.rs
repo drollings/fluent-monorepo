@@ -172,7 +172,7 @@ async fn buffered_happy_path_returns_200_with_choices() {
         5000,
         2000,
     );
-    let server = spawn_test_server(config, Some(mock_for("What is 2+2?", "4"))).await;
+    let server = Box::pin(spawn_test_server(config, Some(mock_for("What is 2+2?", "4")))).await;
 
     let body = json!({
         "model": "fast",
@@ -203,11 +203,11 @@ async fn session_step_recorded_and_completed_on_dispatch_path() {
         2000,
     );
     let sessions = Arc::new(SessionRegistry::new(None));
-    let server = spawn_test_server_with_sessions(
+    let server = Box::pin(spawn_test_server_with_sessions(
         config,
         Some(mock_for("What is 2+2?", "4")),
         Some(Arc::clone(&sessions)),
-    )
+    ))
     .await;
 
     let body = json!({
@@ -274,7 +274,7 @@ async fn routed_dispatch_answer_recorded_in_ledger_lod0() {
     let upstream = upstream_answering("the ledger answer").await;
     let config = make_config(&upstream, false, false, 5000, 2000);
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
-    let server = spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger)))
+    let server = Box::pin(spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger))))
         .await;
 
     let body = json!({
@@ -321,7 +321,7 @@ async fn ledger_with_summarizer_attached_derives_lod() {
             .unwrap()
             .with_summarizer(summarizer),
     );
-    let server = spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger)))
+    let server = Box::pin(spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger))))
         .await;
 
     let body = json!({
@@ -376,12 +376,12 @@ async fn mock_dispatch_path_records_answer_in_ledger() {
         2000,
     );
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
-    let server = spawn_test_server_with_ledger(
+    let server = Box::pin(spawn_test_server_with_ledger(
         config,
         Some(mock_for("What is 2+2?", "mock answer")),
         None,
         Some(Arc::clone(&ledger)),
-    )
+    ))
     .await;
 
     let body = json!({
@@ -437,7 +437,7 @@ async fn routed_stream_dispatch_answer_recorded_on_completion() {
 
     let config = make_config(&upstream, true, false, 5000, 2000);
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
-    let server = spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger)))
+    let server = Box::pin(spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger))))
         .await;
 
     let body = json!({
@@ -485,10 +485,10 @@ async fn streaming_request_returns_sse_data_lines() {
         5000,
         2000,
     );
-    let server = spawn_test_server(
+    let server = Box::pin(spawn_test_server(
         config,
         Some(mock_for("Tell me a story", "Once upon a time")),
-    )
+    ))
     .await;
 
     let body = json!({
@@ -533,7 +533,7 @@ async fn malformed_json_returns_400() {
         5000,
         2000,
     );
-    let server = spawn_test_server(config, None).await;
+    let server = Box::pin(spawn_test_server(config, None)).await;
 
     let client = reqwest::Client::new();
     let response = tokio::time::timeout(
@@ -562,7 +562,7 @@ async fn oversized_payload_returns_413() {
         2000,
     );
     config.server.max_payload = 64;
-    let server = spawn_test_server(config, None).await;
+    let server = Box::pin(spawn_test_server(config, None)).await;
 
     let body = json!({
         "model": "fast",
@@ -594,7 +594,7 @@ async fn multibyte_utf8_message_at_120_byte_boundary_returns_200() {
         5000,
         2000,
     );
-    let server = spawn_test_server(config, Some(mock_for(&msg, "ok"))).await;
+    let server = Box::pin(spawn_test_server(config, Some(mock_for(&msg, "ok")))).await;
 
     let body = json!({
         "model": "fast",
@@ -632,7 +632,7 @@ async fn never_responding_upstream_times_out() {
         total_timeout_ms,
         total_timeout_ms,
     );
-    let server = spawn_test_server(config, None).await;
+    let server = Box::pin(spawn_test_server(config, None)).await;
 
     let body = json!({
         "model": "fast",
@@ -828,7 +828,7 @@ async fn filter_thinking_stripped_from_buffered_response() {
     .await;
 
     let config = make_config(&upstream, false, true, 5000, 2000);
-    let server = spawn_test_server(config, None).await;
+    let server = Box::pin(spawn_test_server(config, None)).await;
 
     let body = json!({
         "model": "fast",
@@ -886,7 +886,7 @@ async fn filter_thinking_never_leaks_partial_tag_in_stream() {
     .await;
 
     let config = make_config(&upstream, true, true, 5000, 2000);
-    let server = spawn_test_server(config, None).await;
+    let server = Box::pin(spawn_test_server(config, None)).await;
 
     let body = json!({
         "model": "fast",
@@ -1030,7 +1030,7 @@ async fn plan_route_second_failure_terminates_as_fresh_draft() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn plan_route_unconfigured_returns_service_unavailable() {
     let config = make_config("http://127.0.0.1:1", false, false, 5000, 2000);
-    let server = spawn_test_server(config, None).await;
+    let server = Box::pin(spawn_test_server(config, None)).await;
     let body = json!({ "message": "anything" });
     let resp = post_plan(&server.base_url(), body, 5000)
         .await
@@ -1114,7 +1114,7 @@ async fn successful_dispatch_distills_a_draft_chart() {
             .with_chart_store(store.clone())
             .with_workflow_extractor(Arc::new(extractor)),
     );
-    let server = spawn_server_with_plan_route(config, plan_route).await;
+    let server = Box::pin(spawn_server_with_plan_route(config, plan_route)).await;
 
     let body = json!({
         "model": "fast",
@@ -1239,7 +1239,7 @@ async fn escalation_ladder_responds_after_local_chain_fails() {
     let backend: Arc<dyn ChatBackend> = Arc::new(provider);
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(Some(&backend)));
     let deps = test_deps(pipelines, &config, None, None, None, ladders, None);
-    let server = spawn_test_server_with_deps(deps).await;
+    let server = Box::pin(spawn_test_server_with_deps(deps)).await;
 
     let resp = post_chat(
         &server.base_url(),
@@ -1311,7 +1311,7 @@ async fn context_cache_short_circuits_before_frontier_integration() {
         ladders,
         Some(context_cache),
     );
-    let server = spawn_test_server_with_deps(deps).await;
+    let server = Box::pin(spawn_test_server_with_deps(deps)).await;
 
     let resp = post_chat(
         &server.base_url(),
@@ -1501,8 +1501,7 @@ async fn rigor_route_unconfigured_returns_explicit_error() {
 
 /// A stub llama-server management backend answering the `/instances` envelope,
 /// create, and delete.
-fn instance_stub_handler(
-) -> Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> {
+fn instance_stub_handler() -> crate::instances::stub::StubHandler {
     Arc::new(|method, path, _body| match (method, path) {
         ("GET", "/instances") => (
             200,
@@ -1799,7 +1798,7 @@ async fn graceful_shutdown_drains_tracked_connections_within_timeout() {
 
     let _ = shutdown_tx.send(true);
     let drained = tokio::time::timeout(Duration::from_secs(3), async {
-        serve.await.expect("serve task joined").expect("serve_http ok")
+        serve.await.expect("serve task joined").expect("serve_http ok");
     })
     .await;
 
@@ -1996,7 +1995,7 @@ fn review_deps(
 async fn review_parse_endpoints_enqueue_and_read_back_status() {
     let config = make_config("http://127.0.0.1:1", false, false, 5000, 2000);
     let (deps, ledger, parse_id, fetched) = review_deps(&config, "sess-rv");
-    let server = spawn_test_server_with_deps(deps).await;
+    let server = Box::pin(spawn_test_server_with_deps(deps)).await;
     let base = server.base_url();
     let client = reqwest::Client::new();
 
@@ -2084,7 +2083,7 @@ async fn review_parse_endpoint_degrades_gracefully() {
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(None));
     let mut deps = test_deps(pipelines, &config, None, None, None, HashMap::new(), None);
     deps.ledger = Some(Arc::new(ContentNodeLedger::open_in_memory().expect("ledger")));
-    let server = spawn_test_server_with_deps(deps).await;
+    let server = Box::pin(spawn_test_server_with_deps(deps)).await;
     let base = server.base_url();
     let client = reqwest::Client::new();
 
@@ -2097,7 +2096,7 @@ async fn review_parse_endpoint_degrades_gracefully() {
 
     // A worker but no parse node for the session → 404.
     let (deps, _ledger, _, _) = review_deps(&config, "sess-with-parse");
-    let server = spawn_test_server_with_deps(deps).await;
+    let server = Box::pin(spawn_test_server_with_deps(deps)).await;
     let base = server.base_url();
     let resp = client
         .post(format!("{base}/v1/sessions/sess-absent/review-parse"))

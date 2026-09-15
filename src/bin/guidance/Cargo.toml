@@ -30,7 +30,6 @@ common-core = { path = "../../common-core" }
 guidance-core = { path = "../../guidance" }
 search-vector = { path = "../../search-vector" }
 fluent-llm = { path = "../../llm" }
-content-node = { path = "../../content-node" }
 fluent-types = { path = "../../types" }
 fluent-concurrency = { path = "../../fluent-concurrency" }
 clap = { workspace = true, features = ["derive"] }

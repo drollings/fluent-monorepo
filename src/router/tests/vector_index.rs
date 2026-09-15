@@ -44,8 +44,7 @@ fn vector_index_brute_force_vs_hnsw_recall() {
     let recall = intersect as f64 / k as f64;
     assert!(
         recall >= 0.9,
-        "HNSW recall@{} vs brute-force must be >=0.9, got {recall} (brute {brute_set:?} vs hnsw {hnsw_set:?})",
-        k
+        "HNSW recall@{k} vs brute-force must be >=0.9, got {recall} (brute {brute_set:?} vs hnsw {hnsw_set:?})"
     );
     assert_eq!(brute.len(), n);
     assert_eq!(hnsw.len(), n);
@@ -90,7 +89,7 @@ fn ann_calibration_control_50_unrelated_queries_must_not_fire_high_confidence() 
     let index = BruteForceIndex::new();
     for i in 0..n {
         let emb = random_embedding(dim, i as u64 * 7919 + 7);
-        index.insert(NodeId::from_int(i as i64 + 1), &emb).unwrap();
+        index.insert(NodeId::from_int(i64::from(i) + 1), &emb).unwrap();
     }
     // Unrelated queries: use seeds far from ledger seeds
     let mut false_high = 0;
@@ -116,7 +115,7 @@ fn ann_calibration_recall_and_latency_baseline() {
     let hnsw = HnswVectorIndex::new();
     for i in 0..n {
         let emb = random_embedding(dim, i as u64 * 7919 + 13);
-        let id = NodeId::from_int(i as i64 + 1);
+        let id = NodeId::from_int(i64::from(i) + 1);
         brute.insert(id, &emb).unwrap();
         hnsw.insert(id, &emb).unwrap();
     }
@@ -130,7 +129,7 @@ fn ann_calibration_recall_and_latency_baseline() {
     let brute_set: std::collections::HashSet<i64> = brute_hits.iter().map(|(id,_)| id.as_int()).collect();
     let hnsw_set: std::collections::HashSet<i64> = hnsw_hits.iter().map(|(id,_)| id.as_int()).collect();
     let recall = hnsw_set.intersection(&brute_set).count() as f64 / k as f64;
-    assert!(recall >= 0.8, "recall@{} baseline must be >=0.8, got {recall}", k);
+    assert!(recall >= 0.8, "recall@{k} baseline must be >=0.8, got {recall}");
     // Latency: HNSW should be <= brute-force (or at least not 10x slower) for 500 nodes
     assert!(hnsw_lat <= brute_lat * 10, "HNSW latency {hnsw_lat:?} should not be 10x brute {brute_lat:?}");
 }

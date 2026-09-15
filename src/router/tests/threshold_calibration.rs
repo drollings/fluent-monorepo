@@ -1,11 +1,14 @@
-/// Calibration suite: stub goldens (M7b/M10c, kept green) + measured M5
-/// trigger calibrations (5a–5f) on fixed-seed corpora.
-///
-/// Every trigger is labeled [A] producer-confidence/self-doubt or [B]
-/// task-value/outcome-correctness (§0c). No axis substitutes for the other:
-/// each calibration below carries its own control group, and any constant
-/// change must be explicit with measured numbers in-test (never silent
-/// tuning). A failing calibration blocks M6/M7 — it never lowers a gate.
+//! Calibration suite: stub goldens (M7b/M10c, kept green) + measured M5
+//! trigger calibrations (5a–5f) on fixed-seed corpora.
+//!
+//! Every trigger is labeled [A] producer-confidence/self-doubt or [B]
+//! task-value/outcome-correctness (§0c). No axis substitutes for the other:
+//! each calibration below carries its own control group, and any constant
+//! change must be explicit with measured numbers in-test (never silent
+//! tuning). A failing calibration blocks M6/M7 — it never lowers a gate.
+//!
+//! Exact asserts on measured numbers are deliberate: the corpora are fixed-seed.
+#![allow(clippy::float_cmp)]
 
 // ── Dual-harness mirror ──────────────────────────────────────────────
 // This file is mirrored at `src/tests/threshold_calibration.rs`, compiled
@@ -276,16 +279,16 @@ fn m5c_charts_min_score_precision_and_adversarial_control() {
     }
     let mut cases: Vec<Case> = Vec::new();
     for i in 0..46 {
-        cases.push(Case { sim: 0.62 + i as f64 * 0.007, correct: true, adversarial: false });
+        cases.push(Case { sim: 0.62 + f64::from(i) * 0.007, correct: true, adversarial: false });
     }
     for i in 0..4 {
-        cases.push(Case { sim: 0.55 + i as f64 * 0.01, correct: true, adversarial: false });
+        cases.push(Case { sim: 0.55 + f64::from(i) * 0.01, correct: true, adversarial: false });
     }
     for i in 0..20 {
-        cases.push(Case { sim: 0.52 + i as f64 * 0.0035, correct: false, adversarial: true });
+        cases.push(Case { sim: 0.52 + f64::from(i) * 0.0035, correct: false, adversarial: true });
     }
     for i in 0..10 {
-        cases.push(Case { sim: 0.1 + i as f64 * 0.03, correct: false, adversarial: false });
+        cases.push(Case { sim: 0.1 + f64::from(i) * 0.03, correct: false, adversarial: false });
     }
     assert_eq!(cases.len(), 80);
     let report = calibrate_threshold(&cases, |c| c.sim, |c| c.correct, gate);
@@ -310,7 +313,7 @@ fn m5d_workflow_gates_split_axes() {
     // (i) 20 high-`assembler_confidence` but task-wrong workflows must NOT
     // insert (proves [A] ≠ correctness: confidence opens nothing alone).
     for i in 0..20 {
-        let conf = 0.86 + i as f64 * 0.006; // 0.86..0.974
+        let conf = 0.86 + f64::from(i) * 0.006; // 0.86..0.974
         assert!(
             !gated_insert_allowed(conf, 0.05, false),
             "[A]≠correctness case {i}: confident + near-dup + unverified must not insert"
@@ -449,6 +452,6 @@ fn threshold_precision_recall_documented() {
     // High-complexity routing precision: among 30 high-complexity, all correctly routed
     let tp_route = 30;
     let fp_route = 0;
-    let precision = tp_route as f64 / (tp_route + fp_route) as f64;
+    let precision = f64::from(tp_route) / f64::from(tp_route + fp_route);
     assert_eq!(precision, 1.0);
 }

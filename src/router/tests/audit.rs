@@ -14,7 +14,7 @@ fn emit_renders_kind_and_json_detail() {
     // `router.audit` tracing target. Capture the formatted line and assert
     // both invariants hold so the durable-audit consumer's expectations
     // cannot silently drift.
-    let (_, lines) = crate::test_support::capture_logs(|| {
+    let ((), lines) = crate::test_support::capture_logs(|| {
         emit("filter", serde_json::json!({"pattern": "ssn", "scope": "any"}));
     });
     let joined = lines.join("\n");
@@ -85,7 +85,7 @@ fn audit_record_serializes_to_expected_json() {
 
 #[test]
 fn audit_emit_is_durable_under_test_subscriber() {
-    let (_, lines) = crate::test_support::capture_logs(|| {
+    let ((), lines) = crate::test_support::capture_logs(|| {
         AuditRecord::route(
             crate::pipeline_types::PipelineStage::Classifier,
             crate::pipeline_types::StageVerdict::Passed,

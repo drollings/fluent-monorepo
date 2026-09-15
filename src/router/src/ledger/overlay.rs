@@ -197,6 +197,65 @@ impl OverlayCandidateStore {
             .collect())
     }
 
+    /// Persist an approved stamp, first-wins on `(node_id, token)`.
+    /// Returns `true` when a new row was inserted.
+    pub fn write_stamp(
+        &self,
+        node_id: NodeId,
+        token: usize,
+        entity_id: InterlinguaId,
+        text_hash: u64,
+    ) -> Result<bool, LedgerError> {
+        let inserted = self
+            .store
+            .execute(
+                "INSERT OR IGNORE INTO entity_stamps (node_id, token, entity_id, text_hash) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    node_id.as_int(),
+                    token as i64,
+                    entity_id.as_i64(),
+                    format!("{text_hash:016x}"),
+                ],
+            )
+            .map_err(|e| LedgerError::Db(e.to_string()))?;
+        Ok(inserted > 0)
+    }
+
+    /// All persisted stamps for a node, in token order.
+    pub fn stamps_for_node(&self, node_id: NodeId) -> Result<Vec<EntityStampRow>, LedgerError> {
+        let rows: Vec<(i64, i64, String)> = self
+            .store
+            .query_rows(
+                "SELECT token, entity_id, text_hash FROM entity_stamps \
+                 WHERE node_id = ?1 ORDER BY token",
+                params![node_id.as_int()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .map_err(|e| LedgerError::Db(e.to_string()))?;
+        rows.into_iter()
+            .map(|(token, entity_id, text_hash)| {
+                Ok(EntityStampRow {
+                    token: token as usize,
+                    entity_id: InterlinguaId::from_u64(entity_id as u64),
+                    text_hash: u64::from_str_radix(&text_hash, 16)
+                        .map_err(|e| LedgerError::Db(e.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    /// Delete a stamp row (after `verify_stamps` clears a mutated slot).
+    pub fn delete_stamp(&self, node_id: NodeId, token: usize) -> Result<(), LedgerError> {
+        self.store
+            .execute(
+                "DELETE FROM entity_stamps WHERE node_id = ?1 AND token = ?2",
+                params![node_id.as_int(), token as i64],
+            )
+            .map_err(|e| LedgerError::Db(e.to_string()))?;
+        Ok(())
+    }
+
     /// Promote a candidate (human review accepted it). First-wins preserved —
     /// only a `Pending` candidate can be promoted, and promotion is idempotent.
     pub fn promote(&self, node_id: NodeId, cand: &OverlayCandidate) -> Result<(), LedgerError> {
@@ -235,7 +294,18 @@ impl OverlayCandidateStore {
         let _ = updated;
         Ok(())
     }
+}
 
+/// One persisted entity stamp: a gate-approved entity id for a token,
+/// content-keyed so text mutation invalidates it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityStampRow {
+    pub token: usize,
+    pub entity_id: InterlinguaId,
+    pub text_hash: u64,
+}
+
+impl OverlayCandidateStore {
     /// Promote every `Pending` `EntityLink` candidate on a node whose
     /// `entity_id` is in `linked` — the M6.5 integration: after the review
     /// worker links entities (via `apply_corrections`' linked-entities

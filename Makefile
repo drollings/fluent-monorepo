@@ -204,6 +204,10 @@ CORAL_ROUTER_TEST_SCRIPT := bin/coral-router-test.py
 router-benchmark: router-start ## Score the live router (routing accuracy, TTFT, VRAM) via bin/coral-router-test.py; reads env/coral-router.json for routes + expectations
 	$(Q)python3 $(CORAL_ROUTER_TEST_SCRIPT) --config $(CORAL_ROUTER_CONFIG)
 
+.PHONY: bench
+bench: ## Run the fluent-router criterion benches (pipeline dispatch, tree evaluation, filter before/after)
+	$(Q)cargo bench -p fluent-router
+
 # ── spaCy vs spacy-rs Parity Benchmark ───────────────────────────────────────
 # Re-runs the tokenizer speed + memory comparison over the shared golden
 # corpus fixture (`src/spacy-rs/tests/data/en_tokenization.json`, pinned to

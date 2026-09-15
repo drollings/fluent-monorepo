@@ -39,6 +39,7 @@
 //! for LOD/role metadata).
 
 pub mod correction_index;
+pub mod entity_promotion;
 pub mod span_cache;
 pub mod annotations;
 pub mod frame_index;
@@ -49,7 +50,6 @@ pub mod overlay;
 pub mod overlay_worker;
 pub mod prompt;
 pub mod tiering;
-pub mod workflow;
 pub mod workflow_replay;
 pub mod workflow_store;
 
@@ -351,7 +351,7 @@ fn emit_write_audit(pattern: Option<&str>) {
 ///
 /// Shared with `ContentNodeStore` (4B), which owns the durable backing now — the
 /// schema stays here as the single source of truth.
-pub(crate) fn ledger_migrations() -> [&'static dyn Migration; 9] {
+pub(crate) fn ledger_migrations() -> [&'static dyn Migration; 10] {
     [
         &LedgerBaseSchema,
         &LedgerLabelColumn,
@@ -362,7 +362,41 @@ pub(crate) fn ledger_migrations() -> [&'static dyn Migration; 9] {
         &LedgerOverlayCandidatesSchema,
         &LedgerAnnotationSchema,
         &LedgerSpanCacheHexKey,
+        &LedgerEntityStampsSchema,
     ]
+}
+
+/// Migration 10: the entity-stamps table.
+///
+/// `entity_stamps` is the durable surface for parse-time entity promotion
+/// (M16): one row per gate-approved stamp, keyed by `(node_id, token)` with
+/// the content-keyed `text_hash` (hex `TEXT`, full `u64` range — the R10
+/// `span_key` lesson: no `i64` truncation). A text mutation invalidates the
+/// row via `verify_stamps` (the row is deleted, never updated).
+struct LedgerEntityStampsSchema;
+
+impl Migration for LedgerEntityStampsSchema {
+    fn version(&self) -> u32 {
+        10
+    }
+    fn name(&self) -> &str {
+        "ledger-entity-stamps-schema"
+    }
+    fn up(&self, tx: &mut rusqlite::Transaction<'_>) -> Result<(), DbError> {
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS entity_stamps (
+                node_id INTEGER NOT NULL,
+                token INTEGER NOT NULL,
+                entity_id INTEGER NOT NULL,
+                text_hash TEXT NOT NULL,
+                PRIMARY KEY (node_id, token)
+            );
+            CREATE INDEX IF NOT EXISTS idx_entity_stamps_node
+                ON entity_stamps(node_id);",
+        )
+        .map_err(DbError::from)?;
+        Ok(())
+    }
 }
 
 struct LedgerBaseSchema;

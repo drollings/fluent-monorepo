@@ -3,6 +3,9 @@
 //! `build_plausibility_inputs` over an attached `Doc`), the knowledge owner
 //! (`score_plausibility`) consumes it — no behavior change for callers.
 
+// Exact asserts on deterministic plausibility scores are deliberate.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use fluent_concept::{ConceptStore, ConceptStoreState, InMemoryConceptStore};
 use fluent_types::{ConceptMetadata, InterlinguaId, NodeId};
@@ -53,9 +56,9 @@ fn scored_inputs(
     spacy_rs::build_plausibility_inputs(doc, &triples, resolver)
 }
 
-fn resolver_for(store: Arc<InMemoryConceptStore>) -> spacy_rs::InterlinguaResolver {
+fn resolver_for(store: &Arc<InMemoryConceptStore>) -> spacy_rs::InterlinguaResolver {
     spacy_rs::InterlinguaResolver::new(
-        Arc::clone(&store) as Arc<dyn ConceptStore>,
+        Arc::clone(store) as Arc<dyn ConceptStore>,
         Arc::clone(vocab().strings()),
     )
 }
@@ -90,7 +93,7 @@ fn semantic_plausibility_hermetic_dog_is_animal() {
     assert!(store.is_subclass_of(dog_lemma, animal_lemma));
 
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let inputs = scored_inputs(&doc, &resolver);
     let score = score_plausibility(&inputs, &*store).expect("score");
     assert!(score > 0.5, "dog-known triple must be plausible, got {score}");
@@ -100,7 +103,7 @@ fn semantic_plausibility_hermetic_dog_is_animal() {
 fn semantic_plausibility_unknown_is_zero() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let inputs = scored_inputs(&doc, &resolver);
     // Empty store → no lemma known
     let score = score_plausibility(&inputs, &*store).expect("score");
@@ -114,7 +117,7 @@ fn semantic_plausibility_loading_is_none() {
     let dog_lemma = lemma_id_for("dog");
     store.insert(meta(dog_lemma, "dog", None)).expect("dog");
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let inputs = scored_inputs(&doc, &resolver);
     assert!(score_plausibility(&inputs, &*store).is_none());
 }
@@ -125,7 +128,7 @@ fn semantic_plausibility_bounded_and_deterministic() {
     let dog_lemma = lemma_id_for("dog");
     store.insert(meta(dog_lemma, "dog", None)).expect("dog");
     let doc = attached(CAT_SAT_PARSE, &["The", "cat", "sat", "."]);
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let inputs = scored_inputs(&doc, &resolver);
     let a = score_plausibility(&inputs, &*store).expect("a");
     let b = score_plausibility(&inputs, &*store).expect("b");
@@ -149,7 +152,7 @@ fn never_folds_into_oracle_margins() {
     let dog_lemma = lemma_id_for("dog");
     store.insert(meta(dog_lemma, "dog", None)).expect("dog");
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let inputs = scored_inputs(&doc, &resolver);
     let score = score_plausibility(&inputs, &*store);
     let mut pc = spacy_rs::ParseConfidence::compute(&[0.9], &[0.0, 0.25], 1.0);

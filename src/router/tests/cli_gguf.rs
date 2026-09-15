@@ -1,3 +1,6 @@
+// Exact asserts on integer-valued snapshots are deliberate.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use std::io::Write;
 
@@ -143,7 +146,7 @@ fn mtime_snapshot_round_trips_through_json() {
     // The integer-valued microsecond snapshot must be exactly representable
     // and survive the JSON round-trip bit-for-bit, which is what keeps the
     // `parent_mtime` token stable across a cache rewrite.
-    let raw = 1786778176.386162519f64;
+    let raw = 1_786_778_176.386_162_5_f64;
     let snap = mtime_snapshot(raw);
     assert_eq!(snap.fract(), 0.0, "snapshot must be an integer-valued f64");
     assert_eq!(snap, 1786778176386163.0);

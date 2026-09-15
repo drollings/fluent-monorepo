@@ -391,6 +391,136 @@ impl WorkflowReplay {
     }
 }
 
+/// The frontier-assisted recording half of the loop: a flag-gated,
+/// best-effort post-run hook that distills a solved escalation run into the
+/// embedding-keyed library through the existing [`WorkflowReplay::record_workflow`]
+/// (never a parallel recorder).
+///
+/// Division of labour with `charts::WorkflowExtractor` (deliberately not
+/// merged): the extractor distills dispatches into **draft chart contracts**
+/// for selection; the recorder stores **embedding-keyed reusable `Target`
+/// DAGs** for near-neighbor replay. Charts are selected; workflows replay.
+///
+/// Fail-closed composition: the recorder is `None` (uncomposed) unless the
+/// operator enables `replay` **and** a real embedding source is attached.
+/// Hash or stub embeddings would corrupt the near-neighbor keys, so a
+/// missing embedder refuses the record rather than recording garbage — and
+/// the ladder runs byte-identically without a recorder.
+pub struct WorkflowRecorder {
+    store: Arc<dyn WorkflowStore>,
+    replay: WorkflowReplay,
+    embedder: Option<Arc<dyn fluent_llm::EmbeddingProvider>>,
+    cfg: ReplayConfig,
+}
+
+impl WorkflowRecorder {
+    pub fn new(
+        store: Arc<dyn WorkflowStore>,
+        embedder: Option<Arc<dyn fluent_llm::EmbeddingProvider>>,
+        cfg: ReplayConfig,
+    ) -> Self {
+        let replay = WorkflowReplay::new(Arc::clone(&store));
+        Self {
+            store,
+            replay,
+            embedder,
+            cfg,
+        }
+    }
+
+    /// The replay handle for consulting the recorded library (M14).
+    pub fn replay(&self) -> &WorkflowReplay {
+        &self.replay
+    }
+
+    /// Consult the library before planning fresh: embed the query and run
+    /// the calibrated [`WorkflowReplay::try_replay`] gate. `None` when the
+    /// loop is disabled, the embedder is missing/failed, or any gate leg
+    /// refuses (flagged query, below-threshold neighbor, below `min_reuses`,
+    /// below `min_confidence`). The caller plans fresh on `None`.
+    pub fn consult(
+        &self,
+        query_text: &str,
+        current_confidence: f64,
+    ) -> Option<ReplayedWorkflow> {
+        if !self.cfg.enabled {
+            return None;
+        }
+        let embedding = self
+            .embedder
+            .as_ref()?
+            .embed(query_text)
+            .ok()
+            .filter(|embedding| !embedding.is_empty())?;
+        self.replay
+            .try_replay(query_text, &embedding, current_confidence, &self.cfg)
+    }
+
+    /// Record a solved question-mode run: one step per hypothetical plus the
+    /// assemble step, mirroring the run's own decomposition.
+    /// `assembler_confidence` is the scorer's numeric score (**[A]**);
+    /// `accepted` is the scorer verdict — the local-model verification rung
+    /// for the `verified` provenance flag (human review stays the stronger
+    /// provenance; the calibrated write gate still applies). Never fails:
+    /// a disabled flag, a missing/failed embedding, or a gate refusal all
+    /// map to [`RecordOutcome::RejectedGate`] and the request is untouched.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_question_run(
+        &self,
+        user_text: &str,
+        hypotheticals: &[String],
+        answers: &[String],
+        assembled: &str,
+        assembler_confidence: f64,
+        accepted: bool,
+        audit_id: &str,
+        session_id: Option<&str>,
+    ) -> RecordOutcome {
+        if !self.cfg.enabled {
+            return RecordOutcome::RejectedGate;
+        }
+        let embedding = match &self.embedder {
+            Some(embedder) => match embedder.embed(user_text) {
+                Ok(embedding) if !embedding.is_empty() => embedding,
+                _ => return RecordOutcome::RejectedGate,
+            },
+            None => return RecordOutcome::RejectedGate,
+        };
+        let mut steps = Vec::with_capacity(hypotheticals.len() + 1);
+        for (i, hyp) in hypotheticals.iter().enumerate() {
+            steps.push(RecordedStep {
+                step_id: format!("hypothetical-{i}"),
+                prompt_lod0: hyp.clone(),
+                response_lod0: answers.get(i).cloned().unwrap_or_default(),
+                depends_on: vec![],
+                provides: vec![format!("hyp-answer-{i}")],
+                outcome_ok: accepted,
+            });
+        }
+        steps.push(RecordedStep {
+            step_id: "assemble".into(),
+            prompt_lod0: user_text.to_string(),
+            response_lod0: assembled.to_string(),
+            depends_on: (0..hypotheticals.len())
+                .map(|i| format!("hyp-answer-{i}"))
+                .collect(),
+            provides: vec!["solution".into()],
+            outcome_ok: accepted,
+        });
+        self.replay.record_workflow(
+            &*self.store,
+            None,
+            &embedding,
+            audit_id,
+            &steps,
+            assembler_confidence,
+            accepted,
+            session_id.unwrap_or(""),
+            lod0_hash_of(user_text),
+        )
+    }
+}
+
 /// Cosine distance (`1 − cosine`) to the nearest stored entry; `f64::INFINITY`
 /// (always novel) when the library is empty.
 fn nearest_distance(store: &dyn WorkflowStore, query_embedding: &[f32]) -> f64 {

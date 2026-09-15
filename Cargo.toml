@@ -14,7 +14,6 @@ members = [
     "src/dag",
     "src/types",
     "src/common-core",
-    "src/content-node",
     "src/vector-math",
     "src/search-vector",
     "src/rdf",

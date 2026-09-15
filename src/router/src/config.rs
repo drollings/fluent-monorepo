@@ -14,6 +14,7 @@ pub mod refine_policy;
 pub mod root;
 pub mod rounds;
 pub mod routing;
+pub mod compiled_tree;
 pub mod runtime;
 pub mod serving;
 pub mod tree_reload;
@@ -22,6 +23,7 @@ pub use self::addr::{hosts_equivalent, parse_bind_addr, validate_no_self_routing
 pub use self::builder::{NlpConfig, NlpOrdering, PipelineParams, TargetMatchMode};
 pub use self::refine_policy::{RouterRefineMode, RouterRefinePolicy};
 pub use self::classification::{ClassificationChild, ClassificationNode, ClassificationTree};
+pub use self::compiled_tree::{CompileError, CompiledTree};
 pub use self::escalation::{EscalationLadderConfig, FrontierConfig, GroupMember, ModelGroup};
 pub use self::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 pub use self::filters::{

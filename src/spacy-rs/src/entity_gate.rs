@@ -36,8 +36,23 @@ use crate::doc::{sentence_spans, Doc};
 use crate::labels::Upos;
 use crate::routing::extract_routing_signals;
 
+/// Calibration date for the entity-stamp numbers below: the labeled PROPN
+/// corpus (should-stamp spans vs ambiguous / already-routed / non-YaGO /
+/// low-score controls) the threshold was measured on. The gate tests pin the
+/// constant with the date; re-calibration updates both together.
+pub const ENTITY_CALIBRATION_DATE: &str = "2026-09-15";
+
+/// Calibrated gate-1 bar (**[A]** producer self-doubt): should-stamp scores
+/// sit at 0.80–0.95, the control group tops at 0.70 — 0.75 separates the
+/// bands with margin on both sides. The threshold stays an approval floor,
+/// never a ranking input.
+pub const CALIBRATED_SCORE_THRESHOLD: f64 = 0.75;
+
 /// The two-gate promotion policy. Stamping is per-pattern opt-in: nothing in
 /// the pipeline constructs this by default (candidates-only default holds).
+/// There is deliberately no `Default` impl and no production default value —
+/// callers pass an explicit threshold (the calibrated constant once M16
+/// wires the flag) so the gate stays opt-in.
 #[derive(Debug, Clone, Copy)]
 pub struct EntityStampGate {
     /// Gate-1 bar: candidate scores reach (`>=`) this to stamp. NaN never
@@ -207,3 +222,6 @@ fn sentence_concept_set(doc: &Doc, token: usize) -> HashSet<InterlinguaId> {
 #[cfg(test)]
 #[path = "../tests/entity_gate.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "../tests/entity_gate_cal.rs"]
+mod calibration_tests;

@@ -47,7 +47,7 @@ fn interned_session_and_role_indices_return_correct_sets() {
     assert_eq!(sess_a.len(), 2);
     assert_eq!(sess_a[0].request_id.as_deref(), Some("r2"));
     assert_eq!(sess_a[1].request_id.as_deref(), Some("r1"));
-    assert!(store.get_session_nodes("sess-b", 10).unwrap().len() == 1);
+    assert_eq!(store.get_session_nodes("sess-b", 10).unwrap().len(), 1);
     assert!(store.get_session_nodes("absent", 10).unwrap().is_empty());
 
     // role index (interned): all recorded requests carry role "user".
@@ -203,8 +203,8 @@ fn lod_text_not_found_returns_not_found() {
 // never chained from another cached tier (no summary-of-a-summary). The
 // recording backend captures each derivation's input: after LOD1 is cached,
 // deriving LOD2 must still be fed the LOD0 full text — not the LOD1 marker.
-// Any future extraction of the store behind `db` traits or reconciliation
-// with `content-node` slices must keep this table green.
+// Any future extraction of the store behind `db` traits must keep this
+// table green.
 #[test]
 fn lazy_tiers_derive_from_lod0_never_from_another_tier() {
     struct RecordingBackend {

@@ -4,8 +4,8 @@
 //!
 //! This is a **framework trait** crate — the Rust equivalent of a header-only
 //! interface.  It defines the core `Component`, `WorkUnit`, `FieldAccess`, and
-//! `Describable` traits that the DAG executor, Coral, and ContentNode crates
-//! implement and consume.
+//! `Describable` traits that the DAG executor and Coral crates implement and
+//! consume.
 //!
 //! **Design contract:**
 //! - No implementation logic beyond blanket impls and helper types
@@ -13,7 +13,7 @@
 //! - The thinness is intentional — value is in the trait boundaries
 //! - If a derive macro (`#[derive(FieldAccess)]`) is added later, it goes here
 //!
-//! Consumers: `fluent-dag`, `coral-context`, `content-node`
+//! Consumers: `fluent-dag`, `coral-context`
 
 extern crate self as fluent_wvr;
 
@@ -136,12 +136,20 @@ impl Component for Arc<dyn Component> {
         (**self).as_any()
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
-        Arc::get_mut(self)
-            .expect(
-                "Arc<dyn Component>::as_any_mut: Arc has multiple owners. \
-                 Use ComponentArcExt::try_as_any_mut to handle this case safely.",
-            )
-            .as_any_mut()
+        // Asymmetric by necessity: `&mut` cannot reach the inner component
+        // through a shared `Arc`. When uniquely owned, delegate to the inner
+        // component (unchanged behavior). When shared, hand out the `Arc`
+        // handle itself as `&mut dyn Any` — sound because
+        // `Arc<dyn Component>: Any` — so a downcast on a shared handle yields
+        // the `Arc`, not the inner. Use `ComponentArcExt::try_as_any_mut`
+        // for fallible inner access.
+        // (Two `get_mut` probes: the first borrow ends before the second
+        // begins, so the shared-`None` arm can reborrow `self`.)
+        if Arc::get_mut(self).is_some() {
+            Arc::get_mut(self).expect("probed unique").as_any_mut()
+        } else {
+            self as &mut dyn Any
+        }
     }
 }
 

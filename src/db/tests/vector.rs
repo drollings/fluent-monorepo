@@ -1,3 +1,6 @@
+// Exact asserts on pure-function outputs are deliberate: clamped conversions are exact.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 
 #[test]
@@ -297,7 +300,7 @@ fn q8_knn_orders_like_fp32() {
     let q_query = QuantizedEmbedding::from_f32(&query);
     let q_candidates: Vec<QuantizedEmbedding> =
         candidates.iter().map(|v| QuantizedEmbedding::from_f32(v)).collect();
-    let q8 = knn_brute_force_q8(&q_query, q_candidates.iter().enumerate().map(|(i, v)| (i, v)), 5);
+    let q8 = knn_brute_force_q8(&q_query, q_candidates.iter().enumerate(), 5);
     let fp32_ids: Vec<usize> = fp32.iter().map(|(id, _)| *id).collect();
     let q8_ids: Vec<usize> = q8.iter().map(|(id, _)| *id).collect();
     assert_eq!(q8_ids, fp32_ids, "q8 must preserve fp32 rank order here");

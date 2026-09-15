@@ -42,7 +42,7 @@ fn bench_hnsw_vs_brute(criterion: &mut Criterion) {
         }
         let brute_top3: Vec<usize> = knn_brute_force_q8(
             &QuantizedEmbedding::from_f32(&query),
-            quantized.iter().enumerate().map(|(i, q)| (i, q)),
+            quantized.iter().enumerate(),
             3,
         )
         .into_iter()
@@ -56,7 +56,7 @@ fn bench_hnsw_vs_brute(criterion: &mut Criterion) {
             bencher.iter(|| {
                 knn_brute_force_q8(
                     black_box(&QuantizedEmbedding::from_f32(&query)),
-                    black_box(quantized.iter().enumerate().map(|(i, q)| (i, q))),
+                    black_box(quantized.iter().enumerate()),
                     black_box(K),
                 )
             });

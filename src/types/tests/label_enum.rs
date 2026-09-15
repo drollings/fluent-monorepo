@@ -6,9 +6,9 @@
 
 #[derive(Debug, PartialEq)]
 enum SampleError {
-    UnknownLevel(String),
-    UnknownMark(String),
-    UnknownKind(String),
+    Level(String),
+    Mark(String),
+    Kind(String),
 }
 
 crate::label_enum! {
@@ -21,7 +21,7 @@ crate::label_enum! {
         High = 9 => "high",
     }
     err_ty SampleError,
-    err_ctor SampleError::UnknownLevel,
+    err_ctor SampleError::Level,
     normalize lowercase,
 }
 
@@ -34,7 +34,7 @@ label_enum! {
         BetaGlyph = 381 => "BETA_GLYPH",
     }
     err_ty SampleError,
-    err_ctor SampleError::UnknownMark,
+    err_ctor SampleError::Mark,
     normalize uppercase,
 }
 
@@ -48,7 +48,7 @@ label_enum! {
         Inside = 1 => "I",
     }
     err_ty SampleError,
-    err_ctor SampleError::UnknownKind,
+    err_ctor SampleError::Kind,
     normalize exact,
 }
 
@@ -62,7 +62,7 @@ fn lowercase_folds_and_reports_folded_text() {
     // The error carries the FOLDED text, matching the hand-written convention.
     assert_eq!(
         "NOPE".parse::<Level>(),
-        Err(SampleError::UnknownLevel("nope".to_string()))
+        Err(SampleError::Level("nope".to_string()))
     );
     // Discriminants survive the macro.
     assert_eq!(Level::Low as u8, 0);
@@ -75,7 +75,7 @@ fn uppercase_folds_up_and_keeps_serde_shape() {
     assert_eq!("beta_glyph".parse::<Mark>(), Ok(Mark::BetaGlyph));
     assert_eq!(
         "nope".parse::<Mark>(),
-        Err(SampleError::UnknownMark("NOPE".to_string()))
+        Err(SampleError::Mark("NOPE".to_string()))
     );
     assert_eq!(Mark::Alpha as u16, 380);
     // `rename_all = "UPPERCASE"` passes through verbatim: serde uppercases
@@ -95,7 +95,7 @@ fn exact_matches_verbatim_and_rejects_case_variants() {
     assert_eq!("I".parse::<Sigil>(), Ok(Sigil::Inside));
     assert_eq!(
         "i".parse::<Sigil>(),
-        Err(SampleError::UnknownKind("i".to_string()))
+        Err(SampleError::Kind("i".to_string()))
     );
     assert_eq!(Sigil::Inside as u8, 1);
 }

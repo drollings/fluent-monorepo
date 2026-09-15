@@ -1,3 +1,6 @@
+// Exact asserts on ranking scores are deliberate: deterministic scorer outputs.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use crate::ledger::ContentNodeLedger;
 use crate::ledger::nlp::record_parse_node;
@@ -84,8 +87,7 @@ fn score_matches_manual_dot() {
 #[test]
 fn scorer_orders_deterministically() {
     let scorer = SalienceScorer::new();
-    let mut signals = vec![
-        SalienceSignal {
+    let mut signals = [SalienceSignal {
             frame_frequency: 0.5,
             interlingua_centrality: 0.9,
             recency: 0.1,
@@ -102,8 +104,7 @@ fn scorer_orders_deterministically() {
             interlingua_centrality: 0.1,
             recency: 1.0,
             reference_count: 0.9,
-        },
-    ];
+        }];
     let scores: Vec<f64> = signals.iter().map(|s| scorer.score(s)).collect();
     signals.sort_by(|a, b| {
         scorer
@@ -281,6 +282,8 @@ impl ChatBackend for CaptureBackend {
     }
 }
 
+// The `Option` wrap is required: `rank_candidates` takes an optional-label callback.
+#[allow(clippy::unnecessary_wraps)]
 fn label_of(_id: NodeId) -> Option<String> {
     Some("a candidate".into())
 }
@@ -379,7 +382,7 @@ fn rank_candidates_tied_salience_breaks_by_id_asc() {
 fn rank_candidates_empty_input_yields_empty() {
     // M7.1: no candidates → no results, and no model call even with a backend.
     let source = fixture(&[]);
-    let backend = Arc::new(CaptureBackend::new(r#"[]"#));
+    let backend = Arc::new(CaptureBackend::new(r"[]"));
     let ranked = rank_candidates(
         "query",
         &[],
@@ -459,9 +462,8 @@ fn parse_ranking_keeps_only_shortlist_ids() {
 
 #[test]
 fn ranking_scoped_does_not_scan_unrelated_session() {
-    // Control: 10k-node session stub — scoped load is O(K log N) not O(N)
-    // This stub asserts the API shape; wall-time measured in calibration.
-    assert!(true);
+    // Control: 10k-node session stub — scoped load is O(K log N) not O(N).
+    // Shape placeholder only; wall-time measured in calibration.
 }
 
 #[test]

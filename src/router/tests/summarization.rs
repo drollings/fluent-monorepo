@@ -1,3 +1,6 @@
+// Exact asserts on parsed scorer outputs are deliberate.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use crate::test_stubs::StubChatBackend;
 

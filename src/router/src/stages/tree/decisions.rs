@@ -2,7 +2,7 @@
 //! materialize the `tree_path` audit trail (`node_decision` family) and the
 //! final pipeline-handoff decision (`final_decision`).
 
-use crate::config::ClassificationNode;
+use crate::config::compiled_tree::{CompiledChild, CompiledNode};
 use crate::pipeline::RoutingTarget;
 use crate::pipeline_types::{PipelineStage, StageDecision, StageMetadata, StageVerdict};
 use crate::target_match::AssessmentRecord;
@@ -97,12 +97,10 @@ pub fn final_decision(outcome: TreeOutcome, visited: Vec<StageDecision>) -> Tree
     }
 }
 
-pub fn fallback_child(
-    children: &[crate::config::ClassificationChild],
-) -> Option<&crate::config::ClassificationChild> {
+pub(crate) fn fallback_child(children: &[CompiledChild]) -> Option<&CompiledChild> {
     children
         .iter()
-        .find(|c| matches!(c.node, ClassificationNode::Fallback { .. }))
+        .find(|c| matches!(c.node, CompiledNode::Fallback { .. }))
 }
 
 /// Build the `tree_path` decision for a resolved terminal. Additive over the

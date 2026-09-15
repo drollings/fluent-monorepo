@@ -90,7 +90,7 @@ fn parse_node_metadata_carries_interlingua_frame() {
     )
     .metadata
     .expect("metadata");
-    assert!(without.get("token_confidence").is_none_or(|v| v.is_null()));
+    assert!(without.get("token_confidence").is_none_or(serde_json::Value::is_null));
 }
 
 #[test]

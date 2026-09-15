@@ -279,8 +279,8 @@ impl Future for SupervisedBatch {
                     this.summary
                         .completed
                         .push(SupervisedBatchEvent::Completed { name, output });
-                    this.active_count -= 1;
-                    budget -= 1;
+                    this.active_count = this.active_count.saturating_sub(1);
+                    budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(Some(Ok((id, Err(WorkError::Timeout { .. }))))) => {
                     let name = this
@@ -292,8 +292,8 @@ impl Future for SupervisedBatch {
                         name,
                         reason: CancelReason::Timeout,
                     });
-                    this.active_count -= 1;
-                    budget -= 1;
+                    this.active_count = this.active_count.saturating_sub(1);
+                    budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(Some(Ok((id, Err(e))))) => {
                     let name = this
@@ -304,8 +304,8 @@ impl Future for SupervisedBatch {
                     this.summary
                         .failed
                         .push(SupervisedBatchEvent::Failed { name, error: e });
-                    this.active_count -= 1;
-                    budget -= 1;
+                    this.active_count = this.active_count.saturating_sub(1);
+                    budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(Some(Err(e))) => {
                     let name = this
@@ -334,8 +334,8 @@ impl Future for SupervisedBatch {
                             info: "task terminated abnormally".into(),
                         });
                     }
-                    this.active_count -= 1;
-                    budget -= 1;
+                    this.active_count = this.active_count.saturating_sub(1);
+                    budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(None) => {
                     this.done = true;

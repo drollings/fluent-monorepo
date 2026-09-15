@@ -1,5 +1,8 @@
 //! P6 target (4) probe: inflected-query recall, fused (L1+L2) vs FTS-only.
 //!
+//! Exact asserts on measured recall are deliberate.
+#![allow(clippy::float_cmp)]
+//!
 //! Method (mirrors zvec `benchmarks/`): a morphology-heavy micro-corpus is
 //! ingested once with the hermetic rule-lemmatizer pipeline; each probe
 //! query names an inflected form ABSENT from the corpus text. P@3 is

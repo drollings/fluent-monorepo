@@ -1,4 +1,4 @@
-use super::stub::StubServer;
+use super::stub::{StubHandler, StubServer};
 use super::*;
 
 use std::collections::HashMap;
@@ -305,7 +305,7 @@ fn management_base_url_strips_chat_completions_suffix() {
 
 #[tokio::test]
 async fn client_list_parses_envelope_and_bare_array() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (
@@ -332,7 +332,7 @@ async fn client_list_parses_envelope_and_bare_array() {
     assert_eq!(list.instances.len(), 2);
     assert_eq!(list.instances[0].id, "swarm0");
     assert_eq!(list.instances[0].group, "swarm");
-    assert_eq!(list.instances[1].pinned, true);
+    assert!(list.instances[1].pinned);
     assert_eq!(list.total.total, 118226080);
     assert_eq!(list.total.model, 115343360);
 }
@@ -340,7 +340,7 @@ async fn client_list_parses_envelope_and_bare_array() {
 #[tokio::test]
 async fn client_mutating_calls_hit_expected_paths() {
     let requests_c = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, _body| {
             requests_c.lock().unwrap().push((method.into(), path.into()));
             if path.ends_with("/snapshots") {
@@ -393,7 +393,7 @@ async fn client_mutating_calls_hit_expected_paths() {
 
 #[tokio::test]
 async fn client_snapshot_wire_is_per_instance() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances/work/snapshots" {
                 (
@@ -445,7 +445,7 @@ async fn client_snapshot_wire_is_per_instance() {
 
 #[tokio::test]
 async fn client_classifies_409_duplicate_and_5xx_transient() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if path == "/instances" && method == "POST" {
                 (409, r#"{"error":{"message":"duplicate"}}"#.into())
@@ -475,7 +475,7 @@ async fn client_abort_posts_slot_id_and_defaults_to_zero() {
     let seen: Arc<std::sync::Mutex<Vec<(String, String, String)>>> =
         Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen2 = seen.clone();
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, body| {
             seen2
                 .lock()
@@ -516,7 +516,7 @@ async fn client_talks_directly_to_its_server() {
     let seen: Arc<std::sync::Mutex<Vec<(String, String, String)>>> =
         Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen2 = seen.clone();
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, body| {
             seen2.lock().unwrap().push((method.into(), path.into(), body.into()));
             (200, "{}".into())
@@ -553,7 +553,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
         instance_info("ledger", "ledger", true, 1),
         instance_info("swarm0", "swarm", true, 5),
     ];
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (200, serde_json::to_string(&existing).unwrap())
@@ -648,7 +648,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
 async fn ensure_instance_creates_missing_unpinned_on_demand() {
     // Server is empty; `scratch` is configured but unpinned -> absent at
     // boot, created on demand by ensure_instance.
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (200, r#"{"instances":[],"snapshots":[],"total":{"total":0}}"#.into())
@@ -691,7 +691,7 @@ async fn ensure_instance_creates_missing_unpinned_on_demand() {
 
 #[tokio::test]
 async fn ensure_instance_skips_when_already_present_or_unknown() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (200, serde_json::to_string(&[instance_info("scratch", "scratch", false, 7)]).unwrap())
@@ -742,7 +742,7 @@ async fn list_accepts_wrapped_instances_object() {
     ];
     let payload = serde_json::json!({ "instances": existing });
     let payload_str = payload.to_string();
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+    let handler: StubHandler =
         Arc::new(move |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (200, payload_str.clone())
@@ -759,7 +759,7 @@ async fn list_accepts_wrapped_instances_object() {
 
 #[tokio::test]
 async fn reconcile_tolerates_duplicate_create() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (200, "[]".into())
@@ -812,7 +812,7 @@ async fn residency_evicts_lru_unpinned_and_never_pinned() {
         "snapshots": [],
         "total": { "model": 5000, "context": 2500, "compute": 2500, "total": 10000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let policy = sidecar_policy();
     let manager = Arc::new(InstanceManager::new(
         "base",
@@ -859,7 +859,7 @@ async fn residency_eviction_frees_largest_lru_context_first() {
         "snapshots": [],
         "total": { "model": 5000, "context": 2000, "compute": 2000, "total": 9000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.evict_batch = 1;
     let manager = Arc::new(InstanceManager::new(
@@ -890,7 +890,7 @@ async fn llama_context_evict_snapshots_resume_marked_context_before_destroy() {
     // is the snapshot-before-destroy regression net.
     use fluent_llm::runtime::LlmContext as _LlmContext;
 
-    let stub = residency_stub(serde_json::json!({
+    let stub = residency_stub(&serde_json::json!({
         "instances": [],
         "snapshots": [],
         "total": { "model": 0, "context": 0, "compute": 0, "total": 0 }
@@ -938,7 +938,7 @@ async fn residency_no_eviction_when_free_vram_within_budget() {
         "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
     });
     // Empty rows -> nothing resident -> no eviction.
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let policy = sidecar_policy();
     let manager = Arc::new(InstanceManager::new(
         "base",
@@ -969,7 +969,7 @@ async fn residency_without_budget_never_evicts() {
         "snapshots": [],
         "total": { "model": 5000, "context": 2000, "compute": 2000, "total": 9000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.vram_total_bytes = None;
     policy.minimum_remaining_vram = None;
@@ -991,7 +991,7 @@ async fn residency_without_budget_never_evicts() {
 
 #[tokio::test]
 async fn ensure_group_allocates_fresh_instance_from_profile() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "POST" && path == "/instances" {
                 (201, "{}".into())
@@ -1037,7 +1037,7 @@ async fn ensure_group_allocates_fresh_instance_from_profile() {
 #[tokio::test]
 async fn ensure_group_ready_is_noop_when_member_present() {
     // A resident member -> no management write, idempotent.
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (
@@ -1090,7 +1090,7 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
     // The pinned `swarm` group has no resident member while the default
     // `ledger` instance is resident -> reconcile creates only the missing
     // pinned member and never re-creates a resident one.
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (
@@ -1171,7 +1171,7 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
 async fn ensure_group_ready_allocates_unpinned_group_when_absent() {
     // Unpinned group with no resident member -> a fresh member is allocated
     // on demand (the "even unpinned, load on demand" guarantee).
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (
@@ -1228,7 +1228,7 @@ async fn pool_aggregates_models_with_rewritten_ids() {
     // Two managed models, each served by its own stub: `swarm` (ledger
     // default + scratch) and `qwen` (work). Envelopes use the server's own
     // (bare) instance ids and byte totals.
-    let handler_a: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler_a: StubHandler = Arc::new(
         move |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 let ledger = InstanceInfo {
@@ -1252,7 +1252,7 @@ async fn pool_aggregates_models_with_rewritten_ids() {
             }
         },
     );
-    let handler_b: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler_b: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (
@@ -1327,7 +1327,7 @@ async fn pool_aggregates_models_with_rewritten_ids() {
 async fn pool_scopes_aggregate_to_one_model() {
     use crate::instances::stub::StubServer;
 
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (
@@ -1367,9 +1367,9 @@ async fn pool_scopes_aggregate_to_one_model() {
 
 /// Build a stub server that serves a fixed `/instances` envelope and
 /// records destroys; DELETE answers 200.
-fn residency_stub(envelope: serde_json::Value) -> StubServer {
+fn residency_stub(envelope: &serde_json::Value) -> StubServer {
     let envelope = envelope.to_string();
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, _body| {
             if method == "GET" && path == "/instances" {
                 (200, envelope.clone())
@@ -1413,8 +1413,8 @@ async fn pool_residency_evicts_lru_largest_unpinned_across_managers() {
         "snapshots": [],
         "total": { "model": 0, "context": 0, "compute": 0, "total": 0 }
     });
-    let stub_a = residency_stub(env_a);
-    let stub_b = residency_stub(env_b);
+    let stub_a = residency_stub(&env_a);
+    let stub_b = residency_stub(&env_b);
     let policy = sidecar_policy();
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), manager_for_stub(&stub_a));
@@ -1451,7 +1451,7 @@ async fn pool_residency_no_eviction_within_budget() {
         "snapshots": [],
         "total": { "model": 4000, "context": 500, "compute": 500, "total": 5000 }
     });
-    let stub = residency_stub(env);
+    let stub = residency_stub(&env);
     let policy = sidecar_policy();
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), manager_for_stub(&stub));
@@ -1469,7 +1469,7 @@ async fn pool_residency_no_eviction_within_budget() {
 /// is a loud rejection, and no need / no profile is a no-op.
 #[tokio::test]
 async fn resize_to_demand_grows_within_max_ctx_and_refuses_beyond() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "POST" && path.ends_with("/resize") {
                 (200, r#"{"success": true}"#.into())
@@ -1555,7 +1555,7 @@ async fn pool_residency_without_budget_never_evicts() {
         "snapshots": [],
         "total": { "model": 4000, "context": 500, "compute": 500, "total": 5000 }
     });
-    let stub = residency_stub(env);
+    let stub = residency_stub(&env);
     let manager = Arc::new(InstanceManager::new(
         "swarm",
         InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
@@ -1599,9 +1599,8 @@ fn build_instance_managers_rejects_duplicate_name_within_model() {
             }
         }))
         .unwrap();
-    let err = match build_instance_managers(&config, None) {
-        Err(e) => e,
-        Ok(_) => panic!("duplicate-name config must fail validation"),
+    let Err(err) = build_instance_managers(&config, None) else {
+        panic!("duplicate-name config must fail validation")
     };
     assert!(
         err.contains("duplicate instance name 'swarm0'"),
@@ -1670,9 +1669,9 @@ fn build_instance_managers_is_empty_without_instances() {
 
 /// A stub that 404s `/instances` (the fork's behavior for a server started
 /// without `--instance` grammar) and answers `/props`.
-fn plain_stub(props: serde_json::Value) -> StubServer {
+fn plain_stub(props: &serde_json::Value) -> StubServer {
     let props = props.to_string();
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         move |method, path, _body| {
             if method == "GET" && path == "/props" {
                 (200, props.clone())
@@ -1702,7 +1701,7 @@ async fn plain_model_footprint_reports_weights_when_awake() {
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 16384 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 10_000_000_000);
     let (envelope, plain) = manager.list_with_fallback().await.expect("fallback");
     assert!(plain, "a 404 on /instances is synthesized");
@@ -1722,7 +1721,7 @@ async fn plain_model_footprint_zeroes_weights_when_sleeping() {
         "is_sleeping": true,
         "default_generation_settings": { "n_ctx": 16384 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 10_000_000_000);
     let (envelope, plain) = manager.list_with_fallback().await.expect("fallback");
     assert!(plain);
@@ -1735,7 +1734,7 @@ async fn plain_model_footprint_zeroes_weights_when_sleeping() {
 #[tokio::test]
 async fn plain_model_footprint_none_when_server_down() {
     // A down (never-loaded) plain server: /props is unreachable -> None.
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+    let handler: StubHandler =
         Arc::new(|_m, _p, _b| (404, "{}".into()));
     let stub = StubServer::start(handler);
     let manager = plain_manager(&stub, 1_000);
@@ -1748,7 +1747,7 @@ async fn aggregate_includes_plain_model_footprint() {
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let mut managers = HashMap::new();
     managers.insert("qwen".into(), plain_manager(&stub, 5_000_000_000));
     let pool = InstancePool::from_managers(managers, None);
@@ -1781,7 +1780,7 @@ async fn list_models_includes_plain_model_entry() {
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let mut managers = HashMap::new();
     managers.insert("qwen".into(), plain_manager(&stub, 5_000_000_000));
     let pool = InstancePool::from_managers(managers, None);
@@ -1798,7 +1797,7 @@ async fn touch_advances_plain_model_last_used() {
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 1_000);
     let before = manager.plain_footprint().await.expect("footprint").last_used;
     manager.touch();
@@ -1815,7 +1814,7 @@ async fn residency_polls_plain_models_and_unloads_over_budget() {
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let mut policy = sidecar_policy();
     policy.vram_total_bytes = Some(4000);
     policy.minimum_remaining_vram = Some(2000);
@@ -1894,8 +1893,8 @@ async fn make_room_for_no_eviction_within_budget() {
         "snapshots": [],
         "total": { "model": 2000, "context": 500, "compute": 500, "total": 3000 }
     });
-    let swarm_stub = residency_stub(swarm_envelope);
-    let gemma_stub = plain_stub(serde_json::json!({
+    let swarm_stub = residency_stub(&swarm_envelope);
+    let gemma_stub = plain_stub(&serde_json::json!({
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     }));
@@ -1947,7 +1946,7 @@ async fn make_room_for_evicts_unpinned_instance_over_budget() {
         "snapshots": [],
         "total": { "model": 2000, "context": 500, "compute": 500, "total": 3000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.vram_total_bytes = Some(4000);
     let manager = Arc::new(InstanceManager::new(
@@ -1986,8 +1985,8 @@ async fn make_room_for_excludes_target_and_skips_without_supervisor() {
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     });
-    let qwen_stub = plain_stub(props.clone());
-    let gemma_stub = plain_stub(props);
+    let qwen_stub = plain_stub(&props.clone());
+    let gemma_stub = plain_stub(&props);
     let mut policy = sidecar_policy();
     policy.vram_total_bytes = Some(4000);
     let qwen = Arc::new(
@@ -2027,11 +2026,11 @@ async fn is_sleeping_reflects_fork_state_and_skips_instance_models() {
         "is_sleeping": true,
         "default_generation_settings": { "n_ctx": 8192 }
     });
-    let stub = plain_stub(props);
+    let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 1000);
     assert_eq!(manager.is_sleeping().await, Some(true), "fork reports sleeping");
 
-    let stub2 = plain_stub(serde_json::json!({
+    let stub2 = plain_stub(&serde_json::json!({
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 8192 }
     }));
@@ -2040,7 +2039,7 @@ async fn is_sleeping_reflects_fork_state_and_skips_instance_models() {
 
     // Instance models never poll /props: their pinned contexts keep the
     // weights resident, so the answer is always Some(false).
-    let stub3 = plain_stub(serde_json::json!({ "is_sleeping": true }));
+    let stub3 = plain_stub(&serde_json::json!({ "is_sleeping": true }));
     let instance_manager = InstanceManager::new(
         "swarm",
         InstanceClient::new(reqwest::Client::new(), stub3.base_url(), None),
@@ -2107,7 +2106,7 @@ async fn aggregate_reports_resume_overlay() {
         "snapshots": [],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let manager = manager_for_stub(&stub);
     manager.set_resume("agent", true);
     let mut managers = HashMap::new();
@@ -2133,7 +2132,7 @@ async fn aggregate_reports_weights_identity_overlay() {
         "snapshots": [],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let manager = Arc::new(
         InstanceManager::new(
             "swarm",
@@ -2175,7 +2174,7 @@ async fn eviction_snapshots_resume_context_before_destroy() {
         "snapshots": [],
         "total": { "model": 5000, "context": 3000, "compute": 3000, "total": 11000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.vram_total_bytes = Some(4000); // budget = 4000 - 2000 = 2000
     let manager = Arc::new(InstanceManager::new(
@@ -2222,7 +2221,7 @@ async fn expire_resume_clears_idle_context_and_deletes_snapshot() {
         "snapshots": [],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.resume_ttl_s = Some(60);
     let manager = Arc::new(InstanceManager::new(
@@ -2307,7 +2306,7 @@ async fn snapshot_retention_deletes_only_expired_non_resume() {
         ],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.snapshot_ttl_s = Some(3600);
     let mut managers = HashMap::new();
@@ -2335,7 +2334,7 @@ async fn snapshot_retention_budget_deletes_oldest_first() {
         ],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut policy = sidecar_policy();
     policy.snapshot_budget_bytes = Some(10_000);
     let mut managers = HashMap::new();
@@ -2358,7 +2357,7 @@ async fn snapshot_retention_disabled_without_limits() {
         "snapshots": [ snapshot_entry("sess-old", Some("agent"), 6000, 100) ],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let policy = sidecar_policy();
     let mut managers = HashMap::new();
     managers.insert("base".into(), retention_manager(&stub, &policy));
@@ -2378,7 +2377,7 @@ async fn set_resume_false_deletes_snapshot() {
         "snapshots": [],
         "total": { "model": 1000, "context": 500, "compute": 500, "total": 2000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), manager_for_stub(&stub));
     let pool = InstancePool::from_managers(managers, None);
@@ -2413,7 +2412,7 @@ async fn whole_model_is_largest_footprint_candidate() {
         "snapshots": [],
         "total": { "model": 8000, "context": 2000, "compute": 2000, "total": 12000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let policy = sidecar_policy();
     let mut managers = HashMap::new();
     managers.insert("base".into(), manager_for_stub(&stub));
@@ -2446,7 +2445,7 @@ async fn residency_all_pinned_over_budget_evicts_nothing() {
         "snapshots": [],
         "total": { "model": 5000, "context": 2500, "compute": 2500, "total": 10000 }
     });
-    let stub = residency_stub(envelope);
+    let stub = residency_stub(&envelope);
     let policy = sidecar_policy();
     let mut managers = HashMap::new();
     managers.insert("base".into(), manager_for_stub(&stub));
@@ -2503,7 +2502,7 @@ async fn one_shot_evict_destroys_without_snapshot() {
     // never errors.
     use fluent_llm::runtime::LlmContext as _LlmContext;
 
-    let stub = residency_stub(serde_json::json!({
+    let stub = residency_stub(&serde_json::json!({
         "instances": [],
         "snapshots": [],
         "total": { "model": 0, "context": 0, "compute": 0, "total": 0 }
@@ -2548,7 +2547,7 @@ async fn session_evict_snapshots_before_destroy() {
     // snapshot-before-destroy order through the real adapter.
     use fluent_llm::runtime::LlmContext as _LlmContext;
 
-    let stub = residency_stub(serde_json::json!({
+    let stub = residency_stub(&serde_json::json!({
         "instances": [],
         "snapshots": [],
         "total": { "model": 0, "context": 0, "compute": 0, "total": 0 }

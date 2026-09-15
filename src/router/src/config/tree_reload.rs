@@ -15,12 +15,13 @@
 //! in as a new monotonic version (audit-logged), and `rollback` restores the
 //! previous generation exactly once (one-reload depth).
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::config::classification::{
     default_coherence_threshold, default_safety_threshold, ClassificationNode,
     ClassificationTree,
 };
+use crate::config::compiled_tree::CompiledTree;
 
 /// Errors from regeneration and reload.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -50,13 +51,26 @@ pub enum ReloadError {
     NoHistory,
 }
 
-/// A live tree generation: monotonic version + content + the alias map that
-/// covers its topology change (empty for tuning-only reloads).
+/// A live tree generation: monotonic version + content + its precompiled
+/// form (compiled once per accepted version, shared by all readers of the
+/// generation) + the alias map that covers its topology change (empty for
+/// tuning-only reloads).
 #[derive(Debug, Clone)]
 struct TreeGeneration {
     version: u64,
     tree: ClassificationTree,
+    compiled: Arc<CompiledTree>,
     aliases: std::collections::HashMap<String, String>,
+}
+
+/// Precompile a tree for publication in a generation. Invalid patterns are
+/// collected as warn-and-non-match entries, never errors, so this
+/// expectation only fires on a defensive RegexSet failure that cannot occur.
+fn precompile(tree: &ClassificationTree) -> Arc<CompiledTree> {
+    Arc::new(
+        tree.compile()
+            .expect("classification tree precompiles"),
+    )
 }
 
 /// The versioned live holder. `Send + Sync`; snapshots clone under a read
@@ -73,6 +87,7 @@ impl VersionedTree {
         Self {
             current: RwLock::new(TreeGeneration {
                 version: 1,
+                compiled: precompile(&tree),
                 tree,
                 aliases: std::collections::HashMap::new(),
             }),
@@ -93,6 +108,14 @@ impl VersionedTree {
         (guard.version, guard.tree.clone())
     }
 
+    /// The live generation's precompiled tree with its version. Readers
+    /// share the compiled form — no per-request compilation, no torn reads:
+    /// the swap publishes raw and compiled together.
+    pub fn current_compiled(&self) -> (u64, Arc<CompiledTree>) {
+        let guard = common_core::sync::lock_read(&self.current);
+        (guard.version, Arc::clone(&guard.compiled))
+    }
+
     /// Swap in a regenerated tree as the next version. Refuses identical
     /// content ([`ReloadError::NoChange`]) and topology changes
     /// ([`ReloadError::TopologyMismatch`]); every accepted reload is
@@ -100,6 +123,7 @@ impl VersionedTree {
     /// version.
     pub fn reload(&self, tree: ClassificationTree, reason: &str) -> Result<u64, ReloadError> {
         let (live_version, live_tree) = self.current();
+        let live_compiled = self.current_compiled().1;
         if tree == live_tree {
             return Err(ReloadError::NoChange);
         }
@@ -112,10 +136,12 @@ impl VersionedTree {
         *common_core::sync::lock_write(&self.previous) = Some(TreeGeneration {
             version: live_version,
             tree: live_tree,
+            compiled: live_compiled,
             aliases: std::collections::HashMap::new(),
         });
         *common_core::sync::lock_write(&self.current) = TreeGeneration {
             version,
+            compiled: precompile(&tree),
             tree,
             aliases: std::collections::HashMap::new(),
         };
@@ -151,6 +177,7 @@ impl VersionedTree {
         aliases: &std::collections::HashMap<String, String>,
     ) -> Result<u64, ReloadError> {
         let (live_version, live_tree) = self.current();
+        let live_compiled = self.current_compiled().1;
         if tree == live_tree {
             return Err(ReloadError::NoChange);
         }
@@ -195,10 +222,12 @@ impl VersionedTree {
         *common_core::sync::lock_write(&self.previous) = Some(TreeGeneration {
             version: live_version,
             tree: live_tree,
+            compiled: live_compiled,
             aliases: std::collections::HashMap::new(),
         });
         *common_core::sync::lock_write(&self.current) = TreeGeneration {
             version,
+            compiled: precompile(&tree),
             tree,
             aliases: aliases.clone(),
         };
@@ -239,6 +268,7 @@ impl VersionedTree {
         *common_core::sync::lock_write(&self.current) = TreeGeneration {
             version,
             tree: prev.tree,
+            compiled: prev.compiled,
             aliases: prev.aliases,
         };
         let _ = live_tree;

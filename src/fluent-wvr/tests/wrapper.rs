@@ -27,6 +27,22 @@ fn retry_call_always_fails() {
 }
 
 #[test]
+fn retry_call_zero_attempts_returns_err_without_panic() {
+    // The `max_attempts >= 1` precondition is a `debug_assert!`: release
+    // builds skip it and the loop returns `Err` after the first attempt
+    // (no serving-path panic), while debug builds trap loudly. Pin both.
+    if cfg!(debug_assertions) {
+        let caught = std::panic::catch_unwind(|| {
+            let _: Result<RetryResult<i32>, ()> = retry_call(0, 1, || Err(()));
+        });
+        assert!(caught.is_err(), "debug builds must trap the violated precondition");
+    } else {
+        let result: Result<RetryResult<i32>, ()> = retry_call(0, 1, || Err(()));
+        assert!(result.is_err());
+    }
+}
+
+#[test]
 fn retry_call_jittered_delays_are_non_deterministic() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Instant;

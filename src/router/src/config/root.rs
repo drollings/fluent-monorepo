@@ -2500,6 +2500,12 @@ pub struct OverlayConfig {
     /// Minimum cosine similarity for an entity-link candidate to be accepted.
     #[serde(default = "default_entity_link_threshold")]
     pub entity_link_threshold: f64,
+    /// Opt-in parse-time entity promotion (M16): when `true`, accepted
+    /// entity-link candidates stamp parse-time ids through the calibrated
+    /// `EntityStampGate`. `false` (default) keeps the candidates-only plane —
+    /// nothing is ever stamped.
+    #[serde(default)]
+    pub entity_promotion_enabled: bool,
     /// Bounded overlay-queue capacity (the `WorkerPool` queue cap).
     #[serde(default = "default_overlay_queue_capacity")]
     pub queue_capacity: usize,

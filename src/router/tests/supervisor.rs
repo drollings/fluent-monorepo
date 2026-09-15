@@ -382,8 +382,7 @@ fn write_crashing_llama(counter: &Path) -> PathBuf {
 
 fn spawn_count(counter: &Path) -> usize {
     std::fs::read_to_string(counter)
-        .map(|s| s.lines().count())
-        .unwrap_or(0)
+        .map_or(0, |s| s.lines().count())
 }
 
 async fn wait_for_spawn_count(counter: &Path, expected: usize, timeout: Duration) {
@@ -440,7 +439,7 @@ async fn liveness_restarts_hung_server_but_leaves_healthy_one() {
     // Cross the threshold: the hung child is killed and respawned.
     wait_for_spawn_count(&counter, 2, Duration::from_secs(8)).await;
     supervise.abort();
-    let _ = server.stop().await;
+    let () = server.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -596,9 +595,8 @@ fn evicted_registry_key_is_a_typed_boot_error_not_a_panic() {
     sup.register_test_server("ghost");
     assert!(sup.live_server("ghost").is_ok());
     sup.servers.remove(&"ghost".to_string());
-    let err = match sup.live_server("ghost") {
-        Ok(_) => panic!("evicted key must error"),
-        Err(err) => err,
+    let Err(err) = sup.live_server("ghost") else {
+        panic!("evicted key must error")
     };
     assert!(err.contains("ghost"), "error names the key: {err}");
 }

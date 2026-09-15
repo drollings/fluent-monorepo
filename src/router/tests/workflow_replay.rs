@@ -329,3 +329,144 @@ fn similarity_bands_hold_for_fixture() {
     assert!(far < 0.5, "far is distant: {far}");
     assert!(cross < 0.5, "other intent is distant: {cross}");
 }
+
+fn recorder_with(
+    enabled: bool,
+    embedder: Option<std::sync::Arc<dyn fluent_llm::EmbeddingProvider>>,
+) -> (WorkflowRecorder, std::sync::Arc<InMemoryWorkflowStore>) {
+    let store = std::sync::Arc::new(InMemoryWorkflowStore::new());
+    let cfg = ReplayConfig {
+        enabled,
+        ..ReplayConfig::default()
+    };
+    let recorder = WorkflowRecorder::new(
+        std::sync::Arc::clone(&store) as std::sync::Arc<dyn WorkflowStore>,
+        embedder,
+        cfg,
+    );
+    (recorder, store)
+}
+
+fn hash_embedder() -> std::sync::Arc<dyn fluent_llm::EmbeddingProvider> {
+    std::sync::Arc::new(crate::test_stubs::HashEmbedder::new(64))
+}
+
+fn question_run() -> (Vec<String>, Vec<String>, String) {
+    (
+        vec!["hypothetical one".into(), "hypothetical two".into()],
+        vec!["first answer".into(), "second answer".into()],
+        "assembled solution".into(),
+    )
+}
+
+#[test]
+fn recorder_stores_successful_frontier_run_once() {
+    let (recorder, store) = recorder_with(true, Some(hash_embedder()));
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.9,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::Stored);
+    assert_eq!(store.nearest(&hash_embedder().embed("how do i bake bread").unwrap(), 3).len(), 1);
+}
+
+#[test]
+fn recorder_is_noop_when_disabled() {
+    let (recorder, store) = recorder_with(false, Some(hash_embedder()));
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.9,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    assert!(store.nearest(&emb_a(), 3).is_empty());
+}
+
+#[test]
+fn recorder_is_noop_when_write_gate_rejects() {
+    // Accepted by the scorer (verified rung) but below the calibrated [A]
+    // floor — the write gate refuses.
+    let (recorder, store) = recorder_with(true, Some(hash_embedder()));
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.75,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    assert!(store.nearest(&emb_a(), 3).is_empty());
+}
+
+#[test]
+fn recorder_is_noop_without_embedder() {
+    let (recorder, store) = recorder_with(true, None);
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.9,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    assert!(store.nearest(&emb_a(), 3).is_empty());
+}
+
+#[test]
+fn recorded_run_replays_for_near_neighbor_not_dissimilar() {
+    let (recorder, _) = recorder_with(true, Some(hash_embedder()));
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.9,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::Stored);
+    recorder.replay().note_reuse_outcome("audit-q", true);
+    recorder.replay().note_reuse_outcome("audit-q", true);
+
+    let cfg = ReplayConfig::calibrated();
+    let embedder = hash_embedder();
+    // Near-neighbor (identical text → identical embedding) replays.
+    let near_emb = embedder.embed("how do i bake bread").unwrap();
+    let hit = recorder
+        .replay()
+        .try_replay("how do i bake bread", &near_emb, 0.99, &cfg)
+        .expect("near-neighbor replays");
+    assert_eq!(hit.audit_id, "audit-q");
+    // Dissimilar query does not.
+    let far_emb = embedder.embed("quantum chromodynamics lecture notes").unwrap();
+    assert!(
+        recorder
+            .replay()
+            .try_replay("quantum chromodynamics lecture notes", &far_emb, 0.99, &cfg)
+            .is_none(),
+        "dissimilar query must not replay"
+    );
+}

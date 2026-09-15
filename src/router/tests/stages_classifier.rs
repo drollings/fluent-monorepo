@@ -1,3 +1,6 @@
+// Exact asserts on parsed classifier scores are deliberate: JSON round-trips are exact.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 
 /// The hand-built classifier response schema must cover exactly the fields
@@ -927,6 +930,99 @@ fn reject_reason_names_the_failing_axis() {
         "reason names the axis, got: {}",
         decision.reason
     );
+}
+
+/// Byte-exact pin of the flat classifier system prompt for a representative
+/// config: sorted route list, `{coherence_threshold}`/`{safety_threshold}`
+/// substitution, dispatch rules, and the `action` output schema. Any
+/// rendering change must update this golden deliberately.
+#[test]
+fn flat_system_prompt_is_byte_identical() {
+    use crate::config::routing::RouteRef;
+    let routes = [
+        (
+            "local".to_string(),
+            RouteRef {
+                group: "local".into(),
+                role: None,
+                pipelines: vec!["default".into()],
+                description: String::new(),
+                always_route: false,
+            },
+        ),
+        (
+            "code".to_string(),
+            RouteRef {
+                group: "code".into(),
+                role: None,
+                pipelines: vec!["default".into()],
+                description: "programming and implementation".into(),
+                always_route: true,
+            },
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let routing_config = RoutingConfig {
+        routes,
+        models: std::collections::HashMap::new(),
+        model_groups: std::collections::HashMap::new(),
+        system_prompt: "Route with care (coherence {coherence_threshold}, safety {safety_threshold}).".into(),
+        safety_threshold: 0.5,
+        default_route: "local".into(),
+        score_matrix: None,
+        onnx_keys: std::collections::BTreeSet::new(),
+        roles: Default::default(),
+    };
+    let stage = ClassifierStage::new(
+        Arc::new(crate::test_stubs::StubChatBackend::always("{}")),
+        routing_config,
+        0.6,
+        None,
+        false,
+        5,
+        "fast",
+        Arc::new(fluent_concurrency::pool::Limiter::new(4)),
+        None,
+        crate::config::ClassifierFailurePolicy::Reject,
+        None,
+        None,
+    );
+    let prompt = stage.build_system_prompt();
+    let expected = r#"Route with care (coherence 0.60, safety 0.50).
+
+Available routes:
+  - code: programming and implementation
+  - local
+
+Dispatch rules (never answer these directly):
+  - Requests on the "code" route ALWAYS dispatch to "code". Set action=route and target="code" even if the reasoning complexity seems low: these domains need the stronger model, not you.
+
+Output schema (output these four fields FIRST, in this order, then the rest):
+{
+  "action": "respond" | "route" | "reject",
+  "coherence_score": 0.0-1.0,
+  "safety_score": 0.0-1.0,
+  "reason": "brief explanation",
+  "response": "direct answer (only if action=respond)",
+  "target": "route name (only if action=route)",
+  "complexity": 0-10,
+  "intent": "code" | "local",
+  "completeness": 0.0-1.0,
+  "risk": 0.0-1.0
+}
+
+Response rules:
+- If complexity <= 5 (your intelligence level), set action=respond and answer directly — UNLESS the request matches a dispatch rule above.
+- If complexity > 5, the query needs a more capable model: set action=route with target set to the matching route name. Code requests ALWAYS go to the "code" route. Translation requests ALWAYS go to the "translation" route.
+- Dispatch rules above ALWAYS win: set action=route with the named target, never action=respond.
+- If content is incoherent (coherence_score < 0.60), set action=reject.
+- If content is unsafe (safety_score < 0.50), set action=reject.
+- Safety score 1.0 = completely safe, 0.0 = dangerous.
+- Complexity 0 = trivial, 10 = extremely complex.
+- Only output JSON, no other text.
+"#;
+    assert_eq!(prompt, expected, "flat system prompt changed — update the golden deliberately");
 }
 
 #[test]

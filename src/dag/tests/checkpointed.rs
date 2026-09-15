@@ -34,7 +34,7 @@ fn ready_and_complete_flow() {
 fn cancel_dependents_delegates_to_graph() {
     let g = graph();
     let mut deps = g.cancel_dependents(&"a");
-    deps.sort();
+    deps.sort_unstable();
     assert_eq!(deps, vec!["b", "c"]);
 }
 

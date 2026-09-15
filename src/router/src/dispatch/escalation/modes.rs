@@ -220,14 +220,26 @@ impl Ladder {
             }
         };
 
-        // Acceptance gate: the canonical `ResultScorer` (local model).
+        // Acceptance gate: the canonical `ResultScorer` (local model). The
+        // numeric score doubles as the recorder's [A] self-doubt signal.
         let scorer = ResultScorer::new(assembler.clone(), SCORE_ACCEPTANCE_THRESHOLD);
         let mut wctx = WorkContext::default();
         wctx.set_structured("request", ctx.request);
         wctx.metadata
             .insert("response".into(), MetadataValue::from(assembled.clone()));
-        let accepted = match scorer.execute(&wctx) {
-            Ok(output) => output.data_as::<ScoredResult>().is_ok_and(|s| s.accepted),
+        let (accepted, assembler_confidence) = match scorer.execute(&wctx) {
+            Ok(output) => match output.data_as::<ScoredResult>() {
+                Ok(scored) => (scored.accepted, scored.score),
+                Err(e) => {
+                    tracing::warn!(
+                        target: "router.dispatch.escalation",
+                        mode = "question",
+                        error = %e,
+                        "result scorer output unparseable"
+                    );
+                    (false, 0.0)
+                }
+            },
             Err(e) => {
                 tracing::warn!(
                     target: "router.dispatch.escalation",
@@ -235,7 +247,7 @@ impl Ladder {
                     error = %e,
                     "result scorer failed"
                 );
-                false
+                (false, 0.0)
             }
         };
         let trigger = if accepted {
@@ -253,6 +265,26 @@ impl Ladder {
         );
 
         if accepted {
+            // Learning loop: the solved frontier-assisted run is distilled
+            // into the reusable-DAG library (best-effort, never fails the
+            // request — the outcome is audit, not control flow). The write
+            // gate still applies its calibrated [A]/[B] floors inside.
+            if let Some(recorder) = ctx.recorder {
+                let audit_id = format!(
+                    "escalation:question:{:016x}",
+                    common_core::hash::fnv1a64(ctx.user_text.as_bytes())
+                );
+                let _ = recorder.record_question_run(
+                    ctx.user_text,
+                    &hypotheticals,
+                    &answers,
+                    &assembled,
+                    assembler_confidence,
+                    accepted,
+                    &audit_id,
+                    ctx.request.session_id.as_deref(),
+                );
+            }
             let completion = make_text_completion(ctx.model_name, &assembled);
             Ok(Some(completion_to_response(
                 &completion,

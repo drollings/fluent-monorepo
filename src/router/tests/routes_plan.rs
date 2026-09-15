@@ -394,3 +394,174 @@ async fn plan_without_session_keeps_blank_slate_prompt() {
     );
     assert!(prompt.contains("the request"));
 }
+
+fn replay_test_recorder() -> (
+    std::sync::Arc<crate::ledger::workflow_replay::WorkflowRecorder>,
+    std::sync::Arc<crate::ledger::workflow_store::InMemoryWorkflowStore>,
+) {
+    use crate::ledger::workflow_replay::{ReplayConfig, WorkflowRecorder};
+    use crate::ledger::workflow_store::{InMemoryWorkflowStore, WorkflowStore};
+    let store = std::sync::Arc::new(InMemoryWorkflowStore::new());
+    let embedder: std::sync::Arc<dyn fluent_llm::EmbeddingProvider> =
+        std::sync::Arc::new(HashEmbedder::new(64));
+    let recorder = std::sync::Arc::new(WorkflowRecorder::new(
+        std::sync::Arc::clone(&store) as std::sync::Arc<dyn WorkflowStore>,
+        Some(embedder),
+        ReplayConfig {
+            enabled: true,
+            ..ReplayConfig::default()
+        },
+    ));
+    // The recorded workflow: a solved run plus two validated reuses (the
+    // calibrated N), so consultation can hit.
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &["hypothetical one".to_string(), "hypothetical two".to_string()],
+        &["first answer".to_string(), "second answer".to_string()],
+        "assembled solution",
+        0.9,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(
+        outcome,
+        crate::ledger::workflow_replay::RecordOutcome::Stored
+    );
+    recorder.replay().note_reuse_outcome("audit-q", true);
+    recorder.replay().note_reuse_outcome("audit-q", true);
+    // A flagged-text workflow, recorded so the flag leg (not distance) is
+    // what blocks its consultation below.
+    let flagged = "escalate ssn 123-45-6789 for alpha";
+    let outcome = recorder.record_question_run(
+        flagged,
+        &["hypothetical one".to_string()],
+        &["first answer".to_string()],
+        "assembled solution",
+        0.9,
+        true,
+        "audit-flagged",
+        Some("sess"),
+    );
+    assert_eq!(
+        outcome,
+        crate::ledger::workflow_replay::RecordOutcome::Stored
+    );
+    recorder.replay().note_reuse_outcome("audit-flagged", true);
+    recorder.replay().note_reuse_outcome("audit-flagged", true);
+    (recorder, store)
+}
+
+fn replay_test_route(
+    recorder: std::sync::Arc<crate::ledger::workflow_replay::WorkflowRecorder>,
+    selector: std::sync::Arc<crate::test_stubs::CountingBackend>,
+    execution: std::sync::Arc<crate::test_stubs::CountingBackend>,
+) -> PlanRoute {
+    PlanRoute::new()
+        .with_chart_store(std::sync::Arc::new(ChartStore::new(None)))
+        .with_selector_backend(selector)
+        .with_execution_backend(execution)
+        .with_workflow_recorder(recorder)
+        .with_charts_config(ChartsConfig::default())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replay_hit_returns_decomposition_without_backend_calls() {
+    let (recorder, _store) = replay_test_recorder();
+    let selector = std::sync::Arc::new(crate::test_stubs::CountingBackend::new("{}"));
+    let execution = std::sync::Arc::new(crate::test_stubs::CountingBackend::new("{}"));
+    let route = replay_test_route(
+        recorder,
+        std::sync::Arc::clone(&selector),
+        std::sync::Arc::clone(&execution),
+    );
+    let result = route
+        .plan_replayable(None, "how do i bake bread", &[], 0.99)
+        .await;
+    assert_eq!(result.source, PlanSource::WorkflowReplay);
+    let replayed = result.replayed.expect("replayed decomposition");
+    assert_eq!(replayed.audit_id, "audit-q");
+    assert_eq!(replayed.steps.len(), 3, "two hypotheticals + assemble");
+    assert!(
+        replayed.steps.iter().any(|s| s.step_id == "assemble"),
+        "assemble step present"
+    );
+    // The loop skips the frontier: no selector/execution backend ran.
+    assert_eq!(selector.calls(), 0, "no selector call on replay");
+    assert_eq!(execution.calls(), 0, "no execution call on replay");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replay_miss_and_low_confidence_plan_fresh() {
+    let (recorder, _store) = replay_test_recorder();
+    let selector = std::sync::Arc::new(crate::test_stubs::CountingBackend::new("{}"));
+    let execution = std::sync::Arc::new(crate::test_stubs::CountingBackend::new("{}"));
+    let route = replay_test_route(
+        recorder,
+        std::sync::Arc::clone(&selector),
+        std::sync::Arc::clone(&execution),
+    );
+    // Dissimilar query: below-threshold neighbor plans fresh.
+    let miss = route
+        .plan_replayable(None, "quantum chromodynamics lecture notes", &[], 0.99)
+        .await;
+    assert_eq!(miss.source, PlanSource::FreshDraft);
+    assert!(miss.replayed.is_none());
+    // Same text but a low-confidence plan: the [A] leg blocks.
+    let unsure = route
+        .plan_replayable(None, "how do i bake bread", &[], 0.10)
+        .await;
+    assert_eq!(unsure.source, PlanSource::FreshDraft);
+    assert!(unsure.replayed.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replay_flagged_query_plans_fresh() {
+    let (recorder, _store) = replay_test_recorder();
+    let selector = std::sync::Arc::new(crate::test_stubs::CountingBackend::new("{}"));
+    let execution = std::sync::Arc::new(crate::test_stubs::CountingBackend::new("{}"));
+    let route = replay_test_route(
+        recorder,
+        std::sync::Arc::clone(&selector),
+        std::sync::Arc::clone(&execution),
+    );
+    // Recorded and near (identical text) but flagged: never replays.
+    let flagged = route
+        .plan_replayable(None, "escalate ssn 123-45-6789 for alpha", &[], 0.99)
+        .await;
+    assert_eq!(flagged.source, PlanSource::FreshDraft);
+    assert!(flagged.replayed.is_none());
+}
+
+#[test]
+fn wired_consult_matches_calibration_labels() {
+    // The calibration label structure (should-replay vs must-not controls)
+    // through the wired consult seam: identical precision/recall demands.
+    let (recorder, _store) = replay_test_recorder();
+    let labels = [
+        ("how do i bake bread", 0.99, true),
+        ("quantum chromodynamics lecture notes", 0.99, false),
+        ("how do i bake bread", 0.10, false),
+        ("escalate ssn 123-45-6789 for alpha", 0.99, false),
+    ];
+    let mut tp = 0usize;
+    let mut fp = 0usize;
+    let mut failed = Vec::new();
+    for (text, confidence, want) in labels {
+        let hit = recorder.consult(text, confidence);
+        match (hit.is_some(), want) {
+            (true, true) => tp += 1,
+            (true, false) => {
+                fp += 1;
+                failed.push(format!("CONTROL LEAK {text}"));
+            }
+            (false, true) => failed.push(format!("MISS {text}")),
+            (false, false) => {}
+        }
+    }
+    assert!(failed.is_empty(), "wired-path gate failures: {failed:?}");
+    let r#fn = labels.iter().filter(|(_, _, w)| *w).count() - tp;
+    let precision = tp as f64 / (tp + fp).max(1) as f64;
+    let recall = tp as f64 / (tp + r#fn).max(1) as f64;
+    assert_eq!((precision, recall), (1.0, 1.0));
+}

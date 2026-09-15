@@ -57,7 +57,7 @@ fn with_override_wins_over_default_lod() {
     let a = store
         .record_request("sess", "r1", "short answer A")
         .unwrap();
-    let _b = store
+    let b = store
         .record_request("sess", "r2", "full text answer B")
         .unwrap();
 
@@ -67,7 +67,7 @@ fn with_override_wins_over_default_lod() {
 
     // a renders LOD0 (override), b renders LOD5 (label == first sentence).
     assert_eq!(view.lod_for(a), Lod::LOD0);
-    assert_eq!(view.lod_for(_b), Lod::LOD5);
+    assert_eq!(view.lod_for(b), Lod::LOD5);
     let rendered = view.render();
     assert!(rendered.contains("short answer A"));
     assert!(rendered.contains("full text answer B"));

@@ -82,9 +82,23 @@ impl WorkOutput {
         })
     }
 
+    /// Same as `typed` but never panics: on serialization failure the error
+    /// is stored as a string in `data` instead. Prefer `typed` (which
+    /// reports the failure as `Err`) when the caller can handle it.
+    pub fn typed_lossy<T: serde::Serialize>(message: impl Into<String>, data: &T) -> Self {
+        let data = serde_json::to_value(data)
+            .unwrap_or_else(|e| serde_json::Value::String(e.to_string()));
+        Self {
+            success: true,
+            message: message.into(),
+            data,
+        }
+    }
+
     /// Same as `typed` but panics on serialization failure.
     /// Use this when the input is trusted and you want a one-liner.
     /// For untrusted input, prefer `typed` to handle the error gracefully.
+    #[deprecated(note = "use typed_lossy or typed")]
     pub fn typed_infallible<T: serde::Serialize>(message: impl Into<String>, data: &T) -> Self {
         Self {
             success: true,

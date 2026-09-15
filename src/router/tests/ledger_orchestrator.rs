@@ -1,4 +1,5 @@
 use super::*;
+use crate::instances::stub::StubHandler;
 use crate::dag_session::SessionRegistry;
 use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex};
 use crate::ledger::tiering::TierConfig;
@@ -22,7 +23,7 @@ fn fork_kv() -> SnapshotStore {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "POST" && path.ends_with("/snapshot") {
                 (200, "{}".into())
@@ -192,7 +193,7 @@ async fn records_nodes_and_enqueues_tiers() {
     let o1 = coord.run_agent("sess", "model-a", &worker, "hi").await.unwrap();
     let node = store.snapshot(o1.node_id).unwrap();
     assert_eq!(node.lod[0], "out-1");
-    assert_eq!(node.role.as_ref().map(|r| r.as_str()), Some("agent"));
+    assert_eq!(node.role.as_ref().map(fluent_types::OriginRole::as_str), Some("agent"));
     assert_eq!(node.step_id.as_deref(), Some("model-a-1"));
 
     // LOD4/LOD5 are enqueued and filled in the background (proves the

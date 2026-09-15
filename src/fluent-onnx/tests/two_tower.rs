@@ -1,3 +1,6 @@
+// Exact asserts on stub similarity outputs are deliberate.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use vector_math::cosine_similarity_f32;
 
@@ -332,7 +335,7 @@ fn load_policy_labels_accepts_array_and_object() {
 fn load_policy_labels_rejects_non_string_arrays() {
     let dir = tempfile::tempdir().unwrap();
     let bad = dir.path().join("bad.json");
-    std::fs::write(&bad, r#"[1, 2, 3]"#).unwrap();
+    std::fs::write(&bad, r"[1, 2, 3]").unwrap();
     assert!(load_policy_labels(&bad).is_err());
 
     let missing = dir.path().join("missing.json");

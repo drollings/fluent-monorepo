@@ -10,6 +10,8 @@ use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
 use fluent_wvr::component_downcast_ref;
 use fluent_wvr::prelude::*;
 
+// The `Result` wrap is required: the executor signature must match `DynamicExecutor`.
+#[allow(clippy::unnecessary_wraps)]
 fn echo_executor(
     _ctx: &WorkContext,
     config: &HashMap<String, String>,
@@ -47,6 +49,30 @@ fn unknown_field_errors_on_get() {
     );
     assert!(matches!(
         comp.get_field("missing"),
+        Err(FieldError::NotFound(_))
+    ));
+}
+
+#[test]
+fn poisoned_config_recovers_without_panic() {
+    fn panicking_executor(
+        _ctx: &WorkContext,
+        _config: &HashMap<String, String>,
+    ) -> Result<WorkOutput, WorkError> {
+        panic!("executor boom")
+    }
+    let comp = DynamicComponent::new(
+        "db.tool",
+        Arc::new(panicking_executor) as DynamicExecutor,
+    );
+    let ctx = WorkContext::default();
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        comp.execute(&ctx)
+    }));
+    assert!(caught.is_err(), "executor panic must propagate");
+    // The config lock is poisoned now; field access must recover, not panic.
+    assert!(matches!(
+        comp.get_field("anything"),
         Err(FieldError::NotFound(_))
     ));
 }

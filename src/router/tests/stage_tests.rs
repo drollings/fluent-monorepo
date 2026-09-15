@@ -506,7 +506,7 @@ mod tests {
     fn classifier_reject_policy_rejects_on_parse_failure() {
         let stage = classifier_stage_with_policy(
             Arc::new(FixedResponseBackend {
-                response: "".into(),
+                response: String::new(),
             }),
             crate::config::ClassifierFailurePolicy::Reject,
         );
@@ -542,7 +542,7 @@ mod tests {
         let meta = decision.metadata.as_object().expect("metadata object");
         assert_eq!(meta.get("action").and_then(|v| v.as_str()), Some("respond"));
         assert_eq!(
-            meta.get("fallback").and_then(|v| v.as_bool()),
+            meta.get("fallback").and_then(serde_json::Value::as_bool),
             Some(false),
             "a prose direct answer is complete, not a retryable fallback"
         );
@@ -617,8 +617,8 @@ mod tests {
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let meta = decision.metadata.as_object().expect("metadata object");
-        assert_eq!(meta.get("coherence_score").and_then(|v| v.as_f64()), Some(0.0));
-        assert_eq!(meta.get("safety_score").and_then(|v| v.as_f64()), Some(0.0));
+        assert_eq!(meta.get("coherence_score").and_then(serde_json::Value::as_f64), Some(0.0));
+        assert_eq!(meta.get("safety_score").and_then(serde_json::Value::as_f64), Some(0.0));
     }
 
     // ── Stage 2: ClassifierStage in classification-tree mode ─────────────
@@ -794,6 +794,8 @@ mod tests {
     /// decorator + target-matching ladder), minus the deleted flat authoring
     /// surface. `routes` are `(route, group)` pairs; models/groups come from
     /// the fixture config.
+    // `backend` by value: the helper fans it out to several stage owners.
+    #[allow(clippy::needless_pass_by_value)]
     fn flat_engine_pipeline(
         config: &crate::config::RouterConfig,
         routes: &[(&str, &str)],
@@ -1195,7 +1197,7 @@ mod tests {
                     .map(|m| m.content.clone()),
             );
             if self.calls.load(std::sync::atomic::Ordering::SeqCst) < 3 {
-                Ok("".into())
+                Ok(String::new())
             } else {
                 Ok(self.success_response.clone())
             }
@@ -1315,7 +1317,7 @@ mod tests {
             &self,
             _messages: &[fluent_llm::ChatMessage],
         ) -> Result<String, fluent_llm::LlmError> {
-            Ok("".into())
+            Ok(String::new())
         }
     }
 
@@ -1805,7 +1807,7 @@ mod tests {
             .evaluate_with_target(&ctx_local, &[])
             .expect("evaluate");
         let metadata_local = StageMetadata::from(decision_local.metadata.clone());
-        assert_eq!(metadata_local.response().as_deref(), Some("once upon a time..."));
+        assert_eq!(metadata_local.response(), Some("once upon a time..."));
         assert!(
             target_local.is_none(),
             "non-always-route keeps the direct classifier answer"

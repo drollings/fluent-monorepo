@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use std::collections::HashMap;
 
-use fluent_llm::{ChatMessage, LlmError};
+use fluent_llm::{ChatMessage, EmbeddingProvider, LlmError};
 
 use super::assemble::{parse_subtask_array, summarize_votes};
 use crate::config::FrontierConfig;
@@ -237,6 +237,7 @@ async fn context_cache_short_circuits_before_any_mode() {
         model_name: "fast",
         context_cache: Some(&cache),
         session: None,
+        recorder: None,
     };
     let resp = ladder.try_escalate(&ctx).await.expect("short-circuits");
     assert_eq!(read_body_text(resp).await, "verified answer");
@@ -264,6 +265,7 @@ async fn no_context_hit_does_not_short_circuit() {
         model_name: "fast",
         context_cache: Some(&cache),
         session: None,
+        recorder: None,
     };
     // Filter mode runs: PII transform is identity here, frontier returns
     // a clean answer → accepted.
@@ -292,6 +294,7 @@ async fn filter_mode_accepts_clean_frontier_response() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     let resp = ladder.try_escalate(&ctx).await.expect("accepted");
     assert_eq!(read_body_text(resp).await, "The answer is 4");
@@ -321,6 +324,7 @@ async fn filter_mode_rejects_pii_flagged_response() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     assert!(
         ladder.try_escalate(&ctx).await.is_none(),
@@ -358,6 +362,7 @@ async fn mode_walk_escalates_on_rejection() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     let resp = ladder.try_escalate(&ctx).await.expect("turnover accepted");
     assert_eq!(read_body_text(resp).await, "escalated answer");
@@ -407,6 +412,7 @@ async fn question_mode_accepts_assembled_answer() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     let resp = ladder.try_escalate(&ctx).await.expect("accepted");
     assert_eq!(read_body_text(resp).await, "assembled final answer");
@@ -414,6 +420,99 @@ async fn question_mode_accepts_assembled_answer() {
         frontier.received_texts().len(),
         2,
         "one frontier call per hypothetical"
+    );
+}
+
+fn question_ladder() -> (
+    Ladder,
+    std::sync::Arc<crate::ledger::workflow_store::InMemoryWorkflowStore>,
+    crate::ledger::workflow_replay::WorkflowRecorder,
+) {
+    use crate::ledger::workflow_replay::{ReplayConfig, WorkflowRecorder};
+    use crate::ledger::workflow_store::{InMemoryWorkflowStore, WorkflowStore};
+    let decomposer = func_backend(|_| Ok(r#"["hyp1", "hyp2"]"#.into()));
+    let assembler = func_backend(|messages| {
+        let msg = last_user_message(messages);
+        if msg.contains("Original query") {
+            Ok("assembled final answer".into())
+        } else {
+            Ok(r#"{"score": 0.9, "accepted": true, "reason": "good", "summary": "ok"}"#.into())
+        }
+    });
+    let frontier = StubFrontier::new(vec![
+        text_response("claude", "answer one"),
+        text_response("claude", "answer two"),
+    ]);
+    let config = EscalationLadderConfig {
+        modes: vec![EscalationMode::Question],
+        frontier: filter_config().frontier,
+        ..Default::default()
+    };
+    let ladder = Ladder::new(
+        config,
+        EscalationBackends {
+            frontier,
+            decomposer: Some(decomposer),
+            assembler: Some(assembler),
+            classifier: None,
+            draft: None,
+            judge: None,
+        },
+    );
+    let store = std::sync::Arc::new(InMemoryWorkflowStore::new());
+    let embedder: std::sync::Arc<dyn fluent_llm::EmbeddingProvider> =
+        std::sync::Arc::new(crate::test_stubs::HashEmbedder::new(64));
+    let recorder = WorkflowRecorder::new(
+        std::sync::Arc::clone(&store) as std::sync::Arc<dyn WorkflowStore>,
+        Some(embedder),
+        ReplayConfig {
+            enabled: true,
+            ..ReplayConfig::default()
+        },
+    );
+    (ladder, store, recorder)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn question_success_records_workflow_once() {
+    use crate::ledger::workflow_store::WorkflowStore;
+    let (ladder, store, recorder) = question_ladder();
+    let request = test_request("how do I tune a model?");
+    let ctx = EscalationContext {
+        request: &request,
+        user_text: "how do I tune a model?",
+        model_name: "fast",
+        context_cache: None,
+        session: None,
+        recorder: Some(&recorder),
+    };
+    ladder.try_escalate(&ctx).await.expect("accepted");
+    let embedder = crate::test_stubs::HashEmbedder::new(64);
+    let hits = store.nearest(&embedder.embed("how do I tune a model?").unwrap(), 3);
+    assert_eq!(hits.len(), 1, "one successful run records once");
+    assert!(hits[0].0.verified);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn question_success_without_recorder_records_nothing() {
+    use crate::ledger::workflow_store::WorkflowStore;
+    let (ladder, store, _recorder) = question_ladder();
+    let request = test_request("how do I tune a model?");
+    let ctx = EscalationContext {
+        request: &request,
+        user_text: "how do I tune a model?",
+        model_name: "fast",
+        context_cache: None,
+        session: None,
+        recorder: None,
+    };
+    ladder.try_escalate(&ctx).await.expect("accepted");
+    let embedder = crate::test_stubs::HashEmbedder::new(64);
+    assert!(
+        store
+            .nearest(&embedder.embed("how do I tune a model?").unwrap(), 3)
+            .is_empty(),
+        "no recorder composes no record"
     );
 }
 
@@ -455,6 +554,7 @@ async fn team_mode_accepts_after_judge_verdict() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     let resp = ladder.try_escalate(&ctx).await.expect("accepted");
     assert_eq!(read_body_text(resp).await, "frontier solution");
@@ -503,6 +603,7 @@ async fn team_mode_rejects_when_judge_rejects() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     assert!(
         ladder.try_escalate(&ctx).await.is_none(),
@@ -554,6 +655,7 @@ async fn turnover_marks_session_frontier_owned_and_appends_ledger() {
         model_name: "fast",
         context_cache: None,
         session: Some(&session),
+        recorder: None,
     };
     let resp = ladder.try_escalate(&ctx).await.expect("handoff");
     assert_eq!(read_body_text(resp).await, "handoff answer");
@@ -590,6 +692,7 @@ async fn exhaustion_returns_none() {
         model_name: "fast",
         context_cache: None,
         session: None,
+        recorder: None,
     };
     assert!(
         ladder.try_escalate(&ctx).await.is_none(),

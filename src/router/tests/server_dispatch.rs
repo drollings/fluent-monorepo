@@ -1,4 +1,5 @@
 use super::*;
+use crate::instances::stub::StubHandler;
 
 fn base_target() -> RoutingTarget {
     crate::pipeline::RoutingTarget {
@@ -55,7 +56,7 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
 
     let chat_calls = StdArc::new(Mutex::new(0usize));
     let chat_calls_c = chat_calls.clone();
-    let handler: StdArc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+    let handler: StubHandler =
         StdArc::new(move |method, path, _body| {
             if method == "POST" && path.ends_with("/chat/completions") {
                 let mut n = chat_calls_c.lock().unwrap();

@@ -25,13 +25,13 @@ fn estimate_tokens_empty() {
 #[test]
 fn estimate_tokens_ascii() {
     let tokens = estimate_tokens("hello world"); // 11 chars → ~2.75 → 3
-    assert!(tokens >= 2 && tokens <= 4, "got {tokens}");
+    assert!((2..=4).contains(&tokens), "got {tokens}");
 }
 
 #[test]
 fn estimate_tokens_cjk() {
     let tokens = estimate_tokens("你好世界"); // 4 CJK chars → ~2.68 → 3
-    assert!(tokens >= 2 && tokens <= 4, "got {tokens}");
+    assert!((2..=4).contains(&tokens), "got {tokens}");
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn estimate_tokens_emoji() {
 fn estimate_tokens_mixed() {
     let tokens = estimate_tokens("hello 世界 😀"); // 6 ASCII + 1 space + 2 CJK + 1 space + 1 emoji
     // 6*0.25 + 0.1 + 2*0.67 + 0.1 + 1.0 = 1.5 + 0.1 + 1.34 + 0.1 + 1.0 = 4.04 → 4
-    assert!(tokens >= 3 && tokens <= 5, "got {tokens}");
+    assert!((3..=5).contains(&tokens), "got {tokens}");
 }
 
 #[test]

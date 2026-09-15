@@ -1,6 +1,9 @@
 //! Row-translator characterization (included via `#[path]` forwarder
 //! from `src/query/db_storage.rs`, per repo convention).
 //!
+//! Exact asserts on round-tripped values are deliberate.
+#![allow(clippy::float_cmp)]
+//!
 //! M14.1: pins the `FileInfo -> FileRecord` and
 //! `EntityFragment -> FragmentRecord -> FragmentRow -> EntityFragment`
 //! translations through a real in-memory `GuidanceDb`, including the lossy

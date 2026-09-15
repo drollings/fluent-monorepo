@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &item.text, None, None, spacy_rs::RefinePolicy::default())?;
         let set = result.records;
         if set.0.len() != gold.len() { continue; }
-        let ties = result.parse_confidence.as_ref().map(|c| c.oracle_tie_count).unwrap_or(999);
+        let ties = result.parse_confidence.as_ref().map_or(999, |c| c.oracle_tie_count);
         let mut cerr = 0;
         for (p, g) in set.0.iter().zip(gold.iter()) {
             if g.pos == "punct" { continue; }
@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             content.push((item.category.clone(), item.id.clone() + " :: " + &item.text, cerr, ties));
         }
     }
-    content.sort_by(|a, b| b.2.cmp(&a.2));
+    content.sort_by_key(|a| std::cmp::Reverse(a.2));
     for r in &content {
         println!("{:<20} cerr={} ties={} | {}", r.0, r.2, r.3, r.1);
     }

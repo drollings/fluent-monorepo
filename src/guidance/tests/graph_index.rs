@@ -367,8 +367,8 @@ fn routing_signal(
         subject: subject.map(str::to_string),
         direct_object: direct_object.map(str::to_string),
         indirect_object: None,
-        modifiers: modifiers.iter().map(|s| s.to_string()).collect(),
-        qualifiers: qualifiers.iter().map(|s| s.to_string()).collect(),
+        modifiers: modifiers.iter().map(std::string::ToString::to_string).collect(),
+        qualifiers: qualifiers.iter().map(std::string::ToString::to_string).collect(),
         arguments: Vec::new(),
         dependents: Vec::new(),
         tokens: Vec::new(),
@@ -680,8 +680,8 @@ fn hydrated_graph_equals_harvested_graph() {
     for path in &known {
         assert_eq!(harvested.file_dependencies(path), hydrated.file_dependencies(path), "{path}");
         assert_eq!(
-            harvested.dependents_closure(&[path.clone()]),
-            hydrated.dependents_closure(&[path.clone()]),
+            harvested.dependents_closure(std::slice::from_ref(path)),
+            hydrated.dependents_closure(std::slice::from_ref(path)),
             "{path}"
         );
     }
@@ -725,7 +725,7 @@ fn hydrated_build_costs_less_than_reparse_per_file() {
         .into_iter()
         .map(|r| (r.name, r.file, r.calls))
         .collect();
-    let known: Vec<String> = corpus.iter().map(|(p, _, _)| p.to_string()).collect();
+    let known: Vec<String> = corpus.iter().map(|(p, _, _)| p.clone()).collect();
 
     let start = std::time::Instant::now();
     let hydrated = GraphIndex::build_from_rows(&known, &edges, &symbols, &roots).expect("hydrated");

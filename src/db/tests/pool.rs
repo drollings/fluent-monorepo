@@ -75,9 +75,8 @@ async fn acquire_requires_db_capability() {
     // The raw-acquire path is gated like every other effect entry
     // point — a pool held without a `DbCapability` token must be denied.
     let pool = pool();
-    let err = match pool.acquire().await {
-        Ok(_) => panic!("acquire must be denied without a DbCapability"),
-        Err(e) => e,
+    let Err(err) = pool.acquire().await else {
+        panic!("acquire must be denied without a DbCapability")
     };
     assert!(
         matches!(err, DbError::PermissionDenied(_)),

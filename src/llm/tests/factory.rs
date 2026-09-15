@@ -1,7 +1,7 @@
 //! Ported from zvec-grep `test/unit/models/factory.test.mjs` (remote
 //! dispatch) plus the resolution-order contract (flag > env > global default
 //! > builtin local) and the model-or-endpoint rebuild rule: key/device
-//! changes never force a rebuild.
+//! > changes never force a rebuild.
 
 use fluent_llm::embeddings::EmbeddingError;
 use fluent_llm::factory::{
@@ -48,9 +48,8 @@ fn factory_resolves_remote_dispatch_and_rejects_unknown_models() {
     assert_eq!(provider.dimensions(), 1024);
 
     for unknown in ["missing", "invalid", "unknown/missing", "local/missing"] {
-        let error = match create_embedding_model(unknown, &qwen_options()) {
-            Err(error) => error,
-            Ok(_) => panic!("{unknown} must miss the catalog"),
+        let Err(error) = create_embedding_model(unknown, &qwen_options()) else {
+            panic!("{unknown} must miss the catalog")
         };
         assert!(
             matches!(error, EmbeddingError::CatalogNotFound(_)),
@@ -85,17 +84,15 @@ fn factory_builds_local_gguf_entries_with_unbound_runtime() {
 fn factory_reports_unwired_backends_without_confusing_them_with_unknowns() {
     // ONNX/model2vec entries are catalogued but constructed by their session
     // owners (daemon), not this factory.
-    let error = match create_embedding_model("local/bge-small-en-v1.5", &qwen_options()) {
-        Err(error) => error,
-        Ok(_) => panic!("onnx must report unwired"),
+    let Err(error) = create_embedding_model("local/bge-small-en-v1.5", &qwen_options()) else {
+        panic!("onnx must report unwired")
     };
     assert!(
         matches!(error, EmbeddingError::BackendNotWired { .. }),
         "onnx must report unwired, got {error}"
     );
-    let error = match create_embedding_model("local/potion-code-16m-v2", &qwen_options()) {
-        Err(error) => error,
-        Ok(_) => panic!("model2vec must report unwired"),
+    let Err(error) = create_embedding_model("local/potion-code-16m-v2", &qwen_options()) else {
+        panic!("model2vec must report unwired")
     };
     assert!(
         matches!(error, EmbeddingError::BackendNotWired { .. }),

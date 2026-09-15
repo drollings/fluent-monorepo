@@ -1,3 +1,6 @@
+// Exact asserts on pure-function outputs are deliberate: the conversions are exact.
+#![allow(clippy::float_cmp)]
+
 use common_core::score::*;
 use std::collections::HashMap;
 

@@ -1,4 +1,8 @@
+// Exact asserts on calibrated round/ladder numbers are deliberate.
+#![allow(clippy::float_cmp)]
+
 use super::*;
+use crate::instances::stub::StubHandler;
 use crate::config::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 use crate::dag_session::DependencySession;
 use crate::test_stubs::StubChatBackend;
@@ -370,7 +374,7 @@ async fn blue_save_then_rewind_produces_pending_kv_fields() {
     use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, SnapshotStore};
 
     // Stub fork: answer the snapshot save + any /instances reads.
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "POST" && path == "/instances/scratch/snapshot" {
                 (200, "{}".into())
@@ -438,7 +442,7 @@ async fn blue_save_without_kv_instance_is_a_no_op() {
     use crate::instances::InstanceClient;
     use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, SnapshotStore};
 
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, _path, _body| {
             if method == "POST" {
                 (200, "{}".into())

@@ -40,10 +40,10 @@ async fn control_group_no_affinity_stable_ordering() {
 
     let mut priorities = Vec::new();
     for i in 0..20 {
-        let identity = format!("sess-{}", i);
+        let identity = format!("sess-{i}");
         let task = ScheduledTask {
             identity: identity.clone(),
-            task: format!("job-{}", i),
+            task: format!("job-{i}"),
             enqueued_at: rt.now(),
         };
         // All base_priority 0, no affinity, fresh enqueued_at -> all should compute same priority
@@ -182,14 +182,14 @@ async fn golden_trace_synthetic_workload_precision_recall() {
     let scheduler = make_scheduler(rt.clone(), aging.clone());
     scheduler.set_affinity(Some("sess-0".into()));
 
-    let sessions: Vec<String> = (0..10).map(|i| format!("sess-{}", i)).collect();
+    let sessions: Vec<String> = (0..10).map(|i| format!("sess-{i}")).collect();
     // Round-robin 100 tasks, base_priority 0, enqueued_at = now for all (fresh)
     let mut trace: Vec<(String, i32)> = Vec::new();
     for i in 0..100 {
         let sess = &sessions[i % sessions.len()];
         let task = ScheduledTask {
             identity: sess.clone(),
-            task: format!("job-{}", i),
+            task: format!("job-{i}"),
             enqueued_at: rt.now(),
         };
         let p = scheduler.effective_priority(&task, 0);

@@ -796,60 +796,55 @@ impl RouterConfig {
                 Some(self.logging.log_dir.clone())
             };
 
-            let stage = if let Some(tree) = &self.classification {
-                // Classification tree drives the classifier stage. The
-                // injected backend (mock/transcript) is always the default
-                // client; per-node model backends are only built in real mode.
-                // The target-matching ladder is shared with the flat path -
-                // the engine resolves 2+ member group terminals through it.
-                let engine = build_classification_engine(
-                    self,
-                    tree,
-                    routing_config.clone(),
-                    Arc::clone(&client),
-                    Arc::clone(&limiter),
-                    params.coherence_threshold,
-                    !injected_backend,
-                    target_matcher.clone(),
-                    backend_resolver.clone(),
-                );
-                tracing::info!(
+            // The classification tree always drives the classifier stage:
+            // `verify_schema_conformance` rejects configs without one at boot,
+            // so `None` here means a hand-built config bypassed verification —
+            // skip the classifier rather than falling back to flat mode.
+            let Some(tree) = &self.classification else {
+                tracing::error!(
                     target: "router.config",
                     pipeline = %name,
-                    tree_models = ?tree.classifier_model_keys(),
-                    "classifier stage driven by classification tree",
+                    "classification tree missing — classifier stage skipped \
+                     (config rejected at boot by schema verification)",
                 );
-                crate::stages::classifier::ClassifierStage::with_tree(
-                    client,
-                    routing_config,
-                    params.coherence_threshold,
-                    params.score_matrix.clone(),
-                    params.score_matrix_authoritative,
-                    classifier_intel,
-                    classifier_model,
-                    limiter,
-                    Arc::new(engine),
-                    target_matcher,
-                    self.classifier_failure_policy,
-                    failure_dir,
-                    backend_resolver.clone(),
-                )
-            } else {
-                crate::stages::classifier::ClassifierStage::new(
-                    client,
-                    routing_config,
-                    params.coherence_threshold,
-                    params.score_matrix.clone(),
-                    params.score_matrix_authoritative,
-                    classifier_intel,
-                    classifier_model,
-                    limiter,
-                    target_matcher,
-                    self.classifier_failure_policy,
-                    failure_dir,
-                    backend_resolver.clone(),
-                )
+                return Some(orchestrator.build());
             };
+            // The injected backend (mock/transcript) is always the default
+            // client; per-node model backends are only built in real mode.
+            // The target-matching ladder is shared with the score-matrix
+            // path - the engine resolves 2+ member group terminals through it.
+            let engine = build_classification_engine(
+                self,
+                tree,
+                routing_config.clone(),
+                Arc::clone(&client),
+                Arc::clone(&limiter),
+                params.coherence_threshold,
+                !injected_backend,
+                target_matcher.clone(),
+                backend_resolver.clone(),
+            );
+            tracing::info!(
+                target: "router.config",
+                pipeline = %name,
+                tree_models = ?tree.classifier_model_keys(),
+                "classifier stage driven by classification tree",
+            );
+            let stage = crate::stages::classifier::ClassifierStage::with_tree(
+                client,
+                routing_config,
+                params.coherence_threshold,
+                params.score_matrix.clone(),
+                params.score_matrix_authoritative,
+                classifier_intel,
+                classifier_model,
+                limiter,
+                Arc::new(engine),
+                target_matcher,
+                self.classifier_failure_policy,
+                failure_dir,
+                backend_resolver.clone(),
+            );
             // When configured, wrap the classifier in the retry decorator
             // so parse/LLM failures re-run with escalating corrective prompts.
             // Both push through the orchestrator's typed producer path so the
@@ -1127,8 +1122,13 @@ fn build_classification_engine(
             }
         }
     }
+    // Precompile once per engine build: invalid patterns are collected as
+    // warn-and-non-match entries, never errors, so this expectation only
+    // fires on a defensive RegexSet failure that cannot occur.
+    let compiled =
+        std::sync::Arc::new(tree.clone().compile().expect("classification tree precompiles"));
     crate::stages::tree::ClassificationEngine::new(
-        tree.clone(),
+        compiled,
         routing,
         default_client,
         clients,

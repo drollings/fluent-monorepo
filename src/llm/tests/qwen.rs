@@ -5,6 +5,9 @@
 //! validation, error taxonomy with `Retry-After` context, image rules,
 //! base64 encoding, header propagation.
 
+// Exact asserts on stub embedding vectors are deliberate: the stub returns literals.
+#![allow(clippy::float_cmp)]
+
 use fluent_llm::embeddings::EmbeddingError;
 use fluent_llm::qwen::{
     EmbedContent, Qwen37TextEmbedding, Qwen3VlEmbedding, QwenEmbedResult, QwenImageFormat,

@@ -358,7 +358,7 @@ fn control_20_confident_sentences_no_trigger_both_paths() {
     let agg_reason = refine_reason_aggregated(&base, &signals_agg, policy);
     assert_eq!(agg_reason, RefineReason::NoTrigger, "20 confident aggregated must be NoTrigger");
     // 0.0 false-positive before OnUncertain is trusted
-    let fp = if agg_reason != RefineReason::NoTrigger { 1 } else { 0 };
+    let fp = i32::from(agg_reason != RefineReason::NoTrigger);
     assert_eq!(fp, 0);
 }
 

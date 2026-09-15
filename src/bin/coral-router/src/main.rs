@@ -2047,8 +2047,10 @@ mod config_tests {
     }
 
     #[derive(Default)]
+    #[cfg(feature = "onnx")]
     struct StubLoader;
 
+    #[cfg(feature = "onnx")]
     impl fluent_llm::onnx_session::SessionLoader for StubLoader {
         fn load(
             &self,

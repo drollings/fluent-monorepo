@@ -131,7 +131,7 @@ async fn affinity_never_deadlocks_submit_vs_age_now() {
         handles.push(tokio::spawn(async move {
             let task = ScheduledTask {
                 identity: format!("sess-{}", i % 5),
-                task: format!("job-{}", i),
+                task: format!("job-{i}"),
                 enqueued_at: s.runtime.now(),
             };
             let _ = s.submit(task, 0).await;
@@ -209,8 +209,8 @@ async fn affinity_bounded_map_evicts_oldest_identity() {
     let scheduler = AffinityScheduler::new_with_cap(Arc::clone(&p), Arc::clone(&runtime), 1024, AgingConfig::default());
     for i in 0..2000 {
         let task = ScheduledTask {
-            identity: format!("id-{}", i),
-            task: format!("job-{}", i),
+            identity: format!("id-{i}"),
+            task: format!("job-{i}"),
             enqueued_at: scheduler.runtime.now(),
         };
         scheduler.submit(task, 0).await.unwrap();
@@ -235,7 +235,7 @@ async fn affinity_enqueued_at_weights_older_task_higher() {
     let old_task = ScheduledTask {
         identity: "sess".into(),
         task: "old".into(),
-        enqueued_at: runtime.now() - Duration::from_secs(10),
+        enqueued_at: runtime.now().checked_sub(Duration::from_secs(10)).unwrap(),
     };
     let fresh_task = ScheduledTask {
         identity: "sess".into(),
@@ -288,7 +288,7 @@ async fn affinity_bonus_is_task_value_not_confidence() {
     let starved_submit = ScheduledTask {
         identity: "B".into(),
         task: "starved".into(),
-        enqueued_at: runtime.now() - Duration::from_secs(20),
+        enqueued_at: runtime.now().checked_sub(Duration::from_secs(20)).unwrap(),
     };
     scheduler.submit(starved_submit, 0).await.unwrap();
     // Age 10 ticks

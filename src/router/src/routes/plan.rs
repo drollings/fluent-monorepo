@@ -42,6 +42,10 @@ pub struct PlanRoute {
     /// Dispatch post-processing hook: distills successful dispatches into
     /// draft charts. `None` when extraction is not configured (opt-in).
     extractor: Option<Arc<WorkflowExtractor>>,
+    /// The workflow-learning loop: record solved escalations (M13) and
+    /// consult the library before planning fresh (M14). `None` keeps every
+    /// plan path byte-identical.
+    recorder: Option<Arc<crate::ledger::workflow_replay::WorkflowRecorder>>,
     /// Optional session-context renderer: when a ledger store + prompt
     /// assembler are attached, the selector/adjudicator models receive the
     /// session ledger rendered through the assembler's budget/relevance rules.
@@ -119,6 +123,29 @@ pub struct PlanResult {
     pub fit: Option<String>,
     /// Selection confidence in `[0, 1]` (audit trail provenance).
     pub score: Option<f64>,
+    /// The replayed decomposition on a `WorkflowReplay` hit. `None` on every
+    /// other source.
+    pub replayed: Option<ReplayedPlan>,
+}
+
+/// A replayed workflow as a plan: the stored decomposition, ready to run
+/// locally with no frontier call. Steps carry LOD0 text (never summaries).
+#[derive(Debug, Clone)]
+pub struct ReplayedPlan {
+    pub audit_id: String,
+    pub score: f64,
+    pub reuses: u32,
+    pub steps: Vec<ReplayedPlanStep>,
+}
+
+/// One replayed step: identity, data-flow edges, and LOD0 content.
+#[derive(Debug, Clone)]
+pub struct ReplayedPlanStep {
+    pub step_id: String,
+    pub prompt_lod0: String,
+    pub response_lod0: String,
+    pub depends_on: Vec<String>,
+    pub provides: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +153,7 @@ pub enum PlanSource {
     HnswHit,
     TemplateAdapted,
     FreshDraft,
+    WorkflowReplay,
 }
 
 impl Default for PlanRoute {
@@ -145,6 +173,7 @@ impl PlanRoute {
             limiter: Arc::new(Limiter::new(4)),
             cfg: ChartsConfig::default(),
             extractor: None,
+            recorder: None,
             prompt_ctx: None,
         }
     }
@@ -230,6 +259,17 @@ impl PlanRoute {
         self.extractor.as_ref()
     }
 
+    /// Attach the workflow-learning loop (record + consult). Opt-in — a
+    /// route without it plans exactly as before.
+    #[must_use]
+    pub fn with_workflow_recorder(
+        mut self,
+        recorder: Arc<crate::ledger::workflow_replay::WorkflowRecorder>,
+    ) -> Self {
+        self.recorder = Some(recorder);
+        self
+    }
+
     /// Borrow the chart store.
     pub fn chart_store(&self) -> &ChartStore {
         self.charts.as_ref()
@@ -265,6 +305,76 @@ impl PlanRoute {
     ) -> PlanResult {
         let enriched = self.enrich_with_context(session_id, user_message);
         self.plan_inner(&enriched, entities, false).await
+    }
+
+    /// Plan with the workflow-learning loop armed: consult the recorded
+    /// library before planning fresh; on a hit the stored DAG returns with
+    /// no backend call. `confidence` is the caller's current-plan self-doubt
+    /// signal (**[A]**) — replay needs it, so consultation only runs when
+    /// the caller supplies one (fail-closed: no signal, no replay; the
+    /// `plan`/`plan_for_session` paths stay unarmed and byte-identical).
+    /// Consultation keys on the raw message (the record key); session
+    /// enrichment still applies to the fresh-planning fallback only.
+    pub async fn plan_replayable(
+        &self,
+        session_id: Option<&str>,
+        user_message: &str,
+        entities: &[Entity],
+        confidence: f64,
+    ) -> PlanResult {
+        if let Some(replayed) = self.consult_replay(session_id, user_message, confidence) {
+            return replayed;
+        }
+        let enriched = self.enrich_with_context(session_id, user_message);
+        self.plan_inner(&enriched, entities, false).await
+    }
+
+    /// The replay short-circuit: embed + calibrated gate, then materialize
+    /// the stored DAG through the existing path. The materialized nodes are
+    /// the ledger writer's input (this route owns no store); the plan
+    /// response carries the same decomposition. `None` plans fresh.
+    fn consult_replay(
+        &self,
+        session_id: Option<&str>,
+        user_message: &str,
+        confidence: f64,
+    ) -> Option<PlanResult> {
+        let recorder = self.recorder.as_ref()?;
+        let hit = recorder.consult(user_message, confidence)?;
+        let content_hash = if user_message.is_empty() {
+            0
+        } else {
+            common_core::hash::fnv1a64(user_message.as_bytes())
+        };
+        let _materialized =
+            recorder
+                .replay()
+                .materialize(&hit, session_id.unwrap_or(""), content_hash);
+        Some(PlanResult {
+            source: PlanSource::WorkflowReplay,
+            interview_questions: Vec::new(),
+            gaps: Vec::new(),
+            gaps_filled: Vec::new(),
+            summary: None,
+            fit: Some("replay".into()),
+            score: Some(hit.score),
+            replayed: Some(ReplayedPlan {
+                audit_id: hit.audit_id.clone(),
+                score: hit.score,
+                reuses: hit.reuses,
+                steps: hit
+                    .steps
+                    .iter()
+                    .map(|s| ReplayedPlanStep {
+                        step_id: s.step_id.clone(),
+                        prompt_lod0: s.prompt_lod0.clone(),
+                        response_lod0: s.response_lod0.clone(),
+                        depends_on: s.depends_on.clone(),
+                        provides: s.provides.clone(),
+                    })
+                    .collect(),
+            }),
+        })
     }
 
     /// Render the session context and prepend it to the selector's user
@@ -381,6 +491,7 @@ impl PlanRoute {
                         summary: None,
                         fit: Some("partial".into()),
                         score: Some(selection.score),
+                        replayed: None,
                     }
                 }
             }
@@ -440,6 +551,7 @@ impl PlanRoute {
                 summary: Some(summary),
                 fit: Some(fit.into()),
                 score: Some(score),
+                replayed: None,
             },
             Err(e) => {
                 tracing::error!(
@@ -464,6 +576,7 @@ fn fresh_draft() -> PlanResult {
         summary: None,
         fit: None,
         score: None,
+        replayed: None,
     }
 }
 
@@ -566,10 +679,18 @@ pub async fn handle_plan_request(
     // assembler attached, the selector/adjudicator reads the session ledger
     // through the assembler's budget/relevance rules.
     let session_id = body.get("session_id").and_then(serde_json::Value::as_str);
+    // The workflow-learning loop arms only on an explicit caller-supplied
+    // self-doubt signal: replay needs it, and inventing one would collapse
+    // the [A]/[B] split. Absent, the unarmed paths run byte-identically.
+    let confidence = body.get("confidence").and_then(serde_json::Value::as_f64);
 
     let result = if retry {
         route
             .plan_interviewed_for_session(session_id, message, &entities, &prior_gaps)
+            .await
+    } else if let Some(confidence) = confidence {
+        route
+            .plan_replayable(session_id, message, &entities, confidence)
             .await
     } else {
         route
@@ -580,6 +701,23 @@ pub async fn handle_plan_request(
     let response = match result.source {
         PlanSource::FreshDraft => {
             serde_json::json!({ "status": "fresh_draft", "source": "fresh_draft" })
+        }
+        PlanSource::WorkflowReplay => {
+            let replayed = result.replayed.as_ref();
+            serde_json::json!({
+                "status": "replayed",
+                "source": "workflow_replay",
+                "audit_id": replayed.map_or("", |r| r.audit_id.as_str()),
+                "score": replayed.map_or(0.0, |r| r.score),
+                "reuses": replayed.map_or(0, |r| r.reuses),
+                "steps": replayed.map(|r| r.steps.iter().map(|s| serde_json::json!({
+                    "step_id": s.step_id,
+                    "prompt_lod0": s.prompt_lod0,
+                    "response_lod0": s.response_lod0,
+                    "depends_on": s.depends_on,
+                    "provides": s.provides,
+                })).collect::<Vec<_>>()).unwrap_or_default(),
+            })
         }
         PlanSource::HnswHit => plan_executed_response("hnsw_hit", &result),
         PlanSource::TemplateAdapted => {

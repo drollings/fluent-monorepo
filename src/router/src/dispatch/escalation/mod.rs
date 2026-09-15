@@ -58,6 +58,10 @@ pub struct EscalationContext<'a> {
     pub context_cache: Option<&'a Arc<dyn fluent_types::ContextCache>>,
     /// The session to mark frontier-owned after a turnover handoff.
     pub session: Option<&'a Arc<Mutex<DependencySession>>>,
+    /// The workflow-learning recorder: solved question-mode runs are
+    /// distilled into the embedding-keyed library through it (best-effort,
+    /// default-off). `None` leaves the ladder byte-identical.
+    pub recorder: Option<&'a crate::ledger::workflow_replay::WorkflowRecorder>,
 }
 
 /// A configured escalation ladder for one model group.

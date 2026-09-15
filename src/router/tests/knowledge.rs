@@ -50,9 +50,11 @@ async fn allow_with_token() {
             assert_eq!(nodes.len(), 1);
             // insert_node: allocates + persists (session set so the
             // interned index picks it up).
-            let mut new_node = fluent_types::ContentNode::default();
-            new_node.lod = vec!["second".into()];
-            new_node.session_id = Some("sess".into());
+            let new_node = fluent_types::ContentNode {
+                lod: vec!["second".into()],
+                session_id: Some("sess".into()),
+                ..Default::default()
+            };
             let new_id = KnowledgeCapability::insert_node(&*store, &new_node).unwrap();
             assert!(new_id.as_int() > id.as_int());
             assert_eq!(

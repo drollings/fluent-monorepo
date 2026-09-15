@@ -47,11 +47,11 @@ fn gguf_entries_pin_revisions_without_changing_cache_names() {
     assert_eq!(entry.backend, EmbeddingBackend::LlamaCpp);
     assert_eq!(entry.provider, "local");
     assert_eq!(
-        entry.uri.as_deref(),
+        entry.uri,
         Some("hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf#0f741b5a6585bd53aeb15cd1372c56f2a0f65e12")
     );
     assert_eq!(
-        entry.cache_file.as_deref(),
+        entry.cache_file,
         Some("hf_ggml-org_embeddinggemma-300M-Q8_0.gguf")
     );
     let sources = entry.sources.as_ref().expect("gguf entry must declare mirrors");
@@ -79,7 +79,7 @@ fn qwen_entries_carry_endpoints_and_token_limits() {
         .expect("qwen v4 must be catalogued");
     assert_eq!(entry.backend, EmbeddingBackend::Qwen);
     assert_eq!(
-        entry.default_endpoint.as_deref(),
+        entry.default_endpoint,
         Some(DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT)
     );
     assert_eq!(entry.max_input_tokens, Some(8192));
@@ -113,11 +113,11 @@ fn onnx_entries_carry_pooling_and_prefixes() {
     let e5 = get_embedding_model_catalog_entry("local/multilingual-e5-small")
         .expect("e5 must be catalogued");
     assert_eq!(
-        e5.query_prefix.as_deref(),
+        e5.query_prefix,
         Some("query: "),
         "e5 query prefix must survive the port"
     );
-    assert_eq!(e5.document_prefix.as_deref(), Some("passage: "));
+    assert_eq!(e5.document_prefix, Some("passage: "));
 }
 
 #[test]
@@ -125,12 +125,12 @@ fn model2vec_entries_carry_tensor_and_tokenizer_files() {
     let entry = get_embedding_model_catalog_entry("local/potion-code-16m-v2")
         .expect("potion code must be catalogued");
     assert_eq!(entry.backend, EmbeddingBackend::Model2Vec);
-    assert_eq!(entry.model_file.as_deref(), Some("model.safetensors"));
+    assert_eq!(entry.model_file, Some("model.safetensors"));
     assert_eq!(
-        entry.embedding_tensor.as_deref(),
+        entry.embedding_tensor,
         Some("embeddings")
     );
-    assert_eq!(entry.tokenizer_file.as_deref(), Some("tokenizer.json"));
+    assert_eq!(entry.tokenizer_file, Some("tokenizer.json"));
     assert_eq!(entry.dimension, 256);
     assert_eq!(entry.default_concurrency, Some(2));
 }

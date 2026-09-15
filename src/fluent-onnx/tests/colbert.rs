@@ -102,7 +102,7 @@ fn maxsim_score_normalized_range() {
     let q: Vec<&[f32]> = vec![&[1.0, 0.0], &[0.0, 1.0]];
     let d: Vec<&[f32]> = vec![&[-1.0, 0.0], &[0.0, -1.0]];
     let norm = maxsim_score_normalized(&q, &d);
-    assert!(norm >= 0.0 && norm <= 1.0, "normalized score out of range: {norm}");
+    assert!((0.0..=1.0).contains(&norm), "normalized score out of range: {norm}");
 }
 
 #[test]

@@ -35,6 +35,14 @@ fn make_test_config() -> RouterConfig {
         "pipelines": {"default": {"deterministic_prefilter": true, "classifier": true, "blacklist": "env/pii-patterns.json"}},
         "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.000001, "cost_output": 0.000006, "cost_cached_read": 0.0000004, "tok_s": 10, "total_timeout_ms": 5000, "idle_timeout_ms": 2000, "stream": false, "filter_thinking": false, "retry_count": 0, "retry_base_interval_s": 1}},
         "model_groups": {"fast": ["fast"]},
+        "classification": {"root": {
+            "type": "classifier",
+            "description": "test router",
+            "model": "fast",
+            "children": [
+                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "group": "fast"}}
+            ]
+        }},
         "default_route": "fast"
     }"#,
     ) {

@@ -58,7 +58,7 @@ fn classifier_reject_has_typed_reason() {
     // Empty reason still typed but caller can check emptiness
     let empty = ClassifierOutput {
         action: "reject".into(),
-        reason: "".into(),
+        reason: String::new(),
         ..Default::default()
     };
     match ClassifierAction::from_output(&empty).unwrap() {

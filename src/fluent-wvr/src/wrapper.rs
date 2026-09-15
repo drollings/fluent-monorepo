@@ -29,7 +29,7 @@ pub fn retry_call<F, T, E>(max_attempts: usize, base_ms: u64, f: F) -> Result<Re
 where
     F: Fn() -> Result<T, E>,
 {
-    assert!(max_attempts >= 1);
+    debug_assert!(max_attempts >= 1);
     let mut attempts = 0;
     loop {
         attempts += 1;

@@ -1,3 +1,6 @@
+// Exact asserts on measured overlay numbers are deliberate.
+#![allow(clippy::float_cmp)]
+
 use crate::config::builder::{
     OVERLAY_DISAMBIGUATION_FLOOR_DEFAULT, OVERLAY_REDIRECT_THRESHOLD_DEFAULT,
 };
@@ -148,7 +151,7 @@ fn redirect_gate_off_on_120_prompt_corpus() {
         "redirect default locked OFF by this corpus"
     );
     // 100 labeled prompts with top-hint scores spread across the range.
-    let labeled: Vec<f64> = (0..100).map(|i| 0.05 + 0.0094 * i as f64).collect();
+    let labeled: Vec<f64> = (0..100).map(|i| 0.05 + 0.0094 * f64::from(i)).collect();
     assert_eq!(labeled.len(), 100, "corpus size: 100 labeled prompts");
     // 20 adversarial-nearby pairs: high top-hint scores on the wrong route.
     let adversarial: Vec<f64> = vec![0.95; 20];

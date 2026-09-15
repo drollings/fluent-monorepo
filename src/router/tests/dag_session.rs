@@ -1,4 +1,5 @@
 use super::*;
+use crate::instances::stub::StubHandler;
 
 fn ok_result(content: &str) -> StepResult {
     StepResult {
@@ -616,7 +617,7 @@ async fn advance_with_fork_records_snapshot_and_sets_pending() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "POST" && path == "/instances/scratch/snapshot" {
                 (200, "{}".into())

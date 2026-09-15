@@ -125,6 +125,10 @@ fn engine_with_matcher(
     engine_with_routing(tree, backend, test_routing(), matcher)
 }
 
+fn compiled(tree: &ClassificationTree) -> Arc<crate::config::CompiledTree> {
+    Arc::new(tree.clone().compile().expect("test tree compiles"))
+}
+
 fn engine_with_routing(
     tree: &ClassificationTree,
     backend: Arc<dyn ChatBackend>,
@@ -132,7 +136,7 @@ fn engine_with_routing(
     matcher: Option<TargetMatcher>,
 ) -> ClassificationEngine {
     ClassificationEngine::new(
-        tree.clone(),
+        compiled(tree),
         routing,
         backend,
         HashMap::new(),
@@ -163,15 +167,21 @@ fn self_assessment(complexity: u8, reason: &str) -> String {
     .unwrap()
 }
 
-/// A ladder matcher whose default backend serves the queued self-assessment
-/// responses (empty per-key map → every candidate routes through the
-/// default, mirroring mock/transcript injection).
-fn ladder_matcher(responses: Vec<String>) -> TargetMatcher {
+/// A ladder matcher with one stub backend per member model key. Response
+/// attribution is scheduling-independent: whichever member's assessment runs
+/// first still receives its own scripted response.
+fn ladder_matcher_keyed(pairs: Vec<(&str, String)>) -> TargetMatcher {
+    let by_key: HashMap<String, Arc<dyn ChatBackend>> = pairs
+        .into_iter()
+        .map(|(key, response)| {
+            (
+                key.to_string(),
+                Arc::new(StubChatBackend::new(vec![response])) as Arc<dyn ChatBackend>,
+            )
+        })
+        .collect();
     TargetMatcher::new(
-        TargetBackends::new(
-            HashMap::new(),
-            Arc::new(StubChatBackend::new(responses)),
-        ),
+        TargetBackends::new(by_key, Arc::new(StubChatBackend::always("{}"))),
         Arc::new(Limiter::new(4)),
         0,
     )
@@ -287,9 +297,9 @@ fn terminal_group_ladder_self_assesses_and_matches() {
         "root": { "type": "terminal", "route": "fresh", "group": "fast" }
     }))
     .unwrap();
-    let matcher = ladder_matcher(vec![
-        self_assessment(7, "too hard for fast"),
-        self_assessment(1, "easy for small"),
+    let matcher = ladder_matcher_keyed(vec![
+        ("fast", self_assessment(7, "too hard for fast")),
+        ("small", self_assessment(1, "easy for small")),
     ]);
     let engine = engine_with_matcher(
         &tree,
@@ -351,9 +361,9 @@ fn terminal_flat_route_ladder_matches_within_group() {
 
     // fast self-assesses 2 > intelligence 1 → escalate to small, which
     // matches at 2 <= 2.
-    let matcher = ladder_matcher(vec![
-        self_assessment(2, "above fast"),
-        self_assessment(2, "ok for small"),
+    let matcher = ladder_matcher_keyed(vec![
+        ("fast", self_assessment(2, "above fast")),
+        ("small", self_assessment(2, "ok for small")),
     ]);
     let engine = engine_with_routing(
         &tree,
@@ -419,9 +429,9 @@ fn terminal_ladder_assessment_failure_escalates_to_last_member() {
         "root": { "type": "terminal", "route": "fresh", "group": "fast" }
     }))
     .unwrap();
-    let matcher = ladder_matcher(vec![
-        "not json at all".into(),
-        self_assessment(9, "hard even for small"),
+    let matcher = ladder_matcher_keyed(vec![
+        ("fast", "not json at all".into()),
+        ("small", self_assessment(9, "hard even for small")),
     ]);
     let engine = engine_with_matcher(
         &tree,
@@ -1069,7 +1079,7 @@ fn live_engine(
         None => Arc::new(|_: &str| None),
     };
     ClassificationEngine::new(
-        simple_tree(),
+        compiled(&simple_tree()),
         test_routing(),
         frozen,
         HashMap::new(),

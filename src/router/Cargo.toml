@@ -55,6 +55,15 @@ internment = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "stage_dispatch"
+harness = false
+
+[[bench]]
+name = "tree"
+harness = false
 
 [features]
 # The onnx wiring (registry build at boot, encoder/overlay workers) is gated on

@@ -292,7 +292,7 @@ mod tests {
             Case { distance: 2.5, label: false },
         ];
         // Sweep -threshold (negated distance) to use calibration's score >= threshold semantics.
-        let thresholds_pos: Vec<f64> = (0..=8).map(|i| 0.5 + i as f64 * 0.05).collect(); // 0.5..0.9
+        let thresholds_pos: Vec<f64> = (0..=8).map(|i| 0.5 + f64::from(i) * 0.05).collect(); // 0.5..0.9
         let thresholds_neg: Vec<f64> = thresholds_pos.iter().map(|t| -t).collect();
         let reports = common_core::calibration::sweep_thresholds(&cases, |c| -c.distance, |c| c.label, &thresholds_neg);
         common_core::calibration::emit_markdown_artifact("coral_l4_threshold", &reports);

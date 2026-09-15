@@ -1,4 +1,5 @@
 use super::*;
+use crate::instances::stub::StubHandler;
 
 fn test_snapshot(session_id: &str) -> KvSnapshot {
     KvSnapshot {
@@ -200,7 +201,7 @@ async fn save_snapshot_with_fork_records_metadata_and_posts() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "POST" && path == "/instances/scratch/snapshot" {
                 (200, "{}".into())
@@ -272,7 +273,7 @@ async fn list_and_delete_delegate_to_fork_when_present() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
+    let handler: StubHandler = Arc::new(
         |method, path, _body| {
             if method == "GET" && path == "/instances/scratch/snapshots" {
                 (

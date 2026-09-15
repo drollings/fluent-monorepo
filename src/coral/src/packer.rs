@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_ffd_pack_respects_order() {
         let packer = ContextPacker::new(10);
-        let candidates = vec![
+        let candidates = [
             PackedNode {
                 id: NodeId(1),
                 lod_level: 0,

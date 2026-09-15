@@ -91,7 +91,7 @@ pub(crate) fn install_global_subscriber() -> Arc<Mutex<Vec<String>>> {
 /// test's own worker has emitted anything. Suffix-scoping keeps parallel
 /// tests sound without clearing (which would drop a sibling's lines).
 pub(crate) fn global_capture_len(capture: &Arc<Mutex<Vec<String>>>) -> usize {
-    capture.lock().map(|lines| lines.len()).unwrap_or(0)
+    capture.lock().map_or(0, |lines| lines.len())
 }
 
 /// Lines appended to the shared global buffer since `base` (see

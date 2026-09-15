@@ -10,11 +10,10 @@ use fluent_concurrency::pool::Limiter;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
 use fluent_wvr::prelude::*;
-use regex::Regex;
 
-use crate::config::classification::InterlinguaMatch;
+use crate::config::compiled_tree::{CompiledChild, CompiledFilter, CompiledNode, CompiledTree};
 use crate::config::filters::FilterOutcome;
-use crate::config::{ClassificationNode, ClassificationTree, RoutingConfig};
+use crate::config::RoutingConfig;
 use crate::pipeline::RoutingTarget;
 use crate::stages::classifier::ClassifierBackendResolver;
 use crate::pipeline_types::{StageDecision, StageVerdict};
@@ -24,7 +23,7 @@ use super::decisions::{fallback_child, final_decision, node_decision, terminal_d
 use super::verdict::{parse_tree_verdict, TreeClassifierVerdict};
 
 pub struct ClassificationEngine {
-    tree: ClassificationTree,
+    tree: Arc<CompiledTree>,
     routing: RoutingConfig,
     /// Backend used for every classifier node that has no dedicated entry in
     /// `clients` (mock/transcript injection, or the root classifier client).
@@ -54,7 +53,7 @@ pub struct ClassificationEngine {
 impl ClassificationEngine {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        tree: ClassificationTree,
+        tree: Arc<CompiledTree>,
         routing: RoutingConfig,
         default_client: Arc<dyn ChatBackend>,
         clients: HashMap<String, Arc<dyn ChatBackend>>,
@@ -136,8 +135,8 @@ impl ClassificationEngine {
     #[allow(clippy::too_many_arguments)]
     fn evaluate_node(
         &self,
-        node: &ClassificationNode,
-        siblings: &HashMap<String, ClassificationNode>,
+        node: &CompiledNode,
+        siblings: &HashMap<String, CompiledNode>,
         user_text: &str,
         interlingua: Option<&[spacy_rs::routing::InterlinguaSignal]>,
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
@@ -146,7 +145,7 @@ impl ClassificationEngine {
         expansion: &GroupExpansion,
     ) -> Result<TreeOutcome, WorkError> {
         match node {
-            ClassificationNode::Classifier {
+            CompiledNode::Classifier {
                 description,
                 model,
                 model_group,
@@ -185,7 +184,7 @@ impl ClassificationEngine {
                     expansion,
                 )
             }
-            ClassificationNode::Terminal {
+            CompiledNode::Terminal {
                 route,
                 group,
                 description,
@@ -199,18 +198,8 @@ impl ClassificationEngine {
                 visited,
                 expansion,
             )),
-            ClassificationNode::Filter {
-                description,
-                patterns,
-                outcome,
-                redirect_to,
-                match_interlingua,
-            } => self.evaluate_filter(
-                description,
-                patterns,
-                match_interlingua.as_ref(),
-                outcome,
-                redirect_to.as_deref(),
+            CompiledNode::Filter(filter) => self.evaluate_filter(
+                filter,
                 siblings,
                 user_text,
                 interlingua,
@@ -219,7 +208,7 @@ impl ClassificationEngine {
                 visited,
                 expansion,
             ),
-            ClassificationNode::Fallback { node, .. } => self.evaluate_node(
+            CompiledNode::Fallback { node, .. } => self.evaluate_node(
                 node,
                 siblings,
                 user_text,
@@ -241,8 +230,8 @@ impl ClassificationEngine {
         model: &str,
         coherence_threshold: Option<f64>,
         safety_threshold: Option<f64>,
-        children: &[crate::config::ClassificationChild],
-        node: &ClassificationNode,
+        children: &[CompiledChild],
+        node: &CompiledNode,
         user_text: &str,
         interlingua: Option<&[spacy_rs::routing::InterlinguaSignal]>,
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
@@ -250,12 +239,12 @@ impl ClassificationEngine {
         expansion: &GroupExpansion,
     ) -> Result<TreeOutcome, WorkError> {
         // Deterministic filter children short-circuit before any LLM call.
-        let siblings: HashMap<String, ClassificationNode> = children
+        let siblings: HashMap<String, CompiledNode> = children
             .iter()
             .map(|c| (c.key.clone(), c.node.clone()))
             .collect();
         for child in children {
-            if let ClassificationNode::Filter { .. } = child.node {
+            if let CompiledNode::Filter { .. } = child.node {
                 match self.evaluate_node(
                     &child.node,
                     &siblings,
@@ -275,7 +264,7 @@ impl ClassificationEngine {
         let coherence = coherence_threshold.unwrap_or(self.default_coherence_threshold);
         let safety = safety_threshold.unwrap_or(self.routing.safety_threshold);
 
-        let Some(prompt) = node.build_prompt(coherence, safety) else {
+        let Some(prompt) = node.render_classifier_prompt(coherence, safety) else {
             let reason = "classifier node has no routeable children".to_string();
             visited.push(node_decision(
                 "classifier",
@@ -597,12 +586,8 @@ impl ClassificationEngine {
     #[allow(clippy::too_many_arguments)]
     fn evaluate_filter(
         &self,
-        description: &str,
-        patterns: &[String],
-        match_interlingua: Option<&InterlinguaMatch>,
-        outcome: &FilterOutcome,
-        redirect_to: Option<&str>,
-        siblings: &HashMap<String, ClassificationNode>,
+        filter: &CompiledFilter,
+        siblings: &HashMap<String, CompiledNode>,
         user_text: &str,
         interlingua: Option<&[spacy_rs::routing::InterlinguaSignal]>,
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
@@ -610,7 +595,8 @@ impl ClassificationEngine {
         visited: &mut Vec<StageDecision>,
         expansion: &GroupExpansion,
     ) -> Result<TreeOutcome, WorkError> {
-        let matched = if let Some(m) = match_interlingua {
+        let description = filter.description.as_str();
+        let matched = if let Some(m) = filter.match_interlingua.as_ref() {
             // Interlingua dispatch: AND of the set fields across any sentence,
             // gated by the sentence confidence floor. `confidence_min` is
             // fail-closed: a sentence whose parse carried no confidence is
@@ -625,7 +611,7 @@ impl ClassificationEngine {
                 })
             })
         } else {
-            if patterns.is_empty() {
+            if filter.order.is_empty() {
                 visited.push(node_decision(
                     "filter",
                     description,
@@ -635,27 +621,14 @@ impl ClassificationEngine {
                 ));
                 return Ok(TreeOutcome::Pass);
             }
-            patterns.iter().any(|p| {
-                Regex::new(p).map_or_else(
-                    |e| {
-                        tracing::warn!(
-                            target: "router.pipeline.stage2.tree",
-                            pattern = %p,
-                            error = %e,
-                            "invalid filter regex — treated as non-match",
-                        );
-                        false
-                    },
-                    |re| re.is_match(user_text),
-                )
-            })
+            filter.matches(user_text)
         };
         if !matched {
             visited.push(node_decision(
                 "filter",
                 description,
                 StageVerdict::Passed,
-                if match_interlingua.is_some() {
+                if filter.match_interlingua.is_some() {
                     "interlingua filter did not match — passing through".into()
                 } else {
                     "filter did not match — passing through".into()
@@ -665,7 +638,7 @@ impl ClassificationEngine {
             return Ok(TreeOutcome::Pass);
         }
 
-        match outcome {
+        match &filter.outcome {
             FilterOutcome::HardReject => {
                 let reason = format!("blocked by filter: {description}");
                 visited.push(node_decision(
@@ -678,7 +651,7 @@ impl ClassificationEngine {
                 Ok(TreeOutcome::Reject(reason))
             }
             FilterOutcome::SoftRedirect => {
-                if let Some(target) = redirect_to {
+                if let Some(target) = filter.redirect_to.as_deref() {
                     if let Some(node) = siblings.get(target) {
                         visited.push(node_decision(
                             "filter",

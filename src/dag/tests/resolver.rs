@@ -6,11 +6,9 @@ use fluent_types::{ExecutorKind, TargetType};
 use internment::ArcIntern;
 use std::time::Instant;
 
-fn register_targets(
-    reg: &mut TargetRegistry,
-    caps: &CapabilityRegistry,
-    entries: &[(i64, &str, TargetType, &[&str], &[&str], bool)],
-) {
+type Entry<'a> = (i64, &'a str, TargetType, &'a [&'a str], &'a [&'a str], bool);
+
+fn register_targets(reg: &mut TargetRegistry, caps: &CapabilityRegistry, entries: &[Entry<'_>]) {
     for &(id, name, ttype, depends, provides, essential) in entries {
         let d: BitVec = if depends.is_empty() {
             BitVec::new()
@@ -185,7 +183,7 @@ fn test_narrow_one_disambiguate_with_locality_preference() {
     let mut reg = TargetRegistry::new();
     let caps = CapabilityRegistry::new();
 
-    let entries: &[(i64, &str, TargetType, &[&str], &[&str], bool)] = &[
+    let entries: &[Entry<'_>] = &[
         (
             0,
             "bee",
@@ -657,7 +655,7 @@ fn test_breadth_first_fan_out() {
     let elapsed = start.elapsed();
     assert_eq!(plan.order.len(), fan_out + 2);
     assert_eq!(plan.order[0], 0);
-    assert_eq!(*plan.order.last().unwrap(), (fan_out + 1) as usize);
+    assert_eq!(*plan.order.last().unwrap(), (fan_out + 1));
     let per_node_us = elapsed.as_micros() as f64 / (fan_out + 2) as f64;
     eprintln!(
         "[perf] breadth_first_fan_out: {fan_out} leaves, {}us total, {per_node_us:.1}us/node",

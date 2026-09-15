@@ -163,7 +163,6 @@ async fn max_concurrent_bounds_handler_invocations() {
             max_concurrent: 1,
             poll_interval_ms: 5,
             batch_size: 8,
-            ..config()
         },
         move |_: usize| {
             let f = Arc::clone(&f);
@@ -227,11 +226,11 @@ async fn drain_lets_queued_items_complete_then_exits() {
     }
     worker.drain();
     // The loop processes whatever remains in the feed, then exits cleanly.
-    let finished = tokio::time::timeout(Duration::from_secs(5), handle)
+    tokio::time::timeout(Duration::from_secs(5), handle)
         .await
         .expect("drain completes within timeout")
         .expect("no panic");
-    assert_eq!(finished, ());
+    assert_eq!((), ());
     assert_eq!(
         counter.load(AtomicOrdering::SeqCst),
         8,

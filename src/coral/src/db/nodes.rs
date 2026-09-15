@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn insert_with_explicit_id_uses_it_as_primary_key() {
         let lib = lib();
-        let nid = NodeId::from_int(0x1234_5678_9abc_def0_i64 as i64);
+        let nid = NodeId::from_int(0x1234_5678_9abc_def0_i64);
         let node = ContentNode {
             id: Some(nid),
             ..make_node("content-addressed", "s")

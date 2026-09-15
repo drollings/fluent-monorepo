@@ -144,21 +144,21 @@ fn snapshot_fields_ignored_for_one_shot_contexts() {
     // still reaches the body.
     let (instance, snapshot, id_slot) =
         filter_routing_fields_for_session(Some("scratch"), Some("snap"), Some(2), false);
-    assert_eq!(instance.as_deref(), Some("scratch"));
+    assert_eq!(instance, Some("scratch"));
     assert!(snapshot.is_none(), "one-shot drops snapshot");
     assert!(id_slot.is_none(), "one-shot drops id_slot");
 
     let (instance, snapshot, id_slot) =
         filter_routing_fields_for_session(Some("agent"), Some("snap"), Some(2), true);
-    assert_eq!(instance.as_deref(), Some("agent"));
-    assert_eq!(snapshot.as_deref(), Some("snap"), "session keeps snapshot");
+    assert_eq!(instance, Some("agent"));
+    assert_eq!(snapshot, Some("snap"), "session keeps snapshot");
     assert_eq!(id_slot, Some(2), "session keeps id_slot");
 
     // No instance targeted: fields pass through untouched (group dispatch
     // resolves the concrete context server-side).
     let (_, snapshot, id_slot) =
         filter_routing_fields_for_session(None, Some("snap"), Some(2), false);
-    assert_eq!(snapshot.as_deref(), Some("snap"));
+    assert_eq!(snapshot, Some("snap"));
     assert_eq!(id_slot, Some(2));
 }
 
@@ -480,7 +480,7 @@ async fn complete_sends_bearer_token_from_api_key_env() {
 
     let auth = seen.lock().unwrap().clone();
     assert_eq!(
-        auth.as_deref().map(|a| a.to_lowercase()).as_deref(),
+        auth.as_deref().map(str::to_lowercase).as_deref(),
         Some("bearer s3cret-token"),
         "external api_key env var sent as Authorization: Bearer"
     );
@@ -539,10 +539,7 @@ async fn complete_omits_auth_when_api_key_env_missing() {
         .await;
     assert!(result.is_ok(), "dispatch succeeds without an auth header: {result:?}");
 
-    match old {
-        Some(v) => std::env::set_var("TEST_LLAMA_CPP_MISSING_KEY", v),
-        None => {}
-    }
+    if let Some(v) = old { std::env::set_var("TEST_LLAMA_CPP_MISSING_KEY", v) }
 }
 
 #[tokio::test]
@@ -556,9 +553,8 @@ async fn stream_group_miss_yields_instance_group_miss() {
     let body_owned = body.to_string();
     let _server = tokio::spawn(async move {
         loop {
-            let (mut stream, _) = match listener.accept().await {
-                Ok(v) => v,
-                Err(_) => continue,
+            let Ok((mut stream, _)) = listener.accept().await else {
+                continue;
             };
             let body_owned = body_owned.clone();
             tokio::spawn(async move {
@@ -598,9 +594,8 @@ async fn stream_group_miss_yields_instance_group_miss() {
     let result = backend
         .stream_complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
         .await;
-    let err = match result {
-        Err(e) => e,
-        Ok(_) => panic!("streaming group-miss must error"),
+    let Err(err) = result else {
+        panic!("streaming group-miss must error")
     };
     assert!(
         matches!(&err, DispatchError::InstanceGroupMiss { group } if group == "swarm"),

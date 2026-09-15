@@ -160,11 +160,13 @@ assert_eq!(weights[0].model_key(), "onnx/llm");
 
 #[test]
 fn fleet_round_trip_keeps_roles() {
-    let mut config = RouterConfig::default();
-    config.onnx = Some(fluent_llm::onnx_config::OnnxFleetConfig {
-        encoder: Some(role_config("/models/encoder.onnx")),
+    let config = RouterConfig {
+        onnx: Some(fluent_llm::onnx_config::OnnxFleetConfig {
+            encoder: Some(role_config("/models/encoder.onnx")),
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
     let json = serde_json::to_string(&config).unwrap();
     let back: RouterConfig = serde_json::from_str(&json).unwrap();
     let fleet = back.onnx.expect("onnx fleet");
@@ -597,7 +599,7 @@ fn local_backend_for_instance_onnx_branch_routes_to_resolver() {
             "onnx",
             key,
             |instance| match instance {
-                Some(name) if name == "swarm" => "onnx-swarm",
+                Some("swarm") => "onnx-swarm",
                 _ => "onnx-default",
             },
         )

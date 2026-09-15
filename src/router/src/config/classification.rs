@@ -19,6 +19,7 @@ use fluent_types::InterlinguaId;
 use serde::{Deserialize, Serialize};
 
 use crate::config::filters::FilterOutcome;
+use crate::stages::classifier::prompt::{render_available_routes, RouteEntry};
 
 /// The interlingua match for a `Filter` node: a
 /// deterministic dispatch on the request's parsed predicate/subject/object
@@ -270,6 +271,19 @@ impl ClassificationNode {
     /// threshold guidance. `None` when the node is not a classifier or has no
     /// routeable children.
     pub fn build_prompt(&self, coherence_threshold: f64, safety_threshold: f64) -> Option<String> {
+        Some(crate::stages::classifier::prompt::substitute_thresholds(
+            &self.build_prompt_template()?,
+            coherence_threshold,
+            safety_threshold,
+        ))
+    }
+
+    /// The classifier prompt with literal `{coherence_threshold}` /
+    /// `{safety_threshold}` placeholders in the guidance line. The compiled
+    /// tree pre-renders this once per tree version; per-request rendering
+    /// only substitutes the thresholds, so the template is the single source
+    /// of the prompt text.
+    pub(crate) fn build_prompt_template(&self) -> Option<String> {
         let ClassificationNode::Classifier {
             description,
             children,
@@ -295,15 +309,14 @@ impl ClassificationNode {
         let mut prompt = String::new();
         let _ = writeln!(prompt, "You are a {description}.");
         let _ = writeln!(prompt);
-        let _ = writeln!(prompt, "Available routes:");
-        for child in &routeable {
-            if child.description.is_empty() {
-                let _ = writeln!(prompt, "- {}", child.key);
-            } else {
-                let _ = writeln!(prompt, "- {}: {}", child.key, child.description);
-            }
-        }
-        let _ = writeln!(prompt);
+        let entries: Vec<RouteEntry<'_>> = routeable
+            .iter()
+            .map(|child| RouteEntry {
+                name: child.key.as_str(),
+                description: child.description.as_str(),
+            })
+            .collect();
+        prompt.push_str(&render_available_routes(&entries, "- "));
         let keys: Vec<&str> = routeable.iter().map(|c| c.key.as_str()).collect();
         let _ = writeln!(prompt, "You must output exactly one JSON object with:");
         let _ = writeln!(
@@ -330,8 +343,8 @@ impl ClassificationNode {
         let _ = writeln!(prompt);
         let _ = writeln!(
             prompt,
-            "If the query is incoherent (coherence < {coherence_threshold:.2}) or unsafe \
-             (safety < {safety_threshold:.2}), route to the fallback branch or output an empty route."
+            "If the query is incoherent (coherence < {{coherence_threshold}}) or unsafe \
+             (safety < {{safety_threshold}}), route to the fallback branch or output an empty route."
         );
         let _ = writeln!(prompt, "Only output JSON, no other text.");
         Some(prompt)

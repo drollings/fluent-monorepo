@@ -11,7 +11,7 @@ fn make_fallback_output() -> WorkOutput {
         latency_ms: 0,
         metadata: serde_json::json!({"fallback": true}),
     };
-    WorkOutput::typed_infallible("classified", &decision)
+    WorkOutput::typed_lossy("classified", &decision)
 }
 
 fn make_success_output() -> WorkOutput {
@@ -23,7 +23,7 @@ fn make_success_output() -> WorkOutput {
         latency_ms: 0,
         metadata: serde_json::json!({"intent": "code", "action": "route", "fallback": false}),
     };
-    WorkOutput::typed_infallible("classified", &decision)
+    WorkOutput::typed_lossy("classified", &decision)
 }
 
 #[test]

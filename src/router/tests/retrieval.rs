@@ -96,7 +96,7 @@ fn lemma_grep_hits_carry_confidence_and_lemma() {
         lemma[0].parse_confidence.is_some(),
         "confidence is mandatory on a lemma hit"
     );
-    assert!(lemma[0].span.len() > 0, "a real byte span");
+    assert!(!lemma[0].span.is_empty(), "a real byte span");
 }
 
 #[test]

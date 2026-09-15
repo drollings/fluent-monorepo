@@ -102,6 +102,7 @@ fn work_output_data_take_consumes_self() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn work_output_typed_infallible_roundtrip() {
     #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
     struct MyData {
@@ -115,15 +116,40 @@ fn work_output_typed_infallible_roundtrip() {
 }
 
 #[test]
+fn typed_lossy_serializes_ok() {
+    #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+    struct MyData {
+        x: i32,
+    }
+    let data = MyData { x: 42 };
+    let output = WorkOutput::typed_lossy("ok", &data);
+    assert!(output.success);
+    let recovered: MyData = output.data_as().unwrap();
+    assert_eq!(recovered, data);
+}
+
+#[test]
+fn typed_lossy_never_panics_on_unserializable_payload() {
+    // A map with non-string keys cannot serialize to JSON: `typed` reports
+    // `Err`, while `typed_lossy` stores the error as a string.
+    let bad: std::collections::HashMap<Vec<u8>, i32> =
+        [(vec![0u8], 1)].into_iter().collect();
+    assert!(WorkOutput::typed::<std::collections::HashMap<Vec<u8>, i32>>("ok", &bad).is_err());
+    let output = WorkOutput::typed_lossy("ok", &bad);
+    assert!(output.success);
+    assert!(output.data.is_string());
+}
+
+#[test]
 fn work_output_display_ok() {
     let out = WorkOutput::ok("done");
-    assert_eq!(format!("{}", out), "OK: done");
+    assert_eq!(format!("{out}"), "OK: done");
 }
 
 #[test]
 fn work_output_display_fail() {
     let out = WorkOutput::fail("oops");
-    assert_eq!(format!("{}", out), "FAIL: oops");
+    assert_eq!(format!("{out}"), "FAIL: oops");
 }
 
 #[test]

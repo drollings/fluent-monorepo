@@ -1034,7 +1034,7 @@ fn non_object_params_warn_and_degrade() {
         }
     }))
     .expect("junk params still deserialize");
-    let (_, logs) = capture_logs(|| cfg.apply_defaults());
+    let ((), logs) = capture_logs(|| cfg.apply_defaults());
     let joined = logs.join("\n");
     for path in [
         "roles.fleet.instances.p.params",
@@ -1081,7 +1081,7 @@ fn role_binding_to_unknown_model_warns_and_is_ignored() {
         }
     }))
     .expect("dangling binding parses");
-    let (_, logs) = capture_logs(|| cfg.apply_defaults());
+    let ((), logs) = capture_logs(|| cfg.apply_defaults());
     let joined = logs.join("\n");
     assert!(
         joined.contains("ghost"),
@@ -1362,7 +1362,7 @@ fn missing_endpoint_warns_only_for_external_models() {
     // Managed models (weights/hf_repo) omit `endpoint` — the supervisor
     // assigns it. Only external models without one warn at boot.
     use crate::test_support::capture_logs;
-    fn entry(extra: serde_json::Value) -> ModelEntry {
+    fn entry(extra: &serde_json::Value) -> ModelEntry {
         let mut base = serde_json::json!({
             "intelligence": 1,
             "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
@@ -1376,11 +1376,11 @@ fn missing_endpoint_warns_only_for_external_models() {
     let mut cfg = RouterConfig::default();
     cfg.models.insert(
         "managed".to_string(),
-        entry(serde_json::json!({"weights": "/m.gguf"})),
+        entry(&serde_json::json!({"weights": "/m.gguf"})),
     );
     cfg.models
-        .insert("external".to_string(), entry(serde_json::json!({})));
-    let (_, logs) = capture_logs(|| cfg.apply_defaults());
+        .insert("external".to_string(), entry(&serde_json::json!({})));
+    let ((), logs) = capture_logs(|| cfg.apply_defaults());
     let joined = logs.join("\n");
     assert!(
         joined.contains("external"),
@@ -1985,7 +1985,7 @@ fn router_config_field_access_round_trip() {
     assert_eq!(cfg.get_field("safety_threshold").unwrap(), "0.7");
     // skipped fields (e.g. models) are NotFound
     let err = cfg.set_field("models", "x").unwrap_err();
-    assert!(matches!(err, fluent_wvr::FieldError::NotFound(_)), "models should be NotFound, got {:?}", err);
+    assert!(matches!(err, fluent_wvr::FieldError::NotFound(_)), "models should be NotFound, got {err:?}");
 }
 
 #[test]
@@ -2428,7 +2428,7 @@ fn inference_point_fixture() -> (
             "bare-role": {"models": {"plain": {}}}
         }))
         .expect("roles parse");
-    for (key, entry) in models.iter_mut() {
+    for (key, entry) in &mut models {
         materialize(key, entry, &roles);
     }
     (models, roles)

@@ -69,7 +69,6 @@ impl From<common_core::error::IoError> for DbError {
 }
 
 #[cfg(feature = "sqlite")]
-
 #[cfg(all(test, feature = "sqlite"))]
 #[path = "../tests/error.rs"]
 mod tests;

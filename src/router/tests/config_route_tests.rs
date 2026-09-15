@@ -118,15 +118,13 @@ fn probe_for_route(route: &str, rref: &RouteRef) -> String {
     let seeds = ROUTE_PROBE_SEEDS;
     seeds
         .iter()
-        .find(|(name, _)| *name == route)
-        .map(|(_, p)| p.to_string())
-        .unwrap_or_else(|| {
+        .find(|(name, _)| *name == route).map_or_else(|| {
             if rref.description.is_empty() {
                 format!("Please help with: {route}")
             } else {
                 rref.description.clone()
             }
-        })
+        }, |(_, p)| p.to_string())
 }
 
 /// Additional phrasings per route so the dispatch path is exercised across
@@ -322,7 +320,7 @@ async fn route_intents_dispatch_to_their_model_groups() {
     let config = load_config();
     let route_count = config.routes_view().len();
     let entries = transcripts_from_config(&config);
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock) = Box::pin(spawn_config_mock_server(config, entries.clone())).await;
 
     let mut probed = 0;
     for entry in &entries {
@@ -399,7 +397,7 @@ async fn every_declared_model_answers_directly() {
             }
         })
         .collect();
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock) = Box::pin(spawn_config_mock_server(config, entries.clone())).await;
 
     for entry in &entries {
         let key = entry.expected_route.as_deref().expect("model key");
@@ -513,7 +511,7 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         });
     }
 
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock) = Box::pin(spawn_config_mock_server(config, entries.clone())).await;
 
     for entry in &entries {
         let route = entry.expected_route.as_deref().expect("declared route");
@@ -556,7 +554,7 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn deterministic_commands_dispatch() {
     let config = load_config();
-    let (server, _mock) = spawn_config_mock_server(config.clone(), vec![]).await;
+    let (server, _mock) = Box::pin(spawn_config_mock_server(config.clone(), vec![])).await;
 
     let cases: &[(&str, &str)] = &[
         ("/help", "help"),
@@ -627,7 +625,7 @@ async fn pii_requests_are_blocked() {
             reject_reason_contains: Some("api_key".into()),
         },
     ];
-    let (server, mock) = spawn_config_mock_server(config.clone(), entries.clone()).await;
+    let (server, mock) = Box::pin(spawn_config_mock_server(config.clone(), entries.clone())).await;
 
     for entry in &entries {
         let body = json!({
@@ -663,7 +661,7 @@ async fn pii_requests_are_blocked() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn health_and_stats_endpoints_report_ok() {
     let config = load_config();
-    let (server, _mock) = spawn_config_mock_server(config, vec![]).await;
+    let (server, _mock) = Box::pin(spawn_config_mock_server(config, vec![])).await;
 
     let health = get(&server.base_url(), "/health", 10_000)
         .await
@@ -685,7 +683,7 @@ async fn health_and_stats_endpoints_report_ok() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unknown_path_returns_404() {
     let config = load_config();
-    let (server, _mock) = spawn_config_mock_server(config, vec![]).await;
+    let (server, _mock) = Box::pin(spawn_config_mock_server(config, vec![])).await;
 
     let response = get(&server.base_url(), "/nonexistent", 10_000)
         .await
@@ -761,7 +759,7 @@ async fn mock_transcript_entries_serve_their_expected_answers() {
     let default_route = config.default_route.clone();
     let entries = load_transcript_file(mock_transcripts_path())
         .expect("load mock-transcripts.json (validated by mock_transcript_fixture_stays_synced_with_config)");
-    let (server, mock) = spawn_config_mock_server(config, entries.clone()).await;
+    let (server, mock) = Box::pin(spawn_config_mock_server(config, entries.clone())).await;
 
     for entry in &entries {
         let body = json!({

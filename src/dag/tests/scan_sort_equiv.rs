@@ -70,7 +70,7 @@ fn build_registry(rng: &mut Rng, n: usize, width: usize) -> TargetRegistry {
     reg
 }
 
-fn names<'a>(targets: Vec<&'a Target>) -> Vec<String> {
+fn names(targets: Vec<&Target>) -> Vec<String> {
     let mut out: Vec<String> = targets.into_iter().map(|t| t.name.to_string()).collect();
     out.sort();
     out
@@ -254,7 +254,7 @@ fn closure_matrix(closure: &HashMap<i64, BitVec>, ids: &[i64], id_to_bit: &HashM
             }
         }
     }
-    pairs.sort();
+    pairs.sort_unstable();
     pairs
 }
 
@@ -450,7 +450,7 @@ fn subclass_matrix(ti: &TypeInference, ids: &[i64]) -> Vec<(i64, i64)> {
             }
         }
     }
-    pairs.sort();
+    pairs.sort_unstable();
     pairs
 }
 

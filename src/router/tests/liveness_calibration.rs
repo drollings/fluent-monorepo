@@ -6,6 +6,9 @@
 //! 2,3,5,10 against synthetic flake rates and assert precision=1.0 for
 //! control before the chosen default is trusted.
 
+// Exact asserts on measured control precision are deliberate.
+#![allow(clippy::float_cmp)]
+
 fn hung_after_threshold(seq: &[bool], threshold: u32) -> bool {
     // Simulate HealthProbe consecutive-failure counter
     let mut failures = 0u32;
@@ -39,9 +42,7 @@ fn control_recover_within_threshold_minus_one_must_not_kill() {
         // Fail threshold-1 times, then recover, repeated
         let mut seq = Vec::new();
         for _ in 0..10 {
-            for _ in 0..threshold - 1 {
-                seq.push(false);
-            }
+            seq.extend(std::iter::repeat_n(false, (threshold - 1) as usize));
             seq.push(true); // recover
         }
         assert!(
@@ -73,7 +74,7 @@ fn sweep_threshold_precision_is_one_for_control() {
             "threshold {threshold}: 1% isolated 503 must not trip, precision must be 1.0"
         );
         // Verify precision = TP/(TP+FP) for control = 1.0 (FP must be 0)
-        let false_positives = if hung { 1 } else { 0 };
+        let false_positives = i32::from(hung);
         let precision = if false_positives == 0 { 1.0 } else { 0.0 };
         assert_eq!(precision, 1.0, "threshold {threshold}: control precision must be 1.0");
     }

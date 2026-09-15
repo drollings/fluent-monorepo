@@ -34,7 +34,7 @@ async fn grant_then_has_grant_with_fingerprint_isolation() {
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
 
-    let granted = target(&[root.clone()]);
+    let granted = target(std::slice::from_ref(&root));
     assert!(!store.has_grant(&granted).unwrap());
     store.grant(&granted).await.unwrap();
     assert!(store.has_grant(&granted).unwrap());
@@ -64,7 +64,7 @@ async fn tampered_documents_do_not_authorize() {
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
-    let granted = target(&[root.clone()]);
+    let granted = target(std::slice::from_ref(&root));
     store.grant(&granted).await.unwrap();
     assert!(store.has_grant(&granted).unwrap());
 
@@ -95,7 +95,7 @@ async fn revoke_and_revoke_all() {
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
-    let first = target(&[root.clone()]);
+    let first = target(std::slice::from_ref(&root));
     let second = RemoteEmbeddingTarget::new(
         vec![root.clone()],
         "qwen",
@@ -118,7 +118,7 @@ async fn grant_files_are_owner_only() {
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
-    store.grant(&target(&[root.clone()])).await.unwrap();
+    store.grant(&target(std::slice::from_ref(&root))).await.unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -162,7 +162,7 @@ async fn one_shot_allow_remote_bypasses_the_store_without_writing() {
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
-    let granted = target(&[root.clone()]);
+    let granted = target(std::slice::from_ref(&root));
     let outcome = ensure_remote_embedding_authorized(&store, &granted, true, None).await.unwrap();
     assert!(matches!(
         outcome,
@@ -180,7 +180,7 @@ async fn elicitation_approval_persists_a_grant_and_denial_names_the_path() {
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
-    let granted = target(&[root.clone()]);
+    let granted = target(std::slice::from_ref(&root));
 
     let approver = StubElicitor {
         approve: true,

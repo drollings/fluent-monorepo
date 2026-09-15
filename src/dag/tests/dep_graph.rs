@@ -115,8 +115,7 @@ fn test_dependents_of_multi_asset_no_false_cycle() {
     assert_eq!(
         deps.len(),
         1,
-        "link should appear exactly once, got: {:?}",
-        deps
+        "link should appear exactly once, got: {deps:?}"
     );
     assert!(deps.contains(&"link"));
 }

@@ -302,7 +302,7 @@ fn eviction_order_scores_each_candidate_once() {
         let mut seed: u64 = 0x1234_5678_9abc_def0;
         let mut next = || {
                 seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                (seed >> 33) as u64
+                seed >> 33
         };
         let cands: Vec<(u64, i64)> = (0..200)
                 .map(|_| ((next() % 50) * 100, (next() % 100) as i64))

@@ -5,6 +5,9 @@
 //! callers — every assertion below is ported verbatim from the pre-move
 //! suites (`spacy-rs/tests/arcready.rs`, `spacy-rs/tests/pipeline.rs`
 //! `arc_ready_*`), with only the type path and constructor updated.
+//!
+//! Exact asserts on ported annotation values are deliberate.
+#![allow(clippy::float_cmp)]
 
 use super::*;
 use std::sync::Arc;

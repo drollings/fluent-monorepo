@@ -200,6 +200,53 @@ fn rebootless_reload_never_tears_readers() {
     assert_eq!(holder.version(), 2);
 }
 
+/// A reload publishes a new compiled tree alongside the raw one, and
+/// in-flight readers of the compiled snapshot never observe a torn version
+/// (version and content move together).
+#[test]
+fn reload_publishes_a_new_compiled_tree_without_tearing_readers() {
+    use std::sync::Arc;
+    let holder = Arc::new(VersionedTree::new(fixture_tree()));
+    let (v1, c1) = holder.current_compiled();
+    assert_eq!(v1, 1);
+    let v1_prompt = c1.render_prompt(&[], 0.6, 0.4).expect("v1 prompt");
+    let v2 = regenerate_description(&fixture_tree(), &[], "live v2".into()).expect("regen");
+    let v2_prompt = v2
+        .compile()
+        .expect("compile")
+        .render_prompt(&[], 0.6, 0.4)
+        .expect("v2 prompt");
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            let holder = Arc::clone(&holder);
+            let (v1_prompt, v2_prompt) = (&v1_prompt, &v2_prompt);
+            scope.spawn(move || {
+                for _ in 0..200 {
+                    let (version, compiled) = holder.current_compiled();
+                    let prompt = compiled.render_prompt(&[], 0.6, 0.4).expect("prompt");
+                    assert_eq!(
+                        prompt == *v1_prompt,
+                        version == 1,
+                        "reader saw a torn version"
+                    );
+                    assert!(
+                        prompt == *v1_prompt || prompt == *v2_prompt,
+                        "readers see whole versions only"
+                    );
+                }
+            });
+        }
+        holder.reload(v2, "live").expect("reload");
+    });
+    assert_eq!(holder.version(), 2);
+    let (v2_live, c2) = holder.current_compiled();
+    assert_eq!(v2_live, 2);
+    assert!(
+        !Arc::ptr_eq(&c1, &c2),
+        "reload publishes a new compiled tree"
+    );
+}
+
 #[test]
 fn fingerprint_ignores_tuning_but_catches_structure() {
     let base = topology_fingerprint(&fixture_tree());

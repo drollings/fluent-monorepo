@@ -58,7 +58,7 @@ fn scorer_fixed(hits: Vec<(InterlinguaId, f64)>) -> EntityLinkScorer {
 
 async fn wait_for_candidates(s: &OverlayCandidateStore, node: NodeId, n: usize) {
     for _ in 0..100 {
-        if s.for_node(node).map(|r| r.len()).unwrap_or(0) >= n {
+        if s.for_node(node).map_or(0, |r| r.len()) >= n {
             return;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;

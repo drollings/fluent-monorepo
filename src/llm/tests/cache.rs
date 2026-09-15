@@ -20,11 +20,11 @@ use std::sync::{Arc, Mutex};
 
 type Store = Arc<Mutex<HashMap<String, CachedResponse>>>;
 
-fn make_cache(store: Store) -> ResponseCache {
-    let s_check = Arc::clone(&store);
-    let s_store = Arc::clone(&store);
-    let s_clear = Arc::clone(&store);
-    let s_delete = Arc::clone(&store);
+fn make_cache(store: &Store) -> ResponseCache {
+    let s_check = Arc::clone(store);
+    let s_store = Arc::clone(store);
+    let s_clear = Arc::clone(store);
+    let s_delete = Arc::clone(store);
     ResponseCache::new(
         None,
         move |key: &str| s_check.lock().unwrap().get(key).cloned(),
@@ -48,7 +48,7 @@ fn make_cache(store: Store) -> ResponseCache {
 #[test]
 fn response_cache_identical_request_hits() {
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     let request_json = r#"{"model":"test","messages":[{"role":"user","content":"hi"}]}"#;
     // Cache miss on first call
     assert!(cache.get("gpt-4", request_json).is_none());
@@ -70,7 +70,7 @@ fn response_cache_identical_request_hits() {
 #[test]
 fn response_cache_different_temperature_misses() {
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     let req1 = r#"{"model":"test","messages":[],"temperature":0.5}"#;
     let req2 = r#"{"model":"test","messages":[],"temperature":1.0}"#;
     cache.set("gpt-4", req1, serde_json::json!({"result": "a"}));
@@ -109,7 +109,7 @@ fn response_cache_corrupted_entry_miss() {
     // The in-memory store wouldn't have "corrupted" entries,
     // but this tests that a None return from the backend is treated as a miss.
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     // No entry stored → should be None
     assert!(cache.get("gpt-4", "anything").is_none());
 }
@@ -117,7 +117,7 @@ fn response_cache_corrupted_entry_miss() {
 #[test]
 fn response_cache_invalidate_key() {
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     let req = r#"{"x":1}"#;
     cache.set("gpt-4", req, serde_json::json!({"result": "data"}));
     assert!(cache.get("gpt-4", req).is_some());
@@ -128,7 +128,7 @@ fn response_cache_invalidate_key() {
 #[test]
 fn response_cache_invalidate_all() {
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     cache.set("gpt-4", r#"{"a":1}"#, serde_json::json!({"result": "a"}));
     cache.set("gpt-4", r#"{"b":2}"#, serde_json::json!({"result": "b"}));
     cache.invalidate_all();
@@ -139,7 +139,7 @@ fn response_cache_invalidate_all() {
 #[test]
 fn response_cache_different_model_different_key() {
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     let req = r#"{"model":"test"}"#;
     cache.set("gpt-4", req, serde_json::json!({"result": "gpt4"}));
     // Same request JSON but different model → different key → miss
@@ -229,7 +229,7 @@ fn control_ttl_boundary_is_locked() {
 fn control_key_format_is_model_colon_sha256() {
     // The one `"{model}:…"` key format: `model:sha256_hex(request bytes)`.
     let store: Store = Arc::new(Mutex::new(HashMap::new()));
-    let cache = make_cache(Arc::clone(&store));
+    let cache = make_cache(&store);
     let req = r#"{"model":"test","messages":[]}"#;
     cache.set("gpt-4", req, serde_json::json!({"result": "a"}));
     let want = format!("gpt-4:{}", common_core::hash::sha256_hex(req.as_bytes()));

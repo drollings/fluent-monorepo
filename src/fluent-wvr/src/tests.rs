@@ -699,28 +699,48 @@ fn try_as_any_mut_returns_none_with_multiple_owners() {
 }
 
 #[test]
-fn as_any_mut_panic_message_mentions_try_variant() {
+fn shared_arc_as_any_mut_returns_arc_handle_not_panic() {
     let arc: Arc<dyn Component> = Arc::new(TestComponent {
         name: ArcIntern::from("t"),
         value: 1,
     });
     let _clone = Arc::clone(&arc);
     let mut arc_mut = arc;
-    let msg = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = arc_mut.as_any_mut();
-    }))
-    .unwrap_err();
-    let payload = if let Some(s) = msg.downcast_ref::<String>() {
-        s.clone()
-    } else if let Some(s) = msg.downcast_ref::<&str>() {
-        s.to_string()
-    } else {
-        String::new()
-    };
+    let any = arc_mut.as_any_mut();
     assert!(
-        payload.contains("ComponentArcExt::try_as_any_mut"),
-        "panic message should mention ComponentArcExt::try_as_any_mut, got: {payload}"
+        any.downcast_ref::<Arc<dyn Component>>().is_some(),
+        "shared handle must yield the Arc, not the inner"
     );
+    assert!(
+        any.downcast_ref::<TestComponent>().is_none(),
+        "shared handle must not yield the inner component"
+    );
+}
+
+#[test]
+fn unique_arc_as_any_mut_returns_inner() {
+    let mut arc: Arc<dyn Component> = Arc::new(TestComponent {
+        name: ArcIntern::from("t"),
+        value: 1,
+    });
+    let any = arc.as_any_mut();
+    let inner = any
+        .downcast_mut::<TestComponent>()
+        .expect("unique handle must yield the inner component");
+    inner.value = 42;
+    assert_eq!(inner.value, 42);
+}
+
+#[test]
+fn component_downcast_ref_still_reaches_inner_through_arc() {
+    let arc: Arc<dyn Component> = Arc::new(TestComponent {
+        name: ArcIntern::from("t"),
+        value: 7,
+    });
+    let _clone = Arc::clone(&arc);
+    let inner = component_downcast_ref::<TestComponent>(&*arc)
+        .expect("shared-arc downcast_ref must reach the inner component");
+    assert_eq!(inner.value, 7);
 }
 
 #[test]
@@ -801,7 +821,7 @@ fn impl_fieldless_produces_fieldless_no_ops() {
     let err = unit.get_field("anything").unwrap_err();
     match err {
         FieldError::NotFound(msg) => {
-            assert_eq!(msg, "FieldlessUnit has no configurable fields")
+            assert_eq!(msg, "FieldlessUnit has no configurable fields");
         }
         other => panic!("expected NotFound, got: {other:?}"),
     }
@@ -809,7 +829,7 @@ fn impl_fieldless_produces_fieldless_no_ops() {
     let err = unit.set_field("anything", "value").unwrap_err();
     match err {
         FieldError::NotFound(msg) => {
-            assert_eq!(msg, "FieldlessUnit has no configurable fields")
+            assert_eq!(msg, "FieldlessUnit has no configurable fields");
         }
         other => panic!("expected NotFound, got: {other:?}"),
     }

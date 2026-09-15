@@ -647,6 +647,8 @@ async fn handle_chat_completion(
                     model_name: &model_name,
                     context_cache: context_cache.as_ref(),
                     session: Some(&step.session),
+                    // Frontier-owned bypass answers directly: nothing to distill.
+                    recorder: None,
                 };
                 if let Some(resp) = ladder.dispatch_frontier(&esc_ctx).await {
                     step.complete(

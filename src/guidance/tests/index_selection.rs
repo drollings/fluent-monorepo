@@ -210,8 +210,8 @@ fn m7_extension_matrix_across_tables() {
     // the two lists are pinned together here instead of unified.
     let mut walker = common_core::walk::SOURCE_EXTENSIONS.to_vec();
     let mut canonical = fluent_types::file_kind::SOURCE_EXTENSIONS.to_vec();
-    walker.sort();
-    canonical.sort();
+    walker.sort_unstable();
+    canonical.sort_unstable();
     assert_eq!(walker, canonical);
 
     // D1/D2 restated as cross-table assertions so no migration can blur them.

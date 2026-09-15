@@ -207,7 +207,7 @@ fn implicit_sentinel_suffix_appends_once() {
 fn empty_group_rides_default_role() {
     // A group declaring no role/model members (empty, or sentinels only)
     // dispatches through the `default` role instead of resolving to nothing.
-    let empty: ModelGroup = serde_json::from_str(r#"[]"#).unwrap();
+    let empty: ModelGroup = serde_json::from_str(r"[]").unwrap();
     assert_eq!(empty.duty_members(), vec!["default".to_string()]);
     assert_eq!(
         empty.effective_models(),

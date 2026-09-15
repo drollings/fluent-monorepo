@@ -53,8 +53,8 @@ fn entity_scoped_patterns_do_not_collide() {
 fn review_status_is_status_only_and_entity_id_is_real() {
     let (store, idx) = open();
     let lemma = InterlinguaId::from_u64(0x0300_0000_0000_0001);
-    let entity = Some(InterlinguaId::from_u64(0x0100_0000_0000_0009));
-    idx.record_correction(lemma, entity, &corrections()).expect("record");
+    let entity = InterlinguaId::from_u64(0x0100_0000_0000_0009);
+    idx.record_correction(lemma, Some(entity), &corrections()).expect("record");
     let (entity_id, status): (i64, String) = store
         .query_row(
             "SELECT entity_id, review_status FROM interlingua_index \
@@ -64,17 +64,17 @@ fn review_status_is_status_only_and_entity_id_is_real() {
         )
         .expect("row")
         .expect("some");
-    assert_eq!(entity_id, entity.unwrap().as_i64(), "entity id in its own column");
+    assert_eq!(entity_id, entity.as_i64(), "entity id in its own column");
     assert_eq!(status, "cached", "review_status is status-only, never an id");
 }
 
 #[test]
 fn record_upserts_instead_of_duplicating() {
-    let (_store, idx) = open();
+    let (store, idx) = open();
     let lemma = InterlinguaId::from_u64(0x0300_0000_0000_0001);
     idx.record_correction(lemma, None, &corrections()).expect("first");
     idx.record_correction(lemma, None, &corrections()).expect("second");
-    let count: i64 = _store
+    let count: i64 = store
         .query_row(
             "SELECT COUNT(*) FROM interlingua_index WHERE node_id = ?1 AND role = ?2",
             params![PATTERN_NODE, CORRECTION_ROLE],

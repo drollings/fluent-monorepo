@@ -204,7 +204,7 @@ pub async fn spawn_test_server(
     config: RouterConfig,
     mock: Option<MockDispatchContext>,
 ) -> TestServer {
-    spawn_test_server_with_sessions(config, mock, None).await
+    Box::pin(spawn_test_server_with_sessions(config, mock, None)).await
 }
 
 /// `spawn_test_server` with an optional `SessionRegistry` (session-step
@@ -214,7 +214,7 @@ pub async fn spawn_test_server_with_sessions(
     mock: Option<MockDispatchContext>,
     sessions: Option<Arc<crate::dag_session::SessionRegistry>>,
 ) -> TestServer {
-    spawn_test_server_with_ledger(config, mock, sessions, None).await
+    Box::pin(spawn_test_server_with_ledger(config, mock, sessions, None)).await
 }
 
 /// `spawn_test_server` with a session registry and/or ledger wired

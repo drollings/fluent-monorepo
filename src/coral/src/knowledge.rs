@@ -107,12 +107,12 @@ mod tests {
         let lib = lib();
         CURRENT_CAPS
             .scope(caps(), async {
-                let mut node = ContentNode {
+                let node = ContentNode {
                     lod: vec!["coral content".into()],
                     embedding: Some(vec![1.0, 0.0, 0.0, 0.0]),
                     ..make_node("test-node", "test")
                 };
-                let id = KnowledgeCapability::insert_node(&lib, &mut node).unwrap();
+                let id = KnowledgeCapability::insert_node(&lib, &node).unwrap();
                 let fetched = KnowledgeCapability::get_node(&lib, id).unwrap();
                 assert_eq!(fetched.name.as_str(), "test-node");
                 // Reuses the existing Library::knn_search (brute force / HNSW).

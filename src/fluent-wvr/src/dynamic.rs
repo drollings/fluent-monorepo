@@ -70,7 +70,7 @@ impl DynamicComponent {
     /// Pre-seed the config map (e.g. rows from a `tool_config` query).
     #[must_use]
     pub fn with_config(self, config: HashMap<String, String>) -> Self {
-        *self.fields.lock().expect("dynamic component config poisoned") = config;
+        *common_core::sync::lock(&self.fields) = config;
         self
     }
 
@@ -88,23 +88,19 @@ impl DynamicComponent {
 
     /// Read the current config map (for the executor and tests).
     pub fn config(&self) -> HashMap<String, String> {
-        self.fields.lock().expect("dynamic component config poisoned").clone()
+        common_core::sync::lock(&self.fields).clone()
     }
 }
 
 impl FieldAccess for DynamicComponent {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.fields
-            .lock()
-            .expect("dynamic component config poisoned")
+        common_core::sync::lock(&self.fields)
             .insert(name.to_string(), value.to_string());
         Ok(())
     }
 
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        self.fields
-            .lock()
-            .expect("dynamic component config poisoned")
+        common_core::sync::lock(&self.fields)
             .get(name)
             .cloned()
             .ok_or_else(|| FieldError::NotFound(name.into()))
@@ -139,7 +135,12 @@ impl WorkUnit for DynamicComponent {
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        (self.executor)(ctx, &self.config())
+        // Holds the config lock across the executor call so the map is not
+        // cloned per execution; the executor must not call back into
+        // `set_field`/`config` on this component (it receives `&self` only
+        // through the shared handle, which cannot re-lock here).
+        let cfg = common_core::sync::lock(&self.fields);
+        (self.executor)(ctx, &cfg)
     }
 }
 

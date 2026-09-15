@@ -38,7 +38,7 @@ fn is_forbidden_use(line: &str) -> Option<String> {
     }
     let rest = t.strip_prefix("pub use ").or_else(|| t.strip_prefix("use "))?;
     let head = rest
-        .split(|c| c == ':' || c == ';' || c == ' ' || c == '{')
+        .split([':', ';', ' ', '{'])
         .next()
         .unwrap_or("")
         .trim();

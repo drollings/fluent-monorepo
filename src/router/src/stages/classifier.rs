@@ -40,6 +40,8 @@ use crate::target_match::GroupExpansion;
 
 pub mod action;
 pub use action::{ClassifierAction, UnknownAction};
+pub mod prompt;
+pub(crate) use prompt::{render_available_routes, substitute_thresholds, RouteEntry};
 
 const DEFAULT_COMPLEXITY: u8 = 5;
 const COMPLEXITY_SCALE: f64 = 10.0;
@@ -543,6 +545,12 @@ pub(crate) fn dump_classifier_failure(dir: &std::path::Path, model: &str, error:
 }
 
 impl ClassifierStage {
+    /// Flat-mode constructor — test-only. Production always builds the stage
+    /// through [`ClassifierStage::with_tree`] (the config builder no longer
+    /// wires flat mode: configs without a classification tree are rejected
+    /// at boot), so this constructor is unavailable outside `cfg(test)`.
+    /// Unit tests keep exercising the score-matrix math through it.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         client: Arc<dyn ChatBackend>,
@@ -683,34 +691,26 @@ fn build_system_prompt(&self) -> String {
         let mut prompt = String::new();
 
         // Preamble from config — variable substitution still applies
-        let preamble = self
-            .routing_config
-            .system_prompt
-            .replace(
-                "{coherence_threshold}",
-                &format!("{:.2}", self.coherence_threshold),
-            )
-            .replace(
-                "{safety_threshold}",
-                &format!("{:.2}", self.routing_config.safety_threshold),
-            );
+        let preamble = substitute_thresholds(
+            &self.routing_config.system_prompt,
+            self.coherence_threshold,
+            self.routing_config.safety_threshold,
+        );
         if !preamble.is_empty() {
             let _ = writeln!(prompt, "{preamble}\n");
         }
 
         // Available routes — auto-generated from config to eliminate DRY violation
-        prompt.push_str("Available routes:\n");
         let mut route_names: Vec<&String> = self.routing_config.routes.keys().collect();
         route_names.sort();
-        for name in &route_names {
-            let desc = &self.routing_config.routes[*name].description;
-            if desc.is_empty() {
-                let _ = writeln!(prompt, "  - {name}");
-            } else {
-                let _ = writeln!(prompt, "  - {name}: {desc}");
-            }
-        }
-        prompt.push('\n');
+        let entries: Vec<RouteEntry<'_>> = route_names
+            .iter()
+            .map(|name| RouteEntry {
+                name: name.as_str(),
+                description: self.routing_config.routes[*name].description.as_str(),
+            })
+            .collect();
+        prompt.push_str(&render_available_routes(&entries, "  - "));
 
         // Dispatch rules — auto-generated for routes configured `always_route`
         // (domains where the classifier model is overconfident and must never

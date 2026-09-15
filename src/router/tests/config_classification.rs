@@ -252,6 +252,32 @@ fn build_prompt_lists_only_routeable_children() {
     assert!(prompt.contains("safety < 0.40"));
 }
 
+/// Byte-exact pin of the tree node prompt: sorted route list, threshold
+/// substitution, and the `route` output schema. Any rendering change must
+/// update this golden deliberately.
+#[test]
+fn tree_node_prompt_is_byte_identical() {
+    let tree: ClassificationTree = serde_json::from_str(tree_json()).unwrap();
+    let prompt = tree.root.build_prompt(0.6, 0.4).expect("prompt");
+    let expected = r#"You are a request router.
+
+Available routes:
+- code: programming and implementation
+- translation: translation between languages
+
+You must output exactly one JSON object with:
+  "route": "<exactly one of: code, translation>"
+  "coherence": 0.0-1.0 (how well-formed and coherent the query is)
+  "safety": 0.0-1.0 (1.0 = completely safe, 0.0 = policy violation)
+  "complexity": 0-10 (0 = trivial, 10 = requires most capable model)
+  "reason": "brief explanation for the routing decision"
+
+If the query is incoherent (coherence < 0.60) or unsafe (safety < 0.40), route to the fallback branch or output an empty route.
+Only output JSON, no other text.
+"#;
+    assert_eq!(prompt, expected, "tree node prompt changed — update the golden deliberately");
+}
+
 #[test]
 fn derive_system_prompt_uses_root_thresholds() {
     let tree: ClassificationTree = serde_json::from_str(tree_json()).unwrap();

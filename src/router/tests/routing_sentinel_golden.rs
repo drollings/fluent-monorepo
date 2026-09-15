@@ -756,14 +756,14 @@ fn is_genuine_cause(case: &serde_json::Value, cause: &str) -> bool {
     }
     if let Some(key) = cause.strip_prefix("endpoint-rewrite:") {
         return case["op"].as_str() == Some("latebind")
-            && case["table"].get(&key).is_some()
-            && case["rewrite"].get(&key).is_some()
-            && case["table"].get(&key) != case["rewrite"].get(&key);
+            && case["table"].get(key).is_some()
+            && case["rewrite"].get(key).is_some()
+            && case["table"].get(key) != case["rewrite"].get(key);
     }
     if let Some(key) = cause.strip_prefix("load:") {
         return case["op"].as_str() == Some("latebind")
-            && case["table"].get(&key).is_none()
-            && case["rewrite"].get(&key).is_some();
+            && case["table"].get(key).is_none()
+            && case["rewrite"].get(key).is_some();
     }
     false
 }
@@ -777,11 +777,7 @@ fn expected_outcome(case: &serde_json::Value) -> Option<Observed> {
         Some(Observed::Some(marker.to_string()))
     } else if expected["none"].as_bool().unwrap_or(false) {
         Some(Observed::None)
-    } else if let Some(msg) = expected["err"].as_str() {
-        Some(Observed::Err(msg.to_string()))
-    } else {
-        None
-    }
+    } else { expected["err"].as_str().map(|msg| Observed::Err(msg.to_string())) }
 }
 
 #[test]

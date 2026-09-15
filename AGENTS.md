@@ -37,7 +37,7 @@ is the priority.
 4. **VERIFY** — the full gate before landing:
    ```
    cargo build --workspace && cargo test --workspace \
-     && cargo clippy --workspace -- -D warnings
+     && cargo clippy --workspace --all-targets -- -D warnings
    ```
 
 ## Make targets

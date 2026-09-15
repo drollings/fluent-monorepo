@@ -26,7 +26,7 @@ fn entity_link_control_must_not_fire_at_0_9() {
     // FPR >0 (i.e., the harness can detect a bad threshold).
     // For the roadmap gate, the relevant check is combined precision at 0.9: we want it to fail if must-not-fire leaks.
     // Here we just assert the group is calibrated to have some high scores above 0.9.
-    assert!(r.fp > 0, "must-not-fire should have some FP at 0.9 to be a useful control, got {:?}", r);
+    assert!(r.fp > 0, "must-not-fire should have some FP at 0.9 to be a useful control, got {r:?}");
     assert!(r.fpr > 0.0);
     // At threshold 0.95, FPR should be lower (monotonic).
     let r2 = calibrate_threshold(&cases, |c| c.score, |c| c.label, 0.95);
@@ -41,6 +41,6 @@ fn entity_link_combined_precision_at_0_9_is_low_without_filter() {
     cases.extend(entity_link_must_fire());
     let r = calibrate_threshold(&cases, |c| c.score, |c| c.label, 0.9);
     // With 0.85..0.94 wrong entities, at 0.9 about 50-100 FP, TP ~50-100, precision ~0.5
-    assert!(r.precision < 0.90, "combined precision at 0.9 should be <0.90 (confident-but-wrong poisons)",);
+    assert!(r.precision < 0.90, "combined precision at 0.9 should be <0.90 (confident-but-wrong poisons)");
     // This is the point of the harness: you cannot trust cosine alone.
 }

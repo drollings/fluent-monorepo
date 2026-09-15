@@ -35,6 +35,10 @@ struct Calls {
     lifecycle: Vec<&'static str>,
 }
 
+// Independent failure-injection toggles for the stub backend, always built
+// with named fields (`fail_gpu: true, ..Default::default()`); grouping them
+// would obscure the per-test failure selection.
+#[allow(clippy::struct_excessive_bools)]
 struct StubOptions {
     train_context_size: Option<usize>,
     fail_context_after: Option<usize>,
@@ -242,7 +246,7 @@ impl GgufArtifactResolver for StubResolver {
     ) -> Result<GgufResolvedArtifacts, EmbeddingError> {
         let mut calls = self.calls.lock().unwrap();
         calls.lifecycle.push("resolveArtifacts");
-        calls.resolve_sources = request.sources.clone();
+        calls.resolve_sources.clone_from(&request.sources);
         if self.options.fail_artifact_resolution {
             return Err(EmbeddingError::RequestFailed("artifact download failed".to_string()));
         }
@@ -279,7 +283,7 @@ impl GgufArtifactResolver for StubResolver {
                 });
             }
         }
-        let source = request.sources[self.options.use_model_scope as usize].clone();
+        let source = request.sources[usize::from(self.options.use_model_scope)].clone();
         let mut paths = HashMap::new();
         paths.insert(
             artifact_path,
@@ -406,74 +410,77 @@ async fn loads_gguf_formats_truncates_parallelizes_caches_and_disposes() {
     assert_eq!(result.vectors.len(), 3);
     // Query formatting inflates every text past the 6-token stub limit.
     assert_eq!(result.truncated, vec![0, 1, 2]);
-    let calls = fix.calls.lock().unwrap();
-    assert_eq!(calls.contexts.len(), 2);
-    assert_eq!(calls.contexts[0].threads, 4);
-    assert!(
-        calls.texts.iter().all(|text| text.len() <= 2),
-        "truncated texts must fit the context: {:?}",
-        calls.texts
-    );
-    assert_eq!(calls.model_loads[0].1, Some(0), "CPU disables GPU offload");
-    assert_eq!(calls.model_loads[0].0, fix.model_path);
-    let sources = &calls.resolve_sources;
-    assert_eq!(sources.len(), 2);
-    assert_eq!(sources[0].kind, fluent_llm::artifact::SourceKind::HuggingFace);
-    assert_eq!(sources[0].repo, "test/model");
-    assert_eq!(sources[0].revision, "hf-revision");
-    assert_eq!(sources[0].cache_directory, fix.cache_dir.path());
-    assert_eq!(
-        sources[0].local_paths.get("model.gguf").map(String::as_str),
-        Some("hf_test_model.gguf")
-    );
-    assert_eq!(sources[1].kind, fluent_llm::artifact::SourceKind::ModelScope);
-    assert_eq!(
-        sources[1].cache_directory,
-        fix.cache_dir.path().join("modelscope").join("llama-cpp").join("mirror--test-model").join("ms-revision")
-    );
-    assert_eq!(
-        &calls.lifecycle[..2],
-        &["resolveArtifacts", "getLlama"],
-        "artifacts resolve before any runtime init"
-    );
-    assert_eq!(
-        progress.lock().unwrap().as_slice(),
-        &[
-            EmbeddingProgress::Preparing {
-                model: "local/test-model".to_string()
-            },
-            EmbeddingProgress::Downloading {
-                model: "local/test-model".to_string(),
-                downloaded_bytes: 25,
-                total_bytes: 100,
-            },
-            EmbeddingProgress::Ready {
-                model: "local/test-model".to_string()
-            },
-        ]
-    );
-    drop(calls);
+    {
+        let calls = fix.calls.lock().unwrap();
+        assert_eq!(calls.contexts.len(), 2);
+        assert_eq!(calls.contexts[0].threads, 4);
+        assert!(
+            calls.texts.iter().all(|text| text.len() <= 2),
+            "truncated texts must fit the context: {:?}",
+            calls.texts
+        );
+        assert_eq!(calls.model_loads[0].1, Some(0), "CPU disables GPU offload");
+        assert_eq!(calls.model_loads[0].0, fix.model_path);
+        let sources = &calls.resolve_sources;
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].kind, fluent_llm::artifact::SourceKind::HuggingFace);
+        assert_eq!(sources[0].repo, "test/model");
+        assert_eq!(sources[0].revision, "hf-revision");
+        assert_eq!(sources[0].cache_directory, fix.cache_dir.path());
+        assert_eq!(
+            sources[0].local_paths.get("model.gguf").map(String::as_str),
+            Some("hf_test_model.gguf")
+        );
+        assert_eq!(sources[1].kind, fluent_llm::artifact::SourceKind::ModelScope);
+        assert_eq!(
+            sources[1].cache_directory,
+            fix.cache_dir.path().join("modelscope").join("llama-cpp").join("mirror--test-model").join("ms-revision")
+        );
+        assert_eq!(
+            &calls.lifecycle[..2],
+            &["resolveArtifacts", "getLlama"],
+            "artifacts resolve before any runtime init"
+        );
+        assert_eq!(
+            progress.lock().unwrap().as_slice(),
+            &[
+                EmbeddingProgress::Preparing {
+                    model: "local/test-model".to_string()
+                },
+                EmbeddingProgress::Downloading {
+                    model: "local/test-model".to_string(),
+                    downloaded_bytes: 25,
+                    total_bytes: 100,
+                },
+                EmbeddingProgress::Ready {
+                    model: "local/test-model".to_string()
+                },
+            ]
+        );
+    }
 
     // Second embed reuses the loaded model without re-resolving artifacts.
     model
         .embed_texts(&["cached".to_string()], EmbedPurpose::Document, None)
         .await
         .unwrap();
-    let calls = fix.calls.lock().unwrap();
-    assert_eq!(calls.model_loads.len(), 1);
-    assert_eq!(
-        calls.lifecycle.iter().filter(|event| **event == "resolveArtifacts").count(),
-        1
-    );
-    drop(calls);
+    {
+        let calls = fix.calls.lock().unwrap();
+        assert_eq!(calls.model_loads.len(), 1);
+        assert_eq!(
+            calls.lifecycle.iter().filter(|event| **event == "resolveArtifacts").count(),
+            1
+        );
+    }
 
     model.dispose().await;
     model.dispose().await;
-    let calls = fix.calls.lock().unwrap();
-    assert_eq!(calls.disposed_contexts, 2);
-    assert_eq!(calls.disposed_models, 1);
-    assert_eq!(calls.disposed_llamas, 1);
-    drop(calls);
+    {
+        let calls = fix.calls.lock().unwrap();
+        assert_eq!(calls.disposed_contexts, 2);
+        assert_eq!(calls.disposed_models, 1);
+        assert_eq!(calls.disposed_llamas, 1);
+    }
     let error = model
         .embed_texts(&["after dispose".to_string()], EmbedPurpose::Document, None)
         .await
@@ -648,16 +655,17 @@ async fn qwen_format_auto_parallelism_and_partial_context_capacity() {
         .await
         .unwrap();
     assert_eq!(result.vectors.len(), 4);
-    let calls = fix.calls.lock().unwrap();
-    assert_eq!(calls.contexts.len(), 3, "two contexts plus one failed attempt");
-    assert!(
-        calls.texts[0].starts_with("Instruct:"),
-        "qwen3 query format required, got {:?}",
-        calls.texts[0]
-    );
-    assert_eq!(calls.contexts[0].threads, 0, "GPU contexts take no threads");
-    assert_eq!(calls.model_loads[0].1, None, "metal keeps GPU offload");
-    drop(calls);
+    {
+        let calls = fix.calls.lock().unwrap();
+        assert_eq!(calls.contexts.len(), 3, "two contexts plus one failed attempt");
+        assert!(
+            calls.texts[0].starts_with("Instruct:"),
+            "qwen3 query format required, got {:?}",
+            calls.texts[0]
+        );
+        assert_eq!(calls.contexts[0].threads, 0, "GPU contexts take no threads");
+        assert_eq!(calls.model_loads[0].1, None, "metal keeps GPU offload");
+    }
     model.dispose().await;
 }
 
@@ -699,10 +707,11 @@ async fn falls_back_from_gpu_init_to_cpu() {
         warnings.iter().any(|message| message.contains("GPU init failed")),
         "GPU fallback warning required, got {warnings:?}"
     );
-    let calls = fix.calls.lock().unwrap();
-    assert_eq!(calls.llama_gpus, vec![GpuSelection::Metal, GpuSelection::Cpu]);
-    assert_eq!(calls.lifecycle[0], "resolveArtifacts");
-    drop(calls);
+    {
+        let calls = fix.calls.lock().unwrap();
+        assert_eq!(calls.llama_gpus, vec![GpuSelection::Metal, GpuSelection::Cpu]);
+        assert_eq!(calls.lifecycle[0], "resolveArtifacts");
+    }
     model.dispose().await;
 }
 
@@ -745,9 +754,10 @@ async fn packaged_backend_fallback_and_model_retry_on_cpu() {
         warnings.iter().any(|message| message.contains("CPU-only")),
         "packaged-backend warning required, got {warnings:?}"
     );
-    let calls = fix.calls.lock().unwrap();
-    assert_eq!(calls.llama_gpus, vec![GpuSelection::Cpu, GpuSelection::Auto]);
-    drop(calls);
+    {
+        let calls = fix.calls.lock().unwrap();
+        assert_eq!(calls.llama_gpus, vec![GpuSelection::Cpu, GpuSelection::Auto]);
+    }
     model.dispose().await;
 
     // GPU model-load failure retries once on CPU with one artifact resolve.
@@ -787,14 +797,15 @@ async fn packaged_backend_fallback_and_model_retry_on_cpu() {
         warnings.iter().any(|message| message.contains("GPU model load failed")),
         "model retry warning required, got {warnings:?}"
     );
-    let calls = retry.calls.lock().unwrap();
-    assert_eq!(calls.model_loads.len(), 2);
-    assert_eq!(
-        calls.lifecycle.iter().filter(|event| **event == "resolveArtifacts").count(),
-        1
-    );
-    assert_eq!(calls.model_loads[0].0, calls.model_loads[1].0);
-    drop(calls);
+    {
+        let calls = retry.calls.lock().unwrap();
+        assert_eq!(calls.model_loads.len(), 2);
+        assert_eq!(
+            calls.lifecycle.iter().filter(|event| **event == "resolveArtifacts").count(),
+            1
+        );
+        assert_eq!(calls.model_loads[0].0, calls.model_loads[1].0);
+    }
     model.dispose().await;
 }
 
