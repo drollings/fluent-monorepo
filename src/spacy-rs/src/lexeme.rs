@@ -467,10 +467,7 @@ impl Lexicon {
     /// Number of distinct lexemes interned.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.by_orth
-            .read()
-            .expect("Lexicon read lock poisoned")
-            .len()
+        common_core::sync::lock_read(&self.by_orth).len()
     }
 
     /// Whether the lexicon is empty.
@@ -485,9 +482,7 @@ impl Lexicon {
         if orth == 0 {
             return Some(Lexeme::empty());
         }
-        self.by_orth
-            .read()
-            .expect("Lexicon read lock poisoned")
+        common_core::sync::lock_read(&self.by_orth)
             .get(&orth)
             .cloned()
     }
@@ -504,7 +499,7 @@ impl Lexicon {
             return lexeme;
         }
         let lexeme = Arc::new(self.compute_lexeme(text, orth));
-        let mut map = self.by_orth.write().expect("Lexicon write lock poisoned");
+        let mut map = common_core::sync::lock_write(&self.by_orth);
         map.entry(orth).or_insert_with(|| lexeme.clone());
         map.get(&orth).expect("just inserted").clone()
     }

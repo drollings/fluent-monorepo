@@ -1,5 +1,6 @@
 //! guidance-ontology: Entity extraction, capability inference, and YAGO
 //! taxonomy integration for semantic knowledge representation.
+#![forbid(unsafe_code)]
 
 pub mod entity;
 pub mod inference;

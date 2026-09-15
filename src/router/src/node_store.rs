@@ -1329,20 +1329,24 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
             self.hnsw_policy.dispatch(self.is_hnsw_built(), len)
         };
         if dispatch_hnsw {
-            let hnsw = lock_read(&self.hnsw).clone().expect("dispatched ⇒ built");
-            if let Some(neighbours) = fluent_db::hnsw::hnsw_lookup(&hnsw, embedding, k) {
-                let mut results = Vec::with_capacity(neighbours.len());
-                for (raw, distance) in neighbours {
-                    let node_id = NodeId::from_int(raw);
-                    let name = self.snapshot(node_id).map(|n| n.name).unwrap_or_default();
-                    results.push(KnnHit {
-                        node_id,
-                        distance,
-                        name,
-                    });
-                }
-                if !results.is_empty() {
-                    return results;
+            // A concurrent unload can clear the index between the dispatch
+            // check and this clone; a missing index degrades to the
+            // brute-force path below instead of panicking.
+            if let Some(hnsw) = lock_read(&self.hnsw).clone() {
+                if let Some(neighbours) = fluent_db::hnsw::hnsw_lookup(&hnsw, embedding, k) {
+                    let mut results = Vec::with_capacity(neighbours.len());
+                    for (raw, distance) in neighbours {
+                        let node_id = NodeId::from_int(raw);
+                        let name = self.snapshot(node_id).map(|n| n.name).unwrap_or_default();
+                        results.push(KnnHit {
+                            node_id,
+                            distance,
+                            name,
+                        });
+                    }
+                    if !results.is_empty() {
+                        return results;
+                    }
                 }
             }
         }

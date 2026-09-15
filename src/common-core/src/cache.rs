@@ -380,13 +380,19 @@ pub fn eviction_order<C>(
     freed_of: impl Fn(&C) -> u64,
     last_used_of: impl Fn(&C) -> i64,
 ) -> Vec<C> {
-    let mut ordered = candidates;
-    ordered.sort_by(|a, b| {
-        eviction_score(freed_of(b), last_used_of(b), now)
-            .cmp(&eviction_score(freed_of(a), last_used_of(a), now))
-            .then_with(|| last_used_of(b).cmp(&last_used_of(a)))
-    });
-    ordered
+    // Scores precomputed once per candidate (Schwartzian transform): the old
+    // comparator recomputed both scores on every comparison (O(n log n)
+    // `saturating_mul`s). Same key order, same stable sort — same output.
+    let mut scored: Vec<(u64, i64, C)> = candidates
+        .into_iter()
+        .map(|c| {
+            let score = eviction_score(freed_of(&c), last_used_of(&c), now);
+            let last = last_used_of(&c);
+            (score, last, c)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+    scored.into_iter().map(|(_, _, c)| c).collect()
 }
 
 /// Evict candidates (already in [`eviction_order`]) until `used <= budget` or

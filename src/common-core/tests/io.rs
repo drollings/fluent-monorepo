@@ -22,10 +22,16 @@ fn read_file_alloc_reads_content() {
 }
 
 #[test]
-fn make_path_absolute_creates_nested_dirs() {
+fn make_path_absolute_is_pure_resolution() {
+        // `make_path_absolute` resolves without creating anything; directory
+        // creation is the caller's job via `ensure_dir`.
         let dir = TempDir::new().unwrap();
         let rel = "a/b/c";
-        let abs = make_path_absolute(&format!("{}/{}", dir.path().to_string_lossy(), rel)).unwrap();
+        let target = format!("{}/{}", dir.path().to_string_lossy(), rel);
+        let abs = make_path_absolute(&target).unwrap();
+        assert_eq!(abs, target);
+        assert!(!Path::new(&abs).exists());
+        ensure_dir(&abs).unwrap();
         assert!(Path::new(&abs).exists());
 }
 
@@ -130,4 +136,96 @@ fn ensure_dir_idempotent() {
         let dir = TempDir::new().unwrap();
         ensure_dir(dir.path()).unwrap();
         ensure_dir(dir.path()).unwrap();
+}
+
+#[test]
+fn write_atomic_same_stem_siblings_do_not_share_tmp() {
+    // Regression: the old `with_extension("tmp")` mapped both `a.json`
+    // and `a.toml` to one tmp file (`a.tmp`), corrupting concurrent
+    // writes. Sibling tmp files must be unique per target.
+    use std::sync::Barrier;
+    let dir = TempDir::new().unwrap();
+    let barrier = std::sync::Arc::new(Barrier::new(2));
+    for round in 0..20 {
+        let (ja, ta) = (dir.path().join("a.json"), dir.path().join("a.toml"));
+        let (pa, pb) = (format!("{{\"round\":{round},\"f\":\"json\"}}"), format!("<x r=\"{round}\"/>"));
+        let (ra, rb) = (pa.clone(), pb.clone());
+        let (jaa, taa) = (ja.clone(), ta.clone());
+        let b = std::sync::Arc::clone(&barrier);
+        let ha = std::thread::spawn(move || {
+            b.wait();
+            write_atomic(&jaa, ra.as_bytes()).unwrap();
+        });
+        let b = std::sync::Arc::clone(&barrier);
+        let hb = std::thread::spawn(move || {
+            b.wait();
+            write_atomic(&taa, rb.as_bytes()).unwrap();
+        });
+        ha.join().unwrap();
+        hb.join().unwrap();
+        assert_eq!(std::fs::read_to_string(&ja).unwrap(), pa);
+        assert_eq!(std::fs::read_to_string(&ta).unwrap(), pb);
+    }
+}
+
+#[test]
+fn write_atomic_concurrent_writers_are_all_or_nothing() {
+    use std::sync::Barrier;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("shared.json");
+    std::fs::write(&path, b"init").unwrap();
+    let payloads: Vec<Vec<u8>> = (0..8).map(|i| format!("payload-{i:04}-{}", "x".repeat(2000)).into_bytes()).collect();
+    let barrier = std::sync::Arc::new(Barrier::new(8));
+    let handles: Vec<_> = payloads
+        .iter()
+        .map(|p| {
+            let b = std::sync::Arc::clone(&barrier);
+            let path = path.clone();
+            let p = p.clone();
+            std::thread::spawn(move || {
+                b.wait();
+                for _ in 0..25 {
+                    write_atomic(&path, &p).unwrap();
+                }
+            })
+        })
+        .collect();
+    // While writers run, every observed read is one full payload (or init).
+    for _ in 0..50 {
+        let seen = std::fs::read(&path).unwrap();
+        assert!(
+            seen == b"init" || payloads.contains(&seen),
+            "torn read: {} bytes",
+            seen.len()
+        );
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert!(payloads.contains(&std::fs::read(&path).unwrap()));
+    // No tmp debris visible under the real name or alongside it.
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+        assert_eq!(name, "shared.json", "debris left behind: {name}");
+    }
+}
+
+#[test]
+fn write_atomic_stale_tmp_never_read_as_real() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("real.json");
+    // Simulate crash debris from an earlier writer under our tmp pattern.
+    std::fs::write(dir.path().join("real.json.12345.1.tmp"), b"stale").unwrap();
+    write_atomic(&path, b"{\"ok\":true}").unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"ok\":true}");
+}
+
+#[test]
+fn make_path_absolute_does_not_create_dirs() {
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("no/such/dirs/here");
+    assert!(!missing.exists());
+    let abs = make_path_absolute(&missing.to_string_lossy()).unwrap();
+    assert_eq!(abs, missing.to_string_lossy());
+    assert!(!missing.exists(), "resolution must not create directories");
 }

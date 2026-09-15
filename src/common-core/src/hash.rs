@@ -197,10 +197,40 @@ pub fn sha256_digest(data: &[u8]) -> [u8; 32] {
 }
 
 pub fn hex_encode(data: &[u8]) -> String {
-    data.iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<Vec<_>>()
-        .concat()
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(data.len() * 2);
+    for byte in data {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 15) as usize] as char);
+    }
+    encoded
+}
+
+/// HMAC-SHA-256 (RFC 2104) over `message` under `key`: the shared keyed-hash
+/// home (grants today; artifact signing / webhook verification next). Keys
+/// longer than the 64-byte block are hashed first, per the RFC.
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    const BLOCK: usize = 64;
+    let mut normalized = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        let digest = Sha256::digest(key);
+        normalized[..32].copy_from_slice(&digest);
+    } else {
+        normalized[..key.len()].copy_from_slice(key);
+    }
+    let pad = |byte: u8| -> Vec<u8> {
+        normalized.iter().map(|key| key ^ byte).collect()
+    };
+    let inner = pad(0x36);
+    let outer = pad(0x5c);
+    let mut inner_hasher = Sha256::new();
+    inner_hasher.update(&inner);
+    inner_hasher.update(message);
+    let inner_digest = inner_hasher.finalize();
+    let mut outer_hasher = Sha256::new();
+    outer_hasher.update(&outer);
+    outer_hasher.update(inner_digest);
+    outer_hasher.finalize().into()
 }
 
 /// Generate a time-based pseudo-UUID v4 string.

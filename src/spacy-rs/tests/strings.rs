@@ -105,3 +105,21 @@ fn load_or_empty_missing_file_is_empty() {
     let store = StringStore::load_or_empty(&dir.path().join("absent.json"));
     assert!(store.is_empty());
 }
+
+#[test]
+fn poisoned_store_recovers_instead_of_panicking() {
+    let store = StringStore::new();
+    store.add("hello");
+    // Poison the lock: panic while holding the write guard.
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = store.by_hash.write().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison setup must panic");
+    // Recovery: reads and writes keep working on the valid state.
+    assert_eq!(store.get(hash_utf8("hello")).map(|s| s.to_string()), Some("hello".into()));
+    assert!(store.contains("hello"));
+    store.add("world");
+    assert!(store.contains("world"));
+    assert_eq!(store.len(), 2);
+}

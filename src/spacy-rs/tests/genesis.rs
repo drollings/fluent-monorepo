@@ -185,3 +185,18 @@ fn default_thresholds_preserved_at_new_home() {
     g.record(&ner_corr("Person"), "washington");
     assert_eq!(g.get_ner("washington"), Some(NerType::Person));
 }
+
+#[test]
+fn poisoned_genesis_map_recovers_instead_of_panicking() {
+    let g = InMemoryGenesisIndex::with_threshold(2);
+    g.record(&corr("noun"), "hello");
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = g.map.lock().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison setup must panic");
+    // Prior counts survive; recording continues to threshold.
+    assert_eq!(g.count_for("hello"), 1);
+    g.record(&corr("noun"), "hello");
+    assert!(g.is_promoted("hello"));
+}

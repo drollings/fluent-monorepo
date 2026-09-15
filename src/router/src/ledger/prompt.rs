@@ -187,6 +187,88 @@ impl RelevanceSignal {
     }
 }
 
+/// The fidelity-selection interface: assign each intermediate node a target
+/// fidelity inside the band, most-relevant-first. This is the
+/// interchangeable seam behind relevance ranking (cosine today; BM25/HNSW
+/// candidates plug in here without touching assembly or the budget fit).
+///
+/// Axis statement: a selector score is **producer confidence** (how close an
+/// embedding is); the byte budget and the worker's role-need are
+/// **task-value** (what the worker needs to decide). Selection never
+/// surfaces a node on score alone past budget — the assembler enforces that.
+///
+/// Contract: deterministic (same inputs ⇒ same outputs, ties in view
+/// order), pure (no I/O, no LOD derivation — assembly must stay free), and
+/// total over the band (every returned `Lod` lies within `min..=max`).
+pub trait FidelitySelector: Send + Sync {
+    /// Rank `intermediates` most-relevant-first with fidelity targets.
+    fn select(
+        &self,
+        store: &ContentNodeStore,
+        intermediates: &[NodeId],
+        band: &LodSpec,
+    ) -> Vec<(NodeId, Lod)>;
+}
+
+/// Cosine-rank selection: sort by cosine similarity to the query embedding
+/// descending (most relevant → finest), nodes without an embedding last,
+/// interpolated across the band. The current relevance-ranked mechanism,
+/// extracted verbatim.
+#[derive(Debug, Clone)]
+pub struct CosineRankSelector {
+    query: Vec<f32>,
+}
+
+impl CosineRankSelector {
+    /// A selector ranking by similarity to `query`.
+    pub fn new(query: Vec<f32>) -> Self {
+        Self { query }
+    }
+}
+
+impl FidelitySelector for CosineRankSelector {
+    fn select(
+        &self,
+        store: &ContentNodeStore,
+        intermediates: &[NodeId],
+        band: &LodSpec,
+    ) -> Vec<(NodeId, Lod)> {
+        let mut ranked: Vec<(NodeId, f32)> = intermediates
+            .iter()
+            .map(|id| {
+                let sim = store
+                    .snapshot(*id)
+                    .and_then(|n| n.embedding.as_ref().map(|e| cosine_similarity_f32(&self.query, e)))
+                    .unwrap_or(f32::MIN);
+                (*id, sim)
+            })
+            .collect();
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        ranked
+            .into_iter()
+            .enumerate()
+            .map(|(r, (id, _))| (id, band.interpolate(r, intermediates.len())))
+            .collect()
+    }
+}
+
+/// Uniform selection: every intermediate at the band midpoint. The current
+/// no-signal mechanism, extracted verbatim.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UniformSelector;
+
+impl FidelitySelector for UniformSelector {
+    fn select(
+        &self,
+        _store: &ContentNodeStore,
+        intermediates: &[NodeId],
+        band: &LodSpec,
+    ) -> Vec<(NodeId, Lod)> {
+        let mid = band.midpoint();
+        intermediates.iter().map(|id| (*id, mid)).collect()
+    }
+}
+
 /// The assembled prompt output.
 #[derive(Debug, Clone)]
 pub struct AssembledPrompt {
@@ -261,6 +343,35 @@ impl LedgerPromptAssembler {
         relevance: Option<&RelevanceSignal>,
         lod_spec: &LodSpec,
     ) -> AssembledPrompt {
+        // Legacy signal paths delegate to the selector seam (byte-identical):
+        // `Query` ranks by cosine, anything else is uniform.
+        match relevance.and_then(RelevanceSignal::embedding) {
+            Some(query) => {
+                let selector = CosineRankSelector::new(query.to_vec());
+                self.assemble_with_selector(view, worker, budget, Some(&selector), lod_spec)
+            }
+            None => self.assemble_with_selector(
+                view,
+                worker,
+                budget,
+                Some(&UniformSelector),
+                lod_spec,
+            ),
+        }
+    }
+
+    /// Assemble with an explicit [`FidelitySelector`]: the interchangeable
+    /// relevance seam (`None` = uniform fidelity, as the legacy no-signal
+    /// path). Budget fitting, anchor guarantees, and rendering are identical
+    /// to [`Self::assemble`].
+    pub fn assemble_with_selector(
+        &self,
+        view: &dyn LedgerView,
+        worker: &WorkerContext,
+        budget: &PromptBudget,
+        selector: Option<&dyn FidelitySelector>,
+        lod_spec: &LodSpec,
+    ) -> AssembledPrompt {
         let store = view.store();
         let ids: Vec<NodeId> = view
             .node_ids()
@@ -287,31 +398,15 @@ impl LedgerPromptAssembler {
             Vec::new()
         };
 
-        // Assign each intermediate a target Lod within the band.
-        let targets: Vec<(NodeId, Lod)> =
-            if let Some(query) = relevance.and_then(RelevanceSignal::embedding) {
-                // Relevance-ranked: sort by similarity descending (most relevant
-                // first → finest). Nodes without an embedding are least relevant.
-                let mut ranked: Vec<(NodeId, f32)> = intermediates
-                    .iter()
-                    .map(|id| {
-                        let sim = store
-                            .snapshot(*id)
-                            .and_then(|n| n.embedding.as_ref().map(|e| cosine_similarity_f32(query, e)))
-                            .unwrap_or(f32::MIN);
-                        (*id, sim)
-                    })
-                    .collect();
-                ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                ranked
-                    .into_iter()
-                    .enumerate()
-                    .map(|(r, (id, _))| (id, lod_spec.interpolate(r, intermediates.len())))
-                    .collect()
-            } else {
-                let mid = lod_spec.midpoint();
-                intermediates.iter().map(|id| (*id, mid)).collect()
-            };
+        // Assign each intermediate a target Lod within the band (most
+        // relevant first → finest). Priority order for fitting below.
+        // `None` is uniform fidelity, as the legacy no-signal path.
+        let uniform = UniformSelector;
+        let selector: &dyn FidelitySelector = match selector {
+            Some(selector) => selector,
+            None => &uniform,
+        };
+        let targets: Vec<(NodeId, Lod)> = selector.select(store, &intermediates, lod_spec);
 
         // Budget-fit the intermediates: degrade each toward coarser tiers until
         // it fits; drop it if even the coarsest does not fit. Priority order for

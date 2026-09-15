@@ -1014,6 +1014,15 @@ pub struct LlamaServerSupervisor {
 }
 
 impl LlamaServerSupervisor {
+    /// Look up a managed server by key. A key gathered from `servers.keys()`
+    /// can vanish under a concurrent eviction, so the miss is a typed boot
+    /// error the caller propagates — never a panic on the serving path.
+    fn live_server(&self, key: &str) -> Result<Arc<ManagedServer>, String> {
+        self.servers
+            .get(&key.to_string())
+            .ok_or_else(|| format!("model '{key}' evicted during boot"))
+    }
+
     /// Resolve the binary and build one server per managed model (`weights` /
     /// `hf_repo` / `instances` declared), each on its own free localhost port.
     /// Fails fast when `llama-server` is not found on `$PATH`.
@@ -1179,7 +1188,7 @@ impl LlamaServerSupervisor {
         keys.sort();
         let mut boot_keys = Vec::new();
         for key in &keys {
-            let server = self.servers.get(key).expect("managed key from registry");
+            let server = self.live_server(key)?;
             if !server.spec.boot {
                 tracing::info!(
                     target: "router.supervisor",
@@ -1213,7 +1222,7 @@ impl LlamaServerSupervisor {
         let client = Arc::clone(&self.http_client);
         let mut health = Vec::new();
         for key in &boot_keys {
-            let server = self.servers.get(key).expect("managed key from registry");
+            let server = self.live_server(key)?;
             let client = Arc::clone(&client);
             health.push(async move { (key.clone(), server.wait_healthy_with_client(&client).await) });
         }

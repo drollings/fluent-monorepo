@@ -728,3 +728,35 @@ fn latest_parse_node_id_returns_latest_per_session() {
     // Other sessions are unaffected.
     assert_eq!(store.latest_parse_node_id("s2"), None);
 }
+
+#[test]
+fn knn_search_multi_node_nearest_order_without_hnsw() {
+    // Degraded-mode contract: with no HNSW built, search is brute force and
+    // returns neighbors nearest-first. This pins the fallback the serving
+    // path degrades to when the index is unavailable.
+    let store = temp_store();
+    let fixtures = [
+        ("r0", "node zero", vec![1.0f32, 0.0, 0.0, 0.0]),
+        ("r1", "node one", vec![0.0, 1.0, 0.0, 0.0]),
+        ("r2", "node two", vec![0.9, 0.1, 0.0, 0.0]),
+    ];
+    let mut ids = Vec::new();
+    for (i, (req, content, emb)) in fixtures.into_iter().enumerate() {
+        let mut node = new_node(
+            NodeId::from_int(i as i64),
+            "s",
+            req,
+            "assistant",
+            content,
+            Some(true),
+        );
+        node.embedding = Some(emb);
+        ids.push(store.record_content_node(&node).unwrap());
+    }
+    assert!(!store.is_hnsw_built());
+    let hits = store.knn_search(&[1.0, 0.0, 0.0, 0.0], 3);
+    assert_eq!(hits.len(), 3);
+    assert_eq!(hits[0].node_id, ids[0], "exact match first");
+    assert_eq!(hits[1].node_id, ids[2], "near match second");
+    assert_eq!(hits[2].node_id, ids[1], "orthogonal last");
+}

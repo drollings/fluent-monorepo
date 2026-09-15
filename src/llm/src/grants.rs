@@ -9,6 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
+use common_core::hash::{hex_encode, hmac_sha256};
+
 use crate::artifact_lock::{LockOptions, acquire_artifact_cache_lock};
 
 
@@ -433,39 +435,6 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
         .zip(right.iter())
         .fold(0u8, |acc, (left, right)| acc | (left ^ right))
         == 0
-}
-
-fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
-    use sha2::Digest as _;
-    const BLOCK: usize = 64;
-    let mut normalized = [0u8; BLOCK];
-    if key.len() > BLOCK {
-        let digest = sha2::Sha256::digest(key);
-        normalized[..32].copy_from_slice(&digest);
-    } else {
-        normalized[..key.len()].copy_from_slice(key);
-    }
-    let pad = |byte: u8| -> Vec<u8> { normalized.iter().map(|key| key ^ byte).collect() };
-    let inner = pad(0x36);
-    let outer = pad(0x5c);
-    let mut inner_hasher = sha2::Sha256::new();
-    inner_hasher.update(&inner);
-    inner_hasher.update(message);
-    let inner_digest = inner_hasher.finalize();
-    let mut outer_hasher = sha2::Sha256::new();
-    outer_hasher.update(&outer);
-    outer_hasher.update(inner_digest);
-    outer_hasher.finalize().into()
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        encoded.push(HEX[(byte >> 4) as usize] as char);
-        encoded.push(HEX[(byte & 15) as usize] as char);
-    }
-    encoded
 }
 
 fn new_id() -> String {

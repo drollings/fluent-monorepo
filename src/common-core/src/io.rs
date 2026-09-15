@@ -9,9 +9,17 @@ pub fn mtime(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
-/// Atomically write data to a file by writing to a temp file and renaming.
+/// Atomically write data to a file by writing to a unique sibling temp file
+/// and renaming over the target.
 ///
-/// This prevents partial writes if the process is interrupted mid-write.
+/// The temp file lives in the same directory as the target (so the rename
+/// never crosses filesystems) and is named
+/// `<file>.<pid>.<counter>.<rand>.tmp`, which can neither collide with a
+/// sibling target (`a.json` vs. `a.toml`) nor be mistaken for the real file
+/// by a reader. The file is fsync'd before the rename and the parent
+/// directory is fsync'd on a best-effort basis; the temp file is removed on
+/// any failure. Readers always observe the old or the new contents, never a
+/// mix.
 ///
 /// # Examples
 ///
@@ -23,10 +31,40 @@ pub fn mtime(path: &Path) -> Option<SystemTime> {
 /// # Ok::<(), std::io::Error>(())
 /// ```
 pub fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, data)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    use std::io::Write as _;
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let stem = path
+        .file_name()
+        .map_or_else(|| "file".to_string(), |s| s.to_string_lossy().into_owned());
+    let slot = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_name = format!(
+        "{stem}.{}.{slot}.{}.tmp",
+        std::process::id(),
+        fastrand::u32(..)
+    );
+    let tmp = match parent {
+        Some(dir) => dir.join(tmp_name),
+        None => Path::new(&tmp_name).to_path_buf(),
+    };
+    let write_result = (|| {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+        drop(file);
+        // Durability best-effort: a failed directory sync must not fail the
+        // write — atomicity (all-or-nothing via rename) already holds.
+        if let Some(dir) = parent {
+            if let Ok(dir_fd) = fs::File::open(dir) {
+                let _ = dir_fd.sync_all();
+            }
+        }
+        fs::rename(&tmp, path)
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    write_result
 }
 
 /// Read a file to a string, returning `IoError` for I/O failures and files
@@ -54,6 +92,9 @@ pub fn read_to_string_err(path: &Path) -> Result<String, IoError> {
     fs::read_to_string(path).map_err(IoError)
 }
 
+/// Resolve `path` against the current directory without touching the
+/// filesystem. Unlike earlier versions this never creates directories;
+/// callers that need the directory to exist call [`ensure_dir`] explicitly.
 pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
     let pb = Path::new(path);
     let abs = if pb.is_absolute() {
@@ -61,12 +102,11 @@ pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
     } else {
         std::env::current_dir()?.join(pb)
     };
-    fs::create_dir_all(&abs)?;
     Ok(abs.to_string_lossy().to_string())
 }
 
 pub fn read_file_alloc(path: &str) -> Option<String> {
-    fs::read_to_string(path).ok()
+    read_file_alloc_err(path).ok()
 }
 
 pub fn read_file_alloc_err(path: &str) -> Result<String, std::io::Error> {

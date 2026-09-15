@@ -207,21 +207,6 @@ pub trait Component: FieldAccess + Describable + WorkUnit + Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-/// Compatibility surface (scaffold).
-/// Optional trait for components that can be persisted to storage.
-///
-/// **Deferred:** This trait is a design placeholder — no blanket impl exists,
-/// and no in-tree component implements it yet. A second consumer that needs
-/// to serialize component state (e.g., to a database or over the wire) should
-/// implement this trait on the specific types that need persistence. The base
-/// `Component` trait intentionally does NOT require `Serialize` because most
-/// components hold non-serializable state (`Arc<dyn Provider>`, `Mutex<Plugin>`).
-#[doc(hidden)]
-#[allow(dead_code)]
-pub trait PersistableComponent: Component {
-    fn serialize_state(&self) -> Result<serde_json::Value, WorkError>;
-}
-
 /// Downcast a `dyn Component` to a concrete type. Returns `None` if the type doesn't match.
 pub fn component_downcast_ref<T: 'static>(comp: &dyn Component) -> Option<&T> {
     comp.as_any().downcast_ref::<T>()

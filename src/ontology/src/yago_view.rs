@@ -56,7 +56,9 @@ impl YagoView {
         }
         // Try header check
         if data.len() >= 44 {
-            let magic = u32::from_le_bytes(data[0..4].try_into().unwrap());
+            let magic = u32::from_le_bytes(data[0..4].try_into().map_err(|_| {
+                OntologyError::YagoView("short YaGO header".into())
+            })?);
             if magic == 0x5953_4D31 {
                 return Err(OntologyError::YagoView("YSM1 binary decode not yet wired — use TTL fixture".into()));
             }

@@ -1833,7 +1833,7 @@ async fn instances_api_key_auth_401_without_200_with() {
     // Register the key in a uniquely-named env var so parallel tests can't
     // clobber each other; removed after the test.
     let key_var = "ROUTER_TEST_API_KEY_9f7c";
-    unsafe { std::env::set_var(key_var, "s3cret-key") };
+    std::env::set_var(key_var, "s3cret-key");
 
     let config = make_config("http://127.0.0.1:1", false, false, 5000, 2000);
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(None));

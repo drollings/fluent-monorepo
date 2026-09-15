@@ -359,15 +359,15 @@ async fn dispatch_to_single_target(
             )
         }
         _ => (
-            target.instance.clone(),
-            target.snapshot.clone(),
+            target.instance.as_deref(),
+            target.snapshot.as_deref(),
             target.id_slot,
         ),
     };
     let params = crate::dispatch::backend::params_with_routing_fields(
         target.params.clone(),
-        instance.as_deref(),
-        snapshot.as_deref(),
+        instance,
+        snapshot,
         id_slot,
     );
 

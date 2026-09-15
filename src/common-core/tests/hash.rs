@@ -103,3 +103,75 @@ fn sha256_file_matches_hex_and_fails_open() {
 }
 
 
+
+#[test]
+fn hex_encode_matches_format_reference_all_bytes() {
+        // The shared encoder must render exactly what `format!("{b:02x}")`
+        // produces, for every byte value (including a multi-byte sequence).
+        let all: Vec<u8> = (0u8..=255u8).collect();
+        let reference: String = all.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex_encode(&all), reference);
+        assert_eq!(hex_encode(&[]), "");
+        assert_eq!(hex_encode(&[0x00, 0x0f, 0xf0, 0xff]), "000ff0ff");
+}
+
+#[test]
+fn hmac_sha256_rfc4231_vectors() {
+        // RFC 4231 §4.2 HMAC-SHA-256 test cases 1–4 (key/message/digest).
+        let cases: &[(&[u8], &[u8], &str)] = &[
+                (
+                        &[0x0bu8; 20],
+                        b"Hi There",
+                        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+                ),
+                (
+                        b"Jefe",
+                        b"what do ya want for nothing?",
+                        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+                ),
+                (
+                        &[0xaau8; 20],
+                        &[0xddu8; 50],
+                        "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe",
+                ),
+                (
+                        &[0x0cu8; 20],
+                        b"Test With Truncation",
+                        "a3b6167473100ee06e0c796c2955552bfa6f7c0a6a8aef8b93f860aab0cd20c5",
+                ),
+        ];
+        for (key, msg, want_prefix) in cases {
+                let got = hex_encode(&hmac_sha256(key, msg));
+                assert!(
+                        got.starts_with(want_prefix),
+                        "hmac_sha256({key:?}, {msg:?}) = {got}, want prefix {want_prefix}"
+                );
+        }
+        // Long-key path (> block size): hashed key, still deterministic and
+        // 32 bytes. Case 6 key (131 bytes of 0xaa) with its message.
+        let long_key = vec![0xaau8; 131];
+        let d1 = hmac_sha256(&long_key, b"Test Using Larger Than Block-Sized Key - Hash Key First");
+        let d2 = hmac_sha256(&long_key, b"Test Using Larger Than Block-Sized Key - Hash Key First");
+        assert_eq!(d1, d2);
+        assert_eq!(hex_encode(&d1), "ad47763c29284e9399feab51e0e79c9c5869cd06617d14fe69f0af19ffbd51cd");
+}
+
+#[test]
+fn hash_file_engine_matches_oneshot_digest() {
+        // The streaming file engine must agree with the one-shot digest over
+        // the same bytes (empty, small, and multi-chunk inputs).
+        let dir = std::env::temp_dir().join("common-core-hash-file-check");
+        std::fs::create_dir_all(&dir).unwrap();
+        let payloads: &[&[u8]] = &[b"", b"hello", &[0xabu8; 200_000]];
+        for (i, payload) in payloads.iter().enumerate() {
+                let path = dir.join(format!("payload-{i}.bin"));
+                std::fs::write(&path, payload).unwrap();
+                assert_eq!(
+                        hash_file(&path, HashAlgorithm::Sha256).unwrap(),
+                        sha256_hex(payload),
+                        "payload {i}"
+                );
+                assert_eq!(sha256_file(&path).unwrap(), sha256_hex(payload));
+        }
+        std::fs::remove_dir_all(&dir).ok();
+}

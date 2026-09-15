@@ -32,3 +32,26 @@ fn sha_mismatch_is_detected() {
     let res = YagoView::load(&path);
     assert!(res.is_err(), "YSM1 magic with bad payload must be rejected");
 }
+
+#[test]
+fn malformed_headers_never_panic_with_typed_errors() {
+    // Every byte shape through `load`: empty, short binary, exactly-44
+    // garbage, bad magic, and YSM1 magic (typed rejection, never panic).
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let inputs: Vec<(&str, Vec<u8>)> = vec![
+        ("empty.bin", vec![]),
+        ("short.bin", vec![0u8; 10]),
+        ("exact44.bin", vec![0xabu8; 44]),
+        ("long.bin", vec![0x00u8; 200]),
+    ];
+    for (name, bytes) in inputs {
+        let path = dir.path().join(name);
+        std::fs::write(&path, &bytes).expect("write");
+        let _ = YagoView::load(&path);
+    }
+    let mut ysm1 = vec![0u8; 64];
+    ysm1[0..4].copy_from_slice(&0x5953_4D31u32.to_le_bytes());
+    let magic_path = dir.path().join("magic.bin");
+    std::fs::write(&magic_path, &ysm1).expect("write");
+    assert!(YagoView::load(&magic_path).is_err());
+}

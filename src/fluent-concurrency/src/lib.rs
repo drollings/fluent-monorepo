@@ -6,6 +6,7 @@ pub mod affinity;
 // feature so a non-DB consumer pays nothing for the database layer.
 #[cfg(feature = "db")]
 pub mod capability;
+pub mod close;
 pub mod credit_pool;
 pub mod feed_worker;
 pub mod flow;
@@ -20,9 +21,7 @@ pub mod ladder;
 // `runtime::TestRuntime`) stays and is composed by the protocol owner.
 pub mod pool;
 pub mod queue;
-pub mod reserve;
 pub mod retry;
-pub mod router;
 pub mod runtime;
 pub mod scope;
 pub mod stream;

@@ -60,7 +60,7 @@ impl CodewordAnonymizer {
 
     /// Reverse-substitute codewords back to real values.
     pub fn reverse(&self, text: &str) -> String {
-        let map = self.mapping.lock().unwrap();
+        let map = common_core::sync::lock(&self.mapping);
         let mut result = text.to_string();
         for (codeword, real) in map.iter() {
             result = result.replace(codeword, real);
@@ -103,7 +103,7 @@ impl CodewordAnonymizer {
 
         // Check shared mapping
         {
-            let map = self.mapping.lock().unwrap();
+            let map = common_core::sync::lock(&self.mapping);
             if let Some((k, _)) = map.iter().find(|(_, v)| v.as_str() == text) {
                 let codeword = k.clone();
                 dedup.insert(text.to_string(), codeword.clone());
@@ -111,7 +111,7 @@ impl CodewordAnonymizer {
             }
         }
 
-        let mut counters = self.counters.lock().unwrap();
+        let mut counters = common_core::sync::lock(&self.counters);
         let count = counters.entry(type_name).or_insert(0);
         *count += 1;
         let codeword = format!("CODEWORD_{}_{}", pattern_name.to_uppercase(), count);
@@ -137,7 +137,7 @@ impl CodewordAnonymizer {
 
         // Store codeword → original-value mappings
         {
-            let mut map = self.mapping.lock().unwrap();
+            let mut map = common_core::sync::lock(&self.mapping);
             for (_, _, ref codeword, ref original) in &substitutions {
                 map.entry(codeword.clone())
                     .or_insert_with(|| original.clone());
@@ -176,7 +176,7 @@ impl TransformStrategy for CodewordAnonymizer {
         })?;
 
         // Record the codeword map in metadata for downstream reverse-substitution
-        let map = self.mapping.lock().unwrap().clone();
+        let map = common_core::sync::lock(&self.mapping).clone();
         insert_string_map(&mut transformed, "codeword_map", map);
 
         Ok(transformed)

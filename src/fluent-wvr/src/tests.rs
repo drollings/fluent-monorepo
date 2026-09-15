@@ -851,8 +851,6 @@ fn scaffold_types_still_compile() {
     assert_send_sync::<crate::dynamic::DynamicComponent>();
     // Ensure scaffold trait names exist (compiles if traits exist, even without impls).
     #[allow(dead_code)]
-    fn assert_trait_exists<T: crate::traits::PersistableComponent + Send + Sync>() {}
-    #[allow(dead_code)]
     fn assert_schema_provider<T: crate::traits::SchemaProvider + Send + Sync>() {}
     // Types from fluent-concurrency are checked via their own crate tests; here we just ensure this crate's scaffolds compile.
     let _ = crate::traits::FieldSchema {

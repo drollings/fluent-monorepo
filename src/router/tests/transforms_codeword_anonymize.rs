@@ -154,3 +154,16 @@ fn name_returns_correct_value() {
     let anon = CodewordAnonymizer::new();
     assert_eq!(anon.name(), "codeword_anonymize");
 }
+
+#[test]
+fn poisoned_mapping_recovers_instead_of_panicking() {
+    let anon = CodewordAnonymizer::new();
+    assert_eq!(anon.reverse("nothing mapped"), "nothing mapped");
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = anon.mapping.lock().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison setup must panic");
+    // Recovery: the valid (empty) mapping survives; reads keep working.
+    assert_eq!(anon.reverse("nothing mapped"), "nothing mapped");
+}

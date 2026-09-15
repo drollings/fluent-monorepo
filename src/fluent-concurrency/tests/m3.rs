@@ -1,7 +1,6 @@
 use super::*;
 use crate::pool::{Limiter, PoolError, Queue, ResultPool, ResultPoolError, WorkerPool};
 use crate::queue::{BoundedPriorityQueue, PriorityQueue};
-use crate::router::PartitionedRouter;
 use std::sync::Arc;
 
 #[tokio::test(start_paused = true)]
@@ -319,68 +318,6 @@ async fn test_high_contention_worker_pool() {
     assert_eq!(completed.load(Ordering::SeqCst), 1000);
 }
 
-#[tokio::test(start_paused = true)]
-async fn test_partitioned_router_same_key() {
-    let results = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let r1 = Arc::clone(&results);
-    let r2 = Arc::clone(&results);
-    let pool1 = WorkerPool::new(crate::tokio_runtime(), 1, 10, move |job: i32| {
-        let r = Arc::clone(&r1);
-        async move {
-            let mut guard = r.lock().unwrap();
-            guard.push((0, job));
-        }
-    });
-    let pool2 = WorkerPool::new(crate::tokio_runtime(), 1, 10, move |job: i32| {
-        let r = Arc::clone(&r2);
-        async move {
-            let mut guard = r.lock().unwrap();
-            guard.push((1, job));
-        }
-    });
-
-    let router = PartitionedRouter::new(vec![pool1, pool2], |key: &String| key.len());
-    router.submit(&"a".to_string(), 10).await.unwrap();
-    router.submit(&"a".to_string(), 20).await.unwrap();
-    // Both go to same shard because "a".len() % 2 == 1
-    tokio::task::yield_now().await;
-    let guard = results.lock().unwrap();
-    assert_eq!(guard.len(), 2);
-    let shard1_count = guard.iter().filter(|(s, _)| *s == 1).count();
-    assert_eq!(shard1_count, 2);
-}
-
-#[tokio::test(start_paused = true)]
-async fn test_partitioned_router_distributes() {
-    let results = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let r1 = Arc::clone(&results);
-    let r2 = Arc::clone(&results);
-    let pool1 = WorkerPool::new(crate::tokio_runtime(), 1, 10, move |job: i32| {
-        let r = Arc::clone(&r1);
-        async move {
-            let mut guard = r.lock().unwrap();
-            guard.push((0, job));
-        }
-    });
-    let pool2 = WorkerPool::new(crate::tokio_runtime(), 1, 10, move |job: i32| {
-        let r = Arc::clone(&r2);
-        async move {
-            let mut guard = r.lock().unwrap();
-            guard.push((1, job));
-        }
-    });
-
-    let router = PartitionedRouter::new(vec![pool1, pool2], |key: &String| key.len());
-    router.submit(&"a".to_string(), 10).await.unwrap();
-    router.submit(&"bb".to_string(), 20).await.unwrap();
-    tokio::task::yield_now().await;
-    let guard = results.lock().unwrap();
-    assert_eq!(guard.len(), 2);
-    let shards: Vec<_> = guard.iter().map(|(s, _)| *s).collect();
-    assert!(shards.contains(&0));
-    assert!(shards.contains(&1));
-}
-
 #[tokio::test]
 async fn result_pool_happy_path() {
     let pool = ResultPool::new(crate::tokio_runtime(), 2, 10, |job: i32| async move {
@@ -461,4 +398,131 @@ fn queue_push_is_sync_no_await_needed() {
     // Compile-only: push is sync, no .await
     let _: Result<(), _> = q.push(1);
     assert!(q.push(2).is_ok());
+}
+
+/// `close()` wakes a `push_wait` blocked on a full queue with `Closed`
+/// (space-waiter half of close-wakes-waiters), for both queue types.
+#[tokio::test(start_paused = true)]
+async fn test_queue_close_wakes_blocked_push_wait() {
+    let q: Queue<i32> = Queue::new(1);
+    q.push(1).unwrap();
+    let q = Arc::new(q);
+    let q2 = Arc::clone(&q);
+    let handle = tokio::spawn(async move { q2.push_wait(2).await });
+    tokio::task::yield_now().await;
+    q.close();
+    assert_eq!(handle.await.unwrap(), Err(PoolError::Closed));
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_bounded_priority_queue_close_wakes_blocked_push_wait() {
+    let q = BoundedPriorityQueue::<i32>::new(1);
+    q.push(1, 0).unwrap();
+    let q = Arc::new(q);
+    let q2 = Arc::clone(&q);
+    let handle = tokio::spawn(async move { q2.push_wait(2, 0).await });
+    tokio::task::yield_now().await;
+    q.close();
+    assert_eq!(handle.await.unwrap(), Err(PoolError::Closed));
+}
+
+/// `close()` wakes a `pop` blocked on an empty priority queue with `None`.
+#[tokio::test(start_paused = true)]
+async fn test_bounded_priority_queue_close_wakes_blocked_pop() {
+    let q = Arc::new(BoundedPriorityQueue::<i32>::new(2));
+    let q2 = Arc::clone(&q);
+    let handle = tokio::spawn(async move { q2.pop().await });
+    tokio::task::yield_now().await;
+    q.close();
+    assert_eq!(handle.await.unwrap(), None);
+}
+
+/// Anti-missed-wakeup: a `push_wait` racing a concurrent `pop` that frees
+/// space must complete rather than sleep through the notification.
+#[tokio::test(start_paused = true)]
+async fn test_queue_push_wait_racing_pop_completes() {
+    let q = Arc::new(Queue::new(1));
+    q.push(1).unwrap();
+    let q2 = Arc::clone(&q);
+    let waiter = tokio::spawn(async move { q2.push_wait(2).await });
+    tokio::task::yield_now().await;
+    assert_eq!(q.pop().await, Some(1));
+    assert_eq!(waiter.await.unwrap(), Ok(()));
+    assert_eq!(q.pop().await, Some(2));
+    q.close();
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_bounded_priority_queue_push_wait_racing_pop_completes() {
+    let q = Arc::new(BoundedPriorityQueue::new(1));
+    q.push(1, 0).unwrap();
+    let q2 = Arc::clone(&q);
+    let waiter = tokio::spawn(async move { q2.push_wait(2, 5).await });
+    tokio::task::yield_now().await;
+    assert_eq!(q.pop().await, Some(1));
+    assert_eq!(waiter.await.unwrap(), Ok(()));
+    assert_eq!(q.pop().await, Some(2));
+    q.close();
+}
+
+/// Ordering parity through the concurrent shell: priority desc, FIFO within
+/// a priority, priority-0 between positive and negative.
+#[tokio::test(start_paused = true)]
+async fn test_bounded_priority_queue_concurrent_ordering() {
+    let q = BoundedPriorityQueue::new(8);
+    q.push("neg", -1).unwrap();
+    q.push("zero-a", 0).unwrap();
+    q.push("hi-a", 10).unwrap();
+    q.push("zero-b", 0).unwrap();
+    q.push("hi-b", 10).unwrap();
+    q.push("neg2", -5).unwrap();
+    assert_eq!(q.pop().await, Some("hi-a"));
+    assert_eq!(q.pop().await, Some("hi-b"));
+    assert_eq!(q.pop().await, Some("zero-a"));
+    assert_eq!(q.pop().await, Some("zero-b"));
+    assert_eq!(q.pop().await, Some("neg"));
+    assert_eq!(q.pop().await, Some("neg2"));
+    q.close();
+}
+
+/// `into_iter`/`drain` order goldens: repeated-pop iteration must yield the
+/// same priority-desc, FIFO-within-priority sequence the sorted paths do,
+/// including emptied-bucket removal and negative priorities.
+#[test]
+fn priority_queue_iter_drain_order_golden() {
+    let mut pq = PriorityQueue::new();
+    pq.push("neg", -1);
+    pq.push("zero-a", 0);
+    pq.push("hi-a", 10);
+    pq.push("zero-b", 0);
+    pq.push("hi-b", 10);
+    pq.push("neg2", -5);
+    // Pop one item to exercise bucket removal, then re-add at that priority.
+    assert_eq!(pq.pop(), Some("hi-a"));
+    pq.push("hi-c", 10);
+    let want = vec![
+        (10, "hi-b"),
+        (10, "hi-c"),
+        (0, "zero-a"),
+        (0, "zero-b"),
+        (-1, "neg"),
+        (-5, "neg2"),
+    ];
+    let got: Vec<(i32, &str)> = pq.into_iter().collect();
+    assert_eq!(got, want);
+
+    let mut pq = PriorityQueue::new();
+    pq.push("neg", -1);
+    pq.push("zero-a", 0);
+    pq.push("hi-a", 10);
+    pq.push("zero-b", 0);
+    pq.push("hi-b", 10);
+    pq.push("neg2", -5);
+    assert_eq!(pq.pop(), Some("hi-a"));
+    pq.push("hi-c", 10);
+    let got: Vec<(i32, &str)> = pq.drain().collect();
+    assert_eq!(got, want);
+    assert_eq!(pq.len(), 0);
+    assert!(pq.is_empty());
+    assert_eq!(pq.pop(), None);
 }

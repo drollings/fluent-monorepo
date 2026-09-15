@@ -1,10 +1,7 @@
 //! A priority queue with a fast path for zero-priority items.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-
-use tokio::sync::Notify;
 
 use crate::pool::PoolError;
 use crate::sync::lock;
@@ -51,30 +48,38 @@ impl<T> PriorityQueue<T> {
 
     /// Shared ordering helper: which bucket holds the next item.
     fn pick_bucket(&self) -> Pick {
-        if let Some((&key, _)) = self.prioritized.last_key_value() {
-            if key > 0 {
-                return Pick::Positive(key);
+        let top = self.prioritized.last_key_value().map(|(&key, _)| key);
+        match top {
+            Some(key) if key > 0 => Pick::Positive(key),
+            _ => {
+                if !self.simple.is_empty() {
+                    return Pick::Simple;
+                }
+                match top {
+                    Some(key) => Pick::Negative(key),
+                    None => Pick::Empty,
+                }
             }
         }
-        if !self.simple.is_empty() {
-            return Pick::Simple;
-        }
-        if let Some((&key, _)) = self.prioritized.last_key_value() {
-            return Pick::Negative(key);
-        }
-        Pick::Empty
     }
 
     #[allow(clippy::redundant_closure_for_method_calls)]
     fn pop_entry(&mut self) -> Option<(T, i32)> {
         match self.pick_bucket() {
             Pick::Positive(key) | Pick::Negative(key) => {
-                let item = self.prioritized.get_mut(&key).and_then(VecDeque::pop_front);
-                if let Some(q) = self.prioritized.get(&key) {
-                    if q.is_empty() {
-                        self.prioritized.remove(&key);
+                let item = match self.prioritized.entry(key) {
+                    std::collections::btree_map::Entry::Occupied(mut slot) => {
+                        let item = slot.get_mut().pop_front();
+                        if slot.get().is_empty() {
+                            slot.remove();
+                        }
+                        item
                     }
-                }
+                    // Unreachable: `key` came from this map with no
+                    // mutation in between. Graceful `None` preserves the
+                    // old defensive behavior rather than panicking.
+                    std::collections::btree_map::Entry::Vacant(_) => None,
+                };
                 if item.is_some() {
                     self.count -= 1;
                 }
@@ -127,36 +132,24 @@ impl<T> PriorityQueue<T> {
     }
 
     /// Converts the queue into an iterator, consuming it.
-    /// Items are yielded in priority order (highest first).
-    pub fn into_iter(self) -> impl Iterator<Item = (i32, T)> {
-        let mut items: Vec<(i32, T)> = Vec::new();
-        for (prio, queue) in self.prioritized {
-            for item in queue {
-                items.push((prio, item));
-            }
+    /// Items are yielded in priority order (highest first): repeated `pop`,
+    /// so the sequence is exactly the pop order (no separate sort pass and
+    /// no extra allocation beyond the output).
+    pub fn into_iter(mut self) -> impl Iterator<Item = (i32, T)> {
+        let mut items = Vec::with_capacity(self.count);
+        while let Some((item, prio)) = self.pop_entry() {
+            items.push((prio, item));
         }
-        for item in self.simple {
-            items.push((0, item));
-        }
-        items.sort_by_key(|b| std::cmp::Reverse(b.0));
         items.into_iter()
     }
 
-    /// Removes all items from the queue, returning them in priority order.
+    /// Removes all items from the queue, returning them in priority order
+    /// (repeated `pop`: exactly the pop order, no separate sort pass).
     pub fn drain(&mut self) -> impl Iterator<Item = (i32, T)> + '_ {
-        self.count = 0;
-        let mut items: Vec<(i32, T)> = Vec::new();
-        let prioritized = std::mem::take(&mut self.prioritized);
-        for (prio, queue) in prioritized {
-            for item in queue {
-                items.push((prio, item));
-            }
+        let mut items = Vec::with_capacity(self.count);
+        while let Some((item, prio)) = self.pop_entry() {
+            items.push((prio, item));
         }
-        let simple = std::mem::take(&mut self.simple);
-        for item in simple {
-            items.push((0, item));
-        }
-        items.sort_by_key(|b| std::cmp::Reverse(b.0));
         items.into_iter()
     }
 }
@@ -169,23 +162,21 @@ impl<T> Default for PriorityQueue<T> {
 
 /// A bounded, concurrent priority queue with close-wakes-waiters semantics.
 ///
-/// Mirrors `crate::pool::Queue` (the FIFO bounded queue): same
-/// close-wakes-waiters discipline, same anti-missed-wakeup pattern (register
+/// Composes the shared [`crate::close::CloseWaker`] core for the close/wake
+/// discipline (the same core as `crate::pool::Queue`): same
+/// close-wakes-waiters behavior, same anti-missed-wakeup pattern (register
 /// `notified()` *before* taking the lock), same `std::sync::Mutex` backing
 /// (never held across an await — the async mutex's waker bookkeeping would be
-/// pure overhead). The only difference is the ordering: items are popped by
-/// [`PriorityQueue`]'s priority order (descending, FIFO within a priority,
-/// priority-0 fast path). Keep this type in sync with `Queue` when either
-/// changes the close/wake discipline.
+/// pure overhead). The only queue-specific state here is the ordering:
+/// items are popped by [`PriorityQueue`]'s priority order (descending, FIFO
+/// within a priority, priority-0 fast path).
 ///
 /// Ordering (LSP): identical to `PriorityQueue` — priority desc, FIFO within
 /// priority, priority-0 fast path.
 pub struct BoundedPriorityQueue<T> {
     inner: Mutex<PriorityQueue<T>>,
     capacity: usize,
-    closed: AtomicBool,
-    notify: Notify,
-    space_notify: Notify,
+    waker: crate::close::CloseWaker,
 }
 
 impl<T: Send + 'static> BoundedPriorityQueue<T> {
@@ -195,16 +186,14 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
         Self {
             inner: Mutex::new(PriorityQueue::new()),
             capacity,
-            closed: AtomicBool::new(false),
-            notify: Notify::new(),
-            space_notify: Notify::new(),
+            waker: crate::close::CloseWaker::new(),
         }
     }
 
     /// Pushes an item with the given priority. Returns `Err(Full)` if at
     /// capacity, `Err(Closed)` if closed. Synchronous fast path.
     pub fn push(&self, item: T, priority: i32) -> Result<(), PoolError> {
-        if self.closed.load(Ordering::SeqCst) {
+        if self.waker.is_closed() {
             return Err(PoolError::Closed);
         }
         let mut inner = lock(&self.inner);
@@ -212,7 +201,7 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
             return Err(PoolError::Full);
         }
         inner.push(item, priority);
-        self.notify.notify_one();
+        self.waker.wake_item();
         Ok(())
     }
 
@@ -221,15 +210,15 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
     pub async fn push_wait(&self, item: T, priority: i32) -> Result<(), PoolError> {
         let mut item = Some(item);
         loop {
-            if self.closed.load(Ordering::SeqCst) {
+            if self.waker.is_closed() {
                 return Err(PoolError::Closed);
             }
-            let waited = self.space_notify.notified();
+            let waited = self.waker.space_available();
             {
                 let mut inner = lock(&self.inner);
                 if inner.len() < self.capacity {
                     inner.push(item.take().unwrap(), priority);
-                    self.notify.notify_one();
+                    self.waker.wake_item();
                     return Ok(());
                 }
             }
@@ -242,14 +231,14 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
     /// (the same shape as `Queue::pop`).
     pub async fn pop(&self) -> Option<T> {
         loop {
-            let notified = self.notify.notified();
+            let notified = self.waker.items_available();
             {
                 let mut inner = lock(&self.inner);
                 if let Some(item) = inner.pop() {
-                    self.space_notify.notify_one();
+                    self.waker.wake_space();
                     return Some(item);
                 }
-                if self.closed.load(Ordering::SeqCst) {
+                if self.waker.is_closed() {
                     return None;
                 }
             }
@@ -259,9 +248,7 @@ impl<T: Send + 'static> BoundedPriorityQueue<T> {
 
     /// Closes the queue, waking all waiters. Subsequent `pop`s return `None`.
     pub fn close(&self) {
-        self.closed.store(true, Ordering::SeqCst);
-        self.notify.notify_waiters();
-        self.space_notify.notify_waiters();
+        self.waker.close();
     }
 
     /// Returns the number of items currently queued.

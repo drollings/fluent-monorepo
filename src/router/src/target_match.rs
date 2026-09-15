@@ -692,13 +692,20 @@ impl TargetMatcher {
             }
             // No ambient runtime (unit tests, CLI paths): a throwaway
             // multi-thread runtime drives the same fan-out. Sized to the
-            // suffix — groups are 2–4 members, never a thread farm.
-            Err(_) => tokio::runtime::Builder::new_multi_thread()
+            // suffix — groups are 2–4 members, never a thread farm. A
+            // failed build degrades to the sequential walk below (timing
+            // only — decisions, records, and audit order are identical).
+            Err(_) => match tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(suffix.len())
                 .enable_all()
                 .build()
-                .expect("build fan-out runtime for target self-assessment")
-                .block_on(fanout),
+            {
+                Ok(rt) => rt.block_on(fanout),
+                Err(_) => suffix
+                    .iter()
+                    .map(|candidate| self.assess(candidate, user_text))
+                    .collect(),
+            },
             // Current-thread runtime: `block_on` cannot run here (and the
             // pool workers' own `run_sync` bridge needs multi-thread to
             // re-enter), so fall back to the sequential walk. Timing only —

@@ -3,10 +3,12 @@
 //! The tree config loads once at boot and is statically assembled (VISION
 //! §"The Classification Tree": the self-updating loop is the forward
 //! target). This module is the first half of that loop: **descriptions and
-//! thresholds** regenerate at runtime and swap in without a restart, while
-//! **topology edits are excluded** — child membership, keys, routes, groups,
-//! models, patterns, and redirect targets are structural, and any reload
-//! that changes them is refused.
+//! thresholds** regenerate at runtime and swap in without a restart via
+//! [`VersionedTree::reload`], which refuses structural changes. Topology
+//! edits go through the opt-in [`VersionedTree::reload_topology`]: the
+//! payload is validated off-path (prompts regenerate, thresholds in range)
+//! and the topology guard requires every removed child key to be covered by
+//! an explicit alias map before the versioned swap publishes it.
 //!
 //! [`VersionedTree`] holds the live tree behind an `RwLock`: readers take
 //! whole-version snapshots (never torn), `reload` swaps a regenerated tree
@@ -38,17 +40,23 @@ pub enum ReloadError {
     /// The reloaded tree changes topology (structure), not just tuning.
     #[error("reloaded tree changes topology: {detail}")]
     TopologyMismatch { detail: String },
+    /// The reloaded topology is structurally invalid: a classifier node
+    /// cannot regenerate its prompt (no routeable children) or similar.
+    #[error("reloaded topology invalid: {detail}")]
+    TopologyInvalid { detail: String },
     /// No previous generation to roll back to (fresh holder, or rollback
     /// already consumed the one-reload depth).
     #[error("no previous tree generation to roll back to")]
     NoHistory,
 }
 
-/// A live tree generation: monotonic version + content.
+/// A live tree generation: monotonic version + content + the alias map that
+/// covers its topology change (empty for tuning-only reloads).
 #[derive(Debug, Clone)]
 struct TreeGeneration {
     version: u64,
     tree: ClassificationTree,
+    aliases: std::collections::HashMap<String, String>,
 }
 
 /// The versioned live holder. `Send + Sync`; snapshots clone under a read
@@ -63,7 +71,11 @@ impl VersionedTree {
     /// Publish the boot-loaded tree as version 1.
     pub fn new(tree: ClassificationTree) -> Self {
         Self {
-            current: RwLock::new(TreeGeneration { version: 1, tree }),
+            current: RwLock::new(TreeGeneration {
+                version: 1,
+                tree,
+                aliases: std::collections::HashMap::new(),
+            }),
             previous: RwLock::new(None),
         }
     }
@@ -100,8 +112,13 @@ impl VersionedTree {
         *common_core::sync::lock_write(&self.previous) = Some(TreeGeneration {
             version: live_version,
             tree: live_tree,
+            aliases: std::collections::HashMap::new(),
         });
-        *common_core::sync::lock_write(&self.current) = TreeGeneration { version, tree };
+        *common_core::sync::lock_write(&self.current) = TreeGeneration {
+            version,
+            tree,
+            aliases: std::collections::HashMap::new(),
+        };
         crate::audit::emit(
             "tree_reload",
             serde_json::json!({
@@ -111,6 +128,102 @@ impl VersionedTree {
             }),
         );
         Ok(version)
+    }
+
+    /// Swap in a tree that changes topology (child membership, keys, routes,
+    /// …) as the next version. Opt-in: the tuning-only [`Self::reload`] still
+    /// refuses structural changes.
+    ///
+    /// Off-path validation, in order: (1) identical content is refused
+    /// ([`ReloadError::NoChange`]); (2) every classifier node must regenerate
+    /// its prompt and carry in-range thresholds (task-value gates — whether
+    /// the tree is usable — never producer self-doubt); (3) the topology
+    /// guard: every live child path must exist in the new tree or be covered
+    /// by `aliases` (old path → live new path), and every alias target must
+    /// exist. Only then does the single atomic swap publish the new version;
+    /// in-flight readers drain on the generation they snapshotted.
+    /// The swap audit records the guard decision (removed keys, aliases).
+    /// Returns the new version.
+    pub fn reload_topology(
+        &self,
+        tree: ClassificationTree,
+        reason: &str,
+        aliases: &std::collections::HashMap<String, String>,
+    ) -> Result<u64, ReloadError> {
+        let (live_version, live_tree) = self.current();
+        if tree == live_tree {
+            return Err(ReloadError::NoChange);
+        }
+        validate_topology_tuning(&tree)?;
+        let live_paths = child_paths(&live_tree);
+        let new_paths = child_paths(&tree);
+        let mut removed: Vec<String> = live_paths
+            .iter()
+            .filter(|p| !new_paths.contains(p))
+            .cloned()
+            .collect();
+        removed.sort();
+        let mut uncovered: Vec<String> = removed
+            .iter()
+            .filter(|p| !aliases.contains_key(*p))
+            .cloned()
+            .collect();
+        uncovered.sort();
+        if !uncovered.is_empty() {
+            return Err(ReloadError::TopologyMismatch {
+                detail: format!(
+                    "removed child keys without aliases: {}",
+                    uncovered.join(", ")
+                ),
+            });
+        }
+        let mut dangling: Vec<String> = aliases
+            .values()
+            .filter(|t| !new_paths.contains(*t))
+            .cloned()
+            .collect();
+        dangling.sort();
+        if !dangling.is_empty() {
+            return Err(ReloadError::TopologyMismatch {
+                detail: format!(
+                    "aliases point at unknown keys: {}",
+                    dangling.join(", ")
+                ),
+            });
+        }
+        let version = live_version + 1;
+        *common_core::sync::lock_write(&self.previous) = Some(TreeGeneration {
+            version: live_version,
+            tree: live_tree,
+            aliases: std::collections::HashMap::new(),
+        });
+        *common_core::sync::lock_write(&self.current) = TreeGeneration {
+            version,
+            tree,
+            aliases: aliases.clone(),
+        };
+        crate::audit::emit(
+            "tree_topology_reload",
+            serde_json::json!({
+                "version": version,
+                "previous_version": live_version,
+                "reason": reason,
+                "removed_keys": removed,
+                "aliases": aliases,
+            }),
+        );
+        Ok(version)
+    }
+
+    /// Resolve a child path against the live generation's alias map
+    /// (identity when unaliased). In-flight readers use the tree they
+    /// snapshotted; this covers keys renamed by the live topology swap.
+    pub fn resolve_alias(&self, path: &str) -> String {
+        common_core::sync::lock_read(&self.current)
+            .aliases
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| path.to_string())
     }
 
     /// Restore the previous generation as a new monotonic version
@@ -126,6 +239,7 @@ impl VersionedTree {
         *common_core::sync::lock_write(&self.current) = TreeGeneration {
             version,
             tree: prev.tree,
+            aliases: prev.aliases,
         };
         let _ = live_tree;
         crate::audit::emit(
@@ -283,6 +397,79 @@ pub fn topology_fingerprint(tree: &ClassificationTree) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     feed(&tree.root, &mut hasher);
     std::hash::Hasher::finish(&hasher)
+}
+
+/// Every classifier-child path in the tree (`"plan"`, `"sub/deep"`), in
+/// walk order. The topology guard compares these across generations.
+fn child_paths(tree: &ClassificationTree) -> Vec<String> {
+    fn walk(node: &ClassificationNode, prefix: &mut Vec<String>, out: &mut Vec<String>) {
+        let ClassificationNode::Classifier { children, .. } = node else {
+            return;
+        };
+        for child in children {
+            prefix.push(child.key.clone());
+            out.push(prefix.join("/"));
+            walk(&child.node, prefix, out);
+            prefix.pop();
+        }
+    }
+    let mut out = Vec::new();
+    walk(&tree.root, &mut Vec::new(), &mut out);
+    out
+}
+
+/// Off-path tuning validation for a topology payload: every classifier node
+/// must regenerate its prompt (with node thresholds over the hard defaults)
+/// and carry in-range thresholds. Task-value gates (is the tree usable),
+/// checked before the key guard so malformed payloads fail fast.
+fn validate_topology_tuning(tree: &ClassificationTree) -> Result<(), ReloadError> {
+    fn walk(node: &ClassificationNode, path: &mut Vec<String>) -> Result<(), ReloadError> {
+        let ClassificationNode::Classifier {
+            coherence_threshold,
+            safety_threshold,
+            ..
+        } = node
+        else {
+            return Ok(());
+        };
+        let path_vec: Vec<&str> = path.iter().map(String::as_str).collect();
+        for (name, value) in [
+            ("coherence", *coherence_threshold),
+            ("safety", *safety_threshold),
+        ] {
+            if let Some(value) = value {
+                if !(0.0..=1.0).contains(&value) {
+                    return Err(ReloadError::ThresholdOutOfRange {
+                        path: format!("{}:{name}", format_path(&path_vec)),
+                        value,
+                    });
+                }
+            }
+        }
+        let prompt = node.build_prompt(
+            coherence_threshold.unwrap_or_else(default_coherence_threshold),
+            safety_threshold.unwrap_or_else(default_safety_threshold),
+        );
+        if prompt.is_none() {
+            return Err(ReloadError::TopologyInvalid {
+                detail: format!(
+                    "classifier at {} regenerates no prompt (no routeable children)",
+                    format_path(&path_vec)
+                ),
+            });
+        }
+        let ClassificationNode::Classifier { children, .. } = node else {
+            return Ok(());
+        };
+        for child in children {
+            path.push(child.key.clone());
+            let result = walk(&child.node, path);
+            path.pop();
+            result?;
+        }
+        Ok(())
+    }
+    walk(&tree.root, &mut Vec::new())
 }
 
 fn node_kind(node: &ClassificationNode) -> &'static str {

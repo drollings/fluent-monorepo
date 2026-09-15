@@ -3405,3 +3405,24 @@ fn unresolved_fraction_boundary_and_empty_signal() {
         RefineReason::TaskValue(TaskValueReason::UnresolvedPropn)
     );
 }
+
+#[test]
+fn poisoned_pipeline_state_returns_error_instead_of_panicking() {
+    use std::sync::{Arc, Mutex};
+    // A poisoned shared state must surface as a typed `Dependency` error
+    // from the stage (lock recovered), never as a panic.
+    let state = Arc::new(Mutex::new(PipelineState::default()));
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = state.lock().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison setup must panic");
+    let mut ctx = WorkContext::default();
+    ctx.set(STATE_KEY, Arc::clone(&state));
+    let stage = ValidateStage::new(Arc::new(AnnotationValidator::default()));
+    let err = stage.execute(&ctx).expect_err("empty poisoned state must error");
+    assert!(
+        matches!(err, WorkError::Dependency(_)),
+        "expected Dependency error, got {err:?}"
+    );
+}

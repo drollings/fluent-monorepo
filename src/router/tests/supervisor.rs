@@ -586,3 +586,19 @@ fn server_args_omit_chat_template_file_when_absent() {
         "no template configured means no flag (server default untouched)"
     );
 }
+
+#[test]
+fn evicted_registry_key_is_a_typed_boot_error_not_a_panic() {
+    let sup = LlamaServerSupervisor::with_client_for_test(
+        std::path::PathBuf::from("/bin/false"),
+        reqwest::Client::new(),
+    );
+    sup.register_test_server("ghost");
+    assert!(sup.live_server("ghost").is_ok());
+    sup.servers.remove(&"ghost".to_string());
+    let err = match sup.live_server("ghost") {
+        Ok(_) => panic!("evicted key must error"),
+        Err(err) => err,
+    };
+    assert!(err.contains("ghost"), "error names the key: {err}");
+}

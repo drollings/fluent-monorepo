@@ -878,7 +878,11 @@ fn validate_artifact(
     if !stats.is_file() || stats.len() != artifact.size {
         return Ok(false);
     }
-    let digest = hash_file(&local).map_err(|error| {
+    let digest = common_core::hash::hash_file(
+        &local,
+        common_core::hash::HashAlgorithm::Sha256,
+    )
+    .map_err(|error| {
         filesystem_error(
             format!(
                 "Unable to validate cached artifact '{}' for {model}",
@@ -890,22 +894,6 @@ fn validate_artifact(
         )
     })?;
     Ok(digest == artifact.sha256.to_lowercase())
-}
-
-fn hash_file(path: &Path) -> io::Result<String> {
-    use sha2::Digest as _;
-    let mut hasher = sha2::Sha256::new();
-    let mut file = std::fs::File::open(path)?;
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        use io::Read as _;
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
 }
 
 // ---------------------------------------------------------------------------
@@ -1146,7 +1134,7 @@ async fn download_artifact_inner(
     }
     drop(file);
 
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = common_core::hash::hex_encode(&hasher.finalize());
     if downloaded != artifact.size || actual != artifact.sha256.to_lowercase() {
         return Err(ArtifactDownloadError {
             message: format!(

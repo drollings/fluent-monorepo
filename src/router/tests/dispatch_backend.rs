@@ -781,3 +781,22 @@ fn pin_live_leaves_explicit_switch_and_defaults_alone() {
         serde_json::Value::Bool(false)
     );
 }
+
+#[test]
+fn routing_fields_filter_borrows_without_allocating() {
+    // Allocation budget: the filter only drops or passes fields through, so
+    // it returns borrows into its inputs — pointer-identical, never cloned.
+    let instance = String::from("agent");
+    let snapshot = String::from("snap");
+    let (i, s, id) =
+        filter_routing_fields_for_session(Some(&instance), Some(&snapshot), Some(2), true);
+    assert!(std::ptr::eq(i.unwrap(), instance.as_str()));
+    assert!(std::ptr::eq(s.unwrap(), snapshot.as_str()));
+    assert_eq!(id, Some(2));
+    // One-shot drops snapshot/id_slot but still borrows the instance.
+    let (i, s, id) =
+        filter_routing_fields_for_session(Some(&instance), Some(&snapshot), Some(2), false);
+    assert!(std::ptr::eq(i.unwrap(), instance.as_str()));
+    assert!(s.is_none());
+    assert!(id.is_none());
+}

@@ -245,3 +245,18 @@ fn english_rule_handles_concurrent_construction() {
         }
     }
 }
+
+#[test]
+fn poisoned_cache_recovers_instead_of_panicking() {
+    let l = en();
+    assert_eq!(l.lemmatize("cats", Upos::Noun, 0)[0], "cat");
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = l.cache.write().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison setup must panic");
+    // The valid cached entry survives; new analyses still compute + store.
+    assert_eq!(l.lemmatize("cats", Upos::Noun, 0)[0], "cat");
+    assert_eq!(l.lemmatize("running", Upos::Verb, 0)[0], "run");
+    assert!(l.cache_len() >= 2);
+}

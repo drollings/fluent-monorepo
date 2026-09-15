@@ -32,6 +32,7 @@ pub mod attrs;
 /// backward-compat alias; new code should import from `fluent_concept`.
 pub use fluent_concept::{ConceptStore, ConceptStoreError, InMemoryConceptStore, PlausibilityTriple, ScoredLemma, TaxonomyHierarchy};
 pub mod doc;
+pub mod entity_gate;
 pub mod error;
 pub mod frame;
 pub mod hash;

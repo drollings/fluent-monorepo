@@ -105,7 +105,7 @@ impl YagoResolveStage {
     pub fn has_fetch(&self) -> bool { self.fetch.is_some() }
 
     fn resolver_for(&self, doc: &crate::doc::Doc) -> Arc<crate::interlingua::InterlinguaResolver> {
-        let mut guard = self.cached_resolver.lock().expect("yago resolver lock");
+        let mut guard = common_core::sync::lock(&self.cached_resolver);
         if let Some(r) = guard.as_ref() {
             return Arc::clone(r);
         }
@@ -130,7 +130,7 @@ impl WorkUnit for YagoResolveStage {
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let state = ctx.get::<Arc<Mutex<PipelineState>>>(STATE_KEY).ok_or_else(|| WorkError::Dependency(STATE_KEY.into()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         let doc = state.doc.as_ref().ok_or_else(|| WorkError::Dependency("doc missing".into()))?;
         // Guarded M3 spike + M5 injection: when disabled (default) or when no
         // knowledge fetch is wired, leave plausibility as None (pre-M3

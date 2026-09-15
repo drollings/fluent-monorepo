@@ -223,3 +223,276 @@ fn fingerprint_ignores_tuning_but_catches_structure() {
     }
     assert_ne!(topology_fingerprint(&added_filter), base);
 }
+
+// ── M11: opt-in topology reload ──────────────────────────────────────────
+// Path-qualified child keys ("sub/deep"); aliases map removed old paths to
+// live new paths.
+
+fn without_child(tree: &ClassificationTree, parent: &[&str], key: &str) -> ClassificationTree {
+    let mut next = tree.clone();
+    let node = if parent.is_empty() {
+        &mut next.root
+    } else {
+        panic!("test helper only handles root-level removal");
+    };
+    let ClassificationNode::Classifier { children, .. } = node else {
+        panic!("root must be a classifier");
+    };
+    children.retain(|c| c.key != key);
+    next
+}
+
+fn renamed_child(
+    tree: &ClassificationTree,
+    parent: &[&str],
+    old: &str,
+    new: &str,
+) -> ClassificationTree {
+    let mut next = tree.clone();
+    let node = if parent.is_empty() {
+        &mut next.root
+    } else {
+        panic!("test helper only handles root-level rename");
+    };
+    let ClassificationNode::Classifier { children, .. } = node else {
+        panic!("root must be a classifier");
+    };
+    for child in children.iter_mut() {
+        if child.key == old {
+            child.key = new.to_string();
+        }
+    }
+    next
+}
+
+fn with_broken_threshold(tree: &ClassificationTree) -> ClassificationTree {
+    let mut next = tree.clone();
+    let ClassificationNode::Classifier { children, .. } = &mut next.root else {
+        panic!("root must be a classifier");
+    };
+    for child in children.iter_mut() {
+        if child.key == "sub" {
+            let ClassificationNode::Classifier {
+                coherence_threshold,
+                ..
+            } = &mut child.node
+            else {
+                panic!("sub must be a classifier");
+            };
+            *coherence_threshold = Some(5.0);
+        }
+    }
+    next
+}
+
+fn with_emptied_sub(tree: &ClassificationTree) -> ClassificationTree {
+    let mut next = tree.clone();
+    let ClassificationNode::Classifier { children, .. } = &mut next.root else {
+        panic!("root must be a classifier");
+    };
+    for child in children.iter_mut() {
+        if child.key == "sub" {
+            let ClassificationNode::Classifier {
+                children: nested, ..
+            } = &mut child.node
+            else {
+                panic!("sub must be a classifier");
+            };
+            nested.clear();
+        }
+    }
+    next
+}
+
+fn no_aliases() -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::new()
+}
+
+fn aliases(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+    pairs
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect()
+}
+
+#[test]
+fn topology_guard_accept_reject_table() {
+    // Calibration table for the guard decision: the control group
+    // (tuning-only, pure addition) must NOT fire; uncovered removals and
+    // renames must fire; covered ones must NOT fire.
+    let live = fixture_tree();
+    let holder = VersionedTree::new(live.clone());
+
+    // Control: tuning-only change needs no alias and is accepted.
+    let tuned = regenerate_description(&live, &[], "root router v2".into()).expect("regen");
+    assert!(holder.reload_topology(tuned, "tuning", &no_aliases()).is_ok());
+
+    // Control: pure addition (no live key removed) needs no alias.
+    let mut added = live.clone();
+    let ClassificationNode::Classifier { children, .. } = &mut added.root else {
+        panic!("root must be a classifier");
+    };
+    children.push(ClassificationChild {
+        key: "extra".into(),
+        description: "new branch".into(),
+        node: ClassificationNode::Terminal {
+            route: "extra".into(),
+            group: None,
+            role: None,
+            description: "extra things".into(),
+            always_route: false,
+        },
+    });
+    assert!(holder.reload_topology(added, "addition", &no_aliases()).is_ok());
+
+    // Must fire: key removal without an alias is rejected.
+    // (Fresh holder per case: each swap changes the live tree the guard
+    // compares against.)
+    let holder = VersionedTree::new(live.clone());
+    let removed = without_child(&live, &[], "plan");
+    assert!(
+        matches!(
+            holder.reload_topology(removed.clone(), "drop plan", &no_aliases()),
+            Err(ReloadError::TopologyMismatch { .. })
+        ),
+        "uncovered removal must be rejected"
+    );
+    // Covered removal is accepted, and the alias resolves at read time.
+    holder
+        .reload_topology(removed, "drop plan aliased", &aliases(&[("plan", "sub")]))
+        .expect("aliased removal accepted");
+    assert_eq!(holder.resolve_alias("plan"), "sub");
+    assert_eq!(holder.resolve_alias("sub"), "sub");
+
+    // Must fire: rename without an alias is rejected (old key uncovered).
+    let holder2 = VersionedTree::new(live.clone());
+    let renamed = renamed_child(&live, &[], "plan", "project");
+    assert!(
+        matches!(
+            holder2.reload_topology(renamed.clone(), "rename", &no_aliases()),
+            Err(ReloadError::TopologyMismatch { .. })
+        ),
+        "uncovered rename must be rejected"
+    );
+    assert!(
+        holder2
+            .reload_topology(renamed, "rename aliased", &aliases(&[("plan", "project")]))
+            .is_ok()
+    );
+
+    // Unknown alias targets are rejected: aliases must point at live keys.
+    let holder3 = VersionedTree::new(live.clone());
+    let removed2 = without_child(&live, &[], "plan");
+    assert!(
+        matches!(
+            holder3.reload_topology(removed2, "bad alias", &aliases(&[("plan", "ghost")])),
+            Err(ReloadError::TopologyMismatch { .. })
+        ),
+        "alias to a nonexistent key must be rejected"
+    );
+}
+
+#[test]
+fn topology_reload_validates_prompts_and_thresholds() {
+    let live = fixture_tree();
+    let holder = VersionedTree::new(live.clone());
+    // Out-of-range threshold in the payload is rejected with its path.
+    let broken = with_broken_threshold(&live);
+    assert!(
+        matches!(
+            holder.reload_topology(broken, "bad threshold", &no_aliases()),
+            Err(ReloadError::ThresholdOutOfRange { .. })
+        )
+    );
+    // A classifier left with no routeable children cannot regenerate its
+    // prompt: rejected as invalid topology, not swapped.
+    let emptied = with_emptied_sub(&live);
+    assert!(
+        matches!(
+            holder.reload_topology(emptied, "emptied", &no_aliases()),
+            Err(ReloadError::TopologyInvalid { .. })
+        )
+    );
+    assert_eq!(holder.version(), 1, "rejected payloads mint no version");
+}
+
+#[test]
+fn topology_swap_is_atomic_under_concurrent_readers() {
+    use std::sync::Arc;
+    let v1 = fixture_tree();
+    let tuned = regenerate_description(&v1, &[], "v2".into()).expect("regen");
+    let v3 = without_child(&v1, &[], "plan");
+    let holder = Arc::new(VersionedTree::new(v1.clone()));
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let snapshots: Arc<std::sync::Mutex<Vec<(u64, ClassificationTree)>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let readers: Vec<_> = (0..4)
+        .map(|_| {
+            let (h, s, stop) = (Arc::clone(&holder), Arc::clone(&snapshots), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let snap = h.current();
+                    s.lock().unwrap().push(snap);
+                }
+            })
+        })
+        .collect();
+    holder.reload(tuned.clone(), "tuning").expect("v2");
+    holder
+        .reload_topology(v3.clone(), "drop plan", &aliases(&[("plan", "sub")]))
+        .expect("v3");
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for r in readers {
+        r.join().unwrap();
+    }
+    // Every snapshot is wholly one version: no torn mix of v1/v2/v3 trees.
+    for (version, tree) in snapshots.lock().unwrap().iter() {
+        match version {
+            1 => assert_eq!(*tree, v1),
+            2 => assert_eq!(*tree, tuned),
+            3 => assert_eq!(*tree, v3),
+            other => panic!("unexpected version {other}"),
+        }
+    }
+    assert_eq!(holder.version(), 3);
+}
+
+#[test]
+fn topology_reload_emits_audit_record() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::registry;
+    use tracing_subscriber::Layer;
+    let dir = tempfile::tempdir().unwrap();
+    let audit_path = dir.path().join("audit.log");
+    let audit_appender = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::NEVER)
+        .filename_prefix("audit")
+        .filename_suffix("log")
+        .build(dir.path())
+        .unwrap();
+    let (audit_nb, audit_guard) = tracing_appender::non_blocking(audit_appender);
+    let subscriber = registry().with(
+        tracing_subscriber::fmt::layer()
+            .json()
+            .with_writer(audit_nb)
+            .with_filter(tracing_subscriber::filter::EnvFilter::new("router.audit=info")),
+    );
+    let holder = VersionedTree::new(fixture_tree());
+    tracing::subscriber::with_default(subscriber, || {
+        let next = without_child(&fixture_tree(), &[], "plan");
+        holder
+            .reload_topology(next, "drop plan", &aliases(&[("plan", "sub")]))
+            .expect("reload");
+    });
+    drop(audit_guard);
+    let content = std::fs::read_to_string(&audit_path).unwrap_or_default();
+    let logged: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap_or_default())
+        .collect();
+    let all = logged.join("\n") + &content;
+    assert!(all.contains("tree_topology_reload"), "audit record missing:\n{all}");
+    assert!(all.contains("drop plan"), "reason missing:\n{all}");
+    assert!(all.contains(r#"\"version\":2"#), "version missing:\n{all}");
+    assert!(all.contains(r#"\"removed_keys\":[\"plan\"]"#), "guard decision missing:\n{all}");
+}

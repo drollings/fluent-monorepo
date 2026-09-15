@@ -271,3 +271,61 @@ async fn evict_until_fit_empty_candidates_leaves_used_unchanged() {
         assert_eq!(used, 100);
         assert_eq!(n, 0, "empty store evicts nothing");
 }
+
+#[test]
+fn eviction_order_golden_with_ties_and_stability() {
+        // Hand-computed at now=1000. score = freed * clamp(now-last,1,CAP);
+        // last_used<0 → maximally cold. Ties on score break by last_used
+        // desc; full ties keep input order (stable sort).
+        // c: maximally cold → first. a=d=10000 (tie → a first, stable).
+        // g=f=1000 (tie → g newer first). Then b=500, e=10.
+        let cands = vec![
+                ("a", 100u64, 900i64),
+                ("b", 50u64, 990i64),
+                ("c", 200u64, -1i64),
+                ("d", 100u64, 900i64),
+                ("e", 10u64, 999i64),
+                ("f", 20u64, 950i64),
+                ("g", 1000u64, 999i64),
+        ];
+        let ordered = eviction_order(cands, 1000, |c| c.1, |c| c.2);
+        let names: Vec<&str> = ordered.iter().map(|c| c.0).collect();
+        assert_eq!(names, vec!["c", "a", "d", "g", "f", "b", "e"]);
+}
+
+#[test]
+fn eviction_order_scores_each_candidate_once() {
+        use std::cell::Cell;
+        let freed_calls = Cell::new(0usize);
+        let used_calls = Cell::new(0usize);
+        // Deterministic pseudo-random fixtures (LCG) with duplicate scores.
+        let mut seed: u64 = 0x1234_5678_9abc_def0;
+        let mut next = || {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                (seed >> 33) as u64
+        };
+        let cands: Vec<(u64, i64)> = (0..200)
+                .map(|_| ((next() % 50) * 100, (next() % 100) as i64))
+                .collect();
+        let ordered = eviction_order(cands, 1000, |c| {
+                freed_calls.set(freed_calls.get() + 1);
+                c.0
+        }, |c| {
+                used_calls.set(used_calls.get() + 1);
+                c.1
+        });
+        assert_eq!(ordered.len(), 200);
+        // Scores are precomputed once per candidate (Schwartzian), not once
+        // per comparison: exactly one `freed_of` call each. The tiebreak key
+        // costs one extra `last_used_of` per candidate.
+        assert_eq!(freed_calls.get(), 200);
+        assert_eq!(used_calls.get(), 400);
+        // Output is still ordered: score desc, then last_used desc.
+        let keys: Vec<(u64, i64)> = ordered
+                .iter()
+                .map(|&(f, l)| (eviction_score(f, l, 1000), l))
+                .collect();
+        let mut sorted = keys.clone();
+        sorted.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+        assert_eq!(keys, sorted);
+}

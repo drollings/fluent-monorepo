@@ -178,7 +178,7 @@ impl WorkUnit for AnnotateStage {
             .map_err(|e| WorkError::Execution(e.to_string()))?;
         let set =
             AnnotationSet::parse_json(&json).map_err(|e| WorkError::Execution(e.to_string()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         state.annotations = Some(set);
         Ok(WorkOutput::ok("annotations parsed"))
     }
@@ -228,7 +228,7 @@ impl WorkUnit for ValidateStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_ref()
@@ -279,7 +279,7 @@ impl WorkUnit for AttachStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         let set = state
             .annotations
             .clone()
@@ -349,7 +349,7 @@ impl WorkUnit for FrameStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_ref()
@@ -415,7 +415,7 @@ fn depends(&self) -> &[ArcIntern<str>] {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         // Clone the confidence out first so the doc borrow below is exclusive.
         let confidence = state
             .annotation
@@ -483,7 +483,7 @@ impl WorkUnit for SentencizeStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = state.lock().expect("pipeline state lock");
+        let mut state = common_core::sync::lock(&state);
         let doc = state
             .doc
             .as_mut()
@@ -2389,7 +2389,7 @@ impl NlpPipeline {
             ..PipelineState::default()
         }));
         self.stages.run(&state, json.to_string(), rt, caps).await?;
-        let state = state.lock().expect("pipeline state lock");
+        let state = common_core::sync::lock(&state);
         state.doc.clone().ok_or(PipelineError::NoDoc)
     }
 
@@ -2416,7 +2416,7 @@ impl NlpPipeline {
             ..PipelineState::default()
         }));
         self.stages.run(&state, json, rt, caps).await?;
-        let state = state.lock().expect("pipeline state lock");
+        let state = common_core::sync::lock(&state);
         state.doc.clone().ok_or(PipelineError::NoDoc)
     }
 

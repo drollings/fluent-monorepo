@@ -261,3 +261,26 @@ fn single_candidate_makes_exactly_one_call() {
     assert!(tm.assessments[0].matched);
     assert_eq!(backend.calls(), 1);
 }
+
+#[test]
+fn assess_suffix_outside_runtime_matches_sequential_outcomes() {
+    // No ambient runtime here (plain #[test]): the fan-out drives a
+    // throwaway runtime. Outcomes must equal the sequential single-candidate
+    // walk — the degradation the serving path falls back to when no runtime
+    // can be built.
+    let matcher = matcher_with_keys(vec![
+        ("a", delay_backend(30, assessment(8, "slow-a"))),
+        ("b", delay_backend(0, assessment(3, "fast-b"))),
+    ]);
+    let suffix = vec![candidate("a", 5), candidate("b", 5)];
+    let fanned: Vec<String> = matcher
+        .assess_suffix(&suffix, "hello")
+        .into_iter()
+        .map(|r| format!("{r:?}"))
+        .collect();
+    let sequential: Vec<String> = suffix
+        .iter()
+        .map(|c| format!("{:?}", matcher.assess_suffix(std::slice::from_ref(c), "hello").remove(0)))
+        .collect();
+    assert_eq!(fanned, sequential);
+}

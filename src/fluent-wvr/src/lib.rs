@@ -50,7 +50,7 @@ pub use runtime::{NoopRuntime, Runtime};
 pub use store::OutputStore;
 pub use traits::{
     component_downcast_mut, component_downcast_ref, describe_work_unit, Component, ComponentArcExt,
-    Describable, FieldAccess, FieldError, FieldSchema, PersistableComponent, SchemaProvider,
+    Describable, FieldAccess, FieldError, FieldSchema, SchemaProvider,
     WorkUnit,
 };
 pub use work::{WorkContext, WorkError, WorkOutput};

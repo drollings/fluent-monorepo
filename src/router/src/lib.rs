@@ -1,5 +1,7 @@
 //! LLM Router & Agent Orchestration Framework
 //!
+#![forbid(unsafe_code)]
+//!
 //! ## Modules
 //! - `pipeline_types` — `StageDecision`, `PipelineStage`, `StageVerdict`
 //! - `types` — `RouterRequest`, `RouterResponse`, `RouterMessage`, etc.

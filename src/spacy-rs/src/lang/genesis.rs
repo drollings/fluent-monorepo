@@ -111,7 +111,7 @@ pub struct InMemoryGenesisIndex {
 
 impl std::fmt::Debug for InMemoryGenesisIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let map = self.map.lock().expect("genesis lock");
+        let map = common_core::sync::lock(&self.map);
         f.debug_struct("InMemoryGenesisIndex")
             .field("len", &map.len())
             .field("threshold", &self.threshold)
@@ -193,7 +193,7 @@ impl Default for InMemoryGenesisIndex {
 
 impl GenesisIndex for InMemoryGenesisIndex {
     fn get_pos(&self, normalized: &str) -> Option<Upos> {
-        let map = self.map.lock().expect("genesis lock");
+        let map = common_core::sync::lock(&self.map);
         let e = map.get(normalized)?;
         if !e.promoted {
             return None;
@@ -203,7 +203,7 @@ impl GenesisIndex for InMemoryGenesisIndex {
     }
 
     fn get_ner(&self, normalized: &str) -> Option<NerType> {
-        let map = self.map.lock().expect("genesis lock");
+        let map = common_core::sync::lock(&self.map);
         let e = map.get(normalized)?;
         if !e.ner_promoted {
             return None;
@@ -220,7 +220,7 @@ impl GenesisIndex for InMemoryGenesisIndex {
             CorrectionField::Ner => (None, Some(correction.new_value.clone())),
             _ => return,
         };
-        let mut map = self.map.lock().expect("genesis lock");
+        let mut map = common_core::sync::lock(&self.map);
         let entry = map.entry(normalized.to_string()).or_insert(GenesisEntry {
             pos: None,
             ner: None,
@@ -252,36 +252,30 @@ impl GenesisIndex for InMemoryGenesisIndex {
     }
 
     fn count_for(&self, normalized: &str) -> u32 {
-        self.map
-            .lock()
-            .expect("genesis lock")
+        common_core::sync::lock(&self.map)
             .get(normalized)
             .map_or(0, |e| e.count)
     }
 
     fn is_promoted(&self, normalized: &str) -> bool {
-        self.map
-            .lock()
-            .expect("genesis lock")
+        common_core::sync::lock(&self.map)
             .get(normalized)
             .is_some_and(|e| e.promoted || e.ner_promoted)
     }
 
     fn promoted_len(&self) -> usize {
-        self.map
-            .lock()
-            .expect("genesis lock")
+        common_core::sync::lock(&self.map)
             .values()
             .filter(|e| e.promoted || e.ner_promoted)
             .count()
     }
 
     fn len(&self) -> usize {
-        self.map.lock().expect("genesis lock").len()
+        common_core::sync::lock(&self.map).len()
     }
 
     fn save(&self, path: &Path) -> Result<(), std::io::Error> {
-        let map = self.map.lock().expect("genesis lock");
+        let map = common_core::sync::lock(&self.map);
         let json = serde_json::to_string_pretty(&*map).map_err(std::io::Error::other)?;
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -295,9 +289,7 @@ impl GenesisIndex for InMemoryGenesisIndex {
 impl InMemoryGenesisIndex {
     /// NER evidence count for `normalized` (separate from POS).
     pub fn ner_count_for(&self, normalized: &str) -> u32 {
-        self.map
-            .lock()
-            .expect("genesis lock")
+        common_core::sync::lock(&self.map)
             .get(normalized)
             .map_or(0, |e| e.ner_count)
     }

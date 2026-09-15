@@ -37,11 +37,13 @@ pub fn trim_left<'a>(slice: &'a [u8], pattern: &[u8]) -> &'a [u8] {
     &slice[start..]
 }
 
-fn contains_word_with_boundary(text: &str, word: &str, is_boundary: fn(u8) -> bool) -> bool {
-    let lower = text.to_lowercase();
-    let lower_word = word.to_lowercase();
-    let bytes = lower.as_bytes();
-    let wb = lower_word.as_bytes();
+fn contains_word_with_boundary_lowered(
+    lowered: &str,
+    lowered_word: &str,
+    is_boundary: fn(u8) -> bool,
+) -> bool {
+    let bytes = lowered.as_bytes();
+    let wb = lowered_word.as_bytes();
     if wb.is_empty() || wb.len() > bytes.len() {
         return false;
     }
@@ -59,6 +61,64 @@ fn contains_word_with_boundary(text: &str, word: &str, is_boundary: fn(u8) -> bo
     false
 }
 
+fn contains_word_with_boundary(text: &str, word: &str, is_boundary: fn(u8) -> bool) -> bool {
+    contains_word_with_boundary_lowered(
+        &text.to_lowercase(),
+        &word.to_lowercase(),
+        is_boundary,
+    )
+}
+
+/// A haystack lowered once and reused across many case-insensitive queries.
+///
+/// The free functions below each lower the haystack on every call, so a loop
+/// over N keywords pays N lowerings. Build one `LoweredHaystack` and run the
+/// whole scan against it instead; matching semantics are identical to the
+/// free functions (comparison happens on the lowered bytes).
+pub struct LoweredHaystack {
+    lowered: String,
+}
+
+impl LoweredHaystack {
+    pub fn new(text: &str) -> Self {
+        Self {
+            lowered: text.to_lowercase(),
+        }
+    }
+
+    pub fn lowered(&self) -> &str {
+        &self.lowered
+    }
+
+    pub fn contains(&self, pattern: &str) -> bool {
+        self.lowered.contains(&pattern.to_lowercase())
+    }
+
+    pub fn contains_any(&self, keywords: &[&str]) -> bool {
+        keywords.iter().any(|k| self.contains(k))
+    }
+
+    pub fn contains_word(&self, word: &str) -> bool {
+        contains_word_with_boundary_lowered(
+            &self.lowered,
+            &word.to_lowercase(),
+            |c| !c.is_ascii_alphanumeric(),
+        )
+    }
+
+    pub fn contains_any_word(&self, keywords: &[&str]) -> bool {
+        keywords.iter().any(|k| self.contains_word(k))
+    }
+
+    pub fn contains_ident_word(&self, needle: &str) -> bool {
+        contains_word_with_boundary_lowered(
+            &self.lowered,
+            &needle.to_lowercase(),
+            is_ident_boundary,
+        )
+    }
+}
+
 fn is_ident_boundary(c: u8) -> bool {
     !c.is_ascii_alphanumeric()
 }
@@ -68,12 +128,11 @@ pub fn contains_ident_word(haystack: &str, needle: &str) -> bool {
 }
 
 pub fn contains_any(text: &str, keywords: &[&str]) -> bool {
-    let lower = text.to_lowercase();
-    keywords.iter().any(|k| lower.contains(&k.to_lowercase()))
+    LoweredHaystack::new(text).contains_any(keywords)
 }
 
 pub fn contains_any_word(text: &str, keywords: &[&str]) -> bool {
-    keywords.iter().any(|k| contains_word(text, k))
+    LoweredHaystack::new(text).contains_any_word(keywords)
 }
 
 pub fn contains_ignore_case(text: &str, pattern: &str) -> bool {
@@ -129,122 +188,204 @@ pub fn lower_into<'a>(dst: &'a mut [u8], src: &[u8]) -> &'a [u8] {
 /// block-level tags (`<br>`, `</p>`, `</div>`, `</li>`, `</tr>`) with
 /// newlines, and collapses whitespace.
 /// Suitable for untrusted text going to an LLM or field validator.
+///
+/// Single pass: tag-name parsing allocates nothing, entity decoding and
+/// whitespace collapsing fold into the main walk.
 pub fn strip_html(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
     let mut in_script = false;
     let mut in_style = false;
-    let mut chars = s.char_indices().peekable();
+    // Collapsing state folded into emission: at most one `' '` per
+    // whitespace run, no leading space (`true` initially suppresses it),
+    // at most one trailing `' '` (popped at the end).
+    let mut prev_space = true;
+    let mut i = 0;
 
-    while let Some((i, c)) = chars.next() {
-        if c == '<' {
+    // Skip past the closing `>` of a tag starting at byte offset `i`
+    // (which is just past the `<` or `/name` already examined).
+    let skip_to_tag_end = |i: &mut usize| {
+        match bytes[*i..].iter().position(|&b| b == b'>') {
+            Some(pos) => *i += pos + 1,
+            None => *i = bytes.len(),
+        }
+    };
+
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
             let rest = &s[i + 1..];
             let tag_start = rest.trim_start();
-            let lower: String = tag_start
+            let name_empty = tag_start
                 .chars()
-                .take_while(|ch| ch.is_alphanumeric())
-                .collect();
-            let lower = lower.to_ascii_lowercase();
+                .next()
+                .map_or(true, |c| !c.is_alphanumeric());
 
             // Check for closing tags first — in_script/in_style flags block the
             // normal tag handler, so we must detect </script>/</style> here.
-            if in_script && lower.is_empty() {
+            if in_script && name_empty {
                 if let Some(past_slash) = tag_start.strip_prefix('/') {
-                    let rest_name: String = past_slash
-                        .chars()
-                        .take_while(|ch| ch.is_alphanumeric())
-                        .collect();
-                    if rest_name.eq_ignore_ascii_case("script") {
+                    if run_eq_word(past_slash, "script") {
                         in_script = false;
-                        while let Some(&(_, ch)) = chars.peek() {
-                            chars.next();
-                            if ch == '>' {
-                                break;
-                            }
-                        }
+                        i += 1;
+                        skip_to_tag_end(&mut i);
                         continue;
                     }
                 }
             }
-            if in_style && lower.is_empty() {
+            if in_style && name_empty {
                 if let Some(past_slash) = tag_start.strip_prefix('/') {
-                    let rest_name: String = past_slash
-                        .chars()
-                        .take_while(|ch| ch.is_alphanumeric())
-                        .collect();
-                    if rest_name.eq_ignore_ascii_case("style") {
+                    if run_eq_word(past_slash, "style") {
                         in_style = false;
-                        while let Some(&(_, ch)) = chars.peek() {
-                            chars.next();
-                            if ch == '>' {
-                                break;
-                            }
-                        }
+                        i += 1;
+                        skip_to_tag_end(&mut i);
                         continue;
                     }
                 }
             }
 
-            if lower.starts_with("script") {
+            if run_starts_word(tag_start, "script") {
                 in_script = true;
+                i += 1;
                 continue;
             }
-            if lower.starts_with("style") {
+            if run_starts_word(tag_start, "style") {
                 in_style = true;
+                i += 1;
                 continue;
             }
             // Check for block-level break tags and replace with newline.
-            if lower.is_empty() {
+            if name_empty {
                 if let Some(past_slash) = tag_start.strip_prefix('/') {
-                    let closing_name: String = past_slash
-                        .chars()
-                        .take_while(|ch| ch.is_alphanumeric())
-                        .collect();
-                    if matches!(closing_name.as_str(), "br" | "p" | "div" | "li" | "tr") {
-                        result.push('\n');
+                    if matches_block_close(past_slash) {
+                        emit_collapsed(&mut out, &mut prev_space, '\n');
                     }
                 }
-            } else if matches!(lower.as_str(), "br" | "p" | "div" | "li" | "tr") {
-                result.push('\n');
+            } else if matches_block_open(tag_start) {
+                emit_collapsed(&mut out, &mut prev_space, '\n');
             }
             // Skip everything until '>'
-            while let Some(&(_, ch)) = chars.peek() {
-                chars.next();
-                if ch == '>' {
-                    break;
-                }
-            }
+            i += 1;
+            skip_to_tag_end(&mut i);
             continue;
         }
 
         if in_script || in_style {
+            // Advance one char (tags inside skipped content are handled
+            // by the `<` branch above on the next iteration).
+            i += s[i..].chars().next().map_or(1, |c| c.len_utf8());
             continue;
         }
 
-        result.push(c);
-    }
-
-    // Decode common HTML entities
-    let result = result.replace("&amp;", "&");
-    let result = result.replace("&lt;", "<");
-    let result = result.replace("&gt;", ">");
-    let result = result.replace("&quot;", "\"");
-    let result = result.replace("&#39;", "'");
-
-    // Collapse whitespace (including newlines from block-tag substitution)
-    let mut out = String::with_capacity(result.len());
-    let mut prev_space = false;
-    for c in result.chars() {
-        if c.is_whitespace() {
-            if !prev_space {
-                out.push(' ');
-                prev_space = true;
+        if bytes[i] == b'&' {
+            if let Some((decoded, len)) = decode_entity(&s[i..]) {
+                for c in decoded.chars() {
+                    emit_collapsed(&mut out, &mut prev_space, c);
+                }
+                i += len;
+                continue;
             }
+            emit_collapsed(&mut out, &mut prev_space, '&');
+            i += 1;
+        } else if bytes[i] < 0x80 {
+            emit_collapsed(&mut out, &mut prev_space, bytes[i] as char);
+            i += 1;
         } else {
-            out.push(c);
-            prev_space = false;
+            let c = s[i..].chars().next().unwrap();
+            emit_collapsed(&mut out, &mut prev_space, c);
+            i += c.len_utf8();
         }
     }
-    out.trim().to_string()
+
+    if prev_space {
+        out.pop();
+    }
+    out
+}
+
+/// Push `c` with whitespace collapsing: a whitespace run emits at most one
+/// `' '`, and leading whitespace is suppressed when `prev_space` starts
+/// `true`. A single trailing `' '` (if any) is popped by the caller.
+fn emit_collapsed(out: &mut String, prev_space: &mut bool, c: char) {
+    if c.is_whitespace() {
+        if !*prev_space {
+            out.push(' ');
+            *prev_space = true;
+        }
+    } else {
+        out.push(c);
+        *prev_space = false;
+    }
+}
+
+/// Byte length of the leading ASCII-alphanumeric run of `s`.
+fn alnum_run_len(s: &str) -> usize {
+    s.bytes()
+        .take_while(|b| b.is_ascii_alphanumeric())
+        .count()
+}
+
+/// Exact tag-name match without allocating: the leading run must equal `lit`
+/// (ASCII case-insensitive) *and* be the full alphanumeric run, so `<bré>`
+/// does not match `"br"`.
+fn run_eq_word(s: &str, lit: &str) -> bool {
+    let run = alnum_run_len(s);
+    run == lit.len()
+        && s.as_bytes()[..run].eq_ignore_ascii_case(lit.as_bytes())
+        && s[run..].chars().next().map_or(true, |c| !c.is_alphanumeric())
+}
+
+/// Tag-name prefix match without allocating (opening `<script…>` / `<style…>`).
+fn run_starts_word(s: &str, lit: &str) -> bool {
+    let run = alnum_run_len(s);
+    run >= lit.len() && s.as_bytes()[..lit.len()].eq_ignore_ascii_case(lit.as_bytes())
+}
+
+fn matches_block_close(past_slash: &str) -> bool {
+    matches_block_open(past_slash)
+}
+
+fn matches_block_open(tag_start: &str) -> bool {
+    ["br", "p", "div", "li", "tr"]
+        .iter()
+        .any(|name| run_eq_word(tag_start, name))
+}
+
+/// Decode one entity at the start of `s`, replicating the historical
+/// sequential-replace semantics (`&amp;` first, then `&lt;`, `&gt;`,
+/// `&quot;`, `&#39;`): `&amp;lt;` decodes twice to `<`, while `&amp;amp;`
+/// stays `&amp;` (a single amp pass). Returns the decoded text and the
+/// bytes consumed. Unknown entities return `None` (emitted literally).
+fn decode_entity(s: &str) -> Option<(&'static str, usize)> {
+    if let Some(after) = s.strip_prefix("&amp;") {
+        // Chained decode: `&amp;` immediately forming a second entity
+        // decodes again, exactly as the old sequential passes did.
+        if after.starts_with("lt;") {
+            return Some(("<", 5 + 3));
+        }
+        if after.starts_with("gt;") {
+            return Some((">", 5 + 3));
+        }
+        if after.starts_with("quot;") {
+            return Some(("\"", 5 + 5));
+        }
+        if after.starts_with("#39;") {
+            return Some(("'", 5 + 4));
+        }
+        return Some(("&", 5));
+    }
+    if s.starts_with("&lt;") {
+        return Some(("<", 4));
+    }
+    if s.starts_with("&gt;") {
+        return Some((">", 4));
+    }
+    if s.starts_with("&quot;") {
+        return Some(("\"", 6));
+    }
+    if s.starts_with("&#39;") {
+        return Some(("'", 5));
+    }
+    None
 }
 
 // ── ANSI / control-character sanitizers ───────────────────────────────
@@ -473,28 +614,61 @@ pub fn slugify_with(text: &str, opts: &SlugOptions) -> String {
         text.to_lowercase()
     };
     let mut out = String::with_capacity(lowered.len());
+    // Byte offset of the first pushed char that is not the separator.
+    // Every byte before it is separator-valued by construction (`-` is both
+    // kept and separator-valued), so draining the prefix replaces the old
+    // `len() - trim_start_matches().len()` + `drain` recomputation.
+    let mut first_live: Option<usize> = None;
+    // Chars pushed before the first live char (the trim_leading count).
+    let mut leading_seps: usize = 0;
+    // Total chars pushed (for the `max_chars` cap).
+    let mut pushed: usize = 0;
     for c in lowered.chars() {
         if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            if c != opts.separator && first_live.is_none() {
+                first_live = Some(out.len());
+            }
             out.push(c);
+            pushed += 1;
+            if first_live.is_none() {
+                leading_seps += 1;
+            }
         } else if c == ' ' || opts.ascii_only {
             if opts.collapse_runs && (out.is_empty() || out.ends_with(opts.separator)) {
                 continue;
             }
             out.push(opts.separator);
+            pushed += 1;
+            if first_live.is_none() {
+                leading_seps += 1;
+            }
         }
         // Else (!ascii_only, non-space, non-kept): drop (legacy behavior).
     }
     if opts.trim_leading {
-        let prefix = out.len() - out.trim_start_matches(opts.separator).len();
-        out.drain(..prefix);
+        match first_live {
+            Some(off) => {
+                out.drain(..off);
+            }
+            None => out.clear(),
+        }
     }
+    let mut trailing_popped: usize = 0;
     if opts.trim_trailing {
         while out.ends_with(opts.separator) {
             out.pop();
+            trailing_popped += 1;
         }
     }
     if let Some(max) = opts.max_chars {
-        if out.chars().count() > max {
+        // Chars surviving the trims, counted during the single build walk:
+        // separators before the first kept char are gone iff trim_leading
+        // ran, and the popped tail is gone iff trim_trailing ran. The cap
+        // walk from the trimmed start is bounded by `max`, not by the
+        // input length.
+        let trimmed_away =
+            trailing_popped + leading_seps * usize::from(opts.trim_leading);
+        if pushed - trimmed_away > max {
             let byte_offset = out
                 .char_indices()
                 .nth(max)
@@ -506,21 +680,30 @@ pub fn slugify_with(text: &str, opts: &SlugOptions) -> String {
 }
 
 pub fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
-    let char_count = text.chars().count();
-    if char_count <= max_chars {
+    // Single walk: count chars, remember the cut point and the last `.`
+    // (byte offset + char index) seen inside the first `max_chars` chars.
+    let mut count: usize = 0;
+    let mut cut_byte = text.len();
+    let mut last_period: Option<(usize, usize)> = None;
+    let mut fits = true;
+    for (i, c) in text.char_indices() {
+        if count >= max_chars {
+            cut_byte = i;
+            fits = false;
+            break;
+        }
+        if c == '.' {
+            last_period = Some((i, count));
+        }
+        count += 1;
+    }
+    if fits {
         return text.to_string();
     }
-    // Find the byte offset for the max_chars-th character
-    let byte_offset = text
-        .char_indices()
-        .nth(max_chars)
-        .map_or(text.len(), |(i, _)| i);
-    let truncated = &text[..byte_offset];
-    if let Some(last_period) = truncated.rfind('.') {
-        // Find the char index of the period to check if it's past the midpoint
-        let period_char_count = truncated[..last_period].chars().count();
-        if period_char_count > max_chars / 2 {
-            return text[..=last_period].to_string();
+    let truncated = &text[..cut_byte];
+    if let Some((period_byte, period_chars)) = last_period {
+        if period_chars > max_chars / 2 {
+            return text[..=period_byte].to_string();
         }
     }
     truncated.to_string()
@@ -659,10 +842,10 @@ pub fn find_subseq(haystack: &[u8], start: usize, needle: &[u8]) -> Option<usize
 /// `…` ellipsis when truncating), this is a hard char cap with no suffix —
 /// the caller decides whether to append anything.
 pub fn truncate_chars(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        return s.to_string();
+    match s.char_indices().nth(max_chars) {
+        Some((i, _)) => s[..i].to_string(),
+        None => s.to_string(),
     }
-    s.chars().take(max_chars).collect()
 }
 
 /// Whether a char is CJK (Han, Hiragana, Katakana, Hangul syllables +

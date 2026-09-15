@@ -112,7 +112,7 @@ impl Lemmatizer {
     /// Number of cached analyses.
     #[must_use]
     pub fn cache_len(&self) -> usize {
-        self.cache.read().expect("lemma cache lock poisoned").len()
+        common_core::sync::lock_read(&self.cache).len()
     }
 
     /// The lemma forms for a token surface under a coarse POS and morph key.
@@ -145,7 +145,7 @@ impl Lemmatizer {
             return vec![lemma.to_string()];
         }
         let cache_key = (hash_utf8(orth), pos.id() as u8, morph_key);
-        if let Some(cached) = self.cache.read().expect("lemma cache lock poisoned").get(&cache_key) {
+        if let Some(cached) = common_core::sync::lock_read(&self.cache).get(&cache_key) {
             return cached.clone();
         }
 
@@ -171,10 +171,7 @@ impl Lemmatizer {
             self.apply_rules(orth, pos, pos == Upos::Verb || shouty)
         };
 
-        self.cache
-            .write()
-            .expect("lemma cache lock poisoned")
-            .insert(cache_key, forms.clone());
+        common_core::sync::lock_write(&self.cache).insert(cache_key, forms.clone());
         forms
     }
 

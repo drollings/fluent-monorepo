@@ -59,9 +59,7 @@ impl StringStore {
         if hash == 0 {
             return Some(ArcIntern::from(""));
         }
-        self.by_hash
-            .read()
-            .expect("StringStore read lock poisoned")
+        common_core::sync::lock_read(&self.by_hash)
             .get(&hash)
             .cloned()
     }
@@ -70,20 +68,13 @@ impl StringStore {
     #[must_use]
     pub fn contains(&self, s: &str) -> bool {
         s.is_empty()
-            || self
-                .by_hash
-                .read()
-                .expect("StringStore read lock poisoned")
-                .contains_key(&hash_utf8(s))
+            || common_core::sync::lock_read(&self.by_hash).contains_key(&hash_utf8(s))
     }
 
     /// Number of distinct non-empty strings interned.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.by_hash
-            .read()
-            .expect("StringStore read lock poisoned")
-            .len()
+        common_core::sync::lock_read(&self.by_hash).len()
     }
 
     /// Whether the store is empty.
@@ -94,10 +85,7 @@ impl StringStore {
 
     /// Intern `s` under its hash unless already present.
     fn intern(&self, hash: u64, s: &str) {
-        let mut map = self
-            .by_hash
-            .write()
-            .expect("StringStore write lock poisoned");
+        let mut map = common_core::sync::lock_write(&self.by_hash);
         map.entry(hash).or_insert_with(|| ArcIntern::from(s));
     }
 }
@@ -115,7 +103,7 @@ impl StringStore {
     /// Serialized as `String` (not `ArcIntern`) so no `internment` serde
     /// feature is needed for the blob.
     pub fn to_bytes(&self) -> Result<Vec<u8>, serde_json::Error> {
-        let map = self.by_hash.read().expect("StringStore read lock poisoned");
+        let map = common_core::sync::lock_read(&self.by_hash);
         let entries: Vec<(u64, String)> = map
             .iter()
             .map(|(&h, s)| (h, s.to_string()))
@@ -129,7 +117,7 @@ impl StringStore {
         let entries: Vec<(u64, String)> = serde_json::from_slice(data)?;
         let store = Self::new();
         {
-            let mut map = store.by_hash.write().expect("StringStore write lock poisoned");
+            let mut map = common_core::sync::lock_write(&store.by_hash);
             for (hash, s) in entries {
                 map.entry(hash).or_insert_with(|| ArcIntern::from(s));
             }

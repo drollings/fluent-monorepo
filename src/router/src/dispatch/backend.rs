@@ -327,25 +327,17 @@ fn group_from_message(msg: &str) -> Option<String> {
 /// errors). The `instance` itself still reaches the body. Without a targeted
 /// instance (group dispatch resolves the concrete context server-side) the
 /// fields pass through untouched.
-pub(crate) fn filter_routing_fields_for_session(
-    instance: Option<&str>,
-    snapshot: Option<&str>,
+pub(crate) fn filter_routing_fields_for_session<'a>(
+    instance: Option<&'a str>,
+    snapshot: Option<&'a str>,
     id_slot: Option<i32>,
     is_session: bool,
-) -> (Option<String>, Option<String>, Option<i32>) {
+) -> (Option<&'a str>, Option<&'a str>, Option<i32>) {
     let Some(name) = instance else {
-        return (
-            None,
-            snapshot.map(str::to_string),
-            id_slot,
-        );
+        return (None, snapshot, id_slot);
     };
     if is_session {
-        return (
-            Some(name.to_string()),
-            snapshot.map(str::to_string),
-            id_slot,
-        );
+        return (Some(name), snapshot, id_slot);
     }
     if snapshot.is_some() || id_slot.is_some() {
         tracing::debug!(
@@ -354,7 +346,7 @@ pub(crate) fn filter_routing_fields_for_session(
             "ignoring snapshot/id_slot for a one-shot context (no multi-step state)",
         );
     }
-    (Some(name.to_string()), None, None)
+    (Some(name), None, None)
 }
 
 /// Merge the routing request fields (`instance`/`snapshot`/`id_slot`) into the

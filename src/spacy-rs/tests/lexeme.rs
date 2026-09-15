@@ -173,3 +173,19 @@ fn computed_flags_agree_with_lex_attrs() {
         );
     }
 }
+
+#[test]
+fn poisoned_lexicon_recovers_instead_of_panicking() {
+    let lex = lexicon();
+    let _ = lex.get_or_create("hello");
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = lex.by_orth.write().unwrap();
+        panic!("intentional poison");
+    }));
+    assert!(poisoned.is_err(), "poison setup must panic");
+    assert!(lex.len() >= 1);
+    let _ = lex.get_or_create("hello");
+    let _ = lex.get_or_create("world");
+    assert!(lex.get_by_orth(hash_utf8("hello")).is_some());
+    assert!(lex.get_by_orth(hash_utf8("world")).is_some());
+}

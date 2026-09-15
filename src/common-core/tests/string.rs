@@ -148,10 +148,170 @@ fn lower_into_various() {
 }
 
 #[test]
+fn strip_html_golden_corpus() {
+        // Characterization: single-pass rewrites must reproduce these
+        // byte-for-byte, including the chaining and script quirks below.
+        let cases = [
+                ("Hello <b>World</b>", "Hello World"),
+                ("<script>alert('x')</script>Visible", "Visible"),
+                ("<style>.a{color:red}</style>Text", "Text"),
+                ("<p>Hello</p><p>World</p>", "Hello World"),
+                ("a<br>b", "a b"),
+                ("Fish &amp; Chips", "Fish & Chips"),
+                ("&lt;tag&gt;", "<tag>"),
+                ("&quot;q&quot; &#39;c&#39;", "\"q\" 'c'"),
+                // Entity chaining: the `&amp;` pass runs first, so a decoded
+                // `&` followed by a second entity decodes again ...
+                ("&amp;lt;", "<"),
+                ("&amp;#39;", "'"),
+                // ... but `&amp;` itself decodes only once (one amp pass).
+                ("&amp;amp;", "&amp;"),
+                ("&unknown; stays", "&unknown; stays"),
+                ("unclosed <b bold", "unclosed"),
+                ("a <!-- comment --> b", "a b"),
+                ("<SCRIPT>X</SCRIPT>y", "y"),
+                ("<script src=\"x\">evil()</script>ok", "ok"),
+                ("  spaced   out  ", "spaced out"),
+                ("<div><p>Hi</p></div>", "Hi"),
+                // Quirk: a block-level closing tag inside script/style still
+                // emits a newline before collapsing.
+                ("x<script>a</div>b</script>y", "x y"),
+                ("", ""),
+                ("no tags at all", "no tags at all"),
+        ];
+        for (input, want) in cases {
+                assert_eq!(strip_html(input), want, "strip_html({input:?})");
+        }
+}
+
+#[test]
+fn truncate_at_sentence_golden_table() {
+        let cases = [
+                ("Hello world. This is a test. More content.", 20, "Hello world."),
+                ("Short", 100, "Short"),
+                ("A. very long string that continues past the limit", 20, "A. very long string "),
+                ("No period here at all in this long text input", 10, "No period "),
+                ("", 5, ""),
+                ("Hi.", 3, "Hi."),
+        ];
+        for (input, max, want) in cases {
+                assert_eq!(truncate_at_sentence(input, max), want, "truncate_at_sentence({input:?}, {max})");
+        }
+}
+
+#[test]
+fn truncate_chars_golden_table() {
+        let cases = [
+                ("abcdef", 3, "abc"),
+                ("hello", 10, "hello"),
+                ("hello", 5, "hello"),
+                ("", 5, ""),
+                ("héllo wörld", 5, "héllo"),
+        ];
+        for (input, max, want) in cases {
+                assert_eq!(truncate_chars(input, max), want, "truncate_chars({input:?}, {max})");
+        }
+}
+
+#[test]
+fn truncate_never_splits_char_boundary() {
+        let text = "a🚀b汉c";
+        for max in 0..8 {
+                let a = truncate_chars(text, max);
+                assert!(text.starts_with(&a), "truncate_chars({max}) = {a:?}");
+                let b = truncate_at_sentence(text, max);
+                assert!(text.starts_with(&b) || b.len() <= text.len());
+        }
+}
+
+#[test]
 fn contains_any_basic() {
         assert!(contains_any("hello world", &["hello"]));
         assert!(contains_any("hello world", &["world", "foo"]));
         assert!(!contains_any("hello world", &["foo"]));
+}
+
+#[test]
+fn lowered_haystack_matches_free_functions_on_golden_corpus() {
+        let corpus = [
+                "Hello World",
+                "The Quick Brown Fox",
+                "Straße und STRASSE",
+                "İstanbul ıstanbul",
+                "Café Münchén",
+                "test builder builders",
+                "mystructfield unstructured test_struct",
+                "a→b foo->bar",
+                "",
+                "ß",
+                "İ",
+                "η Θ Σ",
+        ];
+        let keywords: &[&str] = &[
+                "hello", "WORLD", "straße", "STRASSE", "i̇stanbul", "CAFÉ", "builder",
+                "struct", "bar", "η", "",
+        ];
+        for text in corpus {
+                let hay = LoweredHaystack::new(text);
+                assert_eq!(hay.lowered(), text.to_lowercase(), "lowered({text:?})");
+                for kw in keywords {
+                        assert_eq!(
+                                hay.contains(kw),
+                                contains_ignore_case(text, kw),
+                                "contains({text:?}, {kw:?})"
+                        );
+                        assert_eq!(
+                                hay.contains_word(kw),
+                                contains_word(text, kw),
+                                "contains_word({text:?}, {kw:?})"
+                        );
+                }
+                assert_eq!(
+                        hay.contains_any(keywords),
+                        contains_any(text, keywords),
+                        "contains_any({text:?})"
+                );
+                assert_eq!(
+                        hay.contains_any_word(keywords),
+                        contains_any_word(text, keywords),
+                        "contains_any_word({text:?})"
+                );
+        }
+}
+
+#[test]
+fn lowered_haystack_unicode_goldens() {
+        // Turkish dotted capital I expands on lowering (2 bytes -> 3 bytes);
+        // matching must follow the lowered forms exactly.
+        assert!(contains_ignore_case("İstanbul", "i̇stanbul"));
+        assert!(LoweredHaystack::new("İstanbul").contains("i̇stanbul"));
+        // German ß lowercases to itself; "STRASSE" does not contain "ß".
+        assert!(contains_ignore_case("Straße", "straße"));
+        assert!(!contains_ignore_case("STRASSE", "ß"));
+        assert!(!LoweredHaystack::new("STRASSE").contains("ß"));
+        // Empty needle is contained (str::contains semantics preserved).
+        assert!(contains_ignore_case("abc", ""));
+        assert!(LoweredHaystack::new("abc").contains(""));
+        // Word boundaries still apply on the lowered bytes.
+        assert!(!LoweredHaystack::new("test builders").contains_word("builder"));
+        assert!(LoweredHaystack::new("test builder").contains_word("BUILDER"));
+}
+
+#[test]
+fn lowered_haystack_single_lowering_fifty_keywords() {
+        let text = "the quick brown fox jumps over the lazy dog".repeat(4);
+        let keywords: Vec<String> = (0..50).map(|i| format!("keyword{i}")).collect();
+        let refs: Vec<&str> = keywords.iter().map(String::as_str).collect();
+        let hay = LoweredHaystack::new(&text);
+        // One stored lowering serves the whole scan; repeated scans agree.
+        assert_eq!(hay.lowered(), text.to_lowercase());
+        let first = hay.contains_any(&refs);
+        for _ in 0..10 {
+                assert_eq!(hay.contains_any(&refs), first);
+                assert_eq!(hay.contains_any(&refs), contains_any(&text, &refs));
+        }
+        assert!(!first);
+        assert!(hay.contains_any(&["quick", "keyword1"]));
 }
 
 #[test]
