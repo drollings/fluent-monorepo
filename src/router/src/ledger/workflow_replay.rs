@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use bitvec::vec::BitVec;
 use fluent_dag::dep_graph::DependencyGraph;
 use fluent_dag::target::{Target, TargetRegistry};
-use fluent_types::{AnnotationClaim, ContentNode, ProvenanceTier};
+use fluent_types::{AnnotationClaim, ContentHash, ContentNode, ProvenanceTier};
 use serde::{Deserialize, Serialize};
 
 use super::workflow_store::{gated_insert_allowed, WorkflowEntry, WorkflowStore};
@@ -785,14 +785,10 @@ fn split_step_envelope(target: &Target) -> StepEnvelope {
     }
 }
 
-/// The `fnv1a64` LOD0 hash (same function + empty→0 rule as the node store's
-/// content hash) — cite, don't fork.
+/// The LOD0 hash for replay metadata — the node store's rule, cited here
+/// rather than forked.
 fn lod0_hash_of(text: &str) -> u64 {
-    if text.is_empty() {
-        0
-    } else {
-        common_core::hash::fnv1a64(text.as_bytes())
-    }
+    ContentHash::from_lod0(text).as_u64()
 }
 
 /// Build the ledger `ContentNode` for one recorded step: LOD0 is the step's

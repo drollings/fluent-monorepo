@@ -183,9 +183,7 @@ impl InstanceManager {
     /// Whether the named instance is marked to be preserved (KV snapshotted +
     /// ledger transcript) across eviction.
     pub fn resume_for(&self, name: &str) -> bool {
-        self.resume
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        common_core::sync::lock(&self.resume)
             .get(name)
             .copied()
             .unwrap_or(false)
@@ -204,10 +202,7 @@ impl InstanceManager {
 
     /// Set (or clear) the preserve-on-evict flag for a named instance.
     pub fn set_resume(&self, name: &str, enabled: bool) {
-        self.resume
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(name.to_string(), enabled);
+        common_core::sync::lock(&self.resume).insert(name.to_string(), enabled);
     }
 
     /// Whether the fork currently has this model's weights slept out of VRAM

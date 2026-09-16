@@ -18,8 +18,13 @@ use std::sync::Arc;
 
 use fluent_db::error::DbError;
 use fluent_db::store::SqliteStore;
-use fluent_types::{AnnotationClaim, ClaimStatus, ProvenanceTier};
+use fluent_types::{AnnotationClaim, ClaimStatus, ContentHash, ProvenanceTier};
 use rusqlite::params;
+
+/// Single `u64`→`i64` cast for the SQL boundary.
+fn bind(h: ContentHash) -> i64 {
+    h.as_u64() as i64
+}
 
 /// The `ledger_annotations` table name (single source of truth for the schema;
 /// the DDL itself lives in `crate::ledger::ledger_migrations`).
@@ -52,9 +57,12 @@ impl AnnotationStore {
     /// Returns the effective status of the write.
     pub fn write(
         &self,
-        content_hash: u64,
+        content_hash: ContentHash,
         claim: &AnnotationClaim,
     ) -> Result<ClaimStatus, DbError> {
+        if content_hash.is_unstamped() {
+            return Err(DbError::UnstampedContent);
+        }
         self.store.transaction(|tx| {
             let current = current_row(tx, content_hash, &claim.claim_key)?;
             match current {
@@ -68,7 +76,7 @@ impl AnnotationStore {
                     tx.execute(
                         "UPDATE ledger_annotations SET status = 'superseded' \
                          WHERE content_hash = ?1 AND claim_key = ?2 AND claim_id = ?3",
-                        params![content_hash, claim.claim_key, cur.claim_id],
+                        params![bind(content_hash), claim.claim_key, cur.claim_id],
                     )?;
                     let next_id = next_claim_id(tx, content_hash, &claim.claim_key)?;
                     insert_row(tx, content_hash, next_id, claim, ClaimStatus::Confirmed)?;
@@ -97,7 +105,7 @@ impl AnnotationStore {
     /// invalidation contract.
     pub fn read(
         &self,
-        content_hash: u64,
+        content_hash: ContentHash,
         claim_key: &str,
     ) -> Result<Option<AnnotationClaim>, DbError> {
         self.store.query_row(
@@ -107,7 +115,7 @@ impl AnnotationStore {
                  WHERE content_hash = ?1 AND claim_key = ?2 AND status != 'superseded' \
                  ORDER BY {STATUS_PRIORITY}, claim_id DESC LIMIT 1",
             ),
-            params![content_hash as i64, claim_key],
+            params![bind(content_hash), claim_key],
             row_to_claim,
         )
     }
@@ -115,13 +123,13 @@ impl AnnotationStore {
     /// Read every **authoritative** (`Confirmed`) claim for a node version.
     /// Pending provisional claims are deliberately excluded — they are not
     /// authoritative.
-    pub fn read_active(&self, content_hash: u64) -> Result<Vec<AnnotationClaim>, DbError> {
+    pub fn read_active(&self, content_hash: ContentHash) -> Result<Vec<AnnotationClaim>, DbError> {
         self.store.query_rows(
             "SELECT claim_key, tier, status, payload, produced_by, produced_at \
              FROM ledger_annotations \
              WHERE content_hash = ?1 AND status = 'confirmed' \
              ORDER BY claim_key, claim_id",
-            params![content_hash as i64],
+            params![bind(content_hash)],
             row_to_claim,
         )
     }
@@ -130,7 +138,7 @@ impl AnnotationStore {
     /// rows) — the audit trail behind the "never deleted" invariant.
     pub fn history(
         &self,
-        content_hash: u64,
+        content_hash: ContentHash,
         claim_key: &str,
     ) -> Result<Vec<AnnotationClaim>, DbError> {
         self.store.query_rows(
@@ -138,7 +146,7 @@ impl AnnotationStore {
              FROM ledger_annotations \
              WHERE content_hash = ?1 AND claim_key = ?2 \
              ORDER BY claim_id",
-            params![content_hash as i64, claim_key],
+            params![bind(content_hash), claim_key],
             row_to_claim,
         )
     }
@@ -178,13 +186,13 @@ fn row_to_claim(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnnotationClaim> {
 /// `(content_hash, claim_key)` — the row the write's tier comparison is decided
 /// against.
 ///
-/// NOTE (M9): transaction-scoped (`&Transaction`), so it uses rusqlite
+/// NOTE: transaction-scoped (`&Transaction`), so it uses rusqlite
 /// directly — the `db::query` free functions take `&Connection` and there is
 /// no pool/transaction variant without an async rewrite. Same statement
 /// shape (`prepare` → single-row → `Ok(None)` on no rows).
 fn current_row(
     tx: &rusqlite::Transaction<'_>,
-    content_hash: u64,
+    content_hash: ContentHash,
     claim_key: &str,
 ) -> Result<Option<Row>, DbError> {
     let mut stmt = tx.prepare(&format!(
@@ -193,7 +201,7 @@ fn current_row(
              WHERE content_hash = ?1 AND claim_key = ?2 AND status != 'superseded' \
              ORDER BY {STATUS_PRIORITY}, claim_id DESC LIMIT 1",
     ))?;
-    let mut rows = stmt.query(params![content_hash as i64, claim_key])?;
+    let mut rows = stmt.query(params![bind(content_hash), claim_key])?;
     let row = rows.next()?.map(row_to_row).transpose()?;
     Ok(row)
 }
@@ -201,13 +209,13 @@ fn current_row(
 /// The next `claim_id` for `(content_hash, claim_key)` (max + 1, 1-based).
 fn next_claim_id(
     tx: &rusqlite::Transaction<'_>,
-    content_hash: u64,
+    content_hash: ContentHash,
     claim_key: &str,
 ) -> Result<i64, DbError> {
     let next: i64 = tx.query_row(
         "SELECT COALESCE(MAX(claim_id), 0) FROM ledger_annotations \
          WHERE content_hash = ?1 AND claim_key = ?2",
-        params![content_hash as i64, claim_key],
+        params![bind(content_hash), claim_key],
         |r| r.get(0),
     )?;
     Ok(next + 1)
@@ -215,7 +223,7 @@ fn next_claim_id(
 
 fn insert_row(
     tx: &rusqlite::Transaction<'_>,
-    content_hash: u64,
+    content_hash: ContentHash,
     claim_id: i64,
     claim: &AnnotationClaim,
     status: ClaimStatus,
@@ -225,7 +233,7 @@ fn insert_row(
          (content_hash, claim_key, claim_id, tier, status, payload, produced_by, produced_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
-            content_hash as i64,
+            bind(content_hash),
             claim.claim_key,
             claim_id,
             tier_as_text(claim.tier),

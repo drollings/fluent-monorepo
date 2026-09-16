@@ -274,7 +274,7 @@ async fn test_batch_real_panic() {
     assert_eq!(summary.cancelled.len(), 0);
     match &summary.panicked[0] {
         crate::batch::SupervisedBatchEvent::Panicked { info, .. } => {
-            assert!(info.contains("panicked"))
+            assert!(info.contains("panicked"));
         }
         _ => panic!("expected Panicked event"),
     }

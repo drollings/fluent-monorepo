@@ -1,0 +1,267 @@
+{
+  "charts": {
+    "dir": "env/workflows/charts",
+    "entity_context": true,
+    "index_path": "data/workflow_library.sqlite",
+    "max_candidates": 5,
+    "min_score": 0.6,
+    "selector_model": "code:default"
+  },
+  "classification": {
+    "root": {
+      "children": [
+        {
+          "description": "General Q&A, simple questions, chitchat, research queries, brainstorming, and help formulating prompts. Answered directly by the classifier when simple.",
+          "key": "local",
+          "node": {
+            "always_route": false,
+            "description": "General Q&A",
+            "group": "default",
+            "route": "local",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Programming, software development, Linux, bash, Python, Rust, dev-ops, debugging, and technical implementation - write, debug, or explain code.",
+          "key": "code",
+          "node": {
+            "always_route": true,
+            "description": "Code",
+            "group": "code",
+            "route": "code",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Summarize or condense text - an article, report, email thread, meeting notes, or other content, into a shorter form.",
+          "key": "summarize",
+          "node": {
+            "always_route": false,
+            "description": "Summarize",
+            "group": "summarize",
+            "route": "summarize",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Search, navigate, look up, or pull a value - search the web, open a page, look up an API, query data storage or a knowledge graph, or extract a specific value (a date, amount, email, or identifier) from text.",
+          "key": "explore",
+          "node": {
+            "always_route": true,
+            "description": "Explore",
+            "group": "explore",
+            "route": "explore",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "A deep answer - translate between languages, analyze or reason about a topic, identify named entities in text, or explain a concept from the sciences, mathematics, medicine, or law.",
+          "key": "explain",
+          "node": {
+            "always_route": true,
+            "description": "Explain",
+            "group": "explain",
+            "route": "explain",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Write a story, novel, poem, essay, screenplay, or letter - any substantial creative writing.",
+          "key": "prose",
+          "node": {
+            "always_route": true,
+            "description": "Prose",
+            "group": "prose",
+            "route": "prose",
+            "type": "terminal"
+          }
+        }
+      ],
+      "coherence_threshold": 0.5,
+      "description": "Coral request router",
+      "model": "code:default",
+      "safety_threshold": 0.3,
+      "type": "classifier"
+    }
+  },
+  "default_route": "local",
+  "embedding_model": "embed",
+  "gguf_dir": "/app/ai/models/gguf",
+  "ledger": {
+    "model": "code:default",
+    "path": "data/ledger.sqlite"
+  },
+  "logging": {
+    "audit_log": {
+      "console_output": false,
+      "json_format": true,
+      "log_dir": "logs/audit",
+      "max_age_days": 90,
+      "max_file_size_mb": 50,
+      "max_files": 20
+    },
+    "console_output": true,
+    "json_format": false,
+    "log_dir": "logs",
+    "max_age_days": 3,
+    "max_file_size_mb": 10,
+    "max_files": 4
+  },
+  "model_groups": {
+    "code": [
+      "code:default"
+    ],
+    "default": [
+      "code:default"
+    ],
+    "explain": [
+      "code:default"
+    ],
+    "explore": [
+      "code:default"
+    ],
+    "prose": [
+      "code:default"
+    ],
+    "summarize": [
+      "code:default"
+    ]
+  },
+  "models": {
+    "code": {
+      "cost_cached_read": 1.2e-6,
+      "cost_input": 3e-6,
+      "cost_output": 0.000018,
+      "endpoint": "http://localhost:8080/v1/chat/completions",
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 4,
+      "name": "code",
+      "params": {
+        "num_ctx": 131072,
+        "sleep-idle-seconds": 7200,
+        "temperature": 0.6,
+        "top_k": 40,
+        "top_p": 0.9
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 3,
+      "stream": true,
+      "tok_s": 5,
+      "total_timeout_ms": 120000
+    },
+    "embed": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "endpoint": "http://localhost:8080/v1/chat/completions",
+      "filter_thinking": false,
+      "idle_timeout_ms": 4000,
+      "intelligence": 1,
+      "name": "google/embeddinggemma-300m",
+      "retry_base_interval_s": 1,
+      "retry_count": 2,
+      "stream": true,
+      "tok_s": 8,
+      "total_timeout_ms": 20000,
+      "weights": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf"
+    },
+    "gemma4-12b": {
+      "cost_cached_read": 1.2e-6,
+      "cost_input": 3e-6,
+      "cost_output": 0.000018,
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 4,
+      "name": "mradermacher/gemma-4-12b-styletune-i1",
+      "params": {
+        "temperature": 0.6
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 1,
+      "stream": true,
+      "tok_s": 5,
+      "total_timeout_ms": 120000,
+      "weights": "/app/ai/models/gguf/mradermacher/gemma-4-12b-styletune-i1-gguf/latest.gguf"
+    },
+    "lfm2.5-2.6b": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "filter_thinking": true,
+      "idle_timeout_ms": 3000,
+      "intelligence": 1,
+      "name": "liquidai/lfm2.6-2.6b",
+      "retry_base_interval_s": 1,
+      "retry_count": 1,
+      "stream": true,
+      "tok_s": 8,
+      "total_timeout_ms": 50000,
+      "weights": "/app/ai/models/gguf/liquidai/lfm2.5-2.6b-gguf/latest.gguf"
+    },
+    "lfm2.5-350m": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "filter_thinking": true,
+      "idle_timeout_ms": 3000,
+      "intelligence": 2,
+      "name": "liquidai/lfm2.5-350m",
+      "retry_base_interval_s": 1,
+      "retry_count": 2,
+      "stream": true,
+      "tok_s": 8,
+      "total_timeout_ms": 50000,
+      "weights": "/app/ai/models/gguf/liquidai/lfm2.5-350m-gguf/latest.gguf"
+    },
+    "qwen3.6-27b": {
+      "cost_cached_read": 1.2e-6,
+      "cost_input": 3e-6,
+      "cost_output": 0.000018,
+      "filter_thinking": true,
+      "idle_timeout_ms": 30000,
+      "intelligence": 5,
+      "name": "vinpix/ternary-bonsai-27b-stock-mtp",
+      "params": {
+        "num_ctx": 65536,
+        "repeat_penalty": 1.05,
+        "temperature": 0.7
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 1,
+      "stream": true,
+      "tok_s": 3,
+      "total_timeout_ms": 300000,
+      "weights": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/latest.gguf"
+    }
+  },
+  "pipelines": {
+    "default": {
+      "classifier": true,
+      "classifier_model": "code:default",
+      "coherence_threshold": 0.5,
+      "deterministic_prefilter": true
+    }
+  },
+  "post_process": {
+    "workflow_extraction": false
+  },
+  "safety_threshold": 0.3,
+  "server": {
+    "bind_addr": "127.0.0.1:8079",
+    "max_payload": 1048576
+  },
+  "session": {
+    "root": "data/sessions"
+  },
+  "sidecar": {
+    "api_key_env": null,
+    "evict_batch": 1,
+    "minimum_remaining_vram": 2048000000,
+    "poll_interval_s": 5,
+    "resume_ttl_s": 3600,
+    "slot_save_path": "data/slots",
+    "vram_low_watermark_bytes": 1024000000,
+    "vram_total_bytes": null
+  }
+}

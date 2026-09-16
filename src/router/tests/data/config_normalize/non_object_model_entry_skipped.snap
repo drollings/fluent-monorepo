@@ -1,0 +1,12 @@
+{
+  "models": {
+    "default": {
+      "intelligence": 1
+    },
+    "m": {
+      "endpoint": "http://x/v1/chat/completions",
+      "intelligence": 1
+    },
+    "weird": "not-an-entry"
+  }
+}

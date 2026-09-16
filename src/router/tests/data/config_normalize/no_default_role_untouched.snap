@@ -1,0 +1,16 @@
+{
+  "models": {
+    "default": {
+      "params": {
+        "temperature": 0.1
+      }
+    }
+  },
+  "roles": {
+    "spare": {
+      "params": {
+        "top_k": 10
+      }
+    }
+  }
+}

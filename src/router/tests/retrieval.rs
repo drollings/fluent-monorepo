@@ -303,6 +303,173 @@ fn moved_combiner_consumes_spacy_lemma_hits() {
     );
 }
 
+// ── Topical prefilter: candidate predicate equal-or-subclass of the query ──
+// predicate (candidate-side `ancestors_of` walk). Relevance only — parse
+// confidence is never consulted.
+
+use fluent_concept::{ConceptStore, InMemoryConceptStore, TaxonomyHierarchy};
+use fluent_types::{lemma_id_for_str, InterlinguaId};
+
+fn filter_service(store: Arc<InMemoryConceptStore>) -> NodeRetrievalService {
+    NodeRetrievalService::new(Arc::new(SynonymProvider), None)
+        .expect("service")
+        .with_concept_store(store as Arc<dyn ConceptStore>)
+        .with_interlingua_filter(true)
+}
+
+fn calibration_store() -> (
+    Arc<InMemoryConceptStore>,
+    InterlinguaId,
+    InterlinguaId,
+    InterlinguaId,
+    InterlinguaId,
+    InterlinguaId,
+) {
+    let show = lemma_id_for_str("show");
+    let display = lemma_id_for_str("display");
+    let list = lemma_id_for_str("list");
+    let act = lemma_id_for_str("do");
+    let unrelated = lemma_id_for_str("delete");
+    let store = Arc::new(InMemoryConceptStore::new());
+    store.set_hierarchy(
+        TaxonomyHierarchy::from_edges(&[(display, show), (list, show), (show, act)])
+            .expect("hierarchy"),
+    );
+    (store, show, display, list, act, unrelated)
+}
+
+fn pred_report(id: i64, predicates: Vec<InterlinguaId>) -> NodeRetrievalReport {
+    NodeRetrievalReport {
+        node_id: NodeId::from_int(id),
+        hits: Vec::new(),
+        regions: Vec::new(),
+        rank: None,
+        predicate_ids: predicates,
+    }
+}
+
+#[test]
+fn prefilter_keeps_equal_and_subclass_predicates() {
+    let (store, show, display, list, _, _) = calibration_store();
+    let svc = filter_service(store);
+    let reports: Vec<NodeRetrievalReport> = (0..60)
+        .map(|i| {
+            let p = match i % 3 {
+                0 => show,
+                1 => display,
+                _ => list,
+            };
+            pred_report(i, vec![p])
+        })
+        .collect();
+    let kept = svc.filter_by_interlingua(Some(show), reports);
+    assert_eq!(kept.len(), 60, "equal + subclass predicates are all kept");
+}
+
+#[test]
+fn prefilter_drops_unrelated_predicates() {
+    let (store, show, _, _, _, unrelated) = calibration_store();
+    let svc = filter_service(store);
+    let reports: Vec<NodeRetrievalReport> =
+        (0..60).map(|i| pred_report(i, vec![unrelated])).collect();
+    let kept = svc.filter_by_interlingua(Some(show), reports);
+    assert!(kept.is_empty(), "unrelated predicates are all dropped");
+}
+
+#[test]
+fn prefilter_drops_strict_superclass_predicates() {
+    // Pins against regressing to the query-side
+    // `allowed = {q} ∪ ancestors_of(q)` variant, which would keep these.
+    let (store, show, _, _, act, _) = calibration_store();
+    let svc = filter_service(store);
+    let reports: Vec<NodeRetrievalReport> =
+        (0..20).map(|i| pred_report(i, vec![act])).collect();
+    let kept = svc.filter_by_interlingua(Some(show), reports);
+    assert!(
+        kept.is_empty(),
+        "strict superclasses of the query are dropped"
+    );
+}
+
+#[test]
+fn prefilter_fails_open_without_signal_or_store_or_query() {
+    let (store, show, display, _, _, unrelated) = calibration_store();
+    let svc = filter_service(Arc::clone(&store));
+    // Empty predicate signal is kept.
+    let kept = svc.filter_by_interlingua(Some(show), vec![pred_report(1, vec![])]);
+    assert_eq!(kept.len(), 1, "empty signal is kept (fail-open)");
+    // No query predicate is kept.
+    let kept = svc.filter_by_interlingua(None, vec![pred_report(2, vec![unrelated])]);
+    assert_eq!(kept.len(), 1, "missing query predicate is kept (fail-open)");
+    // No concept store is kept.
+    let bare = service();
+    let kept = bare.filter_by_interlingua(Some(show), vec![pred_report(3, vec![display])]);
+    assert_eq!(kept.len(), 1, "missing store is kept (fail-open)");
+    // Filter disabled (the default) is kept.
+    let off = NodeRetrievalService::new(Arc::new(SynonymProvider), None)
+        .expect("service")
+        .with_concept_store(store as Arc<dyn ConceptStore>);
+    let kept = off.filter_by_interlingua(Some(show), vec![pred_report(4, vec![unrelated])]);
+    assert_eq!(kept.len(), 1, "disabled filter keeps everything");
+}
+
+#[test]
+fn prefilter_mixed_adversarial_set_keep_recall() {
+    let (store, show, display, list, act, unrelated) = calibration_store();
+    let svc = filter_service(store);
+    // 200 mixed pairs: 120 keep-eligible (equal/subclass/empty) + 80 droppable
+    // (unrelated/superclass). Keep-recall over the keep-eligible slice must
+    // clear 0.98; removal-precision over the droppable slice must be 1.0.
+    let mut reports = Vec::new();
+    for i in 0..60 {
+        let p = if i % 2 == 0 { display } else { list };
+        reports.push(pred_report(i, vec![p]));
+    }
+    for i in 60..100 {
+        reports.push(pred_report(i, vec![show]));
+    }
+    for i in 100..120 {
+        reports.push(pred_report(i, vec![]));
+    }
+    for i in 120..180 {
+        reports.push(pred_report(i, vec![unrelated]));
+    }
+    for i in 180..200 {
+        reports.push(pred_report(i, vec![act]));
+    }
+    let kept = svc.filter_by_interlingua(Some(show), reports);
+    let kept_ids: std::collections::HashSet<i64> =
+        kept.iter().map(|r| r.node_id.as_int()).collect();
+    let keep_eligible = 120usize;
+    let kept_eligible = (0..120).filter(|i| kept_ids.contains(i)).count();
+    let recall = kept_eligible as f64 / keep_eligible as f64;
+    assert!(
+        recall >= 0.98,
+        "keep-recall {recall} below 0.98 ({kept_eligible}/{keep_eligible})"
+    );
+    let wrongly_kept = (120..200).filter(|i| kept_ids.contains(&i64::from(*i))).count();
+    assert_eq!(wrongly_kept, 0, "removal precision must be 1.0");
+}
+
+#[test]
+fn prefilter_ignores_parse_confidence() {
+    // Low-confidence hits stay eligible: the filter reads only predicate ids.
+    let (store, show, display, _, _, _) = calibration_store();
+    let svc = filter_service(store);
+    let mut report = pred_report(1, vec![display]);
+    report.hits.push(RetrievalHit {
+        source: RetrievalSource::LemmaGrep,
+        span: Span { start: 0, end: 4 },
+        lemma: Some("display".into()),
+        lemma_id: Some(display),
+        parse_confidence: Some(0.01),
+        fuzzy_score: None,
+        embedding_id: None,
+    });
+    let kept = svc.filter_by_interlingua(Some(show), vec![report]);
+    assert_eq!(kept.len(), 1, "low confidence does not exclude");
+}
+
 #[test]
 fn moved_cross_check_lemma_only_regions_have_no_conflict() {
     let svc = service();

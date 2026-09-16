@@ -1,0 +1,8 @@
+{
+  "models": {
+    "default": "not-an-entry",
+    "m": {
+      "endpoint": "http://x/v1/chat/completions"
+    }
+  }
+}

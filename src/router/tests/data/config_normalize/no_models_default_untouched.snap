@@ -1,0 +1,14 @@
+{
+  "models": {
+    "m": {
+      "endpoint": "http://x/v1/chat/completions"
+    }
+  },
+  "roles": {
+    "spare": {
+      "params": {
+        "batch_size": 1024
+      }
+    }
+  }
+}

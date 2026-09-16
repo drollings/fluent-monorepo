@@ -1,0 +1,28 @@
+{
+  "roles": {
+    "bare": {
+      "params": {
+        "batch_size": 512,
+        "num_ctx": 8192,
+        "temperature": 0.1,
+        "top_k": 40
+      }
+    },
+    "default": {
+      "params": {
+        "batch_size": 512,
+        "num_ctx": 8192,
+        "temperature": 0.1,
+        "top_k": 40
+      }
+    },
+    "spare": {
+      "params": {
+        "batch_size": 1024,
+        "num_ctx": 8192,
+        "temperature": 0.1,
+        "top_k": 10
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ pub(crate) mod turtle;
 pub mod yago;
 pub mod yago_loader;
 pub mod yago_view;
+pub mod ysm1;
 
 use thiserror::Error;
 

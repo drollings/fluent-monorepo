@@ -1,0 +1,10 @@
+{
+  "roles": {
+    "spare": {
+      "params": {
+        "batch_size": 1024,
+        "params": "fast"
+      }
+    }
+  }
+}

@@ -10,7 +10,10 @@ pub mod classification;
 pub mod compiled_tree;
 pub mod escalation;
 pub mod filters;
+pub mod fleet;
 pub mod ledger_group;
+pub mod models;
+pub mod normalize;
 pub mod refine_policy;
 pub mod root;
 pub mod rounds;
@@ -28,16 +31,18 @@ pub use self::filters::{
     CommandConfig, ConfidenceGate, FilterAction, FilterOutcome, FilterScope, MockConfig,
     PatternEntry, RejectPatterns,
 };
+pub use self::fleet::RoleParams;
+pub use self::models::{InstanceProfile, ModelBinding, ModelEntry, ModelRoleOverride};
+pub use self::normalize::warn_on_non_object_params;
 pub use self::refine_policy::{RouterRefineMode, RouterRefinePolicy};
 #[allow(unused_imports)]
 pub(crate) use self::root::materialize_effective_pool;
 pub use self::root::split_model_key;
 pub use self::root::{
     detect_device_vram_total, models_serving_role, overlay_params, resolve_group_head_key,
-    resolve_inference_point, role_head_key, strip_declaration_params, warn_on_non_object_params,
-    ArcReadyConfig, AuditLogConfig, ChartsConfig, ClassifierFailurePolicy, ClassifierOutput,
-    EvictionPolicy, InstanceProfile, LedgerConfig, ModelBinding, ModelEntry, ModelRoleOverride,
-    OrchestratorSection, OverlayConfig, PostProcessConfig, ReviewConfig, RigorConfig, RoleParams,
+    resolve_inference_point, role_head_key, strip_declaration_params, ArcReadyConfig,
+    AuditLogConfig, ChartsConfig, ClassifierFailurePolicy, ClassifierOutput, EvictionPolicy,
+    LedgerConfig, OrchestratorSection, OverlayConfig, PostProcessConfig, ReviewConfig, RigorConfig,
     RouterConfig, ServerConfig, SessionConfig, SidecarConfig, WorkflowExtractionMode,
     DECLARATION_PARAM_KEYS, DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
 };

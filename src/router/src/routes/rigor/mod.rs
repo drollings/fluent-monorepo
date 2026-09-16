@@ -35,7 +35,7 @@ use std::sync::{Arc, Mutex};
 
 use common_core::hash::uuid_v4;
 use common_core::sync::lock;
-use fluent_types::{ContentNode, NodeId};
+use fluent_types::{ContentHash, ContentNode, NodeId};
 use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
 
@@ -414,7 +414,7 @@ impl RigorRoute {
             id: None,
             name: "rigor-blue-dead-end".into(),
             source: "rigor".into(),
-            content_hash: 0,
+            content_hash: ContentHash::UNSTAMPED,
             lod: vec![
                 answer.to_string(),
                 String::new(),

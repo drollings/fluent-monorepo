@@ -434,7 +434,7 @@ impl Migration for LedgerLabelColumn {
         "ledger-label-column"
     }
     fn up(&self, tx: &mut rusqlite::Transaction<'_>) -> Result<(), DbError> {
-        ensure_column(tx, "ledger", "label", "label TEXT NOT NULL DEFAULT ''")
+        ensure_column(tx, "ledger", "label", "TEXT NOT NULL DEFAULT ''")
     }
 }
 
@@ -448,7 +448,7 @@ impl Migration for LedgerLodColumn {
         "ledger-lod-column"
     }
     fn up(&self, tx: &mut rusqlite::Transaction<'_>) -> Result<(), DbError> {
-        ensure_column(tx, "ledger", "lod", "lod TEXT NOT NULL DEFAULT '[]'")
+        ensure_column(tx, "ledger", "lod", "TEXT NOT NULL DEFAULT '[]'")
     }
 }
 
@@ -462,12 +462,7 @@ impl Migration for LedgerContentJsonColumn {
         "ledger-content-json-column"
     }
     fn up(&self, tx: &mut rusqlite::Transaction<'_>) -> Result<(), DbError> {
-        ensure_column(
-            tx,
-            "ledger",
-            "content_json",
-            "content_json TEXT NOT NULL DEFAULT '{}'",
-        )
+        ensure_column(tx, "ledger", "content_json", "TEXT NOT NULL DEFAULT '{}'")
     }
 }
 

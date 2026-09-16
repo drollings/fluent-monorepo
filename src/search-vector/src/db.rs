@@ -161,7 +161,7 @@ impl GuidanceDb {
                 CREATE INDEX IF NOT EXISTS idx_graph_symbols_file ON graph_symbols(file);",
             )
             .map_err(DbError::from)?;
-            ensure_file_status_columns(conn).map_err(DbError::from)?;
+            ensure_file_status_columns(conn)?;
             ensure_fragment_q8_column(conn).map_err(DbError::from)?;
             Ok(())
         })?;
@@ -1280,28 +1280,17 @@ impl GraphSymbolRow {
 // -- P1 fragment records, filter, and FTS match builder ---------------------
 
 /// Add P2 file-status columns to pre-P2 databases (fresh tables already
-/// carry them via `ALTER ... ADD COLUMN` no-ops guarded here).
-fn ensure_file_status_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    use rusqlite::params;
-    let mut existing = std::collections::HashSet::new();
-    let mut stmt = conn.prepare("PRAGMA table_info(files)")?;
-    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
-    for name in rows.flatten() {
-        existing.insert(name);
-    }
-    for (column, ddl) in [
+/// carry them via the idempotent ensure-column no-op guarded here).
+fn ensure_file_status_columns(conn: &rusqlite::Connection) -> Result<(), DbError> {
+    use fluent_db::migrate::ensure_column;
+    for (column, col_def) in [
         ("content_hash", "TEXT"),
         ("index_status", "TEXT DEFAULT 'indexed'"),
         ("fail_count", "INTEGER NOT NULL DEFAULT 0"),
         ("last_error", "TEXT"),
         ("indexed_time", "INTEGER"),
     ] {
-        if !existing.contains(column) {
-            conn.execute(
-                &format!("ALTER TABLE files ADD COLUMN {column} {ddl}"),
-                params![],
-            )?;
-        }
+        ensure_column(conn, "files", column, col_def)?;
     }
     Ok(())
 }

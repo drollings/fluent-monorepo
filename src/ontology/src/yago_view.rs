@@ -36,20 +36,34 @@ impl YagoView {
         if text.starts_with("@prefix") {
             return Ok(Self::from_ttl_str(&text));
         }
-        // Try header check
-        if data.len() >= 44 {
+        // Binary leg: a YSM1 magic word routes to the binary decoder, which
+        // verifies format version, taxonomy version, and the content digest.
+        // Any rejection falls through to the caller's provisional path via
+        // the typed error (the TTL leg is never attempted on magic bytes).
+        if data.len() >= crate::ysm1::YSM1_HEADER_LEN {
             let magic = u32::from_le_bytes(
                 data[0..4]
                     .try_into()
                     .map_err(|_| OntologyError::YagoView("short YaGO header".into()))?,
             );
-            if magic == 0x5953_4D31 {
-                return Err(OntologyError::YagoView(
-                    "YSM1 binary decode not yet wired — use TTL fixture".into(),
-                ));
+            if magic == crate::ysm1::YSM1_MAGIC_U32 {
+                let decoded = crate::ysm1::decode(&data)?;
+                return Ok(Self::from_decoded(decoded));
             }
         }
         Ok(Self::from_ttl_str(&text))
+    }
+
+    /// Build from a verified YSM1 payload: the class table plus hierarchy
+    /// edges feed the same shared [`HierarchyIndex`] the TTL leg builds, so
+    /// `ancestors_of` ordering (nearest first) is identical either way.
+    fn from_decoded(decoded: crate::ysm1::Ysm1File) -> Self {
+        let mut classes: HashMap<String, InterlinguaId> = HashMap::new();
+        for (curie, id) in decoded.classes {
+            classes.insert(curie, id);
+        }
+        let hierarchy = HierarchyIndex::from_edges(decoded.edges);
+        Self { classes, hierarchy }
     }
 
     fn from_ttl_str(ttl: &str) -> Self {

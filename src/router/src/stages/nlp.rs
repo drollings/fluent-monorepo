@@ -223,10 +223,9 @@ impl NlpStage {
             // point (`block_in_place` requires `'static`).
             self.limiter.run_sync(move || {
                 let pipeline = Arc::clone(&pipeline);
-                let text = text_owned.clone();
                 async move {
                     pipeline.process_sync_with_refine_and_reason(
-                        &text,
+                        &text_owned,
                         fetch.as_ref(),
                         encoder.as_ref(),
                         &spacy_rs::RefineSeams::default(),
@@ -289,7 +288,7 @@ impl NlpStage {
                     source = %format!("{:?}", summary.source),
                     "nlp refine decision"
                 );
-                let mut meta = StageMetadata::new(serde_json::Value::Object(Default::default()));
+                let mut meta = StageMetadata::empty();
                 meta.set_nlp_parse(&signals);
                 meta.set_nlp_interlingua(&interlingua);
                 meta.set_nlp_confidence(&summary);

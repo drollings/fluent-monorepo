@@ -51,6 +51,8 @@ Then you you must read
 │   ├── gen_yago_classes.py  # #!/usr/bin/env python3
 │   ├── live-ai-guard.sh
 │   ├── llm-boundary-check.sh
+│   ├── parse_yago_taxonomy_to_json.py  # #!/usr/bin/env python3
+│   ├── prune_yago_taxonomy.py  # #!/usr/bin/env python3
 │   ├── router-wait-health.sh
 │   ├── spacy/
 │   │   └── benchmark/
@@ -103,6 +105,7 @@ Then you you must read
 │   │       └── SKILL.md  # # Interlingua — unified, disambigua...
 │   └── spacy-rs/
 │       ├── ARCHITECTURE.md  # # spacy-rs — Architecture
+│       ├── BLOB_SPEC.md  # # Taxonomy Blob Specification — Dec...
 │       ├── ITERATIVE_PARSE_IMPROVEMENT.md  # # Iterative Deterministic Parse Improvem
 │       └── VISION.md  # # spacy-rs — Vision
 ├── env/
@@ -182,8 +185,10 @@ Then you you must read
     │   │   ├── interner.rs  # //! Capability registry: thread-safe str
     │   │   ├── io.rs  # use std::fs;
     │   │   ├── jsonrpc.rs  # //! Shared JSON-RPC 2.
+    │   │   ├── label_match.rs  # //! Hash-parameterized label matching: "
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── metrics.rs  # //! Lock-free latency histogram with 12
+    │   │   ├── path.rs  # //! Pure lexical path helpers (no I/O):
     │   │   ├── prelude.rs  # //! The common-core prelude — impor...
     │   │   ├── registry.rs  # //! Generic keyed registry — the ca...
     │   │   ├── retry.rs  # //! Retry and backoff primitives — ...
@@ -191,28 +196,25 @@ Then you you must read
     │   │   ├── score.rs  # use std::collections::HashMap;
     │   │   ├── shell.rs  # //! Subprocess helpers: `run_capture`, `
     │   │   ├── shell_parser.rs  # //! Safe shell parser: whitespace+quote
-    │   │   ├── sqlite.rs  # //! Shared SQLite helpers — connect...
+    │   │   ├── sort.rs  # //! Deterministic ordering: the single c
     │   │   ├── string.rs  # //! 20+ string utilities: case-insensiti
     │   │   ├── sync.rs  # //! Poison-safe locking helpers for `std
     │   │   ├── telemetry.rs  # //! Failure taxonomy — the generic ...
     │   │   ├── time.rs  # //! Time utilities: epoch-second helpers
-    │   │   ├── vector_math.rs  # //! Scalar embedding-vector math (P1 can
     │   │   ├── walk.rs  # //! Directory walker: `walk_files` (call
-    │   │   ├── watchdog.rs  # use std::collections::VecDeque;
-    │   │   ├── yago_normalize.rs  # //! Single source for YaGO name normaliz
-    │   │   └── yago_taxonomy.rs  # //! YaGO TTL → JSON taxonomy pipeli...
+    │   │   └── watchdog.rs  # use std::collections::VecDeque;
     │   └── tests/
+    │       ├── blob_cursor.rs  # //! Focused unit tests for `common_core:
     │       ├── blob_spec.rs  # use common_core::blob_spec::*;
     │       ├── cache.rs  # // NOTE (ROADMAP_20260903_LLM M11): the
-    │       ├── calibration.rs  # use common_core::calibration::*;
+    │       ├── cache_singleflight.rs  # //! Single-flight `LoadCache::get_or_loa
+    │       ├── calibration.rs  # // Exact asserts on harness outputs are
     │       ├── cite.rs  # use common_core::cite::*;
     │       ├── config.rs  # use common_core::config::*;
     │       ├── constants.rs  # use common_core::constants::*;
     │       ├── drift.rs  # //! Bit-set drift analysis: compute "mis
     │       ├── error.rs  # use common_core::error::*;
     │       ├── error_context.rs  # use common_core::error_context::*;
-    │       ├── fixtures/
-    │       │   └── yago_mini.ttl
     │       ├── format.rs  # use common_core::format::*;
     │       ├── git.rs  # use common_core::git::*;
     │       ├── hash.rs  # use common_core::hash::*;
@@ -220,23 +222,24 @@ Then you you must read
     │       ├── interner.rs  # use common_core::interner::*;
     │       ├── io.rs  # use common_core::io::*;
     │       ├── jsonrpc.rs  # use common_core::jsonrpc::*;
+    │       ├── label_match.rs  # //! Focused unit tests for `common_core:
     │       ├── lib.rs  # #[allow(unused_imports)]
     │       ├── metrics.rs  # use common_core::metrics::*;
+    │       ├── path.rs  # use common_core::path::{
+    │       ├── prelude.rs  # //! Prelude completeness: every symbol t
     │       ├── registry.rs  # use common_core::registry::*;
     │       ├── retry.rs  # use common_core::retry::*;
     │       ├── runtime.rs  # use common_core::runtime::*;
-    │       ├── score.rs  # use common_core::score::*;
+    │       ├── score.rs  # // Exact asserts on pure-function output
     │       ├── shell.rs  # use common_core::shell::*;
     │       ├── shell_parser.rs  # use common_core::shell_parser::*;
-    │       ├── sqlite.rs  # #[cfg(feature = "sqlite")]
+    │       ├── sort.rs  # use std::cmp::Ordering;
+    │       ├── sqlite.rs  # //! Consumer-perspective coverage for th
     │       ├── string.rs  # use common_core::string::*;
     │       ├── sync.rs  # use common_core::sync::*;
     │       ├── telemetry.rs  # // NOTE (ROADMAP_20260903_LLM M11): the
-    │       ├── vector_math.rs  # use common_core::vector_math::cosine_sim
-    │       ├── walk.rs  # use common_core::walk::{
-    │       ├── watchdog.rs  # use common_core::watchdog::*;
-    │       ├── yago_normalize.rs  # use common_core::yago_normalize::*;
-    │       └── yago_taxonomy.rs  # //! Parity with the deprecated `src/onto
+    │       ├── walk.rs  # use common_core::walk::{sniff_is_binary,
+    │       └── watchdog.rs  # use common_core::watchdog::*;
     ├── concept/
     │   ├── Cargo.toml
     │   ├── src/
@@ -247,17 +250,6 @@ Then you you must read
     │   └── tests/
     │       ├── concept_store.rs  # use super::*;
     │       └── concept_store_mem.rs  # use super::*;
-    ├── content-node/
-    │   ├── Cargo.toml
-    │   ├── src/
-    │   │   ├── doc_node.rs  # use crate::file_node::FileContentNode;
-    │   │   ├── file_node.rs  # use std::fmt::Debug;
-    │   │   ├── lib.rs  # //! content-node: Level-of-detail text s
-    │   │   ├── lod.rs  # pub fn generate_lod_slices(full_text: &s
-    │   │   ├── node.rs  # use fluent_types::LOD_COUNT;
-    │   │   └── source_node.rs  # use crate::file_node::FileContentNode;
-    │   └── tests/
-    │       └── lod.rs  # use content_node::lod::*;
     ├── coral/
     │   ├── Cargo.toml
     │   ├── src/
@@ -297,13 +289,14 @@ Then you you must read
     │   │   ├── closure.rs  # use std::collections::HashSet;
     │   │   ├── dep_graph.rs  # //! Pure dependency-graph algorithms sha
     │   │   ├── error.rs  # use thiserror::Error;
+    │   │   ├── hierarchy.rs  # //! The one hierarchy-closure index for
     │   │   ├── lib.rs  # //! fluent-dag: DAG executor with resolv
     │   │   ├── middleware.rs  # use std::sync::Arc;
     │   │   ├── narrowing.rs  # use std::collections::HashSet;
     │   │   ├── resolver.rs  # //! Capability-aware dependency resolver
     │   │   ├── target.rs  # use bitvec::vec::BitVec;
     │   │   ├── target_work_unit.rs  # //! `Target → WorkUnit` bridge.
-    │   │   ├── type_inference.rs  # //! Ontology type-hierarchy inference vi
+    │   │   ├── type_inference.rs  # //! Ontology type-hierarchy inference.
     │   │   ├── work_unit.rs  # use bon::Builder;
     │   │   ├── wvr.rs  # //! Fluent WVR integration for DAG crate
     │   │   └── yamake_loader.rs  # use bitvec::vec::BitVec;
@@ -313,10 +306,12 @@ Then you you must read
     │       ├── common.rs  # //! Crate-typed test fixtures shared by
     │       ├── dep_graph.rs  # use super::*;
     │       ├── error.rs  # use super::*;
+    │       ├── hierarchy.rs  # use super::*;
     │       ├── middleware.rs  # use super::*;
     │       ├── mod.rs  # //! Tier-1 test support for fluent-dag,
     │       ├── narrowing.rs  # use super::*;
     │       ├── resolver.rs  # use super::*;
+    │       ├── scan_sort_equiv.rs  # //! Equivalence + golden coverage for th
     │       ├── target.rs  # use super::*;
     │       ├── target_work_unit.rs  # use super::*;
     │       ├── type_inference.rs  # use super::*;
@@ -333,21 +328,25 @@ Then you you must read
     │   │   ├── migrate.rs  # //! Idempotent schema migrations.
     │   │   ├── pool.rs  # //! The canonical pooled SQLite store (D
     │   │   ├── query.rs  # //! Typed statement helpers shared by `S
+    │   │   ├── sqlite.rs  # //! SQLite connection setup, WAL mode, s
     │   │   ├── store.rs  # //! The canonical single-connection SQLi
     │   │   ├── vector.rs  # //! Embedding vector math.
     │   │   └── wvr.rs  # //! Database `Component`/`WorkUnit` adap
     │   └── tests/
+    │       ├── bind_path.rs  # //! The `OwnedValue` bind path: type mat
     │       ├── cache.rs  # use super::*;
     │       ├── capability.rs  # use super::*;
     │       ├── common.rs  # //! Crate-typed test fixtures shared by
     │       ├── error.rs  # use super::*;
     │       ├── hnsw.rs  # use super::*;
+    │       ├── hnsw_concurrent.rs  # //! Concurrent HNSW behavior: generation
     │       ├── migrate.rs  # use super::*;
     │       ├── mod.rs  # //! Tier-1 test support for fluent-db, w
     │       ├── pool.rs  # use super::*;
     │       ├── query.rs  # use super::*;
+    │       ├── sqlite.rs  # //! The `fluent_db::sqlite` connection/s
     │       ├── store.rs  # use super::*;
-    │       ├── vector.rs  # use super::*;
+    │       ├── vector.rs  # // Exact asserts on pure-function output
     │       └── wvr.rs  # use std::sync::Arc;
     ├── fluent-concurrency/
     │   ├── Cargo.toml
@@ -355,6 +354,7 @@ Then you you must read
     │   │   ├── affinity.rs  # //! Affinity-aware priority scheduler.
     │   │   ├── batch.rs  # //! Supervised batch runner with async r
     │   │   ├── capability.rs  # //! Concrete capability tokens for files
+    │   │   ├── close.rs  # //! Shared close-wakes-waiters core for
     │   │   ├── credit_pool.rs  # //! Credit-gated bounded worker pool: a
     │   │   ├── feed_worker.rs  # //! `CreditedFeedWorker<Item>` — a ...
     │   │   ├── flow.rs  # //! Credit-based backpressure flow contr
@@ -367,14 +367,14 @@ Then you you must read
     │   │   ├── lib.rs  # #![forbid(unsafe_code)]
     │   │   ├── pool.rs  # //! Bounded async queue, worker pool, an
     │   │   ├── queue.rs  # //! A priority queue with a fast path fo
-    │   │   ├── reserve.rs  # //! Available primitive: RAII permit on
-    │   │   ├── router.rs  # //! A partitioned router that distribute
+    │   │   ├── retry.rs  # //! Retry/backoff drivers for concurrenc
     │   │   ├── runtime/
     │   │   │   ├── mod.rs  # //! Pluggable `Runtime` backends (produc
     │   │   │   ├── test.rs  # //! Test `Runtime` implementation with p
     │   │   │   └── tokio.rs  # //! Production `Runtime` implementation
     │   │   ├── scope.rs  # //! Structured concurrency via `Scope...
     │   │   ├── stream.rs  # //! Cooperative cancellation for long-li
+    │   │   ├── sync.rs  # //! Poison-safe locking for `std::sync`
     │   │   └── thread_resource.rs  # //! Per-thread lazy-initialized resource
     │   └── tests/
     │       ├── affinity.rs  # use super::*;
@@ -384,6 +384,8 @@ Then you you must read
     │       ├── feed_worker.rs  # use super::*;
     │       ├── flow.rs  # use super::*;
     │       ├── ladder.rs  # use super::*;
+    │       ├── m-affinity-purity.rs  # //! `effective_priority` purity + priori
+    │       ├── m-credit-pool-race.rs  # //! Submit/drain race coverage: concurre
     │       ├── m1.rs  # use super::*;
     │       ├── m2.rs  # use super::*;
     │       ├── m3.rs  # use super::*;
@@ -391,17 +393,17 @@ Then you you must read
     │       ├── m5.rs  # // Exercises the capability-gated I/O en
     │       ├── mod.rs  # use std::sync::atomic::{AtomicUsize, Ord
     │       ├── pool.rs  # use super::*;
-    │       ├── reserve.rs  # use super::*;
+    │       ├── retry_reexport.rs  # //! The `crate::retry` surface is the si
     │       ├── stream.rs  # use super::*;
     │       └── thread_resource.rs  # use super::*;
     ├── fluent-onnx/
     │   ├── Cargo.toml
     │   ├── src/
-    │   │   ├── align.rs  # //! LFM ↔ spacy-rs token alignment ...
-    │   │   ├── annotate.rs  # //! The trained-encoder annotation rung
+    │   │   ├── align.rs  # //! LFM ↔ spacy-rs token alignment.
+    │   │   ├── annotate.rs  # //! The trained-encoder annotation rung.
     │   │   ├── colbert.rs  # //! ColBERT late-interaction retrieve...
     │   │   ├── config.rs  # //! ONNX model configuration schema ...
-    │   │   ├── context.rs  # //! The per-context KV surface (ROADMAP
+    │   │   ├── context.rs  # //! The per-context KV surface: `PastSta
     │   │   ├── context_pool.rs  # //! `OnnxContextPool` — the onnx ha...
     │   │   ├── encoder.rs  # //! `OrtEncoder` — the base Encoder...
     │   │   ├── error.rs  # //! Error type for `fluent-onnx` — ...
@@ -410,7 +412,7 @@ Then you you must read
     │   │   ├── llm.rs  # //! The generative `CausalLm` decoder...
     │   │   ├── ort_loader.rs  # //! Real session loader backed by ONNX R
     │   │   ├── overlay.rs  # //! Overlay data types and the `Residual
-    │   │   ├── pii.rs  # //! PII detection (ROADMAP_20260827_ORT
+    │   │   ├── pii.rs  # //! PII detection: the BILUO decode, the
     │   │   ├── session.rs  # //! ONNX session registry — re-expo...
     │   │   ├── tokenizer.rs  # //! LFM tokenizer wrapper — the fir...
     │   │   └── two_tower.rs  # //! Two-tower zero-shot worker: the shar
@@ -439,7 +441,7 @@ Then you you must read
     │       ├── pii.rs  # use super::*;
     │       ├── session.rs  # #[cfg(feature = "onnx")]
     │       ├── tokenizer.rs  # use super::*;
-    │       └── two_tower.rs  # use super::*;
+    │       └── two_tower.rs  # // Exact asserts on stub similarity outp
     ├── fluent-wvr/
     │   ├── Cargo.toml
     │   ├── src/
@@ -454,7 +456,7 @@ Then you you must read
     │   │   ├── runtime.rs  # use std::future::Future;
     │   │   ├── store.rs  # //! Typed in-process handoff accumulator
     │   │   ├── test_support.rs  # //! Crate-local test support for fluent-
-    │   │   ├── tests.rs  # use crate::*;
+    │   │   ├── tests.rs  # use crate::test_support::TestComponent;
     │   │   ├── traits.rs  # use std::any::Any;
     │   │   ├── work.rs  # use std::collections::HashMap;
     │   │   └── wrapper.rs  # use std::collections::HashMap;
@@ -516,7 +518,7 @@ Then you you must read
     │   │   │   ├── ingest.rs  # //! P1 minimal ingestion: whole-file fra
     │   │   │   ├── lemma_backend.rs  # //! Lemma backend: query lemmas looked u
     │   │   │   ├── llm_filter.rs  # use common_core::string::contains_ignore
-    │   │   │   ├── llm_filter_batch.rs  # use super::llm_filter::{LlmFilterBackend
+    │   │   │   ├── llm_filter_batch.rs  # //! Chunked synchronous scoring over one
     │   │   │   ├── mod.rs  # pub mod db_storage;
     │   │   │   ├── recall.rs  # //! Hybrid recall pipeline: plan validat
     │   │   │   ├── rg_backend.rs  # //! L0 minimal: capability-gated managed
@@ -530,6 +532,8 @@ Then you you must read
     │   │   ├── runtime.rs  # use std::path::PathBuf;
     │   │   ├── scanner.rs  # use common_core::string::{contains_any,
     │   │   ├── scheduler.rs  # //! P3 reconcile job queue: the coalesci
+    │   │   ├── search_constants.rs  # //! Tested search/index constants (P0 co
+    │   │   ├── search_types.rs  # //! Search value types + pure search hel
     │   │   ├── selection.rs  # //! P2 file selection: `FileSelection` (
     │   │   ├── sync/
     │   │   │   ├── comments.rs  # use std::path::Path;
@@ -541,9 +545,7 @@ Then you you must read
     │   │   ├── tests/
     │   │   │   ├── common.rs  # //! Crate-typed test fixtures shared by
     │   │   │   └── mod.rs  # //! Tier-1 test suites for guidance-core
-    │   │   ├── watcher.rs  # //! P3 file watcher (port of zvec-grep `
-    │   │   ├── zg_constants.rs
-    │   │   └── zg_types.rs
+    │   │   └── watcher.rs  # //! P3 file watcher (port of zvec-grep `
     │   └── tests/
     │       ├── change_set.rs  # //! P3 `change_set` tests (port of zvec-
     │       ├── common/
@@ -565,6 +567,10 @@ Then you you must read
     │       │   ├── README.md  # # guidance-core — Live-AI tests
     │       │   └── smoke_live.rs  # //! Opt-in live-AI smoke test for the gu
     │       ├── live.rs  # //! Live-AI integration test crate for g
+    │       ├── parity/
+    │       │   ├── corpus_cjk.rs  # //! CJK-heavy fixture corpus (Gate 0 ...
+    │       │   └── mod.rs  # //! P0 fixture corpora for legacy parity
+    │       ├── query_db_storage.rs  # //! Row-translator characterization (inc
     │       ├── query_fts_backend.rs  # use super::*;
     │       ├── query_fusion.rs  # use super::*;
     │       ├── query_glob.rs  # use super::*;
@@ -576,12 +582,9 @@ Then you you must read
     │       ├── query_structure_enrich.rs  # //! Ported `structure-enrichment.test.
     │       ├── query_vector_backend.rs  # use super::*;
     │       ├── scheduler.rs  # //! P3 scheduler tests: the coalescing c
-    │       ├── watcher.rs  # //! P3 watcher tests (port of zvec-grep
-    │       ├── zg_constants.rs
-    │       ├── zg_parity/
-    │       │   ├── corpus_cjk.rs
-    │       │   └── mod.rs
-    │       └── zg_types.rs
+    │       ├── search_constants.rs  # use super::*;
+    │       ├── search_types.rs  # use super::*;
+    │       └── watcher.rs  # //! P3 watcher tests (port of zvec-grep
     ├── knowledge/
     │   ├── Cargo.toml
     │   ├── src/
@@ -613,7 +616,7 @@ Then you you must read
     │   │   ├── catalog.rs  # //! Pinned embedding-model catalog: the
     │   │   ├── client.rs  # use std::sync::Arc;
     │   │   ├── constants.rs  # //! LLM-domain constants — the sing...
-    │   │   ├── context_packer.rs  # use crate::ChatMessage;
+    │   │   ├── context_packer.rs  # use crate::tokens::{estimate_tokens, Tok
     │   │   ├── decomposer.rs  # use bon::Builder;
     │   │   ├── embeddings.rs  # use std::num::NonZeroUsize;
     │   │   ├── embeddings_cache.rs  # //! Embedding-cache DDL — the singl...
@@ -638,7 +641,7 @@ Then you you must read
     │   │   ├── telemetry.rs  # //! LLM telemetry vocabulary + structure
     │   │   ├── testutil.rs  # //! Shared hermetic doubles for inferenc
     │   │   ├── thinking.rs  # //! Think-block stripping — the sin...
-    │   │   ├── tokens.rs  # //! Token budgets — the single owne...
+    │   │   ├── tokens.rs  # //! Token budgets — the single owner.
     │   │   └── url.rs  # use thiserror::Error;
     │   └── tests/
     │       ├── anonymize.rs  # use super::*;
@@ -646,15 +649,16 @@ Then you you must read
     │       ├── artifact.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── artifact_lock.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── backend.rs  # //! Backend plugin layer tests: registry
-    │       ├── cache.rs  # //! ROADMAP_20260903_LLM M4.
-    │       ├── calibration.rs  # //! ROADMAP_20260903_LLM M10 — cali...
+    │       ├── cache.rs  # //! LLM response-cache goldens.
+    │       ├── calibration.rs  # //! Calibration gate (tests + measuremen
     │       ├── catalog.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── client.rs  # use super::*;
-    │       ├── constants.rs  # //! ROADMAP_20260903_LLM M6.
+    │       ├── constants.rs  # //! LLM constants goldens.
     │       ├── context_packer.rs  # use super::*;
     │       ├── decomposer.rs  # use super::*;
+    │       ├── embed_cache.rs  # //! `CachedEmbeddingProvider` behavior:
     │       ├── embeddings.rs  # use super::*;
-    │       ├── embeddings_cache.rs  # //! ROADMAP_20260903_LLM M5.
+    │       ├── embeddings_cache.rs  # //! Embedding-cache DDL goldens (moved,
     │       ├── error.rs  # use super::*;
     │       ├── factory.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── gguf.rs  # //! Ported from zvec-grep `test/unit/mod
@@ -667,22 +671,22 @@ Then you you must read
     │       │   └── smoke_live.rs  # //! Opt-in live-AI smoke test for the fl
     │       ├── live.rs  # //! Live-AI integration test crate for f
     │       ├── llm_queue.rs  # use super::*;
-    │       ├── no_domain_imports.rs  # //! ROADMAP_20260903_LLM M0.
+    │       ├── no_domain_imports.rs  # //! No-domain-imports guard.
     │       ├── onnx_config.rs  # use super::*;
     │       ├── onnx_session.rs  # use super::*;
-    │       ├── openai.rs  # //! ROADMAP_20260903_LLM M7.
+    │       ├── openai.rs  # //! OpenAI envelope goldens.
     │       ├── parse.rs  # use super::*;
     │       ├── pii.rs  # use super::*;
     │       ├── pii_patterns.rs  # use super::*;
-    │       ├── protocol_parity.rs  # //! ROADMAP_20260903_LLM M9.
+    │       ├── protocol_parity.rs  # //! Protocol-ownership parity.
     │       ├── qwen.rs  # //! Ported from zvec-grep `test/unit/mod
     │       ├── resolution.rs  # //! Ported from zvec-grep `resolution.
     │       ├── runtime.rs  # use super::*;
-    │       ├── sse.rs  # //! ROADMAP_20260903_LLM M2.
-    │       ├── telemetry.rs  # //! ROADMAP_20260903_LLM M8.
+    │       ├── sse.rs  # //! SSE framing goldens.
+    │       ├── telemetry.rs  # //! LLM telemetry-vocabulary goldens.
     │       ├── testutil.rs  # //! Shared stub-backend contract: route-
-    │       ├── thinking.rs  # //! ROADMAP_20260903_LLM M1.
-    │       ├── tokens.rs  # //! ROADMAP_20260903_LLM M3.
+    │       ├── thinking.rs  # //! Think-block stripping goldens.
+    │       ├── tokens.rs  # //! Token-budget goldens.
     │       └── url.rs  # use super::*;
     ├── memory-plugin/
     │   ├── Cargo.toml
@@ -713,16 +717,25 @@ Then you you must read
     │   │   ├── lib.rs  # //! guidance-ontology: Entity extraction
     │   │   ├── mapper.rs  # use std::collections::HashMap;
     │   │   ├── migration.rs  # #[derive(Debug, Clone)]
+    │   │   ├── normalize.rs  # //! Single source for YaGO name normaliz
     │   │   ├── plausibility.rs  # //! Taxonomy plausibility scoring —...
+    │   │   ├── taxonomy.rs  # //! YaGO TTL → JSON taxonomy pipeli...
+    │   │   ├── turtle.rs  # //! The one Turtle `rdfs:subClassOf` rea
     │   │   ├── yago.rs  # pub const NS_YAGO: &str = "http://yago-k
     │   │   ├── yago_loader.rs  # //! The YaGO taxonomy loader (ROADMAP...
     │   │   └── yago_view.rs  # //! YagoView — runtime file, safe `...
     │   └── tests/
     │       ├── entity.rs  # use super::*;
+    │       ├── fixtures/
+    │       │   └── yago_mini.ttl
     │       ├── inference.rs  # use super::*;
+    │       ├── inference_equiv.rs  # //! Equivalence coverage for the subclas
+    │       ├── loader.rs  # //! `YaGoLoader` behavior: duplicate-IRI
     │       ├── mapper.rs  # use super::*;
     │       ├── migration.rs  # use super::*;
+    │       ├── normalize.rs  # use super::*;
     │       ├── plausibility.rs  # //! Moved with the scoring (M5.
+    │       ├── taxonomy.rs  # //! Parity with the deprecated `src/onto
     │       ├── yago.rs  # use super::*;
     │       ├── yago_interlingua.rs  # //! ROADMAP M11.8 — the YaGO taxono...
     │       ├── yago_loader.rs  # use super::*;
@@ -743,6 +756,9 @@ Then you you must read
     ├── requirements.txt
     ├── router/
     │   ├── Cargo.toml
+    │   ├── benches/
+    │   │   ├── stage_dispatch.rs  # //! Pipeline stage dispatch throughput:
+    │   │   └── tree.rs  # //! Classification-tree evaluation cost:
     │   ├── src/
     │   │   ├── audit.rs  # //! Canonical durable-audit surface for
     │   │   ├── charts/
@@ -769,6 +785,7 @@ Then you you must read
     │   │   │   ├── addr.rs  # //! Address parsing, host equivalence, a
     │   │   │   ├── builder.rs  # //! Pipeline builder - constructs pipeli
     │   │   │   ├── classification.rs  # //! Classification-tree configuration
+    │   │   │   ├── compiled_tree.rs  # //! Precompiled classification tree.
     │   │   │   ├── escalation.rs  # //! Escalation-ladder configuration
     │   │   │   ├── filters.rs  # //! Filter types and reject patterns for
     │   │   │   ├── ledger_group.rs  # //! LedgerGroupConfig (M8).
@@ -777,7 +794,8 @@ Then you you must read
     │   │   │   ├── rounds.rs  # use serde::{Deserialize, Deserializer, S
     │   │   │   ├── routing.rs  # //! Route resolution and routing configu
     │   │   │   ├── runtime.rs  # //! RuntimeConfig (M8).
-    │   │   │   └── serving.rs  # //! ServingConfig sub-config (M8) —...
+    │   │   │   ├── serving.rs  # //! ServingConfig sub-config (M8) —...
+    │   │   │   └── tree_reload.rs  # //! Runtime classification-tree regenera
     │   │   ├── config.rs  # //! Router configuration types - deseria
     │   │   ├── dag_session.rs  # //! Dependency-aware session with DAG st
     │   │   ├── dispatch/
@@ -810,17 +828,18 @@ Then you you must read
     │   │   ├── ledger/
     │   │   │   ├── annotations.rs  # //! `AnnotationStore` — the ledger'...
     │   │   │   ├── correction_index.rs  # //! The router's [`CorrectionIndex`] ove
+    │   │   │   ├── entity_promotion.rs  # //! Parse-time entity promotion (M16): t
     │   │   │   ├── frame_index.rs  # //! Frame resolution — the router's...
     │   │   │   ├── nlp.rs  # //! Ledger writer for the NLP parse (roa
     │   │   │   ├── node_annotation.rs  # //! `NodeAnnotation` — the fully-ma...
     │   │   │   ├── orchestrator.rs  # //! `LedgerAgentCoordinator` — the ...
-    │   │   │   ├── overlay.rs  # //! The overlay/candidate plane (ROADMAP
+    │   │   │   ├── overlay.rs  # //! The overlay/candidate plane.
     │   │   │   ├── overlay_acceptance.rs  # //! ArcReady overlay acceptance suite (O
     │   │   │   ├── overlay_worker.rs  # //! `OverlayWorker` — continuous ba...
     │   │   │   ├── prompt.rs  # //! `LedgerPromptAssembler` — the p...
     │   │   │   ├── span_cache.rs  # //! Span-level detail cache as a **read-
     │   │   │   ├── tiering.rs  # //! `LedgerTierWorker` — continuous...
-    │   │   │   ├── workflow.rs  # // M12 stub
+    │   │   │   ├── workflow_replay.rs  # //! Workflow replay loop (M14a): record
     │   │   │   └── workflow_store.rs  # //! Workflow extraction store (M8) ...
     │   │   ├── ledger.rs  # //! Full-detail content ledger with LOD
     │   │   ├── ledger_guard.rs  # //! Irreversible write-path scrubber for
@@ -829,10 +848,10 @@ Then you you must read
     │   │   ├── metrics.rs  # //! Failure classification for the route
     │   │   ├── node_store.rs  # //! ContentNodeStore — the shared, ...
     │   │   ├── normalize.rs  # //! Request and response normalizatio...
-    │   │   ├── ort.rs  # //! Ort ONNX registry composition (ROADM
+    │   │   ├── ort.rs  # //! Ort ONNX registry composition.
     │   │   ├── overlay/
-    │   │   │   └── canonical.rs  # //! The versioned canonical-form table (
-    │   │   ├── overlay.rs  # //! Pure overlay-plane data (ROADMAP_202
+    │   │   │   └── canonical.rs  # //! The versioned canonical-form table.
+    │   │   ├── overlay.rs  # //! Pure overlay-plane data.
     │   │   ├── pipeline.rs  # //! Pipeline orchestrator — sequenc...
     │   │   ├── pipeline_types.rs  # //! Pipeline decision types — struc...
     │   │   ├── ranking.rs  # //! Deterministic salience prefilter + m
@@ -847,18 +866,19 @@ Then you you must read
     │   │   ├── score_matrix.rs  # //! Router-local `String` specialization
     │   │   ├── server/
     │   │   │   ├── admin.rs  # //! Admin endpoints for the CLI (`coral-
-    │   │   │   ├── cors.rs  # //! CORS headers — the single owner...
+    │   │   │   ├── cors.rs  # //! CORS headers — the single owner.
     │   │   │   ├── dispatch.rs  # use std::collections::HashMap;
     │   │   │   ├── entity_link.rs  # //! The async entity-link overlay worker
     │   │   │   ├── handler.rs  # use std::collections::HashMap;
     │   │   │   ├── instances_api.rs  # //! Public `/instances` management API f
     │   │   │   ├── responses.rs  # use std::sync::atomic::AtomicU64;
-    │   │   │   └── review.rs  # //! The async review worker (ROADMAP ...
+    │   │   │   └── review.rs  # //! The async review worker.
     │   │   ├── server.rs  # //! HTTP server exposing the router pipe
     │   │   ├── session.rs  # //! Session context node schema — b...
     │   │   ├── stages/
     │   │   │   ├── classifier/
-    │   │   │   │   └── action.rs  # //! ClassifierAction — typed dispat...
+    │   │   │   │   ├── action.rs  # //! ClassifierAction — typed dispat...
+    │   │   │   │   └── prompt.rs  # //! Prompt fragments shared by the flat
     │   │   │   ├── classifier.rs  # //! Stage 2: ClassifierStage — sing...
     │   │   │   ├── common.rs  # //! Shared helpers for pipeline stages.
     │   │   │   ├── deterministic.rs  # use std::collections::HashMap;
@@ -884,7 +904,7 @@ Then you you must read
     │   │   ├── test_stubs.rs  # use std::collections::VecDeque;
     │   │   ├── test_support.rs  # //! Shared test logging capture.
     │   │   ├── testing/
-    │   │   │   ├── calibration.rs  # //! Calibration control-group helpers (R
+    │   │   │   ├── calibration.rs  # //! Calibration control-group helpers.
     │   │   │   ├── fixtures/
     │   │   │   │   └── ledger_lod.json
     │   │   │   ├── ledger_golden.rs  # //! Golden ledger LOD snapshot (M4).
@@ -916,31 +936,43 @@ Then you you must read
     │       ├── charts_select.rs  # // Tests compare reordered HNSW/reranker
     │       ├── charts_stage.rs  # use super::*;
     │       ├── charts_store.rs  # use super::*;
-    │       ├── cli_commands_mod.rs  # use super::*;
-    │       ├── cli_gguf.rs  # use super::*;
+    │       ├── cli_commands_mod.rs  # use super::server::{model_weights_bytes,
+    │       ├── cli_gguf.rs  # // Exact asserts on integer-valued snaps
     │       ├── cli_preset.rs  # use super::*;
     │       ├── common.rs  # //! Crate-typed HTTP test fixtures share
     │       ├── concept_store_sqlite.rs  # use super::*;
     │       ├── config_addr.rs  # use super::*;
+    │       ├── config_boot_gate.rs  # use super::*;
     │       ├── config_builder.rs  # use super::*;
-    │       ├── config_classification.rs  # use super::*;
+    │       ├── config_classification.rs  # // Tests assert float threshold values a
     │       ├── config_escalation.rs  # use super::*;
     │       ├── config_filters.rs  # use super::*;
     │       ├── config_refine_policy.rs  # use super::*;
     │       ├── config_root.rs  # // Tests assert float config values agai
     │       ├── config_route_tests.rs  # //! Config-synced routing integration te
     │       ├── config_routing.rs  # use super::*;
+    │       ├── coordinator_gate.rs  # use super::*;
     │       ├── dag_session.rs  # use super::*;
     │       ├── data/
+    │       │   ├── boot_invalid_group.json
+    │       │   ├── boot_invalid_member.json
+    │       │   ├── boot_invalid_role.json
+    │       │   ├── boot_valid.json
+    │       │   ├── coherence_safety_reject_corpus.json
+    │       │   ├── config_overhaul_sketch.json
+    │       │   ├── config_roles_split_fixture.json
+    │       │   ├── ls_fixture.json
     │       │   ├── residency_engine_fleet_aggregate.json
     │       │   ├── residency_engine_fleet_models.json
     │       │   ├── residency_engine_pool_aggregate.json
     │       │   ├── residency_engine_pool_models.json
     │       │   ├── routing_fallback_corpus.json
     │       │   ├── routing_fallback_report.json
+    │       │   ├── routing_role_fixture.json
     │       │   ├── routing_role_golden.json
     │       │   ├── routing_sentinel_corpus.json
-    │       │   └── routing_sentinel_report.json
+    │       │   ├── routing_sentinel_report.json
+    │       │   └── target_match_ladder_corpus.json
     │       ├── deprecated_baseline.rs  # //! Baseline characterization for the de
     │       ├── dispatch_backend.rs  # use super::*;
     │       ├── dispatch_escalation_mod.rs  # use super::*;
@@ -953,14 +985,16 @@ Then you you must read
     │       ├── frontier_modes.rs  # use super::*;
     │       ├── golden.rs  # //! Golden test set for the router pipel
     │       ├── instances_manager.rs  # use super::*;
-    │       ├── instances_mod.rs  # use super::stub::StubServer;
+    │       ├── instances_mod.rs  # use super::stub::{StubHandler, StubServe
     │       ├── instances_traits.rs  # use super::*;
     │       ├── knowledge.rs  # use super::*;
     │       ├── kv_cache.rs  # use super::*;
     │       ├── ledger.rs  # use super::*;
     │       ├── ledger_annotations.rs  # use super::*;
     │       ├── ledger_correction_index.rs  # use super::*;
+    │       ├── ledger_entity_promotion.rs  # //! End-to-end control-group tests for p
     │       ├── ledger_frame_index.rs  # use super::*;
+    │       ├── ledger_frame_index_cal.rs  # use super::*;
     │       ├── ledger_guard.rs  # use super::*;
     │       ├── ledger_guard_golden.rs  # use crate::test_support::capture_logs;
     │       ├── ledger_nlp.rs  # use super::*;
@@ -984,16 +1018,16 @@ Then you you must read
     │       ├── node_store.rs  # use super::*;
     │       ├── normalize.rs  # use super::*;
     │       ├── ort.rs  # use super::*;
-    │       ├── overlay_calibration.rs  # use crate::config::builder::{
+    │       ├── overlay_calibration.rs  # // Exact asserts on measured overlay num
     │       ├── overlay_canonical.rs  # use super::*;
     │       ├── pipeline.rs  # use super::*;
     │       ├── pipeline_types.rs  # use super::*;
     │       ├── qualified_model_id_roundtrip.rs  # use super::*;
-    │       ├── ranking.rs  # use super::*;
+    │       ├── ranking.rs  # // Exact asserts on ranking scores are d
     │       ├── residency_engine_golden.rs  # //! Aggregation-envelope goldens for the
     │       ├── retrieval.rs  # use super::*;
     │       ├── routes_plan.rs  # use super::*;
-    │       ├── routes_rigor_mod.rs  # use super::*;
+    │       ├── routes_rigor_mod.rs  # // Exact asserts on calibrated round/lad
     │       ├── routing_context.rs  # use super::*;
     │       ├── routing_fallback_golden.rs  # //! Routing-fallback calibration corpus.
     │       ├── routing_role_golden.rs  # //! Role-first resolved-target golden.
@@ -1001,6 +1035,7 @@ Then you you must read
     │       ├── rubric_fixtures.rs  # //! Rubric-based test fixtures for `Resu
     │       ├── score_matrix.rs  # use super::*;
     │       ├── score_matrix_golden.rs  # use super::*;
+    │       ├── seam_adapter.rs  # //! The single `ChatBackend` → fetc...
     │       ├── server_admin.rs  # use std::sync::Arc;
     │       ├── server_dispatch.rs  # use super::*;
     │       ├── server_entity_link.rs  # use super::*;
@@ -1009,8 +1044,9 @@ Then you you must read
     │       ├── server_responses.rs  # use super::*;
     │       ├── server_review.rs  # use super::*;
     │       ├── server_tests.rs  # #[cfg(test)]
+    │       ├── stage_context.rs  # use super::*;
     │       ├── stage_tests.rs  # #[cfg(test)]
-    │       ├── stages_classifier.rs  # use super::*;
+    │       ├── stages_classifier.rs  # // Exact asserts on parsed classifier sc
     │       ├── stages_classifier_action.rs  # use super::*;
     │       ├── stages_common.rs  # use super::*;
     │       ├── stages_nlp.rs  # use super::*;
@@ -1019,21 +1055,27 @@ Then you you must read
     │       ├── stages_retry_classifier.rs  # use super::*;
     │       ├── stages_tree_mod.rs  # use std::collections::HashMap;
     │       ├── streaming.rs  # use super::*;
-    │       ├── summarization.rs  # use super::*;
+    │       ├── summarization.rs  # // Exact asserts on parsed scorer output
     │       ├── supervisor.rs  # use super::*;
     │       ├── supervisor_adopt.rs  # //! Orphan-adoption tests: argv parsing,
     │       ├── supervisor_integration_tests.rs  # //! End-to-end supervisor + sidecar inte
     │       ├── target_match.rs  # use std::collections::HashMap;
+    │       ├── target_match_order.rs  # use std::collections::HashMap;
     │       ├── telemetry.rs  # use super::*;
     │       ├── testing_calibration.rs  # use super::*;
-    │       ├── threshold_calibration.rs  # /// Calibration suite: stub goldens (M7b
+    │       ├── threshold_calibration.rs  # //! Calibration suite: stub goldens (M7b
     │       ├── transforms_codeword_anonymize.rs  # use super::*;
     │       ├── transforms_sanitize.rs  # use super::*;
     │       ├── transforms_secret_mask.rs  # use super::*;
     │       ├── transforms_tests.rs  # #[cfg(test)]
+    │       ├── tree_compiled.rs  # //! Equivalence corpus for the precompil
+    │       ├── tree_reload.rs  # use super::*;
     │       ├── types.rs  # use super::*;
     │       ├── vector_index.rs  # use super::*;
-    │       └── views.rs  # use super::*;
+    │       ├── views.rs  # use super::*;
+    │       ├── workflow_replay.rs  # use super::*;
+    │       ├── workflow_replay_cal.rs  # use crate::ledger::workflow_replay::{
+    │       └── workflow_store_cal.rs  # //! Calibration of the workflow **write*
     ├── search-vector/
     │   ├── Cargo.toml
     │   ├── benches/
@@ -1041,11 +1083,15 @@ Then you you must read
     │   ├── src/
     │   │   ├── aliases.rs  # use std::collections::HashMap;
     │   │   ├── db.rs  # use std::collections::HashMap;
-    │   │   └── lib.rs  # #![forbid(unsafe_code)]
+    │   │   ├── fusion.rs  # //! Score fusion: RRF kernel surface, bo
+    │   │   ├── lib.rs  # #![forbid(unsafe_code)]
+    │   │   ├── math.rs  # //! Scalar vector-search kernels for `se
+    │   │   └── tokens.rs  # //! Token helpers for the search pipelin
     │   └── tests/
     │       ├── error_hops.rs  # //! Error-hop tests (M7): every `rusqlit
     │       ├── file_status.rs  # //! P2 file-status tests: `replace_file`
     │       ├── fragments.rs  # use super::*;
+    │       ├── fusion.rs  # //! M6.2 unit pins for `search_vector::f
     │       ├── graph_edges.rs  # use super::*;
     │       └── node_sync.rs  # //! Node-sync change-gate goldens: `sync
     ├── spacy-rs/
@@ -1059,10 +1105,11 @@ Then you you must read
     │   │   ├── attrs.rs  # //! The attribute-id space and the `get_
     │   │   ├── cache.rs  # //! Span-level detail cache for refiner
     │   │   ├── doc.rs  # //! The doc model: contiguous `TokenReco
+    │   │   ├── entity_gate.rs  # //! Two-gate promotion for entity-link c
     │   │   ├── error.rs  # //! Error taxonomy for the spaCy core.
     │   │   ├── frame.rs  # //! Frame extraction — spacy-rs as ...
     │   │   ├── hash.rs  # //! spaCy-compatible hashing: MurmurHash
-    │   │   ├── interlingua.rs  # //! The pure hash→ID bridge (ROADMA...
+    │   │   ├── interlingua.rs  # //! The pure hash→ID bridge.
     │   │   ├── labels.rs  # //! The closed label vocabularies —...
     │   │   ├── lang/
     │   │   │   ├── en/
@@ -1073,7 +1120,7 @@ Then you you must read
     │   │   │   │   ├── stop_words.rs  # // @generated by src/spacy-rs/tools/gen_
     │   │   │   │   └── tag_map.rs  # // @generated by src/spacy-rs/tools/gen_
     │   │   │   ├── en.rs  # //! English language data — the por...
-    │   │   │   ├── genesis.rs  # //! Rule genesis for POS/NER (ROADMAP_20
+    │   │   │   ├── genesis.rs  # //! Rule genesis for POS/NER.
     │   │   │   ├── mod.rs  # //! Language data: the deterministic inp
     │   │   │   ├── norm_exceptions.rs  # // @generated by src/spacy-rs/tools/gen_
     │   │   │   └── url.rs  # // @generated by src/spacy-rs/tools/gen_
@@ -1087,7 +1134,7 @@ Then you you must read
     │   │   ├── ortho.rs  # //! Tagger orthography: the string fragm
     │   │   ├── pipeline.rs  # //! The pipeline composition (walkthroug
     │   │   ├── retrieval.rs  # //! Pure lemma-grep helpers over a parse
-    │   │   ├── review.rs  # //! The async review mechanism (ROADMAP
+    │   │   ├── review.rs  # //! The async review mechanism.
     │   │   ├── routing.rs  # //! DEP-as-routing-signal extraction (wa
     │   │   ├── sentencizer.rs  # //! The deterministic, punctuation-rule
     │   │   ├── strings.rs  # //! Bidirectional string ↔ hash sto...
@@ -1111,6 +1158,8 @@ Then you you must read
     │   │   │   └── pipeline_eager_golden.json
     │   │   ├── doc.rs  # use super::*;
     │   │   ├── en_tokenization.rs  # //! Golden tokenization test: replays th
+    │   │   ├── entity_gate.rs  # use std::sync::Arc;
+    │   │   ├── entity_gate_cal.rs  # //! Calibration of `EntityStampGate.
     │   │   ├── frame.rs  # use super::*;
     │   │   ├── genesis.rs  # use super::*;
     │   │   ├── hash.rs  # use super::*;
@@ -1140,9 +1189,11 @@ Then you you must read
     │   │   ├── tag_map.rs  # use super::*;
     │   │   ├── taxonomy_blob.rs  # use super::*;
     │   │   ├── tokenizer.rs  # use super::*;
+    │   │   ├── tokenizer_snapshot.rs  # use super::*;
     │   │   ├── triple.rs  # use super::*;
     │   │   ├── validate.rs  # use super::*;
-    │   │   └── vocab.rs  # use super::*;
+    │   │   ├── vocab.rs  # use super::*;
+    │   │   └── yago_resolve.rs  # //! M5.1 pins for `YagoResolveStage`: na
     │   └── tools/
     │       ├── gen_en_exceptions.py  # #!/usr/bin/env python3
     │       ├── gen_en_lemma_data.py  # #!/usr/bin/env python3
@@ -1151,12 +1202,26 @@ Then you you must read
     │       └── gen_golden_corpus.py  # #!/usr/bin/env python3
     ├── types/
     │   ├── Cargo.toml
+    │   ├── src/
+    │   │   ├── file_kind.rs  # //! Canonical file-kind classification:
+    │   │   ├── instance_id.rs  # use internment::ArcIntern;
+    │   │   ├── interlingua.rs  # //! The disambiguated interlingua: a por
+    │   │   ├── knowledge.rs  # //! KnowledgeCapability — the cross...
+    │   │   ├── label_enum.rs  # //! Closed-vocabulary label enums: one t
+    │   │   ├── lib.rs  # //! fluent-types: Shared data types (Gui
+    │   │   ├── model_ref.rs  # //! Canonical model-reference parsing: t
+    │   │   └── provenance.rs  # //! Ledger annotation provenance — ...
+    │   └── tests/
+    │       ├── file_kind.rs  # //! `file_kind` unit pins: canonical ext
+    │       ├── label_enum.rs  # //! Macro unit tests for `fluent_types::
+    │       └── model_ref.rs  # //! `model_ref` unit pins: canonical `pr
+    ├── vector-math/
+    │   ├── Cargo.toml
     │   └── src/
-    │       ├── instance_id.rs  # use internment::ArcIntern;
-    │       ├── interlingua.rs  # //! The disambiguated interlingua: a por
-    │       ├── knowledge.rs  # //! KnowledgeCapability — the cross...
-    │       ├── lib.rs  # //! fluent-types: Shared data types (Gui
-    │       └── provenance.rs  # //! Ledger annotation provenance — ...
+    │       ├── lib.rs  # //! Scalar embedding-vector math — ...
+    │       └── tests/
+    │           ├── leaf.rs  # //! Dependency-leaf invariant: this crat
+    │           └── math.rs  # //! Contract tests for the scalar kernel
     └── wasm_ipc/
         ├── Cargo.toml
         └── src/

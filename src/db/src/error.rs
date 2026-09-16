@@ -36,6 +36,14 @@ pub enum DbError {
     /// The database schema version was not what a migration expected.
     #[error("invalid schema version: {0}")]
     InvalidSchemaVersion(u32),
+    /// An identifier (table/column name) failed validation before being
+    /// spliced into DDL — empty, or containing `"`, `;`, or a NUL byte.
+    #[error("invalid identifier: {0}")]
+    InvalidIdentifier(String),
+    /// An annotation write was attempted against an unstamped content hash
+    /// (no node version to key against).
+    #[error("unstamped content hash")]
+    UnstampedContent,
     /// Any other database-layer error.
     #[error("database error: {0}")]
     Other(String),

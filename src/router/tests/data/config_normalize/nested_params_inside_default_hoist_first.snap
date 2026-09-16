@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "default": {
+      "params": {
+        "batch_size": 512,
+        "top_k": 40
+      }
+    },
+    "spare": {
+      "params": {
+        "batch_size": 512,
+        "top_k": 40
+      }
+    }
+  }
+}

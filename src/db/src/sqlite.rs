@@ -14,6 +14,22 @@ use anndists::dist::DistCosine;
 use common_core::constants::HnswParams;
 use hnsw_rs::hnsw::Hnsw;
 
+use crate::error::DbError;
+
+/// Quote `id` as a SQL identifier, rejecting anything that could break out
+/// of the quoted token: empty strings, NUL bytes, embedded `"` (terminates
+/// the quote), and `;` (statement separator). Everything else is wrapped in
+/// double quotes — the check is a reject list rather than an allowlist, so
+/// legitimate future non-ASCII identifiers pass.
+pub fn quote_ident(id: &str) -> Result<String, DbError> {
+    if id.is_empty() || id.contains(['"', ';', '\0']) {
+        return Err(DbError::InvalidIdentifier(format!(
+            "identifier must be non-empty and free of quotes, semicolons, and NUL bytes: {id:?}"
+        )));
+    }
+    Ok(format!("\"{id}\""))
+}
+
 /// Open a connection to `path` with WAL journal mode and a busy timeout.
 ///
 /// `PRAGMA journal_mode=WAL` allows concurrent readers while one writer holds

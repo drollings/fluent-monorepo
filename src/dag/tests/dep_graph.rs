@@ -290,6 +290,54 @@ fn test_topo_sort_deterministic() {
     assert_eq!(order, vec!["a", "b", "c"]);
 }
 
+/// Determinism golden over a 12-node graph exercising every edge-derivation
+/// shape at once: duplicate providers for one asset (`data` and `fixture`
+/// both provide `"fixture"`), a repeated dependency entry (`build` lists
+/// `"gen"` twice, so it carries in-degree 2 from the same provider), a
+/// self-loop (`cache` provides what it depends on — skipped), an unresolved
+/// dependency (`audit` needs `"nowhere"`, provided by no node — edge
+/// skipped), and disjoint components (`idle`) that leave the subset when
+/// sorting from roots. The exact joined order strings are the contract:
+/// any change to in-degree seeding, adjacency building, or the Kahn loop
+/// that alters this output is a behavior change.
+fn golden_graph() -> DependencyGraph<&'static str> {
+    let mut g: DependencyGraph<&str> = DependencyGraph::new();
+    g.register(&"deploy", &["dist", "attest"], &[]).unwrap();
+    g.register(&"package", &["test"], &["dist"]).unwrap();
+    g.register(&"test", &["build", "fixture"], &["test"])
+        .unwrap();
+    g.register(&"build", &["gen", "gen"], &["build"]).unwrap();
+    g.register(&"gen", &["schema"], &["gen"]).unwrap();
+    g.register(&"schema", &[], &["schema"]).unwrap();
+    g.register(&"fixture", &["data"], &["fixture"]).unwrap();
+    g.register(&"data", &[], &["data", "fixture"]).unwrap();
+    g.register(&"attest", &["dist"], &["attest"]).unwrap();
+    g.register(&"audit", &["nowhere"], &["audit-out"]).unwrap();
+    g.register(&"cache", &["cache"], &["cache"]).unwrap();
+    g.register(&"idle", &[], &["idle-out"]).unwrap();
+    g
+}
+
+#[test]
+fn test_topo_sort_determinism_golden() {
+    let g = golden_graph();
+
+    let full = g.topo_sort().unwrap();
+    assert_eq!(
+        full.join("|"),
+        "audit|cache|data|fixture|idle|schema|gen|build|test|package|attest|deploy"
+    );
+
+    let from_deploy = g.topo_sort_from(&["deploy"]).unwrap();
+    assert_eq!(
+        from_deploy.join("|"),
+        "data|fixture|schema|gen|build|test|package|attest|deploy"
+    );
+
+    let from_idle = g.topo_sort_from(&["idle"]).unwrap();
+    assert_eq!(from_idle.join("|"), "idle");
+}
+
 #[test]
 fn test_default_is_empty() {
     let g: DependencyGraph<&str> = DependencyGraph::default();

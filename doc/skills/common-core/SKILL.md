@@ -17,7 +17,7 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 | BitSetDrift | `drift` | `src/common-core/src/drift.rs` |
 | Latency histograms / metrics (LatencyHistogram, bucket_counts, aggregate) | `metrics` | `src/common-core/src/metrics.rs` |
 | Poison-safe mutex locking (lock, lock_read, lock_write — PoisonError::into_inner) | `sync` | `src/common-core/src/sync.rs` |
-| SQLite open helpers + schemas (open_wal, make_hnsw, init_embedding_cache, is_unique_violation, in_clause) | `sqlite` | `src/common-core/src/sqlite.rs` (feature `sqlite`) |
+| SQLite open helpers + schemas (open_wal, make_hnsw, init_embedding_cache, is_unique_violation, in_clause) | `sqlite` | `src/db/src/sqlite.rs` (feature `sqlite`) — sqlite helpers are owned by `fluent-db`, not common-core (see `src/common-core/tests/sqlite.rs`) |
 | JSON-RPC / MCP stdio loop | `jsonrpc` | `src/common-core/src/jsonrpc.rs` |
 | Token budget helpers | `tokens` | `src/common-core/src/tokens.rs` |
 | Directory walk / file scan | `walk` | `src/common-core/src/walk.rs` |
@@ -33,7 +33,7 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 ```rust
 use common_core::prelude::*;        // 80% case — brings in hash, io, string, tokens
 use common_core::metrics::LatencyHistogram;  // explicit for metrics
-use common_core::sqlite::open_wal;           // feature-gated
+use fluent_db::sqlite::open_wal;             // feature-gated (fluent-db owns sqlite helpers)
 ```
 
 ## What NOT to put here

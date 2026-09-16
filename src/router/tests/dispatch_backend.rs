@@ -557,7 +557,7 @@ async fn complete_omits_auth_when_api_key_env_missing() {
     );
 
     if let Some(v) = old {
-        std::env::set_var("TEST_LLAMA_CPP_MISSING_KEY", v)
+        std::env::set_var("TEST_LLAMA_CPP_MISSING_KEY", v);
     }
 }
 

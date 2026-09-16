@@ -31,8 +31,8 @@ use fluent_db::vector::knn_brute_force;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::EmbeddingProvider;
 use fluent_types::{
-    AnnotationClaim, ClaimStatus, ContentNode, KnnHit, NodeId, OriginRole, OverlayKind,
-    OverlayStatus,
+    AnnotationClaim, ClaimStatus, ContentHash, ContentNode, KnnHit, NodeId, OriginRole,
+    OverlayKind, OverlayStatus,
 };
 use fluent_wvr::ArcIntern;
 use rusqlite::Connection;
@@ -661,10 +661,11 @@ impl ContentNodeStore {
                 };
                 let node_id = NodeId::from_int(id);
                 let mut node = node;
-                // Rows written before the `content_hash` field default to 0;
-                // stamp the hash from LOD0 so the annotation keying domain is
-                // correct even for rows written before the field existed.
-                node.content_hash = content_hash_of(
+                // Rows written before the `content_hash` field default to
+                // UNSTAMPED; stamp the hash from LOD0 so the annotation
+                // keying domain is correct even for rows written before the
+                // field existed.
+                node.content_hash = ContentHash::from_lod0(
                     node.lod
                         .get(LOD0_FULL_TEXT as usize)
                         .map(String::as_str)
@@ -1545,7 +1546,7 @@ pub(crate) fn new_node(
         id: Some(id),
         name: format!("{role}-msg-{}", id.as_int()).into(),
         source: "session".into(),
-        content_hash: 0,
+        content_hash: ContentHash::UNSTAMPED,
         lod: vec![
             content.to_string(),
             String::new(),
@@ -1603,15 +1604,6 @@ pub(crate) fn derive_label(role: &str, content: &str) -> String {
 }
 
 /// Guarantee LOD0 (full text) and LOD5 (label) are present on a node.
-/// The stable content hash for a node's LOD0 — `0` for empty content.
-fn content_hash_of(content: &str) -> u64 {
-    if content.is_empty() {
-        0
-    } else {
-        common_core::hash::fnv1a64(content.as_bytes())
-    }
-}
-
 fn ensure_lod_eager(node: &mut ContentNode) {
     while node.lod.len() < LOD5_LABEL as usize + 1 {
         node.lod.push(String::new());
@@ -1620,8 +1612,8 @@ fn ensure_lod_eager(node: &mut ContentNode) {
     // The content hash is the annotation keying domain: it tracks
     // LOD0 exactly, recomputed in this single write funnel so a mutation that
     // changes LOD0 changes the hash and thereby invalidates cached annotations
-    // — no staleness scheduler. Empty content maps to the stable `0` sentinel.
-    node.content_hash = content_hash_of(&content);
+    // — no staleness scheduler. Empty content maps to the unstamped sentinel.
+    node.content_hash = ContentHash::from_lod0(&content);
     if content.is_empty() {
         // Nothing to derive LOD0 from — nothing to do.
         return;

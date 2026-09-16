@@ -848,3 +848,45 @@ fn test_resolve_shared_dependency() {
     assert_eq!(plan.order[0], 0);
     assert_eq!(plan.order.len(), 4);
 }
+
+/// Determinism golden for the resolve→plan path over a 12-target registry
+/// exercising every edge-derivation shape at once: a contested capability
+/// with two providers (`cap3` is provided by both `alpha` and `delta`), a
+/// self-provided dependency bit (`delta` provides and depends on `cap3`/
+/// `cap5` — self-edges skipped), and a disjoint component (`juliet`, `kilo`,
+/// `lima`) that never enters the plan when seeding elsewhere. The exact
+/// joined order is the contract: any change to in-degree seeding, edge
+/// derivation, or the shared Kahn core that alters this output is a
+/// behavior change.
+#[test]
+fn test_plan_order_determinism_golden() {
+    let targets = vec![
+        crate::tests::common::target(0, "alpha", &[], &[0, 3], false),
+        crate::tests::common::target(1, "bravo", &[0], &[1], false),
+        crate::tests::common::target(2, "charlie", &[0, 3], &[2], false),
+        crate::tests::common::target(3, "delta", &[3, 5], &[3, 5], false),
+        crate::tests::common::target(4, "echo", &[3, 5], &[4], false),
+        crate::tests::common::target(5, "foxtrot", &[1, 2], &[6], false),
+        crate::tests::common::target(6, "golf", &[4], &[7], false),
+        crate::tests::common::target(7, "hotel", &[6, 7], &[8], false),
+        crate::tests::common::target(8, "india", &[8], &[9], false),
+        crate::tests::common::target(9, "juliet", &[], &[10], false),
+        crate::tests::common::target(10, "kilo", &[10], &[11], false),
+        crate::tests::common::target(11, "lima", &[11], &[], false),
+    ];
+    let reg = make_registry(targets);
+    let resolver = DependencyResolver::new(&reg);
+
+    let plan = resolver.resolve(&["india"]).expect("golden resolve");
+    assert_eq!(plan.order, vec![0, 1, 3, 2, 4, 5, 6, 7, 8]);
+    assert_eq!(
+        plan.target_names.join("|"),
+        "alpha|bravo|delta|charlie|echo|foxtrot|golf|hotel|india"
+    );
+
+    // Seeding the disjoint component orders only that leg, with the same
+    // in-degree derivation over a different subset.
+    let lima_plan = resolver.resolve(&["lima"]).expect("lima resolve");
+    assert_eq!(lima_plan.order, vec![9, 10, 11]);
+    assert_eq!(lima_plan.target_names.join("|"), "juliet|kilo|lima");
+}

@@ -1,0 +1,19 @@
+{
+  "models": {
+    "absent": {
+      "endpoint": "http://x/v1/chat/completions",
+      "params": {
+        "temperature": 0.1
+      }
+    },
+    "default": {
+      "params": {
+        "temperature": 0.1
+      }
+    },
+    "nulled": {
+      "endpoint": "http://x/v1/chat/completions",
+      "params": null
+    }
+  }
+}

@@ -992,7 +992,7 @@ fn download_progress_reporter_aggregates_per_artifact_bytes() {
     let events: Arc<Mutex<Vec<EmbeddingProgress>>> = Arc::new(Mutex::new(Vec::new()));
     let hook = Arc::clone(&events);
     let reporter = DownloadProgressReporter::new("local/test-model", move |event| {
-        hook.lock().unwrap().push(event)
+        hook.lock().unwrap().push(event);
     });
     reporter.start();
     reporter.set_download_plan(&[

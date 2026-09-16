@@ -169,7 +169,7 @@ impl HolographicStore {
         // Migrate: add hrr_vector column if missing (idempotent)
         store
             .with_conn(|conn| {
-                fluent_db::migrate::ensure_column(conn, "facts", "hrr_vector", "hrr_vector BLOB")
+                fluent_db::migrate::ensure_column(conn, "facts", "hrr_vector", "BLOB")
             })
             .map_err(|e| MemoryError::InitFailed(format!("failed to migrate schema: {e}")))?;
 

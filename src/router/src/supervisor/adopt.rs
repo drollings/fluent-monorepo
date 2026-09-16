@@ -476,16 +476,13 @@ impl LlamaServerSupervisor {
         );
         replacement.mark_adopted(pid);
         self.servers.insert(key.to_string(), replacement);
-        self.adoptions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                key.to_string(),
-                AdoptionInfo {
-                    pid,
-                    instances_supported: identity.instances_supported,
-                },
-            );
+        common_core::sync::lock(&self.adoptions).insert(
+            key.to_string(),
+            AdoptionInfo {
+                pid,
+                instances_supported: identity.instances_supported,
+            },
+        );
     }
 
     /// The adoption record for a model, if it was adopted this boot and the
@@ -494,10 +491,7 @@ impl LlamaServerSupervisor {
     /// record is dropped and `None` is returned, so callers (instance-manager
     /// construction, residency) see the respawned server for what it is.
     pub fn adoption_info(&self, model_key: &str) -> Option<AdoptionInfo> {
-        let info = self
-            .adoptions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        let info = common_core::sync::lock(&self.adoptions)
             .get(model_key)
             .cloned()?;
         let live = self.server_for(model_key).and_then(|s| s.adopted_pid()) == Some(info.pid);
@@ -512,10 +506,7 @@ impl LlamaServerSupervisor {
     /// Clear one model's adoption record (after its orphan died or was
     /// unloaded and a fresh child takes over).
     pub(super) fn clear_adoption(&self, model_key: &str) {
-        self.adoptions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(model_key);
+        common_core::sync::lock(&self.adoptions).remove(model_key);
     }
 
     /// Persist the fleet map (`{model: {port, pid}}` for every running

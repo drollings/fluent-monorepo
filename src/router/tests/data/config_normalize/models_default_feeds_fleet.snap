@@ -1,0 +1,20 @@
+{
+  "models": {
+    "default": {
+      "params": {
+        "batch_size": 2048,
+        "num_ctx": 8192,
+        "temperature": 0.1
+      }
+    }
+  },
+  "roles": {
+    "default": {
+      "params": {
+        "batch_size": 2048,
+        "num_ctx": 8192,
+        "temperature": 0.1
+      }
+    }
+  }
+}

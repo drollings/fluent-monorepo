@@ -297,6 +297,7 @@ router-tree: ## Run config-synced routing tests against the tree config (M7; hon
 .PHONY: yago-load
 yago-load: ## Operator action: download the full YaGO 4.5 taxonomy and regenerate the embedded class registry (tools/download_yago_taxonomy.sh → src/ontology/data/yago_classes.json)
 	$(Q)tools/download_yago_taxonomy.sh
+	$(Q)if [ -f env/yago-taxonomy.ttl ]; then cargo run -q -p guidance-ontology --bin ysm1_encode -- env/yago-taxonomy.ttl env/yago-taxonomy.ysm1; fi
 
 .PHONY: review-test
 review-test: ## Run the async parse-review + interlingua suites: spacy-rs review types, the router review worker + /v1/sessions/{id}/review-parse endpoints, and the ontology loader/reconciliation

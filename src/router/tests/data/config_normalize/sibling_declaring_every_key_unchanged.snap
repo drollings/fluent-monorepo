@@ -1,0 +1,18 @@
+{
+  "models": {
+    "default": {
+      "intelligence": 1,
+      "params": {
+        "temperature": 0.1
+      }
+    },
+    "full": {
+      "endpoint": "http://x/v1/chat/completions",
+      "intelligence": 5,
+      "params": {
+        "temperature": 0.9,
+        "top_k": 10
+      }
+    }
+  }
+}

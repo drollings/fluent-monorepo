@@ -256,13 +256,25 @@ pub struct RouteHint {
 /// through the typed getters — no raw string-key traversal of the handoff
 /// vocabulary outside this type. The underlying `serde_json::Value` storage
 /// is unchanged, so the wire/serde shape of `StageDecision` is identical.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct StageMetadata(serde_json::Value);
+
+impl Default for StageMetadata {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
 impl StageMetadata {
     pub fn new(inner: serde_json::Value) -> Self {
         Self(inner)
+    }
+
+    /// An empty metadata object: the starting point every stage builds on
+    /// through the typed setters.
+    pub fn empty() -> Self {
+        Self(serde_json::Value::Object(Default::default()))
     }
 
     /// Borrow the underlying diagnostic fields (for logging/latency/verdict

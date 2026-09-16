@@ -1,0 +1,533 @@
+{
+  "charts": {
+    "dir": "env/workflows/charts",
+    "entity_context": true,
+    "index_path": "data/workflow_library.sqlite",
+    "max_candidates": 6,
+    "min_score": 0.6,
+    "selector_group": "default"
+  },
+  "classification": {
+    "root": {
+      "children": [
+        {
+          "description": "General Q&A, simple questions, chitchat, research queries, brainstorming, and help formulating prompts. Answered directly by the classifier when simple.",
+          "key": "local",
+          "node": {
+            "always_route": false,
+            "description": "General Q&A",
+            "group": "default",
+            "role": "quick",
+            "route": "local",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Programming, software development, Linux, bash, Python, Rust, dev-ops, debugging, and technical implementation - write, debug, or explain code.",
+          "key": "code",
+          "node": {
+            "always_route": true,
+            "description": "Code",
+            "group": "code",
+            "role": "reasoning",
+            "route": "code",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Summarize or condense text - an article, report, email thread, meeting notes, or other content, into a shorter form.",
+          "key": "summarize",
+          "node": {
+            "always_route": false,
+            "description": "Summarize",
+            "group": "summarize",
+            "role": "scratch",
+            "route": "summarize",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Search, navigate, look up, or pull a value - search the web, open a page, look up an API, query data storage or a knowledge graph, or extract a specific value (a date, amount, email, or identifier) from text.",
+          "key": "explore",
+          "node": {
+            "always_route": true,
+            "description": "Explore",
+            "group": "explore",
+            "role": "scratch",
+            "route": "explore",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "A deep answer - translate between languages, analyze or reason about a topic, identify named entities in text, or explain a concept from the sciences, mathematics, medicine, or law.",
+          "key": "reasoning",
+          "node": {
+            "always_route": true,
+            "description": "Explain",
+            "group": "reason",
+            "role": "reasoning",
+            "route": "reasoning",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Translate a text from one language into another.",
+          "key": "translate",
+          "node": {
+            "always_route": false,
+            "description": "Translate",
+            "group": "translate",
+            "role": "reasoning",
+            "route": "translate",
+            "type": "terminal"
+          }
+        },
+        {
+          "description": "Write a story, novel, poem, essay, screenplay, or letter - any substantial creative writing.",
+          "key": "prose",
+          "node": {
+            "always_route": true,
+            "description": "Prose",
+            "group": "prose",
+            "role": "scratch",
+            "route": "prose",
+            "type": "terminal"
+          }
+        }
+      ],
+      "coherence_threshold": 0.1,
+      "description": "Coral request router",
+      "model": "last",
+      "safety_threshold": 0.2,
+      "type": "classifier"
+    }
+  },
+  "default_route": "local",
+  "gguf_dir": "/app/ai/models/gguf",
+  "ledger": {
+    "group": "code",
+    "path": "data/ledger.sqlite"
+  },
+  "logging": {
+    "audit_log": {
+      "console_output": false,
+      "json_format": true,
+      "log_dir": "logs/audit",
+      "max_age_days": 90,
+      "max_file_size_mb": 50,
+      "max_files": 20
+    },
+    "console_output": true,
+    "json_format": false,
+    "log_dir": "logs",
+    "max_age_days": 3,
+    "max_file_size_mb": 10,
+    "max_files": 4
+  },
+  "model_groups": {
+    "code": [
+      "qwen3.5-9b",
+      "qwen3.8-27b"
+    ],
+    "default": [
+      "last",
+      "lfm2.5-2.6b",
+      "qwen3.5-9b"
+    ],
+    "explore": [
+      "lfm2.5-2.6b",
+      "qwen3.5-9b",
+      "last"
+    ],
+    "prose": [
+      "lfm2.5-2.6b",
+      "gemma4-12b",
+      "last"
+    ],
+    "reason": [
+      "qwen3.5-9b",
+      "qwen3.8-27b",
+      "last"
+    ],
+    "summarize": [
+      "last",
+      "qwen3.5-9b"
+    ],
+    "translate": [
+      "lfm2.5-2.6b",
+      "qwen3.8-27b",
+      "last"
+    ]
+  },
+  "models": {
+    "default": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 1,
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 8192,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.1,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 0,
+      "stream": true,
+      "tok_s": 20,
+      "total_timeout_ms": 30000
+    },
+    "gemma4-12b": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 4,
+      "name": "mradermacher/gemma-4-12b-styletune-i1",
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 8192,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.6,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 0,
+      "stream": true,
+      "tok_s": 60,
+      "total_timeout_ms": 30000,
+      "weights": "/app/ai/models/gguf/mradermacher/gemma-4-12b-styletune-i1-gguf/latest.gguf"
+    },
+    "lfm2.5-2.6b": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 2,
+      "name": "liquidai/lfm2.6-2.6b",
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 8192,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.1,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 0,
+      "stream": true,
+      "tok_s": 160,
+      "total_timeout_ms": 30000,
+      "weights": "/app/ai/models/gguf/liquidai/lfm2.5-2.6b-gguf/latest.gguf"
+    },
+    "lfm2.5-350m": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 1,
+      "name": "liquidai/lfm2.5-350m",
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 8192,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.1,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 0,
+      "stream": true,
+      "tok_s": 250,
+      "total_timeout_ms": 30000,
+      "weights": "/app/ai/models/gguf/liquidai/lfm2.5-350m-gguf/latest.gguf"
+    },
+    "qwen3.5-9b": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 10000,
+      "intelligence": 4,
+      "name": "qwen3.5-9b",
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 32768,
+        "repeat_penalty": 1.02,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.7,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 2,
+      "retry_count": 0,
+      "stream": true,
+      "tok_s": 50,
+      "total_timeout_ms": 30000,
+      "weights": "/app/ai/models/gguf/mannix-ita/jackod-9b-coder-mtp-gguf/latest.gguf"
+    },
+    "qwen3.6-27b": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 30000,
+      "intelligence": 5,
+      "name": "vinpix/ternary-bonsai-27b-stock-mtp",
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 32768,
+        "repeat_penalty": 1.03,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.7,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 5,
+      "retry_count": 1,
+      "roles": {
+        "quick": {
+          "params": {
+            "repeat_penalty": 1.02,
+            "temperature": 0.6
+          }
+        }
+      },
+      "stream": true,
+      "template": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/template.txt",
+      "tok_s": 35,
+      "total_timeout_ms": 300000,
+      "weights": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/latest.gguf"
+    },
+    "qwen3.8-27b": {
+      "cost_cached_read": 4e-7,
+      "cost_input": 1e-6,
+      "cost_output": 6e-6,
+      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "filter_thinking": true,
+      "idle_timeout_ms": 30000,
+      "intelligence": 6,
+      "name": "davidau/turbo-fable-cold-fusion",
+      "params": {
+        "batch_size": 2048,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0",
+        "filter_thinking": true,
+        "flash_attn": "on",
+        "max_ctx": 262144,
+        "n_cpu_moe": 0,
+        "n_gpu_layers": 999,
+        "num_ctx": 32768,
+        "repeat_penalty": 1.03,
+        "sleep_idle_seconds": 60,
+        "stream": true,
+        "temperature": 0.7,
+        "ubatch_size": 512
+      },
+      "retry_base_interval_s": 5,
+      "retry_count": 1,
+      "roles": {
+        "quick": {
+          "params": {
+            "repeat_penalty": 1.02,
+            "temperature": 0.6
+          }
+        }
+      },
+      "stream": true,
+      "template": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/template.txt",
+      "tok_s": 35,
+      "total_timeout_ms": 300000,
+      "weights": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/latest.gguf"
+    }
+  },
+  "pipelines": {
+    "default": {
+      "classifier": true,
+      "coherence_threshold": 0.2,
+      "deterministic_prefilter": true
+    }
+  },
+  "post_process": {
+    "workflow_extraction": false
+  },
+  "roles": {
+    "json": {
+      "context": {
+        "num_ctx": 16384,
+        "pinned": true
+      },
+      "params": {
+        "repeat_penalty": 1.0,
+        "temperature": 0.1
+      }
+    },
+    "ledger": {
+      "context": {
+        "num_ctx": 128000
+      },
+      "models": {
+        "qwen3.5-9b": {}
+      },
+      "params": {
+        "repeat_penalty": 1.01,
+        "sleep_idle_seconds": 7200,
+        "temperature": 0.1
+      }
+    },
+    "quick": {
+      "concurrency": {
+        "max_parallel": 2
+      },
+      "context": {
+        "num_ctx": 8192,
+        "pinned": true
+      },
+      "instances": {
+        "quick": {
+          "num_ctx": 8192,
+          "pinned": true
+        }
+      },
+      "models": {
+        "lfm2.5-2.6b": {},
+        "qwen3.5-9b": {},
+        "qwen3.8-27b": {}
+      },
+      "params": {
+        "repeat_penalty": 1.0,
+        "temperature": 0.6
+      }
+    },
+    "reasoning": {
+      "concurrency": {
+        "max_parallel": 1
+      },
+      "context": {
+        "num_ctx": 128000
+      },
+      "instances": {
+        "reasoning": {
+          "num_ctx": 128000
+        }
+      },
+      "models": {
+        "lfm2.5-2.6b": {},
+        "qwen3.5-9b": {},
+        "qwen3.8-27b": {}
+      },
+      "params": {
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "preserve_thinking": true,
+        "reasoning_budget_tokens": 4096,
+        "reasoning_effort": "high",
+        "repeat_penalty": 1.03,
+        "sleep_idle_seconds": 300,
+        "temperature": 0.7,
+        "top_p": 0.95
+      }
+    },
+    "scratch": {
+      "concurrency": {
+        "max_parallel": 1
+      },
+      "context": {
+        "num_ctx": 128000
+      },
+      "instances": {
+        "scratch": {
+          "num_ctx": 128000
+        }
+      },
+      "models": {
+        "gemma4-12b": {},
+        "lfm2.5-2.6b": {},
+        "qwen3.5-9b": {}
+      },
+      "params": {
+        "repeat_penalty": 1.03,
+        "sleep_idle_seconds": 60,
+        "temperature": 0.7,
+        "top_p": 0.95
+      }
+    }
+  },
+  "server": {
+    "bind_addr": "127.0.0.1:8079",
+    "max_payload": 1048576
+  },
+  "session": {
+    "root": "data/sessions"
+  },
+  "sidecar": {
+    "api_key_env": null,
+    "evict_batch": 1,
+    "minimum_remaining_vram": 1024000000,
+    "poll_interval_s": 5,
+    "resume_ttl_s": 3600,
+    "server_state_path": "data/server_state.json",
+    "slot_save_path": "/tmp/_coral-router/slots",
+    "snapshot_budget_bytes": 20480000000,
+    "snapshot_ttl_s": 604800,
+    "vram_low_watermark_bytes": 2048000000,
+    "vram_total_bytes": null
+  }
+}

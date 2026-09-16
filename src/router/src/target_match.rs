@@ -124,11 +124,19 @@ fn candidates_for_keys(routing: &RoutingConfig, keys: &[String]) -> Vec<TargetCa
 ///
 /// Sessions are unbounded over a server lifetime, so the map evicts the
 /// oldest-stamped entry past [`RECENCY_CAPACITY`] (scanned on insert only
-/// when full). A failed `Last` target falls through to the next rung via the
+/// when full). Recency is a monotonic sequence, not wall-clock time: two
+/// dispatches in the same wall-clock second previously tied, and the
+/// eviction scan could remove the entry that was just re-recorded. Sequence
+/// stamps are totally ordered, so the least-recently-written entry always
+/// leaves. A failed `Last` target falls through to the next rung via the
 /// existing fallback combinator.
+/// Session → group → (serving model, sequence stamp).
+type RecencyMap = HashMap<ArcIntern<str>, HashMap<ArcIntern<str>, (ArcIntern<str>, u64)>>;
+
 #[derive(Debug, Default)]
 pub struct GroupRecency {
-    inner: std::sync::Mutex<HashMap<(String, String), (String, i64)>>,
+    inner: std::sync::Mutex<RecencyMap>,
+    seq: std::sync::atomic::AtomicU64,
 }
 
 /// Maximum `(session, group)` recency entries (see [`GroupRecency`]).
@@ -138,6 +146,7 @@ impl GroupRecency {
     pub fn new() -> Self {
         Self {
             inner: std::sync::Mutex::new(HashMap::new()),
+            seq: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -145,22 +154,32 @@ impl GroupRecency {
     /// target whose wire `model` id is `model_wire`. Lock-serialized with
     /// reads — concurrent requests in one session observe one winner.
     pub fn record(&self, session: &str, group: &str, model_wire: &str) {
-        let now = i64::try_from(common_core::now_secs()).unwrap_or(i64::MAX);
-        let mut inner = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        inner.insert(
-            (session.to_string(), group.to_string()),
-            (model_wire.to_string(), now),
-        );
-        if inner.len() > RECENCY_CAPACITY {
-            if let Some(oldest) = inner
-                .iter()
-                .min_by_key(|(_, (_, stamped))| *stamped)
-                .map(|(key, _)| key.clone())
-            {
-                inner.remove(&oldest);
+        let stamped = self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut inner = common_core::sync::lock(&self.inner);
+        let session_key: ArcIntern<str> = ArcIntern::from(session);
+        let group_key: ArcIntern<str> = ArcIntern::from(group);
+        let model: ArcIntern<str> = ArcIntern::from(model_wire);
+        inner
+            .entry(session_key)
+            .or_default()
+            .insert(group_key, (model, stamped));
+        if Self::len_locked(&inner) > RECENCY_CAPACITY {
+            let mut oldest: Option<(ArcIntern<str>, ArcIntern<str>, u64)> = None;
+            for (session_key, groups) in &*inner {
+                for (group_key, (_, stamped)) in groups {
+                    let replace = oldest.as_ref().is_none_or(|(_, _, min)| *stamped < *min);
+                    if replace {
+                        oldest = Some((session_key.clone(), group_key.clone(), *stamped));
+                    }
+                }
+            }
+            if let Some((session_key, group_key, _)) = oldest {
+                if let Some(groups) = inner.get_mut(&session_key) {
+                    groups.remove(&group_key);
+                    if groups.is_empty() {
+                        inner.remove(&session_key);
+                    }
+                }
             }
         }
     }
@@ -169,24 +188,28 @@ impl GroupRecency {
     /// `session`, if any. An unknown session resolves to nothing — the
     /// caller falls back to the group head.
     pub fn last_for(&self, session: &str, group: &str) -> Option<String> {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&(session.to_string(), group.to_string()))
-            .map(|(model_wire, _)| model_wire.clone())
+        let inner = common_core::sync::lock(&self.inner);
+        let session_key: ArcIntern<str> = ArcIntern::from(session);
+        let group_key: ArcIntern<str> = ArcIntern::from(group);
+        inner
+            .get(&session_key)
+            .and_then(|groups| groups.get(&group_key))
+            .map(|(model_wire, _)| model_wire.to_string())
     }
 
     /// Entry count (bounded by [`RECENCY_CAPACITY`]).
     pub fn len(&self) -> usize {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len()
+        let inner = common_core::sync::lock(&self.inner);
+        Self::len_locked(&inner)
     }
 
     /// Whether no dispatch has been recorded yet.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn len_locked(inner: &RecencyMap) -> usize {
+        inner.values().map(HashMap::len).sum()
     }
 }
 

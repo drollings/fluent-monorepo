@@ -22,6 +22,14 @@
 //! the pipeline falls back to the deterministic `en_default()` — the service
 //! never requires a model. A node that fails to parse is skipped (fail-open,
 //! logged); a node with no hits simply contributes an empty report.
+//!
+//! Sizing record: per-node spans score exact brute-force through
+//! `common_core::score::top_k_by_score` (span counts per node are small, so
+//! no index is warranted there); ledger-scale vector search is the node
+//! store's `AdaptiveHnsw` (`node_store.rs`: threshold-gated, HNSW above and
+//! exact brute-force below). The adaptive dispatch is a cost gate, not a
+//! quality gate — the recall co-requirement (HNSW recall vs brute-force) is
+//! owned by the `fluent-db` HNSW tests.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -279,6 +287,11 @@ pub struct NodeRetrievalReport {
     /// salient). `None` when no ranker is wired or the node fell outside the
     /// ranked shortlist.
     pub rank: Option<usize>,
+    /// The node's predicate ids (one per parsed sentence, from the routing
+    /// signals' interlingua frames). Empty when the node carried no
+    /// filterable signal — such reports are always kept by
+    /// [`NodeRetrievalService::filter_by_interlingua`] (fail-open).
+    pub predicate_ids: Vec<fluent_types::InterlinguaId>,
 }
 
 /// The live retrieval service: M5 tools over a parsed node + the M6 salience
@@ -292,6 +305,7 @@ pub struct NodeRetrievalService {
     agree_tolerance: f64,
     fuzzy_top_k: usize,
     concept_store: Option<Arc<dyn fluent_concept::ConceptStore>>,
+    interlingua_filter_enabled: bool,
 }
 
 impl NodeRetrievalService {
@@ -310,6 +324,7 @@ impl NodeRetrievalService {
             agree_tolerance: DEFAULT_AGREE_TOLERANCE,
             fuzzy_top_k: DEFAULT_FUZZY_TOP_K,
             concept_store: None,
+            interlingua_filter_enabled: false,
         })
     }
 
@@ -344,37 +359,46 @@ impl NodeRetrievalService {
         self
     }
 
-    /// Filter reports by `match_interlingua(predicate_lemma_id + ancestors)` — the
-    /// deterministic pre-filter before fuzzy fallback (M6). `query_predicate` is the
-    /// query's predicate lemma id; candidates whose predicate does not equal it nor
-    /// is a subclass of it (via `ancestors_of`) are dropped when a concept store is wired.
+    /// Opt into the interlingua prefilter. Off by default: the filter removes
+    /// candidates irreversibly for the request, so it stays disabled until a
+    /// calibration measurement clears it. In-process only, never config.
+    #[must_use]
+    pub fn with_interlingua_filter(mut self, enabled: bool) -> Self {
+        self.interlingua_filter_enabled = enabled;
+        self
+    }
+
+    /// Filter reports by topical relatedness to the query predicate. A report
+    /// is kept when it carries no filterable signal (empty `predicate_ids` —
+    /// fail-open) or when any of its candidate predicates equals the query
+    /// predicate or is a subclass of it (the query predicate appears in the
+    /// candidate-side `ancestors_of` walk). A strict superclass of the query
+    /// predicate is dropped, as is any unrelated predicate. Relevance only:
+    /// parse confidence is never consulted here.
     #[must_use]
     pub fn filter_by_interlingua(
         &self,
         query_predicate: Option<fluent_types::InterlinguaId>,
         reports: Vec<NodeRetrievalReport>,
     ) -> Vec<NodeRetrievalReport> {
+        if !self.interlingua_filter_enabled {
+            return reports;
+        }
         let Some(q) = query_predicate else {
             return reports;
         };
         let Some(store) = &self.concept_store else {
             return reports;
         };
-        let mut allowed = std::collections::HashSet::new();
-        allowed.insert(q);
-        for anc in store.ancestors_of(q) {
-            allowed.insert(anc);
-        }
         reports
             .into_iter()
             .filter(|r| {
-                // Keep reports that have at least one hit whose predicate matches;
-                // reports with no predicate-filterable hits are kept (fail-open).
-                // For this minimal M6 seam we filter on node_id's predicate via hits is not yet wired,
-                // so we keep all when no filter signal — the service's retrieve already pre-filters via SalienceRanker.
-                // This hook is the composition point for future predicate-aware filtering.
-                let _ = r;
-                true
+                if r.predicate_ids.is_empty() {
+                    return true;
+                }
+                r.predicate_ids.iter().any(|p| {
+                    *p == q || store.ancestors_of(*p).contains(&q)
+                })
             })
             .collect()
     }
@@ -405,11 +429,17 @@ impl NodeRetrievalService {
             let lemma_hits = spacy_rs::retrieval::lemma_grep(&doc, query);
             let fuzzy_hits = self.fuzzy_hits(&doc, query);
             let report = cross_check(&lemma_hits, &fuzzy_hits, self.agree_tolerance);
+            let predicate_ids = spacy_rs::routing::extract_routing_signals(&doc)
+                .iter()
+                .filter_map(|s| s.interlingua.as_ref())
+                .filter_map(|il| il.predicate_id)
+                .collect();
             reports.push(NodeRetrievalReport {
                 node_id,
                 hits: report.hits,
                 regions: report.regions,
                 rank: None,
+                predicate_ids,
             });
         }
         self.prefilter(query, reports)

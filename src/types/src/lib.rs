@@ -542,6 +542,52 @@ impl<'de> serde::Deserialize<'de> for OriginRole {
     }
 }
 
+/// Stable identity of a node's LOD0 text — the keying domain for ledger
+/// annotations. The wire shape is a plain `u64` (`#[serde(transparent)]`),
+/// computed with `common_core::hash::fnv1a64` so existing stored rows stay
+/// joinable. `UNSTAMPED` (the `0` value) means there is no version to key
+/// against: the node has no LOD0 content or has not yet been stamped.
+///
+/// A non-empty LOD0 hashes to `0` with probability 2⁻⁶⁴ and is treated as
+/// unstamped (annotations rejected). This sentinel reservation is accepted,
+/// not accidental.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct ContentHash(u64);
+
+impl ContentHash {
+    /// No version to key against.
+    pub const UNSTAMPED: Self = Self(0);
+
+    /// Hash LOD0 text; empty content maps to [`Self::UNSTAMPED`].
+    #[must_use]
+    pub fn from_lod0(content: &str) -> Self {
+        if content.is_empty() {
+            Self::UNSTAMPED
+        } else {
+            Self(common_core::hash::fnv1a64(content.as_bytes()))
+        }
+    }
+
+    /// Whether this is the unstamped sentinel.
+    #[must_use]
+    pub fn is_unstamped(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Raw value for the database boundary only.
+    #[must_use]
+    pub fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for ContentHash {
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ContentNode {
     // ── Core fields ──
@@ -551,10 +597,10 @@ pub struct ContentNode {
     /// A stable hash of LOD0 (the full text), the **keying domain** for ledger
     /// annotations. Computed by the node store's single write
     /// funnel; a mutation of LOD0 changes this hash and thereby invalidates the
-    /// node's cached annotations — no staleness scheduler. `0` when the node
-    /// has no LOD0 content (or has not yet been stamped).
+    /// node's cached annotations — no staleness scheduler. [`ContentHash::UNSTAMPED`]
+    /// when the node has no LOD0 content (or has not yet been stamped).
     #[serde(default)]
-    pub content_hash: u64,
+    pub content_hash: ContentHash,
     #[serde(default)]
     pub lod: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1089,7 +1135,7 @@ mod tests {
             id: None,
             name: SmolStr::new("root"),
             source: "full text".into(),
-            content_hash: 0,
+            content_hash: ContentHash::UNSTAMPED,
             lod: vec!["hello".into()],
             embedding: None,
             capabilities: None,
@@ -1207,12 +1253,40 @@ mod tests {
         let back: ContentNode = serde_json::from_str(&json).expect("round trip");
         assert_eq!(back.name.as_str(), "legacy");
         assert!(back.annotation.is_none());
-        // `content_hash` predates this node's serialization → defaults to 0.
+        // `content_hash` predates this node's serialization → defaults to UNSTAMPED.
         assert_eq!(
-            node.content_hash, 0,
-            "missing content_hash back-compat defaults to 0"
+            node.content_hash,
+            ContentHash::UNSTAMPED,
+            "missing content_hash back-compat defaults to UNSTAMPED"
         );
     }
+    #[test]
+    fn content_hash_wire_is_plain_u64() {
+        let json = serde_json::to_string(&ContentHash::UNSTAMPED).expect("serialize");
+        assert_eq!(json, "0");
+        let back: ContentHash = serde_json::from_str("0").expect("deserialize");
+        assert_eq!(back, ContentHash::UNSTAMPED);
+        assert!(back.is_unstamped());
+        // A node whose JSON carries the old numeric shape still parses.
+        let node: ContentNode = serde_json::from_str(
+            r#"{"id":null,"name":"n","source":"s","content_hash":0,"lod":[]}"#,
+        )
+        .expect("old row parses");
+        assert_eq!(node.content_hash, ContentHash::UNSTAMPED);
+        // Serialized UNSTAMPED node emits the same `0` number.
+        let out = serde_json::to_string(&node).expect("serialize");
+        assert!(out.contains(r#""content_hash":0"#), "{out}");
+    }
+
+    #[test]
+    fn content_hash_from_lod0_matches_fnv() {
+        assert_eq!(ContentHash::from_lod0(""), ContentHash::UNSTAMPED);
+        let h = ContentHash::from_lod0("x");
+        assert!(!h.is_unstamped());
+        assert_eq!(h.as_u64(), common_core::hash::fnv1a64(b"x"));
+        assert_eq!(ContentHash::default(), ContentHash::UNSTAMPED);
+    }
+
     #[test]
     fn wasm_tool_serde() {
         let tool = WasmTool {

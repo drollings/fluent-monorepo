@@ -3,7 +3,7 @@
 
 use crate::sqlite::{
     in_clause, is_unique_violation, make_hnsw, open_in_memory, open_shared_in_memory, open_wal,
-    run_batch,
+    quote_ident, run_batch,
 };
 use common_core::constants::HnswParams;
 
@@ -96,4 +96,108 @@ fn make_hnsw_builds_searchable_cosine_index() {
     let hits = hnsw.search(&a, 1, 16);
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].d_id, 0);
+}
+
+#[test]
+fn quote_ident_reject_list_and_round_trip() {
+    assert_eq!(quote_ident("facts").unwrap(), "\"facts\"");
+    assert_eq!(quote_ident("t").unwrap(), "\"t\"");
+    // The reject list, not an allowlist: legitimate non-ASCII identifiers
+    // pass through.
+    assert_eq!(quote_ident("tabel_ä").unwrap(), "\"tabel_ä\"");
+    for bad in [
+        "",
+        "t\"",
+        "\"",
+        "ta\"ble",
+        "t;",
+        ";",
+        "t; DROP TABLE t; --",
+        "a\u{0}b",
+        "\u{0}",
+    ] {
+        assert!(
+            quote_ident(bad).is_err(),
+            "expected reject for identifier {bad:?}"
+        );
+    }
+}
+
+/// Table-valued functions accepting bound parameters is version-sensitive
+/// SQLite behavior — the identifier-free pragma lookup in `ensure_column`
+/// depends on it, so it is asserted, not assumed.
+#[test]
+fn pragma_table_info_accepts_bound_table_parameter() {
+    let conn = open_in_memory().unwrap();
+    run_batch(&conn, "CREATE TABLE facts (id INTEGER PRIMARY KEY, v TEXT)").unwrap();
+    let hit: i64 = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            rusqlite::params!["facts", "id"],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(hit, 1);
+    let miss: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            rusqlite::params!["facts", "nope"],
+            |r| r.get::<_, i64>(0),
+        )
+        .ok();
+    assert!(miss.is_none());
+}
+
+/// For every identifier the quoting accepts, splicing the quoted form into
+/// a DDL batch is a single statement: the batch either succeeds creating
+/// exactly one table with that identifier, or fails as a whole — never
+/// parsing as two statements (checked via `sqlite_master`).
+#[test]
+fn quote_ident_accepted_ids_never_split_statements() {
+    // Deterministic xorshift PRNG — reproducible corpus, no external dep.
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut accepted = 0usize;
+    for _ in 0..2000 {
+        let len = (next() % 12 + 1) as usize;
+        let id: String = (0..len).map(|_| (next() % 95 + 32) as u8 as char).collect();
+        let Ok(quoted) = quote_ident(&id) else {
+            continue;
+        };
+        accepted += 1;
+        let conn = open_in_memory().unwrap();
+        let created = conn.execute_batch(&format!("CREATE TABLE {quoted} (x INTEGER)"));
+        let objects: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        match created {
+            Ok(()) => {
+                assert_eq!(objects, 1, "accepted id {id:?} must create one table");
+                let name: String = conn
+                    .query_row("SELECT name FROM sqlite_master", [], |r| r.get(0))
+                    .unwrap();
+                assert_eq!(name, id);
+            }
+            Err(_) => assert_eq!(
+                objects, 0,
+                "a failed batch over accepted id {id:?} must not leave a partial object"
+            ),
+        }
+        if accepted >= 1000 {
+            break;
+        }
+    }
+    assert!(
+        accepted >= 500,
+        "corpus too thin: only {accepted} of 2000 draws were accepted identifiers"
+    );
 }

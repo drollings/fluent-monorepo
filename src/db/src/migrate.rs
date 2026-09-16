@@ -8,22 +8,32 @@
 use rusqlite::Connection;
 
 use crate::error::DbError;
+use crate::sqlite::quote_ident;
 
 /// Add a column to `table` if it does not already exist.
 ///
-/// Port of `router/src/ledger.rs:636-641`, made table-generic and idempotent:
-/// it checks `pragma_table_info(table)` for `name` and issues
-/// `ALTER TABLE {table} ADD COLUMN {ddl}` only when absent. `ddl` is the full
-/// column definition (name + type + default), e.g.
-/// `"label TEXT NOT NULL DEFAULT ''"`.
-pub fn ensure_column(conn: &Connection, table: &str, name: &str, ddl: &str) -> Result<(), DbError> {
-    let has_sql = format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1");
+/// `column` is the bare column name and `col_def` is the *type-and-default*
+/// text only (e.g. `"TEXT NOT NULL DEFAULT ''"`) — it never re-states the
+/// column name. Both `table` and `column` are validated and quoted via
+/// [`quote_ident`](crate::sqlite::quote_ident) before being spliced into the
+/// `ALTER TABLE` statement, so a hostile identifier fails with
+/// [`DbError::InvalidIdentifier`](crate::error::DbError::InvalidIdentifier)
+/// instead of executing. The existence check needs no quoting at all: it
+/// binds the table name as a parameter to `pragma_table_info(?)`.
+pub fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    col_def: &str,
+) -> Result<(), DbError> {
     let has = conn
-        .prepare(&has_sql)
-        .and_then(|mut stmt| stmt.query_row(rusqlite::params![name], |_| Ok(())))
+        .prepare("SELECT 1 FROM pragma_table_info(?) WHERE name = ?")
+        .and_then(|mut stmt| stmt.query_row(rusqlite::params![table, column], |_| Ok(())))
         .is_ok();
     if !has {
-        let alter_sql = format!("ALTER TABLE {table} ADD COLUMN {ddl}");
+        let q_table = quote_ident(table)?;
+        let q_column = quote_ident(column)?;
+        let alter_sql = format!("ALTER TABLE {q_table} ADD COLUMN {q_column} {col_def}");
         conn.execute_batch(&alter_sql).map_err(DbError::from)?;
     }
     Ok(())

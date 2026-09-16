@@ -1,0 +1,24 @@
+{
+  "models": {
+    "default": {
+      "params": {
+        "temperature": 0.1
+      }
+    }
+  },
+  "roles": {
+    "default": {
+      "models": {
+        "m": {}
+      },
+      "params": {
+        "temperature": 0.1
+      }
+    },
+    "spare": {
+      "params": {
+        "temperature": 0.1
+      }
+    }
+  }
+}

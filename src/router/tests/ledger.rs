@@ -19,7 +19,7 @@ fn write_annotation_facade_supersedes_by_tier() {
         .record_request("sess", "req", "show me the report")
         .unwrap();
     let hash = ledger.get_node(id).unwrap().content_hash;
-    assert_ne!(hash, 0, "LOD0 present → non-zero hash");
+    assert!(!hash.is_unstamped(), "LOD0 present → stamped hash");
 
     let claim = |tier: ProvenanceTier| {
         AnnotationClaim::confirmed(

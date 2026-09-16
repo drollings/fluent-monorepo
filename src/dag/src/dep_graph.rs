@@ -422,7 +422,7 @@ impl<K: Eq + Hash + Clone> DependencyGraph<K> {
                                 continue;
                             }
                             adj.entry(provider).or_default().push(node);
-                            *in_degree.get_mut(node).unwrap() += 1;
+                            *in_degree.entry(node).or_insert(0) += 1;
                         }
                     }
                 }

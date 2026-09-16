@@ -1,0 +1,16 @@
+{
+  "model_groups": {},
+  "models": {
+    "a": {
+      "endpoint": "http://x/v1/chat/completions",
+      "template": "/fleet/template.txt"
+    },
+    "b": {
+      "endpoint": "http://x/v1/chat/completions",
+      "template": "/own/t.txt"
+    },
+    "default": {
+      "template": "/fleet/template.txt"
+    }
+  }
+}

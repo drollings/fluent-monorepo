@@ -357,7 +357,7 @@ impl<'a> DependencyResolver<'a> {
                     let provider_bit_idx = provider.id as usize;
                     if needed.contains(&provider_bit_idx) && provider_bit_idx != bit_idx {
                         adj.entry(provider_bit_idx).or_default().push(bit_idx);
-                        *in_degree.get_mut(&bit_idx).unwrap() += 1;
+                        *in_degree.entry(bit_idx).or_insert(0) += 1;
                     }
                 }
             }

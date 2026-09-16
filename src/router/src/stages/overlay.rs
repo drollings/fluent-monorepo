@@ -253,7 +253,7 @@ impl OverlayStage {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut meta = StageMetadata::new(serde_json::Value::Object(Default::default()));
+        let mut meta = StageMetadata::empty();
         meta.set_overlay_contributions(&contributions);
         if !hints.is_empty() {
             meta.set_overlay_route_hints(&hints);
@@ -337,7 +337,7 @@ impl OverlayStage {
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        let mut meta = StageMetadata::new(serde_json::Value::Object(Default::default()));
+        let mut meta = StageMetadata::empty();
         meta.set_overlay_contributions(&contributions);
         if !hints.is_empty() {
             meta.set_overlay_route_hints(&hints);

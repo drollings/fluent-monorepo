@@ -998,3 +998,33 @@ fn ordering_never_outranks_capability() {
         assert!(tm.assessments[1].matched, "a assessed in");
     }
 }
+
+#[test]
+fn group_recency_eviction_is_seq_total_ordered() {
+    // Fill to capacity, re-record the oldest entry, then overflow by one:
+    // the re-recorded entry must survive and the true oldest must leave.
+    // Sequence stamps are totally ordered, so same-instant re-records can
+    // never tie with (and lose to) the entry they just refreshed.
+    let recency = GroupRecency::new();
+    for i in 0..RECENCY_CAPACITY {
+        recency.record("sess", &format!("group-{i}"), &format!("model-{i}"));
+    }
+    assert_eq!(recency.len(), RECENCY_CAPACITY);
+    recency.record("sess", "group-0", "model-0-new");
+    recency.record("sess", "group-overflow", "model-overflow");
+    assert_eq!(recency.len(), RECENCY_CAPACITY);
+    assert_eq!(
+        recency.last_for("sess", "group-0").as_deref(),
+        Some("model-0-new"),
+        "re-recorded entry survives its own refresh"
+    );
+    assert_eq!(
+        recency.last_for("sess", "group-1"),
+        None,
+        "true oldest entry evicted"
+    );
+    assert_eq!(
+        recency.last_for("sess", "group-overflow").as_deref(),
+        Some("model-overflow")
+    );
+}

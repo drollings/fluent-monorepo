@@ -344,11 +344,7 @@ impl PlanRoute {
     ) -> Option<PlanResult> {
         let recorder = self.recorder.as_ref()?;
         let hit = recorder.consult(user_message, confidence)?;
-        let content_hash = if user_message.is_empty() {
-            0
-        } else {
-            common_core::hash::fnv1a64(user_message.as_bytes())
-        };
+        let content_hash = fluent_types::ContentHash::from_lod0(user_message).as_u64();
         let _materialized =
             recorder
                 .replay()

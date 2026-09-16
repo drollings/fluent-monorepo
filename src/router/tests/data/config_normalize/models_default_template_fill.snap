@@ -1,0 +1,39 @@
+{
+  "models": {
+    "bare": {
+      "cost_input": 1e-6,
+      "embedding": "/models/base-embed.gguf",
+      "endpoint": "http://x/v1/chat/completions",
+      "intelligence": 1,
+      "params": {
+        "num_ctx": 8192,
+        "temperature": 0.1
+      },
+      "tok_s": 20,
+      "total_timeout_ms": 50000
+    },
+    "default": {
+      "cost_input": 1e-6,
+      "embedding": "/models/base-embed.gguf",
+      "intelligence": 1,
+      "params": {
+        "num_ctx": 8192,
+        "temperature": 0.1
+      },
+      "tok_s": 20,
+      "total_timeout_ms": 50000
+    },
+    "tuned": {
+      "cost_input": 1e-6,
+      "embedding": "/models/base-embed.gguf",
+      "endpoint": "http://y/v1/chat/completions",
+      "intelligence": 5,
+      "params": {
+        "num_ctx": 8192,
+        "temperature": 0.9
+      },
+      "tok_s": 42,
+      "total_timeout_ms": 50000
+    }
+  }
+}
