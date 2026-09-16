@@ -4,8 +4,7 @@ use fluent_wvr::capability::*;
 #[allow(unused_imports)]
 use fluent_wvr::prelude::*;
 #[allow(unused_imports)]
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 struct NetCapability;
 impl Capability for NetCapability {
@@ -49,11 +48,14 @@ fn capability_set_remove_as_returns_none_when_absent() {
 fn capability_set_contains() {
     let caps = CapabilitySet::new().with(NetCapability);
     assert!(caps.contains::<NetCapability>());
-    assert!(!caps.contains::<FsCapability>());    }
+    assert!(!caps.contains::<FsCapability>());
+}
 
 #[test]
 fn capability_set_iter_yields_correct_count() {
-    let caps = CapabilitySet::new().with(NetCapability).with(FsCapability::new());
+    let caps = CapabilitySet::new()
+        .with(NetCapability)
+        .with(FsCapability::new());
     assert_eq!(caps.iter().count(), 2);
 }
 
@@ -107,7 +109,9 @@ fn capability_aware_fs_denied_without_token() {
     // No FsCapability in the current scope: the gate refuses.
     assert!(capability_aware_fs::create_dir_all(&dir).is_err());
     assert_eq!(
-        capability_aware_fs::create_dir_all(&dir).unwrap_err().kind(),
+        capability_aware_fs::create_dir_all(&dir)
+            .unwrap_err()
+            .kind(),
         std::io::ErrorKind::PermissionDenied
     );
 }
@@ -119,14 +123,14 @@ fn capability_aware_fs_allowed_with_token() {
         "fluent-wvr-fs-gate-{}",
         common_core::hash::uuid_v4()
     ));
-    let result = CURRENT_CAPS.sync_scope(
-        CapabilitySet::new().with(FsCapability::new()),
-        || {
-            let r = capability_aware_fs::create_dir_all(&dir);
-            assert!(r.is_ok(), "gated create_dir_all must succeed with the token");
-            r
-        },
-    );
+    let result = CURRENT_CAPS.sync_scope(CapabilitySet::new().with(FsCapability::new()), || {
+        let r = capability_aware_fs::create_dir_all(&dir);
+        assert!(
+            r.is_ok(),
+            "gated create_dir_all must succeed with the token"
+        );
+        r
+    });
     assert!(result.is_ok());
     let _ = std::fs::remove_dir_all(&dir);
 }

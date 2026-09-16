@@ -134,11 +134,9 @@ fn candidate_actions_noun_before_verb() {
         .collect();
     let actions = st.candidate_actions(&pos, &texts, &flags, &labels, &ortho());
     assert!(actions.iter().any(|a| a.move_type == ArcEagerMove::Shift));
-    assert!(
-        actions
-            .iter()
-            .any(|a| a.move_type == ArcEagerMove::Left && a.label == labels.nsubj)
-    );
+    assert!(actions
+        .iter()
+        .any(|a| a.move_type == ArcEagerMove::Left && a.label == labels.nsubj));
     assert!(actions.iter().any(|a| a.move_type == ArcEagerMove::Reduce));
 }
 
@@ -156,11 +154,9 @@ fn candidate_actions_verb_before_noun() {
         .map(|t| vocab.lexicon().get_or_create(t).flags)
         .collect();
     let actions = st.candidate_actions(&pos, &texts, &flags, &labels, &ortho());
-    assert!(
-        actions
-            .iter()
-            .any(|a| a.move_type == ArcEagerMove::Right && a.label == labels.dobj)
-    );
+    assert!(actions
+        .iter()
+        .any(|a| a.move_type == ArcEagerMove::Right && a.label == labels.dobj));
 }
 
 #[test]
@@ -212,34 +208,52 @@ fn apply_shift_reduce_left_right_break() {
     st.buffer.extend(0..4);
 
     // SHIFT 0.
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Shift, label: 0 });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Shift,
+        label: 0,
+    });
     assert_eq!(st.stack, vec![0]);
     assert_eq!(st.buffer.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
 
     // SHIFT 1 → stack [0, 1], buffer [2, 3].
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Shift, label: 0 });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Shift,
+        label: 0,
+    });
     assert_eq!(st.stack, vec![0, 1]);
 
     // LEFT(nsubj): stack top 1 depends on buffer head 2 (absolute).
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Left, label: labels.nsubj });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Left,
+        label: labels.nsubj,
+    });
     assert_eq!(st.heads[1], 2);
     assert_eq!(st.labels[1], labels.nsubj);
     assert!(st.left_children[2].contains(&1));
     assert_eq!(st.stack, vec![0], "LEFT pops the stack top");
 
     // RIGHT(prep): buffer head 2 depends on stack top 0.
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Right, label: labels.prep });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Right,
+        label: labels.prep,
+    });
     assert_eq!(st.heads[2], 0);
     assert_eq!(st.labels[2], labels.prep);
     assert!(st.right_children[0].contains(&2));
     assert_eq!(st.stack, vec![0, 2], "RIGHT pushes the buffer head");
 
     // REDUCE pops the stack top.
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Reduce, label: 0 });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Reduce,
+        label: 0,
+    });
     assert_eq!(st.stack, vec![0]);
 
     // BREAK clears the stack and consumes the buffer head (always progresses).
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Break, label: 0 });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Break,
+        label: 0,
+    });
     assert!(st.stack.is_empty());
     assert!(st.buffer.is_empty(), "Break consumed the boundary token");
 }
@@ -251,11 +265,17 @@ fn apply_refuses_to_rehead_a_token() {
     let mut st = ArcEagerState::new(3, 0);
     st.stack.push(0);
     st.buffer.extend(1..3);
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Left, label: labels.det });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Left,
+        label: labels.det,
+    });
     assert_eq!(st.heads[0], 1, "first attachment wins");
     st.stack.push(0);
     st.buffer.pop_front(); // 1 consumed conceptually
-    st.apply(&ArcEagerAction { move_type: ArcEagerMove::Left, label: labels.nsubj });
+    st.apply(&ArcEagerAction {
+        move_type: ArcEagerMove::Left,
+        label: labels.nsubj,
+    });
     assert_eq!(st.heads[0], 1, "already-headed token is never re-headed");
 }
 
@@ -265,9 +285,7 @@ fn apply_refuses_to_rehead_a_token() {
 fn relative_heads_match_the_doc_contract() {
     // head is a signed offset: token.i + head == head_index; root head = 0.
     let doc = tokenize("The cat sat on the mat.");
-    let (result, _pc) = annotator()
-        .annotate_with_confidence(&doc)
-        .expect("parse");
+    let (result, _pc) = annotator().annotate_with_confidence(&doc).expect("parse");
     let recs = result.records().records();
     assert_eq!(recs.len(), doc.len());
     let root_count = recs.iter().filter(|r| r.dep == "root").count();
@@ -286,9 +304,7 @@ fn relative_heads_match_the_doc_contract() {
 #[test]
 fn verb_governs_argument_structure() {
     let doc = tokenize("The cat sat on the mat.");
-    let (result, _pc) = annotator()
-        .annotate_with_confidence(&doc)
-        .expect("parse");
+    let (result, _pc) = annotator().annotate_with_confidence(&doc).expect("parse");
     let recs = result.records().records();
     let deps: Vec<&str> = recs.iter().map(|r| r.dep.as_str()).collect();
     assert!(deps.contains(&"nsubj"), "subject extracted: {deps:?}");
@@ -305,11 +321,12 @@ fn verb_governs_argument_structure() {
 #[test]
 fn transitive_dobj_structure() {
     let doc = tokenize("NASA launched HTML5.");
-    let (result, _pc) = annotator()
-        .annotate_with_confidence(&doc)
-        .expect("parse");
+    let (result, _pc) = annotator().annotate_with_confidence(&doc).expect("parse");
     let recs = result.records().records();
-    let launched = recs.iter().position(|r| r.text == "launched").expect("verb");
+    let launched = recs
+        .iter()
+        .position(|r| r.text == "launched")
+        .expect("verb");
     let nasa = recs.iter().position(|r| r.text == "NASA").expect("nasa");
     let html5 = recs.iter().position(|r| r.text == "HTML5").expect("html5");
     assert_eq!(recs[launched].dep, "root");
@@ -376,9 +393,7 @@ fn parse_confidence_never_goes_below_zero() {
 #[test]
 fn annotate_reports_sane_confidence() {
     let doc = tokenize("The cat sat on the mat.");
-    let (_result, pc) = annotator()
-        .annotate_with_confidence(&doc)
-        .expect("parse");
+    let (_result, pc) = annotator().annotate_with_confidence(&doc).expect("parse");
     assert!((0.0..=1.0).contains(&pc.overall));
     assert!(pc.role_coverage > 0.0, "subject slot filled");
     assert_eq!(pc.token_scores.len(), doc.len());
@@ -409,7 +424,10 @@ fn rung_returns_none_only_on_structural_failure() {
     );
     let empty = Doc::new(vocab);
     let out = crate::pipeline::tests::run_rung_sync(rung, &empty);
-    assert!(out.expect("no error").is_none(), "empty doc → None → RuleRung");
+    assert!(
+        out.expect("no error").is_none(),
+        "empty doc → None → RuleRung"
+    );
 }
 
 // ── 9.10 property: every output passes the 7-check validator ──────────
@@ -419,7 +437,9 @@ fn random_pos_sequences_produce_valid_trees() {
     // A small LCG so the property test is deterministic (no rand dep).
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut next = move || {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         seed >> 33
     };
     let pos_words: &[(Upos, &str)] = &[
@@ -448,7 +468,9 @@ fn random_pos_sequences_produce_valid_trees() {
             doc.push_back(w, true).expect("push");
         }
         let (result, _pc) = annotator.annotate_with_confidence(&doc).expect("parse");
-        validator.validate(&doc, result.records()).expect("7-check gate");
+        validator
+            .validate(&doc, result.records())
+            .expect("7-check gate");
     }
 }
 
@@ -466,18 +488,52 @@ fn starts_lowercase_matches_legacy_spelling() {
         word.chars().next().is_some_and(char::is_lowercase)
     }
     let words = [
-        "opened", "failed", "left", "stands", "ended", "fell", "ready", "work", "calls",
-        "wittily", "unlikely", "loudly", "quarterly", "smiling", "raining",
-        "Anna", "July", "CEO", "NASA", "Big", "Dogs", "She", "It", "S", "A",
-        "yet", "today", "hard", "go", "a", "x", "", "5", "2fast", ".", ",", "—",
-        "éclair", "Éclair", "ßeta", "ẞeta", "über", "Über",
+        "opened",
+        "failed",
+        "left",
+        "stands",
+        "ended",
+        "fell",
+        "ready",
+        "work",
+        "calls",
+        "wittily",
+        "unlikely",
+        "loudly",
+        "quarterly",
+        "smiling",
+        "raining",
+        "Anna",
+        "July",
+        "CEO",
+        "NASA",
+        "Big",
+        "Dogs",
+        "She",
+        "It",
+        "S",
+        "A",
+        "yet",
+        "today",
+        "hard",
+        "go",
+        "a",
+        "x",
+        "",
+        "5",
+        "2fast",
+        ".",
+        ",",
+        "—",
+        "éclair",
+        "Éclair",
+        "ßeta",
+        "ẞeta",
+        "über",
+        "Über",
     ];
     for word in words {
-        assert_eq!(
-            starts_lowercase(word),
-            legacy(word),
-            "word={word:?}"
-        );
+        assert_eq!(starts_lowercase(word), legacy(word), "word={word:?}");
         // Both receiver spellings in the file (`word` and `texts[i]`)
         // route through the same `&str` primitive.
         let owned = word.to_string();
@@ -547,46 +603,161 @@ fn copula_is_attached_matches_legacy_spelling() {
 // keep passing after (early-out skips legally).
 #[test]
 fn refine_early_out_no_candidate_no_write() {
-    type WithOrtho = for<'a, 'b> fn(
-        &'a [String],
-        &'a mut [Upos],
-        &'a [LexemeFlags],
-        &'a TaggerOrtho<'b>,
-    );
+    type WithOrtho =
+        for<'a, 'b> fn(&'a [String], &'a mut [Upos], &'a [LexemeFlags], &'a TaggerOrtho<'b>);
     // Every `refine_pos_*` rule takes `ortho` (its frame may evaluate blob
     // strings); (rule, refine fn, sentence with realistic trigger flags,
     // scrub POS that leaves the rule's candidate set empty).
     let ortho_table: &[(&str, WithOrtho, &str, Upos)] = &[
-        ("bare_infinitive", refine_pos_bare_infinitive, "She won't answer calls.", Upos::Verb),
-        ("bare_object_noun", refine_pos_bare_object_noun, "She won't answer calls.", Upos::Noun),
-        ("directive_initial", refine_pos_directive_initial, "Call the office now.", Upos::Verb),
-        ("demonstrative_object", refine_pos_demonstrative_object, "Translate this to French.", Upos::Noun),
-        ("attributive_ly", refine_pos_attributive_ly, "quarterly sales report", Upos::Verb),
-        ("shifted_det_noun_verb", refine_pos_shifted_det_noun_verb, "Truthfully, the plan failed.", Upos::Verb),
-        ("relative_matrix_verb", refine_pos_relative_matrix_verb, "The man who called left.", Upos::Verb),
-        ("relcl_matrix_complement", refine_pos_relcl_matrix_complement, "The dog that barked stands empty.", Upos::Verb),
-        ("comma_adverbial", refine_pos_comma_adverbial, "In July, we met.", Upos::Verb),
-        ("predicative_ly", refine_pos_predicative_ly, "That seems unlikely.", Upos::Verb),
-        ("final_adverbial", refine_pos_final_adverbial, "The dog barks loudly.", Upos::Verb),
-        ("temporal_yet", refine_pos_temporal_yet, "She is not ready yet.", Upos::Verb),
-        ("linking_predicate", refine_pos_linking_predicate, "That seems unlikely.", Upos::Verb),
-        ("medial_manner_ly", refine_pos_medial_manner_ly, "She spoke wittily at dinner.", Upos::Verb),
-        ("post_comma_verb", refine_pos_post_comma_verb, "The test, honestly, scared us.", Upos::Verb),
-        ("comma_participle", refine_pos_comma_participle, "The CEO, smiling, took questions.", Upos::Verb),
-        ("inverted_copular", refine_pos_inverted_copular, "Is lunch ready?", Upos::Verb),
-        ("be_predicate", refine_pos_be_predicate, "It's raining.", Upos::Verb),
-        ("progressive_ing", refine_pos_progressive_ing, "It's raining.", Upos::Verb),
-        ("modal_question_verb", refine_pos_modal_question_verb, "Will this work?", Upos::Verb),
-        ("contracted_be", refine_pos_contracted_be, "It's raining.", Upos::Verb),
-        ("discourse_initial_verb", refine_pos_discourse_initial_verb, "Please confirm the date.", Upos::Verb),
-        ("imperative_non_det_object", refine_pos_imperative_non_det_object, "Eat apples daily.", Upos::Verb),
-        ("bare_ed_transitive", refine_pos_bare_ed_transitive, "John opened the door.", Upos::Verb),
+        (
+            "bare_infinitive",
+            refine_pos_bare_infinitive,
+            "She won't answer calls.",
+            Upos::Verb,
+        ),
+        (
+            "bare_object_noun",
+            refine_pos_bare_object_noun,
+            "She won't answer calls.",
+            Upos::Noun,
+        ),
+        (
+            "directive_initial",
+            refine_pos_directive_initial,
+            "Call the office now.",
+            Upos::Verb,
+        ),
+        (
+            "demonstrative_object",
+            refine_pos_demonstrative_object,
+            "Translate this to French.",
+            Upos::Noun,
+        ),
+        (
+            "attributive_ly",
+            refine_pos_attributive_ly,
+            "quarterly sales report",
+            Upos::Verb,
+        ),
+        (
+            "shifted_det_noun_verb",
+            refine_pos_shifted_det_noun_verb,
+            "Truthfully, the plan failed.",
+            Upos::Verb,
+        ),
+        (
+            "relative_matrix_verb",
+            refine_pos_relative_matrix_verb,
+            "The man who called left.",
+            Upos::Verb,
+        ),
+        (
+            "relcl_matrix_complement",
+            refine_pos_relcl_matrix_complement,
+            "The dog that barked stands empty.",
+            Upos::Verb,
+        ),
+        (
+            "comma_adverbial",
+            refine_pos_comma_adverbial,
+            "In July, we met.",
+            Upos::Verb,
+        ),
+        (
+            "predicative_ly",
+            refine_pos_predicative_ly,
+            "That seems unlikely.",
+            Upos::Verb,
+        ),
+        (
+            "final_adverbial",
+            refine_pos_final_adverbial,
+            "The dog barks loudly.",
+            Upos::Verb,
+        ),
+        (
+            "temporal_yet",
+            refine_pos_temporal_yet,
+            "She is not ready yet.",
+            Upos::Verb,
+        ),
+        (
+            "linking_predicate",
+            refine_pos_linking_predicate,
+            "That seems unlikely.",
+            Upos::Verb,
+        ),
+        (
+            "medial_manner_ly",
+            refine_pos_medial_manner_ly,
+            "She spoke wittily at dinner.",
+            Upos::Verb,
+        ),
+        (
+            "post_comma_verb",
+            refine_pos_post_comma_verb,
+            "The test, honestly, scared us.",
+            Upos::Verb,
+        ),
+        (
+            "comma_participle",
+            refine_pos_comma_participle,
+            "The CEO, smiling, took questions.",
+            Upos::Verb,
+        ),
+        (
+            "inverted_copular",
+            refine_pos_inverted_copular,
+            "Is lunch ready?",
+            Upos::Verb,
+        ),
+        (
+            "be_predicate",
+            refine_pos_be_predicate,
+            "It's raining.",
+            Upos::Verb,
+        ),
+        (
+            "progressive_ing",
+            refine_pos_progressive_ing,
+            "It's raining.",
+            Upos::Verb,
+        ),
+        (
+            "modal_question_verb",
+            refine_pos_modal_question_verb,
+            "Will this work?",
+            Upos::Verb,
+        ),
+        (
+            "contracted_be",
+            refine_pos_contracted_be,
+            "It's raining.",
+            Upos::Verb,
+        ),
+        (
+            "discourse_initial_verb",
+            refine_pos_discourse_initial_verb,
+            "Please confirm the date.",
+            Upos::Verb,
+        ),
+        (
+            "imperative_non_det_object",
+            refine_pos_imperative_non_det_object,
+            "Eat apples daily.",
+            Upos::Verb,
+        ),
+        (
+            "bare_ed_transitive",
+            refine_pos_bare_ed_transitive,
+            "John opened the door.",
+            Upos::Verb,
+        ),
     ];
     for (name, refine, text, scrub) in ortho_table {
         let doc = tokenize(text);
         let texts: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-        let flags: Vec<LexemeFlags> =
-            (0..doc.len()).map(|i| doc.token(i).lexeme.flags).collect();
+        let flags: Vec<LexemeFlags> = (0..doc.len()).map(|i| doc.token(i).lexeme.flags).collect();
         let mut pos = vec![*scrub; doc.len()];
         refine(&texts, &mut pos, &flags, &ortho());
         assert_eq!(
@@ -607,8 +778,7 @@ fn refine_early_out_no_candidate_no_write() {
 fn refine_rule_order_bare_ed_before_imperative_is_load_bearing() {
     let doc = tokenize("Morning mailed the forms to clients.");
     let texts: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-    let flags: Vec<LexemeFlags> =
-        (0..doc.len()).map(|i| doc.token(i).lexeme.flags).collect();
+    let flags: Vec<LexemeFlags> = (0..doc.len()).map(|i| doc.token(i).lexeme.flags).collect();
     let base: Vec<Upos> = flags.iter().map(|&f| infer_pos(f)).collect();
     assert!(
         base.iter().all(|&p| p != Upos::Verb && p != Upos::Aux),
@@ -624,14 +794,24 @@ fn refine_rule_order_bare_ed_before_imperative_is_load_bearing() {
     refine_pos_bare_ed_transitive(&texts, &mut swapped, &flags, &ortho());
 
     assert_ne!(current, swapped, "refine order must be load-bearing");
-    assert_eq!(current[0], Upos::Noun, "current order: imperative suppressed");
-    assert_eq!(current[1], Upos::Verb, "current order: bare-ed crowns 'mailed'");
     assert_eq!(
-        swapped[0], Upos::Verb,
+        current[0],
+        Upos::Noun,
+        "current order: imperative suppressed"
+    );
+    assert_eq!(
+        current[1],
+        Upos::Verb,
+        "current order: bare-ed crowns 'mailed'"
+    );
+    assert_eq!(
+        swapped[0],
+        Upos::Verb,
         "swapped order: imperative crowns 'Morning' via the PP branch"
     );
     assert_eq!(
-        swapped[1], Upos::Noun,
+        swapped[1],
+        Upos::Noun,
         "swapped order: bare-ed early-outs on the VERB-first shape"
     );
     assert_eq!(
@@ -651,7 +831,12 @@ fn full_pipeline_pins_order_sensitive_sentence() {
     // "mailed" governs as the predicate, "Morning" stays nominal.
     let doc = tokenize("Morning mailed the forms to clients.");
     let (result, _pc) = annotator().annotate_with_confidence(&doc).expect("parse");
-    let pos: Vec<&str> = result.records().records().iter().map(|r| r.pos.as_str()).collect();
+    let pos: Vec<&str> = result
+        .records()
+        .records()
+        .iter()
+        .map(|r| r.pos.as_str())
+        .collect();
     assert_eq!(
         pos,
         vec!["noun", "verb", "det", "noun", "adp", "noun", "punct"]

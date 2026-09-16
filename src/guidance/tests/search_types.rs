@@ -27,7 +27,13 @@ fn fragment(id: &str, group: Option<&str>) -> EntityFragment {
 #[test]
 fn fusion_sums_rrf_across_lists_and_orders_by_score() {
     // 1-based storage ranks: a: 1/61 · b: 1/62+1/61 · c: 1/62.
-    let fused = rrf_fuse(&[vec!["a".to_string(), "b".to_string()], vec!["b".to_string(), "c".to_string()]], RRF_K);
+    let fused = rrf_fuse(
+        &[
+            vec!["a".to_string(), "b".to_string()],
+            vec!["b".to_string(), "c".to_string()],
+        ],
+        RRF_K,
+    );
     let ids: Vec<&str> = fused.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, vec!["b", "a", "c"]);
     assert_eq!(fused[0].rank, 1);
@@ -62,10 +68,7 @@ fn fusion_generalizes_to_n_routes() {
 
 #[test]
 fn fusion_ignores_empty_lists_and_dedupes_within_a_list() {
-    let fused = rrf_fuse(
-        &[vec![], vec!["a".to_string(), "a".to_string()]],
-        RRF_K,
-    );
+    let fused = rrf_fuse(&[vec![], vec!["a".to_string(), "a".to_string()]], RRF_K);
     assert_eq!(fused.len(), 1);
     assert_eq!(fused[0].id, "a");
 }
@@ -93,10 +96,7 @@ fn extract_symbol_names_skips_keyword_stoplist() {
         extract_symbol_names("find Namespace::AlphaSymbol"),
         vec!["Namespace::AlphaSymbol".to_string()]
     );
-    assert_eq!(
-        extract_symbol_names("class Foo"),
-        vec!["Foo".to_string()]
-    );
+    assert_eq!(extract_symbol_names("class Foo"), vec!["Foo".to_string()]);
     assert!(extract_symbol_names("find where explain").is_empty());
 }
 
@@ -196,7 +196,10 @@ fn group_validation_requires_exactly_one_major() {
 
 #[test]
 fn public_entity_id_prefers_group() {
-    assert_eq!(public_entity_id(&fragment("frag", Some("entity"))), "entity");
+    assert_eq!(
+        public_entity_id(&fragment("frag", Some("entity"))),
+        "entity"
+    );
     assert_eq!(public_entity_id(&fragment("solo", None)), "solo");
     // Empty group behaves as no group (zvec `""` major marker).
     assert_eq!(public_entity_id(&fragment("m", Some(""))), "m");
@@ -304,10 +307,7 @@ fn m13_extract_symbol_names_edge_cases() {
         vec!["foo".to_string(), "bar".to_string()]
     );
     // `~` starts a token and survives validation.
-    assert_eq!(
-        extract_symbol_names("~temp"),
-        vec!["~temp".to_string()]
-    );
+    assert_eq!(extract_symbol_names("~temp"), vec!["~temp".to_string()]);
     // Single colons fail token validation (only `::` splits).
     assert!(extract_symbol_names("a:b:c").is_empty());
     // Non-ASCII bytes terminate the ASCII token scan.
@@ -341,10 +341,7 @@ fn m13_symbol_name_from_token_edges() {
     assert_eq!(symbol_name_from_token(""), None);
     assert_eq!(symbol_name_from_token("::"), None);
     assert_eq!(symbol_name_from_token("a_b"), Some("a_b".to_string()));
-    assert_eq!(
-        symbol_name_from_token("A::~x"),
-        Some("A::~x".to_string())
-    );
+    assert_eq!(symbol_name_from_token("A::~x"), Some("A::~x".to_string()));
 }
 
 // --- M6.1 characterization: RRF goldens (verbatim current outputs, K=60) ---

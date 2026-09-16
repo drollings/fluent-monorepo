@@ -6,8 +6,8 @@
 //! table field-for-field so mirror drift is caught here, not at download.
 
 use fluent_llm::catalog::{
-    DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT, EmbeddingBackend, get_embedding_model_catalog_entry,
-    list_embedding_models,
+    get_embedding_model_catalog_entry, list_embedding_models, EmbeddingBackend,
+    DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT,
 };
 
 #[test]
@@ -54,7 +54,10 @@ fn gguf_entries_pin_revisions_without_changing_cache_names() {
         entry.cache_file,
         Some("hf_ggml-org_embeddinggemma-300M-Q8_0.gguf")
     );
-    let sources = entry.sources.as_ref().expect("gguf entry must declare mirrors");
+    let sources = entry
+        .sources
+        .as_ref()
+        .expect("gguf entry must declare mirrors");
     assert_eq!(sources.hugging_face.0, "ggml-org/embeddinggemma-300M-GGUF");
     assert_eq!(
         sources.hugging_face.1,
@@ -95,7 +98,10 @@ fn qwen_entries_carry_endpoints_and_token_limits() {
 fn gte_uses_the_modelscope_iic_namespace() {
     let entry = get_embedding_model_catalog_entry("local/gte-modernbert-base")
         .expect("gte must be catalogued");
-    let sources = entry.sources.as_ref().expect("onnx entry must declare mirrors");
+    let sources = entry
+        .sources
+        .as_ref()
+        .expect("onnx entry must declare mirrors");
     assert_eq!(sources.hugging_face.0, "Alibaba-NLP/gte-modernbert-base");
     assert_eq!(sources.model_scope.0, "iic/gte-modernbert-base");
 }
@@ -126,10 +132,7 @@ fn model2vec_entries_carry_tensor_and_tokenizer_files() {
         .expect("potion code must be catalogued");
     assert_eq!(entry.backend, EmbeddingBackend::Model2Vec);
     assert_eq!(entry.model_file, Some("model.safetensors"));
-    assert_eq!(
-        entry.embedding_tensor,
-        Some("embeddings")
-    );
+    assert_eq!(entry.embedding_tensor, Some("embeddings"));
     assert_eq!(entry.tokenizer_file, Some("tokenizer.json"));
     assert_eq!(entry.dimension, 256);
     assert_eq!(entry.default_concurrency, Some(2));

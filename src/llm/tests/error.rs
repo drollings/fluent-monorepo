@@ -25,8 +25,14 @@ fn embed_error_request_failed() {
 #[test]
 fn embed_error_unit_variants() {
     assert_eq!(format!("{}", EmbedError::InvalidApiUrl), "invalid API URL");
-    assert_eq!(format!("{}", EmbedError::InsecureApiUrl), "insecure API URL");
-    assert_eq!(format!("{}", EmbedError::SsrfBlockedUrl), "SSRF blocked URL");
+    assert_eq!(
+        format!("{}", EmbedError::InsecureApiUrl),
+        "insecure API URL"
+    );
+    assert_eq!(
+        format!("{}", EmbedError::SsrfBlockedUrl),
+        "SSRF blocked URL"
+    );
 }
 
 #[test]

@@ -3,7 +3,12 @@ use super::*;
 #[test]
 fn score_matrix_resolve_is_clone_free() {
     let m = ScoreMatrix::default();
-    let scores = HashMap::from([("completeness".into(), 0.8), ("risk".into(), 0.6), ("coherence".into(), 0.9), ("complexity".into(), 0.7)]);
+    let scores = HashMap::from([
+        ("completeness".into(), 0.8),
+        ("risk".into(), 0.6),
+        ("coherence".into(), 0.9),
+        ("complexity".into(), 0.7),
+    ]);
     let a = m.resolve(&scores);
     let b = m.resolve(&scores);
     assert_eq!(a.len(), b.len());

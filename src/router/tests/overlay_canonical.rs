@@ -28,7 +28,10 @@ fn canonical_returns_baked_form_and_identity_for_unknown() {
 fn first_wins_on_duplicate_surface() {
     let t = CanonicalFormTable::new(
         "1",
-        [("run".into(), "run".into()), ("run".into(), "sprint".into())],
+        [
+            ("run".into(), "run".into()),
+            ("run".into(), "sprint".into()),
+        ],
     );
     assert_eq!(t.canonical("run"), "run");
 }

@@ -13,7 +13,14 @@ fn explain_help_lists_stable_flags() {
     let out = run(dir.path(), &["explain", "--help"]);
     assert!(out.status.success(), "explain --help: {out:?}");
     let text = stdout(&out);
-    for flag in ["--guidance", "--db", "--workspace", "--limit", "--no-llm", "--filter"] {
+    for flag in [
+        "--guidance",
+        "--db",
+        "--workspace",
+        "--limit",
+        "--no-llm",
+        "--filter",
+    ] {
         assert!(text.contains(flag), "missing {flag}:\n{text}");
     }
 }
@@ -46,7 +53,10 @@ fn explain_not_found_state_is_stable() {
     let text = stdout(&out);
     assert!(text.starts_with("## Explain: "), "{text}");
     assert!(text.contains("No results found."), "{text}");
-    assert!(!text.contains('|'), "no table rows for empty results: {text}");
+    assert!(
+        !text.contains('|'),
+        "no table rows for empty results: {text}"
+    );
 }
 
 #[test]

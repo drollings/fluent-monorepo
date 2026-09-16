@@ -64,16 +64,12 @@ pub fn build_self_assessment_prompt(user_text: &str) -> String {
 /// shared fence-strip → parse → extract pipeline, then the shared field
 /// coercion so string-valued numbers ("7") survive.
 pub fn parse_self_assessment(response: &str) -> Result<SelfAssessment, WorkError> {
-    fluent_llm::parse_typed::<SelfAssessment>(
-        response,
-        &serde_json::Value::Null,
-        |v| {
-            if let Some(obj) = v.as_object_mut() {
-                coerce_u8(obj, "complexity", 5);
-                coerce_string(obj, "reason", "");
-            }
-        },
-    )
+    fluent_llm::parse_typed::<SelfAssessment>(response, &serde_json::Value::Null, |v| {
+        if let Some(obj) = v.as_object_mut() {
+            coerce_u8(obj, "complexity", 5);
+            coerce_string(obj, "reason", "");
+        }
+    })
     .map_err(|e| WorkError::Execution(format!("self-assessment verdict parse error: {e}")))
 }
 
@@ -210,7 +206,9 @@ impl LivenessProbe {
     /// Whether the managed model behind a base key is currently running.
     /// `None` when the model is not managed.
     pub fn is_running(&self, base_key: &str) -> Option<bool> {
-        self.supervisor.as_ref().and_then(|s| s.is_running(base_key))
+        self.supervisor
+            .as_ref()
+            .and_then(|s| s.is_running(base_key))
     }
 }
 
@@ -243,8 +241,7 @@ impl GroupExpansion {
             // carries it on served paths; `None` off those paths means
             // "unknown session" (Last falls back to the head). Read through
             // the typed-request cache (M14) — no per-call re-parse.
-            session: crate::stages::common::typed_request(ctx)
-                .and_then(|r| r.session_id.clone()),
+            session: crate::stages::common::typed_request(ctx).and_then(|r| r.session_id.clone()),
         }
     }
 
@@ -458,7 +455,10 @@ impl TargetBackends {
         for (key, backend) in by_key {
             reg.insert(key, backend);
         }
-        Self { by_key: reg, default }
+        Self {
+            by_key: reg,
+            default,
+        }
     }
 
     /// The backend for `model_key`, falling back to `default` when the key has
@@ -684,9 +684,7 @@ impl TargetMatcher {
             .collect();
         let fanout = Self::fanout_assessments(self.clone(), jobs);
         match tokio::runtime::Handle::try_current() {
-            Ok(handle)
-                if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread =>
-            {
+            Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
                 tokio::task::block_in_place(|| handle.block_on(fanout))
             }
             // No ambient runtime (unit tests, CLI paths): a throwaway
@@ -762,7 +760,11 @@ impl TargetMatcher {
     /// shared limiter (mirroring `stages::classifier`'s sync call), bounded by
     /// `timeout_ms`. A failed/unparseable call is `Err` — the caller escalates
     /// conservatively.
-    fn assess(&self, candidate: &TargetCandidate, user_text: &str) -> Result<SelfAssessment, WorkError> {
+    fn assess(
+        &self,
+        candidate: &TargetCandidate,
+        user_text: &str,
+    ) -> Result<SelfAssessment, WorkError> {
         let messages = vec![ChatMessage {
             role: "system".into(),
             content: build_self_assessment_prompt(user_text),
@@ -781,11 +783,9 @@ impl TargetMatcher {
         let response = self.limiter.run_sync(|| async {
             let call = client.chat_complete(&messages);
             if self.timeout_ms > 0 {
-                let timed = tokio::time::timeout(
-                    Duration::from_millis(self.timeout_ms),
-                    async { call },
-                )
-                .await;
+                let timed =
+                    tokio::time::timeout(Duration::from_millis(self.timeout_ms), async { call })
+                        .await;
                 if let Ok(r) = timed {
                     r
                 } else {
@@ -949,9 +949,14 @@ pub(crate) fn resolve_route_to_target(
                 &|base| expansion.supervisor_loaded(base),
             );
             if candidates.len() >= 2 {
-                if let Some(tm) =
-                    matcher.match_target(route, group, routing_config, &candidates, complexity, user_text)
-                {
+                if let Some(tm) = matcher.match_target(
+                    route,
+                    group,
+                    routing_config,
+                    &candidates,
+                    complexity,
+                    user_text,
+                ) {
                     tracing::info!(
                         target: "router.pipeline.stage2",
                         route = %route,

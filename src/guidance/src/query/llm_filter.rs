@@ -149,10 +149,8 @@ impl WorkUnit for NoopLlmFilter {
         let candidates_value = ctx.structured.get("candidates").ok_or_else(|| {
             WorkError::Execution("filter execute needs ctx.structured[\"candidates\"]".into())
         })?;
-        let candidates: Vec<String> =
-            serde_json::from_value(candidates_value.clone()).map_err(|e| {
-                WorkError::Execution(format!("filter execute: candidates decode: {e}"))
-            })?;
+        let candidates: Vec<String> = serde_json::from_value(candidates_value.clone())
+            .map_err(|e| WorkError::Execution(format!("filter execute: candidates decode: {e}")))?;
         let refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
         let scores = self
             .score_relevance(query, &refs)
@@ -298,7 +296,9 @@ mod tests {
     #[test]
     fn m10_noop_filter_execute_needs_handoff() {
         let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(NoopLlmFilter);
-        let err = handle.execute(&WorkContext::default()).expect_err("missing query");
+        let err = handle
+            .execute(&WorkContext::default())
+            .expect_err("missing query");
         assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
     }
 

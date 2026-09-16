@@ -60,13 +60,7 @@ impl AnnotationStore {
             match current {
                 None => {
                     let next_id = next_claim_id(tx, content_hash, &claim.claim_key)?;
-                    insert_row(
-                        tx,
-                        content_hash,
-                        next_id,
-                        claim,
-                        ClaimStatus::Confirmed,
-                    )?;
+                    insert_row(tx, content_hash, next_id, claim, ClaimStatus::Confirmed)?;
                     Ok(ClaimStatus::Confirmed)
                 }
                 Some(cur) if claim.tier > cur.tier => {
@@ -77,18 +71,10 @@ impl AnnotationStore {
                         params![content_hash, claim.claim_key, cur.claim_id],
                     )?;
                     let next_id = next_claim_id(tx, content_hash, &claim.claim_key)?;
-                    insert_row(
-                        tx,
-                        content_hash,
-                        next_id,
-                        claim,
-                        ClaimStatus::Confirmed,
-                    )?;
+                    insert_row(tx, content_hash, next_id, claim, ClaimStatus::Confirmed)?;
                     Ok(ClaimStatus::Confirmed)
                 }
-                Some(cur)
-                    if claim.tier == cur.tier && cur.status == ClaimStatus::Confirmed =>
-                {
+                Some(cur) if claim.tier == cur.tier && cur.status == ClaimStatus::Confirmed => {
                     // Idempotent re-write at the same authority: keep the
                     // confirmed row rather than self-demoting to provisional.
                     Ok(ClaimStatus::Confirmed)
@@ -97,13 +83,7 @@ impl AnnotationStore {
                     // Lower tier (or equal to a provisional): record it as
                     // provisional — it never overrides the higher confirmed row.
                     let next_id = next_claim_id(tx, content_hash, &claim.claim_key)?;
-                    insert_row(
-                        tx,
-                        content_hash,
-                        next_id,
-                        claim,
-                        ClaimStatus::Provisional,
-                    )?;
+                    insert_row(tx, content_hash, next_id, claim, ClaimStatus::Provisional)?;
                     Ok(ClaimStatus::Provisional)
                 }
             }
@@ -135,10 +115,7 @@ impl AnnotationStore {
     /// Read every **authoritative** (`Confirmed`) claim for a node version.
     /// Pending provisional claims are deliberately excluded — they are not
     /// authoritative.
-    pub fn read_active(
-        &self,
-        content_hash: u64,
-    ) -> Result<Vec<AnnotationClaim>, DbError> {
+    pub fn read_active(&self, content_hash: u64) -> Result<Vec<AnnotationClaim>, DbError> {
         self.store.query_rows(
             "SELECT claim_key, tier, status, payload, produced_by, produced_at \
              FROM ledger_annotations \
@@ -210,14 +187,12 @@ fn current_row(
     content_hash: u64,
     claim_key: &str,
 ) -> Result<Option<Row>, DbError> {
-    let mut stmt = tx.prepare(
-        &format!(
-            "SELECT claim_id, tier, status \
+    let mut stmt = tx.prepare(&format!(
+        "SELECT claim_id, tier, status \
              FROM ledger_annotations \
              WHERE content_hash = ?1 AND claim_key = ?2 AND status != 'superseded' \
              ORDER BY {STATUS_PRIORITY}, claim_id DESC LIMIT 1",
-        ),
-    )?;
+    ))?;
     let mut rows = stmt.query(params![content_hash as i64, claim_key])?;
     let row = rows.next()?.map(row_to_row).transpose()?;
     Ok(row)

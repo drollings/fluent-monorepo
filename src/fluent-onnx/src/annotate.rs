@@ -235,7 +235,9 @@ pub mod ort_annotate {
                     OrtError::Other("session handle does not hold an ort session".to_string())
                 })?;
             let tokenizer_path = config.tokenizer_path.as_ref().ok_or_else(|| {
-                OrtError::Other(format!("annotation worker '{model_key}' missing tokenizer_path"))
+                OrtError::Other(format!(
+                    "annotation worker '{model_key}' missing tokenizer_path"
+                ))
             })?;
             let tokenizer = LfmTokenizer::from_file(tokenizer_path, config.max_seq_len)?;
             let heads = config.annotation_heads.clone().ok_or_else(|| {
@@ -280,16 +282,17 @@ pub mod ort_annotate {
                 .map(|&m| i64::from(m))
                 .collect();
             let shape = [1usize, seq];
-            let input = ort::value::Tensor::from_array((shape, ids))
-                .map_err(|e| OrtError::SessionRun {
+            let input =
+                ort::value::Tensor::from_array((shape, ids)).map_err(|e| OrtError::SessionRun {
                     model: "annotation".to_string(),
                     detail: e.to_string(),
                 })?;
-            let mask_t = ort::value::Tensor::from_array((shape, mask))
-                .map_err(|e| OrtError::SessionRun {
+            let mask_t = ort::value::Tensor::from_array((shape, mask)).map_err(|e| {
+                OrtError::SessionRun {
                     model: "annotation".to_string(),
                     detail: e.to_string(),
-                })?;
+                }
+            })?;
 
             let mut guard = self
                 .session

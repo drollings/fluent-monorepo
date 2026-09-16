@@ -25,7 +25,8 @@ fn routing_context_into_params_strips_none() {
 
 #[test]
 fn routing_context_from_body_parses() {
-    let body = serde_json::json!({"instance":"scratch","snapshot":"snap","id_slot":3,"num_ctx":8192});
+    let body =
+        serde_json::json!({"instance":"scratch","snapshot":"snap","id_slot":3,"num_ctx":8192});
     let ctx = RoutingContext::from_body(&body);
     assert_eq!(ctx.instance.as_deref(), Some("scratch"));
     assert_eq!(ctx.snapshot.as_deref(), Some("snap"));

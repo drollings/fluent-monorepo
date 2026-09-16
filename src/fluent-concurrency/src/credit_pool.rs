@@ -108,7 +108,13 @@ impl<J: Send + Sync + 'static> CreditGatedPool<J> {
         F: Fn(J) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send,
     {
-        Self::new_with_config(runtime, credit_limit, queue_capacity, handler, CreditGatedConfig::default())
+        Self::new_with_config(
+            runtime,
+            credit_limit,
+            queue_capacity,
+            handler,
+            CreditGatedConfig::default(),
+        )
     }
 
     /// Construct the pool with explicit tuning (same semantics as [`new`](Self::new)).
@@ -126,8 +132,7 @@ impl<J: Send + Sync + 'static> CreditGatedPool<J> {
     {
         let (credit, credit_receiver) = flow::new(CreditSpec {
             initial: credit_limit.max(config.min_initial_credit),
-            more_after: (credit_limit / config.refill_divisor.max(1))
-                .max(config.min_refill_batch),
+            more_after: (credit_limit / config.refill_divisor.max(1)).max(config.min_refill_batch),
         });
         let receiver = Arc::new(credit_receiver);
         let worker_cap = config.worker_cap.max(1);
@@ -239,7 +244,6 @@ impl<J: Send + Sync + 'static> SinkPool for CreditGatedPool<J> {
         CreditGatedPool::drain(&self).await;
     }
 }
-
 
 #[cfg(test)]
 #[path = "../tests/credit_pool.rs"]

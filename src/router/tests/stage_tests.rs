@@ -8,7 +8,9 @@ mod tests {
         ConfidenceGate, FilterAction, FilterOutcome, FilterScope, PatternEntry, RejectPatterns,
     };
     use crate::pipeline::PipelineOrchestrator;
-    use crate::pipeline_types::{PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict};
+    use crate::pipeline_types::{
+        PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict,
+    };
     use crate::stages::deterministic::DeterministicPreFilter;
     use crate::test_support::capture_logs;
 
@@ -500,8 +502,7 @@ mod tests {
         assert!(decision.reason.contains("LLM error"));
         // No fabricated 1.0 scores may appear on the reject path.
         assert!(
-            !decision.reason.contains("coherence")
-                && !decision.reason.contains("1.00"),
+            !decision.reason.contains("coherence") && !decision.reason.contains("1.00"),
             "reject path must not fabricate scores: {}",
             decision.reason
         );
@@ -534,7 +535,8 @@ mod tests {
         let stage = classifier_stage_with_policy(
             Arc::new(FixedResponseBackend {
                 response: "I'm built on a hybrid architecture combining gated short \
-                           convolutions with grouped-query attention.".into(),
+                           convolutions with grouped-query attention."
+                    .into(),
             }),
             crate::config::ClassifierFailurePolicy::Reject,
         );
@@ -551,7 +553,10 @@ mod tests {
             Some(false),
             "a prose direct answer is complete, not a retryable fallback"
         );
-        assert!(meta.get("response").is_some(), "prose must be delivered as the response");
+        assert!(
+            meta.get("response").is_some(),
+            "prose must be delivered as the response"
+        );
     }
 
     /// On an `always_route` route the classifier is never allowed to answer
@@ -622,8 +627,15 @@ mod tests {
             .expect("data_as");
         assert_eq!(decision.verdict, StageVerdict::Passed);
         let meta = decision.metadata.as_object().expect("metadata object");
-        assert_eq!(meta.get("coherence_score").and_then(serde_json::Value::as_f64), Some(0.0));
-        assert_eq!(meta.get("safety_score").and_then(serde_json::Value::as_f64), Some(0.0));
+        assert_eq!(
+            meta.get("coherence_score")
+                .and_then(serde_json::Value::as_f64),
+            Some(0.0)
+        );
+        assert_eq!(
+            meta.get("safety_score").and_then(serde_json::Value::as_f64),
+            Some(0.0)
+        );
     }
 
     // ── Stage 2: ClassifierStage in classification-tree mode ─────────────
@@ -840,16 +852,16 @@ mod tests {
         };
         let client = Arc::clone(&backend);
         let limiter = Arc::new(fluent_concurrency::pool::Limiter::new(4));
-        let matcher =
-            if params.target_match == crate::config::builder::TargetMatchMode::SelfAssess {
-                Some(TargetMatcher::new(
-                    TargetBackends::new(HashMap::new(), Arc::clone(&client)),
-                    Arc::clone(&limiter),
-                    params.target_match_timeout_ms,
-                ))
-            } else {
-                None
-            };
+        let matcher = if params.target_match == crate::config::builder::TargetMatchMode::SelfAssess
+        {
+            Some(TargetMatcher::new(
+                TargetBackends::new(HashMap::new(), Arc::clone(&client)),
+                Arc::clone(&limiter),
+                params.target_match_timeout_ms,
+            ))
+        } else {
+            None
+        };
         let classifier: Arc<ClassifierStage> = Arc::new(ClassifierStage::new(
             client,
             routing,
@@ -857,7 +869,10 @@ mod tests {
             params.score_matrix.clone(),
             params.score_matrix_authoritative,
             1,
-            params.classifier_model.clone().unwrap_or_else(|| "fast".into()),
+            params
+                .classifier_model
+                .clone()
+                .unwrap_or_else(|| "fast".into()),
             limiter,
             matcher,
             config.classifier_failure_policy,
@@ -877,15 +892,13 @@ mod tests {
                     params.classifier_retry_prompts.clone(),
                 ));
             let producer_stage = Arc::clone(&retry);
-            let producer: crate::pipeline::StageProducer = Arc::new(move |ctx, prior| {
-                producer_stage.evaluate_with_target(ctx, prior)
-            });
+            let producer: crate::pipeline::StageProducer =
+                Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
             orchestrator = orchestrator.push_with_producer(retry, producer);
         } else {
             let producer_stage = Arc::clone(&classifier);
-            let producer: crate::pipeline::StageProducer = Arc::new(move |ctx, prior| {
-                producer_stage.evaluate_with_target(ctx, prior)
-            });
+            let producer: crate::pipeline::StageProducer =
+                Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
             orchestrator = orchestrator.push_with_producer(classifier, producer);
         }
         orchestrator.build()
@@ -933,7 +946,8 @@ mod tests {
     ) -> crate::pipeline::PipelineResult {
         let backend: Arc<dyn fluent_llm::client::ChatBackend> =
             Arc::new(crate::test_stubs::StubChatBackend::always(response));
-        let pipeline = flat_engine_pipeline(config, &[("code", "code"), ("local", "local")], backend);
+        let pipeline =
+            flat_engine_pipeline(config, &[("code", "code"), ("local", "local")], backend);
         let mut ctx = WorkContext::default();
         ctx.set_structured(
             "request",
@@ -1260,11 +1274,8 @@ mod tests {
         };
 
         let (result, logs) = capture_logs(|| {
-            let pipeline = flat_engine_pipeline(
-                &config,
-                &[("code", "code")],
-                std::sync::Arc::new(backend),
-            );
+            let pipeline =
+                flat_engine_pipeline(&config, &[("code", "code")], std::sync::Arc::new(backend));
             let mut ctx = WorkContext::default();
             ctx.set_structured(
                 "request",
@@ -1402,11 +1413,8 @@ mod tests {
             prompts,
             success_response: "{}".into(),
         };
-        let pipeline = flat_engine_pipeline(
-            &config,
-            &[("code", "code")],
-            std::sync::Arc::new(backend),
-        );
+        let pipeline =
+            flat_engine_pipeline(&config, &[("code", "code")], std::sync::Arc::new(backend));
         let mut ctx = WorkContext::default();
         ctx.set_structured(
             "request",
@@ -1543,11 +1551,10 @@ mod tests {
         responses: Vec<String>,
         fallback: String,
     ) -> crate::pipeline::PipelineResult {
-        let backend: Arc<dyn fluent_llm::client::ChatBackend> =
-            Arc::new(QueueThenBackend {
-                queue: std::sync::Mutex::new(responses.into()),
-                fallback,
-            });
+        let backend: Arc<dyn fluent_llm::client::ChatBackend> = Arc::new(QueueThenBackend {
+            queue: std::sync::Mutex::new(responses.into()),
+            fallback,
+        });
         let pipeline = flat_engine_pipeline(config, &[("code", "code")], backend);
         let mut ctx = WorkContext::default();
         ctx.set_structured(
@@ -1781,9 +1788,7 @@ mod tests {
                 "messages": [{"role": "user", "content": "Write a 400-word gothic story..."}],
             }),
         );
-        let (decision, target) = stage
-            .evaluate_with_target(&ctx, &[])
-            .expect("evaluate");
+        let (decision, target) = stage.evaluate_with_target(&ctx, &[]).expect("evaluate");
         let metadata = StageMetadata::from(decision.metadata.clone());
         // The direct response must have been overridden into a routing target.
         assert!(
@@ -1798,7 +1803,9 @@ mod tests {
         // without the hard enforcement.
         let recorded = prompt_log.lock().unwrap().clone();
         assert!(
-            recorded.iter().any(|p| p.contains("ALWAYS dispatch") && p.contains("prose")),
+            recorded
+                .iter()
+                .any(|p| p.contains("ALWAYS dispatch") && p.contains("prose")),
             "prompt must teach the always-route rule: {recorded:?}"
         );
 

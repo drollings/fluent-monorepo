@@ -208,7 +208,12 @@ mod tests {
         fs::write(&json, "old").expect("write json");
         thread::sleep(Duration::from_millis(1100));
         fs::write(&source, "newer").expect("write source");
-        assert!(should_generate_with_stored(&json, &source, Some("h"), hash_now));
+        assert!(should_generate_with_stored(
+            &json,
+            &source,
+            Some("h"),
+            hash_now
+        ));
         // Fresh by the clock (source older): skips without hashing.
         let dir = tempdir();
         let json = dir.path().join("old.json");
@@ -216,7 +221,12 @@ mod tests {
         fs::write(&source, "old").expect("write source");
         thread::sleep(Duration::from_millis(100));
         fs::write(&json, "newer").expect("write json");
-        assert!(!should_generate_with_stored(&json, &source, Some("h"), hash_now));
+        assert!(!should_generate_with_stored(
+            &json,
+            &source,
+            Some("h"),
+            hash_now
+        ));
         assert_eq!(calls.get(), 0, "hash must not fire outside the window");
     }
 
@@ -232,20 +242,39 @@ mod tests {
         fs::write(&source, body).expect("write source");
         let current = common_core::hash::sha256_hex(body);
         // Identical bytes inside the window: skip (precision).
-        assert!(!should_generate_with_stored(&json, &source, Some(&current), || {
-            calls.set(calls.get() + 1);
-            Some(current.clone())
-        }));
+        assert!(!should_generate_with_stored(
+            &json,
+            &source,
+            Some(&current),
+            || {
+                calls.set(calls.get() + 1);
+                Some(current.clone())
+            }
+        ));
         // Changed bytes inside the window: fire (recall).
-        assert!(should_generate_with_stored(&json, &source, Some("other"), || {
-            calls.set(calls.get() + 1);
-            Some(current.clone())
-        }));
+        assert!(should_generate_with_stored(
+            &json,
+            &source,
+            Some("other"),
+            || {
+                calls.set(calls.get() + 1);
+                Some(current.clone())
+            }
+        ));
         // Unreadable source inside the window: fail open toward work.
-        assert!(should_generate_with_stored(&json, &source, Some(&current), || {
-            calls.set(calls.get() + 1);
-            None
-        }));
-        assert_eq!(calls.get(), 3, "hash runs exactly once per inside-window decision");
+        assert!(should_generate_with_stored(
+            &json,
+            &source,
+            Some(&current),
+            || {
+                calls.set(calls.get() + 1);
+                None
+            }
+        ));
+        assert_eq!(
+            calls.get(),
+            3,
+            "hash runs exactly once per inside-window decision"
+        );
     }
 }

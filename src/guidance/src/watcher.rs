@@ -29,8 +29,8 @@ use crate::scheduler::BoxFuture;
 use notify::Watcher as _;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 
@@ -431,16 +431,17 @@ fn is_ignored_under(
     matcher.matched(path, is_dir).is_ignore()
 }
 
-fn has_system_segment(path: &Path) -> bool {    path.components().any(|component| {
-        matches!(component.as_os_str().to_str(), Some(".git" | ".guidance"))
-    })
+fn has_system_segment(path: &Path) -> bool {
+    path.components()
+        .any(|component| matches!(component.as_os_str().to_str(), Some(".git" | ".guidance")))
 }
 
 fn is_hidden_segment(path: &Path) -> bool {
     path.components().any(|component| {
-        component.as_os_str().to_str().is_some_and(|segment| {
-            segment.starts_with('.') && segment != "." && segment != ".."
-        })
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|segment| segment.starts_with('.') && segment != "." && segment != "..")
     })
 }
 
@@ -533,7 +534,9 @@ impl WatchManager {
         if self
             .shared
             .tx
-            .send(LoopMsg::FlushNow { done: Some(done_tx) })
+            .send(LoopMsg::FlushNow {
+                done: Some(done_tx),
+            })
             .is_err()
         {
             return;
@@ -610,10 +613,18 @@ async fn run_loop(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<LoopMsg>)
         options,
     };
     loop {
-        let debounce_sleep = state.debounce_at.map(|at| tokio::time::sleep_until(at.into()));
-        let maxwait_sleep = state.maxwait_at.map(|at| tokio::time::sleep_until(at.into()));
-        let reconcile_sleep = state.reconcile_at.map(|at| tokio::time::sleep_until(at.into()));
-        let resume_sleep = state.resume_at.map(|at| tokio::time::sleep_until(at.into()));
+        let debounce_sleep = state
+            .debounce_at
+            .map(|at| tokio::time::sleep_until(at.into()));
+        let maxwait_sleep = state
+            .maxwait_at
+            .map(|at| tokio::time::sleep_until(at.into()));
+        let reconcile_sleep = state
+            .reconcile_at
+            .map(|at| tokio::time::sleep_until(at.into()));
+        let resume_sleep = state
+            .resume_at
+            .map(|at| tokio::time::sleep_until(at.into()));
         tokio::select! {
             msg = rx.recv() => {
                 let Some(msg) = msg else { return };
@@ -671,8 +682,9 @@ fn handle_msg(shared: &Arc<Shared>, state: &mut LoopState, msg: LoopMsg) {
             state.lifecycle = Lifecycle::Running;
             state.last_resume_check = Instant::now();
             if state.options.reconcile_interval_ms > 0 {
-                state.reconcile_at =
-                    Some(Instant::now() + Duration::from_millis(state.options.reconcile_interval_ms));
+                state.reconcile_at = Some(
+                    Instant::now() + Duration::from_millis(state.options.reconcile_interval_ms),
+                );
             }
             if state.options.resume_check_interval_ms > 0 {
                 state.resume_at = Some(
@@ -688,7 +700,11 @@ fn handle_msg(shared: &Arc<Shared>, state: &mut LoopState, msg: LoopMsg) {
             state.handles.insert(key.clone(), handle);
             state.watched_dirs.insert(PathBuf::from(key));
         }
-        LoopMsg::Statted { path, hint, exists_dir } => {
+        LoopMsg::Statted {
+            path,
+            hint,
+            exists_dir,
+        } => {
             handle_statted(shared, state, &path, hint, exists_dir);
         }
         LoopMsg::RefreshTree { dir, done } => {
@@ -740,7 +756,11 @@ fn handle_backend(shared: &Arc<Shared>, state: &mut LoopState, event: WatcherEve
                     .await
                     .ok()
                     .map(|metadata| metadata.is_dir());
-                let _ = tx.send(LoopMsg::Statted { path, hint: kind, exists_dir });
+                let _ = tx.send(LoopMsg::Statted {
+                    path,
+                    hint: kind,
+                    exists_dir,
+                });
             });
         }
         WatcherEvent::Error { key, message } => {
@@ -827,7 +847,9 @@ fn handle_watch_error(shared: &Arc<Shared>, state: &mut LoopState, key: &str, _m
             .recovery
             .get(key)
             .map_or(1, |recovery| recovery.consecutive_errors);
-        let delay_ms = 100u64.saturating_mul(2u64.pow(consecutive.saturating_sub(1).min(8))).min(5_000);
+        let delay_ms = 100u64
+            .saturating_mul(2u64.pow(consecutive.saturating_sub(1).min(8)))
+            .min(5_000);
         let tx = shared.tx.clone();
         let key = key.to_string();
         spawn_tracked(shared, async move {
@@ -879,7 +901,10 @@ fn retry_watch(shared: &Arc<Shared>, state: &mut LoopState, key: &str) {
 /// Spawn an async directory-tree walk reporting registrations to the loop.
 fn spawn_walk_tree(shared: &Arc<Shared>, dir: PathBuf, done: Option<oneshot::Sender<()>>) {
     let backend = Arc::clone(&shared.options.backend);
-    let filters = Arc::new(build_filters(&shared.options.root, &shared.options.root_paths));
+    let filters = Arc::new(build_filters(
+        &shared.options.root,
+        &shared.options.root_paths,
+    ));
     let tx = shared.tx.clone();
     spawn_tracked(shared, async move {
         walk_dir(&backend, &dir, &tx, &filters).await;
@@ -945,7 +970,10 @@ fn refresh_tree(
     }
     // Rebuild ignore filters (a `.gitignore` change may have arrived),
     // prune the subtree, and re-walk it.
-    state.filters = Arc::new(build_filters(&state.options.root, &state.options.root_paths));
+    state.filters = Arc::new(build_filters(
+        &state.options.root,
+        &state.options.root_paths,
+    ));
     prune_dir_watchers(state, &dir);
     spawn_walk_tree(shared, dir, done);
 }
@@ -972,7 +1000,9 @@ fn queue_full_reconcile(shared: &Arc<Shared>, state: &mut LoopState) {
 }
 
 fn resume_check(state: &mut LoopState, now: Instant) {
-    if now.saturating_duration_since(state.last_resume_check).as_millis() as u64
+    if now
+        .saturating_duration_since(state.last_resume_check)
+        .as_millis() as u64
         >= state.options.resume_threshold_ms
     {
         state.changes.require_full_reconcile();
@@ -1014,11 +1044,7 @@ fn emit_pending(shared: &Arc<Shared>, state: &LoopState, value: bool) {
     let _ = shared;
 }
 
-fn start_flush(
-    shared: &Arc<Shared>,
-    state: &mut LoopState,
-    done: Option<oneshot::Sender<()>>,
-) {
+fn start_flush(shared: &Arc<Shared>, state: &mut LoopState, done: Option<oneshot::Sender<()>>) {
     if state.lifecycle == Lifecycle::Closed || state.changes.is_empty() {
         if let Some(done) = done {
             let _ = done.send(());
@@ -1117,10 +1143,14 @@ impl WatchBackend for NotifyBackend {
             notify::RecursiveMode::NonRecursive
         };
         let key = dir_key(dir);
-        let mut watcher =
-            notify::RecommendedWatcher::new(NotifyDispatch { sink, key }, notify::Config::default())
-                .map_err(|error| error.to_string())?;
-        watcher.watch(dir, mode).map_err(|error| error.to_string())?;
+        let mut watcher = notify::RecommendedWatcher::new(
+            NotifyDispatch { sink, key },
+            notify::Config::default(),
+        )
+        .map_err(|error| error.to_string())?;
+        watcher
+            .watch(dir, mode)
+            .map_err(|error| error.to_string())?;
         Ok(Box::new(NotifyHandle { _watcher: watcher }))
     }
 }
@@ -1278,13 +1308,9 @@ impl WatchBackend for ManualBackend {
         if recursive && inner.fail_recursive {
             return Err("recursive unsupported".to_string());
         }
-        inner.watches.insert(
-            dir_key(dir),
-            ManualWatch {
-                recursive,
-                sink,
-            },
-        );
+        inner
+            .watches
+            .insert(dir_key(dir), ManualWatch { recursive, sink });
         Ok(Box::new(ManualHandle {
             backend: self.clone(),
             key: dir_key(dir),
@@ -1295,4 +1321,3 @@ impl WatchBackend for ManualBackend {
 #[cfg(test)]
 #[path = "../tests/watcher.rs"]
 mod tests;
-

@@ -6,7 +6,9 @@ fn event_to_json(event: &TelemetryEvent) -> serde_json::Value {
 
 #[test]
 fn tool_invoked_is_pii_free() {
-    let json = event_to_json(&TelemetryEvent::ToolInvoked { tool: ToolName::Search });
+    let json = event_to_json(&TelemetryEvent::ToolInvoked {
+        tool: ToolName::Search,
+    });
     assert_eq!(json["type"].as_str(), Some("ToolInvoked"));
     assert_eq!(json["tool"].as_str(), Some("search"));
     assert!(json.get("user_input").is_none());
@@ -27,21 +29,28 @@ fn tool_completed_has_duration_and_outcome() {
 
 #[test]
 fn routing_has_category_not_name() {
-    let json = event_to_json(&TelemetryEvent::Routing { category: ProviderCategory::Local });
+    let json = event_to_json(&TelemetryEvent::Routing {
+        category: ProviderCategory::Local,
+    });
     assert_eq!(json["category"].as_str(), Some("local"));
     assert!(json.get("provider_name").is_none());
 }
 
 #[test]
 fn error_event_has_class() {
-    let json = event_to_json(&TelemetryEvent::Error { class: FailureClass::Timeout, message: None });
+    let json = event_to_json(&TelemetryEvent::Error {
+        class: FailureClass::Timeout,
+        message: None,
+    });
     assert_eq!(json["class"].as_str(), Some("timeout"));
     assert!(json.get("user_data").is_none());
 }
 
 #[test]
 fn feature_used_is_controlled() {
-    let json = event_to_json(&TelemetryEvent::FeatureUsed { feature: FeatureName::InjectionDetection });
+    let json = event_to_json(&TelemetryEvent::FeatureUsed {
+        feature: FeatureName::InjectionDetection,
+    });
     assert_eq!(json["feature"].as_str(), Some("injection_detection"));
 }
 
@@ -57,7 +66,10 @@ fn failure_class_round_trips_through_json() {
         (FailureClass::Internal, "internal"),
         (FailureClass::Unknown, "unknown"),
     ] {
-        let json = event_to_json(&TelemetryEvent::Error { class: *class, message: None });
+        let json = event_to_json(&TelemetryEvent::Error {
+            class: *class,
+            message: None,
+        });
         assert_eq!(json["class"].as_str(), Some(*label));
     }
 }
@@ -65,14 +77,20 @@ fn failure_class_round_trips_through_json() {
 #[test]
 fn tracing_sink_emits_without_panic() {
     let sink = TracingSink;
-    let event = TelemetryEvent::ToolCompleted { tool: ToolName::Classify, duration_ms: 42, success: true };
+    let event = TelemetryEvent::ToolCompleted {
+        tool: ToolName::Classify,
+        duration_ms: 42,
+        success: true,
+    };
     sink.emit(&event);
 }
 
 #[test]
 fn noop_sink_emits_without_panic() {
     let sink = NoopSink;
-    let event = TelemetryEvent::FeatureUsed { feature: FeatureName::OutputSanitization };
+    let event = TelemetryEvent::FeatureUsed {
+        feature: FeatureName::OutputSanitization,
+    };
     sink.emit(&event);
 }
 

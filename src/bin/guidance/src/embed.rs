@@ -9,7 +9,7 @@
 //! embedder-absent paths. Construction is offline (no dial); the network
 //! only happens at embed time, so resolution itself is hermetic-safe.
 
-use fluent_llm::embeddings::{EmbeddingProvider, create_embedding_provider};
+use fluent_llm::embeddings::{create_embedding_provider, EmbeddingProvider};
 use guidance_core::config::ProjectConfig;
 
 /// Build the configured embedding provider, or `None` when no backend is
@@ -25,9 +25,11 @@ pub fn embedder_from_config(cfg: &ProjectConfig) -> Option<Box<dyn EmbeddingProv
     // scheme is a plain token; full forms (`custom:http://…`) travel
     // whole into the factory, which parses them itself.
     let (name, model, scheme) = match model_ref.split_once(':') {
-        Some((scheme, model)) if !scheme.contains('/') => {
-            (model_ref.clone(), Some(model.to_string()), scheme.to_string())
-        }
+        Some((scheme, model)) if !scheme.contains('/') => (
+            model_ref.clone(),
+            Some(model.to_string()),
+            scheme.to_string(),
+        ),
         _ => (model_ref.clone(), None, model_ref.clone()),
     };
     let base_url = cfg.providers.get(&scheme).map(|p| p.base_url.clone());
@@ -42,7 +44,15 @@ pub fn embedder_from_config(cfg: &ProjectConfig) -> Option<Box<dyn EmbeddingProv
         .as_ref()
         .and_then(|embed| embed.cache_limit)
         .or(cfg.embedding_cache_limit);
-    match create_embedding_provider(&name, model.as_deref(), base_url.as_deref(), None, dims, cache_limit, None) {
+    match create_embedding_provider(
+        &name,
+        model.as_deref(),
+        base_url.as_deref(),
+        None,
+        dims,
+        cache_limit,
+        None,
+    ) {
         Ok(provider) => Some(provider),
         Err(error) => {
             tracing::warn!("embedding backend {model_ref} unusable: {error}");

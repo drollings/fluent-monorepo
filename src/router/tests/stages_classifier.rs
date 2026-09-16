@@ -27,7 +27,10 @@ fn response_format_schema_covers_classifier_output_fields() {
         .map(|v| v.as_str().expect("required name"))
         .collect();
     for name in &required {
-        assert!(props.contains_key(*name), "required but not a property: {name}");
+        assert!(
+            props.contains_key(*name),
+            "required but not a property: {name}"
+        );
     }
 }
 
@@ -46,8 +49,14 @@ fn response_format_schema_uses_numeric_bounds() {
     assert!(coherence["maximum"].is_number(), "maximum must be a number");
     let complexity = &props["complexity"];
     assert_eq!(complexity["type"], "integer");
-    assert!(complexity["minimum"].is_number(), "integer minimum must be a number");
-    assert!(complexity["maximum"].is_number(), "integer maximum must be a number");
+    assert!(
+        complexity["minimum"].is_number(),
+        "integer minimum must be a number"
+    );
+    assert!(
+        complexity["maximum"].is_number(),
+        "integer maximum must be a number"
+    );
 }
 
 /// The response_format extras must be a valid fork-shaped body: top-level
@@ -67,7 +76,10 @@ fn parse_heals_malformed_json_instead_of_rejecting() {
     let raw = "{action: 'route', target: 'code', coherence_score: 0.9, safety_score: 1, \
                 complexity: 7, intent: 'code', reason: 'needs the big model',}";
     let (out, ok) = parse_classifier_response(raw, "local", true).expect("must self-heal");
-    assert!(!ok, "a repaired parse must be flagged as recovered, not pristine");
+    assert!(
+        !ok,
+        "a repaired parse must be flagged as recovered, not pristine"
+    );
     assert_eq!(out.action, "route");
     assert_eq!(out.target.as_deref(), Some("code"));
     assert_eq!(out.coherence_score, 0.9);
@@ -136,13 +148,15 @@ fn parse_heals_truncated_mid_member() {
 /// for review; the dump is a file, never the ledger.
 #[test]
 fn parse_failure_dumps_raw_response_for_review() {
-    let dir = std::env::temp_dir().join(format!(
-        "coral-classifier-fail-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("coral-classifier-fail-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let failures = dir.join("classifier_failures");
-    dump_classifier_failure(&dir, "lfm2.5-350m", "invalid JSON in LLM response", "{\"a\": ");
+    dump_classifier_failure(
+        &dir,
+        "lfm2.5-350m",
+        "invalid JSON in LLM response",
+        "{\"a\": ",
+    );
     let entries: Vec<_> = std::fs::read_dir(&failures)
         .expect("failures dir must exist")
         .flatten()
@@ -164,7 +178,10 @@ fn parse_recovers_brace_less_key_value_via_boundary_decode() {
     let raw = "action: route, target: code, coherence_score: 0.8, safety_score: 1, \
                 complexity: 7, reason: needs the big model";
     let (out, ok) = parse_classifier_response(raw, "local", true).expect("must decode members");
-    assert!(!ok, "a boundary decode is a recovered parse, never pristine");
+    assert!(
+        !ok,
+        "a boundary decode is a recovered parse, never pristine"
+    );
     assert_eq!(out.action, "route");
     assert_eq!(out.target.as_deref(), Some("code"));
     assert_eq!(out.coherence_score, 0.8);
@@ -196,11 +213,20 @@ fn parse_prose_becomes_direct_answer_when_permitted() {
                convolutions with grouped-query attention, chosen for fast on-device \
                inference.";
     let (out, ok) = parse_classifier_response(raw, "local", true).expect("must respond");
-    assert!(ok, "a prose direct answer is complete, not a retryable fallback");
+    assert!(
+        ok,
+        "a prose direct answer is complete, not a retryable fallback"
+    );
     assert_eq!(out.action, "respond");
     assert_eq!(out.response.as_deref(), Some(raw.trim()));
-    assert_eq!(out.coherence_score, 1.0, "mirrors sanitize defaults for respond");
-    assert_eq!(out.safety_score, 1.0, "mirrors sanitize defaults for respond");
+    assert_eq!(
+        out.coherence_score, 1.0,
+        "mirrors sanitize defaults for respond"
+    );
+    assert_eq!(
+        out.safety_score, 1.0,
+        "mirrors sanitize defaults for respond"
+    );
 }
 
 /// On an `always_route` route the classifier is never allowed to answer
@@ -297,10 +323,10 @@ fn classifier_sends_response_format_through_extras_seam() {
         "lfm2.5-2.6b",
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         None,
-            crate::config::ClassifierFailurePolicy::Reject,
-            None,
-            None,
-        );
+        crate::config::ClassifierFailurePolicy::Reject,
+        None,
+        None,
+    );
 
     let mut ctx = WorkContext::default();
     ctx.set_structured(
@@ -323,8 +349,7 @@ fn classifier_sends_response_format_through_extras_seam() {
     assert_eq!(rf["type"], "json_object", "must request a JSON object");
     assert!(rf["schema"].is_object(), "must carry the JSON schema");
     assert_eq!(
-        rf["schema"]["properties"]["action"]["type"],
-        "string",
+        rf["schema"]["properties"]["action"]["type"], "string",
         "schema must cover the classifier output shape"
     );
 }
@@ -364,7 +389,10 @@ fn route_hints_prompt_context_lists_hints_with_scores() {
     ];
     let ctx = ClassifierStage::route_hints_prompt_context(&hints);
     assert!(ctx.contains("Route hints"));
-    assert!(ctx.contains("- code: 0.910"), "score formatted, ctx:\n{ctx}");
+    assert!(
+        ctx.contains("- code: 0.910"),
+        "score formatted, ctx:\n{ctx}"
+    );
     assert!(ctx.contains("- prose: 0.080"));
     assert!(
         ctx.find("code").unwrap() < ctx.find("prose").unwrap(),
@@ -377,7 +405,10 @@ fn route_hints_prompt_context_lists_hints_with_scores() {
 #[test]
 fn route_hints_prompt_context_empty_is_empty() {
     let ctx = ClassifierStage::route_hints_prompt_context(&[]);
-    assert_eq!(ctx.trim(), "Route hints (deterministic overlay scores — weigh the top routes when deciding):");
+    assert_eq!(
+        ctx.trim(),
+        "Route hints (deterministic overlay scores — weigh the top routes when deciding):"
+    );
 }
 
 /// Backend that records the system message so the merged deterministic
@@ -438,10 +469,10 @@ fn classifier_merges_overlay_route_hints_into_the_prompt() {
         "lfm2.5-2.6b",
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         None,
-            crate::config::ClassifierFailurePolicy::Reject,
-            None,
-            None,
-        );
+        crate::config::ClassifierFailurePolicy::Reject,
+        None,
+        None,
+    );
 
     let mut ctx = WorkContext::default();
     ctx.set_structured(
@@ -455,21 +486,31 @@ fn classifier_merges_overlay_route_hints_into_the_prompt() {
     // An overlay decision published between nlp and classifier.
     let mut overlay_meta = StageMetadata::new(serde_json::json!({}));
     overlay_meta.set_overlay_route_hints(&[
-        RouteHint { route: "code".into(), score: 0.91 },
-        RouteHint { route: "prose".into(), score: 0.06 },
+        RouteHint {
+            route: "code".into(),
+            score: 0.91,
+        },
+        RouteHint {
+            route: "prose".into(),
+            score: 0.06,
+        },
     ]);
-    let prior = vec![StageDecision::new(
-        PipelineStage::Overlay,
-        StageVerdict::Passed,
-        "scored",
-    )
-    .with_metadata(overlay_meta.into_value())];
+    let prior = vec![
+        StageDecision::new(PipelineStage::Overlay, StageVerdict::Passed, "scored")
+            .with_metadata(overlay_meta.into_value()),
+    ];
 
     let decision = stage.evaluate(&ctx, &prior).expect("evaluate");
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let system = seen.lock().expect("lock").first().expect("system").clone();
-    assert!(system.contains("Route hints"), "hints merged, system:\n{system}");
-    assert!(system.contains("- code: 0.910"), "hint listed with score, system:\n{system}");
+    assert!(
+        system.contains("Route hints"),
+        "hints merged, system:\n{system}"
+    );
+    assert!(
+        system.contains("- code: 0.910"),
+        "hint listed with score, system:\n{system}"
+    );
     assert!(
         system.find("code: 0.910").unwrap() < system.find("prose: 0.060").unwrap(),
         "highest-score hint listed first"
@@ -505,10 +546,10 @@ fn classifier_prompt_unchanged_without_overlay_hints() {
         "lfm2.5-2.6b",
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         None,
-            crate::config::ClassifierFailurePolicy::Reject,
-            None,
-            None,
-        );
+        crate::config::ClassifierFailurePolicy::Reject,
+        None,
+        None,
+    );
 
     let mut ctx = WorkContext::default();
     ctx.set_structured(
@@ -667,9 +708,10 @@ fn late_bound_stage(
     live: Arc<SwappableBackend>,
     model_key: &str,
 ) -> ClassifierStage {
-    let resolver: ClassifierBackendResolver = Arc::new(move |_: &str| {
-        Some(Arc::clone(&live) as Arc<dyn fluent_llm::client::ChatBackend>)
-    });
+    let resolver: ClassifierBackendResolver =
+        Arc::new(
+            move |_: &str| Some(Arc::clone(&live) as Arc<dyn fluent_llm::client::ChatBackend>),
+        );
     ClassifierStage::new(
         frozen,
         empty_routing_config(),
@@ -734,7 +776,8 @@ fn late_bound_flat_path_consults_resolved_backend_not_frozen() {
         response: respond_json("live"),
     });
     let live_backend: Arc<dyn fluent_llm::client::ChatBackend> = Arc::clone(&live) as _;
-    let resolver: ClassifierBackendResolver = Arc::new(move |_: &str| Some(Arc::clone(&live_backend)));
+    let resolver: ClassifierBackendResolver =
+        Arc::new(move |_: &str| Some(Arc::clone(&live_backend)));
     let stage = ClassifierStage::new(
         frozen.clone() as Arc<dyn fluent_llm::client::ChatBackend>,
         empty_routing_config(),
@@ -750,10 +793,20 @@ fn late_bound_flat_path_consults_resolved_backend_not_frozen() {
         Some(resolver),
     );
 
-    let decision = stage.evaluate(&classifier_request_ctx(), &[]).expect("evaluate");
+    let decision = stage
+        .evaluate(&classifier_request_ctx(), &[])
+        .expect("evaluate");
     assert_eq!(decision.verdict, StageVerdict::Passed);
-    assert_eq!(*live.calls.lock().expect("lock"), 1, "resolved backend serves");
-    assert_eq!(*frozen.calls.lock().expect("lock"), 0, "frozen client untouched");
+    assert_eq!(
+        *live.calls.lock().expect("lock"),
+        1,
+        "resolved backend serves"
+    );
+    assert_eq!(
+        *frozen.calls.lock().expect("lock"),
+        0,
+        "frozen client untouched"
+    );
 }
 
 #[test]
@@ -781,9 +834,15 @@ fn late_bound_miss_rejects_without_fabricated_route() {
     );
 
     assert!(stage.resolve_backend().is_none());
-    let decision = stage.evaluate(&classifier_request_ctx(), &[]).expect("evaluate");
+    let decision = stage
+        .evaluate(&classifier_request_ctx(), &[])
+        .expect("evaluate");
     assert_eq!(decision.verdict, StageVerdict::Rejected);
-    assert_eq!(*frozen.calls.lock().expect("lock"), 0, "no backend consulted");
+    assert_eq!(
+        *frozen.calls.lock().expect("lock"),
+        0,
+        "no backend consulted"
+    );
 }
 
 #[test]
@@ -810,7 +869,9 @@ fn frozen_client_serves_when_no_resolver_installed() {
     );
 
     assert!(!stage.has_backend_resolver());
-    let decision = stage.evaluate(&classifier_request_ctx(), &[]).expect("evaluate");
+    let decision = stage
+        .evaluate(&classifier_request_ctx(), &[])
+        .expect("evaluate");
     assert_eq!(decision.verdict, StageVerdict::Passed);
     assert_eq!(*frozen.calls.lock().expect("lock"), 1);
 }
@@ -839,9 +900,7 @@ fn reject_predicted(case: &serde_json::Value, coherence_t: f64, safety_t: f64) -
 
 #[test]
 fn reject_calibration_at_shipped_defaults() {
-    use crate::config::classification::{
-        default_coherence_threshold, default_safety_threshold,
-    };
+    use crate::config::classification::{default_coherence_threshold, default_safety_threshold};
     let coherence_t = default_coherence_threshold();
     let safety_t = default_safety_threshold();
     assert_eq!((coherence_t, safety_t), (0.70, 0.5));
@@ -871,9 +930,7 @@ fn reject_calibration_at_shipped_defaults() {
 
 #[test]
 fn control_prompts_never_reject() {
-    use crate::config::classification::{
-        default_coherence_threshold, default_safety_threshold,
-    };
+    use crate::config::classification::{default_coherence_threshold, default_safety_threshold};
     let corpus = reject_corpus();
     let control = corpus["control"].as_array().expect("control array");
     assert!(!control.is_empty(), "control group must not be empty");
@@ -895,9 +952,7 @@ fn control_prompts_never_reject() {
 
 #[test]
 fn reject_reason_names_the_failing_axis() {
-    use crate::config::classification::{
-        default_coherence_threshold, default_safety_threshold,
-    };
+    use crate::config::classification::{default_coherence_threshold, default_safety_threshold};
     let coherence_case = ClassifierOutput {
         coherence_score: 0.2,
         safety_score: 0.9,
@@ -967,7 +1022,8 @@ fn flat_system_prompt_is_byte_identical() {
         routes,
         models: std::collections::HashMap::new(),
         model_groups: std::collections::HashMap::new(),
-        system_prompt: "Route with care (coherence {coherence_threshold}, safety {safety_threshold}).".into(),
+        system_prompt:
+            "Route with care (coherence {coherence_threshold}, safety {safety_threshold}).".into(),
         safety_threshold: 0.5,
         default_route: "local".into(),
         score_matrix: None,
@@ -1022,14 +1078,15 @@ Response rules:
 - Complexity 0 = trivial, 10 = extremely complex.
 - Only output JSON, no other text.
 "#;
-    assert_eq!(prompt, expected, "flat system prompt changed — update the golden deliberately");
+    assert_eq!(
+        prompt, expected,
+        "flat system prompt changed — update the golden deliberately"
+    );
 }
 
 #[test]
 fn confidence_gap_predicate_cannot_see_task_value() {
-    use crate::config::classification::{
-        default_coherence_threshold, default_safety_threshold,
-    };
+    use crate::config::classification::{default_coherence_threshold, default_safety_threshold};
     let corpus = reject_corpus();
     let gap = &corpus["known_gap"][0];
     // Maximal confidence scores on a wrong-task request: the predicate

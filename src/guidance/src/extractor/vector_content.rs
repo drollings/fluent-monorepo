@@ -4,7 +4,7 @@
 //! (markdown) lines, capped at 25% of the chunk budget, prepended to the
 //! fragment text. Char-boundary-safe truncation (the surrogate-pair rule).
 
-use super::{FragmentMetadata, utf16_len, utf16_prefix};
+use super::{utf16_len, utf16_prefix, FragmentMetadata};
 
 /// Metadata budget ratio (port of `MAX_METADATA_BUDGET_RATIO`).
 pub const METADATA_BUDGET_RATIO: f64 = 0.25;
@@ -51,7 +51,11 @@ pub fn metadata_lines(metadata: &Option<FragmentMetadata>) -> Vec<String> {
             }
             lines
         }
-        FragmentMetadata::Markdown { heading, level, scope } => {
+        FragmentMetadata::Markdown {
+            heading,
+            level,
+            scope,
+        } => {
             let mut lines = Vec::new();
             if let Some(heading) = heading {
                 lines.push(format!("heading: {heading}"));

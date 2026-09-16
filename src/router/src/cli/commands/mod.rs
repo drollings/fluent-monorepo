@@ -26,10 +26,10 @@ pub use server::{coordinator_rollback, frame_rollback, ps, speedtest, stop};
 
 use std::path::Path;
 
-use crate::config::RouterConfig;
 use super::CliError;
 use crate::cli::gguf::sync_cache;
 use crate::cli::preset::write_models_preset;
+use crate::config::RouterConfig;
 
 /// Whether to show the model's modelfile and license/params/system/template.
 #[derive(Debug, Clone, Default)]

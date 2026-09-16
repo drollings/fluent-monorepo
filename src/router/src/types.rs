@@ -179,7 +179,9 @@ impl RouterResponse {
     }
 
     pub fn answer_text(&self) -> Option<String> {
-        self.choices.first().map(|c| c.message.content.to_string_lossy())
+        self.choices
+            .first()
+            .map(|c| c.message.content.to_string_lossy())
     }
 }
 

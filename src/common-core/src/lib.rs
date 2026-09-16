@@ -53,9 +53,7 @@ pub mod walk;
 pub mod watchdog;
 
 pub use config::{find_hierarchical, home_or_dot, load_json, load_json_or_default};
-pub use constants::{
-    default_true, HnswParams, MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN,
-};
+pub use constants::{default_true, HnswParams, MAX_FILE_SIZE, MAX_JSON_DEPTH, MAX_VALUE_LEN};
 pub use drift::BitSetDrift;
 #[cfg(feature = "sqlite")]
 pub use error::SqliteError;
@@ -78,8 +76,7 @@ pub use jsonrpc::{
 };
 pub use metrics::LatencyHistogram;
 pub use path::{
-    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical,
-    parent_lexical,
+    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical, parent_lexical,
 };
 pub use registry::{ConcurrentRegistry, KeyedRegistry};
 pub use retry::{
@@ -99,11 +96,10 @@ pub use string::{
 pub use time::now_secs;
 pub use walk::{
     collect_extensions, should_skip_dir, sniff_is_binary, walk_files, walk_files_filtered,
-    BINARY_CONTROL_CHAR_RATIO, BINARY_SNIFF_BYTES, SOURCE_EXTENSIONS, WalkEntry, WalkFilter,
-    SkipReason,
+    SkipReason, WalkEntry, WalkFilter, BINARY_CONTROL_CHAR_RATIO, BINARY_SNIFF_BYTES,
+    SOURCE_EXTENSIONS,
 };
 pub use watchdog::{
     BudgetWatchdog, RepetitionWatchdog, WallClockWatchdog, WatchdogEvent, WatchdogEventType,
     WatchdogSet,
 };
-

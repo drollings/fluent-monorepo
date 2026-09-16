@@ -91,7 +91,10 @@ where
     }
 
     /// Create a new affinity scheduler with an explicit runtime (for virtual-time tests).
-    pub fn new_with_runtime(pool: Arc<PriorityResultPool<T, R, E>>, runtime: Arc<dyn fluent_wvr::Runtime>) -> Self {
+    pub fn new_with_runtime(
+        pool: Arc<PriorityResultPool<T, R, E>>,
+        runtime: Arc<dyn fluent_wvr::Runtime>,
+    ) -> Self {
         let cap = NonZeroUsize::new(DEFAULT_MAX_IDENTITIES).unwrap();
         let now = runtime.now();
         Self {
@@ -152,7 +155,11 @@ where
     ) -> Result<R, ResultPoolError<E>> {
         let priority = {
             let mut state = sync_lock::lock(&self.state);
-            let State { affinity, base, last_aging } = &mut *state;
+            let State {
+                affinity,
+                base,
+                last_aging,
+            } = &mut *state;
             let now = self.runtime.now();
             if now.duration_since(*last_aging) >= self.aging.aging_interval {
                 age_locked(base, affinity.as_deref(), &self.aging);
@@ -253,7 +260,11 @@ where
     /// Run aging immediately (useful for testing).
     pub fn age_now(&self) {
         let mut state = sync_lock::lock(&self.state);
-        let State { affinity, base, last_aging } = &mut *state;
+        let State {
+            affinity,
+            base,
+            last_aging,
+        } = &mut *state;
         age_locked(base, affinity.as_deref(), &self.aging);
         *last_aging = self.runtime.now();
     }
@@ -267,11 +278,7 @@ where
 /// One aging tick over the base map: every non-affine identity gains
 /// `aging_rate`, capped at `max_priority`. Pure over explicit borrows —
 /// the caller holds the single state guard.
-fn age_locked(
-    base: &mut LruCache<String, i32>,
-    affinity: Option<&str>,
-    aging: &AgingConfig,
-) {
+fn age_locked(base: &mut LruCache<String, i32>, affinity: Option<&str>, aging: &AgingConfig) {
     for (identity, prio) in base.iter_mut() {
         if Some(identity.as_str()) != affinity {
             *prio = (*prio + aging.aging_rate).min(aging.max_priority);

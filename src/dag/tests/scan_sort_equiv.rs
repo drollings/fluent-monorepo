@@ -7,10 +7,10 @@
 //! randomized inputs plus pinned goldens for diamond/cycle/disconnected
 //! shapes.
 
-use bitvec::prelude::*;
 use super::dep_graph::DependencyGraph;
 use super::target::{Target, TargetRegistry};
 use super::type_inference::TypeInference;
+use bitvec::prelude::*;
 use fluent_types::{ExecutorKind, TargetType};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -134,9 +134,11 @@ fn ref_kahn<K: Ord + Clone + Hash>(
 /// Rebuild `topo_sort`'s edge derivation from the public accessors, then run
 /// the reference Kahn core. Returns the same shape as `topo_sort`: `Ok`
 /// order or `Err` leftover set.
-fn ref_topo_sort(nodes: &[String], deps: &HashMap<String, Vec<String>>) -> Result<Vec<String>, HashSet<String>> {
-    let mut in_degree: HashMap<String, usize> =
-        nodes.iter().map(|n| (n.clone(), 0)).collect();
+fn ref_topo_sort(
+    nodes: &[String],
+    deps: &HashMap<String, Vec<String>>,
+) -> Result<Vec<String>, HashSet<String>> {
+    let mut in_degree: HashMap<String, usize> = nodes.iter().map(|n| (n.clone(), 0)).collect();
     let mut adj: HashMap<String, Vec<String>> = HashMap::new();
     // Edge P → N when N depends on an asset P provides. Fixtures below use
     // one asset per provider named `provides:<node>`, depended on by name.
@@ -177,10 +179,7 @@ fn ref_direct_dependents(
     let mut out: Vec<String> = Vec::new();
     if let Some(pv) = provides.get(node) {
         for (other, other_deps) in deps {
-            if other != node
-                && other_deps.iter().any(|d| pv.contains(d))
-                && !out.contains(other)
-            {
+            if other != node && other_deps.iter().any(|d| pv.contains(d)) && !out.contains(other) {
                 out.push(other.clone());
             }
         }
@@ -211,9 +210,7 @@ fn ref_closure(class_ids: &[i64], edges: &[[i64; 2]]) -> HashMap<i64, BitVec> {
         changed = false;
         let mut updates: Vec<(i64, BitVec)> = Vec::new();
         for &[child, parent] in edges {
-            if let (Some(&pb), Some(child_anc)) =
-                (id_to_bit.get(&parent), ancestors.get(&child))
-            {
+            if let (Some(&pb), Some(child_anc)) = (id_to_bit.get(&parent), ancestors.get(&child)) {
                 let parent_anc = ancestors.get(&parent).cloned().unwrap_or_else(BitVec::new);
                 if !child_anc[pb]
                     || parent_anc
@@ -243,7 +240,11 @@ fn ref_closure(class_ids: &[i64], edges: &[[i64; 2]]) -> HashMap<i64, BitVec> {
     ancestors
 }
 
-fn closure_matrix(closure: &HashMap<i64, BitVec>, ids: &[i64], id_to_bit: &HashMap<i64, usize>) -> Vec<(i64, i64)> {
+fn closure_matrix(
+    closure: &HashMap<i64, BitVec>,
+    ids: &[i64],
+    id_to_bit: &HashMap<i64, usize>,
+) -> Vec<(i64, i64)> {
     let mut pairs = Vec::new();
     for &child in ids {
         for &parent in ids {
@@ -336,7 +337,14 @@ fn find_providers_insertion_order_and_subset_semantics() {
 
 // ── M6.2: Kahn heap equivalence + goldens ──
 
-fn dep_graph_fixture(rng: &mut Rng, n: usize) -> (DependencyGraph<String>, Vec<String>, HashMap<String, Vec<String>>) {
+fn dep_graph_fixture(
+    rng: &mut Rng,
+    n: usize,
+) -> (
+    DependencyGraph<String>,
+    Vec<String>,
+    HashMap<String, Vec<String>>,
+) {
     // Acyclic-by-construction with probability ~1: node i depends only on
     // assets provided by lower-indexed nodes; plus occasional cross edges
     // that may introduce cycles (both impls must agree on those too).

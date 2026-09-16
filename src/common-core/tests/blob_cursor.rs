@@ -90,5 +90,7 @@ fn expect_magic_checks_and_advances() {
         c.expect_magic(0xDEAD_BEEF),
         Err(BlobError::BadMagic(_))
     ));
-    assert!(BlobCursor::new(&data[..2]).expect_magic(0x534F_5231).is_err());
+    assert!(BlobCursor::new(&data[..2])
+        .expect_magic(0x534F_5231)
+        .is_err());
 }

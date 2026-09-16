@@ -85,7 +85,8 @@ mod tests {
         lib.init_schema().expect("first init");
         lib.init_schema().expect("second init (IF NOT EXISTS)");
         // Core tables are queryable after init.
-        lib.insert_node(&crate::tests::common::make_node("a", "s")).expect("insert");
+        lib.insert_node(&crate::tests::common::make_node("a", "s"))
+            .expect("insert");
         assert_eq!(lib.node_count().expect("count"), 1);
     }
 

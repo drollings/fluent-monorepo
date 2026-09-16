@@ -383,10 +383,10 @@ mod tests {
         // `handle_request` establishes exactly this grant for the life of each
         // MCP request, mirroring the router's HTTP handler. A gated
         // `KnowledgeCapability` call therefore succeeds inside the scope.
-        let granted = CURRENT_CAPS.sync_scope(
-            CapabilitySet::new().with(CoralKnowledgeCapability),
-            || check_capability(&CoralKnowledgeCapability).is_ok(),
-        );
+        let granted = CURRENT_CAPS
+            .sync_scope(CapabilitySet::new().with(CoralKnowledgeCapability), || {
+                check_capability(&CoralKnowledgeCapability).is_ok()
+            });
         assert!(
             granted,
             "the coral knowledge capability must be granted inside the MCP request scope"

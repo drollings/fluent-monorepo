@@ -57,7 +57,11 @@ fn byte_range_equivalence_adversarial_fixture() {
         ("Hello world", &[("Hello", 0, true), ("world", 6, false)]),
         (
             "caf\u{e9} na\u{ef}ve r\u{e9}sum\u{e9}",
-            &[("caf\u{e9}", 0, true), ("na\u{ef}ve", 5, true), ("r\u{e9}sum\u{e9}", 11, false)],
+            &[
+                ("caf\u{e9}", 0, true),
+                ("na\u{ef}ve", 5, true),
+                ("r\u{e9}sum\u{e9}", 11, false),
+            ],
         ),
         ("e\u{301}cole", &[("e\u{301}cole", 0, false)]),
         (
@@ -110,10 +114,7 @@ fn byte_range_equivalence_adversarial_fixture() {
                 ("3.14", 22, false),
             ],
         ),
-        (
-            "a b",
-            &[("a", 0, false), (" ", 1, false), ("b", 2, false)],
-        ),
+        ("a b", &[("a", 0, false), (" ", 1, false), ("b", 2, false)]),
         (
             "line1\nline2\r\nline3",
             &[

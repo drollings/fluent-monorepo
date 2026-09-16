@@ -17,17 +17,16 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 
 use crate::artifact::{
-    DownloadProgressReporter, EmbeddingProgress, ModelArtifact, ModelArtifactDownloadProgress,
-    ModelArtifactSource, ReqwestArtifactFetcher, ResolveArtifactsOptions, SourceKind,
-    resolve_model_artifacts,
+    resolve_model_artifacts, DownloadProgressReporter, EmbeddingProgress, ModelArtifact,
+    ModelArtifactDownloadProgress, ModelArtifactSource, ReqwestArtifactFetcher,
+    ResolveArtifactsOptions, SourceKind,
 };
 use crate::artifact_lock::LockOptions;
 use crate::catalog::{CatalogEntry, EmbeddingBackend};
 use crate::embeddings::{
-    BatchEmbedding, EmbeddingError, EmbeddingProvider, block_on_provider, check_embed_batch_output,
-    validate_embed_batch,
+    block_on_provider, check_embed_batch_output, validate_embed_batch, BatchEmbedding,
+    EmbeddingError, EmbeddingProvider,
 };
-
 
 /// Compute device selection for local embedding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -418,7 +417,9 @@ impl GgufEmbedding {
         }
         let result = embed_shaped(self, &mut state, texts, purpose, on_progress)
             .await
-            .map_err(|error| EmbeddingError::RequestFailed(format!("llama.cpp embedding failed: {error}")))?;
+            .map_err(|error| {
+                EmbeddingError::RequestFailed(format!("llama.cpp embedding failed: {error}"))
+            })?;
         check_embed_batch_output(
             &BatchEmbedding {
                 flat: result.vectors.iter().flatten().copied().collect(),
@@ -463,7 +464,8 @@ async fn embed_shaped(
     let mut safe = Vec::with_capacity(texts.len());
     for (index, text) in texts.iter().enumerate() {
         let shaped = format_text_for_embedding(text, purpose, provider.spec.format);
-        let shortened = truncate_to_context_size(model.as_ref(), &shaped, provider.spec.context_size);
+        let shortened =
+            truncate_to_context_size(model.as_ref(), &shaped, provider.spec.context_size);
         if shortened.truncated {
             truncated.push(index);
         }
@@ -674,7 +676,9 @@ fn resolve_parallelism(provider: &GgufEmbedding, state: &LoadedState) -> usize {
     match llama.vram_free_bytes() {
         Some(free_bytes) => {
             let free_mb = free_bytes as f64 / (1024.0 * 1024.0);
-            (free_mb * 0.25 / 150.0).floor().clamp(1.0, DEFAULT_PARALLELISM_CAP as f64) as usize
+            (free_mb * 0.25 / 150.0)
+                .floor()
+                .clamp(1.0, DEFAULT_PARALLELISM_CAP as f64) as usize
         }
         None => 2,
     }
@@ -805,12 +809,16 @@ async fn resolve_model_path(
         }),
     };
     let resolved = provider.dependencies.resolver.resolve(&request).await?;
-    resolved.paths.get(&primary.path).map(PathBuf::from).ok_or_else(|| {
-        EmbeddingError::RequestFailed(format!(
-            "Resolved GGUF artifact path is missing (model={} artifact={})",
-            spec.reference, primary.path
-        ))
-    })
+    resolved
+        .paths
+        .get(&primary.path)
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            EmbeddingError::RequestFailed(format!(
+                "Resolved GGUF artifact path is missing (model={} artifact={})",
+                spec.reference, primary.path
+            ))
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -903,11 +911,7 @@ fn offload_disabled(provider: &GgufEmbedding, state: &LoadedState) -> bool {
     provider.gpu == GpuSelection::Cpu || state.using_cpu_fallback
 }
 
-fn threads_per_context(
-    provider: &GgufEmbedding,
-    state: &LoadedState,
-    parallelism: usize,
-) -> u32 {
+fn threads_per_context(provider: &GgufEmbedding, state: &LoadedState, parallelism: usize) -> u32 {
     let Some(llama) = state.llama.as_ref() else {
         return 0;
     };
@@ -924,7 +928,9 @@ fn validate_gguf_file(path: &Path, model_uri: &str) -> Result<(), EmbeddingError
     if !path.exists() {
         return Ok(());
     }
-    let failed = |message: String| EmbeddingError::RequestFailed(format!("llama.cpp embedding failed: {message}"));
+    let failed = |message: String| {
+        EmbeddingError::RequestFailed(format!("llama.cpp embedding failed: {message}"))
+    };
     let bytes = std::fs::read(path).map_err(|error| failed(error.to_string()))?;
     let sniff = &bytes[..bytes.len().min(512)];
     if sniff.len() >= 4 && sniff[..4] == GGUF_MAGIC {

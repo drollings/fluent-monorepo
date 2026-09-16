@@ -132,9 +132,7 @@ pub enum MtimeSkew {
 pub fn mtime_skew(json_mtime: SystemTime, source_mtime: SystemTime) -> MtimeSkew {
     match source_mtime.duration_since(json_mtime) {
         Err(_) => MtimeSkew::SourceOlder,
-        Ok(skew)
-            if skew.as_secs() > 1 || (skew.as_secs() == 1 && skew.subsec_nanos() > 0) =>
-        {
+        Ok(skew) if skew.as_secs() > 1 || (skew.as_secs() == 1 && skew.subsec_nanos() > 0) => {
             MtimeSkew::SourceNewer
         }
         Ok(_) => MtimeSkew::Ambiguous,

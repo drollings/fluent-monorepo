@@ -24,8 +24,8 @@ use fluent_concurrency::stream::StreamAbort;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
 /// Boxed sendable future (local alias; no new future runtime).
@@ -173,7 +173,10 @@ struct SchedulerInner {
 
 enum DriverMsg {
     Pump,
-    JobDone { id: u64, result: Result<(), JobError> },
+    JobDone {
+        id: u64,
+        result: Result<(), JobError>,
+    },
     Closed,
 }
 
@@ -223,7 +226,10 @@ impl JobScheduler {
                 state: JobState::Cancelled,
                 attempt: 0,
             };
-            return SubmitResult { job: snapshot, reused: false };
+            return SubmitResult {
+                job: snapshot,
+                reused: false,
+            };
         }
         // Active job for this root: coalesce watch/followup submissions.
         // The run closure moves exactly once (take from the holder).
@@ -257,54 +263,77 @@ impl JobScheduler {
                     if running {
                         let id = guard.next_id.fetch_add(1, Ordering::SeqCst);
                         let run = run_holder.take().expect("run held");
-                        guard.jobs.insert(id, JobRecord {
+                        guard.jobs.insert(
                             id,
-                            root: input.root.clone(),
-                            reason: input.reason,
-                            state: JobState::Queued,
-                            attempt: 0,
-                            run,
-                            abort: StreamAbort::new(),
-                            waiters: Vec::new(),
-                            error: None,
-                        });
+                            JobRecord {
+                                id,
+                                root: input.root.clone(),
+                                reason: input.reason,
+                                state: JobState::Queued,
+                                attempt: 0,
+                                run,
+                                abort: StreamAbort::new(),
+                                waiters: Vec::new(),
+                                error: None,
+                            },
+                        );
                         guard.followup_by_root.insert(input.root.clone(), id);
-                        let job = guard.jobs.get(&id).map(JobRecord::snapshot).expect("inserted");
+                        let job = guard
+                            .jobs
+                            .get(&id)
+                            .map(JobRecord::snapshot)
+                            .expect("inserted");
                         return SubmitResult { job, reused: true };
                     }
                     // Active hasn't started: same coalescing shape.
                     if let Some(active) = guard.jobs.get(&active_id) {
                         let snapshot = active.snapshot();
-                        return SubmitResult { job: snapshot, reused: true };
+                        return SubmitResult {
+                            job: snapshot,
+                            reused: true,
+                        };
                     }
                 }
             }
             if let Some(active) = guard.jobs.get(&active_id) {
                 let snapshot = active.snapshot();
-                return SubmitResult { job: snapshot, reused: true };
+                return SubmitResult {
+                    job: snapshot,
+                    reused: true,
+                };
             }
         }
         let id = guard.next_id.fetch_add(1, Ordering::SeqCst);
         let run = run_holder.take().expect("run held");
-        guard.jobs.insert(id, JobRecord {
+        guard.jobs.insert(
             id,
-            root: input.root.clone(),
-            reason: input.reason,
-            state: JobState::Queued,
-            attempt: 0,
-            run,
-            abort: StreamAbort::new(),
-            waiters: Vec::new(),
-            error: None,
-        });
+            JobRecord {
+                id,
+                root: input.root.clone(),
+                reason: input.reason,
+                state: JobState::Queued,
+                attempt: 0,
+                run,
+                abort: StreamAbort::new(),
+                waiters: Vec::new(),
+                error: None,
+            },
+        );
         // The new job owns its root from submit time (zvec: submit-while-
         // active coalesces even before the first job starts).
         guard.active_by_root.insert(input.root.clone(), id);
         guard.queue.push_back(id);
-        let snapshot = guard.jobs.get(&id).map(JobRecord::snapshot).expect("inserted");
+        let snapshot = guard
+            .jobs
+            .get(&id)
+            .map(JobRecord::snapshot)
+            .expect("inserted");
         drop(guard);
         let _ = self.tx.send(DriverMsg::Pump);
-        SubmitResult { job: snapshot, reused: false }
+        SubmitResult {
+            job: snapshot,
+            reused: false,
+        }
     }
 
     /// Wait for a job's terminal snapshot (`None` when unknown).
@@ -332,14 +361,19 @@ impl JobScheduler {
             let mut guard = common_core::sync::lock(&self.inner);
             let busy = guard.active_by_root.contains_key(root)
                 || guard.followup_by_root.contains_key(root)
-                || guard.queue.iter().any(|id| {
-                    guard.jobs.get(id).is_some_and(|job| job.root == root)
-                });
+                || guard
+                    .queue
+                    .iter()
+                    .any(|id| guard.jobs.get(id).is_some_and(|job| job.root == root));
             if !busy {
                 return;
             }
             let (tx, rx) = oneshot::channel();
-            guard.idle_waiters.entry(root.to_string()).or_default().push(tx);
+            guard
+                .idle_waiters
+                .entry(root.to_string())
+                .or_default()
+                .push(tx);
             rx
         };
         let _ = waiter.await;
@@ -426,9 +460,10 @@ impl JobScheduler {
             if guard.closed || guard.running >= guard.concurrency {
                 None
             } else {
-                let next = guard.queue.pop_front().and_then(|id| {
-                    guard.jobs.get(&id).map(|record| (id, record.root.clone()))
-                });
+                let next = guard
+                    .queue
+                    .pop_front()
+                    .and_then(|id| guard.jobs.get(&id).map(|record| (id, record.root.clone())));
                 next.map(|(id, root)| {
                     let (run, abort, attempt) = {
                         let record = guard.jobs.get_mut(&id).expect("queued");
@@ -454,8 +489,15 @@ impl JobScheduler {
 
     async fn finish_job(&self, id: u64, result: Result<(), JobError>) {
         enum After {
-            Retry { run: JobRun, context: JobContext, delay_ms: u64 },
-            Terminal { snapshot: JobSnapshot, waiters: Vec<oneshot::Sender<JobSnapshot>> },
+            Retry {
+                run: JobRun,
+                context: JobContext,
+                delay_ms: u64,
+            },
+            Terminal {
+                snapshot: JobSnapshot,
+                waiters: Vec<oneshot::Sender<JobSnapshot>>,
+            },
         }
         // Decide under one scoped borrow, then act without holding the guard.
         let planned = {
@@ -467,7 +509,13 @@ impl JobScheduler {
                 Ok(()) => false,
                 Err(error) => error.retryable && record.attempt < guard.max_attempts,
             };
-            (retry, record.run.clone(), record.abort.clone(), record.attempt, guard.retry_base_delay_ms)
+            (
+                retry,
+                record.run.clone(),
+                record.abort.clone(),
+                record.attempt,
+                guard.retry_base_delay_ms,
+            )
         };
         let after = {
             let mut guard = common_core::sync::lock(&self.inner);
@@ -480,13 +528,19 @@ impl JobScheduler {
                 // equal on the whole u32 domain (attempt ≥ 1 on this path;
                 // the clamp preserves the ceiling). Pinned by
                 // `m4_scheduler_delay_matches_backoff_composition`.
-                let delay_ms =
-                    common_core::retry::backoff_ms(base_delay_ms, attempt.min(9), 0);
+                let delay_ms = common_core::retry::backoff_ms(base_delay_ms, attempt.min(9), 0);
                 if let Some(record) = guard.jobs.get_mut(&id) {
                     record.attempt = attempt + 1;
                 }
-                let context = JobContext { abort, attempt: attempt + 1 };
-                After::Retry { run, context, delay_ms }
+                let context = JobContext {
+                    abort,
+                    attempt: attempt + 1,
+                };
+                After::Retry {
+                    run,
+                    context,
+                    delay_ms,
+                }
             } else {
                 let (state, error) = match result {
                     Ok(()) => (JobState::Succeeded, None),
@@ -516,7 +570,11 @@ impl JobScheduler {
             }
         };
         match after {
-            After::Retry { run, context, delay_ms } => {
+            After::Retry {
+                run,
+                context,
+                delay_ms,
+            } => {
                 if delay_ms > 0 {
                     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                 }
@@ -537,12 +595,15 @@ impl JobScheduler {
                 // Promote the followup, if any.
                 let promoted = {
                     let mut guard = common_core::sync::lock(&self.inner);
-                    guard.followup_by_root.remove(&snapshot.root).and_then(|followup_id| {
-                        guard.jobs.get(&followup_id).map(|record| {
-                            debug_assert_eq!(record.state, JobState::Queued);
-                            followup_id
+                    guard
+                        .followup_by_root
+                        .remove(&snapshot.root)
+                        .and_then(|followup_id| {
+                            guard.jobs.get(&followup_id).map(|record| {
+                                debug_assert_eq!(record.state, JobState::Queued);
+                                followup_id
+                            })
                         })
-                    })
                 };
                 if let Some(followup_id) = promoted {
                     let mut guard = common_core::sync::lock(&self.inner);
@@ -557,7 +618,9 @@ impl JobScheduler {
                             }
                         }
                     } else {
-                        guard.active_by_root.insert(snapshot.root.clone(), followup_id);
+                        guard
+                            .active_by_root
+                            .insert(snapshot.root.clone(), followup_id);
                         guard.queue.push_back(followup_id);
                         drop(guard);
                         let _ = self.tx.send(DriverMsg::Pump);
@@ -576,9 +639,10 @@ impl JobScheduler {
             .filter(|root| {
                 !guard.active_by_root.contains_key(*root)
                     && !guard.followup_by_root.contains_key(*root)
-                    && !guard.queue.iter().any(|id| {
-                        guard.jobs.get(id).is_some_and(|job| &job.root == *root)
-                    })
+                    && !guard
+                        .queue
+                        .iter()
+                        .any(|id| guard.jobs.get(id).is_some_and(|job| &job.root == *root))
             })
             .cloned()
             .collect();

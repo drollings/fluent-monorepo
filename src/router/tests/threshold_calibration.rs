@@ -108,7 +108,10 @@ fn sweep_confidence_vs_task_value_gates_are_independent() {
     assert!(!coherence_gate(coherence, coherence_threshold));
     assert!(!safety_gate(safety, safety_threshold));
     // But task-value gate must still FIRE (route to higher model)
-    assert!(complexity_needs_route(complexity, intelligence), "confident but high-complexity must still route");
+    assert!(
+        complexity_needs_route(complexity, intelligence),
+        "confident but high-complexity must still route"
+    );
 }
 
 #[ignore = "heavy (~13s): HNSW-at-scale recall benchmark; run via `make test-heavy`"]
@@ -135,21 +138,21 @@ fn m5a_hnsw_recall_at_scale_and_brute_force_control() {
         for q in 0..20 {
             let base = &corpus[(q * 97 + 11) % n].1;
             let noise = m5_embedding(dim, 1_000_000 + q as u64 * 12_345);
-            let query: Vec<f32> =
-                base.iter().zip(noise.iter()).map(|(b, e)| b + 0.01 * e).collect();
-            let truth: HashSet<i64> = knn_brute_force(
-                &query,
-                corpus.iter().map(|(id, e)| (*id, e.as_slice())),
-                k,
-            )
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect();
-            let approx: HashSet<i64> =
-                fluent_db::hnsw::hnsw_lookup(&idx, &query, k).expect("built → Some")
+            let query: Vec<f32> = base
+                .iter()
+                .zip(noise.iter())
+                .map(|(b, e)| b + 0.01 * e)
+                .collect();
+            let truth: HashSet<i64> =
+                knn_brute_force(&query, corpus.iter().map(|(id, e)| (*id, e.as_slice())), k)
                     .into_iter()
                     .map(|(id, _)| id)
                     .collect();
+            let approx: HashSet<i64> = fluent_db::hnsw::hnsw_lookup(&idx, &query, k)
+                .expect("built → Some")
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
             per_query.push(approx.intersection(&truth).count() as f64 / k as f64);
         }
         let mean_recall = per_query.iter().sum::<f64>() / per_query.len() as f64;
@@ -180,10 +183,17 @@ fn m5a_hnsw_recall_at_scale_and_brute_force_control() {
         };
         store.record_content_node(&node).expect("insert");
     }
-    assert!(!store.is_hnsw_built(), "M5a control: 256 nodes must not build HNSW");
+    assert!(
+        !store.is_hnsw_built(),
+        "M5a control: 256 nodes must not build HNSW"
+    );
     let query = m5_embedding(8, 999);
     let hits = store.knn_search(&query, 3);
-    assert_eq!(hits.len(), 3, "M5a control: brute-force fallback must serve top-3");
+    assert_eq!(
+        hits.len(),
+        3,
+        "M5a control: brute-force fallback must serve top-3"
+    );
 }
 
 #[ignore = "heavy (~9s): ef sweep over a scale corpus; run via `make test-heavy`"]
@@ -211,7 +221,10 @@ fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
         .map(|q| {
             let base = &corpus[(q * 97 + 11) % n];
             let noise = m5_embedding(dim, 2_000_000 + q as u64 * 12_345);
-            base.iter().zip(noise.iter()).map(|(b, e)| b + 0.01 * e).collect()
+            base.iter()
+                .zip(noise.iter())
+                .map(|(b, e)| b + 0.01 * e)
+                .collect()
         })
         .collect();
     let truth: Vec<HashSet<usize>> = queries
@@ -228,10 +241,7 @@ fn m5b_ef_sweep_holds_recall_and_k0_probes_nothing() {
         })
         .collect();
     for ef in [k * 2, k * 4, k * 8] {
-        let h = fluent_db::sqlite::make_hnsw(
-            &common_core::constants::HnswParams::default(),
-            n,
-        );
+        let h = fluent_db::sqlite::make_hnsw(&common_core::constants::HnswParams::default(), n);
         for (i, emb) in corpus.iter().enumerate() {
             h.insert((emb, i));
         }
@@ -279,16 +289,32 @@ fn m5c_charts_min_score_precision_and_adversarial_control() {
     }
     let mut cases: Vec<Case> = Vec::new();
     for i in 0..46 {
-        cases.push(Case { sim: 0.62 + f64::from(i) * 0.007, correct: true, adversarial: false });
+        cases.push(Case {
+            sim: 0.62 + f64::from(i) * 0.007,
+            correct: true,
+            adversarial: false,
+        });
     }
     for i in 0..4 {
-        cases.push(Case { sim: 0.55 + f64::from(i) * 0.01, correct: true, adversarial: false });
+        cases.push(Case {
+            sim: 0.55 + f64::from(i) * 0.01,
+            correct: true,
+            adversarial: false,
+        });
     }
     for i in 0..20 {
-        cases.push(Case { sim: 0.52 + f64::from(i) * 0.0035, correct: false, adversarial: true });
+        cases.push(Case {
+            sim: 0.52 + f64::from(i) * 0.0035,
+            correct: false,
+            adversarial: true,
+        });
     }
     for i in 0..10 {
-        cases.push(Case { sim: 0.1 + f64::from(i) * 0.03, correct: false, adversarial: false });
+        cases.push(Case {
+            sim: 0.1 + f64::from(i) * 0.03,
+            correct: false,
+            adversarial: false,
+        });
     }
     assert_eq!(cases.len(), 80);
     let report = calibrate_threshold(&cases, |c| c.sim, |c| c.correct, gate);
@@ -296,9 +322,18 @@ fn m5c_charts_min_score_precision_and_adversarial_control() {
         "M5c: precision {:.3} recall {:.3} FPR {:.3} (tp {} fp {} tn {} fn {})",
         report.precision, report.recall, report.fpr, report.tp, report.fp, report.tn, report.r#fn
     );
-    assert!(report.precision >= 0.85, "M5c [B]: precision at 0.6 must be ≥0.85");
-    assert!(report.recall >= 0.9, "M5c [B]: recall at 0.6 must be ≥0.9 (achieved 46/50)");
-    let adv_fp = cases.iter().filter(|c| c.adversarial && c.sim >= gate).count();
+    assert!(
+        report.precision >= 0.85,
+        "M5c [B]: precision at 0.6 must be ≥0.85"
+    );
+    assert!(
+        report.recall >= 0.9,
+        "M5c [B]: recall at 0.6 must be ≥0.9 (achieved 46/50)"
+    );
+    let adv_fp = cases
+        .iter()
+        .filter(|c| c.adversarial && c.sim >= gate)
+        .count();
     assert_eq!(adv_fp, 0, "M5c [B]: 0% FP on adversarial-nearby controls");
 }
 
@@ -308,7 +343,7 @@ fn m5d_workflow_gates_split_axes() {
     // artifact must be blocked by [B], and high-cosine-but-unverified replay
     // must be blocked until verified.
     use fluent_router::ledger::workflow_store::{
-        InMemoryWorkflowStore, WorkflowEntry, WorkflowStore, gated_insert_allowed,
+        gated_insert_allowed, InMemoryWorkflowStore, WorkflowEntry, WorkflowStore,
     };
     // (i) 20 high-`assembler_confidence` but task-wrong workflows must NOT
     // insert (proves [A] ≠ correctness: confidence opens nothing alone).
@@ -324,10 +359,22 @@ fn m5d_workflow_gates_split_axes() {
         );
     }
     // The calibrated point still opens, and each floor is strict.
-    assert!(gated_insert_allowed(0.9, 0.2, true), "calibrated point must insert");
-    assert!(!gated_insert_allowed(0.849, 0.2, true), "confidence floor is strict");
-    assert!(!gated_insert_allowed(0.9, 0.15, true), "novelty floor is strict (>)");
-    assert!(!gated_insert_allowed(0.9, 0.2, false), "verified is required");
+    assert!(
+        gated_insert_allowed(0.9, 0.2, true),
+        "calibrated point must insert"
+    );
+    assert!(
+        !gated_insert_allowed(0.849, 0.2, true),
+        "confidence floor is strict"
+    );
+    assert!(
+        !gated_insert_allowed(0.9, 0.15, true),
+        "novelty floor is strict (>)"
+    );
+    assert!(
+        !gated_insert_allowed(0.9, 0.2, false),
+        "verified is required"
+    );
     // (ii) 20 high-cosine but unverified/near-duplicate entries must NOT replay.
     let store = InMemoryWorkflowStore::new();
     let query = vec![1.0, 0.0, 0.0, 0.0];
@@ -342,7 +389,10 @@ fn m5d_workflow_gates_split_axes() {
             .expect("insert");
     }
     let replayed = store.nearest_verified(&query, 25, 0.75);
-    assert!(replayed.is_empty(), "[B] unverified near-dups must not replay");
+    assert!(
+        replayed.is_empty(),
+        "[B] unverified near-dups must not replay"
+    );
     // Positive controls on a fresh store: 5 verified high-cosine entries
     // replay; 3 verified low-cosine entries stay out. k == n (8) so the probe
     // overfetch returns the complete set (M0) and the outcome is exact on
@@ -369,7 +419,11 @@ fn m5d_workflow_gates_split_axes() {
             .expect("insert");
     }
     let replayed = store.nearest_verified(&query, 8, 0.75);
-    assert_eq!(replayed.len(), 5, "[B]: exactly the 5 verified near entries replay");
+    assert_eq!(
+        replayed.len(),
+        5,
+        "[B]: exactly the 5 verified near entries replay"
+    );
     assert!(
         replayed.iter().all(|(e, s)| e.verified && *s >= 0.75),
         "[B]: replay precision must be 1.0"
@@ -402,13 +456,15 @@ fn m5e_rrf_fusion_golden_and_stability() {
         fused[0].2
     );
     for k_constant in [30.0, 120.0] {
-        let order: Vec<i64> = order_at(k_constant).into_iter().map(|(id, _, _)| id).collect();
+        let order: Vec<i64> = order_at(k_constant)
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
         assert_eq!(order, vec![2, 1, 3], "order stable at k = {k_constant}");
     }
     // Control: id present in neither list never appears.
     assert!(!fused.iter().any(|(id, _, _)| *id == 99));
-    let empty: Vec<(f64, (i64, &str))> =
-        fluent_db::vector::rrf_merge(Vec::new(), Vec::new(), 60.0);
+    let empty: Vec<(f64, (i64, &str))> = fluent_db::vector::rrf_merge(Vec::new(), Vec::new(), 60.0);
     assert!(empty.is_empty());
 }
 
@@ -422,13 +478,27 @@ fn m5f_keyword_min_matches_rule() {
         .expect("insert");
     db.insert_node("beta", "s", None, Some("module"), "m", "l", None)
         .expect("insert");
-    db.insert_node("gamma", "s", None, Some("quantum entanglement module"), "m", "l", None)
-        .expect("insert");
+    db.insert_node(
+        "gamma",
+        "s",
+        None,
+        Some("quantum entanglement module"),
+        "m",
+        "l",
+        None,
+    )
+    .expect("insert");
     // 3 tokens → min_matches = max(ceil(3*0.3), 2) = 2.
     let hits = db.keyword_search("quantum triage module").expect("search");
     let names: Vec<&str> = hits.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"alpha"), "alpha matches 2/3 tokens: {names:?}");
-    assert!(names.contains(&"gamma"), "gamma matches 2/3 tokens: {names:?}");
+    assert!(
+        names.contains(&"alpha"),
+        "alpha matches 2/3 tokens: {names:?}"
+    );
+    assert!(
+        names.contains(&"gamma"),
+        "gamma matches 2/3 tokens: {names:?}"
+    );
     assert!(!names.contains(&"beta"), "beta matches 1/3 < 2: {names:?}");
     // Short query golden: 1 token → 1 match suffices (exact substring path).
     let hits = db.keyword_search("triage").expect("search");
@@ -437,10 +507,19 @@ fn m5f_keyword_min_matches_rule() {
     // 2-token query → min_matches = 1: every overlapping row returns.
     let hits = db.keyword_search("triage module").expect("search");
     let names: Vec<&str> = hits.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names.len(), 3, "2-token query returns all overlapping rows: {names:?}");
+    assert_eq!(
+        names.len(),
+        3,
+        "2-token query returns all overlapping rows: {names:?}"
+    );
     // Incidental-overlap control: one shared token of three → empty.
-    let hits = db.keyword_search("quantum zebra xylophone").expect("search");
-    assert!(hits.is_empty(), "incidental single-token overlap must return empty");
+    let hits = db
+        .keyword_search("quantum zebra xylophone")
+        .expect("search");
+    assert!(
+        hits.is_empty(),
+        "incidental single-token overlap must return empty"
+    );
 }
 
 #[test]

@@ -27,7 +27,9 @@ impl fmt::Display for InstanceIdError {
             Self::MissingSeparator => write!(f, "missing ':' separator"),
             Self::ExtraSeparator => write!(f, "extra ':' separator in instance name"),
             Self::EmptyModel => write!(f, "model id is empty"),
-            Self::InvalidName(n) => write!(f, "invalid instance name '{n}' (allowed: [A-Za-z0-9._-])"),
+            Self::InvalidName(n) => {
+                write!(f, "invalid instance name '{n}' (allowed: [A-Za-z0-9._-])")
+            }
             Self::EmptyName => write!(f, "instance name is empty"),
         }
     }
@@ -218,7 +220,12 @@ mod tests {
 
     #[test]
     fn accepts_valid_chars() {
-        for name in ["m:n", "model:my.instance_name-1", "swarm:ledger", "my-model:my_instance.name-1"] {
+        for name in [
+            "m:n",
+            "model:my.instance_name-1",
+            "swarm:ledger",
+            "my-model:my_instance.name-1",
+        ] {
             assert!(InstanceId::parse(name).is_ok(), "{name}");
         }
     }

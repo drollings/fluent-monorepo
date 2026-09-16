@@ -55,11 +55,9 @@ impl ChatBackend for FailingBackend {
 }
 
 fn status_of(store: &ContentNodeStore, id: NodeId, kind: OverlayKind) -> OverlayStatus {
-    store
-        .get_node(id)
-        .map_or(OverlayStatus::Absent, |arc| {
-            lock_read(&arc).overlay(kind).status
-        })
+    store.get_node(id).map_or(OverlayStatus::Absent, |arc| {
+        lock_read(&arc).overlay(kind).status
+    })
 }
 
 async fn wait_until(
@@ -135,7 +133,9 @@ async fn slow_llm_never_delays_spacy_or_embedding_for_same_node() {
     store.set_overlay_events(worker.sender());
     worker.start();
 
-    let id = store.record_request("s", "r1", "Show me the sales report").unwrap();
+    let id = store
+        .record_request("s", "r1", "Show me the sales report")
+        .unwrap();
 
     // The spacy and embedding overlays must reach `ready` while the LLM is
     // still sleeping (not yet `ready`). Poll on a short window so a slow LLM
@@ -203,7 +203,12 @@ async fn one_overlay_failure_is_contained() {
         OverlayStatus::Failed,
         "only the LLM overlay is failed"
     );
-    assert_eq!(node.metadata.as_ref().and_then(|m| m.get(LLM_OVERLAY_META_KEY)), None);
+    assert_eq!(
+        node.metadata
+            .as_ref()
+            .and_then(|m| m.get(LLM_OVERLAY_META_KEY)),
+        None
+    );
 
     worker.abort();
 }
@@ -320,7 +325,7 @@ async fn emits_overlay_audit_records() {
         "audit records must land on the router.audit target"
     );
     // The two successful overlays.
-for (kind, status) in [("spacy", "ready"), ("embedding", "ready")] {
+    for (kind, status) in [("spacy", "ready"), ("embedding", "ready")] {
         assert!(
             joined.contains("kind=\"overlay\"")
                 && joined.contains(&format!("\"node_id\":{nid}"))

@@ -7,15 +7,13 @@
 
 use fluent_llm::catalog::DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT;
 use fluent_llm::grants::{
-    ElicitationDecision, ElicitationRequest, Elicitor, RemoteEmbeddingAuthorizationStore,
-    RemoteEmbeddingTarget, ensure_remote_embedding_authorized,
+    ensure_remote_embedding_authorized, ElicitationDecision, ElicitationRequest, Elicitor,
+    RemoteEmbeddingAuthorizationStore, RemoteEmbeddingTarget,
 };
 use tempfile::TempDir;
 
 fn store_in(dir: &TempDir) -> RemoteEmbeddingAuthorizationStore {
-    RemoteEmbeddingAuthorizationStore::with_signing_key_path(
-        dir.path().join("signing.key"),
-    )
+    RemoteEmbeddingAuthorizationStore::with_signing_key_path(dir.path().join("signing.key"))
 }
 
 fn target(roots: &[std::path::PathBuf]) -> RemoteEmbeddingTarget {
@@ -107,7 +105,10 @@ async fn revoke_and_revoke_all() {
     assert!(store.revoke(&first).await.unwrap());
     assert!(!store.has_grant(&first).unwrap());
     assert!(store.has_grant(&second).unwrap());
-    assert!(!store.revoke(&first).await.unwrap(), "second revoke is a no-op");
+    assert!(
+        !store.revoke(&first).await.unwrap(),
+        "second revoke is a no-op"
+    );
     assert_eq!(store.revoke_all(&root).await.unwrap(), 1);
     assert!(!store.has_grant(&second).unwrap());
 }
@@ -118,7 +119,10 @@ async fn grant_files_are_owner_only() {
     let store = store_in(&dir);
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
-    store.grant(&target(std::slice::from_ref(&root))).await.unwrap();
+    store
+        .grant(&target(std::slice::from_ref(&root)))
+        .await
+        .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -163,7 +167,9 @@ async fn one_shot_allow_remote_bypasses_the_store_without_writing() {
     let root = dir.path().join("workspace");
     std::fs::create_dir_all(root.join(".guidance")).unwrap();
     let granted = target(std::slice::from_ref(&root));
-    let outcome = ensure_remote_embedding_authorized(&store, &granted, true, None).await.unwrap();
+    let outcome = ensure_remote_embedding_authorized(&store, &granted, true, None)
+        .await
+        .unwrap();
     assert!(matches!(
         outcome,
         fluent_llm::grants::RemoteAuthorization::OneShot
@@ -186,8 +192,9 @@ async fn elicitation_approval_persists_a_grant_and_denial_names_the_path() {
         approve: true,
         asked: std::sync::Mutex::new(Vec::new()),
     };
-    let outcome =
-        ensure_remote_embedding_authorized(&store, &granted, false, Some(&approver)).await.unwrap();
+    let outcome = ensure_remote_embedding_authorized(&store, &granted, false, Some(&approver))
+        .await
+        .unwrap();
     assert!(matches!(
         outcome,
         fluent_llm::grants::RemoteAuthorization::Stored
@@ -196,8 +203,9 @@ async fn elicitation_approval_persists_a_grant_and_denial_names_the_path() {
     assert_eq!(approver.asked.lock().unwrap().len(), 1);
 
     // A stored grant short-circuits: no second elicitation.
-    let outcome =
-        ensure_remote_embedding_authorized(&store, &granted, false, Some(&approver)).await.unwrap();
+    let outcome = ensure_remote_embedding_authorized(&store, &granted, false, Some(&approver))
+        .await
+        .unwrap();
     assert!(matches!(
         outcome,
         fluent_llm::grants::RemoteAuthorization::Stored
@@ -214,14 +222,17 @@ async fn elicitation_approval_persists_a_grant_and_denial_names_the_path() {
         "qwen3.7-text-embedding",
         DEFAULT_QWEN_TEXT_EMBEDDING_ENDPOINT,
     );
-    let error =
-        ensure_remote_embedding_authorized(&store, &other, false, Some(&denier)).await.unwrap_err();
+    let error = ensure_remote_embedding_authorized(&store, &other, false, Some(&denier))
+        .await
+        .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("authorization.json"), "{message}");
     assert!(message.contains("qwen3.7-text-embedding"), "{message}");
 
     // No elicitor and no grant: the same named-path error, no data sent.
-    let error = ensure_remote_embedding_authorized(&store, &other, false, None).await.unwrap_err();
+    let error = ensure_remote_embedding_authorized(&store, &other, false, None)
+        .await
+        .unwrap_err();
     assert!(error.to_string().contains("authorization.json"), "{error}");
 }
 

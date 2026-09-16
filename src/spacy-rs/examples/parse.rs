@@ -28,7 +28,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The table reads the same `AnnotationSet` the JSON below serializes,
     // so the two views cannot disagree (`head` is the relative offset from
     // the record contract: `token.i + head == head_index`).
-    println!("{:<4} {:<16} {:<8} {:<6} {:<10} lemma", "i", "text", "upos", "head", "dep");
+    println!(
+        "{:<4} {:<16} {:<8} {:<6} {:<10} lemma",
+        "i", "text", "upos", "head", "dep"
+    );
     for (i, rec) in result.records.0.iter().enumerate() {
         println!(
             "{:<4} {:<16} {:<8} {:<6} {:<10} {}",
@@ -42,6 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pc.overall, pc.role_coverage, pc.oracle_tie_count, pc.oracle_margins
         );
     }
-    println!("\nannotations :\n{}", serde_json::to_string_pretty(&result.records)?);
+    println!(
+        "\nannotations :\n{}",
+        serde_json::to_string_pretty(&result.records)?
+    );
     Ok(())
 }

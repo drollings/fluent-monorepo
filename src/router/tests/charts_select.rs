@@ -3,8 +3,8 @@
 #![allow(clippy::float_cmp)]
 use super::*;
 use crate::charts::store::{chart_from_str, ChartStore};
-use fluent_db::hnsw::HnswIndexHandle;
 use crate::test_stubs::{HashEmbedder, StubChatBackend};
+use fluent_db::hnsw::HnswIndexHandle;
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -214,9 +214,8 @@ fn adjudicator_partial_with_gaps_when_unbound() {
     let index_path = tmp.path().join("workflow_library.sqlite");
     let store = store_with(&[triage_chart_json()], Some(&index_path));
     // The LLM picks the chart; binding derives the fit and the gaps.
-    let adjudicator = StubChatBackend::always(
-        r#"{"chart": "bug_triage", "fit": "partial", "gaps": ["report"]}"#,
-    );
+    let adjudicator =
+        StubChatBackend::always(r#"{"chart": "bug_triage", "fit": "partial", "gaps": ["report"]}"#);
     let selector = selector(store, Some(Arc::new(adjudicator)), 0.0);
     let m = selector
         .select(
@@ -317,8 +316,7 @@ fn adjudicator_hallucinated_chart_is_rejected() {
     let tmp = TempDir::new().unwrap();
     let index_path = tmp.path().join("workflow_library.sqlite");
     let store = store_with(&[triage_chart_json()], Some(&index_path));
-    let adjudicator =
-        StubChatBackend::always(r#"{"chart": "not_a_real_chart", "fit": "exact"}"#);
+    let adjudicator = StubChatBackend::always(r#"{"chart": "not_a_real_chart", "fit": "exact"}"#);
     let selector = selector(store, Some(Arc::new(adjudicator)), 0.0);
     let m = selector
         .select("Triage a bug report", &[])

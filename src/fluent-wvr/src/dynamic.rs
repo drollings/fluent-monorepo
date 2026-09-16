@@ -24,8 +24,9 @@ use crate::{impl_component, WorkUnit};
 /// and the `WorkContext`, and returns a `WorkOutput`. Signature is chosen to
 /// be implementable from a DB-row fetch, an HTTP callback, or a WASM call
 /// without capturing anything beyond what those paths already own.
-pub type DynamicExecutor =
-    Arc<dyn Fn(&WorkContext, &HashMap<String, String>) -> Result<WorkOutput, WorkError> + Send + Sync>;
+pub type DynamicExecutor = Arc<
+    dyn Fn(&WorkContext, &HashMap<String, String>) -> Result<WorkOutput, WorkError> + Send + Sync,
+>;
 
 /// Compatibility surface (scaffold).
 /// A runtime-assembled `Component`.
@@ -94,8 +95,7 @@ impl DynamicComponent {
 
 impl FieldAccess for DynamicComponent {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        common_core::sync::lock(&self.fields)
-            .insert(name.to_string(), value.to_string());
+        common_core::sync::lock(&self.fields).insert(name.to_string(), value.to_string());
         Ok(())
     }
 

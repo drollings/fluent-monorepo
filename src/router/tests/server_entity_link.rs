@@ -1,55 +1,55 @@
 use super::*;
 use std::time::Duration;
 
-use crate::ledger::ContentNodeLedger;
 use crate::ledger::overlay::CandidateStatus;
-use fluent_concurrency::tokio_runtime;
+use crate::ledger::ContentNodeLedger;
 use fluent_concept::InMemoryConceptStore;
+use fluent_concurrency::tokio_runtime;
 use fluent_types::{InterlinguaId, InterlinguaNamespace};
 
 fn entity_root() -> InterlinguaId {
-InterlinguaId::new(InterlinguaNamespace::YagoClass, 0x100)
+    InterlinguaId::new(InterlinguaNamespace::YagoClass, 0x100)
 }
 
 fn store() -> OverlayCandidateStore {
-let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
-OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"))
+    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"))
 }
 
 /// A concept store whose taxonomy makes `entity_root` the parent of the
 /// candidate `YagoEntity` ids, so `is_subclass_of` gates correctly. The
 /// hierarchy is derived from `parent_class_id` on insert (C5).
 fn concepts() -> Arc<dyn ConceptStore> {
-let store = InMemoryConceptStore::new();
-let root = entity_root();
-store
-    .insert(fluent_types::ConceptMetadata {
-        id: root,
-        canonical_name: "yago:Entity".into(),
-        namespace: InterlinguaNamespace::YagoClass,
-        yago_iri: None,
-        yago_class_iri: None,
-        label: None,
-        node_id: None,
-        parent_class_id: None,
-    })
-    .expect("insert root");
-for local in [0x001, 0x002, 0x009] {
-    let child = InterlinguaId::new(InterlinguaNamespace::YagoEntity, local);
+    let store = InMemoryConceptStore::new();
+    let root = entity_root();
     store
         .insert(fluent_types::ConceptMetadata {
-            id: child,
-            canonical_name: format!("yago:Entity{local}"),
-            namespace: InterlinguaNamespace::YagoEntity,
+            id: root,
+            canonical_name: "yago:Entity".into(),
+            namespace: InterlinguaNamespace::YagoClass,
             yago_iri: None,
             yago_class_iri: None,
             label: None,
             node_id: None,
-            parent_class_id: Some(root),
+            parent_class_id: None,
         })
-        .expect("insert child");
-}
-Arc::new(store)
+        .expect("insert root");
+    for local in [0x001, 0x002, 0x009] {
+        let child = InterlinguaId::new(InterlinguaNamespace::YagoEntity, local);
+        store
+            .insert(fluent_types::ConceptMetadata {
+                id: child,
+                canonical_name: format!("yago:Entity{local}"),
+                namespace: InterlinguaNamespace::YagoEntity,
+                yago_iri: None,
+                yago_class_iri: None,
+                label: None,
+                node_id: None,
+                parent_class_id: Some(root),
+            })
+            .expect("insert child");
+    }
+    Arc::new(store)
 }
 
 fn scorer_fixed(hits: Vec<(InterlinguaId, f64)>) -> EntityLinkScorer {
@@ -85,11 +85,7 @@ fn entity_link_jobs_from_signals_extracts_propn_spans() {
         heads: vec![0, -1, 0, -1],
         interlingua: None,
     };
-    let jobs = entity_link_jobs_from_signals(
-        "Visit Paris in May",
-        NodeId::from_int(9),
-        &[signal],
-    );
+    let jobs = entity_link_jobs_from_signals("Visit Paris in May", NodeId::from_int(9), &[signal]);
     assert_eq!(jobs.len(), 2, "the two PROPN tokens");
     assert_eq!(jobs[0].text, "Paris");
     assert_eq!(jobs[0].span_start, "Visit ".len());
@@ -117,8 +113,7 @@ fn entity_link_jobs_skip_non_propn_and_unlocatable() {
         heads: vec![1, 0],
         interlingua: None,
     };
-    let jobs =
-        entity_link_jobs_from_signals("the cat", NodeId::from_int(1), &[signal]);
+    let jobs = entity_link_jobs_from_signals("the cat", NodeId::from_int(1), &[signal]);
     assert!(jobs.is_empty(), "no PROPN tokens → no jobs");
 }
 

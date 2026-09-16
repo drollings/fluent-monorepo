@@ -31,7 +31,9 @@ impl FromStr for ClassifierAction {
         match s {
             "respond" => Ok(Self::Respond(String::new())),
             "route" => Ok(Self::Route { target: None }),
-            "reject" => Ok(Self::Reject { reason: String::new() }),
+            "reject" => Ok(Self::Reject {
+                reason: String::new(),
+            }),
             other => Err(UnknownAction(other.to_string())),
         }
     }

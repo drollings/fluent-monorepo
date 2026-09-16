@@ -19,7 +19,9 @@
 use std::sync::Arc;
 
 use fluent_concurrency::pool::{Limiter, ResultPool};
-use fluent_llm::backend::{OverlayContribution, OverlayError, Residual, ResidualKind, ResidualOverlay};
+use fluent_llm::backend::{
+    OverlayContribution, OverlayError, Residual, ResidualKind, ResidualOverlay,
+};
 use fluent_wvr::prelude::*;
 use spacy_rs::routing::RoutingSignal;
 
@@ -73,13 +75,14 @@ impl ResidualSelector {
         signals: &[RoutingSignal],
         confidence: Option<&NlpConfidenceSummary>,
     ) -> Vec<Residual> {
-        let doc_needs = confidence
-            .is_some_and(|c| c.needs_disambiguation(self.disambiguation_floor));
+        let doc_needs =
+            confidence.is_some_and(|c| c.needs_disambiguation(self.disambiguation_floor));
         let mut out = Vec::new();
         for signal in signals {
-            let sentence_low = signal.interlingua.as_ref().is_some_and(|il| {
-                il.confidence.unwrap_or(0.0) < self.disambiguation_floor
-            });
+            let sentence_low = signal
+                .interlingua
+                .as_ref()
+                .is_some_and(|il| il.confidence.unwrap_or(0.0) < self.disambiguation_floor);
             if doc_needs || sentence_low {
                 out.push(Residual::disambiguation(signal.sentence.clone()));
             }
@@ -145,7 +148,12 @@ impl OverlayStage {
                                 .iter()
                                 .find(|o| o.kind() == residual.kind)
                                 .cloned()
-                                .ok_or_else(|| OverlayError::Rejected(format!("no overlay for {:?}", residual.kind)))?;
+                                .ok_or_else(|| {
+                                    OverlayError::Rejected(format!(
+                                        "no overlay for {:?}",
+                                        residual.kind
+                                    ))
+                                })?;
                             limiter.run(|| async { overlay.run(&residual) }).await
                         }
                     },
@@ -162,11 +170,7 @@ impl OverlayStage {
         let skip = |reason: String| {
             (
                 "skipped".into(),
-                StageDecision::new(
-                    PipelineStage::Overlay,
-                    StageVerdict::Skipped,
-                    reason,
-                ),
+                StageDecision::new(PipelineStage::Overlay, StageVerdict::Skipped, reason),
             )
         };
 
@@ -243,7 +247,11 @@ impl OverlayStage {
 
         // Highest-scoring hint first — the classifier's context and the
         // redirect gate (when armed) both consume the top of the list.
-        hints.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hints.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut meta = StageMetadata::new(serde_json::Value::Object(Default::default()));
         meta.set_overlay_contributions(&contributions);
@@ -306,7 +314,9 @@ impl OverlayStage {
                         if let Some(payload) = contribution.payload.get("route_hints") {
                             // M2: intentionally direct — own-struct round-trip,
                             // never LLM text (see the sync `decide` above).
-                            if let Ok(parsed) = serde_json::from_value::<Vec<RouteHint>>(payload.clone()) {
+                            if let Ok(parsed) =
+                                serde_json::from_value::<Vec<RouteHint>>(payload.clone())
+                            {
                                 hints.extend(parsed);
                             }
                         }
@@ -322,7 +332,11 @@ impl OverlayStage {
         if contributions.is_empty() {
             return skip(format!("all {errored} overlay run(s) failed (fail-open)"));
         }
-        hints.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hints.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mut meta = StageMetadata::new(serde_json::Value::Object(Default::default()));
         meta.set_overlay_contributions(&contributions);
         if !hints.is_empty() {
@@ -333,7 +347,11 @@ impl OverlayStage {
             StageDecision::new(
                 PipelineStage::Overlay,
                 StageVerdict::Passed,
-                format!("scored {} residual(s) with {} overlay contribution(s)", residual_count, contributions.len()),
+                format!(
+                    "scored {} residual(s) with {} overlay contribution(s)",
+                    residual_count,
+                    contributions.len()
+                ),
             )
             .with_metadata(meta.into_value()),
         )

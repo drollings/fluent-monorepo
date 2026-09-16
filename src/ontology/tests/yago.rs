@@ -125,7 +125,9 @@ fn whitelist_id_is_namespace_aware_and_truncation_correct() {
     // A YagoClass id that is NOT a whitelist class is not whitelisted.
     let other = InterlinguaId::new(
         InterlinguaNamespace::YagoClass,
-        local_id_of(hash_iri("http://yago-knowledge.org/resource/NotWhitelisted")),
+        local_id_of(hash_iri(
+            "http://yago-knowledge.org/resource/NotWhitelisted",
+        )),
     );
     assert!(!is_whitelisted_id(other));
     // A non-Yago namespace never matches, even with a colliding local.
@@ -153,8 +155,7 @@ fn whitelist_iris_match_all_classes() {
     // lookup sets derive from `ALL_CLASSES`.
     let from_classes: std::collections::HashSet<&str> =
         ALL_CLASSES.iter().map(|cls| cls.iri).collect();
-    let listed: std::collections::HashSet<&str> =
-        WHITELIST_IRIS.iter().copied().collect();
+    let listed: std::collections::HashSet<&str> = WHITELIST_IRIS.iter().copied().collect();
     assert_eq!(from_classes, listed);
     for iri in WHITELIST_IRIS {
         assert!(is_whitelisted(iri));

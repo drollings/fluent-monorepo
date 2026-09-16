@@ -79,12 +79,16 @@ fn freshness_and_mtime_validate() {
 #[test]
 fn context_flag_defaults_off_and_parses() {
     assert!(!args(serde_json::json!({"query": "a"})).unwrap().context);
-    assert!(!args(serde_json::json!({"query": "a", "context": false}))
-        .unwrap()
-        .context);
-    assert!(args(serde_json::json!({"query": "a", "context": true}))
-        .unwrap()
-        .context);
+    assert!(
+        !args(serde_json::json!({"query": "a", "context": false}))
+            .unwrap()
+            .context
+    );
+    assert!(
+        args(serde_json::json!({"query": "a", "context": true}))
+            .unwrap()
+            .context
+    );
 }
 
 #[test]

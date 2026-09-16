@@ -11,20 +11,21 @@ async fn test_e2e_batch_mixed_outcomes() {
     let mut batch = SupervisedBatch::new(runtime, caps);
     // root fails permanently (providing `shared`), child1 waits on `shared`
     // (transient, stays pending), independent panics.
-    batch.register(Arc::new(
-        StubComponent::fail("root").with_provides("shared"),
-    ))
-    .unwrap()
-    .register_with_context(
-        Arc::new(StubComponent::dep_fail("child1").with_dep("shared")),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap()
-    .register(Arc::new(StubComponent::panic("independent")))
-    .unwrap();
+    batch
+        .register(Arc::new(
+            StubComponent::fail("root").with_provides("shared"),
+        ))
+        .unwrap()
+        .register_with_context(
+            Arc::new(StubComponent::dep_fail("child1").with_dep("shared")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap()
+        .register(Arc::new(StubComponent::panic("independent")))
+        .unwrap();
 
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 0);
@@ -42,38 +43,43 @@ async fn test_e2e_batch_mixed_outcomes() {
 async fn test_e2e_panic_cascade_with_independent_neighbors() {
     let mut batch = make_batch();
 
-    batch.register(Arc::new(
-        StubComponent::panic("parent").with_provides("shared"),
-    ))
-    .unwrap();
-    batch.register_with_context(
-        Arc::new(StubComponent::dep_fail("child").with_dep("shared")),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap();
-    batch.register_with_context(
-        Arc::new(StubComponent::dep_fail("child2").with_dep("shared")),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap();
-    batch.register(Arc::new(
-        StubComponent::ok("neighbor").with_provides("independent"),
-    ))
-    .unwrap();
-    batch.register_with_context(
-        Arc::new(StubComponent::ok("grandchild").with_dep("independent")),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap();
+    batch
+        .register(Arc::new(
+            StubComponent::panic("parent").with_provides("shared"),
+        ))
+        .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(StubComponent::dep_fail("child").with_dep("shared")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(StubComponent::dep_fail("child2").with_dep("shared")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
+    batch
+        .register(Arc::new(
+            StubComponent::ok("neighbor").with_provides("independent"),
+        ))
+        .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(StubComponent::ok("grandchild").with_dep("independent")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
 
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(

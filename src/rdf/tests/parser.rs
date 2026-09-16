@@ -91,9 +91,8 @@ fn test_parse_literal_with_lang_tag() {
 
 #[test]
 fn test_parse_literal_with_datatype() {
-    let trips = parse_triples(
-        "<http://s> <http://p> \"42\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    );
+    let trips =
+        parse_triples("<http://s> <http://p> \"42\"^^<http://www.w3.org/2001/XMLSchema#integer> .");
     match &trips[0].object {
         Term::Literal(lit) => {
             assert_eq!(

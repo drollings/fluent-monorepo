@@ -15,7 +15,11 @@ fn cjk_queries_resolve_within_the_corpus() {
         // Every bigram of the query must occur in the expected doc text —
         // the exact substring property the FTS bigram column relies on.
         let wanted = cjk_bigrams(query.query);
-        assert!(!wanted.is_empty(), "golden query must carry CJK: {}", query.query);
+        assert!(
+            !wanted.is_empty(),
+            "golden query must carry CJK: {}",
+            query.query
+        );
         for bigram in &wanted {
             assert!(
                 doc.text.contains(bigram.as_str()),

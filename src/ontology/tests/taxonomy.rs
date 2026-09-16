@@ -50,10 +50,7 @@ fn yago_python_parity_on_fixture() {
             &["rdfs:class", "yago:entity", "yago:place"],
         ),
     );
-    expected.insert(
-        "yago:creativework".to_string(),
-        entry(&[], &[]),
-    );
+    expected.insert("yago:creativework".to_string(), entry(&[], &[]));
     expected.insert(
         "yago:entity".to_string(),
         entry(&["rdfs:class"], &["rdfs:class"]),
@@ -84,7 +81,10 @@ fn yago_python_parity_on_fixture() {
     // ... but their edges never leak into yago entries either.
     for (k, v) in &map {
         assert!(
-            v.parents.iter().chain(&v.ancestors).all(|n| !n.starts_with("schema:")),
+            v.parents
+                .iter()
+                .chain(&v.ancestors)
+                .all(|n| !n.starts_with("schema:")),
             "no schema: names in {k}"
         );
     }
@@ -95,11 +95,11 @@ fn parity_include_all_keeps_schema_classes() {
     // Mirrors `test_yago_only_filter --include-all`: schema:City appears.
     let map = taxonomy_from_ttl(&fixture_ttl(), false, true);
     assert!(map.contains_key("yago:city"), "yago keys stay");
-    assert!(map.contains_key("schema:city"), "include-all keeps schema keys");
-    assert_eq!(
-        map["schema:city"].parents,
-        vec!["schema:place".to_string()]
+    assert!(
+        map.contains_key("schema:city"),
+        "include-all keeps schema keys"
     );
+    assert_eq!(map["schema:city"].parents, vec!["schema:place".to_string()]);
 }
 
 #[test]
@@ -132,8 +132,7 @@ fn parity_json_string_is_sorted_and_newline_terminated() {
     sorted.sort_unstable();
     assert_eq!(keys, sorted, "sorted keys");
     // Round-trip: the emitted text parses back to the same map.
-    let back: BTreeMap<String, ClassEntry> =
-        serde_json::from_str(&text).expect("round-trip");
+    let back: BTreeMap<String, ClassEntry> = serde_json::from_str(&text).expect("round-trip");
     assert_eq!(back, map);
 }
 
@@ -241,8 +240,7 @@ fn normalize_curie_preserves_lowercased_prefix() {
 // ── Turtle-reader parity: the streaming parser and the line scanner ────────
 
 fn n2_fixture() -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../env/yago-taxonomy-n2.ttl");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../env/yago-taxonomy-n2.ttl");
     std::fs::read_to_string(&path).expect("n2 taxonomy TTL readable")
 }
 
@@ -268,7 +266,11 @@ fn parity_readers_agree_on_real_n2_taxonomy() {
     let ttl = n2_fixture();
     assert_readers_agree(&ttl, "yago-taxonomy-n2.ttl");
     let (_, edges) = collect_edges(&ttl);
-    assert!(edges.len() > 1_000, "n2 has a large edge set: {}", edges.len());
+    assert!(
+        edges.len() > 1_000,
+        "n2 has a large edge set: {}",
+        edges.len()
+    );
     assert!(
         edges.contains(&(
             "http://schema.org/Person".to_string(),
@@ -305,8 +307,8 @@ fn malformed_inputs_never_panic() {
     let malformed = [
         "",
         "@prefix yago: <http://yago-knowledge.org/resource/> .\n",
-        "yago:A rdfs:subClassOf",                 // missing object + dot
-        "yago:A rdfs:subClassOf yago:B",          // missing dot
+        "yago:A rdfs:subClassOf",        // missing object + dot
+        "yago:A rdfs:subClassOf yago:B", // missing dot
         "\"unterminated literal",
         "<http://x",
         "@@@ not turtle @@@",

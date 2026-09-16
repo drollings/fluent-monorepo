@@ -6,8 +6,8 @@
 //! skips cleanly without it (skip-not-fail). Assertions are structural only.
 
 use fluent_llm::artifact::{
-    ModelArtifact, ModelArtifactSource, ReqwestArtifactFetcher, ResolveArtifactsOptions,
-    SourceKind, resolve_model_artifacts,
+    resolve_model_artifacts, ModelArtifact, ModelArtifactSource, ReqwestArtifactFetcher,
+    ResolveArtifactsOptions, SourceKind,
 };
 use fluent_llm::artifact_lock::LockOptions;
 use fluent_llm::catalog::get_embedding_model_catalog_entry;
@@ -104,9 +104,10 @@ fn live_qwen_text_embedding_structural() {
         timeout_ms: None,
     })
     .expect("live Qwen model should construct");
-    let result =
-        futures_executor_block_on(model.embed_texts(&["hello world".to_string(), "second".to_string()]))
-            .expect("live Qwen embed should succeed");
+    let result = futures_executor_block_on(
+        model.embed_texts(&["hello world".to_string(), "second".to_string()]),
+    )
+    .expect("live Qwen embed should succeed");
     assert_eq!(result.vectors.len(), 2);
     for vector in &result.vectors {
         assert_eq!(vector.len(), 1024);

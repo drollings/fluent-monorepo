@@ -44,7 +44,11 @@ fn finish_walk<R, E>(last_err: Option<E>) -> Result<Option<R>, E> {
     }
 }
 
-fn walk_one<R, E>(res: Result<Option<R>, E>, stop: &mut impl FnMut(&E) -> bool, last_err: &mut Option<E>) -> ControlFlow<Result<Option<R>, E>> {
+fn walk_one<R, E>(
+    res: Result<Option<R>, E>,
+    stop: &mut impl FnMut(&E) -> bool,
+    last_err: &mut Option<E>,
+) -> ControlFlow<Result<Option<R>, E>> {
     match res {
         Ok(Some(v)) => ControlFlow::Break(Ok(Some(v))),
         Ok(None) => ControlFlow::Continue(()),

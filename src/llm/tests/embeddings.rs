@@ -367,8 +367,6 @@ fn ollama_embedding_dimensions() {
     assert_eq!(p.dimensions(), 768);
 }
 
-
-
 #[test]
 fn ollama_default_constructor() {
     let p = OllamaEmbedding::new(None, None, 768).unwrap();
@@ -546,8 +544,7 @@ fn batch_output_validation_checks_shape_values_and_truncation() {
     let error = check_embed_batch_output(&non_finite, 2, 2, &[]).unwrap_err();
     assert!(error.to_string().contains("non-finite"), "{error}");
     for bad_truncation in [vec![2], vec![1, 1]] {
-        let error =
-            check_embed_batch_output(&good, 2, 2, &bad_truncation).unwrap_err();
+        let error = check_embed_batch_output(&good, 2, 2, &bad_truncation).unwrap_err();
         assert!(error.to_string().contains("truncated"), "{error}");
     }
 }

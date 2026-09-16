@@ -26,7 +26,10 @@ fn local_host_case_whitespace_and_loopback_range() {
 fn extract_host_shapes() {
     // Characterization (M5): verbatim host-extraction behavior.
     assert_eq!(extract_host("http://localhost:11434/v1"), "localhost");
-    assert_eq!(extract_host("https://api.example.com/v1"), "api.example.com");
+    assert_eq!(
+        extract_host("https://api.example.com/v1"),
+        "api.example.com"
+    );
     assert_eq!(extract_host("http://127.0.0.1:8079/x"), "127.0.0.1");
     assert_eq!(extract_host("bare-host"), "bare-host");
     // IPv6-bracket naive: cuts at the first ':' inside "[::1]". Locked
@@ -38,12 +41,18 @@ fn extract_host_shapes() {
 #[test]
 fn hosts_equivalent_with_preserves_both_classes() {
     // The parameterized primitive reproduces each side's class exactly.
-    let llm = HostEquivalence { fold_case: true, loopback_range_127: true };
+    let llm = HostEquivalence {
+        fold_case: true,
+        loopback_range_127: true,
+    };
     assert!(hosts_equivalent_with("LocalHost", "127.0.0.2", llm));
     assert!(hosts_equivalent_with("::1", "localhost", llm));
     assert!(!hosts_equivalent_with("example.com", "127.0.0.1", llm));
     assert!(hosts_equivalent_with("Example.COM", "example.com", llm));
-    let router = HostEquivalence { fold_case: false, loopback_range_127: false };
+    let router = HostEquivalence {
+        fold_case: false,
+        loopback_range_127: false,
+    };
     assert!(hosts_equivalent_with("localhost", "127.0.0.1", router));
     assert!(hosts_equivalent_with("::1", "127.0.0.1", router));
     assert!(!hosts_equivalent_with("LocalHost", "localhost", router));
@@ -54,10 +63,22 @@ fn hosts_equivalent_with_preserves_both_classes() {
 #[test]
 fn is_local_host_matches_wrapper_over_table() {
     // `is_local_host` is a thin wrapper: local(h) == equivalent(h, 127.0.0.1).
-    let llm = HostEquivalence { fold_case: true, loopback_range_127: true };
+    let llm = HostEquivalence {
+        fold_case: true,
+        loopback_range_127: true,
+    };
     for h in [
-        "localhost", "LocalHost", "  localhost  ", "127.0.0.1", "127.0.0.2",
-        "::1", "example.com", "Example.COM", "", "0.0.0.0", "10.0.0.1",
+        "localhost",
+        "LocalHost",
+        "  localhost  ",
+        "127.0.0.1",
+        "127.0.0.2",
+        "::1",
+        "example.com",
+        "Example.COM",
+        "",
+        "0.0.0.0",
+        "10.0.0.1",
     ] {
         assert_eq!(
             is_local_host(h),

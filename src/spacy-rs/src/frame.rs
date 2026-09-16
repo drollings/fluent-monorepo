@@ -32,7 +32,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use fluent_concept::ConceptStore;
 use crate::doc::{dep_in, dep_is, lemma_of, sentence_root, sentence_spans, Doc};
 use crate::interlingua::InterlinguaResolver;
 use crate::labels::{
@@ -40,6 +39,7 @@ use crate::labels::{
     SUBJECT_DEPS,
 };
 use crate::routing::{InterlinguaSignal, RoutingSignal};
+use fluent_concept::ConceptStore;
 use fluent_types::InterlinguaId;
 
 /// A margin at or below this magnitude is treated as an oracle tie (near-tie →
@@ -306,11 +306,7 @@ pub fn extract_frames(
             };
             let lemma_id = resolver.lemma_id(&lemma_of(doc, i));
             let candidates = concept_store.candidates(lemma_id);
-            roles.push((
-                role,
-                (i, i + 1),
-                candidates.iter().map(|c| c.id).collect(),
-            ));
+            roles.push((role, (i, i + 1), candidates.iter().map(|c| c.id).collect()));
         }
 
         // Predicate polysemy: the lemma id resolves to more than one concept.
@@ -358,7 +354,10 @@ pub fn extract_frames(
         });
     }
 
-    FrameAnalysis { frames, ambiguities }
+    FrameAnalysis {
+        frames,
+        ambiguities,
+    }
 }
 
 /// Task-value gate for sense promotion into the ledger-owner
@@ -410,9 +409,19 @@ pub fn mint_frame_key(
         .map(|(role, (s, _), _)| (*role, resolver.lemma_id(&lemma_of(doc, *s))))
         .collect();
     if open_ambiguity {
-        FrameKey::provisional(frame.predicate_lemma_id, roles, frame.polarity, frame.modality)
+        FrameKey::provisional(
+            frame.predicate_lemma_id,
+            roles,
+            frame.polarity,
+            frame.modality,
+        )
     } else {
-        FrameKey::permanent(frame.predicate_lemma_id, roles, frame.polarity, frame.modality)
+        FrameKey::permanent(
+            frame.predicate_lemma_id,
+            roles,
+            frame.polarity,
+            frame.modality,
+        )
     }
 }
 
@@ -517,10 +526,7 @@ pub fn frame_coverage_signal(signal: &InterlinguaSignal) -> f64 {
     if signal.subject_id.is_some_and(|id| id.as_u64() != 0) {
         present_and_resolved += 1;
     }
-    if signal
-        .direct_object_id
-        .is_some_and(|id| id.as_u64() != 0)
-    {
+    if signal.direct_object_id.is_some_and(|id| id.as_u64() != 0) {
         present_and_resolved += 1;
     }
     f64::from(present_and_resolved) / f64::from(total)

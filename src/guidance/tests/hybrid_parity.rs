@@ -32,8 +32,20 @@ fn file_info(id: &str, relative: &str, format: &str) -> FileInfo {
 
 fn seed_matrix(db: &GuidanceDb, nlp: &spacy_rs::pipeline::NlpPipeline) {
     let docs = [
-        ("sym", "src/sym.rs", "pub fn UniqueAlphaSymbol() {}\n", "rust", None),
-        ("cjk", "src/seg.rs", "// 中文分词器测试\npub fn seg() {}\n", "rust", None),
+        (
+            "sym",
+            "src/sym.rs",
+            "pub fn UniqueAlphaSymbol() {}\n",
+            "rust",
+            None,
+        ),
+        (
+            "cjk",
+            "src/seg.rs",
+            "// 中文分词器测试\npub fn seg() {}\n",
+            "rust",
+            None,
+        ),
         (
             "lemma",
             "src/run.ts",
@@ -76,7 +88,11 @@ fn top_path(
         .evidence
         .iter()
         .any(|evidence| evidence.path == guidance_core::search_types::RecallPath::Lemma);
-    (output.hits[0].file.relative_path.clone(), elapsed_ms, lemma_evidence)
+    (
+        output.hits[0].file.relative_path.clone(),
+        elapsed_ms,
+        lemma_evidence,
+    )
 }
 
 #[test]
@@ -87,10 +103,25 @@ fn known_item_parity_matrix() {
     // The lemma case is a genuine inflection proof: neither "service" the
     // verb form "run" appears verbatim — the index holds "runs".
     let cases = [
-        ("UniqueAlphaSymbol", QueryIntent::SingleIdentifier, "src/sym.rs", None),
+        (
+            "UniqueAlphaSymbol",
+            QueryIntent::SingleIdentifier,
+            "src/sym.rs",
+            None,
+        ),
         ("分词器", QueryIntent::GeneralSearch, "src/seg.rs", None),
-        ("service run", QueryIntent::GeneralSearch, "src/run.ts", Some(&nlp)),
-        ("UnrelatedHelper", QueryIntent::SingleIdentifier, "src/other.ts", None),
+        (
+            "service run",
+            QueryIntent::GeneralSearch,
+            "src/run.ts",
+            Some(&nlp),
+        ),
+        (
+            "UnrelatedHelper",
+            QueryIntent::SingleIdentifier,
+            "src/other.ts",
+            None,
+        ),
     ];
     let mut sum_rr = 0.0;
     for (query, intent, expected, nlp) in cases {

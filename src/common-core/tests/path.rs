@@ -1,6 +1,5 @@
 use common_core::path::{
-    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical,
-    parent_lexical,
+    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical, parent_lexical,
 };
 
 #[test]

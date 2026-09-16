@@ -283,11 +283,7 @@ impl InferenceBackend for StubInferenceBackend {
     fn weights(&self, _key: &str) -> Option<Arc<dyn LlmWeights>> {
         None
     }
-    fn chat_backend(
-        &self,
-        key: &str,
-        instance: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
+    fn chat_backend(&self, key: &str, instance: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         if key != self.key {
             return None;
         }

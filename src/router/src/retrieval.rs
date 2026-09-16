@@ -27,8 +27,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use common_core::score::top_k_by_score;
-use search_vector::math::cosine_similarity_f32;
 use fluent_types::{ContentNode, NodeId};
+use search_vector::math::cosine_similarity_f32;
 use spacy_rs::doc::SentStart;
 use spacy_rs::pipeline::NlpPipeline;
 use spacy_rs::retrieval::{LemmaGrepHit, Span};
@@ -476,14 +476,26 @@ fn sentence_regions(doc: &spacy_rs::doc::Doc) -> Vec<(Span, String)> {
         let token_text = doc.token_text(i);
         let end = byte + token_text.len();
         if doc.token(i).sent_start == SentStart::Start && i > sent_start {
-            regions.push((Span { start: sent_byte, end: byte }, text[sent_byte..byte].to_string()));
+            regions.push((
+                Span {
+                    start: sent_byte,
+                    end: byte,
+                },
+                text[sent_byte..byte].to_string(),
+            ));
             sent_start = i;
             sent_byte = byte;
         }
         byte = end + usize::from(doc.token(i).spacy);
     }
     if sent_start < doc.len() {
-        regions.push((Span { start: sent_byte, end: byte }, text[sent_byte..byte].to_string()));
+        regions.push((
+            Span {
+                start: sent_byte,
+                end: byte,
+            },
+            text[sent_byte..byte].to_string(),
+        ));
     }
     regions
 }

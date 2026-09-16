@@ -90,10 +90,7 @@ fn property_newline_never_splits_codepoint() {
     ];
     for payload in &payloads {
         let bytes = payload.as_bytes();
-        let want: Vec<String> = payload
-            .lines()
-            .map(|l| l.trim_end().to_string())
-            .collect();
+        let want: Vec<String> = payload.lines().map(|l| l.trim_end().to_string()).collect();
         for split in 0..=bytes.len() {
             let mut buf = Vec::new();
             let first = drain_sse_lines(&mut buf, &bytes[..split]);

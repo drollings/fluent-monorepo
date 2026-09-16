@@ -36,8 +36,11 @@ fn fixture() -> tempfile::TempDir {
         "mod importee;\nuse importee::fee;\n/// Calls fee.\npub fn caller(x: u64) -> u64 {\n    fee(x)\n}\n",
     )
     .expect("write");
-    std::fs::write(dir.path().join("leaf.rs"), "pub fn leaf() -> u64 {\n    42\n}\n")
-        .expect("write");
+    std::fs::write(
+        dir.path().join("leaf.rs"),
+        "pub fn leaf() -> u64 {\n    42\n}\n",
+    )
+    .expect("write");
     dir
 }
 
@@ -60,9 +63,7 @@ fn fragment_texts(dir: &Path, file: &str) -> Vec<String> {
     let out = std::process::Command::new("sqlite3")
         .args([
             db.to_str().unwrap(),
-            &format!(
-                "SELECT content_text FROM fragments WHERE file_id = '{file_id}' ORDER BY id"
-            ),
+            &format!("SELECT content_text FROM fragments WHERE file_id = '{file_id}' ORDER BY id"),
         ])
         .output();
     // sqlite3 CLI may be absent (hermetic CI): fall back to file bytes.
@@ -72,7 +73,10 @@ fn fragment_texts(dir: &Path, file: &str) -> Vec<String> {
     if !out.status.success() {
         return vec![std::fs::read_to_string(dir.join(file)).unwrap()];
     }
-    String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect()
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
 }
 
 #[test]
@@ -84,8 +88,11 @@ fn importee_signature_edit_reprocesses_importer() {
     let before = fragment_texts(root, "importer.rs");
 
     // Same-size edit pins the size arm; the mtime arm must fire.
-    std::fs::write(root.join("importee.rs"), "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n")
-        .expect("write");
+    std::fs::write(
+        root.join("importee.rs"),
+        "pub fn fee(x: u64) -> u64 {\n    x + 2\n}\n",
+    )
+    .expect("write");
     let out = sync(root, ".sync.db", true);
 
     let measured = regenerated(&out);
@@ -95,7 +102,10 @@ fn importee_signature_edit_reprocesses_importer() {
     ];
     // Pre-registered bound: recall 1.0 (no silent miss, ever).
     for expected in &oracle {
-        assert!(measured.contains(expected), "missed {expected}; measured={measured:?}");
+        assert!(
+            measured.contains(expected),
+            "missed {expected}; measured={measured:?}"
+        );
     }
     let over: Vec<_> = measured.iter().filter(|p| !oracle.contains(p)).collect();
     eprintln!("M3 probe: affected={measured:?} over-invalidation={over:?}");
@@ -111,19 +121,25 @@ fn leaf_edit_reprocesses_only_itself() {
     let root = dir.path();
     sync(root, ".sync.db", false);
 
-    std::fs::write(root.join("leaf.rs"), "pub fn leaf() -> u64 {\n    43\n}\n")
-        .expect("write");
+    std::fs::write(root.join("leaf.rs"), "pub fn leaf() -> u64 {\n    43\n}\n").expect("write");
     let out = sync(root, ".sync.db", true);
 
     let measured = regenerated(&out);
     let leaf = root.join("leaf.rs").to_string_lossy().into_owned();
     let importer = root.join("importer.rs").to_string_lossy().into_owned();
-    assert!(measured.contains(&leaf), "leaf itself must re-process: {measured:?}");
+    assert!(
+        measured.contains(&leaf),
+        "leaf itself must re-process: {measured:?}"
+    );
     assert!(
         !measured.contains(&importer),
         "must-NOT-fire: importer untouched by a leaf edit: {measured:?}"
     );
-    assert_eq!(measured.len(), 1, "affected is exactly the leaf: {measured:?}");
+    assert_eq!(
+        measured.len(),
+        1,
+        "affected is exactly the leaf: {measured:?}"
+    );
 }
 
 fn db_count(db: &Path, table: &str, file_id: &str) -> usize {
@@ -135,7 +151,10 @@ fn db_count(db: &Path, table: &str, file_id: &str) -> usize {
         .output()
         .expect("sqlite3");
     assert!(out.status.success(), "sqlite3 failed: {out:?}");
-    String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(usize::MAX)
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .unwrap_or(usize::MAX)
 }
 
 #[test]

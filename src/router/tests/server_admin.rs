@@ -73,12 +73,10 @@ async fn unload_refuses_always_resident_onnx_model() {
         .expect("request");
     assert_eq!(resp.status(), hyper::StatusCode::CONFLICT);
     let body: serde_json::Value = resp.json().await.expect("json");
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("cannot be unloaded")
-    );
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("cannot be unloaded"));
 }
 
 /// Shared canned-handle session loader (single home:

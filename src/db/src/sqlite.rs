@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, Result};
 
-use common_core::constants::HnswParams;
 use anndists::dist::DistCosine;
+use common_core::constants::HnswParams;
 use hnsw_rs::hnsw::Hnsw;
 
 /// Open a connection to `path` with WAL journal mode and a busy timeout.

@@ -38,10 +38,9 @@
 //! column holding the full serialized `ContentNode` (single source of truth
 //! for LOD/role metadata).
 
+pub mod annotations;
 pub mod correction_index;
 pub mod entity_promotion;
-pub mod span_cache;
-pub mod annotations;
 pub mod frame_index;
 pub mod nlp;
 pub mod node_annotation;
@@ -49,6 +48,7 @@ pub mod orchestrator;
 pub mod overlay;
 pub mod overlay_worker;
 pub mod prompt;
+pub mod span_cache;
 pub mod tiering;
 pub mod workflow_replay;
 pub mod workflow_store;

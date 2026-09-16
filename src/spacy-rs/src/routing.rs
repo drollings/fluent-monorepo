@@ -199,7 +199,11 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
                 count += 1;
             }
         }
-        if count == 0 { None } else { Some(sum / count as f64) }
+        if count == 0 {
+            None
+        } else {
+            Some(sum / count as f64)
+        }
     };
 
     // The interlingua frame: content-addressed ids of the routing-relevant

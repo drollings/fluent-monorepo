@@ -405,7 +405,10 @@ mod tests {
         assert_eq!(back.embedding, Some(vec![0.1, 0.2, 0.3]));
         assert_eq!(lib.node_count().expect("count"), 1);
         // Missing node -> None.
-        assert!(lib.get_node(NodeId::from_int(999)).expect("missing").is_none());
+        assert!(lib
+            .get_node(NodeId::from_int(999))
+            .expect("missing")
+            .is_none());
     }
 
     #[test]
@@ -425,8 +428,12 @@ mod tests {
     #[test]
     fn find_by_name_and_batch_resolution() {
         let lib = lib();
-        let a = lib.insert_node(&make_node("alpha", "src-a")).expect("insert a");
-        let b = lib.insert_node(&make_node("beta", "src-b")).expect("insert b");
+        let a = lib
+            .insert_node(&make_node("alpha", "src-a"))
+            .expect("insert a");
+        let b = lib
+            .insert_node(&make_node("beta", "src-b"))
+            .expect("insert b");
         assert_eq!(lib.find_node_by_name("alpha").expect("find"), Some(a));
         assert!(lib.find_node_by_name("nope").expect("find").is_none());
 
@@ -443,9 +450,7 @@ mod tests {
     #[test]
     fn batch_insert_commits_all_rows() {
         let lib = lib();
-        let nodes: Vec<ContentNode> = (0..5)
-            .map(|i| make_node(&format!("n{i}"), "src"))
-            .collect();
+        let nodes: Vec<ContentNode> = (0..5).map(|i| make_node(&format!("n{i}"), "src")).collect();
         lib.insert_nodes_batch(&nodes).expect("batch insert");
         assert_eq!(lib.node_count().expect("count"), 5);
         assert_eq!(lib.get_all_node_ids().expect("ids").len(), 5);
@@ -454,8 +459,10 @@ mod tests {
     #[test]
     fn keyword_search_matches_name_and_source() {
         let lib = lib();
-        lib.insert_node(&make_node("bug-triage", "jira ticket 42")).expect("insert");
-        lib.insert_node(&make_node("review", "unrelated")).expect("insert");
+        lib.insert_node(&make_node("bug-triage", "jira ticket 42"))
+            .expect("insert");
+        lib.insert_node(&make_node("review", "unrelated"))
+            .expect("insert");
         let hits = lib.keyword_search("jira").expect("search");
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name.as_str(), "bug-triage");
@@ -481,13 +488,17 @@ mod tests {
         let hits = lib.find_wasm_tools_by_capability("search").expect("find");
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name.as_str(), "search");
-        assert!(lib.find_wasm_tools_by_capability("nope").expect("find").is_empty());
+        assert!(lib
+            .find_wasm_tools_by_capability("nope")
+            .expect("find")
+            .is_empty());
     }
 
     #[test]
     fn embedded_node_count_only_counts_embedded() {
         let lib = lib();
-        lib.insert_node(&make_node("plain", "s")).expect("insert plain");
+        lib.insert_node(&make_node("plain", "s"))
+            .expect("insert plain");
         lib.insert_node(&ContentNode {
             embedding: Some(vec![0.5]),
             ..make_node("embedded", "s")
@@ -522,8 +533,15 @@ mod tests {
         };
         lib.insert_node(&node).expect("first insert");
         let again = lib.insert_node(&node).expect("second insert");
-        assert_eq!(again, nid, "explicit id returned whether or not the row was inserted");
-        assert_eq!(lib.node_count().expect("count"), 1, "re-ingestion adds no row");
+        assert_eq!(
+            again, nid,
+            "explicit id returned whether or not the row was inserted"
+        );
+        assert_eq!(
+            lib.node_count().expect("count"),
+            1,
+            "re-ingestion adds no row"
+        );
     }
 
     #[test]
@@ -531,7 +549,9 @@ mod tests {
         let lib = lib();
         let nodes: Vec<ContentNode> = (0..3)
             .map(|i| ContentNode {
-                id: Some(NodeId::from_int(hash_iri_fixture(&format!("http://example.org/b{i}")))),
+                id: Some(NodeId::from_int(hash_iri_fixture(&format!(
+                    "http://example.org/b{i}"
+                )))),
                 ..make_node(&format!("b{i}"), "src")
             })
             .collect();

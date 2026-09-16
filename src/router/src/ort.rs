@@ -10,10 +10,10 @@ use std::sync::Arc;
 
 use fluent_llm::backend::{BackendCaps, InferenceBackend, Readiness};
 use fluent_llm::client::ChatBackend;
-#[cfg(feature = "onnx")]
-use fluent_llm::runtime::LlmWeights;
 use fluent_llm::onnx_error::OrtError;
 use fluent_llm::onnx_session::OrtSessionRegistry;
+#[cfg(feature = "onnx")]
+use fluent_llm::runtime::LlmWeights;
 use fluent_wvr::prelude::*;
 
 use crate::config::RouterConfig;
@@ -46,7 +46,8 @@ pub fn disambiguation_overlays<S: std::hash::BuildHasher>(
         .collect();
     let mut overlays = Vec::new();
     for key in model_keys {
-        let Some(overlay) = fluent_onnx::build_prompt_router_overlay(registry, key, labels.clone())?
+        let Some(overlay) =
+            fluent_onnx::build_prompt_router_overlay(registry, key, labels.clone())?
         else {
             continue;
         };
@@ -291,8 +292,13 @@ impl OnnxChatBackend {
         let messages = messages.to_vec();
         let ctx_arc = Arc::clone(ctx);
         self.limiter.run_sync(move || {
-            let result =
-                runner.complete_on_context(&ctx_arc, &messages, grammar.as_deref_mut(), None, params);
+            let result = runner.complete_on_context(
+                &ctx_arc,
+                &messages,
+                grammar.as_deref_mut(),
+                None,
+                params,
+            );
             async move { result }
         })
     }
@@ -369,7 +375,10 @@ impl OnnxChatBackend {
 
 #[cfg(feature = "onnx")]
 impl fluent_llm::client::ChatBackend for OnnxChatBackend {
-    fn chat_complete(&self, messages: &[fluent_llm::ChatMessage]) -> Result<String, fluent_llm::LlmError> {
+    fn chat_complete(
+        &self,
+        messages: &[fluent_llm::ChatMessage],
+    ) -> Result<String, fluent_llm::LlmError> {
         self.run_limited(messages, None)
     }
 
@@ -446,22 +455,20 @@ pub fn onnx_context_backend(
 ) -> Result<Option<Arc<dyn fluent_llm::client::ChatBackend>>, OrtError> {
     use fluent_onnx::HuggingFaceVocab;
 
-    let pool = weights
-        .ensure_pool()
-        .map_err(|e| {
-            // Supervisor-containment parity for onnx: a session
-            // that fails to load on first use is a LOUD error, not a silent
-            // fall-through — the registry's own `ensure_loaded` already logged
-            // the underlying load failure.
-            tracing::error!(
-                target: "router.ort",
-                model = %weights.model_key(),
-                context = %name,
-                error = %e,
-                "onnx context pool load failed on first use — onnx backend unavailable (fail-open)",
-            );
-            OrtError::Other(format!("onnx context pool load failed: {e}"))
-        })?;
+    let pool = weights.ensure_pool().map_err(|e| {
+        // Supervisor-containment parity for onnx: a session
+        // that fails to load on first use is a LOUD error, not a silent
+        // fall-through — the registry's own `ensure_loaded` already logged
+        // the underlying load failure.
+        tracing::error!(
+            target: "router.ort",
+            model = %weights.model_key(),
+            context = %name,
+            error = %e,
+            "onnx context pool load failed on first use — onnx backend unavailable (fail-open)",
+        );
+        OrtError::Other(format!("onnx context pool load failed: {e}"))
+    })?;
     let session = pool.session();
     let vocab: Arc<dyn fluent_onnx::TokenVocab> =
         Arc::new(HuggingFaceVocab::new(session.tokenizer().inner().clone()));
@@ -661,20 +668,21 @@ pub fn nlp_encoder_fetch(
     // deterministic (VISION: the model annotates *given* tokens, it does not
     // own lexical data).
     let lemmatizer = Lemmatizer::english_rule();
-    let closure: EncoderFetchSync = Arc::new(move |doc: &Doc| -> Result<AnnotationSet, AnnotateError> {
-        // The doc's reconstructed text is the byte source both the LFM
-        // tokenizer and the spacy spans index (orth + idx → spacy_spans).
-        let text = doc.text();
-        let orth: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-        let idx: Vec<usize> = (0..doc.len()).map(|i| doc.token(i).idx as usize).collect();
-        let spans = fluent_onnx::SpacyTokenAligner::spacy_spans(&orth, &idx);
+    let closure: EncoderFetchSync =
+        Arc::new(move |doc: &Doc| -> Result<AnnotationSet, AnnotateError> {
+            // The doc's reconstructed text is the byte source both the LFM
+            // tokenizer and the spacy spans index (orth + idx → spacy_spans).
+            let text = doc.text();
+            let orth: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
+            let idx: Vec<usize> = (0..doc.len()).map(|i| doc.token(i).idx as usize).collect();
+            let spans = fluent_onnx::SpacyTokenAligner::spacy_spans(&orth, &idx);
 
-        // Session error → Err → the ladder falls through to ArcEager.
-        let annotations = worker
-            .annotate(&text, &spans)
-            .map_err(|e| AnnotateError::Encoder(e.to_string()))?;
-        map_annotations(doc, &lemmatizer, &annotations)
-    });
+            // Session error → Err → the ladder falls through to ArcEager.
+            let annotations = worker
+                .annotate(&text, &spans)
+                .map_err(|e| AnnotateError::Encoder(e.to_string()))?;
+            map_annotations(doc, &lemmatizer, &annotations)
+        });
 
     tracing::info!(
         target: "router.ort",
@@ -779,7 +787,9 @@ pub fn nlp_encoder_fetch(
 /// regex baseline when `auto_enqueue` requires a pre-filter, else no
 /// pre-filter. The cfg split itself stays (the onnx classifier type does not
 /// exist without the feature); only the repeated tail is factored out.
-fn regex_baseline_or_none(auto_enqueue: bool) -> Option<Arc<dyn fluent_llm::backend::PiiSpanDetector>> {
+fn regex_baseline_or_none(
+    auto_enqueue: bool,
+) -> Option<Arc<dyn fluent_llm::backend::PiiSpanDetector>> {
     if auto_enqueue {
         Some(Arc::new(fluent_llm::RegexPiiDetector))
     } else {
@@ -992,7 +1002,9 @@ pub fn build_onnx_registry(
     // from the encoder role. This keeps the simplified config format concise.
     // The generative `Llm` role is exempt — its tokenizer is its own (the
     // model's `tokenizer.json`), never the encoder's.
-    let encoder_tokenizer = fleet.encoder.as_ref()
+    let encoder_tokenizer = fleet
+        .encoder
+        .as_ref()
         .and_then(|e| e.model.tokenizer_path.clone());
     let registry = OrtSessionRegistry::new(Arc::new(fluent_onnx::OrtSessionLoader));
     for (role, role_cfg) in fleet.iter() {
@@ -1121,7 +1133,9 @@ impl OnnxWeights {
 
     /// Build the role's context pool on first use (loads the session through
     /// `build_llm_session` — the M6 lazy-residency load point). Idempotent.
-    fn ensure_pool(&self) -> Result<Arc<fluent_onnx::OnnxContextPool>, fluent_llm::runtime::LlmRuntimeError> {
+    fn ensure_pool(
+        &self,
+    ) -> Result<Arc<fluent_onnx::OnnxContextPool>, fluent_llm::runtime::LlmRuntimeError> {
         {
             let guard = common_core::sync::lock(&self.pool);
             if let Some(pool) = guard.as_ref() {
@@ -1154,7 +1168,10 @@ impl OnnxWeights {
 /// profile inheriting the role's global `max_ctx` and pin. Shared by
 /// `OnnxWeights::ensure_context` and the context-bound `OnnxChatBackend`.
 #[cfg(feature = "onnx")]
-fn onnx_role_profile_for(role: &fluent_llm::onnx_config::OnnxRoleConfig, name: &str) -> fluent_onnx::OnnxContextProfile {
+fn onnx_role_profile_for(
+    role: &fluent_llm::onnx_config::OnnxRoleConfig,
+    name: &str,
+) -> fluent_onnx::OnnxContextProfile {
     if let Some((key, p)) = role.instances.as_ref().and_then(|m| {
         m.iter()
             .find(|(k, p)| p.name.as_deref() == Some(name) || k.as_str() == name)
@@ -1220,7 +1237,9 @@ impl fluent_llm::runtime::LlmWeights for OnnxWeights {
     }
 
     async fn unload(&self) -> Result<(), fluent_llm::runtime::LlmRuntimeError> {
-        self.registry.release(&self.model_key).map_err(|e| map_ort_err(&e))?;
+        self.registry
+            .release(&self.model_key)
+            .map_err(|e| map_ort_err(&e))?;
         // The session is gone: drop the pool's contexts (their KV dies with it).
         let pool = common_core::sync::lock(&self.pool).take();
         if let Some(pool) = pool {
@@ -1282,7 +1301,8 @@ impl fluent_llm::runtime::LlmWeights for OnnxWeights {
     async fn ensure_context(
         &self,
         name: &str,
-    ) -> Result<Arc<dyn fluent_llm::runtime::LlmContext>, fluent_llm::runtime::LlmRuntimeError> {
+    ) -> Result<Arc<dyn fluent_llm::runtime::LlmContext>, fluent_llm::runtime::LlmRuntimeError>
+    {
         let pool = self.ensure_pool()?;
         let profile = self.profile_for(name);
         let ctx = pool.ensure_context(name, profile);
@@ -1313,7 +1333,11 @@ pub fn onnx_weights_impls(
         if !registry.is_registered(&key) {
             continue;
         }
-        out.push(Arc::new(OnnxWeights::new(key, Arc::clone(registry), role_cfg.clone())));
+        out.push(Arc::new(OnnxWeights::new(
+            key,
+            Arc::clone(registry),
+            role_cfg.clone(),
+        )));
     }
     out
 }
@@ -1374,7 +1398,9 @@ impl OnnxBackend {
     /// generative llm role is configured (fail-open — the backend simply is
     /// not registered).
     pub fn from_config(config: &RouterConfig, registry: &OrtRegistry) -> Option<Self> {
-        let llm_key = fluent_llm::onnx_config::OnnxRole::Llm.registry_key().to_string();
+        let llm_key = fluent_llm::onnx_config::OnnxRole::Llm
+            .registry_key()
+            .to_string();
         let role = config.onnx.as_ref()?.llm.as_ref()?.clone();
         let single_shot = onnx_chat_backend(registry, &llm_key).ok().flatten();
         #[cfg(feature = "onnx")]
@@ -1383,10 +1409,7 @@ impl OnnxBackend {
             Arc::clone(registry),
             role.clone(),
         )));
-        let has_instances = role
-            .instances
-            .as_ref()
-            .is_some_and(|m| !m.is_empty());
+        let has_instances = role.instances.as_ref().is_some_and(|m| !m.is_empty());
         let pool_context = onnx_pool_context(&role);
         if single_shot.is_some() {
             tracing::info!(
@@ -1475,11 +1498,7 @@ impl InferenceBackend for OnnxBackend {
             None
         }
     }
-    fn chat_backend(
-        &self,
-        key: &str,
-        instance: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
+    fn chat_backend(&self, key: &str, instance: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         if key != self.llm_key {
             return None;
         }

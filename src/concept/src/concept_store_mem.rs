@@ -73,7 +73,10 @@ impl InMemoryConceptStore {
     /// hierarchy from each `insert`'s `parent_class_id` metadata (the same
     /// field the router store hydrates from).
     pub fn set_hierarchy(&self, hierarchy: TaxonomyHierarchy) {
-        *self.hierarchy.write().expect("concept store write lock poisoned") = Some(hierarchy);
+        *self
+            .hierarchy
+            .write()
+            .expect("concept store write lock poisoned") = Some(hierarchy);
     }
 
     /// Build the hierarchy lazily on first read: inserts only accumulate
@@ -92,7 +95,10 @@ impl InMemoryConceptStore {
             let edges = self.edges.read().expect("concept store read lock poisoned");
             TaxonomyHierarchy::from_edges(&edges).unwrap_or_default()
         };
-        let mut guard = self.hierarchy.write().expect("concept store write lock poisoned");
+        let mut guard = self
+            .hierarchy
+            .write()
+            .expect("concept store write lock poisoned");
         if guard.is_none() {
             *guard = Some(built);
         }
@@ -101,7 +107,10 @@ impl InMemoryConceptStore {
     /// Override the store readiness (tests only — production readiness is
     /// `Ready` except while the SQLite store batches).
     pub fn set_state(&self, state: ConceptStoreState) {
-        *self.state.write().expect("concept store write lock poisoned") = state;
+        *self
+            .state
+            .write()
+            .expect("concept store write lock poisoned") = state;
     }
 }
 
@@ -135,18 +144,27 @@ impl ConceptStore for InMemoryConceptStore {
 
     fn insert(&self, meta: ConceptMetadata) -> Result<(), ConceptStoreError> {
         {
-            let mut map = self.meta.write().expect("concept store write lock poisoned");
+            let mut map = self
+                .meta
+                .write()
+                .expect("concept store write lock poisoned");
             // First-wins: a colliding canonical is kept alongside under the
             // shared id, never replacing the incumbent (spaCy StringStore
             // semantics, §2.3). A re-insertion of the same canonical is a no-op
             // (boot reconciliation is idempotent).
             let bucket = map.entry(meta.id).or_default();
-            if !bucket.iter().any(|m| m.canonical_name == meta.canonical_name) {
+            if !bucket
+                .iter()
+                .any(|m| m.canonical_name == meta.canonical_name)
+            {
                 bucket.push(meta.clone());
             }
         }
         {
-            let mut names = self.names.write().expect("concept store write lock poisoned");
+            let mut names = self
+                .names
+                .write()
+                .expect("concept store write lock poisoned");
             names.entry(meta.canonical_name.clone()).or_insert(meta.id);
         }
         if let Some(iri) = &meta.yago_iri {
@@ -162,13 +180,19 @@ impl ConceptStore for InMemoryConceptStore {
         // `TaxonomyHierarchy` lazily on first read, so both share the
         // construction path without an O(N²) rebuild per insert).
         if let Some(parent) = meta.parent_class_id {
-            let mut edges = self.edges.write().expect("concept store write lock poisoned");
+            let mut edges = self
+                .edges
+                .write()
+                .expect("concept store write lock poisoned");
             if !edges.contains(&(meta.id, parent)) {
                 edges.push((meta.id, parent));
             }
             drop(edges);
             // Mark dirty; `ensure_hierarchy` rebuilds from the accumulated edges.
-            *self.hierarchy.write().expect("concept store write lock poisoned") = None;
+            *self
+                .hierarchy
+                .write()
+                .expect("concept store write lock poisoned") = None;
         }
         Ok(())
     }

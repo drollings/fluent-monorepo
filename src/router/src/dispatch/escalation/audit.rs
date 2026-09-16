@@ -11,7 +11,8 @@ pub(super) fn emit_audit(
     trigger: &str,
     extra: &serde_json::Value,
 ) {
-    let mut base = crate::audit::AuditRecord::escalation(mode, accepted, payload, raw_response, trigger);
+    let mut base =
+        crate::audit::AuditRecord::escalation(mode, accepted, payload, raw_response, trigger);
     if let Some(obj) = extra.as_object() {
         for (k, v) in obj {
             base.detail[k] = v.clone();

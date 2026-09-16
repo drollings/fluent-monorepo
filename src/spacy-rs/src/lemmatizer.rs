@@ -129,7 +129,10 @@ impl Lemmatizer {
         let Some(table) = &self.lookup else {
             return vec![orth.to_string()];
         };
-        table.get(orth).cloned().unwrap_or_else(|| vec![orth.to_string()])
+        table
+            .get(orth)
+            .cloned()
+            .unwrap_or_else(|| vec![orth.to_string()])
     }
 
     /// The rule path (`rule_lemmatize`, `lemmatizer.py:172-240`), ported
@@ -166,8 +169,8 @@ impl Lemmatizer {
             // (acronyms, never title-case names). Title-case nominals keep
             // surface per the proper-noun convention (`French`, `John`;
             // unit-pinned alongside `proper_nouns_keep_case`).
-            let shouty = orth.chars().any(char::is_alphabetic)
-                && orth.chars().all(|c| !c.is_lowercase());
+            let shouty =
+                orth.chars().any(char::is_alphabetic) && orth.chars().all(|c| !c.is_lowercase());
             self.apply_rules(orth, pos, pos == Upos::Verb || shouty)
         };
 
@@ -338,7 +341,8 @@ fn contraction_lemma(orth: &str, pos: Upos) -> Option<&'static str> {
 /// A lemmatizer whose morphology table resolves through a `StringStore`
 /// (helper for callers without a full vocab).
 #[must_use]
-pub fn rule_lemmatizer_with_strings(strings: std::sync::Arc<StringStore>) -> Lemmatizer {    let morphology = std::sync::Arc::new(Morphology::new(strings));
+pub fn rule_lemmatizer_with_strings(strings: std::sync::Arc<StringStore>) -> Lemmatizer {
+    let morphology = std::sync::Arc::new(Morphology::new(strings));
     Lemmatizer::english_rule().with_morphology(morphology)
 }
 

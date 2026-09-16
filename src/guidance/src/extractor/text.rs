@@ -4,8 +4,8 @@
 //! offsets (Rust-side slicing is byte-based — documented deviation).
 
 use super::{
-    ChunkOptions, ExtractError, ExtractSource, FragmentRange, PreparedFragment, utf16_len,
-    utf16_slice,
+    utf16_len, utf16_slice, ChunkOptions, ExtractError, ExtractSource, FragmentRange,
+    PreparedFragment,
 };
 
 /// Extract whole-file text windows (port of `extractPlainTextFragments`).
@@ -158,7 +158,12 @@ pub fn find_line_cut(line: &str, max_chars: usize) -> usize {
     let min_position = (max_chars as f64 * 0.7).floor() as usize;
     let mut best_position = 0;
     let mut best_score = 0;
-    for (index, ch) in line.encode_utf16().enumerate().skip(min_position).take(max_chars.saturating_sub(min_position)) {
+    for (index, ch) in line
+        .encode_utf16()
+        .enumerate()
+        .skip(min_position)
+        .take(max_chars.saturating_sub(min_position))
+    {
         let c = char::from_u32(u32::from(ch)).unwrap_or('\0');
         let score = match c {
             '.' | '!' | '?' => 4,
@@ -203,7 +208,11 @@ fn compute_next_start_line(
         index -= 1;
     }
     let next = end_index.saturating_sub(overlap_lines);
-    if next > start_index { next } else { end_index }
+    if next > start_index {
+        next
+    } else {
+        end_index
+    }
 }
 
 #[cfg(test)]

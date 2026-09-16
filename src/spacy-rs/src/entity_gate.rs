@@ -151,8 +151,7 @@ pub fn verify_stamps(doc: &mut Doc, stamps: &[StampedSpan]) -> Vec<usize> {
         if token.interlingua_entity_id != Some(stamp.entity) {
             continue;
         }
-        if common_core::hash::fnv1a64(doc.token_text(stamp.token).as_bytes()) != stamp.text_hash
-        {
+        if common_core::hash::fnv1a64(doc.token_text(stamp.token).as_bytes()) != stamp.text_hash {
             doc.token_mut(stamp.token).interlingua_entity_id = None;
             cleared.push(stamp.token);
         }
@@ -166,7 +165,10 @@ fn decide(
     gate: EntityStampGate,
     cand: &StampCandidate,
 ) -> Result<StampedSpan, KeepReason> {
-    let token = doc.tokens().get(cand.token).ok_or(KeepReason::UnknownToken)?;
+    let token = doc
+        .tokens()
+        .get(cand.token)
+        .ok_or(KeepReason::UnknownToken)?;
     if token.pos != Upos::Propn {
         return Err(KeepReason::NonProperNoun);
     }
@@ -226,8 +228,8 @@ fn sentence_concept_set(doc: &Doc, token: usize) -> HashSet<InterlinguaId> {
 }
 
 #[cfg(test)]
-#[path = "../tests/entity_gate.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "../tests/entity_gate_cal.rs"]
 mod calibration_tests;
+#[cfg(test)]
+#[path = "../tests/entity_gate.rs"]
+mod tests;

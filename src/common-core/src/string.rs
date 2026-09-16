@@ -62,11 +62,7 @@ fn contains_word_with_boundary_lowered(
 }
 
 fn contains_word_with_boundary(text: &str, word: &str, is_boundary: fn(u8) -> bool) -> bool {
-    contains_word_with_boundary_lowered(
-        &text.to_lowercase(),
-        &word.to_lowercase(),
-        is_boundary,
-    )
+    contains_word_with_boundary_lowered(&text.to_lowercase(), &word.to_lowercase(), is_boundary)
 }
 
 /// A haystack lowered once and reused across many case-insensitive queries.
@@ -99,11 +95,9 @@ impl LoweredHaystack {
     }
 
     pub fn contains_word(&self, word: &str) -> bool {
-        contains_word_with_boundary_lowered(
-            &self.lowered,
-            &word.to_lowercase(),
-            |c| !c.is_ascii_alphanumeric(),
-        )
+        contains_word_with_boundary_lowered(&self.lowered, &word.to_lowercase(), |c| {
+            !c.is_ascii_alphanumeric()
+        })
     }
 
     pub fn contains_any_word(&self, keywords: &[&str]) -> bool {
@@ -204,11 +198,9 @@ pub fn strip_html(s: &str) -> String {
 
     // Skip past the closing `>` of a tag starting at byte offset `i`
     // (which is just past the `<` or `/name` already examined).
-    let skip_to_tag_end = |i: &mut usize| {
-        match bytes[*i..].iter().position(|&b| b == b'>') {
-            Some(pos) => *i += pos + 1,
-            None => *i = bytes.len(),
-        }
+    let skip_to_tag_end = |i: &mut usize| match bytes[*i..].iter().position(|&b| b == b'>') {
+        Some(pos) => *i += pos + 1,
+        None => *i = bytes.len(),
     };
 
     while i < bytes.len() {
@@ -319,9 +311,7 @@ fn emit_collapsed(out: &mut String, prev_space: &mut bool, c: char) {
 
 /// Byte length of the leading ASCII-alphanumeric run of `s`.
 fn alnum_run_len(s: &str) -> usize {
-    s.bytes()
-        .take_while(u8::is_ascii_alphanumeric)
-        .count()
+    s.bytes().take_while(u8::is_ascii_alphanumeric).count()
 }
 
 /// Exact tag-name match without allocating: the leading run must equal `lit`
@@ -669,13 +659,9 @@ pub fn slugify_with(text: &str, opts: &SlugOptions) -> String {
         // ran, and the popped tail is gone iff trim_trailing ran. The cap
         // walk from the trimmed start is bounded by `max`, not by the
         // input length.
-        let trimmed_away =
-            trailing_popped + leading_seps * usize::from(opts.trim_leading);
+        let trimmed_away = trailing_popped + leading_seps * usize::from(opts.trim_leading);
         if pushed - trimmed_away > max {
-            let byte_offset = out
-                .char_indices()
-                .nth(max)
-                .map_or(out.len(), |(i, _)| i);
+            let byte_offset = out.char_indices().nth(max).map_or(out.len(), |(i, _)| i);
             out.truncate(byte_offset);
         }
     }
@@ -920,4 +906,3 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
         Some(content)
     }
 }
-

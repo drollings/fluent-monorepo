@@ -105,7 +105,8 @@ impl TargetRegistry {
             return Vec::new();
         }
         bits.sort_by_key(|b| self.providers.get(b).map_or(0, Vec::len));
-        let mut candidates: HashSet<usize> = self.providers
+        let mut candidates: HashSet<usize> = self
+            .providers
             .get(&bits[0])
             .map(|post| post.iter().copied().collect())
             .unwrap_or_default();
@@ -125,9 +126,7 @@ impl TargetRegistry {
             .iter()
             .filter(|t| {
                 candidates.contains(&(t.id as usize))
-                    && bits
-                        .iter()
-                        .all(|b| t.provides.get(*b).is_some_and(|x| *x))
+                    && bits.iter().all(|b| t.provides.get(*b).is_some_and(|x| *x))
             })
             .collect()
     }

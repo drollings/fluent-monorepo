@@ -169,7 +169,9 @@ mod tests {
     async fn tcp_connect_echo_roundtrip() {
         // A `TcpListener`-backed echo server on loopback: the capability-gated
         // `tcp_connect` must establish the connection and round-trip bytes.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let echo = tokio::spawn(async move {
             let (mut sock, _) = listener.accept().await.expect("accept");

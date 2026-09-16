@@ -197,11 +197,7 @@ where
     /// the write lock is held, so re-entry deadlocks. Debug builds assert
     /// this with a thread-local re-entrancy guard; release builds rely on
     /// the contract stated here.
-    pub fn resolve_or_create(
-        &self,
-        key: K,
-        ctor: impl FnOnce(&K) -> V,
-    ) -> Arc<V> {
+    pub fn resolve_or_create(&self, key: K, ctor: impl FnOnce(&K) -> V) -> Arc<V> {
         if let Some(existing) = self.get(&key) {
             return existing;
         }
@@ -297,4 +293,3 @@ std::thread_local! {
     static ACTIVE_RESOLVES: std::cell::RefCell<Vec<usize>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
-

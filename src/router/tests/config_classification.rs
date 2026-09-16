@@ -275,7 +275,10 @@ You must output exactly one JSON object with:
 If the query is incoherent (coherence < 0.60) or unsafe (safety < 0.40), route to the fallback branch or output an empty route.
 Only output JSON, no other text.
 "#;
-    assert_eq!(prompt, expected, "tree node prompt changed — update the golden deliberately");
+    assert_eq!(
+        prompt, expected,
+        "tree node prompt changed — update the golden deliberately"
+    );
 }
 
 #[test]
@@ -308,7 +311,10 @@ fn filter_node_parses_outcome_variants() {
     };
     assert_eq!(outcome, FilterOutcome::SoftRedirect);
     assert_eq!(redirect_to.as_deref(), Some("code"));
-    assert!(match_interlingua.is_none(), "regex filter has no interlingua match");
+    assert!(
+        match_interlingua.is_none(),
+        "regex filter has no interlingua match"
+    );
 }
 
 #[test]
@@ -327,7 +333,10 @@ fn filter_node_parses_match_interlingua() {
     };
     assert!(patterns.is_empty(), "interlingua filter ignores patterns");
     let m = match_interlingua.expect("match");
-    assert_eq!(m.predicate_id, Some(InterlinguaId::from_u64(2251799813685260)));
+    assert_eq!(
+        m.predicate_id,
+        Some(InterlinguaId::from_u64(2251799813685260))
+    );
     assert_eq!(m.object_id, Some(InterlinguaId::from_u64(2251799813685262)));
     assert_eq!(m.confidence_min, Some(0.5));
     assert!(m.subject_id.is_none());
@@ -374,8 +383,16 @@ fn terminal_role_parses_and_defaults_none() {
     }))
     .expect("tree with terminal role parses");
     assert_eq!(tree.terminal_role("code").as_deref(), Some("quick"));
-    assert_eq!(tree.terminal_role("chat"), None, "absent role defaults to None");
-    assert_eq!(tree.terminal_role("nope"), None, "unknown route has no role");
+    assert_eq!(
+        tree.terminal_role("chat"),
+        None,
+        "absent role defaults to None"
+    );
+    assert_eq!(
+        tree.terminal_role("nope"),
+        None,
+        "unknown route has no role"
+    );
 }
 
 #[test]
@@ -388,10 +405,9 @@ fn top_safety_absent_means_hard_default() {
 
 #[test]
 fn top_safety_present_is_the_default() {
-    let cfg: RouterConfig = serde_json::from_str(
-        r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#,
-    )
-    .expect("parses");
+    let cfg: RouterConfig =
+        serde_json::from_str(r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#)
+            .expect("parses");
     assert_eq!(cfg.safety_threshold, Some(0.4));
     assert_eq!(cfg.effective_safety_threshold(), 0.4);
 }
@@ -405,10 +421,9 @@ fn top_safety_omitted_when_unset() {
         value.get("safety_threshold").is_none(),
         "unset default stays out of the serialized form"
     );
-    let set: RouterConfig = serde_json::from_str(
-        r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#,
-    )
-    .expect("parses");
+    let set: RouterConfig =
+        serde_json::from_str(r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#)
+            .expect("parses");
     let back: RouterConfig =
         serde_json::from_str(&serde_json::to_string(&set).expect("serializes"))
             .expect("round trip");
@@ -435,7 +450,10 @@ fn prompt_thresholds_resolve_node_over_top_over_hard() {
     let prompt = tree
         .derive_system_prompt_with(None, Some(0.4))
         .expect("prompt");
-    assert!(prompt.contains("0.60"), "node threshold shown, got: {prompt}");
+    assert!(
+        prompt.contains("0.60"),
+        "node threshold shown, got: {prompt}"
+    );
     // Top default fills an unset node.
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": {

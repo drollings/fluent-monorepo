@@ -12,11 +12,21 @@
 
 use serde::{Deserialize, Serialize};
 
-fn default_min_overall() -> f64 { 0.7 }
-fn default_min_role_coverage() -> f64 { 0.5 }
-fn default_min_token_score() -> f64 { 0.5 }
-fn default_true() -> bool { true }
-fn default_unresolved_token_threshold() -> f64 { 0.3 }
+fn default_min_overall() -> f64 {
+    0.7
+}
+fn default_min_role_coverage() -> f64 {
+    0.5
+}
+fn default_min_token_score() -> f64 {
+    0.5
+}
+fn default_true() -> bool {
+    true
+}
+fn default_unresolved_token_threshold() -> f64 {
+    0.3
+}
 
 /// Mirrors `spacy_rs::RefineMode` field-for-field, owned here so the router
 /// config surface never deserializes a `spacy-rs` type directly.

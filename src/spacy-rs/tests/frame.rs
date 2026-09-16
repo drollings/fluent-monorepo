@@ -1,8 +1,8 @@
 use super::*;
-use fluent_concept::InMemoryConceptStore;
 use crate::llm::{attach, AnnotationSet};
 use crate::sentencizer::Sentencizer;
 use crate::vocab::Vocab;
+use fluent_concept::InMemoryConceptStore;
 use fluent_types::ConceptMetadata;
 use std::sync::Arc;
 
@@ -11,9 +11,7 @@ use std::sync::Arc;
 /// establishes between its resolver and the docs it processes).
 fn vocab() -> Arc<Vocab> {
     static VOCAB: std::sync::OnceLock<Arc<Vocab>> = std::sync::OnceLock::new();
-    Arc::clone(
-        VOCAB.get_or_init(|| Arc::new(Vocab::new(crate::lexeme::LexiconConfig::default()))),
-    )
+    Arc::clone(VOCAB.get_or_init(|| Arc::new(Vocab::new(crate::lexeme::LexiconConfig::default()))))
 }
 
 fn doc_for(tokens: &[&str]) -> Doc {
@@ -77,7 +75,19 @@ fn meta(id: InterlinguaId, name: &str) -> ConceptMetadata {
 #[test]
 fn extracts_roles_polarity_and_modality() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
+    let doc = attached(
+        FULL_PARSE,
+        &[
+            "Show",
+            "me",
+            "the",
+            "sales",
+            "report",
+            "for",
+            "yesterday",
+            "please",
+        ],
+    );
     let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
 
@@ -102,20 +112,50 @@ fn extracts_roles_polarity_and_modality() {
 #[test]
 fn ambiguity_free_frame_mints_permanent_key() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
+    let doc = attached(
+        FULL_PARSE,
+        &[
+            "Show",
+            "me",
+            "the",
+            "sales",
+            "report",
+            "for",
+            "yesterday",
+            "please",
+        ],
+    );
     let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
-    assert!(analysis.ambiguities.is_empty(), "no ambiguity on a clean parse");
+    assert!(
+        analysis.ambiguities.is_empty(),
+        "no ambiguity on a clean parse"
+    );
     let keys = ex.keys(&doc, &analysis);
     assert_eq!(keys.len(), 1);
     assert!(!keys[0].provisional, "ambiguity-free frame → permanent");
-    assert_eq!(keys[0].predicate_lemma_id, analysis.frames[0].predicate_lemma_id);
+    assert_eq!(
+        keys[0].predicate_lemma_id,
+        analysis.frames[0].predicate_lemma_id
+    );
 }
 
 #[test]
 fn near_tie_margin_marks_attachment_ambiguity_and_provisional_key() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
+    let doc = attached(
+        FULL_PARSE,
+        &[
+            "Show",
+            "me",
+            "the",
+            "sales",
+            "report",
+            "for",
+            "yesterday",
+            "please",
+        ],
+    );
     let ex = extractor(&store);
     // A near-zero margin → the oracle doubted an attachment.
     let margins = [0.0f64, 1.0, 0.5];
@@ -135,14 +175,24 @@ fn near_tie_margin_marks_attachment_ambiguity_and_provisional_key() {
 #[test]
 fn two_candidate_predicate_lemma_marks_polysemy() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
+    let doc = attached(
+        FULL_PARSE,
+        &[
+            "Show",
+            "me",
+            "the",
+            "sales",
+            "report",
+            "for",
+            "yesterday",
+            "please",
+        ],
+    );
     let ex = extractor(&store);
 
     // Register two canonicals under the same predicate lemma id bucket —
     // the store keeps both, so `candidates` yields 2 → polysemy.
-    let pred_id = ex
-        .resolver
-        .lemma_id("show");
+    let pred_id = ex.resolver.lemma_id("show");
     store.insert(meta(pred_id, "show_present")).expect("a");
     store.insert(meta(pred_id, "show_display")).expect("b");
 
@@ -162,10 +212,7 @@ fn two_candidate_predicate_lemma_marks_polysemy() {
 #[test]
 fn neg_plus_modal_marks_scope_conflict() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let doc = attached(
-        NEG_MODAL_PARSE,
-        &["The", "dog", "will", "not", "sleep"],
-    );
+    let doc = attached(NEG_MODAL_PARSE, &["The", "dog", "will", "not", "sleep"]);
     let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
 
@@ -196,7 +243,19 @@ fn interrogative_punct_is_modality() {
 #[test]
 fn serde_roundtrip_frame_and_key() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
+    let doc = attached(
+        FULL_PARSE,
+        &[
+            "Show",
+            "me",
+            "the",
+            "sales",
+            "report",
+            "for",
+            "yesterday",
+            "please",
+        ],
+    );
     let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
     let keys = ex.keys(&doc, &analysis);
@@ -225,36 +284,100 @@ fn loading_gate_stamps_provisional_even_when_unambiguous() {
     use fluent_concept::ConceptStoreState;
     struct LoadingStore(InMemoryConceptStore);
     impl fluent_concept::ConceptStore for LoadingStore {
-        fn get(&self, id: fluent_types::InterlinguaId) -> Result<fluent_types::ConceptMetadata, fluent_concept::ConceptStoreError> { self.0.get(id) }
-        fn resolve_name(&self, n: &str) -> Result<fluent_types::InterlinguaId, fluent_concept::ConceptStoreError> { self.0.resolve_name(n) }
-        fn resolve_yago_iri(&self, i: &str) -> Result<fluent_types::InterlinguaId, fluent_concept::ConceptStoreError> { self.0.resolve_yago_iri(i) }
-        fn insert(&self, m: fluent_types::ConceptMetadata) -> Result<(), fluent_concept::ConceptStoreError> { self.0.insert(m) }
-        fn contains(&self, id: fluent_types::InterlinguaId) -> bool { self.0.contains(id) }
-        fn iter_ids(&self) -> Box<dyn Iterator<Item=fluent_types::InterlinguaId> + '_> { self.0.iter_ids() }
-        fn ancestors_of(&self, id: fluent_types::InterlinguaId) -> Vec<fluent_types::InterlinguaId> { self.0.ancestors_of(id) }
-        fn is_subclass_of(&self, c: fluent_types::InterlinguaId, p: fluent_types::InterlinguaId) -> bool { self.0.is_subclass_of(c,p) }
-        fn state(&self) -> ConceptStoreState { ConceptStoreState::Loading }
+        fn get(
+            &self,
+            id: fluent_types::InterlinguaId,
+        ) -> Result<fluent_types::ConceptMetadata, fluent_concept::ConceptStoreError> {
+            self.0.get(id)
+        }
+        fn resolve_name(
+            &self,
+            n: &str,
+        ) -> Result<fluent_types::InterlinguaId, fluent_concept::ConceptStoreError> {
+            self.0.resolve_name(n)
+        }
+        fn resolve_yago_iri(
+            &self,
+            i: &str,
+        ) -> Result<fluent_types::InterlinguaId, fluent_concept::ConceptStoreError> {
+            self.0.resolve_yago_iri(i)
+        }
+        fn insert(
+            &self,
+            m: fluent_types::ConceptMetadata,
+        ) -> Result<(), fluent_concept::ConceptStoreError> {
+            self.0.insert(m)
+        }
+        fn contains(&self, id: fluent_types::InterlinguaId) -> bool {
+            self.0.contains(id)
+        }
+        fn iter_ids(&self) -> Box<dyn Iterator<Item = fluent_types::InterlinguaId> + '_> {
+            self.0.iter_ids()
+        }
+        fn ancestors_of(
+            &self,
+            id: fluent_types::InterlinguaId,
+        ) -> Vec<fluent_types::InterlinguaId> {
+            self.0.ancestors_of(id)
+        }
+        fn is_subclass_of(
+            &self,
+            c: fluent_types::InterlinguaId,
+            p: fluent_types::InterlinguaId,
+        ) -> bool {
+            self.0.is_subclass_of(c, p)
+        }
+        fn state(&self) -> ConceptStoreState {
+            ConceptStoreState::Loading
+        }
     }
     let store = Arc::new(LoadingStore(InMemoryConceptStore::new()));
-    let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
+    let doc = attached(
+        FULL_PARSE,
+        &[
+            "Show",
+            "me",
+            "the",
+            "sales",
+            "report",
+            "for",
+            "yesterday",
+            "please",
+        ],
+    );
     let ex = crate::frame::FrameExtractor::new(
-        Arc::new(crate::interlingua::InterlinguaResolver::new(Arc::clone(&store) as Arc<dyn fluent_concept::ConceptStore>, Arc::clone(vocab().strings()))),
+        Arc::new(crate::interlingua::InterlinguaResolver::new(
+            Arc::clone(&store) as Arc<dyn fluent_concept::ConceptStore>,
+            Arc::clone(vocab().strings()),
+        )),
         Arc::clone(&store) as Arc<dyn fluent_concept::ConceptStore>,
     );
     let analysis = ex.extract(&doc, None);
     assert!(analysis.ambiguities.is_empty(), "grammatically unambiguous");
     let keys = ex.keys(&doc, &analysis);
-    assert!(keys[0].provisional, "Loading state must stamp provisional even when unambiguous");
+    assert!(
+        keys[0].provisional,
+        "Loading state must stamp provisional even when unambiguous"
+    );
 }
 
 #[test]
 fn property_random_parses_extract_frames_and_keep_one_root() {
     // 100+ random POS with frame extraction still yields valid trees
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
-    let mut next = move || { seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); seed >> 33 };
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        seed >> 33
+    };
     let pos_words: &[(crate::labels::Upos, &str)] = &[
-        (crate::labels::Upos::Noun, "cat"), (crate::labels::Upos::Verb, "run"), (crate::labels::Upos::Det, "the"),
-        (crate::labels::Upos::Adp, "of"), (crate::labels::Upos::Propn, "NASA"), (crate::labels::Upos::Punct, "."),
+        (crate::labels::Upos::Noun, "cat"),
+        (crate::labels::Upos::Verb, "run"),
+        (crate::labels::Upos::Det, "the"),
+        (crate::labels::Upos::Adp, "of"),
+        (crate::labels::Upos::Propn, "NASA"),
+        (crate::labels::Upos::Punct, "."),
     ];
     let vocab = vocab();
     let annotator = crate::arc_eager::ArcEagerAnnotator::en_default(Arc::clone(&vocab));
@@ -275,7 +398,12 @@ fn property_random_parses_extract_frames_and_keep_one_root() {
             let _ = k;
         }
         // validator still passes exactly one ROOT
-        assert!(doc.is_empty() || crate::validate::AnnotationValidator::new().validate(&doc, result.records()).is_ok());
+        assert!(
+            doc.is_empty()
+                || crate::validate::AnnotationValidator::new()
+                    .validate(&doc, result.records())
+                    .is_ok()
+        );
     }
 }
 
@@ -368,11 +496,7 @@ fn promotion_gate_rejects_ambiguity_kinds_without_sense_choice() {
             "{kind:?} without candidates never promotes"
         );
         assert!(
-            !accept_resolution_for_promotion(
-                kind,
-                &[sense_id(11)],
-                &resolution_for(11)
-            ),
+            !accept_resolution_for_promotion(kind, &[sense_id(11)], &resolution_for(11)),
             "{kind:?} never promotes even with candidates"
         );
     }

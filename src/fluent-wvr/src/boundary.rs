@@ -230,7 +230,10 @@ fn walk(raw: &str, opts: &BoundaryOptions) -> (String, Vec<(String, String)>) {
         match c {
             '"' => {
                 in_string = true;
-                if opts.schema.is_some() && depth <= 1 && at_member_start(opts, prev_significant(&out)) {
+                if opts.schema.is_some()
+                    && depth <= 1
+                    && at_member_start(opts, prev_significant(&out))
+                {
                     key_slice = Some((i + 1, i + 1));
                 }
                 out.push('"');
@@ -522,6 +525,11 @@ pub fn from_describable<T: FieldAccess + Describable + Default>() -> BoundaryOpt
 /// Coerce a raw boundary value for a specific field (M6) — delegates to
 /// `coerce` with the field's canonical pipeline (`Trim` + `StripQuotes`).
 pub fn coerce_for_field(_field: &str, raw: &str) -> String {
-    crate::coerce::coerce(raw, &[crate::coerce::Coercion::Trim, crate::coerce::Coercion::StripQuotes])
+    crate::coerce::coerce(
+        raw,
+        &[
+            crate::coerce::Coercion::Trim,
+            crate::coerce::Coercion::StripQuotes,
+        ],
+    )
 }
-

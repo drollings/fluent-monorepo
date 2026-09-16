@@ -32,7 +32,10 @@ fn unresolvable_classifier_fails_open_without_classifier_stage() {
 
     // The pipeline IS built (deterministic prefilter works without a model)
     // but the classifier stage is skipped (fail-open).
-    assert!(!map.is_empty(), "pipeline should build (fail-open without classifier)");
+    assert!(
+        !map.is_empty(),
+        "pipeline should build (fail-open without classifier)"
+    );
     assert!(
         joined.contains("classifier stage skipped"),
         "missing classifier-skip warning, logs:\n{joined}"
@@ -111,7 +114,10 @@ fn overlay_config(
 
 #[test]
 fn default_nlp_ordering_is_llm_first() {
-    assert_eq!(PipelineParams::default().nlp_ordering, NlpOrdering::LlmFirst);
+    assert_eq!(
+        PipelineParams::default().nlp_ordering,
+        NlpOrdering::LlmFirst
+    );
     assert!(!PipelineParams::default().overlay_enabled());
     let config: RouterConfig = serde_json::from_str(
         r#"{"pipelines":{"default":{"nlp":true}},"models":{},"model_groups":{}}"#,
@@ -155,13 +161,7 @@ fn overlay_without_registry_skips_stage_fail_open() {
     // `overlay: true` with `overlay_models` but no onnx registry: the
     // stage is skipped with a warning (fail-open) and the pipeline still
     // builds with the classifier.
-    let config = overlay_config(
-        true,
-        true,
-        NlpOrdering::LlmFirst,
-        &["prompt-router"],
-        None,
-    );
+    let config = overlay_config(true, true, NlpOrdering::LlmFirst, &["prompt-router"], None);
     let (map, logs) = capture_logs(|| config.build_all_pipelines());
     let joined = logs.join("\n");
     assert_eq!(map.len(), 1, "pipeline still builds");
@@ -214,7 +214,10 @@ fn overlay_bool_key_ignored_without_warning() {
     )
     .expect("config with legacy overlay key deserializes (key ignored)");
     let params = &config.pipelines["default"];
-    assert!(!params.overlay_enabled(), "derived flag off with empty models");
+    assert!(
+        !params.overlay_enabled(),
+        "derived flag off with empty models"
+    );
     let (map, logs) = capture_logs(|| config.build_all_pipelines());
     let joined = logs.join("\n");
     assert_eq!(map.len(), 1, "pipeline still builds (fail-open)");
@@ -243,13 +246,7 @@ fn overlay_redirect_threshold_is_inert_without_the_golden_corpus_gate() {
     // The redirect threshold field deserializes but is inert until the
     // ≥100-case zero-shot eval corpus gates it — only the smoke ships
     // feed-first with no redirect wiring.
-    let config = overlay_config(
-        true,
-        true,
-        NlpOrdering::LlmFirst,
-        &[],
-        Some(0.9),
-    );
+    let config = overlay_config(true, true, NlpOrdering::LlmFirst, &[], Some(0.9));
     let params = &config.pipelines["default"];
     assert_eq!(params.overlay_redirect_threshold, Some(0.9));
 }
@@ -282,7 +279,8 @@ fn local_backend_single_resolver_with_role_work_point() {
                 "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it (no per-model binding:
     // pool as authored).
     config.apply_defaults();
@@ -319,8 +317,7 @@ fn local_backend_single_resolver_with_role_work_point() {
     // The canonical target builder keeps bare-base default dispatch: :ledger.
     let rt = crate::pipeline::RoutingTarget::from_model_entry("swarm", entry);
     assert_eq!(
-        rt.model,
-        "abiray/lfm2.5-2.6b-heretic-abliterated:ledger",
+        rt.model, "abiray/lfm2.5-2.6b-heretic-abliterated:ledger",
         "client-facing default dispatch is unchanged (goldens preserved)"
     );
 }
@@ -351,12 +348,16 @@ fn summarizer_for_ledger_builds_when_ledger_section_present() {
                 "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it.
     config.apply_defaults();
 
     let summarizer = config.summarizer_for_ledger();
-    assert!(summarizer.is_some(), "ledger section + ledger instance -> Some");
+    assert!(
+        summarizer.is_some(),
+        "ledger section + ledger instance -> Some"
+    );
 }
 
 #[test]
@@ -397,7 +398,8 @@ fn ledger_tier_backend_builds_when_ledger_section_present() {
                 "cost_input": 2.0, "cost_output": 2.0, "cost_cached_read": 0.8, "tok_s": 4
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it.
     config.apply_defaults();
 
@@ -420,7 +422,8 @@ fn ledger_tier_backend_none_without_ledger_section() {
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4, "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     assert!(
         config.ledger_tier_backend(None).is_none(),
         "no ledger section -> no tier backend"
@@ -442,7 +445,8 @@ fn summarizer_for_ledger_none_without_ledger_section() {
                 "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     assert!(
         config.summarizer_for_ledger().is_none(),
         "no ledger section -> no summarizer"
@@ -474,13 +478,18 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
                 "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it.
     config.apply_defaults();
 
     // The named-instance backends build (single LlmClient factory).
-    assert!(config.local_backend_for_instance("swarm", "ledger").is_some());
-    assert!(config.local_backend_for_instance("swarm", "scratch").is_some());
+    assert!(config
+        .local_backend_for_instance("swarm", "ledger")
+        .is_some());
+    assert!(config
+        .local_backend_for_instance("swarm", "scratch")
+        .is_some());
 
     // The canonical target builder confirms the exact model id each point
     // resolves to on the wire.
@@ -531,7 +540,8 @@ fn local_backend_for_instance_role_params_win_over_entry_params() {
                 "params": { "temperature": 0.9, "repeat_penalty": 1.05, "num_ctx": 0 }
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it.
     config.apply_defaults();
 
@@ -548,7 +558,10 @@ fn local_backend_for_instance_role_params_win_over_entry_params() {
     assert_eq!(obj["repeat_penalty"].as_f64(), Some(1.05));
     // Declaration-only keys are stripped from the merged object.
     assert!(obj.get("num_ctx").is_none(), "declaration key stripped");
-    assert!(obj.get("sleep_idle_seconds").is_none(), "declaration key stripped");
+    assert!(
+        obj.get("sleep_idle_seconds").is_none(),
+        "declaration key stripped"
+    );
 }
 
 #[test]
@@ -563,11 +576,16 @@ fn local_backend_for_instance_none_for_unknown_instance() {
                 "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // A named instance that does not exist -> None (no fabricated lookup).
-    assert!(config.local_backend_for_instance("swarm", "ghost").is_none());
+    assert!(config
+        .local_backend_for_instance("swarm", "ghost")
+        .is_none());
     // An unknown model key -> None.
-    assert!(config.local_backend_for_instance("missing", "scratch").is_none());
+    assert!(config
+        .local_backend_for_instance("missing", "scratch")
+        .is_none());
 }
 
 #[test]
@@ -591,7 +609,8 @@ fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
                 "params": { "repeat_penalty": 1.05, "num_ctx": 0 }
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it.
     config.apply_defaults();
     let merged = config
@@ -606,7 +625,9 @@ fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
     assert!(obj.get("num_ctx").is_none(), "declaration key stripped");
     assert_eq!(obj.len(), 1, "no profile params to add");
     // The backend itself still builds for the valid named instance.
-    assert!(config.local_backend_for_instance("swarm", "scratch").is_some());
+    assert!(config
+        .local_backend_for_instance("swarm", "scratch")
+        .is_some());
 }
 
 #[test]
@@ -934,7 +955,10 @@ fn onnx_llm_key_reports_role_key_when_configured() {
         config.onnx_llm_key().as_deref(),
         Some(fluent_llm::onnx_config::OnnxRole::Llm.registry_key())
     );
-    assert!(config.onnx_llm_backend().is_some(), "onnx_llm_backend resolves");
+    assert!(
+        config.onnx_llm_backend().is_some(),
+        "onnx_llm_backend resolves"
+    );
 
     let empty: RouterConfig = RouterConfig::default();
     assert_eq!(empty.onnx_llm_key(), None, "no onnx.llm → None");
@@ -996,7 +1020,15 @@ fn builder_refine_policy_from_ordering() {
             .mode,
         crate::config::RouterRefineMode::Always
     );
-    assert!((config_explicit.pipelines["default"].refine_policy.unwrap().min_overall - 0.9).abs() < 1e-9);
+    assert!(
+        (config_explicit.pipelines["default"]
+            .refine_policy
+            .unwrap()
+            .min_overall
+            - 0.9)
+            .abs()
+            < 1e-9
+    );
     // DeterministicFirst with overlay → OnUncertain
     let config_det: RouterConfig = serde_json::from_str(
         r#"{
@@ -1019,8 +1051,12 @@ fn builder_refine_policy_from_ordering() {
     .expect("valid config");
     // refine_policy None → builder should derive OnUncertain
     assert!(config_det.pipelines["default"].refine_policy.is_none());
-    let dto_none: Option<crate::config::RouterRefinePolicy> = config.pipelines["default"].refine_policy;
-    assert!(dto_none.is_none(), "LlmFirst config has no DTO → ordering decides");
+    let dto_none: Option<crate::config::RouterRefinePolicy> =
+        config.pipelines["default"].refine_policy;
+    assert!(
+        dto_none.is_none(),
+        "LlmFirst config has no DTO → ordering decides"
+    );
     let _ = pipeline_llm;
 }
 
@@ -1040,8 +1076,14 @@ fn summarizer_and_tier_fall_back_to_onnx_llm_when_no_llama_ledger_instance() {
     );
     // No `ledger.model` and no llama `ledger` instance → the onnx LLM is
     // the default enrichment/tier backend.
-    assert!(config.summarizer_for_ledger().is_some(), "summarizer falls back to onnx");
-    assert!(config.ledger_tier_backend(None).is_some(), "tier backend falls back to onnx");
+    assert!(
+        config.summarizer_for_ledger().is_some(),
+        "summarizer falls back to onnx"
+    );
+    assert!(
+        config.ledger_tier_backend(None).is_some(),
+        "tier backend falls back to onnx"
+    );
 
     // With an explicit key that has no `ledger` instance, it also falls back.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
@@ -1063,7 +1105,10 @@ fn summarizer_and_tier_fall_back_to_onnx_llm_when_no_llama_ledger_instance() {
         )
         .into_registry(),
     );
-    assert!(config.summarizer_for_ledger().is_some(), "no ledger instance → onnx fallback");
+    assert!(
+        config.summarizer_for_ledger().is_some(),
+        "no ledger instance → onnx fallback"
+    );
 }
 
 // -- Late-bound classifier backend -------------------------------------------
@@ -1110,7 +1155,10 @@ fn classifier_backend_resolver_resolves_known_key_per_request() {
     assert!(resolve("clf").is_some(), "known key resolves");
     assert!(resolve("unknown-model").is_none(), "unknown key misses");
     // The factory behind the resolver still builds without I/O.
-    assert!(resolve("clf").expect("resolves").chat_complete(&[]).is_err());
+    assert!(resolve("clf")
+        .expect("resolves")
+        .chat_complete(&[])
+        .is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1131,7 +1179,10 @@ async fn late_bound_local_backend_follows_endpoint_rewrite() {
         format!("{}/v1/chat/completions", server.base_url());
     let after = config.local_backend("clf").expect("backend builds");
     let body = after.chat_complete(&[]).expect("live server answers");
-    assert!(body.contains("live-marker"), "live body served, got: {body}");
+    assert!(
+        body.contains("live-marker"),
+        "live body served, got: {body}"
+    );
     assert!(!server.recorded().is_empty(), "live server was dialed");
 }
 
@@ -1160,23 +1211,43 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
                 "tok_s": 8
             }
         }
-    })).expect("valid config");
+    }))
+    .expect("valid config");
     // Boot composition, as production boot runs it (the role pool composes
     // into the model's effective pool; the bound model's entry default
     // serves "ledger").
     config.apply_defaults();
 
-    assert!(config.local_backend("work").is_some(), "role builds head candidate");
-    assert!(config.local_backend("swarm:default").is_some(), "literal keys unchanged");
-    assert!(config.local_backend("swarm").is_some(), "bare keys unchanged");
-    assert!(config.local_backend("nope").is_none(), "unknown keys fail closed");
-    assert!(config.local_backend("empty").is_none(), "empty roles fail closed");
     assert!(
-        config.local_backend_for_instance("work", "ledger").is_some(),
+        config.local_backend("work").is_some(),
+        "role builds head candidate"
+    );
+    assert!(
+        config.local_backend("swarm:default").is_some(),
+        "literal keys unchanged"
+    );
+    assert!(
+        config.local_backend("swarm").is_some(),
+        "bare keys unchanged"
+    );
+    assert!(
+        config.local_backend("nope").is_none(),
+        "unknown keys fail closed"
+    );
+    assert!(
+        config.local_backend("empty").is_none(),
+        "empty roles fail closed"
+    );
+    assert!(
+        config
+            .local_backend_for_instance("work", "ledger")
+            .is_some(),
         "role + named instance builds"
     );
     assert!(
-        config.local_backend_for_instance("work", "missing").is_none(),
+        config
+            .local_backend_for_instance("work", "missing")
+            .is_none(),
         "unknown instances still fail closed through roles"
     );
 }
@@ -1263,7 +1334,10 @@ fn score_matrix_config_parses_and_warns_at_boot() {
         .iter()
         .filter(|l| l.contains("deprecated") && l.contains("score_matrix"))
         .count();
-    assert!(warns >= 2, "boot warns for both deprecated fields: {logs:?}");
+    assert!(
+        warns >= 2,
+        "boot warns for both deprecated fields: {logs:?}"
+    );
 }
 
 /// A config without `score_matrix` parses and builds with no deprecation

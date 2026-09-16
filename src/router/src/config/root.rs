@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use fluent_wvr::{Describable, FieldAccess};
 
-use crate::logging::LoggingConfig;
 use crate::config::builder::PipelineParams;
 use crate::config::classification::ClassificationTree;
 use crate::config::escalation::ModelGroup;
 use crate::config::filters::MockConfig;
 use crate::config::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 use crate::config::routing::{RoleEntry, RouteRef};
+use crate::logging::LoggingConfig;
 
 /// Decompose a possibly-qualified model key (`base:qualifier`) into the base
 /// `models` config key and the optional qualifier. A bare key (or a malformed
@@ -60,10 +60,10 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub roles: HashMap<String, RoleEntry>,
-    #[field(desc="safety threshold", min=0.0, max=1.0)]
+    #[field(desc = "safety threshold", min = 0.0, max = 1.0)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safety_threshold: Option<f64>,
-    #[field(desc="default route")]
+    #[field(desc = "default route")]
     #[serde(default = "default_route")]
     pub default_route: String,
     /// What the classifier stage does when its LLM call fails or its response
@@ -410,9 +410,7 @@ impl RouterConfig {
             }
             if entry.endpoint.is_empty() {
                 if is_referenced {
-                    return Err(format!(
-                        "model '{key}' has no weights and no endpoint"
-                    ));
+                    return Err(format!("model '{key}' has no weights and no endpoint"));
                 }
                 tracing::warn!(
                     target: "router.config",
@@ -520,7 +518,11 @@ impl RouterConfig {
         if self.onnx.is_some() {
             // Already has a nested `onnx` section — top-level role keys are
             // redundant and ignored (nested wins).
-            if self.encoder.is_some() || self.pii.is_some() || self.router.is_some() || self.colbert.is_some() {
+            if self.encoder.is_some()
+                || self.pii.is_some()
+                || self.router.is_some()
+                || self.colbert.is_some()
+            {
                 tracing::warn!(
                     target: "router.config",
                     "both `onnx` section and top-level role keys present; \
@@ -548,9 +550,18 @@ impl RouterConfig {
         // Roles like `router` and `pii` often share the encoder's tokenizer.
         // When a role is missing its tokenizer_path, inherit it from the
         // encoder role. This keeps the simplified config format concise.
-        if let Some(ref tok) = fleet.encoder.as_ref().and_then(|e| e.model.tokenizer_path.clone()) {
+        if let Some(ref tok) = fleet
+            .encoder
+            .as_ref()
+            .and_then(|e| e.model.tokenizer_path.clone())
+        {
             let tok = tok.clone();
-            for role_cfg in [&mut fleet.pii, &mut fleet.router, &mut fleet.colbert, &mut fleet.policy] {
+            for role_cfg in [
+                &mut fleet.pii,
+                &mut fleet.router,
+                &mut fleet.colbert,
+                &mut fleet.policy,
+            ] {
                 if let Some(cfg) = role_cfg.as_mut() {
                     if cfg.model.tokenizer_path.is_none() {
                         cfg.model.tokenizer_path = Some(tok.clone());
@@ -1080,11 +1091,7 @@ pub(crate) fn materialize_effective_pool(
         // target: the selected instance IS the model's pool for the role.
         // Only profiles this role contributed are removed — another
         // role's same-named profile (first-wins above) stays.
-        let role_names: Vec<String> = roles[*role_name]
-            .instances
-            .keys()
-            .cloned()
-            .collect();
+        let role_names: Vec<String> = roles[*role_name].instances.keys().cloned().collect();
         merged.retain(|name, _| *name == target || !role_names.contains(name));
         // The binding designates the role's dispatch point, displacing
         // a pool default with a loud warn.
@@ -1486,8 +1493,12 @@ pub fn role_head_key(
 
 /// Declaration-only request-body keys the fork ignores: the instance grammar
 /// owns them (`ctx`/`parallel`/`sleep`), so they must not leak into the body.
-pub const DECLARATION_PARAM_KEYS: [&str; 4] =
-    ["num_ctx", "parallel", "sleep_idle_seconds", "rope_freq_base"];
+pub const DECLARATION_PARAM_KEYS: [&str; 4] = [
+    "num_ctx",
+    "parallel",
+    "sleep_idle_seconds",
+    "rope_freq_base",
+];
 
 /// Router-local params key selecting the response-side keep behavior for
 /// thinking blocks (see [`ModelEntry::preserve_thinking`]). Never a server
@@ -1959,9 +1970,10 @@ impl ModelEntry {
         classification_params: Option<&serde_json::Value>,
     ) -> Option<serde_json::Value> {
         let profile = match qualifier {
-            Some(q) => self.effective_pool().iter().find(|p| {
-                p.name.as_deref() == Some(q) || p.group.as_deref() == Some(q)
-            }),
+            Some(q) => self
+                .effective_pool()
+                .iter()
+                .find(|p| p.name.as_deref() == Some(q) || p.group.as_deref() == Some(q)),
             None => None,
         };
         if qualifier.is_some() && profile.is_none() {
@@ -1978,10 +1990,7 @@ impl ModelEntry {
         merged = overlay_params(Some(&merged), override_params);
         if let Some(level) = self.resolve_thinking(role_sampling, override_params) {
             if let Some(obj) = merged.as_object_mut() {
-                obj.insert(
-                    "thinking".to_string(),
-                    serde_json::Value::String(level),
-                );
+                obj.insert("thinking".to_string(), serde_json::Value::String(level));
             }
         }
         Some(strip_declaration_params(merged))
@@ -2010,14 +2019,21 @@ impl ModelEntry {
             if let Some(t) = obj.get("thinking").and_then(|t| t.as_str()) {
                 return Some(t.to_string());
             }
-            if let Some(enabled) = obj.get("enable_thinking").and_then(serde_json::Value::as_bool) {
+            if let Some(enabled) = obj
+                .get("enable_thinking")
+                .and_then(serde_json::Value::as_bool)
+            {
                 if !enabled && obj.contains_key("reasoning_effort") {
                     tracing::warn!(
                         target: "router.config",
                         "enable_thinking:false beside reasoning_effort — effort ignored, level resolves off",
                     );
                 }
-                return Some(if enabled { "on".to_string() } else { "off".to_string() });
+                return Some(if enabled {
+                    "on".to_string()
+                } else {
+                    "off".to_string()
+                });
             }
             obj.get("reasoning_effort")
                 .and_then(|e| e.as_str())
@@ -2048,10 +2064,7 @@ impl ModelEntry {
         override_params: Option<&serde_json::Value>,
     ) -> Option<bool> {
         fn keep(params: Option<&serde_json::Value>) -> Option<bool> {
-            params
-                ?.as_object()?
-                .get(PRESERVE_THINKING_KEY)?
-                .as_bool()
+            params?.as_object()?.get(PRESERVE_THINKING_KEY)?.as_bool()
         }
         keep(override_params).or_else(|| keep(role_sampling))
     }
@@ -2094,9 +2107,11 @@ impl ModelEntry {
     /// `qualifier = None` resolves the entry default (the bare-model path).
     pub fn embedding_for(&self, qualifier: Option<&str>) -> Option<String> {
         if let Some(q) = qualifier {
-            if let Some(profile) = self.effective_pool().iter().find(|p| {
-                p.name.as_deref() == Some(q) || p.group.as_deref() == Some(q)
-            }) {
+            if let Some(profile) = self
+                .effective_pool()
+                .iter()
+                .find(|p| p.name.as_deref() == Some(q) || p.group.as_deref() == Some(q))
+            {
                 if let Some(embed) = profile.embedding.clone() {
                     return Some(embed);
                 }
@@ -2174,11 +2189,29 @@ pub struct ClassifierOutput {
     #[field(desc = "routing target", coerce = "strip_quotes,trim")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
-    #[field(desc = "coherence score", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
+    #[field(
+        desc = "coherence score",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
     pub coherence_score: f64,
-    #[field(desc = "safety score", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
+    #[field(
+        desc = "safety score",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
     pub safety_score: f64,
-    #[field(desc = "complexity", min = 0.0, max = 10.0, coerce = "strip_quotes,trim", parse = "number")]
+    #[field(
+        desc = "complexity",
+        min = 0.0,
+        max = 10.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub complexity: Option<u8>,
     #[field(desc = "intent", coerce = "strip_quotes,trim,normalize_literal")]
@@ -2186,10 +2219,22 @@ pub struct ClassifierOutput {
     pub intent: Option<String>,
     #[field(desc = "routing reason", coerce = "strip_quotes,trim")]
     pub reason: String,
-    #[field(desc = "completeness", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
+    #[field(
+        desc = "completeness",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completeness: Option<f64>,
-    #[field(desc = "risk", min = 0.0, max = 1.0, coerce = "strip_quotes,trim", parse = "number")]
+    #[field(
+        desc = "risk",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub risk: Option<f64>,
 }
@@ -2781,7 +2826,10 @@ impl RoleParams {
             None
         } else {
             Some(serde_json::Value::Object(
-                self.sampling.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                self.sampling
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
             ))
         }
     }
@@ -2795,10 +2843,7 @@ impl RoleParams {
     /// object compose at dispatch, never at spawn. Unparseable values keep
     /// the base loudly (fail-open, never a boot fatal).
     #[must_use]
-    pub fn with_model_launch_overrides(
-        &self,
-        params: Option<&serde_json::Value>,
-    ) -> RoleParams {
+    pub fn with_model_launch_overrides(&self, params: Option<&serde_json::Value>) -> RoleParams {
         let mut out = self.clone();
         let Some(obj) = params.and_then(|p| p.as_object()) else {
             return out;

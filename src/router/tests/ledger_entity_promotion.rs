@@ -15,12 +15,7 @@ use spacy_rs::entity_gate::EntityStampGate;
 use std::sync::Arc;
 
 fn store(ledger: &ContentNodeLedger) -> OverlayCandidateStore {
-    OverlayCandidateStore::new(
-        ledger
-            .node_store()
-            .shared_sqlite()
-            .expect("shared sqlite"),
-    )
+    OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared sqlite"))
 }
 
 fn paris_doc() -> spacy_rs::doc::Doc {
@@ -54,11 +49,7 @@ fn gate() -> EntityStampGate {
 
 const TEXT: &str = "Show me Paris today";
 
-fn paris_candidate(
-    node: NodeId,
-    entity: InterlinguaId,
-    score: f64,
-) -> OverlayCandidate {
+fn paris_candidate(node: NodeId, entity: InterlinguaId, score: f64) -> OverlayCandidate {
     // "Paris" sits at bytes 8..13 of TEXT.
     OverlayCandidate::entity_link(node, 8, 13, entity, score, "entity_link")
 }
@@ -183,12 +174,10 @@ fn content_mutation_clears_stamp() {
         .expect("promote");
     assert_eq!(stamped.len(), 1);
     // Untouched text verifies clean.
-    assert!(
-        promotion
-            .verify(&mut doc, node, &s)
-            .expect("verify")
-            .is_empty()
-    );
+    assert!(promotion
+        .verify(&mut doc, node, &s)
+        .expect("verify")
+        .is_empty());
     // Mutating the token text invalidates: cleared, reported, row deleted.
     doc.token_mut(2).lexeme = doc.token(0).lexeme.clone();
     let cleared = promotion.verify(&mut doc, node, &s).expect("verify");

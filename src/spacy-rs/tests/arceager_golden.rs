@@ -98,14 +98,21 @@ fn allcaps_is_propn_positive() {
     let nasa = texts.iter().position(|t| t == "NASA").expect("NASA");
     let html5 = texts.iter().position(|t| t == "HTML5").expect("HTML5");
     assert_eq!(pos[nasa], "propn", "NASA is PROPN (ALL-CAPS): {pos:?}");
-    assert_eq!(pos[html5], "propn", "HTML5 is PROPN (ALL-CAPS + digit): {pos:?}");
+    assert_eq!(
+        pos[html5], "propn",
+        "HTML5 is PROPN (ALL-CAPS + digit): {pos:?}"
+    );
 }
 
 #[test]
 fn verb_governs_argument_extraction() {
     let (_doc, set) = parse("NASA launched HTML5.");
     let deps = deps(&set);
-    let launched = set.0.iter().position(|r| r.text == "launched").expect("verb");
+    let launched = set
+        .0
+        .iter()
+        .position(|r| r.text == "launched")
+        .expect("verb");
     let nasa = set.0.iter().position(|r| r.text == "NASA").expect("nasa");
     let html5 = set.0.iter().position(|r| r.text == "HTML5").expect("html5");
     assert_eq!(deps[launched], "root");
@@ -150,7 +157,8 @@ fn one_root_per_sentence_multi_sentence_break() {
 
 #[ignore = "heavy (~6s): corpus-wide sweep; run via `make test-heavy`"]
 #[test]
-fn every_output_is_relatively_headed_and_valid() {    for text in [
+fn every_output_is_relatively_headed_and_valid() {
+    for text in [
         "The cat sat on the mat.",
         "NASA launched HTML5.",
         "Dogs bark loudly.",
@@ -209,7 +217,10 @@ fn inversion_subject_withheld_from_infinitive_upgrade() {
     assert_eq!(deps[verb], "root", "deps: {deps:?}");
     assert_eq!(how as i32 + set.0[how].head, verb as i32, "deps: {deps:?}");
     let (conf, _, _) = ambiguity_of("How does photosynthesis work?");
-    assert_eq!(conf.oracle_tie_count, 0, "determined frame must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "determined frame must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -233,7 +244,11 @@ fn aux_neg_bare_infinitive_answer_is_verb() {
     let (_doc, set) = parse("She won't answer calls.");
     let pos = pos_of(&set);
     let deps = deps(&set);
-    let answer = set.0.iter().position(|r| r.text == "answer").expect("answer");
+    let answer = set
+        .0
+        .iter()
+        .position(|r| r.text == "answer")
+        .expect("answer");
     let calls = set.0.iter().position(|r| r.text == "calls").expect("calls");
     assert_eq!(pos[answer], "verb", "pos: {pos:?}");
     assert_eq!(deps[answer], "root");
@@ -327,7 +342,10 @@ fn contracted_m_progressive_frame() {
     assert_eq!(today as i32 + set.0[today].head, feeling as i32);
     // Determined frame: complement-licensed, no POS doubt — quiet.
     let (conf, _, _) = ambiguity_of("I'm feeling sad today.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed progressive must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed progressive must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -371,7 +389,10 @@ fn modal_question_bare_verb_is_verbal() {
     // Determined frame: the modal license leaves no POS doubt, so Track B
     // stays quiet.
     let (conf, _, _) = ambiguity_of("Will this work?");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed inversion must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed inversion must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -414,7 +435,10 @@ fn full_be_participial_adjective_stays_non_verb() {
     let deps = deps(&set);
     let texts = token_texts(&doc);
     let at = |w: &str| set.0.iter().position(|r| r.text == w).expect(w);
-    let surprising = texts.iter().position(|t| t == "surprising").expect("surprising");
+    let surprising = texts
+        .iter()
+        .position(|t| t == "surprising")
+        .expect("surprising");
     assert_ne!(pos[surprising], "verb", "pos: {pos:?}");
     assert_eq!(pos[surprising], "adj", "pos: {pos:?}");
     let (results, were) = (at("results"), at("were"));
@@ -622,7 +646,10 @@ fn aux_governed_progressive_with_complement_is_verbal() {
     // Determined frame: the complement license leaves no POS doubt, so
     // Track B stays quiet.
     let (conf, _, _) = ambiguity_of("They aren't coming today.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed progressive must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed progressive must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -657,7 +684,8 @@ fn bare_initial_noun_subject_governs_verb() {
 }
 
 #[test]
-fn bare_verb_object_initials_are_not_subject_verbs() {    // Must-NOT-fire: "Translate hello" / "Define photosynthesis" are
+fn bare_verb_object_initials_are_not_subject_verbs() {
+    // Must-NOT-fire: "Translate hello" / "Define photosynthesis" are
     // verb–object initials, POS-identical to subject–verb ones — the
     // initial-noun rule covers DET-led subjects only, so both stay NOUN.
     let (_doc, set) = parse("Define photosynthesis.");
@@ -1193,7 +1221,10 @@ fn where_be_question_crowns_aux() {
         let abs = where_ as i32 + set.0[where_].head;
         assert_eq!(abs, is as i32, "{text}: Where headed by be");
         let (conf, _, _) = ambiguity_of(text);
-        assert_eq!(conf.oracle_tie_count, 0, "{text}: determined frame must not tie: {conf:?}");
+        assert_eq!(
+            conf.oracle_tie_count, 0,
+            "{text}: determined frame must not tie: {conf:?}"
+        );
     }
 }
 
@@ -1235,7 +1266,10 @@ fn initial_when_with_inversion_is_adverbial() {
     assert_eq!(when as i32 + set.0[when].head, close as i32);
     assert_eq!(deps[close], "root", "deps: {deps:?}");
     let (conf, _, _) = ambiguity_of("When does the store close?");
-    assert_eq!(conf.oracle_tie_count, 0, "determined frame must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "determined frame must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -1288,7 +1322,10 @@ fn where_invoice_convention_split_is_stable() {
     assert_eq!(deps[q], "punct", "deps: {deps:?}");
     assert_eq!(q as i32 + set.0[q].head, invoice as i32, "deps: {deps:?}");
     let (conf, _, _) = ambiguity_of("Where is the invoice?");
-    assert_eq!(conf.oracle_tie_count, 0, "split frame must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "split frame must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -1583,7 +1620,10 @@ fn inverted_copular_predicate_is_adjectival() {
     // Bare-subject frame: no DET between be and predicate, so the
     // copular-complement category tie never fires — determined and quiet.
     let (conf, _, _) = ambiguity_of("Is lunch ready?");
-    assert_eq!(conf.oracle_tie_count, 0, "bare-subject copular must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "bare-subject copular must not tie: {conf:?}"
+    );
     let (reason, should) = refine_of("Is lunch ready?");
     assert_eq!(
         reason,
@@ -1684,7 +1724,10 @@ fn direct_copular_complement_emits_no_tie() {
     // low` — nothing between be and predicate) is fully determined — no
     // tie, no ambiguity entry, permanent keys, no confidence-axis refine.
     let (conf, analysis, keys) = ambiguity_of("Your fee is low.");
-    assert_eq!(conf.oracle_tie_count, 0, "direct copular must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "direct copular must not tie: {conf:?}"
+    );
     assert!(
         analysis.ambiguities.is_empty(),
         "no ambiguity on a direct complement: {analysis:?}"
@@ -1756,7 +1799,10 @@ fn relative_matrix_verb_after_relcl_is_verb() {
     assert_eq!(pos[left], "verb", "pos: {pos:?}");
     assert_ne!(deps[left], "parataxis", "deps: {deps:?}");
     let abs = left as i32 + set.0[left].head;
-    assert!((0..set.len() as i32).contains(&abs), "left headed: {deps:?}");
+    assert!(
+        (0..set.len() as i32).contains(&abs),
+        "left headed: {deps:?}"
+    );
 }
 
 #[test]
@@ -1793,7 +1839,10 @@ fn relcl_matrix_sform_with_complement_is_verbal() {
     // Determined frame: morphology licenses the reading outright, so
     // Track B stays quiet.
     let (conf, _, _) = ambiguity_of("The house where I grew stands empty.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed matrix must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed matrix must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -2089,7 +2138,10 @@ fn predicative_ly_after_linking_is_adjective() {
     // Determined frame: the predicative license leaves no POS doubt, so
     // Track B stays quiet.
     let (conf, _, _) = ambiguity_of("That seems unlikely.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed predicative must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed predicative must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -2109,7 +2161,8 @@ fn manner_ly_with_complement_stays_adverb() {
         assert_eq!(pos[at(word)], "adv", "{text} pos: {pos:?}");
         assert_eq!(deps[at(word)], "advmod", "{text} deps: {deps:?}");
         assert_eq!(
-            at(word) as i32 + set.0[at(word)].head, at(host) as i32,
+            at(word) as i32 + set.0[at(word)].head,
+            at(host) as i32,
             "{text} deps: {deps:?}"
         );
     }
@@ -2132,7 +2185,10 @@ fn medial_manner_ly_after_verb_is_adv() {
     assert_eq!(deps[dinner], "pobj", "deps: {deps:?}");
     // Determined frame: quiet.
     let (conf, _, _) = ambiguity_of("He spoke wittily at dinner.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed manner must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed manner must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -2221,7 +2277,10 @@ fn verb_anchored_sentence_emits_no_root_tie() {
     // ("Dogs bark loudly.") is fully determined — no root tie, no
     // ambiguity entry, permanent keys.
     let (conf, analysis, keys) = ambiguity_of("Dogs bark loudly.");
-    assert_eq!(conf.oracle_tie_count, 0, "anchored clause must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "anchored clause must not tie: {conf:?}"
+    );
     assert!(
         analysis.ambiguities.is_empty(),
         "no ambiguity on a clean clause: {analysis:?}"
@@ -2669,7 +2728,10 @@ fn clean_subordinate_emits_no_tie() {
     // ("because it snowed") is fully determined — no tie, no ambiguity
     // entry, permanent key.
     let (conf, analysis, keys) = ambiguity_of("We stayed because it snowed.");
-    assert_eq!(conf.oracle_tie_count, 0, "clean clause must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "clean clause must not tie: {conf:?}"
+    );
     assert!(
         analysis.ambiguities.is_empty(),
         "no ambiguity on a clean clause: {analysis:?}"
@@ -2709,15 +2771,18 @@ fn refine_of(text: &str) -> (spacy_rs::RefineReason, bool) {
         .into_iter()
         .next()
         .map(|s| {
-            let inter = s.interlingua.clone().unwrap_or(spacy_rs::InterlinguaSignal {
-                predicate_id: None,
-                subject_id: None,
-                direct_object_id: None,
-                indirect_object_id: None,
-                concept_ids: Vec::new(),
-                token_ids: Vec::new(),
-                confidence: None,
-            });
+            let inter = s
+                .interlingua
+                .clone()
+                .unwrap_or(spacy_rs::InterlinguaSignal {
+                    predicate_id: None,
+                    subject_id: None,
+                    direct_object_id: None,
+                    indirect_object_id: None,
+                    concept_ids: Vec::new(),
+                    token_ids: Vec::new(),
+                    confidence: None,
+                });
             (s, inter)
         })
         .expect("one routing signal");
@@ -2783,8 +2848,7 @@ fn verbless_adp_concessive_emits_attachment_tie() {
     let (_doc, set) = parse("Although in pain, he smiled.");
     let deps = deps(&set);
     let at = |w: &str| set.0.iter().position(|r| r.text == w).expect(w);
-    let (although, in_, pain, smiled) =
-        (at("Although"), at("in"), at("pain"), at("smiled"));
+    let (although, in_, pain, smiled) = (at("Although"), at("in"), at("pain"), at("smiled"));
     assert_eq!(deps[although], "dep", "deps: {deps:?}");
     assert_eq!(although as i32 + set.0[although].head, smiled as i32);
     assert_eq!(deps[in_], "dep", "deps: {deps:?}");
@@ -2852,7 +2916,10 @@ fn single_embedding_emits_no_tie() {
     // ccomp arm owns the pair, so no tie, no ambiguity entry, permanent
     // keys, and no confidence-axis refine.
     let (conf, analysis, keys) = ambiguity_of("She thinks he left.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed complement must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed complement must not tie: {conf:?}"
+    );
     assert!(
         analysis.ambiguities.is_empty(),
         "no ambiguity on a licensed complement: {analysis:?}"
@@ -2894,7 +2961,10 @@ fn clean_copular_emits_no_refine() {
     // Track B (must-NOT-fire control): an unambiguous copular sentence
     // keeps high ParseConfidence — no tie, no ambiguity, no refine.
     let (conf, analysis, _) = ambiguity_of("Your fee is low.");
-    assert_eq!(conf.oracle_tie_count, 0, "clean copular must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "clean copular must not tie: {conf:?}"
+    );
     assert!(
         analysis.ambiguities.is_empty(),
         "no ambiguity on clean copular: {analysis:?}"
@@ -2917,11 +2987,15 @@ fn unsubordinated_single_verb_attaches_no_subordinate() {
     let (_doc, set) = parse("She sings loudly.");
     let deps = deps(&set);
     assert!(
-        deps.iter().all(|d| d != "ccomp" && d != "advcl" && d != "parataxis"),
+        deps.iter()
+            .all(|d| d != "ccomp" && d != "advcl" && d != "parataxis"),
         "no subordinate attachment without a subordinate clause: {deps:?}"
     );
     let (conf, _, _) = ambiguity_of("She sings loudly.");
-    assert_eq!(conf.oracle_tie_count, 0, "single verb must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "single verb must not tie: {conf:?}"
+    );
     let (reason, should) = refine_of("She sings loudly.");
     assert_eq!(
         reason,
@@ -3224,7 +3298,10 @@ fn get_imperative_is_verbal() {
     // Determined frame: the complement license leaves no POS doubt, so
     // Track B stays quiet.
     let (conf, _, _) = ambiguity_of("Get me a coffee.");
-    assert_eq!(conf.oracle_tie_count, 0, "licensed imperative must not tie: {conf:?}");
+    assert_eq!(
+        conf.oracle_tie_count, 0,
+        "licensed imperative must not tie: {conf:?}"
+    );
 }
 
 #[test]
@@ -3381,7 +3458,10 @@ fn bare_nominal_chain_crowns_last() {
     // Determined frames: no oracle tie (Track B stays quiet).
     for (text, heads) in [
         ("Rust borrow checker", ("Rust", "borrow", "checker")),
-        ("blood pressure medication", ("blood", "pressure", "medication")),
+        (
+            "blood pressure medication",
+            ("blood", "pressure", "medication"),
+        ),
         ("server error logs", ("server", "error", "logs")),
     ] {
         let (_doc, set) = parse(text);
@@ -3394,7 +3474,10 @@ fn bare_nominal_chain_crowns_last() {
         assert_eq!(mid as i32 + set.0[mid].head, last as i32, "{text}");
         assert_eq!(deps[first], "compound", "{text}: deps: {deps:?}");
         let (conf, _, _) = ambiguity_of(text);
-        assert_eq!(conf.oracle_tie_count, 0, "{text}: determined frame must not tie: {conf:?}");
+        assert_eq!(
+            conf.oracle_tie_count, 0,
+            "{text}: determined frame must not tie: {conf:?}"
+        );
     }
 }
 
@@ -3524,7 +3607,13 @@ fn suffix_governed_parses_hold_across_families() {
         ("She won't answer calls.", "calls", "noun", "dobj", "answer"),
         ("John opened the door.", "opened", "verb", "root", ""),
         ("It's raining.", "raining", "verb", "root", ""),
-        ("The CEO, smiling, took questions.", "smiling", "verb", "amod", "CEO"),
+        (
+            "The CEO, smiling, took questions.",
+            "smiling",
+            "verb",
+            "amod",
+            "CEO",
+        ),
         ("That seems unlikely.", "unlikely", "adj", "acomp", "seems"),
     ];
     for (text, target, pos, dep, head_word) in cases {
@@ -3620,9 +3709,27 @@ fn lowercase_gated_parses_hold_across_families() {
         ("Truthfully, the plan failed.", "failed", "verb", "root", ""),
         ("The game ended.", "ended", "verb", "root", ""),
         ("Is lunch ready?", "ready", "adj", "root", ""),
-        ("She spoke wittily at dinner.", "wittily", "adv", "advmod", "spoke"),
-        ("Prices rose and spirits fell.", "fell", "verb", "conj", "rose"),
-        ("The dog that barked stands empty.", "stands", "verb", "root", ""),
+        (
+            "She spoke wittily at dinner.",
+            "wittily",
+            "adv",
+            "advmod",
+            "spoke",
+        ),
+        (
+            "Prices rose and spirits fell.",
+            "fell",
+            "verb",
+            "conj",
+            "rose",
+        ),
+        (
+            "The dog that barked stands empty.",
+            "stands",
+            "verb",
+            "root",
+            "",
+        ),
     ];
     for (text, target, pos, dep, head_word) in cases {
         let (_doc, set) = parse(text);
@@ -3762,7 +3869,10 @@ fn lemma_fallback_split_golden() {
         sells as i32 - apple as i32,
         "Apple points at sells (relative)"
     );
-    assert_eq!(set.0[apple].lemma, "Apple", "title-case nominal keeps surface");
+    assert_eq!(
+        set.0[apple].lemma, "Apple",
+        "title-case nominal keeps surface"
+    );
     assert_eq!(set.0[sells].pos, "verb", "sells crowns");
     assert_eq!(set.0[sells].dep, "root");
     assert_eq!(set.0[sells].lemma, "sell", "verb inflection reduces");

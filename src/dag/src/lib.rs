@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 
 pub mod adapter;
-pub(crate) mod closure;
 pub mod checkpointed;
+pub(crate) mod closure;
 pub mod dep_graph;
 pub mod error;
 pub mod hierarchy;

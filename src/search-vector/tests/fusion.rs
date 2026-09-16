@@ -62,10 +62,7 @@ fn rrf_dedupes_within_a_list() {
 
 #[test]
 fn score_postings_sums_duplicates_per_id() {
-    let scores = score_postings(
-        vec![("a".to_string(), 1), ("a".to_string(), 1)],
-        60.0,
-    );
+    let scores = score_postings(vec![("a".to_string(), 1), ("a".to_string(), 1)], 60.0);
     assert!((scores["a"] - 2.0 / 61.0).abs() < 1e-12);
 }
 

@@ -3,10 +3,10 @@
 //! majors for multi-window sections, break-score window splitting.
 
 use super::{
-    ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
-    utf16_len,
     text::{compute_line_offsets, find_line_cut},
+    utf16_len,
     vector_content::chunk_options_for_metadata,
+    ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
 };
 
 /// Extract markdown sections (empty when the format is not markdown or no
@@ -30,9 +30,13 @@ pub fn extract_markdown_fragments(
     for section in &sections {
         let metadata = markdown_metadata(section);
         let meta_opt = Some(metadata.clone());
-        let (max, overlap) =
-            chunk_options_for_metadata(options.max_chunk_chars, options.chunk_overlap_chars, &meta_opt);
-        let windows = split_markdown_section(&lines, &line_offsets, &fence_lines, section, max, overlap);
+        let (max, overlap) = chunk_options_for_metadata(
+            options.max_chunk_chars,
+            options.chunk_overlap_chars,
+            &meta_opt,
+        );
+        let windows =
+            split_markdown_section(&lines, &line_offsets, &fence_lines, section, max, overlap);
         if windows.len() > 1 {
             let major_id = super::make_entity_id(&source.file_id, fragments.len());
             fragments.push(PreparedFragment {
@@ -42,7 +46,12 @@ pub fn extract_markdown_fragments(
                     max,
                 ),
                 embedding_text: None,
-                range: lines_to_range(&lines, &line_offsets, section.start_index, section.end_index),
+                range: lines_to_range(
+                    &lines,
+                    &line_offsets,
+                    section.start_index,
+                    section.end_index,
+                ),
                 group: Some(major_id.clone()),
                 metadata: Some(metadata),
                 calls: Vec::new(),
@@ -128,7 +137,11 @@ pub fn scan_headings(lines: &[&str]) -> Vec<Heading> {
             continue;
         }
         if let Some(atx) = parse_atx(line) {
-            headings.push(Heading { level: atx.0, text: atx.1, line_index: index });
+            headings.push(Heading {
+                level: atx.0,
+                text: atx.1,
+                line_index: index,
+            });
             index += 1;
             continue;
         }
@@ -136,12 +149,20 @@ pub fn scan_headings(lines: &[&str]) -> Vec<Heading> {
         if !line.trim().is_empty() {
             if let Some(next) = next {
                 if !next.is_empty() && next.chars().all(|c| c == '=') {
-                    headings.push(Heading { level: 1, text: line.trim().to_string(), line_index: index });
+                    headings.push(Heading {
+                        level: 1,
+                        text: line.trim().to_string(),
+                        line_index: index,
+                    });
                     index += 2;
                     continue;
                 }
                 if !next.is_empty() && next.chars().all(|c| c == '-') {
-                    headings.push(Heading { level: 2, text: line.trim().to_string(), line_index: index });
+                    headings.push(Heading {
+                        level: 2,
+                        text: line.trim().to_string(),
+                        line_index: index,
+                    });
                     index += 2;
                     continue;
                 }
@@ -177,9 +198,7 @@ fn parse_atx(line: &str) -> Option<(u32, String)> {
 pub fn build_sections(headings: &[Heading], lines: &[&str]) -> Vec<Section> {
     let mut sections = Vec::new();
     let first = &headings[0];
-    if first.line_index > 0
-        && !lines[..first.line_index].join("\n").trim().is_empty()
-    {
+    if first.line_index > 0 && !lines[..first.line_index].join("\n").trim().is_empty() {
         sections.push(Section {
             heading: None,
             start_index: 0,
@@ -195,7 +214,9 @@ pub fn build_sections(headings: &[Heading], lines: &[&str]) -> Vec<Section> {
         sections.push(Section {
             heading: Some(heading.clone()),
             start_index: heading.line_index,
-            end_index: headings.get(i + 1).map_or(lines.len() - 1, |next| next.line_index - 1),
+            end_index: headings
+                .get(i + 1)
+                .map_or(lines.len() - 1, |next| next.line_index - 1),
             breadcrumb: stack.iter().map(|h| h.text.clone()).collect(),
         });
         stack.push(heading);
@@ -217,9 +238,9 @@ fn markdown_metadata(section: &Section) -> FragmentMetadata {
 
 fn markdown_outline(metadata: &FragmentMetadata) -> String {
     match metadata {
-        FragmentMetadata::Markdown { heading, .. } => {
-            heading.clone().unwrap_or_else(|| "markdown section".to_string())
-        }
+        FragmentMetadata::Markdown { heading, .. } => heading
+            .clone()
+            .unwrap_or_else(|| "markdown section".to_string()),
         FragmentMetadata::Code { .. } => "markdown section".to_string(),
     }
 }
@@ -270,7 +291,10 @@ fn split_markdown_section(
         let next = end.saturating_sub(overlap_lines);
         start = if next > start { next } else { end };
     }
-    windows.into_iter().filter(|w| !w.text.trim().is_empty()).collect()
+    windows
+        .into_iter()
+        .filter(|w| !w.text.trim().is_empty())
+        .collect()
 }
 
 fn choose_markdown_break(

@@ -158,7 +158,12 @@ struct StubContext {
 
 impl StubContext {
     fn new(name: &'static str, destroyed: Arc<Mutex<usize>>) -> Self {
-        Self { name, destroyed, resume: false, events: None }
+        Self {
+            name,
+            destroyed,
+            resume: false,
+            events: None,
+        }
     }
 
     fn resume_marked(
@@ -166,7 +171,12 @@ impl StubContext {
         destroyed: Arc<Mutex<usize>>,
         events: Arc<Mutex<Vec<String>>>,
     ) -> Self {
-        Self { name, destroyed, resume: true, events: Some(events) }
+        Self {
+            name,
+            destroyed,
+            resume: true,
+            events: Some(events),
+        }
     }
 }
 
@@ -204,7 +214,10 @@ impl LlmContext for StubContext {
     async fn destroy(&self) -> Result<(), LlmRuntimeError> {
         *self.destroyed.lock().unwrap() += 1;
         if let Some(events) = &self.events {
-            events.lock().unwrap().push(format!("destroy:{}", self.name));
+            events
+                .lock()
+                .unwrap()
+                .push(format!("destroy:{}", self.name));
         }
         Ok(())
     }
@@ -218,7 +231,10 @@ impl LlmContext for StubContext {
         // directly) so adapters can preserve state before the drop.
         if self.resume {
             if let Some(events) = &self.events {
-                events.lock().unwrap().push(format!("snapshot:{}", self.name));
+                events
+                    .lock()
+                    .unwrap()
+                    .push(format!("snapshot:{}", self.name));
             }
         }
         self.destroy().await
@@ -280,14 +296,23 @@ async fn idle_release_fires_for_stub_whose_idle_exceeds_threshold() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[w.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
+    engine
+        .residency_cycle(&[w.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
     assert_eq!(w.unload_count(), 1, "idle release unloads the session");
 }
 
 #[tokio::test]
 async fn idle_release_skips_fresh_and_refusing_weights() {
     // Fresh: 0ms idle → never released.
-    let fresh = Arc::new(StubWeights::onnx("onnx/fresh", 100, true, Some(30), 9_000_000_000i64));
+    let fresh = Arc::new(StubWeights::onnx(
+        "onnx/fresh",
+        100,
+        true,
+        Some(30),
+        9_000_000_000i64,
+    ));
     // Refusing (`Always`/pinned-equivalent): idle but never released.
     let refusing =
         Arc::new(StubWeights::onnx("onnx/refusing", 100, true, Some(1), 0).with_refuse_unload());
@@ -300,11 +325,18 @@ async fn idle_release_skips_fresh_and_refusing_weights() {
         Arc::new(|| 9_000_000_000i64),
     );
     engine
-        .residency_cycle(&[fresh.clone() as Arc<dyn LlmWeights>, refusing.clone() as Arc<dyn LlmWeights>])
+        .residency_cycle(&[
+            fresh.clone() as Arc<dyn LlmWeights>,
+            refusing.clone() as Arc<dyn LlmWeights>,
+        ])
         .await
         .expect("cycle");
     assert_eq!(fresh.unload_count(), 0, "fresh session stays");
-    assert_eq!(refusing.unload_count(), 0, "Always/pinned session never released");
+    assert_eq!(
+        refusing.unload_count(),
+        0,
+        "Always/pinned session never released"
+    );
 }
 
 #[tokio::test]
@@ -347,7 +379,10 @@ async fn budget_eviction_footprint_coldness_matches_eviction_order() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[w.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
+    engine
+        .residency_cycle(&[w.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
 
     // The shared primitive, fed the identical candidate inputs, must agree
     // on the first eviction candidate.
@@ -356,12 +391,18 @@ async fn budget_eviction_footprint_coldness_matches_eviction_order() {
     let now_secs = now / 1000;
     let candidates: Vec<Candidate> = vec![
         Candidate {
-            kind: CandidateKind::Context { weights: Arc::clone(&w) as Arc<dyn LlmWeights>, name: "a".into() },
+            kind: CandidateKind::Context {
+                weights: Arc::clone(&w) as Arc<dyn LlmWeights>,
+                name: "a".into(),
+            },
             freed_bytes: 2000,
             last_used: 100,
         },
         Candidate {
-            kind: CandidateKind::Context { weights: Arc::clone(&w) as Arc<dyn LlmWeights>, name: "b".into() },
+            kind: CandidateKind::Context {
+                weights: Arc::clone(&w) as Arc<dyn LlmWeights>,
+                name: "b".into(),
+            },
             freed_bytes: 1000,
             last_used: 200,
         },
@@ -372,10 +413,17 @@ async fn budget_eviction_footprint_coldness_matches_eviction_order() {
         |c: &Candidate| c.freed_bytes,
         |c: &Candidate| c.last_used,
     );
-    assert_eq!(ordered[0].freed_bytes, 2000, "a (2000B, cold 100) outranks b (1000B, cold 200) by footprint×coldness");
+    assert_eq!(
+        ordered[0].freed_bytes, 2000,
+        "a (2000B, cold 100) outranks b (1000B, cold 200) by footprint×coldness"
+    );
     // Engine destroyed exactly one context (batch=1) and it was `a`.
     assert_eq!(*destroyed_a.lock().unwrap(), 1, "a destroyed");
-    assert_eq!(*destroyed_b.lock().unwrap(), 0, "b untouched (batch reached)");
+    assert_eq!(
+        *destroyed_b.lock().unwrap(),
+        0,
+        "b untouched (batch reached)"
+    );
     assert_eq!(*destroyed_pinned.lock().unwrap(), 0, "pinned never evicted");
 }
 
@@ -404,7 +452,10 @@ async fn budget_eviction_runs_snapshot_before_destroy_through_evict() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[w.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
+    engine
+        .residency_cycle(&[w.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
 
     assert_eq!(*destroyed.lock().unwrap(), 1, "context destroyed once");
     assert_eq!(
@@ -428,13 +479,16 @@ fn admission_engine(vram_budget: Option<u64>) -> Arc<LlmResidencyEngine> {
 /// One loaded llama weights with a single unpinned context row of `vram`
 /// bytes, registered for engine eviction. Returns the weights and its
 /// destroy counter.
-fn loaded_llama(key: &'static str, vram: u64, last_used: i64) -> (Arc<StubWeights>, Arc<Mutex<usize>>) {
+fn loaded_llama(
+    key: &'static str,
+    vram: u64,
+    last_used: i64,
+) -> (Arc<StubWeights>, Arc<Mutex<usize>>) {
     let mut ctx = row(key, "work", false, last_used);
     ctx.vram_bytes = vram;
     let w = Arc::new(StubWeights::llama(key, 5000, true, vec![ctx]));
     let destroyed = Arc::new(Mutex::new(0usize));
-    *w.contexts.lock().unwrap() =
-        vec![StubContext::new("work", Arc::clone(&destroyed))];
+    *w.contexts.lock().unwrap() = vec![StubContext::new("work", Arc::clone(&destroyed))];
     (w, destroyed)
 }
 
@@ -443,7 +497,12 @@ async fn admission_no_eviction_within_budget() {
     // used 1000 + required 500 <= 2000 → the load fits, nothing evicted.
     let (a, destroyed) = loaded_llama("a", 1000, 100);
     admission_engine(Some(2000))
-        .make_room_for(&[a.clone() as Arc<dyn LlmWeights>], "b", 500, MemoryPool::Vram)
+        .make_room_for(
+            &[a.clone() as Arc<dyn LlmWeights>],
+            "b",
+            500,
+            MemoryPool::Vram,
+        )
         .await;
     assert_eq!(*destroyed.lock().unwrap(), 0, "no eviction within budget");
 }
@@ -456,13 +515,20 @@ async fn admission_evicts_over_budget_and_excludes_target() {
     let (b, destroyed_b) = loaded_llama("b", 5000, 50);
     admission_engine(Some(2000))
         .make_room_for(
-            &[a.clone() as Arc<dyn LlmWeights>, b.clone() as Arc<dyn LlmWeights>],
+            &[
+                a.clone() as Arc<dyn LlmWeights>,
+                b.clone() as Arc<dyn LlmWeights>,
+            ],
             "b",
             1500,
             MemoryPool::Vram,
         )
         .await;
-    assert_eq!(*destroyed_a.lock().unwrap(), 1, "non-target evicted to make room");
+    assert_eq!(
+        *destroyed_a.lock().unwrap(),
+        1,
+        "non-target evicted to make room"
+    );
     assert_eq!(*destroyed_b.lock().unwrap(), 0, "cold target excluded");
 }
 
@@ -470,9 +536,17 @@ async fn admission_evicts_over_budget_and_excludes_target() {
 async fn admission_no_budget_or_zero_required_is_noop() {
     let (a, destroyed) = loaded_llama("a", 1000, 100);
     let weights = vec![a.clone() as Arc<dyn LlmWeights>];
-    admission_engine(None).make_room_for(&weights, "b", 10_000, MemoryPool::Vram).await;
-    admission_engine(Some(100)).make_room_for(&weights, "b", 0, MemoryPool::Vram).await;
-    assert_eq!(*destroyed.lock().unwrap(), 0, "no budget / zero need → no-op");
+    admission_engine(None)
+        .make_room_for(&weights, "b", 10_000, MemoryPool::Vram)
+        .await;
+    admission_engine(Some(100))
+        .make_room_for(&weights, "b", 0, MemoryPool::Vram)
+        .await;
+    assert_eq!(
+        *destroyed.lock().unwrap(),
+        0,
+        "no budget / zero need → no-op"
+    );
 }
 
 #[tokio::test]
@@ -480,8 +554,20 @@ async fn budget_eviction_lru_largest_matches_onnx_sort() {
     // Mirror `working_set_budget_evicts_lru_largest_first`: big (100B,
     // older) + small (50B) over a 60B budget → the largest is released
     // first and the small stays.
-    let big = Arc::new(StubWeights::onnx("onnx/big", 100, true, None, 9_000_000_000i64 - 2_000));
-    let small = Arc::new(StubWeights::onnx("onnx/small", 50, true, None, 9_000_000_000i64 - 1_000));
+    let big = Arc::new(StubWeights::onnx(
+        "onnx/big",
+        100,
+        true,
+        None,
+        9_000_000_000i64 - 2_000,
+    ));
+    let small = Arc::new(StubWeights::onnx(
+        "onnx/small",
+        50,
+        true,
+        None,
+        9_000_000_000i64 - 1_000,
+    ));
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
         None,
@@ -491,19 +577,38 @@ async fn budget_eviction_lru_largest_matches_onnx_sort() {
         Arc::new(|| 9_000_000_000i64),
     );
     engine
-        .residency_cycle(&[big.clone() as Arc<dyn LlmWeights>, small.clone() as Arc<dyn LlmWeights>])
+        .residency_cycle(&[
+            big.clone() as Arc<dyn LlmWeights>,
+            small.clone() as Arc<dyn LlmWeights>,
+        ])
         .await
         .expect("cycle");
     assert_eq!(big.unload_count(), 1, "largest working set evicted first");
-    assert_eq!(small.unload_count(), 0, "under budget after the big release");
+    assert_eq!(
+        small.unload_count(),
+        0,
+        "under budget after the big release"
+    );
 }
 
 #[tokio::test]
 async fn budget_eviction_lru_largest_tie_evicts_oldest_first() {
     // Mirror `working_set_tie_evicts_oldest_first`: two 100B sessions over
     // a 150B budget → the oldest of the equal footprints goes.
-    let old = Arc::new(StubWeights::onnx("onnx/old", 100, true, None, 9_000_000_000i64 - 2_000));
-    let new = Arc::new(StubWeights::onnx("onnx/new", 100, true, None, 9_000_000_000i64 - 1_000));
+    let old = Arc::new(StubWeights::onnx(
+        "onnx/old",
+        100,
+        true,
+        None,
+        9_000_000_000i64 - 2_000,
+    ));
+    let new = Arc::new(StubWeights::onnx(
+        "onnx/new",
+        100,
+        true,
+        None,
+        9_000_000_000i64 - 1_000,
+    ));
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
         None,
@@ -513,16 +618,29 @@ async fn budget_eviction_lru_largest_tie_evicts_oldest_first() {
         Arc::new(|| 9_000_000_000i64),
     );
     engine
-        .residency_cycle(&[old.clone() as Arc<dyn LlmWeights>, new.clone() as Arc<dyn LlmWeights>])
+        .residency_cycle(&[
+            old.clone() as Arc<dyn LlmWeights>,
+            new.clone() as Arc<dyn LlmWeights>,
+        ])
         .await
         .expect("cycle");
-    assert_eq!(old.unload_count(), 1, "oldest evicted first on the size tie");
+    assert_eq!(
+        old.unload_count(),
+        1,
+        "oldest evicted first on the size tie"
+    );
     assert_eq!(new.unload_count(), 0, "newest of equal footprints stays");
 }
 
 #[tokio::test]
 async fn budget_eviction_within_limits_releases_nothing() {
-    let m = Arc::new(StubWeights::onnx("onnx/m", 100, true, None, 9_000_000_000i64 - 1_000));
+    let m = Arc::new(StubWeights::onnx(
+        "onnx/m",
+        100,
+        true,
+        None,
+        9_000_000_000i64 - 1_000,
+    ));
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
         None,
@@ -531,7 +649,10 @@ async fn budget_eviction_within_limits_releases_nothing() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[m.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
+    engine
+        .residency_cycle(&[m.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
     assert_eq!(m.unload_count(), 0, "within budget → nothing released");
 }
 
@@ -557,11 +678,18 @@ async fn unload_empty_fires_for_weights_with_zero_contexts() {
         Arc::new(|| 9_000_000_000i64),
     );
     engine
-        .residency_cycle(&[empty.clone() as Arc<dyn LlmWeights>, resident.clone() as Arc<dyn LlmWeights>])
+        .residency_cycle(&[
+            empty.clone() as Arc<dyn LlmWeights>,
+            resident.clone() as Arc<dyn LlmWeights>,
+        ])
         .await
         .expect("cycle");
     assert_eq!(empty.unload_count(), 1, "zero-context model unloaded");
-    assert_eq!(resident.unload_count(), 0, "pinned context keeps the weights resident");
+    assert_eq!(
+        resident.unload_count(),
+        0,
+        "pinned context keeps the weights resident"
+    );
 }
 
 #[tokio::test]
@@ -595,9 +723,8 @@ async fn unload_empty_skips_weights_that_are_not_loaded() {
 async fn pinned_and_refusing_weights_never_budget_evicted() {
     // A refusing (`Always`/pinned-equivalent) onnx session is never a
     // budget candidate even when far over budget.
-    let refusing = Arc::new(
-        StubWeights::onnx("onnx/resident", 500, true, None, 0).with_refuse_unload(),
-    );
+    let refusing =
+        Arc::new(StubWeights::onnx("onnx/resident", 500, true, None, 0).with_refuse_unload());
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
         None,
@@ -606,8 +733,15 @@ async fn pinned_and_refusing_weights_never_budget_evicted() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[refusing.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
-    assert_eq!(refusing.unload_count(), 0, "Always/pinned never budget-evicted");
+    engine
+        .residency_cycle(&[refusing.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
+    assert_eq!(
+        refusing.unload_count(),
+        0,
+        "Always/pinned never budget-evicted"
+    );
 }
 
 #[tokio::test]
@@ -623,8 +757,7 @@ async fn start_loops_on_injected_runtime() {
         9_000_000_000i64 - 10_000,
     ));
     let engine = LlmResidencyEngine::new(Duration::from_millis(5), None, None, 30, 1);
-    let weights: Arc<Vec<Arc<dyn LlmWeights>>> =
-        Arc::new(vec![w.clone() as Arc<dyn LlmWeights>]);
+    let weights: Arc<Vec<Arc<dyn LlmWeights>>> = Arc::new(vec![w.clone() as Arc<dyn LlmWeights>]);
     let handle = engine.start(&rt, weights);
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     handle.abort();
@@ -648,8 +781,7 @@ async fn vram_budget_ignores_cpu_offloaded_bytes() {
     ctx.vram_bytes = 350;
     let w = Arc::new(StubWeights::llama("base", 14000, true, vec![ctx]));
     let destroyed = Arc::new(Mutex::new(0usize));
-    *w.contexts.lock().unwrap() =
-        vec![StubContext::new("default", Arc::clone(&destroyed))];
+    *w.contexts.lock().unwrap() = vec![StubContext::new("default", Arc::clone(&destroyed))];
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
         Some(19400),
@@ -658,8 +790,15 @@ async fn vram_budget_ignores_cpu_offloaded_bytes() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[w.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
-    assert_eq!(w.unload_count(), 0, "VRAM-accurate usage (14250) fits the 19400 budget");
+    engine
+        .residency_cycle(&[w.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
+    assert_eq!(
+        w.unload_count(),
+        0,
+        "VRAM-accurate usage (14250) fits the 19400 budget"
+    );
     assert_eq!(*destroyed.lock().unwrap(), 0, "no context destroyed");
 }
 
@@ -673,8 +812,7 @@ async fn vram_budget_still_evicts_when_truly_over() {
     ctx.vram_bytes = 350;
     let w = Arc::new(StubWeights::llama("base", 14000, true, vec![ctx]));
     let destroyed = Arc::new(Mutex::new(0usize));
-    *w.contexts.lock().unwrap() =
-        vec![StubContext::new("default", Arc::clone(&destroyed))];
+    *w.contexts.lock().unwrap() = vec![StubContext::new("default", Arc::clone(&destroyed))];
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
         Some(14000),
@@ -683,7 +821,10 @@ async fn vram_budget_still_evicts_when_truly_over() {
         1,
         Arc::new(|| 9_000_000_000i64),
     );
-    engine.residency_cycle(&[w.clone() as Arc<dyn LlmWeights>]).await.expect("cycle");
+    engine
+        .residency_cycle(&[w.clone() as Arc<dyn LlmWeights>])
+        .await
+        .expect("cycle");
     assert_eq!(
         w.unload_count() + *destroyed.lock().unwrap(),
         1,
@@ -749,7 +890,11 @@ async fn unload_empty_skips_recently_touched_weights() {
         .residency_cycle(&[fresh.clone() as Arc<dyn LlmWeights>])
         .await
         .expect("cycle");
-    assert_eq!(fresh.unload_count(), 0, "just-loaded model survives its first pass");
+    assert_eq!(
+        fresh.unload_count(),
+        0,
+        "just-loaded model survives its first pass"
+    );
 }
 
 /// The grace is bounded: an empty weights instance untouched for an hour is
@@ -758,8 +903,7 @@ async fn unload_empty_skips_recently_touched_weights() {
 async fn unload_empty_unloads_stale_empty_weights() {
     let now_ms = 9_000_000_000i64;
     let stale = Arc::new(
-        StubWeights::llama("base/stale", 5000, true, vec![])
-            .with_last_used(now_ms / 1000 - 3600),
+        StubWeights::llama("base/stale", 5000, true, vec![]).with_last_used(now_ms / 1000 - 3600),
     );
     let engine = LlmResidencyEngine::new_with_clock(
         Duration::from_secs(1),
@@ -773,7 +917,11 @@ async fn unload_empty_unloads_stale_empty_weights() {
         .residency_cycle(&[stale.clone() as Arc<dyn LlmWeights>])
         .await
         .expect("cycle");
-    assert_eq!(stale.unload_count(), 1, "long-idle empty model is collected");
+    assert_eq!(
+        stale.unload_count(),
+        1,
+        "long-idle empty model is collected"
+    );
 }
 
 /// An active inference holds its weights: an in-flight empty model is never
@@ -782,8 +930,7 @@ async fn unload_empty_unloads_stale_empty_weights() {
 async fn unload_empty_skips_in_flight_weights() {
     let now_ms = 9_000_000_000i64;
     let busy = Arc::new(
-        StubWeights::llama("base/busy", 5000, true, vec![])
-            .with_last_used(now_ms / 1000 - 3600),
+        StubWeights::llama("base/busy", 5000, true, vec![]).with_last_used(now_ms / 1000 - 3600),
     );
     busy.set_in_flight(1);
     let engine = LlmResidencyEngine::new_with_clock(
@@ -826,7 +973,10 @@ async fn budget_eviction_skips_in_flight_weights() {
         Arc::new(move || now_ms),
     );
     engine
-        .residency_cycle(&[big.clone() as Arc<dyn LlmWeights>, small.clone() as Arc<dyn LlmWeights>])
+        .residency_cycle(&[
+            big.clone() as Arc<dyn LlmWeights>,
+            small.clone() as Arc<dyn LlmWeights>,
+        ])
         .await
         .expect("cycle");
     assert_eq!(big.unload_count(), 0, "in-flight weights never evicted");

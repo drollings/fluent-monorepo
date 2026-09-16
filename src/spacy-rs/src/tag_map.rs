@@ -78,8 +78,9 @@ impl FromStr for TagMap {
             .split(',')
             .filter(|p| !p.is_empty())
             .map(|p| {
-                p.split_once('=')
-                    .ok_or_else(|| SpacyError::Annotation(format!("tag map entry missing '=': {p:?}")))
+                p.split_once('=').ok_or_else(|| {
+                    SpacyError::Annotation(format!("tag map entry missing '=': {p:?}"))
+                })
             })
             .collect::<Result<_, _>>()?;
         Self::from_pairs(&pairs)
@@ -88,12 +89,10 @@ impl FromStr for TagMap {
 
 impl fmt::Display for TagMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut tags: Vec<(&str, Upos)> = self.entries.iter().map(|(t, p)| (t.as_str(), *p)).collect();
+        let mut tags: Vec<(&str, Upos)> =
+            self.entries.iter().map(|(t, p)| (t.as_str(), *p)).collect();
         tags.sort_by(|a, b| a.0.cmp(b.0));
-        let pairs: Vec<String> = tags
-            .iter()
-            .map(|(t, p)| format!("{t}={p}"))
-            .collect();
+        let pairs: Vec<String> = tags.iter().map(|(t, p)| format!("{t}={p}")).collect();
         write!(f, "{}", pairs.join(","))
     }
 }

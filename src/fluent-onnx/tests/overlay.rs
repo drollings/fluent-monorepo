@@ -6,7 +6,10 @@ fn residual_kind_serde_names() {
         serde_json::to_string(&ResidualKind::Disambiguation).unwrap(),
         "\"disambiguation\""
     );
-    assert_eq!(serde_json::to_string(&ResidualKind::EntityLink).unwrap(), "\"entity_link\"");
+    assert_eq!(
+        serde_json::to_string(&ResidualKind::EntityLink).unwrap(),
+        "\"entity_link\""
+    );
 }
 
 #[test]
@@ -17,8 +20,7 @@ fn residual_and_contribution_serde_round_trip() {
         text: "show me the report".into(),
         meta: serde_json::json!({ "overall": 0.3 }),
     };
-    let back: Residual =
-        serde_json::from_str(&serde_json::to_string(&residual).unwrap()).unwrap();
+    let back: Residual = serde_json::from_str(&serde_json::to_string(&residual).unwrap()).unwrap();
     assert_eq!(back, residual);
 
     let contribution = OverlayContribution {

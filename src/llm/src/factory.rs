@@ -17,11 +17,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::catalog::{EmbeddingBackend, get_embedding_model_catalog_entry};
+use crate::catalog::{get_embedding_model_catalog_entry, EmbeddingBackend};
 use crate::embeddings::{EmbeddingError, EmbeddingProvider};
-use crate::gguf::{Device, GgufDependencies, GgufEmbedding, GgufModelOptions, ProductionGgufResolver, UnboundGgufRuntime};
+use crate::gguf::{
+    Device, GgufDependencies, GgufEmbedding, GgufModelOptions, ProductionGgufResolver,
+    UnboundGgufRuntime,
+};
 use crate::qwen::{Qwen37TextEmbedding, Qwen3VlEmbedding, QwenTextEmbeddingV4, QwenTextOptions};
-
 
 /// Factory inputs. Only the selected backend reads its own fields: `api_key`
 /// / `endpoint` feed remote Qwen, `model_cache_dir` / `device` feed local
@@ -169,8 +171,14 @@ pub fn require_compatible_embedding(
     if existing.endpoint != requested.endpoint {
         return Err(RebuildMismatch {
             field: RebuildField::Endpoint,
-            existing: existing.endpoint.clone().unwrap_or_else(|| "(default)".to_string()),
-            requested: requested.endpoint.clone().unwrap_or_else(|| "(default)".to_string()),
+            existing: existing
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "(default)".to_string()),
+            requested: requested
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "(default)".to_string()),
             rebuild_command: rebuild_command.to_string(),
         });
     }

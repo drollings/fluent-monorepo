@@ -620,11 +620,31 @@ mod tests {
     #[test]
     fn m10_search_backend_handles_carry_names_and_schema() {
         let handles: Vec<(&str, &str, std::sync::Arc<dyn Component>)> = vec![
-            ("backend.identifier", "identifier", std::sync::Arc::new(IdentifierBackend)),
-            ("backend.keyword", "keyword", std::sync::Arc::new(KeywordBackend)),
-            ("backend.concept", "concept", std::sync::Arc::new(ConceptBackend)),
-            ("backend.filepath", "filepath", std::sync::Arc::new(FilePathBackend)),
-            ("backend.general", "general", std::sync::Arc::new(GeneralBackend)),
+            (
+                "backend.identifier",
+                "identifier",
+                std::sync::Arc::new(IdentifierBackend),
+            ),
+            (
+                "backend.keyword",
+                "keyword",
+                std::sync::Arc::new(KeywordBackend),
+            ),
+            (
+                "backend.concept",
+                "concept",
+                std::sync::Arc::new(ConceptBackend),
+            ),
+            (
+                "backend.filepath",
+                "filepath",
+                std::sync::Arc::new(FilePathBackend),
+            ),
+            (
+                "backend.general",
+                "general",
+                std::sync::Arc::new(GeneralBackend),
+            ),
         ];
         for (name, backend, handle) in &handles {
             assert_eq!(handle.name(), *name);
@@ -640,7 +660,9 @@ mod tests {
         // No live SearchContext travels the handoff: execute guides back to
         // downcast-native dispatch instead of failing opaquely.
         let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
-        let err = handle.execute(&WorkContext::default()).expect_err("native-only");
+        let err = handle
+            .execute(&WorkContext::default())
+            .expect_err("native-only");
         match err {
             fluent_wvr::WorkError::Execution(message) => {
                 assert!(message.contains("downcast"), "{message}");
@@ -654,12 +676,15 @@ mod tests {
         // The uniform handle recovers the native backend: arbitration and
         // outputs stay byte-identical (no serialize round-trip).
         let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(IdentifierBackend);
-        let native =
-            fluent_wvr::component_downcast_ref::<IdentifierBackend>(handle.as_ref())
-                .expect("downcast");
+        let native = fluent_wvr::component_downcast_ref::<IdentifierBackend>(handle.as_ref())
+            .expect("downcast");
         assert!(native.matches(QueryIntent::IdentifierLookup));
         let stages = native
-            .search("helloWorld", &make_test_doc(), &ctx_with_filter(&noop_filter()))
+            .search(
+                "helloWorld",
+                &make_test_doc(),
+                &ctx_with_filter(&noop_filter()),
+            )
             .expect("search");
         assert!(!stages.is_empty());
     }

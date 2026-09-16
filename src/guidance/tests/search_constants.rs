@@ -158,7 +158,11 @@ fn m4_open_retry_schedule_table() {
     // `min(100 × 2^attempt, 1000)`, 0-based attempt. Cap binds at attempt 4.
     let expected = [100, 200, 400, 800, 1000, 1000, 1000, 1000, 1000];
     for (attempt, want) in expected.iter().enumerate() {
-        assert_eq!(open_retry_delay_ms(attempt as u32), *want, "attempt {attempt}");
+        assert_eq!(
+            open_retry_delay_ms(attempt as u32),
+            *want,
+            "attempt {attempt}"
+        );
     }
     // Cap tail: saturation holds for large attempts (no overflow, no growth).
     for attempt in [9u32, 10, 20, 31, 100, u32::MAX] {
@@ -187,7 +191,9 @@ fn m4_open_retry_matches_backoff_composition() {
 fn m4_embed_retry_constants_unchanged() {
     // index_pipeline's retry fields already compose `backoff_ms` (M4 keeps);
     // pin the values so no migration may drift them.
-    use crate::index_pipeline::{EMBED_RETRY_ATTEMPTS, EMBED_RETRY_BASE_MS, EMBED_RETRY_JITTER_PCT};
+    use crate::index_pipeline::{
+        EMBED_RETRY_ATTEMPTS, EMBED_RETRY_BASE_MS, EMBED_RETRY_JITTER_PCT,
+    };
     assert_eq!(EMBED_RETRY_ATTEMPTS, 3);
     assert_eq!(EMBED_RETRY_BASE_MS, 500);
     assert_eq!(EMBED_RETRY_JITTER_PCT, 50);

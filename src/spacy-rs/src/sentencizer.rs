@@ -110,7 +110,11 @@ impl Sentencizer {
         for (i, &guess) in guesses.iter().enumerate() {
             let token = doc.token_mut(i);
             if token.sent_start == SentStart::Unset || self.overwrite {
-                token.sent_start = if guess { SentStart::Start } else { SentStart::NotStart };
+                token.sent_start = if guess {
+                    SentStart::Start
+                } else {
+                    SentStart::NotStart
+                };
             }
         }
     }

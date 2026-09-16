@@ -177,12 +177,7 @@ impl Morphology {
     pub fn get_by_field(&self, key: u64, field: &str) -> Vec<String> {
         self.to_dict(key)
             .and_then(|dict| dict.get(field).cloned())
-            .map(|values| {
-                values
-                    .split(VALUE_SEP)
-                    .map(ToString::to_string)
-                    .collect()
-            })
+            .map(|values| values.split(VALUE_SEP).map(ToString::to_string).collect())
             .unwrap_or_default()
     }
 }

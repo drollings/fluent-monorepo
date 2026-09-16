@@ -33,8 +33,13 @@ fn qualified_model_id_bare_vs_qualified() {
 #[test]
 fn qualified_model_id_prop_roundtrip() {
     // Property: qualified(b,q).as_wire().split_once(':') == Some((b,q)) is enforced via split_model_key
-    for (b, q) in [("a","b"), ("model","inst"), ("x-1","y_2"), ("base","qualifier")] {
-        let id = QualifiedModelId::qualified(b,q);
+    for (b, q) in [
+        ("a", "b"),
+        ("model", "inst"),
+        ("x-1", "y_2"),
+        ("base", "qualifier"),
+    ] {
+        let id = QualifiedModelId::qualified(b, q);
         let wire = id.as_wire();
         let (pb, pq) = crate::config::split_model_key(&wire);
         assert_eq!(pb, b);

@@ -1,7 +1,7 @@
-use super::*;
 use super::server::{model_weights_bytes, parse_prometheus_metrics};
-use serde_json::json;
+use super::*;
 use crate::cli::CliContext;
+use serde_json::json;
 
 #[test]
 fn prometheus_parse_handles_labels_and_help() {
@@ -60,10 +60,7 @@ fn ps_weights_prefer_router_model_bytes_over_config_and_gguf() {
         "sleeping weights are not resident"
     );
     // No config, no instance → GGUF layout still resolves the file.
-    assert_eq!(
-        model_weights_bytes(&[], None, dir.path(), "swarm"),
-        4096
-    );
+    assert_eq!(model_weights_bytes(&[], None, dir.path(), "swarm"), 4096);
     // Nothing at all → 0 (never crashes).
     assert_eq!(model_weights_bytes(&[], None, dir.path(), "absent"), 0);
 }
@@ -116,7 +113,10 @@ fn ls_markdown_escapes_pipes() {
     };
     let text = render_config_listing(&listing);
     assert!(text.contains("a\\|b"), "pipes escaped, got:\n{text}");
-    assert!(text.contains("(none)"), "empty groups section marked, got:\n{text}");
+    assert!(
+        text.contains("(none)"),
+        "empty groups section marked, got:\n{text}"
+    );
 }
 
 #[test]
@@ -144,7 +144,10 @@ fn ls_json_round_trips_losslessly() {
     };
     let value = render_config_json(&listing);
     assert_eq!(value["routes"]["local"], serde_json::json!("default"));
-    assert_eq!(value["groups"]["default"], serde_json::json!(["lfm", "tiny"]));
+    assert_eq!(
+        value["groups"]["default"],
+        serde_json::json!(["lfm", "tiny"])
+    );
     assert_eq!(value["models"][0]["key"], serde_json::json!("tiny"));
     assert!(value["models"][0]["weights"].is_null());
     // And it prints as valid JSON text.
@@ -172,8 +175,7 @@ fn ls_missing_file_errors() {
 #[test]
 fn ls_lists_fixture_config_sections() {
     use crate::cli::commands::filesystem::load_listing;
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/ls_fixture.json");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ls_fixture.json");
     let listing = load_listing(&path).expect("fixture loads");
     assert_eq!(
         listing.routes,

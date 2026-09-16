@@ -35,9 +35,9 @@ use crate::pipeline_types::{
 use crate::score_matrix::ScoreMatrix;
 use crate::stages::common::{coerce_float, coerce_string, coerce_u8, extract_user_message};
 use crate::stages::tree::ClassificationEngine;
-use crate::target_match::TargetMatcher;
-use crate::target_match::GroupExpansion;
 use crate::target_match::resolve_route_to_target;
+use crate::target_match::GroupExpansion;
+use crate::target_match::TargetMatcher;
 
 pub mod action;
 pub use action::{ClassifierAction, UnknownAction};
@@ -386,10 +386,20 @@ fn resolve_routing_target(
 ) -> Result<Option<RoutingTarget>, UnknownAction> {
     let typed = ClassifierAction::from_output(output)?;
     // Guard against caller passing mismatched action string vs output.action (defensive)
-    if typed.is_respond() && action != "respond" || typed.is_route() && action != "route" || typed.is_reject() && action != "reject" {
+    if typed.is_respond() && action != "respond"
+        || typed.is_route() && action != "route"
+        || typed.is_reject() && action != "reject"
+    {
         // Still respect the typed output — the string arg is just for parity with old call sites
     }
-    Ok(try_resolve_routing_target(&typed, output, routing_config, matcher, user_text, expansion))
+    Ok(try_resolve_routing_target(
+        &typed,
+        output,
+        routing_config,
+        matcher,
+        user_text,
+        expansion,
+    ))
 }
 
 pub struct ClassifierStage {
@@ -594,49 +604,47 @@ impl ClassifierStage {
 
     /// The deterministic parsed-grammar context folded into the classifier prompt:
     /// the per-sentence interlingua ids, so the router LLM is
-/// given the parse rather than re-deriving it. Additive; never a gate.
-fn interlingua_prompt_context(
-    interlingua: &[spacy_rs::routing::InterlinguaSignal],
-) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "Parsed grammar (deterministic interlingua ids — trust these for routing):"
-    );
-    for (i, s) in interlingua.iter().enumerate() {
-        let id = |v: Option<fluent_types::InterlinguaId>| {
-            v.map_or_else(|| "null".to_string(), |id| id.as_i64().to_string())
-        };
+    /// given the parse rather than re-deriving it. Additive; never a gate.
+    fn interlingua_prompt_context(interlingua: &[spacy_rs::routing::InterlinguaSignal]) -> String {
+        use std::fmt::Write;
+        let mut out = String::new();
         let _ = writeln!(
             out,
-            "  sentence {i}: predicate_id={} subject_id={} object_id={}",
-            id(s.predicate_id),
-            id(s.subject_id),
-            id(s.direct_object_id),
+            "Parsed grammar (deterministic interlingua ids — trust these for routing):"
         );
+        for (i, s) in interlingua.iter().enumerate() {
+            let id = |v: Option<fluent_types::InterlinguaId>| {
+                v.map_or_else(|| "null".to_string(), |id| id.as_i64().to_string())
+            };
+            let _ = writeln!(
+                out,
+                "  sentence {i}: predicate_id={} subject_id={} object_id={}",
+                id(s.predicate_id),
+                id(s.subject_id),
+                id(s.direct_object_id),
+            );
+        }
+        out
     }
-    out
-}
 
-/// The overlay stage's route hints as deterministic routing context:
+    /// The overlay stage's route hints as deterministic routing context:
     /// scored route recommendations the classifier
     /// merges like the interlingua frames — a deterministic input, never a gate.
     /// Hints are already sorted highest-score-first by the overlay stage.
     pub(crate) fn route_hints_prompt_context(hints: &[crate::pipeline_types::RouteHint]) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "Route hints (deterministic overlay scores — weigh the top routes when deciding):"
-    );
-    for h in hints {
-        let _ = writeln!(out, "  - {}: {:.3}", h.route, h.score);
+        use std::fmt::Write;
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "Route hints (deterministic overlay scores — weigh the top routes when deciding):"
+        );
+        for h in hints {
+            let _ = writeln!(out, "  - {}: {:.3}", h.route, h.score);
+        }
+        out
     }
-    out
-}
 
-fn build_system_prompt(&self) -> String {
+    fn build_system_prompt(&self) -> String {
         let mut prompt = String::new();
 
         // Preamble from config — variable substitution still applies

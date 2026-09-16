@@ -69,7 +69,8 @@ pub enum RequestedRef {
 /// `model:` with an empty remainder — an explicit form misused, resolved as
 /// the bare name through the normal order).
 pub fn strip_model_prefix(name: &str) -> Option<&str> {
-    name.strip_prefix(MODEL_PREFIX).filter(|rest| !rest.is_empty())
+    name.strip_prefix(MODEL_PREFIX)
+        .filter(|rest| !rest.is_empty())
 }
 
 /// A role's KV-window/residency axis: the context sizes and residency
@@ -92,7 +93,10 @@ pub struct RoleContext {
     #[serde(default, skip_serializing_if = "RoleContext::is_false")]
     pub pinned: bool,
     /// Sibling instances sharing the profile's group (1 = single instance).
-    #[serde(default = "default_role_count", skip_serializing_if = "RoleContext::is_one")]
+    #[serde(
+        default = "default_role_count",
+        skip_serializing_if = "RoleContext::is_one"
+    )]
     pub count: u32,
 }
 
@@ -310,8 +314,7 @@ impl RoutingConfig {
                 Some(concurrency) => concurrency.max_parallel,
                 None => continue,
             };
-            let mut serving =
-                crate::config::models_serving_role(&self.roles, &self.models, role);
+            let mut serving = crate::config::models_serving_role(&self.roles, &self.models, role);
             if role == "default" {
                 let mut inherited: Vec<String> = self
                     .models
@@ -423,9 +426,7 @@ pub fn select_group_member(
     };
     let passing: Vec<&&String> = model_keys
         .iter()
-        .filter(|n| {
-            intelligence(n).is_some_and(|i| i >= min_complexity.unwrap_or(0))
-        })
+        .filter(|n| intelligence(n).is_some_and(|i| i >= min_complexity.unwrap_or(0)))
         .collect();
 
     let cost = |key: &String| {
@@ -435,7 +436,9 @@ pub fn select_group_member(
             .map_or(f64::MAX, |m| m.cost_input + m.cost_output)
     };
     let cheapest = |a: &&&String, b: &&&String| {
-        cost(a).partial_cmp(&cost(b)).unwrap_or(std::cmp::Ordering::Equal)
+        cost(a)
+            .partial_cmp(&cost(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
     };
 
     if passing.is_empty() {
@@ -556,11 +559,7 @@ impl RoutingConfig {
         }
         let member = self.resolve_route_member(route, min_complexity)?;
         let mut rt = self.target_for_key(&member)?;
-        if let Some(role) = self
-            .routes
-            .get(route)
-            .and_then(|r| r.role.clone())
-        {
+        if let Some(role) = self.routes.get(route).and_then(|r| r.role.clone()) {
             self.apply_terminal_role(&mut rt, &member, &role);
         }
         let group = self
@@ -586,9 +585,10 @@ impl RoutingConfig {
     /// ([`Self::validate_terminal_roles`], fail-closed). Requires
     /// boot-materialized pools (`apply_defaults` first).
     fn terminal_role_qualifier(&self, base: &str, role: &str) -> Result<String, String> {
-        let role_entry = self.roles.get(role).ok_or_else(|| {
-            format!("unknown role '{role}' (no roles.{role} entry)")
-        })?;
+        let role_entry = self
+            .roles
+            .get(role)
+            .ok_or_else(|| format!("unknown role '{role}' (no roles.{role} entry)"))?;
         let entry = self
             .models
             .get(base)
@@ -603,21 +603,16 @@ impl RoutingConfig {
         } else {
             // No binding: only default-inherited models serve the role (a
             // model bound nowhere inherits the `default` pool).
-            let bound_anywhere = self
-                .roles
-                .values()
-                .any(|r| r.models.contains_key(base));
+            let bound_anywhere = self.roles.values().any(|r| r.models.contains_key(base));
             if role != "default" || bound_anywhere {
                 return Err(format!("model '{base}' serves no role '{role}'"));
             }
             crate::config::root::default_inference_point(entry)
         };
-        let name = selected.ok_or_else(|| {
-            format!("role '{role}' selects no dispatch point in model '{base}'")
-        })?;
+        let name = selected
+            .ok_or_else(|| format!("role '{role}' selects no dispatch point in model '{base}'"))?;
         let found = entry.effective_pool().iter().any(|p| {
-            p.name.as_deref() == Some(name.as_str())
-                || p.group.as_deref() == Some(name.as_str())
+            p.name.as_deref() == Some(name.as_str()) || p.group.as_deref() == Some(name.as_str())
         });
         if !found {
             return Err(format!(
@@ -678,8 +673,13 @@ impl RoutingConfig {
         {
             qualified.params = Some(params);
         }
-        qualified.filter_thinking = entry
-            .filter_thinking_for(entry.resolve_thinking(role_sampling.as_ref(), override_params).as_deref(), role_sampling.as_ref(), override_params);
+        qualified.filter_thinking = entry.filter_thinking_for(
+            entry
+                .resolve_thinking(role_sampling.as_ref(), override_params)
+                .as_deref(),
+            role_sampling.as_ref(),
+            override_params,
+        );
         qualified.role = Some(role.to_string());
         *rt = qualified;
     }
@@ -722,9 +722,7 @@ impl RoutingConfig {
                     continue;
                 }
                 if let Err(reason) = self.terminal_role_qualifier(base, &role) {
-                    return Err(format!(
-                        "terminal route '{route}' role '{role}': {reason}"
-                    ));
+                    return Err(format!("terminal route '{route}' role '{role}': {reason}"));
                 }
             }
         }
@@ -838,18 +836,24 @@ impl RoutingConfig {
         // The hatch addresses the models table directly (the remainder may
         // itself be qualified): explicit addressing never falls back.
         if let Some(rest) = strip_model_prefix(route_name) {
-            return self.entry_for_key(rest).map(|entry| {
-                let name = entry.name.clone().unwrap_or_else(|| split_model_key(rest).0.to_string());
-                tracing::info!(target: "router.config", route = %route_name, model = %name,
-                    "route resolved as direct model (explicit hatch)"
-                );
-                (entry, name)
-            }).or_else(|| {
-                tracing::warn!(target: "router.config", route = %route_name,
-                    "model hatch names no models entry"
-                );
-                None
-            });
+            return self
+                .entry_for_key(rest)
+                .map(|entry| {
+                    let name = entry
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| split_model_key(rest).0.to_string());
+                    tracing::info!(target: "router.config", route = %route_name, model = %name,
+                        "route resolved as direct model (explicit hatch)"
+                    );
+                    (entry, name)
+                })
+                .or_else(|| {
+                    tracing::warn!(target: "router.config", route = %route_name,
+                        "model hatch names no models entry"
+                    );
+                    None
+                });
         }
 
         // Exact route (no default fallback here — it runs last, below).
@@ -861,7 +865,10 @@ impl RoutingConfig {
 
             let member = self.resolve_route_member(route_name, min_complexity)?;
             let entry = self.entry_for_key(&member)?;
-            let name = entry.name.clone().unwrap_or_else(|| split_model_key(&member).0.to_string());
+            let name = entry
+                .name
+                .clone()
+                .unwrap_or_else(|| split_model_key(&member).0.to_string());
             tracing::info!(target: "router.config", route = %route_name, model = %name, member = %member, "route resolved");
             return Some((entry, name));
         }
@@ -873,7 +880,10 @@ impl RoutingConfig {
                 tracing::warn!(target: "router.config", route = %route_name, member = %member, "group resolved to an onnx role (no ModelEntry)");
                 None
             })?;
-            let name = entry.name.clone().unwrap_or_else(|| split_model_key(&member).0.to_string());
+            let name = entry
+                .name
+                .clone()
+                .unwrap_or_else(|| split_model_key(&member).0.to_string());
             tracing::info!(target: "router.config", route = %route_name, model = %name, member = %member, "group resolved");
             return Some((entry, name));
         }
@@ -908,11 +918,7 @@ impl RoutingConfig {
     /// candidate keys first; availability sentinels (`last`/`any`) have no
     /// meaning on this static path (no recency/liveness) and are skipped —
     /// the dispatch climb owns them.
-    fn resolve_route_member(
-        &self,
-        route_name: &str,
-        min_complexity: Option<u8>,
-    ) -> Option<String> {
+    fn resolve_route_member(&self, route_name: &str, min_complexity: Option<u8>) -> Option<String> {
         let route_ref = self
             .routes
             .get(route_name)
@@ -923,11 +929,7 @@ impl RoutingConfig {
     /// Choose the member a model group dispatches to — the static half of
     /// [`Self::resolve_route_member`] parameterized by group, so bare group
     /// names resolve through the same rule. `None` for unknown groups.
-    pub fn resolve_group_member(
-        &self,
-        group: &str,
-        min_complexity: Option<u8>,
-    ) -> Option<String> {
+    pub fn resolve_group_member(&self, group: &str, min_complexity: Option<u8>) -> Option<String> {
         if !self.model_groups.contains_key(group) {
             tracing::warn!(target: "router.config", group = %group, "model group not found");
             return None;

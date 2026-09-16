@@ -1,11 +1,11 @@
 use super::*;
-use std::path::PathBuf;
-use fluent_concept::ConceptStore;
-use fluent_concept::InMemoryConceptStore;
 use crate::interlingua::InterlinguaResolver;
 use crate::labels::Upos;
+use fluent_concept::ConceptStore;
+use fluent_concept::InMemoryConceptStore;
 use fluent_wvr::{CapabilitySet, Runtime};
 use serde_json::json;
+use std::path::PathBuf;
 
 fn rt() -> Arc<dyn Runtime> {
     fluent_concurrency::tokio_runtime()
@@ -54,7 +54,9 @@ fn strings_persist_across_restart() {
     // First "process run": annotate, then persist the grown string store.
     {
         let pipe = NlpPipeline::en_default().expect("first boot");
-        let doc = pipe.process_sync("The cat sat on the mat.", None).expect("process");
+        let doc = pipe
+            .process_sync("The cat sat on the mat.", None)
+            .expect("process");
         assert!(!doc.is_empty());
         pipe.persist_strings(&strings_path).expect("persist");
     }
@@ -62,10 +64,15 @@ fn strings_persist_across_restart() {
     // "Restart": a fresh pipeline pre-loads the same store, so the lemma
     // strings interned in the first run resolve again.
     let pipe = NlpPipeline::en_default_with_strings(&strings_path).expect("second boot");
-    let doc = pipe.process_sync("The cat sat on the mat.", None).expect("process");
+    let doc = pipe
+        .process_sync("The cat sat on the mat.", None)
+        .expect("process");
     assert!(!doc.is_empty());
     let store = pipe.vocab().strings();
-    assert!(store.contains("cat"), "lemma interned in run 1 survives restart");
+    assert!(
+        store.contains("cat"),
+        "lemma interned in run 1 survives restart"
+    );
     assert!(store.contains("the"));
     assert!(store.contains("mat"));
 }
@@ -383,7 +390,9 @@ fn stub_fetch_sync(reply: String) -> LlmFetchSync {
 #[test]
 fn process_sync_deterministic_star_parse() {
     let pipeline = en_pipeline();
-    let doc = pipeline.process_sync("show me the report", None).expect("sync");
+    let doc = pipeline
+        .process_sync("show me the report", None)
+        .expect("sync");
     assert_eq!(doc.len(), 4);
     // Attached + sentence boundaries set → extractable signal. The parser
     // rung detects "show" as the verb predicate and "report" (the theme,
@@ -402,7 +411,9 @@ fn process_sync_attempts_llm_rung_and_falls_back_on_failure() {
     // A fetch that returns garbage → the sync ladder falls back to the
     // deterministic parser without erroring.
     let bad = stub_fetch_sync("not json".into());
-    let doc = pipeline.process_sync("show me the report", Some(&bad)).expect("sync");
+    let doc = pipeline
+        .process_sync("show me the report", Some(&bad))
+        .expect("sync");
     assert_eq!(signals_of(&doc)[0].predicate, "show");
 }
 
@@ -468,7 +479,12 @@ fn stub_encoder() -> EncoderFetchSync {
 fn encoder_rung_wins_when_present_and_gate_passes() {
     let pipeline = en_pipeline();
     let (doc, annotation) = pipeline
-        .process_sync_with_confidence("show me the report", None, Some(&stub_encoder()), llm_first_policy())
+        .process_sync_with_confidence(
+            "show me the report",
+            None,
+            Some(&stub_encoder()),
+            llm_first_policy(),
+        )
         .expect("sync");
     assert_eq!(annotation.source(), AnnotationSource::Encoder);
     // The encoder's star parse is attached (record count matches the doc).
@@ -478,11 +494,15 @@ fn encoder_rung_wins_when_present_and_gate_passes() {
 #[test]
 fn encoder_error_falls_back_to_arceager_never_empty() {
     let pipeline = en_pipeline();
-    let failing: EncoderFetchSync = Arc::new(|_doc: &Doc| {
-        Err(AnnotateError::Encoder("no trained head".into()))
-    });
+    let failing: EncoderFetchSync =
+        Arc::new(|_doc: &Doc| Err(AnnotateError::Encoder("no trained head".into())));
     let (doc, annotation) = pipeline
-        .process_sync_with_confidence("show me the report", None, Some(&failing), RefinePolicy::default())
+        .process_sync_with_confidence(
+            "show me the report",
+            None,
+            Some(&failing),
+            RefinePolicy::default(),
+        )
         .expect("sync");
     // The encoder failing is NOT an annotation error — the ladder falls through
     // to the deterministic parser (never empty, never the rule star).
@@ -516,7 +536,12 @@ fn encoder_gate_rejection_falls_back_to_arceager() {
         Ok(AnnotationSet(records))
     });
     let (_, annotation) = pipeline
-        .process_sync_with_confidence("show me the report", None, Some(&bad), RefinePolicy::default())
+        .process_sync_with_confidence(
+            "show me the report",
+            None,
+            Some(&bad),
+            RefinePolicy::default(),
+        )
         .expect("sync");
     assert_eq!(annotation.source(), AnnotationSource::ArcEager);
 }
@@ -553,7 +578,12 @@ fn ladder_ordering_llm_then_encoder_then_arceager() {
     let bad_fetch: LlmFetchSync =
         Arc::new(|_tokens: Vec<String>| Err(AnnotateError::Fetch("boom".into())));
     let (_, b) = pipeline
-        .process_sync_with_confidence("show me the report", Some(&bad_fetch), Some(&encoder), llm_first_policy())
+        .process_sync_with_confidence(
+            "show me the report",
+            Some(&bad_fetch),
+            Some(&encoder),
+            llm_first_policy(),
+        )
         .expect("sync");
     assert_eq!(
         b.source(),
@@ -679,7 +709,10 @@ async fn frame_stage_runs_between_attach_and_resolve_in_the_dag() {
 async fn resolver_stage_graph_includes_the_frame_stage() {
     let (pipe, _store) = en_pipeline_with_resolver();
     let names = pipe.stages().stage_names();
-    assert!(names.contains(&"frame".to_string()), "frame wired with a resolver");
+    assert!(
+        names.contains(&"frame".to_string()),
+        "frame wired with a resolver"
+    );
     assert!(names.contains(&"resolve".to_string()));
     // The default (resolver-less) pipeline has no frame stage.
     let plain = en_pipeline();
@@ -707,28 +740,45 @@ async fn resolve_stage_stamps_ids_and_never_writes_the_store() {
     // The doc still extracts routing signals with interlingua frames.
     let signals = crate::routing::extract_routing_signals(&doc);
     assert_eq!(signals.len(), 1);
-    assert!(signals[0].interlingua.as_ref().unwrap().predicate_id.is_some());
+    assert!(signals[0]
+        .interlingua
+        .as_ref()
+        .unwrap()
+        .predicate_id
+        .is_some());
 }
 
 #[test]
 fn process_sync_resolves_after_attach() {
     let (pipe, _store) = en_pipeline_with_resolver();
-    let doc = pipe
-        .process_sync("show me the report", None)
-        .expect("sync");
+    let doc = pipe.process_sync("show me the report", None).expect("sync");
     // The sync path resolves after attach + sentencize (§11.8).
     for i in 0..doc.len() {
-        assert!(doc.token(i).interlingua_lemma_id.is_some(), "token {i} stamped");
+        assert!(
+            doc.token(i).interlingua_lemma_id.is_some(),
+            "token {i} stamped"
+        );
     }
     let signals = signals_of(&doc);
-    assert_eq!(signals[0].interlingua.as_ref().unwrap().token_ids.len(), doc.len());
+    assert_eq!(
+        signals[0].interlingua.as_ref().unwrap().token_ids.len(),
+        doc.len()
+    );
 }
 
 #[tokio::test]
 async fn batch_resolves_each_doc_via_shared_resolver() {
     let (pipe, _store) = en_pipeline_with_resolver();
     let docs = pipe
-        .annotate_batch_async(&["buy apple", "sell stock"], None, None, rt(), 2, 8, RefinePolicy::default())
+        .annotate_batch_async(
+            &["buy apple", "sell stock"],
+            None,
+            None,
+            rt(),
+            2,
+            8,
+            RefinePolicy::default(),
+        )
         .await
         .expect("batch");
     assert_eq!(docs.len(), 2);
@@ -774,21 +824,18 @@ fn encoder_source_rides_like_arc_eager() {
     // M4: the trained-encoder rung's provenance flows through the same
     // confidence shape as ArcEager (the router's `confidence_summary` fills
     // the Encoder arm from `ParseConfidence` when present).
-    let result = AnnotationResult::new(
-        AnnotationSet::default(),
-        AnnotationSource::Encoder,
-    )
-    .with_confidence(
-        Some(vec![0.4, 0.9]),
-        Some(crate::arc_eager::ParseConfidence {
-            overall: 0.6,
-            token_scores: vec![0.4, 0.9],
-            role_coverage: 0.5,
-            oracle_tie_count: 1,
-            oracle_margins: vec![0.0, 1.0],
-            semantic_plausibility: None,
-        }),
-    );
+    let result = AnnotationResult::new(AnnotationSet::default(), AnnotationSource::Encoder)
+        .with_confidence(
+            Some(vec![0.4, 0.9]),
+            Some(crate::arc_eager::ParseConfidence {
+                overall: 0.6,
+                token_scores: vec![0.4, 0.9],
+                role_coverage: 0.5,
+                oracle_tie_count: 1,
+                oracle_margins: vec![0.0, 1.0],
+                semantic_plausibility: None,
+            }),
+        );
     assert_eq!(result.source(), AnnotationSource::Encoder);
     assert_eq!(result.token_confidence(), Some(&[0.4, 0.9][..]));
     let pc = result.parse_confidence.as_ref().expect("parse confidence");
@@ -806,7 +853,12 @@ fn ladder_is_deterministic_first_base_wins() {
         panic!("fetch must not be called when the deterministic base wins")
     });
     let (_, annotation) = pipeline
-        .process_sync_with_confidence("The cat sat on the mat.", Some(&fetch), None, RefinePolicy::default())
+        .process_sync_with_confidence(
+            "The cat sat on the mat.",
+            Some(&fetch),
+            None,
+            RefinePolicy::default(),
+        )
         .expect("sync");
     assert_eq!(annotation.source(), AnnotationSource::ArcEager);
 }
@@ -820,7 +872,12 @@ fn refine_off_is_deterministic_only() {
         panic!("fetch must not be called under RefinePolicy::Off")
     });
     let (_, annotation) = pipeline
-        .process_sync_with_confidence("The cat sat on the mat.", Some(&fetch), None, RefinePolicy::default())
+        .process_sync_with_confidence(
+            "The cat sat on the mat.",
+            Some(&fetch),
+            None,
+            RefinePolicy::default(),
+        )
         .expect("sync");
     assert_eq!(annotation.source(), AnnotationSource::ArcEager);
 }
@@ -881,12 +938,7 @@ fn async_sync_ladder_agree_on_ordering() {
     // Both paths with Off policy → ArcEager (no refiners run).
     let async_result = tokio::runtime::Runtime::new()
         .expect("runtime")
-        .block_on(pipeline.process_async(
-            "show me the report",
-            None,
-            rt(),
-            caps(),
-        ));
+        .block_on(pipeline.process_async("show me the report", None, rt(), caps()));
     let sync_result = pipeline.process_sync("show me the report", None);
     match (async_result, sync_result) {
         (Ok(async_doc), Ok(sync_doc)) => {
@@ -940,10 +992,7 @@ fn signal_with_ids(
     }
 }
 
-fn routing_with(
-    subject: Option<&str>,
-    direct_object: Option<&str>,
-) -> RoutingSignal {
+fn routing_with(subject: Option<&str>, direct_object: Option<&str>) -> RoutingSignal {
     RoutingSignal {
         sentence: String::new(),
         predicate: "run".into(),
@@ -1279,7 +1328,11 @@ fn refine_focus_includes_all_trigger_kinds() {
         ..RefinePolicy::default()
     };
     let focus = refine_focus(&base, &signal, policy);
-    assert_eq!(focus, vec![0, 1, 3], "low score, near-tie margin, unresolved token");
+    assert_eq!(
+        focus,
+        vec![0, 1, 3],
+        "low score, near-tie margin, unresolved token"
+    );
     assert!(
         !focus.contains(&2),
         "confident + routing-resolved token is not in focus"
@@ -1304,7 +1357,10 @@ fn refine_focus_unresolved_tokens_gated_by_task_value_flags() {
         ..RefinePolicy::default()
     };
     let focus = refine_focus(&base, &signal, policy);
-    assert!(focus.is_empty(), "task-value flags off → unresolved tokens not focused");
+    assert!(
+        focus.is_empty(),
+        "task-value flags off → unresolved tokens not focused"
+    );
 }
 
 #[test]
@@ -1332,8 +1388,11 @@ fn frame_coverage_is_monotonic() {
     // Resolving an additional critical role never lowers coverage.
     let none = signal_with_ids(None, None, None);
     let pred = signal_with_ids(Some(InterlinguaId::from_u64(1)), None, None);
-    let pred_subj =
-        signal_with_ids(Some(InterlinguaId::from_u64(1)), Some(InterlinguaId::from_u64(2)), None);
+    let pred_subj = signal_with_ids(
+        Some(InterlinguaId::from_u64(1)),
+        Some(InterlinguaId::from_u64(2)),
+        None,
+    );
     let all = signal_with_ids(
         Some(InterlinguaId::from_u64(1)),
         Some(InterlinguaId::from_u64(2)),
@@ -1740,7 +1799,12 @@ fn refine_reason_metrics_snapshot_counts_per_reason() {
         refine_on_unresolved_critical_role: false,
         ..RefinePolicy::default()
     };
-    metrics.record(refine_reason(&base_high, &resolved, &routing_none, policy_always));
+    metrics.record(refine_reason(
+        &base_high,
+        &resolved,
+        &routing_none,
+        policy_always,
+    ));
     metrics.record(refine_reason(
         &base_low,
         &resolved,
@@ -1785,7 +1849,11 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
     sig_one.token_ids = vec![InterlinguaId::from_u64(1)];
     let routing_none = routing_with(None, None);
     let r1 = refine_reason(&base_low, &sig_one, &routing_none, policy);
-    let r1_agg = refine_reason_aggregated(&base_low, &[(routing_none.clone(), sig_one.clone())], policy);
+    let r1_agg = refine_reason_aggregated(
+        &base_low,
+        &[(routing_none.clone(), sig_one.clone())],
+        policy,
+    );
     assert_eq!(r1, r1_agg);
 
     // NoTrigger (confident, resolved)
@@ -1801,14 +1869,22 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
     };
     let routing_some = routing_with(Some("cat"), Some("mat"));
     let r2 = refine_reason(&base_high, &sig_resolved, &routing_some, policy);
-    let r2_agg = refine_reason_aggregated(&base_high, &[(routing_some.clone(), sig_resolved.clone())], policy);
+    let r2_agg = refine_reason_aggregated(
+        &base_high,
+        &[(routing_some.clone(), sig_resolved.clone())],
+        policy,
+    );
     assert_eq!(r2, r2_agg);
     assert_eq!(r2, RefineReason::NoTrigger);
 
     // UnresolvedRole
     let sig_unresolved = signal_with_ids(None, None, None);
     let r3 = refine_reason(&base_high, &sig_unresolved, &routing_some, policy);
-    let r3_agg = refine_reason_aggregated(&base_high, &[(routing_some.clone(), sig_unresolved.clone())], policy);
+    let r3_agg = refine_reason_aggregated(
+        &base_high,
+        &[(routing_some.clone(), sig_unresolved.clone())],
+        policy,
+    );
     assert_eq!(r3, r3_agg);
 
     // UnresolvedPropn
@@ -1822,7 +1898,11 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
         confidence: None,
     };
     let r4 = refine_reason(&base_high, &sig_propn, &routing_none, policy);
-    let r4_agg = refine_reason_aggregated(&base_high, &[(routing_none.clone(), sig_propn.clone())], policy);
+    let r4_agg = refine_reason_aggregated(
+        &base_high,
+        &[(routing_none.clone(), sig_propn.clone())],
+        policy,
+    );
     assert_eq!(r4, r4_agg);
 
     // Collision
@@ -1831,7 +1911,11 @@ fn refine_reason_single_equals_aggregated_for_one_sentence() {
     let mut sig_coll = sig.clone();
     sig_coll.token_ids = vec![InterlinguaId::from_u64(1)];
     let r5 = refine_reason(&base_coll, &sig_coll, &routing_none, policy);
-    let r5_agg = refine_reason_aggregated(&base_coll, &[(routing_none.clone(), sig_coll.clone())], policy);
+    let r5_agg = refine_reason_aggregated(
+        &base_coll,
+        &[(routing_none.clone(), sig_coll.clone())],
+        policy,
+    );
     assert_eq!(r5, r5_agg);
 }
 
@@ -1848,7 +1932,11 @@ fn refine_reason_aggregated_propn_is_document_wide() {
         direct_object_id: Some(InterlinguaId::from_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(1), InterlinguaId::from_u64(2), InterlinguaId::from_u64(0)],
+        token_ids: vec![
+            InterlinguaId::from_u64(1),
+            InterlinguaId::from_u64(2),
+            InterlinguaId::from_u64(0),
+        ],
         confidence: None,
     };
     let sig_b = InterlinguaSignal {
@@ -1857,7 +1945,11 @@ fn refine_reason_aggregated_propn_is_document_wide() {
         direct_object_id: Some(InterlinguaId::from_u64(31)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(1), InterlinguaId::from_u64(2), InterlinguaId::from_u64(0)],
+        token_ids: vec![
+            InterlinguaId::from_u64(1),
+            InterlinguaId::from_u64(2),
+            InterlinguaId::from_u64(0),
+        ],
         confidence: None,
     };
     let routing_none = routing_with(None, None);
@@ -1869,10 +1961,20 @@ fn refine_reason_aggregated_propn_is_document_wide() {
         ..RefinePolicy::default()
     };
     // Single-sentence: 1/3 =33% <40% -> NoTrigger
-    assert_eq!(refine_reason(&base, &sig_a, &routing_none, policy), RefineReason::NoTrigger);
+    assert_eq!(
+        refine_reason(&base, &sig_a, &routing_none, policy),
+        RefineReason::NoTrigger
+    );
     // Aggregated doc-wide: 2/6=33% <40% -> also NoTrigger (document-wide)
     assert_eq!(
-        refine_reason_aggregated(&base, &[(routing_none.clone(), sig_a.clone()), (routing_none.clone(), sig_b.clone())], policy),
+        refine_reason_aggregated(
+            &base,
+            &[
+                (routing_none.clone(), sig_a.clone()),
+                (routing_none.clone(), sig_b.clone())
+            ],
+            policy
+        ),
         RefineReason::NoTrigger
     );
     // Now 2 unresolved out of 3 per sentence =66% >40% -> single triggers
@@ -1882,7 +1984,11 @@ fn refine_reason_aggregated_propn_is_document_wide() {
         direct_object_id: Some(InterlinguaId::from_u64(30)),
         indirect_object_id: None,
         concept_ids: vec![],
-        token_ids: vec![InterlinguaId::from_u64(0), InterlinguaId::from_u64(0), InterlinguaId::from_u64(1)],
+        token_ids: vec![
+            InterlinguaId::from_u64(0),
+            InterlinguaId::from_u64(0),
+            InterlinguaId::from_u64(1),
+        ],
         confidence: None,
     };
     assert_eq!(
@@ -1893,7 +1999,10 @@ fn refine_reason_aggregated_propn_is_document_wide() {
     assert_eq!(
         refine_reason_aggregated(
             &base,
-            &[(routing_none.clone(), sig_high.clone()), (routing_none.clone(), sig_high.clone())],
+            &[
+                (routing_none.clone(), sig_high.clone()),
+                (routing_none.clone(), sig_high.clone())
+            ],
             policy
         ),
         RefineReason::TaskValue(TaskValueReason::UnresolvedPropn)
@@ -1908,10 +2017,7 @@ fn llm_refiner_accepts_when_gate_passes() {
     let doc = pipeline
         .process_sync("show me the report", None)
         .expect("tokenize");
-    let base = AnnotationResult::new(
-        AnnotationSet::default(),
-        AnnotationSource::ArcEager,
-    );
+    let base = AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager);
     let fetch: LlmFetch = Arc::new(move |_tokens: Vec<String>| {
         let reply = r#"[
             {"text":"show","pos":"verb","dep":"root","head":0,"lemma":"show"},
@@ -1937,10 +2043,7 @@ fn llm_refiner_returns_none_when_gate_rejects() {
     let doc = pipeline
         .process_sync("show me the report", None)
         .expect("tokenize");
-    let base = AnnotationResult::new(
-        AnnotationSet::default(),
-        AnnotationSource::ArcEager,
-    );
+    let base = AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager);
     // A set that fails check 1 (text mismatch) → gate rejects → Ok(None).
     let fetch: LlmFetch = Arc::new(move |tokens: Vec<String>| {
         let n = tokens.len();
@@ -1972,10 +2075,7 @@ fn encoder_refiner_accepts_when_gate_passes() {
     let doc = pipeline
         .process_sync("show me the report", None)
         .expect("tokenize");
-    let base = AnnotationResult::new(
-        AnnotationSet::default(),
-        AnnotationSource::ArcEager,
-    );
+    let base = AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager);
     let rung = EncoderRung::new(stub_encoder(), Arc::new(pipeline.validator().clone()));
     let refiner = rung.into_refiner();
     let result = tokio::runtime::Runtime::new()
@@ -1991,22 +2091,14 @@ fn encoder_refiner_returns_none_when_gate_rejects() {
     let doc = pipeline
         .process_sync("show me the report", None)
         .expect("tokenize");
-    let base = AnnotationResult::new(
-        AnnotationSet::default(),
-        AnnotationSource::ArcEager,
-    );
+    let base = AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager);
     let bad: EncoderFetchSync = Arc::new(|doc: &Doc| {
         let records: Vec<AnnotationRecord> = (0..doc.len())
             .map(|i| AnnotationRecord {
                 text: format!("mismatch-{i}"),
                 pos: "x".into(),
                 tag: String::new(),
-                dep: if i + 1 == doc.len() {
-                    "root"
-                } else {
-                    "dep"
-                }
-                .into(),
+                dep: if i + 1 == doc.len() { "root" } else { "dep" }.into(),
                 head: if i + 1 == doc.len() {
                     0
                 } else {
@@ -2028,17 +2120,13 @@ fn encoder_refiner_returns_none_when_gate_rejects() {
     assert!(result.expect("ok").is_none(), "gate rejects → Ok(None)");
 }
 
-
 // ── M2: span-scoped (focused) LLM refinement ──
 
 use crate::review::{Correction, CorrectionField};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A focused-fetch stub returning a canned corrections reply, counting calls.
-fn focused_fetch(
-    reply: &'static str,
-    calls: Arc<AtomicUsize>,
-) -> LlmRefineFetchSync {
+fn focused_fetch(reply: &'static str, calls: Arc<AtomicUsize>) -> LlmRefineFetchSync {
     Arc::new(move |_req: LlmRefineRequest| {
         calls.fetch_add(1, Ordering::SeqCst);
         Ok(reply.to_string())
@@ -2083,11 +2171,13 @@ fn llm_refine_only_touches_focus() {
     let refined = block_on_refine(rung, &doc, &base, &[2]).expect("focused correction adopted");
     assert_eq!(refined.records().records()[2].lemma, "teh");
     assert_eq!(
-        refined.records().records()[3].lemma, base.records().records()[3].lemma,
+        refined.records().records()[3].lemma,
+        base.records().records()[3].lemma,
         "out-of-focus records are untouched"
     );
     assert_eq!(
-        refined.records().records()[0].lemma, base.records().records()[0].lemma,
+        refined.records().records()[0].lemma,
+        base.records().records()[0].lemma,
         "out-of-focus records are untouched"
     );
 }
@@ -2144,11 +2234,18 @@ fn llm_refine_empty_corrections_keeps_base() {
     // An empty focus never consults the model at all (the base stands).
     let calls = Arc::new(AtomicUsize::new(0));
     let rung = LlmRefineRung::new(
-        focused_fetch(r#"{"corrections":[{"token_index":0,"field":"lemma","new_value":"x"}]}"#, calls.clone()),
+        focused_fetch(
+            r#"{"corrections":[{"token_index":0,"field":"lemma","new_value":"x"}]}"#,
+            calls.clone(),
+        ),
         Arc::new(pipeline.validator().clone()),
     );
     assert!(block_on_refine(rung, &doc, &base, &[]).is_none());
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "empty focus → no model call");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "empty focus → no model call"
+    );
 }
 
 /// M9.1: corrections that are all out of focus scope to the empty set, so
@@ -2201,14 +2298,20 @@ fn llm_refine_frame_regression_keeps_base() {
     let (_, result) = pipeline
         .process_sync_with_refine("show me the report", None, None, &seams, None, policy)
         .expect("sync");
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "focused refiner was consulted");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "focused refiner was consulted"
+    );
     assert_eq!(
         result.source(),
         AnnotationSource::ArcEager,
         "valid but coverage-regressing refinement → base kept"
     );
     let signals = crate::routing::extract_routing_signals(
-        &pipeline.process_sync("show me the report", None).expect("sync"),
+        &pipeline
+            .process_sync("show me the report", None)
+            .expect("sync"),
     );
     assert!(
         signals[0].direct_object.is_some(),
@@ -2298,11 +2401,17 @@ fn encoder_residual_empty_focus_or_error_keeps_base() {
         Err(AnnotateError::Encoder("no residual head".into()))
     });
     let rung = EncoderResidualRung::new(failing, Arc::new(pipeline.validator().clone()));
-    assert!(block_on_refine(rung, &doc, &base, &[1]).is_none(), "error → base kept");
+    assert!(
+        block_on_refine(rung, &doc, &base, &[1]).is_none(),
+        "error → base kept"
+    );
 
     let ok: EncoderResidualFetch = Arc::new(|_doc: &Doc, _focus: &[usize]| Ok(vec![]));
     let rung = EncoderResidualRung::new(ok, Arc::new(pipeline.validator().clone()));
-    assert!(block_on_refine(rung, &doc, &base, &[1]).is_none(), "no residual → base kept");
+    assert!(
+        block_on_refine(rung, &doc, &base, &[1]).is_none(),
+        "no residual → base kept"
+    );
 }
 
 // ── M2.4: slot selection is decided in exactly one place ──
@@ -2326,12 +2435,22 @@ fn refine_slots_selects_focused_for_on_uncertain_and_full_for_always() {
     );
     // No focused seam ⇒ fall back to the full adapter (never nothing).
     assert_eq!(
-        refine_slots(&RefineSeams::default(), false, true, RefineMode::OnUncertain),
+        refine_slots(
+            &RefineSeams::default(),
+            false,
+            true,
+            RefineMode::OnUncertain
+        ),
         (EncoderSlot::Off, LlmSlot::Full)
     );
     // Nothing wired ⇒ no refiners.
     assert_eq!(
-        refine_slots(&RefineSeams::default(), false, false, RefineMode::OnUncertain),
+        refine_slots(
+            &RefineSeams::default(),
+            false,
+            false,
+            RefineMode::OnUncertain
+        ),
         (EncoderSlot::Off, LlmSlot::Off)
     );
 }
@@ -2359,11 +2478,26 @@ fn always_policy_ignores_focused_seams_and_uses_full_reannotation() {
         ..RefineSeams::default()
     };
     let (_, result) = pipeline
-        .process_sync_with_refine("show me the report", Some(&fetch), None, &seams, None, llm_first_policy())
+        .process_sync_with_refine(
+            "show me the report",
+            Some(&fetch),
+            None,
+            &seams,
+            None,
+            llm_first_policy(),
+        )
         .expect("sync");
     assert_eq!(result.source(), AnnotationSource::Llm);
-    assert_eq!(focused_calls.load(Ordering::SeqCst), 0, "Always runs the full adapter");
-    assert_eq!(result.records().records()[1].dep, "dobj", "full reply adopted");
+    assert_eq!(
+        focused_calls.load(Ordering::SeqCst),
+        0,
+        "Always runs the full adapter"
+    );
+    assert_eq!(
+        result.records().records()[1].dep,
+        "dobj",
+        "full reply adopted"
+    );
 }
 
 // ── M6.1: span-level cache (amortized detail cache, M2b seam) ──
@@ -2417,18 +2551,36 @@ fn span_cache_hit_avoids_llm_call() {
     let (_, r2) = pipeline
         .process_sync_with_refine("show me the report", None, None, &seams, None, policy)
         .expect("sync");
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "cache hit avoids second LLM call");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "cache hit avoids second LLM call"
+    );
     assert_eq!(r1.records().records()[1].pos, r2.records().records()[1].pos);
     // Invalidate through the correction-index contract → next call re-consults.
-    let doc = pipeline.tokenizer.tokenize("show me the report").expect("tokenize");
+    let doc = pipeline
+        .tokenizer
+        .tokenize("show me the report")
+        .expect("tokenize");
     let focus = refine_focus(
         &r1,
-        &crate::routing::extract_routing_signals(&pipeline.process_sync("show me the report", None).expect("sync"))
-            .into_iter().next().and_then(|s| s.interlingua)
-            .unwrap_or_else(|| crate::routing::InterlinguaSignal {
-                predicate_id: None, subject_id: None, direct_object_id: None,
-                indirect_object_id: None, concept_ids: vec![], token_ids: vec![], confidence: None,
-            }),
+        &crate::routing::extract_routing_signals(
+            &pipeline
+                .process_sync("show me the report", None)
+                .expect("sync"),
+        )
+        .into_iter()
+        .next()
+        .and_then(|s| s.interlingua)
+        .unwrap_or_else(|| crate::routing::InterlinguaSignal {
+            predicate_id: None,
+            subject_id: None,
+            direct_object_id: None,
+            indirect_object_id: None,
+            concept_ids: vec![],
+            token_ids: vec![],
+            confidence: None,
+        }),
         policy,
     );
     // Direct invalidation (simulates CorrectionIndex write).
@@ -2436,7 +2588,11 @@ fn span_cache_hit_avoids_llm_call() {
     let (_, _r3) = pipeline
         .process_sync_with_refine("show me the report", None, None, &seams, None, policy)
         .expect("sync");
-    assert_eq!(calls.load(Ordering::SeqCst), 2, "invalidated → model re-consulted");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "invalidated → model re-consulted"
+    );
 }
 
 #[test]
@@ -2460,8 +2616,9 @@ fn span_cache_write_through_on_hit_and_gate() {
 
 #[test]
 fn genesis_promotes_after_threshold_and_overrides_rule() {
-    let genesis: std::sync::Arc<dyn crate::lang::genesis::GenesisIndex> =
-        std::sync::Arc::new(crate::lang::genesis::InMemoryGenesisIndex::with_threshold(2));
+    let genesis: std::sync::Arc<dyn crate::lang::genesis::GenesisIndex> = std::sync::Arc::new(
+        crate::lang::genesis::InMemoryGenesisIndex::with_threshold(2),
+    );
     // A pipeline with genesis wired: the rule annotator consults it.
     let mut pipe = en_pipeline();
     // Manually wire genesis (with_genesis rebuilds the rule).
@@ -2522,11 +2679,7 @@ fn sync_hot_path_does_not_reconstruct_base() {
             RefinePolicy::default(),
         )
         .expect("sync");
-    assert_eq!(
-        reason_off,
-        RefineReason::NoTrigger,
-        "Off must be NoTrigger"
-    );
+    assert_eq!(reason_off, RefineReason::NoTrigger, "Off must be NoTrigger");
 }
 
 #[test]
@@ -2553,18 +2706,30 @@ fn async_sync_refine_agree() {
     }
     fn adopt_single_final(base_cov: f64, refined_covs: &[Option<f64>]) -> Option<usize> {
         // Old sync logic: first_accept_in_order_sync picks first Some, then single check.
-        let first = refined_covs.iter().enumerate().find_map(|(i, c)| c.map(|_| i));
+        let first = refined_covs
+            .iter()
+            .enumerate()
+            .find_map(|(i, c)| c.map(|_| i));
         match first {
             Some(idx) => {
                 let c = refined_covs[idx].unwrap();
-                if c >= base_cov { Some(idx) } else { None }
+                if c >= base_cov {
+                    Some(idx)
+                } else {
+                    None
+                }
             }
             None => None,
         }
     }
 
     // Fuzz over base signals / confidence / policies that exercise every axis.
-    let base_cases: Vec<(ParseConfidence, InterlinguaSignal, RoutingSignal, RefinePolicy)> = vec![
+    let base_cases: Vec<(
+        ParseConfidence,
+        InterlinguaSignal,
+        RoutingSignal,
+        RefinePolicy,
+    )> = vec![
         // Always -> always refine, confidence high, role resolved.
         (
             ParseConfidence {
@@ -2601,7 +2766,10 @@ fn async_sync_refine_agree() {
                 heads: vec![],
                 interlingua: None,
             },
-            RefinePolicy { mode: RefineMode::Always, ..RefinePolicy::default() },
+            RefinePolicy {
+                mode: RefineMode::Always,
+                ..RefinePolicy::default()
+            },
         ),
         // Off -> never refine, low confidence still no trigger.
         (
@@ -2639,7 +2807,10 @@ fn async_sync_refine_agree() {
                 heads: vec![],
                 interlingua: None,
             },
-            RefinePolicy { mode: RefineMode::Off, ..RefinePolicy::default() },
+            RefinePolicy {
+                mode: RefineMode::Off,
+                ..RefinePolicy::default()
+            },
         ),
         // OnUncertain triggered by low overall (confidence axis)
         (
@@ -2677,7 +2848,11 @@ fn async_sync_refine_agree() {
                 heads: vec![],
                 interlingua: None,
             },
-            RefinePolicy { mode: RefineMode::OnUncertain, min_overall: 0.7, ..RefinePolicy::default() },
+            RefinePolicy {
+                mode: RefineMode::OnUncertain,
+                min_overall: 0.7,
+                ..RefinePolicy::default()
+            },
         ),
         // OnUncertain triggered by unresolved critical role (task-value axis)
         (
@@ -2715,7 +2890,10 @@ fn async_sync_refine_agree() {
                 heads: vec![],
                 interlingua: None,
             },
-            RefinePolicy { mode: RefineMode::OnUncertain, ..RefinePolicy::default() },
+            RefinePolicy {
+                mode: RefineMode::OnUncertain,
+                ..RefinePolicy::default()
+            },
         ),
         // OnUncertain triggered by unresolved propn fraction > threshold (task-value)
         (
@@ -2759,7 +2937,10 @@ fn async_sync_refine_agree() {
                 heads: vec![],
                 interlingua: None,
             },
-            RefinePolicy { mode: RefineMode::OnUncertain, ..RefinePolicy::default() },
+            RefinePolicy {
+                mode: RefineMode::OnUncertain,
+                ..RefinePolicy::default()
+            },
         ),
         // No trigger: confident and fully resolved
         (
@@ -2797,7 +2978,10 @@ fn async_sync_refine_agree() {
                 heads: vec![],
                 interlingua: None,
             },
-            RefinePolicy { mode: RefineMode::OnUncertain, ..RefinePolicy::default() },
+            RefinePolicy {
+                mode: RefineMode::OnUncertain,
+                ..RefinePolicy::default()
+            },
         ),
     ];
 
@@ -2818,7 +3002,10 @@ fn async_sync_refine_agree() {
         // Simulate two stub refiners: first regresses, second improves.
         // Use synthetic coverages relative to base (regress = -0.33, improve = +0.33 clamped).
         let base_cov = frame_coverage_signal(&signal);
-        let refined_covs = vec![Some((base_cov - 0.34).max(0.0)), Some((base_cov + 0.34).min(1.0))];
+        let refined_covs = vec![
+            Some((base_cov - 0.34).max(0.0)),
+            Some((base_cov + 0.34).min(1.0)),
+        ];
 
         let per_refiner = adopt_per_refiner(base_cov, &refined_covs);
         let single_final = adopt_single_final(base_cov, &refined_covs);
@@ -2860,7 +3047,10 @@ fn async_sync_refine_agree() {
         // ladders must share after the F3 fix — so sync and async agree.
         let sync_adopt = per_refiner;
         let async_adopt = per_refiner;
-        assert_eq!(sync_adopt, async_adopt, "sync and async must make same adoption decision");
+        assert_eq!(
+            sync_adopt, async_adopt,
+            "sync and async must make same adoption decision"
+        );
     }
 
     // Live ladder integration: verify that an actual NlpPipeline with a regressing
@@ -2871,10 +3061,10 @@ fn async_sync_refine_agree() {
         // needs the real ArcEager base parse, whose function-word categories
         // come from the language config — an empty config leaves every word
         // an uncategorized nominal and the coverage comparison is vacuous.
-        let vocab = std::sync::Arc::new(crate::vocab::Vocab::new(
-            crate::lang::en::lexicon_config(),
-        ));
-        let tokenizer = crate::lang::en::tokenizer(std::sync::Arc::clone(&vocab)).expect("tokenizer");
+        let vocab =
+            std::sync::Arc::new(crate::vocab::Vocab::new(crate::lang::en::lexicon_config()));
+        let tokenizer =
+            crate::lang::en::tokenizer(std::sync::Arc::clone(&vocab)).expect("tokenizer");
         let store = std::sync::Arc::new(fluent_concept::InMemoryConceptStore::new());
         let resolver = std::sync::Arc::new(crate::interlingua::InterlinguaResolver::new(
             std::sync::Arc::clone(&store) as std::sync::Arc<dyn fluent_concept::ConceptStore>,
@@ -2887,35 +3077,39 @@ fn async_sync_refine_agree() {
             Some(std::sync::Arc::clone(&resolver)),
         )
         .expect("pipeline");
-        let policy = RefinePolicy { mode: RefineMode::Always, ..RefinePolicy::default() };
+        let policy = RefinePolicy {
+            mode: RefineMode::Always,
+            ..RefinePolicy::default()
+        };
         let text = "The cat sat on the mat.";
         // Encoder intentionally regresses: star parse with no nsubj/dobj roles,
         // so coverage drops vs the ArcEager base (1/3 vs 2/3) and the per-refiner
         // gate skips it.
-        let encoder: crate::pipeline::EncoderFetchSync = std::sync::Arc::new(|doc: &crate::doc::Doc| {
-            let n = doc.len();
-            let mut records = Vec::with_capacity(n);
-            for i in 0..n {
-                let text = doc.token_text(i);
-                let (dep, head) = if i + 1 == n {
-                    ("root".to_string(), 0)
-                } else {
-                    ("dep".to_string(), (n as i32 - 1 - i as i32))
-                };
-                records.push(crate::llm::AnnotationRecord {
-                    text,
-                    pos: "noun".into(),
-                    dep,
-                    head,
-                    tag: String::new(),
-                    lemma: String::new(),
-                    morph: String::new(),
-                    ent_iob: String::new(),
-                    ent_type: String::new(),
-                });
-            }
-            Ok(crate::llm::AnnotationSet(records))
-        });
+        let encoder: crate::pipeline::EncoderFetchSync =
+            std::sync::Arc::new(|doc: &crate::doc::Doc| {
+                let n = doc.len();
+                let mut records = Vec::with_capacity(n);
+                for i in 0..n {
+                    let text = doc.token_text(i);
+                    let (dep, head) = if i + 1 == n {
+                        ("root".to_string(), 0)
+                    } else {
+                        ("dep".to_string(), (n as i32 - 1 - i as i32))
+                    };
+                    records.push(crate::llm::AnnotationRecord {
+                        text,
+                        pos: "noun".into(),
+                        dep,
+                        head,
+                        tag: String::new(),
+                        lemma: String::new(),
+                        morph: String::new(),
+                        ent_iob: String::new(),
+                        ent_type: String::new(),
+                    });
+                }
+                Ok(crate::llm::AnnotationSet(records))
+            });
         let full_json = r#"[
             {"text":"The","pos":"det","dep":"det","head":1,"lemma":"the"},
             {"text":"cat","pos":"noun","dep":"nsubj","head":1,"lemma":"cat"},
@@ -2929,8 +3123,14 @@ fn async_sync_refine_agree() {
             let j = full_json.to_string();
             move |_tokens: Vec<String>| Ok(j.clone())
         });
-        let (_, res) = pipe.process_sync_with_confidence(text, Some(&llm), Some(&encoder), policy).expect("sync");
-        assert_eq!(res.source(), crate::llm::AnnotationSource::Llm, "per-refiner gate must skip regressing encoder and adopt llm");
+        let (_, res) = pipe
+            .process_sync_with_confidence(text, Some(&llm), Some(&encoder), policy)
+            .expect("sync");
+        assert_eq!(
+            res.source(),
+            crate::llm::AnnotationSource::Llm,
+            "per-refiner gate must skip regressing encoder and adopt llm"
+        );
     }
 }
 
@@ -2982,7 +3182,10 @@ fn r2_aggregated_threshold_across_multi_sentence_document() {
     let focus = refine_focus_aggregated(&base, &signals, policy);
     // Second sentence starts at offset 2, its 5 unresolved tokens are at global 2..7
     for idx in 2..7 {
-        assert!(focus.contains(&idx), "aggregated focus must contain global idx {idx}");
+        assert!(
+            focus.contains(&idx),
+            "aggregated focus must contain global idx {idx}"
+        );
     }
 }
 
@@ -3055,8 +3258,8 @@ fn eager_output_matches_pinned_golden() {
     // byte-identical before/after the sharing change: annotation work never
     // changes a parse. Regenerate with UPDATE_GOLDEN=1, then review the diff.
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let dataset_raw =
-        std::fs::read_to_string(manifest.join("tests/data/parse_bench.json")).expect("dataset readable");
+    let dataset_raw = std::fs::read_to_string(manifest.join("tests/data/parse_bench.json"))
+        .expect("dataset readable");
     let dataset: serde_json::Value = serde_json::from_str(&dataset_raw).expect("dataset parses");
     let items = dataset["items"].as_array().expect("items array").clone();
     let pipe = en_pipeline();
@@ -3067,16 +3270,24 @@ fn eager_output_matches_pinned_golden() {
         let (_doc, result) = pipe
             .process_sync_with_confidence(text, None, None, RefinePolicy::default())
             .expect("deterministic parse");
-        snapshot.insert(id, serde_json::to_value(result.records()).expect("records serialize"));
+        snapshot.insert(
+            id,
+            serde_json::to_value(result.records()).expect("records serialize"),
+        );
     }
-    let rendered = serde_json::to_string_pretty(&serde_json::Value::Object(snapshot)).expect("snapshot renders");
+    let rendered = serde_json::to_string_pretty(&serde_json::Value::Object(snapshot))
+        .expect("snapshot renders");
     let golden_path = manifest.join("tests/data/pipeline_eager_golden.json");
     if std::env::var("UPDATE_GOLDEN").is_ok() {
         std::fs::write(&golden_path, format!("{rendered}\n")).expect("golden writable");
         return;
     }
     let golden = std::fs::read_to_string(&golden_path).expect("golden fixture readable");
-    assert_eq!(rendered + "\n", golden, "annotation records drifted from golden");
+    assert_eq!(
+        rendered + "\n",
+        golden,
+        "annotation records drifted from golden"
+    );
 }
 
 // ── M5.1: pin every stage's name/depends/provides/describe ───────────────
@@ -3231,7 +3442,13 @@ async fn async_refine_all_skip_and_empty_keep_base_without_error() {
     );
     // Empty refiner set (no fetch, no encoder) under Always → base as well.
     let result = pipeline
-        .run_ladder(&doc, None, None, &RefineSeams::default(), llm_first_policy())
+        .run_ladder(
+            &doc,
+            None,
+            None,
+            &RefineSeams::default(),
+            llm_first_policy(),
+        )
         .await
         .expect("empty refiners keep base");
     assert!(
@@ -3267,8 +3484,7 @@ async fn parse_view_is_first_of_parse_views() {
     let (signal, interlingua, collisions) = parse_view(&doc, &base, &rule, None);
     let (all, all_collisions) = parse_views(&doc, &base, &rule, None);
     assert_eq!(collisions, all_collisions);
-    let (first_signal, first_interlingua) =
-        all.first().cloned().expect("at least one signal");
+    let (first_signal, first_interlingua) = all.first().cloned().expect("at least one signal");
     assert_eq!(signal, first_signal);
     assert_eq!(interlingua, first_interlingua);
 
@@ -3380,10 +3596,7 @@ fn unresolved_fraction_boundary_and_empty_signal() {
         Some(InterlinguaId::from_u64(20)),
         Some(InterlinguaId::from_u64(30)),
     );
-    signal.token_ids = vec![
-        InterlinguaId::from_u64(10),
-        InterlinguaId::from_u64(0),
-    ];
+    signal.token_ids = vec![InterlinguaId::from_u64(10), InterlinguaId::from_u64(0)];
     let base = m71_base(0.9, 1.0, vec![0.9]);
     assert_eq!(
         refine_reason(&base, &signal, &routing, policy),
@@ -3421,7 +3634,9 @@ fn poisoned_pipeline_state_returns_error_instead_of_panicking() {
     let mut ctx = WorkContext::default();
     ctx.set(STATE_KEY, Arc::clone(&state));
     let stage = ValidateStage::new(Arc::new(AnnotationValidator::default()));
-    let err = stage.execute(&ctx).expect_err("empty poisoned state must error");
+    let err = stage
+        .execute(&ctx)
+        .expect_err("empty poisoned state must error");
     assert!(
         matches!(err, WorkError::Dependency(_)),
         "expected Dependency error, got {err:?}"

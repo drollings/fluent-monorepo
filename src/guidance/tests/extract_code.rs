@@ -13,18 +13,30 @@ fn code_source(format: &str, text: &str) -> ExtractSource {
     }
 }
 
-fn extract(format: &str, text: &str, max: usize, overlap: usize) -> Vec<crate::extractor::PreparedFragment> {
+fn extract(
+    format: &str,
+    text: &str,
+    max: usize,
+    overlap: usize,
+) -> Vec<crate::extractor::PreparedFragment> {
     let mut parser = crate::ast_parser::AstParser::new();
     let extractor = crate::extractor::code::CodeExtractor;
     extractor
-        .extract_for_indexing(&mut parser, &code_source(format, text), ChunkOptions {
-            max_chunk_chars: max,
-            chunk_overlap_chars: overlap,
-        })
+        .extract_for_indexing(
+            &mut parser,
+            &code_source(format, text),
+            ChunkOptions {
+                max_chunk_chars: max,
+                chunk_overlap_chars: overlap,
+            },
+        )
         .expect("extract")
 }
 
-fn named<'a>(frags: &'a [crate::extractor::PreparedFragment], name: &str) -> &'a crate::extractor::PreparedFragment {
+fn named<'a>(
+    frags: &'a [crate::extractor::PreparedFragment],
+    name: &str,
+) -> &'a crate::extractor::PreparedFragment {
     frags
         .iter()
         .find(|f| matches!(&f.metadata, Some(crate::extractor::FragmentMetadata::Code { symbol_name: Some(n), .. }) if n == name))
@@ -55,7 +67,14 @@ fn typescript_metadata_scope_and_ranges() {
     );
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &source, ChunkOptions { max_chunk_chars: 500, chunk_overlap_chars: 50 })
+        .extract_for_indexing(
+            &mut parser,
+            &source,
+            ChunkOptions {
+                max_chunk_chars: 500,
+                chunk_overlap_chars: 50,
+            },
+        )
         .expect("extract");
     let add = named(&frags, "add");
     let publish = named(&frags, "publish");
@@ -64,12 +83,23 @@ fn typescript_metadata_scope_and_ranges() {
     assert_source_backed(&source, publish);
     assert_source_backed(&source, create);
     match &add.metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, doc, modifiers }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            symbol_name,
+            scope,
+            node_type,
+            signature,
+            doc,
+            modifiers,
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("add"));
             assert!(scope.is_none(), "{scope:?}");
             assert_eq!(node_type, "function_declaration");
-            assert_eq!(signature.as_deref(), Some("async function add(value: number): Promise<number>"));
+            assert_eq!(
+                signature.as_deref(),
+                Some("async function add(value: number): Promise<number>")
+            );
             assert_eq!(doc.as_deref(), Some("Adds one."));
             assert_eq!(modifiers, &["async".to_string()]);
         }
@@ -82,7 +112,15 @@ fn typescript_metadata_scope_and_ranges() {
         other => panic!("{other:?}"),
     }
     match &create.metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, doc, modifiers }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            symbol_name,
+            scope,
+            node_type,
+            signature,
+            doc,
+            modifiers,
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("create"));
             assert_eq!(scope.as_deref(), Some("Box"));
@@ -109,12 +147,23 @@ fn language_specific_symbols_and_scopes() {
     let python = extract("python", "class Service:\n    @staticmethod\n    async def fetch(value: str) -> str:\n        return value", 3600, 540);
 
     match &named(&c, "Widget").metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, doc, modifiers }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            symbol_name,
+            scope,
+            node_type,
+            signature,
+            doc,
+            modifiers,
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
             assert_eq!(symbol_name.as_deref(), Some("Widget"));
             assert!(scope.is_none());
             assert_eq!(node_type, "type_definition");
-            assert_eq!(signature.as_deref(), Some("typedef struct Widget { int value; } Widget"));
+            assert_eq!(
+                signature.as_deref(),
+                Some("typedef struct Widget { int value; } Widget")
+            );
             assert!(doc.is_none());
             assert!(modifiers.is_empty(), "{modifiers:?}");
         }
@@ -127,7 +176,15 @@ fn language_specific_symbols_and_scopes() {
         other => panic!("{other:?}"),
     }
     match &named(&go, "Value").metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, node_type, signature, modifiers, .. }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            symbol_name,
+            scope,
+            node_type,
+            signature,
+            modifiers,
+            ..
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("Value"));
             assert_eq!(scope.as_deref(), Some("Widget"));
@@ -150,11 +207,21 @@ fn language_specific_symbols_and_scopes() {
         other => panic!("{other:?}"),
     }
     match &named(&python, "fetch").metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, symbol_name, scope, signature, modifiers, .. }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            symbol_name,
+            scope,
+            signature,
+            modifiers,
+            ..
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(symbol_name.as_deref(), Some("fetch"));
             assert_eq!(scope.as_deref(), Some("Service"));
-            assert_eq!(signature.as_deref(), Some("async def fetch(value: str) -> str:"));
+            assert_eq!(
+                signature.as_deref(),
+                Some("async def fetch(value: str) -> str:")
+            );
             assert_eq!(modifiers, &["async".to_string(), "static".to_string()]);
         }
         other => panic!("{other:?}"),
@@ -181,7 +248,14 @@ fn large_entities_emit_outlines_and_grouped_windows() {
     );
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &source, ChunkOptions { max_chunk_chars: 140, chunk_overlap_chars: 30 })
+        .extract_for_indexing(
+            &mut parser,
+            &source,
+            ChunkOptions {
+                max_chunk_chars: 140,
+                chunk_overlap_chars: 30,
+            },
+        )
         .expect("extract");
     let outline = |name: &str| {
         frags
@@ -194,10 +268,30 @@ fn large_entities_emit_outlines_and_grouped_windows() {
     };
     let service = outline("Service");
     let orchestrate = outline("orchestrate");
-    assert!(service.content_text.contains("members:"), "{:?}", service.content_text);
-    assert!(service.content_text.contains("function first(value: string)"), "{:?}", service.content_text);
-    assert!(service.content_text.contains("function second()"), "{:?}", service.content_text);
-    assert!(orchestrate.content_text.contains("calls: load, client.fetch, finalize"), "{:?}", orchestrate.content_text);
+    assert!(
+        service.content_text.contains("members:"),
+        "{:?}",
+        service.content_text
+    );
+    assert!(
+        service
+            .content_text
+            .contains("function first(value: string)"),
+        "{:?}",
+        service.content_text
+    );
+    assert!(
+        service.content_text.contains("function second()"),
+        "{:?}",
+        service.content_text
+    );
+    assert!(
+        orchestrate
+            .content_text
+            .contains("calls: load, client.fetch, finalize"),
+        "{:?}",
+        orchestrate.content_text
+    );
 
     let windows: Vec<_> = frags
         .iter()
@@ -206,7 +300,10 @@ fn large_entities_emit_outlines_and_grouped_windows() {
     assert!(windows.len() >= 2, "{frags:?}");
     for window in &windows {
         assert_source_backed(&source, window);
-        assert!(crate::extractor::utf16_len(&window.content_text) <= 140, "{window:?}");
+        assert!(
+            crate::extractor::utf16_len(&window.content_text) <= 140,
+            "{window:?}"
+        );
     }
     assert!(
         windows[0].range.end_offset > windows[1].range.start_offset,
@@ -216,14 +313,24 @@ fn large_entities_emit_outlines_and_grouped_windows() {
 
 #[test]
 fn gaps_compact_for_embedding_without_changing_windows() {
-    let mut text = vec!["def spaced() -> str:".to_string(), "    first_value = prepare()".to_string()];
+    let mut text = vec![
+        "def spaced() -> str:".to_string(),
+        "    first_value = prepare()".to_string(),
+    ];
     text.extend(std::iter::repeat_n(String::new(), 70));
     text.push("    second_value = transform(first_value)".to_string());
     text.push("    return second_value".to_string());
     let source = code_source("python", &text.join("\n"));
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &source, ChunkOptions { max_chunk_chars: 120, chunk_overlap_chars: 18 })
+        .extract_for_indexing(
+            &mut parser,
+            &source,
+            ChunkOptions {
+                max_chunk_chars: 120,
+                chunk_overlap_chars: 18,
+            },
+        )
         .expect("extract");
     let major = frags
         .iter()
@@ -232,13 +339,18 @@ fn gaps_compact_for_embedding_without_changing_windows() {
                 && f.group.as_deref() == Some(f.id.as_str())
         })
         .expect("outline major");
-    assert!(major.content_text.contains("calls: prepare, transform"), "{:?}", major.content_text);
+    assert!(
+        major.content_text.contains("calls: prepare, transform"),
+        "{:?}",
+        major.content_text
+    );
     let window = frags
         .iter()
         .find(|f| {
             f.group.as_deref() == Some(major.id.as_str())
                 && f.embedding_text.as_deref().is_some_and(|e| {
-                    e.contains("first_value = prepare()") && e.contains("second_value = transform(first_value)")
+                    e.contains("first_value = prepare()")
+                        && e.contains("second_value = transform(first_value)")
                 })
         })
         .expect("compact window");
@@ -265,7 +377,14 @@ fn script_blocks_remap_and_fall_back() {
     );
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &source, ChunkOptions { max_chunk_chars: 3600, chunk_overlap_chars: 540 })
+        .extract_for_indexing(
+            &mut parser,
+            &source,
+            ChunkOptions {
+                max_chunk_chars: 3600,
+                chunk_overlap_chars: 540,
+            },
+        )
         .expect("extract");
     let first = named(&frags, "first");
     let second = named(&frags, "second");
@@ -274,10 +393,20 @@ fn script_blocks_remap_and_fall_back() {
     assert_eq!(first.range.start_line, 3);
     assert_eq!(second.range.start_line, 7);
 
-    let plain = code_source("vue", "<template><p>x</p></template>\n<script lang=\"ts\">\n// no declarations\n</script>");
+    let plain = code_source(
+        "vue",
+        "<template><p>x</p></template>\n<script lang=\"ts\">\n// no declarations\n</script>",
+    );
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &plain, ChunkOptions { max_chunk_chars: 3600, chunk_overlap_chars: 540 })
+        .extract_for_indexing(
+            &mut parser,
+            &plain,
+            ChunkOptions {
+                max_chunk_chars: 3600,
+                chunk_overlap_chars: 540,
+            },
+        )
         .expect("extract");
     assert_eq!(frags.len(), 1);
     assert_source_backed(&plain, &frags[0]);
@@ -287,7 +416,14 @@ fn script_blocks_remap_and_fall_back() {
     let no_script = code_source("svelte", "<h1>No script</h1>");
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &no_script, ChunkOptions { max_chunk_chars: 3600, chunk_overlap_chars: 540 })
+        .extract_for_indexing(
+            &mut parser,
+            &no_script,
+            ChunkOptions {
+                max_chunk_chars: 3600,
+                chunk_overlap_chars: 540,
+            },
+        )
         .expect("extract");
     assert_eq!(frags.len(), 1);
     assert!(frags[0].metadata.is_none());
@@ -304,7 +440,14 @@ fn rust_struct_impl_and_functions() {
     );
     let widget = named(&frags, "Widget");
     match &widget.metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, scope, node_type, doc, modifiers, .. }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            scope,
+            node_type,
+            doc,
+            modifiers,
+            ..
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
             assert!(scope.is_none(), "{scope:?}");
             assert_eq!(node_type, "struct_item");
@@ -315,10 +458,19 @@ fn rust_struct_impl_and_functions() {
     }
     let create = named(&frags, "create");
     match &create.metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, scope, signature, doc, .. }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            scope,
+            signature,
+            doc,
+            ..
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(scope.as_deref(), Some("Widget"));
-            assert_eq!(signature.as_deref(), Some("pub fn create(value: i32) -> Self"));
+            assert_eq!(
+                signature.as_deref(),
+                Some("pub fn create(value: i32) -> Self")
+            );
             assert_eq!(doc.as_deref(), Some("Create one."));
         }
         other => panic!("{other:?}"),
@@ -335,14 +487,21 @@ fn java_and_cpp_smoke() {
         540,
     );
     match &named(&java, "Maker").metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, doc, .. }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type, doc, ..
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Class);
             assert_eq!(doc.as_deref(), Some("Makes things."));
         }
         other => panic!("{other:?}"),
     }
     match &named(&java, "create").metadata {
-        Some(crate::extractor::FragmentMetadata::Code { symbol_type, scope, modifiers, .. }) => {
+        Some(crate::extractor::FragmentMetadata::Code {
+            symbol_type,
+            scope,
+            modifiers,
+            ..
+        }) => {
             assert_eq!(*symbol_type, crate::search_types::CodeSymbolType::Function);
             assert_eq!(scope.as_deref(), Some("Maker"));
             assert!(modifiers.contains(&"public".to_string()), "{modifiers:?}");
@@ -367,10 +526,20 @@ fn java_and_cpp_smoke() {
 #[test]
 fn chunk_boundaries_never_split_characters() {
     let emoji = "😀".repeat(80);
-    let source = code_source("typescript", &format!("export function emoji() {{ return \"{emoji}\"; }}"));
+    let source = code_source(
+        "typescript",
+        &format!("export function emoji() {{ return \"{emoji}\"; }}"),
+    );
     let mut parser = crate::ast_parser::AstParser::new();
     let frags = crate::extractor::code::CodeExtractor
-        .extract_for_indexing(&mut parser, &source, ChunkOptions { max_chunk_chars: 31, chunk_overlap_chars: 7 })
+        .extract_for_indexing(
+            &mut parser,
+            &source,
+            ChunkOptions {
+                max_chunk_chars: 31,
+                chunk_overlap_chars: 7,
+            },
+        )
         .expect("extract");
     let windows: Vec<_> = frags
         .iter()
@@ -382,7 +551,12 @@ fn chunk_boundaries_never_split_characters() {
     assert!(windows.len() > 2, "{frags:?}");
     for window in &windows {
         assert_source_backed(&source, window);
-        assert!(crate::extractor::utf16_len(&window.content_text) <= 31, "{window:?}");
-        assert!(window.content_text.is_char_boundary(window.content_text.len()));
+        assert!(
+            crate::extractor::utf16_len(&window.content_text) <= 31,
+            "{window:?}"
+        );
+        assert!(window
+            .content_text
+            .is_char_boundary(window.content_text.len()));
     }
 }

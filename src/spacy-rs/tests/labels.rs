@@ -122,10 +122,7 @@ fn ent_iob_exact_match_rejects_lowercase() {
     }
     for bad in ["i", "o", "b", "b_"] {
         assert!(
-            matches!(
-                bad.parse::<EntIoB>(),
-                Err(SpacyError::InvalidEntIobText(_))
-            ),
+            matches!(bad.parse::<EntIoB>(), Err(SpacyError::InvalidEntIobText(_))),
             "{bad:?} must be rejected"
         );
     }

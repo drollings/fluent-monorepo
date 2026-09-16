@@ -12,14 +12,14 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use common_core::hash::uuid_v4;
-use common_core::retry::PollWithBackoff;
 use crate::cli::gguf::{compute_short_id, quant_name, read_gguf_metadata};
 use crate::config::InstanceProfile;
+use common_core::hash::uuid_v4;
+use common_core::retry::PollWithBackoff;
 
 use super::client::{InstanceClient, InstanceError, InstanceInfo, InstanceList, InstanceTotals};
-use super::{instance_grammar_string, management_base_url, validate_instances};
 use super::pool::InstancePool;
+use super::{instance_grammar_string, management_base_url, validate_instances};
 
 /// The weights-file identity of one managed model, surfaced on the aggregate
 /// `/instances` envelope so `coral-router ps` can display it without needing
@@ -253,7 +253,9 @@ impl InstanceManager {
     /// the residency engine never evicts a model mid-inference.
     pub fn hold_in_flight(self: &Arc<Self>) -> InflightLease {
         self.in_flight_count.fetch_add(1, Ordering::Relaxed);
-        InflightLease { manager: Arc::clone(self) }
+        InflightLease {
+            manager: Arc::clone(self),
+        }
     }
 
     /// Ask this model's server to stop the generation running in a slot.
@@ -606,8 +608,7 @@ impl InstanceManager {
             match self.reconcile().await {
                 Ok(()) => true,
                 Err(e) => {
-                    let count =
-                        failures.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let count = failures.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                     if count == 1 {
                         tracing::info!(
                             target: "router.instances",
@@ -692,11 +693,7 @@ impl InstanceManager {
             Ok(envelope) => envelope,
             Err(e) => return Err(e),
         };
-        if existing
-            .instances
-            .iter()
-            .any(|i| i.group == group)
-        {
+        if existing.instances.iter().any(|i| i.group == group) {
             return Ok(());
         }
         let group_is_pinned = self
@@ -809,10 +806,7 @@ pub fn build_instance_managers(
         // `/instances` route) serves generation but cannot be reconciled:
         // suspend the management calls that would 404 against it. A mid-life
         // respawn self-heals — `adoption_info` verifies the live pid.
-        if let Some(adoption) = supervisor
-            .as_ref()
-            .and_then(|sup| sup.adoption_info(key))
-        {
+        if let Some(adoption) = supervisor.as_ref().and_then(|sup| sup.adoption_info(key)) {
             manager.set_instances_supported(adoption.instances_supported);
         }
         managers.insert(key.clone(), manager);

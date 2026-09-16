@@ -43,8 +43,7 @@ fn handles_braces_inside_strings() {
 fn extracts_array_from_fenced_with_noise() {
     // The reranker shape: noise before the fence defeats the fence strip,
     // so extraction must find the balanced array.
-    let v =
-        parse_json_response("Sure!\n```json\n[\"draft_doc\", \"bug_triage\"]\n```").unwrap();
+    let v = parse_json_response("Sure!\n```json\n[\"draft_doc\", \"bug_triage\"]\n```").unwrap();
     assert_eq!(v, serde_json::json!(["draft_doc", "bug_triage"]));
 }
 
@@ -82,9 +81,15 @@ fn empty_defaults() -> Value {
 
 #[test]
 fn parse_typed_pristine_fast_path() {
-    let t = parse_typed::<Typed>(r#"{"name":"x","score":1.5}"#, &empty_defaults(), |_| {})
-        .unwrap();
-    assert_eq!(t, Typed { name: "x".into(), score: 1.5, tags: vec![] });
+    let t = parse_typed::<Typed>(r#"{"name":"x","score":1.5}"#, &empty_defaults(), |_| {}).unwrap();
+    assert_eq!(
+        t,
+        Typed {
+            name: "x".into(),
+            score: 1.5,
+            tags: vec![]
+        }
+    );
 }
 
 #[test]
@@ -95,7 +100,14 @@ fn parse_typed_tolerant_fenced_input() {
         |_| {},
     )
     .unwrap();
-    assert_eq!(t, Typed { name: "x".into(), score: 2.0, tags: vec![] });
+    assert_eq!(
+        t,
+        Typed {
+            name: "x".into(),
+            score: 2.0,
+            tags: vec![]
+        }
+    );
 }
 
 #[test]
@@ -106,7 +118,14 @@ fn parse_typed_tolerant_noisy_input() {
         |_| {},
     )
     .unwrap();
-    assert_eq!(t, Typed { name: "x".into(), score: 0.0, tags: vec![] });
+    assert_eq!(
+        t,
+        Typed {
+            name: "x".into(),
+            score: 0.0,
+            tags: vec![]
+        }
+    );
 }
 
 #[test]
@@ -115,16 +134,34 @@ fn parse_typed_applies_defaults_for_missing_fields() {
     // LLM omitted `score`/`tags`, which `defaults` fills in.
     let defaults = serde_json::json!({"score": 9.0, "tags": ["a"]});
     let t = parse_typed::<Typed>("prefix {\"name\":\"y\"} suffix", &defaults, |_| {}).unwrap();
-    assert_eq!(t, Typed { name: "y".into(), score: 9.0, tags: vec!["a".into()] });
+    assert_eq!(
+        t,
+        Typed {
+            name: "y".into(),
+            score: 9.0,
+            tags: vec!["a".into()]
+        }
+    );
 }
 
 #[test]
 fn parse_typed_defaults_do_not_overwrite_present_values() {
     // `score` is present so the merge must leave it alone.
     let defaults = serde_json::json!({"score": 9.0});
-    let t = parse_typed::<Typed>("prefix {\"name\":\"y\",\"score\":3.0} suffix", &defaults, |_| {})
-        .unwrap();
-    assert_eq!(t, Typed { name: "y".into(), score: 3.0, tags: vec![] });
+    let t = parse_typed::<Typed>(
+        "prefix {\"name\":\"y\",\"score\":3.0} suffix",
+        &defaults,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(
+        t,
+        Typed {
+            name: "y".into(),
+            score: 3.0,
+            tags: vec![]
+        }
+    );
 }
 
 #[test]
@@ -140,9 +177,16 @@ fn parse_typed_runs_sanitize_field_coercion() {
             }
         }
     };
-    let t = parse_typed::<Typed>(r#"{"name":"z","score":"4.5"}"#, &empty_defaults(), coerce)
-        .unwrap();
-    assert_eq!(t, Typed { name: "z".into(), score: 4.5, tags: vec![] });
+    let t =
+        parse_typed::<Typed>(r#"{"name":"z","score":"4.5"}"#, &empty_defaults(), coerce).unwrap();
+    assert_eq!(
+        t,
+        Typed {
+            name: "z".into(),
+            score: 4.5,
+            tags: vec![]
+        }
+    );
 }
 
 #[test]
@@ -189,10 +233,7 @@ fn repair_closes_truncated_array_and_string() {
         repaired(r#"{"a": "hello"#),
         serde_json::json!({"a": "hello"})
     );
-    assert_eq!(
-        repaired(r#"{"a": [1, 2"#),
-        serde_json::json!({"a": [1, 2]})
-    );
+    assert_eq!(repaired(r#"{"a": [1, 2"#), serde_json::json!({"a": [1, 2]}));
 }
 
 #[test]
@@ -217,10 +258,7 @@ fn repair_handles_dangling_backslash() {
 fn repair_drops_incomplete_tail_member() {
     // Truncated mid-member: `"b":` has no value. Dropping the dangling
     // tail yields a valid (if lossy) object.
-    assert_eq!(
-        repaired(r#"{"a": 1, "b":}"#),
-        serde_json::json!({"a": 1})
-    );
+    assert_eq!(repaired(r#"{"a": 1, "b":}"#), serde_json::json!({"a": 1}));
     assert_eq!(
         repaired(r#"{"a": 1, "b": 2, "c": "#),
         serde_json::json!({"a": 1, "b": 2})

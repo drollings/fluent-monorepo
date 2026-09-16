@@ -103,7 +103,11 @@ fn from_name_covers_every_variant() {
         ("IS_GET_WORD", Attribute::IsGetWord, 52u16),
         ("IS_HAVE_CLITIC", Attribute::IsHaveClitic, 53u16),
         ("IS_WILL_CLITIC", Attribute::IsWillClitic, 54u16),
-        ("IS_INDEFINITE_PRONOUN", Attribute::IsIndefinitePronoun, 55u16),
+        (
+            "IS_INDEFINITE_PRONOUN",
+            Attribute::IsIndefinitePronoun,
+            55u16,
+        ),
         ("ID", Attribute::Id, 64u16),
         ("ORTH", Attribute::Orth, 65u16),
         ("LOWER", Attribute::Lower, 66u16),
@@ -130,13 +134,20 @@ fn from_name_covers_every_variant() {
         ("IDX", Attribute::Idx, 87u16),
         ("SENT_END", Attribute::SentEnd, 88u16),
         ("INTERLINGUA_LEMMA_ID", Attribute::InterlinguaLemmaId, 89u16),
-        ("INTERLINGUA_ENTITY_ID", Attribute::InterlinguaEntityId, 90u16),
-        ("ANNOTATION_CONFIDENCE", Attribute::AnnotationConfidence, 91u16),
+        (
+            "INTERLINGUA_ENTITY_ID",
+            Attribute::InterlinguaEntityId,
+            90u16,
+        ),
+        (
+            "ANNOTATION_CONFIDENCE",
+            Attribute::AnnotationConfidence,
+            91u16,
+        ),
     ];
     assert_eq!(TABLE.len(), 83, "table must grow with the Attribute enum");
     for (name, expected, id) in TABLE {
-        let parsed = Attribute::from_name(name)
-            .unwrap_or_else(|_| panic!("{name} must parse"));
+        let parsed = Attribute::from_name(name).unwrap_or_else(|_| panic!("{name} must parse"));
         assert_eq!(&parsed, expected, "{name} resolves");
         assert_eq!(parsed.id(), *id, "{name} id");
         // Lowercase folds to the same variant (the case-insensitive contract).

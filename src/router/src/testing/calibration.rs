@@ -115,10 +115,7 @@ pub fn entity_link_calibration_report(emit: bool) -> Vec<(f64, CalibrationReport
 }
 
 /// Calibration for `needs_disambiguation` at `threshold` (default 0.5 in tests).
-pub fn needs_disambiguation_report(
-    threshold: f64,
-    emit: bool,
-) -> CalibrationReport {
+pub fn needs_disambiguation_report(threshold: f64, emit: bool) -> CalibrationReport {
     let cases = needs_disambiguation_must_not_fire();
     // For this signal, task-value label is collision_count>0 || overall<0.5 (ground truth ambiguous).
     // But harness's must-not-fire cases are all label false (should not fire), so we can just score.
@@ -148,12 +145,22 @@ pub fn needs_disambiguation_report(
 fn emit_calibration_artifacts() {
     let reports = entity_link_calibration_report(true);
     for (t, r) in &reports {
-        println!("entity_link threshold {:.2}: precision {:.3} recall {:.3} FPR {:.3} support {}", t, r.precision, r.recall, r.fpr, r.support);
+        println!(
+            "entity_link threshold {:.2}: precision {:.3} recall {:.3} FPR {:.3} support {}",
+            t, r.precision, r.recall, r.fpr, r.support
+        );
     }
     let _ = needs_disambiguation_report(0.5, true);
     // Also sweep needs_disambiguation over 0.3..0.9
     let cases = needs_disambiguation_must_not_fire();
-    let synthetic: Vec<SyntheticCase> = cases.iter().map(|s| SyntheticCase { score: s.overall, label: false, note: "must not fire" }).collect();
+    let synthetic: Vec<SyntheticCase> = cases
+        .iter()
+        .map(|s| SyntheticCase {
+            score: s.overall,
+            label: false,
+            note: "must not fire",
+        })
+        .collect();
     let thresholds: Vec<f64> = (0..=20).map(|i| i as f64 * 0.05).collect();
     let reports2 = sweep_thresholds(&synthetic, |c| c.score, |c| c.label, &thresholds);
     common_core::calibration::emit_markdown_artifact("needs_disambiguation_full", &reports2);

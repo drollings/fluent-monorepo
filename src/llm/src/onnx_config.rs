@@ -557,12 +557,11 @@ impl OnnxConfig {
             path: config_json.display().to_string(),
             detail: e.to_string(),
         })?;
-        let parsed: ModelConfigJson = serde_json::from_str(&json).map_err(|e| {
-            OrtError::ConfigParse {
+        let parsed: ModelConfigJson =
+            serde_json::from_str(&json).map_err(|e| OrtError::ConfigParse {
                 path: config_json.display().to_string(),
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
 
         if let Some(architectures) = parsed.architectures.as_ref() {
             let families = self.task.expected_architecture_families();

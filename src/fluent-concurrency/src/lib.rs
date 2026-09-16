@@ -19,6 +19,7 @@ pub mod ladder;
 // `ResultPool`. Import LLM queue types from `fluent_llm`, never from here.
 // The generic executor (`pool::ResultPool`, `stream::StreamAbort`,
 // `runtime::TestRuntime`) stays and is composed by the protocol owner.
+pub mod batch;
 pub mod pool;
 pub mod queue;
 pub mod retry;
@@ -27,7 +28,6 @@ pub mod scope;
 pub mod stream;
 pub mod sync;
 pub mod thread_resource;
-pub mod batch;
 
 use std::sync::Arc;
 
@@ -43,4 +43,3 @@ mod e2e_tests;
 #[cfg(test)]
 #[path = "../tests/affinity_calibration.rs"]
 mod affinity_calibration_tests;
-

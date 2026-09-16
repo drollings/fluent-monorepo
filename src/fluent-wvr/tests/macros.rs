@@ -2,8 +2,7 @@
 #[allow(unused_imports)]
 use fluent_wvr::macros::*;
 use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 use fluent_wvr::component_downcast_mut;
 use fluent_wvr::component_downcast_ref;
@@ -49,7 +48,9 @@ impl_component!(DemoUnit);
 
 #[test]
 fn impl_component_concrete_enables_downcast() {
-    let comp: Arc<dyn Component> = Arc::new(DemoUnit { name: "demo".into() });
+    let comp: Arc<dyn Component> = Arc::new(DemoUnit {
+        name: "demo".into(),
+    });
     assert!(component_downcast_ref::<DemoUnit>(&*comp).is_some());
     assert!(component_downcast_ref::<String>(&*comp).is_none());
     assert_eq!(comp.name(), "demo");
@@ -63,7 +64,9 @@ fn impl_component_concrete_mut_downcast() {
     let down = component_downcast_mut::<DemoUnit>(&mut comp).expect("downcast");
     down.name = "renamed".into();
     assert_eq!(
-        component_downcast_ref::<DemoUnit>(&*comp).expect("ref").name,
+        component_downcast_ref::<DemoUnit>(&*comp)
+            .expect("ref")
+            .name,
         "renamed"
     );
 }
@@ -95,7 +98,10 @@ impl_fieldless!(Fieldless);
 #[test]
 fn impl_fieldless_rejects_all_fields() {
     let mut f = Fieldless;
-    assert!(matches!(f.set_field("x", "y"), Err(FieldError::NotFound(_))));
+    assert!(matches!(
+        f.set_field("x", "y"),
+        Err(FieldError::NotFound(_))
+    ));
     assert!(matches!(f.get_field("x"), Err(FieldError::NotFound(_))));
     assert!(f.field_names().is_empty());
 }
@@ -136,7 +142,9 @@ impl_component!(generic (U: Component + 'static) for Wrap<U>);
 
 #[test]
 fn impl_component_generic_expands_for_wrapper() {
-    let inner: Arc<dyn Component> = Arc::new(DemoUnit { name: "inner".into() });
+    let inner: Arc<dyn Component> = Arc::new(DemoUnit {
+        name: "inner".into(),
+    });
     let comp: Arc<dyn Component> = Arc::new(Wrap(Arc::clone(&inner)));
     assert!(component_downcast_ref::<Wrap<Arc<dyn Component>>>(&*comp).is_some());
     assert_eq!(comp.name(), "inner");

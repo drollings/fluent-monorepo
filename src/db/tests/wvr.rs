@@ -160,10 +160,8 @@ fn db_store_impl_for_pool() {
     // path must run under a `DbCapability` scope (the sync `sync_scope`
     // propagates into the fallback-runtime `block_on`).
     let n: i64 = CURRENT_CAPS.sync_scope(db_caps(), || {
-        pool.with_conn_blocking(|conn| {
-            Ok(conn.query_row("SELECT 41 + 1", [], |row| row.get(0))?)
-        })
-        .expect("pool with_conn_blocking")
+        pool.with_conn_blocking(|conn| Ok(conn.query_row("SELECT 41 + 1", [], |row| row.get(0))?))
+            .expect("pool with_conn_blocking")
     });
     assert_eq!(n, 42);
 }

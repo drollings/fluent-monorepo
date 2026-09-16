@@ -505,7 +505,10 @@ impl ChartStore {
                 scored_hits(resolved, distance_to_similarity_clamped)
                     .into_iter()
                     .filter_map(|(key, similarity)| {
-                        index.ids.get(key as usize).map(|name| (name.clone(), similarity))
+                        index
+                            .ids
+                            .get(key as usize)
+                            .map(|name| (name.clone(), similarity))
                     })
                     .collect()
             })

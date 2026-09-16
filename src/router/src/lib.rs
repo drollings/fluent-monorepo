@@ -38,7 +38,6 @@ pub mod logging;
 pub mod metrics;
 pub mod node_store;
 pub mod normalize;
-pub mod routing_context;
 pub mod ort;
 pub mod overlay;
 pub mod pipeline;
@@ -46,6 +45,7 @@ pub mod pipeline_types;
 pub mod ranking;
 pub mod retrieval;
 pub mod routes;
+pub mod routing_context;
 pub mod score_matrix;
 pub mod server;
 pub mod session;
@@ -64,6 +64,15 @@ pub mod views;
 pub mod testing;
 
 #[cfg(test)]
+#[path = "../tests/build_graph.rs"]
+mod build_graph;
+#[cfg(test)]
+#[path = "../tests/config_route_tests.rs"]
+mod config_route_tests;
+#[cfg(test)]
+#[path = "../tests/deprecated_baseline.rs"]
+mod deprecated_baseline;
+#[cfg(test)]
 #[path = "../tests/server_http_tests.rs"]
 mod server_http_tests;
 #[cfg(test)]
@@ -73,21 +82,12 @@ mod server_tests;
 #[path = "../tests/stage_tests.rs"]
 mod stage_tests;
 #[cfg(test)]
-#[path = "../tests/config_route_tests.rs"]
-mod config_route_tests;
-#[cfg(test)]
-#[path = "../tests/deprecated_baseline.rs"]
-mod deprecated_baseline;
-#[cfg(test)]
-#[path = "../tests/build_graph.rs"]
-mod build_graph;
-#[cfg(test)]
 #[path = "../tests/supervisor_integration_tests.rs"]
 mod supervisor_integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
-#[cfg(test)]
 pub(crate) mod test_stubs;
+#[cfg(test)]
+pub(crate) mod test_support;
 #[cfg(test)]
 #[path = "../tests/mod.rs"]
 mod tests;

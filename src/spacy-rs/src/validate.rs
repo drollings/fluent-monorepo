@@ -103,43 +103,148 @@ pub enum AnnotationError {
 impl Clone for AnnotationError {
     fn clone(&self) -> Self {
         match self {
-            Self::CountMismatch { expected, got } => Self::CountMismatch { expected: *expected, got: *got },
-            Self::TextMismatch { index, expected, got } => Self::TextMismatch { index: *index, expected: expected.clone(), got: got.clone() },
+            Self::CountMismatch { expected, got } => Self::CountMismatch {
+                expected: *expected,
+                got: *got,
+            },
+            Self::TextMismatch {
+                index,
+                expected,
+                got,
+            } => Self::TextMismatch {
+                index: *index,
+                expected: expected.clone(),
+                got: got.clone(),
+            },
             Self::UnknownPos(s) => Self::UnknownPos(s.clone()),
             Self::UnknownDep(s) => Self::UnknownDep(s.clone()),
-            Self::HeadOutOfBounds { token, head, len } => Self::HeadOutOfBounds { token: *token, head: *head, len: *len },
+            Self::HeadOutOfBounds { token, head, len } => Self::HeadOutOfBounds {
+                token: *token,
+                head: *head,
+                len: *len,
+            },
             Self::SelfLoop { token } => Self::SelfLoop { token: *token },
-            Self::RootHeadMismatch { token, head } => Self::RootHeadMismatch { token: *token, head: *head },
-            Self::RootCount { expected, found } => Self::RootCount { expected: *expected, found: *found },
+            Self::RootHeadMismatch { token, head } => Self::RootHeadMismatch {
+                token: *token,
+                head: *head,
+            },
+            Self::RootCount { expected, found } => Self::RootCount {
+                expected: *expected,
+                found: *found,
+            },
             Self::Unreachable(v) => Self::Unreachable(v.clone()),
             Self::Cycle(v) => Self::Cycle(v.clone()),
-            Self::MalformedBiluo { index, detail } => Self::MalformedBiluo { index: *index, detail: detail.clone() },
-            Self::NonProjective { token, head, blocked } => Self::NonProjective { token: *token, head: *head, blocked: blocked.clone() },
-            Self::Json { source } => Self::Json { source: std::sync::Arc::clone(source) },
+            Self::MalformedBiluo { index, detail } => Self::MalformedBiluo {
+                index: *index,
+                detail: detail.clone(),
+            },
+            Self::NonProjective {
+                token,
+                head,
+                blocked,
+            } => Self::NonProjective {
+                token: *token,
+                head: *head,
+                blocked: blocked.clone(),
+            },
+            Self::Json { source } => Self::Json {
+                source: std::sync::Arc::clone(source),
+            },
             Self::Apply(s) => Self::Apply(s.clone()),
             Self::EmptyDocument => Self::EmptyDocument,
         }
     }
 }
 
- impl PartialEq for AnnotationError {
+impl PartialEq for AnnotationError {
     // The single-field tuple arms share bodies textually but bind different
     // types (`String` vs `Vec<usize>`), so or-patterns cannot merge them.
     #[allow(clippy::match_same_arms)]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::CountMismatch { expected: a1, got: b1 }, Self::CountMismatch { expected: a2, got: b2 }) => a1 == a2 && b1 == b2,
-            (Self::TextMismatch { index: i1, expected: e1, got: g1 }, Self::TextMismatch { index: i2, expected: e2, got: g2 }) => i1 == i2 && e1 == e2 && g1 == g2,
+            (
+                Self::CountMismatch {
+                    expected: a1,
+                    got: b1,
+                },
+                Self::CountMismatch {
+                    expected: a2,
+                    got: b2,
+                },
+            ) => a1 == a2 && b1 == b2,
+            (
+                Self::TextMismatch {
+                    index: i1,
+                    expected: e1,
+                    got: g1,
+                },
+                Self::TextMismatch {
+                    index: i2,
+                    expected: e2,
+                    got: g2,
+                },
+            ) => i1 == i2 && e1 == e2 && g1 == g2,
             (Self::UnknownPos(a), Self::UnknownPos(b)) => a == b,
             (Self::UnknownDep(a), Self::UnknownDep(b)) => a == b,
-            (Self::HeadOutOfBounds { token: t1, head: h1, len: l1 }, Self::HeadOutOfBounds { token: t2, head: h2, len: l2 }) => t1 == t2 && h1 == h2 && l1 == l2,
+            (
+                Self::HeadOutOfBounds {
+                    token: t1,
+                    head: h1,
+                    len: l1,
+                },
+                Self::HeadOutOfBounds {
+                    token: t2,
+                    head: h2,
+                    len: l2,
+                },
+            ) => t1 == t2 && h1 == h2 && l1 == l2,
             (Self::SelfLoop { token: t1 }, Self::SelfLoop { token: t2 }) => t1 == t2,
-            (Self::RootHeadMismatch { token: t1, head: h1 }, Self::RootHeadMismatch { token: t2, head: h2 }) => t1 == t2 && h1 == h2,
-            (Self::RootCount { expected: e1, found: f1 }, Self::RootCount { expected: e2, found: f2 }) => e1 == e2 && f1 == f2,
+            (
+                Self::RootHeadMismatch {
+                    token: t1,
+                    head: h1,
+                },
+                Self::RootHeadMismatch {
+                    token: t2,
+                    head: h2,
+                },
+            ) => t1 == t2 && h1 == h2,
+            (
+                Self::RootCount {
+                    expected: e1,
+                    found: f1,
+                },
+                Self::RootCount {
+                    expected: e2,
+                    found: f2,
+                },
+            ) => e1 == e2 && f1 == f2,
             (Self::Cycle(a), Self::Cycle(b)) => a == b,
-            (Self::MalformedBiluo { index: i1, detail: d1 }, Self::MalformedBiluo { index: i2, detail: d2 }) => i1 == i2 && d1 == d2,
-            (Self::NonProjective { token: t1, head: h1, blocked: b1 }, Self::NonProjective { token: t2, head: h2, blocked: b2 }) => t1 == t2 && h1 == h2 && b1 == b2,
-            (Self::Json { source: s1 }, Self::Json { source: s2 }) => s1.to_string() == s2.to_string(),
+            (
+                Self::MalformedBiluo {
+                    index: i1,
+                    detail: d1,
+                },
+                Self::MalformedBiluo {
+                    index: i2,
+                    detail: d2,
+                },
+            ) => i1 == i2 && d1 == d2,
+            (
+                Self::NonProjective {
+                    token: t1,
+                    head: h1,
+                    blocked: b1,
+                },
+                Self::NonProjective {
+                    token: t2,
+                    head: h2,
+                    blocked: b2,
+                },
+            ) => t1 == t2 && h1 == h2 && b1 == b2,
+            (Self::Json { source: s1 }, Self::Json { source: s2 }) => {
+                s1.to_string() == s2.to_string()
+            }
             (Self::Apply(a), Self::Apply(b)) => a == b,
             (Self::EmptyDocument, Self::EmptyDocument) => true,
             _ => false,

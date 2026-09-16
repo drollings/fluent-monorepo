@@ -41,7 +41,11 @@ impl Calls {
 
 #[test]
 fn fresh_serves_without_trigger_or_wait_in_every_mode() {
-    for mode in [FreshnessMode::Background, FreshnessMode::Wait, FreshnessMode::Off] {
+    for mode in [
+        FreshnessMode::Background,
+        FreshnessMode::Wait,
+        FreshnessMode::Off,
+    ] {
         let calls = Calls::new();
         let gate = FreshnessGate::new(mode);
         assert_eq!(calls.run(gate, 7, 7), "served");
@@ -94,10 +98,7 @@ fn stale_wait_triggers_waits_then_serves_fresh() {
     assert_eq!(calls.run(gate, 7, 9), "served");
     assert_eq!(calls.triggered.get(), 1);
     assert_eq!(calls.waited.get(), 1);
-    assert_eq!(
-        calls.served.take(),
-        Some(Freshness::Fresh { revision: 9 })
-    );
+    assert_eq!(calls.served.take(), Some(Freshness::Fresh { revision: 9 }));
 }
 
 // --- M12.1 characterization: revision-matrix edges (verbatim outputs) ---
@@ -106,7 +107,11 @@ fn stale_wait_triggers_waits_then_serves_fresh() {
 fn m12_dirty_behind_indexed_is_fresh() {
     // `dirty <= indexed` → Fresh: a dirty watermark older than the index
     // carries no work (clock moved backward or watermark reused).
-    for mode in [FreshnessMode::Background, FreshnessMode::Wait, FreshnessMode::Off] {
+    for mode in [
+        FreshnessMode::Background,
+        FreshnessMode::Wait,
+        FreshnessMode::Off,
+    ] {
         let calls = Calls::new();
         let gate = FreshnessGate::new(mode);
         assert_eq!(calls.run(gate, 9, 7), "served");
@@ -123,10 +128,7 @@ fn m12_dirty_behind_indexed_is_fresh() {
 #[test]
 fn m12_zero_revisions_are_fresh() {
     let gate = FreshnessGate::new(FreshnessMode::Background);
-    assert_eq!(
-        gate.check(0, 0),
-        Freshness::Fresh { revision: 0 }
-    );
+    assert_eq!(gate.check(0, 0), Freshness::Fresh { revision: 0 });
     // Boundary: dirty exactly one ahead is already possibly stale.
     assert_eq!(
         gate.check(0, 1),

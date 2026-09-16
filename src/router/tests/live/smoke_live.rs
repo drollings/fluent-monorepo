@@ -88,7 +88,8 @@ async fn smoke_live_classifier_dispatch_structural() {
     assert!(
         stage_order
             .windows(2)
-            .any(|w| w[0] == PipelineStage::DeterministicPreFilter && w[1] == PipelineStage::Classifier),
+            .any(|w| w[0] == PipelineStage::DeterministicPreFilter
+                && w[1] == PipelineStage::Classifier),
         "deterministic pre-filter must precede the classifier"
     );
 
@@ -100,7 +101,10 @@ async fn smoke_live_classifier_dispatch_structural() {
                 .classifier_response
                 .as_ref()
                 .is_some_and(|s| !s.is_empty())
-            || result.final_response.as_ref().is_some_and(|s| !s.is_empty()),
+            || result
+                .final_response
+                .as_ref()
+                .is_some_and(|s| !s.is_empty()),
         "pipeline must produce a routing target or an answer"
     );
 }

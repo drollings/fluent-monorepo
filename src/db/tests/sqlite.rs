@@ -17,7 +17,8 @@ fn open_wal_enables_wal_and_roundtrips() {
         .unwrap();
     assert_eq!(mode.to_lowercase(), "wal");
     run_batch(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)").unwrap();
-    conn.execute("INSERT INTO t (v) VALUES (?1)", ["hello"]).unwrap();
+    conn.execute("INSERT INTO t (v) VALUES (?1)", ["hello"])
+        .unwrap();
     let v: String = conn
         .query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0))
         .unwrap();

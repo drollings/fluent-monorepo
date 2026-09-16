@@ -122,9 +122,18 @@ mod tests {
 
     #[test]
     fn tier_and_status_wire_names_are_snake_case() {
-        assert_eq!(serde_json::to_string(&ProvenanceTier::HumanReview).unwrap(), "\"human_review\"");
-        assert_eq!(serde_json::to_string(&ProvenanceTier::LocalModel).unwrap(), "\"local_model\"");
-        assert_eq!(serde_json::to_string(&ClaimStatus::Superseded).unwrap(), "\"superseded\"");
+        assert_eq!(
+            serde_json::to_string(&ProvenanceTier::HumanReview).unwrap(),
+            "\"human_review\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ProvenanceTier::LocalModel).unwrap(),
+            "\"local_model\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ClaimStatus::Superseded).unwrap(),
+            "\"superseded\""
+        );
     }
 
     #[test]

@@ -273,8 +273,14 @@ mod tests {
         let person = NodeId::from_int(guidance_rdf::normalize::hash_iri(
             "http://yago-knowledge.org/resource/Person",
         ));
-        assert_eq!(lib.get_node(artist).expect("artist").expect("exists").id, Some(artist));
-        assert_eq!(lib.get_node(person).expect("person").expect("exists").id, Some(person));
+        assert_eq!(
+            lib.get_node(artist).expect("artist").expect("exists").id,
+            Some(artist)
+        );
+        assert_eq!(
+            lib.get_node(person).expect("person").expect("exists").id,
+            Some(person)
+        );
 
         // traverse_from follows the subClassOf edge: Artist → Person.
         let hops = lib.traverse_from(artist, 1).expect("traverse");
@@ -290,7 +296,9 @@ mod tests {
             "http://yago-knowledge.org/resource/Person",
         )
         .expect("hierarchy");
-        assert!(lib.is_a(artist, "http://yago-knowledge.org/resource/Person").expect("is_a"));
+        assert!(lib
+            .is_a(artist, "http://yago-knowledge.org/resource/Person")
+            .expect("is_a"));
     }
 
     #[test]

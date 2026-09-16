@@ -4,9 +4,7 @@ fn open() -> (Arc<SqliteStore>, SqliteConceptStore) {
     let store = Arc::new(SqliteStore::open_in_memory().expect("in-memory"));
     // Run the router's migrations so the interlingua tables exist.
     store
-        .with_conn(|conn| {
-            fluent_db::migrate::migrate(conn, &crate::ledger::ledger_migrations())
-        })
+        .with_conn(|conn| fluent_db::migrate::migrate(conn, &crate::ledger::ledger_migrations()))
         .expect("migrate");
     let cs = SqliteConceptStore::new(Arc::clone(&store));
     (store, cs)
@@ -32,10 +30,7 @@ fn crud_roundtrip_and_lookup() {
     cs.insert(meta(id, "schema:Person")).expect("insert");
     assert_eq!(cs.get(id).expect("get").canonical_name, "schema:Person");
     assert_eq!(cs.resolve_name("schema:Person").expect("name"), id);
-    assert_eq!(
-        cs.resolve_yago_iri("iri:schema:Person").expect("iri"),
-        id
-    );
+    assert_eq!(cs.resolve_yago_iri("iri:schema:Person").expect("iri"), id);
     assert!(cs.contains(id));
     assert_eq!(cs.iter_ids().count(), 1);
     assert!(matches!(

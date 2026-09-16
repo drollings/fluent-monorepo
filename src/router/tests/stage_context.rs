@@ -35,7 +35,10 @@ fn stub(name: &'static str) -> Arc<dyn Component> {
 }
 
 fn passed(stage: PipelineStage, reason: &str) -> (StageDecision, Option<RoutingTarget>) {
-    (StageDecision::new(stage, StageVerdict::Passed, reason), None)
+    (
+        StageDecision::new(stage, StageVerdict::Passed, reason),
+        None,
+    )
 }
 
 fn orchestrator_with(
@@ -55,10 +58,7 @@ fn stage_sees_request_and_caller_context_untouched() {
             .structured_ref("request")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
-        seen_producer
-            .lock()
-            .expect("observation lock")
-            .push(req);
+        seen_producer.lock().expect("observation lock").push(req);
         Ok(passed(PipelineStage::DeterministicPreFilter, "ok"))
     });
     let orch = orchestrator_with(&["s"], vec![Some(producer)]);
@@ -129,5 +129,7 @@ fn metadata_borrowed_reader_matches_owned() {
     assert_eq!(borrowed.rewritten_request(), owned.rewritten_request());
     assert_eq!(borrowed.response(), Some("done"));
     assert_eq!(borrowed.fallback(), Some(true));
-    assert!(StageMetadata::metadata_ref(&serde_json::Value::Null).response().is_none());
+    assert!(StageMetadata::metadata_ref(&serde_json::Value::Null)
+        .response()
+        .is_none());
 }

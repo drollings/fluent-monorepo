@@ -1,6 +1,6 @@
 //! ServingConfig sub-config (M8) — models, sidecar, onnx, gguf.
-use serde::{Deserialize, Serialize};
 use crate::config::{ModelEntry, SidecarConfig};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ServingConfig {

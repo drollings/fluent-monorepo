@@ -177,7 +177,10 @@ impl SupervisedBatch {
     /// has already been registered. If you intentionally want to replace an
     /// existing task, use `register_or_replace` (not yet implemented — file
     /// a feature request if you need it).
-    pub fn register(&mut self, unit: Arc<dyn Component>) -> Result<&mut Self, SupervisedBatchError> {
+    pub fn register(
+        &mut self,
+        unit: Arc<dyn Component>,
+    ) -> Result<&mut Self, SupervisedBatchError> {
         let ctx = WorkContext::for_unit_in_batch(&self.runtime, &self.caps, |_| {});
         self.register_with_context(unit, ctx)
     }
@@ -218,21 +221,22 @@ impl SupervisedBatch {
         // `register_with_context` may carry per-unit overrides, so we clone
         // from the effective `ctx` rather than `self.caps`.
         let caps_for_task = ctx.caps.clone();
-        let abort = self.join_set.spawn(fluent_wvr::capability::CURRENT_CAPS.scope(
-            caps_for_task,
-            async move {
-                execute_with_timeout_and_retry(
-                    unit,
-                    ctx,
-                    max_retries,
-                    timeout_ms,
-                    is_retryable,
-                    backoff_base_ms,
-                    backoff_jitter_ms,
-                )
-                .await
-            },
-        ));
+        let abort = self
+            .join_set
+            .spawn(
+                fluent_wvr::capability::CURRENT_CAPS.scope(caps_for_task, async move {
+                    execute_with_timeout_and_retry(
+                        unit,
+                        ctx,
+                        max_retries,
+                        timeout_ms,
+                        is_retryable,
+                        backoff_base_ms,
+                        backoff_jitter_ms,
+                    )
+                    .await
+                }),
+            );
 
         let id = abort.id();
         self.task_names.insert(id, name.clone());
@@ -261,7 +265,8 @@ impl SupervisedBatch {
         name
     }
 
-    fn cancel_dependents_of(&mut self, name: &ArcIntern<str>) {        // Delegate the dependency traversal to `DependencyGraph::dependents_of`,
+    fn cancel_dependents_of(&mut self, name: &ArcIntern<str>) {
+        // Delegate the dependency traversal to `DependencyGraph::dependents_of`,
         // which performs the DFS with cycle detection (ported verbatim from
         // the original hand-rolled implementation). The graph returns the
         // transitive set of nodes that depend on `name`; SupervisedBatch applies the
@@ -302,10 +307,12 @@ impl Future for SupervisedBatch {
                 Poll::Ready(Some(Ok((id, Err(WorkError::Timeout { .. }))))) => {
                     let name = this.take_finished_name(id);
                     this.cancel_dependents_of(&name);
-                    this.summary.cancelled.push(SupervisedBatchEvent::Cancelled {
-                        name,
-                        reason: CancelReason::Timeout,
-                    });
+                    this.summary
+                        .cancelled
+                        .push(SupervisedBatchEvent::Cancelled {
+                            name,
+                            reason: CancelReason::Timeout,
+                        });
                     this.active_count = this.active_count.saturating_sub(1);
                     budget = budget.saturating_sub(1);
                 }

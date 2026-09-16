@@ -140,9 +140,11 @@ fn propagation_db() -> GuidanceDb {
     let db = GuidanceDb::open_in_memory().expect("db");
     // `files` rows seed the hydration's known-file set (paths resolve
     // against indexed files, never rows alone).
-    for (id, path) in
-        [("a", "/repo/a.rs"), ("b", "/repo/b.rs"), ("c", "/repo/c.rs")]
-    {
+    for (id, path) in [
+        ("a", "/repo/a.rs"),
+        ("b", "/repo/b.rs"),
+        ("c", "/repo/c.rs"),
+    ] {
         db.replace_file(
             &search_vector::db::FileRecord {
                 id: id.to_string(),
@@ -186,7 +188,10 @@ fn affected_expands_changed_through_dependents() {
     let db = propagation_db();
     let mut affected = affected_for_sync(&db, &["/repo/a.rs".to_string()], &[], &roots());
     affected.sort();
-    assert_eq!(affected, vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]);
+    assert_eq!(
+        affected,
+        vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]
+    );
 }
 
 #[test]
@@ -194,7 +199,10 @@ fn affected_expands_deleted_seeds() {
     let db = propagation_db();
     let mut affected = affected_for_sync(&db, &[], &["/repo/a.rs".to_string()], &roots());
     affected.sort();
-    assert_eq!(affected, vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]);
+    assert_eq!(
+        affected,
+        vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]
+    );
 }
 
 #[test]
@@ -225,7 +233,11 @@ fn ingest_reports_changed_and_purges_deleted() {
 
     std::fs::remove_file(dir.path().join("gone.rs")).expect("delete");
     let second = ingest_workspace_fragments(&db_path, dir.path(), &srcs).expect("ingest");
-    assert!(second.changed.is_empty(), "nothing changed: {:?}", second.changed);
+    assert!(
+        second.changed.is_empty(),
+        "nothing changed: {:?}",
+        second.changed
+    );
     assert_eq!(second.deleted.len(), 1);
     assert!(second.deleted[0].ends_with("gone.rs"));
 
@@ -238,10 +250,9 @@ fn ingest_reports_changed_and_purges_deleted() {
         .map(|f| f.absolute_path)
         .collect();
     assert!(!files.iter().any(|f| f.ends_with("gone.rs")), "{files:?}");
-    assert!(
-        !db.graph_symbol_rows()
-            .expect("symbols")
-            .iter()
-            .any(|r| r.file.ends_with("gone.rs"))
-    );
+    assert!(!db
+        .graph_symbol_rows()
+        .expect("symbols")
+        .iter()
+        .any(|r| r.file.ends_with("gone.rs")));
 }

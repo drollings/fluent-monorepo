@@ -122,7 +122,10 @@ async fn fleet_aggregate_adds_onnx_synthesized_row_and_keeps_llama_identical() {
     let onnx = onnx_registry();
     let config = config_with_onnx_llm();
     let fleet = LlmFleet::build(pool.clone(), None, Some(onnx), &config);
-    assert!(!fleet.is_empty(), "onnx weights registered -> fleet non-empty");
+    assert!(
+        !fleet.is_empty(),
+        "onnx weights registered -> fleet non-empty"
+    );
 
     let llama_only = pool.aggregate(None).await.expect("llama aggregate");
     let combined = fleet.aggregate(None).await.expect("fleet aggregate");
@@ -231,8 +234,8 @@ async fn fleet_list_models_appends_onnx_rows_with_aliases() {
 
 #[tokio::test]
 async fn fleet_scoped_aggregate_returns_only_matching_rows() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
-        |_method, _path, _body| {
+    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+        Arc::new(|_method, _path, _body| {
             (
                 200,
                 serde_json::json!({
@@ -242,8 +245,7 @@ async fn fleet_scoped_aggregate_returns_only_matching_rows() {
                 })
                 .to_string(),
             )
-        },
-    );
+        });
     let stub = StubServer::start(handler);
     let pool = llama_pool_with(&stub);
     let onnx = onnx_registry();
@@ -271,8 +273,8 @@ async fn fleet_scoped_aggregate_returns_only_matching_rows() {
 
 #[tokio::test]
 async fn fleet_unload_releases_unloadable_onnx_role_and_refuses_always() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
-        |_method, _path, _body| {
+    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+        Arc::new(|_method, _path, _body| {
             (
                 200,
                 serde_json::json!({
@@ -282,8 +284,7 @@ async fn fleet_unload_releases_unloadable_onnx_role_and_refuses_always() {
                 })
                 .to_string(),
             )
-        },
-    );
+        });
     let stub = StubServer::start(handler);
     let pool = llama_pool_with(&stub);
 
@@ -332,19 +333,25 @@ async fn fleet_unload_releases_unloadable_onnx_role_and_refuses_always() {
     let fleet = LlmFleet::build(pool.clone(), None, Some(lazy_registry.clone()), &config);
     assert!(fleet.is_known_model("onnx/llm"));
     fleet.unload("onnx/llm").await.expect("unload");
-    assert!(!lazy_registry
-        .residency_report()
-        .iter()
-        .find(|r| r.key == "onnx/llm")
-        .unwrap()
-        .loaded, "lazy role released");
+    assert!(
+        !lazy_registry
+            .residency_report()
+            .iter()
+            .find(|r| r.key == "onnx/llm")
+            .unwrap()
+            .loaded,
+        "lazy role released"
+    );
 
     // An `Always` (resident) onnx role refuses unload (UnloadRefused).
     let always = onnx_registry();
     let config = config_with_onnx_llm();
     let fleet = LlmFleet::build(pool.clone(), None, Some(always), &config);
     let err = fleet.unload("onnx/llm").await.expect_err("Always refuses");
-    assert!(matches!(err, LlmRuntimeError::UnloadRefused(_)), "got {err:?}");
+    assert!(
+        matches!(err, LlmRuntimeError::UnloadRefused(_)),
+        "got {err:?}"
+    );
 }
 
 /// `LlmFleet::resize_context` routes an onnx context through
@@ -352,8 +359,8 @@ async fn fleet_unload_releases_unloadable_onnx_role_and_refuses_always() {
 /// fleet's onnx id grammar resolves `<onnx_key>:<context>`.
 #[tokio::test]
 async fn fleet_resize_context_and_onnx_id_grammar() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
-        |_method, _path, _body| {
+    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+        Arc::new(|_method, _path, _body| {
             (
                 200,
                 serde_json::json!({
@@ -363,8 +370,7 @@ async fn fleet_resize_context_and_onnx_id_grammar() {
                 })
                 .to_string(),
             )
-        },
-    );
+        });
     let stub = StubServer::start(handler);
     let pool = llama_pool_with(&stub);
     let onnx = onnx_registry();
@@ -389,10 +395,7 @@ async fn fleet_resize_context_and_onnx_id_grammar() {
         .resize_context("onnx/llm", "default", 32768)
         .await
         .expect_err("unloaded onnx context is loud");
-    assert!(
-        matches!(err, LlmRuntimeError::NotLoaded(_)),
-        "got {err:?}"
-    );
+    assert!(matches!(err, LlmRuntimeError::NotLoaded(_)), "got {err:?}");
 
     // Unknown models are loud too.
     let err = fleet
@@ -420,10 +423,16 @@ fn ps_render_keeps_llama_block_and_adds_onnx_block() {
     });
     let llama_block =
         crate::cli::commands::server::render_weight_block(None, dir.path(), "base", &[llama_row]);
-    assert!(llama_block.contains("ctx-mem"), "llama uses the VRAM column");
+    assert!(
+        llama_block.contains("ctx-mem"),
+        "llama uses the VRAM column"
+    );
     assert!(llama_block.contains("weights"), "weights row");
     assert!(llama_block.contains("100 MB"), "weights size rendered");
-    assert!(!llama_block.contains("onnx"), "no onnx marker in the llama block");
+    assert!(
+        !llama_block.contains("onnx"),
+        "no onnx marker in the llama block"
+    );
     assert!(llama_block.contains("base"));
 
     let onnx_row = serde_json::json!({
@@ -447,14 +456,17 @@ fn ps_render_keeps_llama_block_and_adds_onnx_block() {
     assert!(onnx_block.contains("(onnx)"), "runtime marker");
     assert!(onnx_block.contains("ram-mem"), "RAM memory column");
     assert!(!onnx_block.contains("ctx-mem"), "no VRAM column for onnx");
-    assert!(onnx_block.contains("onnx/llm"), "display line names the model");
+    assert!(
+        onnx_block.contains("onnx/llm"),
+        "display line names the model"
+    );
     assert!(onnx_block.contains("default"), "the default context row");
 }
 
 #[tokio::test]
 async fn fleet_knows_llama_and_onnx_keys() {
-    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> = Arc::new(
-        |_method, _path, _body| {
+    let handler: Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync> =
+        Arc::new(|_method, _path, _body| {
             (
                 200,
                 serde_json::json!({
@@ -464,8 +476,7 @@ async fn fleet_knows_llama_and_onnx_keys() {
                 })
                 .to_string(),
             )
-        },
-    );
+        });
     let stub = StubServer::start(handler);
     let pool = llama_pool_with(&stub);
     let onnx = onnx_registry();

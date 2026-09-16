@@ -177,15 +177,14 @@ pub(crate) fn template_from_prompt(prompt: &str, query: &str) -> String {
 /// Slug options reproducing [`slugify_chart_name`] byte-for-byte (P4).
 /// Domain constant: stays router-side, composed over
 /// `common_core::string::slugify_with`.
-pub const CHART_SLUG_OPTIONS: common_core::string::SlugOptions =
-    common_core::string::SlugOptions {
-        ascii_only: true,
-        separator: '_',
-        collapse_runs: true,
-        trim_leading: false,
-        trim_trailing: true,
-        max_chars: Some(super::CHART_EXTRACTED_NAME_MAX_CHARS),
-    };
+pub const CHART_SLUG_OPTIONS: common_core::string::SlugOptions = common_core::string::SlugOptions {
+    ascii_only: true,
+    separator: '_',
+    collapse_runs: true,
+    trim_leading: false,
+    trim_trailing: true,
+    max_chars: Some(super::CHART_EXTRACTED_NAME_MAX_CHARS),
+};
 
 /// Slugify a query into a valid chart name: lowercase alphanumerics and
 /// `_`/`-` only, truncated to `CHART_EXTRACTED_NAME_MAX_CHARS`.

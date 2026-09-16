@@ -1,9 +1,9 @@
 //! Compiles `../../env/en_lemmatizer.json` into SLM2 blob.
+use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use serde_json::Value;
 const MAGIC: u32 = 0x534C_4D32;
 const HEADER_VERSION: u16 = 1;
 const SECTION_VERSION: u16 = 2;
@@ -20,7 +20,9 @@ fn main() {
     keys.sort_unstable();
     // Build directory and sections first (payload)
     let mut dir_len = 0usize;
-    for k in &keys { dir_len += 1 + k.len() + 6*4; }
+    for k in &keys {
+        dir_len += 1 + k.len() + 6 * 4;
+    }
     let mut payload = Vec::new();
     // placeholder for dir; we build dir bytes separately
     // Actually we need to compute offsets relative to file start (header 44 + dir)
@@ -73,7 +75,7 @@ fn main() {
         let mut hasher = Sha256::new();
         hasher.update(&payload);
         let out = hasher.finalize();
-        let mut a = [0u8;16];
+        let mut a = [0u8; 16];
         a.copy_from_slice(&out[..16]);
         a
     };
@@ -98,7 +100,11 @@ fn main() {
     let out_path = Path::new(&out_dir).join("en_lemmas.bin");
     fs::write(&out_path, &blob).expect("write");
     println!("cargo:rustc-env=LEMMA_BLOB={}", out_path.display());
-    eprintln!("lemmas blob SLM2: {} bytes -> {}", blob.len(), out_path.display());
+    eprintln!(
+        "lemmas blob SLM2: {} bytes -> {}",
+        blob.len(),
+        out_path.display()
+    );
     // Tagger orthography blob (SOR1): the string fragments/suffixes the
     // ArcEager parser evaluates, compiled from env/en_orthography.json so
     // each language ships data, not parser edits. Layout (see ortho.rs):
@@ -112,12 +118,19 @@ fn main() {
     let mut ortho = Vec::new();
     ortho.extend_from_slice(&0x534F5231u32.to_le_bytes());
     ortho.extend_from_slice(&1u16.to_le_bytes());
-    for key in ["trailing_punct", "sentence_boundary", "bare_demonstrative_follow"] {
+    for key in [
+        "trailing_punct",
+        "sentence_boundary",
+        "bare_demonstrative_follow",
+    ] {
         let items: Vec<&str> = ortho_root[key]
             .as_array()
             .unwrap_or_else(|| panic!("ortho list {key}"))
             .iter()
-            .map(|v| v.as_str().unwrap_or_else(|| panic!("ortho string in {key}")))
+            .map(|v| {
+                v.as_str()
+                    .unwrap_or_else(|| panic!("ortho string in {key}"))
+            })
             .collect();
         assert!(!items.is_empty(), "ortho list {key} must not be empty");
         let mut body = Vec::new();
@@ -133,8 +146,16 @@ fn main() {
         ortho.extend_from_slice(&(body.len() as u32).to_le_bytes());
         ortho.extend_from_slice(&body);
     }
-    for key in ["suffix_plural_s", "suffix_manner_ly", "suffix_past_ed", "suffix_part_ing", "clause_comma"] {
-        let s = ortho_root[key].as_str().unwrap_or_else(|| panic!("ortho scalar {key}"));
+    for key in [
+        "suffix_plural_s",
+        "suffix_manner_ly",
+        "suffix_past_ed",
+        "suffix_part_ing",
+        "clause_comma",
+    ] {
+        let s = ortho_root[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("ortho scalar {key}"));
         assert!(
             !s.is_empty() && !s.as_bytes().contains(&0),
             "ortho scalar {key} must be non-empty NUL-free UTF-8"
@@ -145,7 +166,11 @@ fn main() {
     let ortho_out = Path::new(&out_dir).join("en_ortho.bin");
     fs::write(&ortho_out, &ortho).expect("write ortho blob");
     println!("cargo:rustc-env=ORTHO_BLOB={}", ortho_out.display());
-    eprintln!("ortho blob SOR1: {} bytes -> {}", ortho.len(), ortho_out.display());
+    eprintln!(
+        "ortho blob SOR1: {} bytes -> {}",
+        ortho.len(),
+        ortho_out.display()
+    );
 }
 fn encode_rules(v: &Value) -> Vec<u8> {
     let rules = v.as_array().expect("rules array");
@@ -163,12 +188,23 @@ fn encode_rules(v: &Value) -> Vec<u8> {
     out
 }
 fn encode_index(v: &Value) -> Vec<u8> {
-    let words: Vec<&str> = v.as_array().expect("index array").iter().map(|w| w.as_str().expect("word")).collect();
+    let words: Vec<&str> = v
+        .as_array()
+        .expect("index array")
+        .iter()
+        .map(|w| w.as_str().expect("word"))
+        .collect();
     let mut sorted: Vec<&str> = words;
     sorted.sort_unstable();
     sorted.dedup();
     let mut body = Vec::new();
-    for w in &sorted { if w.is_empty(){continue;} body.extend_from_slice(w.as_bytes()); body.push(0); }
+    for w in &sorted {
+        if w.is_empty() {
+            continue;
+        }
+        body.extend_from_slice(w.as_bytes());
+        body.push(0);
+    }
     let mut out = Vec::new();
     out.extend_from_slice(&(sorted.len() as u32).to_le_bytes());
     out.extend_from_slice(&(body.len() as u32).to_le_bytes());
@@ -177,18 +213,43 @@ fn encode_index(v: &Value) -> Vec<u8> {
 }
 fn encode_exc(v: &Value) -> Vec<u8> {
     let table = v.as_object().expect("exc object");
-    let mut entries: Vec<(&str, Vec<&str>)> = table.iter().map(|(s,l)| (s.as_str(), l.as_array().expect("lemmas").iter().map(|l| l.as_str().expect("lemma")).collect())).collect();
-    entries.sort_unstable_by(|a,b| a.0.cmp(b.0));
+    let mut entries: Vec<(&str, Vec<&str>)> = table
+        .iter()
+        .map(|(s, l)| {
+            (
+                s.as_str(),
+                l.as_array()
+                    .expect("lemmas")
+                    .iter()
+                    .map(|l| l.as_str().expect("lemma"))
+                    .collect(),
+            )
+        })
+        .collect();
+    entries.sort_unstable_by(|a, b| a.0.cmp(b.0));
     let mut surfaces = Vec::new();
     let mut offsets = Vec::new();
     let mut lemmas = Vec::new();
-    for (surface, ls) in &entries { surfaces.extend_from_slice(surface.as_bytes()); surfaces.push(0); offsets.push(lemmas.len() as u32); for l in ls { if l.is_empty(){continue;} lemmas.extend_from_slice(l.as_bytes()); lemmas.push(0);} }
+    for (surface, ls) in &entries {
+        surfaces.extend_from_slice(surface.as_bytes());
+        surfaces.push(0);
+        offsets.push(lemmas.len() as u32);
+        for l in ls {
+            if l.is_empty() {
+                continue;
+            }
+            lemmas.extend_from_slice(l.as_bytes());
+            lemmas.push(0);
+        }
+    }
     let mut out = Vec::new();
     out.extend_from_slice(&(entries.len() as u32).to_le_bytes());
     out.extend_from_slice(&(surfaces.len() as u32).to_le_bytes());
     out.extend_from_slice(&surfaces);
-    out.extend_from_slice(&((offsets.len()*4) as u32).to_le_bytes());
-    for o in &offsets { out.extend_from_slice(&o.to_le_bytes()); }
+    out.extend_from_slice(&((offsets.len() * 4) as u32).to_le_bytes());
+    for o in &offsets {
+        out.extend_from_slice(&o.to_le_bytes());
+    }
     out.extend_from_slice(&(lemmas.len() as u32).to_le_bytes());
     out.extend_from_slice(&lemmas);
     out

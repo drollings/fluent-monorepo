@@ -55,7 +55,8 @@ pub struct SymbolDef {
 
 /// A caller → callee-name edge (callee resolved at build).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallEdge {    /// Calling file.
+pub struct CallEdge {
+    /// Calling file.
     pub caller_file: String,
     /// Calling symbol, if named.
     pub caller_symbol: Option<String>,
@@ -261,11 +262,19 @@ impl GraphIndex {
         }
         for (name, file, calls) in symbols {
             if known.contains(file) {
-                per_file.entry(file.clone()).or_default().symbols.push(HarvestedSymbol {
-                    name: if name.is_empty() { None } else { Some(name.clone()) },
-                    scope: Vec::new(),
-                    calls: calls.clone(),
-                });
+                per_file
+                    .entry(file.clone())
+                    .or_default()
+                    .symbols
+                    .push(HarvestedSymbol {
+                        name: if name.is_empty() {
+                            None
+                        } else {
+                            Some(name.clone())
+                        },
+                        scope: Vec::new(),
+                        calls: calls.clone(),
+                    });
             }
         }
         let ordered: Vec<(String, HarvestedFile)> = per_file.into_iter().collect();
@@ -281,10 +290,13 @@ impl GraphIndex {
         for (path, harvested) in per_file {
             for symbol in &harvested.symbols {
                 if let Some(name) = &symbol.name {
-                    symbol_defs.entry(name.clone()).or_default().push(SymbolDef {
-                        file: path.clone(),
-                        symbol: name.clone(),
-                    });
+                    symbol_defs
+                        .entry(name.clone())
+                        .or_default()
+                        .push(SymbolDef {
+                            file: path.clone(),
+                            symbol: name.clone(),
+                        });
                 }
             }
         }
@@ -336,8 +348,7 @@ impl GraphIndex {
             }
         }
         let mut files = DependencyGraph::new();
-        let ordered: Vec<&String> =
-            common_core::sort::sorted_vec(file_deps.keys().collect());
+        let ordered: Vec<&String> = common_core::sort::sorted_vec(file_deps.keys().collect());
         for path in ordered {
             let deps: Vec<String> =
                 common_core::sort::sorted_vec(file_deps[path].iter().cloned().collect());
@@ -424,7 +435,11 @@ impl GraphIndex {
                     via: edge.specifier.clone(),
                 });
             }
-            for edge in self.call_edges.iter().filter(|edge| edge.caller_file == *anchor) {
+            for edge in self
+                .call_edges
+                .iter()
+                .filter(|edge| edge.caller_file == *anchor)
+            {
                 for callee_file in &edge.callee_files {
                     edges.push(ContextEdge {
                         file: callee_file.clone(),
@@ -466,24 +481,28 @@ impl GraphIndex {
             .collect();
         let touches = self.call_edges.iter().any(|edge| {
             candidate_files.contains(edge.caller_file.as_str())
-                || edge.callee_files.iter().any(|file| candidate_files.contains(file.as_str()))
+                || edge
+                    .callee_files
+                    .iter()
+                    .any(|file| candidate_files.contains(file.as_str()))
         }) || self.import_edges.iter().any(|edge| {
             candidate_files.contains(edge.importer.as_str())
-                || edge.resolved_file.as_deref().is_some_and(|file| candidate_files.contains(file))
+                || edge
+                    .resolved_file
+                    .as_deref()
+                    .is_some_and(|file| candidate_files.contains(file))
         });
         if !touches {
             return;
         }
-        let mut anchors: Vec<usize> = common_core::sort::sorted_by_vec(
-            (0..candidates.len()).collect(),
-            |&a, &b| {
+        let mut anchors: Vec<usize> =
+            common_core::sort::sorted_by_vec((0..candidates.len()).collect(), |&a, &b| {
                 candidates[b]
                     .score
                     .partial_cmp(&candidates[a].score)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| candidates[a].id.cmp(&candidates[b].id))
-            },
-        );
+            });
         anchors.truncate(3);
         let anchor_files: HashSet<&str> = anchors
             .iter()
@@ -524,8 +543,7 @@ impl GraphIndex {
             // Local ordering key only: the composite magnitude plus the
             // structural boosts, sorted here and never stored back into
             // the candidate (composites never combine — see `RrfScore`).
-            let boosted =
-                search_vector::fusion::apply_boosts(candidate.score.value(), boosts);
+            let boosted = search_vector::fusion::apply_boosts(candidate.score.value(), boosts);
             scored.push((index, boosted, overlap));
         }
         let scored = common_core::sort::sorted_by_vec(scored, |a, b| {
@@ -536,8 +554,10 @@ impl GraphIndex {
         });
         // Reorder by the sorted permutation (candidates are few; the
         // clone keeps the rotation obviously correct and deterministic).
-        let reordered: Vec<RecallCandidate> =
-            scored.iter().map(|(index, _, _)| candidates[*index].clone()).collect();
+        let reordered: Vec<RecallCandidate> = scored
+            .iter()
+            .map(|(index, _, _)| candidates[*index].clone())
+            .collect();
         candidates.clone_from_slice(&reordered);
     }
 
@@ -576,13 +596,16 @@ impl GraphIndex {
         false
     }
 
-    fn shares_anchor_scope(anchors: &[usize], candidates: &[RecallCandidate], candidate: &RecallCandidate) -> bool {
+    fn shares_anchor_scope(
+        anchors: &[usize],
+        candidates: &[RecallCandidate],
+        candidate: &RecallCandidate,
+    ) -> bool {
         let Some(scope) = candidate_scope(candidate) else {
             return false;
         };
         anchors.iter().any(|&anchor| {
-            candidate_scope(&candidates[anchor])
-                .is_some_and(|anchor_scope| anchor_scope == scope)
+            candidate_scope(&candidates[anchor]).is_some_and(|anchor_scope| anchor_scope == scope)
         })
     }
 }
@@ -649,12 +672,18 @@ fn resolve_import(
         return None;
     }
     // Relative specifiers resolve against the importer directory.
-    if cleaned.starts_with("./") || cleaned.starts_with("../") || cleaned == "." || cleaned == ".." {
+    if cleaned.starts_with("./") || cleaned.starts_with("../") || cleaned == "." || cleaned == ".."
+    {
         let base = Path::new(importer).parent().unwrap_or(Path::new("/"));
         return probe_path(&base.join(cleaned), known_files);
     }
     // Dotted modules (`pkg.sub`) probe as relative segments first.
-    if cleaned.contains('.') && !cleaned.contains('/') && Path::new(cleaned).extension().is_none_or(std::ffi::OsStr::is_empty) {
+    if cleaned.contains('.')
+        && !cleaned.contains('/')
+        && Path::new(cleaned)
+            .extension()
+            .is_none_or(std::ffi::OsStr::is_empty)
+    {
         let relative = cleaned.replace('.', "/");
         let base = Path::new(importer).parent().unwrap_or(Path::new("/"));
         if let Some(found) = probe_path(&base.join(&relative), known_files) {
@@ -679,7 +708,11 @@ fn resolve_import(
 }
 
 /// Rust `mod child;` (or `crate::a::b` paths) to sibling files.
-fn probe_module_file(importer: &str, module: &str, known_files: &HashSet<String>) -> Option<String> {
+fn probe_module_file(
+    importer: &str,
+    module: &str,
+    known_files: &HashSet<String>,
+) -> Option<String> {
     let dir = Path::new(importer).parent().unwrap_or(Path::new("/"));
     for candidate in [
         dir.join(format!("{module}.rs")),
@@ -737,4 +770,3 @@ pub(crate) fn normalize_separators(path: &str) -> String {
 #[cfg(test)]
 #[path = "../tests/graph_index.rs"]
 mod tests;
-

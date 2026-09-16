@@ -8,7 +8,10 @@ struct TestVocab {
 impl TestVocab {
     fn from_list(tokens: &[&str]) -> Arc<Self> {
         Arc::new(Self {
-            tokens: tokens.iter().map(std::string::ToString::to_string).collect(),
+            tokens: tokens
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         })
     }
 }
@@ -53,19 +56,47 @@ fn drive_accept(grammar: &mut dyn Grammar, vocab: &TestVocab, stream: &[&str]) {
 #[test]
 fn object_accepts_well_formed_stream() {
     let vocab = TestVocab::from_list(&[
-        "{", "}", ":", ",", "\"action\"", "\"run\"", "\"score\"", "1.5", "\"reason\"", "\"ok\"",
+        "{",
+        "}",
+        ":",
+        ",",
+        "\"action\"",
+        "\"run\"",
+        "\"score\"",
+        "1.5",
+        "\"reason\"",
+        "\"ok\"",
     ]);
     let mut g = JsonObjectGrammar::new(sample_schema(), vocab.clone());
     drive_accept(
         &mut g,
         &vocab,
-        &["{", "\"action\"", ":", "\"run\"", ",", "\"score\"", ":", "1.5", "}"],
+        &[
+            "{",
+            "\"action\"",
+            ":",
+            "\"run\"",
+            ",",
+            "\"score\"",
+            ":",
+            "1.5",
+            "}",
+        ],
     );
 }
 
 #[test]
 fn object_requires_all_required_fields_before_close() {
-    let vocab = TestVocab::from_list(&["{", "}", ":", ",", "\"action\"", "\"run\"", "\"score\"", "1.5"]);
+    let vocab = TestVocab::from_list(&[
+        "{",
+        "}",
+        ":",
+        ",",
+        "\"action\"",
+        "\"run\"",
+        "\"score\"",
+        "1.5",
+    ]);
     let mut g = JsonObjectGrammar::new(sample_schema(), vocab.clone());
     g.reset();
     g.advance(id_of(&vocab, "{"));
@@ -99,7 +130,16 @@ fn object_rejects_unknown_key() {
 
 #[test]
 fn object_rejects_repeated_key() {
-    let vocab = TestVocab::from_list(&["{", "}", ":", ",", "\"action\"", "\"run\"", "\"score\"", "1.5"]);
+    let vocab = TestVocab::from_list(&[
+        "{",
+        "}",
+        ":",
+        ",",
+        "\"action\"",
+        "\"run\"",
+        "\"score\"",
+        "1.5",
+    ]);
     let mut g = JsonObjectGrammar::new(sample_schema(), vocab.clone());
     g.reset();
     drive_accept(&mut g, &vocab, &["{", "\"action\"", ":", "\"run\"", ","]);
@@ -114,7 +154,14 @@ fn object_rejects_repeated_key() {
 #[test]
 fn object_type_checks_values() {
     let vocab = TestVocab::from_list(&[
-        "{", "}", ":", ",", "\"action\"", "\"run\"", "\"score\"", "not-a-number",
+        "{",
+        "}",
+        ":",
+        ",",
+        "\"action\"",
+        "\"run\"",
+        "\"score\"",
+        "not-a-number",
     ]);
     let mut g = JsonObjectGrammar::new(sample_schema(), vocab.clone());
     g.reset();
@@ -145,11 +192,8 @@ fn malformed_order_rejects_terminally() {
 
 #[test]
 fn array_values_round_trip() {
-    let schema = JsonSchema::new(vec![JsonField::required("tags", JsonType::String)])
-        .with_arrays();
-    let vocab = TestVocab::from_list(&[
-        "{", "}", ":", ",", "[", "]", "\"tags\"", "\"a\"", "\"b\"",
-    ]);
+    let schema = JsonSchema::new(vec![JsonField::required("tags", JsonType::String)]).with_arrays();
+    let vocab = TestVocab::from_list(&["{", "}", ":", ",", "[", "]", "\"tags\"", "\"a\"", "\"b\""]);
     let mut g = JsonObjectGrammar::new(schema, vocab.clone());
     drive_accept(
         &mut g,
@@ -164,22 +208,44 @@ fn object_values_nest() {
     let vocab = TestVocab::from_list(&["{", "}", ":", "\"meta\"", "\"k\"", "\"v\""]);
     let mut g = JsonObjectGrammar::new(schema, vocab.clone());
     // `{ "meta": { "k": "v" } }` — the object value accepts balanced braces.
-    drive_accept(&mut g, &vocab, &["{", "\"meta\"", ":", "{", "\"k\"", "\"v\"", "}", "}"]);
+    drive_accept(
+        &mut g,
+        &vocab,
+        &["{", "\"meta\"", ":", "{", "\"k\"", "\"v\"", "}", "}"],
+    );
 }
 
 #[test]
 fn batch_grammar_accepts_well_formed_array() {
     let schema = JsonSchema::new(vec![JsonField::required("action", JsonType::String)]);
-    let vocab = TestVocab::from_list(&["[", "]", ",", "{", "}", ":", "\"action\"", "\"run\"", "\"halt\""]);
+    let vocab = TestVocab::from_list(&[
+        "[",
+        "]",
+        ",",
+        "{",
+        "}",
+        ":",
+        "\"action\"",
+        "\"run\"",
+        "\"halt\"",
+    ]);
     let mut g = BatchPromptGrammar::new(&[schema.clone(), schema], vocab.clone());
     drive_accept(
         &mut g,
         &vocab,
         &[
             "[",
-            "{", "\"action\"", ":", "\"run\"", "}",
+            "{",
+            "\"action\"",
+            ":",
+            "\"run\"",
+            "}",
             ",",
-            "{", "\"action\"", ":", "\"halt\"", "}",
+            "{",
+            "\"action\"",
+            ":",
+            "\"halt\"",
+            "}",
             "]",
         ],
     );
@@ -263,7 +329,11 @@ fn object_accepts_whitespace_marked_tokens() {
     let vocab = TestVocab::from_list(&["Ġ{", "Ġ\"action\"", "Ġ:", "Ġ\"run\"", "Ġ}", "Ġ,"]);
     let schema = JsonSchema::new(vec![JsonField::required("action", JsonType::String)]);
     let mut g = JsonObjectGrammar::new(schema, vocab.clone());
-    drive_accept(&mut g, &vocab, &["Ġ{", "Ġ\"action\"", "Ġ:", "Ġ\"run\"", "Ġ}"]);
+    drive_accept(
+        &mut g,
+        &vocab,
+        &["Ġ{", "Ġ\"action\"", "Ġ:", "Ġ\"run\"", "Ġ}"],
+    );
 }
 
 #[test]
@@ -305,13 +375,9 @@ fn array_grammar_accepts_dynamic_length_object_array() {
         &mut g,
         &vocab,
         &[
-            "[",
-            "{", "\"text\"", ":", "\"run\"", ",", "\"pos\"", ":", "\"verb\"", ",", "\"head\"",
-            ":", "0", "}",
-            ",",
-            "{", "\"text\"", ":", "\"run\"", ",", "\"pos\"", ":", "\"verb\"", ",", "\"head\"",
-            ":", "1", "}",
-            "]",
+            "[", "{", "\"text\"", ":", "\"run\"", ",", "\"pos\"", ":", "\"verb\"", ",", "\"head\"",
+            ":", "0", "}", ",", "{", "\"text\"", ":", "\"run\"", ",", "\"pos\"", ":", "\"verb\"",
+            ",", "\"head\"", ":", "1", "}", "]",
         ],
     );
 }
@@ -389,9 +455,8 @@ fn from_json_schema_rejects_non_object_and_missing_properties() {
 
 #[test]
 fn grammar_from_json_schema_builds_object_and_array() {
-    let vocab = TestVocab::from_list(&[
-        "[", "]", "{", "}", ":", ",", "\"a\"", "\"x\"", "\"b\"", "1",
-    ]);
+    let vocab =
+        TestVocab::from_list(&["[", "]", "{", "}", ":", ",", "\"a\"", "\"x\"", "\"b\"", "1"]);
     // Object form → JsonObjectGrammar.
     let obj_schema = serde_json::json!({
         "type": "object",
@@ -411,9 +476,15 @@ fn grammar_from_json_schema_builds_object_and_array() {
         }
     });
     let mut g = grammar_from_json_schema(&arr_schema, vocab.clone()).expect("array grammar");
-    drive_accept(g.as_mut(), &vocab, &["[", "{", "\"a\"", ":", "\"x\"", "}", "]"]);
+    drive_accept(
+        g.as_mut(),
+        &vocab,
+        &["[", "{", "\"a\"", ":", "\"x\"", "}", "]"],
+    );
 
     // Unrepresentable → None (free text).
     assert!(grammar_from_json_schema(&serde_json::json!("nope"), vocab.clone()).is_none());
-    assert!(grammar_from_json_schema(&serde_json::json!({"type":"number"}), vocab.clone()).is_none());
+    assert!(
+        grammar_from_json_schema(&serde_json::json!({"type":"number"}), vocab.clone()).is_none()
+    );
 }

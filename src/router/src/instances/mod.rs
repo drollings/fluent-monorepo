@@ -26,7 +26,10 @@ pub mod traits;
 pub use client::{
     InstanceClient, InstanceError, InstanceInfo, InstanceList, InstanceTotals, SnapshotInfo,
 };
-pub use manager::{build_instance_managers, resume_snapshot_name, weights_identity, InstanceManager, WeightsIdentity};
+pub use manager::{
+    build_instance_managers, resume_snapshot_name, weights_identity, InstanceManager,
+    WeightsIdentity,
+};
 pub use pool::InstancePool;
 pub use traits::{LlamaBackend, LlamaContext, LlamaKVCache, LlamaWeights, LlmFleet};
 
@@ -123,7 +126,12 @@ pub fn is_valid_instance_name(name: &str) -> bool {
 
 /// The alias set for one public instance id: the bare model id and `latest`
 /// form on the default instance, the group form, and the exact id.
-fn instance_aliases(model_key: &str, instance_id: &str, group: &str, is_default: bool) -> Vec<String> {
+fn instance_aliases(
+    model_key: &str,
+    instance_id: &str,
+    group: &str,
+    is_default: bool,
+) -> Vec<String> {
     let mut aliases = Vec::new();
     if is_default {
         aliases.push(model_key.to_string());
@@ -237,16 +245,13 @@ pub(crate) mod stub {
         }
 
         pub fn recorded(&self) -> Vec<(String, String, String)> {
-            self.requests
-                .lock()
-                .map(|r| r.clone())
-                .unwrap_or_default()
+            self.requests.lock().map(|r| r.clone()).unwrap_or_default()
         }
     }
 }
 #[cfg(test)]
-#[path = "../../tests/instances_mod.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "../../tests/residency_engine_golden.rs"]
 mod residency_engine_golden_tests;
+#[cfg(test)]
+#[path = "../../tests/instances_mod.rs"]
+mod tests;

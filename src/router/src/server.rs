@@ -26,7 +26,7 @@ use crate::ledger::ContentNodeLedger;
 use crate::pipeline::PipelineOrchestrator;
 use crate::routes::plan::PlanRoute;
 use crate::routes::rigor::RigorRoute;
-use crate::server::review::{ReviewWorker, ReviewFetch};
+use crate::server::review::{ReviewFetch, ReviewWorker};
 use crate::testing::mock::MockDispatchContext;
 
 pub struct RouterServer {
@@ -282,7 +282,10 @@ impl RouterServer {
     /// Attach the managed llama-server supervisor. Enables
     /// `POST /models/unload` and the `/metrics` aggregation.
     #[must_use]
-    pub fn with_supervisor(mut self, supervisor: Option<Arc<crate::supervisor::LlamaServerSupervisor>>) -> Self {
+    pub fn with_supervisor(
+        mut self,
+        supervisor: Option<Arc<crate::supervisor::LlamaServerSupervisor>>,
+    ) -> Self {
         self.supervisor = supervisor;
         self
     }
@@ -372,7 +375,10 @@ impl RouterServer {
     /// `Arc`, so the server and the operator observe the same state.
     /// Defaults to a fresh open gate.
     #[must_use]
-    pub fn with_frame_gate(mut self, gate: crate::ledger::frame_index::FrameResolutionGate) -> Self {
+    pub fn with_frame_gate(
+        mut self,
+        gate: crate::ledger::frame_index::FrameResolutionGate,
+    ) -> Self {
         self.frame_gate = gate;
         self
     }
@@ -537,9 +543,8 @@ impl RouterServer {
         if let Some(sessions) = &self.sessions {
             let sessions = Arc::clone(sessions);
             background.spawn(async move {
-                let mut interval = tokio::time::interval(
-                    crate::dag_session::SESSION_SNAPSHOT_SWEEP_INTERVAL,
-                );
+                let mut interval =
+                    tokio::time::interval(crate::dag_session::SESSION_SNAPSHOT_SWEEP_INTERVAL);
                 loop {
                     interval.tick().await;
                     let evicted = sessions.evict_expired();

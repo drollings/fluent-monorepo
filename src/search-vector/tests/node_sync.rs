@@ -22,8 +22,7 @@ fn write_doc(dir: &std::path::Path, name: &str, source: &str, member: &str) {
 /// without sleeping (mirrors the production mtime discipline, where
 /// any tick movement is a change).
 fn touch_future(path: &std::path::Path) {
-    let later =
-        std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
     std::fs::File::options()
         .write(true)
         .open(path)

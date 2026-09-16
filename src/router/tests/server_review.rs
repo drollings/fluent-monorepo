@@ -2,9 +2,9 @@ use super::*;
 use std::time::Duration;
 
 use crate::ledger::correction_index::SqliteCorrectionIndex;
+use fluent_concept::InMemoryConceptStore;
 use fluent_concurrency::tokio_runtime;
 use fluent_types::InterlinguaNamespace;
-use fluent_concept::InMemoryConceptStore;
 use spacy_rs::{AnnotationRecord, AnnotationSet, AnnotationSource};
 
 fn parse() -> AnnotationResult {
@@ -171,10 +171,7 @@ fn candidate_concepts_resolves_parse_lemmas_and_falls_back() {
     use spacy_rs::llm::{AnnotationRecord, AnnotationSet};
 
     let store = InMemoryConceptStore::new();
-    let report = fluent_types::InterlinguaId::new(
-        InterlinguaNamespace::YagoClass,
-        0x1111,
-    );
+    let report = fluent_types::InterlinguaId::new(InterlinguaNamespace::YagoClass, 0x1111);
     store
         .insert(ConceptMetadata {
             id: report,
@@ -187,10 +184,7 @@ fn candidate_concepts_resolves_parse_lemmas_and_falls_back() {
             parent_class_id: None,
         })
         .expect("insert report");
-    let person = fluent_types::InterlinguaId::new(
-        InterlinguaNamespace::YagoClass,
-        0x2222,
-    );
+    let person = fluent_types::InterlinguaId::new(InterlinguaNamespace::YagoClass, 0x2222);
     store
         .insert(ConceptMetadata {
             id: person,
@@ -355,7 +349,10 @@ async fn prefilter_adds_candidates_never_drops_a_manual_job() {
     ));
 
     // Manual enqueue always proceeds with a pre-filter present.
-    worker.enqueue(flagged).await.expect("manual enqueue proceeds");
+    worker
+        .enqueue(flagged)
+        .await
+        .expect("manual enqueue proceeds");
     wait_for_reviewed(&ledger, node_id).await;
     worker.drain().await;
 
@@ -398,7 +395,10 @@ async fn failing_prefilter_never_blocks_manual_enqueue() {
         4,
         tokio_runtime(),
     ));
-    worker.enqueue(job(node_id)).await.expect("fail-open: still enqueues");
+    worker
+        .enqueue(job(node_id))
+        .await
+        .expect("fail-open: still enqueues");
     wait_for_reviewed(&ledger, node_id).await;
     worker.drain().await;
     let node = ledger.get_node(node_id).expect("parse node");
@@ -509,7 +509,7 @@ async fn auto_enqueue_does_not_fire_without_spans_or_when_disabled() {
 
 #[tokio::test]
 async fn review_promotes_matching_entity_link_candidates() {
-    use crate::ledger::overlay::{OverlayCandidateStore, CandidateStatus};
+    use crate::ledger::overlay::{CandidateStatus, OverlayCandidateStore};
 
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
     let node_id = ledger
@@ -568,7 +568,10 @@ async fn review_promotes_matching_entity_link_candidates() {
     worker.drain().await;
 
     let rows = candidates.for_node(node_id).expect("query");
-    let linked = rows.iter().find(|r| r.entity_id == Some(linked_id)).unwrap();
+    let linked = rows
+        .iter()
+        .find(|r| r.entity_id == Some(linked_id))
+        .unwrap();
     assert_eq!(
         linked.status,
         CandidateStatus::Promoted,

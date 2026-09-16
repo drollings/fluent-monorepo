@@ -175,7 +175,10 @@ impl OverlayWorker {
 
     /// Enqueue a node with chain backpressure (credit-gated). `Err(FeedClosed)`
     /// when the feed is closed (the worker is torn down).
-    pub async fn enqueue_with_credit(&self, id: NodeId) -> Result<(), fluent_concurrency::feed_worker::FeedError> {
+    pub async fn enqueue_with_credit(
+        &self,
+        id: NodeId,
+    ) -> Result<(), fluent_concurrency::feed_worker::FeedError> {
         self.feed.enqueue_with_credit(id).await
     }
 
@@ -249,11 +252,7 @@ impl OverlayWorker {
             Arc::new(Mutex::new(Vec::with_capacity(3)));
 
         let mut handles = Vec::with_capacity(3);
-        for kind in [
-            OverlayKind::Spacy,
-            OverlayKind::Llm,
-            OverlayKind::Embedding,
-        ] {
+        for kind in [OverlayKind::Spacy, OverlayKind::Llm, OverlayKind::Embedding] {
             let store = Arc::clone(&store);
             let results = Arc::clone(&results);
             handles.push(self.runtime.spawn(Box::pin(async move {
@@ -297,11 +296,9 @@ fn run_overlay(store: &ContentNodeStore, id: NodeId, kind: OverlayKind) {
 /// record — `ready`, `failed`, `pending`, or `absent` for a node that never
 /// started / was fail-open without a seam).
 fn overlay_status(store: &ContentNodeStore, id: NodeId, kind: OverlayKind) -> OverlayStatus {
-    store
-        .get_node(id)
-        .map_or(OverlayStatus::Absent, |arc| {
-            lock_read(&arc).overlay(kind).status
-        })
+    store.get_node(id).map_or(OverlayStatus::Absent, |arc| {
+        lock_read(&arc).overlay(kind).status
+    })
 }
 
 /// The snake_case wire name of an overlay kind (matches the serde rename).

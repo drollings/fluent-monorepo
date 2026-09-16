@@ -28,7 +28,9 @@ fn data_dir() -> PathBuf {
 
 /// The live-endpoint URL; unset (or empty) skips the test.
 fn live_url() -> Option<String> {
-    std::env::var("SPACY_LIVE_LLM_URL").ok().filter(|u| !u.is_empty())
+    std::env::var("SPACY_LIVE_LLM_URL")
+        .ok()
+        .filter(|u| !u.is_empty())
 }
 
 fn live_model() -> String {
@@ -67,9 +69,11 @@ async fn generate_missing_parse_bench_refs() {
     };
     let model = live_model();
 
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.json")).expect("dataset readable");
+    let raw =
+        std::fs::read_to_string(data_dir().join("parse_bench.json")).expect("dataset readable");
     let dataset: serde_json::Value = serde_json::from_str(&raw).expect("dataset parses");
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.refs.json")).expect("refs readable");
+    let raw =
+        std::fs::read_to_string(data_dir().join("parse_bench.refs.json")).expect("refs readable");
     let mut refs: serde_json::Value = serde_json::from_str(&raw).expect("refs parse");
     let have = refs
         .get("refs")
@@ -83,10 +87,22 @@ async fn generate_missing_parse_bench_refs() {
     let mut added = 0usize;
     let mut skipped = 0usize;
 
-    let items = dataset.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let items = dataset
+        .get("items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     for item in items {
-        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-        let text = item.get("text").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let text = item
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
         if refs.get("refs").and_then(|r| r.get(&id)).is_some() {
             continue;
         }
@@ -147,9 +163,10 @@ async fn generate_missing_parse_bench_refs() {
         };
         // Validate: one record per token, verbatim texts.
         let texts_ok = records.len() == tokens.len()
-            && records.iter().zip(tokens.iter()).all(|(r, t)| {
-                r.get("text").and_then(|v| v.as_str()) == Some(t.as_str())
-            });
+            && records
+                .iter()
+                .zip(tokens.iter())
+                .all(|(r, t)| r.get("text").and_then(|v| v.as_str()) == Some(t.as_str()));
         if !texts_ok {
             eprintln!("{id}: record texts/len mismatch vs tokenizer — skipping (do not pin)");
             skipped += 1;
@@ -165,5 +182,7 @@ async fn generate_missing_parse_bench_refs() {
         std::fs::write(data_dir().join("parse_bench.refs.json"), out).expect("refs writable");
     }
     eprintln!("ref-gen done: had {have} refs, added {added} drafts, skipped {skipped}.");
-    eprintln!("Next: `git diff` the refs file, correct by hand, re-run `make spacy-parse-benchmark`.");
+    eprintln!(
+        "Next: `git diff` the refs file, correct by hand, re-run `make spacy-parse-benchmark`."
+    );
 }

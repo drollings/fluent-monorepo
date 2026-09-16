@@ -1,6 +1,6 @@
 use super::*;
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::test(start_paused = true)]
@@ -129,8 +129,8 @@ async fn queued_bumps_are_consumed_on_demand() {
     });
     receiver.recv(); // bump(1) queued
     receiver.recv(); // bump(1) queued
-    // Each send consumes exactly one queued bump; both complete without
-    // needing another recv.
+                     // Each send consumes exactly one queued bump; both complete without
+                     // needing another recv.
     for _ in 0..2 {
         sender.send(|| async {}).await;
     }

@@ -96,10 +96,7 @@ pub(crate) fn global_capture_len(capture: &Arc<Mutex<Vec<String>>>) -> usize {
 
 /// Lines appended to the shared global buffer since `base` (see
 /// [`global_capture_len`]).
-pub(crate) fn global_capture_since(
-    capture: &Arc<Mutex<Vec<String>>>,
-    base: usize,
-) -> Vec<String> {
+pub(crate) fn global_capture_since(capture: &Arc<Mutex<Vec<String>>>, base: usize) -> Vec<String> {
     capture
         .lock()
         .map(|lines| lines.iter().skip(base).cloned().collect())

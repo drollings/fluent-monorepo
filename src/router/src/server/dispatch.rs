@@ -268,7 +268,9 @@ pub async fn handle_dispatch(
 fn make_backend(deps: &DispatchDeps, target: &RoutingTarget) -> Arc<dyn DispatchBackend> {
     if target.is_onnx {
         if let Some(onnx) = &deps.onnx_llm_backend {
-            return Arc::new(crate::dispatch::backend::OnnxDispatchBackend::new(onnx.clone()));
+            return Arc::new(crate::dispatch::backend::OnnxDispatchBackend::new(
+                onnx.clone(),
+            ));
         }
         tracing::warn!(
             target: "router.dispatch",
@@ -277,7 +279,8 @@ fn make_backend(deps: &DispatchDeps, target: &RoutingTarget) -> Arc<dyn Dispatch
         );
     }
     let base: Arc<dyn DispatchBackend> = Arc::new(
-        OpenAiChatBackend::new((*deps.http_client).clone(), &target.url).with_api_key(target.api_key.clone()),
+        OpenAiChatBackend::new((*deps.http_client).clone(), &target.url)
+            .with_api_key(target.api_key.clone()),
     );
     if target.retry_count > 0 {
         Arc::new(RetryBackend::new(
@@ -488,12 +491,7 @@ async fn dispatch_to_single_target(
     }
 
     Ok(DispatchOutcome {
-        response: completion_to_response(
-            &completion,
-            "",
-            false,
-            Some(&target.model),
-        ),
+        response: completion_to_response(&completion, "", false, Some(&target.model)),
         answer_text: answer_text(&completion),
         stream_answer: None,
     })
@@ -606,8 +604,7 @@ pub async fn dispatch_real(
                     Some(limiter) => limiter.run(dispatch).await,
                     None => dispatch().await,
                 };
-                match outcome
-                {
+                match outcome {
                     Ok(outcome) => {
                         // Recency for `last`-sentinel expansion: the serving
                         // target's wire id, recorded per (session, group)
@@ -618,10 +615,7 @@ pub async fn dispatch_real(
                         if let Some(group) = rt.group.as_deref() {
                             // The handler stamps the effective session id
                             // into the request; empty only off served paths.
-                            let session = router_request
-                                .session_id
-                                .as_deref()
-                                .unwrap_or("");
+                            let session = router_request.session_id.as_deref().unwrap_or("");
                             deps.stats.recency.record(session, group, &target.model);
                         }
                         crate::audit::AuditRecord::route(
@@ -714,7 +708,7 @@ pub async fn dispatch_real(
     // Escalation: only after the local chain is exhausted do we engage the
     // frontier ladder. The ladder is resolved from the resolved route's group
     // (`RoutingTarget.group`); direct-model targets (no group) get `None`.
-        if let Some(ladder) = rt.group.as_deref().and_then(|g| deps.ladders.get(g)) {
+    if let Some(ladder) = rt.group.as_deref().and_then(|g| deps.ladders.get(g)) {
         tracing::info!(
             target: "router.server",
             group = ?rt.group,
@@ -748,12 +742,7 @@ pub async fn dispatch_real(
     );
     let completion = fallback_completion(model_name);
     Ok(DispatchOutcome {
-        response: completion_to_response(
-            &completion,
-            model_name,
-            stream,
-            None,
-        ),
+        response: completion_to_response(&completion, model_name, stream, None),
         answer_text: answer_text(&completion),
         stream_answer: None,
     })

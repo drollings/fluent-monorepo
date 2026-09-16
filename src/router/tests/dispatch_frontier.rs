@@ -104,11 +104,6 @@ fn dispatch_error_retryable_table() {
     assert!(!DispatchError::ResponseParse("bad".into()).is_retryable());
     assert!(!DispatchError::StreamParse("bad".into()).is_retryable());
     assert!(!DispatchError::UnsupportedProvider("x".into()).is_retryable());
-    assert!(
-        !DispatchError::InstanceGroupMiss {
-            group: "g".into()
-        }
-        .is_retryable()
-    );
+    assert!(!DispatchError::InstanceGroupMiss { group: "g".into() }.is_retryable());
     assert!(!DispatchError::AllBackendsFailed.is_retryable());
 }

@@ -19,8 +19,7 @@ fn test_timing_middleware_with_histogram() {
 
 #[test]
 fn test_middleware_chain() {
-    let chain =
-        fluent_wvr::wrapper::MiddlewareChain::new().push(Box::new(TimingMiddleware::new()));
+    let chain = fluent_wvr::wrapper::MiddlewareChain::new().push(Box::new(TimingMiddleware::new()));
     let wrapped = chain.apply(Arc::new(PassthroughUnit::new("chained")));
     assert!(wrapped.execute(&WorkContext::default()).unwrap().success);
 }

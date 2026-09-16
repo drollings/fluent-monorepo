@@ -218,9 +218,7 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     } else {
         normalized[..key.len()].copy_from_slice(key);
     }
-    let pad = |byte: u8| -> Vec<u8> {
-        normalized.iter().map(|key| key ^ byte).collect()
-    };
+    let pad = |byte: u8| -> Vec<u8> { normalized.iter().map(|key| key ^ byte).collect() };
     let inner = pad(0x36);
     let outer = pad(0x5c);
     let mut inner_hasher = Sha256::new();
@@ -253,4 +251,3 @@ pub fn uuid_v4() -> String {
     let node = (rng >> 32) as u32;
     format!("{time_hi:08x}-{time_mid:04x}-{time_lo:04x}-{version:04x}-{variant:04x}{node:08x}")
 }
-

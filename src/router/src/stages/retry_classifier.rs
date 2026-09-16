@@ -62,10 +62,7 @@ impl RetryClassifier {
         retry_prompts: Vec<String>,
     ) -> Self {
         Self {
-            name: ArcIntern::from(format!(
-                "pipeline.stage2.retry({})",
-                inner_component.name()
-            )),
+            name: ArcIntern::from(format!("pipeline.stage2.retry({})", inner_component.name())),
             inner_component,
             inner_producer,
             max_retries,

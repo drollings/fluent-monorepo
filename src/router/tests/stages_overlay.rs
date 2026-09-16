@@ -1,7 +1,7 @@
 use super::*;
 use crate::pipeline_types::{PipelineStage, StageDecision};
 use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
-use fluent_llm::backend::{OverlayError, OverlayContribution};
+use fluent_llm::backend::{OverlayContribution, OverlayError};
 
 fn interlingua_confidence(conf: Option<f64>) -> spacy_rs::routing::InterlinguaSignal {
     spacy_rs::routing::InterlinguaSignal {
@@ -82,7 +82,11 @@ fn doc_level_needs_disambiguation_flags_all_sentences() {
 fn sentence_without_confidence_is_below_the_floor() {
     let selector = ResidualSelector::new(0.5);
     let residuals = selector.select(&[signal("show me the report", None)], None);
-    assert_eq!(residuals.len(), 1, "None confidence fails closed to a residual");
+    assert_eq!(
+        residuals.len(),
+        1,
+        "None confidence fails closed to a residual"
+    );
 }
 
 #[test]
@@ -153,12 +157,10 @@ fn nlp_prior(signals: &[RoutingSignal], conf: Option<NlpConfidenceSummary>) -> V
     if let Some(c) = conf {
         meta.set_nlp_confidence(&c);
     }
-    vec![StageDecision::new(
-        PipelineStage::Nlp,
-        StageVerdict::Passed,
-        "parsed",
-    )
-    .with_metadata(meta.into_value())]
+    vec![
+        StageDecision::new(PipelineStage::Nlp, StageVerdict::Passed, "parsed")
+            .with_metadata(meta.into_value()),
+    ]
 }
 
 #[test]
@@ -268,7 +270,9 @@ fn request_context_round_trip() {
 #[tokio::test]
 async fn overlay_concurrent_scores_all_residuals() {
     let stage = OverlayStage::new(ResidualSelector::new(0.5), vec![hint_overlay()], Some(2));
-    let signals: Vec<RoutingSignal> = (0..4).map(|i| signal(&format!("sentence {i}"), Some(0.1))).collect();
+    let signals: Vec<RoutingSignal> = (0..4)
+        .map(|i| signal(&format!("sentence {i}"), Some(0.1)))
+        .collect();
     let conf = confidence(spacy_rs::AnnotationSource::ArcEager, 0.1);
     let (msg, decision) = stage.decide_async(Some(&signals), Some(&conf)).await;
     assert_eq!(msg, "overlaid");
@@ -287,18 +291,29 @@ async fn overlay_peak_concurrency_equals_cap() {
         peak: std::sync::Arc<AtomicUsize>,
     }
     impl ResidualOverlay for SlowOverlay {
-        fn kind(&self) -> ResidualKind { ResidualKind::Disambiguation }
+        fn kind(&self) -> ResidualKind {
+            ResidualKind::Disambiguation
+        }
         fn run(&self, _r: &Residual) -> Result<OverlayContribution, OverlayError> {
             let cur = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.peak.fetch_max(cur, Ordering::SeqCst);
             std::thread::sleep(std::time::Duration::from_millis(20));
             self.in_flight.fetch_sub(1, Ordering::SeqCst);
-            Ok(OverlayContribution { kind: ResidualKind::Disambiguation, score: Some(0.5), payload: serde_json::json!({"route_hints": []}) })
+            Ok(OverlayContribution {
+                kind: ResidualKind::Disambiguation,
+                score: Some(0.5),
+                payload: serde_json::json!({"route_hints": []}),
+            })
         }
     }
-    let overlay: std::sync::Arc<dyn ResidualOverlay> = std::sync::Arc::new(SlowOverlay { in_flight: in_flight.clone(), peak: peak.clone() });
+    let overlay: std::sync::Arc<dyn ResidualOverlay> = std::sync::Arc::new(SlowOverlay {
+        in_flight: in_flight.clone(),
+        peak: peak.clone(),
+    });
     let stage = OverlayStage::new(ResidualSelector::new(0.5), vec![overlay], Some(2));
-    let signals: Vec<RoutingSignal> = (0..8).map(|i| signal(&format!("s {i}"), Some(0.1))).collect();
+    let signals: Vec<RoutingSignal> = (0..8)
+        .map(|i| signal(&format!("s {i}"), Some(0.1)))
+        .collect();
     let conf = confidence(spacy_rs::AnnotationSource::ArcEager, 0.1);
     let _ = stage.decide_async(Some(&signals), Some(&conf)).await;
     assert_eq!(peak.load(Ordering::SeqCst), 2, "peak should equal cap 2");

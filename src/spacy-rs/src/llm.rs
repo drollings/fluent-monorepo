@@ -179,10 +179,17 @@ impl LlmRefinePrompt {
              schema:\n{}",
             Self::contract(),
         );
-        let _ = writeln!(prompt, "Base parse (index / token / pos / dep / head / lemma):");
+        let _ = writeln!(
+            prompt,
+            "Base parse (index / token / pos / dep / head / lemma):"
+        );
         for (i, r) in base.records().records().iter().enumerate() {
             let mark = if focus.contains(&i) { " FOCUS" } else { "" };
-            let _ = writeln!(prompt, "  {i}: {} / {} / {} / {} / {}{mark}", r.text, r.pos, r.dep, r.head, r.lemma);
+            let _ = writeln!(
+                prompt,
+                "  {i}: {} / {} / {} / {} / {}{mark}",
+                r.text, r.pos, r.dep, r.head, r.lemma
+            );
         }
         let _ = writeln!(prompt, "Focus token indices: {focus:?}");
         let _ = writeln!(prompt, "Tokens (in order): {tokens:?}");
@@ -198,7 +205,9 @@ impl AnnotationSet {
     /// Deserialize the LLM reply (the §10.1 token array). Structural parse
     /// only — the closed-vocabulary / tree checks are the validator's job.
     pub fn parse_json(json: &str) -> Result<Self, AnnotationError> {
-        serde_json::from_str(json).map_err(|e| AnnotationError::Json { source: std::sync::Arc::new(e) })
+        serde_json::from_str(json).map_err(|e| AnnotationError::Json {
+            source: std::sync::Arc::new(e),
+        })
     }
 
     /// The records.

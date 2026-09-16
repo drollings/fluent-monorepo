@@ -34,10 +34,8 @@ fn parallel_views_share_arc_and_derive_lazy_tier_once() {
         .record_request("sess", "r1", "Shared full text for parallel views.")
         .unwrap();
 
-    let v1 =
-        ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
-    let v2 =
-        ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
+    let v1 = ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
+    let v2 = ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
 
     let r1 = v1.render();
     let r2 = v2.render();
@@ -83,8 +81,7 @@ fn filtered_ledger_exclusion_is_free_no_derivation() {
         .record_request("sess", "r2", "Live accepted text.")
         .unwrap();
 
-    let base =
-        ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
+    let base = ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
     let excluded: HashSet<NodeId> = [dead].into_iter().collect();
     let view = FilteredLedger::new(base, excluded);
 
@@ -108,8 +105,7 @@ fn pii_redacted_view_scrubs_email_keeps_clean() {
         .record_request("sess", "r2", "plain clean text")
         .unwrap();
 
-    let base =
-        ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD0);
+    let base = ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD0);
     let view = pii_redacted(base, HashSet::new());
 
     let rendered = view.render();
@@ -129,8 +125,7 @@ fn render_degrades_to_lod0_without_summarizer() {
         .unwrap();
 
     // LOD2 is un-derivable (no summarizer) → degrade to LOD0, never error.
-    let view =
-        ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
+    let view = ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD2);
     assert_eq!(view.render(), "Full text, no summarizer present.");
 }
 

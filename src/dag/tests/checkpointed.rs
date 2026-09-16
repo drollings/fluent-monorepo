@@ -50,7 +50,10 @@ fn rewind_returns_suffix_clears_checkpoint_and_uncompletes() {
     let reset = g.rewind_to(&"b").unwrap();
     assert_eq!(reset, vec!["b", "c"]);
     assert!(!g.is_checkpoint(&"b"));
-    assert!(g.is_completed(&"a"), "steps before the checkpoint stay completed");
+    assert!(
+        g.is_completed(&"a"),
+        "steps before the checkpoint stay completed"
+    );
     assert!(!g.is_completed(&"b"));
     assert!(!g.is_completed(&"c"));
 }

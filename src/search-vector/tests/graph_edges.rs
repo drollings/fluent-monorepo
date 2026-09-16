@@ -93,10 +93,11 @@ fn delete_file_removes_graph_rows() {
         last_error: None,
     };
     db.replace_file(&file, &[], &[]).expect("fragments");
-    db.replace_file_graph("/repo/src/a.ts", &["./b".to_string()], &[(
-        "alpha".to_string(),
-        Vec::new(),
-    )])
+    db.replace_file_graph(
+        "/repo/src/a.ts",
+        &["./b".to_string()],
+        &[("alpha".to_string(), Vec::new())],
+    )
     .expect("graph");
 
     db.delete_file("file-a").expect("delete");
@@ -107,10 +108,11 @@ fn delete_file_removes_graph_rows() {
 #[test]
 fn drop_index_clears_graph_tables() {
     let db = graph_db();
-    db.replace_file_graph("/repo/src/a.ts", &["./b".to_string()], &[(
-        "alpha".to_string(),
-        Vec::new(),
-    )])
+    db.replace_file_graph(
+        "/repo/src/a.ts",
+        &["./b".to_string()],
+        &[("alpha".to_string(), Vec::new())],
+    )
     .expect("graph");
 
     db.drop_index().expect("drop");

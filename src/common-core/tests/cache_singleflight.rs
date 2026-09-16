@@ -129,8 +129,5 @@ fn singleflight_error_falls_back_to_individual_loads() {
     }
     expect_done(&done, 8, "error-storm outcomes");
     // After recovery the value is cached: exactly one post-recovery state.
-    assert_eq!(
-        cache.get_or_load("flaky".to_string()).unwrap(),
-        "recovered"
-    );
+    assert_eq!(cache.get_or_load("flaky".to_string()).unwrap(), "recovered");
 }

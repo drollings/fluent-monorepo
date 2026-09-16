@@ -44,7 +44,9 @@ impl VectorIndex for BruteForceIndex {
     fn knn(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit> {
         let results = knn_brute_force(
             query,
-            self.entries.iter().map(|(id, emb, _)| (*id, emb.as_slice())),
+            self.entries
+                .iter()
+                .map(|(id, emb, _)| (*id, emb.as_slice())),
             k,
         );
         results
@@ -112,7 +114,10 @@ pub fn distance_to_similarity_clamped(d: f32) -> f32 {
 ///
 /// Retires the per-site `1.0 - d` closures so the mapping lives in exactly
 /// one place. Sort/truncate/filter stay call-site code.
-pub fn scored_hits<Id: Clone>(resolved: Vec<(Id, f32)>, map: impl Fn(f32) -> f32) -> Vec<(Id, f32)> {
+pub fn scored_hits<Id: Clone>(
+    resolved: Vec<(Id, f32)>,
+    map: impl Fn(f32) -> f32,
+) -> Vec<(Id, f32)> {
     resolved.into_iter().map(|(id, d)| (id, map(d))).collect()
 }
 
@@ -208,8 +213,7 @@ pub fn quantized_from_bytes(bytes: &[u8]) -> Option<QuantizedEmbedding> {
         return None;
     }
     let scale = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    let dimensions =
-        u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    let dimensions = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
     let values = &bytes[8..];
     if values.len() != dimensions {
         return None;
@@ -266,15 +270,31 @@ pub fn knn_brute_force_q8<'a, Id: Clone>(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TaskRelevanceThreshold(pub f32);
 impl TaskRelevanceThreshold {
-    pub fn new(v: f32) -> Result<Self,String>{ if (0.0..=1.0).contains(&v){ Ok(Self(v))} else { Err(format!("TaskRelevanceThreshold {v} out of range")) } }
-    pub fn get(self)->f32{ self.0 }
+    pub fn new(v: f32) -> Result<Self, String> {
+        if (0.0..=1.0).contains(&v) {
+            Ok(Self(v))
+        } else {
+            Err(format!("TaskRelevanceThreshold {v} out of range"))
+        }
+    }
+    pub fn get(self) -> f32 {
+        self.0
+    }
 }
 /// Producer confidence threshold (axis A).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProducerConfidenceThreshold(pub f32);
 impl ProducerConfidenceThreshold {
-    pub fn new(v: f32) -> Result<Self,String>{ if (0.0..=1.0).contains(&v){ Ok(Self(v))} else { Err(format!("ProducerConfidenceThreshold {v} out of range")) } }
-    pub fn get(self)->f32{ self.0 }
+    pub fn new(v: f32) -> Result<Self, String> {
+        if (0.0..=1.0).contains(&v) {
+            Ok(Self(v))
+        } else {
+            Err(format!("ProducerConfidenceThreshold {v} out of range"))
+        }
+    }
+    pub fn get(self) -> f32 {
+        self.0
+    }
 }
 
 pub fn rrf_merge<T>(

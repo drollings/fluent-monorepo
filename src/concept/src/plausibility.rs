@@ -31,7 +31,10 @@ impl ScoredLemma {
     /// A scorable argument from its id + surface lemma.
     #[must_use]
     pub fn new(id: InterlinguaId, lemma: impl Into<String>) -> Self {
-        Self { id, lemma: lemma.into() }
+        Self {
+            id,
+            lemma: lemma.into(),
+        }
     }
 }
 
@@ -55,6 +58,10 @@ impl PlausibilityTriple {
         predicate: ScoredLemma,
         object: Option<ScoredLemma>,
     ) -> Self {
-        Self { subject, predicate, object }
+        Self {
+            subject,
+            predicate,
+            object,
+        }
     }
 }

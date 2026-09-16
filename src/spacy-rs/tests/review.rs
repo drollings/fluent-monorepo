@@ -147,9 +147,10 @@ fn refine_reply_parses_without_old_value_or_entities() {
     // The span-scoped refine contract omits `old_value` and
     // `linked_entities` — the same `Correction`/`ParseReview` types must
     // deserialize it (M2.2 DRY amendment vocabulary).
-    let review =
-        ParseReview::parse_json(r#"{"corrections":[{"token_index":2,"field":"dep","new_value":"nsubj"}]}"#)
-            .expect("parse");
+    let review = ParseReview::parse_json(
+        r#"{"corrections":[{"token_index":2,"field":"dep","new_value":"nsubj"}]}"#,
+    )
+    .expect("parse");
     assert_eq!(review.corrections.len(), 1);
     assert_eq!(review.corrections[0].field, CorrectionField::Dep);
     assert_eq!(review.corrections[0].old_value, "");

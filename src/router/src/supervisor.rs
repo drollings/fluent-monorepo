@@ -154,7 +154,10 @@ pub fn fleet_lib_dir(bin: &Path) -> Option<PathBuf> {
 
 /// Prepend `dir` to an `LD_LIBRARY_PATH`-style value, preserving any
 /// inherited entries (ROCm, system) behind it. Pure and unit-tested.
-pub fn prepend_library_path(dir: &Path, existing: Option<std::ffi::OsString>) -> std::ffi::OsString {
+pub fn prepend_library_path(
+    dir: &Path,
+    existing: Option<std::ffi::OsString>,
+) -> std::ffi::OsString {
     let mut out = dir.as_os_str().to_os_string();
     if let Some(rest) = existing.filter(|s| !s.is_empty()) {
         out.push(":");
@@ -388,11 +391,7 @@ impl ManagedServer {
 
     /// The adopted non-child pid, if this entry manages an orphan.
     pub fn adopted_pid(&self) -> Option<u32> {
-        self.inner
-            .adopted_pid
-            .lock()
-            .ok()
-            .and_then(|g| *g)
+        self.inner.adopted_pid.lock().ok().and_then(|g| *g)
     }
 
     /// Whether this entry manages an adopted (non-child) process.
@@ -444,7 +443,8 @@ impl ManagedServer {
     /// spawn lock prevents a lazy model from being double-spawned. Called by
     /// the router when a dispatch targets a managed model that is not loaded.
     pub async fn ensure_running(self: &Arc<Self>, bin: &Path) -> Result<(), String> {
-        self.ensure_running_with_client(bin, &build_shared_client()).await
+        self.ensure_running_with_client(bin, &build_shared_client())
+            .await
     }
 
     pub async fn ensure_running_with_client(
@@ -497,7 +497,9 @@ impl ManagedServer {
                 let me = Arc::clone(self);
                 let bin = bin.to_path_buf();
                 let client = Arc::new(client.clone());
-                let handle = tokio::spawn(async move { me.supervise(bin, client).await; });
+                let handle = tokio::spawn(async move {
+                    me.supervise(bin, client).await;
+                });
                 *guard = Some(handle.abort_handle());
             }
         }
@@ -558,7 +560,8 @@ impl ManagedServer {
     pub async fn wait_healthy_with_client(&self, client: &reqwest::Client) -> Result<(), String> {
         let probe = HealthProbe::for_wait(client.clone(), self.base_url.clone());
         // Use HealthProbe's poll but log on success
-        let result = probe.poll
+        let result = probe
+            .poll
             .run(|| async {
                 let healthy = probe.probe_once().await;
                 if healthy {
@@ -1130,12 +1133,7 @@ impl LlamaServerSupervisor {
         };
         self.servers.insert(
             model_key.to_string(),
-            ManagedServer::with_liveness(
-                spec,
-                std::time::Duration::from_secs(30),
-                3,
-                5,
-            ),
+            ManagedServer::with_liveness(spec, std::time::Duration::from_secs(30), 3, 5),
         );
     }
 
@@ -1210,7 +1208,9 @@ impl LlamaServerSupervisor {
             let handle = {
                 let me = Arc::clone(&server);
                 let bin = bin.clone();
-                tokio::spawn(async move { me.supervise(bin, client).await; })
+                tokio::spawn(async move {
+                    me.supervise(bin, client).await;
+                })
             };
             let supervisor_guard = server.inner.supervisor.lock();
             if let Ok(mut guard) = supervisor_guard {
@@ -1224,7 +1224,8 @@ impl LlamaServerSupervisor {
         for key in &boot_keys {
             let server = self.live_server(key)?;
             let client = Arc::clone(&client);
-            health.push(async move { (key.clone(), server.wait_healthy_with_client(&client).await) });
+            health
+                .push(async move { (key.clone(), server.wait_healthy_with_client(&client).await) });
         }
         for fut in health {
             let (key, result) = fut.await;
@@ -1239,9 +1240,10 @@ impl LlamaServerSupervisor {
     /// running) and wait for `/health`. Returns `None` when the model is not
     /// managed. Used by the dispatch path before targeting a lazy model.
     pub async fn ensure_running(&self, model_key: &str) -> Result<(), String> {
-        let server = self.servers.get(&model_key.to_string()).ok_or_else(|| {
-            format!("model '{model_key}' is not managed by the supervisor")
-        })?;
+        let server = self
+            .servers
+            .get(&model_key.to_string())
+            .ok_or_else(|| format!("model '{model_key}' is not managed by the supervisor"))?;
         server
             .ensure_running_with_client(&self.bin, &self.http_client)
             .await
@@ -1250,7 +1252,9 @@ impl LlamaServerSupervisor {
     /// Whether a managed model's server is currently running. `None` when the
     /// model is not managed.
     pub fn is_running(&self, model_key: &str) -> Option<bool> {
-        self.servers.get(&model_key.to_string()).map(|s| s.is_running())
+        self.servers
+            .get(&model_key.to_string())
+            .map(|s| s.is_running())
     }
 
     /// Whether a managed model's entry currently drives an adopted (non-child)

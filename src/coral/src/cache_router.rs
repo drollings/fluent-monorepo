@@ -26,7 +26,10 @@ impl ParallelRouter {
     }
 
     pub fn route(&self, query: &str) -> Result<RoutingResult, CacheError> {
-        enum Attempt { Keyword, Traverse }
+        enum Attempt {
+            Keyword,
+            Traverse,
+        }
 
         let rungs = [Attempt::Keyword, Attempt::Traverse];
         let out: Result<Option<RoutingResult>, CacheError> = first_accept_in_order_sync(
@@ -68,7 +71,9 @@ impl ParallelRouter {
         if query_emb.is_empty() {
             return Err(CacheError::Miss);
         }
-        enum Attempt { KnnOrHybrid }
+        enum Attempt {
+            KnnOrHybrid,
+        }
         let rungs = [Attempt::KnnOrHybrid];
         let out: Result<Option<RoutingResult>, CacheError> = first_accept_in_order_sync(
             rungs,
@@ -76,14 +81,17 @@ impl ParallelRouter {
                 let hits = if query.is_empty() {
                     self.library.knn_search(query_emb, self.knn_k, None)
                 } else {
-                    self.library.hybrid_search(query, Some(query_emb), self.knn_k)
+                    self.library
+                        .hybrid_search(query, Some(query_emb), self.knn_k)
                 };
                 match hits {
-                    Ok(ref h) if !h.is_empty() && h[0].distance < self.l4_threshold => Ok(Some(RoutingResult {
-                        query: query.to_string(),
-                        result: format!("KNN hit: {}", h[0].name.as_str()),
-                        tier: CacheTier::L4Semantic,
-                    })),
+                    Ok(ref h) if !h.is_empty() && h[0].distance < self.l4_threshold => {
+                        Ok(Some(RoutingResult {
+                            query: query.to_string(),
+                            result: format!("KNN hit: {}", h[0].name.as_str()),
+                            tier: CacheTier::L4Semantic,
+                        }))
+                    }
                     _ => Ok(None),
                 }
             },
@@ -190,8 +198,14 @@ mod tests {
         let router = make_router();
         insert_test_node(&router.library, "zig_compiler", "Zig compiler docs");
         let result = router.route("zig").expect("route zig");
-        assert!(result.result.contains("zig_compiler"), "keyword hit should contain node name");
-        assert!(!result.result.contains("Graph traversal"), "keyword should precede traverse");
+        assert!(
+            result.result.contains("zig_compiler"),
+            "keyword hit should contain node name"
+        );
+        assert!(
+            !result.result.contains("Graph traversal"),
+            "keyword should precede traverse"
+        );
         assert_eq!(result.tier, CacheTier::L3Graph);
     }
 
@@ -213,7 +227,9 @@ mod tests {
     fn test_route_traverse_fallback_after_keyword_miss() {
         let router = make_router();
         insert_test_node(&router.library, "alpha", "source alpha");
-        let result = router.route("nonexistent-xyz").expect("should fallback to traverse");
+        let result = router
+            .route("nonexistent-xyz")
+            .expect("should fallback to traverse");
         assert!(result.result.contains("Graph traversal"));
         assert_eq!(result.tier, CacheTier::L3Graph);
     }
@@ -221,8 +237,14 @@ mod tests {
     #[test]
     fn test_route_all_miss_returns_miss() {
         let router = make_router();
-        assert!(matches!(router.route("test"), Err(crate::error::CacheError::Miss)));
-        assert!(matches!(router.route_with_embedding("x", &[0.1, 0.2]), Err(crate::error::CacheError::Miss)));
+        assert!(matches!(
+            router.route("test"),
+            Err(crate::error::CacheError::Miss)
+        ));
+        assert!(matches!(
+            router.route_with_embedding("x", &[0.1, 0.2]),
+            Err(crate::error::CacheError::Miss)
+        ));
     }
 
     #[test]
@@ -236,16 +258,24 @@ mod tests {
     fn test_route_with_embedding_threshold_boundary() {
         let lib = Arc::new(Library::open_in_memory().expect("db"));
         let emb = vec![1.0, 0.0];
-        let node = ContentNode { embedding: Some(emb.clone()), ..make_node("threshold_node", "src") };
+        let node = ContentNode {
+            embedding: Some(emb.clone()),
+            ..make_node("threshold_node", "src")
+        };
         lib.insert_node(&node).expect("insert");
         // distance 0 < 0.7 => hit
         let router_hit = ParallelRouter::new(Arc::clone(&lib), 10, 0.7, 4);
-        let hit = router_hit.route_with_embedding("q", &emb).expect("should hit at 0.7");
+        let hit = router_hit
+            .route_with_embedding("q", &emb)
+            .expect("should hit at 0.7");
         assert_eq!(hit.tier, CacheTier::L4Semantic);
         // distance 0 < 0.0 is false => miss (strict <)
         let router_miss = ParallelRouter::new(Arc::clone(&lib), 10, 0.0, 4);
         let miss = router_miss.route_with_embedding("q", &emb);
-        assert!(matches!(miss, Err(crate::error::CacheError::Miss)), "threshold strict < : 0 < 0 must be Miss");
+        assert!(
+            matches!(miss, Err(crate::error::CacheError::Miss)),
+            "threshold strict < : 0 < 0 must be Miss"
+        );
     }
 
     #[test]
@@ -253,14 +283,21 @@ mod tests {
         // Both paths should succeed when embedding matches, regardless of query string
         let lib = Arc::new(Library::open_in_memory().expect("db"));
         let emb = vec![0.5, 0.5];
-        let node = ContentNode { embedding: Some(emb.clone()), ..make_node("knn_node", "source knn") };
+        let node = ContentNode {
+            embedding: Some(emb.clone()),
+            ..make_node("knn_node", "source knn")
+        };
         lib.insert_node(&node).expect("insert");
         let router = ParallelRouter::new(Arc::clone(&lib), 10, 0.7, 4);
         // empty query → knn_search branch
-        let r1 = router.route_with_embedding("", &emb).expect("empty query knn");
+        let r1 = router
+            .route_with_embedding("", &emb)
+            .expect("empty query knn");
         assert_eq!(r1.tier, CacheTier::L4Semantic);
         // non-empty query → hybrid_search branch
-        let r2 = router.route_with_embedding("knn", &emb).expect("non-empty hybrid");
+        let r2 = router
+            .route_with_embedding("knn", &emb)
+            .expect("non-empty hybrid");
         assert_eq!(r2.tier, CacheTier::L4Semantic);
     }
 
@@ -268,36 +305,109 @@ mod tests {
     fn test_l4_sweep_fpr_bound_at_0_7() {
         // Synthetic near-neighbor positives (distance ~0) and far negatives (large L2).
         // For calibration we map score = -distance so score >= -threshold => distance <= threshold.
-        struct Case { distance: f64, label: bool }
+        struct Case {
+            distance: f64,
+            label: bool,
+        }
         let cases: Vec<Case> = vec![
             // Positives: near neighbors (should fire at 0.7)
-            Case { distance: 0.0, label: true },
-            Case { distance: 0.05, label: true },
-            Case { distance: 0.10, label: true },
-            Case { distance: 0.20, label: true },
-            Case { distance: 0.30, label: true },
-            Case { distance: 0.50, label: true },
-            Case { distance: 0.60, label: true },
-            Case { distance: 0.65, label: true },
+            Case {
+                distance: 0.0,
+                label: true,
+            },
+            Case {
+                distance: 0.05,
+                label: true,
+            },
+            Case {
+                distance: 0.10,
+                label: true,
+            },
+            Case {
+                distance: 0.20,
+                label: true,
+            },
+            Case {
+                distance: 0.30,
+                label: true,
+            },
+            Case {
+                distance: 0.50,
+                label: true,
+            },
+            Case {
+                distance: 0.60,
+                label: true,
+            },
+            Case {
+                distance: 0.65,
+                label: true,
+            },
             // Negatives: far (must NOT fire at 0.7)
-            Case { distance: 1.5, label: false },
-            Case { distance: 2.0, label: false },
-            Case { distance: 1.2, label: false },
-            Case { distance: 1.0, label: false },
-            Case { distance: 0.85, label: false },
-            Case { distance: 0.90, label: false },
-            Case { distance: 1.8, label: false },
-            Case { distance: 1.1, label: false },
-            Case { distance: 0.80, label: false },
-            Case { distance: 2.5, label: false },
+            Case {
+                distance: 1.5,
+                label: false,
+            },
+            Case {
+                distance: 2.0,
+                label: false,
+            },
+            Case {
+                distance: 1.2,
+                label: false,
+            },
+            Case {
+                distance: 1.0,
+                label: false,
+            },
+            Case {
+                distance: 0.85,
+                label: false,
+            },
+            Case {
+                distance: 0.90,
+                label: false,
+            },
+            Case {
+                distance: 1.8,
+                label: false,
+            },
+            Case {
+                distance: 1.1,
+                label: false,
+            },
+            Case {
+                distance: 0.80,
+                label: false,
+            },
+            Case {
+                distance: 2.5,
+                label: false,
+            },
         ];
         // Sweep -threshold (negated distance) to use calibration's score >= threshold semantics.
         let thresholds_pos: Vec<f64> = (0..=8).map(|i| 0.5 + f64::from(i) * 0.05).collect(); // 0.5..0.9
         let thresholds_neg: Vec<f64> = thresholds_pos.iter().map(|t| -t).collect();
-        let reports = common_core::calibration::sweep_thresholds(&cases, |c| -c.distance, |c| c.label, &thresholds_neg);
+        let reports = common_core::calibration::sweep_thresholds(
+            &cases,
+            |c| -c.distance,
+            |c| c.label,
+            &thresholds_neg,
+        );
         common_core::calibration::emit_markdown_artifact("coral_l4_threshold", &reports);
         let threshold_neg = -0.7;
-        let report = common_core::calibration::calibrate_threshold(&cases, |c| -c.distance, |c| c.label, threshold_neg);
-        assert!(report.passes_gate(), "L4 0.7 must pass gate: precision {} FPR {} \n{}", report.precision, report.fpr, common_core::calibration::render_markdown_table(&reports));
+        let report = common_core::calibration::calibrate_threshold(
+            &cases,
+            |c| -c.distance,
+            |c| c.label,
+            threshold_neg,
+        );
+        assert!(
+            report.passes_gate(),
+            "L4 0.7 must pass gate: precision {} FPR {} \n{}",
+            report.precision,
+            report.fpr,
+            common_core::calibration::render_markdown_table(&reports)
+        );
     }
 }

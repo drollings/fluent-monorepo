@@ -1,17 +1,16 @@
 #![allow(unused_imports)]
 use common_core::metrics::LatencyHistogram;
+use fluent_wvr::prelude::*;
 #[allow(unused_imports)]
 use fluent_wvr::wrapper::*;
-use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 use fluent_wvr::test_support::{
-    AdapterHost, CloneableUnit, ConstrainedHost, DepProvider, FieldedHost, MockUnit,
-    failing_unit, ok_unit,
+    failing_unit, ok_unit, AdapterHost, CloneableUnit, ConstrainedHost, DepProvider, FieldedHost,
+    MockUnit,
 };
-use std::sync::atomic::Ordering;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 #[test]
@@ -35,7 +34,10 @@ fn retry_call_zero_attempts_returns_err_without_panic() {
         let caught = std::panic::catch_unwind(|| {
             let _: Result<RetryResult<i32>, ()> = retry_call(0, 1, || Err(()));
         });
-        assert!(caught.is_err(), "debug builds must trap the violated precondition");
+        assert!(
+            caught.is_err(),
+            "debug builds must trap the violated precondition"
+        );
     } else {
         let result: Result<RetryResult<i32>, ()> = retry_call(0, 1, || Err(()));
         assert!(result.is_err());
@@ -287,7 +289,10 @@ fn instrumented_clone() {
     let cloned = inst.clone();
     // label is private; verify clone preserves identity via name delegation
     assert_eq!(cloned.name(), inst.name());
-    assert_eq!(cloned.execute(&WorkContext::default()).unwrap().message, inst.execute(&WorkContext::default()).unwrap().message);
+    assert_eq!(
+        cloned.execute(&WorkContext::default()).unwrap().message,
+        inst.execute(&WorkContext::default()).unwrap().message
+    );
 }
 
 #[test]

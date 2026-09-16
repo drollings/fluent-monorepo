@@ -468,7 +468,14 @@ async fn complete_sends_bearer_token_from_api_key_env() {
     let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"))
         .with_api_key(Some("TEST_LLAMA_CPP_API_KEY".to_string()));
     let result = backend
-        .complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .complete(
+            make_test_request("hi"),
+            "m".into(),
+            None,
+            5000,
+            30000,
+            false,
+        )
         .await;
     assert!(result.is_ok(), "dispatch succeeds: {result:?}");
 
@@ -535,11 +542,23 @@ async fn complete_omits_auth_when_api_key_env_missing() {
     let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"))
         .with_api_key(Some("TEST_LLAMA_CPP_MISSING_KEY".to_string()));
     let result = backend
-        .complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .complete(
+            make_test_request("hi"),
+            "m".into(),
+            None,
+            5000,
+            30000,
+            false,
+        )
         .await;
-    assert!(result.is_ok(), "dispatch succeeds without an auth header: {result:?}");
+    assert!(
+        result.is_ok(),
+        "dispatch succeeds without an auth header: {result:?}"
+    );
 
-    if let Some(v) = old { std::env::set_var("TEST_LLAMA_CPP_MISSING_KEY", v) }
+    if let Some(v) = old {
+        std::env::set_var("TEST_LLAMA_CPP_MISSING_KEY", v)
+    }
 }
 
 #[tokio::test]
@@ -592,7 +611,14 @@ async fn stream_group_miss_yields_instance_group_miss() {
 
     let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"));
     let result = backend
-        .stream_complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .stream_complete(
+            make_test_request("hi"),
+            "m".into(),
+            None,
+            5000,
+            30000,
+            false,
+        )
         .await;
     let Err(err) = result else {
         panic!("streaming group-miss must error")
@@ -692,7 +718,10 @@ async fn stream_abort_drops_upstream_and_finalizes_partial_answer() {
     // drop-guard fires the signal, and the forwarding task closes the
     // upstream connection.
     drop(handle.body);
-    assert!(handle.abort.is_cancelled(), "body drop fires the abort signal");
+    assert!(
+        handle.abort.is_cancelled(),
+        "body drop fires the abort signal"
+    );
 
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !peer_closed.load(AtomicOrdering::SeqCst) {

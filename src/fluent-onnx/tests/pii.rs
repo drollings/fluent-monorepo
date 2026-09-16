@@ -3,8 +3,7 @@ use super::*;
 #[test]
 fn pii_span_serde_and_slice() {
     let span = PiiSpan::new(2, 9, "credential.password", 0.9);
-    let back: PiiSpan =
-        serde_json::from_str(&serde_json::to_string(&span).unwrap()).unwrap();
+    let back: PiiSpan = serde_json::from_str(&serde_json::to_string(&span).unwrap()).unwrap();
     assert_eq!(back, span);
     assert_eq!(span.slice("xxhunter2xx"), Some("hunter2"));
     // A zero-width span at a valid boundary slices empty; an out-of-bounds
@@ -35,10 +34,7 @@ fn decode_biluo_single_and_begin_inside_end() {
 #[test]
 fn decode_biluo_single_labels_are_their_own_spans() {
     let offsets = [(0, 4), (5, 9)];
-    let labels = [
-        "S-contact.email".to_string(),
-        "S-contact.email".to_string(),
-    ];
+    let labels = ["S-contact.email".to_string(), "S-contact.email".to_string()];
     let spans = decode_biluo(&offsets, &labels, &[0.9, 0.7]);
     assert_eq!(spans.len(), 2);
     assert_eq!(spans[0], PiiSpan::new(0, 4, "contact.email", 0.9));
@@ -73,7 +69,10 @@ fn decode_biluo_type_mismatch_splits_the_span() {
 #[test]
 fn decode_biluo_unclosed_span_closes_at_document_end() {
     let offsets = [(0, 5), (5, 10)];
-    let labels = ["B-org.company_name".to_string(), "I-org.company_name".to_string()];
+    let labels = [
+        "B-org.company_name".to_string(),
+        "I-org.company_name".to_string(),
+    ];
     let spans = decode_biluo(&offsets, &labels, &[0.8, 0.6]);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].end, 10);

@@ -19,7 +19,11 @@ fn pool() -> Arc<PriorityResultPool<String, String, String>> {
     ))
 }
 
-fn task_at(identity: &str, age_secs: u64, runtime: &Arc<dyn fluent_wvr::Runtime>) -> ScheduledTask<String> {
+fn task_at(
+    identity: &str,
+    age_secs: u64,
+    runtime: &Arc<dyn fluent_wvr::Runtime>,
+) -> ScheduledTask<String> {
     ScheduledTask {
         identity: identity.into(),
         task: identity.into(),

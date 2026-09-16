@@ -116,13 +116,15 @@ async fn control_group_fresh_non_affine_vs_affine_ticks() {
     scheduler2.age_now();
     let starved_1 = {
         let g = crate::pool::PriorityResultPool::<String, String, String>::new(
-            rt2.clone(), 1, |_: String| async move { Ok::<String, String>("ok".into()) },
+            rt2.clone(),
+            1,
+            |_: String| async move { Ok::<String, String>("ok".into()) },
         );
         let _ = g;
         // peek directly from scheduler's LRU
         scheduler2.base_priorities_len(); // ensure something
-        // Read via lock: we need to access base_priorities; use effective_priority after aging
-        // Simulate by inserting then aging
+                                          // Read via lock: we need to access base_priorities; use effective_priority after aging
+                                          // Simulate by inserting then aging
         crate::affinity::AgingConfig::default();
         0
     };
@@ -279,12 +281,15 @@ async fn sweep_affinity_bonus_vs_starvation() {
             };
             let pa = scheduler.effective_priority(&affine, 0);
             let rt2 = crate::tokio_runtime();
-            let scheduler2 = make_scheduler(rt2.clone(), AgingConfig {
-                affinity_bonus: bonus,
-                aging_rate: rate,
-                aging_interval: Duration::from_secs(5),
-                max_priority: 100,
-            });
+            let scheduler2 = make_scheduler(
+                rt2.clone(),
+                AgingConfig {
+                    affinity_bonus: bonus,
+                    aging_rate: rate,
+                    aging_interval: Duration::from_secs(5),
+                    max_priority: 100,
+                },
+            );
             scheduler2.set_affinity(Some("a".into()));
             let non = ScheduledTask {
                 identity: "b".into(),
@@ -292,7 +297,10 @@ async fn sweep_affinity_bonus_vs_starvation() {
                 enqueued_at: rt2.now(),
             };
             let pb = scheduler2.effective_priority(&non, 0);
-            assert!(pa >= pb, "bonus {bonus} rate {rate}: affine {pa} must >= non-affine {pb}");
+            assert!(
+                pa >= pb,
+                "bonus {bonus} rate {rate}: affine {pa} must >= non-affine {pb}"
+            );
             assert!(pa <= 100 && pb <= 100, "max_priority bound");
         }
     }

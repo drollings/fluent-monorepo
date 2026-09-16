@@ -658,8 +658,7 @@ mod tests {
     #[test]
     fn m10_generator_handle_executes_byte_identical_to_native() {
         let gen = DefaultCommentGenerator;
-        let handle: std::sync::Arc<dyn Component> =
-            std::sync::Arc::new(DefaultCommentGenerator);
+        let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(DefaultCommentGenerator);
         assert_eq!(handle.name(), "generator.default_comment");
         let member_ctx = ctx_with_prompt(&[
             ("prompt", "member"),
@@ -692,8 +691,7 @@ mod tests {
 
     #[test]
     fn m10_generator_execute_rejects_bad_handoff() {
-        let handle: std::sync::Arc<dyn Component> =
-            std::sync::Arc::new(DefaultCommentGenerator);
+        let handle: std::sync::Arc<dyn Component> = std::sync::Arc::new(DefaultCommentGenerator);
         // Missing prompt kind.
         let err = handle
             .execute(&WorkContext::default())
@@ -701,7 +699,10 @@ mod tests {
         assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
         // Unknown prompt kind.
         let err = handle
-            .execute(&ctx_with_prompt(&[("prompt", "bogus"), ("language", "rust")]))
+            .execute(&ctx_with_prompt(&[
+                ("prompt", "bogus"),
+                ("language", "rust"),
+            ]))
             .expect_err("unknown prompt");
         assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
     }

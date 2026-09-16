@@ -62,10 +62,7 @@ struct Raw {
 
 impl Raw {
     fn into_instance_profile(self) -> InstanceProfile {
-        let group = self
-            .group
-            .clone()
-            .unwrap_or_else(|| self.name.clone());
+        let group = self.group.clone().unwrap_or_else(|| self.name.clone());
         InstanceProfile {
             embedding: None,
             name: Some(self.name),
@@ -300,15 +297,17 @@ fn management_base_url_strips_chat_completions_suffix() {
         management_base("http://localhost:8080/chat/completions"),
         "http://localhost:8080"
     );
-    assert_eq!(management_base("http://localhost:8080/v1"), "http://localhost:8080/v1");
+    assert_eq!(
+        management_base("http://localhost:8080/v1"),
+        "http://localhost:8080/v1"
+    );
 }
 
 #[tokio::test]
 async fn client_list_parses_envelope_and_bare_array() {
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
                     200,
                     serde_json::json!({
                         "instances": [
@@ -320,11 +319,10 @@ async fn client_list_parses_envelope_and_bare_array() {
                     })
                     .to_string(),
                 )
-            } else {
-                (404, r#"{"error":{"message":"not found"}}"#.into())
-            }
-        },
-    );
+        } else {
+            (404, r#"{"error":{"message":"not found"}}"#.into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
@@ -340,16 +338,17 @@ async fn client_list_parses_envelope_and_bare_array() {
 #[tokio::test]
 async fn client_mutating_calls_hit_expected_paths() {
     let requests_c = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
-    let handler: StubHandler = Arc::new(
-        move |method, path, _body| {
-            requests_c.lock().unwrap().push((method.into(), path.into()));
-            if path.ends_with("/snapshots") {
-                (200, "[]".into())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        requests_c
+            .lock()
+            .unwrap()
+            .push((method.into(), path.into()));
+        if path.ends_with("/snapshots") {
+            (200, "[]".into())
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
@@ -362,8 +361,14 @@ async fn client_mutating_calls_hit_expected_paths() {
     client.pin("work").await.expect("pin");
     client.unpin("work").await.expect("unpin");
     client.resize("work", 49152).await.expect("resize");
-    client.save_snapshot("work", "readfiles").await.expect("save");
-    client.delete_snapshot("work", "readfiles").await.expect("delete");
+    client
+        .save_snapshot("work", "readfiles")
+        .await
+        .expect("save");
+    client
+        .delete_snapshot("work", "readfiles")
+        .await
+        .expect("delete");
     client.list_snapshots("work").await.expect("list snapshots");
 
     let recorded = stub.recorded();
@@ -393,10 +398,9 @@ async fn client_mutating_calls_hit_expected_paths() {
 
 #[tokio::test]
 async fn client_snapshot_wire_is_per_instance() {
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances/work/snapshots" {
-                (
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances/work/snapshots" {
+            (
                     200,
                     serde_json::json!({
                         "snapshots": [
@@ -407,13 +411,12 @@ async fn client_snapshot_wire_is_per_instance() {
                     })
                     .to_string(),
                 )
-            } else if method == "POST" && path == "/instances/work/snapshot" {
-                (201, r#"{"success":true}"#.into())
-            } else {
-                (404, r#"{"error":{"message":"not found"}}"#.into())
-            }
-        },
-    );
+        } else if method == "POST" && path == "/instances/work/snapshot" {
+            (201, r#"{"success":true}"#.into())
+        } else {
+            (404, r#"{"error":{"message":"not found"}}"#.into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
@@ -429,8 +432,14 @@ async fn client_snapshot_wire_is_per_instance() {
     assert!(listed[2].instance.is_none());
 
     // Explicit slot and default-slot saves carry id_slot on the wire.
-    client.save_snapshot_slot("work", "snap1", 2).await.expect("save slot");
-    client.save_snapshot("work", "snap1").await.expect("save default");
+    client
+        .save_snapshot_slot("work", "snap1", 2)
+        .await
+        .expect("save slot");
+    client
+        .save_snapshot("work", "snap1")
+        .await
+        .expect("save default");
     let saves: Vec<serde_json::Value> = stub
         .recorded()
         .into_iter()
@@ -445,17 +454,15 @@ async fn client_snapshot_wire_is_per_instance() {
 
 #[tokio::test]
 async fn client_classifies_409_duplicate_and_5xx_transient() {
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if path == "/instances" && method == "POST" {
-                (409, r#"{"error":{"message":"duplicate"}}"#.into())
-            } else if path == "/instances/boom" {
-                (507, r#"{"error":{"message":"oom"}}"#.into())
-            } else {
-                (404, r#"{"error":{"message":"not found"}}"#.into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if path == "/instances" && method == "POST" {
+            (409, r#"{"error":{"message":"duplicate"}}"#.into())
+        } else if path == "/instances/boom" {
+            (507, r#"{"error":{"message":"oom"}}"#.into())
+        } else {
+            (404, r#"{"error":{"message":"not found"}}"#.into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
@@ -475,15 +482,13 @@ async fn client_abort_posts_slot_id_and_defaults_to_zero() {
     let seen: Arc<std::sync::Mutex<Vec<(String, String, String)>>> =
         Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen2 = seen.clone();
-    let handler: StubHandler = Arc::new(
-        move |method, path, body| {
-            seen2
-                .lock()
-                .unwrap()
-                .push((method.into(), path.into(), body.into()));
-            (200, "{}".into())
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, body| {
+        seen2
+            .lock()
+            .unwrap()
+            .push((method.into(), path.into(), body.into()));
+        (200, "{}".into())
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
@@ -516,16 +521,20 @@ async fn client_talks_directly_to_its_server() {
     let seen: Arc<std::sync::Mutex<Vec<(String, String, String)>>> =
         Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen2 = seen.clone();
-    let handler: StubHandler = Arc::new(
-        move |method, path, body| {
-            seen2.lock().unwrap().push((method.into(), path.into(), body.into()));
-            (200, "{}".into())
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, body| {
+        seen2
+            .lock()
+            .unwrap()
+            .push((method.into(), path.into(), body.into()));
+        (200, "{}".into())
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
-    client.create("swarm-0", "swarm", 16384, Some(1), false, false).await.unwrap();
+    client
+        .create("swarm-0", "swarm", 16384, Some(1), false, false)
+        .await
+        .unwrap();
     client.destroy("swarm-0", false).await.unwrap();
     client.resize("swarm-0", 32768).await.unwrap();
 
@@ -553,15 +562,13 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
         instance_info("ledger", "ledger", true, 1),
         instance_info("swarm0", "swarm", true, 5),
     ];
-    let handler: StubHandler = Arc::new(
-        move |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (200, serde_json::to_string(&existing).unwrap())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (200, serde_json::to_string(&existing).unwrap())
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
@@ -579,7 +586,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
             no_sleep: false,
             sleep_idle_seconds: None,
             default: true,
-        resume: false,
+            resume: false,
             params: None,
             max_ctx: None,
             session: false,
@@ -595,7 +602,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
             no_sleep: true,
             sleep_idle_seconds: None,
             default: false,
-        resume: false,
+            resume: false,
             params: None,
             max_ctx: None,
             session: false,
@@ -611,7 +618,7 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
             no_sleep: true,
             sleep_idle_seconds: None,
             default: false,
-        resume: false,
+            resume: false,
             params: None,
             max_ctx: None,
             session: false,
@@ -648,15 +655,16 @@ async fn reconcile_creates_missing_pinned_and_resizes_n_ctx_drift() {
 async fn ensure_instance_creates_missing_unpinned_on_demand() {
     // Server is empty; `scratch` is configured but unpinned -> absent at
     // boot, created on demand by ensure_instance.
-    let handler: StubHandler = Arc::new(
-        move |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (200, r#"{"instances":[],"snapshots":[],"total":{"total":0}}"#.into())
-            } else {
-                (201, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                r#"{"instances":[],"snapshots":[],"total":{"total":0}}"#.into(),
+            )
+        } else {
+            (201, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
@@ -676,7 +684,10 @@ async fn ensure_instance_creates_missing_unpinned_on_demand() {
         session: false,
     }];
     let manager = InstanceManager::new("base", client, profiles, sidecar_policy());
-    manager.ensure_instance("scratch").await.expect("ensure_instance");
+    manager
+        .ensure_instance("scratch")
+        .await
+        .expect("ensure_instance");
 
     let recorded = stub.recorded();
     let creates: Vec<&(String, String, String)> = recorded
@@ -691,15 +702,16 @@ async fn ensure_instance_creates_missing_unpinned_on_demand() {
 
 #[tokio::test]
 async fn ensure_instance_skips_when_already_present_or_unknown() {
-    let handler: StubHandler = Arc::new(
-        move |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (200, serde_json::to_string(&[instance_info("scratch", "scratch", false, 7)]).unwrap())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                serde_json::to_string(&[instance_info("scratch", "scratch", false, 7)]).unwrap(),
+            )
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
@@ -722,12 +734,13 @@ async fn ensure_instance_skips_when_already_present_or_unknown() {
     // Already present -> no create.
     manager.ensure_instance("scratch").await.expect("present");
     // Unknown name -> nothing to create, no error.
-    manager.ensure_instance("nope").await.expect("unknown is a no-op");
+    manager
+        .ensure_instance("nope")
+        .await
+        .expect("unknown is a no-op");
     let recorded = stub.recorded();
     assert!(
-        recorded
-            .iter()
-            .all(|(m, _, _)| m != "POST"),
+        recorded.iter().all(|(m, _, _)| m != "POST"),
         "no create when already present or unknown: {recorded:?}"
     );
 }
@@ -742,14 +755,13 @@ async fn list_accepts_wrapped_instances_object() {
     ];
     let payload = serde_json::json!({ "instances": existing });
     let payload_str = payload.to_string();
-    let handler: StubHandler =
-        Arc::new(move |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (200, payload_str.clone())
-            } else {
-                (404, "{}".into())
-            }
-        });
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (200, payload_str.clone())
+        } else {
+            (404, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let list = client.list().await.expect("list parses wrapped shape");
@@ -759,18 +771,16 @@ async fn list_accepts_wrapped_instances_object() {
 
 #[tokio::test]
 async fn reconcile_tolerates_duplicate_create() {
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (200, "[]".into())
-            } else if method == "POST" && path == "/instances" {
-                // A concurrent reconciler created it first.
-                (409, "{}".into())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (200, "[]".into())
+        } else if method == "POST" && path == "/instances" {
+            // A concurrent reconciler created it first.
+            (409, "{}".into())
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
@@ -879,7 +889,11 @@ async fn residency_eviction_frees_largest_lru_context_first() {
         .filter(|(m, _, _)| m == "DELETE")
         .map(|(_, p, _)| p.clone())
         .collect();
-    assert_eq!(deletes, vec!["/instances/big"], "largest LRU context evicted first");
+    assert_eq!(
+        deletes,
+        vec!["/instances/big"],
+        "largest LRU context evicted first"
+    );
 }
 
 #[tokio::test]
@@ -903,12 +917,7 @@ async fn llama_context_evict_snapshots_resume_marked_context_before_destroy() {
     ));
     manager.set_resume("work", true);
     let info = instance_info("work", "g", false, 100);
-    let ctx = LlamaContext::from_info(
-        Arc::clone(&manager),
-        manager.client().clone(),
-        &info,
-        None,
-    );
+    let ctx = LlamaContext::from_info(Arc::clone(&manager), manager.client().clone(), &info, None);
     ctx.evict().await.expect("evict");
 
     let order: Vec<String> = stub
@@ -951,9 +960,7 @@ async fn residency_no_eviction_when_free_vram_within_budget() {
     let pool = InstancePool::from_managers(managers, None);
     engine_cycle(&pool, &policy, &["base"]).await;
     assert!(
-        stub.recorded()
-            .iter()
-            .all(|(m, _, _)| m != "DELETE"),
+        stub.recorded().iter().all(|(m, _, _)| m != "DELETE"),
         "no eviction within budget"
     );
 }
@@ -991,15 +998,13 @@ async fn residency_without_budget_never_evicts() {
 
 #[tokio::test]
 async fn ensure_group_allocates_fresh_instance_from_profile() {
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "POST" && path == "/instances" {
-                (201, "{}".into())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path == "/instances" {
+            (201, "{}".into())
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
@@ -1037,23 +1042,21 @@ async fn ensure_group_allocates_fresh_instance_from_profile() {
 #[tokio::test]
 async fn ensure_group_ready_is_noop_when_member_present() {
     // A resident member -> no management write, idempotent.
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (
-                    200,
-                    serde_json::json!({
-                        "instances": [ instance_info("swarm-0", "swarm", true, 1) ],
-                        "snapshots": [],
-                        "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
-                    })
-                    .to_string(),
-                )
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                serde_json::json!({
+                    "instances": [ instance_info("swarm-0", "swarm", true, 1) ],
+                    "snapshots": [],
+                    "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
+                })
+                .to_string(),
+            )
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
@@ -1090,25 +1093,23 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
     // The pinned `swarm` group has no resident member while the default
     // `ledger` instance is resident -> reconcile creates only the missing
     // pinned member and never re-creates a resident one.
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (
-                    200,
-                    serde_json::json!({
-                        "instances": [ instance_info("ledger", "ledger", true, 0) ],
-                        "snapshots": [],
-                        "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
-                    })
-                    .to_string(),
-                )
-            } else if method == "POST" && path == "/instances" {
-                (201, "{}".into())
-            } else {
-                (404, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                serde_json::json!({
+                    "instances": [ instance_info("ledger", "ledger", true, 0) ],
+                    "snapshots": [],
+                    "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
+                })
+                .to_string(),
+            )
+        } else if method == "POST" && path == "/instances" {
+            (201, "{}".into())
+        } else {
+            (404, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![
@@ -1156,9 +1157,15 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
         .filter(|(m, p, _)| m == "POST" && p == "/instances")
         .map(|(_, _, b)| serde_json::from_str::<serde_json::Value>(&b).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(creates.len(), 1, "reconcile creates only the missing pinned member");
+    assert_eq!(
+        creates.len(),
+        1,
+        "reconcile creates only the missing pinned member"
+    );
     assert!(
-        creates.iter().any(|b| b["name"] == "swarm" && b["group"] == "swarm"),
+        creates
+            .iter()
+            .any(|b| b["name"] == "swarm" && b["group"] == "swarm"),
         "pinned swarm member created"
     );
     assert!(
@@ -1171,25 +1178,23 @@ async fn ensure_group_ready_reconciles_pinned_group_when_absent() {
 async fn ensure_group_ready_allocates_unpinned_group_when_absent() {
     // Unpinned group with no resident member -> a fresh member is allocated
     // on demand (the "even unpinned, load on demand" guarantee).
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (
-                    200,
-                    serde_json::json!({
-                        "instances": [],
-                        "snapshots": [],
-                        "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
-                    })
-                    .to_string(),
-                )
-            } else if method == "POST" && path == "/instances" {
-                (201, "{}".into())
-            } else {
-                (404, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                serde_json::json!({
+                    "instances": [],
+                    "snapshots": [],
+                    "total": { "model": 1000, "context": 200, "compute": 200, "total": 1400 }
+                })
+                .to_string(),
+            )
+        } else if method == "POST" && path == "/instances" {
+            (201, "{}".into())
+        } else {
+            (404, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
     let profiles = vec![InstanceProfile {
@@ -1228,14 +1233,13 @@ async fn pool_aggregates_models_with_rewritten_ids() {
     // Two managed models, each served by its own stub: `swarm` (ledger
     // default + scratch) and `qwen` (work). Envelopes use the server's own
     // (bare) instance ids and byte totals.
-    let handler_a: StubHandler = Arc::new(
-        move |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                let ledger = InstanceInfo {
-                    is_default: true,
-                    ..instance_info("ledger", "ledger", true, 1)
-                };
-                (
+    let handler_a: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            let ledger = InstanceInfo {
+                is_default: true,
+                ..instance_info("ledger", "ledger", true, 1)
+            };
+            (
                     200,
                     serde_json::json!({
                         "instances": [
@@ -1247,15 +1251,13 @@ async fn pool_aggregates_models_with_rewritten_ids() {
                     })
                     .to_string(),
                 )
-            } else {
-                (404, "{}".into())
-            }
-        },
-    );
-    let handler_b: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (
+        } else {
+            (404, "{}".into())
+        }
+    });
+    let handler_b: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
                     200,
                     serde_json::json!({
                         "instances": [ instance_info("work", "work", false, 3) ],
@@ -1264,11 +1266,10 @@ async fn pool_aggregates_models_with_rewritten_ids() {
                     })
                     .to_string(),
                 )
-            } else {
-                (404, "{}".into())
-            }
-        },
-    );
+        } else {
+            (404, "{}".into())
+        }
+    });
     let stub_a = StubServer::start(handler_a);
     let stub_b = StubServer::start(handler_b);
     let mut managers = HashMap::new();
@@ -1295,15 +1296,15 @@ async fn pool_aggregates_models_with_rewritten_ids() {
     let agg = pool.aggregate(None).await.expect("aggregate");
     let instances = agg["instances"].as_array().unwrap();
     assert_eq!(instances.len(), 3);
-    let ids: Vec<&str> = instances
-        .iter()
-        .filter_map(|i| i["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = instances.iter().filter_map(|i| i["id"].as_str()).collect();
     assert!(ids.contains(&"swarm:ledger"), "ids: {ids:?}");
     assert!(ids.contains(&"swarm:scratch"));
     assert!(ids.contains(&"qwen:work"));
     // The default instance's aliases carry the bare model id + latest.
-    let ledger = instances.iter().find(|i| i["id"] == "swarm:ledger").unwrap();
+    let ledger = instances
+        .iter()
+        .find(|i| i["id"] == "swarm:ledger")
+        .unwrap();
     let aliases: Vec<&str> = ledger["aliases"]
         .as_array()
         .unwrap()
@@ -1327,23 +1328,21 @@ async fn pool_aggregates_models_with_rewritten_ids() {
 async fn pool_scopes_aggregate_to_one_model() {
     use crate::instances::stub::StubServer;
 
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (
-                    200,
-                    serde_json::json!({
-                        "instances": [ instance_info("ledger", "ledger", true, 1) ],
-                        "snapshots": [],
-                        "total": { "model": 1, "context": 1, "compute": 1, "total": 3 },
-                    })
-                    .to_string(),
-                )
-            } else {
-                (404, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                serde_json::json!({
+                    "instances": [ instance_info("ledger", "ledger", true, 1) ],
+                    "snapshots": [],
+                    "total": { "model": 1, "context": 1, "compute": 1, "total": 3 },
+                })
+                .to_string(),
+            )
+        } else {
+            (404, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let mut managers = HashMap::new();
     managers.insert(
@@ -1356,7 +1355,10 @@ async fn pool_scopes_aggregate_to_one_model() {
         )),
     );
     let pool = InstancePool::from_managers(managers, None);
-    let agg = pool.aggregate(Some("swarm")).await.expect("scoped aggregate");
+    let agg = pool
+        .aggregate(Some("swarm"))
+        .await
+        .expect("scoped aggregate");
     assert_eq!(agg["instances"].as_array().unwrap().len(), 1);
     let unknown = pool.aggregate(Some("nope")).await.expect("unknown scope");
     assert_eq!(unknown["instances"].as_array().unwrap().len(), 0);
@@ -1369,15 +1371,13 @@ async fn pool_scopes_aggregate_to_one_model() {
 /// records destroys; DELETE answers 200.
 fn residency_stub(envelope: &serde_json::Value) -> StubServer {
     let envelope = envelope.to_string();
-    let handler: StubHandler = Arc::new(
-        move |method, path, _body| {
-            if method == "GET" && path == "/instances" {
-                (200, envelope.clone())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (200, envelope.clone())
+        } else {
+            (200, "{}".into())
+        }
+    });
     StubServer::start(handler)
 }
 
@@ -1432,7 +1432,10 @@ async fn pool_residency_evicts_lru_largest_unpinned_across_managers() {
     // evict_batch = 2 (sidecar_policy) -> both unpinned candidates go,
     // ordered LRU (old) before big; pinned never is.
     assert_eq!(deletes_a.len(), 2, "evict_batch = 2 per pass");
-    assert!(deletes_a[0].ends_with("/old"), "LRU evicted first: {deletes_a:?}");
+    assert!(
+        deletes_a[0].ends_with("/old"),
+        "LRU evicted first: {deletes_a:?}"
+    );
     assert!(
         !deletes_a.iter().any(|p| p.contains("pinned")),
         "pinned instance never evicted"
@@ -1469,15 +1472,13 @@ async fn pool_residency_no_eviction_within_budget() {
 /// is a loud rejection, and no need / no profile is a no-op.
 #[tokio::test]
 async fn resize_to_demand_grows_within_max_ctx_and_refuses_beyond() {
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "POST" && path.ends_with("/resize") {
-                (200, r#"{"success": true}"#.into())
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path.ends_with("/resize") {
+            (200, r#"{"success": true}"#.into())
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let profile = crate::config::InstanceProfile {
         embedding: None,
@@ -1578,27 +1579,26 @@ fn build_instance_managers_rejects_duplicate_name_within_model() {
     // Two profiles in ONE model resolve to the same instance name: the
     // profile key `swarm0` and another profile whose explicit `name` is
     // also `swarm0`. The pool grammar is invalid and boot fails fast.
-    let config: crate::config::RouterConfig =
-        serde_json::from_value(serde_json::json!({
-            "roles": {
-                "work": {
-                    "instances": {
-                        "swarm0": { "num_ctx": 16384 },
-                        "x": { "name": "swarm0", "num_ctx": 32768 }
-                    },
-                    "models": {"a": {}}
-                }
-            },
-            "models": {
-                "a": {
-                    "endpoint": "http://x/v1/chat/completions",
-                    "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
-                    "weights": "/models/a.gguf"
-                }
+    let config: crate::config::RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "instances": {
+                    "swarm0": { "num_ctx": 16384 },
+                    "x": { "name": "swarm0", "num_ctx": 32768 }
+                },
+                "models": {"a": {}}
             }
-        }))
-        .unwrap();
+        },
+        "models": {
+            "a": {
+                "endpoint": "http://x/v1/chat/completions",
+                "intelligence": 1,
+                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
+                "weights": "/models/a.gguf"
+            }
+        }
+    }))
+    .unwrap();
     let Err(err) = build_instance_managers(&config, None) else {
         panic!("duplicate-name config must fail validation")
     };
@@ -1618,30 +1618,37 @@ fn residency_backoff_progresses_and_caps() {
     assert_eq!(capped_backoff_ms(base_ms, 0, 12), 5_000);
     assert_eq!(capped_backoff_ms(base_ms, 1, 12), 10_000);
     assert_eq!(capped_backoff_ms(base_ms, 2, 12), 15_000);
-    assert_eq!(capped_backoff_ms(base_ms, 11, 12), 60_000, "cap at 12x base");
-    assert_eq!(capped_backoff_ms(base_ms, 100, 12), 60_000, "capped regardless of further failures");
+    assert_eq!(
+        capped_backoff_ms(base_ms, 11, 12),
+        60_000,
+        "cap at 12x base"
+    );
+    assert_eq!(
+        capped_backoff_ms(base_ms, 100, 12),
+        60_000,
+        "capped regardless of further failures"
+    );
 }
 
 #[test]
 fn build_instance_managers_ok_on_valid_config() {
-    let config: crate::config::RouterConfig =
-        serde_json::from_value(serde_json::json!({
-            "roles": {
-                "work": {
-                    "instances": { "swarm": { "num_ctx": 16384, "count": 2 } },
-                    "models": {"a": {}}
-                }
-            },
-            "models": {
-                "a": {
-                    "endpoint": "http://x/v1/chat/completions",
-                    "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
-                    "weights": "/models/a.gguf"
-                }
+    let config: crate::config::RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {
+                "instances": { "swarm": { "num_ctx": 16384, "count": 2 } },
+                "models": {"a": {}}
             }
-        }))
-        .unwrap();
+        },
+        "models": {
+            "a": {
+                "endpoint": "http://x/v1/chat/completions",
+                "intelligence": 1,
+                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
+                "weights": "/models/a.gguf"
+            }
+        }
+    }))
+    .unwrap();
     let pool = build_instance_managers(&config, None).expect("valid config builds managers");
     assert_eq!(pool.managers_iter().len(), 1);
     // Keyed by the Coral Router model id.
@@ -1650,17 +1657,16 @@ fn build_instance_managers_ok_on_valid_config() {
 
 #[test]
 fn build_instance_managers_is_empty_without_instances() {
-    let config: crate::config::RouterConfig =
-        serde_json::from_value(serde_json::json!({
-            "models": {
-                "a": {
-                    "endpoint": "http://x/v1/chat/completions",
-                    "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
-                }
+    let config: crate::config::RouterConfig = serde_json::from_value(serde_json::json!({
+        "models": {
+            "a": {
+                "endpoint": "http://x/v1/chat/completions",
+                "intelligence": 1,
+                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
             }
-        }))
-        .unwrap();
+        }
+    }))
+    .unwrap();
     let pool = build_instance_managers(&config, None).expect("no managers");
     assert!(pool.is_empty());
 }
@@ -1671,15 +1677,13 @@ fn build_instance_managers_is_empty_without_instances() {
 /// without `--instance` grammar) and answers `/props`.
 fn plain_stub(props: &serde_json::Value) -> StubServer {
     let props = props.to_string();
-    let handler: StubHandler = Arc::new(
-        move |method, path, _body| {
-            if method == "GET" && path == "/props" {
-                (200, props.clone())
-            } else {
-                (404, r#"{"error":{"message":"File Not Found"}}"#.into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/props" {
+            (200, props.clone())
+        } else {
+            (404, r#"{"error":{"message":"File Not Found"}}"#.into())
+        }
+    });
     StubServer::start(handler)
 }
 
@@ -1727,15 +1731,17 @@ async fn plain_model_footprint_zeroes_weights_when_sleeping() {
     assert!(plain);
     let inst = &envelope.instances[0];
     assert_eq!(inst.state, "sleeping");
-    assert_eq!(inst.model_bytes, 0, "sleeping plain model freed its weights");
+    assert_eq!(
+        inst.model_bytes, 0,
+        "sleeping plain model freed its weights"
+    );
     assert_eq!(envelope.total.total, 0);
 }
 
 #[tokio::test]
 async fn plain_model_footprint_none_when_server_down() {
     // A down (never-loaded) plain server: /props is unreachable -> None.
-    let handler: StubHandler =
-        Arc::new(|_m, _p, _b| (404, "{}".into()));
+    let handler: StubHandler = Arc::new(|_m, _p, _b| (404, "{}".into()));
     let stub = StubServer::start(handler);
     let manager = plain_manager(&stub, 1_000);
     assert!(manager.list_with_fallback().await.is_none());
@@ -1799,9 +1805,17 @@ async fn touch_advances_plain_model_last_used() {
     });
     let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 1_000);
-    let before = manager.plain_footprint().await.expect("footprint").last_used;
+    let before = manager
+        .plain_footprint()
+        .await
+        .expect("footprint")
+        .last_used;
     manager.touch();
-    let after = manager.plain_footprint().await.expect("footprint").last_used;
+    let after = manager
+        .plain_footprint()
+        .await
+        .expect("footprint")
+        .last_used;
     assert!(after >= before, "touch must advance last_used");
 }
 
@@ -1832,7 +1846,9 @@ async fn residency_polls_plain_models_and_unloads_over_budget() {
     let pool = InstancePool::from_managers(managers, None);
     engine_cycle(&pool, &policy, &["qwen"]).await;
     assert!(
-        stub.recorded().iter().any(|(m, p, _)| m == "GET" && p == "/props"),
+        stub.recorded()
+            .iter()
+            .any(|(m, p, _)| m == "GET" && p == "/props"),
         "the plain-model branch must poll /props"
     );
 }
@@ -1861,23 +1877,20 @@ fn engine_for_policy(policy: &crate::config::SidecarConfig) -> ResidencyEngine {
 /// same `LlamaWeights` adapters the fleet build uses. Every residency
 /// behavior below is pinned through the engine (the pool owns no eviction
 /// ordering of its own).
-async fn engine_cycle(
-    pool: &InstancePool,
-    policy: &crate::config::SidecarConfig,
-    keys: &[&str],
-) {
+async fn engine_cycle(pool: &InstancePool, policy: &crate::config::SidecarConfig, keys: &[&str]) {
     let sup = supervisor_with_servers(keys);
     let engine = engine_for_policy(policy);
-    let weights =
-        crate::instances::traits::llama_weights_for_pool(pool, &sup, policy);
+    let weights = crate::instances::traits::llama_weights_for_pool(pool, &sup, policy);
     engine.residency_cycle(&weights).await.expect("residency");
 }
 
 fn supervisor_with_servers(keys: &[&str]) -> Arc<crate::supervisor::LlamaServerSupervisor> {
-    let sup = Arc::new(crate::supervisor::LlamaServerSupervisor::with_client_for_test(
-        std::path::PathBuf::from("/bin/false"),
-        reqwest::Client::new(),
-    ));
+    let sup = Arc::new(
+        crate::supervisor::LlamaServerSupervisor::with_client_for_test(
+            std::path::PathBuf::from("/bin/false"),
+            reqwest::Client::new(),
+        ),
+    );
     for key in keys {
         sup.register_test_server(key);
     }
@@ -1917,17 +1930,12 @@ async fn make_room_for_no_eviction_within_budget() {
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), swarm);
     managers.insert("gemma".into(), gemma);
-    let pool = InstancePool::from_managers(
-        managers,
-        Some(supervisor_with_servers(&["swarm", "gemma"])),
-    );
+    let pool =
+        InstancePool::from_managers(managers, Some(supervisor_with_servers(&["swarm", "gemma"])));
     pool.set_admission_engine(engine_for_policy(&policy));
     pool.make_room_for("gemma", 1000).await;
     assert!(
-        swarm_stub
-            .recorded()
-            .iter()
-            .all(|(m, _, _)| m != "DELETE"),
+        swarm_stub.recorded().iter().all(|(m, _, _)| m != "DELETE"),
         "no eviction within budget"
     );
 }
@@ -1957,10 +1965,7 @@ async fn make_room_for_evicts_unpinned_instance_over_budget() {
     ));
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), manager);
-    let pool = InstancePool::from_managers(
-        managers,
-        Some(supervisor_with_servers(&["swarm"])),
-    );
+    let pool = InstancePool::from_managers(managers, Some(supervisor_with_servers(&["swarm"])));
     pool.set_admission_engine(engine_for_policy(&policy));
     pool.make_room_for("gemma", 1000).await;
     let recorded = stub.recorded();
@@ -2028,7 +2033,11 @@ async fn is_sleeping_reflects_fork_state_and_skips_instance_models() {
     });
     let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 1000);
-    assert_eq!(manager.is_sleeping().await, Some(true), "fork reports sleeping");
+    assert_eq!(
+        manager.is_sleeping().await,
+        Some(true),
+        "fork reports sleeping"
+    );
 
     let stub2 = plain_stub(&serde_json::json!({
         "is_sleeping": false,
@@ -2070,7 +2079,10 @@ fn eviction_score_weights_size_and_coldness() {
     // Coldness scales within a size class: the same 10 GB pool idle a
     // minute is far more evictable than when used a second ago, so active
     // work is relatively protected by recency.
-    assert!(eviction_score(10_000_000_000, now - 60, now) > eviction_score(10_000_000_000, now - 1, now));
+    assert!(
+        eviction_score(10_000_000_000, now - 60, now)
+            > eviction_score(10_000_000_000, now - 1, now)
+    );
     // Never used = maximally cold.
     assert!(eviction_score(1_000, -1, now) > eviction_score(1_000, 1, now));
 }
@@ -2119,7 +2131,10 @@ async fn aggregate_reports_resume_overlay() {
         .iter()
         .find(|i| i["id"] == "swarm:agent")
         .expect("aggregated entry");
-    assert_eq!(entry["resume"], true, "aggregate overlays the router-side flag");
+    assert_eq!(
+        entry["resume"], true,
+        "aggregate overlays the router-side flag"
+    );
 }
 
 #[tokio::test]
@@ -2195,13 +2210,20 @@ async fn eviction_snapshots_resume_context_before_destroy() {
         .filter(|(m, p, _)| m == "POST" && *p == "/instances/agent/snapshot")
         .map(|(_, p, _)| p.as_str())
         .collect();
-    assert_eq!(snapshot_posts.len(), 1, "resume context snapshotted: {recorded:?}");
+    assert_eq!(
+        snapshot_posts.len(),
+        1,
+        "resume context snapshotted: {recorded:?}"
+    );
     let deletes: Vec<&str> = recorded
         .iter()
         .filter(|(m, _, _)| m == "DELETE")
         .map(|(_, p, _)| p.as_str())
         .collect();
-    assert!(deletes.contains(&"/instances/agent"), "resume context evicted");
+    assert!(
+        deletes.contains(&"/instances/agent"),
+        "resume context evicted"
+    );
     assert!(
         !deletes.iter().any(|p| p.contains("keep")),
         "pinned context never evicted"
@@ -2252,12 +2274,7 @@ async fn expire_resume_clears_idle_context_and_deletes_snapshot() {
     );
 }
 
-fn snapshot_entry(
-    name: &str,
-    instance: Option<&str>,
-    size: u64,
-    mtime: i64,
-) -> serde_json::Value {
+fn snapshot_entry(name: &str, instance: Option<&str>, size: u64, mtime: i64) -> serde_json::Value {
     let mut entry = serde_json::json!({
         "name": name,
         "size": size,
@@ -2381,9 +2398,13 @@ async fn set_resume_false_deletes_snapshot() {
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), manager_for_stub(&stub));
     let pool = InstancePool::from_managers(managers, None);
-    pool.set_resume("swarm", "agent", true).await.expect("enable");
+    pool.set_resume("swarm", "agent", true)
+        .await
+        .expect("enable");
     assert!(pool.manager("swarm").unwrap().resume_for("agent"));
-    pool.set_resume("swarm", "agent", false).await.expect("disable");
+    pool.set_resume("swarm", "agent", false)
+        .await
+        .expect("disable");
     assert!(!pool.manager("swarm").unwrap().resume_for("agent"));
     let recorded = stub.recorded();
     let deletes: Vec<&str> = recorded
@@ -2515,12 +2536,7 @@ async fn one_shot_evict_destroys_without_snapshot() {
     ));
     manager.set_resume("work", true);
     let info = instance_info("work", "g", false, 100);
-    let ctx = LlamaContext::from_info(
-        Arc::clone(&manager),
-        manager.client().clone(),
-        &info,
-        None,
-    );
+    let ctx = LlamaContext::from_info(Arc::clone(&manager), manager.client().clone(), &info, None);
     ctx.evict().await.expect("evict");
 
     let posts: Vec<String> = stub
@@ -2559,12 +2575,7 @@ async fn session_evict_snapshots_before_destroy() {
         sidecar_policy(),
     ));
     let info = instance_info("work", "g", false, 100);
-    let ctx = LlamaContext::from_info(
-        Arc::clone(&manager),
-        manager.client().clone(),
-        &info,
-        None,
-    );
+    let ctx = LlamaContext::from_info(Arc::clone(&manager), manager.client().clone(), &info, None);
     ctx.evict().await.expect("evict");
 
     let order: Vec<String> = stub

@@ -315,11 +315,7 @@ async fn test_rewind_restores_kv_snapshot_for_real() {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     );
 
     let src_file = src_dir.path().join("rewind.kv");
@@ -337,7 +333,7 @@ async fn test_rewind_restores_kv_snapshot_for_real() {
         llama_cpp_version: Some("0.1.0".into()),
         model_quant: None,
         base_model_hash: Some("abc".into()),
-    turn_seq: None,
+        turn_seq: None,
     };
     kv.store(snapshot).unwrap();
     // Force a cold-tier hit so rewind exercises the reload-into-hot-tier
@@ -371,15 +367,24 @@ async fn test_rewind_restores_kv_snapshot_for_real() {
     // router never copies KV bytes, so no file is materialized.
     assert_eq!(
         restored.file_path,
-        dir.path().join("model-x").join("scratch").join("readfiles.bin")
+        dir.path()
+            .join("model-x")
+            .join("scratch")
+            .join("readfiles.bin")
     );
     assert!(!restored.file_path.exists());
     // Metadata is preserved (it was recorded, not re-derived from a file).
     assert_eq!(restored.token_count, Some(42));
     // The session carries the pending fields for the next dispatch.
     let pending = session.pending_kv_fields();
-    assert_eq!(pending.as_ref().map(|(n, _, _)| n.as_str()), Some("readfiles"));
-    assert_eq!(pending.as_ref().and_then(|(_, i, _)| i.as_deref()), Some("scratch"));
+    assert_eq!(
+        pending.as_ref().map(|(n, _, _)| n.as_str()),
+        Some("readfiles")
+    );
+    assert_eq!(
+        pending.as_ref().and_then(|(_, i, _)| i.as_deref()),
+        Some("scratch")
+    );
     assert_eq!(pending.map(|(_, _, s)| s), Some(0));
 
     // Steps were still reset (data preserved for audit).
@@ -404,17 +409,13 @@ fn test_pending_kv_fields_only_when_metadata_exists() {
     // `pending_kv_fields` is set only when a snapshot was actually
     // restored. A session with a kv manager but no stored snapshot has no
     // pending fields; once a snapshot is stored + rewind runs, they appear.
-    use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, SnapshotStore, KvSnapshot};
+    use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, KvSnapshot, SnapshotStore};
 
     let dir = tempfile::tempdir().unwrap();
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     );
 
     let mut session = DependencySession::new("sess-1")
@@ -522,11 +523,7 @@ fn test_kv_manager(slot_path: &std::path::Path) -> (SnapshotStore, Arc<HotSnapsh
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            slot_path,
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(slot_path, 1024, 86400)),
     );
     (kv, hot)
 }
@@ -551,7 +548,10 @@ fn advance_without_model_is_noop() {
     let (kv, _) = test_kv_manager(dir.path());
     let mut session = DependencySession::new("sess").with_kv_cache(kv);
     let result = session.advance_and_snapshot("scratch").unwrap();
-    assert!(result.is_none(), "no model - no snapshot, no fabricated key");
+    assert!(
+        result.is_none(),
+        "no model - no snapshot, no fabricated key"
+    );
     assert!(session.pending_snapshot().is_none());
 }
 
@@ -574,15 +574,13 @@ async fn advance_without_opt_in_takes_no_snapshot() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler = Arc::new(
-        |method: &str, path: &str, _body: &str| {
-            if method == "POST" && path == "/instances/scratch/snapshot" {
-                (200, "{}".into())
-            } else {
-                (200, "[]".into())
-            }
-        },
-    );
+    let handler = Arc::new(|method: &str, path: &str, _body: &str| {
+        if method == "POST" && path == "/instances/scratch/snapshot" {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -617,15 +615,13 @@ async fn advance_with_fork_records_snapshot_and_sets_pending() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "POST" && path == "/instances/scratch/snapshot" {
-                (200, "{}".into())
-            } else {
-                (200, "[]".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path == "/instances/scratch/snapshot" {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -655,7 +651,10 @@ async fn advance_with_fork_records_snapshot_and_sets_pending() {
         .advance_and_snapshot("scratch")
         .unwrap()
         .expect("second turn snapshot recorded");
-    assert_ne!(s2.snapshot_name, s1.snapshot_name, "per-turn distinct names");
+    assert_ne!(
+        s2.snapshot_name, s1.snapshot_name,
+        "per-turn distinct names"
+    );
     let pending2 = session.pending_kv_fields().expect("pending fields set");
     assert_ne!(pending2.0, name1, "pending is the most recent snapshot");
 
@@ -691,7 +690,7 @@ fn advance_sets_pending_snapshot_for_same_model_restore() {
         llama_cpp_version: None,
         model_quant: None,
         base_model_hash: None,
-            turn_seq: None,
+        turn_seq: None,
     };
     session.pending_snapshot = Some(pending);
 

@@ -116,9 +116,8 @@ fn resolved_targets_match_golden() {
         .expect("write golden file");
         return;
     }
-    let expected_raw = std::fs::read_to_string(golden_path()).expect(
-        "golden file exists (generate once with UPDATE_GOLDEN=1 before migrating)",
-    );
+    let expected_raw = std::fs::read_to_string(golden_path())
+        .expect("golden file exists (generate once with UPDATE_GOLDEN=1 before migrating)");
     let expected: serde_json::Value =
         serde_json::from_str(&expected_raw).expect("golden file parses");
     assert_eq!(

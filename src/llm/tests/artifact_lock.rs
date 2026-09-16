@@ -5,9 +5,7 @@
 //! recheck, dead-local-owner fast path, and fencing of displaced owners.
 //! Timing uses real short windows with wide margins (no fake timers).
 
-use fluent_llm::artifact_lock::{
-    acquire_artifact_cache_lock, local_hostname, LockOptions,
-};
+use fluent_llm::artifact_lock::{acquire_artifact_cache_lock, local_hostname, LockOptions};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 

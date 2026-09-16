@@ -347,7 +347,10 @@ fn narrowed_checks_match_stringly_behavior() {
         pos.parse::<Upos>()
             .is_ok_and(|p: Upos| Upos::UPOS.contains(&p))
     };
-    let mut pos_cases: Vec<String> = Upos::UPOS.iter().map(std::string::ToString::to_string).collect();
+    let mut pos_cases: Vec<String> = Upos::UPOS
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     pos_cases.extend(
         [
             "NOUN", "Verb", "PROPN", "Aux", "X", "notapos", "", "conj", "eol", "space", "NOUNX",
@@ -379,8 +382,8 @@ fn narrowed_checks_match_stringly_behavior() {
         _ => None,
     };
     for iob in [
-        "", "O", "o", "B", "b", "U", "u", "I", "i", "L", "l", "X", "x", "BB", " b ", " O ",
-        "Ll", "o ",
+        "", "O", "o", "B", "b", "U", "u", "I", "i", "L", "l", "X", "x", "BB", " b ", " O ", "Ll",
+        "o ",
     ] {
         assert_eq!(
             IobMarker::classify(iob.trim()),

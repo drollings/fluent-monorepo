@@ -7,7 +7,9 @@ use crate::views::ParallelLedger;
 /// A store whose nodes have all LOD tiers pre-filled (so assembling never
 /// triggers lazy derivation), plus a `CountingBackend` summarizer to prove
 /// no derivation happened.
-fn pre_filled_store(contents: &[(&str, &str, &str, Option<&[f32]>)]) -> (Arc<ContentNodeStore>, usize) {
+fn pre_filled_store(
+    contents: &[(&str, &str, &str, Option<&[f32]>)],
+) -> (Arc<ContentNodeStore>, usize) {
     let store = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let backend = Arc::new(crate::test_stubs::CountingBackend::new("derived"));
     let summarizer = crate::summarization::Summarizer::new(backend.clone(), 20);
@@ -64,7 +66,11 @@ fn first_and_last_always_lod0_even_beyond_budget() {
     let last = *store.session_node_ids("sess").last().unwrap();
     assert_eq!(out.node_plan.first().unwrap(), &(first, Lod::LOD0));
     assert_eq!(out.node_plan.last().unwrap(), &(last, Lod::LOD0));
-    assert_eq!(out.node_plan.len(), 2, "intermediate dropped at zero budget");
+    assert_eq!(
+        out.node_plan.len(),
+        2,
+        "intermediate dropped at zero budget"
+    );
     assert!(out.system.contains("analyst"));
     assert!(out.system.contains("be thorough"));
 }
@@ -120,16 +126,14 @@ fn no_signal_uses_uniform_mid_tier() {
     let view = view_for(&store);
     let budget = PromptBudget::new(10_000);
     let spec = LodSpec::full();
-    let out = LedgerPromptAssembler.assemble(
-        &view,
-        &WorkerContext::new("x", ""),
-        &budget,
-        None,
-        &spec,
-    );
+    let out =
+        LedgerPromptAssembler.assemble(&view, &WorkerContext::new("x", ""), &budget, None, &spec);
     let mid = spec.midpoint();
-    let intermediates: Vec<&(NodeId, Lod)> =
-        out.node_plan.iter().filter(|(id, _)| *id != out.node_plan[0].0 && *id != out.node_plan.last().unwrap().0).collect();
+    let intermediates: Vec<&(NodeId, Lod)> = out
+        .node_plan
+        .iter()
+        .filter(|(id, _)| *id != out.node_plan[0].0 && *id != out.node_plan.last().unwrap().0)
+        .collect();
     assert_eq!(intermediates.len(), 2);
     assert!(
         intermediates.iter().all(|(_, l)| *l == mid),
@@ -155,7 +159,11 @@ fn budget_exhaustion_degrades_toward_coarser_never_exceeds_max() {
         None,
         &LodSpec::full(),
     );
-    assert!(out.budget_used <= 60, "budget_used {} exceeded max_chars", out.budget_used);
+    assert!(
+        out.budget_used <= 60,
+        "budget_used {} exceeded max_chars",
+        out.budget_used
+    );
     // Every intermediate plan Lod is within the band and coarser-or-equal to
     // the midpoint default (degradation only, never finer).
     let mid = LodSpec::full().midpoint();
@@ -163,7 +171,10 @@ fn budget_exhaustion_degrades_toward_coarser_never_exceeds_max() {
         if *id == out.node_plan[0].0 || *id == out.node_plan.last().unwrap().0 {
             assert_eq!(*lod, Lod::LOD0, "anchors stay LOD0");
         } else {
-            assert!(*lod >= mid, "intermediate degraded at least to mid, got {lod}");
+            assert!(
+                *lod >= mid,
+                "intermediate degraded at least to mid, got {lod}"
+            );
         }
     }
 }
@@ -248,10 +259,16 @@ fn from_tokens_default_locks_8192_window() {
 #[test]
 fn intermediate_budget_saturates_at_edges() {
     // M4.1: min(max - reserve, max - actual head/tail cost), saturating.
-    let full = PromptBudget { max_chars: 100, reserve_head_tail: 30 };
+    let full = PromptBudget {
+        max_chars: 100,
+        reserve_head_tail: 30,
+    };
     assert_eq!(full.intermediate_budget(20), 70);
     assert_eq!(full.intermediate_budget(90), 10);
-    let over_reserved = PromptBudget { max_chars: 100, reserve_head_tail: 150 };
+    let over_reserved = PromptBudget {
+        max_chars: 100,
+        reserve_head_tail: 150,
+    };
     assert_eq!(over_reserved.intermediate_budget(0), 0, "reserve > max");
     assert_eq!(full.intermediate_budget(200), 0, "head_tail_cost > max");
     let zero = PromptBudget::new(0);
@@ -276,7 +293,12 @@ fn graded_session() -> (Arc<ContentNodeStore>, Vec<NodeId>) {
     let (store, _) = pre_filled_store(&[
         ("user", "head", "head anchor text", Some(SIM)),
         ("assistant", "exact", "exact match content here", Some(SIM)),
-        ("assistant", "near", "near match content here", Some(&[0.9, 0.1])),
+        (
+            "assistant",
+            "near",
+            "near match content here",
+            Some(&[0.9, 0.1]),
+        ),
         ("assistant", "mid", "mid content here", Some(&[0.7, 0.7])),
         ("assistant", "far", "far content here", Some(&[0.1, 0.9])),
         ("assistant", "ortho", "orthogonal content here", Some(OPP)),
@@ -316,7 +338,10 @@ fn fidelity_is_deterministic_including_exact_ties() {
     let rel = RelevanceSignal::query(SIM.to_vec());
     let first = LedgerPromptAssembler.assemble(&view, &worker, &budget, Some(&rel), &spec);
     let second = LedgerPromptAssembler.assemble(&view, &worker, &budget, Some(&rel), &spec);
-    assert_eq!(first.node_plan, second.node_plan, "same focus ⇒ same selection");
+    assert_eq!(
+        first.node_plan, second.node_plan,
+        "same focus ⇒ same selection"
+    );
     // Tied similarities keep view order (stable sort), not hash order.
     let ids = store.session_node_ids("sess");
     let plan_ids: Vec<NodeId> = first.node_plan.iter().map(|(id, _)| *id).collect();
@@ -347,7 +372,10 @@ fn fidelity_monotonic_in_distance_near_finer_than_far() {
     // ids[1..7] = exact, near, mid, far, ortho, noemb.
     let levels: Vec<u8> = (1..7).map(lod_of).collect();
     for w in levels.windows(2) {
-        assert!(w[0] <= w[1], "fidelity must not get finer with distance: {levels:?}");
+        assert!(
+            w[0] <= w[1],
+            "fidelity must not get finer with distance: {levels:?}"
+        );
     }
     assert_eq!(levels[0], Lod::LOD1.as_u8(), "exact match finest");
     assert_eq!(levels[5], Lod::LOD4.as_u8(), "unembedded control coarsest");
@@ -369,9 +397,18 @@ fn tight_budget_drops_distant_before_near() {
         &band14(),
     );
     let kept: Vec<NodeId> = out.node_plan.iter().map(|(id, _)| *id).collect();
-    assert!(kept.contains(&ids[0]) && kept.contains(&ids[7]), "anchors always kept");
-    assert!(!kept.contains(&ids[6]), "unembedded control must not surface");
-    assert!(!kept.contains(&ids[5]), "orthogonal control must not surface");
+    assert!(
+        kept.contains(&ids[0]) && kept.contains(&ids[7]),
+        "anchors always kept"
+    );
+    assert!(
+        !kept.contains(&ids[6]),
+        "unembedded control must not surface"
+    );
+    assert!(
+        !kept.contains(&ids[5]),
+        "orthogonal control must not surface"
+    );
     assert!(kept.contains(&ids[1]), "exact match survives the cut");
 }
 
@@ -380,16 +417,30 @@ fn adversarial_session_stays_within_intermediate_budget() {
     // 50 long nodes, tiny budget: intermediates' rendered bytes stay within
     // the intermediate budget; anchors present; accounting reconciles.
     let mut contents: Vec<(String, String, String, Option<Vec<f32>>)> = Vec::new();
-    contents.push(("user".into(), "head".into(), "h".repeat(500), Some(SIM.to_vec())));
+    contents.push((
+        "user".into(),
+        "head".into(),
+        "h".repeat(500),
+        Some(SIM.to_vec()),
+    ));
     for i in 0..50 {
         contents.push((
             "assistant".into(),
             format!("m{i}"),
             format!("body-{i}-").repeat(100),
-            Some(if i % 2 == 0 { SIM.to_vec() } else { OPP.to_vec() }),
+            Some(if i % 2 == 0 {
+                SIM.to_vec()
+            } else {
+                OPP.to_vec()
+            }),
         ));
     }
-    contents.push(("user".into(), "tail".into(), "t".repeat(500), Some(SIM.to_vec())));
+    contents.push((
+        "user".into(),
+        "tail".into(),
+        "t".repeat(500),
+        Some(SIM.to_vec()),
+    ));
     let refs: Vec<(&str, &str, &str, Option<&[f32]>)> = contents
         .iter()
         .map(|(r, q, t, e)| (r.as_str(), q.as_str(), t.as_str(), e.as_deref()))
@@ -408,17 +459,29 @@ fn adversarial_session_stays_within_intermediate_budget() {
     assert_eq!(out.node_plan.first().unwrap().0, ids[0]);
     assert_eq!(out.node_plan.last().unwrap().0, *ids.last().unwrap());
     // Intermediates only: rendered bytes within the intermediate budget.
-    let head_tail: usize = ["h".repeat(500).chars().count(), "t".repeat(500).chars().count()]
-        .into_iter()
-        .sum();
+    let head_tail: usize = [
+        "h".repeat(500).chars().count(),
+        "t".repeat(500).chars().count(),
+    ]
+    .into_iter()
+    .sum();
     let inter_budget = budget.intermediate_budget(head_tail);
     let inter_used: usize = out
         .node_plan
         .iter()
         .filter(|(id, _)| *id != ids[0] && *id != *ids.last().unwrap())
-        .map(|(id, lod)| store.lod_text(*id, lod.as_u8()).unwrap_or_default().chars().count())
+        .map(|(id, lod)| {
+            store
+                .lod_text(*id, lod.as_u8())
+                .unwrap_or_default()
+                .chars()
+                .count()
+        })
         .sum();
-    assert!(inter_used <= inter_budget, "inter {inter_used} > budget {inter_budget}");
+    assert!(
+        inter_used <= inter_budget,
+        "inter {inter_used} > budget {inter_budget}"
+    );
 }
 
 #[test]

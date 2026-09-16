@@ -59,7 +59,8 @@ where
     /// dependents of `key` are satisfied once `key` is [`Self::complete`]d.
     /// Returns `Err(GraphError::DuplicateNode)` if `key` is already present.
     pub fn add_step(&mut self, key: K, deps: &[K], state: S) -> Result<(), GraphError> {
-        self.graph.register(&key, deps, std::slice::from_ref(&key))?;
+        self.graph
+            .register(&key, deps, std::slice::from_ref(&key))?;
         self.order.push(key.clone());
         self.state.insert(key, state);
         Ok(())
@@ -177,7 +178,6 @@ where
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 #[path = "../tests/checkpointed.rs"]

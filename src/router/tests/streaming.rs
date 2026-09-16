@@ -16,22 +16,20 @@ fn stream_answer_finalizes_content() {
 async fn stream_answer_wait_returns_after_finalize() {
     let answer = StreamAnswer::new();
     let waiter = answer.clone();
-    let task = tokio::spawn(async move {
-        waiter
-            .wait(std::time::Duration::from_millis(2000))
-            .await
-    });
+    let task =
+        tokio::spawn(async move { waiter.wait(std::time::Duration::from_millis(2000)).await });
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     answer.finalize("done".into());
-    assert_eq!(task.await.expect("waiter completes").as_deref(), Some("done"));
+    assert_eq!(
+        task.await.expect("waiter completes").as_deref(),
+        Some("done")
+    );
 }
 
 #[tokio::test]
 async fn stream_answer_wait_times_out_without_finalize() {
     let answer = StreamAnswer::new();
-    let content = answer
-        .wait(std::time::Duration::from_millis(50))
-        .await;
+    let content = answer.wait(std::time::Duration::from_millis(50)).await;
     assert_eq!(content, None);
 }
 

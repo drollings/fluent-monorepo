@@ -155,10 +155,7 @@ fn control_expired_cross_model_and_unknown_must_miss() {
     let now = common_core::time::now_secs();
     let ttl = std::time::Duration::from_secs(60);
     let req = r#"{"model":"test"}"#;
-    let stale_key = format!(
-        "gpt-4:{}",
-        common_core::hash::sha256_hex(req.as_bytes())
-    );
+    let stale_key = format!("gpt-4:{}", common_core::hash::sha256_hex(req.as_bytes()));
     store.lock().unwrap().insert(
         stale_key.clone(),
         CachedResponse {

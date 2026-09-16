@@ -46,8 +46,24 @@ fn predicates_match_legacy_spellings() {
                 .is_some_and(|sfx| sfx.eq_ignore_ascii_case(suffix))
     };
     let words = [
-        "calls", "CALLS", "as", "quarterly", "QUARTERLY", "July", "opened", "OPENED", "red",
-        "smiling", "SMILING", "king", "rain", "raining", "go", "a", "today", "statuses",
+        "calls",
+        "CALLS",
+        "as",
+        "quarterly",
+        "QUARTERLY",
+        "July",
+        "opened",
+        "OPENED",
+        "red",
+        "smiling",
+        "SMILING",
+        "king",
+        "rain",
+        "raining",
+        "go",
+        "a",
+        "today",
+        "statuses",
     ];
     for w in words {
         assert_eq!(o.is_plural_s(w), lic(w, "s"), "plural {w:?}");
@@ -56,7 +72,9 @@ fn predicates_match_legacy_spellings() {
         assert_eq!(o.is_part_ing(w), lic(w, "ing"), "part {w:?}");
     }
     // Token predicates vs the legacy matches! sets.
-    for t in [".", "!", "?", ";", ":", ",", "-", "—", "--", "(", ")", "...", "calls", "x", ""] {
+    for t in [
+        ".", "!", "?", ";", ":", ",", "-", "—", "--", "(", ")", "...", "calls", "x", "",
+    ] {
         assert_eq!(
             o.is_trailing_punct(t),
             legacy_trailing().contains(&t),
@@ -89,7 +107,9 @@ fn predicates_match_legacy_spellings() {
     .collect();
     for texts in &streams {
         for from in 0..=texts.len() {
-            let legacy = texts[from..].iter().all(|t| legacy_trailing().contains(&t.as_str()));
+            let legacy = texts[from..]
+                .iter()
+                .all(|t| legacy_trailing().contains(&t.as_str()));
             assert_eq!(o.trailing_only(texts, from), legacy, "texts={texts:?}");
         }
         for i in 0..texts.len() {
@@ -123,9 +143,39 @@ fn loader_rejects_bad_blobs() {
 
 fn pinned_words() -> Vec<&'static str> {
     vec![
-        "calls", "CALLS", "as", "quarterly", "QUARTERLY", "July", "opened", "OPENED", "red",
-        "smiling", "SMILING", "king", "rain", "raining", "go", "a", "today", "statuses",
-        ".", "!", "?", ";", ":", ",", "-", "—", "--", "(", ")", "...", "calls", "x", "",
+        "calls",
+        "CALLS",
+        "as",
+        "quarterly",
+        "QUARTERLY",
+        "July",
+        "opened",
+        "OPENED",
+        "red",
+        "smiling",
+        "SMILING",
+        "king",
+        "rain",
+        "raining",
+        "go",
+        "a",
+        "today",
+        "statuses",
+        ".",
+        "!",
+        "?",
+        ";",
+        ":",
+        ",",
+        "-",
+        "—",
+        "--",
+        "(",
+        ")",
+        "...",
+        "calls",
+        "x",
+        "",
     ]
 }
 
@@ -145,7 +195,11 @@ fn english_constructor_matches_fresh_parse() {
     assert_eq!(cached.comma(), fresh.comma());
     for w in pinned_words() {
         assert_eq!(cached.is_plural_s(w), fresh.is_plural_s(w), "plural {w:?}");
-        assert_eq!(cached.is_manner_ly(w), fresh.is_manner_ly(w), "manner {w:?}");
+        assert_eq!(
+            cached.is_manner_ly(w),
+            fresh.is_manner_ly(w),
+            "manner {w:?}"
+        );
         assert_eq!(cached.is_past_ed(w), fresh.is_past_ed(w), "past {w:?}");
         assert_eq!(cached.is_part_ing(w), fresh.is_part_ing(w), "part {w:?}");
         assert_eq!(
@@ -153,8 +207,16 @@ fn english_constructor_matches_fresh_parse() {
             fresh.is_trailing_punct(w),
             "trailing {w:?}"
         );
-        assert_eq!(cached.is_boundary(w), fresh.is_boundary(w), "boundary {w:?}");
-        assert_eq!(cached.is_bare_follow(w), fresh.is_bare_follow(w), "bare {w:?}");
+        assert_eq!(
+            cached.is_boundary(w),
+            fresh.is_boundary(w),
+            "boundary {w:?}"
+        );
+        assert_eq!(
+            cached.is_bare_follow(w),
+            fresh.is_bare_follow(w),
+            "bare {w:?}"
+        );
         assert_eq!(cached.is_comma(w), fresh.is_comma(w), "comma {w:?}");
     }
 }

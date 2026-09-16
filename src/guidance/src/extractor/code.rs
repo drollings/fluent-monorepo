@@ -7,11 +7,12 @@
 use std::collections::HashSet;
 
 use super::{
-    ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
-    make_entity_id, utf16_len, utf16_slice,
-    adapter::{NodeView, TsAdapter, classify_code_node, is_structural_symbol, resolve_adapter},
+    adapter::{classify_code_node, is_structural_symbol, resolve_adapter, NodeView, TsAdapter},
+    make_entity_id,
     text::extract_plain_text_fragments,
+    utf16_len, utf16_slice,
     vector_content::chunk_options_for_metadata,
+    ChunkOptions, ExtractError, ExtractSource, FragmentMetadata, FragmentRange, PreparedFragment,
 };
 use crate::ast_parser::AstParser;
 use crate::search_constants::{
@@ -52,19 +53,31 @@ impl CodeExtractor {
             if !blocks.is_empty() {
                 return Ok((blocks, HarvestedFile::default()));
             }
-            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
+            return Ok((
+                fallback_fragments(source, options)?,
+                HarvestedFile::default(),
+            ));
         }
         let Some(adapter) = resolve_adapter(&source.format) else {
-            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
+            return Ok((
+                fallback_fragments(source, options)?,
+                HarvestedFile::default(),
+            ));
         };
         if !AstParser::has_grammar(&source.format) {
-            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
+            return Ok((
+                fallback_fragments(source, options)?,
+                HarvestedFile::default(),
+            ));
         }
         let tree = parser
             .parse_tree(&source.format, &source.text)
             .map_err(|e| ExtractError::Parse(e.to_string()))?;
         let source_bytes = source.text.as_bytes();
-        let root = NodeView { node: tree.root_node(), source: source_bytes };
+        let root = NodeView {
+            node: tree.root_node(),
+            source: source_bytes,
+        };
         let mut entities = Vec::new();
         walk_code_node(root, adapter, &[], &mut entities);
         // Imports ride the same tree — an entity-less file (pure
@@ -73,7 +86,10 @@ impl CodeExtractor {
         if entities.is_empty() {
             return Ok((
                 fallback_fragments(source, options)?,
-                HarvestedFile { symbols: Vec::new(), imports },
+                HarvestedFile {
+                    symbols: Vec::new(),
+                    imports,
+                },
             ));
         }
         let mut fragments = Vec::new();
@@ -81,7 +97,10 @@ impl CodeExtractor {
             append_entity(source, adapter, entity, options, &mut fragments);
         }
         if fragments.is_empty() {
-            return Ok((fallback_fragments(source, options)?, HarvestedFile::default()));
+            return Ok((
+                fallback_fragments(source, options)?,
+                HarvestedFile::default(),
+            ));
         }
         let harvested = HarvestedFile {
             symbols: entities
@@ -138,7 +157,10 @@ pub fn harvest_file_entities(
     let tree = parser
         .parse_tree(&source.format, &source.text)
         .map_err(|e| ExtractError::Parse(e.to_string()))?;
-    let root = NodeView { node: tree.root_node(), source: source.text.as_bytes() };
+    let root = NodeView {
+        node: tree.root_node(),
+        source: source.text.as_bytes(),
+    };
     let mut entities = Vec::new();
     walk_code_node(root, adapter, &[], &mut entities);
     harvested.symbols = entities
@@ -291,10 +313,7 @@ fn append_entity(
     let major_id = make_entity_id(&source.file_id, fragments.len());
     fragments.push(PreparedFragment {
         id: major_id.clone(),
-        content_text: truncate_outline(
-            &code_entity_outline(entity, content_max),
-            content_max,
-        ),
+        content_text: truncate_outline(&code_entity_outline(entity, content_max), content_max),
         embedding_text: None,
         range: FragmentRange {
             start_line: entity.start_row + 1,
@@ -354,7 +373,10 @@ fn code_metadata(entity: &OwnedEntity) -> FragmentMetadata {
 fn code_entity_outline(entity: &OwnedEntity, max_chars: usize) -> String {
     let header = extract_code_header(&entity.text);
     let mut lines = vec![if header.is_empty() {
-        entity.name.clone().unwrap_or_else(|| format!("{:?}", entity.symbol_type).to_lowercase())
+        entity
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("{:?}", entity.symbol_type).to_lowercase())
     } else {
         header
     }];
@@ -366,7 +388,9 @@ fn code_entity_outline(entity: &OwnedEntity, max_chars: usize) -> String {
                 lines.push(format!("- {}", format_outline_member(member)));
             }
         }
-    } else if entity.symbol_type == crate::search_types::CodeSymbolType::Function && !entity.calls.is_empty() {
+    } else if entity.symbol_type == crate::search_types::CodeSymbolType::Function
+        && !entity.calls.is_empty()
+    {
         lines.push(String::new());
         lines.push(format!("calls: {}", entity.calls.join(", ")));
     }
@@ -431,7 +455,9 @@ fn truncate_outline(outline: &str, max_chars: usize) -> String {
 }
 
 fn utf16_prefix_trim_end(text: &str, max_units: usize) -> String {
-    super::utf16_slice(text, 0, max_units).trim_end().to_string()
+    super::utf16_slice(text, 0, max_units)
+        .trim_end()
+        .to_string()
 }
 
 fn truncate_outline_line(value: &str) -> String {
@@ -495,7 +521,11 @@ fn collect_members(
                         resolved.node.start_byte()
                     );
                     if visitor.seen.insert(key) {
-                        visitor.members.push(OutlineMember { symbol_type, name, signature });
+                        visitor.members.push(OutlineMember {
+                            symbol_type,
+                            name,
+                            signature,
+                        });
                     }
                 }
             }
@@ -503,7 +533,14 @@ fn collect_members(
         }
         let mut cursor = view.node.walk();
         for child in view.node.named_children(&mut cursor) {
-            visit(NodeView { node: child, source: view.source }, visitor, depth + 1);
+            visit(
+                NodeView {
+                    node: child,
+                    source: view.source,
+                },
+                visitor,
+                depth + 1,
+            );
         }
     }
     let mut visitor = Visitor {
@@ -567,7 +604,11 @@ fn normalize_call_name(value: &str) -> Option<String> {
         .join(" ")
         .trim()
         .to_string();
-    let cleaned = cleaned.strip_prefix("new ").unwrap_or(&cleaned).trim().to_string();
+    let cleaned = cleaned
+        .strip_prefix("new ")
+        .unwrap_or(&cleaned)
+        .trim()
+        .to_string();
     if cleaned.is_empty()
         || utf16_len(&cleaned) > OUTLINE_MAX_LINE_CHARS
         || cleaned.contains(['\n', '\r'])
@@ -614,7 +655,12 @@ fn split_large_entity(
         let statement_chars = utf16_len(stmt_text(source, span));
         if statement_chars > max_chars {
             if index > group_start {
-                windows.push(slice_statements(source, &entity.statements, group_start, index - 1));
+                windows.push(slice_statements(
+                    source,
+                    &entity.statements,
+                    group_start,
+                    index - 1,
+                ));
             }
             windows.extend(split_text_by_lines_code(
                 stmt_text(source, span),
@@ -629,9 +675,19 @@ fn split_large_entity(
         }
         let separator = usize::from(index > group_start);
         if group_chars + separator + statement_chars > max_chars && index > group_start {
-            windows.push(slice_statements(source, &entity.statements, group_start, index - 1));
-            let overlap_start =
-                compute_overlap_start(&entity.statements, group_start, index - 1, overlap_chars, source);
+            windows.push(slice_statements(
+                source,
+                &entity.statements,
+                group_start,
+                index - 1,
+            ));
+            let overlap_start = compute_overlap_start(
+                &entity.statements,
+                group_start,
+                index - 1,
+                overlap_chars,
+                source,
+            );
             let mut candidate_start = overlap_start.min(index);
             let mut candidate_chars = statement_chars;
             for prev in (candidate_start..index).rev() {
@@ -871,7 +927,8 @@ struct ScriptBlock {
 }
 
 fn find_script_blocks(text: &str) -> Vec<ScriptBlock> {
-    let pattern = regex::Regex::new(r"(?i)<script(\s[^>]*)?>([\s\S]*?)</script>").expect("script pattern");
+    let pattern =
+        regex::Regex::new(r"(?i)<script(\s[^>]*)?>([\s\S]*?)</script>").expect("script pattern");
     let mut blocks = Vec::new();
     for captures in pattern.captures_iter(text) {
         let full = captures.get(0).expect("full match").as_str();
@@ -924,7 +981,10 @@ fn extract_script_blocks(
         // Remap ids + ranges into file coordinates.
         let mut id_map = std::collections::HashMap::new();
         for (index, item) in items.iter().enumerate() {
-            id_map.insert(item.id.clone(), make_entity_id(&source.file_id, fragments.len() + index));
+            id_map.insert(
+                item.id.clone(),
+                make_entity_id(&source.file_id, fragments.len() + index),
+            );
         }
         for item in items.drain(..) {
             let id = id_map.get(&item.id).cloned().unwrap_or(item.id);

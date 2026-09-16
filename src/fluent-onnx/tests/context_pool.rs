@@ -14,7 +14,9 @@ fn profile(n_ctx: u64) -> OnnxContextProfile {
 /// Head-0 per-position markers of a stub KV layer (row-major
 /// `[head][position][head_dim]`; head 0's positions start at `p * 64`).
 fn head0_markers(past: &crate::context::PastState, layer: usize) -> Vec<f32> {
-    (0..past.seq_len).map(|p| past.kv[&layer].0[p * 64]).collect()
+    (0..past.seq_len)
+        .map(|p| past.kv[&layer].0[p * 64])
+        .collect()
 }
 
 #[test]
@@ -79,7 +81,11 @@ fn decode_reaches_n_ctx_truncates_oldest_kv() {
     let past = ctx.past().unwrap();
     assert_eq!(past.seq_len, 4, "window stays at n_ctx");
     let keys = head0_markers(&past, 2);
-    assert_eq!(keys, vec![2.0, 3.0, 10.0, 11.0], "oldest KV position dropped");
+    assert_eq!(
+        keys,
+        vec![2.0, 3.0, 10.0, 11.0],
+        "oldest KV position dropped"
+    );
 }
 
 #[test]
@@ -106,11 +112,17 @@ fn pool_resize_is_bounded_by_max_ctx() {
             ..profile(2048)
         },
     );
-    assert!(pool.resize("capped", 8192).is_err(), "growth past max_ctx refused");
+    assert!(
+        pool.resize("capped", 8192).is_err(),
+        "growth past max_ctx refused"
+    );
     pool.resize("capped", 4096).expect("at the cap is fine");
     assert_eq!(pool.context("capped").unwrap().n_ctx(), 4096);
 
-    assert!(pool.resize("nope", 4096).is_err(), "unknown context is loud");
+    assert!(
+        pool.resize("nope", 4096).is_err(),
+        "unknown context is loud"
+    );
 }
 
 #[test]
@@ -125,7 +137,10 @@ fn destroy_frees_the_context_and_its_kv() {
     assert!(removed.is_some());
     assert!(ctx.past().is_none(), "destroy clears the KV");
     assert!(pool.context("a").is_none());
-    assert!(pool.destroy("a").is_none(), "destroy of an absent context is a no-op");
+    assert!(
+        pool.destroy("a").is_none(),
+        "destroy of an absent context is a no-op"
+    );
 }
 
 #[test]
@@ -150,7 +165,10 @@ fn residency_rows_report_each_context() {
     // An empty context renders as "sleeping" with zero bytes.
     pool.ensure_context("idle", profile(64));
     let rows = pool.residency_rows();
-    let idle = rows.iter().find(|r| r.context_key.ends_with(":idle")).unwrap();
+    let idle = rows
+        .iter()
+        .find(|r| r.context_key.ends_with(":idle"))
+        .unwrap();
     assert_eq!(idle.state, "sleeping");
     assert_eq!(idle.total_bytes, 0);
 }

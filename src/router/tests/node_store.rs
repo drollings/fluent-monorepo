@@ -247,7 +247,9 @@ fn lazy_tiers_derive_from_lod0_never_from_another_tier() {
 #[test]
 fn apply_review_commits_all_three_writes_together() {
     let store = temp_store();
-    let parse_id = store.record_request("s1", "r1", "show me the report").unwrap();
+    let parse_id = store
+        .record_request("s1", "r1", "show me the report")
+        .unwrap();
     let shared = store.shared_sqlite().expect("durable backing");
 
     let review_node = new_node(
@@ -264,8 +266,8 @@ fn apply_review_commits_all_three_writes_together() {
     let rows = [CorrectionRow {
         lemma_id: 0x0300_0000_0000_0001,
         entity_id: 0,
-        corrections_json: r#"[{"token_index":0,"field":"dep","old_value":"det","new_value":"nsubj"}]"#
-            .into(),
+        corrections_json:
+            r#"[{"token_index":0,"field":"dep","old_value":"det","new_value":"nsubj"}]"#.into(),
     }];
 
     let review_id = store
@@ -281,7 +283,12 @@ fn apply_review_commits_all_three_writes_together() {
     // 2. the parse_review node is persisted + indexed.
     let review_id = review_id.expect("review node id");
     assert_eq!(
-        store.snapshot(review_id).expect("review node").role.as_ref().map(OriginRole::as_str),
+        store
+            .snapshot(review_id)
+            .expect("review node")
+            .role
+            .as_ref()
+            .map(OriginRole::as_str),
         Some("parse_review")
     );
     // 3. the correction pattern is durable in interlingua_index.
@@ -326,7 +333,9 @@ fn apply_review_rolls_back_on_missing_parse_node() {
 #[test]
 fn apply_review_durable_failure_leaves_in_memory_unchanged() {
     let store = temp_store();
-    let parse_id = store.record_request("s1", "r1", "show me the report").unwrap();
+    let parse_id = store
+        .record_request("s1", "r1", "show me the report")
+        .unwrap();
     let shared = store.shared_sqlite().expect("durable backing");
 
     // The review node's id will be `next_id` = 2. Pre-occupy that ledger
@@ -380,11 +389,9 @@ fn apply_review_durable_failure_leaves_in_memory_unchanged() {
     // 3. The transaction rolled back: only the injected intruder row
     //    occupies node_id=2, and no correction rows survived.
     let ledger_rows: i64 = shared
-        .query_row(
-            "SELECT COUNT(*) FROM ledger WHERE node_id = 2",
-            &[],
-            |r| r.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM ledger WHERE node_id = 2", &[], |r| {
+            r.get(0)
+        })
         .expect("count")
         .expect("row");
     assert_eq!(ledger_rows, 1, "no partial ledger write");
@@ -470,19 +477,36 @@ fn pipeline_store() -> ContentNodeStore {
 #[test]
 fn annotation_for_derives_once_and_caches_same_arc() {
     let store = pipeline_store();
-    let id = store.record_request("s", "r1", "Show me the sales report").unwrap();
+    let id = store
+        .record_request("s", "r1", "Show me the sales report")
+        .unwrap();
 
-    let first = store.annotation_for(id).expect("derive").expect("annotation");
-    let second = store.annotation_for(id).expect("derive").expect("annotation");
+    let first = store
+        .annotation_for(id)
+        .expect("derive")
+        .expect("annotation");
+    let second = store
+        .annotation_for(id)
+        .expect("derive")
+        .expect("annotation");
     assert!(Arc::ptr_eq(&first, &second), "the cache must share one Arc");
     assert_eq!(first.signals[0].predicate, "show");
-    assert_eq!(first.primary_signal().unwrap().sentence, "Show me the sales report");
+    assert_eq!(
+        first.primary_signal().unwrap().sentence,
+        "Show me the sales report"
+    );
     // Bookkeeping: ready, from the spacy rung; value rides the shared node.
     let node = store.snapshot(id).unwrap();
-    assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Ready);
+    assert_eq!(
+        node.overlay(OverlayKind::Spacy).status,
+        OverlayStatus::Ready
+    );
     assert_eq!(node.overlay(OverlayKind::Spacy).source, "spacy");
     assert_eq!(
-        node.annotation_as::<crate::ledger::node_annotation::NodeAnnotation>().unwrap().tokens.len(),
+        node.annotation_as::<crate::ledger::node_annotation::NodeAnnotation>()
+            .unwrap()
+            .tokens
+            .len(),
         5
     );
 }
@@ -491,7 +515,10 @@ fn annotation_for_derives_once_and_caches_same_arc() {
 fn annotation_for_fail_open_without_pipeline() {
     let store = temp_store();
     let id = store.record_request("s", "r1", "text").unwrap();
-    assert!(store.annotation_for(id).expect("no pipeline is fail-open").is_none());
+    assert!(store
+        .annotation_for(id)
+        .expect("no pipeline is fail-open")
+        .is_none());
 }
 
 #[test]
@@ -506,9 +533,20 @@ fn embedding_for_derives_once_and_caches() {
     assert_eq!(first.len(), 8);
     assert_eq!(calls.load(Ordering::SeqCst), 1, "exactly one derivation");
     let second = store.embedding_for(id).expect("derive").expect("embedding");
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "second read hits the cache");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "second read hits the cache"
+    );
     assert_eq!(second, first);
-    assert_eq!(store.snapshot(id).unwrap().overlay(OverlayKind::Embedding).status, OverlayStatus::Ready);
+    assert_eq!(
+        store
+            .snapshot(id)
+            .unwrap()
+            .overlay(OverlayKind::Embedding)
+            .status,
+        OverlayStatus::Ready
+    );
 }
 
 #[test]
@@ -526,7 +564,9 @@ fn llm_overlay_for_derives_scrubbed_and_caches() {
     let node = store.snapshot(id).unwrap();
     assert_eq!(node.overlay(OverlayKind::Llm).status, OverlayStatus::Ready);
     assert_eq!(
-        node.metadata.as_ref().and_then(|m| m.get(LLM_OVERLAY_META_KEY)),
+        node.metadata
+            .as_ref()
+            .and_then(|m| m.get(LLM_OVERLAY_META_KEY)),
         Some(&serde_json::json!("A request to buy apple stock."))
     );
 }
@@ -544,32 +584,49 @@ fn llm_overlay_failure_fail_open_and_not_retried() {
     // A permanent failure is never retried: the second call hits the
     // `failed` status and returns without another LLM call.
     assert!(store.llm_overlay_for(id).expect("fail-open").is_none());
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "no retry of a failed overlay");
-    assert_eq!(store.snapshot(id).unwrap().overlay(OverlayKind::Llm).status, OverlayStatus::Failed);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "no retry of a failed overlay"
+    );
+    assert_eq!(
+        store.snapshot(id).unwrap().overlay(OverlayKind::Llm).status,
+        OverlayStatus::Failed
+    );
 }
 
 #[test]
 fn concurrent_annotation_for_installs_at_most_once() {
     let store = Arc::new(pipeline_store());
-    let id = store.record_request("s", "r1", "Show me the sales report").unwrap();
+    let id = store
+        .record_request("s", "r1", "Show me the sales report")
+        .unwrap();
 
     let handles: Vec<_> = (0..8)
         .map(|_| {
             let store = Arc::clone(&store);
             std::thread::spawn(move || {
-                store.annotation_for(id).expect("derive").expect("annotation")
+                store
+                    .annotation_for(id)
+                    .expect("derive")
+                    .expect("annotation")
             })
         })
         .collect();
-    let mut results: Vec<Arc<crate::ledger::node_annotation::NodeAnnotation>> =
-        handles.into_iter().map(|h| h.join().expect("thread")).collect();
+    let mut results: Vec<Arc<crate::ledger::node_annotation::NodeAnnotation>> = handles
+        .into_iter()
+        .map(|h| h.join().expect("thread"))
+        .collect();
     let canonical = results.pop().expect("at least one");
     assert!(
         results.iter().all(|r| Arc::ptr_eq(r, &canonical)),
         "all concurrent callers must share the one installed Arc"
     );
     let node = store.snapshot(id).unwrap();
-    assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Ready);
+    assert_eq!(
+        node.overlay(OverlayKind::Spacy).status,
+        OverlayStatus::Ready
+    );
     assert!(node.annotation.is_some());
 }
 
@@ -586,8 +643,10 @@ fn concurrent_embedding_for_installs_once_under_races() {
             std::thread::spawn(move || store.embedding_for(id).expect("derive"))
         })
         .collect();
-    let results: Vec<Option<Vec<f32>>> =
-        handles.into_iter().map(|h| h.join().expect("thread")).collect();
+    let results: Vec<Option<Vec<f32>>> = handles
+        .into_iter()
+        .map(|h| h.join().expect("thread"))
+        .collect();
     assert!(results.iter().all(Option::is_some));
     let first = results[0].clone().unwrap();
     assert!(
@@ -596,7 +655,10 @@ fn concurrent_embedding_for_installs_once_under_races() {
     );
     let node = store.snapshot(id).unwrap();
     assert_eq!(node.embedding, Some(first));
-    assert_eq!(node.overlay(OverlayKind::Embedding).status, OverlayStatus::Ready);
+    assert_eq!(
+        node.overlay(OverlayKind::Embedding).status,
+        OverlayStatus::Ready
+    );
 }
 
 #[test]
@@ -660,7 +722,10 @@ fn hnsw_threshold_is_adaptive() {
     // All hits should be from the 0-mod-8 group (distance minimal)
     // Check that HNSW did not return wildly off results
     for h in &hits {
-        assert!(h.distance < 0.5, "HNSW recall must stay close (distance <0.5)");
+        assert!(
+            h.distance < 0.5,
+            "HNSW recall must stay close (distance <0.5)"
+        );
     }
 }
 
@@ -684,16 +749,28 @@ fn hnsw_must_not_fire_control_distance_gt_04() {
     // Query orthogonal (+Y) → cosine 0 → distance 1.0
     let hits = store.knn_search(&[0.0, 1.0, 0.0, 0.0], 1);
     assert!(!hits.is_empty());
-    assert!(hits[0].distance > 0.4, "dissimilar query must stay >0.4 distance");
+    assert!(
+        hits[0].distance > 0.4,
+        "dissimilar query must stay >0.4 distance"
+    );
 }
 
 #[test]
 fn node_store_scrub_is_non_bypassable() {
     let store = ContentNodeStore::open_in_memory().unwrap();
-    let id = store.record_request("sess", "req", "Contact user@example.com now").unwrap();
+    let id = store
+        .record_request("sess", "req", "Contact user@example.com now")
+        .unwrap();
     let node = store.snapshot(id).unwrap();
     assert_eq!(node.lod[0], "Contact [REDACTED:email] now");
-    let mut n = new_node(NodeId::from_int(0), "sess2", "req2", "user", "My ssn is 123-45-6789.", None);
+    let mut n = new_node(
+        NodeId::from_int(0),
+        "sess2",
+        "req2",
+        "user",
+        "My ssn is 123-45-6789.",
+        None,
+    );
     n.id = None;
     n.lod[0] = "My ssn is 123-45-6789.".into();
     let id2 = store.record_content_node(&n).unwrap();
@@ -730,7 +807,8 @@ fn latest_parse_node_id_returns_latest_per_session() {
 }
 
 #[test]
-fn knn_search_multi_node_nearest_order_without_hnsw() {    // Degraded-mode contract: with no HNSW built, search is brute force and
+fn knn_search_multi_node_nearest_order_without_hnsw() {
+    // Degraded-mode contract: with no HNSW built, search is brute force and
     // returns neighbors nearest-first. This pins the fallback the serving
     // path degrades to when the index is unavailable.
     let store = temp_store();
@@ -778,7 +856,7 @@ fn summarizer_lock_is_free_during_the_model_call() {
             &self,
             _messages: &[fluent_llm::ChatMessage],
         ) -> Result<String, fluent_llm::LlmError> {
-                    {
+            {
                 let (lock, cvar) = &*self.entered;
                 let mut entered = lock.lock().unwrap();
                 *entered = true;
@@ -800,12 +878,10 @@ fn summarizer_lock_is_free_during_the_model_call() {
         entered: Arc::clone(&entered),
         release: Arc::clone(&release),
     });
-    let store = Arc::new(
-        temp_store().with_summarizer(Summarizer::new(
-            backend as Arc<dyn fluent_llm::client::ChatBackend>,
-            20,
-        )),
-    );
+    let store = Arc::new(temp_store().with_summarizer(Summarizer::new(
+        backend as Arc<dyn fluent_llm::client::ChatBackend>,
+        20,
+    )));
     let id = store
         .record_request("s", "r1", "The full text to summarize.")
         .unwrap();

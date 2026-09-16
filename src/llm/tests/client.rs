@@ -115,10 +115,16 @@ fn test_chat_complete_with_extras_invokes_seam() {
     // queue-less client: it compiles and routes through the shared async
     // path (unreachable endpoint here, so we assert the error shape only).
     let client = LlmClient::new("http://127.0.0.1:1/v1", "llama3");
-    let messages = vec![ChatMessage { role: "user".into(), content: "hi".into() }];
+    let messages = vec![ChatMessage {
+        role: "user".into(),
+        content: "hi".into(),
+    }];
     let extras = serde_json::json!({"response_format": {"type": "json_object"}});
     let result = client.chat_complete_with_extras(&messages, &extras);
-    assert!(result.is_err(), "unreachable endpoint must surface an error");
+    assert!(
+        result.is_err(),
+        "unreachable endpoint must surface an error"
+    );
 }
 
 #[test]
@@ -244,7 +250,10 @@ fn chat_body() -> serde_json::Value {
 }
 
 fn one_message() -> Vec<ChatMessage> {
-    vec![ChatMessage { role: "user".into(), content: "hi".into() }]
+    vec![ChatMessage {
+        role: "user".into(),
+        content: "hi".into(),
+    }]
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -269,7 +278,9 @@ async fn test_chat_complete_http_rate_limited_is_retryable() {
             .json_body(serde_json::json!({"error": {"message": "overloaded"}}));
     });
     let client = LlmClient::new(&server.base_url(), "m");
-    let err = client.chat_complete(&one_message()).expect_err("rate limited");
+    let err = client
+        .chat_complete(&one_message())
+        .expect_err("rate limited");
     assert_eq!(err, LlmError::RateLimited);
     assert!(err.is_retryable());
     mock.assert_hits(1);
@@ -302,7 +313,9 @@ async fn test_chat_complete_empty_content_is_no_response() {
         }));
     });
     let client = LlmClient::new(&server.base_url(), "m");
-    let err = client.chat_complete(&one_message()).expect_err("empty content");
+    let err = client
+        .chat_complete(&one_message())
+        .expect_err("empty content");
     assert_eq!(err, LlmError::NoResponse);
 }
 
@@ -346,7 +359,11 @@ async fn test_client_ctors_agree_on_base_and_model() {
         .think(true)
         .build();
     let a = LlmClient::new("http://localhost:11434/v1/", "llama3");
-    let b = LlmClient::with_queue("http://localhost:11434/v1/", "llama3", std::sync::Arc::clone(&queue));
+    let b = LlmClient::with_queue(
+        "http://localhost:11434/v1/",
+        "llama3",
+        std::sync::Arc::clone(&queue),
+    );
     let c = LlmClient::with_config(config.clone());
     let d = LlmClient::with_queue_and_config(std::sync::Arc::clone(&queue), config.clone());
     for client in [&a, &b, &c, &d] {

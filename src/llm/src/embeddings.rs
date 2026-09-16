@@ -37,7 +37,10 @@ pub enum EmbeddingError {
     #[error("embedding catalog entry is not usable here: {0}")]
     InvalidCatalogEntry(String),
     #[error("embedding backend '{backend}' for '{reference}' has no factory constructor")]
-    BackendNotWired { reference: String, backend: &'static str },
+    BackendNotWired {
+        reference: String,
+        backend: &'static str,
+    },
     #[error("unknown embedding device: {0}")]
     InvalidDevice(String),
 }
@@ -320,13 +323,11 @@ impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
     }
 
     pub fn new_with_limit(inner: T, limit: usize) -> Self {
-        let per_shard = NonZeroUsize::new(limit.div_ceil(CACHE_SHARDS).max(1))
-            .unwrap_or(NonZeroUsize::MIN);
+        let per_shard =
+            NonZeroUsize::new(limit.div_ceil(CACHE_SHARDS).max(1)).unwrap_or(NonZeroUsize::MIN);
         Self {
             inner,
-            shards: [(); CACHE_SHARDS].map(|()| {
-                Arc::new(Mutex::new(LruCache::new(per_shard)))
-            }),
+            shards: [(); CACHE_SHARDS].map(|()| Arc::new(Mutex::new(LruCache::new(per_shard)))),
         }
     }
 
@@ -336,11 +337,7 @@ impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
     }
 
     fn cached(&self, key: &str) -> Option<Arc<Vec<f32>>> {
-        self.shards[shard_of(key)]
-            .lock()
-            .ok()?
-            .get(key)
-            .cloned()
+        self.shards[shard_of(key)].lock().ok()?.get(key).cloned()
     }
 
     fn store(&self, key: String, vec: Arc<Vec<f32>>) {
@@ -441,13 +438,11 @@ impl<T: EmbeddingProvider + Send + Sync + 'static> EmbeddingProvider
         if !uncached_texts.is_empty() {
             let batch = self.inner.embed_batch_async(&uncached_texts).await?;
             for (j, &g) in uncached_groups.iter().enumerate() {
-                let vec = batch
-                    .try_vector(j)
-                    .ok_or_else(|| {
-                        EmbeddingError::ParseError(format!(
-                            "batch returned fewer vectors than requested (requested {j})"
-                        ))
-                    })?;
+                let vec = batch.try_vector(j).ok_or_else(|| {
+                    EmbeddingError::ParseError(format!(
+                        "batch returned fewer vectors than requested (requested {j})"
+                    ))
+                })?;
                 let vec = Arc::new(vec.to_vec());
                 // Empty vectors stay uncached (no-op passthrough).
                 if !vec.is_empty() {

@@ -136,22 +136,18 @@ impl fluent_llm::backend::InferenceBackend for CountingBackend {
             .lock()
             .expect("log")
             .push(self.id.to_string());
-        self.chat_marker.clone().map(|text| {
-            Arc::new(MarkerChat { text }) as Arc<dyn fluent_llm::client::ChatBackend>
-        })
+        self.chat_marker
+            .clone()
+            .map(|text| Arc::new(MarkerChat { text }) as Arc<dyn fluent_llm::client::ChatBackend>)
     }
-    fn embed_provider(
-        &self,
-        _key: &str,
-    ) -> Option<Arc<dyn fluent_llm::EmbeddingProvider>> {
+    fn embed_provider(&self, _key: &str) -> Option<Arc<dyn fluent_llm::EmbeddingProvider>> {
         self.logs
             .consults
             .lock()
             .expect("log")
             .push(self.id.to_string());
-        self.embed_name.map(|name| {
-            Arc::new(MarkerEmbedder { name }) as Arc<dyn fluent_llm::EmbeddingProvider>
-        })
+        self.embed_name
+            .map(|name| Arc::new(MarkerEmbedder { name }) as Arc<dyn fluent_llm::EmbeddingProvider>)
     }
     fn capabilities(&self) -> fluent_llm::backend::BackendCaps {
         fluent_llm::backend::BackendCaps::default()
@@ -410,10 +406,7 @@ fn is_genuine_cause(script: &RungScript) -> bool {
     if script.failed {
         return true;
     }
-    matches!(
-        split_behavior(&script.behavior).0,
-        "miss" | "err-continue"
-    )
+    matches!(split_behavior(&script.behavior).0, "miss" | "err-continue")
 }
 
 fn is_serving(script: &RungScript) -> bool {
@@ -575,7 +568,11 @@ fn routing_fallback_corpus_and_report() {
         "report total drift"
     );
     for (name, recomputed, filed) in [
-        ("precision", precision, report["precision"].as_f64().unwrap_or(-1.0)),
+        (
+            "precision",
+            precision,
+            report["precision"].as_f64().unwrap_or(-1.0),
+        ),
         ("recall", recall, report["recall"].as_f64().unwrap_or(-1.0)),
         (
             "control_pass_rate",

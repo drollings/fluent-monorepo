@@ -42,6 +42,9 @@ pub(crate) fn substitute_thresholds(
     safety_threshold: f64,
 ) -> String {
     template
-        .replace("{coherence_threshold}", &format!("{coherence_threshold:.2}"))
+        .replace(
+            "{coherence_threshold}",
+            &format!("{coherence_threshold:.2}"),
+        )
         .replace("{safety_threshold}", &format!("{safety_threshold:.2}"))
 }

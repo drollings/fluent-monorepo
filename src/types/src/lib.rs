@@ -5,22 +5,22 @@ use internment::ArcIntern;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
+pub mod file_kind;
 pub mod instance_id;
 pub mod interlingua;
 pub mod knowledge;
 pub mod label_enum;
-pub mod provenance;
-pub mod file_kind;
 pub mod model_ref;
+pub mod provenance;
 
+pub use file_kind::FileKind;
 pub use interlingua::{
-    id_for_namespace, lemma_id_for_str, local_id_of, property_id_for_iri,
-    yago_class_id_for_iri, yago_entity_id_for_iri, ConceptMetadata, InterlinguaId,
-    InterlinguaNamespace, LOCAL_BITS, LOCAL_MASK, NAMESPACE_BITS,
+    id_for_namespace, lemma_id_for_str, local_id_of, property_id_for_iri, yago_class_id_for_iri,
+    yago_entity_id_for_iri, ConceptMetadata, InterlinguaId, InterlinguaNamespace, LOCAL_BITS,
+    LOCAL_MASK, NAMESPACE_BITS,
 };
 pub use knowledge::{KnowledgeCapability, KnowledgeError};
 pub use provenance::{AnnotationClaim, ClaimStatus, ProvenanceTier};
-pub use file_kind::FileKind;
 
 pub const LOD_COUNT: usize = 6;
 
@@ -442,13 +442,27 @@ impl OriginRole {
             Self::Other(s) => s.as_str(),
         }
     }
-    pub fn is_user(&self) -> bool { matches!(self, Self::User) }
-    pub fn is_system(&self) -> bool { matches!(self, Self::System) }
-    pub fn is_assistant(&self) -> bool { matches!(self, Self::Assistant) }
-    pub fn is_tool(&self) -> bool { matches!(self, Self::Tool) }
-    pub fn is_subagent(&self) -> bool { matches!(self, Self::Subagent) }
-    pub fn is_self_origin(&self) -> bool { matches!(self, Self::SelfOrigin) }
-    pub fn is_other(&self) -> bool { matches!(self, Self::Other(_)) }
+    pub fn is_user(&self) -> bool {
+        matches!(self, Self::User)
+    }
+    pub fn is_system(&self) -> bool {
+        matches!(self, Self::System)
+    }
+    pub fn is_assistant(&self) -> bool {
+        matches!(self, Self::Assistant)
+    }
+    pub fn is_tool(&self) -> bool {
+        matches!(self, Self::Tool)
+    }
+    pub fn is_subagent(&self) -> bool {
+        matches!(self, Self::Subagent)
+    }
+    pub fn is_self_origin(&self) -> bool {
+        matches!(self, Self::SelfOrigin)
+    }
+    pub fn is_other(&self) -> bool {
+        matches!(self, Self::Other(_))
+    }
 }
 
 impl std::fmt::Display for OriginRole {
@@ -471,7 +485,9 @@ impl From<String> for OriginRole {
     }
 }
 impl From<&str> for OriginRole {
-    fn from(s: &str) -> Self { Self::from(s.to_string()) }
+    fn from(s: &str) -> Self {
+        Self::from(s.to_string())
+    }
 }
 
 // Custom deserialize that maps unknown strings to Other while preserving case.
@@ -550,7 +566,11 @@ pub struct ContentNode {
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_origin_role_opt", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_origin_role_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub role: Option<OriginRole>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_index: Option<u64>,
@@ -629,8 +649,7 @@ impl ContentNode {
         } else {
             states.push(state);
         }
-        meta[OVERLAYS_META_KEY] =
-            serde_json::to_value(states).expect("OverlayState serializes");
+        meta[OVERLAYS_META_KEY] = serde_json::to_value(states).expect("OverlayState serializes");
     }
 
     /// Transition one overlay's status through the lifecycle:
@@ -904,16 +923,30 @@ mod tests {
     #[test]
     fn overlay_status_absent_pending_ready() {
         let mut node = ContentNode::default();
-        assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Absent);
+        assert_eq!(
+            node.overlay(OverlayKind::Spacy).status,
+            OverlayStatus::Absent
+        );
         node.transition_overlay(OverlayKind::Spacy, OverlayStatus::Pending, "arceager", None)
             .expect("pending");
-        assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Pending);
+        assert_eq!(
+            node.overlay(OverlayKind::Spacy).status,
+            OverlayStatus::Pending
+        );
         let ready = node
-            .transition_overlay(OverlayKind::Spacy, OverlayStatus::Ready, "arceager", Some(1000))
+            .transition_overlay(
+                OverlayKind::Spacy,
+                OverlayStatus::Ready,
+                "arceager",
+                Some(1000),
+            )
             .expect("ready");
         assert_eq!(ready.status, OverlayStatus::Ready);
         assert_eq!(ready.at, Some(1000));
-        assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Ready);
+        assert_eq!(
+            node.overlay(OverlayKind::Spacy).status,
+            OverlayStatus::Ready
+        );
         // Other kinds stay untouched.
         assert_eq!(node.overlay(OverlayKind::Llm).status, OverlayStatus::Absent);
     }
@@ -924,10 +957,18 @@ mod tests {
         node.transition_overlay(OverlayKind::Embedding, OverlayStatus::Pending, "bge", None)
             .expect("pending");
         let failed = node
-            .transition_overlay(OverlayKind::Embedding, OverlayStatus::Failed, "bge", Some(2000))
+            .transition_overlay(
+                OverlayKind::Embedding,
+                OverlayStatus::Failed,
+                "bge",
+                Some(2000),
+            )
             .expect("failed");
         assert_eq!(failed.status, OverlayStatus::Failed);
-        assert_eq!(node.overlay(OverlayKind::Embedding).status, OverlayStatus::Failed);
+        assert_eq!(
+            node.overlay(OverlayKind::Embedding).status,
+            OverlayStatus::Failed
+        );
     }
 
     #[test]
@@ -959,8 +1000,13 @@ mod tests {
     #[test]
     fn overlay_ready_is_not_recomputed() {
         let mut node = ContentNode::default();
-        node.transition_overlay(OverlayKind::Spacy, OverlayStatus::Ready, "arceager", Some(1))
-            .expect("ready");
+        node.transition_overlay(
+            OverlayKind::Spacy,
+            OverlayStatus::Ready,
+            "arceager",
+            Some(1),
+        )
+        .expect("ready");
         assert_eq!(
             node.transition_overlay(OverlayKind::Spacy, OverlayStatus::Pending, "llm", None),
             Err(OverlayTransitionError::AlreadyReady(OverlayKind::Spacy))
@@ -970,9 +1016,17 @@ mod tests {
             Err(OverlayTransitionError::AlreadyReady(OverlayKind::Spacy))
         );
         // Equal-status no-op is allowed.
-        node.transition_overlay(OverlayKind::Spacy, OverlayStatus::Ready, "arceager", Some(3))
-            .expect("no-op");
-        assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Ready);
+        node.transition_overlay(
+            OverlayKind::Spacy,
+            OverlayStatus::Ready,
+            "arceager",
+            Some(3),
+        )
+        .expect("no-op");
+        assert_eq!(
+            node.overlay(OverlayKind::Spacy).status,
+            OverlayStatus::Ready
+        );
     }
 
     #[test]
@@ -982,10 +1036,22 @@ mod tests {
         let back: OverlayState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, state);
         // Wire names are snake_case.
-        assert_eq!(serde_json::to_string(&OverlayKind::Spacy).unwrap(), "\"spacy\"");
-        assert_eq!(serde_json::to_string(&OverlayKind::Embedding).unwrap(), "\"embedding\"");
-        assert_eq!(serde_json::to_string(&OverlayStatus::Pending).unwrap(), "\"pending\"");
-        assert_eq!(serde_json::to_string(&OverlayStatus::Failed).unwrap(), "\"failed\"");
+        assert_eq!(
+            serde_json::to_string(&OverlayKind::Spacy).unwrap(),
+            "\"spacy\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayKind::Embedding).unwrap(),
+            "\"embedding\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayStatus::Pending).unwrap(),
+            "\"pending\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayStatus::Failed).unwrap(),
+            "\"failed\""
+        );
         // Absent entries drop the `at` field.
         let absent = OverlayState::absent(OverlayKind::Llm);
         let json = serde_json::to_string(&absent).expect("serialize");
@@ -1004,11 +1070,17 @@ mod tests {
         // Survives a ContentNode serde round-trip (the durable content_json).
         let json = serde_json::to_string(&node).expect("serialize");
         let back: ContentNode = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.overlay(OverlayKind::Spacy).status, OverlayStatus::Pending);
+        assert_eq!(
+            back.overlay(OverlayKind::Spacy).status,
+            OverlayStatus::Pending
+        );
         // Updating the same kind replaces, never duplicates.
         node.set_overlay(OverlayState::ready(OverlayKind::Spacy, "arceager", 9));
         assert_eq!(node.overlays().len(), 1);
-        assert_eq!(node.overlay(OverlayKind::Spacy).status, OverlayStatus::Ready);
+        assert_eq!(
+            node.overlay(OverlayKind::Spacy).status,
+            OverlayStatus::Ready
+        );
     }
 
     #[test]
@@ -1076,7 +1148,10 @@ mod tests {
         assert!(node.annotation_as::<OtherOverlay>().is_none());
         // Shared: two holders read the same immutable overlay without a lock.
         let shared = node.annotation.clone().expect("shared slot");
-        assert_eq!(shared.as_any().downcast_ref::<TestOverlay>().unwrap().value, 42);
+        assert_eq!(
+            shared.as_any().downcast_ref::<TestOverlay>().unwrap().value,
+            42
+        );
         // The node remains Debug/Clone/Default with the slot populated.
         let clone = node.clone();
         assert_eq!(clone.annotation_as::<TestOverlay>().unwrap().value, 42);
@@ -1133,7 +1208,10 @@ mod tests {
         assert_eq!(back.name.as_str(), "legacy");
         assert!(back.annotation.is_none());
         // `content_hash` predates this node's serialization → defaults to 0.
-        assert_eq!(node.content_hash, 0, "missing content_hash back-compat defaults to 0");
+        assert_eq!(
+            node.content_hash, 0,
+            "missing content_hash back-compat defaults to 0"
+        );
     }
     #[test]
     fn wasm_tool_serde() {

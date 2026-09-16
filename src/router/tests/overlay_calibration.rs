@@ -4,8 +4,8 @@
 use crate::config::builder::{
     OVERLAY_DISAMBIGUATION_FLOOR_DEFAULT, OVERLAY_REDIRECT_THRESHOLD_DEFAULT,
 };
-use crate::stages::overlay::{should_redirect_on_hint, ResidualSelector};
 use crate::pipeline_types::NlpConfidenceSummary;
+use crate::stages::overlay::{should_redirect_on_hint, ResidualSelector};
 use spacy_rs::routing::{InterlinguaSignal, RoutingSignal};
 use spacy_rs::AnnotationSource;
 
@@ -56,7 +56,10 @@ fn control_group_confident_sentences_select_empty() {
     let signals: Vec<RoutingSignal> = (0..20).map(|_| signal_with(0.95)).collect();
     let conf = high_confidence_summary();
     let residuals = selector.select(&signals, Some(&conf));
-    assert!(residuals.is_empty(), "confident control group should produce 0 residuals at floor 0.5");
+    assert!(
+        residuals.is_empty(),
+        "confident control group should produce 0 residuals at floor 0.5"
+    );
     // sweep check: at chosen 0.5 false-positive 0
     let fp = residuals.len();
     assert_eq!(fp, 0, "0.0 false-positive on control group at chosen 0.5");
@@ -117,7 +120,11 @@ fn floor_calibrated_on_50_sentence_corpus() {
     let residuals = selector.select(&signals, None);
     assert_eq!(residuals.len(), 30, "residual yield 30/50 at floor 0.5");
     let confident = selector.select(&signals[30..], None);
-    assert_eq!(confident.len(), 0, "0 false positives on the 20 confident controls");
+    assert_eq!(
+        confident.len(),
+        0,
+        "0 false positives on the 20 confident controls"
+    );
 }
 
 /// [A] control: 20 high-confidence-but-WRONG parses must NOT yield
@@ -128,9 +135,12 @@ fn floor_calibrated_on_50_sentence_corpus() {
 fn confident_but_wrong_controls_yield_no_residuals() {
     let selector = ResidualSelector::new(OVERLAY_DISAMBIGUATION_FLOOR_DEFAULT);
     // 20 parses the producer is sure about (0.95) but are task-wrong.
-    let wrong: Vec<(RoutingSignal, bool)> =
-        (0..20).map(|_| (signal_with(0.95), false)).collect();
-    assert_eq!(wrong.len(), 20, "corpus size: 20 confident-but-wrong controls");
+    let wrong: Vec<(RoutingSignal, bool)> = (0..20).map(|_| (signal_with(0.95), false)).collect();
+    assert_eq!(
+        wrong.len(),
+        20,
+        "corpus size: 20 confident-but-wrong controls"
+    );
     let signals: Vec<RoutingSignal> = wrong.into_iter().map(|(s, _)| s).collect();
     let residuals = selector.select(&signals, None);
     assert_eq!(
@@ -155,14 +165,21 @@ fn redirect_gate_off_on_120_prompt_corpus() {
     assert_eq!(labeled.len(), 100, "corpus size: 100 labeled prompts");
     // 20 adversarial-nearby pairs: high top-hint scores on the wrong route.
     let adversarial: Vec<f64> = vec![0.95; 20];
-    assert_eq!(adversarial.len(), 20, "corpus size: 20 adversarial controls");
+    assert_eq!(
+        adversarial.len(),
+        20,
+        "corpus size: 20 adversarial controls"
+    );
     let mut redirects = 0;
     for score in labeled.iter().chain(adversarial.iter()) {
         if should_redirect_on_hint(*score, OVERLAY_REDIRECT_THRESHOLD_DEFAULT) {
             redirects += 1;
         }
     }
-    assert_eq!(redirects, 0, "OFF gate never redirects, even on 0.95 adversarial hints");
+    assert_eq!(
+        redirects, 0,
+        "OFF gate never redirects, even on 0.95 adversarial hints"
+    );
     // The adversarial high-score controls specifically must not redirect.
     for score in &adversarial {
         assert!(

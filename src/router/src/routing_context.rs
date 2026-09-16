@@ -41,7 +41,10 @@ impl RoutingContext {
                 .get("snapshot")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
-            id_slot: value.get("id_slot").and_then(|v| v.as_i64()).map(|i| i as i32),
+            id_slot: value
+                .get("id_slot")
+                .and_then(|v| v.as_i64())
+                .map(|i| i as i32),
             num_ctx: value.get("num_ctx").and_then(|v| v.as_u64()),
         }
     }
@@ -85,7 +88,10 @@ impl RoutingContext {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.instance.is_none() && self.snapshot.is_none() && self.id_slot.is_none() && self.num_ctx.is_none()
+        self.instance.is_none()
+            && self.snapshot.is_none()
+            && self.id_slot.is_none()
+            && self.num_ctx.is_none()
     }
 }
 

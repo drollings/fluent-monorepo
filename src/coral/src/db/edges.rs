@@ -139,7 +139,8 @@ mod tests {
     }
 
     fn insert(lib: &crate::db::Library, name: &str) -> NodeId {
-        lib.insert_node(&make_node(name, "src")).expect("insert node")
+        lib.insert_node(&make_node(name, "src"))
+            .expect("insert node")
     }
 
     #[test]
@@ -158,7 +159,11 @@ mod tests {
         let b = insert(&lib, "b");
         lib.insert_edge(a, b, "depends", 1.0).expect("first");
         lib.insert_edge(a, b, "depends", 1.0).expect("second");
-        assert_eq!(lib.edge_count().expect("count"), 1, "no duplicate edge rows");
+        assert_eq!(
+            lib.edge_count().expect("count"),
+            1,
+            "no duplicate edge rows"
+        );
 
         // A different edge type between the same nodes IS a distinct row.
         lib.insert_edge(a, b, "related", 0.5).expect("other type");
@@ -204,14 +209,21 @@ mod tests {
         let hops = lib.traverse_all_nodes(3).expect("traverse all");
         let names: Vec<&str> = hops.iter().map(|g| g.name.as_str()).collect();
         assert!(names.contains(&"a") && names.contains(&"b") && names.contains(&"c"));
-        assert_eq!(hops.iter().find(|g| g.name.as_str() == "a").expect("a").depth, 0);
+        assert_eq!(
+            hops.iter()
+                .find(|g| g.name.as_str() == "a")
+                .expect("a")
+                .depth,
+            0
+        );
     }
 
     #[test]
     fn entity_type_and_is_a_hierarchy() {
         let lib = lib();
         let node = insert(&lib, "dog");
-        lib.insert_entity_type(node, "http://schema/Mammal").expect("type");
+        lib.insert_entity_type(node, "http://schema/Mammal")
+            .expect("type");
         lib.insert_entity_hierarchy("http://schema/Mammal", "http://schema/Animal")
             .expect("hierarchy");
         lib.insert_entity_hierarchy("http://schema/Dog", "http://schema/Mammal")

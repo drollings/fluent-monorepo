@@ -1,5 +1,5 @@
 use super::*;
-use fluent_types::{local_id_of, NodeId, InterlinguaNamespace};
+use fluent_types::{local_id_of, InterlinguaNamespace, NodeId};
 
 fn cid(ns: InterlinguaNamespace, h: i64) -> InterlinguaId {
     InterlinguaId::new(ns, local_id_of(h))
@@ -22,7 +22,11 @@ fn meta(id: InterlinguaId, name: &str, iri: Option<&str>) -> ConceptMetadata {
 fn insert_get_roundtrip_and_indexes() {
     let store = InMemoryConceptStore::new();
     let id = cid(InterlinguaNamespace::YagoClass, 0x42);
-    let m = meta(id, "schema:Person", Some("http://yago-knowledge.org/resource/Person"));
+    let m = meta(
+        id,
+        "schema:Person",
+        Some("http://yago-knowledge.org/resource/Person"),
+    );
     store.insert(m.clone()).expect("insert");
     assert_eq!(store.get(id).expect("get").id, id);
     assert_eq!(store.resolve_name("schema:Person").expect("name"), id);
@@ -40,8 +44,12 @@ fn insert_get_roundtrip_and_indexes() {
 fn first_wins_keeps_both_canonicals_under_one_id() {
     let store = InMemoryConceptStore::new();
     let shared = cid(InterlinguaNamespace::SpacyLemma, 7);
-    store.insert(meta(shared, "lead_verb", None)).expect("first");
-    store.insert(meta(shared, "lead_metal", None)).expect("second");
+    store
+        .insert(meta(shared, "lead_verb", None))
+        .expect("first");
+    store
+        .insert(meta(shared, "lead_metal", None))
+        .expect("second");
 
     // Both canonicals are resolvable under the same bucket id.
     assert_eq!(store.resolve_name("lead_verb").expect("a"), shared);
@@ -93,12 +101,16 @@ fn ancestors_and_is_subclass_backed_by_hierarchy() {
     let animal = cid(InterlinguaNamespace::YagoClass, 1);
     let mammal = cid(InterlinguaNamespace::YagoClass, 2);
     let dog = cid(InterlinguaNamespace::YagoClass, 3);
-    store.insert(meta(animal, "schema:Animal", None)).expect("animal");
-    store.insert(meta(mammal, "schema:Mammal", None)).expect("mammal");
+    store
+        .insert(meta(animal, "schema:Animal", None))
+        .expect("animal");
+    store
+        .insert(meta(mammal, "schema:Mammal", None))
+        .expect("mammal");
     store.insert(meta(dog, "schema:Dog", None)).expect("dog");
 
-    let hierarchy = TaxonomyHierarchy::from_edges(&[(mammal, animal), (dog, mammal)])
-        .expect("hierarchy");
+    let hierarchy =
+        TaxonomyHierarchy::from_edges(&[(mammal, animal), (dog, mammal)]).expect("hierarchy");
     store.set_hierarchy(hierarchy);
 
     assert_eq!(store.ancestors_of(dog), vec![mammal, animal]);
@@ -125,8 +137,8 @@ fn lazy_hierarchy_matches_direct_construction() {
         store.insert(m).expect("insert");
     }
 
-    let direct = TaxonomyHierarchy::from_edges(&[(mammal, animal), (dog, mammal)])
-        .expect("hierarchy");
+    let direct =
+        TaxonomyHierarchy::from_edges(&[(mammal, animal), (dog, mammal)]).expect("hierarchy");
     assert_eq!(store.ancestors_of(dog), direct.ancestors(dog));
     assert_eq!(
         store.is_subclass_of(dog, animal),

@@ -168,10 +168,7 @@ impl StubRun {
 }
 
 impl OnnxRun for StubRun {
-    fn run(
-        &self,
-        inputs: Vec<(String, Value)>,
-    ) -> Result<Vec<(String, Value)>, OrtError> {
+    fn run(&self, inputs: Vec<(String, Value)>) -> Result<Vec<(String, Value)>, OrtError> {
         let mut ids: Vec<i64> = Vec::new();
         let mut mask_len: usize = 0;
         let mut past_kv: BTreeMap<usize, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
@@ -190,8 +187,7 @@ impl OnnxRun for StubRun {
                 if parts.len() == 3 {
                     if let Ok(layer) = parts[1].parse::<usize>() {
                         if let Ok((_, data)) = value.try_extract_tensor::<f32>() {
-                            let entry =
-                                past_kv.entry(layer).or_insert((Vec::new(), Vec::new()));
+                            let entry = past_kv.entry(layer).or_insert((Vec::new(), Vec::new()));
                             if parts[2] == "key" {
                                 entry.0 = data.to_vec();
                             } else if parts[2] == "value" {
@@ -249,8 +245,7 @@ impl OnnxRun for StubRun {
             for h in 0..heads {
                 let start = h * past_positions * head_dim;
                 new_key.extend_from_slice(&past_key[start..start + past_positions * head_dim]);
-                new_value
-                    .extend_from_slice(&past_value[start..start + past_positions * head_dim]);
+                new_value.extend_from_slice(&past_value[start..start + past_positions * head_dim]);
                 for p in 0..append {
                     let marker = if past_positions == 0 {
                         ids[p] as f32
@@ -272,9 +267,10 @@ impl OnnxRun for StubRun {
         }
         // present_conv.{L}: echo (a fixed-size sliding window).
         for &layer in &self.io.conv_layers {
-            let data = conv_past.get(&layer).cloned().unwrap_or_else(|| {
-                vec![0.0; self.io.hidden_size * self.io.conv_l_cache]
-            });
+            let data = conv_past
+                .get(&layer)
+                .cloned()
+                .unwrap_or_else(|| vec![0.0; self.io.hidden_size * self.io.conv_l_cache]);
             outputs.push((
                 format!("{}.{layer}", self.io.present_conv),
                 f32tensor([1, self.io.hidden_size, self.io.conv_l_cache], data)?,
@@ -386,7 +382,10 @@ fn complete_on_context_persists_kv_across_calls_and_is_independent() {
     let b_seq = b.past().expect("b has KV").seq_len;
     // Two calls on `a` (each prefill + 2 decode) beat one call on `b`
     // (prefill + 1 decode), and the contexts never share KV.
-    assert!(a_seq > b_seq, "a's KV advances across calls (a={a_seq}, b={b_seq})");
+    assert!(
+        a_seq > b_seq,
+        "a's KV advances across calls (a={a_seq}, b={b_seq})"
+    );
     assert!(b_seq >= 2, "b holds only its own call (b={b_seq})");
     assert_ne!(a_seq, b_seq, "contexts do not share KV");
 }

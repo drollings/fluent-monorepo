@@ -29,10 +29,9 @@ pub fn percent_decode(s: &str) -> String {
     while i < bytes.len() {
         match bytes[i] {
             b'%' if i + 2 < bytes.len() => {
-                if let Ok(v) = u8::from_str_radix(
-                    std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
-                    16,
-                ) {
+                if let Ok(v) =
+                    u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+                {
                     out.push(v);
                     i += 3;
                 } else {
@@ -131,7 +130,10 @@ fn resolve_instance_target(
     query: &[(String, String)],
 ) -> Result<(String, String), HyperResponse> {
     let Some(pool) = deps.instance_pool.as_ref() else {
-        return Err(error_response(hyper::StatusCode::NOT_FOUND, "no managed instances"));
+        return Err(error_response(
+            hyper::StatusCode::NOT_FOUND,
+            "no managed instances",
+        ));
     };
     // Id grammar `<model_id>:<name>` — the llama pool first (byte-identical
     // for llama keys), then the fleet for onnx keys.
@@ -199,15 +201,15 @@ pub fn check_management_key(deps: &ServerDeps, headers: &HeaderMap) -> Option<Hy
     if provided == Some(key.as_str()) {
         None
     } else {
-        Some(error_response(hyper::StatusCode::UNAUTHORIZED, "invalid api key"))
+        Some(error_response(
+            hyper::StatusCode::UNAUTHORIZED,
+            "invalid api key",
+        ))
     }
 }
 
 /// `GET /instances` - the aggregate envelope across every managed model.
-pub async fn handle_get_instances(
-    deps: &ServerDeps,
-    query: &[(String, String)],
-) -> HyperResponse {
+pub async fn handle_get_instances(deps: &ServerDeps, query: &[(String, String)]) -> HyperResponse {
     let model = query_model(query);
     // The unified fleet (llama + onnx) when attached; the llama-only pool
     // path is the byte-identical fallback for fleet-less builds.
@@ -312,7 +314,9 @@ pub async fn handle_post_instances(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     match pool
-        .create(&model, name, group, ctx_size, parallel, pinned, is_default, resume)
+        .create(
+            &model, name, group, ctx_size, parallel, pinned, is_default, resume,
+        )
         .await
     {
         Ok(info) => json_response(
@@ -359,12 +363,10 @@ pub async fn handle_instance_op(
             // (the onnx half of the unified facade). Llama contexts stay on the
             // pool's `client.resize` path (byte-identical).
             if let Some(fleet) = deps.fleet.as_ref() {
-                if fleet
-                    .weights()
-                    .iter()
-                    .any(|w| w.model_key() == model
-                        && w.eviction_policy() == fluent_llm::runtime::EvictionPolicy::LruLargest)
-                {
+                if fleet.weights().iter().any(|w| {
+                    w.model_key() == model
+                        && w.eviction_policy() == fluent_llm::runtime::EvictionPolicy::LruLargest
+                }) {
                     return match fleet.resize_context(&model, &instance, ctx_size).await {
                         Ok(()) => json_response(
                             hyper::StatusCode::OK,
@@ -464,9 +466,10 @@ fn instance_error_response(e: crate::instances::InstanceError) -> HyperResponse 
         crate::instances::InstanceError::Duplicate => {
             error_response(hyper::StatusCode::CONFLICT, "duplicate instance name")
         }
-        crate::instances::InstanceError::Transient { status: 503, .. } => {
-            error_response(hyper::StatusCode::SERVICE_UNAVAILABLE, "transient management error")
-        }
+        crate::instances::InstanceError::Transient { status: 503, .. } => error_response(
+            hyper::StatusCode::SERVICE_UNAVAILABLE,
+            "transient management error",
+        ),
         crate::instances::InstanceError::Transient { .. } => error_response(
             hyper::StatusCode::INSUFFICIENT_STORAGE,
             "insufficient device memory",
@@ -484,7 +487,10 @@ fn instance_error_response(e: crate::instances::InstanceError) -> HyperResponse 
 /// Common response mapping for a per-instance mutating op.
 fn instance_op_response(result: Result<(), crate::instances::InstanceError>) -> HyperResponse {
     match result {
-        Ok(()) => json_response(hyper::StatusCode::OK, &serde_json::json!({ "success": true })),
+        Ok(()) => json_response(
+            hyper::StatusCode::OK,
+            &serde_json::json!({ "success": true }),
+        ),
         Err(e) => instance_error_response(e),
     }
 }
@@ -525,8 +531,7 @@ pub async fn handle_memory(deps: &ServerDeps) -> HyperResponse {
         }
     };
     let total: InstanceTotals =
-        serde_json::from_value(value.get("total").cloned().unwrap_or_default())
-            .unwrap_or_default();
+        serde_json::from_value(value.get("total").cloned().unwrap_or_default()).unwrap_or_default();
     json_response(
         hyper::StatusCode::OK,
         &serde_json::json!({
@@ -587,7 +592,10 @@ pub async fn handle_props(deps: &ServerDeps) -> HyperResponse {
             "cannot route model-less request: multiple managed models",
         );
     };
-    let Some(base) = pool.manager(&model).map(|m| m.client().base_url().to_string()) else {
+    let Some(base) = pool
+        .manager(&model)
+        .map(|m| m.client().base_url().to_string())
+    else {
         return error_response(hyper::StatusCode::NOT_FOUND, "no managed instances");
     };
     let props_url = format!("{base}/props");
@@ -609,13 +617,11 @@ pub async fn handle_props(deps: &ServerDeps) -> HyperResponse {
         .unwrap_or_else(|| serde_json::json!([]));
     let mut props = response;
     if let serde_json::Value::Object(ref mut obj) = props {
-        let total_slots: u64 = instances
-            .as_array()
-            .map_or(0, |arr| {
-                arr.iter()
-                    .filter_map(|i| i.get("parallel").and_then(serde_json::Value::as_u64))
-                    .sum()
-            });
+        let total_slots: u64 = instances.as_array().map_or(0, |arr| {
+            arr.iter()
+                .filter_map(|i| i.get("parallel").and_then(serde_json::Value::as_u64))
+                .sum()
+        });
         obj.insert("total_slots".into(), serde_json::json!(total_slots));
         obj.insert("instances".into(), instances);
     }
@@ -639,7 +645,10 @@ pub async fn handle_model_less_proxy(
             "cannot route model-less request: multiple managed models",
         );
     };
-    let Some(base) = pool.manager(&model).map(|m| m.client().base_url().to_string()) else {
+    let Some(base) = pool
+        .manager(&model)
+        .map(|m| m.client().base_url().to_string())
+    else {
         return error_response(hyper::StatusCode::NOT_FOUND, "no managed instances");
     };
     let method = req.method().clone();

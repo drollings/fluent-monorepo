@@ -1,6 +1,6 @@
 use super::*;
-use crate::instances::stub::StubHandler;
 use crate::dag_session::SessionRegistry;
+use crate::instances::stub::StubHandler;
 use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex};
 use crate::ledger::tiering::TierConfig;
 use crate::test_stubs::StubChatBackend;
@@ -23,15 +23,13 @@ fn fork_kv() -> SnapshotStore {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "POST" && path.ends_with("/snapshot") {
-                (200, "{}".into())
-            } else {
-                (200, "[]".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path.ends_with("/snapshot") {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -42,11 +40,7 @@ fn fork_kv() -> SnapshotStore {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     )
     .with_fork_io(fork)
 }
@@ -90,8 +84,11 @@ fn coordinator(
 async fn two_model_handoff_restores_same_model_only() {
     let store = temp_store();
     let sessions = Arc::new(test_registry());
-    let backend: Arc<dyn ChatBackend> =
-        Arc::new(StubChatBackend::new(vec!["A1".to_string(), "B1".to_string(), "A2".to_string()]));
+    let backend: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::new(vec![
+        "A1".to_string(),
+        "B1".to_string(),
+        "A2".to_string(),
+    ]));
     let (coord, tiers) = coordinator(
         Arc::clone(&store),
         Arc::clone(&sessions),
@@ -152,8 +149,11 @@ async fn two_model_handoff_restores_same_model_only() {
 async fn never_restore_always_rep_prefills() {
     let store = temp_store();
     let sessions = Arc::new(test_registry());
-    let backend: Arc<dyn ChatBackend> =
-        Arc::new(StubChatBackend::new(vec!["x".into(), "y".into(), "z".into()]));
+    let backend: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::new(vec![
+        "x".into(),
+        "y".into(),
+        "z".into(),
+    ]));
     let (coord, tiers) = coordinator(
         Arc::clone(&store),
         Arc::clone(&sessions),
@@ -164,8 +164,14 @@ async fn never_restore_always_rep_prefills() {
     let handle = tiers.start();
     let worker = WorkerContext::new("assistant", "");
 
-    let _ = coord.run_agent("sess", "model-a", &worker, "1").await.unwrap();
-    let again = coord.run_agent("sess", "model-a", &worker, "2").await.unwrap();
+    let _ = coord
+        .run_agent("sess", "model-a", &worker, "1")
+        .await
+        .unwrap();
+    let again = coord
+        .run_agent("sess", "model-a", &worker, "2")
+        .await
+        .unwrap();
     assert!(
         !again.kv_restored,
         "NeverRestore ignores the pending snapshot and re-prefills"
@@ -190,10 +196,16 @@ async fn records_nodes_and_enqueues_tiers() {
     let handle = tiers.start();
     let worker = WorkerContext::new("assistant", "");
 
-    let o1 = coord.run_agent("sess", "model-a", &worker, "hi").await.unwrap();
+    let o1 = coord
+        .run_agent("sess", "model-a", &worker, "hi")
+        .await
+        .unwrap();
     let node = store.snapshot(o1.node_id).unwrap();
     assert_eq!(node.lod[0], "out-1");
-    assert_eq!(node.role.as_ref().map(fluent_types::OriginRole::as_str), Some("agent"));
+    assert_eq!(
+        node.role.as_ref().map(fluent_types::OriginRole::as_str),
+        Some("agent")
+    );
     assert_eq!(node.step_id.as_deref(), Some("model-a-1"));
 
     // LOD4/LOD5 are enqueued and filled in the background (proves the
@@ -263,10 +275,7 @@ struct RecordingBackend {
 }
 
 impl ChatBackend for RecordingBackend {
-    fn chat_complete(
-        &self,
-        messages: &[fluent_llm::ChatMessage],
-    ) -> Result<String, LlmError> {
+    fn chat_complete(&self, messages: &[fluent_llm::ChatMessage]) -> Result<String, LlmError> {
         self.captured.lock().unwrap().extend(
             messages
                 .iter()
@@ -324,11 +333,8 @@ async fn retrieve_nodes_composes_the_live_retrieval_seam() {
 
     // Composed → the M5 tools run over the candidate nodes.
     let svc = Arc::new(
-        crate::retrieval::NodeRetrievalService::new(
-            Arc::new(TestEmbedder),
-            None,
-        )
-        .expect("retrieval service"),
+        crate::retrieval::NodeRetrievalService::new(Arc::new(TestEmbedder), None)
+            .expect("retrieval service"),
     );
     let coord = coord.with_retrieval(svc);
     let nodes = vec![ContentNode {
@@ -359,8 +365,7 @@ async fn agent_node_records_node_plan_for_learning_replay() {
         .record_request("sess", "r0", "Prior context node text")
         .unwrap();
     let sessions = Arc::new(test_registry());
-    let backend: Arc<dyn ChatBackend> =
-        Arc::new(StubChatBackend::new(vec!["out".to_string()]));
+    let backend: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::new(vec!["out".to_string()]));
     let (coord, tiers) = coordinator(
         Arc::clone(&store),
         sessions,
@@ -381,7 +386,8 @@ async fn agent_node_records_node_plan_for_learning_replay() {
     let meta = node.metadata.expect("metadata present");
     let plan = meta["node_plan"].as_array().expect("node_plan array");
     assert!(
-        plan.iter().any(|pair| pair[0].as_i64() == Some(prior.as_int())),
+        plan.iter()
+            .any(|pair| pair[0].as_i64() == Some(prior.as_int())),
         "node_plan must include the prior ledger node (anchored at LOD0), got: {plan:?}"
     );
     assert!(
@@ -400,8 +406,11 @@ async fn affinity_tracks_current_session_through_run_agent() {
     // restore decision or the transport.
     let store = temp_store();
     let sessions = Arc::new(test_registry());
-    let backend: Arc<dyn ChatBackend> =
-        Arc::new(StubChatBackend::new(vec!["a".into(), "b".into(), "c".into()]));
+    let backend: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::new(vec![
+        "a".into(),
+        "b".into(),
+        "c".into(),
+    ]));
     let (coord, tiers) = coordinator(
         Arc::clone(&store),
         Arc::clone(&sessions),
@@ -414,8 +423,14 @@ async fn affinity_tracks_current_session_through_run_agent() {
     let handle = tiers.start();
     let worker = WorkerContext::new("assistant", "");
 
-    let _ = coord.run_agent("sess", "model-a", &worker, "1").await.unwrap();
-    let _ = coord.run_agent("sess", "model-a", &worker, "2").await.unwrap();
+    let _ = coord
+        .run_agent("sess", "model-a", &worker, "1")
+        .await
+        .unwrap();
+    let _ = coord
+        .run_agent("sess", "model-a", &worker, "2")
+        .await
+        .unwrap();
 
     // The composed scheduler marks the active session as affine (minimize
     // context switches) across interleaved sessions.
@@ -427,7 +442,10 @@ async fn affinity_tracks_current_session_through_run_agent() {
 
     // A same-model re-entry still restores KV (affinity bookkeeping must
     // not alter the restore decision or the transport).
-    let outcome = coord.run_agent("sess", "model-a", &worker, "3").await.unwrap();
+    let outcome = coord
+        .run_agent("sess", "model-a", &worker, "3")
+        .await
+        .unwrap();
     assert!(outcome.kv_restored);
 
     handle.abort();
@@ -473,8 +491,15 @@ async fn affinity_cap_config_attaches_scheduler() {
     let handle = tiers.start();
     let worker = WorkerContext::new("assistant", "");
 
-    assert_eq!(coord.affinity_session(), None, "no run yet -> no affine session");
-    let _ = coord.run_agent("sess", "model-a", &worker, "1").await.unwrap();
+    assert_eq!(
+        coord.affinity_session(),
+        None,
+        "no run yet -> no affine session"
+    );
+    let _ = coord
+        .run_agent("sess", "model-a", &worker, "1")
+        .await
+        .unwrap();
     assert_eq!(
         coord.affinity_session().as_deref(),
         Some("sess"),
@@ -509,8 +534,14 @@ async fn preferred_model_prefers_last_resident_and_falls_back() {
 
     // Model A runs (records a checkpoint node), then Model B runs (the most
     // recent checkpoint node is now Model B's).
-    let _ = coord.run_agent("sess", "model-a", &worker, "1").await.unwrap();
-    let _ = coord.run_agent("sess", "model-b", &worker, "2").await.unwrap();
+    let _ = coord
+        .run_agent("sess", "model-a", &worker, "1")
+        .await
+        .unwrap();
+    let _ = coord
+        .run_agent("sess", "model-b", &worker, "2")
+        .await
+        .unwrap();
 
     assert_eq!(
         coord.last_resident_model("sess").as_deref(),
@@ -518,7 +549,9 @@ async fn preferred_model_prefers_last_resident_and_falls_back() {
         "last-resident model is the most recent checkpoint"
     );
     assert_eq!(
-        coord.preferred_model("sess", &["model-a", "model-b"]).as_deref(),
+        coord
+            .preferred_model("sess", &["model-a", "model-b"])
+            .as_deref(),
         Some("model-b"),
         "prefers the resident candidate (KV affinity)"
     );
@@ -530,7 +563,9 @@ async fn preferred_model_prefers_last_resident_and_falls_back() {
 
     // Model B re-enters and wins affinity again (still resident).
     assert_eq!(
-        coord.preferred_model("sess", &["model-b", "model-a"]).as_deref(),
+        coord
+            .preferred_model("sess", &["model-b", "model-a"])
+            .as_deref(),
         Some("model-b")
     );
 

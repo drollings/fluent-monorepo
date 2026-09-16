@@ -16,9 +16,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
-use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 
@@ -179,7 +179,15 @@ pub fn test_deps_with_ledger(
     sessions: Option<Arc<crate::dag_session::SessionRegistry>>,
     ledger: Option<Arc<crate::ledger::ContentNodeLedger>>,
 ) -> ServerDeps {
-    let mut deps = test_deps(pipelines, config, mock, sessions, None, HashMap::new(), None);
+    let mut deps = test_deps(
+        pipelines,
+        config,
+        mock,
+        sessions,
+        None,
+        HashMap::new(),
+        None,
+    );
     deps.ledger = ledger;
     deps
 }
@@ -193,7 +201,15 @@ pub fn rigor_test_deps(
     sessions: Option<Arc<crate::dag_session::SessionRegistry>>,
     ledger: Option<Arc<crate::ledger::ContentNodeLedger>>,
 ) -> ServerDeps {
-    let mut deps = test_deps(pipelines, config, None, sessions, None, HashMap::new(), None);
+    let mut deps = test_deps(
+        pipelines,
+        config,
+        None,
+        sessions,
+        None,
+        HashMap::new(),
+        None,
+    );
     deps.rigor_route = rigor_route;
     deps.ledger = ledger;
     deps
@@ -238,7 +254,15 @@ pub async fn spawn_test_server_with_ledger(
         .expect("bind ephemeral port");
     let addr = listener.local_addr().expect("local addr");
 
-    let mut deps = test_deps(pipelines, &config, mock, sessions, None, HashMap::new(), None);
+    let mut deps = test_deps(
+        pipelines,
+        &config,
+        mock,
+        sessions,
+        None,
+        HashMap::new(),
+        None,
+    );
     deps.ledger = ledger;
     let handle = tokio::spawn(async move {
         if let Err(e) = serve_http(listener, deps, None).await {

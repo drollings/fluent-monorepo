@@ -56,9 +56,10 @@ impl OnnxContextPool {
     /// fork's `ensure_instance`). Idempotent: a second resolve returns the same
     /// context. A profile with `n_ctx == 0` inherits the pool default.
     pub fn ensure_context(&self, name: &str, profile: OnnxContextProfile) -> Arc<OnnxContext> {
-        self.contexts.resolve_or_create(name.to_string(), move |key| {
-            OnnxContext::new(key.clone(), profile)
-        })
+        self.contexts
+            .resolve_or_create(name.to_string(), move |key| {
+                OnnxContext::new(key.clone(), profile)
+            })
     }
 
     /// The named context, if it is currently materialized.
@@ -69,9 +70,9 @@ impl OnnxContextPool {
     /// Resize a named context, bounded by its `max_ctx` (growth past the cap is
     /// refused). An unknown context is a loud error.
     pub fn resize(&self, name: &str, n_ctx: u64) -> Result<(), OrtError> {
-        let ctx = self.context(name).ok_or_else(|| {
-            OrtError::Other(format!("onnx context {name} not found"))
-        })?;
+        let ctx = self
+            .context(name)
+            .ok_or_else(|| OrtError::Other(format!("onnx context {name} not found")))?;
         ctx.resize(n_ctx)
             .map_err(|e| OrtError::Other(e.to_string()))
     }

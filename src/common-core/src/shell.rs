@@ -87,4 +87,3 @@ pub fn add_unique_path(list: &mut Vec<String>, path: &str, project_root: Option<
     list.push(path.to_string());
     true
 }
-

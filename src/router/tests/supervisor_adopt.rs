@@ -45,7 +45,13 @@ fn code_identity() -> ServerIdentity {
 #[test]
 fn argv_parses_both_flag_spellings() {
     let argv = [
-        "--host", "127.0.0.1", "--port", "53577", "--alias", "code", "-m",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "53577",
+        "--alias",
+        "code",
+        "-m",
         "/w.gguf",
     ]
     .iter()
@@ -67,7 +73,10 @@ fn argv_parses_both_flag_spellings() {
 
 #[test]
 fn argv_rejects_missing_alias_and_non_loopback_binds() {
-    let no_alias = ["--port", "1"].iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+    let no_alias = ["--port", "1"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect::<Vec<_>>();
     assert!(parse_llama_argv(&no_alias).is_none());
 
     // A stock router-mode server on 0.0.0.0 is never ours, even with an alias.
@@ -171,25 +180,24 @@ fn server_matches_hf_and_refuses_sourceless_specs() {
 
 fn probe_stub(instances_status: u16) -> StubServer {
     type Handler = Arc<dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync>;
-    let handler: Handler =
-        Arc::new(move |method, path, _body| {
-            if method == "GET" && path == "/health" {
-                (200, r#"{"status":"ok"}"#.to_string())
-            } else if method == "GET" && path == "/props" {
-                (
-                    200,
-                    serde_json::json!({
-                        "model_alias": "code",
-                        "model_path": "/app/ai/models/gguf/code/latest.gguf",
-                    })
-                    .to_string(),
-                )
-            } else if method == "GET" && path == "/instances" {
-                (instances_status, r#"{"instances":[]}"#.to_string())
-            } else {
-                (404, r#"{"error":{"message":"not found"}}"#.to_string())
-            }
-        });
+    let handler: Handler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/health" {
+            (200, r#"{"status":"ok"}"#.to_string())
+        } else if method == "GET" && path == "/props" {
+            (
+                200,
+                serde_json::json!({
+                    "model_alias": "code",
+                    "model_path": "/app/ai/models/gguf/code/latest.gguf",
+                })
+                .to_string(),
+            )
+        } else if method == "GET" && path == "/instances" {
+            (instances_status, r#"{"instances":[]}"#.to_string())
+        } else {
+            (404, r#"{"error":{"message":"not found"}}"#.to_string())
+        }
+    });
     StubServer::start(handler)
 }
 
@@ -213,11 +221,9 @@ async fn probe_identity_reports_the_grammar_verdict() {
     assert!(!identity.instances_supported);
 
     // Nothing listening: never adopt on a partial read.
-    assert!(
-        probe_identity(&client, "http://127.0.0.1:1", None)
-            .await
-            .is_none()
-    );
+    assert!(probe_identity(&client, "http://127.0.0.1:1", None)
+        .await
+        .is_none());
 }
 
 fn pinned_profile(name: &str) -> InstanceProfile {
@@ -243,11 +249,7 @@ fn pinned_profile(name: &str) -> InstanceProfile {
 async fn grammar_less_manager_skips_management_without_http() {
     // A dead base URL: any management call would fail, so reaching this
     // assertion proves the grammar-less path performs zero HTTP.
-    let client = InstanceClient::new(
-        reqwest::Client::new(),
-        "http://127.0.0.1:1",
-        None,
-    );
+    let client = InstanceClient::new(reqwest::Client::new(), "http://127.0.0.1:1", None);
     let manager = InstanceManager::new(
         "code",
         client,
@@ -258,8 +260,14 @@ async fn grammar_less_manager_skips_management_without_http() {
     assert!(!manager.has_instances_api());
 
     manager.reconcile().await.expect("reconcile suspends");
-    manager.ensure_instance("default").await.expect("on-demand skips");
-    manager.ensure_group("default").await.expect("group alloc skips");
+    manager
+        .ensure_instance("default")
+        .await
+        .expect("on-demand skips");
+    manager
+        .ensure_group("default")
+        .await
+        .expect("group alloc skips");
     manager
         .ensure_group_ready("default")
         .await
@@ -311,8 +319,7 @@ async fn persist_state_round_trips_the_fleet_map() {
     let dir = tempfile::tempdir().expect("tempdir");
     let state_path = dir.path().join("servers.json");
     let mut config = crate::config::RouterConfig::default();
-    config.sidecar.server_state_path =
-        Some(state_path.to_string_lossy().to_string());
+    config.sidecar.server_state_path = Some(state_path.to_string_lossy().to_string());
 
     let sup = LlamaServerSupervisor::with_client_for_test(
         std::path::PathBuf::from("/bin/false"),
@@ -320,12 +327,7 @@ async fn persist_state_round_trips_the_fleet_map() {
     );
     // Only running servers persist: the adopted entry qualifies, the idle one
     // does not.
-    let adopted = ManagedServer::with_liveness(
-        code_spec(53577),
-        Duration::from_secs(30),
-        3,
-        5,
-    );
+    let adopted = ManagedServer::with_liveness(code_spec(53577), Duration::from_secs(30), 3, 5);
     adopted.mark_adopted(4242);
     sup.servers.insert("code".to_string(), adopted);
     sup.servers.insert(

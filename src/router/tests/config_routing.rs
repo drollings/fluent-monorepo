@@ -38,7 +38,8 @@ fn route_ref_serde_round_trip() {
 
 #[test]
 fn route_ref_pipelines_defaults_to_default() {
-    let r: RouteRef = serde_json::from_value(serde_json::json!({"group": "g"})).expect("deserialize");
+    let r: RouteRef =
+        serde_json::from_value(serde_json::json!({"group": "g"})).expect("deserialize");
     assert_eq!(r.pipelines, vec!["default"]);
     assert!(!r.always_route);
 }
@@ -183,7 +184,10 @@ fn routing_target_resolves_onnx_role_group_member() {
     c.onnx_keys.insert("onnx/llm".into());
 
     let rt = c.routing_target("local", None).expect("routing target");
-    assert!(rt.is_onnx, "onnx target must be flagged for the onnx backend");
+    assert!(
+        rt.is_onnx,
+        "onnx target must be flagged for the onnx backend"
+    );
     assert_eq!(rt.model, "onnx/llm");
     assert!(rt.url.is_empty(), "onnx targets have no HTTP url");
     assert_eq!(rt.group.as_deref(), Some("default"));
@@ -370,9 +374,17 @@ fn routing_target_applies_terminal_role() {
     // qualifies it to the role profile inside big's own pool.
     let rt = cfg.routing_target("code", Some(5)).expect("target");
     assert_eq!(rt.role.as_deref(), Some("quick"));
-    assert_eq!(rt.model, "big:fast", "role selects the profile, not a new model");
+    assert_eq!(
+        rt.model, "big:fast",
+        "role selects the profile, not a new model"
+    );
     let params = rt.params.as_ref().expect("params");
-    let get = |k: &str| params.get(k).and_then(|v| v.as_str()).unwrap_or("<missing>");
+    let get = |k: &str| {
+        params
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>")
+    };
     assert_eq!(get("mk"), "mv", "model leg survives");
     assert_eq!(get("rk"), "rv", "role leg composes");
     assert_eq!(get("ok"), "ov", "model role override is final");
@@ -431,8 +443,14 @@ fn terminal_role_validation_rejects_unknown_role() {
     let err = cfg
         .validate_terminal_roles(&tree)
         .expect_err("unknown role must fail validation");
-    assert!(err.contains("nope"), "error names the missing role, got: {err}");
-    assert!(err.contains("code"), "error names the terminal route, got: {err}");
+    assert!(
+        err.contains("nope"),
+        "error names the missing role, got: {err}"
+    );
+    assert!(
+        err.contains("code"),
+        "error names the terminal route, got: {err}"
+    );
 }
 
 #[test]
@@ -568,10 +586,16 @@ fn model_hatch_bypasses_route() {
     let (_, name) = cfg
         .resolve_route("model:shared", None)
         .expect("hatch resolves");
-    assert_eq!(name, "shared-model", "hatch serves the models entry directly");
+    assert_eq!(
+        name, "shared-model",
+        "hatch serves the models entry directly"
+    );
     let rt = cfg.routing_target("model:shared", None).expect("target");
     assert_eq!(rt.model, "shared-model");
-    assert_eq!(rt.group, None, "hatch is a direct address, like direct models");
+    assert_eq!(
+        rt.group, None,
+        "hatch is a direct address, like direct models"
+    );
     assert_eq!(rt.target_name.as_deref(), Some("shared"));
 }
 
@@ -592,7 +616,10 @@ fn hatch_unknown_fails_closed() {
 fn unknown_keeps_default_fallback() {
     let cfg = lookup_config();
     let (_, name) = cfg.resolve_route("zzz", None).expect("default serves");
-    assert_eq!(name, "m1", "unknown names still resolve via the default route");
+    assert_eq!(
+        name, "m1",
+        "unknown names still resolve via the default route"
+    );
     let rt = cfg.routing_target("zzz", None).expect("default target");
     assert_eq!(
         rt.target_name.as_deref(),
@@ -612,7 +639,9 @@ fn lookup_collisions_name_every_shadow() {
         );
     }
     assert!(
-        collisions.iter().any(|m| m.contains("shared") && m.contains("route")),
+        collisions
+            .iter()
+            .any(|m| m.contains("shared") && m.contains("route")),
         "route shadow named: {collisions:?}"
     );
     assert!(

@@ -1,10 +1,9 @@
 #![allow(unused_imports)]
-use std::time::Duration;
+use fluent_wvr::prelude::*;
 #[allow(unused_imports)]
 use fluent_wvr::runtime::*;
-use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
+use std::time::Duration;
 
 #[test]
 fn noop_runtime_spawn_panics_outside_tokio_with_clear_message() {

@@ -367,7 +367,9 @@ fn build_nlp_pipeline(
             path,
             spacy_rs::lang::en::lexicon_config(),
         )),
-        None => Arc::new(spacy_rs::vocab::Vocab::new(spacy_rs::lang::en::lexicon_config())),
+        None => Arc::new(spacy_rs::vocab::Vocab::new(
+            spacy_rs::lang::en::lexicon_config(),
+        )),
     };
     let tokenizer = spacy_rs::lang::en::tokenizer(Arc::clone(&vocab))?;
     let resolver = deps.concept_store.clone().map(|concepts| {
@@ -384,12 +386,8 @@ fn build_nlp_pipeline(
             Some(resolver),
         )
         .map(Arc::new),
-        None => spacy_rs::NlpPipeline::new(
-            vocab,
-            tokenizer,
-            spacy_rs::AnnotationValidator::new(),
-        )
-        .map(Arc::new),
+        None => spacy_rs::NlpPipeline::new(vocab, tokenizer, spacy_rs::AnnotationValidator::new())
+            .map(Arc::new),
     }
 }
 
@@ -428,9 +426,8 @@ impl RouterConfig {
             .iter()
             .map(|(key, entry)| {
                 let mut effective = entry.clone();
-                effective.effective_profiles = Some(
-                    super::materialize_effective_pool(key, &self.roles),
-                );
+                effective.effective_profiles =
+                    Some(super::materialize_effective_pool(key, &self.roles));
                 (key.clone(), effective)
             })
             .collect();
@@ -547,19 +544,18 @@ impl RouterConfig {
         // never ships without the residual-consultation machinery that
         // justifies it. A config that sets `deterministic_first` without
         // overlay models is a loud warning and falls back to today's `LlmFirst`.
-        let nlp_ordering = if nlp_cfg.ordering == NlpOrdering::DeterministicFirst
-            && !params.overlay_enabled()
-        {
-            tracing::warn!(
-                target: "router.config",
-                pipeline = %name,
-                "nlp_ordering=deterministic_first requires overlay_models to be non-empty; \
-                 falling back to llm_first (today's behavior)",
-            );
-            NlpOrdering::LlmFirst
-        } else {
-            nlp_cfg.ordering
-        };
+        let nlp_ordering =
+            if nlp_cfg.ordering == NlpOrdering::DeterministicFirst && !params.overlay_enabled() {
+                tracing::warn!(
+                    target: "router.config",
+                    pipeline = %name,
+                    "nlp_ordering=deterministic_first requires overlay_models to be non-empty; \
+                     falling back to llm_first (today's behavior)",
+                );
+                NlpOrdering::LlmFirst
+            } else {
+                nlp_cfg.ordering
+            };
 
         if params.deterministic_prefilter {
             // The soft-redirect resolution shares the boot routing table; the
@@ -568,10 +564,8 @@ impl RouterConfig {
             let deterministic_routing = Arc::new(self.routing_config());
             let prefilter = if let Some(ref blacklist_path) = params.blacklist {
                 let reject_patterns = Self::load_reject_patterns(blacklist_path);
-                crate::stages::deterministic::DeterministicPreFilter::from_config(
-                    &reject_patterns,
-                )
-                .with_routing_config(deterministic_routing)
+                crate::stages::deterministic::DeterministicPreFilter::from_config(&reject_patterns)
+                    .with_routing_config(deterministic_routing)
             } else {
                 crate::stages::deterministic::DeterministicPreFilter::new()
                     .with_routing_config(deterministic_routing)
@@ -581,9 +575,8 @@ impl RouterConfig {
             // carries no target).
             let producer_stage = Arc::new(prefilter);
             let stage_for_push = Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>;
-            let producer: crate::pipeline::StageProducer = Arc::new(move |ctx, prior| {
-                producer_stage.evaluate_with_target(ctx, prior)
-            });
+            let producer: crate::pipeline::StageProducer =
+                Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
             orchestrator = orchestrator.push_with_producer(stage_for_push, producer);
         }
 
@@ -609,21 +602,19 @@ impl RouterConfig {
                     // it follows `nlp_ordering` (M4.1). `LlmFirst` preserves
                     // today's always-consult behavior; `DeterministicFirst`
                     // consults only on uncertainty or routing incompleteness.
-                    let refine_policy: spacy_rs::RefinePolicy = nlp_cfg
-                        .refine_policy
-                        .map_or_else(
-                            || match nlp_ordering {
-                                NlpOrdering::LlmFirst => spacy_rs::RefinePolicy {
-                                    mode: spacy_rs::RefineMode::Always,
-                                    ..spacy_rs::RefinePolicy::default()
-                                },
-                                NlpOrdering::DeterministicFirst => spacy_rs::RefinePolicy {
-                                    mode: spacy_rs::RefineMode::OnUncertain,
-                                    ..spacy_rs::RefinePolicy::default()
-                                },
+                    let refine_policy: spacy_rs::RefinePolicy = nlp_cfg.refine_policy.map_or_else(
+                        || match nlp_ordering {
+                            NlpOrdering::LlmFirst => spacy_rs::RefinePolicy {
+                                mode: spacy_rs::RefineMode::Always,
+                                ..spacy_rs::RefinePolicy::default()
                             },
-                            Into::into,
-                        );
+                            NlpOrdering::DeterministicFirst => spacy_rs::RefinePolicy {
+                                mode: spacy_rs::RefineMode::OnUncertain,
+                                ..spacy_rs::RefinePolicy::default()
+                            },
+                        },
+                        Into::into,
+                    );
                     // The annotation backend (refiner): the injected classifier
                     // backend, else the resolved classifier client, else the
                     // onnx LLM backend (M2.6). Present for both orderings — the
@@ -742,11 +733,12 @@ impl RouterConfig {
                 let selector = crate::stages::overlay::ResidualSelector::new(
                     params.overlay_disambiguation_floor,
                 );
-                orchestrator = orchestrator.push(Arc::new(crate::stages::overlay::OverlayStage::new(
-                    selector,
-                    overlays,
-                    params.overlay_max_concurrency,
-                )));
+                orchestrator =
+                    orchestrator.push(Arc::new(crate::stages::overlay::OverlayStage::new(
+                        selector,
+                        overlays,
+                        params.overlay_max_concurrency,
+                    )));
                 tracing::info!(
                     target: "router.config",
                     pipeline = %name,
@@ -762,12 +754,11 @@ impl RouterConfig {
             // Real mode keeps the resolved classifier key and re-resolves the
             // backend per request; the injected mock path serves its frozen
             // backend with no resolver installed.
-            let backend_resolver =
-                (!injected_backend).then(|| classifier_backend_resolver(self));
+            let backend_resolver = (!injected_backend).then(|| classifier_backend_resolver(self));
             let routing_config = self.routing_config();
             let classifier_intel = classifier_intelligence(self, params);
-            let classifier_model = resolve_classifier_model_key(self, params)
-                .unwrap_or_else(|| "unknown".into());
+            let classifier_model =
+                resolve_classifier_model_key(self, params).unwrap_or_else(|| "unknown".into());
             let client: Arc<dyn ChatBackend> = if let Some(backend) = classifier_backend {
                 tracing::info!(target: "router.config", pipeline = %name, backend = "mock/transcript", "classifier using injected backend");
                 backend
@@ -902,10 +893,8 @@ impl RouterConfig {
                     retry_prompt_count = retry_prompts.len(),
                     "classifier wrapped in RetryClassifier",
                 );
-                let component =
-                    Arc::clone(&classifier) as Arc<dyn fluent_wvr::Component>;
-                let producer_handle =
-                    Arc::clone(&classifier) as Arc<dyn StageDecisionProducer>;
+                let component = Arc::clone(&classifier) as Arc<dyn fluent_wvr::Component>;
+                let producer_handle = Arc::clone(&classifier) as Arc<dyn StageDecisionProducer>;
                 let retry: Arc<crate::stages::retry_classifier::RetryClassifier> =
                     Arc::new(crate::stages::retry_classifier::RetryClassifier::new(
                         component,
@@ -914,15 +903,13 @@ impl RouterConfig {
                         retry_prompts,
                     ));
                 let producer_stage = Arc::clone(&retry);
-                let producer: crate::pipeline::StageProducer = Arc::new(move |ctx, prior| {
-                    producer_stage.evaluate_with_target(ctx, prior)
-                });
+                let producer: crate::pipeline::StageProducer =
+                    Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
                 orchestrator = orchestrator.push_with_producer(retry, producer);
             } else {
                 let producer_stage = Arc::clone(&classifier);
-                let producer: crate::pipeline::StageProducer = Arc::new(move |ctx, prior| {
-                    producer_stage.evaluate_with_target(ctx, prior)
-                });
+                let producer: crate::pipeline::StageProducer =
+                    Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
                 orchestrator = orchestrator.push_with_producer(classifier, producer);
             }
         } else if classifier_backend.is_some() {
@@ -954,7 +941,11 @@ impl RouterConfig {
         classifier_backend: Option<&Arc<dyn ChatBackend>>,
         onnx: Option<&crate::ort::OrtRegistry>,
     ) -> HashMap<String, Arc<PipelineOrchestrator>> {
-        self.build_all_pipelines_with_backend_onnx_and_nlp(classifier_backend, onnx, &NlpDeps::default())
+        self.build_all_pipelines_with_backend_onnx_and_nlp(
+            classifier_backend,
+            onnx,
+            &NlpDeps::default(),
+        )
     }
 
     /// Canonical single-point build-all (Plan B F4) — delegates to the
@@ -1172,8 +1163,11 @@ fn build_classification_engine(
     // Precompile once per engine build: invalid patterns are collected as
     // warn-and-non-match entries, never errors, so this expectation only
     // fires on a defensive RegexSet failure that cannot occur.
-    let compiled =
-        std::sync::Arc::new(tree.clone().compile().expect("classification tree precompiles"));
+    let compiled = std::sync::Arc::new(
+        tree.clone()
+            .compile()
+            .expect("classification tree precompiles"),
+    );
     crate::stages::tree::ClassificationEngine::new(
         compiled,
         routing,
@@ -1344,9 +1338,11 @@ impl RouterConfig {
     /// backend. Absent registry / unregistered key → `None` (fail-open).
     /// HTTP `models` keys are unchanged.
     pub fn local_backend(&self, key: &str) -> Option<Arc<dyn ChatBackend>> {
-        if let Some(backend) = self.inference_registry.as_ref().and_then(|r| {
-            common_core::sync::lock_read(r).route_chat(key, None)
-        }) {
+        if let Some(backend) = self
+            .inference_registry
+            .as_ref()
+            .and_then(|r| common_core::sync::lock_read(r).route_chat(key, None))
+        {
             return Some(backend);
         }
         llama_chat_backend_for_key(&self.models, &self.roles, key)
@@ -1360,7 +1356,11 @@ impl RouterConfig {
     /// model is declared.
     pub fn onnx_llm_key(&self) -> Option<String> {
         self.onnx.as_ref()?.llm.as_ref()?;
-        Some(fluent_llm::onnx_config::OnnxRole::Llm.registry_key().to_string())
+        Some(
+            fluent_llm::onnx_config::OnnxRole::Llm
+                .registry_key()
+                .to_string(),
+        )
     }
 
     /// The onnx generative `ChatBackend` (the `onnx/llm` role) via the
@@ -1407,9 +1407,11 @@ impl RouterConfig {
         // both fleets: onnx keys yield context-bound backends, llama keys the
         // named-instance `LlmClient`. Falls through to the legacy path below
         // when no backend serves the key.
-        if let Some(backend) = self.inference_registry.as_ref().and_then(|r| {
-            common_core::sync::lock_read(r).route_chat(key, Some(instance_or_group))
-        }) {
+        if let Some(backend) = self
+            .inference_registry
+            .as_ref()
+            .and_then(|r| common_core::sync::lock_read(r).route_chat(key, Some(instance_or_group)))
+        {
             return Some(backend);
         }
         llama_chat_backend_for_instance(&self.models, &self.roles, key, instance_or_group)
@@ -1587,11 +1589,11 @@ fn frontier_api_client(shared: &reqwest::Client, api_key_env: Option<&str>) -> r
         .unwrap_or_else(|_| shared.clone())
 }
 #[cfg(test)]
-#[path = "../../tests/config_builder.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "../../tests/backend_registry.rs"]
 mod backend_registry_tests;
 #[cfg(test)]
 #[path = "../../tests/routing_fallback_golden.rs"]
 mod routing_fallback_tests;
+#[cfg(test)]
+#[path = "../../tests/config_builder.rs"]
+mod tests;

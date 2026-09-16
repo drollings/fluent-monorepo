@@ -1,6 +1,4 @@
-use common_core::walk::{
-    SkipReason, WalkFilter, sniff_is_binary, walk_files, walk_files_filtered,
-};
+use common_core::walk::{sniff_is_binary, walk_files, walk_files_filtered, SkipReason, WalkFilter};
 use std::collections::HashSet;
 use tempfile::TempDir;
 
@@ -45,14 +43,22 @@ fn filtered_walk_applies_size_and_binary_caps() {
     };
     let mut seen = Vec::new();
     let mut skipped = Vec::new();
-    walk_files_filtered(dir.path(), &filter, &mut |entry| seen.push(entry), &mut |path, reason| {
-        skipped.push((path.to_path_buf(), reason));
-    });
+    walk_files_filtered(
+        dir.path(),
+        &filter,
+        &mut |entry| seen.push(entry),
+        &mut |path, reason| {
+            skipped.push((path.to_path_buf(), reason));
+        },
+    );
     assert_eq!(seen.len(), 1, "only src/main.rs survives: {seen:?}");
     assert!(seen[0].path.ends_with("src/main.rs"));
     assert_eq!(seen[0].size_bytes, 13);
     let reasons: Vec<SkipReason> = skipped.iter().map(|(_, r)| *r).collect();
-    assert!(reasons.contains(&SkipReason::TooLarge), "big.rs: {skipped:?}");
+    assert!(
+        reasons.contains(&SkipReason::TooLarge),
+        "big.rs: {skipped:?}"
+    );
 }
 
 #[test]
@@ -78,11 +84,19 @@ fn filtered_walk_honors_gitignore() {
     };
     let mut seen = Vec::new();
     let mut skipped = Vec::new();
-    walk_files_filtered(dir.path(), &filter, &mut |entry| seen.push(entry), &mut |path, reason| {
-        skipped.push((path.to_path_buf(), reason));
-    });
+    walk_files_filtered(
+        dir.path(),
+        &filter,
+        &mut |entry| seen.push(entry),
+        &mut |path, reason| {
+            skipped.push((path.to_path_buf(), reason));
+        },
+    );
     assert!(seen.iter().any(|p| p.path.ends_with("src/main.rs")));
-    assert!(!seen.iter().any(|p| p.path.ends_with("src/ignored.rs")), "{seen:?}");
+    assert!(
+        !seen.iter().any(|p| p.path.ends_with("src/ignored.rs")),
+        "{seen:?}"
+    );
     assert!(
         skipped.iter().any(|(_, r)| *r == SkipReason::Ignored),
         "{skipped:?}"

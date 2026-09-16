@@ -47,7 +47,10 @@ fn multi_sentence_boundaries() {
     let d = doc("Hello world. How are you? Fine!");
     let g = s.predict(&d);
     // Hello world. | How are you? | Fine!
-    assert_eq!(g, vec![true, false, false, true, false, false, false, true, false]);
+    assert_eq!(
+        g,
+        vec![true, false, false, true, false, false, false, true, false]
+    );
 }
 
 #[test]

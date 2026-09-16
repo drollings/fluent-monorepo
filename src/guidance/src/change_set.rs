@@ -129,9 +129,12 @@ impl ChangeSet {
         if self.force_full_reconcile && self.size() > 0 {
             return;
         }
-        self.touched_files.extend(other.touched_files.iter().cloned());
-        self.rescan_directories.extend(other.rescan_directories.iter().cloned());
-        self.deleted_prefixes.extend(other.deleted_prefixes.iter().cloned());
+        self.touched_files
+            .extend(other.touched_files.iter().cloned());
+        self.rescan_directories
+            .extend(other.rescan_directories.iter().cloned());
+        self.deleted_prefixes
+            .extend(other.deleted_prefixes.iter().cloned());
         self.force_full_reconcile |= other.force_full_reconcile;
         if !self.force_full_reconcile && self.size() >= self.max_changed_paths {
             self.enforce_path_budget();
@@ -238,10 +241,10 @@ fn parent_scope(root: &str, path: &str) -> String {
 }
 
 fn collapse_set(paths: &mut HashSet<String>) {
-    let sorted: Vec<String> = common_core::sort::sorted_by_vec(
-        paths.iter().cloned().collect(),
-        |left, right| left.len().cmp(&right.len()),
-    );
+    let sorted: Vec<String> =
+        common_core::sort::sorted_by_vec(paths.iter().cloned().collect(), |left, right| {
+            left.len().cmp(&right.len())
+        });
     for path in sorted {
         if has_ancestor(paths, &path) {
             paths.remove(&path);

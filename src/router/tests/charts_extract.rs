@@ -87,8 +87,7 @@ fn slugify_normalizes_and_truncates() {
     );
     assert_eq!(slugify_chart_name("already-kebab"), "already-kebab");
     assert!(
-        slugify_chart_name(&"a".repeat(200)).len()
-            <= super::super::CHART_EXTRACTED_NAME_MAX_CHARS
+        slugify_chart_name(&"a".repeat(200)).len() <= super::super::CHART_EXTRACTED_NAME_MAX_CHARS
     );
 }
 
@@ -121,10 +120,7 @@ fn slugify_chart_name_characterization_table() {
     // Parity: the parameterized primitive with chart options.
     for (input, want) in cases {
         assert_eq!(
-            common_core::string::slugify_with(
-                input,
-                &crate::charts::extract::CHART_SLUG_OPTIONS
-            ),
+            common_core::string::slugify_with(input, &crate::charts::extract::CHART_SLUG_OPTIONS),
             want,
             "slugify_with(chart, {input:?})"
         );

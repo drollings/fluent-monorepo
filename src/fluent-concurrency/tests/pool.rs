@@ -58,11 +58,7 @@ async fn test_priority_pool_burst_drains_all() {
 async fn priority_pool_dispatches_in_fifo_within_priority() {
     let rt = tokio_runtime();
     let pool =
-        PriorityResultPool::<u64, u64, String>::new(
-            rt,
-            1,
-            |job: u64| async move { Ok(job * 2) },
-        );
+        PriorityResultPool::<u64, u64, String>::new(rt, 1, |job: u64| async move { Ok(job * 2) });
 
     // Same priority — should be FIFO.
     let r1 = pool.submit(1, 5);
@@ -162,12 +158,8 @@ async fn result_pool_submit_with_abort_cancels_running_handler() {
 #[tokio::test]
 async fn result_pool_submit_with_abort_none_is_noop() {
     let rt = tokio_runtime();
-    let pool = ResultPool::<i32, i32, String>::new(
-        rt,
-        1,
-        10,
-        |job: i32| async move { Ok(job * 2) },
-    );
+    let pool =
+        ResultPool::<i32, i32, String>::new(rt, 1, 10, |job: i32| async move { Ok(job * 2) });
     let result = pool.submit_with_abort(21, None).await.expect("no abort");
     assert_eq!(result, 42);
     pool.shutdown().await;

@@ -23,7 +23,10 @@ fn regex_detector_reports_pattern_matches_with_offsets() {
 #[test]
 fn regex_detector_empty_text_yields_nothing() {
     assert!(RegexPiiDetector.detect("").unwrap().is_empty());
-    assert!(RegexPiiDetector.detect("nothing sensitive here").unwrap().is_empty());
+    assert!(RegexPiiDetector
+        .detect("nothing sensitive here")
+        .unwrap()
+        .is_empty());
 }
 
 /// Detection parity between the two table consumers (M12): the shared
@@ -43,9 +46,10 @@ fn detector_spans_are_rewritten_by_anonymize() {
     ];
     for (text, label) in cases {
         let spans = detector.detect(text).expect("detect");
-        let hit = spans.iter().find(|s| s.label == label).unwrap_or_else(|| {
-            panic!("{label} span reported by the table detector: {spans:?}")
-        });
+        let hit = spans
+            .iter()
+            .find(|s| s.label == label)
+            .unwrap_or_else(|| panic!("{label} span reported by the table detector: {spans:?}"));
         let matched = &text[hit.start..hit.end];
         let anonymized = crate::anonymize::anonymize(text);
         assert_ne!(
@@ -84,7 +88,10 @@ fn anonymize_table_covers_the_twelve_statics_in_order() {
             "api_key",
         ]
     );
-    assert_eq!(actions[0].regex.as_str(), crate::pii_patterns::EMAIL_RE.as_str());
+    assert_eq!(
+        actions[0].regex.as_str(),
+        crate::pii_patterns::EMAIL_RE.as_str()
+    );
     assert_eq!(actions[0].placeholder, "[EMAIL]");
     assert_eq!(
         actions[11].regex.as_str(),

@@ -49,10 +49,8 @@ fn ensure_column_adds_once_and_is_idempotent() {
 #[test]
 fn ensure_column_leaves_existing_columns_untouched() {
     let conn = conn();
-    conn.execute_batch(
-        "CREATE TABLE t (id INTEGER PRIMARY KEY, label TEXT NOT NULL DEFAULT '')",
-    )
-    .unwrap();
+    conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, label TEXT NOT NULL DEFAULT '')")
+        .unwrap();
     // Data in the existing column must survive an ensure_column no-op.
     conn.execute("INSERT INTO t (id, label) VALUES (1, 'keep')", [])
         .unwrap();

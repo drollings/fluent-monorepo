@@ -27,7 +27,10 @@ fn loader_first_wins_on_duplicate_iri() {
     );
     let mut loader = YaGoLoader::new();
     let stats = loader.load_taxonomy_json(&raw).unwrap();
-    assert_eq!(stats.classes, 2, "duplicate IRI must not duplicate the concept");
+    assert_eq!(
+        stats.classes, 2,
+        "duplicate IRI must not duplicate the concept"
+    );
     assert_eq!(stats.edges, 1);
 }
 
@@ -55,8 +58,16 @@ fn loader_stats_count_labels_and_edges() {
     let raw = format!(
         "[{},{},{}]",
         entry("http://schema.org/Person", "Person", None),
-        entry("http://schema.org/Employee", "Employee", Some("http://schema.org/Person")),
-        entry("http://schema.org/Manager", "Manager", Some("http://schema.org/Employee")),
+        entry(
+            "http://schema.org/Employee",
+            "Employee",
+            Some("http://schema.org/Person")
+        ),
+        entry(
+            "http://schema.org/Manager",
+            "Manager",
+            Some("http://schema.org/Employee")
+        ),
     );
     let mut loader = YaGoLoader::new();
     let stats = loader.load_taxonomy_json(&raw).unwrap();

@@ -141,4 +141,3 @@ pub fn parse_command(cmd: &str) -> Result<Vec<String>, ShellParseError> {
 
     Ok(tokens)
 }
-

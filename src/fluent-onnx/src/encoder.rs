@@ -102,7 +102,11 @@ mod ort_encoder {
         fn run_encoding(&self, encoding: &LfmEncoding) -> Result<Vec<f32>, EmbeddingError> {
             let seq = encoding.len().max(1);
             let ids: Vec<i64> = encoding.ids.iter().map(|&i| i64::from(i)).collect();
-            let mask: Vec<i64> = encoding.attention_mask.iter().map(|&m| i64::from(m)).collect();
+            let mask: Vec<i64> = encoding
+                .attention_mask
+                .iter()
+                .map(|&m| i64::from(m))
+                .collect();
             let shape = [1usize, seq];
             let input = ort::value::Tensor::from_array((shape, ids))
                 .map_err(|e| EmbeddingError::RequestFailed(e.to_string()))?;

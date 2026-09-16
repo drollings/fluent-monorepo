@@ -37,8 +37,7 @@ pub(crate) fn compile_count() -> usize {
 /// Serializes the compile-counter tests: the counter is process-global, so
 /// the tests that assert exact counts hold this while they run.
 #[cfg(test)]
-pub(crate) static COMPILE_TEST_LOCK: std::sync::Mutex<()> =
-    std::sync::Mutex::new(());
+pub(crate) static COMPILE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Compilation failure. Unreachable today — invalid patterns are collected
 /// as always-non-matching entries, never errors — but the signature stays
@@ -93,10 +92,7 @@ impl CompiledTree {
             let CompiledNode::Classifier { children, .. } = current else {
                 return None;
             };
-            current = children
-                .iter()
-                .find(|c| &c.key == key)
-                .map(|c| &c.node)?;
+            current = children.iter().find(|c| &c.key == key).map(|c| &c.node)?;
         }
         Some(current)
     }
@@ -297,12 +293,10 @@ impl CompiledNode {
                     match_interlingua: match_interlingua.clone(),
                 }))
             }
-            ClassificationNode::Fallback { description, node } => {
-                Ok(CompiledNode::Fallback {
-                    description: description.clone(),
-                    node: Box::new(CompiledNode::compile(node)?),
-                })
-            }
+            ClassificationNode::Fallback { description, node } => Ok(CompiledNode::Fallback {
+                description: description.clone(),
+                node: Box::new(CompiledNode::compile(node)?),
+            }),
         }
     }
 }

@@ -36,17 +36,13 @@ fn default_five() -> u8 {
 /// deserialize fast path, then the shared fence-strip → parse → extract
 /// pipeline, then the shared field coercion (`stages::common`).
 pub fn parse_tree_verdict(response: &str) -> Result<TreeClassifierVerdict, WorkError> {
-    fluent_llm::parse_typed::<TreeClassifierVerdict>(
-        response,
-        &serde_json::Value::Null,
-        |v| {
-            if let Some(obj) = v.as_object_mut() {
-                coerce_float(obj, "coherence", 1.0);
-                coerce_float(obj, "safety", 1.0);
-                coerce_u8(obj, "complexity", 5);
-                coerce_string(obj, "reason", "");
-            }
-        },
-    )
+    fluent_llm::parse_typed::<TreeClassifierVerdict>(response, &serde_json::Value::Null, |v| {
+        if let Some(obj) = v.as_object_mut() {
+            coerce_float(obj, "coherence", 1.0);
+            coerce_float(obj, "safety", 1.0);
+            coerce_u8(obj, "complexity", 5);
+            coerce_string(obj, "reason", "");
+        }
+    })
     .map_err(|e| WorkError::Execution(format!("tree classifier verdict parse error: {e}")))
 }

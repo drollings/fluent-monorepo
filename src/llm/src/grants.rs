@@ -11,8 +11,7 @@ use std::path::{Path, PathBuf};
 
 use common_core::hash::{hex_encode, hmac_sha256};
 
-use crate::artifact_lock::{LockOptions, acquire_artifact_cache_lock};
-
+use crate::artifact_lock::{acquire_artifact_cache_lock, LockOptions};
 
 pub const REMOTE_EMBEDDING_CAPABILITY: &str = "remote-embedding";
 const GRANT_FILE: &str = "authorization.json";
@@ -32,12 +31,7 @@ pub struct RemoteEmbeddingTarget {
 
 impl RemoteEmbeddingTarget {
     #[must_use]
-    pub fn new(
-        workspace_roots: Vec<PathBuf>,
-        provider: &str,
-        model: &str,
-        endpoint: &str,
-    ) -> Self {
+    pub fn new(workspace_roots: Vec<PathBuf>, provider: &str, model: &str, endpoint: &str) -> Self {
         let workspace_fingerprint = common_core::hash::sha256_hex(
             workspace_roots
                 .iter()
@@ -83,7 +77,9 @@ pub enum GrantError {
     MalformedDocument(String),
     #[error("remote embedding target has no workspace roots")]
     NoWorkspaceRoots,
-    #[error("remote embedding is not authorized for {reference}: {detail} (grant path: {grant_path})")]
+    #[error(
+        "remote embedding is not authorized for {reference}: {detail} (grant path: {grant_path})"
+    )]
     AuthorizationRequired {
         reference: String,
         detail: String,
@@ -198,9 +194,9 @@ impl RemoteEmbeddingAuthorizationStore {
         for root in &target.workspace_roots {
             let path = root.join(".guidance").join(GRANT_FILE);
             self.with_document_write(&path, |document: &mut Document| {
-                document.grants.retain(|candidate| {
-                    candidate.target_fingerprint != grant.target_fingerprint
-                });
+                document
+                    .grants
+                    .retain(|candidate| candidate.target_fingerprint != grant.target_fingerprint);
                 document.grants.push(grant.clone());
                 Ok(())
             })
@@ -318,10 +314,14 @@ impl Document {
     }
 
     fn parse(text: &str) -> Result<Self, GrantError> {
-        let value: serde_json::Value =
-            serde_json::from_str(text).map_err(|error| GrantError::MalformedDocument(error.to_string()))?;
-        if value.get("version").and_then(serde_json::Value::as_u64) != Some(u64::from(DOCUMENT_VERSION)) {
-            return Err(GrantError::MalformedDocument("unsupported version".to_string()));
+        let value: serde_json::Value = serde_json::from_str(text)
+            .map_err(|error| GrantError::MalformedDocument(error.to_string()))?;
+        if value.get("version").and_then(serde_json::Value::as_u64)
+            != Some(u64::from(DOCUMENT_VERSION))
+        {
+            return Err(GrantError::MalformedDocument(
+                "unsupported version".to_string(),
+            ));
         }
         let mut grants = Vec::new();
         for grant in value
@@ -526,7 +526,8 @@ pub async fn ensure_remote_embedding_authorized(
     }
     Err(GrantError::AuthorizationRequired {
         reference: target.reference(),
-        detail: "allow Remote Embedding for this workspace, use local search only, or cancel".to_string(),
+        detail: "allow Remote Embedding for this workspace, use local search only, or cancel"
+            .to_string(),
         grant_path: store.grant_path(target)?,
     })
 }

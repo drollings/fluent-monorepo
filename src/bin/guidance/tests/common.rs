@@ -45,7 +45,17 @@ pub fn sync(dir: &Path, db_name: &str, verbose: bool) -> String {
     let root = dir.to_str().unwrap().to_string();
     let json_dir = dir.join(".guidance");
     let json_dir = json_dir.to_str().unwrap().to_string();
-    let out = run(dir, &["index", &root, "--workspace", &root, "--json-dir", &json_dir]);
+    let out = run(
+        dir,
+        &[
+            "index",
+            &root,
+            "--workspace",
+            &root,
+            "--json-dir",
+            &json_dir,
+        ],
+    );
     assert!(out.status.success(), "index failed: {out:?}");
     let db = dir.join(db_name);
     let db = db.to_str().unwrap().to_string();

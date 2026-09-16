@@ -39,7 +39,8 @@ fn mark_file_failed_records_error_and_counts() {
     assert_eq!(got.index_status.as_deref(), Some("failed"));
     assert_eq!(got.last_error.as_deref(), Some("boom"));
     assert_eq!(got.fail_count, 1);
-    db.mark_file_failed(&file("f.rs"), "boom again").expect("mark");
+    db.mark_file_failed(&file("f.rs"), "boom again")
+        .expect("mark");
     let got = db.get_file("f.rs").expect("get").expect("present");
     assert_eq!(got.fail_count, 2);
 }

@@ -75,15 +75,25 @@ pub enum FeatureName {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum TelemetryEvent {
-    ToolInvoked { tool: ToolName },
-    ToolCompleted { tool: ToolName, duration_ms: u64, success: bool },
-    Routing { category: ProviderCategory },
+    ToolInvoked {
+        tool: ToolName,
+    },
+    ToolCompleted {
+        tool: ToolName,
+        duration_ms: u64,
+        success: bool,
+    },
+    Routing {
+        category: ProviderCategory,
+    },
     Error {
         class: crate::http_class::FailureClass,
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
-    FeatureUsed { feature: FeatureName },
+    FeatureUsed {
+        feature: FeatureName,
+    },
 }
 
 /// A sink for structured telemetry events.

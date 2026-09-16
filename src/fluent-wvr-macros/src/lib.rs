@@ -292,9 +292,8 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         let inner_is_numeric = is_numeric_type(&inner_ty_str);
         let number_tolerant = meta.parse.as_deref() == Some("number") && inner_is_numeric;
         let inner_ty_tokens: TokenStream2 = if number_tolerant {
-            syn::parse_str::<TokenStream2>(&inner_ty_str).unwrap_or_else(|_| {
-                syn::parse_str::<TokenStream2>("i64").expect("i64 parses")
-            })
+            syn::parse_str::<TokenStream2>(&inner_ty_str)
+                .unwrap_or_else(|_| syn::parse_str::<TokenStream2>("i64").expect("i64 parses"))
         } else {
             TokenStream2::new()
         };

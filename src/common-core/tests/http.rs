@@ -9,18 +9,17 @@
 #[cfg(feature = "http")]
 use common_core::http::*;
 
-
 #[cfg(feature = "http")]
 #[test]
 fn shared_http_client_returns_same_instance() {
-        let a = shared_http_client();
-        let b = shared_http_client();
-        assert!(std::ptr::eq(a, b));
+    let a = shared_http_client();
+    let b = shared_http_client();
+    assert!(std::ptr::eq(a, b));
 }
 
 #[cfg(feature = "http")]
 #[test]
 fn json_body_round_trips() {
-        let v = serde_json::json!({"ok":1});
-        assert_eq!(json_body(&v), r#"{"ok":1}"#);
+    let v = serde_json::json!({"ok":1});
+    assert_eq!(json_body(&v), r#"{"ok":1}"#);
 }

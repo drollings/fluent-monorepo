@@ -77,12 +77,18 @@ async fn kv_cache_round_trips_a_past_state() {
     kv.save("resume").await.expect("save");
     ctx.clear();
     assert!(ctx.past().is_none(), "clear frees the KV");
-    assert!(kv.restore("missing").await.is_err(), "unknown snapshot is an error");
+    assert!(
+        kv.restore("missing").await.is_err(),
+        "unknown snapshot is an error"
+    );
 
     kv.restore("resume").await.expect("restore");
     let past = ctx.past().expect("restored");
     assert_eq!(past.seq_len, 2);
-    assert_eq!(past.kv[&0], (vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]));
+    assert_eq!(
+        past.kv[&0],
+        (vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0])
+    );
 
     let list = kv.list().await;
     assert_eq!(list.len(), 1);
@@ -105,12 +111,18 @@ fn sync_save_restore_round_trips_a_past_state() {
     kv.save_sync("resume").expect("save_sync");
     ctx.clear();
     assert!(ctx.past().is_none(), "clear frees the KV");
-    assert!(kv.restore_sync("missing").is_err(), "unknown snapshot is an error");
+    assert!(
+        kv.restore_sync("missing").is_err(),
+        "unknown snapshot is an error"
+    );
 
     kv.restore_sync("resume").expect("restore_sync");
     let past = ctx.past().expect("restored");
     assert_eq!(past.seq_len, 2);
-    assert_eq!(past.kv[&0], (vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]));
+    assert_eq!(
+        past.kv[&0],
+        (vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0])
+    );
 }
 
 #[tokio::test]

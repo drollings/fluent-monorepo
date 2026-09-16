@@ -1,6 +1,9 @@
 use super::*;
+use crate::batch::{
+    CancelReason, SupervisedBatchConfig, SupervisedBatchError, SupervisedBatchEvent,
+    SupervisedBatchSummary,
+};
 use crate::scope::Scope;
-use crate::batch::{CancelReason, SupervisedBatchConfig, SupervisedBatchError, SupervisedBatchEvent, SupervisedBatchSummary};
 #[tokio::test(start_paused = true)]
 async fn test_scope_close_drains_tasks() {
     tokio::time::resume();
@@ -119,7 +122,9 @@ async fn test_scope_defer_aborts_tasks() {
 #[tokio::test(start_paused = true)]
 async fn test_batch_panic_propagates_as_join_error() {
     let mut batch = make_batch();
-    batch.register(Arc::new(StubComponent::panic("panicker"))).unwrap();
+    batch
+        .register(Arc::new(StubComponent::panic("panicker")))
+        .unwrap();
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(
         summary.panicked.len(),
@@ -146,8 +151,12 @@ async fn test_batch_panic_propagates_as_join_error() {
 #[tokio::test(start_paused = true)]
 async fn test_batch_normal_completion() {
     let mut batch = make_batch();
-    batch.register(Arc::new(StubComponent::ok("task1"))).unwrap();
-    batch.register(Arc::new(StubComponent::ok("task2"))).unwrap();
+    batch
+        .register(Arc::new(StubComponent::ok("task1")))
+        .unwrap();
+    batch
+        .register(Arc::new(StubComponent::ok("task2")))
+        .unwrap();
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 2);
     assert_eq!(summary.panicked.len(), 0);
@@ -158,7 +167,9 @@ async fn test_batch_normal_completion() {
 async fn test_batch_panic_containment() {
     let mut batch = make_batch();
     batch.register(Arc::new(StubComponent::ok("good"))).unwrap();
-    batch.register(Arc::new(StubComponent::fail("bad"))).unwrap();
+    batch
+        .register(Arc::new(StubComponent::fail("bad")))
+        .unwrap();
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 1);
     assert_eq!(summary.failed.len(), 1);
@@ -204,12 +215,10 @@ async fn test_batch_retry_with_max_retries() {
     // `Dependency` is transient/retryable, so the SupervisedBatch retries up to
     // `max_retries` times. A permanent `Execution` failure would short-circuit
     // on the first attempt.
-    let unit = Arc::new(
-        StubComponent::new("retry_test").with_handler(move |_| {
-            cnt.fetch_add(1, Ordering::SeqCst);
-            Err(WorkError::Dependency("retry fail".into()))
-        }),
-    );
+    let unit = Arc::new(StubComponent::new("retry_test").with_handler(move |_| {
+        cnt.fetch_add(1, Ordering::SeqCst);
+        Err(WorkError::Dependency("retry fail".into()))
+    }));
     let ctx = WorkContext {
         max_retries: 2,
         ..WorkContext::default()
@@ -232,12 +241,10 @@ async fn test_batch_permanent_error_does_not_retry() {
     let mut batch = make_batch();
     let counter = Arc::new(AtomicUsize::new(0));
     let cnt = Arc::clone(&counter);
-    let unit = Arc::new(
-        StubComponent::new("permanent_fail").with_handler(move |_| {
-            cnt.fetch_add(1, Ordering::SeqCst);
-            Err(WorkError::Execution("permanent failure".into()))
-        }),
-    );
+    let unit = Arc::new(StubComponent::new("permanent_fail").with_handler(move |_| {
+        cnt.fetch_add(1, Ordering::SeqCst);
+        Err(WorkError::Execution("permanent failure".into()))
+    }));
     let ctx = WorkContext {
         max_retries: 5,
         ..WorkContext::default()
@@ -258,14 +265,17 @@ async fn test_batch_real_panic() {
     let mut batch = make_batch();
 
     batch.register(Arc::new(StubComponent::ok("good"))).unwrap();
-    batch.register(Arc::new(StubComponent::panic("panic")))
+    batch
+        .register(Arc::new(StubComponent::panic("panic")))
         .unwrap();
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 1);
     assert_eq!(summary.panicked.len(), 1);
     assert_eq!(summary.cancelled.len(), 0);
     match &summary.panicked[0] {
-        crate::batch::SupervisedBatchEvent::Panicked { info, .. } => assert!(info.contains("panicked")),
+        crate::batch::SupervisedBatchEvent::Panicked { info, .. } => {
+            assert!(info.contains("panicked"))
+        }
         _ => panic!("expected Panicked event"),
     }
 }
@@ -277,14 +287,15 @@ async fn assert_parent_outcome_cancels_dependent(parent: StubComponent) {
     let parent_panics = parent.panic;
     let mut batch = make_batch();
     batch.register(Arc::new(parent)).unwrap();
-    batch.register_with_context(
-        Arc::new(StubComponent::dep_fail("child").with_dep("shared")),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(StubComponent::dep_fail("child").with_dep("shared")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
 
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 0);
@@ -310,10 +321,8 @@ async fn assert_parent_outcome_cancels_dependent(parent: StubComponent) {
 
 #[tokio::test(start_paused = true)]
 async fn test_batch_dependency_cancellation() {
-    assert_parent_outcome_cancels_dependent(
-        StubComponent::fail("parent").with_provides("shared"),
-    )
-    .await;
+    assert_parent_outcome_cancels_dependent(StubComponent::fail("parent").with_provides("shared"))
+        .await;
 }
 
 /// Dropping a `SupervisedBatch` with in-flight, pending, or already-completed
@@ -407,7 +416,8 @@ async fn test_batch_drop_is_safe() {
 #[tokio::test(start_paused = true)]
 async fn test_batch_builder_chaining() {
     let mut batch = make_batch();
-    batch.register(Arc::new(StubComponent::ok("a")))
+    batch
+        .register(Arc::new(StubComponent::ok("a")))
         .unwrap()
         .register(Arc::new(StubComponent::ok("b")))
         .unwrap();
@@ -420,28 +430,31 @@ async fn test_batch_transitive_cancellation() {
     tokio::time::resume();
     let mut batch = make_batch();
 
-    batch.register(Arc::new(StubComponent::fail("A").with_provides("a_out")))
+    batch
+        .register(Arc::new(StubComponent::fail("A").with_provides("a_out")))
         .unwrap();
-    batch.register_with_context(
-        Arc::new(
-            StubComponent::dep_fail("B")
-                .with_dep("a_out")
-                .with_provides("b_out"),
-        ),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap();
-    batch.register_with_context(
-        Arc::new(StubComponent::dep_fail("C").with_dep("b_out")),
-        WorkContext {
-            max_retries: 10,
-            ..WorkContext::default()
-        },
-    )
-    .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(
+                StubComponent::dep_fail("B")
+                    .with_dep("a_out")
+                    .with_provides("b_out"),
+            ),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(StubComponent::dep_fail("C").with_dep("b_out")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
 
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 0);
@@ -462,10 +475,8 @@ async fn test_batch_transitive_cancellation() {
 
 #[tokio::test(start_paused = true)]
 async fn test_batch_panic_cancels_dependents() {
-    assert_parent_outcome_cancels_dependent(
-        StubComponent::panic("parent").with_provides("shared"),
-    )
-    .await;
+    assert_parent_outcome_cancels_dependent(StubComponent::panic("parent").with_provides("shared"))
+        .await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -473,7 +484,8 @@ async fn test_batch_budget_exhaustion() {
     let mut batch = make_batch();
 
     for i in 0..250 {
-        batch.register(Arc::new(StubComponent::ok(&format!("fast_{i}"))))
+        batch
+            .register(Arc::new(StubComponent::ok(&format!("fast_{i}"))))
             .unwrap();
     }
 
@@ -513,9 +525,11 @@ async fn poll_budget_zero_does_not_panic() {
 async fn test_batch_failed_vs_panic_distinct() {
     let mut batch = make_batch();
 
-    batch.register(Arc::new(StubComponent::fail("fail_task")))
+    batch
+        .register(Arc::new(StubComponent::fail("fail_task")))
         .unwrap();
-    batch.register(Arc::new(StubComponent::panic("panic_task")))
+    batch
+        .register(Arc::new(StubComponent::panic("panic_task")))
         .unwrap();
 
     let summary: SupervisedBatchSummary = (&mut batch).await;
@@ -527,10 +541,9 @@ async fn test_batch_failed_vs_panic_distinct() {
         .failed
         .iter()
         .any(|e| matches!(e, SupervisedBatchEvent::Failed { name, .. } if &**name == "fail_task")));
-    assert!(summary
-        .panicked
-        .iter()
-        .any(|e| matches!(e, SupervisedBatchEvent::Panicked { name, .. } if &**name == "panic_task")));
+    assert!(summary.panicked.iter().any(
+        |e| matches!(e, SupervisedBatchEvent::Panicked { name, .. } if &**name == "panic_task")
+    ));
 }
 
 /// BatchConfig satisfies Debug, Clone, Copy, PartialEq, Eq.
@@ -696,7 +709,9 @@ async fn test_batch_all_outcomes_release_bookkeeping() {
             },
         )
         .unwrap();
-    batch.register(Arc::new(StubComponent::panic("boom"))).unwrap();
+    batch
+        .register(Arc::new(StubComponent::panic("boom")))
+        .unwrap();
 
     let summary: SupervisedBatchSummary = (&mut batch).await;
     assert_eq!(summary.completed.len(), 1, "good completes");

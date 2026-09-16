@@ -116,8 +116,7 @@ pub fn ingest_workspace_fragments(
     // L3 embedder from the workspace project config (offline
     // construction; absent backend degrades to unembedded fragments,
     // counted in stats — same contract as before, now actually usable).
-    let cfg =
-        guidance_core::config::load_config(workspace).unwrap_or_default();
+    let cfg = guidance_core::config::load_config(workspace).unwrap_or_default();
     let embedder = crate::embed::embedder_from_config(&cfg);
     let mut stats = FragmentIngestStats::default();
     // One parser for the whole sync: per-file graph harvest reuses the
@@ -202,13 +201,12 @@ pub fn ingest_workspace_fragments(
                     // committed rows via the gate above). A graph-write
                     // failure rolls the fragment rows back so the next
                     // sync re-ingests the file instead of going stale.
-                    let (specifiers, symbols) =
-                        guidance_core::graph_index::harvest_graph_inputs(
-                            &mut parser,
-                            &file.format,
-                            file.kind.unwrap_or(FileKind::Text),
-                            &text,
-                        );
+                    let (specifiers, symbols) = guidance_core::graph_index::harvest_graph_inputs(
+                        &mut parser,
+                        &file.format,
+                        file.kind.unwrap_or(FileKind::Text),
+                        &text,
+                    );
                     if let Err(error) =
                         db.replace_file_graph(&file.absolute_path, &specifiers, &symbols)
                     {
@@ -252,8 +250,7 @@ pub fn ingest_workspace_fragments(
         }
     }
     if !doomed.is_empty() {
-        let doomed_paths: Vec<String> =
-            doomed.iter().map(|(_, path)| path.clone()).collect();
+        let doomed_paths: Vec<String> = doomed.iter().map(|(_, path)| path.clone()).collect();
         let roots: Vec<String> = src_dirs
             .iter()
             .map(|dir| dir.to_string_lossy().into_owned())
@@ -307,10 +304,10 @@ pub fn affected_for_sync(
 /// reads, no parsing — the M2 hydrated constructor). Shared by sync
 /// propagation and the explain port (one hydration helper, two callers).
 pub fn hydrated_graph(db: &GuidanceDb, roots: &[String]) -> Result<GraphIndex, String> {
-    let files =
-        db.list_files().map_err(|error| format!("list files: {error}"))?;
-    let known: Vec<String> =
-        files.into_iter().map(|file| file.absolute_path).collect();
+    let files = db
+        .list_files()
+        .map_err(|error| format!("list files: {error}"))?;
+    let known: Vec<String> = files.into_iter().map(|file| file.absolute_path).collect();
     let edges: Vec<(String, String)> = db
         .graph_edge_rows()
         .map_err(|error| format!("edge rows: {error}"))?

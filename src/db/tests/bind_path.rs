@@ -58,27 +58,16 @@ async fn owned_value_type_matrix_round_trips() {
             assert_eq!(rows.len(), 2);
             assert_eq!(
                 rows[0],
-                (
-                    "hello".to_string(),
-                    42,
-                    2.5,
-                    Some(vec![1_u8, 2, 3]),
-                    None
-                )
+                ("hello".to_string(), 42, 2.5, Some(vec![1_u8, 2, 3]), None)
             );
             // `bool` binds as integer 1 (TEXT affinity reads it back as "1").
-            assert_eq!(
-                rows[1],
-                ("1".to_string(), 7, 1.5, None, None)
-            );
+            assert_eq!(rows[1], ("1".to_string(), 7, 1.5, None, None));
 
             // Borrowed params (`&str`, `String`, integers) convert directly.
             let count = pool
-                .query_row(
-                    "SELECT COUNT(*) FROM m WHERE t = ?1",
-                    ["hello"],
-                    |row| row.get::<_, i64>(0),
-                )
+                .query_row("SELECT COUNT(*) FROM m WHERE t = ?1", ["hello"], |row| {
+                    row.get::<_, i64>(0)
+                })
                 .await
                 .unwrap();
             assert_eq!(count, Some(1));

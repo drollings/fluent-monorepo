@@ -136,7 +136,10 @@ fn fragment_record_write_row_pins_code_fields() {
 
 #[test]
 fn code_fragment_db_round_trip() {
-    assert_eq!(write_read(&file_fixture(), &code_fragment()), code_fragment());
+    assert_eq!(
+        write_read(&file_fixture(), &code_fragment()),
+        code_fragment()
+    );
 }
 
 #[test]

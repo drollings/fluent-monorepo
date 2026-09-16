@@ -8,13 +8,13 @@
 //! preserved constants (200 → 2000 × 2) stand unless this sweep shows
 //! early saturation or blowup.
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::recall::run_recall;
 use guidance_core::query::strategy::QueryIntent;
-use search_vector::GuidanceDb;
 use search_vector::db::{FileRecord, FragmentRecord};
+use search_vector::GuidanceDb;
 use std::hint::black_box;
 
 fn file_record() -> FileRecord {
@@ -60,7 +60,8 @@ fn fragment_record(index: usize) -> FragmentRecord {
 fn seed(size: usize) -> GuidanceDb {
     let db = GuidanceDb::open_in_memory().expect("db");
     let fragments: Vec<FragmentRecord> = (0..size).map(fragment_record).collect();
-    db.upsert_fragments(&file_record(), &fragments, &[]).expect("upsert");
+    db.upsert_fragments(&file_record(), &fragments, &[])
+        .expect("upsert");
     db
 }
 

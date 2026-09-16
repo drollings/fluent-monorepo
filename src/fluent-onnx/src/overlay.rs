@@ -101,7 +101,10 @@ pub fn build_prompt_router_overlay(
         return Ok(None);
     };
     let worker = crate::two_tower::TwoTowerWorker::from_handle(&handle, &config, model_key)?;
-    Ok(Some(Arc::new(PromptRouterOverlay::new(Arc::new(worker), labels))))
+    Ok(Some(Arc::new(PromptRouterOverlay::new(
+        Arc::new(worker),
+        labels,
+    ))))
 }
 
 #[cfg(test)]

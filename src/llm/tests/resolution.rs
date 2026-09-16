@@ -95,7 +95,10 @@ fn invalid_environment_reference_is_a_hard_error() {
         message.contains("bogus/model"),
         "error must name the rejected value: {message}"
     );
-    assert!(matches!(error, EmbeddingError::InvalidEmbeddingReference(_)));
+    assert!(matches!(
+        error,
+        EmbeddingError::InvalidEmbeddingReference(_)
+    ));
 }
 
 #[test]

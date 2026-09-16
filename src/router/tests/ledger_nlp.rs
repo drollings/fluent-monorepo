@@ -66,9 +66,15 @@ fn parse_node_metadata_carries_interlingua_frame() {
         Some(&[0.9, 0.8]),
     );
     let meta = node.metadata.expect("metadata");
-// interlingua_ids per sentence (§14.1).
-    assert_eq!(meta["interlingua_ids"]["sentence_0"]["predicate_id"], 0x0300_0000_0000_0001_i64);
-    assert_eq!(meta["interlingua_ids"]["sentence_0"]["direct_object_id"], 0x0300_0000_0000_0002_i64);
+    // interlingua_ids per sentence (§14.1).
+    assert_eq!(
+        meta["interlingua_ids"]["sentence_0"]["predicate_id"],
+        0x0300_0000_0000_0001_i64
+    );
+    assert_eq!(
+        meta["interlingua_ids"]["sentence_0"]["direct_object_id"],
+        0x0300_0000_0000_0002_i64
+    );
     assert_eq!(
         meta["interlingua_ids"]["sentence_0"]["concept_ids"][0],
         0x0100_0000_0000_0001_i64
@@ -90,7 +96,9 @@ fn parse_node_metadata_carries_interlingua_frame() {
     )
     .metadata
     .expect("metadata");
-    assert!(without.get("token_confidence").is_none_or(serde_json::Value::is_null));
+    assert!(without
+        .get("token_confidence")
+        .is_none_or(serde_json::Value::is_null));
 }
 
 #[test]
@@ -108,8 +116,8 @@ fn record_round_trips_through_the_ledger() {
 #[test]
 fn record_populates_interlingua_index() {
     let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
-    let id = record_parse_node(&ledger, "s1", "r1", "show me the report", &signals())
-        .expect("record");
+    let id =
+        record_parse_node(&ledger, "s1", "r1", "show me the report", &signals()).expect("record");
     let store = ledger.node_store().shared_sqlite().expect("shared sqlite");
     let rows: Vec<(i64, String)> = store
         .query_rows(
@@ -158,7 +166,10 @@ fn consolidated_write_populates_index_unreviewed() {
     assert_eq!(rows.len(), 4, "one row per (sentence × role id)");
     for (_id, _role, conf, status) in &rows {
         assert_eq!(status, "unreviewed", "fresh parse rows are unreviewed");
-        assert!((0.0..=1.0).contains(conf), "confidence carried onto the index");
+        assert!(
+            (0.0..=1.0).contains(conf),
+            "confidence carried onto the index"
+        );
     }
     let roles: Vec<&str> = rows.iter().map(|(_, r, _, _)| r.as_str()).collect();
     assert!(roles.contains(&"predicate"));
@@ -170,7 +181,9 @@ fn consolidated_write_populates_index_unreviewed() {
 #[test]
 fn non_parse_node_is_not_a_parse_node() {
     let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
-    let id = ledger.record_request("s1", "r1", "plain request").expect("record");
+    let id = ledger
+        .record_request("s1", "r1", "plain request")
+        .expect("record");
     let node = ledger.get_node(id).expect("get node");
     assert!(!is_parse_node(&node));
 }

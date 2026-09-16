@@ -14,10 +14,14 @@ fn unique_violation_hops_to_duplicate_node_end_to_end() {
     // `LibraryError::DuplicateNode` through a real duplicate-name insert
     // (the legacy autoincrement path issues a plain `INSERT`).
     let lib = crate::db::Library::open_in_memory().expect("in-memory db");
-    lib.insert_node(&ContentNode { ..make_node("dup", "s") })
-        .expect("first insert");
+    lib.insert_node(&ContentNode {
+        ..make_node("dup", "s")
+    })
+    .expect("first insert");
     let err = lib
-        .insert_node(&ContentNode { ..make_node("dup", "s") })
+        .insert_node(&ContentNode {
+            ..make_node("dup", "s")
+        })
         .expect_err("duplicate name must fail");
     match err {
         LibraryError::DuplicateNode(_) => {}

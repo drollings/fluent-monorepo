@@ -16,8 +16,8 @@
 //! context); the injected `ChatBackend` transport is synchronous, so no session
 //! guard is held across an LLM call.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use fluent_concurrency::affinity::{AffinityScheduler, ScheduledTask};
@@ -184,10 +184,7 @@ impl LedgerAgentCoordinator {
     /// shared `AffinityScheduler`'s affinity-bonus/aging priority bookkeeping;
     /// the coordinator's transport and KV-affinity decision are unchanged.
     #[must_use]
-    pub fn with_affinity(
-        mut self,
-        scheduler: AffinityScheduler<String, String, String>,
-    ) -> Self {
+    pub fn with_affinity(mut self, scheduler: AffinityScheduler<String, String, String>) -> Self {
         self.affinity = Some(scheduler);
         self
     }
@@ -226,9 +223,7 @@ impl LedgerAgentCoordinator {
 
     /// Build a ready-to-compose KV-affinity scheduler over the shared runtime
     /// `cap` bounds concurrent agent turns tracked by the pool.
-    pub fn build_affinity_scheduler(
-        cap: usize,
-    ) -> AffinityScheduler<String, String, String> {
+    pub fn build_affinity_scheduler(cap: usize) -> AffinityScheduler<String, String, String> {
         let pool = Arc::new(PriorityResultPool::new(
             fluent_concurrency::tokio_runtime(),
             cap,
@@ -286,7 +281,9 @@ impl LedgerAgentCoordinator {
     /// or `None` when no scheduler is attached. `None` from a composed
     /// scheduler means no `run_agent` has run yet.
     pub fn affinity_session(&self) -> Option<String> {
-        self.affinity.as_ref().and_then(AffinityScheduler::current_affinity)
+        self.affinity
+            .as_ref()
+            .and_then(AffinityScheduler::current_affinity)
     }
 
     /// Run one agent synchronization step.
@@ -336,9 +333,7 @@ impl LedgerAgentCoordinator {
         // lets a same-model re-entry resume its own KV while a different model
         // re-prefills.
         let (kv_restored, step_id) = {
-            let mut guard = session
-                .lock()
-                .map_err(|_| CoordinatorError::LockPoisoned)?;
+            let mut guard = session.lock().map_err(|_| CoordinatorError::LockPoisoned)?;
             guard.set_model(model);
             // The coordinator is an explicit multi-step KV consumer: it
             // restores same-model snapshots (per `kv_policy`) or re-prefills,
@@ -348,9 +343,10 @@ impl LedgerAgentCoordinator {
             // (Ad-hoc `DependencySession` use stays opted out: no snapshots
             // unless specifically asked.)
             guard.set_snapshot_on_advance(true);
-            let snapshot = guard
-                .kv_cache()
-                .and_then(|kv| kv.retrieve(model, guard.adapter.as_deref(), session_id).ok());
+            let snapshot = guard.kv_cache().and_then(|kv| {
+                kv.retrieve(model, guard.adapter.as_deref(), session_id)
+                    .ok()
+            });
             let kv_restored = snapshot.is_some_and(|s| {
                 self.config
                     .kv_policy
@@ -384,9 +380,7 @@ impl LedgerAgentCoordinator {
         // 4-6. Snapshot KV on context advance, record a checkpoint node, and
         // complete the step. The KV snapshot key is `(model, adapter, session)`.
         {
-            let mut guard = session
-                .lock()
-                .map_err(|_| CoordinatorError::LockPoisoned)?;
+            let mut guard = session.lock().map_err(|_| CoordinatorError::LockPoisoned)?;
             let instance = model.to_string();
             if let Some(snap) = guard.advance_and_snapshot(&instance)? {
                 self.record_checkpoint_node(session_id, &snap)?;

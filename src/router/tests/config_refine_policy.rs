@@ -17,7 +17,10 @@ fn default_matches_spacy_default() {
         dto.refine_on_unresolved_critical_role,
         spacy.refine_on_unresolved_critical_role
     );
-    assert_eq!(dto.refine_on_unresolved_propn, spacy.refine_on_unresolved_propn);
+    assert_eq!(
+        dto.refine_on_unresolved_propn,
+        spacy.refine_on_unresolved_propn
+    );
     assert_eq!(dto.refine_on_collision_note, spacy.refine_on_collision_note);
 }
 
@@ -32,14 +35,23 @@ fn serde_empty_object_matches_on_both_sides() {
     assert!((dto_empty.min_overall - dto_default.min_overall).abs() < 1e-9);
     assert!((dto_empty.min_role_coverage - dto_default.min_role_coverage).abs() < 1e-9);
     assert!((dto_empty.min_token_score - dto_default.min_token_score).abs() < 1e-9);
-    assert!((dto_empty.unresolved_token_threshold - dto_default.unresolved_token_threshold).abs() < 1e-9);
+    assert!(
+        (dto_empty.unresolved_token_threshold - dto_default.unresolved_token_threshold).abs()
+            < 1e-9
+    );
     assert_eq!(dto_empty.refine_on_ties, dto_default.refine_on_ties);
     assert_eq!(
         dto_empty.refine_on_unresolved_critical_role,
         dto_default.refine_on_unresolved_critical_role
     );
-    assert_eq!(dto_empty.refine_on_unresolved_propn, dto_default.refine_on_unresolved_propn);
-    assert_eq!(dto_empty.refine_on_collision_note, dto_default.refine_on_collision_note);
+    assert_eq!(
+        dto_empty.refine_on_unresolved_propn,
+        dto_default.refine_on_unresolved_propn
+    );
+    assert_eq!(
+        dto_empty.refine_on_collision_note,
+        dto_default.refine_on_collision_note
+    );
     assert_eq!(dto_empty.mode as u8, dto_default.mode as u8);
 
     let spacy_empty: spacy_rs::RefinePolicy = serde_json::from_str("{}").expect("spacy {}");
@@ -47,13 +59,22 @@ fn serde_empty_object_matches_on_both_sides() {
     assert!((spacy_empty.min_overall - spacy_default.min_overall).abs() < 1e-9);
     assert!((spacy_empty.min_role_coverage - spacy_default.min_role_coverage).abs() < 1e-9);
     assert!((spacy_empty.min_token_score - spacy_default.min_token_score).abs() < 1e-9);
-    assert!((spacy_empty.unresolved_token_threshold - spacy_default.unresolved_token_threshold).abs() < 1e-9);
+    assert!(
+        (spacy_empty.unresolved_token_threshold - spacy_default.unresolved_token_threshold).abs()
+            < 1e-9
+    );
     assert_eq!(spacy_empty.refine_on_ties, spacy_default.refine_on_ties);
     assert_eq!(
         spacy_empty.refine_on_unresolved_critical_role,
         spacy_default.refine_on_unresolved_critical_role
     );
-    assert_eq!(spacy_empty.refine_on_unresolved_propn, spacy_default.refine_on_unresolved_propn);
-    assert_eq!(spacy_empty.refine_on_collision_note, spacy_default.refine_on_collision_note);
+    assert_eq!(
+        spacy_empty.refine_on_unresolved_propn,
+        spacy_default.refine_on_unresolved_propn
+    );
+    assert_eq!(
+        spacy_empty.refine_on_collision_note,
+        spacy_default.refine_on_collision_note
+    );
     assert_eq!(spacy_empty.mode as u8, spacy_default.mode as u8);
 }

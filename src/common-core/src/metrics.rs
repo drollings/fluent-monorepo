@@ -129,4 +129,3 @@ impl Default for LatencyHistogram {
         Self::new()
     }
 }
-

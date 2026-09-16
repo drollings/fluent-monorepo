@@ -16,7 +16,10 @@ fn source(text: &str) -> ExtractSource {
 }
 
 fn opts(max: usize, overlap: usize) -> ChunkOptions {
-    ChunkOptions { max_chunk_chars: max, chunk_overlap_chars: overlap }
+    ChunkOptions {
+        max_chunk_chars: max,
+        chunk_overlap_chars: overlap,
+    }
 }
 
 #[test]
@@ -35,7 +38,10 @@ fn blank_text_yields_no_chunks() {
 
 #[test]
 fn windows_respect_budget_and_overlap() {
-    let text = (0..50).map(|i| format!("line {i:02} padding padding")).collect::<Vec<_>>().join("\n");
+    let text = (0..50)
+        .map(|i| format!("line {i:02} padding padding"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let chunks = chunk_text(&text, opts(140, 30));
     assert!(chunks.len() >= 2, "{}", chunks.len());
     for chunk in &chunks {
@@ -61,7 +67,10 @@ fn long_lines_cut_at_scored_breaks() {
     assert!(chunks.len() >= 2, "{chunks:?}");
     assert!(chunks[0].text.ends_with('.'), "{chunks:?}");
     // Joining the windows reproduces the line (overlap 0).
-    assert_eq!(chunks.iter().map(|c| c.text.as_str()).collect::<String>(), line);
+    assert_eq!(
+        chunks.iter().map(|c| c.text.as_str()).collect::<String>(),
+        line
+    );
 }
 
 #[test]

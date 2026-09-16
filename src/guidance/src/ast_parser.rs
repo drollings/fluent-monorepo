@@ -80,7 +80,11 @@ impl AstParser {
     /// parser applies and unknown is terminal. A ladder here would be one
     /// rung (obfuscation), and `&mut self` field selection does not fit
     /// `FnMut` rungs. Stays.
-    pub fn parse_tree(&mut self, format: &str, source: &str) -> Result<tree_sitter::Tree, ParseError> {
+    pub fn parse_tree(
+        &mut self,
+        format: &str,
+        source: &str,
+    ) -> Result<tree_sitter::Tree, ParseError> {
         let parser = match format {
             "rust" => &mut self.rust,
             "python" => &mut self.python,
@@ -104,7 +108,16 @@ impl AstParser {
     pub fn has_grammar(format: &str) -> bool {
         matches!(
             format,
-            "rust" | "python" | "c" | "cpp" | "go" | "java" | "javascript" | "jsx" | "typescript" | "tsx"
+            "rust"
+                | "python"
+                | "c"
+                | "cpp"
+                | "go"
+                | "java"
+                | "javascript"
+                | "jsx"
+                | "typescript"
+                | "tsx"
         )
     }
 

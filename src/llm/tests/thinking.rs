@@ -7,9 +7,7 @@
 //! control group. Behavior is byte-identical to the removed
 //! `common_core::string` shims (M11 deleted them with `parity_new_eq_old`).
 
-use fluent_llm::thinking::{
-    strip_think_block, strip_thinking_blocks, StreamingThinkFilter,
-};
+use fluent_llm::thinking::{strip_think_block, strip_thinking_blocks, StreamingThinkFilter};
 
 // ── Moved from router/tests/streaming.rs:141-156 ──────────────────────────
 
@@ -60,9 +58,7 @@ fn strip_ollama_thinking_at_any_position() {
 #[test]
 fn strip_thinking_blocks_multiple_formats() {
     assert_eq!(
-        strip_thinking_blocks(
-            "<think>ollama</think>plain<thinking>xml</thinking>end"
-        ),
+        strip_thinking_blocks("<think>ollama</think>plain<thinking>xml</thinking>end"),
         "plainend"
     );
 }
@@ -197,7 +193,10 @@ fn streaming_filter_unclosed_thinking_discards() {
 #[test]
 fn control_group_must_not_strip() {
     // Word-boundary guard: "rethinking" must not match " thinking".
-    assert_eq!(strip_thinking_blocks("rethinking a plan"), "rethinking a plan");
+    assert_eq!(
+        strip_thinking_blocks("rethinking a plan"),
+        "rethinking a plan"
+    );
     assert_eq!(strip_think_block("rethinking a plan"), "rethinking a plan");
     // Plain prose with no tags.
     assert_eq!(

@@ -247,7 +247,16 @@ fn select_files_applies_discovery_rules() {
     assert!(names.contains(&"data.json".to_string()), "{names:?}");
     // Rasters are skipped by the default patterns but stay discoverable:
     // an explicit include restores them with their kind tag (G0.5).
-    for banned in ["big.rs", "Cargo.lock", "dep.js", "app.zip", "blob.bin", "manifest.json", "photo.png", "logo.jpg"] {
+    for banned in [
+        "big.rs",
+        "Cargo.lock",
+        "dep.js",
+        "app.zip",
+        "blob.bin",
+        "manifest.json",
+        "photo.png",
+        "logo.jpg",
+    ] {
         assert!(!names.contains(&banned.to_string()), "{names:?}");
     }
     assert!(diag.skipped_large >= 1, "{diag:?}");
@@ -258,7 +267,10 @@ fn select_files_applies_discovery_rules() {
     sel.include_globs = vec!["src/*.png".to_string()];
     let mut diag = ScanDiagnostics::default();
     let files = select_files(&sel, &mut diag).expect("select");
-    let photo = files.iter().find(|f| f.path.ends_with("photo.png")).expect("explicit png restored");
+    let photo = files
+        .iter()
+        .find(|f| f.path.ends_with("photo.png"))
+        .expect("explicit png restored");
     assert_eq!(photo.kind, FileKind::Image);
     assert_eq!(diag.image_files, 1, "{diag:?}");
 }
@@ -270,13 +282,21 @@ fn select_files_honors_include_and_exclude_globs() {
     sel.include_globs = vec!["src/*.rs".to_string()];
     let mut diag = ScanDiagnostics::default();
     let files = select_files(&sel, &mut diag).expect("select");
-    assert!(files.iter().all(|f| f.path.extension().is_some_and(|e| e == "rs")), "{files:?}");
+    assert!(
+        files
+            .iter()
+            .all(|f| f.path.extension().is_some_and(|e| e == "rs")),
+        "{files:?}"
+    );
 
     let mut sel = selection(dir.path());
     sel.exclude_globs = vec!["src/*.md".to_string()];
     let mut diag = ScanDiagnostics::default();
     let files = select_files(&sel, &mut diag).expect("select");
-    assert!(files.iter().all(|f| !f.path.ends_with("notes.md")), "{files:?}");
+    assert!(
+        files.iter().all(|f| !f.path.ends_with("notes.md")),
+        "{files:?}"
+    );
     assert!(diag.skipped_glob >= 1, "{diag:?}");
 }
 
@@ -297,7 +317,6 @@ fn validate_roots_rejects_missing_and_overlapping() {
 
     assert!(validate_roots(&selection(dir.path())).is_ok());
 }
-
 
 #[test]
 fn default_file_patterns_match_without_recompiling_per_file() {
@@ -331,8 +350,14 @@ fn default_file_patterns_match_without_recompiling_per_file() {
 fn explicit_globs_still_match_per_call() {
     // Must-NOT-fire control: user-supplied globs keep per-call
     // semantics — the cache covers the static default list only.
-    assert!(crate::query::glob::path_pattern_matches("src/*.rs", "src/main.rs"));
-    assert!(!crate::query::glob::path_pattern_matches("src/*.rs", "src/nested/main.rs"));
+    assert!(crate::query::glob::path_pattern_matches(
+        "src/*.rs",
+        "src/main.rs"
+    ));
+    assert!(!crate::query::glob::path_pattern_matches(
+        "src/*.rs",
+        "src/nested/main.rs"
+    ));
 }
 
 #[test]

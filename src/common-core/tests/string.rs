@@ -5,645 +5,693 @@ use common_core::string::*;
 
 #[test]
 fn contains_ignore_case_basic() {
-        assert!(contains_ignore_case("Hello World", "hello"));
-        assert!(contains_ignore_case("Hello World", "WORLD"));
-        assert!(!contains_ignore_case("Hello World", "goodbye"));
+    assert!(contains_ignore_case("Hello World", "hello"));
+    assert!(contains_ignore_case("Hello World", "WORLD"));
+    assert!(!contains_ignore_case("Hello World", "goodbye"));
 }
 
 #[test]
 fn contains_word_boundary() {
-        assert!(contains_word("test builder", "builder"));
-        assert!(!contains_word("test builders", "builder"));
+    assert!(contains_word("test builder", "builder"));
+    assert!(!contains_word("test builders", "builder"));
 }
 
 #[test]
 fn first_comment_line_strips_prefix() {
-        assert_eq!(
-            first_comment_line("/// This is a doc comment\n/// more"),
-            Some("This is a doc comment".into())
-        );
+    assert_eq!(
+        first_comment_line("/// This is a doc comment\n/// more"),
+        Some("This is a doc comment".into())
+    );
 }
 
 #[test]
 fn has_extension_variants() {
-        assert!(has_extension("file.zig", "zig"));
-        assert!(has_extension("file.ZIG", ".zig"));
-        assert!(!has_extension("file.zig", "rs"));
+    assert!(has_extension("file.zig", "zig"));
+    assert!(has_extension("file.ZIG", ".zig"));
+    assert!(!has_extension("file.zig", "rs"));
 }
 
 #[test]
 fn looks_like_identifier_various() {
-        assert!(looks_like_identifier("foo"));
-        assert!(looks_like_identifier("_private"));
-        assert!(!looks_like_identifier("123abc"));
+    assert!(looks_like_identifier("foo"));
+    assert!(looks_like_identifier("_private"));
+    assert!(!looks_like_identifier("123abc"));
 }
 
 #[test]
 fn slugify_converts() {
-        assert_eq!(slugify("Hello World"), "hello-world");
-        assert_eq!(slugify("FooBar"), "foobar");
+    assert_eq!(slugify("Hello World"), "hello-world");
+    assert_eq!(slugify("FooBar"), "foobar");
 }
 
 #[test]
 fn stop_words_contains_expected() {
-        assert!(STOP_WORDS.contains("the"));
-        assert!(STOP_WORDS.contains("is"));
-        assert!(!STOP_WORDS.contains("zig"));
+    assert!(STOP_WORDS.contains("the"));
+    assert!(STOP_WORDS.contains("is"));
+    assert!(!STOP_WORDS.contains("zig"));
 }
 
 #[test]
 fn contains_ident_word_no_false_positive_on_substring() {
-        assert!(!contains_ident_word("mystructfield", "struct"));
-        assert!(!contains_ident_word("unstructured", "struct"));
-        assert!(contains_ident_word("test_struct", "struct"));
+    assert!(!contains_ident_word("mystructfield", "struct"));
+    assert!(!contains_ident_word("unstructured", "struct"));
+    assert!(contains_ident_word("test_struct", "struct"));
 }
 
 #[test]
 fn truncate_at_sentence_basic() {
-        assert_eq!(truncate_at_sentence("Hello world. This is a test. More content.", 20), "Hello world.");
-        assert_eq!(truncate_at_sentence("Short", 100), "Short");
+    assert_eq!(
+        truncate_at_sentence("Hello world. This is a test. More content.", 20),
+        "Hello world."
+    );
+    assert_eq!(truncate_at_sentence("Short", 100), "Short");
 }
 
 #[test]
 fn truncate_utf8_empty_input() {
-        assert_eq!(truncate_utf8("", 120), "");
+    assert_eq!(truncate_utf8("", 120), "");
 }
 
 #[test]
 fn truncate_utf8_shorter_than_cap() {
-        assert_eq!(truncate_utf8("hello", 120), "hello");
+    assert_eq!(truncate_utf8("hello", 120), "hello");
 }
 
 #[test]
 fn truncate_utf8_boundary_exact_char() {
-        // 4 ASCII chars, cap exactly at a char boundary
-        assert_eq!(truncate_utf8("abcd", 4), "abcd");
-        // 5 ASCII chars capped at 4 → "abcd…"
-        assert_eq!(truncate_utf8("abcde", 4), "abcd…");
+    // 4 ASCII chars, cap exactly at a char boundary
+    assert_eq!(truncate_utf8("abcd", 4), "abcd");
+    // 5 ASCII chars capped at 4 → "abcd…"
+    assert_eq!(truncate_utf8("abcde", 4), "abcd…");
 }
 
 #[test]
 fn truncate_utf8_mid_char_no_panic() {
-        // CJK chars are 3 bytes each; 10 chars = 30 bytes.
-        let s = "汉".repeat(10);
-        assert_eq!(s.len(), 30);
-        // cap at 29 bytes falls inside the 10th char (starts at byte 27)
-        let out = truncate_utf8(&s, 29);
-        assert!(out.starts_with(&"汉".repeat(9)));
-        assert!(out.ends_with('…'));
-        assert_eq!(out, format!("{}…", "汉".repeat(9)));
-        // cap at 28 also lands mid-char
-        let out = truncate_utf8(&s, 28);
-        assert!(out.starts_with(&"汉".repeat(9)));
-        assert!(out.ends_with('…'));
-        // cap at 30 lands exactly on a boundary → no truncation
-        assert_eq!(truncate_utf8(&s, 30), s);
+    // CJK chars are 3 bytes each; 10 chars = 30 bytes.
+    let s = "汉".repeat(10);
+    assert_eq!(s.len(), 30);
+    // cap at 29 bytes falls inside the 10th char (starts at byte 27)
+    let out = truncate_utf8(&s, 29);
+    assert!(out.starts_with(&"汉".repeat(9)));
+    assert!(out.ends_with('…'));
+    assert_eq!(out, format!("{}…", "汉".repeat(9)));
+    // cap at 28 also lands mid-char
+    let out = truncate_utf8(&s, 28);
+    assert!(out.starts_with(&"汉".repeat(9)));
+    assert!(out.ends_with('…'));
+    // cap at 30 lands exactly on a boundary → no truncation
+    assert_eq!(truncate_utf8(&s, 30), s);
 }
 
 #[test]
 fn truncate_utf8_max_bytes_zero() {
-        assert_eq!(truncate_utf8("anything", 0), "…");
-        assert_eq!(truncate_utf8("", 0), "");
+    assert_eq!(truncate_utf8("anything", 0), "…");
+    assert_eq!(truncate_utf8("", 0), "");
 }
 
 #[test]
 fn truncate_utf8_never_exceeds_cap_before_ellipsis() {
-        let emoji = "🚀".repeat(50);
-        for cap in 0..emoji.len() {
-            let out = truncate_utf8(&emoji, cap);
-            let content = out.strip_suffix('…').unwrap_or(&out);
-            assert!(content.len() <= cap);
-        }
+    let emoji = "🚀".repeat(50);
+    for cap in 0..emoji.len() {
+        let out = truncate_utf8(&emoji, cap);
+        let content = out.strip_suffix('…').unwrap_or(&out);
+        assert!(content.len() <= cap);
+    }
 }
 
 #[test]
 fn trim_right_various() {
-        assert_eq!(trim_right(b"hello   ", b" "), b"hello");
-        assert_eq!(trim_right(b"hello", b" "), b"hello");
-        assert_eq!(trim_right(b"   ", b" "), b"");
-        assert_eq!(trim_right(b"hello!?!", b"!?"), b"hello");
+    assert_eq!(trim_right(b"hello   ", b" "), b"hello");
+    assert_eq!(trim_right(b"hello", b" "), b"hello");
+    assert_eq!(trim_right(b"   ", b" "), b"");
+    assert_eq!(trim_right(b"hello!?!", b"!?"), b"hello");
 }
 
 #[test]
 fn trim_left_various() {
-        assert_eq!(trim_left(b"   hello", b" "), b"hello");
-        assert_eq!(trim_left(b"hello", b" "), b"hello");
+    assert_eq!(trim_left(b"   hello", b" "), b"hello");
+    assert_eq!(trim_left(b"hello", b" "), b"hello");
 }
-
 
 #[test]
 fn contains_ident_word_underscore_boundary() {
-        assert!(contains_ident_word("test_foo_bar", "foo"));
-        assert!(!contains_ident_word("testfoobar", "foo"));
+    assert!(contains_ident_word("test_foo_bar", "foo"));
+    assert!(!contains_ident_word("testfoobar", "foo"));
 }
 
 #[test]
 fn lower_into_various() {
-        let mut buf = [0u8; 16];
-        assert_eq!(lower_into(&mut buf, b"HELLO"), b"hello");
-        let mut buf = [0u8; 4];
-        assert_eq!(lower_into(&mut buf, b"HELLO WORLD"), b"hell");
-        let mut buf = [0u8; 4];
-        assert_eq!(lower_into(&mut buf, b""), b"");
+    let mut buf = [0u8; 16];
+    assert_eq!(lower_into(&mut buf, b"HELLO"), b"hello");
+    let mut buf = [0u8; 4];
+    assert_eq!(lower_into(&mut buf, b"HELLO WORLD"), b"hell");
+    let mut buf = [0u8; 4];
+    assert_eq!(lower_into(&mut buf, b""), b"");
 }
 
 #[test]
 fn strip_html_golden_corpus() {
-        // Characterization: single-pass rewrites must reproduce these
-        // byte-for-byte, including the chaining and script quirks below.
-        let cases = [
-                ("Hello <b>World</b>", "Hello World"),
-                ("<script>alert('x')</script>Visible", "Visible"),
-                ("<style>.a{color:red}</style>Text", "Text"),
-                ("<p>Hello</p><p>World</p>", "Hello World"),
-                ("a<br>b", "a b"),
-                ("Fish &amp; Chips", "Fish & Chips"),
-                ("&lt;tag&gt;", "<tag>"),
-                ("&quot;q&quot; &#39;c&#39;", "\"q\" 'c'"),
-                // Entity chaining: the `&amp;` pass runs first, so a decoded
-                // `&` followed by a second entity decodes again ...
-                ("&amp;lt;", "<"),
-                ("&amp;#39;", "'"),
-                // ... but `&amp;` itself decodes only once (one amp pass).
-                ("&amp;amp;", "&amp;"),
-                ("&unknown; stays", "&unknown; stays"),
-                ("unclosed <b bold", "unclosed"),
-                ("a <!-- comment --> b", "a b"),
-                ("<SCRIPT>X</SCRIPT>y", "y"),
-                ("<script src=\"x\">evil()</script>ok", "ok"),
-                ("  spaced   out  ", "spaced out"),
-                ("<div><p>Hi</p></div>", "Hi"),
-                // Quirk: a block-level closing tag inside script/style still
-                // emits a newline before collapsing.
-                ("x<script>a</div>b</script>y", "x y"),
-                ("", ""),
-                ("no tags at all", "no tags at all"),
-        ];
-        for (input, want) in cases {
-                assert_eq!(strip_html(input), want, "strip_html({input:?})");
-        }
+    // Characterization: single-pass rewrites must reproduce these
+    // byte-for-byte, including the chaining and script quirks below.
+    let cases = [
+        ("Hello <b>World</b>", "Hello World"),
+        ("<script>alert('x')</script>Visible", "Visible"),
+        ("<style>.a{color:red}</style>Text", "Text"),
+        ("<p>Hello</p><p>World</p>", "Hello World"),
+        ("a<br>b", "a b"),
+        ("Fish &amp; Chips", "Fish & Chips"),
+        ("&lt;tag&gt;", "<tag>"),
+        ("&quot;q&quot; &#39;c&#39;", "\"q\" 'c'"),
+        // Entity chaining: the `&amp;` pass runs first, so a decoded
+        // `&` followed by a second entity decodes again ...
+        ("&amp;lt;", "<"),
+        ("&amp;#39;", "'"),
+        // ... but `&amp;` itself decodes only once (one amp pass).
+        ("&amp;amp;", "&amp;"),
+        ("&unknown; stays", "&unknown; stays"),
+        ("unclosed <b bold", "unclosed"),
+        ("a <!-- comment --> b", "a b"),
+        ("<SCRIPT>X</SCRIPT>y", "y"),
+        ("<script src=\"x\">evil()</script>ok", "ok"),
+        ("  spaced   out  ", "spaced out"),
+        ("<div><p>Hi</p></div>", "Hi"),
+        // Quirk: a block-level closing tag inside script/style still
+        // emits a newline before collapsing.
+        ("x<script>a</div>b</script>y", "x y"),
+        ("", ""),
+        ("no tags at all", "no tags at all"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(strip_html(input), want, "strip_html({input:?})");
+    }
 }
 
 #[test]
 fn truncate_at_sentence_golden_table() {
-        let cases = [
-                ("Hello world. This is a test. More content.", 20, "Hello world."),
-                ("Short", 100, "Short"),
-                ("A. very long string that continues past the limit", 20, "A. very long string "),
-                ("No period here at all in this long text input", 10, "No period "),
-                ("", 5, ""),
-                ("Hi.", 3, "Hi."),
-        ];
-        for (input, max, want) in cases {
-                assert_eq!(truncate_at_sentence(input, max), want, "truncate_at_sentence({input:?}, {max})");
-        }
+    let cases = [
+        (
+            "Hello world. This is a test. More content.",
+            20,
+            "Hello world.",
+        ),
+        ("Short", 100, "Short"),
+        (
+            "A. very long string that continues past the limit",
+            20,
+            "A. very long string ",
+        ),
+        (
+            "No period here at all in this long text input",
+            10,
+            "No period ",
+        ),
+        ("", 5, ""),
+        ("Hi.", 3, "Hi."),
+    ];
+    for (input, max, want) in cases {
+        assert_eq!(
+            truncate_at_sentence(input, max),
+            want,
+            "truncate_at_sentence({input:?}, {max})"
+        );
+    }
 }
 
 #[test]
 fn truncate_chars_golden_table() {
-        let cases = [
-                ("abcdef", 3, "abc"),
-                ("hello", 10, "hello"),
-                ("hello", 5, "hello"),
-                ("", 5, ""),
-                ("héllo wörld", 5, "héllo"),
-        ];
-        for (input, max, want) in cases {
-                assert_eq!(truncate_chars(input, max), want, "truncate_chars({input:?}, {max})");
-        }
+    let cases = [
+        ("abcdef", 3, "abc"),
+        ("hello", 10, "hello"),
+        ("hello", 5, "hello"),
+        ("", 5, ""),
+        ("héllo wörld", 5, "héllo"),
+    ];
+    for (input, max, want) in cases {
+        assert_eq!(
+            truncate_chars(input, max),
+            want,
+            "truncate_chars({input:?}, {max})"
+        );
+    }
 }
 
 #[test]
 fn truncate_never_splits_char_boundary() {
-        let text = "a🚀b汉c";
-        for max in 0..8 {
-                let a = truncate_chars(text, max);
-                assert!(text.starts_with(&a), "truncate_chars({max}) = {a:?}");
-                let b = truncate_at_sentence(text, max);
-                assert!(text.starts_with(&b) || b.len() <= text.len());
-        }
+    let text = "a🚀b汉c";
+    for max in 0..8 {
+        let a = truncate_chars(text, max);
+        assert!(text.starts_with(&a), "truncate_chars({max}) = {a:?}");
+        let b = truncate_at_sentence(text, max);
+        assert!(text.starts_with(&b) || b.len() <= text.len());
+    }
 }
 
 #[test]
 fn contains_any_basic() {
-        assert!(contains_any("hello world", &["hello"]));
-        assert!(contains_any("hello world", &["world", "foo"]));
-        assert!(!contains_any("hello world", &["foo"]));
+    assert!(contains_any("hello world", &["hello"]));
+    assert!(contains_any("hello world", &["world", "foo"]));
+    assert!(!contains_any("hello world", &["foo"]));
 }
 
 #[test]
 fn lowered_haystack_matches_free_functions_on_golden_corpus() {
-        let corpus = [
-                "Hello World",
-                "The Quick Brown Fox",
-                "Straße und STRASSE",
-                "İstanbul ıstanbul",
-                "Café Münchén",
-                "test builder builders",
-                "mystructfield unstructured test_struct",
-                "a→b foo->bar",
-                "",
-                "ß",
-                "İ",
-                "η Θ Σ",
-        ];
-        let keywords: &[&str] = &[
-                "hello", "WORLD", "straße", "STRASSE", "i̇stanbul", "CAFÉ", "builder",
-                "struct", "bar", "η", "",
-        ];
-        for text in corpus {
-                let hay = LoweredHaystack::new(text);
-                assert_eq!(hay.lowered(), text.to_lowercase(), "lowered({text:?})");
-                for kw in keywords {
-                        assert_eq!(
-                                hay.contains(kw),
-                                contains_ignore_case(text, kw),
-                                "contains({text:?}, {kw:?})"
-                        );
-                        assert_eq!(
-                                hay.contains_word(kw),
-                                contains_word(text, kw),
-                                "contains_word({text:?}, {kw:?})"
-                        );
-                }
-                assert_eq!(
-                        hay.contains_any(keywords),
-                        contains_any(text, keywords),
-                        "contains_any({text:?})"
-                );
-                assert_eq!(
-                        hay.contains_any_word(keywords),
-                        contains_any_word(text, keywords),
-                        "contains_any_word({text:?})"
-                );
+    let corpus = [
+        "Hello World",
+        "The Quick Brown Fox",
+        "Straße und STRASSE",
+        "İstanbul ıstanbul",
+        "Café Münchén",
+        "test builder builders",
+        "mystructfield unstructured test_struct",
+        "a→b foo->bar",
+        "",
+        "ß",
+        "İ",
+        "η Θ Σ",
+    ];
+    let keywords: &[&str] = &[
+        "hello",
+        "WORLD",
+        "straße",
+        "STRASSE",
+        "i̇stanbul",
+        "CAFÉ",
+        "builder",
+        "struct",
+        "bar",
+        "η",
+        "",
+    ];
+    for text in corpus {
+        let hay = LoweredHaystack::new(text);
+        assert_eq!(hay.lowered(), text.to_lowercase(), "lowered({text:?})");
+        for kw in keywords {
+            assert_eq!(
+                hay.contains(kw),
+                contains_ignore_case(text, kw),
+                "contains({text:?}, {kw:?})"
+            );
+            assert_eq!(
+                hay.contains_word(kw),
+                contains_word(text, kw),
+                "contains_word({text:?}, {kw:?})"
+            );
         }
+        assert_eq!(
+            hay.contains_any(keywords),
+            contains_any(text, keywords),
+            "contains_any({text:?})"
+        );
+        assert_eq!(
+            hay.contains_any_word(keywords),
+            contains_any_word(text, keywords),
+            "contains_any_word({text:?})"
+        );
+    }
 }
 
 #[test]
 fn lowered_haystack_unicode_goldens() {
-        // Turkish dotted capital I expands on lowering (2 bytes -> 3 bytes);
-        // matching must follow the lowered forms exactly.
-        assert!(contains_ignore_case("İstanbul", "i̇stanbul"));
-        assert!(LoweredHaystack::new("İstanbul").contains("i̇stanbul"));
-        // German ß lowercases to itself; "STRASSE" does not contain "ß".
-        assert!(contains_ignore_case("Straße", "straße"));
-        assert!(!contains_ignore_case("STRASSE", "ß"));
-        assert!(!LoweredHaystack::new("STRASSE").contains("ß"));
-        // Empty needle is contained (str::contains semantics preserved).
-        assert!(contains_ignore_case("abc", ""));
-        assert!(LoweredHaystack::new("abc").contains(""));
-        // Word boundaries still apply on the lowered bytes.
-        assert!(!LoweredHaystack::new("test builders").contains_word("builder"));
-        assert!(LoweredHaystack::new("test builder").contains_word("BUILDER"));
+    // Turkish dotted capital I expands on lowering (2 bytes -> 3 bytes);
+    // matching must follow the lowered forms exactly.
+    assert!(contains_ignore_case("İstanbul", "i̇stanbul"));
+    assert!(LoweredHaystack::new("İstanbul").contains("i̇stanbul"));
+    // German ß lowercases to itself; "STRASSE" does not contain "ß".
+    assert!(contains_ignore_case("Straße", "straße"));
+    assert!(!contains_ignore_case("STRASSE", "ß"));
+    assert!(!LoweredHaystack::new("STRASSE").contains("ß"));
+    // Empty needle is contained (str::contains semantics preserved).
+    assert!(contains_ignore_case("abc", ""));
+    assert!(LoweredHaystack::new("abc").contains(""));
+    // Word boundaries still apply on the lowered bytes.
+    assert!(!LoweredHaystack::new("test builders").contains_word("builder"));
+    assert!(LoweredHaystack::new("test builder").contains_word("BUILDER"));
 }
 
 #[test]
 fn lowered_haystack_single_lowering_fifty_keywords() {
-        let text = "the quick brown fox jumps over the lazy dog".repeat(4);
-        let keywords: Vec<String> = (0..50).map(|i| format!("keyword{i}")).collect();
-        let refs: Vec<&str> = keywords.iter().map(String::as_str).collect();
-        let hay = LoweredHaystack::new(&text);
-        // One stored lowering serves the whole scan; repeated scans agree.
-        assert_eq!(hay.lowered(), text.to_lowercase());
-        let first = hay.contains_any(&refs);
-        for _ in 0..10 {
-                assert_eq!(hay.contains_any(&refs), first);
-                assert_eq!(hay.contains_any(&refs), contains_any(&text, &refs));
-        }
-        assert!(!first);
-        assert!(hay.contains_any(&["quick", "keyword1"]));
+    let text = "the quick brown fox jumps over the lazy dog".repeat(4);
+    let keywords: Vec<String> = (0..50).map(|i| format!("keyword{i}")).collect();
+    let refs: Vec<&str> = keywords.iter().map(String::as_str).collect();
+    let hay = LoweredHaystack::new(&text);
+    // One stored lowering serves the whole scan; repeated scans agree.
+    assert_eq!(hay.lowered(), text.to_lowercase());
+    let first = hay.contains_any(&refs);
+    for _ in 0..10 {
+        assert_eq!(hay.contains_any(&refs), first);
+        assert_eq!(hay.contains_any(&refs), contains_any(&text, &refs));
+    }
+    assert!(!first);
+    assert!(hay.contains_any(&["quick", "keyword1"]));
 }
 
 #[test]
 fn contains_any_word_basic() {
-        assert!(contains_any_word("test builder", &["test", "builder"]));
-        assert!(contains_any_word("test builder", &["builder"]));
-        assert!(!contains_any_word("test builders", &["builder"]));
+    assert!(contains_any_word("test builder", &["test", "builder"]));
+    assert!(contains_any_word("test builder", &["builder"]));
+    assert!(!contains_any_word("test builders", &["builder"]));
 }
 
 #[test]
 fn truncate_at_sentence_no_usable_boundary_falls_back_to_hard_cut() {
-        for text in ["This is a long string with no period at all in the first half", "A. very long string that continues past the limit"] {
-            assert_eq!(truncate_at_sentence(text, 20).len(), 20);
-        }
+    for text in [
+        "This is a long string with no period at all in the first half",
+        "A. very long string that continues past the limit",
+    ] {
+        assert_eq!(truncate_at_sentence(text, 20).len(), 20);
+    }
 }
 
 #[test]
 fn contains_ident_word_empty_needle() {
-        assert!(!contains_ident_word("test", ""));
+    assert!(!contains_ident_word("test", ""));
 }
 
 #[test]
 fn contains_ident_word_needle_longer_than_haystack() {
-        assert!(!contains_ident_word("abc", "abcdef"));
+    assert!(!contains_ident_word("abc", "abcdef"));
 }
 
 #[test]
 fn looks_like_identifier_empty() {
-        assert!(!looks_like_identifier(""));
+    assert!(!looks_like_identifier(""));
 }
-
 
 #[test]
 fn slugify_trims_dashes() {
-        assert_eq!(slugify("-hello-"), "hello");}
+    assert_eq!(slugify("-hello-"), "hello");
+}
 
 #[test]
 fn slugify_characterization_table() {
-        // Characterization (M4): verbatim outputs of `slugify` — the P4
-        // migration must preserve them byte-for-byte.
-        let cases = [
-                ("", ""),
-                ("---", ""),
-                ("___", "___"),
-                ("Hello World", "hello-world"),
-                ("a  --  b", "a------b"),
-                ("  padded  ", "padded"),
-                ("-hello-", "hello"),
-                ("_lead", "_lead"),
-                ("trail_", "trail_"),
-                ("Café Münchén", "caf-mnchn"),
-                ("already-kebab", "already-kebab"),
-                ("a_b c", "a_b-c"),
-        ];
-        for (input, want) in cases {
-                assert_eq!(slugify(input), want, "slugify({input:?})");
-        }
-        // Parity: the parameterized primitive with legacy options.
-        for (input, want) in cases {
-                assert_eq!(
-                        slugify_with(input, &SlugOptions::legacy_default()),
-                        want,
-                        "slugify_with(legacy, {input:?})"
-                );
-        }
+    // Characterization (M4): verbatim outputs of `slugify` — the P4
+    // migration must preserve them byte-for-byte.
+    let cases = [
+        ("", ""),
+        ("---", ""),
+        ("___", "___"),
+        ("Hello World", "hello-world"),
+        ("a  --  b", "a------b"),
+        ("  padded  ", "padded"),
+        ("-hello-", "hello"),
+        ("_lead", "_lead"),
+        ("trail_", "trail_"),
+        ("Café Münchén", "caf-mnchn"),
+        ("already-kebab", "already-kebab"),
+        ("a_b c", "a_b-c"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(slugify(input), want, "slugify({input:?})");
+    }
+    // Parity: the parameterized primitive with legacy options.
+    for (input, want) in cases {
+        assert_eq!(
+            slugify_with(input, &SlugOptions::legacy_default()),
+            want,
+            "slugify_with(legacy, {input:?})"
+        );
+    }
 }
 
 #[test]
 fn first_comment_line_with_notice_prefix() {
-        assert_eq!(
-            first_comment_line("//! Module level doc\n/// member"),
-            Some("Module level doc".into())
-        );
+    assert_eq!(
+        first_comment_line("//! Module level doc\n/// member"),
+        Some("Module level doc".into())
+    );
 }
 
 #[test]
 fn first_comment_line_empty_after_strip() {
-        assert_eq!(first_comment_line("///"), None);
+    assert_eq!(first_comment_line("///"), None);
 }
-
 
 #[test]
 fn contains_ident_word_boundary_special_chars() {
-        assert!(contains_ident_word("foo->bar", "bar"));
-        assert!(!contains_ident_word("foobar", "bar"));
+    assert!(contains_ident_word("foo->bar", "bar"));
+    assert!(!contains_ident_word("foobar", "bar"));
 }
 
 #[test]
 fn is_path_token_min_length() {
-        assert!(!is_path_token("ab"));
-        assert!(is_path_token("a/b"));
+    assert!(!is_path_token("ab"));
+    assert!(is_path_token("a/b"));
 }
 
 #[test]
 fn is_noisy_comment_checks() {
-        assert!(is_noisy_comment("x"));
-        assert!(!is_noisy_comment("Cosine similarity for vector search"));
+    assert!(is_noisy_comment("x"));
+    assert!(!is_noisy_comment("Cosine similarity for vector search"));
 }
 
 #[test]
 fn is_test_path_detection() {
-        assert!(is_test_path("src/test.rs"));
-        assert!(is_test_path("tests/foo.rs"));
-        assert!(is_test_path("foo_test.zig"));
-        assert!(!is_test_path("src/main.rs"));
+    assert!(is_test_path("src/test.rs"));
+    assert!(is_test_path("tests/foo.rs"));
+    assert!(is_test_path("foo_test.zig"));
+    assert!(!is_test_path("src/main.rs"));
 }
 
 #[test]
 fn strip_boilerplate_various() {
-        assert_eq!(strip_boilerplate("fn foo()", "fn "), "foo()");
-        assert_eq!(strip_boilerplate("hello world", "fn "), "hello world");
+    assert_eq!(strip_boilerplate("fn foo()", "fn "), "foo()");
+    assert_eq!(strip_boilerplate("hello world", "fn "), "hello world");
 }
 
 #[test]
 fn strip_nl_prefix_various() {
-        assert_eq!(strip_nl_prefix("what is X"), "X");
-        assert_eq!(strip_nl_prefix("how does Y work"), "Y work");
-        assert_eq!(strip_nl_prefix("explain Z"), "Z");
-        assert_eq!(strip_nl_prefix("hello world"), "hello world");
+    assert_eq!(strip_nl_prefix("what is X"), "X");
+    assert_eq!(strip_nl_prefix("how does Y work"), "Y work");
+    assert_eq!(strip_nl_prefix("explain Z"), "Z");
+    assert_eq!(strip_nl_prefix("hello world"), "hello world");
 }
 
 #[test]
 fn first_sentence_punctuation_variants() {
-        assert_eq!(first_sentence("Hello world. More text"), "Hello world.");
-        assert_eq!(first_sentence("Great answer! Follow up"), "Great answer!");
-        assert_eq!(first_sentence("What is this? More text."), "What is this?");
+    assert_eq!(first_sentence("Hello world. More text"), "Hello world.");
+    assert_eq!(first_sentence("Great answer! Follow up"), "Great answer!");
+    assert_eq!(first_sentence("What is this? More text."), "What is this?");
 }
 
 #[test]
 fn first_sentence_no_punctuation() {
-        let result = first_sentence("Single sentence no punctuation");
-        assert!(result.len() <= 120);
-        assert_eq!(result, "Single sentence no punctuation");
+    let result = first_sentence("Single sentence no punctuation");
+    assert!(result.len() <= 120);
+    assert_eq!(result, "Single sentence no punctuation");
 }
 
 #[test]
 fn first_sentence_empty() {
-        assert_eq!(first_sentence(""), "");
+    assert_eq!(first_sentence(""), "");
 }
 
 #[test]
 fn first_sentence_whitespace_only() {
-        assert_eq!(first_sentence("  "), "");
+    assert_eq!(first_sentence("  "), "");
 }
 
 #[test]
 fn first_sentence_trims_leading_whitespace() {
-        assert_eq!(first_sentence("  Hello. World"), "Hello.");
+    assert_eq!(first_sentence("  Hello. World"), "Hello.");
 }
 
 #[test]
 fn skill_name_from_ref_skil_md() {
-        assert_eq!(
-            skill_name_from_ref("doc/skills/zig-current/SKILL.md"),
-            "zig-current"
-        );
+    assert_eq!(
+        skill_name_from_ref("doc/skills/zig-current/SKILL.md"),
+        "zig-current"
+    );
 }
 
 #[test]
 fn skill_name_from_ref_fallback() {
-        assert_eq!(skill_name_from_ref("doc/skills/foo.md"), "foo.md");
+    assert_eq!(skill_name_from_ref("doc/skills/foo.md"), "foo.md");
 }
 
 #[test]
 fn truncate_chars_short_input_unchanged() {
-        assert_eq!(truncate_chars("hello", 10), "hello");
-        assert_eq!(truncate_chars("", 5), "");
+    assert_eq!(truncate_chars("hello", 10), "hello");
+    assert_eq!(truncate_chars("", 5), "");
 }
 
 #[test]
 fn truncate_chars_exact_boundary() {
-        assert_eq!(truncate_chars("hello", 5), "hello");
+    assert_eq!(truncate_chars("hello", 5), "hello");
 }
 
 #[test]
 fn truncate_chars_cuts_at_char_boundary() {
-        // 10 CJK chars (3 bytes each); cap at 4 → 4 chars, no partial char.
-        let s = "汉".repeat(10);
-        let out = truncate_chars(&s, 4);
-        assert_eq!(out, "汉".repeat(4));
-        assert_eq!(out.chars().count(), 4);
+    // 10 CJK chars (3 bytes each); cap at 4 → 4 chars, no partial char.
+    let s = "汉".repeat(10);
+    let out = truncate_chars(&s, 4);
+    assert_eq!(out, "汉".repeat(4));
+    assert_eq!(out.chars().count(), 4);
 }
 
 #[test]
 fn truncate_chars_no_ellipsis() {
-        assert_eq!(truncate_chars("abcdef", 3), "abc");
+    assert_eq!(truncate_chars("abcdef", 3), "abc");
 }
 
-    // ── AnsiStripper ─────────────────────────────────────────────────
+// ── AnsiStripper ─────────────────────────────────────────────────
 
 #[test]
 fn ansi_stripper_passthrough_plain_text() {
-        let result: String = AnsiStripper::new("hello world").collect();
-        assert_eq!(result, "hello world");
+    let result: String = AnsiStripper::new("hello world").collect();
+    assert_eq!(result, "hello world");
 }
 
 #[test]
 fn ansi_stripper_removes_sgr_color() {
-        let result: String = AnsiStripper::new("\u{1B}[31mRED\u{1B}[0m").collect();
-        assert_eq!(result, "RED");
+    let result: String = AnsiStripper::new("\u{1B}[31mRED\u{1B}[0m").collect();
+    assert_eq!(result, "RED");
 }
 
 #[test]
 fn ansi_stripper_removes_extended_color() {
-        assert_eq!(AnsiStripper::new("\u{1B}[38;5;196mbright").collect::<String>(), "bright");
-        assert_eq!(AnsiStripper::new("\u{1B}[38;2;255;0;0mRGB red").collect::<String>(), "RGB red");
+    assert_eq!(
+        AnsiStripper::new("\u{1B}[38;5;196mbright").collect::<String>(),
+        "bright"
+    );
+    assert_eq!(
+        AnsiStripper::new("\u{1B}[38;2;255;0;0mRGB red").collect::<String>(),
+        "RGB red"
+    );
 }
 
 #[test]
 fn ansi_stripper_lone_esc_preserved() {
-        let result: String = AnsiStripper::new("a\u{1B}x").collect();
-        assert_eq!(result, "a\u{1B}x");
+    let result: String = AnsiStripper::new("a\u{1B}x").collect();
+    assert_eq!(result, "a\u{1B}x");
 }
 
 #[test]
 fn ansi_stripper_cjk_preserved() {
-        let result: String = AnsiStripper::new("こんにちは").collect();
-        assert_eq!(result, "こんにちは");
+    let result: String = AnsiStripper::new("こんにちは").collect();
+    assert_eq!(result, "こんにちは");
 }
 
 #[test]
 fn ansi_stripper_empty_input() {
-        let result: String = AnsiStripper::new("").collect();
-        assert_eq!(result, "");
+    let result: String = AnsiStripper::new("").collect();
+    assert_eq!(result, "");
 }
 
-    // ── filter_unsafe_chars ──────────────────────────────────────────
+// ── filter_unsafe_chars ──────────────────────────────────────────
 
 #[test]
 fn filter_unsafe_chars_various() {
-        assert_eq!(filter_unsafe_chars("hello\u{0000}world"), "helloworld");
-        assert_eq!(filter_unsafe_chars("a\u{0081}b"), "ab");
-        assert_eq!(filter_unsafe_chars("before\x00after"), "beforeafter");
-        assert_eq!(filter_unsafe_chars("plain text"), "plain text");
-        assert_eq!(filter_unsafe_chars("hello\u{202E}world"), "helloworld");
-        assert_eq!(filter_unsafe_chars("a\u{2028}b"), "ab");
-        assert_eq!(filter_unsafe_chars("text\u{E0001}more"), "textmore");
+    assert_eq!(filter_unsafe_chars("hello\u{0000}world"), "helloworld");
+    assert_eq!(filter_unsafe_chars("a\u{0081}b"), "ab");
+    assert_eq!(filter_unsafe_chars("before\x00after"), "beforeafter");
+    assert_eq!(filter_unsafe_chars("plain text"), "plain text");
+    assert_eq!(filter_unsafe_chars("hello\u{202E}world"), "helloworld");
+    assert_eq!(filter_unsafe_chars("a\u{2028}b"), "ab");
+    assert_eq!(filter_unsafe_chars("text\u{E0001}more"), "textmore");
 }
 
-    // ── trim_doc_prefix ───────────────────────────────────────────────
+// ── trim_doc_prefix ───────────────────────────────────────────────
 
 #[test]
 fn trim_doc_prefix_various() {
-        assert_eq!(trim_doc_prefix("/// Hello world\n/// more"), "Hello world\nmore");
-        assert_eq!(trim_doc_prefix("//! Module\n# hidden"), "Module\nhidden");
-        assert_eq!(trim_doc_prefix("///     indented"), "    indented");
-        assert_eq!(trim_doc_prefix("plain line\nsecond"), "plain line\nsecond");
+    assert_eq!(
+        trim_doc_prefix("/// Hello world\n/// more"),
+        "Hello world\nmore"
+    );
+    assert_eq!(trim_doc_prefix("//! Module\n# hidden"), "Module\nhidden");
+    assert_eq!(trim_doc_prefix("///     indented"), "    indented");
+    assert_eq!(trim_doc_prefix("plain line\nsecond"), "plain line\nsecond");
 }
 
-    // ── detect_identifier_kind ────────────────────────────────────────
+// ── detect_identifier_kind ────────────────────────────────────────
 
 #[test]
 fn identifier_kind_cases() {
-        assert_eq!(
-            detect_identifier_kind("hello_world"),
-            Some(IdentifierKind::SnakeCase)
-        );
-        assert_eq!(
-            detect_identifier_kind("HelloWorld"),
-            Some(IdentifierKind::PascalCase)
-        );
-        assert_eq!(
-            detect_identifier_kind("helloWorld"),
-            Some(IdentifierKind::CamelCase)
-        );
-        assert_eq!(
-            detect_identifier_kind("kebab-case"),
-            Some(IdentifierKind::KebabCase)
-        );
-        assert_eq!(
-            detect_identifier_kind("a.b.c"),
-            Some(IdentifierKind::DottedPath)
-        );
-        assert_eq!(
-            detect_identifier_kind("two words"),
-            Some(IdentifierKind::Other)
-        );
-        assert_eq!(detect_identifier_kind(""), None);
-        assert_eq!(detect_identifier_kind("   "), None);
+    assert_eq!(
+        detect_identifier_kind("hello_world"),
+        Some(IdentifierKind::SnakeCase)
+    );
+    assert_eq!(
+        detect_identifier_kind("HelloWorld"),
+        Some(IdentifierKind::PascalCase)
+    );
+    assert_eq!(
+        detect_identifier_kind("helloWorld"),
+        Some(IdentifierKind::CamelCase)
+    );
+    assert_eq!(
+        detect_identifier_kind("kebab-case"),
+        Some(IdentifierKind::KebabCase)
+    );
+    assert_eq!(
+        detect_identifier_kind("a.b.c"),
+        Some(IdentifierKind::DottedPath)
+    );
+    assert_eq!(
+        detect_identifier_kind("two words"),
+        Some(IdentifierKind::Other)
+    );
+    assert_eq!(detect_identifier_kind(""), None);
+    assert_eq!(detect_identifier_kind("   "), None);
 }
 
 #[test]
 fn identifier_kind_snake_allows_digits_but_not_upper() {
-        assert_eq!(
-            detect_identifier_kind("field_1"),
-            Some(IdentifierKind::SnakeCase)
-        );
-        assert_eq!(
-            detect_identifier_kind("Field_1"),
-            Some(IdentifierKind::Other),
-            "an uppercase start with underscores is not snake (guidance parity)"
-        );
+    assert_eq!(
+        detect_identifier_kind("field_1"),
+        Some(IdentifierKind::SnakeCase)
+    );
+    assert_eq!(
+        detect_identifier_kind("Field_1"),
+        Some(IdentifierKind::Other),
+        "an uppercase start with underscores is not snake (guidance parity)"
+    );
 }
 
 #[test]
 fn cjk_detection_covers_han_hiragana_katakana_hangul() {
-        assert!(is_cjk_char('日'));
-        assert!(is_cjk_char('あ'));
-        assert!(is_cjk_char('ア'));
-        assert!(is_cjk_char('한'));
-        assert!(!is_cjk_char('a'));
-        assert!(!is_cjk_char('。'));
+    assert!(is_cjk_char('日'));
+    assert!(is_cjk_char('あ'));
+    assert!(is_cjk_char('ア'));
+    assert!(is_cjk_char('한'));
+    assert!(!is_cjk_char('a'));
+    assert!(!is_cjk_char('。'));
 }
 
 #[test]
 fn cjk_bigrams_expand_runs_without_dictionary() {
-        assert_eq!(cjk_bigrams("日本語"), vec!["日本", "本語"]);
-        assert_eq!(
-            cjk_bigrams("日本語テスト"),
-            vec!["日本", "本語", "語テ", "テス", "スト"]
-        );
-        assert!(cjk_bigrams("hello").is_empty());
-        assert_eq!(cjk_bigrams("a日本b"), vec!["日本"]);
-        assert!(cjk_bigrams("日").is_empty());
+    assert_eq!(cjk_bigrams("日本語"), vec!["日本", "本語"]);
+    assert_eq!(
+        cjk_bigrams("日本語テスト"),
+        vec!["日本", "本語", "語テ", "テス", "スト"]
+    );
+    assert!(cjk_bigrams("hello").is_empty());
+    assert_eq!(cjk_bigrams("a日本b"), vec!["日本"]);
+    assert!(cjk_bigrams("日").is_empty());
 }
 
 #[test]
 fn extract_tag_first_trimmed_body_or_none() {
-        assert_eq!(extract_tag("<comment> hi </comment>", "comment"), Some("hi"));
-        assert_eq!(
-            extract_tag("prose\n<comment>body</comment>\ntail", "comment"),
-            Some("body")
-        );
-        assert_eq!(
-            extract_tag("<comment>first</comment> <comment>second</comment>", "comment"),
-            Some("first")
-        );
-        assert_eq!(extract_tag("no tags", "comment"), None);
-        assert_eq!(extract_tag("<comment>unclosed", "comment"), None);
-        assert_eq!(extract_tag("unopened</comment>", "comment"), None);
-        assert_eq!(extract_tag("<comment></comment>", "comment"), None);
-        assert_eq!(extract_tag("<comment>   </comment>", "comment"), None);
-        assert_eq!(extract_tag("", "comment"), None);
-        assert_eq!(extract_tag("<other>x</other>", "comment"), None);
+    assert_eq!(
+        extract_tag("<comment> hi </comment>", "comment"),
+        Some("hi")
+    );
+    assert_eq!(
+        extract_tag("prose\n<comment>body</comment>\ntail", "comment"),
+        Some("body")
+    );
+    assert_eq!(
+        extract_tag(
+            "<comment>first</comment> <comment>second</comment>",
+            "comment"
+        ),
+        Some("first")
+    );
+    assert_eq!(extract_tag("no tags", "comment"), None);
+    assert_eq!(extract_tag("<comment>unclosed", "comment"), None);
+    assert_eq!(extract_tag("unopened</comment>", "comment"), None);
+    assert_eq!(extract_tag("<comment></comment>", "comment"), None);
+    assert_eq!(extract_tag("<comment>   </comment>", "comment"), None);
+    assert_eq!(extract_tag("", "comment"), None);
+    assert_eq!(extract_tag("<other>x</other>", "comment"), None);
 }

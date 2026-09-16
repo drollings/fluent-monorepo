@@ -77,7 +77,9 @@ pub struct HnswVectorIndex {
 
 impl HnswVectorIndex {
     pub fn new() -> Self {
-        Self { inner: HnswIndex::new() }
+        Self {
+            inner: HnswIndex::new(),
+        }
     }
     pub fn is_built(&self) -> bool {
         self.inner.is_built()

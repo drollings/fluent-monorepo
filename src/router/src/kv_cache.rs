@@ -24,8 +24,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use common_core::cache::LoadCache;
-use common_core::sync::lock;
 use common_core::now_secs;
+use common_core::sync::lock;
 use thiserror::Error;
 
 /// The snapshot-index key: `(model, adapter, session_id)`.
@@ -69,9 +69,7 @@ pub fn kv_snapshot_path(
 ) -> PathBuf {
     let dir = slot_save_path.join(model_key(model));
     match instance {
-        Some(instance) => dir
-            .join(instance)
-            .join(format!("{snapshot_name}.bin")),
+        Some(instance) => dir.join(instance).join(format!("{snapshot_name}.bin")),
         None => dir.join(format!("{snapshot_name}.bin")),
     }
 }
@@ -246,11 +244,7 @@ impl ColdSnapshotIndex {
     /// cold tier never honored it. Eviction here is always the TTL predicate
     /// sweep in [`ColdSnapshotIndex::evict`]; byte-budget ordering lives in
     /// `common_core::cache` and is composed by `instances::pool`, not here.
-    pub fn new(
-        slot_save_path: impl Into<PathBuf>,
-        _max_mb: usize,
-        ttl_secs: u64,
-    ) -> Self {
+    pub fn new(slot_save_path: impl Into<PathBuf>, _max_mb: usize, ttl_secs: u64) -> Self {
         Self {
             slot_save_path: Some(slot_save_path.into()),
             entries: Mutex::new(HashMap::new()),
@@ -304,11 +298,14 @@ impl ColdSnapshotIndex {
         adapter: Option<&str>,
         session_id: &str,
     ) -> Result<KvSnapshot, KvCacheError> {
-        let key = (model.to_string(), adapter.map(String::from), session_id.to_string());
-        lock(&self.entries)
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| KvCacheError::NotFound(format!("no snapshot for session '{session_id}'")))
+        let key = (
+            model.to_string(),
+            adapter.map(String::from),
+            session_id.to_string(),
+        );
+        lock(&self.entries).get(&key).cloned().ok_or_else(|| {
+            KvCacheError::NotFound(format!("no snapshot for session '{session_id}'"))
+        })
     }
 
     /// Evict stale metadata. Returns the number evicted.
@@ -334,7 +331,11 @@ impl ColdSnapshotIndex {
 
     /// Remove a session's metadata record.
     pub fn remove(&self, model: &str, adapter: Option<&str>, session_id: &str) {
-        let key = (model.to_string(), adapter.map(String::from), session_id.to_string());
+        let key = (
+            model.to_string(),
+            adapter.map(String::from),
+            session_id.to_string(),
+        );
         lock(&self.entries).remove(&key);
     }
 
@@ -515,10 +516,9 @@ impl SnapshotStore {
         let fork = Arc::clone(fork);
         let instance = instance.to_string();
         let fork_instance = instance.clone();
-        match common_core::runtime::block_on(async move {
-            fork.list_snapshots(&fork_instance).await
-        })
-        {
+        match common_core::runtime::block_on(
+            async move { fork.list_snapshots(&fork_instance).await },
+        ) {
             Ok(infos) => infos
                 .into_iter()
                 .map(|info| KvSnapshot {
@@ -556,11 +556,7 @@ impl SnapshotStore {
     /// Delete a fork snapshot `name` for `instance`. With an attached fork
     /// handle this delegates to `DELETE /instances/:instance/snapshot/:name`;
     /// without one it is a no-op returning `Ok(())` - never a crash.
-    pub fn delete_snapshot(
-        &self,
-        instance: &str,
-        name: &str,
-    ) -> Result<(), KvCacheError> {
+    pub fn delete_snapshot(&self, instance: &str, name: &str) -> Result<(), KvCacheError> {
         let Some(fork) = &self.fork else {
             return Ok(());
         };

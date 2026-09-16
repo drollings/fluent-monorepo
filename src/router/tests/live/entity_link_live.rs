@@ -16,16 +16,12 @@
 
 use std::sync::Arc;
 
-use fluent_router::ledger::ContentNodeLedger;
-use fluent_router::ledger::overlay::{
-    CandidateStatus, OverlayCandidateStore,
-};
-use fluent_router::server::entity_link::{
-    EntityLinkJob, EntityLinkWorker,
-};
-use fluent_types::{InterlinguaId, InterlinguaNamespace, NodeId};
-use fluent_concept::InMemoryConceptStore;
 use fluent_concept::ConceptStore;
+use fluent_concept::InMemoryConceptStore;
+use fluent_router::ledger::overlay::{CandidateStatus, OverlayCandidateStore};
+use fluent_router::ledger::ContentNodeLedger;
+use fluent_router::server::entity_link::{EntityLinkJob, EntityLinkWorker};
+use fluent_types::{InterlinguaId, InterlinguaNamespace, NodeId};
 
 /// The YaGO `Entity` root (as `YagoClass`).
 fn entity_root() -> InterlinguaId {
@@ -94,10 +90,7 @@ fn scorer() -> fluent_router::server::entity_link::EntityLinkScorer {
 
 /// Record the accepted candidates for one node at a given threshold, using a
 /// fresh in-memory candidate plane per sweep (so a sweep is isolated).
-async fn sweep_once(
-    concepts: &Arc<dyn ConceptStore>,
-    threshold: f64,
-) -> Vec<(InterlinguaId, f64)> {
+async fn sweep_once(concepts: &Arc<dyn ConceptStore>, threshold: f64) -> Vec<(InterlinguaId, f64)> {
     let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
     let s = OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"));
     let worker = EntityLinkWorker::new(
@@ -139,7 +132,8 @@ async fn entity_link_threshold_sweep_records_precision() {
     let low = sweep_once(&concepts, 0.4).await;
     assert_eq!(low.len(), 2, "both genuine entities accepted at 0.4");
     assert!(
-        low.iter().all(|(id, _)| id.namespace() == InterlinguaNamespace::YagoEntity),
+        low.iter()
+            .all(|(id, _)| id.namespace() == InterlinguaNamespace::YagoEntity),
         "the non-entity class is gated out"
     );
 

@@ -15,8 +15,8 @@
 //! grammar-constrained call returning N resolutions (the `BatchPromptGrammar`
 //! array shape), then applies + promotes.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use fluent_concurrency::credit_pool::CreditGatedPool;
 use fluent_concurrency::pool::PoolError;
@@ -305,13 +305,10 @@ impl FrameResolutionWorker {
 
     /// Enqueue a frame-resolution job, bounded by the credit gate.
     pub async fn enqueue(&self, job: FrameResolutionJob) -> Result<(), FrameResolutionError> {
-        self.pool
-            .submit(job)
-            .await
-            .map_err(|e| match e {
-                PoolError::Closed => FrameResolutionError::Closed("worker drained".into()),
-                PoolError::Full => FrameResolutionError::Full(e.to_string()),
-            })
+        self.pool.submit(job).await.map_err(|e| match e {
+            PoolError::Closed => FrameResolutionError::Closed("worker drained".into()),
+            PoolError::Full => FrameResolutionError::Full(e.to_string()),
+        })
     }
 
     /// Drain in-flight jobs and shut the pool down (graceful shutdown).
@@ -380,8 +377,8 @@ fn process_job(
             return;
         }
     };
-    let resolutions: Vec<Resolution> = serde_json::from_str(&reply)
-        .unwrap_or_else(|_| parse_naive(&reply, misses.len()));
+    let resolutions: Vec<Resolution> =
+        serde_json::from_str(&reply).unwrap_or_else(|_| parse_naive(&reply, misses.len()));
 
     // 3. Apply + promote: each resolved pattern is recorded back into the
     //    index so the next occurrence is deterministic (zero LLM cost) —
@@ -421,11 +418,9 @@ fn process_job(
             );
             continue;
         }
-        if let Err(e) = index.record_preferred_sense(
-            req.predicate_lemma_id,
-            req.ambiguity_kind,
-            res.clone(),
-        ) {
+        if let Err(e) =
+            index.record_preferred_sense(req.predicate_lemma_id, req.ambiguity_kind, res.clone())
+        {
             tracing::warn!(
                 target: "router.frame",
                 model = model,

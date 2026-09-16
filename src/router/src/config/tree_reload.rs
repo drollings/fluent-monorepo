@@ -18,8 +18,7 @@
 use std::sync::{Arc, RwLock};
 
 use crate::config::classification::{
-    default_coherence_threshold, default_safety_threshold, ClassificationNode,
-    ClassificationTree,
+    default_coherence_threshold, default_safety_threshold, ClassificationNode, ClassificationTree,
 };
 use crate::config::compiled_tree::CompiledTree;
 
@@ -67,10 +66,7 @@ struct TreeGeneration {
 /// collected as warn-and-non-match entries, never errors, so this
 /// expectation only fires on a defensive RegexSet failure that cannot occur.
 fn precompile(tree: &ClassificationTree) -> Arc<CompiledTree> {
-    Arc::new(
-        tree.compile()
-            .expect("classification tree precompiles"),
-    )
+    Arc::new(tree.compile().expect("classification tree precompiles"))
 }
 
 /// The versioned live holder. `Send + Sync`; snapshots clone under a read
@@ -212,10 +208,7 @@ impl VersionedTree {
         dangling.sort();
         if !dangling.is_empty() {
             return Err(ReloadError::TopologyMismatch {
-                detail: format!(
-                    "aliases point at unknown keys: {}",
-                    dangling.join(", ")
-                ),
+                detail: format!("aliases point at unknown keys: {}", dangling.join(", ")),
             });
         }
         let version = live_version + 1;
@@ -553,9 +546,10 @@ fn resolve_mut<'a>(
     let mut current = node;
     for (i, key) in path.iter().enumerate() {
         let next = match current {
-            ClassificationNode::Classifier { children, .. } => {
-                children.iter_mut().find(|c| &c.key == key).map(|c| &mut c.node)
-            }
+            ClassificationNode::Classifier { children, .. } => children
+                .iter_mut()
+                .find(|c| &c.key == key)
+                .map(|c| &mut c.node),
             _ => None,
         };
         current = next.ok_or_else(|| ReloadError::NotFound {

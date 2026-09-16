@@ -163,4 +163,3 @@ pub fn serve_stdio<H: JsonRpcHandler>(handler: &H) -> Result<(), IoError> {
 
     Ok(())
 }
-

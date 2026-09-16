@@ -41,7 +41,10 @@ async fn handler_runs_once_per_item_and_credit_released_after_completion() {
     let w = Arc::clone(&worker);
     let second = tokio::spawn(async move { w.enqueue_with_credit(2).await });
     tokio::time::sleep(Duration::from_millis(10)).await;
-    assert!(worker.is_blocked(), "credit exhausted -> second enqueue blocked");
+    assert!(
+        worker.is_blocked(),
+        "credit exhausted -> second enqueue blocked"
+    );
     assert!(
         !second.is_finished(),
         "enqueue must block until the handler releases credit"
@@ -50,7 +53,10 @@ async fn handler_runs_once_per_item_and_credit_released_after_completion() {
     // Starting the worker lets it process item 1; the handler's completion
     // (not the enqueue) releases the token and the blocked enqueue proceeds.
     let handle = worker.start();
-    second.await.expect("blocked enqueue completes").expect("ok");
+    second
+        .await
+        .expect("blocked enqueue completes")
+        .expect("ok");
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while counter.load(AtomicOrdering::SeqCst) < 2 {
         assert!(

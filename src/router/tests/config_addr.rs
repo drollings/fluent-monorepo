@@ -31,9 +31,15 @@ fn hosts_equivalent_divergences_locked() {
     // Characterization (M5): the router equivalence class — trim-only, three
     // exact loopback forms. Each divergence from fluent_llm::url is
     // security-relevant (self-routing-loop vs SSRF threat models) and locked.
-    assert!(!hosts_equivalent("LocalHost", "localhost"), "no case folding");
+    assert!(
+        !hosts_equivalent("LocalHost", "localhost"),
+        "no case folding"
+    );
     assert!(!hosts_equivalent("LOCALHOST", "127.0.0.1"));
-    assert!(!hosts_equivalent("127.0.0.2", "127.0.0.1"), "no 127/8 range");
+    assert!(
+        !hosts_equivalent("127.0.0.2", "127.0.0.1"),
+        "no 127/8 range"
+    );
     assert!(hosts_equivalent("127.0.0.1", "127.0.0.1"));
     assert!(!hosts_equivalent("[::1]", "::1"), "no bracket unwrap");
     assert!(!hosts_equivalent("127.0.0.1 ", "upstream.test"));

@@ -4,8 +4,7 @@
 #[allow(unused_imports)]
 use fluent_wvr::boundary::*;
 use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 use fluent_wvr::coerce::{coerce, Coercion};
 
@@ -68,7 +67,14 @@ impl FieldAccess for Verdict {
         }
     }
     fn field_names(&self) -> &'static [&'static str] {
-        &["action", "target", "coherence", "complexity", "reason", "tags"]
+        &[
+            "action",
+            "target",
+            "coherence",
+            "complexity",
+            "reason",
+            "tags",
+        ]
     }
 }
 
@@ -131,7 +137,9 @@ fn repair_strips_comments() {
 #[test]
 fn repair_normalizes_non_json_literals() {
     assert_eq!(
-        repaired(r#"{"a": undefined, "b": NaN, "c": Infinity, "d": -Infinity, "e": None, "f": true}"#),
+        repaired(
+            r#"{"a": undefined, "b": NaN, "c": Infinity, "d": -Infinity, "e": None, "f": true}"#
+        ),
         r#"{"a": null, "b": null, "c": null, "d": null, "e": null, "f": true}"#
     );
 }
@@ -187,8 +195,8 @@ const VERDICT_SCHEMA: &[&str] = &[
 #[test]
 fn extract_members_from_bare_and_quoted() {
     let opts = BoundaryOptions::for_schema(VERDICT_SCHEMA);
-    let members = extract_members("{action: route, 'target': code, reason: 'why'}", &opts)
-        .expect("members");
+    let members =
+        extract_members("{action: route, 'target': code, reason: 'why'}", &opts).expect("members");
     assert_eq!(
         members,
         vec![
@@ -215,8 +223,8 @@ fn extract_members_brace_less_key_value() {
 #[test]
 fn extract_members_filters_to_schema() {
     let opts = BoundaryOptions::for_schema(VERDICT_SCHEMA);
-    let members = extract_members("{action: route, unknown: 1, target: code}", &opts)
-        .expect("members");
+    let members =
+        extract_members("{action: route, unknown: 1, target: code}", &opts).expect("members");
     // `unknown` is not a schema field and is not emitted.
     assert_eq!(
         members,
@@ -230,7 +238,10 @@ fn extract_members_filters_to_schema() {
 #[test]
 fn extract_members_no_members_errors() {
     let opts = BoundaryOptions::for_schema(VERDICT_SCHEMA);
-    assert_eq!(extract_members("llama llama llama", &opts), Err(BoundaryError::NoMembers));
+    assert_eq!(
+        extract_members("llama llama llama", &opts),
+        Err(BoundaryError::NoMembers)
+    );
     assert_eq!(extract_members("", &opts), Err(BoundaryError::NoMembers));
 }
 

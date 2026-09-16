@@ -90,9 +90,7 @@ pub async fn handle_unload_model(
         if onnx.refuses_unload(&key) {
             return error_response(
                 hyper::StatusCode::CONFLICT,
-                &format!(
-                    "model '{key}' is an always-resident onnx model and cannot be unloaded"
-                ),
+                &format!("model '{key}' is an always-resident onnx model and cannot be unloaded"),
             );
         }
     }

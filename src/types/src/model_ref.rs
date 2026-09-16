@@ -30,7 +30,9 @@ impl ModelRef {
     /// Strip the provider prefix (`"ollama:llama3"` → `"llama3"`).
     #[must_use]
     pub fn model_name(model_ref: &str) -> &str {
-        model_ref.split_once(':').map_or(model_ref, |(_, name)| name)
+        model_ref
+            .split_once(':')
+            .map_or(model_ref, |(_, name)| name)
     }
 
     /// Split into `(provider, model)`; `None` when no colon is present.

@@ -26,6 +26,6 @@ pub enum OntologyError {
     YagoView(String),
 }
 
-pub use yago_loader::{canonical_class_name, yago_class_id, LoadStats, YaGoLoader};
 pub use plausibility::{score_plausibility, PlausibilityInput};
+pub use yago_loader::{canonical_class_name, yago_class_id, LoadStats, YaGoLoader};
 pub use yago_view::YagoView;

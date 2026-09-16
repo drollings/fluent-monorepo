@@ -223,7 +223,10 @@ impl FsCapability {
         Self { _priv: () }
     }
 
-    pub async fn read(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, common_core::error::IoError> {
+    pub async fn read(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<u8>, common_core::error::IoError> {
         check_capability(self)?;
         Ok(tokio::fs::read(path).await?)
     }

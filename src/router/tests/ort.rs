@@ -25,7 +25,7 @@ fn plain_entry() -> ModelEntry {
         hf_file: None,
         template: None,
         role_params: None,
-            api_key: None,
+        api_key: None,
     }
 }
 
@@ -73,89 +73,97 @@ fn no_onnx_config_yields_empty_registry() {
 #[cfg(feature = "onnx")]
 #[test]
 fn role_fleet_registers_under_role_keys_with_implied_tasks() {
-let mut config = RouterConfig::default();
-config.onnx = Some(fluent_llm::onnx_config::OnnxFleetConfig {
-    encoder: Some(role_config("/models/encoder.onnx")),
-    pii: None,
-    router: None,
-    policy: None,
-    colbert: Some(role_config("/models/colbert.onnx")),
-    llm: None,
-});
-let registry = build_onnx_registry(&config).expect("build").expect("fleet");
-let encoder_key = fluent_llm::onnx_config::OnnxRole::Encoder.registry_key();
-let colbert_key = fluent_llm::onnx_config::OnnxRole::Colbert.registry_key();
-assert!(registry.config(encoder_key).is_some());
-assert!(registry.config(colbert_key).is_some());
-assert_eq!(
-    registry.config(encoder_key).unwrap().task,
-    fluent_llm::onnx_config::OnnxTask::FillMask
-);
-assert_eq!(
-    registry.config(colbert_key).unwrap().task,
-    fluent_llm::onnx_config::OnnxTask::LateInteraction
-);
-// Unconfigured roles are not registered.
-assert!(!registry.config(fluent_llm::onnx_config::OnnxRole::Pii.registry_key()).is_some());
+    let mut config = RouterConfig::default();
+    config.onnx = Some(fluent_llm::onnx_config::OnnxFleetConfig {
+        encoder: Some(role_config("/models/encoder.onnx")),
+        pii: None,
+        router: None,
+        policy: None,
+        colbert: Some(role_config("/models/colbert.onnx")),
+        llm: None,
+    });
+    let registry = build_onnx_registry(&config).expect("build").expect("fleet");
+    let encoder_key = fluent_llm::onnx_config::OnnxRole::Encoder.registry_key();
+    let colbert_key = fluent_llm::onnx_config::OnnxRole::Colbert.registry_key();
+    assert!(registry.config(encoder_key).is_some());
+    assert!(registry.config(colbert_key).is_some());
+    assert_eq!(
+        registry.config(encoder_key).unwrap().task,
+        fluent_llm::onnx_config::OnnxTask::FillMask
+    );
+    assert_eq!(
+        registry.config(colbert_key).unwrap().task,
+        fluent_llm::onnx_config::OnnxTask::LateInteraction
+    );
+    // Unconfigured roles are not registered.
+    assert!(!registry
+        .config(fluent_llm::onnx_config::OnnxRole::Pii.registry_key())
+        .is_some());
 }
 
 #[cfg(feature = "onnx")]
 #[test]
 fn llm_role_registers_as_causal_lm_with_lifecycle() {
-let mut config = RouterConfig::default();
-config.onnx = Some(fluent_llm::onnx_config::OnnxFleetConfig {
-    llm: Some(fluent_llm::onnx_config::OnnxRoleConfig {
-        pinned: true,
-        no_sleep: false,
-        sleep_idle_seconds: Some(30),
-        total_timeout_ms: 120000,
-        idle_timeout_ms: 0,
-        params: None,
-        model: fluent_llm::onnx_config::OnnxConfig::new()
-            .model_path("/models/llm.onnx")
-            .tokenizer_path("/models/llm/tokenizer.json")
-            // Unloadable so registration does not attempt a real load.
-            .resident(false)
-            .task(fluent_llm::onnx_config::OnnxTask::CausalLm)
-            .max_gen_tokens(512)
-            .build(),
-    }),
-    ..Default::default()
-});
-let registry = build_onnx_registry(&config).expect("build").expect("fleet");
-let key = fluent_llm::onnx_config::OnnxRole::Llm.registry_key();
-let cfg = registry.config(key).expect("llm registered");
-assert_eq!(cfg.task, fluent_llm::onnx_config::OnnxTask::CausalLm);
-assert_eq!(cfg.max_gen_tokens, 512);
-assert!(registry.is_pinned(key), "role pinned flag reaches the registry");
-assert_eq!(registry.sleep_idle_seconds(key), Some(30));
-assert!(!registry.refuses_unload(key), "unloadable role is not Always");
+    let mut config = RouterConfig::default();
+    config.onnx = Some(fluent_llm::onnx_config::OnnxFleetConfig {
+        llm: Some(fluent_llm::onnx_config::OnnxRoleConfig {
+            pinned: true,
+            no_sleep: false,
+            sleep_idle_seconds: Some(30),
+            total_timeout_ms: 120000,
+            idle_timeout_ms: 0,
+            params: None,
+            model: fluent_llm::onnx_config::OnnxConfig::new()
+                .model_path("/models/llm.onnx")
+                .tokenizer_path("/models/llm/tokenizer.json")
+                // Unloadable so registration does not attempt a real load.
+                .resident(false)
+                .task(fluent_llm::onnx_config::OnnxTask::CausalLm)
+                .max_gen_tokens(512)
+                .build(),
+        }),
+        ..Default::default()
+    });
+    let registry = build_onnx_registry(&config).expect("build").expect("fleet");
+    let key = fluent_llm::onnx_config::OnnxRole::Llm.registry_key();
+    let cfg = registry.config(key).expect("llm registered");
+    assert_eq!(cfg.task, fluent_llm::onnx_config::OnnxTask::CausalLm);
+    assert_eq!(cfg.max_gen_tokens, 512);
+    assert!(
+        registry.is_pinned(key),
+        "role pinned flag reaches the registry"
+    );
+    assert_eq!(registry.sleep_idle_seconds(key), Some(30));
+    assert!(
+        !registry.refuses_unload(key),
+        "unloadable role is not Always"
+    );
 }
 
 #[cfg(feature = "onnx")]
 #[test]
 fn onnx_weights_impls_yield_one_engine_input_per_registered_role() {
-// No fleet → no engine inputs (the shared engine sees an empty onnx half).
-let bare = RouterConfig::default();
-assert!(onnx_weights_impls(
-    &Arc::new(fluent_llm::onnx_session::OrtSessionRegistry::new(
-        Arc::new(fluent_onnx::OrtSessionLoader),
-    )),
-    &bare,
-)
-.is_empty());
+    // No fleet → no engine inputs (the shared engine sees an empty onnx half).
+    let bare = RouterConfig::default();
+    assert!(onnx_weights_impls(
+        &Arc::new(fluent_llm::onnx_session::OrtSessionRegistry::new(Arc::new(
+            fluent_onnx::OrtSessionLoader
+        ),)),
+        &bare,
+    )
+    .is_empty());
 
-let config = RouterConfig {
-    onnx: Some(fluent_llm::onnx_config::OnnxFleetConfig {
-        llm: Some(role_config("/models/llm.onnx")),
+    let config = RouterConfig {
+        onnx: Some(fluent_llm::onnx_config::OnnxFleetConfig {
+            llm: Some(role_config("/models/llm.onnx")),
+            ..Default::default()
+        }),
         ..Default::default()
-    }),
-    ..Default::default()
-};
-let registry = build_onnx_registry(&config).expect("build").expect("fleet");
-let weights = onnx_weights_impls(&registry, &config);
-assert_eq!(weights.len(), 1, "one engine input per registered role");
-assert_eq!(weights[0].model_key(), "onnx/llm");
+    };
+    let registry = build_onnx_registry(&config).expect("build").expect("fleet");
+    let weights = onnx_weights_impls(&registry, &config);
+    assert_eq!(weights.len(), 1, "one engine input per registered role");
+    assert_eq!(weights[0].model_key(), "onnx/llm");
 }
 
 #[test]
@@ -207,10 +215,26 @@ mod map_annotations_tests {
 
     fn valid_annotations() -> Vec<Option<TokenAnnotation>> {
         vec![
-            Some(TokenAnnotation { pos: "det".into(), dep: "det".into(), head_abs: Some(1) }),
-            Some(TokenAnnotation { pos: "noun".into(), dep: "nsubj".into(), head_abs: Some(2) }),
-            Some(TokenAnnotation { pos: "verb".into(), dep: "root".into(), head_abs: Some(2) }),
-            Some(TokenAnnotation { pos: "punct".into(), dep: "punct".into(), head_abs: Some(2) }),
+            Some(TokenAnnotation {
+                pos: "det".into(),
+                dep: "det".into(),
+                head_abs: Some(1),
+            }),
+            Some(TokenAnnotation {
+                pos: "noun".into(),
+                dep: "nsubj".into(),
+                head_abs: Some(2),
+            }),
+            Some(TokenAnnotation {
+                pos: "verb".into(),
+                dep: "root".into(),
+                head_abs: Some(2),
+            }),
+            Some(TokenAnnotation {
+                pos: "punct".into(),
+                dep: "punct".into(),
+                head_abs: Some(2),
+            }),
         ]
     }
 
@@ -228,8 +252,9 @@ mod map_annotations_tests {
         assert_eq!(set.records()[1].head, 1); // cat → sat
         assert_eq!(set.records()[2].head, 0); // sat → self (root)
         assert_eq!(set.records()[3].head, -1); // . → sat
-        // The 7-check gate accepts the mapped set (valid tree, closed vocab).
-        set.validate(&AnnotationValidator::new(), &doc).expect("7-check gate passes");
+                                               // The 7-check gate accepts the mapped set (valid tree, closed vocab).
+        set.validate(&AnnotationValidator::new(), &doc)
+            .expect("7-check gate passes");
     }
 
     #[test]
@@ -276,7 +301,9 @@ mod map_annotations_tests {
 #[test]
 #[cfg(not(feature = "onnx"))]
 fn nlp_encoder_fetch_noop_without_onnx_feature() {
-    let registry = Arc::new(fluent_llm::onnx_session::OrtSessionRegistry::new(Arc::new(StubLoader)));
+    let registry = Arc::new(fluent_llm::onnx_session::OrtSessionRegistry::new(Arc::new(
+        StubLoader,
+    )));
     let result = nlp_encoder_fetch(&registry, "encoder").expect("no ort error");
     assert!(result.is_none());
 }
@@ -291,11 +318,11 @@ fn nlp_encoder_fetch_noop_without_onnx_feature() {
 #[cfg(feature = "onnx")]
 #[tokio::test]
 async fn entity_link_full_loop_scorer_to_overlay_candidates() {
-    use crate::server::entity_link::{EntityLinkJob, EntityLinkWorker, EntityLinkScorer};
+    use crate::server::entity_link::{EntityLinkJob, EntityLinkScorer, EntityLinkWorker};
+    use fluent_concept::ConceptStore;
+    use fluent_concept::InMemoryConceptStore;
     use fluent_concurrency::tokio_runtime;
     use fluent_types::{ConceptMetadata, InterlinguaId, InterlinguaNamespace, NodeId};
-    use fluent_concept::InMemoryConceptStore;
-    use fluent_concept::ConceptStore;
 
     // YaGO `Entity` reference class + a child entity the scorer resolves to.
     let concepts = InMemoryConceptStore::new();
@@ -339,9 +366,8 @@ async fn entity_link_full_loop_scorer_to_overlay_candidates() {
     // The scorer's encode step is model-dependent; use synthetic query tokens
     // through the same pure `score_span` mapping the adapter wires.
     let concepts_h = Arc::clone(&concepts);
-    let scorer: EntityLinkScorer = Arc::new(move |_text| {
-        score_span(&[vec![0.99, 0.14]], &index, concepts_h.as_ref())
-    });
+    let scorer: EntityLinkScorer =
+        Arc::new(move |_text| score_span(&[vec![0.99, 0.14]], &index, concepts_h.as_ref()));
 
     let ledger = crate::ledger::ContentNodeLedger::open_in_memory().expect("ledger");
     let candidates = crate::ledger::overlay::OverlayCandidateStore::new(
@@ -384,9 +410,9 @@ async fn entity_link_full_loop_scorer_to_overlay_candidates() {
 #[cfg(feature = "onnx")]
 #[test]
 fn score_span_resolves_canonical_and_respects_threshold() {
-    use fluent_types::{InterlinguaId, InterlinguaNamespace};
-    use fluent_concept::InMemoryConceptStore;
     use fluent_concept::ConceptStore;
+    use fluent_concept::InMemoryConceptStore;
+    use fluent_types::{InterlinguaId, InterlinguaNamespace};
 
     let concepts = InMemoryConceptStore::new();
     let known = InterlinguaId::new(InterlinguaNamespace::YagoEntity, 0x002);
@@ -444,7 +470,11 @@ mod onnx_backend_tests {
         let backend = OnnxChatBackend::new(runner.clone(), vocab, LlmParams::default());
         let out = backend.chat_complete(&one_message()).expect("free text");
         assert_eq!(out, "free text");
-        assert_eq!(runner.calls.lock().unwrap()[0], false, "no grammar for free text");
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            false,
+            "no grammar for free text"
+        );
     }
 
     #[test]
@@ -495,7 +525,11 @@ mod onnx_backend_tests {
         backend
             .chat_complete_with_extras(&one_message(), &extras)
             .expect("degrades to free text");
-        assert_eq!(runner.calls.lock().unwrap()[0], false, "unrepresentable → no grammar");
+        assert_eq!(
+            runner.calls.lock().unwrap()[0],
+            false,
+            "unrepresentable → no grammar"
+        );
     }
 
     #[test]
@@ -583,7 +617,10 @@ async fn onnx_weights_lazy_role_loads_on_first_use_and_releases() {
 
     // A pinned/Always role would refuse; this Unloadable one unloads.
     weights.unload().await.expect("unload");
-    assert!(!weights.is_loaded(), "release returns the lazy role to unloaded");
+    assert!(
+        !weights.is_loaded(),
+        "release returns the lazy role to unloaded"
+    );
 }
 
 /// `local_backend_for_instance` routes an onnx key to the registry's
@@ -591,18 +628,15 @@ async fn onnx_weights_lazy_role_loads_on_first_use_and_releases() {
 /// dispatch), while `local_backend` keeps the role's default.
 #[test]
 fn local_backend_for_instance_onnx_branch_routes_to_resolver() {
-
     let mut config = RouterConfig::default();
     let key = fluent_llm::onnx_config::OnnxRole::Llm.registry_key();
     config.set_inference_registry(
-        crate::test_stubs::StubInferenceBackend::with_responder(
-            "onnx",
-            key,
-            |instance| match instance {
+        crate::test_stubs::StubInferenceBackend::with_responder("onnx", key, |instance| {
+            match instance {
                 Some("swarm") => "onnx-swarm",
                 _ => "onnx-default",
-            },
-        )
+            }
+        })
         .into_registry(),
     );
 
@@ -617,20 +651,24 @@ fn local_backend_for_instance_onnx_branch_routes_to_resolver() {
     // The role's default (no instance) still resolves through `local_backend`.
     let default_backend = config.local_backend(key);
     assert!(default_backend.is_some());
-    assert_eq!(default_backend.unwrap().chat_complete(&[]).unwrap(), "onnx-default");
+    assert_eq!(
+        default_backend.unwrap().chat_complete(&[]).unwrap(),
+        "onnx-default"
+    );
 }
 
 /// `onnx_pool_context` picks an onnx role's work context (largest
 /// non-default group wins) from the role's `instances` block.
 #[test]
 fn onnx_pool_context_uses_largest_non_default_group() {
-
     let mut role = lazy_llm_role();
     role.instances = Some(
-        serde_json::from_str(r#"{
+        serde_json::from_str(
+            r#"{
             "swarm":  { "num_ctx": 16384, "count": 3, "group": "swarm" },
             "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-        }"#)
+        }"#,
+        )
         .expect("instances json"),
     );
     assert_eq!(
@@ -640,9 +678,8 @@ fn onnx_pool_context_uses_largest_non_default_group() {
     );
 
     let mut single = lazy_llm_role();
-    single.instances = Some(
-        serde_json::from_str(r#"{ "ledger": { "num_ctx": 8192 } }"#).expect("instances"),
-    );
+    single.instances =
+        Some(serde_json::from_str(r#"{ "ledger": { "num_ctx": 8192 } }"#).expect("instances"));
     assert_eq!(
         onnx_pool_context(&single).as_deref(),
         Some("ledger"),
@@ -650,7 +687,11 @@ fn onnx_pool_context_uses_largest_non_default_group() {
     );
 
     let none = lazy_llm_role();
-    assert_eq!(onnx_pool_context(&none), None, "no instances → no pool context");
+    assert_eq!(
+        onnx_pool_context(&none),
+        None,
+        "no instances → no pool context"
+    );
     let _ = RouterConfig::default();
 }
 
@@ -664,7 +705,10 @@ fn onnx_pool_context_uses_largest_non_default_group() {
 #[test]
 fn pii_prefilter_no_model_no_auto_enqueue_returns_none() {
     let filter = pii_prefilter(None, None, false).expect("no ort error");
-    assert!(filter.is_none(), "nothing configured and nothing required → no filter");
+    assert!(
+        filter.is_none(),
+        "nothing configured and nothing required → no filter"
+    );
 }
 
 #[test]
@@ -681,7 +725,10 @@ fn pii_prefilter_no_model_auto_enqueue_returns_regex_baseline() {
 fn pii_prefilter_unregistered_model_falls_back_without_error() {
     // Unregistered key + auto-enqueue → regex baseline (fail-open).
     let filter = pii_prefilter(None, Some("no-such-pii-model"), true).expect("no ort error");
-    assert!(filter.is_some(), "unregistered model falls back to the baseline");
+    assert!(
+        filter.is_some(),
+        "unregistered model falls back to the baseline"
+    );
     // Unregistered key + no auto-enqueue → None.
     let filter = pii_prefilter(None, Some("no-such-pii-model"), false).expect("no ort error");
     assert!(filter.is_none());

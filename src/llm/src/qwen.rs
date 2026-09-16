@@ -16,10 +16,9 @@ use async_trait::async_trait;
 
 use crate::catalog::{CatalogEntry, EmbeddingBackend};
 use crate::embeddings::{
-    BatchEmbedding, EmbeddingError, EmbeddingProvider, block_on_provider, check_embed_batch_output,
-    validate_embed_batch,
+    block_on_provider, check_embed_batch_output, validate_embed_batch, BatchEmbedding,
+    EmbeddingError, EmbeddingProvider,
 };
-
 
 const DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS: u64 = 60_000;
 const QWEN3_VL_MAX_IMAGE_COUNT: usize = 10;
@@ -109,7 +108,9 @@ impl TryFrom<(&CatalogEntry, &'static str)> for QwenTextSpec {
             display_name,
             dimension: entry.dimension,
             max_batch_size: entry.max_batch_size,
-            max_input_tokens: entry.max_input_tokens.ok_or_else(|| invalid("maxInputTokens"))?,
+            max_input_tokens: entry
+                .max_input_tokens
+                .ok_or_else(|| invalid("maxInputTokens"))?,
             default_endpoint: entry
                 .default_endpoint
                 .ok_or_else(|| invalid("defaultEndpoint"))?,
@@ -152,7 +153,9 @@ fn resolve_qwen_config(
         api_key,
         endpoint,
         timeout: Duration::from_millis(
-            options.timeout_ms.unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
+            options
+                .timeout_ms
+                .unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
         ),
     })
 }
@@ -306,18 +309,25 @@ fn parse_text_vectors(
             provider.message
         )));
     }
-    let data = response.body.get("data").and_then(serde_json::Value::as_array).ok_or_else(|| {
-        EmbeddingError::RequestFailed(format!(
-            "{display_name} response did not include data (model={reference})"
-        ))
-    })?;
-    let mut vectors: Vec<Option<Vec<f32>>> = vec![None; input_count];
-    for item in data {
-        let index = item.get("index").and_then(serde_json::Value::as_u64).ok_or_else(|| {
+    let data = response
+        .body
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
             EmbeddingError::RequestFailed(format!(
-                "{display_name} response included an invalid index (model={reference})"
+                "{display_name} response did not include data (model={reference})"
             ))
         })?;
+    let mut vectors: Vec<Option<Vec<f32>>> = vec![None; input_count];
+    for item in data {
+        let index = item
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| {
+                EmbeddingError::RequestFailed(format!(
+                    "{display_name} response included an invalid index (model={reference})"
+                ))
+            })?;
         if index as usize >= input_count {
             return Err(EmbeddingError::RequestFailed(format!(
                 "{display_name} response index was out of range (model={reference} index={index} inputCount={input_count})"
@@ -552,7 +562,9 @@ impl TryFrom<&CatalogEntry> for QwenVlSpec {
             model: entry.model,
             dimension: entry.dimension,
             max_batch_size: entry.max_batch_size,
-            max_image_bytes: entry.max_image_bytes.ok_or_else(|| invalid("maxImageBytes"))?,
+            max_image_bytes: entry
+                .max_image_bytes
+                .ok_or_else(|| invalid("maxImageBytes"))?,
             default_endpoint: entry
                 .default_endpoint
                 .ok_or_else(|| invalid("defaultEndpoint"))?,
@@ -611,7 +623,9 @@ impl Qwen3VlEmbedding {
             endpoint,
             extra_headers: options.extra_headers.clone(),
             timeout: Duration::from_millis(
-                options.timeout_ms.unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
+                options
+                    .timeout_ms
+                    .unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
             ),
             // The workspace's shared pooled client (connection reuse across the
             // embedding fleet); the per-request `.timeout(...)` in `post`
@@ -717,7 +731,11 @@ impl Qwen3VlEmbedding {
                         self.reference
                     ))
                 })?;
-            vectors[index] = Some(parse_float_vector(embedding, "Qwen3 VL embedding", self.reference)?);
+            vectors[index] = Some(parse_float_vector(
+                embedding,
+                "Qwen3 VL embedding",
+                self.reference,
+            )?);
         }
         let vectors = vectors
             .into_iter()
@@ -745,7 +763,10 @@ impl Qwen3VlEmbedding {
     }
 }
 
-fn read_embedding_index(item: &serde_json::Map<String, serde_json::Value>, fallback: usize) -> usize {
+fn read_embedding_index(
+    item: &serde_json::Map<String, serde_json::Value>,
+    fallback: usize,
+) -> usize {
     item.get("index")
         .and_then(serde_json::Value::as_u64)
         .map(|index| index as usize)
@@ -835,10 +856,7 @@ fn base64_encode(bytes: &[u8]) -> String {
 // EmbeddingProvider impls (document purpose; remote models never truncate).
 // ---------------------------------------------------------------------------
 
-fn qwen_batch(
-    result: QwenEmbedResult,
-    dimension: u32,
-) -> (BatchEmbedding, Vec<usize>) {
+fn qwen_batch(result: QwenEmbedResult, dimension: u32) -> (BatchEmbedding, Vec<usize>) {
     (
         BatchEmbedding {
             flat: result.vectors.iter().flatten().copied().collect(),
@@ -860,11 +878,13 @@ impl EmbeddingProvider for QwenTextEmbeddingV4 {
     }
 
     fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        Ok(block_on_provider(self.core.embed_texts(&[text.to_string()]))?
-            .vectors
-            .into_iter()
-            .next()
-            .unwrap_or_default())
+        Ok(
+            block_on_provider(self.core.embed_texts(&[text.to_string()]))?
+                .vectors
+                .into_iter()
+                .next()
+                .unwrap_or_default(),
+        )
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {
@@ -892,7 +912,8 @@ impl EmbeddingProvider for QwenTextEmbeddingV4 {
 }
 
 #[async_trait]
-impl EmbeddingProvider for Qwen37TextEmbedding {    fn name(&self) -> &'static str {
+impl EmbeddingProvider for Qwen37TextEmbedding {
+    fn name(&self) -> &'static str {
         "qwen"
     }
 
@@ -901,11 +922,13 @@ impl EmbeddingProvider for Qwen37TextEmbedding {    fn name(&self) -> &'static s
     }
 
     fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        Ok(block_on_provider(self.core.embed_texts(&[text.to_string()]))?
-            .vectors
-            .into_iter()
-            .next()
-            .unwrap_or_default())
+        Ok(
+            block_on_provider(self.core.embed_texts(&[text.to_string()]))?
+                .vectors
+                .into_iter()
+                .next()
+                .unwrap_or_default(),
+        )
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<BatchEmbedding, EmbeddingError> {

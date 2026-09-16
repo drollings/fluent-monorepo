@@ -24,8 +24,8 @@ use crate::search_constants::{
 };
 use crate::search_types::{
     extract_symbol_names, public_entity_id, CodeSymbolType, Entity, EntityFragment, FileInfo,
-    RecallPath, ResolvedSearchPlan, ResolvedSearchPlanRoute, RrfScore, SearchHit, SearchPlan,
-    SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry, FragmentError,
+    FragmentError, RecallPath, ResolvedSearchPlan, ResolvedSearchPlanRoute, RrfScore, SearchHit,
+    SearchPlan, SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry,
 };
 use thiserror::Error;
 

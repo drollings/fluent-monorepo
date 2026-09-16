@@ -232,7 +232,10 @@ impl RigorRoute {
         let mut frontier_escalation = false;
 
         // A material rejection -> one rewind + a second, final blue pass.
-        if is_reject(&verdict) && self.material_rejection(&objections) && self.cfg.max_passes.rounds() > 1 {
+        if is_reject(&verdict)
+            && self.material_rejection(&objections)
+            && self.cfg.max_passes.rounds() > 1
+        {
             Self::record_blue_dead_end(ctx, &answer);
             rewound = self.rewind_to_blue(ctx);
             let refocused = blue_retry_prompt(&ctx.user_message, &answer, &objections);
@@ -539,7 +542,6 @@ impl RigorRoute {
     }
 }
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum RigorError {
     #[error("rigor role backend not configured: {0}")]
@@ -629,8 +631,7 @@ pub async fn handle_rigor_request(
         let mut s = lock(session);
         s.set_model(model_endpoint.clone());
     }
-    let kv_instance =
-        crate::config::resolve_inference_point(models, roles, &model_endpoint, None);
+    let kv_instance = crate::config::resolve_inference_point(models, roles, &model_endpoint, None);
     let ledger = ledger.clone();
 
     let ctx = RigorContext {

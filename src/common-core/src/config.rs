@@ -70,4 +70,3 @@ pub fn find_hierarchical(candidates: &[PathBuf]) -> Option<PathBuf> {
 pub fn home_or_dot() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
-

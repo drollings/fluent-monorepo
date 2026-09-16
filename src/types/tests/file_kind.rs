@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::file_kind::{
-    code_format_for_extension, is_binary_extension, kind_format_for_extension,
-    named_file_kind, CODE_EXTENSIONS, SOURCE_EXTENSIONS,
+    code_format_for_extension, is_binary_extension, kind_format_for_extension, named_file_kind,
+    CODE_EXTENSIONS, SOURCE_EXTENSIONS,
 };
 
 #[test]
@@ -120,10 +120,7 @@ fn divergences_stay_explicit() {
     assert_eq!(kind_format_for_extension("mts"), None);
     // D3: scan tags fall back to Text, stored tags keep Image.
     assert_eq!(FileKind::parse_scan(Some("image")), FileKind::Text);
-    assert_eq!(
-        FileKind::parse_stored(Some("image")),
-        Some(FileKind::Image)
-    );
+    assert_eq!(FileKind::parse_stored(Some("image")), Some(FileKind::Image));
 }
 
 #[test]
@@ -137,8 +134,7 @@ fn extension_lists_match_walker_scope() {
     }
     for ext in CODE_EXTENSIONS {
         assert!(
-            kind_format_for_extension(ext)
-                .is_some_and(|(kind, _)| kind == FileKind::Code),
+            kind_format_for_extension(ext).is_some_and(|(kind, _)| kind == FileKind::Code),
             "{ext} listed as code must classify Code"
         );
     }

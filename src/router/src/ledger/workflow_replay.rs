@@ -312,7 +312,10 @@ impl WorkflowReplay {
     }
 
     fn reuse_count(&self, audit_id: &str) -> u32 {
-        common_core::sync::lock(&self.reuses).get(audit_id).copied().unwrap_or(0)
+        common_core::sync::lock(&self.reuses)
+            .get(audit_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Resolve a query: replay hit short-circuits (replay is deterministic
@@ -334,7 +337,9 @@ impl WorkflowReplay {
         Fut: std::future::Future<Output = Result<Option<R>, E>> + Send,
         Stop: FnMut(&E) -> bool,
     {
-        if let Some(replayed) = self.try_replay(query_text, query_embedding, current_confidence, cfg) {
+        if let Some(replayed) =
+            self.try_replay(query_text, query_embedding, current_confidence, cfg)
+        {
             return Ok(Resolution::Replayed(replayed));
         }
         let fresh =
@@ -368,20 +373,18 @@ impl WorkflowReplay {
                 );
                 node.id = None;
                 node.step_id = Some(step.step_id.clone());
-                let claims = vec![
-                    AnnotationClaim::confirmed(
-                        format!("replay:{}", step.step_id),
-                        ProvenanceTier::LocalModel,
-                        serde_json::json!({
-                            "audit_id": replayed.audit_id,
-                            "score": replayed.score,
-                            "reuses": replayed.reuses,
-                            "lod0_hash": step.lod0_hash,
-                        }),
-                        "workflow_replay",
-                        now,
-                    ),
-                ];
+                let claims = vec![AnnotationClaim::confirmed(
+                    format!("replay:{}", step.step_id),
+                    ProvenanceTier::LocalModel,
+                    serde_json::json!({
+                        "audit_id": replayed.audit_id,
+                        "score": replayed.score,
+                        "reuses": replayed.reuses,
+                        "lod0_hash": step.lod0_hash,
+                    }),
+                    "workflow_replay",
+                    now,
+                )];
                 node.metadata = Some(serde_json::json!({
                     "origin": "workflow_replay",
                     "kind": "workflow_replay_step",
@@ -485,11 +488,7 @@ impl WorkflowRecorder {
     /// loop is disabled, the embedder is missing/failed, or any gate leg
     /// refuses (flagged query, below-threshold neighbor, below `min_reuses`,
     /// below `min_confidence`). The caller plans fresh on `None`.
-    pub fn consult(
-        &self,
-        query_text: &str,
-        current_confidence: f64,
-    ) -> Option<ReplayedWorkflow> {
+    pub fn consult(&self, query_text: &str, current_confidence: f64) -> Option<ReplayedWorkflow> {
         if !self.cfg.enabled {
             return None;
         }
@@ -771,8 +770,16 @@ fn split_step_envelope(target: &Target) -> StepEnvelope {
             .unwrap_or_default()
     };
     StepEnvelope {
-        prompt: value.get("prompt").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-        response: value.get("response").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        prompt: value
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        response: value
+            .get("response")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
         depends_on: strings("depends_on"),
         provides: strings("provides"),
     }

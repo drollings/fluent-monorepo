@@ -78,8 +78,7 @@ pub enum FeedError {
 
 /// Type-erased per-item handler: an owned boxed future per item, never a
 /// borrow of the worker.
-type Handler<Item> =
-    Arc<dyn Fn(Item) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+type Handler<Item> = Arc<dyn Fn(Item) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// A credit-gated, bounded background feed worker.
 ///
@@ -183,12 +182,7 @@ impl<Item: Send + Sync + 'static> CreditedFeedWorker<Item> {
             .clone()
             .ok_or(FeedError::FeedClosed)?;
         self.credit
-            .send(move || async move {
-                sender
-                    .send(item)
-                    .await
-                    .map_err(|_| FeedError::FeedClosed)
-            })
+            .send(move || async move { sender.send(item).await.map_err(|_| FeedError::FeedClosed) })
             .await
     }
 

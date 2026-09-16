@@ -6,9 +6,7 @@ use fluent_wvr::{Component, WorkContext, WorkUnit};
 
 use crate::ast_parser;
 use crate::memory::MemoryBridge;
-use crate::query::formatter::{
-    CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter,
-};
+use crate::query::formatter::{CompactFormatter, DebugFormatter, JsonFormatter, MarkdownFormatter};
 use crate::query::hybrid::{plan_from_query, stages_from_hits};
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::recall::{run_recall, RecallStorage};
@@ -441,8 +439,8 @@ mod tests {
 
     // ── M0 characterization: dispatch_with_filter parity harness ──────────────
 
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use crate::query::search_backend::{SearchBackend, SearchContext};
     use crate::query::strategy::QueryIntent;
@@ -489,7 +487,10 @@ mod tests {
         fn provides(&self) -> &[fluent_wvr::ArcIntern<str>] {
             &[]
         }
-        fn execute(&self, _ctx: &WorkContext) -> Result<fluent_wvr::WorkOutput, fluent_wvr::WorkError> {
+        fn execute(
+            &self,
+            _ctx: &WorkContext,
+        ) -> Result<fluent_wvr::WorkOutput, fluent_wvr::WorkError> {
             Err(fluent_wvr::WorkError::Execution(
                 "backend.counting runs through QueryEngine dispatch: downcast the handle to \
                  SearchBackend and call search natively"
@@ -531,7 +532,10 @@ mod tests {
         // Current behavior: empty query via GeneralBackend matches empty substring -> returns all members
         // Lock this baseline (parity harness) — do not change expectation without preserving byte-identical.
         let result = engine.explain("", &doc);
-        assert!(result.is_ok(), "empty query currently returns Ok via empty-substring match, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "empty query currently returns Ok via empty-substring match, got {result:?}"
+        );
         let r = engine.dispatch_with_filter("", &doc, &engine.llm_filter);
         assert!(r.is_ok(), "dispatch_with_filter(\"\") currently Ok");
     }
@@ -555,10 +559,20 @@ mod tests {
                 result: Ok(dummy_stages()),
             }),
         ];
-        let res = engine.dispatch_with_filter("helloWorld", &doc, &engine.llm_filter).expect("should win");
+        let res = engine
+            .dispatch_with_filter("helloWorld", &doc, &engine.llm_filter)
+            .expect("should win");
         assert!(!res.is_empty());
-        assert_eq!(calls_primary.load(Ordering::SeqCst), 1, "primary should be called once");
-        assert_eq!(calls_fallback.load(Ordering::SeqCst), 0, "fallback must not be called when primary wins");
+        assert_eq!(
+            calls_primary.load(Ordering::SeqCst),
+            1,
+            "primary should be called once"
+        );
+        assert_eq!(
+            calls_fallback.load(Ordering::SeqCst),
+            0,
+            "fallback must not be called when primary wins"
+        );
     }
 
     #[test]
@@ -581,7 +595,9 @@ mod tests {
                 result: Ok(dummy_stages()),
             }),
         ];
-        let res = engine.dispatch_with_filter("helloWorld", &doc, &engine.llm_filter).expect("fallback should succeed");
+        let res = engine
+            .dispatch_with_filter("helloWorld", &doc, &engine.llm_filter)
+            .expect("fallback should succeed");
         assert!(!res.is_empty());
         assert_eq!(calls_first.load(Ordering::SeqCst), 1);
         assert_eq!(calls_second.load(Ordering::SeqCst), 1);
@@ -608,7 +624,11 @@ mod tests {
         let res = engine.dispatch_with_filter("helloWorld", &doc, &engine.llm_filter);
         assert!(matches!(res, Err(QueryEngineError::LlmFilter(_))));
         assert_eq!(calls_first.load(Ordering::SeqCst), 1);
-        assert_eq!(calls_second.load(Ordering::SeqCst), 0, "hard error must short-circuit, second backend not consulted");
+        assert_eq!(
+            calls_second.load(Ordering::SeqCst),
+            0,
+            "hard error must short-circuit, second backend not consulted"
+        );
     }
 
     #[test]
@@ -623,9 +643,15 @@ mod tests {
             calls: Arc::clone(&calls),
             result: Ok(dummy_stages()),
         })];
-        let res = engine.dispatch_with_filter("helloWorld", &doc, &engine.llm_filter).expect("should win");
+        let res = engine
+            .dispatch_with_filter("helloWorld", &doc, &engine.llm_filter)
+            .expect("should win");
         assert!(!res.is_empty());
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "primary SingleIdentifier should be tried exactly once via dedup");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "primary SingleIdentifier should be tried exactly once via dedup"
+        );
     }
 
     #[test]
@@ -634,7 +660,9 @@ mod tests {
         // explain_no_llm uses NoopLlmFilter (0.9 for substring hit, 0.1 otherwise)
         let engine = QueryEngine::new().with_no_llm();
         // "hello" should still resolve via GeneralBackend/Keyword paths, not fail
-        let stages = engine.explain_no_llm("hello", &doc).expect("no_llm degrade");
+        let stages = engine
+            .explain_no_llm("hello", &doc)
+            .expect("no_llm degrade");
         assert!(!stages.is_empty());
         // A conceptual query with Noop should degrade: Noop returns 0.1 for non-matches,
         // so ConceptBackend will filter to empty -> falls through to other tiers or NoResults
@@ -657,8 +685,11 @@ mod tests {
             "test",
             "zig",
             Some(&[0.1, 0.2, 0.3]),
-        ).expect("insert");
-        let stages = engine.vector_explain("helloWorld", &[0.1, 0.2, 0.3], &db, &doc, 5).expect("vector_explain");
+        )
+        .expect("insert");
+        let stages = engine
+            .vector_explain("helloWorld", &[0.1, 0.2, 0.3], &db, &doc, 5)
+            .expect("vector_explain");
         assert!(!stages.is_empty());
         // Empty result case
         let empty_db = search_vector::GuidanceDb::open_in_memory().expect("db2");
@@ -724,16 +755,19 @@ mod tests {
                     .filter(|(_, backend)| backend.matches(intent))
                     .map(|(name, _)| *name)
                     .collect();
-                (match intent {
-                    QueryIntent::IdentifierLookup => "IdentifierLookup",
-                    QueryIntent::SingleIdentifier => "SingleIdentifier",
-                    QueryIntent::CapabilityQuery => "CapabilityQuery",
-                    QueryIntent::FilePath => "FilePath",
-                    QueryIntent::HowTo => "HowTo",
-                    QueryIntent::Conceptual => "Conceptual",
-                    QueryIntent::MultiKeyword => "MultiKeyword",
-                    QueryIntent::GeneralSearch => "GeneralSearch",
-                }, owners)
+                (
+                    match intent {
+                        QueryIntent::IdentifierLookup => "IdentifierLookup",
+                        QueryIntent::SingleIdentifier => "SingleIdentifier",
+                        QueryIntent::CapabilityQuery => "CapabilityQuery",
+                        QueryIntent::FilePath => "FilePath",
+                        QueryIntent::HowTo => "HowTo",
+                        QueryIntent::Conceptual => "Conceptual",
+                        QueryIntent::MultiKeyword => "MultiKeyword",
+                        QueryIntent::GeneralSearch => "GeneralSearch",
+                    },
+                    owners,
+                )
             })
             .collect();
         assert_eq!(

@@ -293,10 +293,7 @@ pub async fn probe_identity(
         props = props.bearer_auth(key.clone());
         instances = instances.bearer_auth(key);
     }
-    let health_ok = health
-        .send()
-        .await
-        .is_ok_and(|r| r.status().is_success());
+    let health_ok = health.send().await.is_ok_and(|r| r.status().is_success());
     if !health_ok {
         return None;
     }
@@ -416,8 +413,7 @@ impl LlamaServerSupervisor {
             }
             for candidate in candidates {
                 let base_url = format!("http://127.0.0.1:{}", candidate.port);
-                let Some(identity) =
-                    probe_identity(&client, &base_url, api_key.as_deref()).await
+                let Some(identity) = probe_identity(&client, &base_url, api_key.as_deref()).await
                 else {
                     continue;
                 };
@@ -504,10 +500,7 @@ impl LlamaServerSupervisor {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(model_key)
             .cloned()?;
-        let live = self
-            .server_for(model_key)
-            .and_then(|s| s.adopted_pid())
-            == Some(info.pid);
+        let live = self.server_for(model_key).and_then(|s| s.adopted_pid()) == Some(info.pid);
         if live {
             Some(info)
         } else {
@@ -548,10 +541,13 @@ impl LlamaServerSupervisor {
             if pid == 0 {
                 continue;
             }
-            servers.insert(key, SavedServer {
-                port: server.spec().port,
-                pid,
-            });
+            servers.insert(
+                key,
+                SavedServer {
+                    port: server.spec().port,
+                    pid,
+                },
+            );
         }
         let state = ServerStateFile { servers };
         let Ok(text) = serde_json::to_string_pretty(&state) else {

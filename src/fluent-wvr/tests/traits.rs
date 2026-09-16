@@ -1,10 +1,9 @@
 #![allow(unused_imports)]
+use fluent_wvr::prelude::*;
 #[allow(unused_imports)]
 use fluent_wvr::traits::*;
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 use std::sync::Arc;
-use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
 
 #[test]
 fn field_error_display_variants() {
@@ -28,9 +27,18 @@ fn field_error_display_variants() {
 
 #[test]
 fn field_error_equality_and_partial_eq() {
-    assert_eq!(FieldError::NotFound("a".into()), FieldError::NotFound("a".into()));
-    assert_ne!(FieldError::NotFound("a".into()), FieldError::NotFound("b".into()));
-    assert_ne!(FieldError::Parse("p".into()), FieldError::Constraint("p".into()));
+    assert_eq!(
+        FieldError::NotFound("a".into()),
+        FieldError::NotFound("a".into())
+    );
+    assert_ne!(
+        FieldError::NotFound("a".into()),
+        FieldError::NotFound("b".into())
+    );
+    assert_ne!(
+        FieldError::Parse("p".into()),
+        FieldError::Constraint("p".into())
+    );
 }
 
 #[test]

@@ -230,24 +230,19 @@ async fn compiled_stages_feed_chart_execution_plan() {
         ]
     }"#;
     let chart = chart_from_str(chart_json).expect("chart parses");
-    let backend: Arc<dyn ChatBackend> =
-        Arc::new(crate::test_stubs::StubChatBackend::new(vec![
-            r#"{"out": "a"}"#.into(),
-            r#"{"out": "b"}"#.into(),
-        ]));
+    let backend: Arc<dyn ChatBackend> = Arc::new(crate::test_stubs::StubChatBackend::new(vec![
+        r#"{"out": "a"}"#.into(),
+        r#"{"out": "b"}"#.into(),
+    ]));
 
     let (targets, order) =
         compile_chart_stages(&chart, &[], &backend, &test_limiter()).expect("compiles");
     assert_eq!(order, vec!["a".to_string(), "b".to_string()]);
     assert_eq!(targets.len(), 2);
 
-    let plan = crate::charts::execute::ChartExecutionPlan::compile(
-        &chart,
-        &[],
-        &backend,
-        &test_limiter(),
-    )
-    .expect("plan compiles");
+    let plan =
+        crate::charts::execute::ChartExecutionPlan::compile(&chart, &[], &backend, &test_limiter())
+            .expect("plan compiles");
     assert_eq!(plan.order(), &order);
 
     let mut ctx = WorkContext::default();

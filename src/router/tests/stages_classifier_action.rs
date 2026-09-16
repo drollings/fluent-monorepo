@@ -20,7 +20,12 @@ fn classifier_action_parses_known_variants() {
         ..Default::default()
     };
     let b = ClassifierAction::from_output(&route).unwrap();
-    assert_eq!(b, ClassifierAction::Route { target: Some("code".into()) });
+    assert_eq!(
+        b,
+        ClassifierAction::Route {
+            target: Some("code".into())
+        }
+    );
 
     let reject = ClassifierOutput {
         action: "reject".into(),
@@ -28,7 +33,12 @@ fn classifier_action_parses_known_variants() {
         ..Default::default()
     };
     let c = ClassifierAction::from_output(&reject).unwrap();
-    assert_eq!(c, ClassifierAction::Reject { reason: "unsafe".into() });
+    assert_eq!(
+        c,
+        ClassifierAction::Reject {
+            reason: "unsafe".into()
+        }
+    );
 }
 
 #[test]

@@ -180,7 +180,9 @@ async fn supervisor_boot_rewrite_and_on_demand_residency() {
     config.sidecar = SidecarConfig::default();
 
     let sup = Arc::new(LlamaServerSupervisor::build(&config).expect("build supervisor"));
-    sup.start_all().await.expect("start_all boots pinned models");
+    sup.start_all()
+        .await
+        .expect("start_all boots pinned models");
 
     // Boot-time endpoint rewrite (mirrors the coral-router binary's boot loop):
     // every managed model's endpoint is rewritten to its spawned server.
@@ -195,7 +197,11 @@ async fn supervisor_boot_rewrite_and_on_demand_residency() {
     // Boot-time endpoint rewrite + lazy-not-loaded-at-boot.
     let pinned_server = sup.server_for("pinned-m").expect("pinned server");
     assert_eq!(sup.is_running("pinned-m"), Some(true), "pinned model boots");
-    assert_eq!(sup.is_running("lazy-m"), Some(false), "lazy model deferred at boot");
+    assert_eq!(
+        sup.is_running("lazy-m"),
+        Some(false),
+        "lazy model deferred at boot"
+    );
     assert_eq!(
         config.models["pinned-m"].endpoint,
         format!("{}/v1/chat/completions", pinned_server.base_url()),
@@ -244,11 +250,7 @@ async fn supervisor_boot_rewrite_and_on_demand_residency() {
         30,
         10,
     );
-    let weights = crate::instances::traits::llama_weights_for_pool(
-        &pool,
-        &sup,
-        &config.sidecar,
-    );
+    let weights = crate::instances::traits::llama_weights_for_pool(&pool, &sup, &config.sidecar);
     engine.residency_cycle(&weights).await.expect("residency");
     assert_eq!(
         sup.is_running("lazy-m"),
@@ -278,7 +280,11 @@ async fn supervisor_boot_rewrite_and_on_demand_residency() {
         None,
     )
     .await;
-    assert_eq!(sup.is_running("lazy-m"), Some(true), "re-loaded after unload");
+    assert_eq!(
+        sup.is_running("lazy-m"),
+        Some(true),
+        "re-loaded after unload"
+    );
 
     sup.shutdown().await;
     restore_llama_server(restore);

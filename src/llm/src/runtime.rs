@@ -312,7 +312,10 @@ struct Candidate {
 
 enum CandidateKind {
     /// One unpinned context.
-    Context { weights: Arc<dyn LlmWeights>, name: String },
+    Context {
+        weights: Arc<dyn LlmWeights>,
+        name: String,
+    },
     /// A whole weights instance (every unpinned context, then the weights).
     Weights { weights: Arc<dyn LlmWeights> },
 }
@@ -397,7 +400,10 @@ impl LlmResidencyEngine {
 
     /// One residency pass over every weights instance. Best-effort: a failed
     /// release/unload is logged and the pass moves on (never a panic).
-    pub async fn residency_cycle(&self, weights: &[Arc<dyn LlmWeights>]) -> Result<(), LlmRuntimeError> {
+    pub async fn residency_cycle(
+        &self,
+        weights: &[Arc<dyn LlmWeights>],
+    ) -> Result<(), LlmRuntimeError> {
         // 1. Per-weights resume expiry (the llama `expire_resume` pass; onnx is
         //    a no-op until it gains resume semantics).
         for w in weights {
@@ -449,7 +455,11 @@ impl LlmResidencyEngine {
             // reports recency through `last_used`).
             let rows = w.residency_rows().await;
             let rows_last_used = rows.iter().map(|r| r.last_used).max().unwrap_or(-1);
-            let last_used = if w.last_used() >= 0 { w.last_used() } else { rows_last_used };
+            let last_used = if w.last_used() >= 0 {
+                w.last_used()
+            } else {
+                rows_last_used
+            };
             if last_used < 0 {
                 continue; // never used
             }
@@ -513,17 +523,13 @@ impl LlmResidencyEngine {
             // same as `ps`. The RAM pool keeps the all-memory accounting
             // (onnx `weights_bytes` is RAM-resident and carries no VRAM split).
             let resident: u64 = match pool {
-                MemoryPool::Vram => rows
-                    .iter()
-                    .map(|r| r.model_bytes)
-                    .max()
-                    .unwrap_or_else(|| {
-                        if w.is_loaded() {
-                            w.weights_bytes()
-                        } else {
-                            0
-                        }
-                    }),
+                MemoryPool::Vram => rows.iter().map(|r| r.model_bytes).max().unwrap_or_else(|| {
+                    if w.is_loaded() {
+                        w.weights_bytes()
+                    } else {
+                        0
+                    }
+                }),
                 MemoryPool::Ram => {
                     if w.is_loaded() {
                         w.weights_bytes()
@@ -569,7 +575,9 @@ impl LlmResidencyEngine {
             // pinned instances surface as whole-weights candidates.
             if !has_pinned && resident > 0 {
                 candidates.push(Candidate {
-                    kind: CandidateKind::Weights { weights: Arc::clone(w) },
+                    kind: CandidateKind::Weights {
+                        weights: Arc::clone(w),
+                    },
                     freed_bytes: resident.saturating_add(unpinned_vram),
                     // With no unpinned context rows the weights' own last use
                     // is the recency (the onnx registry's `last_used_ms`; a
@@ -640,7 +648,8 @@ impl LlmResidencyEngine {
             budget_bytes = budget,
             "making room for cold model load",
         );
-        self.evict_to_target(pool, candidates, projected, budget, now).await;
+        self.evict_to_target(pool, candidates, projected, budget, now)
+            .await;
     }
 
     /// When the pool's resident usage exceeds `budget`, order the candidates
@@ -667,7 +676,8 @@ impl LlmResidencyEngine {
             budget_bytes = budget,
             "residency over budget - evicting coldest largest footprints",
         );
-        self.evict_to_target(pool, candidates, used, budget, now).await;
+        self.evict_to_target(pool, candidates, used, budget, now)
+            .await;
     }
 
     /// Order `candidates` best-eviction-first per the pool's injected
@@ -718,9 +728,9 @@ impl LlmResidencyEngine {
                         weights: Arc::clone(weights),
                         name: name.clone(),
                     },
-                    CandidateKind::Weights { weights } => {
-                        CandidateKind::Weights { weights: Arc::clone(weights) }
-                    }
+                    CandidateKind::Weights { weights } => CandidateKind::Weights {
+                        weights: Arc::clone(weights),
+                    },
                 };
                 let freed_bytes = c.freed_bytes;
                 async move {
@@ -805,9 +815,7 @@ impl LlmResidencyEngine {
                 continue;
             }
             let last_used = w.last_used();
-            if last_used >= 0
-                && now_ms.saturating_sub(last_used.saturating_mul(1000)) < grace_ms
-            {
+            if last_used >= 0 && now_ms.saturating_sub(last_used.saturating_mul(1000)) < grace_ms {
                 continue;
             }
             let rows = w.residency_rows().await;
@@ -866,14 +874,9 @@ impl LlmResidencyEngine {
                         }
                     }
                 }
-                let sleep_ms = common_core::retry::capped_backoff_ms(
-                    base_ms,
-                    consecutive_failures,
-                    12,
-                );
-                runtime_loop
-                    .sleep(Duration::from_millis(sleep_ms))
-                    .await;
+                let sleep_ms =
+                    common_core::retry::capped_backoff_ms(base_ms, consecutive_failures, 12);
+                runtime_loop.sleep(Duration::from_millis(sleep_ms)).await;
             }
         }))
     }

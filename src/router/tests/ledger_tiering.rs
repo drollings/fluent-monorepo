@@ -1,7 +1,7 @@
 use super::*;
-use std::time::Duration;
 use crate::test_stubs::{CountingBackend, StubChatBackend};
 use crate::views::ParallelLedger;
+use std::time::Duration;
 
 fn temp_store() -> Arc<ContentNodeStore> {
     // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
@@ -26,10 +26,8 @@ fn repeating(response: &str, copies: usize) -> Arc<StubChatBackend> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_fill_observable_without_render() {
     let store = temp_store();
-    let backend: Arc<dyn ChatBackend> = repeating(
-        "SUMMARY: short summary here\nDESCRIPTION: a description",
-        8,
-    );
+    let backend: Arc<dyn ChatBackend> =
+        repeating("SUMMARY: short summary here\nDESCRIPTION: a description", 8);
     let worker = LedgerTierWorker::new(
         Arc::clone(&store),
         backend,
@@ -56,8 +54,14 @@ async fn background_fill_observable_without_render() {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     let node = store.snapshot(id).unwrap();
-    assert_eq!(node.lod[4], "short summary here", "LOD4 filled in background");
-    assert_eq!(node.lod[5], "a description", "LOD5 upgraded to LLM description");
+    assert_eq!(
+        node.lod[4], "short summary here",
+        "LOD4 filled in background"
+    );
+    assert_eq!(
+        node.lod[5], "a description",
+        "LOD5 upgraded to LLM description"
+    );
 
     handle.abort();
 }
@@ -110,12 +114,9 @@ async fn at_most_once_under_concurrent_views() {
 async fn enqueue_on_create_and_backfill_on_boot() {
     let store = temp_store();
     // A pre-existing node (recorded before the worker attaches) missing LOD4.
-    let preexisting = store
-        .record_request("sess", "r0", "backfill me")
-        .unwrap();
+    let preexisting = store.record_request("sess", "r0", "backfill me").unwrap();
 
-    let backend: Arc<dyn ChatBackend> =
-        repeating("SUMMARY: backfilled\nDESCRIPTION: desc", 8);
+    let backend: Arc<dyn ChatBackend> = repeating("SUMMARY: backfilled\nDESCRIPTION: desc", 8);
     let worker = LedgerTierWorker::new(
         Arc::clone(&store),
         backend,
@@ -127,9 +128,7 @@ async fn enqueue_on_create_and_backfill_on_boot() {
     let handle = worker.start();
 
     // A node created after attach is enqueued on create.
-    let created = store
-        .record_request("sess", "r1", "create me")
-        .unwrap();
+    let created = store.record_request("sess", "r1", "create me").unwrap();
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
@@ -140,8 +139,14 @@ async fn enqueue_on_create_and_backfill_on_boot() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
-    assert!(!store.snapshot(preexisting).unwrap().lod[4].is_empty(), "boot backfill filled LOD4");
-    assert!(!store.snapshot(created).unwrap().lod[4].is_empty(), "enqueue-on-create filled LOD4");
+    assert!(
+        !store.snapshot(preexisting).unwrap().lod[4].is_empty(),
+        "boot backfill filled LOD4"
+    );
+    assert!(
+        !store.snapshot(created).unwrap().lod[4].is_empty(),
+        "enqueue-on-create filled LOD4"
+    );
 
     handle.abort();
 }
@@ -228,8 +233,16 @@ async fn budget_enforced_via_truncation() {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     let node = store.snapshot(id).unwrap();
-    assert!(node.lod[4].len() <= 240, "LOD4 truncated to <= 240, got {}", node.lod[4].len());
-    assert!(node.lod[5].len() <= 80, "LOD5 truncated to <= 80, got {}", node.lod[5].len());
+    assert!(
+        node.lod[4].len() <= 240,
+        "LOD4 truncated to <= 240, got {}",
+        node.lod[4].len()
+    );
+    assert!(
+        node.lod[5].len() <= 80,
+        "LOD5 truncated to <= 80, got {}",
+        node.lod[5].len()
+    );
 
     handle.abort();
 }
@@ -273,10 +286,7 @@ fn node_ids_needing_tier_returns_only_unfilled() {
 async fn derive_records_latency_metric() {
     // Each backend derive step records into the shared histogram.
     let store = temp_store();
-    let backend: Arc<dyn ChatBackend> = repeating(
-        "SUMMARY: s\nDESCRIPTION: d",
-        8,
-    );
+    let backend: Arc<dyn ChatBackend> = repeating("SUMMARY: s\nDESCRIPTION: d", 8);
     let worker = LedgerTierWorker::new(
         Arc::clone(&store),
         backend,
@@ -337,7 +347,10 @@ async fn enqueue_with_credit_blocks_then_releases() {
 
     // First enqueue consumes the single credit token.
     worker.enqueue_with_credit(id1).await.unwrap();
-    assert!(!worker.producer_blocked(), "credit available -> not blocked");
+    assert!(
+        !worker.producer_blocked(),
+        "credit available -> not blocked"
+    );
 
     // Second enqueue must block: credit exhausted and the worker (not yet
     // started) cannot process anything to release it.

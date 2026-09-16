@@ -47,14 +47,21 @@ fn nearest_edge_cases_empty_zero_k_and_overfetch() {
     store.insert(entry).unwrap();
     assert!(store.nearest(&[1.0, 0.0, 0.0], 0).is_empty(), "k=0");
     assert!(store.nearest(&[], 3).is_empty(), "empty query");
-    assert_eq!(store.nearest(&[1.0, 0.0, 0.0], 10).len(), 1, "k>len returns all");
+    assert_eq!(
+        store.nearest(&[1.0, 0.0, 0.0], 10).len(),
+        1,
+        "k>len returns all"
+    );
 }
 
 #[test]
 fn confident_but_wrong_does_not_verify() {
     // 30 cases where assembler was confident (0.9) but answer was wrong per human label → must NOT pass gated insert
     for _ in 0..30 {
-        assert!(!gated_insert_allowed(0.9, 0.2, false), "confident but unverified must not be insertable");
+        assert!(
+            !gated_insert_allowed(0.9, 0.2, false),
+            "confident but unverified must not be insertable"
+        );
     }
     // verified true with high confidence and novelty → allowed
     assert!(gated_insert_allowed(0.9, 0.2, true));
@@ -79,7 +86,11 @@ fn paraphrase_replay_is_stable() {
     let paraphrase = vec![0.99, 0.01, 0.0];
     let hits = store.nearest_verified(&paraphrase, 3, 0.75);
     assert_eq!(hits.len(), 1);
-    assert!(hits[0].1 >= 0.78, "paraphrase cosine must be >=0.78, got {}", hits[0].1);
+    assert!(
+        hits[0].1 >= 0.78,
+        "paraphrase cosine must be >=0.78, got {}",
+        hits[0].1
+    );
     // topo_sort order identical — here dag order is stable
     assert_eq!(hits[0].0.dag[0].name, dag[0].name);
     assert_eq!(hits[0].0.dag[1].name, dag[1].name);

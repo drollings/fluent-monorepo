@@ -86,8 +86,8 @@ impl WorkOutput {
     /// is stored as a string in `data` instead. Prefer `typed` (which
     /// reports the failure as `Err`) when the caller can handle it.
     pub fn typed_lossy<T: serde::Serialize>(message: impl Into<String>, data: &T) -> Self {
-        let data = serde_json::to_value(data)
-            .unwrap_or_else(|e| serde_json::Value::String(e.to_string()));
+        let data =
+            serde_json::to_value(data).unwrap_or_else(|e| serde_json::Value::String(e.to_string()));
         Self {
             success: true,
             message: message.into(),
@@ -333,4 +333,3 @@ impl WorkContext {
         ctx
     }
 }
-

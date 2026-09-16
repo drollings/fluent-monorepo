@@ -693,9 +693,8 @@ mod tests {
     fn component_adapter_name_override_reports_new_name() {
         use fluent_wvr_testutil::StubComponent;
 
-        let stub = StubComponent::ok("inner_unit").with_handler(|_| {
-            Ok(fluent_wvr::WorkOutput::ok("from_stub"))
-        });
+        let stub = StubComponent::ok("inner_unit")
+            .with_handler(|_| Ok(fluent_wvr::WorkOutput::ok("from_stub")));
         let adapted = ComponentAdapter::new(Arc::new(stub)).with_name_override("coral.l3.graph");
         assert_eq!(adapted.name(), "coral.l3.graph");
 

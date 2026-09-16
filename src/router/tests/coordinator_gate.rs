@@ -27,11 +27,18 @@ fn fork_kv() -> SnapshotStore {
         }
     });
     let stub = StubServer::start(handler);
-    let fork = Arc::new(InstanceClient::new(reqwest::Client::new(), stub.base_url(), None));
+    let fork = Arc::new(InstanceClient::new(
+        reqwest::Client::new(),
+        stub.base_url(),
+        None,
+    ));
     let dir = tempfile::tempdir().unwrap();
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
-    SnapshotStore::new(Arc::clone(&hot), Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)))
-        .with_fork_io(fork)
+    SnapshotStore::new(
+        Arc::clone(&hot),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
+    )
+    .with_fork_io(fork)
 }
 
 fn coordinator_with() -> (Arc<LedgerAgentCoordinator>, Arc<CountingBackend>) {
@@ -39,7 +46,9 @@ fn coordinator_with() -> (Arc<LedgerAgentCoordinator>, Arc<CountingBackend>) {
     let sessions = Arc::new(SessionRegistry::with_kv_cache(fork_kv()));
     let tiers = Arc::new(LedgerTierWorker::new(
         Arc::clone(&store),
-        Arc::new(crate::test_stubs::StubChatBackend::always("SUMMARY: s\nDESCRIPTION: d")),
+        Arc::new(crate::test_stubs::StubChatBackend::always(
+            "SUMMARY: s\nDESCRIPTION: d",
+        )),
         vec![4, 5],
         TierConfig {
             poll_interval_ms: 5,
@@ -97,13 +106,13 @@ async fn closed_gate_falls_through_without_touching_the_backend() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn absent_coordinator_falls_through_regardless_of_gate() {
     let gate = CoordinatorGate::open();
-    assert!(
-        coordinator_dispatch(None, &gate, "s", "m", "hi").await.is_none()
-    );
+    assert!(coordinator_dispatch(None, &gate, "s", "m", "hi")
+        .await
+        .is_none());
     gate.set_open(false);
-    assert!(
-        coordinator_dispatch(None, &gate, "s", "m", "hi").await.is_none()
-    );
+    assert!(coordinator_dispatch(None, &gate, "s", "m", "hi")
+        .await
+        .is_none());
 }
 
 #[test]
@@ -112,7 +121,10 @@ fn gate_reopens_after_close() {
     gate.set_open(false);
     assert!(!gate.is_open());
     gate.set_open(true);
-    assert!(gate.is_open(), "re-enable path exists (restart also restores)");
+    assert!(
+        gate.is_open(),
+        "re-enable path exists (restart also restores)"
+    );
 }
 
 #[test]

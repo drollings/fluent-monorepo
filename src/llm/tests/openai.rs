@@ -146,9 +146,8 @@ fn parse_stream_delta_finish_reason() {
 
 #[test]
 fn parse_stream_delta_model() {
-    let d =
-        parse_openai_stream_delta(r#"{"model":"gpt-4","choices":[{"delta":{"content":"x"}}]}"#)
-            .unwrap();
+    let d = parse_openai_stream_delta(r#"{"model":"gpt-4","choices":[{"delta":{"content":"x"}}]}"#)
+        .unwrap();
     assert_eq!(d.model.as_deref(), Some("gpt-4"));
 }
 

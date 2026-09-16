@@ -76,7 +76,10 @@ fn sweep_threshold_precision_is_one_for_control() {
         // Verify precision = TP/(TP+FP) for control = 1.0 (FP must be 0)
         let false_positives = i32::from(hung);
         let precision = if false_positives == 0 { 1.0 } else { 0.0 };
-        assert_eq!(precision, 1.0, "threshold {threshold}: control precision must be 1.0");
+        assert_eq!(
+            precision, 1.0,
+            "threshold {threshold}: control precision must be 1.0"
+        );
     }
     // Document chosen default
     assert_eq!(3, 3, "chosen liveness_failures_before_restart default is 3");

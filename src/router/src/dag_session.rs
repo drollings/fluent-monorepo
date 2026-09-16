@@ -19,7 +19,9 @@ use fluent_dag::checkpointed::CheckpointedStepGraph;
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
 use serde::{Deserialize, Serialize};
 
-use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, KvCacheError, SnapshotStore, KvSnapshot};
+use crate::kv_cache::{
+    ColdSnapshotIndex, HotSnapshotIndex, KvCacheError, KvSnapshot, SnapshotStore,
+};
 use crate::session::StepStatus;
 
 /// Errors produced by dependency-session operations.
@@ -364,11 +366,7 @@ impl DependencySession {
         self.graph
             .step_ids()
             .iter()
-            .filter(|id| {
-                self.graph
-                    .status(id)
-                    .is_some_and(|s| s.checkpoint)
-            })
+            .filter(|id| self.graph.status(id).is_some_and(|s| s.checkpoint))
             .cloned()
             .collect()
     }
@@ -551,9 +549,14 @@ impl DependencySession {
         // Crash-safe per-turn snapshot name: ordered and content-addressed.
         let cold_seq = kv.seed_seq_for(&self.session_id);
         self.snapshot_seq = self.snapshot_seq.max(cold_seq) + 1;
-        let hash_hex = common_core::hash::blake3_hex(format!("{}-{}", self.session_id, self.snapshot_seq).as_bytes());
+        let hash_hex = common_core::hash::blake3_hex(
+            format!("{}-{}", self.session_id, self.snapshot_seq).as_bytes(),
+        );
         let hash_suffix = &hash_hex[..8];
-        let snapshot_name = format!("{}-{:06}-{}", self.session_id, self.snapshot_seq, hash_suffix);
+        let snapshot_name = format!(
+            "{}-{:06}-{}",
+            self.session_id, self.snapshot_seq, hash_suffix
+        );
 
         kv.save_snapshot_with_seq(
             &model,
@@ -736,12 +739,14 @@ impl SessionRegistry {
     /// attached) on first use. Seeds `snapshot_seq` from the cold tier (M3).
     pub fn get_or_create(&self, session_id: &str) -> Arc<Mutex<DependencySession>> {
         let kv = self.inner.kv_cache.clone();
-        self.inner.sessions.resolve_or_create(session_id.to_string(), |id| {
-            let seed = kv.seed_seq_for(id);
-            let mut sess = DependencySession::new(id).with_kv_cache(kv.clone());
-            sess.snapshot_seq = seed;
-            Mutex::new(sess)
-        })
+        self.inner
+            .sessions
+            .resolve_or_create(session_id.to_string(), |id| {
+                let seed = kv.seed_seq_for(id);
+                let mut sess = DependencySession::new(id).with_kv_cache(kv.clone());
+                sess.snapshot_seq = seed;
+                Mutex::new(sess)
+            })
     }
 
     /// Drop a session (its KV cache snapshot, if any, is retained in the

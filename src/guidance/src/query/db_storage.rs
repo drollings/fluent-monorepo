@@ -12,13 +12,13 @@
 //! by the `query_db_storage` round-trip tests.
 
 use search_vector::db::{
-    FragmentLemma, GuidanceDb, FileRecord, FragmentFilter, FragmentRecord, FragmentRow,
+    FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb,
 };
 
 use crate::query::recall::{symbol_type_name, RecallError, RecallStorage};
 use crate::search_types::{
     CodeEntityModifier, CodeSymbolType, Entity, EntityFragment, EntityMetadata, FileInfo, FileKind,
-    ImageFormat, StorageFilter, StorageHit, FragmentContent, FragmentSpan,
+    FragmentContent, FragmentSpan, ImageFormat, StorageFilter, StorageHit,
 };
 
 /// Recall storage over a `GuidanceDb` fragment index.

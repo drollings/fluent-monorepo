@@ -43,7 +43,7 @@ fn estimate_tokens_emoji() {
 #[test]
 fn estimate_tokens_mixed() {
     let tokens = estimate_tokens("hello 世界 😀"); // 6 ASCII + 1 space + 2 CJK + 1 space + 1 emoji
-    // 6*0.25 + 0.1 + 2*0.67 + 0.1 + 1.0 = 1.5 + 0.1 + 1.34 + 0.1 + 1.0 = 4.04 → 4
+                                                   // 6*0.25 + 0.1 + 2*0.67 + 0.1 + 1.0 = 1.5 + 0.1 + 1.34 + 0.1 + 1.0 = 4.04 → 4
     assert!((3..=5).contains(&tokens), "got {tokens}");
 }
 
@@ -84,10 +84,18 @@ fn test_estimate_chars_for_tokens() {
     // locked, not unified.
     assert_eq!(estimate_chars_for_tokens(100, 4), 400);
     assert_eq!(estimate_chars_for_tokens(8192, 4), 32768);
-    assert_eq!(estimate_chars_for_tokens(100, 0), 100, "zero ratio floors at 1");
+    assert_eq!(
+        estimate_chars_for_tokens(100, 0),
+        100,
+        "zero ratio floors at 1"
+    );
     assert_eq!(estimate_chars_for_tokens(0, 4), 0);
     assert_eq!(estimate_chars_for_tokens(0, 0), 0);
-    assert_eq!(estimate_chars_for_tokens(usize::MAX, 4), usize::MAX, "saturates");
+    assert_eq!(
+        estimate_chars_for_tokens(usize::MAX, 4),
+        usize::MAX,
+        "saturates"
+    );
 }
 
 // ── Moved: atomic budget ─────────────────────────────────────────────────

@@ -80,7 +80,9 @@ async fn transaction_commit_and_rollback() {
     assert_transaction_commit_rollback(|commit| {
         Box::pin(async move {
             let store = SqliteStore::open_in_memory().unwrap();
-            store.init_schema("CREATE TABLE t (id INTEGER PRIMARY KEY)").unwrap();
+            store
+                .init_schema("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+                .unwrap();
             let result: Result<(), DbError> = store.transaction(|tx| {
                 tx.execute("INSERT INTO t (id) VALUES (?1)", rusqlite::params![7])?;
                 if commit {
@@ -95,11 +97,7 @@ async fn transaction_commit_and_rollback() {
                 assert!(result.is_err());
             }
             store
-                .query_row(
-                    "SELECT COUNT(*) FROM t",
-                    &[],
-                    |row| row.get::<_, i64>(0),
-                )
+                .query_row("SELECT COUNT(*) FROM t", &[], |row| row.get::<_, i64>(0))
                 .unwrap()
                 .unwrap()
         })
@@ -111,9 +109,7 @@ async fn transaction_commit_and_rollback() {
 async fn poison_recovery_via_lock() {
     use crate::tests::common::assert_poison_recovery;
     let store = Arc::new(SqliteStore::open_in_memory().unwrap());
-    store
-        .init_schema("CREATE TABLE t (id INTEGER)")
-        .unwrap();
+    store.init_schema("CREATE TABLE t (id INTEGER)").unwrap();
     let poisoned = Arc::clone(&store);
     assert_poison_recovery(
         move || {

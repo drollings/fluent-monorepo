@@ -53,4 +53,3 @@ fn non_empty(value: Option<String>) -> Option<String> {
     let trimmed = value?.trim().to_string();
     (!trimmed.is_empty()).then_some(trimmed)
 }
-

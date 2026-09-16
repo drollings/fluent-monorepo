@@ -31,10 +31,14 @@ fn stage_verdict_serde_round_trip() {
 
 #[test]
 fn stage_decision_builders_and_serde() {
-    let d = StageDecision::new(PipelineStage::DeterministicPreFilter, StageVerdict::Rejected, "blocked")
-        .with_score(0.9)
-        .with_latency(12)
-        .with_metadata(serde_json::json!({"x": 1}));
+    let d = StageDecision::new(
+        PipelineStage::DeterministicPreFilter,
+        StageVerdict::Rejected,
+        "blocked",
+    )
+    .with_score(0.9)
+    .with_latency(12)
+    .with_metadata(serde_json::json!({"x": 1}));
     assert_eq!(d.score, Some(0.9));
     assert_eq!(d.latency_ms, 12);
     assert_eq!(d.metadata["x"], 1);
@@ -101,11 +105,9 @@ fn stage_metadata_typed_accessors() {
     let mut ctx = fluent_wvr::WorkContext::default();
     crate::stages::common::publish_routing_target(&mut ctx, &mut decision, rt);
     assert_eq!(
-        ctx.get::<crate::pipeline::RoutingTarget>(
-            crate::stages::common::ROUTING_TARGET_TYPED_KEY
-        )
-        .expect("typed routing target")
-        .model,
+        ctx.get::<crate::pipeline::RoutingTarget>(crate::stages::common::ROUTING_TARGET_TYPED_KEY)
+            .expect("typed routing target")
+            .model,
         "fast"
     );
     assert!(
@@ -177,7 +179,10 @@ fn nlp_interlingua_and_confidence_accessors_round_trip() {
     }];
     m.set_nlp_interlingua(&sigs);
     assert_eq!(m.nlp_interlingua().expect("il"), sigs);
-    assert_eq!(StageMetadata::new(serde_json::json!({})).nlp_interlingua(), None);
+    assert_eq!(
+        StageMetadata::new(serde_json::json!({})).nlp_interlingua(),
+        None
+    );
 
     let conf = NlpConfidenceSummary {
         source: spacy_rs::AnnotationSource::ArcEager,
@@ -204,7 +209,10 @@ fn needs_disambiguation_gates_on_source_and_collisions() {
         refine_reason: None,
     };
     assert!(low.needs_disambiguation(0.5));
-    assert!(!low.needs_disambiguation(0.2), "above a lower threshold → no");
+    assert!(
+        !low.needs_disambiguation(0.2),
+        "above a lower threshold → no"
+    );
     // LLM parses are never flagged (they are the capable tier).
     let llm = NlpConfidenceSummary {
         source: spacy_rs::AnnotationSource::Llm,

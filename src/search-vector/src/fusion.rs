@@ -124,11 +124,7 @@ pub fn rrf_fuse(lists: &[Vec<String>], k: f64) -> Vec<FusedHit> {
     let scores = score_postings(postings, k);
     let mut fused: Vec<FusedHit> = scores
         .into_iter()
-        .map(|(id, score)| FusedHit {
-            id,
-            score,
-            rank: 0,
-        })
+        .map(|(id, score)| FusedHit { id, score, rank: 0 })
         .collect();
     fused.sort_by(|a, b| {
         b.score

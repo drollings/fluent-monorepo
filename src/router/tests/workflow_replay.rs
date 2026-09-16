@@ -119,7 +119,10 @@ fn record_rejects_cycle() {
         7,
     );
     assert_eq!(outcome, RecordOutcome::RejectedCycle);
-    assert!(store.nearest(&emb_a(), 3).is_empty(), "cyclic DAG never stored");
+    assert!(
+        store.nearest(&emb_a(), 3).is_empty(),
+        "cyclic DAG never stored"
+    );
 }
 
 #[test]
@@ -127,12 +130,32 @@ fn record_rejects_ungated_writes() {
     let (replay, store) = replay_with_store();
     // Low confidence.
     assert_eq!(
-        replay.record_workflow(store.as_ref(), None, &emb_a(), "a1", &steps_ok(), 0.5, true, "s", 7),
+        replay.record_workflow(
+            store.as_ref(),
+            None,
+            &emb_a(),
+            "a1",
+            &steps_ok(),
+            0.5,
+            true,
+            "s",
+            7
+        ),
         RecordOutcome::RejectedGate
     );
     // Unverified.
     assert_eq!(
-        replay.record_workflow(store.as_ref(), None, &emb_a(), "a2", &steps_ok(), 0.9, false, "s", 7),
+        replay.record_workflow(
+            store.as_ref(),
+            None,
+            &emb_a(),
+            "a2",
+            &steps_ok(),
+            0.9,
+            false,
+            "s",
+            7
+        ),
         RecordOutcome::RejectedGate
     );
     assert!(store.nearest(&emb_a(), 5).is_empty());
@@ -171,7 +194,17 @@ fn replay_hit_returns_lod0_steps_capped_at_local_model() {
 fn replay_misses_without_reuses_confidence_or_proximity() {
     let (replay, store) = replay_with_store();
     // Record but never validate a reuse: reuses (0) < N.
-    let outcome = replay.record_workflow(store.as_ref(), None, &emb_a(), "audit-n", &steps_ok(), 0.9, true, "s", 7);
+    let outcome = replay.record_workflow(
+        store.as_ref(),
+        None,
+        &emb_a(),
+        "audit-n",
+        &steps_ok(),
+        0.9,
+        true,
+        "s",
+        7,
+    );
     assert_eq!(outcome, RecordOutcome::Stored);
     let cfg = ReplayConfig {
         enabled: true,
@@ -242,16 +275,28 @@ fn materialize_stamps_local_model_and_lod0_refs() {
         enabled: true,
         ..ReplayConfig::calibrated()
     };
-    let hit = replay.try_replay("q", &emb_a_para(), 0.99, &cfg).expect("hit");
+    let hit = replay
+        .try_replay("q", &emb_a_para(), 0.99, &cfg)
+        .expect("hit");
     let nodes = replay.materialize(&hit, "sess-1", 4242);
     assert_eq!(nodes.len(), 2);
     for node in &nodes {
-        assert!(!node.lod.is_empty() && !node.lod[0].is_empty(), "LOD0 travels");
+        assert!(
+            !node.lod.is_empty() && !node.lod[0].is_empty(),
+            "LOD0 travels"
+        );
         let meta = node.metadata.as_ref().expect("replay metadata");
-        assert_eq!(meta.get("origin").and_then(|v| v.as_str()), Some("workflow_replay"));
-        assert_eq!(meta.get("audit_id").and_then(|v| v.as_str()), Some("audit-a"));
         assert_eq!(
-            meta.get("query_content_hash").and_then(serde_json::Value::as_u64),
+            meta.get("origin").and_then(|v| v.as_str()),
+            Some("workflow_replay")
+        );
+        assert_eq!(
+            meta.get("audit_id").and_then(|v| v.as_str()),
+            Some("audit-a")
+        );
+        assert_eq!(
+            meta.get("query_content_hash")
+                .and_then(serde_json::Value::as_u64),
             Some(4242),
             "replay references LOD0, never a summary"
         );
@@ -282,14 +327,22 @@ async fn resolve_prefers_replay_then_walks_rungs_in_order() {
     // Replay hit: fresh rungs never run (replay is cheaper than any rung).
     let calls = Arc::new(AtomicUsize::new(0));
     let out: Result<Resolution<String>, String> = replay
-        .resolve("q", &emb_a_para(), 0.99, &cfg, ["fresh-a", "fresh-b"], {
-            let calls = Arc::clone(&calls);
-            move |rung: &str| {
-                calls.fetch_add(1, Ordering::SeqCst);
-                let rung = rung.to_string();
-                async move { Ok(Some(format!("fresh:{rung}"))) }
-            }
-        }, |_: &String| false)
+        .resolve(
+            "q",
+            &emb_a_para(),
+            0.99,
+            &cfg,
+            ["fresh-a", "fresh-b"],
+            {
+                let calls = Arc::clone(&calls);
+                move |rung: &str| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    let rung = rung.to_string();
+                    async move { Ok(Some(format!("fresh:{rung}"))) }
+                }
+            },
+            |_: &String| false,
+        )
         .await;
     assert!(
         matches!(&out, Ok(Resolution::Replayed(h)) if h.audit_id == "audit-a"),
@@ -300,16 +353,24 @@ async fn resolve_prefers_replay_then_walks_rungs_in_order() {
     // Replay miss (far query): the fresh walk runs in order, first Ok wins —
     // the canonical combinator, never a hand-rolled loop.
     let out: Result<Resolution<String>, String> = replay
-        .resolve("q", &emb_far(), 0.99, &cfg, ["fresh-a", "fresh-b"], |rung: &str| {
-            let rung = rung.to_string();
-            async move {
-                if rung == "fresh-a" {
-                    Ok(None)
-                } else {
-                    Ok(Some("fresh:b".to_string()))
+        .resolve(
+            "q",
+            &emb_far(),
+            0.99,
+            &cfg,
+            ["fresh-a", "fresh-b"],
+            |rung: &str| {
+                let rung = rung.to_string();
+                async move {
+                    if rung == "fresh-a" {
+                        Ok(None)
+                    } else {
+                        Ok(Some("fresh:b".to_string()))
+                    }
                 }
-            }
-        }, |_: &String| false)
+            },
+            |_: &String| false,
+        )
         .await;
     assert!(
         matches!(&out, Ok(Resolution::Fresh(Some(s))) if s == "fresh:b"),
@@ -325,7 +386,10 @@ fn similarity_bands_hold_for_fixture() {
     let far = cosine_similarity_f32(&emb_a(), &emb_far());
     let cross = cosine_similarity_f32(&emb_a(), &emb_b());
     assert!(para > 0.97, "paraphrase near-identical: {para}");
-    assert!(adv > 0.85 && adv < para, "adversarial near but below paraphrase: {adv}");
+    assert!(
+        adv > 0.85 && adv < para,
+        "adversarial near but below paraphrase: {adv}"
+    );
     assert!(far < 0.5, "far is distant: {far}");
     assert!(cross < 0.5, "other intent is distant: {cross}");
 }
@@ -374,7 +438,12 @@ fn recorder_stores_successful_frontier_run_once() {
         Some("sess"),
     );
     assert_eq!(outcome, RecordOutcome::Stored);
-    assert_eq!(store.nearest(&hash_embedder().embed("how do i bake bread").unwrap(), 3).len(), 1);
+    assert_eq!(
+        store
+            .nearest(&hash_embedder().embed("how do i bake bread").unwrap(), 3)
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -450,7 +519,10 @@ fn task_value_gate_rejects_degenerate_runs_despite_high_confidence() {
             "assembled solution".to_string(),
         ),
         (
-            vec!["hypothetical one".to_string(), "hypothetical two".to_string()],
+            vec![
+                "hypothetical one".to_string(),
+                "hypothetical two".to_string(),
+            ],
             vec!["first answer".to_string(), "second answer".to_string()],
             String::new(),
         ),
@@ -531,17 +603,28 @@ fn accept_question_run_validates_shape_and_structure() {
     // persists (two hypothetical steps, then the assemble step joining every
     // hypothetical answer).
     let (hyps, answers, assembled) = question_run();
-    let steps = WorkflowRecorder::accept_question_run("how do i bake bread", &hyps, &answers, &assembled, true)
-        .expect("valid solved run is accepted");
+    let steps = WorkflowRecorder::accept_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        true,
+    )
+    .expect("valid solved run is accepted");
     assert_eq!(steps.len(), 3);
     assert_eq!(steps[0].step_id, "hypothetical-0");
     assert_eq!(steps[1].prompt_lod0, "hypothetical two");
     assert_eq!(steps[2].step_id, "assemble");
-    assert_eq!(steps[2].depends_on, vec!["hyp-answer-0".to_string(), "hyp-answer-1".to_string()]);
+    assert_eq!(
+        steps[2].depends_on,
+        vec!["hyp-answer-0".to_string(), "hyp-answer-1".to_string()]
+    );
     assert_eq!(steps[2].provides, vec!["solution".to_string()]);
 
     // Every degenerate shape is refused.
-    assert!(WorkflowRecorder::accept_question_run("q", &hyps, &answers, &assembled, false).is_none());
+    assert!(
+        WorkflowRecorder::accept_question_run("q", &hyps, &answers, &assembled, false).is_none()
+    );
     assert!(
         WorkflowRecorder::accept_question_run(
             "q",
@@ -669,7 +752,9 @@ fn recorded_run_replays_for_near_neighbor_not_dissimilar() {
         .expect("near-neighbor replays");
     assert_eq!(hit.audit_id, "audit-q");
     // Dissimilar query does not.
-    let far_emb = embedder.embed("quantum chromodynamics lecture notes").unwrap();
+    let far_emb = embedder
+        .embed("quantum chromodynamics lecture notes")
+        .unwrap();
     assert!(
         recorder
             .replay()

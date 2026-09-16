@@ -221,4 +221,3 @@ impl From<&WatchdogEvent> for WatchdogEventType {
         }
     }
 }
-

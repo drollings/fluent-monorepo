@@ -15,7 +15,10 @@ fn emit_renders_kind_and_json_detail() {
     // both invariants hold so the durable-audit consumer's expectations
     // cannot silently drift.
     let ((), lines) = crate::test_support::capture_logs(|| {
-        emit("filter", serde_json::json!({"pattern": "ssn", "scope": "any"}));
+        emit(
+            "filter",
+            serde_json::json!({"pattern": "ssn", "scope": "any"}),
+        );
     });
     let joined = lines.join("\n");
     assert!(
@@ -103,6 +106,9 @@ fn audit_emit_is_durable_under_test_subscriber() {
         AuditRecord::escalation("team", false, "prompt", "", "judge rejected").emit();
     });
     let joined = lines.join("\n");
-    assert!(joined.contains("router.audit"), "typed emit must land on router.audit, got:\n{joined}");
+    assert!(
+        joined.contains("router.audit"),
+        "typed emit must land on router.audit, got:\n{joined}"
+    );
     assert!(joined.contains("route") || joined.contains("filter") || joined.contains("escalation"));
 }

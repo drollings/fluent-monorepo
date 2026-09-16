@@ -79,10 +79,7 @@ fn function_word_bits_match_categories_case_insensitively() {
     // spot-check every bit, multi-category overlap (`after` is ADP +
     // SCONJ-word + adverbial-subordinator), and case-insensitivity.
     let strings = Arc::new(StringStore::new());
-    let lex = Lexicon::new(
-        strings,
-        crate::lang::en::lexicon_config(),
-    );
+    let lex = Lexicon::new(strings, crate::lang::en::lexicon_config());
     let flags = |w: &str| lex.get_or_create(w).flags;
     assert!(flags("the").is_det_word());
     assert!(flags("of").is_adp_word());
@@ -110,16 +107,27 @@ fn function_word_bits_match_categories_case_insensitively() {
     assert!(flags("hard").is_adverb_word());
     assert!(flags("today").is_today_word() && !flags("today").is_adverb_word());
     assert!(flags("as").is_as_word() && flags("as").is_adp_word());
-    assert!(flags("after").is_adp_word() && !flags("after").is_sconj_word() && flags("after").is_after_word() && flags("after").is_subord_adverbial());
+    assert!(
+        flags("after").is_adp_word()
+            && !flags("after").is_sconj_word()
+            && flags("after").is_after_word()
+            && flags("after").is_subord_adverbial()
+    );
     assert!(flags("twice").is_twice_word());
-    assert!(flags("yet").is_yet_word() && flags("yet").is_cconj_word() && flags("yet").is_adverb_word());
+    assert!(
+        flags("yet").is_yet_word() && flags("yet").is_cconj_word() && flags("yet").is_adverb_word()
+    );
     assert!(flags("'s").is_be_verb() && flags("'s").is_be_clitic() && flags("'s").is_be_clitic_s());
-    assert!(flags("'re").is_aux_word() && flags("'re").is_be_clitic() && !flags("'re").is_be_clitic_s());
+    assert!(
+        flags("'re").is_aux_word() && flags("'re").is_be_clitic() && !flags("'re").is_be_clitic_s()
+    );
     assert!(flags("IS").is_be_verb() && flags("IS").is_aux_word());
     assert!(flags("After").is_after_word());
     // Open-class words gain no category bits.
     let cat = flags("cat");
-    assert!(!cat.is_det_word() && !cat.is_verb_word() && !cat.is_be_verb() && !cat.is_adverb_word());
+    assert!(
+        !cat.is_det_word() && !cat.is_verb_word() && !cat.is_be_verb() && !cat.is_adverb_word()
+    );
 }
 
 #[test]
@@ -139,8 +147,22 @@ fn computed_flags_agree_with_lex_attrs() {
     use crate::lex_attrs;
     let lex = lexicon();
     for text in [
-        "Apple", "hello", "HELLO", "123", "3rd", "!", " ", "can't", "(x)", "\"q\"",
-        "“q”", "$5", "https://example.com", "user@example.com", "4.5%", "—",
+        "Apple",
+        "hello",
+        "HELLO",
+        "123",
+        "3rd",
+        "!",
+        " ",
+        "can't",
+        "(x)",
+        "\"q\"",
+        "“q”",
+        "$5",
+        "https://example.com",
+        "user@example.com",
+        "4.5%",
+        "—",
     ] {
         let flags = lex.get_or_create(text).flags;
         assert_eq!(flags.is_alpha(), lex_attrs::is_alpha(text), "{text} alpha");
@@ -153,8 +175,16 @@ fn computed_flags_agree_with_lex_attrs() {
         assert_eq!(flags.is_upper(), lex_attrs::is_upper(text), "{text} upper");
         assert_eq!(flags.like_url(), lex_attrs::like_url(text), "{text} url");
         assert_eq!(flags.like_num(), lex_attrs::like_num(text), "{text} num");
-        assert_eq!(flags.like_email(), lex_attrs::like_email(text), "{text} email");
-        assert_eq!(flags.is_bracket(), lex_attrs::is_bracket(text), "{text} bracket");
+        assert_eq!(
+            flags.like_email(),
+            lex_attrs::like_email(text),
+            "{text} email"
+        );
+        assert_eq!(
+            flags.is_bracket(),
+            lex_attrs::is_bracket(text),
+            "{text} bracket"
+        );
         assert_eq!(flags.is_quote(), lex_attrs::is_quote(text), "{text} quote");
         assert_eq!(
             flags.is_left_punct(),

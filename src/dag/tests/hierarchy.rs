@@ -155,7 +155,11 @@ fn is_subclass_of_matches_fixpoint_on_random_graphs() {
         for c in 0..n {
             for p in 0..n {
                 let expected = c == p || reference.contains(&(c, p));
-                assert_eq!(index.is_subclass_of(&c, &p), expected, "seed {seed} ({c},{p})");
+                assert_eq!(
+                    index.is_subclass_of(&c, &p),
+                    expected,
+                    "seed {seed} ({c},{p})"
+                );
             }
         }
     }
@@ -177,8 +181,14 @@ fn concept_store_chain_golden() {
 fn static_superclass_chain_golden() {
     // yago.rs `superclass_chain`: self-first, then ancestors.
     let index = HierarchyIndex::from_edges([
-        ("http://schema.org/Person", "http://yago-knowledge.org/resource/Entity"),
-        ("http://schema.org/Organization", "http://yago-knowledge.org/resource/Entity"),
+        (
+            "http://schema.org/Person",
+            "http://yago-knowledge.org/resource/Entity",
+        ),
+        (
+            "http://schema.org/Organization",
+            "http://yago-knowledge.org/resource/Entity",
+        ),
     ]);
     let mut chain = vec!["http://schema.org/Person"];
     chain.extend(index.ancestors(&"http://schema.org/Person").iter().copied());

@@ -39,12 +39,14 @@ async fn text_model_sends_ordered_batches_and_validates_shapes() {
             .body_contains(r#""model":"text-embedding-v4""#)
             .body_contains(r#""dimensions":1024"#)
             .body_contains(r#""encoding_format":"float""#);
-        then.status(200).header("Content-Type", "application/json").json_body(json!({
-            "data": [
-                { "index": 1, "embedding": vector(1024, 2.0) },
-                { "index": 0, "embedding": vector(1024, 1.0) },
-            ]
-        }));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({
+                "data": [
+                    { "index": 1, "embedding": vector(1024, 2.0) },
+                    { "index": 0, "embedding": vector(1024, 1.0) },
+                ]
+            }));
     });
     let model = QwenTextEmbeddingV4::new(&text_options(&server.url("/embeddings"))).unwrap();
     let result: QwenEmbedResult = model
@@ -75,7 +77,10 @@ fn text_model_construction_rejects_blank_key_and_endpoint() {
         timeout_ms: None,
     })
     .unwrap_err();
-    assert!(error.to_string().contains("requires an endpoint"), "{error}");
+    assert!(
+        error.to_string().contains("requires an endpoint"),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -105,14 +110,19 @@ async fn text_model_api_error_carries_retry_context_without_secrets() {
         then.status(429)
             .header("Content-Type", "application/json")
             .header("retry-after", "1.5")
-            .json_body(json!({ "error": { "code": "Throttled", "type": "rate", "message": "slow" } }));
+            .json_body(
+                json!({ "error": { "code": "Throttled", "type": "rate", "message": "slow" } }),
+            );
     });
     let model = QwenTextEmbeddingV4::new(&text_options(&server.url("/embeddings"))).unwrap();
     let error = model.embed_texts(&["value".to_string()]).await.unwrap_err();
     let message = error.to_string();
     assert!(message.contains("returned an error"), "{message}");
     assert!(message.contains("retryAfterMs=1500"), "{message}");
-    assert!(!message.contains("secret-value"), "key must not leak into errors");
+    assert!(
+        !message.contains("secret-value"),
+        "key must not leak into errors"
+    );
     throttled.assert();
 
     // Flat and null provider error shapes still surface as API errors.
@@ -200,9 +210,11 @@ async fn qwen37_uses_its_name_and_expanded_limits() {
             .body_contains(r#""model":"qwen3.7-text-embedding""#)
             .body_contains(r#""dimensions":1024"#)
             .body_contains(r#""encoding_format":"float""#);
-        then.status(200).header("Content-Type", "application/json").json_body(json!({
-            "data": [{ "index": 0, "embedding": vector(1024, 3.0) }]
-        }));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({
+                "data": [{ "index": 0, "embedding": vector(1024, 3.0) }]
+            }));
     });
     let model = Qwen37TextEmbedding::new(&text_options(&server.url("/qwen37"))).unwrap();
     assert_eq!(model.max_batch_size(), 20);
@@ -228,9 +240,11 @@ async fn requests_propagate_configured_headers() {
     let server = httpmock::MockServer::start();
     let mock = server.mock(|when, then| {
         when.method(httpmock::Method::POST).path("/embeddings");
-        then.status(200).header("Content-Type", "application/json").json_body(json!({
-            "data": [{ "index": 0, "embedding": vector(1024, 0.25) }]
-        }));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({
+                "data": [{ "index": 0, "embedding": vector(1024, 0.25) }]
+            }));
     });
     let model = QwenTextEmbeddingV4::new(&QwenTextOptions {
         extra_headers: [
@@ -263,7 +277,10 @@ async fn vl_model_validates_images_encodes_bytes_and_maps_indexes() {
         .embed_contents(&[EmbedContent::image(vec![1], "gif").unwrap()])
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("does not support image format"), "{error}");
+    assert!(
+        error.to_string().contains("does not support image format"),
+        "{error}"
+    );
 
     let many: Vec<EmbedContent> = (0..11)
         .map(|_| EmbedContent::image(vec![1], "png").unwrap())
@@ -277,16 +294,18 @@ async fn vl_model_validates_images_encodes_bytes_and_maps_indexes() {
             .body_contains(r#""image":"AQ==""#)
             .body_contains(r#""image":"AQI=""#)
             .body_contains(r#""image":"AQID""#);
-        then.status(200).header("Content-Type", "application/json").json_body(json!({
-            "output": {
-                "embeddings": [
-                    { "text_index": 1, "embedding": vector(2560, 2.0) },
-                    { "index": 0, "embedding": vector(2560, 1.0) },
-                    { "embedding": vector(2560, 3.0) },
-                    { "embedding": vector(2560, 4.0) },
-                ]
-            }
-        }));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({
+                "output": {
+                    "embeddings": [
+                        { "text_index": 1, "embedding": vector(2560, 2.0) },
+                        { "index": 0, "embedding": vector(2560, 1.0) },
+                        { "embedding": vector(2560, 3.0) },
+                        { "embedding": vector(2560, 4.0) },
+                    ]
+                }
+            }));
     });
     let result = model
         .embed_contents(&[
@@ -298,7 +317,11 @@ async fn vl_model_validates_images_encodes_bytes_and_maps_indexes() {
         .await
         .unwrap();
     assert_eq!(
-        result.vectors.iter().map(|vector| vector[0]).collect::<Vec<_>>(),
+        result
+            .vectors
+            .iter()
+            .map(|vector| vector[0])
+            .collect::<Vec<_>>(),
         vec![1.0, 2.0, 3.0, 4.0]
     );
     mock.assert();
@@ -367,8 +390,14 @@ async fn vl_model_reports_transport_and_shape_failures() {
 #[test]
 fn image_format_parsing_rejects_unknown_formats() {
     assert_eq!(QwenImageFormat::parse("png").unwrap(), QwenImageFormat::Png);
-    assert_eq!(QwenImageFormat::parse("JPEG").unwrap(), QwenImageFormat::Jpeg);
-    assert_eq!(QwenImageFormat::parse("webp").unwrap(), QwenImageFormat::Webp);
+    assert_eq!(
+        QwenImageFormat::parse("JPEG").unwrap(),
+        QwenImageFormat::Jpeg
+    );
+    assert_eq!(
+        QwenImageFormat::parse("webp").unwrap(),
+        QwenImageFormat::Webp
+    );
     assert!(QwenImageFormat::parse("gif").is_err());
     assert!(QwenImageFormat::parse("").is_err());
 }

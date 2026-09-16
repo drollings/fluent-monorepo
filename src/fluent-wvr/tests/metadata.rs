@@ -2,13 +2,15 @@
 #[allow(unused_imports)]
 use fluent_wvr::metadata::*;
 use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 #[test]
 fn metadata_value_from_strings_and_numbers() {
     assert_eq!(MetadataValue::from("x"), MetadataValue::String("x".into()));
-    assert_eq!(MetadataValue::from("x".to_string()), MetadataValue::String("x".into()));
+    assert_eq!(
+        MetadataValue::from("x".to_string()),
+        MetadataValue::String("x".into())
+    );
     assert_eq!(MetadataValue::from(7i64), MetadataValue::Number(7));
     assert_eq!(MetadataValue::from(0.5f64), MetadataValue::Float(0.5));
     assert_eq!(MetadataValue::from(true), MetadataValue::Bool(true));
@@ -56,6 +58,9 @@ fn metadata_value_works_in_context_metadata_map() {
     let mut map: HashMap<String, MetadataValue> = HashMap::new();
     map.insert("classifier_system_prompt".into(), "system".into());
     map.insert("max_retries".into(), 3.into());
-    assert_eq!(map["classifier_system_prompt"], MetadataValue::String("system".into()));
+    assert_eq!(
+        map["classifier_system_prompt"],
+        MetadataValue::String("system".into())
+    );
     assert_eq!(map["max_retries"], MetadataValue::Number(3));
 }

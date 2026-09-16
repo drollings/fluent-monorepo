@@ -22,8 +22,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use common_core::metrics::LatencyHistogram;
-use fluent_concurrency::pool::Limiter;
 use fluent_concurrency::batch::{SupervisedBatch, SupervisedBatchConfig, SupervisedBatchEvent};
+use fluent_concurrency::pool::Limiter;
 use fluent_dag::dep_graph::DependencyGraph;
 use fluent_llm::client::ChatBackend;
 use fluent_wvr::prelude::*;
@@ -112,7 +112,7 @@ pub struct ChartExecOptions {
     /// Selection confidence for the audit trail.
     pub score: Option<f64>,
     /// When set, the rubric-gate result is recorded against the store —
-    /// consecutive failures demote the chart, a pass promotes a draft. 
+    /// consecutive failures demote the chart, a pass promotes a draft.
     /// `None` disables the recording (executor stays decoupled).
     pub health: Option<Arc<ChartStore>>,
 }
@@ -282,7 +282,8 @@ impl ChartExecutionPlan {
                         format!("chart.{}.{}", self.chart_name, target.name),
                     )),
                 };
-                batch.register_with_context(wrapped, ctx)
+                batch
+                    .register_with_context(wrapped, ctx)
                     .map_err(|e| ChartError::Compile {
                         reason: format!("register chart target '{}': {e}", target.name),
                     })?;

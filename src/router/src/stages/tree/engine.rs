@@ -15,11 +15,13 @@ use crate::config::compiled_tree::{CompiledChild, CompiledFilter, CompiledNode, 
 use crate::config::filters::FilterOutcome;
 use crate::config::RoutingConfig;
 use crate::pipeline::RoutingTarget;
-use crate::stages::classifier::ClassifierBackendResolver;
 use crate::pipeline_types::{StageDecision, StageVerdict};
+use crate::stages::classifier::ClassifierBackendResolver;
 use crate::target_match::{AssessmentRecord, GroupExpansion, TargetMatcher};
 
-use super::decisions::{fallback_child, final_decision, node_decision, terminal_decision, TreeEvaluation, TreeOutcome};
+use super::decisions::{
+    fallback_child, final_decision, node_decision, terminal_decision, TreeEvaluation, TreeOutcome,
+};
 use super::verdict::{parse_tree_verdict, TreeClassifierVerdict};
 
 pub struct ClassificationEngine {
@@ -87,7 +89,12 @@ impl ClassificationEngine {
         interlingua: Option<&[spacy_rs::routing::InterlinguaSignal]>,
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
     ) -> Result<TreeEvaluation, WorkError> {
-        self.evaluate_with_expansion(user_text, interlingua, route_hints, &GroupExpansion::default())
+        self.evaluate_with_expansion(
+            user_text,
+            interlingua,
+            route_hints,
+            &GroupExpansion::default(),
+        )
     }
 
     /// [`Self::evaluate`] with the request's availability view for
@@ -293,7 +300,16 @@ impl ClassificationEngine {
                         format!("classifier LLM error, falling back: {e}"),
                         serde_json::json!({ "model": model, "route": fb.key }),
                     ));
-                    return self.evaluate_node(&fb.node, &siblings, user_text, interlingua, route_hints, None, visited, expansion);
+                    return self.evaluate_node(
+                        &fb.node,
+                        &siblings,
+                        user_text,
+                        interlingua,
+                        route_hints,
+                        None,
+                        visited,
+                        expansion,
+                    );
                 }
                 let reason = format!("classifier LLM error: {e}");
                 visited.push(node_decision(
@@ -660,7 +676,16 @@ impl ClassificationEngine {
                             format!("soft redirect to '{target}'"),
                             serde_json::json!({ "outcome": "soft_redirect", "redirect_to": target }),
                         ));
-                        return self.evaluate_node(node, siblings, user_text, interlingua, route_hints, complexity, visited, expansion);
+                        return self.evaluate_node(
+                            node,
+                            siblings,
+                            user_text,
+                            interlingua,
+                            route_hints,
+                            complexity,
+                            visited,
+                            expansion,
+                        );
                     }
                     tracing::warn!(
                         target: "router.pipeline.stage2.tree",

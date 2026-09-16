@@ -15,7 +15,6 @@
 pub use crate::{
     backoff_ms, blake3_hex, capped_backoff_ms, capped_exp_backoff_ms, ensure_dir,
     ensure_dir_or_panic, fnv1a64, format_json, format_size, hex_encode, lock, lock_read,
-    lock_write, method_not_found, read_to_string_err, sha256_hex, write_atomic, IoError,
+    lock_write, method_not_found, now_secs, read_to_string_err, sha256_hex, write_atomic, IoError,
     JsonRpcError, JsonRpcHandler, JsonRpcRequest, JsonRpcResponse, LatencyHistogram, LoadCache,
-    now_secs,
 };

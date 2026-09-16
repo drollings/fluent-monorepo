@@ -27,10 +27,10 @@ fn sorted_by_vec_length_and_stability() {
         vec!["a".to_string(), "bb".to_string(), "ccc".to_string()]
     );
     // Stable: equal keys keep insertion order.
-    let order: Vec<(i32, &str)> = sorted_by_vec(
-        vec![(1, "first"), (1, "second"), (0, "zero")],
-        |x, y| x.0.cmp(&y.0),
-    );
+    let order: Vec<(i32, &str)> =
+        sorted_by_vec(vec![(1, "first"), (1, "second"), (0, "zero")], |x, y| {
+            x.0.cmp(&y.0)
+        });
     assert_eq!(order, vec![(0, "zero"), (1, "first"), (1, "second")]);
     // Empty and single are fixed points.
     assert_eq!(
@@ -53,7 +53,11 @@ fn dedup_sorted_matrix() {
 /// tiebreak, NaN compares `Equal`): shown here, owned by the scoring
 /// call site — deliberately not a shared helper, so NaN/epsilon policy
 /// never drifts into generic code.
-fn sort_by_score_then_id<T>(values: Vec<T>, score: impl Fn(&T) -> f64, id: impl Fn(&T) -> &str) -> Vec<T> {
+fn sort_by_score_then_id<T>(
+    values: Vec<T>,
+    score: impl Fn(&T) -> f64,
+    id: impl Fn(&T) -> &str,
+) -> Vec<T> {
     sorted_by_vec(values, |a, b| {
         score(b)
             .partial_cmp(&score(a))

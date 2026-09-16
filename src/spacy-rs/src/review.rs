@@ -12,8 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use fluent_concept::ConceptStoreError;
 use crate::llm::{AnnotationRecord, AnnotationResult, AnnotationSource};
+use fluent_concept::ConceptStoreError;
 use fluent_types::{ConceptMetadata, InterlinguaId};
 
 /// The correction field a reviewer can override on a token.
@@ -73,8 +73,9 @@ impl ParseReview {
     /// "..."}`). Structural parse only — the amendment and the 7-check gate
     /// are the callers' business.
     pub fn parse_json(json: &str) -> Result<Self, crate::validate::AnnotationError> {
-        serde_json::from_str(json)
-            .map_err(|e| crate::validate::AnnotationError::Json { source: std::sync::Arc::new(e) })
+        serde_json::from_str(json).map_err(|e| crate::validate::AnnotationError::Json {
+            source: std::sync::Arc::new(e),
+        })
     }
 }
 
@@ -127,7 +128,11 @@ pub trait CorrectionIndex: Send + Sync {
 /// classes/labels/IRIs and asks the reviewer to resolve entity types to
 /// concept ids. **Pure** — unit-testable without a model.
 #[must_use]
-pub fn review_prompt(text: &str, parse: &AnnotationResult, candidate_concepts: &[ConceptMetadata]) -> String {
+pub fn review_prompt(
+    text: &str,
+    parse: &AnnotationResult,
+    candidate_concepts: &[ConceptMetadata],
+) -> String {
     use std::fmt::Write;
     let mut prompt = String::new();
     let _ = writeln!(
@@ -139,7 +144,11 @@ pub fn review_prompt(text: &str, parse: &AnnotationResult, candidate_concepts: &
     let _ = writeln!(prompt, "Sentence: {text}");
     let _ = writeln!(prompt, "Parse (token / pos / dep / head):");
     for (i, r) in parse.records().records().iter().enumerate() {
-        let _ = writeln!(prompt, "  {i}: {} / {} / {} / {}", r.text, r.pos, r.dep, r.head);
+        let _ = writeln!(
+            prompt,
+            "  {i}: {} / {} / {} / {}",
+            r.text, r.pos, r.dep, r.head
+        );
     }
     if candidate_concepts.is_empty() {
         let _ = writeln!(prompt, "Candidate concepts: (none registered)");
@@ -239,8 +248,10 @@ pub fn apply_corrections(parse: &AnnotationResult, corrections: &[Correction]) -
     } else {
         AnnotationSource::HumanReview
     };
-    AnnotationResult::new(crate::llm::AnnotationSet(records), source)
-        .with_confidence(parse.token_confidence.clone(), parse.parse_confidence.clone())
+    AnnotationResult::new(crate::llm::AnnotationSet(records), source).with_confidence(
+        parse.token_confidence.clone(),
+        parse.parse_confidence.clone(),
+    )
 }
 
 /// Amend `base` with review-shaped `corrections`, restricted to `focus`

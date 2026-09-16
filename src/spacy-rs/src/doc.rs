@@ -562,8 +562,12 @@ pub fn get_token_attr(token: &TokenRecord, attr: Attribute) -> Result<u64, Spacy
         Attribute::Morph => token.morph,
         Attribute::EntId => token.ent_id,
         Attribute::Idx => u64::from(token.idx),
-        Attribute::InterlinguaLemmaId => token.interlingua_lemma_id.map_or(0, InterlinguaId::as_u64),
-        Attribute::InterlinguaEntityId => token.interlingua_entity_id.map_or(0, InterlinguaId::as_u64),
+        Attribute::InterlinguaLemmaId => {
+            token.interlingua_lemma_id.map_or(0, InterlinguaId::as_u64)
+        }
+        Attribute::InterlinguaEntityId => {
+            token.interlingua_entity_id.map_or(0, InterlinguaId::as_u64)
+        }
         Attribute::AnnotationConfidence => token.confidence.map_or(0, f64::to_bits),
         Attribute::Other(_) => return Err(SpacyError::UnknownAttribute(attr.id())),
     };

@@ -73,7 +73,11 @@ pub struct SpanCacheSeam {
 impl SpanCacheSeam {
     /// A seam over explicit closure legs.
     pub fn new(get: SpanCacheGet, put: SpanCachePut, invalidate: SpanCacheInvalidate) -> Self {
-        Self { get, put, invalidate }
+        Self {
+            get,
+            put,
+            invalidate,
+        }
     }
 
     /// Return the cached corrections for `key`, if present.

@@ -1,5 +1,5 @@
-use crate::ChatMessage;
 use crate::tokens::{estimate_tokens, TokenBudget};
+use crate::ChatMessage;
 
 /// Token-budget context packing. Canonical owner of token-budget logic in the
 /// workspace: prompt packing, LOD selection, and first-fit-decreasing

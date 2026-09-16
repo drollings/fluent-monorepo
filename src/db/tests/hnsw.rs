@@ -115,9 +115,15 @@ fn adaptive_hnsw_dispatch_needs_built_and_scale() {
     // index below the threshold still routes to brute force.
     let policy = AdaptiveHnsw::default();
     let t = policy.threshold;
-    assert!(!policy.dispatch(false, t + 1), "unbuilt → brute force at any scale");
+    assert!(
+        !policy.dispatch(false, t + 1),
+        "unbuilt → brute force at any scale"
+    );
     assert!(!policy.dispatch(false, 0));
-    assert!(!policy.dispatch(true, t), "built but at/below threshold → brute force");
+    assert!(
+        !policy.dispatch(true, t),
+        "built but at/below threshold → brute force"
+    );
     assert!(policy.dispatch(true, t + 1));
     // A custom threshold is honored; it is still a single source (the field).
     let custom = AdaptiveHnsw::new(10);

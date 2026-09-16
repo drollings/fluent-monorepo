@@ -115,11 +115,7 @@ async fn test_capability_boundary_enforcement_db() {
     let db = DbCapability::open(":memory:").unwrap();
     let result = db
         .pool()
-        .query_rows(
-            "SELECT 1",
-            Vec::<String>::new(),
-            |row| row.get::<_, i64>(0),
-        )
+        .query_rows("SELECT 1", Vec::<String>::new(), |row| row.get::<_, i64>(0))
         .await;
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -136,10 +132,7 @@ async fn test_capability_boundary_enforcement_db() {
 #[tokio::test(start_paused = true)]
 async fn test_capability_boundary_enforcement_db_execute() {
     let db = DbCapability::open(":memory:").unwrap();
-    let result = db
-        .pool()
-        .execute_batch("CREATE TABLE t (id INTEGER)")
-        .await;
+    let result = db.pool().execute_batch("CREATE TABLE t (id INTEGER)").await;
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -168,11 +161,9 @@ async fn test_db_concurrent_queries_via_pool() {
                     .unwrap();
             }
             let cnt = pool
-                .query_row(
-                    "SELECT COUNT(*) FROM t",
-                    Vec::<String>::new(),
-                    |row| row.get::<_, i64>(0),
-                )
+                .query_row("SELECT COUNT(*) FROM t", Vec::<String>::new(), |row| {
+                    row.get::<_, i64>(0)
+                })
                 .await
                 .unwrap()
                 .unwrap();

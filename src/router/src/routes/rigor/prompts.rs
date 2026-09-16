@@ -50,7 +50,10 @@ pub(super) fn messages(system: &str, user: &str) -> Vec<ChatMessage> {
 }
 
 /// Run the blue pass: candidate answer as plain text.
-pub(super) async fn blue_answer(blue: &LocalBackend, user_message: &str) -> Result<String, RigorError> {
+pub(super) async fn blue_answer(
+    blue: &LocalBackend,
+    user_message: &str,
+) -> Result<String, RigorError> {
     chat(blue, BLUE_SYSTEM_PROMPT, user_message)
         .await
         .map_err(|e| RigorError::BlueTeam(e.to_string()))

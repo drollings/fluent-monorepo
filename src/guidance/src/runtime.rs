@@ -68,7 +68,8 @@ fn db_sync_work_unit(job: DbSyncPayload) -> DbWorkUnit<StoreUnitOp> {
     DbWorkUnit::builder()
         .name("db.sync")
         .op(Box::new(move |_ctx: &WorkContext| {
-            let db = GuidanceDb::open(&job.db_path).map_err(|e| WorkError::Execution(e.to_string()))?;
+            let db =
+                GuidanceDb::open(&job.db_path).map_err(|e| WorkError::Execution(e.to_string()))?;
             let count = db
                 .sync_from_dir(&job.json_dir)
                 .map_err(|e| WorkError::Execution(e.to_string()))?;

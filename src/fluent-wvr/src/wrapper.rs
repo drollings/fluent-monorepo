@@ -557,7 +557,12 @@ impl SuffixedComponent {
     pub fn new(inner: Arc<dyn Component>, suffix: impl AsRef<str>, ctx: WorkContext) -> Self {
         let suffix = suffix.as_ref().to_owned();
         let name = format!("{}:{suffix}", inner.name());
-        Self { inner, name, suffix, ctx }
+        Self {
+            inner,
+            name,
+            suffix,
+            ctx,
+        }
     }
 }
 
@@ -576,9 +581,10 @@ impl WorkUnit for SuffixedComponent {
             rt: Arc::clone(&batch_ctx.rt),
             ..self.ctx.clone()
         };
-        merged
-            .metadata
-            .insert("task_suffix".to_owned(), MetadataValue::from(self.suffix.as_str()));
+        merged.metadata.insert(
+            "task_suffix".to_owned(),
+            MetadataValue::from(self.suffix.as_str()),
+        );
         self.inner.execute(&merged)
     }
     fn default_timeout_ms(&self) -> u64 {

@@ -576,10 +576,7 @@ async fn cmd_explain(
     // through the shared context assembly; context renders as an
     // additive section with provenance (the hits table is never
     // perturbed). Hydration failure degrades to hits only.
-    let anchors = search::anchor_files(
-        &hits,
-        guidance_core::graph_index::CLOSURE_ANCHOR_FILES,
-    );
+    let anchors = search::anchor_files(&hits, guidance_core::graph_index::CLOSURE_ANCHOR_FILES);
     let mut context = Vec::new();
     if !anchors.is_empty() {
         match GuidanceDb::open(Path::new(db_path))
@@ -735,30 +732,25 @@ async fn cmd_sync(
             ));
             // Stored source hashes for the member-JSON clock gate (empty on
             // any failure — the gate then keeps mtime behavior).
-            let stored_hash: Option<String> =
-                search_vector::GuidanceDb::open(Path::new(db_path))
-                    .ok()
-                    .and_then(|db| db.source_content_hashes().ok())
-                    .and_then(|map| {
-                        map.get(
-                            guidance_core::sync_engine::absolute_or(source_path.to_path_buf())
-                                .to_string_lossy()
-                                .as_ref(),
-                        )
-                        .cloned()
-                    });
-            let fresh = match stored_hash.as_deref() {
-                Some(stored) => {
-                    !guidance_core::sync::staleness::should_generate_with_stored(
-                        &json_path,
-                        source_path,
-                        Some(stored),
-                        || guidance_core::diff::hash_file(source_path),
+            let stored_hash: Option<String> = search_vector::GuidanceDb::open(Path::new(db_path))
+                .ok()
+                .and_then(|db| db.source_content_hashes().ok())
+                .and_then(|map| {
+                    map.get(
+                        guidance_core::sync_engine::absolute_or(source_path.to_path_buf())
+                            .to_string_lossy()
+                            .as_ref(),
                     )
-                }
-                None => {
-                    !guidance_core::sync::staleness::should_generate(&json_path, source_path)
-                }
+                    .cloned()
+                });
+            let fresh = match stored_hash.as_deref() {
+                Some(stored) => !guidance_core::sync::staleness::should_generate_with_stored(
+                    &json_path,
+                    source_path,
+                    Some(stored),
+                    || guidance_core::diff::hash_file(source_path),
+                ),
+                None => !guidance_core::sync::staleness::should_generate(&json_path, source_path),
             };
             if !force && fresh {
                 if verbose {
@@ -817,9 +809,15 @@ async fn cmd_sync(
             stale_files += status.stale_files;
 
             if stale_files > 0 || force {
-                generated +=
-                    walk_and_gen_async(guidance_dir.clone(), src_dir.clone(), force, verbose, &[], Some(db_path))
-                        .await;
+                generated += walk_and_gen_async(
+                    guidance_dir.clone(),
+                    src_dir.clone(),
+                    force,
+                    verbose,
+                    &[],
+                    Some(db_path),
+                )
+                .await;
             }
         }
 
@@ -829,8 +827,11 @@ async fn cmd_sync(
             // Fragment ingestion first: its change gate reports the
             // fingerprint-changed set (plus files missing on disk) that
             // seeds dependent propagation below.
-            let existing_dirs: Vec<PathBuf> =
-                src_dirs.iter().filter(|dir| dir.is_dir()).cloned().collect();
+            let existing_dirs: Vec<PathBuf> = src_dirs
+                .iter()
+                .filter(|dir| dir.is_dir())
+                .cloned()
+                .collect();
             let frag_stats = match index_cmd::ingest_workspace_fragments(
                 Path::new(db_path),
                 &workspace_path,
@@ -869,14 +870,13 @@ async fn cmd_sync(
                 let mut changed = frag_stats.changed.clone();
                 changed.extend(frag_stats.deleted_dependents.iter().cloned());
                 let affected = match GuidanceDb::open(Path::new(db_path)) {
-                    Ok(db) => index_cmd::affected_for_sync(
-                        &db,
-                        &changed,
-                        &frag_stats.deleted,
-                        &roots,
-                    ),
+                    Ok(db) => {
+                        index_cmd::affected_for_sync(&db, &changed, &frag_stats.deleted, &roots)
+                    }
                     Err(error) => {
-                        eprintln!("Warning: graph hydration failed ({error}); re-processing seeds only");
+                        eprintln!(
+                            "Warning: graph hydration failed ({error}); re-processing seeds only"
+                        );
                         let mut seeds = changed;
                         seeds.extend(frag_stats.deleted.iter().cloned());
                         seeds.sort();
@@ -891,8 +891,7 @@ async fn cmd_sync(
                         if !candidate.is_file() {
                             continue;
                         }
-                        let ext =
-                            candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        let ext = candidate.extension().and_then(|e| e.to_str()).unwrap_or("");
                         if !fluent_types::file_kind::SOURCE_EXTENSIONS.contains(&ext) {
                             continue;
                         }
@@ -1020,18 +1019,19 @@ async fn walk_and_gen_async(
         let json_path = guidance_dir
             .join("src")
             .join(format!("{}.json", rel.display()));
-        let should_gen = force || match source_hashes
-            .get(path.to_string_lossy().as_ref())
-            .map(String::as_str)
-        {
-            Some(stored) => guidance_core::sync::staleness::should_generate_with_stored(
-                &json_path,
-                path,
-                Some(stored),
-                || guidance_core::diff::hash_file(path),
-            ),
-            None => guidance_core::sync::staleness::should_generate(&json_path, path),
-        };
+        let should_gen = force
+            || match source_hashes
+                .get(path.to_string_lossy().as_ref())
+                .map(String::as_str)
+            {
+                Some(stored) => guidance_core::sync::staleness::should_generate_with_stored(
+                    &json_path,
+                    path,
+                    Some(stored),
+                    || guidance_core::diff::hash_file(path),
+                ),
+                None => guidance_core::sync::staleness::should_generate(&json_path, path),
+            };
         if !should_gen {
             if verbose {
                 println!("  skip: {}", rel.display());
@@ -1299,9 +1299,11 @@ async fn start_watcher(
                     let mut seeds: Vec<String> = snapshot.touched_files.clone();
                     for dir in &snapshot.rescan_directories {
                         let mut files = Vec::new();
-                        walk::walk_files(&PathBuf::from(dir), fluent_types::file_kind::SOURCE_EXTENSIONS, |p| {
-                            files.push(p.to_path_buf())
-                        });
+                        walk::walk_files(
+                            &PathBuf::from(dir),
+                            fluent_types::file_kind::SOURCE_EXTENSIONS,
+                            |p| files.push(p.to_path_buf()),
+                        );
                         seeds.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
                     }
                     let affected = graph.dependents_closure(&seeds);

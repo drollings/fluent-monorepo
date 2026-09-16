@@ -72,12 +72,13 @@ async fn test_aging_increases_priority_for_starved_tasks() {
         move |_identity: String| async move { Ok::<String, String>("done".into()) },
     ));
 
-    let scheduler = AffinityScheduler::new_with_runtime(Arc::clone(&p), Arc::clone(&runtime)).with_aging(AgingConfig {
-        affinity_bonus: 10,
-        aging_interval: Duration::ZERO,
-        aging_rate: 5,
-        max_priority: 100,
-    });
+    let scheduler = AffinityScheduler::new_with_runtime(Arc::clone(&p), Arc::clone(&runtime))
+        .with_aging(AgingConfig {
+            affinity_bonus: 10,
+            aging_interval: Duration::ZERO,
+            aging_rate: 5,
+            max_priority: 100,
+        });
 
     scheduler.set_affinity(Some("session-a".into()));
 
@@ -158,12 +159,13 @@ async fn affinity_virtual_time_deterministic() {
         1,
         |_job: String| async move { Ok::<String, String>("ok".into()) },
     ));
-    let scheduler = AffinityScheduler::new_with_runtime(Arc::clone(&p), Arc::clone(&runtime)).with_aging(AgingConfig {
-        affinity_bonus: 10,
-        aging_interval: Duration::from_secs(1),
-        aging_rate: 2,
-        max_priority: 100,
-    });
+    let scheduler = AffinityScheduler::new_with_runtime(Arc::clone(&p), Arc::clone(&runtime))
+        .with_aging(AgingConfig {
+            affinity_bonus: 10,
+            aging_interval: Duration::from_secs(1),
+            aging_rate: 2,
+            max_priority: 100,
+        });
     scheduler.set_affinity(Some("a".into()));
     // Seed a starved identity
     let task = ScheduledTask {
@@ -206,7 +208,12 @@ async fn affinity_bounded_map_evicts_oldest_identity() {
         1,
         |_job: String| async move { Ok::<String, String>("ok".into()) },
     ));
-    let scheduler = AffinityScheduler::new_with_cap(Arc::clone(&p), Arc::clone(&runtime), 1024, AgingConfig::default());
+    let scheduler = AffinityScheduler::new_with_cap(
+        Arc::clone(&p),
+        Arc::clone(&runtime),
+        1024,
+        AgingConfig::default(),
+    );
     for i in 0..2000 {
         let task = ScheduledTask {
             identity: format!("id-{i}"),
@@ -244,18 +251,25 @@ async fn affinity_enqueued_at_weights_older_task_higher() {
     };
     let prio_old = scheduler.effective_priority(&old_task, 0);
     // Need fresh scheduler for fair comparison because first call inserts; use separate instance
-    let scheduler2 = AffinityScheduler::new_with_runtime(Arc::new(PriorityResultPool::new(
+    let scheduler2 = AffinityScheduler::new_with_runtime(
+        Arc::new(PriorityResultPool::new(
+            Arc::clone(&runtime),
+            1,
+            |_job: String| async move { Ok::<String, String>("ok".into()) },
+        )),
         Arc::clone(&runtime),
-        1,
-        |_job: String| async move { Ok::<String, String>("ok".into()) },
-    )), Arc::clone(&runtime)).with_aging(AgingConfig {
+    )
+    .with_aging(AgingConfig {
         affinity_bonus: 10,
         aging_interval: Duration::from_secs(100),
         aging_rate: 5,
         max_priority: 100,
     });
     let prio_fresh = scheduler2.effective_priority(&fresh_task, 0);
-    assert!(prio_old > prio_fresh, "older task should have higher priority: old={prio_old} fresh={prio_fresh}");
+    assert!(
+        prio_old > prio_fresh,
+        "older task should have higher priority: old={prio_old} fresh={prio_fresh}"
+    );
 }
 
 #[tokio::test]
@@ -304,5 +318,8 @@ async fn affinity_bonus_is_task_value_not_confidence() {
     };
     let prio_starved_aged = scheduler.effective_priority(&probe, 0);
     // Starved's base after aging should exceed affine's fresh bonus if aging is confidence
-    assert!(prio_starved_aged > prio_affine_fresh || prio_starved_aged + 2 > prio_affine_fresh, "aged starved B should eventually outrank fresh affine A");
+    assert!(
+        prio_starved_aged > prio_affine_fresh || prio_starved_aged + 2 > prio_affine_fresh,
+        "aged starved B should eventually outrank fresh affine A"
+    );
 }

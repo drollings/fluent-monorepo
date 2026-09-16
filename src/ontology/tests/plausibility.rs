@@ -86,9 +86,12 @@ fn semantic_plausibility_hermetic_dog_is_animal() {
     let animal_lemma = lemma_id_for("animal");
     // For the hermetic spike, register the dog lemma id itself
     store.insert(meta(dog_lemma, "dog", None)).expect("dog");
-    store.insert(meta(animal_lemma, "animal", None)).expect("animal");
+    store
+        .insert(meta(animal_lemma, "animal", None))
+        .expect("animal");
     // Also build hierarchy Dog → Animal via explicit edges (lemma ids)
-    let hierarchy = fluent_concept::TaxonomyHierarchy::from_edges(&[(dog_lemma, animal_lemma)]).expect("hierarchy");
+    let hierarchy = fluent_concept::TaxonomyHierarchy::from_edges(&[(dog_lemma, animal_lemma)])
+        .expect("hierarchy");
     store.set_hierarchy(hierarchy);
     assert!(store.is_subclass_of(dog_lemma, animal_lemma));
 
@@ -96,7 +99,10 @@ fn semantic_plausibility_hermetic_dog_is_animal() {
     let resolver = resolver_for(&store);
     let inputs = scored_inputs(&doc, &resolver);
     let score = score_plausibility(&inputs, &*store).expect("score");
-    assert!(score > 0.5, "dog-known triple must be plausible, got {score}");
+    assert!(
+        score > 0.5,
+        "dog-known triple must be plausible, got {score}"
+    );
 }
 
 #[test]

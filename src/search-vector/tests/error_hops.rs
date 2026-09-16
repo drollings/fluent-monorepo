@@ -13,10 +13,16 @@ fn rusqlite_unique_violation_reaches_db_variant_classified() {
     let conn = fluent_db::sqlite::open_in_memory().unwrap();
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)")
         .unwrap();
-    conn.execute("INSERT INTO t (id, name) VALUES (?1, ?2)", rusqlite::params![1, "x"])
-        .unwrap();
+    conn.execute(
+        "INSERT INTO t (id, name) VALUES (?1, ?2)",
+        rusqlite::params![1, "x"],
+    )
+    .unwrap();
     let err = conn
-        .execute("INSERT INTO t (id, name) VALUES (?1, ?2)", rusqlite::params![1, "y"])
+        .execute(
+            "INSERT INTO t (id, name) VALUES (?1, ?2)",
+            rusqlite::params![1, "y"],
+        )
         .expect_err("duplicate primary key must fail");
     match VectorDbError::from(DbError::from(err)) {
         VectorDbError::Db(DbError::DuplicateEntry(_)) => {}

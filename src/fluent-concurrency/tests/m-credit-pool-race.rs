@@ -60,17 +60,12 @@ async fn submit_drain_race_resolves_cleanly() {
 async fn concurrent_submits_all_succeed_without_drain() {
     let counter = Arc::new(AtomicUsize::new(0));
     let c = Arc::clone(&counter);
-    let pool = Arc::new(CreditGatedPool::new(
-        runtime(),
-        16,
-        32,
-        move |_: usize| {
-            let c = Arc::clone(&c);
-            async move {
-                c.fetch_add(1, Ordering::SeqCst);
-            }
-        },
-    ));
+    let pool = Arc::new(CreditGatedPool::new(runtime(), 16, 32, move |_: usize| {
+        let c = Arc::clone(&c);
+        async move {
+            c.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
     let mut handles = Vec::new();
     for t in 0..8usize {
         let p = Arc::clone(&pool);

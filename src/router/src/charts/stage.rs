@@ -291,11 +291,7 @@ fn read_metadata_json(
 /// responses fall back to a string leaf so the raw text still flows to
 /// upstream targets via the structured `stage.{id}.output` channel.
 fn parse_output(response: &str) -> serde_json::Value {
-    match fluent_llm::parse_typed::<serde_json::Value>(
-        response,
-        &serde_json::Value::Null,
-        |_| {},
-    ) {
+    match fluent_llm::parse_typed::<serde_json::Value>(response, &serde_json::Value::Null, |_| {}) {
         Ok(v) => v,
         Err(_) => serde_json::Value::String(response.trim().to_string()),
     }

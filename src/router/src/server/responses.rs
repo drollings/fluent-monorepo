@@ -13,8 +13,6 @@ use crate::types::{RouterMessageContent, Usage};
 pub type ResponseBody = http_body_util::combinators::UnsyncBoxBody<Bytes, std::convert::Infallible>;
 pub type HyperResponse = hyper::Response<ResponseBody>;
 
-
-
 pub struct ServerStats {
     pub requests: AtomicU64,
     pub errors: AtomicU64,
@@ -46,7 +44,9 @@ impl Default for ServerStats {
     }
 }
 
-pub use crate::server::cors::{add_cors_headers, CORS_ALLOW_HEADERS, CORS_ALLOW_METHODS, CORS_ALLOW_ORIGIN};
+pub use crate::server::cors::{
+    add_cors_headers, CORS_ALLOW_HEADERS, CORS_ALLOW_METHODS, CORS_ALLOW_ORIGIN,
+};
 
 pub fn completion_to_response(
     completion: &RouterResponse,

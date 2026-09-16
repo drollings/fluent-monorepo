@@ -42,7 +42,16 @@ const FULL_PARSE: &str = r#"[
 
 #[test]
 fn full_ud_parse_fills_every_role() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let signals = extract_routing_signals(&doc);
     assert_eq!(signals.len(), 1);
@@ -51,7 +60,10 @@ fn full_ud_parse_fills_every_role() {
     assert_eq!(s.direct_object.as_deref(), Some("report"));
     assert_eq!(s.indirect_object.as_deref(), Some("me"));
     assert_eq!(s.modifiers, vec!["sales"]);
-    assert_eq!(s.arguments, vec![("for".to_string(), "yesterday".to_string())]);
+    assert_eq!(
+        s.arguments,
+        vec![("for".to_string(), "yesterday".to_string())]
+    );
     assert_eq!(s.qualifiers, vec!["please"]);
     assert!(s.subject.is_none());
     // `det` is not a role label — the determiner is a residual dependent.
@@ -60,7 +72,16 @@ fn full_ud_parse_fills_every_role() {
 
 #[test]
 fn transcript_matches_tokens_in_order() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let s = &extract_routing_signals(&doc)[0];
     assert_eq!(s.tokens, tokens);
@@ -122,10 +143,7 @@ fn multi_sentence_doc_yields_one_signal_per_sentence() {
         {"text":"ran","pos":"verb","dep":"root","head":0,"lemma":"run"},
         {"text":".","pos":"punct","dep":"punct","head":-1,"lemma":"."}
     ]"#;
-    let doc = attached(
-        json,
-        &["The", "cat", "sat", ".", "The", "dog", "ran", "."],
-    );
+    let doc = attached(json, &["The", "cat", "sat", ".", "The", "dog", "ran", "."]);
     let signals = extract_routing_signals(&doc);
     assert_eq!(signals.len(), 2);
     assert_eq!(signals[0].predicate, "sit");
@@ -142,7 +160,16 @@ fn empty_doc_yields_no_signals() {
 
 #[test]
 fn routing_signal_serde_round_trip() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let signal = &extract_routing_signals(&doc)[0];
     let json = serde_json::to_string(signal).expect("serialize");
@@ -152,7 +179,16 @@ fn routing_signal_serde_round_trip() {
 
 #[test]
 fn interlingua_signal_carries_role_ids() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let mut doc = attached(FULL_PARSE, &tokens);
     // Stamp content-addressed lemma ids on every token (the resolve stage
     // does this; here we simulate it so the extraction is testable).
@@ -168,11 +204,10 @@ fn interlingua_signal_carries_role_ids() {
         doc.token_mut(i).interlingua_lemma_id = Some(*id);
     }
     // A PROPN token with a YaGO entity id → concept id.
-    doc.token_mut(3).interlingua_entity_id =
-        Some(fluent_types::InterlinguaId::new(
-            fluent_types::InterlinguaNamespace::YagoClass,
-            0xabc,
-        ));
+    doc.token_mut(3).interlingua_entity_id = Some(fluent_types::InterlinguaId::new(
+        fluent_types::InterlinguaNamespace::YagoClass,
+        0xabc,
+    ));
 
     let s = &extract_routing_signals(&doc)[0];
     let il = s.interlingua.as_ref().expect("interlingua frame");
@@ -181,16 +216,28 @@ fn interlingua_signal_carries_role_ids() {
     assert_eq!(il.indirect_object_id, Some(ids[1]));
     assert_eq!(il.direct_object_id, Some(ids[4]));
     assert!(il.subject_id.is_none());
-    assert_eq!(il.concept_ids, vec![fluent_types::InterlinguaId::new(
-        fluent_types::InterlinguaNamespace::YagoClass,
-        0xabc,
-    )]);
+    assert_eq!(
+        il.concept_ids,
+        vec![fluent_types::InterlinguaId::new(
+            fluent_types::InterlinguaNamespace::YagoClass,
+            0xabc,
+        )]
+    );
     assert_eq!(il.token_ids, ids, "aligned per-token lemma ids");
 }
 
 #[test]
 fn interlingua_signal_confidence_is_sentence_mean() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let mut doc = attached(FULL_PARSE, &tokens);
     let conf = [0.8, 0.9, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2];
     for (i, c) in conf.iter().enumerate() {
@@ -208,7 +255,16 @@ fn interlingua_signal_confidence_is_sentence_mean() {
 fn interlingua_signal_confidence_none_when_unresolved() {
     // `attach` (the LLM/rule rung path) carries no per-token confidence →
     // the sentence confidence is `None`.
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let il = extract_routing_signals(&doc)[0]
         .interlingua
@@ -226,10 +282,16 @@ fn unattached_doc_falls_back_to_token_zero_with_empty_roles() {
     let signals = extract_routing_signals(&doc);
     assert_eq!(signals.len(), 1, "fallback sentence [0, len)");
     let s = &signals[0];
-    assert!(!s.predicate.is_empty(), "fallback root still yields a lemma");
+    assert!(
+        !s.predicate.is_empty(),
+        "fallback root still yields a lemma"
+    );
     assert!(s.subject.is_none(), "dep 0 is not a subject");
     assert!(s.direct_object.is_none(), "dep 0 is not an object");
-    assert!(s.indirect_object.is_none(), "dep 0 is not an indirect object");
+    assert!(
+        s.indirect_object.is_none(),
+        "dep 0 is not an indirect object"
+    );
     assert!(s.modifiers.is_empty());
     assert!(s.qualifiers.is_empty());
     assert!(s.arguments.is_empty());
@@ -240,7 +302,16 @@ fn unattached_doc_falls_back_to_token_zero_with_empty_roles() {
 fn interlingua_signal_serde_skips_none_confidence() {
     // The `default` + `skip_serializing_if` pair keeps already-persisted
     // parse nodes (signals without `confidence`) round-tripping unchanged.
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let signal = &extract_routing_signals(&doc)[0];
     let json = serde_json::to_string(signal).expect("serialize");

@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use common_core::sync::lock;
 use fluent_concurrency::pool::Limiter;
-use fluent_llm::{ChatMessage, LlmError};
 use fluent_llm::client::ChatBackend;
+use fluent_llm::{ChatMessage, LlmError};
 
 use crate::config::{ClassificationTree, ModelEntry, ModelGroup, RouteRef, RoutingConfig};
 use crate::pipeline::RoutingTarget;
@@ -38,7 +38,7 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         hf_file: None,
         template: None,
         role_params: None,
-            api_key: None,
+        api_key: None,
     }
 }
 
@@ -52,7 +52,7 @@ fn test_routing() -> RoutingConfig {
                     role: None,
                     pipelines: vec!["default".into()],
                     description: "code".into(),
-        always_route: false,
+                    always_route: false,
                 },
             ),
             (
@@ -62,7 +62,7 @@ fn test_routing() -> RoutingConfig {
                     role: None,
                     pipelines: vec!["default".into()],
                     description: "translation".into(),
-        always_route: false,
+                    always_route: false,
                 },
             ),
             (
@@ -72,7 +72,7 @@ fn test_routing() -> RoutingConfig {
                     role: None,
                     pipelines: vec!["default".into()],
                     description: "local".into(),
-        always_route: false,
+                    always_route: false,
                 },
             ),
         ]),
@@ -234,7 +234,9 @@ fn terminal_node_resolves_route() {
     }))
     .unwrap();
     let engine = engine(&tree, Arc::new(StubChatBackend::always("{}")));
-    let evaluation = engine.evaluate("write a rust function", None, None).unwrap();
+    let evaluation = engine
+        .evaluate("write a rust function", None, None)
+        .unwrap();
     let decision = &evaluation.decision;
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let rt = routed_target(&evaluation);
@@ -319,7 +321,9 @@ fn terminal_group_ladder_self_assesses_and_matches() {
 
     // The terminal's tree_path audit carries the ladder walk (additive over
     // the existing route/group/model/complexity fields).
-    let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+    let path = decision.metadata["tree_path"]
+        .as_array()
+        .expect("tree_path");
     let terminal = path
         .iter()
         .find(|d| d["metadata"]["node_type"] == "terminal")
@@ -351,7 +355,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
             role: None,
             pipelines: vec!["default".into()],
             description: "fresh".into(),
-        always_route: false,
+            always_route: false,
         },
     );
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
@@ -379,7 +383,9 @@ fn terminal_flat_route_ladder_matches_within_group() {
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
     assert_eq!(rt.group.as_deref(), Some("fast"));
 
-    let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+    let path = decision.metadata["tree_path"]
+        .as_array()
+        .expect("tree_path");
     let terminal = path
         .iter()
         .find(|d| d["metadata"]["node_type"] == "terminal")
@@ -401,7 +407,10 @@ fn terminal_single_member_group_never_self_assesses() {
     .unwrap();
     let counting = Arc::new(CountingBackend::new("{}"));
     let matcher = TargetMatcher::new(
-        TargetBackends::new(HashMap::new(), Arc::clone(&counting) as Arc<dyn ChatBackend>),
+        TargetBackends::new(
+            HashMap::new(),
+            Arc::clone(&counting) as Arc<dyn ChatBackend>,
+        ),
         Arc::new(Limiter::new(4)),
         0,
     );
@@ -443,7 +452,9 @@ fn terminal_ladder_assessment_failure_escalates_to_last_member() {
     assert_eq!(decision.verdict, StageVerdict::Passed);
     assert_eq!(routed_target(&evaluation).model, "small");
 
-    let path = decision.metadata["tree_path"].as_array().expect("tree_path");
+    let path = decision.metadata["tree_path"]
+        .as_array()
+        .expect("tree_path");
     let terminal = path
         .iter()
         .find(|d| d["metadata"]["node_type"] == "terminal")
@@ -490,7 +501,8 @@ fn filter_hard_reject_short_circuits() {
         Arc::new(StubChatBackend::always(verdict("code", 0.9, 0.9, 3))),
     );
     let decision = engine
-        .evaluate("this is a harmful pattern test", None, None).unwrap()
+        .evaluate("this is a harmful pattern test", None, None)
+        .unwrap()
         .decision;
     assert_eq!(decision.verdict, StageVerdict::Rejected);
     assert!(decision.reason.contains("blocked"));
@@ -595,7 +607,8 @@ fn filter_output_filter_continues() {
         Arc::new(StubChatBackend::always(verdict("code", 0.9, 0.9, 3))),
     );
     let evaluation = engine
-        .evaluate("my ssn is 123-45-6789 and I need code", None, None).unwrap();
+        .evaluate("my ssn is 123-45-6789 and I need code", None, None)
+        .unwrap();
     let decision = &evaluation.decision;
     assert_eq!(decision.verdict, StageVerdict::Passed);
     assert_eq!(
@@ -900,7 +913,8 @@ fn report_tree() -> ClassificationTree {
                 }
             ]
         }
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn report_signal(object_id: u64) -> spacy_rs::routing::InterlinguaSignal {
@@ -938,9 +952,10 @@ fn interlingua_filter_short_circuits_on_matching_ids() {
 fn interlingua_filter_passes_through_on_non_match() {
     // A different object id → no match → the filter passes and the
     // classifier LLM decides (fallback to local).
-    let engine = engine(&report_tree(), Arc::new(StubChatBackend::always(verdict(
-        "local", 0.9, 1.0, 2,
-    ))));
+    let engine = engine(
+        &report_tree(),
+        Arc::new(StubChatBackend::always(verdict("local", 0.9, 1.0, 2))),
+    );
     let signals = vec![report_signal(999)];
     let evaluation = engine
         .evaluate("some other request", Some(&signals), None)
@@ -953,11 +968,13 @@ fn interlingua_filter_passes_through_on_non_match() {
 fn interlingua_filter_passes_through_when_nlp_absent() {
     // `None` interlingua (no NlpStage) → graceful degradation: the filter
     // does not fire, the LLM path decides.
-    let engine = engine(&report_tree(), Arc::new(StubChatBackend::always(verdict(
-        "local", 0.9, 1.0, 2,
-    ))));
+    let engine = engine(
+        &report_tree(),
+        Arc::new(StubChatBackend::always(verdict("local", 0.9, 1.0, 2))),
+    );
     let evaluation = engine
-        .evaluate("show me the sales report", None, None).unwrap();
+        .evaluate("show me the sales report", None, None)
+        .unwrap();
     let decision = &evaluation.decision;
     let _ = decision;
     let rt = routed_target(&evaluation);
@@ -969,9 +986,10 @@ fn interlingua_filter_requires_confidence_floor() {
     // The ids match `report_tree`'s `confidence_min: 0.5` filter, but the
     // parse confidence (0.2) is below the floor → no match → pass through
     // to the LLM path (fail-closed on the confidence gate).
-    let engine = engine(&report_tree(), Arc::new(StubChatBackend::always(verdict(
-        "local", 0.9, 1.0, 2,
-    ))));
+    let engine = engine(
+        &report_tree(),
+        Arc::new(StubChatBackend::always(verdict("local", 0.9, 1.0, 2))),
+    );
     let mut signal = report_signal(2251799813685262);
     signal.confidence = Some(0.2);
     let evaluation = engine
@@ -985,9 +1003,10 @@ fn interlingua_filter_requires_confidence_floor() {
 fn interlingua_filter_fails_closed_without_confidence() {
     // The ids match but the parse carried no confidence (`None`) → below
     // any positive floor → no match (low-confidence parses escalate).
-    let engine = engine(&report_tree(), Arc::new(StubChatBackend::always(verdict(
-        "local", 0.9, 1.0, 2,
-    ))));
+    let engine = engine(
+        &report_tree(),
+        Arc::new(StubChatBackend::always(verdict("local", 0.9, 1.0, 2))),
+    );
     let mut signal = report_signal(2251799813685262);
     signal.confidence = None;
     let evaluation = engine
@@ -1020,7 +1039,8 @@ fn interlingua_filter_can_hard_reject() {
                 }
             ]
         }
-    })).unwrap();
+    }))
+    .unwrap();
     let engine = engine(&tree, Arc::new(StubChatBackend::always("{}")));
     let signals = vec![report_signal(2251799813685262)];
     let decision = engine
@@ -1096,7 +1116,9 @@ fn tree_engine_prefers_live_backend_over_frozen_default() {
     // map entry: the live resolver's "code" verdict wins over the frozen
     // default's "translation" verdict.
     let engine = live_engine("translation", Some("code"));
-    let evaluation = engine.evaluate("write a rust function", None, None).unwrap();
+    let evaluation = engine
+        .evaluate("write a rust function", None, None)
+        .unwrap();
     assert_eq!(
         routed_target(&evaluation).target_name.as_deref(),
         Some("code"),
@@ -1110,7 +1132,9 @@ fn tree_engine_miss_falls_back_to_frozen_default() {
     // exactly as before (the stage-level miss policy lives one layer up, on
     // the flat path that has no engine to fall back to).
     let engine = live_engine("translation", None);
-    let evaluation = engine.evaluate("write a rust function", None, None).unwrap();
+    let evaluation = engine
+        .evaluate("write a rust function", None, None)
+        .unwrap();
     assert_eq!(
         routed_target(&evaluation).target_name.as_deref(),
         Some("translation"),

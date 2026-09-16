@@ -67,8 +67,7 @@ impl StringStore {
     /// Whether `s` has been added to the store (by hash).
     #[must_use]
     pub fn contains(&self, s: &str) -> bool {
-        s.is_empty()
-            || common_core::sync::lock_read(&self.by_hash).contains_key(&hash_utf8(s))
+        s.is_empty() || common_core::sync::lock_read(&self.by_hash).contains_key(&hash_utf8(s))
     }
 
     /// Number of distinct non-empty strings interned.
@@ -104,10 +103,7 @@ impl StringStore {
     /// feature is needed for the blob.
     pub fn to_bytes(&self) -> Result<Vec<u8>, serde_json::Error> {
         let map = common_core::sync::lock_read(&self.by_hash);
-        let entries: Vec<(u64, String)> = map
-            .iter()
-            .map(|(&h, s)| (h, s.to_string()))
-            .collect();
+        let entries: Vec<(u64, String)> = map.iter().map(|(&h, s)| (h, s.to_string())).collect();
         serde_json::to_vec(&entries)
     }
 

@@ -12,13 +12,12 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::io;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
 
-use crate::artifact_lock::{LockError, LockOptions, acquire_artifact_cache_lock};
-
+use crate::artifact_lock::{acquire_artifact_cache_lock, LockError, LockOptions};
 
 /// Where an artifact snapshot may come from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -97,7 +96,8 @@ pub enum FailureKind {
 
 /// A single-source download failure.
 #[derive(Debug, Clone)]
-pub struct ArtifactDownloadError {    pub message: String,
+pub struct ArtifactDownloadError {
+    pub message: String,
     pub kind: FailureKind,
     pub source: Option<SourceKind>,
     pub artifact: Option<String>,
@@ -348,20 +348,10 @@ pub async fn resolve_model_artifacts(
                     primary_error = Some(error.clone());
                 }
                 let Some(_next) = normalized.sources.get(index + 1) else {
-                    return Err(final_error(
-                        &normalized.model,
-                        primary_error,
-                        index,
-                        error,
-                    ));
+                    return Err(final_error(&normalized.model, primary_error, index, error));
                 };
                 if !error.fallback_allowed() {
-                    return Err(final_error(
-                        &normalized.model,
-                        primary_error,
-                        index,
-                        error,
-                    ));
+                    return Err(final_error(&normalized.model, primary_error, index, error));
                 }
                 if !warned {
                     warned = true;
@@ -422,10 +412,7 @@ fn final_error(
 
 /// Canonical download URL for one artifact from one mirror.
 #[must_use]
-pub fn model_artifact_url(
-    source: &ModelArtifactSource,
-    artifact_path: &str,
-) -> String {
+pub fn model_artifact_url(source: &ModelArtifactSource, artifact_path: &str) -> String {
     let base = match source.kind {
         SourceKind::HuggingFace => "https://huggingface.co",
         SourceKind::ModelScope => "https://modelscope.cn/models",
@@ -577,20 +564,11 @@ fn validate_source(source: &ModelArtifactSource) -> Result<(), ArtifactError> {
         )));
     }
     validate_relative_path(&source.repo, "repository")?;
-    if source.revision.contains('\0')
-        || source.revision == "."
-        || source.revision == ".."
-    {
-        return Err(invalid_input(format!(
-            "Invalid {} revision",
-            source.kind
-        )));
+    if source.revision.contains('\0') || source.revision == "." || source.revision == ".." {
+        return Err(invalid_input(format!("Invalid {} revision", source.kind)));
     }
     if source.cache_directory.to_string_lossy().trim().is_empty()
-        || source
-            .cache_directory
-            .to_string_lossy()
-            .contains('\0')
+        || source.cache_directory.to_string_lossy().contains('\0')
     {
         return Err(invalid_input(format!(
             "{} cache directory must not be empty",
@@ -627,10 +605,7 @@ fn validate_relative_path(path: &str, label: &str) -> Result<(), ArtifactError> 
 }
 
 fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn invalid_input(message: impl Into<String>) -> ArtifactError {
@@ -793,7 +768,10 @@ fn has_valid_complete_marker(
         Err(error) if is_missing(&error) => return Ok(false),
         Err(error) => {
             return Err(filesystem_error(
-                format!("Unable to inspect {} artifact completion marker", source.kind),
+                format!(
+                    "Unable to inspect {} artifact completion marker",
+                    source.kind
+                ),
                 source,
                 None,
                 error,
@@ -805,9 +783,15 @@ fn has_valid_complete_marker(
         Ok(value) => value,
         Err(_) => return Ok(false),
     };
-    if marker.get("version").and_then(serde_json::Value::as_u64) != Some(u64::from(MANIFEST_VERSION))
-        || marker.get("fingerprint").and_then(serde_json::Value::as_str) != Some(&manifest.fingerprint)
-        || !marker.get("files").is_some_and(serde_json::Value::is_object)
+    if marker.get("version").and_then(serde_json::Value::as_u64)
+        != Some(u64::from(MANIFEST_VERSION))
+        || marker
+            .get("fingerprint")
+            .and_then(serde_json::Value::as_str)
+            != Some(&manifest.fingerprint)
+        || !marker
+            .get("files")
+            .is_some_and(serde_json::Value::is_object)
     {
         return Ok(false);
     }
@@ -878,21 +862,18 @@ fn validate_artifact(
     if !stats.is_file() || stats.len() != artifact.size {
         return Ok(false);
     }
-    let digest = common_core::hash::hash_file(
-        &local,
-        common_core::hash::HashAlgorithm::Sha256,
-    )
-    .map_err(|error| {
-        filesystem_error(
-            format!(
-                "Unable to validate cached artifact '{}' for {model}",
-                artifact.path
-            ),
-            source,
-            Some(&artifact.path),
-            error,
-        )
-    })?;
+    let digest = common_core::hash::hash_file(&local, common_core::hash::HashAlgorithm::Sha256)
+        .map_err(|error| {
+            filesystem_error(
+                format!(
+                    "Unable to validate cached artifact '{}' for {model}",
+                    artifact.path
+                ),
+                source,
+                Some(&artifact.path),
+                error,
+            )
+        })?;
     Ok(digest == artifact.sha256.to_lowercase())
 }
 
@@ -999,7 +980,17 @@ async fn download_artifact(
     .map_err(flatten_artifact_error)?;
     let partial = partial_path(&destination);
     let url = model_artifact_url(source, &artifact.path);
-    let result = download_artifact_inner(options, source, artifact, manifest, &destination, &partial, &url, lock).await;
+    let result = download_artifact_inner(
+        options,
+        source,
+        artifact,
+        manifest,
+        &destination,
+        &partial,
+        &url,
+        lock,
+    )
+    .await;
     // Partial files never leak beside the destination.
     let _ = std::fs::remove_file(&partial);
     result
@@ -1081,7 +1072,8 @@ async fn download_artifact_inner(
             )
         })?;
     loop {
-        let chunk = with_read_idle_deadline(options, source, artifact, response.body.as_mut()).await?;
+        let chunk =
+            with_read_idle_deadline(options, source, artifact, response.body.as_mut()).await?;
         let Some(bytes) = chunk else { break };
         {
             use io::Write as _;
@@ -1292,9 +1284,7 @@ async fn install_downloaded_artifact(
         )
     })?;
     if !same_file_identity(original.as_ref(), current.as_ref()) {
-        if validate_artifact(model, source, artifact, manifest)
-            .map_err(flatten_artifact_error)?
-        {
+        if validate_artifact(model, source, artifact, manifest).map_err(flatten_artifact_error)? {
             return Ok(());
         }
         return Err(filesystem_error(
@@ -1304,19 +1294,34 @@ async fn install_downloaded_artifact(
             io::Error::other("Artifact destination changed concurrently while downloading"),
         ));
     }
-    if current.as_ref().is_some_and(|identity| !identity.replaceable) {
+    if current
+        .as_ref()
+        .is_some_and(|identity| !identity.replaceable)
+    {
         return Err(filesystem_error(
             format!("Unable to install local artifact '{}'", artifact.path),
             source,
             Some(&artifact.path),
-            io::Error::other(format!("Refusing to replace non-file destination '{}'", destination.display())),
+            io::Error::other(format!(
+                "Refusing to replace non-file destination '{}'",
+                destination.display()
+            )),
         ));
     }
     match std::fs::rename(partial, destination) {
         Ok(()) => Ok(()),
         #[cfg(windows)]
         Err(error) if is_windows_replace_error(&error) => {
-            replace_on_windows(destination, partial, &current, lock, model, source, artifact).await
+            replace_on_windows(
+                destination,
+                partial,
+                &current,
+                lock,
+                model,
+                source,
+                artifact,
+            )
+            .await
         }
         Err(error) => Err(filesystem_error(
             format!("Unable to install local artifact '{}'", artifact.path),
@@ -1449,8 +1454,7 @@ fn write_complete_marker(
                 format!("Unable to record completed {} model snapshot", source.kind),
                 source,
                 None,
-                io::Error::other(format!("Artifact '{artifact_path}' is not a file"),
-                ),
+                io::Error::other(format!("Artifact '{artifact_path}' is not a file")),
             )));
         }
         files.insert(
@@ -1675,10 +1679,7 @@ fn invoke_download_plan_callback(
     match catch_unwind(AssertUnwindSafe(|| callback(missing))) {
         Ok(()) => Ok(()),
         Err(_) => Err(ArtifactDownloadError {
-            message: format!(
-                "Model download plan callback failed for {}",
-                options.model
-            ),
+            message: format!("Model download plan callback failed for {}", options.model),
             kind: FailureKind::Callback,
             source: None,
             artifact: None,
@@ -1706,10 +1707,7 @@ fn invoke_progress_callback(
     match catch_unwind(AssertUnwindSafe(|| callback(event))) {
         Ok(()) => Ok(()),
         Err(_) => Err(ArtifactDownloadError {
-            message: format!(
-                "Artifact progress callback failed for {}",
-                options.model
-            ),
+            message: format!("Artifact progress callback failed for {}", options.model),
             kind: FailureKind::Callback,
             source: Some(source.kind),
             artifact: Some(artifact.path.clone()),
@@ -1793,10 +1791,7 @@ pub struct DownloadProgressReporter<'a> {
 }
 
 impl<'a> DownloadProgressReporter<'a> {
-    pub fn new(
-        model: &str,
-        on_progress: impl Fn(EmbeddingProgress) + Send + Sync + 'a,
-    ) -> Self {
+    pub fn new(model: &str, on_progress: impl Fn(EmbeddingProgress) + Send + Sync + 'a) -> Self {
         Self {
             model: model.to_string(),
             on_progress: Box::new(on_progress),

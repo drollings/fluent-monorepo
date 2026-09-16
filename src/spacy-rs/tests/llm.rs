@@ -38,8 +38,7 @@ fn parse_json_matches_contract() {
 
 #[test]
 fn parse_json_rejects_malformed() {
-    let err =
-        AnnotationSet::parse_json(r#"[{"text":"The"}]"#).expect_err("missing pos/dep/head");
+    let err = AnnotationSet::parse_json(r#"[{"text":"The"}]"#).expect_err("missing pos/dep/head");
     assert!(matches!(err, AnnotationError::Json { .. }));
     let err = AnnotationSet::parse_json("not json").expect_err("garbage");
     assert!(matches!(err, AnnotationError::Json { .. }));
@@ -71,9 +70,8 @@ fn attach_writes_fields_and_rebuilds_tree() {
 #[test]
 fn attach_defaults_lemma_to_lowercase() {
     let mut doc = doc_for(&[("Apple", false)]);
-    let set =
-        AnnotationSet::parse_json(r#"[{"text":"Apple","pos":"noun","dep":"root","head":0}]"#)
-            .expect("parse");
+    let set = AnnotationSet::parse_json(r#"[{"text":"Apple","pos":"noun","dep":"root","head":0}]"#)
+        .expect("parse");
     attach(&mut doc, &set).expect("attach");
     assert_eq!(doc.token(0).lemma, hash_utf8("apple"));
 }
@@ -151,7 +149,10 @@ fn is_confidence_bearing_equals_arc_eager_or_encoder() {
     ] {
         assert_eq!(
             source.is_confidence_bearing(),
-            matches!(source, AnnotationSource::ArcEager | AnnotationSource::Encoder),
+            matches!(
+                source,
+                AnnotationSource::ArcEager | AnnotationSource::Encoder
+            ),
             "{source:?}"
         );
     }
@@ -170,12 +171,21 @@ fn tier_maps_every_source_exhaustively() {
     ] {
         let _: ProvenanceTier = source.tier();
     }
-    assert_eq!(AnnotationSource::ArcEager.tier(), ProvenanceTier::Deterministic);
-    assert_eq!(AnnotationSource::RuleRung.tier(), ProvenanceTier::Deterministic);
+    assert_eq!(
+        AnnotationSource::ArcEager.tier(),
+        ProvenanceTier::Deterministic
+    );
+    assert_eq!(
+        AnnotationSource::RuleRung.tier(),
+        ProvenanceTier::Deterministic
+    );
     assert_eq!(AnnotationSource::Llm.tier(), ProvenanceTier::LocalModel);
     assert_eq!(AnnotationSource::Encoder.tier(), ProvenanceTier::LocalModel);
     assert_eq!(AnnotationSource::Frontier.tier(), ProvenanceTier::Frontier);
-    assert_eq!(AnnotationSource::HumanReview.tier(), ProvenanceTier::HumanReview);
+    assert_eq!(
+        AnnotationSource::HumanReview.tier(),
+        ProvenanceTier::HumanReview
+    );
     // Authority ordering: deterministic frames are provisional until a
     // higher tier confirms; human review beats every local producer.
     assert!(AnnotationSource::ArcEager.tier() < AnnotationSource::Llm.tier());
@@ -193,7 +203,10 @@ fn refine_prompt_marks_focus_and_shows_the_base() {
         .map(|r| r.text.clone())
         .collect();
     let prompt = LlmRefinePrompt::prompt(&tokens, &base, &[1]);
-    assert!(prompt.contains("Reconsider ONLY"), "focus discipline instruction");
+    assert!(
+        prompt.contains("Reconsider ONLY"),
+        "focus discipline instruction"
+    );
     assert!(prompt.contains("1: cat / noun / nsubj / 1 / cat FOCUS"));
     assert!(
         !prompt.contains("0: The / det / det / 1 / the FOCUS"),

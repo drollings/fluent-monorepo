@@ -142,7 +142,11 @@ fn compile_happens_once_per_compile_never_per_match() {
         let _ = compiled.filter_matches(&["watched"], text);
         let _ = compiled.render_prompt(&[], 0.6, 0.4);
     }
-    assert_eq!(compile_count(), before + 1, "matching/rendering must not recompile");
+    assert_eq!(
+        compile_count(),
+        before + 1,
+        "matching/rendering must not recompile"
+    );
     let _ = tree.compile().expect("compile");
     assert_eq!(compile_count(), before + 2);
 }

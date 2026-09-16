@@ -521,14 +521,18 @@ mod identical_write_tests {
             ..GuidanceDoc::default()
         };
         save_guidance(&path, &doc).expect("first save");
-        let before =
-            std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+        let before = std::fs::metadata(&path)
+            .expect("stat")
+            .modified()
+            .expect("mtime");
         // Ensure the clock could advance: without the skip, the atomic
         // rewrite lands on a new timestamp.
         std::thread::sleep(std::time::Duration::from_millis(5));
         save_guidance(&path, &doc).expect("second save");
-        let after =
-            std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+        let after = std::fs::metadata(&path)
+            .expect("stat")
+            .modified()
+            .expect("mtime");
         assert_eq!(before, after, "identical content must not rewrite the file");
     }
 }

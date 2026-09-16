@@ -36,10 +36,7 @@ impl SalienceSource for FixtureSource {
             .map(|id| {
                 (
                     *id,
-                    self.signals
-                        .get(&id.as_int())
-                        .copied()
-                        .unwrap_or_default(),
+                    self.signals.get(&id.as_int()).copied().unwrap_or_default(),
                 )
             })
             .collect()
@@ -123,7 +120,10 @@ fn cross_check_surfaces_both_axes_on_disagreement() {
     assert!(sources.contains(&RetrievalSource::LemmaGrep));
     assert!(sources.contains(&RetrievalSource::Fuzzy));
     assert!(
-        report[0].regions.iter().any(|r| r.lemma_confidence.is_some() && r.fuzzy_score.is_some()),
+        report[0]
+            .regions
+            .iter()
+            .any(|r| r.lemma_confidence.is_some() && r.fuzzy_score.is_some()),
         "a region covered by both axes is verdict-annotated"
     );
 }
@@ -138,10 +138,18 @@ fn ranker_prefilters_reports_in_salience_order() {
     // Candidate order is scrambled; the ranker must reorder by salience.
     let reports = svc.retrieve(
         "report",
-        &[node(1, "show me the report"), node(2, "the sales report"), node(3, "a report")],
+        &[
+            node(1, "show me the report"),
+            node(2, "the sales report"),
+            node(3, "a report"),
+        ],
     );
     assert_eq!(reports.len(), 3);
-    assert_eq!(reports[0].node_id, NodeId::from_int(2), "highest salience first");
+    assert_eq!(
+        reports[0].node_id,
+        NodeId::from_int(2),
+        "highest salience first"
+    );
     assert_eq!(reports[0].rank, Some(0));
     assert_eq!(reports[1].node_id, NodeId::from_int(3));
     assert_eq!(reports[2].node_id, NodeId::from_int(1));
@@ -155,7 +163,11 @@ fn without_ranker_reports_keep_input_order() {
         &[node(1, "show me the report"), node(2, "the sales report")],
     );
     assert_eq!(reports.len(), 2);
-    assert_eq!(reports[0].node_id, NodeId::from_int(1), "input order preserved");
+    assert_eq!(
+        reports[0].node_id,
+        NodeId::from_int(1),
+        "input order preserved"
+    );
     assert!(reports.iter().all(|r| r.rank.is_none()));
 }
 
@@ -218,7 +230,11 @@ fn moved_fuzzy_index_covers_the_paraphrase_gap() {
     idx.insert(Span { start: 20, end: 40 }, "delete the old file");
     let hits = idx.search("display the report", 2);
     assert!(!hits.is_empty(), "paraphrase-matched region found");
-    assert_eq!(hits[0].span, Span { start: 0, end: 18 }, "paraphrase region ranks first");
+    assert_eq!(
+        hits[0].span,
+        Span { start: 0, end: 18 },
+        "paraphrase region ranks first"
+    );
     assert!(hits[0].score > 0.8, "high paraphrase similarity");
     let scores: Vec<f32> = hits.iter().map(|h| h.score).collect();
     assert!(scores.windows(2).all(|w| w[0] >= w[1]), "sorted desc");
@@ -235,7 +251,10 @@ fn moved_fuzzy_search_filters_nonpositive() {
     let mut idx = InMemoryFuzzyIndex::new(provider);
     for (i, start) in [0usize, 10, 20].iter().enumerate() {
         idx.insert(
-            Span { start: *start, end: *start + 5 },
+            Span {
+                start: *start,
+                end: *start + 5,
+            },
             &format!("REGION{i}"),
         );
     }

@@ -1,11 +1,10 @@
 #![allow(unused_imports)]
 #[allow(unused_imports)]
 use fluent_wvr::dynamic::*;
+use fluent_wvr::prelude::*;
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 use std::collections::HashMap;
 use std::sync::Arc;
-use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
 
 use fluent_wvr::component_downcast_ref;
 use fluent_wvr::prelude::*;
@@ -25,11 +24,8 @@ fn echo_executor(
 
 #[test]
 fn assembles_and_executes_from_config_map() {
-    let mut comp = DynamicComponent::new(
-        "db.tool",
-        Arc::new(echo_executor) as DynamicExecutor,
-    )
-    .with_field_keys(&["retries", "timeout_ms"]);
+    let mut comp = DynamicComponent::new("db.tool", Arc::new(echo_executor) as DynamicExecutor)
+        .with_field_keys(&["retries", "timeout_ms"]);
 
     comp.set_field("retries", "3").unwrap();
     assert_eq!(comp.get_field("retries").unwrap(), "3");
@@ -43,10 +39,7 @@ fn assembles_and_executes_from_config_map() {
 
 #[test]
 fn unknown_field_errors_on_get() {
-    let comp = DynamicComponent::new(
-        "db.tool",
-        Arc::new(echo_executor) as DynamicExecutor,
-    );
+    let comp = DynamicComponent::new("db.tool", Arc::new(echo_executor) as DynamicExecutor);
     assert!(matches!(
         comp.get_field("missing"),
         Err(FieldError::NotFound(_))
@@ -61,14 +54,9 @@ fn poisoned_config_recovers_without_panic() {
     ) -> Result<WorkOutput, WorkError> {
         panic!("executor boom")
     }
-    let comp = DynamicComponent::new(
-        "db.tool",
-        Arc::new(panicking_executor) as DynamicExecutor,
-    );
+    let comp = DynamicComponent::new("db.tool", Arc::new(panicking_executor) as DynamicExecutor);
     let ctx = WorkContext::default();
-    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        comp.execute(&ctx)
-    }));
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| comp.execute(&ctx)));
     assert!(caught.is_err(), "executor panic must propagate");
     // The config lock is poisoned now; field access must recover, not panic.
     assert!(matches!(
@@ -79,10 +67,7 @@ fn poisoned_config_recovers_without_panic() {
 
 #[test]
 fn erases_to_uniform_handle() {
-    let comp = DynamicComponent::new(
-        "db.tool",
-        Arc::new(echo_executor) as DynamicExecutor,
-    );
+    let comp = DynamicComponent::new("db.tool", Arc::new(echo_executor) as DynamicExecutor);
     let handle: Arc<dyn Component> = Arc::new(comp);
     let ctx = WorkContext::default();
     assert!(handle.execute(&ctx).is_ok());

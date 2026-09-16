@@ -22,27 +22,27 @@ use std::sync::Arc;
 mod boot;
 
 use clap::{Args, Parser, Subcommand};
+use fluent_concept::ConceptStore;
+use fluent_db::hnsw::HnswIndexHandle;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::protocol::ChatMessage;
 use fluent_llm::{create_embedding_provider, EmbeddingProvider};
 use fluent_router::charts::store::ChartStore;
 use fluent_router::cli::{commands, CliContext};
+use fluent_router::concept_store_sqlite::SqliteConceptStore;
 use fluent_router::config::builder::NlpDeps;
 use fluent_router::config::{validate_no_self_routing, RouterConfig};
-use fluent_router::concept_store_sqlite::SqliteConceptStore;
-use fluent_db::hnsw::HnswIndexHandle;
 use fluent_router::ledger::correction_index::SqliteCorrectionIndex;
 use fluent_router::ledger::ContentNodeLedger;
 use fluent_router::logging::init_router_logging;
 use fluent_router::routes::plan::PlanRoute;
 use fluent_router::routes::rigor::RigorRoute;
-use fluent_router::server::RouterServer;
+use fluent_router::server::entity_link::{EntityLinkScorer, EntityLinkWorker};
 use fluent_router::server::review::{ReviewFetch, ReviewWorker};
-use fluent_router::server::entity_link::{EntityLinkWorker, EntityLinkScorer};
+use fluent_router::server::RouterServer;
 use fluent_router::testing::{
     load_transcript_file, transcript_provider_from_entries, MockDispatchContext,
 };
-use fluent_concept::ConceptStore;
 
 #[derive(Parser)]
 #[command(
@@ -253,8 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Best-effort config load so CLI defaults (e.g. the GGUF dir) come from
     // the config file instead of hardcoded paths. An explicit `--gguf-dir`
     // still wins.
-    let cli_config: RouterConfig =
-        load_router_config_file(std::path::Path::new(&config_path));
+    let cli_config: RouterConfig = load_router_config_file(std::path::Path::new(&config_path));
     let gguf_dir = cli
         .gguf_dir
         .clone()
@@ -270,9 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("schema serializes")
             );
         }
-        Command::List(args) => {
-            commands::list(&ctx, std::path::Path::new(&config_path), args.json)?
-        }
+        Command::List(args) => commands::list(&ctx, std::path::Path::new(&config_path), args.json)?,
         Command::Ps(args) => {
             commands::ps(
                 &ctx,
@@ -659,16 +656,16 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     // budget is detected inside an `FsCapability` scope (ROCm sysfs), exactly
     // as the llama loop's boot did.
     let residency_engine = fluent_concurrency::scope::CURRENT_CAPS.sync_scope(
-            fluent_concurrency::capability::default_capability_set(),
-            || {
-                fluent_llm::runtime::LlmResidencyEngine::new(
-                    std::time::Duration::from_secs(config.sidecar.poll_interval_s.max(1)),
-                    config.sidecar.allocation_limit(),
-                    config.sidecar.onnx_working_set_budget_bytes,
-                    fluent_router::ort::DEFAULT_SLEEP_IDLE_SECONDS,
-                    config.sidecar.evict_batch,
-                )
-            },
+        fluent_concurrency::capability::default_capability_set(),
+        || {
+            fluent_llm::runtime::LlmResidencyEngine::new(
+                std::time::Duration::from_secs(config.sidecar.poll_interval_s.max(1)),
+                config.sidecar.allocation_limit(),
+                config.sidecar.onnx_working_set_budget_bytes,
+                fluent_router::ort::DEFAULT_SLEEP_IDLE_SECONDS,
+                config.sidecar.evict_batch,
+            )
+        },
     );
 
     // When any pipeline needs interlingua ids
@@ -682,7 +679,10 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     let nlp_enabled = config.pipelines.values().any(|p| p.nlp);
     let needs_concept_store = nlp_enabled
         || config.review.is_some()
-        || config.overlay.as_ref().is_some_and(|o| o.entity_link_enabled)
+        || config
+            .overlay
+            .as_ref()
+            .is_some_and(|o| o.entity_link_enabled)
         || config
             .overlay
             .as_ref()
@@ -785,7 +785,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     // When the operator opts in via the `ledger`/`session` sections, open a
     // `ContentNodeLedger` (with a real `Summarizer` backend targeting
     // `<base>:ledger`) and/or a `SessionRegistry`, and attach both to the
-    // server so rigor rewind and ledger LOD derivation exist at runtime. 
+    // server so rigor rewind and ledger LOD derivation exist at runtime.
     // Both are default-absent, so existing deployments are untouched.
     //
     // The ledger may already have been opened by the M1.1 early step (when
@@ -886,8 +886,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             config.onnx_role_keys(),
             config.sidecar.clone(),
         );
-        common_core::sync::lock_write(&inference_registry)
-            .register(Arc::new(llama));
+        common_core::sync::lock_write(&inference_registry).register(Arc::new(llama));
     }
 
     // Background tiering: when the operator opts in via
@@ -993,11 +992,10 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 .and_then(|key| openai_embedding_provider(&config, key));
             match embedder {
                 Some(embedder) => {
-                    let store: Arc<
-                        dyn fluent_router::ledger::workflow_store::WorkflowStore,
-                    > = Arc::new(
-                        fluent_router::ledger::workflow_store::InMemoryWorkflowStore::new(),
-                    );
+                    let store: Arc<dyn fluent_router::ledger::workflow_store::WorkflowStore> =
+                        Arc::new(
+                            fluent_router::ledger::workflow_store::InMemoryWorkflowStore::new(),
+                        );
                     workflow_recorder = Some(Arc::new(
                         fluent_router::ledger::workflow_replay::WorkflowRecorder::new(
                             store,
@@ -1106,18 +1104,19 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 pii_model,
                 review_cfg.auto_enqueue,
             ) {
-            Ok(prefilter) => prefilter,
-            Err(e) => {
-                tracing::warn!(
-                    target: "coral-router",
-                    error = %e,
-                    "PII pre-filter build failed — falling back to the regex baseline",
-                );
-                review_cfg.auto_enqueue.then(|| {
-                    Arc::new(fluent_llm::RegexPiiDetector) as Arc<dyn fluent_llm::backend::PiiSpanDetector>
-                })
-            }
-        };
+                Ok(prefilter) => prefilter,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "coral-router",
+                        error = %e,
+                        "PII pre-filter build failed — falling back to the regex baseline",
+                    );
+                    review_cfg.auto_enqueue.then(|| {
+                        Arc::new(fluent_llm::RegexPiiDetector)
+                            as Arc<dyn fluent_llm::backend::PiiSpanDetector>
+                    })
+                }
+            };
 
         let worker = Arc::new(ReviewWorker::new(
             ledger_arc,
@@ -1126,7 +1125,10 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             &fetch,
             pii_prefilter.clone(),
             review_cfg.auto_enqueue,
-            review_cfg.review_model.clone().unwrap_or_else(|| "review-model".into()),
+            review_cfg
+                .review_model
+                .clone()
+                .unwrap_or_else(|| "review-model".into()),
             review_cfg.queue_capacity,
             review_cfg.credit_limit,
             fluent_concurrency::tokio_runtime(),
@@ -1174,9 +1176,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             // genuine entities (`is_subclass_of`), resolved through the store.
             let entity_root = concepts
                 .resolve_yago_iri(fluent_router::overlay::canonical::ENTITY_ROOT_IRI)
-                .unwrap_or_else(|_| {
-                    fluent_types::InterlinguaId::from_u64(0x0100_0000_0000_0000)
-                });
+                .unwrap_or_else(|_| fluent_types::InterlinguaId::from_u64(0x0100_0000_0000_0000));
             // ColBERT entity-link scorer (the `colbert` role): baked over the
             // concept store's labels at boot. Fail-open — the colbert role
             // unconfigured/unregistered → empty scorer, and the worker yields
@@ -1224,7 +1224,10 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 }
             };
             let candidates = fluent_router::ledger::overlay::OverlayCandidateStore::new(
-                ledger_arc.node_store().shared_sqlite().expect("shared sqlite"),
+                ledger_arc
+                    .node_store()
+                    .shared_sqlite()
+                    .expect("shared sqlite"),
             );
             let worker = Arc::new(EntityLinkWorker::new(
                 &candidates,
@@ -1256,9 +1259,8 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     // resolves — a missing seam leaves that overlay off (fail-open) without
     // affecting the others. Attached to the server and drained on shutdown so
     // in-flight derivations complete before the router exits.
-    let mut overlay_worker: Option<
-        Arc<fluent_router::ledger::overlay_worker::OverlayWorker>,
-    > = None;
+    let mut overlay_worker: Option<Arc<fluent_router::ledger::overlay_worker::OverlayWorker>> =
+        None;
     if let Some(overlay_cfg) = &config.overlay {
         if let Some(arc_cfg) = overlay_cfg.arc_ready.as_ref() {
             if arc_cfg.enabled {
@@ -1344,9 +1346,8 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     // an ungrammatical model reply can never poison the index). Requires a
     // ledger (the shared SQLite sense-pattern rows). The runtime gate boots
     // open; `POST /admin/frame/rollback` closes it without a restart.
-    let mut frame_worker: Option<
-        Arc<fluent_router::ledger::frame_index::FrameResolutionWorker>,
-    > = None;
+    let mut frame_worker: Option<Arc<fluent_router::ledger::frame_index::FrameResolutionWorker>> =
+        None;
     let frame_gate = fluent_router::ledger::frame_index::FrameResolutionGate::open();
     if let (Some(ledger_arc), Some(frame_cfg)) = (&ledger, &config.frame_resolution) {
         let Some(sqlite) = ledger_arc.node_store().shared_sqlite() else {
@@ -1367,9 +1368,11 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             .as_deref()
             .and_then(|key| config.local_backend(key));
         let model_name = frame_model_key.unwrap_or_else(|| "frame-model".into());
-        let fetch: fluent_router::ledger::frame_index::FrameResolutionFetch =
-            if let Some(backend) = frame_backend {
-                Arc::new(move |reqs: Vec<fluent_router::ledger::frame_index::FrameResolutionRequest>| {
+        let fetch: fluent_router::ledger::frame_index::FrameResolutionFetch = if let Some(backend) =
+            frame_backend
+        {
+            Arc::new(
+                move |reqs: Vec<fluent_router::ledger::frame_index::FrameResolutionRequest>| {
                     let items: Vec<serde_json::Value> = reqs
                         .iter()
                         .map(|r| {
@@ -1395,12 +1398,13 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                     backend
                         .chat_complete(&messages)
                         .map_err(|e| format!("frame resolution model call failed: {e}"))
-                })
-            } else {
-                // No resolution backend derivable — return an error closure so
-                // the worker logs and continues without the LLM call.
-                Arc::new(|_reqs| Err("no frame resolution backend configured".into()))
-            };
+                },
+            )
+        } else {
+            // No resolution backend derivable — return an error closure so
+            // the worker logs and continues without the LLM call.
+            Arc::new(|_reqs| Err("no frame resolution backend configured".into()))
+        };
         let index: Arc<dyn fluent_router::ledger::frame_index::PreferredSenseIndex> =
             Arc::new(fluent_router::ledger::frame_index::SqlitePreferredSenseIndex::new(sqlite));
         frame_worker = Some(Arc::new(
@@ -1628,9 +1632,8 @@ fn build_plan_route(
             {
                 match fluent_router::ort::onnx_colbert_reranker(registry, colbert_key) {
                     Ok(Some(retriever)) => {
-                        let reranker = Arc::new(
-                            fluent_router::ort::ColbertChartReranker::new(retriever),
-                        );
+                        let reranker =
+                            Arc::new(fluent_router::ort::ColbertChartReranker::new(retriever));
                         route = route.with_colbert_reranker(reranker);
                         tracing::info!(
                             target: "router.main",
@@ -1854,15 +1857,13 @@ fn openai_embedding_provider(
     let (base, _) = fluent_router::config::split_model_key(&key);
     let entry = config.models.get(base)?;
     let base = embeddings_base_url(&entry.endpoint);
-    let options = match fluent_router::config::overlay_params(
-        role_base.as_ref(),
-        entry.params.as_ref(),
-    ) {
-        serde_json::Value::Object(map) if !map.is_empty() => {
-            Some(serde_json::Value::Object(map))
-        }
-        _ => entry.params.clone(),
-    };
+    let options =
+        match fluent_router::config::overlay_params(role_base.as_ref(), entry.params.as_ref()) {
+            serde_json::Value::Object(map) if !map.is_empty() => {
+                Some(serde_json::Value::Object(map))
+            }
+            _ => entry.params.clone(),
+        };
     let boxed = create_embedding_provider(
         "openai",
         entry.name.as_deref(),
@@ -1919,7 +1920,7 @@ fn default_adjudicator_backend(config: &RouterConfig) -> Option<Arc<dyn ChatBack
 
 /// Build the chart-candidate reranker backend from the root-level
 /// `reranker_model`, if configured.  Mirrors `default_adjudicator_backend`:
-/// exactly one place constructs a concrete `LlmClient` for the reranker. 
+/// exactly one place constructs a concrete `LlmClient` for the reranker.
 /// The rerank is a cross-encoder-style LLM call over the HNSW candidates
 /// before adjudication (`None` skips the stage).
 fn default_reranker_backend(config: &RouterConfig) -> Option<Arc<dyn ChatBackend>> {
@@ -2030,14 +2031,8 @@ fn load_router_config_file(path: &std::path::Path) -> RouterConfig {
 fn load_router_config_strict(path: &std::path::Path) -> Result<RouterConfig, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("FATAL: {} config file not readable: {e}", path.display()))?;
-    let mut config = RouterConfig::from_json_str(&content).map_err(|e| {
-        format!(
-            "FATAL: {}:{}:{} {e}",
-            path.display(),
-            e.line(),
-            e.column()
-        )
-    })?;
+    let mut config = RouterConfig::from_json_str(&content)
+        .map_err(|e| format!("FATAL: {}:{}:{} {e}", path.display(), e.line(), e.column()))?;
     config.apply_defaults();
     Ok(config)
 }
@@ -2123,8 +2118,8 @@ mod config_tests {
     /// (stub registry), return `None` rather than silently switching models.
     fn onnx_embedder_config() -> super::RouterConfig {
         let mut config = super::load_router_config();
-        let model: serde_json::Value =
-            serde_json::from_str(r#"{
+        let model: serde_json::Value = serde_json::from_str(
+            r#"{
                 "endpoint": "http://127.0.0.1:9999/v1/chat/completions",
                 "name": "embed",
                 "intelligence": 2,
@@ -2132,8 +2127,9 @@ mod config_tests {
                 "cost_output": 0.0,
                 "cost_cached_read": 0.0,
                 "tok_s": 10
-            }"#)
-            .unwrap();
+            }"#,
+        )
+        .unwrap();
         config
             .models
             .insert("embed".into(), serde_json::from_value(model).unwrap());
@@ -2171,10 +2167,18 @@ mod config_tests {
             .onnx
             .as_ref()
             .and_then(|f| f.encoder.as_ref())
-            .map(|rc| rc.clone().to_onnx_config(fluent_llm::onnx_config::OnnxRole::Encoder))
+            .map(|rc| {
+                rc.clone()
+                    .to_onnx_config(fluent_llm::onnx_config::OnnxRole::Encoder)
+            })
             .unwrap();
         registry
-            .register(fluent_llm::onnx_config::OnnxRole::Encoder.registry_key().to_string(), encoder_cfg)
+            .register(
+                fluent_llm::onnx_config::OnnxRole::Encoder
+                    .registry_key()
+                    .to_string(),
+                encoder_cfg,
+            )
             .expect("register");
 
         // The onnx encoder role is preferred: even though the endpoint is valid
@@ -2208,7 +2212,8 @@ mod config_tests {
             &self,
             _config: &fluent_llm::onnx_config::OnnxConfig,
             _model_key: &str,
-        ) -> Result<fluent_llm::onnx_session::SessionHandle, fluent_llm::onnx_error::OrtError> {
+        ) -> Result<fluent_llm::onnx_session::SessionHandle, fluent_llm::onnx_error::OrtError>
+        {
             Ok(fluent_llm::onnx_session::SessionHandle::new("stub"))
         }
     }

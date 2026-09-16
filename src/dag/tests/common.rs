@@ -34,7 +34,13 @@ pub fn make_registry(targets: Vec<Target>) -> TargetRegistry {
 
 /// Build a `Target` with a numeric-provides/depends `BitVec` (bit indices).
 #[allow(clippy::too_many_arguments)]
-pub fn target(id: i64, name: &str, depends: &[usize], provides: &[usize], essential: bool) -> Target {
+pub fn target(
+    id: i64,
+    name: &str,
+    depends: &[usize],
+    provides: &[usize],
+    essential: bool,
+) -> Target {
     Target::new()
         .id(id)
         .name(name.into())

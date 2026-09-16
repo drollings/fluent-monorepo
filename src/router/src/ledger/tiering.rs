@@ -289,13 +289,18 @@ impl LedgerTierWorker {
         let (lod0, need_lod4, need_lod5) = {
             let guard = common_core::sync::lock_read(&arc);
             let lod0 = guard.lod.first().cloned().unwrap_or_default();
-            let role = guard.role.as_ref().map(|r| r.as_str().to_string()).unwrap_or_default();
+            let role = guard
+                .role
+                .as_ref()
+                .map(|r| r.as_str().to_string())
+                .unwrap_or_default();
             let lod4_empty = guard.lod.get(4).is_none_or(String::is_empty);
             // LOD5 is eager (deterministic label); it "needs" derivation only
             // when empty or still holding the deterministic placeholder (i.e.
             // not yet upgraded to an LLM description)
             let current_l5 = guard.lod.get(5).cloned().unwrap_or_default();
-            let lod5_needs_upgrade = current_l5.is_empty() || current_l5 == derive_label(&role, &lod0);
+            let lod5_needs_upgrade =
+                current_l5.is_empty() || current_l5 == derive_label(&role, &lod0);
             (
                 lod0,
                 self.target_levels.contains(&4) && lod4_empty,
@@ -322,7 +327,10 @@ impl LedgerTierWorker {
                 content: lod0,
             },
         ];
-        let text = self.backend.chat_complete(&messages).map_err(TierError::Backend)?;
+        let text = self
+            .backend
+            .chat_complete(&messages)
+            .map_err(TierError::Backend)?;
         let (summary, desc) = parse_tiers(&text);
         let lod4 = if need_lod4 {
             summary.map(|s| truncate_chars(&s, self.config.lod4_max_chars))

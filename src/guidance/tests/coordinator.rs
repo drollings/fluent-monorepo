@@ -6,8 +6,8 @@
 use crate::change_set::ChangeSetSnapshot;
 use crate::coordinator::{EnqueueReason, IndexCoordinator, ReconciliationProof, RootRuntime};
 use crate::scheduler::{BoxFuture, JobError, JobScheduler, JobState};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 struct StubRuntime {
@@ -59,7 +59,9 @@ fn change(path: &str) -> ChangeSetSnapshot {
 
 fn exact_batch(directory: &str, count: usize) -> ChangeSetSnapshot {
     ChangeSetSnapshot {
-        touched_files: (0..count).map(|index| format!("{directory}/{index}.ts")).collect(),
+        touched_files: (0..count)
+            .map(|index| format!("{directory}/{index}.ts"))
+            .collect(),
         rescan_directories: Vec::new(),
         deleted_prefixes: Vec::new(),
         force_full_reconcile: false,
@@ -86,28 +88,24 @@ async fn changes_during_a_write_index_in_one_followup_revision() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
     let snapshots = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let coordinator = Arc::new(IndexCoordinator::new(
-        runtime.clone(),
-        scheduler.clone(),
-        {
+    let coordinator = Arc::new(IndexCoordinator::new(runtime.clone(), scheduler.clone(), {
+        let entered = Arc::clone(&entered);
+        let release = Arc::clone(&release);
+        let snapshots = Arc::clone(&snapshots);
+        Arc::new(move |changes: ChangeSetSnapshot, _, _| {
             let entered = Arc::clone(&entered);
             let release = Arc::clone(&release);
             let snapshots = Arc::clone(&snapshots);
-            Arc::new(move |changes: ChangeSetSnapshot, _, _| {
-                let entered = Arc::clone(&entered);
-                let release = Arc::clone(&release);
-                let snapshots = Arc::clone(&snapshots);
-                Box::pin(async move {
-                    snapshots.lock().unwrap().push(changes);
-                    if snapshots.lock().unwrap().len() == 1 {
-                        entered.notify_one();
-                        release.notified().await;
-                    }
-                    Ok(None)
-                }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
-            })
-        },
-    ));
+            Box::pin(async move {
+                snapshots.lock().unwrap().push(changes);
+                if snapshots.lock().unwrap().len() == 1 {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+                Ok(None)
+            }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
+        })
+    }));
     coordinator.enqueue(&change("/repo/a.ts"), EnqueueReason::Watch);
     wait_for(|| snapshots.lock().unwrap().len() == 1).await;
     coordinator.enqueue(&change("/repo/b.ts"), EnqueueReason::Watch);
@@ -131,23 +129,19 @@ async fn retry_reuses_the_same_change_snapshot() {
     let scheduler = JobScheduler::new(1, 2, 1);
     let runtime = StubRuntime::stub();
     let snapshots = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let coordinator = Arc::new(IndexCoordinator::new(
-        runtime.clone(),
-        scheduler.clone(),
-        {
+    let coordinator = Arc::new(IndexCoordinator::new(runtime.clone(), scheduler.clone(), {
+        let snapshots = Arc::clone(&snapshots);
+        Arc::new(move |changes: ChangeSetSnapshot, _, _| {
             let snapshots = Arc::clone(&snapshots);
-            Arc::new(move |changes: ChangeSetSnapshot, _, _| {
-                let snapshots = Arc::clone(&snapshots);
-                Box::pin(async move {
-                    snapshots.lock().unwrap().push(changes);
-                    if snapshots.lock().unwrap().len() == 1 {
-                        return Err(JobError::retryable("busy"));
-                    }
-                    Ok(None)
-                }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
-            })
-        },
-    ));
+            Box::pin(async move {
+                snapshots.lock().unwrap().push(changes);
+                if snapshots.lock().unwrap().len() == 1 {
+                    return Err(JobError::retryable("busy"));
+                }
+                Ok(None)
+            }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
+        })
+    }));
     let job = coordinator.enqueue(&change("/repo/a.ts"), EnqueueReason::Watch);
     let snapshot = scheduler.wait(job.id).await.expect("wait");
     assert_eq!(snapshot.state, JobState::Succeeded);
@@ -167,11 +161,11 @@ async fn full_reconciliation_without_proof_remains_unconfirmed() {
         runtime.clone(),
         scheduler.clone(),
         Arc::new(|_, _, _| {
-            Box::pin(async { Ok(None) })
-                as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
+            Box::pin(async { Ok(None) }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
         }),
     ));
-    let job = coordinator.enqueue(&ChangeSetSnapshot {
+    let job = coordinator.enqueue(
+        &ChangeSetSnapshot {
             touched_files: Vec::new(),
             rescan_directories: Vec::new(),
             deleted_prefixes: Vec::new(),
@@ -191,21 +185,18 @@ async fn high_ratio_exact_batch_remains_incremental() {
     let scheduler = JobScheduler::new(1, 1, 1);
     let runtime = StubRuntime::stub();
     let snapshots = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let coordinator = Arc::new(IndexCoordinator::new(
-        runtime.clone(),
-        scheduler.clone(),
-        {
+    let coordinator = Arc::new(IndexCoordinator::new(runtime.clone(), scheduler.clone(), {
+        let snapshots = Arc::clone(&snapshots);
+        Arc::new(move |changes: ChangeSetSnapshot, _, _| {
             let snapshots = Arc::clone(&snapshots);
-            Arc::new(move |changes: ChangeSetSnapshot, _, _| {
-                let snapshots = Arc::clone(&snapshots);
-                Box::pin(async move {
-                    snapshots.lock().unwrap().push(changes);
-                    Ok(None)
-                }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
-            })
-        },
-    ));
-    let job = coordinator.enqueue(&ChangeSetSnapshot {
+            Box::pin(async move {
+                snapshots.lock().unwrap().push(changes);
+                Ok(None)
+            }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
+        })
+    }));
+    let job = coordinator.enqueue(
+        &ChangeSetSnapshot {
             touched_files: vec![
                 "/repo/a.ts".to_string(),
                 "/repo/b.ts".to_string(),
@@ -232,28 +223,24 @@ async fn queued_exact_batches_compact_without_full_reconciliation() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
     let snapshots = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let coordinator = Arc::new(IndexCoordinator::new(
-        runtime.clone(),
-        scheduler.clone(),
-        {
+    let coordinator = Arc::new(IndexCoordinator::new(runtime.clone(), scheduler.clone(), {
+        let entered = Arc::clone(&entered);
+        let release = Arc::clone(&release);
+        let snapshots = Arc::clone(&snapshots);
+        Arc::new(move |changes: ChangeSetSnapshot, _, _| {
             let entered = Arc::clone(&entered);
             let release = Arc::clone(&release);
             let snapshots = Arc::clone(&snapshots);
-            Arc::new(move |changes: ChangeSetSnapshot, _, _| {
-                let entered = Arc::clone(&entered);
-                let release = Arc::clone(&release);
-                let snapshots = Arc::clone(&snapshots);
-                Box::pin(async move {
-                    snapshots.lock().unwrap().push(changes);
-                    if snapshots.lock().unwrap().len() == 1 {
-                        entered.notify_one();
-                        release.notified().await;
-                    }
-                    Ok(None)
-                }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
-            })
-        },
-    ));
+            Box::pin(async move {
+                snapshots.lock().unwrap().push(changes);
+                if snapshots.lock().unwrap().len() == 1 {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+                Ok(None)
+            }) as BoxFuture<Result<Option<ReconciliationProof>, JobError>>
+        })
+    }));
     coordinator.enqueue(&change("/repo/initial.ts"), EnqueueReason::Watch);
     wait_for(|| snapshots.lock().unwrap().len() == 1).await;
     coordinator.enqueue(&exact_batch("/repo/package-a", 600), EnqueueReason::Watch);
@@ -267,7 +254,11 @@ async fn queued_exact_batches_compact_without_full_reconciliation() {
         snapshots[1].rescan_directories,
         vec!["/repo/package-a".to_string(), "/repo/package-b".to_string()]
     );
-    assert!(snapshots[1].deleted_prefixes.is_empty(), "{:?}", snapshots[1]);
+    assert!(
+        snapshots[1].deleted_prefixes.is_empty(),
+        "{:?}",
+        snapshots[1]
+    );
     assert!(!snapshots[1].force_full_reconcile);
     scheduler.close();
 }

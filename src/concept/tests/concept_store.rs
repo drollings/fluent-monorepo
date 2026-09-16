@@ -64,7 +64,9 @@ fn parent_only_nodes_are_registered() {
 #[test]
 fn unknown_id_has_no_ancestors() {
     let h = TaxonomyHierarchy::from_edges(&chain_edges()).expect("edges");
-    assert!(h.ancestors(cid(InterlinguaNamespace::YagoClass, 999)).is_empty());
+    assert!(h
+        .ancestors(cid(InterlinguaNamespace::YagoClass, 999))
+        .is_empty());
     assert!(!h.is_subclass(
         cid(InterlinguaNamespace::YagoClass, 999),
         cid(InterlinguaNamespace::YagoClass, 1)

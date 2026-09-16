@@ -3,8 +3,8 @@ use crate::config::builder::NlpDeps;
 use crate::config::RouterConfig;
 use crate::pipeline::PipelineResult;
 use crate::types::RouterRequest;
-use fluent_concept::InMemoryConceptStore;
 use fluent_concept::ConceptStore;
+use fluent_concept::InMemoryConceptStore;
 
 /// A context carrying a user message (the `structured["request"]` handoff
 /// the stage reads).
@@ -90,7 +90,10 @@ fn publishes_interlingua_and_confidence_accessors() {
     // The C1 handoff (13.6): per-sentence interlingua frames + summary.
     let interlingua = meta.nlp_interlingua().expect("nlp_interlingua");
     assert_eq!(interlingua.len(), 1);
-    assert!(interlingua[0].predicate_id.is_some(), "predicate id stamped");
+    assert!(
+        interlingua[0].predicate_id.is_some(),
+        "predicate id stamped"
+    );
     let conf = meta.nlp_confidence().expect("nlp_confidence");
     assert_eq!(conf.source, spacy_rs::AnnotationSource::ArcEager);
     assert!((0.0..=1.0).contains(&conf.overall));
@@ -134,17 +137,20 @@ fn llm_rung_wins_when_fetch_returns_full_parse() {
 
 #[test]
 fn llm_fetch_failure_falls_back_to_star_parse() {
-    let fetch: spacy_rs::pipeline::LlmFetchSync =
-        Arc::new(move |_tokens: Vec<String>| Err(spacy_rs::pipeline::AnnotateError::Fetch(
-            "boom".into(),
-        )));
+    let fetch: spacy_rs::pipeline::LlmFetchSync = Arc::new(move |_tokens: Vec<String>| {
+        Err(spacy_rs::pipeline::AnnotateError::Fetch("boom".into()))
+    });
     let stage = NlpStage::new(
         Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline")),
         Some(fetch),
         None,
     );
     let (_, decision) = stage.decide(&ctx_for("show me the report"));
-    assert_eq!(decision.verdict, StageVerdict::Passed, "parser rung answers");
+    assert_eq!(
+        decision.verdict,
+        StageVerdict::Passed,
+        "parser rung answers"
+    );
     let signals = StageMetadata::from(decision.metadata)
         .nlp_parse()
         .expect("nlp_parse");
@@ -181,17 +187,22 @@ fn encoder_field_reflected_in_describe() {
 
 #[test]
 fn encoder_failure_falls_back_to_arc_eager() {
-    let encoder: spacy_rs::pipeline::EncoderFetchSync =
-        Arc::new(|_doc| Err(spacy_rs::pipeline::AnnotateError::Fetch(
+    let encoder: spacy_rs::pipeline::EncoderFetchSync = Arc::new(|_doc| {
+        Err(spacy_rs::pipeline::AnnotateError::Fetch(
             "heads not trained".into(),
-        )));
+        ))
+    });
     let stage = NlpStage::new(
         Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline")),
         None,
         Some(encoder),
     );
     let (_, decision) = stage.decide(&ctx_for("show me the report"));
-    assert_eq!(decision.verdict, StageVerdict::Passed, "falls back to ArcEager");
+    assert_eq!(
+        decision.verdict,
+        StageVerdict::Passed,
+        "falls back to ArcEager"
+    );
     let meta = StageMetadata::from(decision.metadata);
     let conf = meta.nlp_confidence().expect("nlp_confidence");
     assert_eq!(
@@ -207,35 +218,40 @@ fn encoder_rung_wins_with_encoder_provenance() {
     // ROOT, every other token attaches to it) aligned to the doc's orth by
     // construction — the shape the real adapter produces. It must WIN the
     // ladder and report `AnnotationSource::Encoder`.
-    let encoder: spacy_rs::pipeline::EncoderFetchSync =
-        Arc::new(|doc: &spacy_rs::Doc| {
-            let n = doc.len();
-            if n == 0 {
-                return Err(spacy_rs::pipeline::AnnotateError::Encoder("empty doc".into()));
-            }
-            let root = n - 1;
-            let mut records = Vec::with_capacity(n);
-            for i in 0..n {
-                let text = doc.token_text(i);
-                let (pos, dep, head) = if i == root {
-                    ("verb".to_string(), "root".to_string(), 0)
-                } else {
-                    ("noun".to_string(), "nsubj".to_string(), (root as i32) - (i as i32))
-                };
-                records.push(spacy_rs::AnnotationRecord {
-                    text,
-                    pos,
-                    dep,
-                    head,
-                    tag: String::new(),
-                    lemma: String::new(),
-                    morph: String::new(),
-                    ent_iob: String::new(),
-                    ent_type: String::new(),
-                });
-            }
-            Ok(spacy_rs::AnnotationSet(records))
-        });
+    let encoder: spacy_rs::pipeline::EncoderFetchSync = Arc::new(|doc: &spacy_rs::Doc| {
+        let n = doc.len();
+        if n == 0 {
+            return Err(spacy_rs::pipeline::AnnotateError::Encoder(
+                "empty doc".into(),
+            ));
+        }
+        let root = n - 1;
+        let mut records = Vec::with_capacity(n);
+        for i in 0..n {
+            let text = doc.token_text(i);
+            let (pos, dep, head) = if i == root {
+                ("verb".to_string(), "root".to_string(), 0)
+            } else {
+                (
+                    "noun".to_string(),
+                    "nsubj".to_string(),
+                    (root as i32) - (i as i32),
+                )
+            };
+            records.push(spacy_rs::AnnotationRecord {
+                text,
+                pos,
+                dep,
+                head,
+                tag: String::new(),
+                lemma: String::new(),
+                morph: String::new(),
+                ent_iob: String::new(),
+                ent_type: String::new(),
+            });
+        }
+        Ok(spacy_rs::AnnotationSet(records))
+    });
     let stage = NlpStage::new(
         Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline")),
         None,
@@ -304,15 +320,18 @@ fn builder_built_pipeline_publishes_interlingua_ids() {
         }"#,
     )
     .expect("config");
-    let store: Arc<dyn ConceptStore> =
-        Arc::new(InMemoryConceptStore::new());
+    let store: Arc<dyn ConceptStore> = Arc::new(InMemoryConceptStore::new());
     let nlp_deps = NlpDeps {
         concept_store: Some(store),
         strings_path: None,
     };
     let map = config.build_all_pipelines_with_backend_onnx_and_nlp(None, None, &nlp_deps);
-    let pipeline = map.get("default").expect("pipeline built through the builder");
-    let output = pipeline.execute(&ctx_for("show me the report")).expect("execute");
+    let pipeline = map
+        .get("default")
+        .expect("pipeline built through the builder");
+    let output = pipeline
+        .execute(&ctx_for("show me the report"))
+        .expect("execute");
     let result: PipelineResult = output.data_take().expect("pipeline result");
     let nlp_decision = result
         .decisions
@@ -350,7 +369,9 @@ fn builder_built_pipeline_fails_open_without_concept_store() {
     .expect("config");
     let map = config.build_all_pipelines_with_backend_onnx_and_nlp(None, None, &NlpDeps::default());
     let pipeline = map.get("default").expect("pipeline built");
-    let output = pipeline.execute(&ctx_for("show me the report")).expect("execute");
+    let output = pipeline
+        .execute(&ctx_for("show me the report"))
+        .expect("execute");
     let result: PipelineResult = output.data_take().expect("pipeline result");
     let nlp_decision = result
         .decisions
@@ -405,7 +426,9 @@ fn confidence_summary_reports_collision_count() {
     .expect("config");
     let map = config.build_all_pipelines_with_backend_onnx_and_nlp(None, None, &nlp_deps);
     let pipeline = map.get("default").expect("pipeline built");
-    let output = pipeline.execute(&ctx_for("show me the report")).expect("execute");
+    let output = pipeline
+        .execute(&ctx_for("show me the report"))
+        .expect("execute");
     let result: PipelineResult = output.data_take().expect("pipeline result");
     let nlp_decision = result
         .decisions
@@ -439,8 +462,7 @@ fn refined_products_are_not_confidence_bearing_and_summary_is_well_formed() {
     let vocab = std::sync::Arc::new(spacy_rs::vocab::Vocab::new(
         spacy_rs::lang::en::lexicon_config(),
     ));
-    let mut doc =
-        spacy_rs::doc::Doc::new(std::sync::Arc::clone(&vocab));
+    let mut doc = spacy_rs::doc::Doc::new(std::sync::Arc::clone(&vocab));
     doc.push_back("hello", false).expect("push");
     let set = spacy_rs::AnnotationSet(vec![spacy_rs::AnnotationRecord {
         text: "hello".into(),
@@ -491,13 +513,13 @@ fn on_uncertain_refined_parse_summary_is_well_formed() {
     let full = r#"[{"text":"hello","pos":"noun","dep":"root","head":0,"lemma":"hello"}]"#;
     let fetch: spacy_rs::pipeline::LlmFetchSync =
         std::sync::Arc::new(move |_tokens: Vec<String>| Ok(full.to_string()));
-    let pipeline =
-        std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
-    let stage = NlpStage::with_strings(pipeline, Some(fetch), None, None)
-        .with_refine_policy(spacy_rs::RefinePolicy {
+    let pipeline = std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
+    let stage = NlpStage::with_strings(pipeline, Some(fetch), None, None).with_refine_policy(
+        spacy_rs::RefinePolicy {
             mode: spacy_rs::RefineMode::OnUncertain,
             ..spacy_rs::RefinePolicy::default()
-        });
+        },
+    );
     let (_, decision) = stage.decide(&ctx_for("hello"));
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let meta = StageMetadata::from(decision.metadata);
@@ -518,16 +540,14 @@ fn on_uncertain_refined_parse_summary_is_well_formed() {
 fn nlp_stage_new_with_fetch_defaults_to_off() {
     let fetch: spacy_rs::pipeline::LlmFetchSync =
         std::sync::Arc::new(|_tokens: Vec<String>| Ok("[]".to_string()));
-    let pipeline =
-        std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
+    let pipeline = std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
     let stage = NlpStage::new(pipeline, Some(fetch), None);
     assert_eq!(
         stage.refine_policy().mode,
         spacy_rs::RefineMode::Off,
         "NlpStage::new must default to Off even when fetch is wired"
     );
-    let pipeline2 =
-        std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
+    let pipeline2 = std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
     let encoder: spacy_rs::pipeline::EncoderFetchSync =
         std::sync::Arc::new(|_doc| Err(spacy_rs::pipeline::AnnotateError::Encoder("x".into())));
     let stage2 = NlpStage::new(pipeline2, None, Some(encoder));

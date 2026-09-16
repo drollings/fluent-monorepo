@@ -2,140 +2,139 @@ use common_core::io::*;
 use std::fs;
 use std::path::Path;
 
-
 use tempfile::TempDir;
 
 #[test]
 fn read_file_alloc_returns_none_for_nonexistent() {
-        assert!(read_file_alloc("/nonexistent/path/file.txt").is_none());
+    assert!(read_file_alloc("/nonexistent/path/file.txt").is_none());
 }
 
 #[test]
 fn read_file_alloc_reads_content() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test.txt");
-        fs::write(&path, "hello").unwrap();
-        assert_eq!(
-            read_file_alloc(&path.to_string_lossy()),
-            Some("hello".into())
-        );
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("test.txt");
+    fs::write(&path, "hello").unwrap();
+    assert_eq!(
+        read_file_alloc(&path.to_string_lossy()),
+        Some("hello".into())
+    );
 }
 
 #[test]
 fn make_path_absolute_is_pure_resolution() {
-        // `make_path_absolute` resolves without creating anything; directory
-        // creation is the caller's job via `ensure_dir`.
-        let dir = TempDir::new().unwrap();
-        let rel = "a/b/c";
-        let target = format!("{}/{}", dir.path().to_string_lossy(), rel);
-        let abs = make_path_absolute(&target).unwrap();
-        assert_eq!(abs, target);
-        assert!(!Path::new(&abs).exists());
-        ensure_dir(&abs).unwrap();
-        assert!(Path::new(&abs).exists());
+    // `make_path_absolute` resolves without creating anything; directory
+    // creation is the caller's job via `ensure_dir`.
+    let dir = TempDir::new().unwrap();
+    let rel = "a/b/c";
+    let target = format!("{}/{}", dir.path().to_string_lossy(), rel);
+    let abs = make_path_absolute(&target).unwrap();
+    assert_eq!(abs, target);
+    assert!(!Path::new(&abs).exists());
+    ensure_dir(&abs).unwrap();
+    assert!(Path::new(&abs).exists());
 }
 
 #[test]
 fn make_path_absolute_idempotent() {
-        let dir = TempDir::new().unwrap();
-        let abs = dir.path().join("test").to_string_lossy().to_string();
-        let result = make_path_absolute(&abs).unwrap();
-        assert_eq!(result, abs);
+    let dir = TempDir::new().unwrap();
+    let abs = dir.path().join("test").to_string_lossy().to_string();
+    let result = make_path_absolute(&abs).unwrap();
+    assert_eq!(result, abs);
 }
 
 #[test]
 fn resolve_path_absolute_unchanged() {
-        let result = resolve_path("/base/dir", "/other/path");
-        assert_eq!(result, "/other/path");
+    let result = resolve_path("/base/dir", "/other/path");
+    assert_eq!(result, "/other/path");
 }
 
 #[test]
 fn resolve_path_dot_returns_base() {
-        let result = resolve_path("/base/dir/file.txt", ".");
-        assert_eq!(result, "/base/dir");
+    let result = resolve_path("/base/dir/file.txt", ".");
+    assert_eq!(result, "/base/dir");
 }
 
 #[test]
 fn resolve_path_joins_relative() {
-        let result = resolve_path("/base/dir/file.txt", "sub/file.rs");
-        assert_eq!(result, "/base/dir/sub/file.rs");
+    let result = resolve_path("/base/dir/file.txt", "sub/file.rs");
+    assert_eq!(result, "/base/dir/sub/file.rs");
 }
 
 #[test]
 fn resolve_path_relative_base() {
-        let result = resolve_path("relative/base/file.txt", "sub/file.rs");
-        assert!(result.ends_with("sub/file.rs"));
+    let result = resolve_path("relative/base/file.txt", "sub/file.rs");
+    assert!(result.ends_with("sub/file.rs"));
 }
 
 #[test]
 fn strip_path_prefix_basic() {
-        assert_eq!(strip_path_prefix("/a/b/c", "/a/b"), "c");
-        assert_eq!(strip_path_prefix("/a/b/c", "/x"), "/a/b/c");
-        assert_eq!(strip_path_prefix("/a/b/c", "/a/b/c"), "");
+    assert_eq!(strip_path_prefix("/a/b/c", "/a/b"), "c");
+    assert_eq!(strip_path_prefix("/a/b/c", "/x"), "/a/b/c");
+    assert_eq!(strip_path_prefix("/a/b/c", "/a/b/c"), "");
 }
 
 #[test]
 fn read_file_alloc_err_missing() {
-        let result = read_file_alloc_err("/nonexistent/path/file.txt");
-        assert!(result.is_err());
+    let result = read_file_alloc_err("/nonexistent/path/file.txt");
+    assert!(result.is_err());
 }
 
 #[test]
 fn mtime_returns_some_for_existing_file() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test.txt");
-        fs::write(&path, "hello").unwrap();
-        assert!(mtime(&path).is_some());
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("test.txt");
+    fs::write(&path, "hello").unwrap();
+    assert!(mtime(&path).is_some());
 }
 
 #[test]
 fn mtime_returns_none_for_nonexistent() {
-        assert!(mtime(Path::new("/nonexistent/file.txt")).is_none());
+    assert!(mtime(Path::new("/nonexistent/file.txt")).is_none());
 }
 
 #[test]
 fn write_atomic_creates_file() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test.txt");
-        write_atomic(&path, b"hello").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("test.txt");
+    write_atomic(&path, b"hello").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
 }
 
 #[test]
 fn write_atomic_overwrites_existing() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test.txt");
-        fs::write(&path, "old").unwrap();
-        write_atomic(&path, b"new").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("test.txt");
+    fs::write(&path, "old").unwrap();
+    write_atomic(&path, b"new").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "new");
 }
 
 #[test]
 fn read_to_string_err_reads_content() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test.txt");
-        fs::write(&path, "hello").unwrap();
-        assert_eq!(read_to_string_err(&path).unwrap(), "hello");
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("test.txt");
+    fs::write(&path, "hello").unwrap();
+    assert_eq!(read_to_string_err(&path).unwrap(), "hello");
 }
 
 #[test]
 fn read_to_string_err_missing_file() {
-        assert!(read_to_string_err(Path::new("/nonexistent/file.txt")).is_err());
+    assert!(read_to_string_err(Path::new("/nonexistent/file.txt")).is_err());
 }
 
 #[test]
 fn ensure_dir_creates_nested() {
-        let dir = TempDir::new().unwrap();
-        let nested = dir.path().join("a/b/c");
-        ensure_dir(&nested).unwrap();
-        assert!(nested.is_dir());
+    let dir = TempDir::new().unwrap();
+    let nested = dir.path().join("a/b/c");
+    ensure_dir(&nested).unwrap();
+    assert!(nested.is_dir());
 }
 
 #[test]
 fn ensure_dir_idempotent() {
-        let dir = TempDir::new().unwrap();
-        ensure_dir(dir.path()).unwrap();
-        ensure_dir(dir.path()).unwrap();
+    let dir = TempDir::new().unwrap();
+    ensure_dir(dir.path()).unwrap();
+    ensure_dir(dir.path()).unwrap();
 }
 
 #[test]
@@ -148,7 +147,10 @@ fn write_atomic_same_stem_siblings_do_not_share_tmp() {
     let barrier = std::sync::Arc::new(Barrier::new(2));
     for round in 0..20 {
         let (ja, ta) = (dir.path().join("a.json"), dir.path().join("a.toml"));
-        let (pa, pb) = (format!("{{\"round\":{round},\"f\":\"json\"}}"), format!("<x r=\"{round}\"/>"));
+        let (pa, pb) = (
+            format!("{{\"round\":{round},\"f\":\"json\"}}"),
+            format!("<x r=\"{round}\"/>"),
+        );
         let (ra, rb) = (pa.clone(), pb.clone());
         let (jaa, taa) = (ja.clone(), ta.clone());
         let b = std::sync::Arc::clone(&barrier);
@@ -174,7 +176,9 @@ fn write_atomic_concurrent_writers_are_all_or_nothing() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("shared.json");
     std::fs::write(&path, b"init").unwrap();
-    let payloads: Vec<Vec<u8>> = (0..8).map(|i| format!("payload-{i:04}-{}", "x".repeat(2000)).into_bytes()).collect();
+    let payloads: Vec<Vec<u8>> = (0..8)
+        .map(|i| format!("payload-{i:04}-{}", "x".repeat(2000)).into_bytes())
+        .collect();
     let barrier = std::sync::Arc::new(Barrier::new(8));
     let handles: Vec<_> = payloads
         .iter()

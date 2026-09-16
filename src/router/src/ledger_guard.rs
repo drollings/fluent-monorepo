@@ -114,8 +114,8 @@ fn apply_filter_decision(text: &str, decision: &FilterDecision) -> ScrubbedText 
 }
 
 #[cfg(test)]
-#[path = "../tests/ledger_guard.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "../tests/ledger_guard_golden.rs"]
 mod ledger_guard_golden;
+#[cfg(test)]
+#[path = "../tests/ledger_guard.rs"]
+mod tests;

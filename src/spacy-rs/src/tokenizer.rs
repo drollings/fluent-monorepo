@@ -240,7 +240,8 @@ impl Tokenizer {
     /// tokenization runs with special cases disabled, so every span-path
     /// read lands here only after publication.
     fn tables(&self) -> &FrozenTables {
-        static EMPTY: std::sync::LazyLock<FrozenTables> = std::sync::LazyLock::new(FrozenTables::default);
+        static EMPTY: std::sync::LazyLock<FrozenTables> =
+            std::sync::LazyLock::new(FrozenTables::default);
         self.frozen.get().map_or(&EMPTY, |t| &**t)
     }
 
@@ -268,10 +269,7 @@ impl Tokenizer {
         }
         let mut has_special = false;
         let mut run_start = 0usize;
-        let mut run_is_ws = text
-            .chars()
-            .next()
-            .is_some_and(char::is_whitespace);
+        let mut run_is_ws = text.chars().next().is_some_and(char::is_whitespace);
         for (i, c) in text.char_indices() {
             if c.is_whitespace() != run_is_ws {
                 if run_start < i {
@@ -308,8 +306,7 @@ impl Tokenizer {
         if run_start < text.len() {
             let span = &text[run_start..];
             let key = hash_utf8(span);
-            if !self.try_specials_and_cache(key, &mut doc, &mut has_special, with_special_cases)
-            {
+            if !self.try_specials_and_cache(key, &mut doc, &mut has_special, with_special_cases) {
                 self.tokenize_span(&mut doc, span, key, &mut has_special, with_special_cases)?;
             }
             let last = doc

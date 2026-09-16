@@ -5,8 +5,8 @@
 use crate::scheduler::{
     BoxFuture, JobContext, JobError, JobReason, JobRun, JobScheduler, JobState, SubmitJob,
 };
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 fn run_ok() -> JobRun {
@@ -114,8 +114,7 @@ async fn terminal_errors_fail_without_retry() {
         reason: JobReason::Watch,
         followup_if_running: true,
         run: Arc::new(|_: JobContext| {
-            Box::pin(async { Err(JobError::terminal("fatal")) })
-                as BoxFuture<Result<(), JobError>>
+            Box::pin(async { Err(JobError::terminal("fatal")) }) as BoxFuture<Result<(), JobError>>
         }),
     });
     let snapshot = scheduler.wait(submitted.job.id).await.expect("wait");
@@ -170,11 +169,8 @@ fn m4_scheduler_delay_matches_backoff_composition() {
     // If this ever diverges, behavior wins: revert, do not "fix" the pin.
     for base in [0u64, 1, 100, 500] {
         for attempt in (0u32..=20).chain([21, 100, u32::MAX]) {
-            let historical = base.saturating_mul(
-                2u64.pow(attempt.saturating_sub(1).min(8)),
-            );
-            let composed =
-                common_core::retry::backoff_ms(base, attempt.min(9), 0);
+            let historical = base.saturating_mul(2u64.pow(attempt.saturating_sub(1).min(8)));
+            let composed = common_core::retry::backoff_ms(base, attempt.min(9), 0);
             assert_eq!(historical, composed, "base {base} attempt {attempt}");
         }
     }

@@ -127,12 +127,12 @@ pub struct ChunkOptions {
 /// on Unicode scalar values where the TS operates on UTF-16 code units
 /// (identical for BMP text; P0 goldens pin the ASCII/CJK cases).
 #[must_use]
-pub fn index_chunk_options(
-    max_input_tokens: Option<u64>,
-    text: Option<&str>,
-) -> ChunkOptions {
+pub fn index_chunk_options(max_input_tokens: Option<u64>, text: Option<&str>) -> ChunkOptions {
     let Some(max_input_tokens) = max_input_tokens else {
-        return ChunkOptions { max_chunk_chars: None, chunk_overlap_chars: None };
+        return ChunkOptions {
+            max_chunk_chars: None,
+            chunk_overlap_chars: None,
+        };
     };
     let chars_per_100 = if is_token_dense_text(text, max_input_tokens) {
         CHARS_PER_100_TOKENS_DENSE
@@ -141,7 +141,10 @@ pub fn index_chunk_options(
     };
     let max_chunk_chars = (max_input_tokens * chars_per_100 / 100) as usize;
     let chunk_overlap_chars = (max_chunk_chars as u64 * CHUNK_OVERLAP_PERCENT / 100) as usize;
-    ChunkOptions { max_chunk_chars: Some(max_chunk_chars), chunk_overlap_chars: Some(chunk_overlap_chars) }
+    ChunkOptions {
+        max_chunk_chars: Some(max_chunk_chars),
+        chunk_overlap_chars: Some(chunk_overlap_chars),
+    }
 }
 
 /// Token-dense detector (`isTokenDenseText`).
@@ -270,12 +273,8 @@ pub const OPEN_RETRY_MAX_DELAY_MS: u64 = 1_000;
 /// pin ever diverges, revert to the bespoke formula, do not "fix" it).
 #[must_use]
 pub fn open_retry_delay_ms(attempt: u32) -> u64 {
-    common_core::retry::backoff_ms(
-        OPEN_RETRY_BASE_DELAY_MS,
-        attempt.saturating_add(1),
-        0,
-    )
-    .min(OPEN_RETRY_MAX_DELAY_MS)
+    common_core::retry::backoff_ms(OPEN_RETRY_BASE_DELAY_MS, attempt.saturating_add(1), 0)
+        .min(OPEN_RETRY_MAX_DELAY_MS)
 }
 
 /// Type-aware size cap: code files (1 MiB).

@@ -41,7 +41,6 @@ pub use colbert::{
     l2_normalize, maxsim_score, maxsim_score_normalized, ConceptEncoding, EntitySimilarityHit,
     EntitySimilarityIndex,
 };
-pub use vector_math::cosine_similarity_f32;
 pub use config::{
     AnnotationHeads, AnnotationLabels, LlmIo, OnnxConfig, OnnxFleetConfig, OnnxRole,
     OnnxRoleConfig, OnnxTask, Quant, ResidencyPolicy,
@@ -49,30 +48,28 @@ pub use config::{
 pub use encoder::mean_pool;
 pub use error::OrtError;
 pub use grammar::{
-    BatchPromptGrammar, Grammar, JsonArrayGrammar, JsonField, JsonObjectGrammar, JsonSchema,
-    JsonType, TokenVocab, grammar_from_json_schema, is_valid_json_prefix, tokens_for_literal,
+    grammar_from_json_schema, is_valid_json_prefix, tokens_for_literal, BatchPromptGrammar,
+    Grammar, JsonArrayGrammar, JsonField, JsonObjectGrammar, JsonSchema, JsonType, TokenVocab,
 };
 pub use pii::{decode_biluo, load_id2label};
 pub use session::{OrtSessionRegistry, ResidencyReportEntry, SessionHandle, SessionLoader};
-pub use two_tower::{
-    policy_hits_from_matrix, PromptBuilder, TwoTowerHead, TwoTowerPrompt,
-};
 pub use two_tower::{load_policy_labels, PolicyHit};
+pub use two_tower::{policy_hits_from_matrix, PromptBuilder, TwoTowerHead, TwoTowerPrompt};
+pub use vector_math::cosine_similarity_f32;
 
-#[cfg(feature = "onnx")]
-pub mod tokenizer;
-#[cfg(feature = "onnx")]
-pub mod llm;
 #[cfg(feature = "onnx")]
 pub mod context;
 #[cfg(feature = "onnx")]
 pub mod context_pool;
 #[cfg(feature = "onnx")]
-pub use grammar::HuggingFaceVocab;
+pub mod llm;
 #[cfg(feature = "onnx")]
-pub use llm::{
-    BOS_TOKEN_ID, EOS_TOKEN_ID, VOCAB_SIZE, LlmParams, OnnxChatCompletion, OrtLlmSession,
-    apply_chat_template, build_llm_session, build_llm_session_from_handle, sample_next_token,
+pub mod tokenizer;
+#[cfg(feature = "onnx")]
+pub use annotate::{build_annotation_worker_from_registry, OrtAnnotationWorker};
+#[cfg(feature = "onnx")]
+pub use colbert::{
+    bake_entity_index, build_colbert, build_colbert_from_registry, ColbertRetriever,
 };
 #[cfg(feature = "onnx")]
 pub use context::{
@@ -81,19 +78,21 @@ pub use context::{
 #[cfg(feature = "onnx")]
 pub use context_pool::OnnxContextPool;
 #[cfg(feature = "onnx")]
-pub use colbert::{bake_entity_index, build_colbert, build_colbert_from_registry, ColbertRetriever};
-#[cfg(feature = "onnx")]
 pub use encoder::{build_encoder, build_encoder_from_registry, OrtEncoder};
+#[cfg(feature = "onnx")]
+pub use grammar::HuggingFaceVocab;
+#[cfg(feature = "onnx")]
+pub use llm::{
+    apply_chat_template, build_llm_session, build_llm_session_from_handle, sample_next_token,
+    LlmParams, OnnxChatCompletion, OrtLlmSession, BOS_TOKEN_ID, EOS_TOKEN_ID, VOCAB_SIZE,
+};
+#[cfg(feature = "onnx")]
+pub use ort_loader::OrtSessionLoader;
 #[cfg(feature = "onnx")]
 pub use overlay::{build_prompt_router_overlay, PromptRouterOverlay};
 #[cfg(feature = "onnx")]
 pub use pii::{build_pii_classifier, OrtPiiClassifier};
 #[cfg(feature = "onnx")]
-pub use annotate::{build_annotation_worker_from_registry, OrtAnnotationWorker};
-#[cfg(feature = "onnx")]
-pub use ort_loader::OrtSessionLoader;
-#[cfg(feature = "onnx")]
 pub use two_tower::{
-    build_policy_linter_from_registry, build_two_tower_from_registry, PolicyLinter,
-    TwoTowerWorker,
+    build_policy_linter_from_registry, build_two_tower_from_registry, PolicyLinter, TwoTowerWorker,
 };

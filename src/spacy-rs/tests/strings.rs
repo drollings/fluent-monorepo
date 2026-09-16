@@ -70,9 +70,18 @@ fn to_bytes_from_bytes_roundtrips_first_wins() {
     let bytes = store.to_bytes().expect("serialize");
     let reloaded = StringStore::from_bytes(&bytes).expect("deserialize");
     assert_eq!(reloaded.len(), 3);
-    assert_eq!(reloaded.get(hash_utf8("apple")).map(|s| s.to_string()), Some("apple".into()));
-    assert_eq!(reloaded.get(hash_utf8("banana")).map(|s| s.to_string()), Some("banana".into()));
-    assert_eq!(reloaded.get(hash_utf8("cherry")).map(|s| s.to_string()), Some("cherry".into()));
+    assert_eq!(
+        reloaded.get(hash_utf8("apple")).map(|s| s.to_string()),
+        Some("apple".into())
+    );
+    assert_eq!(
+        reloaded.get(hash_utf8("banana")).map(|s| s.to_string()),
+        Some("banana".into())
+    );
+    assert_eq!(
+        reloaded.get(hash_utf8("cherry")).map(|s| s.to_string()),
+        Some("cherry".into())
+    );
 }
 
 #[test]
@@ -96,7 +105,10 @@ fn save_and_load_or_empty_roundtrip() {
     store.save(&path).expect("save");
     let reloaded = StringStore::load_or_empty(&path);
     assert_eq!(reloaded.len(), 1);
-    assert_eq!(reloaded.get(hash_utf8("persisted")).map(|s| s.to_string()), Some("persisted".into()));
+    assert_eq!(
+        reloaded.get(hash_utf8("persisted")).map(|s| s.to_string()),
+        Some("persisted".into())
+    );
 }
 
 #[test]
@@ -117,7 +129,10 @@ fn poisoned_store_recovers_instead_of_panicking() {
     }));
     assert!(poisoned.is_err(), "poison setup must panic");
     // Recovery: reads and writes keep working on the valid state.
-    assert_eq!(store.get(hash_utf8("hello")).map(|s| s.to_string()), Some("hello".into()));
+    assert_eq!(
+        store.get(hash_utf8("hello")).map(|s| s.to_string()),
+        Some("hello".into())
+    );
     assert!(store.contains("hello"));
     store.add("world");
     assert!(store.contains("world"));

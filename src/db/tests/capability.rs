@@ -1,6 +1,6 @@
 use super::*;
-use fluent_wvr::capability::CURRENT_CAPS;
 use crate::tests::common::db_caps;
+use fluent_wvr::capability::CURRENT_CAPS;
 
 fn db() -> DbCapability {
     DbCapability::open(":memory:").unwrap()

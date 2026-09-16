@@ -404,7 +404,7 @@ impl WorkUnit for ResolveStage {
     fn name(&self) -> &str {
         "resolve"
     }
-fn depends(&self) -> &[ArcIntern<str>] {
+    fn depends(&self) -> &[ArcIntern<str>] {
         &*RESOLVE_DEPS
     }
 
@@ -598,10 +598,7 @@ impl StagePipeline {
                 ),
                 None => crate::yago_resolve::YagoResolveStage::new(Arc::clone(resolver.concepts())),
             };
-            stages.insert(
-                yago,
-                Arc::new(yago_stage) as Arc<dyn Component>,
-            );
+            stages.insert(yago, Arc::new(yago_stage) as Arc<dyn Component>);
             let frame = ArcIntern::from("frame");
             // Frame now depends on yago_resolved, not directly on annotated_doc
             let frame_deps = [ArcIntern::from("yago_resolved")];
@@ -616,12 +613,18 @@ impl StagePipeline {
             graph
                 .register(&resolve, &*RESOLVE_DEPS, &*RESOLVE_PROVIDES)
                 .map_err(|e| PipelineError::StageGraph(e.to_string()))?;
-            stages.insert(resolve, Arc::new(ResolveStage::new(resolver)) as Arc<dyn Component>);
+            stages.insert(
+                resolve,
+                Arc::new(ResolveStage::new(resolver)) as Arc<dyn Component>,
+            );
         }
         graph
             .register(&sentencize, &*SENTENCIZE_DEPS, &*SENTENCIZE_PROVIDES)
             .map_err(|e| PipelineError::StageGraph(e.to_string()))?;
-        stages.insert(sentencize, Arc::new(SentencizeStage::new(sentencizer)) as Arc<dyn Component>);
+        stages.insert(
+            sentencize,
+            Arc::new(SentencizeStage::new(sentencizer)) as Arc<dyn Component>,
+        );
         Ok(Self { graph, stages })
     }
 
@@ -732,8 +735,7 @@ pub type LlmFetch = Arc<
 /// callers (the Coral Router's `NlpStage` runs inside a synchronous pipeline
 /// stage, so it cannot await). Returns the raw §10.1 annotation JSON, or an
 /// error the sync ladder swallows in favor of the deterministic base.
-pub type LlmFetchSync =
-    Arc<dyn Fn(Vec<String>) -> Result<String, AnnotateError> + Send + Sync>;
+pub type LlmFetchSync = Arc<dyn Fn(Vec<String>) -> Result<String, AnnotateError> + Send + Sync>;
 
 /// The **trained-encoder** annotation seam —
 /// symmetric to [`LlmFetchSync`] but consuming the whole [`Doc`]: the encoder
@@ -743,8 +745,7 @@ pub type LlmFetchSync =
 /// check 1), or an error the ladder swallows in favor of ArcEager. The closure
 /// is whole-doc (full re-annotation); the span-scoped residual variant is the
 /// separate [`EncoderResidualFetch`] seam (M2.3).
-pub type EncoderFetchSync =
-    Arc<dyn Fn(&Doc) -> Result<AnnotationSet, AnnotateError> + Send + Sync>;
+pub type EncoderFetchSync = Arc<dyn Fn(&Doc) -> Result<AnnotationSet, AnnotateError> + Send + Sync>;
 
 /// One annotation rung: attempt to produce an accepted annotation for `doc`,
 /// or skip (`Ok(None)`) / fail (`Err`). `run` consumes the boxed rung so the
@@ -756,11 +757,7 @@ pub trait AnnotationRung: Send + Sync {
     fn run<'a>(
         self: Box<Self>,
         doc: &'a Doc,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    >;
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -783,11 +780,21 @@ pub enum RefineMode {
     Always,
 }
 
-fn default_min_overall() -> f64 { 0.7 }
-fn default_min_role_coverage() -> f64 { 0.5 }
-fn default_min_token_score() -> f64 { 0.5 }
-fn default_true() -> bool { true }
-fn default_unresolved_token_threshold() -> f64 { 0.3 }
+fn default_min_overall() -> f64 {
+    0.7
+}
+fn default_min_role_coverage() -> f64 {
+    0.5
+}
+fn default_min_token_score() -> f64 {
+    0.5
+}
+fn default_true() -> bool {
+    true
+}
+fn default_unresolved_token_threshold() -> f64 {
+    0.3
+}
 
 /// The decision policy for when the model refiners run after the
 /// deterministic base parse. Pure data — no I/O, no side effects.
@@ -995,7 +1002,8 @@ fn refine_reason_inner(
                     && is_above_threshold(
                         unresolved as f64 / n as f64,
                         policy.unresolved_token_threshold,
-                    ) {
+                    )
+                {
                     return RefineReason::TaskValue(TaskValueReason::UnresolvedPropn);
                 }
             }
@@ -1231,28 +1239,36 @@ impl RefineMetrics {
     pub fn record(&self, reason: RefineReason) {
         match reason {
             RefineReason::NoTrigger => {
-                self.no_trigger.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.no_trigger
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::AlwaysPolicy => {
-                self.always.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.always
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::Confidence(ConfidenceReason::Overall) => {
-                self.conf_overall.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.conf_overall
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::Confidence(ConfidenceReason::RoleCoverage) => {
-                self.conf_role.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.conf_role
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::Confidence(ConfidenceReason::Ties) => {
-                self.conf_ties.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.conf_ties
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::TaskValue(TaskValueReason::UnresolvedCriticalRole) => {
-                self.task_role.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.task_role
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::TaskValue(TaskValueReason::UnresolvedPropn) => {
-                self.task_propn.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.task_propn
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             RefineReason::TaskValue(TaskValueReason::Collision) => {
-                self.task_collision.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.task_collision
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
     }
@@ -1268,20 +1284,29 @@ impl RefineMetrics {
             confidence_ties: self.conf_ties.load(std::sync::atomic::Ordering::Relaxed),
             task_value_unresolved_role: self.task_role.load(std::sync::atomic::Ordering::Relaxed),
             task_value_unresolved_propn: self.task_propn.load(std::sync::atomic::Ordering::Relaxed),
-            task_value_collision: self.task_collision.load(std::sync::atomic::Ordering::Relaxed),
+            task_value_collision: self
+                .task_collision
+                .load(std::sync::atomic::Ordering::Relaxed),
         }
     }
 
     /// Reset all counters to zero (test helper).
     pub fn reset(&self) {
-        self.no_trigger.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.no_trigger
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         self.always.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.conf_overall.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.conf_role.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.conf_ties.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.task_role.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.task_propn.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.task_collision.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.conf_overall
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.conf_role
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.conf_ties
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.task_role
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.task_propn
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.task_collision
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -1301,11 +1326,7 @@ pub trait AnnotationRefiner: Send + Sync {
         doc: &'a Doc,
         base: &'a AnnotationResult,
         focus: &'a [usize],
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    >;
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>;
 }
 
 /// Adapter: [`LlmRung`] as a full-reannotation [`AnnotationRefiner`].
@@ -1322,11 +1343,8 @@ impl AnnotationRefiner for LlmRefiner {
         doc: &'a Doc,
         _base: &'a AnnotationResult,
         _focus: &'a [usize],
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
             let Ok(json) = (self.fetch)(tokens).await else {
@@ -1357,11 +1375,8 @@ impl AnnotationRefiner for EncoderRefiner {
         doc: &'a Doc,
         _base: &'a AnnotationResult,
         _focus: &'a [usize],
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             let Ok(set) = (self.encoder)(doc) else {
                 return Ok(None);
@@ -1369,10 +1384,7 @@ impl AnnotationRefiner for EncoderRefiner {
             if self.validator.validate(doc, &set).is_err() {
                 return Ok(None);
             }
-            Ok(Some(AnnotationResult::new(
-                set,
-                AnnotationSource::Encoder,
-            )))
+            Ok(Some(AnnotationResult::new(set, AnnotationSource::Encoder)))
         })
     }
 }
@@ -1411,8 +1423,9 @@ pub type LlmRefineFetchSync =
 /// never proposes edits outside the focus and returns corrections, not a
 /// record set. Not configured by default — only wired when a task-specific
 /// encoder head exposes per-token residuals.
-pub type EncoderResidualFetch =
-    Arc<dyn Fn(&Doc, &[usize]) -> Result<Vec<crate::review::Correction>, AnnotateError> + Send + Sync>;
+pub type EncoderResidualFetch = Arc<
+    dyn Fn(&Doc, &[usize]) -> Result<Vec<crate::review::Correction>, AnnotateError> + Send + Sync,
+>;
 
 /// The model seams available to the refine phase beyond the whole-doc
 /// [`LlmFetchSync`] / [`EncoderFetchSync`] closures. All-`None` (the
@@ -1483,14 +1496,16 @@ impl AnnotationRefiner for LlmRefineRung {
         doc: &'a Doc,
         base: &'a AnnotationResult,
         focus: &'a [usize],
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(refine_llm_scoped_with_cache(
-                doc, base, focus, &self.fetch, &self.validator, self.span_cache.as_ref(),
+                doc,
+                base,
+                focus,
+                &self.fetch,
+                &self.validator,
+                self.span_cache.as_ref(),
             ))
         })
     }
@@ -1526,7 +1541,14 @@ fn refine_llm_scoped_with_cache(
     if let Some(cache) = span_cache {
         let key = crate::cache::span_key(doc, focus);
         if let Some(cached) = cache.get(key) {
-            if let Some(hit) = crate::review::apply_scoped(doc, base, focus, &cached, validator, AnnotationSource::Llm) {
+            if let Some(hit) = crate::review::apply_scoped(
+                doc,
+                base,
+                focus,
+                &cached,
+                validator,
+                AnnotationSource::Llm,
+            ) {
                 return Some(hit);
             }
         }
@@ -1593,11 +1615,8 @@ impl AnnotationRefiner for EncoderResidualRung {
         doc: &'a Doc,
         base: &'a AnnotationResult,
         focus: &'a [usize],
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             if focus.is_empty() {
                 return Ok(None);
@@ -1606,9 +1625,14 @@ impl AnnotationRefiner for EncoderResidualRung {
             if let Some(cache) = &self.span_cache {
                 let key = crate::cache::span_key(doc, focus);
                 if let Some(cached) = cache.get(key) {
-                    if let Some(hit) =
-                        crate::review::apply_scoped(doc, base, focus, &cached, &self.validator, AnnotationSource::Encoder)
-                    {
+                    if let Some(hit) = crate::review::apply_scoped(
+                        doc,
+                        base,
+                        focus,
+                        &cached,
+                        &self.validator,
+                        AnnotationSource::Encoder,
+                    ) {
                         return Ok(Some(hit));
                     }
                 }
@@ -1659,8 +1683,16 @@ fn refine_slots(
 ) -> (EncoderSlot, LlmSlot) {
     if mode == RefineMode::Always {
         return (
-            if has_encoder { EncoderSlot::Full } else { EncoderSlot::Off },
-            if has_fetch { LlmSlot::Full } else { LlmSlot::Off },
+            if has_encoder {
+                EncoderSlot::Full
+            } else {
+                EncoderSlot::Off
+            },
+            if has_fetch {
+                LlmSlot::Full
+            } else {
+                LlmSlot::Off
+            },
         );
     }
     let encoder = if seams.encoder_residual.is_some() {
@@ -1710,11 +1742,8 @@ impl AnnotationRung for LlmRung {
     fn run<'a>(
         self: Box<Self>,
         doc: &'a Doc,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
             let json = (self.fetch)(tokens).await?;
@@ -1766,11 +1795,8 @@ impl AnnotationRung for EncoderRung {
     fn run<'a>(
         self: Box<Self>,
         doc: &'a Doc,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             let set = (self.encoder)(doc)?;
             self.validator.validate(doc, &set)?;
@@ -1791,11 +1817,8 @@ impl AnnotationRung for RuleRung {
     fn run<'a>(
         self: Box<Self>,
         doc: &'a Doc,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
+    {
         Box::pin(async move {
             let set = self.rule.annotate(doc);
             Ok(Some(AnnotationResult::new(set, AnnotationSource::RuleRung)))
@@ -1862,7 +1885,10 @@ impl RuleAnnotator {
     /// before the heuristic `pos_of` — a promoted correction becomes
     /// deterministic data.
     #[must_use]
-    pub fn with_genesis(mut self, genesis: std::sync::Arc<dyn crate::lang::genesis::GenesisIndex>) -> Self {
+    pub fn with_genesis(
+        mut self,
+        genesis: std::sync::Arc<dyn crate::lang::genesis::GenesisIndex>,
+    ) -> Self {
         self.genesis = Some(genesis);
         self
     }
@@ -1930,7 +1956,9 @@ impl RuleAnnotator {
                 // M6.2: genesis overrides heuristic POS when promoted.
                 let pos = if let Some(genesis) = &self.genesis {
                     let norm = text.to_ascii_lowercase();
-                    genesis.get_pos(&norm).unwrap_or_else(|| Self::pos_of(flags))
+                    genesis
+                        .get_pos(&norm)
+                        .unwrap_or_else(|| Self::pos_of(flags))
                 } else {
                     Self::pos_of(flags)
                 };
@@ -1950,7 +1978,10 @@ impl RuleAnnotator {
                     "U".to_string()
                 };
                 let lemma = self.lemmatizer.lemmatize(&text, pos, 0);
-                let lemma = lemma.first().cloned().unwrap_or_else(|| text.to_ascii_lowercase());
+                let lemma = lemma
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| text.to_ascii_lowercase());
                 let is_root = heads[i] == 0;
                 AnnotationRecord {
                     text,
@@ -2122,7 +2153,10 @@ impl NlpPipeline {
     /// Attach a genesis index (M6.2). A promoted POS/NER correction becomes
     /// deterministic data consulted by the rule annotator on the next run.
     #[must_use]
-    pub fn with_genesis(mut self, genesis: std::sync::Arc<dyn crate::lang::genesis::GenesisIndex>) -> Self {
+    pub fn with_genesis(
+        mut self,
+        genesis: std::sync::Arc<dyn crate::lang::genesis::GenesisIndex>,
+    ) -> Self {
         // Rebuild the rule annotator with the new genesis handle (first-wins).
         self.rule = std::sync::Arc::new(
             RuleAnnotator::en_default().with_genesis(std::sync::Arc::clone(&genesis)),
@@ -2200,8 +2234,15 @@ impl NlpPipeline {
         text: &str,
         fetch: Option<&LlmFetchSync>,
     ) -> Result<Doc, PipelineError> {
-        self.process_sync_with_refine(text, fetch, None, &RefineSeams::default(), None, RefinePolicy::default())
-            .map(|(doc, _)| doc)
+        self.process_sync_with_refine(
+            text,
+            fetch,
+            None,
+            &RefineSeams::default(),
+            None,
+            RefinePolicy::default(),
+        )
+        .map(|(doc, _)| doc)
     }
 
     /// The synchronous deterministic path plus the ladder's full handoff
@@ -2220,14 +2261,7 @@ impl NlpPipeline {
         encoder: Option<&EncoderFetchSync>,
         policy: RefinePolicy,
     ) -> Result<(Doc, AnnotationResult), PipelineError> {
-        self.process_sync_with_refine(
-            text,
-            fetch,
-            encoder,
-            &RefineSeams::default(),
-            None,
-            policy,
-        )
+        self.process_sync_with_refine(text, fetch, encoder, &RefineSeams::default(), None, policy)
     }
 
     /// [`Self::process_sync_with_confidence`] plus the span-scoped refine
@@ -2346,7 +2380,13 @@ impl NlpPipeline {
     ) -> Result<Doc, PipelineError> {
         let doc = self.tokenizer.tokenize(text)?;
         let result = self
-            .run_ladder(&doc, fetch, None, &RefineSeams::default(), RefinePolicy::default())
+            .run_ladder(
+                &doc,
+                fetch,
+                None,
+                &RefineSeams::default(),
+                RefinePolicy::default(),
+            )
             .await?;
         let json = serde_json::to_string(result.records())
             .map_err(|e| PipelineError::Serialize(e.to_string()))?;
@@ -2415,11 +2455,7 @@ impl NlpPipeline {
             Arc::clone(&rt),
             concurrency,
             queue_capacity,
-            move |(doc, fetch, encoder): (
-                Doc,
-                Option<LlmFetch>,
-                Option<EncoderFetchSync>,
-            )| {
+            move |(doc, fetch, encoder): (Doc, Option<LlmFetch>, Option<EncoderFetchSync>)| {
                 let validator = Arc::clone(&validator);
                 let rule = Arc::clone(&rule);
                 let eager = Arc::clone(&eager);
@@ -2558,7 +2594,10 @@ fn parse_views(
     let signals = crate::routing::extract_routing_signals(&scratch)
         .into_iter()
         .map(|s| {
-            let inter = s.interlingua.clone().unwrap_or_else(default_interlingua_signal);
+            let inter = s
+                .interlingua
+                .clone()
+                .unwrap_or_else(default_interlingua_signal);
             (s, inter)
         })
         .collect();
@@ -2740,8 +2779,7 @@ async fn run_ladder_for(
             match refined {
                 None => Ok(None),
                 Some(candidate) => {
-                    let (_, refined_interlingua, _) =
-                        parse_view(doc, &candidate, rule, resolver);
+                    let (_, refined_interlingua, _) = parse_view(doc, &candidate, rule, resolver);
                     // A5a: compare against base routing presence — dropping a
                     // structurally present role must be a regression even if the
                     // refined parse no longer declares that role (denominator would
@@ -2818,13 +2856,22 @@ fn run_sync_refiner(
                 let key = crate::cache::span_key(doc, focus);
                 if let Some(cached) = cache.get(key) {
                     crate::review::apply_scoped(
-                        doc, base, focus, &cached, validator, AnnotationSource::Encoder,
+                        doc,
+                        base,
+                        focus,
+                        &cached,
+                        validator,
+                        AnnotationSource::Encoder,
                     )
                 } else {
                     let corrections = (fetch)(doc, focus).ok();
                     corrections.and_then(|corrections| {
                         let result = crate::review::apply_scoped(
-                            doc, base, focus, &corrections, validator,
+                            doc,
+                            base,
+                            focus,
+                            &corrections,
+                            validator,
                             AnnotationSource::Encoder,
                         );
                         if result.is_some() {
@@ -2838,7 +2885,11 @@ fn run_sync_refiner(
                 let corrections = (fetch)(doc, focus).ok();
                 corrections.and_then(|corrections| {
                     let result = crate::review::apply_scoped(
-                        doc, base, focus, &corrections, validator,
+                        doc,
+                        base,
+                        focus,
+                        &corrections,
+                        validator,
                         AnnotationSource::Encoder,
                     );
                     if let Some(cache) = span_cache {
@@ -2881,10 +2932,8 @@ fn run_ladder_sync(
     let annotator = Arc::clone(eager);
 
     // ── Base phase: deterministic, unconditional ──
-    let base_rungs: Vec<SyncRung> = vec![
-        SyncRung::Eager(annotator),
-        SyncRung::Rule(Arc::clone(rule)),
-    ];
+    let base_rungs: Vec<SyncRung> =
+        vec![SyncRung::Eager(annotator), SyncRung::Rule(Arc::clone(rule))];
     let base = first_accept_in_order_sync(
         base_rungs,
         |rung| match rung {
@@ -2898,10 +2947,7 @@ fn run_ladder_sync(
             }
             SyncRung::Rule(rule) => {
                 let set = rule.annotate(doc);
-                Ok(Some(AnnotationResult::new(
-                    set,
-                    AnnotationSource::RuleRung,
-                )))
+                Ok(Some(AnnotationResult::new(set, AnnotationSource::RuleRung)))
             }
             _ => unreachable!("base phase only has Eager and Rule"),
         },
@@ -2943,7 +2989,8 @@ fn run_ladder_sync(
 
     // The same slot decision the async walk makes (refine_slots) — full vs
     // focused, encoder vs LLM, in one place.
-    let (encoder_slot, llm_slot) = refine_slots(seams, encoder.is_some(), fetch.is_some(), policy.mode);
+    let (encoder_slot, llm_slot) =
+        refine_slots(seams, encoder.is_some(), fetch.is_some(), policy.mode);
     let mut sync_refiners: Vec<SyncRung> = Vec::with_capacity(2);
     match encoder_slot {
         EncoderSlot::Residual => {
@@ -2965,9 +3012,7 @@ fn run_ladder_sync(
             ));
         }
         LlmSlot::Full => {
-            sync_refiners.push(SyncRung::Llm(
-                fetch.cloned().expect("slot implies seam"),
-            ));
+            sync_refiners.push(SyncRung::Llm(fetch.cloned().expect("slot implies seam")));
         }
         LlmSlot::Off => {}
     }
@@ -2985,14 +3030,8 @@ fn run_ladder_sync(
     let adopted = first_accept_in_order_sync(
         sync_refiners,
         |rung| {
-            let candidate = run_sync_refiner(
-                rung,
-                doc,
-                &base,
-                &focus,
-                validator,
-                span_cache.as_ref(),
-            );
+            let candidate =
+                run_sync_refiner(rung, doc, &base, &focus, validator, span_cache.as_ref());
             match candidate {
                 None => Ok(None),
                 Some(refined_result) => {

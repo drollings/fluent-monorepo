@@ -53,15 +53,15 @@ impl TwoTowerHead {
                     .into(),
             )
         })?;
-        let raw = std::fs::read_to_string(&path)
-            .map_err(|e| OrtError::ConfigRead {
-                path: path.display().to_string(),
-                detail: e.to_string(),
-            })?;
-        let head: RawConfigHead = serde_json::from_str(&raw).map_err(|e| OrtError::ConfigParse {
+        let raw = std::fs::read_to_string(&path).map_err(|e| OrtError::ConfigRead {
             path: path.display().to_string(),
             detail: e.to_string(),
         })?;
+        let head: RawConfigHead =
+            serde_json::from_str(&raw).map_err(|e| OrtError::ConfigParse {
+                path: path.display().to_string(),
+                detail: e.to_string(),
+            })?;
         let head = head.head.ok_or_else(|| OrtError::ConfigParse {
             path: path.display().to_string(),
             detail: "config.json has no `head` block".to_string(),
@@ -70,11 +70,9 @@ impl TwoTowerHead {
     }
 
     fn from_raw(raw: &RawHead, path: &Path) -> Result<Self, OrtError> {
-        let detail = |field: &str| {
-            OrtError::ConfigParse {
-                path: path.display().to_string(),
-                detail: format!("two-tower `head` block missing required field `{field}`"),
-            }
+        let detail = |field: &str| OrtError::ConfigParse {
+            path: path.display().to_string(),
+            detail: format!("two-tower `head` block missing required field `{field}`"),
         };
         let head = match raw.kind.as_str() {
             "cosine" => TwoTowerHead::Cosine {
@@ -300,11 +298,7 @@ pub fn pool_regions(
 
 /// Apply the head to a pooled query vector against pooled rule vectors,
 /// returning one score per rule.
-pub fn score_with_head(
-    head: &TwoTowerHead,
-    query: &[f32],
-    rules: &[Vec<f32>],
-) -> Vec<f64> {
+pub fn score_with_head(head: &TwoTowerHead, query: &[f32], rules: &[Vec<f32>]) -> Vec<f64> {
     match head {
         TwoTowerHead::Cosine { scale, bias } => {
             let q = l2_normalize(query);
@@ -326,7 +320,10 @@ pub fn score_with_head(
                     .map(|(&x, &y)| f64::from(x) * f64::from(y))
                     .sum::<f64>()
             };
-            rules.iter().map(|r| sigmoid(dot(r) * scale + bias)).collect()
+            rules
+                .iter()
+                .map(|r| sigmoid(dot(r) * scale + bias))
+                .collect()
         }
     }
 }
@@ -371,7 +368,9 @@ impl TwoTowerWorker {
                 OrtError::Other("session handle does not hold an ort session".to_string())
             })?;
         let tokenizer_path = config.tokenizer_path.as_ref().ok_or_else(|| {
-            OrtError::Other(format!("two-tower worker '{model_key}' missing tokenizer_path"))
+            OrtError::Other(format!(
+                "two-tower worker '{model_key}' missing tokenizer_path"
+            ))
         })?;
         let tokenizer = LfmTokenizer::from_file(tokenizer_path, config.max_seq_len)?;
         let head = TwoTowerHead::from_config_json(config)?;
@@ -400,13 +399,13 @@ impl TwoTowerWorker {
             .map(|&m| i64::from(m))
             .collect();
         let shape = [1usize, seq];
-        let input = ort::value::Tensor::from_array((shape, ids))
-            .map_err(|e| OrtError::SessionRun {
+        let input =
+            ort::value::Tensor::from_array((shape, ids)).map_err(|e| OrtError::SessionRun {
                 model: self.model_key.clone(),
                 detail: e.to_string(),
             })?;
-        let mask_t = ort::value::Tensor::from_array((shape, mask))
-            .map_err(|e| OrtError::SessionRun {
+        let mask_t =
+            ort::value::Tensor::from_array((shape, mask)).map_err(|e| OrtError::SessionRun {
                 model: self.model_key.clone(),
                 detail: e.to_string(),
             })?;
@@ -421,12 +420,13 @@ impl TwoTowerWorker {
                 detail: e.to_string(),
             })?;
         let extract = |name: &str| -> Result<Vec<f32>, OrtError> {
-            let (_, tensor) = outputs[name].try_extract_tensor::<f32>().map_err(|e| {
-                OrtError::SessionRun {
-                    model: self.model_key.clone(),
-                    detail: format!("extract {name}: {e}"),
-                }
-            })?;
+            let (_, tensor) =
+                outputs[name]
+                    .try_extract_tensor::<f32>()
+                    .map_err(|e| OrtError::SessionRun {
+                        model: self.model_key.clone(),
+                        detail: format!("extract {name}: {e}"),
+                    })?;
             Ok(tensor.to_vec())
         };
         let token_proj = extract("token_proj")?;
@@ -499,8 +499,8 @@ impl TwoTowerWorker {
                     })
                     .collect();
                 let surface = if start < end {
-                    assembled.prompt[start.min(assembled.prompt.len())
-                        ..end.min(assembled.prompt.len())]
+                    assembled.prompt
+                        [start.min(assembled.prompt.len())..end.min(assembled.prompt.len())]
                         .to_string()
                 } else {
                     String::new()
@@ -558,8 +558,7 @@ pub fn build_two_tower_from_registry(
     let Some(config) = registry.config(model_key) else {
         return Ok(None);
     };
-    if config.task != OnnxTask::ZeroShotRouting && config.task != OnnxTask::ZeroShotTokenMatching
-    {
+    if config.task != OnnxTask::ZeroShotRouting && config.task != OnnxTask::ZeroShotTokenMatching {
         return Ok(None);
     }
     let Some(handle) = registry.ensure_loaded(model_key)? else {
@@ -613,7 +612,10 @@ pub fn policy_hits_from_matrix(
                     token: matrix.tokens.get(ti).cloned().unwrap_or_default(),
                     start,
                     end,
-                    label: labels.get(ri).cloned().unwrap_or_else(|| format!("rule-{ri}")),
+                    label: labels
+                        .get(ri)
+                        .cloned()
+                        .unwrap_or_else(|| format!("rule-{ri}")),
                     score,
                 });
             }
@@ -668,7 +670,11 @@ impl PolicyLinter {
             return Ok(Vec::new());
         }
         let matrix = self.worker.token_scores(text, &self.labels)?;
-        Ok(policy_hits_from_matrix(&matrix, &self.labels, self.threshold))
+        Ok(policy_hits_from_matrix(
+            &matrix,
+            &self.labels,
+            self.threshold,
+        ))
     }
 }
 
@@ -744,7 +750,11 @@ pub fn build_policy_linter_from_registry(
     };
     let worker = TwoTowerWorker::from_handle(&handle, &config, model_key)?;
     let labels = load_policy_labels(labels_path)?;
-    Ok(Some(Arc::new(PolicyLinter::new(Arc::new(worker), labels, threshold))))
+    Ok(Some(Arc::new(PolicyLinter::new(
+        Arc::new(worker),
+        labels,
+        threshold,
+    ))))
 }
 
 #[cfg(test)]

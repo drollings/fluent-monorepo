@@ -1,9 +1,9 @@
 use super::*;
-use fluent_concept::{ConceptStore, InMemoryConceptStore};
 use crate::interlingua::InterlinguaResolver;
 use crate::llm::{attach, AnnotationSet};
 use crate::sentencizer::Sentencizer;
 use crate::vocab::Vocab;
+use fluent_concept::{ConceptStore, InMemoryConceptStore};
 use std::sync::Arc;
 
 fn vocab() -> Arc<Vocab> {

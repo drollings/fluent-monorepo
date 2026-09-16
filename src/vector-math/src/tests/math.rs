@@ -41,7 +41,7 @@ fn longer_vectors_agree_with_reference() {
     let a = [0.5f32, -1.25, 3.0, 0.0, 2.5];
     let b = [1.0f32, 0.5, -2.0, 4.0, 1.5];
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let mag = a.iter().map(|x| x * x).sum::<f32>().sqrt()
-        * b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let mag =
+        a.iter().map(|x| x * x).sum::<f32>().sqrt() * b.iter().map(|x| x * x).sum::<f32>().sqrt();
     assert!((cosine_similarity_f32(&a, &b) - dot / mag).abs() < 1e-6);
 }

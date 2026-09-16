@@ -208,8 +208,7 @@ fn golden_corpus_aligns_live_tokenizer_output() {
             lfm_surfaces, g.text,
         );
         assert_eq!(
-            a.spacy_to_lfm,
-            g.spacy_to_lfm,
+            a.spacy_to_lfm, g.spacy_to_lfm,
             "golden {i} spacy_to_lfm ({:?} vs {})",
             lfm_surfaces, g.text,
         );

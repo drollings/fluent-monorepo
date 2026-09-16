@@ -47,7 +47,8 @@ fn golden_corpus_config() -> RouterConfig {
     // into the model's effective pool (no per-model selection: pool as
     // authored, so every named profile stays addressable).
     config.apply_defaults();
-    let pool = crate::instances::InstancePool::from_managers(std::collections::HashMap::new(), None);
+    let pool =
+        crate::instances::InstancePool::from_managers(std::collections::HashMap::new(), None);
     let llama = crate::instances::traits::LlamaBackend::new(
         pool,
         config.models.clone(),
@@ -87,8 +88,6 @@ fn probe(config: &RouterConfig, key: &str, instance: Option<&str>) -> (bool, Opt
         }
     }
 }
-
-
 
 #[test]
 fn local_backend_golden_corpus() {
@@ -211,13 +210,11 @@ fn llama_backend_yields_onnx_keys_on_collision() {
 fn onnx_backend_contract_without_a_session() {
     use fluent_llm::backend::{BackendCaps, InferenceBackend};
     use fluent_llm::testutil::StubSessionLoader as StubLoader;
-    let registry: crate::ort::OrtRegistry = Arc::new(fluent_llm::onnx_session::OrtSessionRegistry::new(
-        Arc::new(StubLoader),
-    ));
-    // No generative role → no backend (fail-open).
-    assert!(
-        crate::ort::OnnxBackend::from_config(&RouterConfig::default(), &registry).is_none()
+    let registry: crate::ort::OrtRegistry = Arc::new(
+        fluent_llm::onnx_session::OrtSessionRegistry::new(Arc::new(StubLoader)),
     );
+    // No generative role → no backend (fail-open).
+    assert!(crate::ort::OnnxBackend::from_config(&RouterConfig::default(), &registry).is_none());
     let corpus = golden_corpus_config();
     let backend =
         crate::ort::OnnxBackend::from_config(&corpus, &registry).expect("llm role configured");

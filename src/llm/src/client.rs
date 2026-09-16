@@ -129,7 +129,8 @@ impl LlmClient {
         messages: &[ChatMessage],
         extras: &serde_json::Value,
     ) -> Result<String, LlmError> {
-        self.chat_complete_with_extra_async(messages, Some(extras)).await
+        self.chat_complete_with_extra_async(messages, Some(extras))
+            .await
     }
 
     /// Core async chat completion. `extras` (per-call body params) are merged

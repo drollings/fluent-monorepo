@@ -28,7 +28,8 @@ pub struct YagoView {
 impl YagoView {
     /// Load from `path` via safe `std::fs::read` + simple TTL parse (hermetic `n2` fixture). Validates `YSM1` header if present; otherwise parses TTL directly.
     pub fn load(path: &Path) -> Result<Self, OntologyError> {
-        let data = std::fs::read(path).map_err(|e| OntologyError::YagoView(format!("read yago {}: {e}", path.display())))?;
+        let data = std::fs::read(path)
+            .map_err(|e| OntologyError::YagoView(format!("read yago {}: {e}", path.display())))?;
         // If file starts with YSM1 magic, decode postcard/fst
         // For hermetic n2, file is TTL; parse streaming.
         let text = String::from_utf8_lossy(&data);
@@ -37,11 +38,15 @@ impl YagoView {
         }
         // Try header check
         if data.len() >= 44 {
-            let magic = u32::from_le_bytes(data[0..4].try_into().map_err(|_| {
-                OntologyError::YagoView("short YaGO header".into())
-            })?);
+            let magic = u32::from_le_bytes(
+                data[0..4]
+                    .try_into()
+                    .map_err(|_| OntologyError::YagoView("short YaGO header".into()))?,
+            );
             if magic == 0x5953_4D31 {
-                return Err(OntologyError::YagoView("YSM1 binary decode not yet wired — use TTL fixture".into()));
+                return Err(OntologyError::YagoView(
+                    "YSM1 binary decode not yet wired — use TTL fixture".into(),
+                ));
             }
         }
         Ok(Self::from_ttl_str(&text))
@@ -54,16 +59,17 @@ impl YagoView {
         for (subject_iri, object_iri) in edges {
             let subject_id = yago_class_id_for_iri(&subject_iri);
             let object_id = yago_class_id_for_iri(&object_iri);
-            classes.entry(iri_to_curie(&subject_iri)).or_insert(subject_id);
-            classes.entry(iri_to_curie(&object_iri)).or_insert(object_id);
+            classes
+                .entry(iri_to_curie(&subject_iri))
+                .or_insert(subject_id);
+            classes
+                .entry(iri_to_curie(&object_iri))
+                .or_insert(object_id);
             hierarchy_edges.push((subject_id, object_id));
         }
         // Build the subclass closure through the shared hierarchy index.
         let hierarchy = HierarchyIndex::from_edges(hierarchy_edges);
-        Self {
-            classes,
-            hierarchy,
-        }
+        Self { classes, hierarchy }
     }
     pub fn resolve_curie(&self, curie: &str) -> Option<InterlinguaId> {
         self.classes.get(curie).copied()
@@ -79,9 +85,11 @@ impl YagoView {
         self.hierarchy.is_subclass_of(&child, &parent)
     }
 
-    pub fn class_count(&self) -> usize { self.classes.len() }
-    pub fn classes_iter(&self) -> impl Iterator<Item=(String, InterlinguaId)> + '_ {
-        self.classes.iter().map(|(k,v)| (k.clone(), *v))
+    pub fn class_count(&self) -> usize {
+        self.classes.len()
+    }
+    pub fn classes_iter(&self) -> impl Iterator<Item = (String, InterlinguaId)> + '_ {
+        self.classes.iter().map(|(k, v)| (k.clone(), *v))
     }
 }
 

@@ -7,20 +7,24 @@
 //! `DEFAULT_HNSW_THRESHOLD = 512`) is pinned by unit tests; this bench
 //! supplies the timing evidence behind it.
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluent_db::hnsw::HnswIndex;
-use fluent_db::vector::{QuantizedEmbedding, knn_brute_force_q8};
+use fluent_db::vector::{knn_brute_force_q8, QuantizedEmbedding};
+use std::hint::black_box;
 
 const DIMS: usize = 384;
 const K: usize = 7;
 
 /// Deterministic pseudo-vector (LCG over the seed; no RNG dependency).
 fn synthetic(seed: u64) -> Vec<f32> {
-    let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let mut state = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     (0..DIMS)
         .map(|_| {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((state >> 33) as f32) / (u32::MAX as f32) - 0.5
         })
         .collect()
@@ -30,8 +34,10 @@ fn bench_hnsw_vs_brute(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("hnsw_vs_brute_k7_dims384");
     for size in [128usize, 512, 2048] {
         let vectors: Vec<Vec<f32>> = (0..size as u64).map(synthetic).collect();
-        let quantized: Vec<QuantizedEmbedding> =
-            vectors.iter().map(|v| QuantizedEmbedding::from_f32(v)).collect();
+        let quantized: Vec<QuantizedEmbedding> = vectors
+            .iter()
+            .map(|v| QuantizedEmbedding::from_f32(v))
+            .collect();
         let query = synthetic(0xC0FFEE);
 
         // Agreement (computed once, printed for the record): HNSW top-1
@@ -48,8 +54,14 @@ fn bench_hnsw_vs_brute(criterion: &mut Criterion) {
         .into_iter()
         .map(|(id, _)| id)
         .collect();
-        let hnsw_top1: Vec<usize> = index.search(&query, 1).into_iter().map(|(id, _)| id).collect();
-        let agreement = hnsw_top1.first().is_some_and(|top| brute_top3.contains(top));
+        let hnsw_top1: Vec<usize> = index
+            .search(&query, 1)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        let agreement = hnsw_top1
+            .first()
+            .is_some_and(|top| brute_top3.contains(top));
         println!("size {size}: hnsw-top1-in-brute-top3 = {agreement}");
 
         group.bench_with_input(BenchmarkId::new("brute_q8", size), &size, |bencher, _| {

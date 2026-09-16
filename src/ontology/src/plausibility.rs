@@ -20,7 +20,9 @@ use fluent_concept::{ConceptStore, ConceptStoreState, PlausibilityTriple, Scored
 use crate::normalize::lemma_to_curies;
 
 /// Re-export of the shared scoring input for owner-side callers.
-pub use fluent_concept::{PlausibilityTriple as PlausibilityInput, ScoredLemma as PlausibilityLemma};
+pub use fluent_concept::{
+    PlausibilityTriple as PlausibilityInput, ScoredLemma as PlausibilityLemma,
+};
 
 /// Score `triples` against the YaGO taxonomy: for each triple, test whether
 /// the subject/object lemmas are known in `store`
@@ -33,10 +35,7 @@ pub use fluent_concept::{PlausibilityTriple as PlausibilityInput, ScoredLemma as
 /// When `store` is in `Loading` state the call returns `None` (provisional —
 /// taxonomy not yet ready, mirrors `FrameKey` provisional gating).
 #[must_use]
-pub fn score_plausibility(
-    triples: &[PlausibilityTriple],
-    store: &dyn ConceptStore,
-) -> Option<f64> {
+pub fn score_plausibility(triples: &[PlausibilityTriple], store: &dyn ConceptStore) -> Option<f64> {
     if triples.is_empty() {
         return None;
     }
@@ -47,7 +46,12 @@ pub fn score_plausibility(
     for t in triples {
         let subj_known = t.subject.as_ref().is_some_and(|s| lemma_known(s, store));
         let obj_known = t.object.as_ref().is_some_and(|o| lemma_known(o, store));
-        let triple_score = match (subj_known, obj_known, t.subject.is_some(), t.object.is_some()) {
+        let triple_score = match (
+            subj_known,
+            obj_known,
+            t.subject.is_some(),
+            t.object.is_some(),
+        ) {
             // Both arguments present and known, or the single structurally
             // present argument resolved — fully plausible.
             (true, true, true, true) | (true, _, true, false) | (_, true, false, true) => 1.0,
@@ -58,7 +62,11 @@ pub fn score_plausibility(
             // No arguments (verbless or bare predicate) — predicate-only triple
             // is vacuously plausible when the predicate lemma itself is known.
             (_, _, false, false) => {
-                if lemma_known(&t.predicate, store) { 1.0 } else { 0.0 }
+                if lemma_known(&t.predicate, store) {
+                    1.0
+                } else {
+                    0.0
+                }
             }
         };
         scores.push(triple_score);

@@ -361,10 +361,7 @@ mod tests {
     }
 
     fn write_doc(json_dir: &Path, rel_path: &str, comment: Option<&str>, skills: &[&str]) {
-        let json_path = json_dir
-            .join("src")
-            .join(rel_path)
-            .with_extension("json");
+        let json_path = json_dir.join("src").join(rel_path).with_extension("json");
         std::fs::create_dir_all(json_path.parent().expect("parent")).expect("mkdir");
         let skills_json: Vec<serde_json::Value> = skills
             .iter()

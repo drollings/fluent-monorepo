@@ -29,7 +29,10 @@ pub mod attrs;
 /// read-only view import — resolver/frame/triple/yago-stage read through it;
 /// boot-only registration is owned elsewhere. The re-export below is a
 /// backward-compat alias; new code should import from `fluent_concept`.
-pub use fluent_concept::{ConceptStore, ConceptStoreError, InMemoryConceptStore, PlausibilityTriple, ScoredLemma, TaxonomyHierarchy};
+pub use fluent_concept::{
+    ConceptStore, ConceptStoreError, InMemoryConceptStore, PlausibilityTriple, ScoredLemma,
+    TaxonomyHierarchy,
+};
 pub mod doc;
 pub mod entity_gate;
 pub mod error;
@@ -38,34 +41,38 @@ pub mod hash;
 pub mod interlingua;
 pub mod labels;
 pub mod lang;
-pub mod lemmatizer;
 mod lemma_blob;
+pub mod lemmatizer;
 pub mod lex_attrs;
 pub mod taxonomy_blob;
 pub mod triple;
-pub use triple::{build_plausibility_inputs, extract_triples, semantic_plausibility_via_fetch, PlausibilityFetch, Triple};
-pub mod yago_resolve;
+pub use triple::{
+    build_plausibility_inputs, extract_triples, semantic_plausibility_via_fetch, PlausibilityFetch,
+    Triple,
+};
+pub mod cache;
 pub mod lexeme;
 pub mod llm;
 pub mod morph;
 pub mod ortho;
 pub mod pipeline;
-pub mod cache;
-pub mod routing;
-pub mod review;
 pub mod retrieval;
+pub mod review;
+pub mod routing;
 pub mod sentencizer;
 pub mod strings;
 pub mod tag_map;
 pub mod tokenizer;
 pub mod validate;
 pub mod vocab;
+pub mod yago_resolve;
 
 pub use arc_eager::{
     infer_pos, ArcEagerAction, ArcEagerAnnotator, ArcEagerMove, ArcEagerRung, ArcEagerState,
     DepLabels, DeterministicOracle, ParseConfidence,
 };
 pub use attrs::Attribute;
+pub use cache::{span_key, SpanCacheGet, SpanCacheInvalidate, SpanCachePut, SpanCacheSeam};
 pub use doc::{
     dep_in, dep_is, get_token_attr, lemma_of, sentence_root, sentence_spans,
     set_children_from_heads, set_token_attr, Doc, SentStart, TokenRecord,
@@ -79,31 +86,32 @@ pub use frame::{
 pub use hash::{hash_utf8, murmur64a, HASH_SEED};
 pub use interlingua::{CollisionNote, InterlinguaResolver};
 pub use labels::{DepLabelSet, DepRel, EntIoB, NerType, Upos};
+pub use lang::genesis::{GenesisEntry, GenesisIndex, InMemoryGenesisIndex};
 pub use lemmatizer::{Lemmatizer, LemmatizerMode};
 pub use lex_attrs::word_shape;
 pub use lexeme::{Lexeme, LexemeFlags, Lexicon, LexiconConfig, OOV_RANK};
-pub use llm::{AnnotationRecord, AnnotationResult, AnnotationSet, AnnotationSource, LlmRefinePrompt};
+pub use llm::{
+    AnnotationRecord, AnnotationResult, AnnotationSet, AnnotationSource, LlmRefinePrompt,
+};
 pub use morph::Morphology;
 pub use pipeline::{
-    AnnotateError, AnnotateStage, AnnotationRefiner, AnnotationRung, AttachStage,
-    ConfidenceReason, EncoderFetchSync, EncoderResidualFetch, EncoderResidualRung,
-    EncoderRung, FrameStage, LlmFetch, LlmFetchSync, LlmRefineFetchSync, LlmRefineRequest,
-    LlmRefineRung, LlmRung, NlpPipeline, NlpPipelineConfig, PipelineError,
+    refine_focus, refine_reason, should_refine, AnnotateError, AnnotateStage, AnnotationRefiner,
+    AnnotationRung, AttachStage, ConfidenceReason, EncoderFetchSync, EncoderResidualFetch,
+    EncoderResidualRung, EncoderRung, FrameStage, LlmFetch, LlmFetchSync, LlmRefineFetchSync,
+    LlmRefineRequest, LlmRefineRung, LlmRung, NlpPipeline, NlpPipelineConfig, PipelineError,
     PipelineStageFailure, PipelineState, RefineMetrics, RefineMetricsSnapshot, RefineMode,
     RefinePolicy, RefineReason, RefineSeams, ResolveStage, RuleAnnotator, RuleRung,
-    SentencizeStage, StagePipeline, TaskValueReason, refine_focus, refine_reason, should_refine,
-};
-pub use cache::{span_key, SpanCacheGet, SpanCacheInvalidate, SpanCachePut, SpanCacheSeam};
-pub use lang::genesis::{GenesisEntry, GenesisIndex, InMemoryGenesisIndex};
-pub use routing::{extract_routing_signals, InterlinguaSignal, RoutingSignal};
-pub use review::{
-    apply_corrections, apply_edits, review_prompt, Correction, CorrectionField, CorrectionIndex,
-    LinkedEntity, ParseReview, ReviewStatus,
+    SentencizeStage, StagePipeline, TaskValueReason,
 };
 /// Pure lemma-grep helpers only (M4): the fuzzy axis, hit tagging, and the
 /// cross-check combiner live with the router retrieval owner beside
 /// `NodeRetrievalService`.
 pub use retrieval::{lemma_grep, LemmaGrepHit, Span};
+pub use review::{
+    apply_corrections, apply_edits, review_prompt, Correction, CorrectionField, CorrectionIndex,
+    LinkedEntity, ParseReview, ReviewStatus,
+};
+pub use routing::{extract_routing_signals, InterlinguaSignal, RoutingSignal};
 pub use sentencizer::Sentencizer;
 pub use strings::StringStore;
 pub use tag_map::TagMap;

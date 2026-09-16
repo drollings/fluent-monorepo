@@ -293,7 +293,10 @@ pub struct PipelineResult {
 }
 
 pub type StageProducer = Arc<
-    dyn Fn(&WorkContext, &[StageDecision]) -> Result<(StageDecision, Option<RoutingTarget>), WorkError>
+    dyn Fn(
+            &WorkContext,
+            &[StageDecision],
+        ) -> Result<(StageDecision, Option<RoutingTarget>), WorkError>
         + Send
         + Sync,
 >;
@@ -327,7 +330,10 @@ impl PipelineOrchestrator {
         }
     }
 
-    pub fn with_producers(stages: Vec<Arc<dyn Component>>, producers: Vec<Option<StageProducer>>) -> Self {
+    pub fn with_producers(
+        stages: Vec<Arc<dyn Component>>,
+        producers: Vec<Option<StageProducer>>,
+    ) -> Self {
         Self {
             name: ArcIntern::from("pipeline.orchestrator"),
             stages,
@@ -741,8 +747,8 @@ impl_component!(PipelineOrchestrator);
 mod tests;
 
 #[cfg(test)]
-#[path = "../tests/stage_context.rs"]
-mod stage_context_tests;
-#[cfg(test)]
 #[path = "../tests/qualified_model_id_roundtrip.rs"]
 mod qualified_model_id_roundtrip;
+#[cfg(test)]
+#[path = "../tests/stage_context.rs"]
+mod stage_context_tests;

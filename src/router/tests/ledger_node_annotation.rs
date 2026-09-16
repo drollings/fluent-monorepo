@@ -12,12 +12,12 @@
 use super::*;
 use std::sync::Arc;
 
+use spacy_rs::llm::attach;
 use spacy_rs::{
-    extract_routing_signals, hash_utf8, AnnotationResult, AnnotationSet, AnnotationSource,
-    Doc, LexiconConfig, LlmFetchSync, NlpPipeline, ParseConfidence, RefineMode, RefinePolicy,
+    extract_routing_signals, hash_utf8, AnnotationResult, AnnotationSet, AnnotationSource, Doc,
+    LexiconConfig, LlmFetchSync, NlpPipeline, ParseConfidence, RefineMode, RefinePolicy,
     Sentencizer, Vocab,
 };
-use spacy_rs::llm::attach;
 
 fn vocab() -> Arc<Vocab> {
     Arc::new(Vocab::new(LexiconConfig::default()))
@@ -63,7 +63,16 @@ fn annotation_for(doc: &Doc) -> NodeAnnotation {
 
 #[test]
 fn materializes_from_doc_result_and_signals() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let ann = annotation_for(&doc);
 
@@ -71,7 +80,10 @@ fn materializes_from_doc_result_and_signals() {
     assert_eq!(ann.records.len(), 8);
     assert_eq!(ann.records.records()[0].text, "Show");
     assert_eq!(ann.source, AnnotationSource::Llm);
-    assert!(ann.token_confidence.is_none(), "LLM rung carries no confidence");
+    assert!(
+        ann.token_confidence.is_none(),
+        "LLM rung carries no confidence"
+    );
     assert!(ann.parse_confidence.is_none());
     assert_eq!(ann.collision_count, 0);
 
@@ -89,7 +101,16 @@ fn materializes_from_doc_result_and_signals() {
 
 #[test]
 fn carries_parse_confidence_from_result() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let mut doc = attached(FULL_PARSE, &tokens);
     // Stamp per-token confidence so the extracted signals carry it too.
     for i in 0..doc.len() {
@@ -129,7 +150,16 @@ fn carries_parse_confidence_from_result() {
 
 #[test]
 fn carries_collision_count_from_result() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let mut result = AnnotationResult::new(
         AnnotationSet::parse_json(FULL_PARSE).expect("parse"),
@@ -148,7 +178,16 @@ fn carries_collision_count_from_result() {
 /// data) and asserts the shared `Arc` read path yields an owned value.
 #[test]
 fn immutable_plain_data_shared_via_arc() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let ann = annotation_for(&doc);
     let shared: Arc<NodeAnnotation> = Arc::new(ann);
@@ -164,13 +203,25 @@ fn immutable_plain_data_shared_via_arc() {
 
 #[test]
 fn primary_signal_single_sentence_is_the_signal() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let ann = annotation_for(&doc);
     let primary = ann.primary_signal().expect("one signal");
     assert_eq!(primary.predicate, "show");
     // The primary signal is exactly the whole (single-sentence) text.
-    assert_eq!(primary.sentence, "Show me the sales report for yesterday please");
+    assert_eq!(
+        primary.sentence,
+        "Show me the sales report for yesterday please"
+    );
 }
 
 #[test]
@@ -189,7 +240,9 @@ fn primary_signal_multi_sentence_picks_most_confident() {
         {"text":"now","pos":"adv","dep":"advmod","head":-2,"lemma":"now"},
         {"text":".","pos":"punct","dep":"punct","head":-4,"lemma":"."}
     ]"#;
-    let tokens = ["Show", "me", "the", "report", ".", "I", "need", "it", "now", "."];
+    let tokens = [
+        "Show", "me", "the", "report", ".", "I", "need", "it", "now", ".",
+    ];
     let mut doc = attached(json, &tokens);
     // Stamp per-token confidence: sentence 1 (tokens 0..5) conf 0.4, sentence 2 (5..10) conf 0.9.
     for i in 0..doc.len() {
@@ -199,7 +252,10 @@ fn primary_signal_multi_sentence_picks_most_confident() {
         AnnotationSet::parse_json(json).expect("parse"),
         AnnotationSource::ArcEager,
     )
-    .with_confidence(Some(vec![0.4; 5].into_iter().chain(vec![0.9; 5]).collect()), None);
+    .with_confidence(
+        Some(vec![0.4; 5].into_iter().chain(vec![0.9; 5]).collect()),
+        None,
+    );
     let signals = extract_routing_signals(&doc);
     let ann = NodeAnnotation::from_doc(&doc, &result, signals);
 
@@ -236,7 +292,10 @@ fn primary_signal_tie_breaks_to_first() {
     let ann = NodeAnnotation::from_doc(&doc, &result, signals);
     assert_eq!(ann.signals.len(), 2);
     let primary = ann.primary_signal().expect("two signals");
-    assert_eq!(primary.predicate, "show", "equal confidence keeps the first");
+    assert_eq!(
+        primary.predicate, "show",
+        "equal confidence keeps the first"
+    );
 }
 
 #[test]
@@ -253,12 +312,26 @@ fn primary_signal_none_when_no_signals() {
 #[test]
 fn primary_signal_falls_back_to_first_when_no_confidence() {
     // No per-token confidence (LLM rung) → primary is the first signal.
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let ann = annotation_for(&doc);
     let primary = ann.primary_signal().expect("one signal");
     assert_eq!(primary.predicate, "show");
-    assert!(ann.signals[0].interlingua.as_ref().unwrap().confidence.is_none());
+    assert!(ann.signals[0]
+        .interlingua
+        .as_ref()
+        .unwrap()
+        .confidence
+        .is_none());
 }
 
 // ── Ladder round-trip: spacy-rs produces the inputs, the ledger consumes ──
@@ -282,7 +355,12 @@ fn llm_first_policy() -> RefinePolicy {
 fn node_annotation_materializes_from_sync_ladder_run() {
     let pipeline = en_pipeline();
     let (doc, result) = pipeline
-        .process_sync_with_confidence("Show me the sales report", None, None, RefinePolicy::default())
+        .process_sync_with_confidence(
+            "Show me the sales report",
+            None,
+            None,
+            RefinePolicy::default(),
+        )
         .expect("sync");
     let ann = node_annotation(&doc, &result);
 
@@ -337,7 +415,16 @@ fn node_annotation_materializes_from_llm_rung_with_real_deps() {
 /// (the same slot `ContentNodeStore::annotation_for` installs into).
 #[test]
 fn node_annotation_rides_the_content_node_overlay_slot() {
-    let tokens = ["Show", "me", "the", "sales", "report", "for", "yesterday", "please"];
+    let tokens = [
+        "Show",
+        "me",
+        "the",
+        "sales",
+        "report",
+        "for",
+        "yesterday",
+        "please",
+    ];
     let doc = attached(FULL_PARSE, &tokens);
     let ann = annotation_for(&doc);
     let node = fluent_types::ContentNode {

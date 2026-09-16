@@ -99,8 +99,7 @@ pub fn fuse_candidates(mut candidates: Vec<RecallCandidate>) -> Vec<RecallCandid
         // The single sanctioned composite wrap: kernel output in,
         // ordinal out. Nothing else in the tree constructs this type
         // from a magnitude except explicit test fixtures.
-        candidate.score =
-            RrfScore::new(scores.get(&candidate.id).copied().unwrap_or(0.0));
+        candidate.score = RrfScore::new(scores.get(&candidate.id).copied().unwrap_or(0.0));
         candidate.forced = candidate
             .recall
             .iter()

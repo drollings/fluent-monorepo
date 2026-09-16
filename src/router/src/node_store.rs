@@ -30,12 +30,15 @@ use fluent_db::store::SqliteStore;
 use fluent_db::vector::knn_brute_force;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::EmbeddingProvider;
-use fluent_types::{AnnotationClaim, ClaimStatus, ContentNode, KnnHit, NodeId, OriginRole, OverlayKind, OverlayStatus};
+use fluent_types::{
+    AnnotationClaim, ClaimStatus, ContentNode, KnnHit, NodeId, OriginRole, OverlayKind,
+    OverlayStatus,
+};
 use fluent_wvr::ArcIntern;
 use rusqlite::Connection;
 
-use crate::ledger::correction_index::{upsert_correction_row, CorrectionRow};
 use crate::ledger::annotations::AnnotationStore;
+use crate::ledger::correction_index::{upsert_correction_row, CorrectionRow};
 use crate::ledger::{
     CompactionStrategy, LedgerEntry, LedgerError, RecencyCompaction, LAZY_LOD_RANGE,
     LOD0_FULL_TEXT, LOD5_LABEL,
@@ -123,16 +126,16 @@ impl ContentNodeStore {
     /// migrations, and hydrate the in-memory maps from every row.
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, LedgerError> {
         let db_path = path.into();
-        let store = Arc::new(SqliteStore::open(&db_path).map_err(|e| LedgerError::Db(e.to_string()))?);
+        let store =
+            Arc::new(SqliteStore::open(&db_path).map_err(|e| LedgerError::Db(e.to_string()))?);
         Self::open_with_store(Some(store))
     }
 
     /// Open an in-memory (non-durable-across-processes) store. Used by tests
     /// and ephemeral ledgers.
     pub fn open_in_memory() -> Result<Self, LedgerError> {
-        let store = Arc::new(
-            SqliteStore::open_in_memory().map_err(|e| LedgerError::Db(e.to_string()))?,
-        );
+        let store =
+            Arc::new(SqliteStore::open_in_memory().map_err(|e| LedgerError::Db(e.to_string()))?);
         Self::open_with_store(Some(store))
     }
 
@@ -292,7 +295,10 @@ impl ContentNodeStore {
             // Filter stale entries (nodes whose overlays have since become ready/failed)
             // and prune the set so a second backfill is idempotent.
             let original_len = pending.len();
-            let filtered: Vec<NodeId> = pending.into_iter().filter(|id| self.needs_overlay(*id)).collect();
+            let filtered: Vec<NodeId> = pending
+                .into_iter()
+                .filter(|id| self.needs_overlay(*id))
+                .collect();
             // Prune stale entries from the live set when any were filtered
             if filtered.len() != original_len {
                 let mut guard = lock_write(&self.overlay_pending);
@@ -348,7 +354,9 @@ impl ContentNodeStore {
         derive: impl FnOnce(&str) -> Result<T, String>,
         install: impl FnOnce(&mut ContentNode, T),
     ) -> Result<Option<T>, LedgerError> {
-        let arc = self.get_node(node_id).ok_or(LedgerError::NotFound(node_id))?;
+        let arc = self
+            .get_node(node_id)
+            .ok_or(LedgerError::NotFound(node_id))?;
 
         // 1. Read-guard fast path.
         {
@@ -445,9 +453,16 @@ impl ContentNodeStore {
             },
             move |text| {
                 let (doc, result) = pipeline
-                    .process_sync_with_confidence(text, None, None, spacy_rs::RefinePolicy::default())
+                    .process_sync_with_confidence(
+                        text,
+                        None,
+                        None,
+                        spacy_rs::RefinePolicy::default(),
+                    )
                     .map_err(|e| e.to_string())?;
-                Ok(Arc::new(crate::ledger::node_annotation::node_annotation(&doc, &result)))
+                Ok(Arc::new(crate::ledger::node_annotation::node_annotation(
+                    &doc, &result,
+                )))
             },
             |node, ann| {
                 node.annotation = Some(ann);
@@ -486,7 +501,10 @@ impl ContentNodeStore {
     /// permanently `failed` (no retry), or derivation failed. The one-call
     /// summary is scrubbed through the same `scrub_for_ledger` gate as every
     /// other ledger write before install (OVERLAYS §9).
-    pub fn llm_overlay_for(&self, node_id: NodeId) -> Result<Option<serde_json::Value>, LedgerError> {
+    pub fn llm_overlay_for(
+        &self,
+        node_id: NodeId,
+    ) -> Result<Option<serde_json::Value>, LedgerError> {
         let Some(backend) = lock(&self.overlay_llm).clone() else {
             return Ok(None); // fail-open: no backend wired
         };
@@ -588,37 +606,37 @@ impl ContentNodeStore {
         out
     }
 
-/// Access the durable backing (for the facade's flat view, the poison test
-/// helper, and the shared `SqliteConceptStore`/`SqliteCorrectionIndex` — all
-/// three share one connection). `None` for an ephemeral store.
-pub(crate) fn durable(&self) -> Option<&Arc<SqliteStore>> {
-    self.durable.as_ref()
-}
+    /// Access the durable backing (for the facade's flat view, the poison test
+    /// helper, and the shared `SqliteConceptStore`/`SqliteCorrectionIndex` — all
+    /// three share one connection). `None` for an ephemeral store.
+    pub(crate) fn durable(&self) -> Option<&Arc<SqliteStore>> {
+        self.durable.as_ref()
+    }
 
-/// A clone of the shared durable connection, so the `SqliteConceptStore` and
-/// `SqliteCorrectionIndex` operate over the *same* connection as the ledger
-/// (one connection, many typed views — atomic corrections, §12.6). The binary
-/// boot composes these at startup.
-pub fn shared_sqlite(&self) -> Option<Arc<SqliteStore>> {
-    self.durable().cloned()
-}
+    /// A clone of the shared durable connection, so the `SqliteConceptStore` and
+    /// `SqliteCorrectionIndex` operate over the *same* connection as the ledger
+    /// (one connection, many typed views — atomic corrections, §12.6). The binary
+    /// boot composes these at startup.
+    pub fn shared_sqlite(&self) -> Option<Arc<SqliteStore>> {
+        self.durable().cloned()
+    }
 
-/// Latest `nlp_parse` node id for a session (M9: the single store-owned
-/// spelling of the parse-lookup query; the HTTP handler calls this instead
-/// of inline SQL).
-pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
-    let store = self.shared_sqlite()?;
-    let row = store
-        .query_row(
-            "SELECT node_id FROM ledger \
+    /// Latest `nlp_parse` node id for a session (M9: the single store-owned
+    /// spelling of the parse-lookup query; the HTTP handler calls this instead
+    /// of inline SQL).
+    pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
+        let store = self.shared_sqlite()?;
+        let row = store
+            .query_row(
+                "SELECT node_id FROM ledger \
              WHERE session_id = ?1 AND json_extract(metadata, '$.kind') = 'nlp_parse' \
              ORDER BY node_id DESC LIMIT 1",
-            rusqlite::params![session_id],
-            |r| r.get::<_, i64>(0),
-        )
-        .ok()??;
-    Some(NodeId::from_int(row))
-}
+                rusqlite::params![session_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .ok()??;
+        Some(NodeId::from_int(row))
+    }
 
     /// Load every persisted row into the maps, seeding `next_id` from
     /// `MAX(node_id) + 1` (pre-existing restart-collision bug fix).
@@ -646,7 +664,12 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
                 // Rows written before the `content_hash` field default to 0;
                 // stamp the hash from LOD0 so the annotation keying domain is
                 // correct even for rows written before the field existed.
-                node.content_hash = content_hash_of(node.lod.get(LOD0_FULL_TEXT as usize).map(String::as_str).unwrap_or_default());
+                node.content_hash = content_hash_of(
+                    node.lod
+                        .get(LOD0_FULL_TEXT as usize)
+                        .map(String::as_str)
+                        .unwrap_or_default(),
+                );
                 let session_key = node.session_id.as_deref().map(ArcIntern::from);
                 let role_key = node.role.as_ref().map(|r| ArcIntern::from(r.as_str()));
                 max_id = max_id.max(id);
@@ -677,14 +700,14 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
                             .is_none();
                     // Nodes already marked failed are not pending — derive_overlay
                     // short-circuits them and they should not be backfilled.
-                    let failed = [
-                        OverlayKind::Spacy,
-                        OverlayKind::Embedding,
-                        OverlayKind::Llm,
-                    ]
-                    .iter()
-                    .all(|k| guard.overlay(*k).status == OverlayStatus::Failed);
-                    if needs && !failed { Some(id) } else { None }
+                    let failed = [OverlayKind::Spacy, OverlayKind::Embedding, OverlayKind::Llm]
+                        .iter()
+                        .all(|k| guard.overlay(*k).status == OverlayStatus::Failed);
+                    if needs && !failed {
+                        Some(id)
+                    } else {
+                        None
+                    }
                 })
                 .collect()
         };
@@ -742,8 +765,13 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
             node.acceptance_score = score;
             if !scrubbed_text.is_empty() {
                 node.lod[LOD0_FULL_TEXT as usize].clone_from(&scrubbed_text);
-                node.lod[LOD5_LABEL as usize] =
-                    derive_label(node.role.as_ref().map(OriginRole::as_str).unwrap_or_default(), &scrubbed_text);
+                node.lod[LOD5_LABEL as usize] = derive_label(
+                    node.role
+                        .as_ref()
+                        .map(OriginRole::as_str)
+                        .unwrap_or_default(),
+                    &scrubbed_text,
+                );
                 node.active_lod = Some(LOD0_FULL_TEXT);
             }
         })?;
@@ -792,7 +820,9 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
         let Some(store) = self.shared_sqlite() else {
             return Ok(None);
         };
-        let node = self.snapshot(node_id).ok_or(LedgerError::NotFound(node_id))?;
+        let node = self
+            .snapshot(node_id)
+            .ok_or(LedgerError::NotFound(node_id))?;
         let status = AnnotationStore::new(store)
             .write(node.content_hash, claim)
             .map_err(|e| LedgerError::Db(e.to_string()))?;
@@ -837,9 +867,7 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
 
     /// Whether the HNSW index has been built (adaptive dispatch is active).
     pub fn is_hnsw_built(&self) -> bool {
-        lock_read(&self.hnsw)
-            .as_ref()
-            .is_some_and(|h| h.is_built())
+        lock_read(&self.hnsw).as_ref().is_some_and(|h| h.is_built())
     }
 
     /// Ensure the HNSW index exists when `|store| > threshold` by bulk-building
@@ -1121,7 +1149,9 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
             // held across an LLM call (R7), and a concurrent
             // `set_summarizer` swaps the store's handle without affecting
             // this in-flight call.
-            let summarizer = lock(&self.summarizer).clone().ok_or(LedgerError::NoSummarizer)?;
+            let summarizer = lock(&self.summarizer)
+                .clone()
+                .ok_or(LedgerError::NoSummarizer)?;
             eprintln!("DBG: guard dropped, calling summarize");
             summarizer
                 .summarize_text(&full_text)
@@ -1401,7 +1431,15 @@ fn insert_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
         .get(LOD5_LABEL as usize)
         .cloned()
         .filter(|l| !l.is_empty())
-        .unwrap_or_else(|| derive_label(node.role.as_ref().map(OriginRole::as_str).unwrap_or_default(), content));
+        .unwrap_or_else(|| {
+            derive_label(
+                node.role
+                    .as_ref()
+                    .map(OriginRole::as_str)
+                    .unwrap_or_default(),
+                content,
+            )
+        });
 
     fluent_db::query::execute(
         conn,
@@ -1413,7 +1451,10 @@ fn insert_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
             node.id.map(NodeId::as_int),
             node.session_id.clone().unwrap_or_default(),
             node.request_id.clone().unwrap_or_default(),
-            node.role.as_ref().map(|r| r.as_str().to_string()).unwrap_or_default(),
+            node.role
+                .as_ref()
+                .map(|r| r.as_str().to_string())
+                .unwrap_or_default(),
             content,
             node.turn_index.unwrap_or(0) as i64,
             node.accepted.unwrap_or(true),
@@ -1447,7 +1488,15 @@ fn update_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
         .get(LOD5_LABEL as usize)
         .cloned()
         .filter(|l| !l.is_empty())
-        .unwrap_or_else(|| derive_label(node.role.as_ref().map(OriginRole::as_str).unwrap_or_default(), content));
+        .unwrap_or_else(|| {
+            derive_label(
+                node.role
+                    .as_ref()
+                    .map(OriginRole::as_str)
+                    .unwrap_or_default(),
+                content,
+            )
+        });
 
     fluent_db::query::execute(
         conn,
@@ -1459,7 +1508,10 @@ fn update_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
         rusqlite::params![
             node.session_id.clone().unwrap_or_default(),
             node.request_id.clone().unwrap_or_default(),
-            node.role.as_ref().map(|r| r.as_str().to_string()).unwrap_or_default(),
+            node.role
+                .as_ref()
+                .map(|r| r.as_str().to_string())
+                .unwrap_or_default(),
             content,
             node.turn_index.unwrap_or(0) as i64,
             node.accepted.unwrap_or(true),
@@ -1575,7 +1627,12 @@ fn ensure_lod_eager(node: &mut ContentNode) {
         return;
     }
     if node.lod[LOD5_LABEL as usize].is_empty() {
-        let role = node.role.as_ref().map(OriginRole::as_str).unwrap_or_default().to_string();
+        let role = node
+            .role
+            .as_ref()
+            .map(OriginRole::as_str)
+            .unwrap_or_default()
+            .to_string();
         node.lod[LOD5_LABEL as usize] = derive_label(&role, &content);
     }
     if node.active_lod.is_none() {

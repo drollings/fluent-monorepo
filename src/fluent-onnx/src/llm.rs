@@ -88,10 +88,7 @@ impl LlmParams {
 /// `ort::value::Value` (the type-erased `DynValue`) — the same shape a
 /// `session.run` accepts and returns.
 pub(crate) trait OnnxRun: Send + Sync {
-    fn run(
-        &self,
-        inputs: Vec<(String, Value)>,
-    ) -> Result<Vec<(String, Value)>, OrtError>;
+    fn run(&self, inputs: Vec<(String, Value)>) -> Result<Vec<(String, Value)>, OrtError>;
 }
 
 /// Real session-backed runner: serializes every run on the shared
@@ -101,10 +98,7 @@ struct RealSessionRun {
 }
 
 impl OnnxRun for RealSessionRun {
-    fn run(
-        &self,
-        inputs: Vec<(String, Value)>,
-    ) -> Result<Vec<(String, Value)>, OrtError> {
+    fn run(&self, inputs: Vec<(String, Value)>) -> Result<Vec<(String, Value)>, OrtError> {
         let mut session = self
             .session
             .lock()
@@ -157,13 +151,17 @@ impl OrtLlmSession {
         let seq = ids.len();
         let mask_len = mask.len();
         let io = &self.io;
-        let mut inputs = Vec::with_capacity(3 + io.conv_layers.len() + io.attention_layers.len() * 2);
+        let mut inputs =
+            Vec::with_capacity(3 + io.conv_layers.len() + io.attention_layers.len() * 2);
         inputs.push((io.input_ids.clone(), i64tensor([batch, seq], ids.to_vec())?));
         inputs.push((
             io.attention_mask.clone(),
             i64tensor([batch, mask_len], mask.to_vec())?,
         ));
-        inputs.push((io.position_ids.clone(), i64tensor([batch, seq], positions.to_vec())?));
+        inputs.push((
+            io.position_ids.clone(),
+            i64tensor([batch, seq], positions.to_vec())?,
+        ));
 
         for &layer in &io.conv_layers {
             let data = past
@@ -278,8 +276,7 @@ impl OrtLlmSession {
         let mut past = self.capture_past(&outputs, seq);
         let n_ctx = ctx.n_ctx() as usize;
         if past.seq_len > n_ctx {
-            let dropped =
-                past.truncate(n_ctx, self.io.num_key_value_heads, self.io.head_dim);
+            let dropped = past.truncate(n_ctx, self.io.num_key_value_heads, self.io.head_dim);
             tracing::warn!(
                 target: "fluent-onnx",
                 context = %ctx.name(),
@@ -580,13 +577,10 @@ impl OnnxChatCompletion {
                 &[EOS_TOKEN_ID],
                 params,
             )?,
-            None => self.session.generate(
-                &prompt_ids,
-                grammar,
-                max_tokens,
-                &[EOS_TOKEN_ID],
-                params,
-            )?,
+            None => {
+                self.session
+                    .generate(&prompt_ids, grammar, max_tokens, &[EOS_TOKEN_ID], params)?
+            }
         };
         self.session.decode(&tokens)
     }
@@ -653,7 +647,11 @@ fn introspect_io(session: &ort::session::Session, config: &OnnxConfig) -> Result
 
 /// Validate a provided [`LlmIo`] against the graph's declared inputs/outputs —
 /// a mismatch is a loud load error.
-fn validate_io(io: &LlmIo, input_names: &[String], output_names: &[String]) -> Result<(), OrtError> {
+fn validate_io(
+    io: &LlmIo,
+    input_names: &[String],
+    output_names: &[String],
+) -> Result<(), OrtError> {
     let expect = |name: &str| -> Result<(), OrtError> {
         if input_names.iter().any(|n| n == name) {
             Ok(())
@@ -695,7 +693,11 @@ fn config_json_dims(config: &OnnxConfig) -> Result<(usize, usize, usize, usize),
         path: path.display().to_string(),
         detail: e.to_string(),
     })?;
-    let num = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).map(|x| x as usize);
+    let num = |k: &str| {
+        v.get(k)
+            .and_then(serde_json::Value::as_u64)
+            .map(|x| x as usize)
+    };
     Ok((
         num("hidden_size").unwrap_or(2048),
         num("num_heads").unwrap_or(32),
@@ -720,22 +722,37 @@ pub fn build_llm_session_from_handle(
     let session = handle
         .downcast_arc::<Mutex<ort::session::Session>>()
         .ok_or_else(|| {
-            OrtError::Other(format!("session handle for {model_key} does not hold an ort session"))
+            OrtError::Other(format!(
+                "session handle for {model_key} does not hold an ort session"
+            ))
         })?;
     let tokenizer_path = config.tokenizer_path.as_ref().ok_or_else(|| {
-        OrtError::Other(format!("onnx llm role '{model_key}' missing tokenizer_path"))
+        OrtError::Other(format!(
+            "onnx llm role '{model_key}' missing tokenizer_path"
+        ))
     })?;
     let tokenizer = LfmTokenizer::from_file(tokenizer_path, config.max_seq_len)?;
 
     let io = if let Some(io) = &config.llm_io {
-        let guard = session.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let input_names: Vec<String> = guard.inputs().iter().map(|i| i.name().to_string()).collect();
-        let output_names: Vec<String> =
-            guard.outputs().iter().map(|o| o.name().to_string()).collect();
+        let guard = session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let input_names: Vec<String> = guard
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let output_names: Vec<String> = guard
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
         validate_io(io, &input_names, &output_names)?;
         io.clone()
     } else {
-        let guard = session.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         introspect_io(&guard, config)?
     };
 

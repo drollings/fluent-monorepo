@@ -2,9 +2,7 @@ use super::*;
 use crate::ledger::ContentNodeLedger;
 
 fn store(ledger: &ContentNodeLedger) -> OverlayCandidateStore {
-    OverlayCandidateStore::new(
-        ledger.node_store().shared_sqlite().expect("shared sqlite"),
-    )
+    OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared sqlite"))
 }
 
 fn cand(node: NodeId, start: usize, entity: Option<i64>) -> OverlayCandidate {
@@ -28,7 +26,10 @@ fn write_is_first_wins() {
     let node = NodeId::from_int(1);
     let a = cand(node, 0, Some(0x0200_0000_0000_0001));
     let b = cand(node, 0, Some(0x0200_0000_0000_0001));
-    assert!(s.write_candidate(&a).expect("first insert"), "first wins inserts");
+    assert!(
+        s.write_candidate(&a).expect("first insert"),
+        "first wins inserts"
+    );
     assert!(
         !s.write_candidate(&b).expect("duplicate"),
         "a duplicate key is ignored (first-wins)"
@@ -71,7 +72,10 @@ fn status_transitions_pending_only_and_promotion_is_idempotent() {
     assert!(rows.iter().any(|r| r.status == CandidateStatus::Dismissed));
     // Promotion of an already-promoted candidate stays promoted.
     s.promote(node, &c).expect("promote again");
-    assert_eq!(s.for_node(node).expect("q")[0].status, CandidateStatus::Promoted);
+    assert_eq!(
+        s.for_node(node).expect("q")[0].status,
+        CandidateStatus::Promoted
+    );
 }
 
 #[test]
@@ -90,7 +94,10 @@ fn promote_linked_for_node_promotes_matching_entity_candidates() {
         .expect("promote");
     assert_eq!(n, 1);
     let rows = s.for_node(node).expect("query");
-    let linked = rows.iter().find(|r| r.entity_id == Some(linked_id)).unwrap();
+    let linked = rows
+        .iter()
+        .find(|r| r.entity_id == Some(linked_id))
+        .unwrap();
     assert_eq!(linked.status, CandidateStatus::Promoted);
     let other = rows.iter().find(|r| r.entity_id == Some(other_id)).unwrap();
     assert_eq!(other.status, CandidateStatus::Pending);
@@ -136,5 +143,8 @@ fn candidate_serde_round_trip() {
     let json = serde_json::to_string(&c).unwrap();
     let back: OverlayCandidate = serde_json::from_str(&json).unwrap();
     assert_eq!(back, c);
-    assert_eq!(serde_json::to_string(&ResidualKind::EntityLink).unwrap(), "\"entity_link\"");
+    assert_eq!(
+        serde_json::to_string(&ResidualKind::EntityLink).unwrap(),
+        "\"entity_link\""
+    );
 }

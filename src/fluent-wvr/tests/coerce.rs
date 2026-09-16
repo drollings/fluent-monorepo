@@ -2,8 +2,7 @@
 #[allow(unused_imports)]
 use fluent_wvr::coerce::*;
 use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 #[test]
 fn coerce_pipeline_runs_in_order() {
@@ -12,7 +11,10 @@ fn coerce_pipeline_runs_in_order() {
         "hello"
     );
     assert_eq!(
-        coerce("  'Hello'  ", &[Coercion::Trim, Coercion::StripQuotes, Coercion::Lowercase]),
+        coerce(
+            "  'Hello'  ",
+            &[Coercion::Trim, Coercion::StripQuotes, Coercion::Lowercase]
+        ),
         "hello"
     );
 }

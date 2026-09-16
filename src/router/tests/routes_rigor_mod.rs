@@ -2,9 +2,9 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::instances::stub::StubHandler;
 use crate::config::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 use crate::dag_session::DependencySession;
+use crate::instances::stub::StubHandler;
 use crate::test_stubs::StubChatBackend;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
@@ -70,7 +70,8 @@ async fn blue_returns_plain_string() {
 
 #[test]
 fn red_objections_parse_from_array() {
-    let raw = r#"[{"category": "factual", "description": "wrong", "severity": 0.8, "target_claim": 7}]"#;
+    let raw =
+        r#"[{"category": "factual", "description": "wrong", "severity": 0.8, "target_claim": 7}]"#;
     let objections = parse_objections(raw).unwrap();
     assert_eq!(objections.len(), 1);
     assert_eq!(objections[0].category, "factual");
@@ -92,18 +93,16 @@ fn red_objections_parse_from_wrapped_object() {
 
 #[test]
 fn red_objections_parse_from_fenced_json() {
-    let raw =
-        "```json\n[{\"category\": \"a\", \"description\": \"b\", \"severity\": 0.5}]\n```";
+    let raw = "```json\n[{\"category\": \"a\", \"description\": \"b\", \"severity\": 0.5}]\n```";
     let objections = parse_objections(raw).unwrap();
     assert_eq!(objections.len(), 1);
 }
 
 #[test]
 fn judge_accept_shape() {
-    let (verdict, confidence) = parse_judge(
-        r#"{"verdict": "accept", "caveats": [], "reasons": [], "confidence": 0.9}"#,
-    )
-    .unwrap();
+    let (verdict, confidence) =
+        parse_judge(r#"{"verdict": "accept", "caveats": [], "reasons": [], "confidence": 0.9}"#)
+            .unwrap();
     assert!(matches!(verdict, JudgeVerdict::Accept));
     assert_eq!(confidence, 0.9);
 }
@@ -219,10 +218,8 @@ async fn low_confidence_final_rejection_escalates() {
                 .to_string(),
         ])))
         .with_judge_backend(Arc::new(StubChatBackend::new(vec![
-            r#"{"verdict": "reject", "caveats": [], "reasons": ["x"], "confidence": 0.8}"#
-                .into(),
-            r#"{"verdict": "reject", "caveats": [], "reasons": ["x"], "confidence": 0.2}"#
-                .into(),
+            r#"{"verdict": "reject", "caveats": [], "reasons": ["x"], "confidence": 0.8}"#.into(),
+            r#"{"verdict": "reject", "caveats": [], "reasons": ["x"], "confidence": 0.2}"#.into(),
         ])))
         .with_config(test_cfg());
     let result = route.execute(&ctx("question")).await.unwrap();
@@ -312,18 +309,14 @@ async fn rewind_restores_kv_snapshot_for_real() {
     // Mirrors `dag_session::tests::test_rewind_restores_kv_snapshot_for_real`:
     // a session carrying the SnapshotStore has its stored snapshot
     // actually restored on rewind.
-    use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, SnapshotStore, KvSnapshot};
+    use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, KvSnapshot, SnapshotStore};
 
     let dir = tempfile::tempdir().unwrap();
     let src_dir = tempfile::tempdir().unwrap();
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     );
     let src_file = src_dir.path().join("rewind.kv");
     tokio::fs::write(&src_file, b"kv bytes").await.unwrap();
@@ -374,15 +367,13 @@ async fn blue_save_then_rewind_produces_pending_kv_fields() {
     use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, SnapshotStore};
 
     // Stub fork: answer the snapshot save + any /instances reads.
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "POST" && path == "/instances/scratch/snapshot" {
-                (200, "{}".into())
-            } else {
-                (200, "[]".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path == "/instances/scratch/snapshot" {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -394,11 +385,7 @@ async fn blue_save_then_rewind_produces_pending_kv_fields() {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     )
     .with_fork_io(fork);
 
@@ -407,8 +394,7 @@ async fn blue_save_then_rewind_produces_pending_kv_fields() {
             .with_model("model-x")
             .with_kv_cache(kv),
     ));
-    let route = route_with_judge(vec![reject_verdict(), accept_verdict()])
-        .with_kv_cache();
+    let route = route_with_judge(vec![reject_verdict(), accept_verdict()]).with_kv_cache();
     let mut ctx = ctx("question");
     ctx.session = Some(Arc::clone(&session));
     ctx.kv_instance = Some("scratch".into());
@@ -442,15 +428,13 @@ async fn blue_save_without_kv_instance_is_a_no_op() {
     use crate::instances::InstanceClient;
     use crate::kv_cache::{ColdSnapshotIndex, HotSnapshotIndex, SnapshotStore};
 
-    let handler: StubHandler = Arc::new(
-        |method, _path, _body| {
-            if method == "POST" {
-                (200, "{}".into())
-            } else {
-                (200, "[]".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, _path, _body| {
+        if method == "POST" {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -461,11 +445,7 @@ async fn blue_save_without_kv_instance_is_a_no_op() {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-        )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     )
     .with_fork_io(fork);
 
@@ -474,8 +454,7 @@ async fn blue_save_without_kv_instance_is_a_no_op() {
             .with_model("model-x")
             .with_kv_cache(kv),
     ));
-    let route = route_with_judge(vec![reject_verdict(), accept_verdict()])
-        .with_kv_cache();
+    let route = route_with_judge(vec![reject_verdict(), accept_verdict()]).with_kv_cache();
     let mut ctx = ctx("question");
     ctx.session = Some(Arc::clone(&session));
     // kv_instance is None -> save skipped.

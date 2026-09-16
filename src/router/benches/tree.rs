@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use fluent_llm::client::ChatBackend;
-use fluent_llm::LlmError;
 use fluent_llm::ChatMessage;
+use fluent_llm::LlmError;
 
 const FILTER_PATTERNS: &[&str] = &[
     "harmful pattern",

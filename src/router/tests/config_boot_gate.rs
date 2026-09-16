@@ -1,7 +1,9 @@
 use super::*;
 
 fn boot_fixture(name: &str) -> RoutingConfig {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(name);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data")
+        .join(name);
     let text = std::fs::read_to_string(&path).expect("fixture readable");
     serde_json::from_str(&text).expect("fixture parses as RoutingConfig")
 }

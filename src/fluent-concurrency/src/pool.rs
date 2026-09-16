@@ -353,17 +353,19 @@ where
 /// observes [`ResultPoolError::Canceled`]. Without an abort signal this is
 /// exactly `result_tx.send(handler(job).await)`. Shared by `ResultPool` and
 /// `PriorityResultPool`.
-async fn run_wrapped<T, R, E, F, Fut>(
-    wrapped: WrappedJob<T, R, E>,
-    handler: Arc<F>,
-) where
+async fn run_wrapped<T, R, E, F, Fut>(wrapped: WrappedJob<T, R, E>, handler: Arc<F>)
+where
     T: Send + 'static,
     R: Send + 'static,
     E: Send + 'static,
     F: Fn(T) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<R, E>> + Send,
 {
-    let WrappedJob { job, result_tx, abort } = wrapped;
+    let WrappedJob {
+        job,
+        result_tx,
+        abort,
+    } = wrapped;
     let fut = handler(job);
     match abort {
         Some(abort) => {

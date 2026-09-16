@@ -36,10 +36,7 @@ impl SpacyTokenAlignment {
     /// when the token has no covering LFM tokens.
     #[must_use]
     pub fn lfm_range(&self, spacy_index: usize) -> Range<usize> {
-        self.spacy_to_lfm
-            .get(spacy_index)
-            .cloned()
-            .unwrap_or(0..0)
+        self.spacy_to_lfm.get(spacy_index).cloned().unwrap_or(0..0)
     }
 
     /// Whether every spacy token has at least one covering LFM token (a
@@ -61,8 +58,7 @@ impl SpacyTokenAligner {
     /// Pure; the caller supplies the orth texts (slices suffice).
     #[must_use]
     pub fn spacy_spans(orth: &[impl AsRef<str>], idx: &[usize]) -> Vec<(usize, usize)> {
-        orth
-            .iter()
+        orth.iter()
             .zip(idx.iter())
             .map(|(text, &i)| (i, i + text.as_ref().len()))
             .collect()

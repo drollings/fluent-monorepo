@@ -16,7 +16,7 @@ use std::sync::RwLock;
 
 use fluent_concept::{ConceptStore, ConceptStoreError, TaxonomyHierarchy};
 use fluent_db::store::SqliteStore;
-use fluent_types::{ConceptMetadata, InterlinguaId, InterlinguaNamespace, NodeId, local_id_of};
+use fluent_types::{local_id_of, ConceptMetadata, InterlinguaId, InterlinguaNamespace, NodeId};
 use rusqlite::params;
 
 /// `ConceptStore` over the `interlingua_concepts` table, sharing the ledger's
@@ -187,11 +187,9 @@ impl ConceptStore for SqliteConceptStore {
     fn iter_ids(&self) -> Box<dyn Iterator<Item = InterlinguaId> + '_> {
         let ids = self
             .store
-            .query_rows(
-                "SELECT DISTINCT id FROM interlingua_concepts",
-                &[],
-                |row| row.get::<_, i64>(0),
-            )
+            .query_rows("SELECT DISTINCT id FROM interlingua_concepts", &[], |row| {
+                row.get::<_, i64>(0)
+            })
             .unwrap_or_default()
             .into_iter()
             .filter_map(InterlinguaId::from_i64)

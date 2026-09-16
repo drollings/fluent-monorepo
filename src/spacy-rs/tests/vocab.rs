@@ -19,7 +19,10 @@ fn vocab_save_and_load_or_empty_roundtrip() {
     let reloaded = Vocab::load_or_empty(&path, LexiconConfig::default());
     // The reverse mapping survives restart.
     assert_eq!(
-        reloaded.strings().get(hash_utf8("persisted_word")).map(|s| s.to_string()),
+        reloaded
+            .strings()
+            .get(hash_utf8("persisted_word"))
+            .map(|s| s.to_string()),
         Some("persisted_word".into())
     );
     // The fresh lexicon lazily rebuilds the lexeme from the loaded store.

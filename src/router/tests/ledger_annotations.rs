@@ -37,7 +37,14 @@ CREATE INDEX IF NOT EXISTS idx_ledger_annotations_active
 fn first_write_establishes_confirmed() {
     let store = store();
     let status = store
-        .write(100, &claim("frame:x", ProvenanceTier::Deterministic, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:x",
+                ProvenanceTier::Deterministic,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     assert_eq!(status, ClaimStatus::Confirmed);
     let got = store.read(100, "frame:x").unwrap().expect("present");
@@ -56,12 +63,18 @@ fn storage_text_matches_serde_snake_case() {
         ProvenanceTier::Frontier,
         ProvenanceTier::HumanReview,
     ] {
-        let serde_form: String = serde_json::from_value(serde_json::to_value(tier).unwrap()).unwrap();
+        let serde_form: String =
+            serde_json::from_value(serde_json::to_value(tier).unwrap()).unwrap();
         assert_eq!(tier_as_text(tier), serde_form, "{tier:?}");
         assert_eq!(tier_from_text(tier_as_text(tier)).unwrap(), tier);
     }
-    for status in [ClaimStatus::Provisional, ClaimStatus::Confirmed, ClaimStatus::Superseded] {
-        let serde_form: String = serde_json::from_value(serde_json::to_value(status).unwrap()).unwrap();
+    for status in [
+        ClaimStatus::Provisional,
+        ClaimStatus::Confirmed,
+        ClaimStatus::Superseded,
+    ] {
+        let serde_form: String =
+            serde_json::from_value(serde_json::to_value(status).unwrap()).unwrap();
         assert_eq!(status_as_text(status), serde_form, "{status:?}");
         assert_eq!(status_from_text(status_as_text(status)).unwrap(), status);
     }
@@ -72,10 +85,20 @@ fn higher_tier_supersedes_and_never_deletes() {
     let store = store();
     // Acceptance criterion #2: LocalModel then Frontier on the same node/claim.
     store
-        .write(100, &claim("frame:x", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:x",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     let status = store
-        .write(100, &claim("frame:x", ProvenanceTier::Frontier, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim("frame:x", ProvenanceTier::Frontier, ClaimStatus::Confirmed),
+        )
         .unwrap();
     assert_eq!(status, ClaimStatus::Confirmed);
 
@@ -87,7 +110,10 @@ fn higher_tier_supersedes_and_never_deletes() {
     // The prior row was marked superseded, not deleted (row count never drops).
     let history = store.history(100, "frame:x").unwrap();
     assert_eq!(history.len(), 2, "superseded row retained");
-    let prior = history.iter().find(|c| c.tier == ProvenanceTier::LocalModel).unwrap();
+    let prior = history
+        .iter()
+        .find(|c| c.tier == ProvenanceTier::LocalModel)
+        .unwrap();
     assert_eq!(prior.status, ClaimStatus::Superseded);
 }
 
@@ -95,17 +121,35 @@ fn higher_tier_supersedes_and_never_deletes() {
 fn lower_tier_is_provisional_and_never_overrides() {
     let store = store();
     store
-        .write(100, &claim("frame:x", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:x",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     // A deterministic (lower) write becomes provisional; the local-model
     // confirmed claim stays authoritative.
     let status = store
-        .write(100, &claim("frame:x", ProvenanceTier::Deterministic, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:x",
+                ProvenanceTier::Deterministic,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     assert_eq!(status, ClaimStatus::Provisional);
 
     let got = store.read(100, "frame:x").unwrap().expect("present");
-    assert_eq!(got.tier, ProvenanceTier::LocalModel, "lower tier never overrides");
+    assert_eq!(
+        got.tier,
+        ProvenanceTier::LocalModel,
+        "lower tier never overrides"
+    );
     assert_eq!(got.status, ClaimStatus::Confirmed);
 
     // The provisional row is recorded (explicitly not authoritative).
@@ -121,11 +165,25 @@ fn lower_tier_is_provisional_and_never_overrides() {
 fn equal_tier_rewrite_is_idempotent() {
     let store = store();
     store
-        .write(100, &claim("frame:x", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:x",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     // Re-derivation at the same authority does not self-demote.
     let status = store
-        .write(100, &claim("frame:x", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:x",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     assert_eq!(status, ClaimStatus::Confirmed);
     assert_eq!(store.history(100, "frame:x").unwrap().len(), 1);
@@ -137,7 +195,14 @@ fn hash_change_invalidates_annotations() {
     // no reachable annotations under the old hash — no scheduler needed.
     let store = store();
     store
-        .write(111, &claim("frame:x", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            111,
+            &claim(
+                "frame:x",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     assert!(store.read(111, "frame:x").unwrap().is_some());
 
@@ -145,9 +210,19 @@ fn hash_change_invalidates_annotations() {
     assert!(store.read(222, "frame:x").unwrap().is_none());
     // Re-derivation under the new hash writes fresh.
     store
-        .write(222, &claim("frame:x", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            222,
+            &claim(
+                "frame:x",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
-    assert_eq!(store.read(222, "frame:x").unwrap().unwrap().tier, ProvenanceTier::LocalModel);
+    assert_eq!(
+        store.read(222, "frame:x").unwrap().unwrap().tier,
+        ProvenanceTier::LocalModel
+    );
     // The old hash's row remains (audit), reachable by history but not by
     // the current read for the new hash.
     assert!(store.read(111, "frame:x").unwrap().is_some());
@@ -157,10 +232,24 @@ fn hash_change_invalidates_annotations() {
 fn distinct_claim_keys_are_independent() {
     let store = store();
     store
-        .write(100, &claim("frame:a", ProvenanceTier::Deterministic, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:a",
+                ProvenanceTier::Deterministic,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     store
-        .write(100, &claim("frame:b", ProvenanceTier::LocalModel, ClaimStatus::Confirmed))
+        .write(
+            100,
+            &claim(
+                "frame:b",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
+        )
         .unwrap();
     let active = store.read_active(100).unwrap();
     assert_eq!(active.len(), 2);
@@ -175,7 +264,9 @@ fn node_store_hash_change_invalidates_annotations() {
     use crate::node_store::ContentNodeStore;
 
     let store = ContentNodeStore::open_in_memory().unwrap();
-    let id = store.record_request("sess", "req", "show me the report").unwrap();
+    let id = store
+        .record_request("sess", "req", "show me the report")
+        .unwrap();
     let hash_before = store.snapshot(id).unwrap().content_hash;
     assert_ne!(hash_before, 0, "LOD0 present → non-zero hash");
 
@@ -183,13 +274,20 @@ fn node_store_hash_change_invalidates_annotations() {
     store
         .write_annotation(
             id,
-            &claim("frame:report", ProvenanceTier::LocalModel, ClaimStatus::Confirmed),
+            &claim(
+                "frame:report",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
         )
         .unwrap()
         .expect("durable in-memory store");
 
     let annotations = AnnotationStore::new(store.shared_sqlite().expect("shared store"));
-    assert!(annotations.read(hash_before, "frame:report").unwrap().is_some());
+    assert!(annotations
+        .read(hash_before, "frame:report")
+        .unwrap()
+        .is_some());
 
     // Mutating LOD0 changes the hash (record_result → with_node_mut →
     // ensure_lod_eager recomputes).
@@ -202,18 +300,31 @@ fn node_store_hash_change_invalidates_annotations() {
     // Under the new hash the old claim is unreachable (invalidation is
     // keying, not a scheduler).
     assert!(
-        annotations.read(hash_after, "frame:report").unwrap().is_none(),
+        annotations
+            .read(hash_after, "frame:report")
+            .unwrap()
+            .is_none(),
         "old annotation invalidated by the hash change"
     );
     // The old-hash row remains (audit), and re-derivation under the new
     // hash writes fresh.
-    assert!(annotations.read(hash_before, "frame:report").unwrap().is_some());
+    assert!(annotations
+        .read(hash_before, "frame:report")
+        .unwrap()
+        .is_some());
     store
         .write_annotation(
             id,
-            &claim("frame:report", ProvenanceTier::LocalModel, ClaimStatus::Confirmed),
+            &claim(
+                "frame:report",
+                ProvenanceTier::LocalModel,
+                ClaimStatus::Confirmed,
+            ),
         )
         .unwrap()
         .expect("re-derive");
-    assert!(annotations.read(hash_after, "frame:report").unwrap().is_some());
+    assert!(annotations
+        .read(hash_after, "frame:report")
+        .unwrap()
+        .is_some());
 }

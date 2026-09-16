@@ -23,4 +23,3 @@ pub fn lock_read<T>(m: &RwLock<T>) -> RwLockReadGuard<'_, T> {
 pub fn lock_write<T>(m: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
     m.write().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
-

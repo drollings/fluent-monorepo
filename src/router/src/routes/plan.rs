@@ -86,7 +86,10 @@ impl PromptAssemblerCtx {
         let view = ParallelLedger::for_session(Arc::clone(&self.store), session_id);
         let assembled = self.assembler.assemble(
             &view,
-            &WorkerContext::new("chart selector", "Select a chart against the session context."),
+            &WorkerContext::new(
+                "chart selector",
+                "Select a chart against the session context.",
+            ),
             &self.budget,
             None,
             &self.lod_spec,
@@ -601,8 +604,6 @@ fn plan_ctx(user_message: &str, entities: &[Entity]) -> fluent_wvr::WorkContext 
     ctx
 }
 
-
-
 pub async fn handle_plan_request(
     req: hyper::Request<hyper::body::Incoming>,
     plan_route: Option<Arc<PlanRoute>>,
@@ -693,9 +694,7 @@ pub async fn handle_plan_request(
             .plan_replayable(session_id, message, &entities, confidence)
             .await
     } else {
-        route
-            .plan_for_session(session_id, message, &entities)
-            .await
+        route.plan_for_session(session_id, message, &entities).await
     };
 
     let response = match result.source {
@@ -742,10 +741,7 @@ pub async fn handle_plan_request(
 /// Build the `/v1/plan` "executed" response: execution results, not a
 /// compiled graph. Carries selection provenance (`fit`/`score`) and the
 /// execution summary (`final_output`/`accepted`/`audit`) when the chart ran.
-pub fn plan_executed_response(
-    source: &str,
-    result: &PlanResult,
-) -> serde_json::Value {
+pub fn plan_executed_response(source: &str, result: &PlanResult) -> serde_json::Value {
     let mut executed = serde_json::json!({
         "status": "executed",
         "source": source,

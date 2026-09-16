@@ -43,8 +43,7 @@ fn null_field_fails() {
 #[test]
 fn nested_path_check() {
     let out = serde_json::json!({"answer": {"steps": ["a"], "verdict": "ok"}});
-    let v =
-        check_rubric(&rubric(&["answer.verdict"]), &out, None, None, "t").expect("no error");
+    let v = check_rubric(&rubric(&["answer.verdict"]), &out, None, None, "t").expect("no error");
     assert!(v.accepted);
 }
 

@@ -129,9 +129,9 @@ fn close_open_containers(healed: &str) -> String {
                 out.push(c);
             }
             '}' | ']' => {
-                let matching = stack.last().is_some_and(|open| {
-                    (*open == '{' && c == '}') || (*open == '[' && c == ']')
-                });
+                let matching = stack
+                    .last()
+                    .is_some_and(|open| (*open == '{' && c == '}') || (*open == '[' && c == ']'));
                 if matching {
                     stack.pop();
                     out.push(c);
@@ -222,9 +222,11 @@ fn drop_incomplete_tail(healed: &str) -> Option<String> {
 /// treat a successful repair as "recovered" (not pristine) output.
 pub fn repair_json(raw: &str) -> Option<String> {
     let start = raw.find(['{', '['])?;
-    let healed =
-        fluent_wvr::boundary::repair_boundary(&raw[start..], &fluent_wvr::BoundaryOptions::lenient())
-            .text;
+    let healed = fluent_wvr::boundary::repair_boundary(
+        &raw[start..],
+        &fluent_wvr::BoundaryOptions::lenient(),
+    )
+    .text;
     if let Some(v) = extract_first_json_value(&healed) {
         return Some(v.to_string());
     }

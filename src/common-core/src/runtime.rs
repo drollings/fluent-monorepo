@@ -46,4 +46,3 @@ fn fallback_runtime() -> &'static tokio::runtime::Runtime {
             .expect("build common-core fallback runtime")
     })
 }
-

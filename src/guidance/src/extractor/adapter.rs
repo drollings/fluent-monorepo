@@ -32,9 +32,10 @@ impl<'a> NodeView<'a> {
     /// Child by field name.
     #[must_use]
     pub fn field(self, name: &str) -> Option<Self> {
-        self.node
-            .child_by_field_name(name)
-            .map(|node| Self { node, source: self.source })
+        self.node.child_by_field_name(name).map(|node| Self {
+            node,
+            source: self.source,
+        })
     }
 
     /// Named children.
@@ -43,7 +44,10 @@ impl<'a> NodeView<'a> {
         let mut cursor = self.node.walk();
         self.node
             .named_children(&mut cursor)
-            .map(|node| Self { node, source: self.source })
+            .map(|node| Self {
+                node,
+                source: self.source,
+            })
             .collect()
     }
 
@@ -53,7 +57,10 @@ impl<'a> NodeView<'a> {
         let mut cursor = self.node.walk();
         self.node
             .children(&mut cursor)
-            .map(|node| Self { node, source: self.source })
+            .map(|node| Self {
+                node,
+                source: self.source,
+            })
             .collect()
     }
 
@@ -63,7 +70,10 @@ impl<'a> NodeView<'a> {
         let mut current = self.node.prev_sibling()?;
         loop {
             if current.is_named() {
-                return Some(Self { node: current, source: self.source });
+                return Some(Self {
+                    node: current,
+                    source: self.source,
+                });
             }
             current = current.prev_sibling()?;
         }
@@ -72,9 +82,10 @@ impl<'a> NodeView<'a> {
     /// Parent node, if any.
     #[must_use]
     pub fn parent(self) -> Option<Self> {
-        self.node
-            .parent()
-            .map(|node| Self { node, source: self.source })
+        self.node.parent().map(|node| Self {
+            node,
+            source: self.source,
+        })
     }
 
     /// Walk ancestors for a node type.
@@ -168,7 +179,11 @@ static ADAPTERS: &[TsAdapter] = &[
     TsAdapter {
         format: "python",
         extensions: &["py"],
-        entity_types: &["class_definition", "decorated_definition", "function_definition"],
+        entity_types: &[
+            "class_definition",
+            "decorated_definition",
+            "function_definition",
+        ],
         scope_types: &["class_definition", "decorated_definition"],
         family: AdapterFamily::Python,
     },
@@ -486,11 +501,7 @@ impl TsAdapter {
             AdapterFamily::Go => {
                 if node.kind() == "method_declaration" {
                     if let Some(receiver) = extract_go_receiver_type(node) {
-                        return breadcrumb
-                            .iter()
-                            .cloned()
-                            .chain([receiver])
-                            .collect();
+                        return breadcrumb.iter().cloned().chain([receiver]).collect();
                     }
                 }
                 breadcrumb.to_vec()
@@ -557,7 +568,9 @@ pub fn classify_code_node(node: NodeView<'_>, breadcrumb: &[String]) -> CodeSymb
         let inner = node.named_children().into_iter().find(|child| {
             child.kind() == "function_definition" || child.kind() == "class_definition"
         });
-        return inner.map_or(CodeSymbolType::Value, |node| classify_code_node(node, breadcrumb));
+        return inner.map_or(CodeSymbolType::Value, |node| {
+            classify_code_node(node, breadcrumb)
+        });
     }
     if (kind == "field_definition"
         || kind == "public_field_definition"
@@ -634,7 +647,13 @@ pub fn extract_generic_signature(node: NodeView<'_>) -> Option<String> {
     let text = match body {
         Some(body) if body.node.start_byte() > node.node.start_byte() => {
             let end = body.node.start_byte() - node.node.start_byte();
-            node.text().as_bytes().get(..end).and_then(|bytes| std::str::from_utf8(bytes).ok()).unwrap_or("").trim_end().to_string()
+            node.text()
+                .as_bytes()
+                .get(..end)
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .unwrap_or("")
+                .trim_end()
+                .to_string()
         }
         _ => first_non_empty_line(node.text()),
     };
@@ -645,7 +664,11 @@ pub fn extract_generic_signature(node: NodeView<'_>) -> Option<String> {
         .trim_end_matches(['{', ';'])
         .trim()
         .to_string();
-    if normalized.is_empty() { None } else { Some(normalized) }
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
 }
 
 /// First non-empty line, trimmed.
@@ -675,7 +698,11 @@ pub fn extract_preceding_doc(node: NodeView<'_>) -> Option<String> {
     }
     comments.reverse();
     let doc = comments.join("\n").trim().to_string();
-    if doc.is_empty() { None } else { Some(doc) }
+    if doc.is_empty() {
+        None
+    } else {
+        Some(doc)
+    }
 }
 
 fn clean_comment_text(text: &str) -> String {
@@ -755,7 +782,12 @@ fn extract_go_receiver_type(node: NodeView<'_>) -> Option<String> {
         .chars()
         .rev()
         .collect();
-    if name.is_empty() || !name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_') {
+    if name.is_empty()
+        || !name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
         return None;
     }
     Some(name)
@@ -792,9 +824,9 @@ fn inner_python_definition(node: NodeView<'_>) -> Option<NodeView<'_>> {
     if node.kind() != "decorated_definition" {
         return None;
     }
-    node.named_children().into_iter().find(|child| {
-        child.kind() == "function_definition" || child.kind() == "class_definition"
-    })
+    node.named_children()
+        .into_iter()
+        .find(|child| child.kind() == "function_definition" || child.kind() == "class_definition")
 }
 
 fn extract_python_modifiers(node: NodeView<'_>) -> Vec<CodeEntityModifier> {
@@ -811,7 +843,10 @@ fn extract_python_modifiers(node: NodeView<'_>) -> Vec<CodeEntityModifier> {
     }) {
         push(CodeEntityModifier::Async);
     }
-    if text.lines().any(|line| line.trim_start().starts_with("@staticmethod")) {
+    if text
+        .lines()
+        .any(|line| line.trim_start().starts_with("@staticmethod"))
+    {
         push(CodeEntityModifier::Static);
     }
     modifiers
@@ -835,7 +870,8 @@ fn should_index_c_entity(node: NodeView<'_>) -> bool {
         }
         return true;
     }
-    node.find_descendant_by_type("function_declarator").is_some()
+    node.find_descendant_by_type("function_declarator")
+        .is_some()
 }
 
 /// Import-node tables per family (tree-sitter node kinds for the pinned
@@ -876,7 +912,10 @@ fn import_specifier_texts(family: AdapterFamily, node: NodeView<'_>) -> Vec<Stri
             .named_children()
             .into_iter()
             .filter(|child| {
-                matches!(child.kind(), "dotted_name" | "aliased_import" | "wildcard_import")
+                matches!(
+                    child.kind(),
+                    "dotted_name" | "aliased_import" | "wildcard_import"
+                )
             })
             .filter_map(|child| first_leaf_text(child))
             .collect();
@@ -928,8 +967,11 @@ fn first_leaf_text(node: NodeView<'_>) -> Option<String> {
     let mut stack = vec![node];
     while let Some(view) = stack.pop() {
         match view.kind() {
-            "string" | "string_literal" | "interpreted_string_literal"
-            | "system_lib_string" | "string_fragment" => {
+            "string"
+            | "string_literal"
+            | "interpreted_string_literal"
+            | "system_lib_string"
+            | "string_fragment" => {
                 let text = unquote(view.text());
                 if !text.is_empty() {
                     return Some(text);
@@ -976,10 +1018,10 @@ fn extract_c_name(node: NodeView<'_>) -> Option<String> {
         return Some(last_qualified_part(&name));
     }
     if let Some(name) = node.field("name") {
-        return Some(find_identifier_leaf(name).map_or_else(
-            || name.text().to_string(),
-            |leaf| leaf.text().to_string(),
-        ));
+        return Some(
+            find_identifier_leaf(name)
+                .map_or_else(|| name.text().to_string(), |leaf| leaf.text().to_string()),
+        );
     }
     if node.kind() == "type_definition" {
         return node
@@ -994,7 +1036,9 @@ fn extract_raw_c_function_name(node: NodeView<'_>) -> Option<String> {
     let declarator = node
         .field("declarator")
         .or_else(|| node.find_descendant_by_type("function_declarator"));
-    let name = declarator.and_then(find_identifier_leaf).map(|leaf| leaf.text().to_string());
+    let name = declarator
+        .and_then(find_identifier_leaf)
+        .map(|leaf| leaf.text().to_string());
     match name {
         Some(name) if is_simple_c_identifier(&name) => Some(name),
         _ => extract_c_function_name(declarator.map_or(node.text(), NodeView::text)),
@@ -1006,7 +1050,10 @@ fn is_simple_c_identifier(value: &str) -> bool {
         && value
             .chars()
             .all(|c| c.is_alphanumeric() || c == '_' || c == '~')
-        && value.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_' || c == '~')
+        && value
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '~')
 }
 
 fn extract_c_function_name(text: &str) -> Option<String> {
@@ -1016,7 +1063,10 @@ fn extract_c_function_name(text: &str) -> Option<String> {
     while i < bytes.len() {
         if bytes[i] == b'(' {
             let mut j = i;
-            while j > 0 && (bytes[j - 1].is_ascii_alphanumeric() || matches!(bytes[j - 1], b'_' | b'~' | b':')) {
+            while j > 0
+                && (bytes[j - 1].is_ascii_alphanumeric()
+                    || matches!(bytes[j - 1], b'_' | b'~' | b':'))
+            {
                 j -= 1;
             }
             let candidate = text[j..i].trim().to_string();
@@ -1030,13 +1080,20 @@ fn extract_c_function_name(text: &str) -> Option<String> {
 }
 
 fn last_qualified_part(name: &str) -> String {
-    name.split("::").filter(|p| !p.is_empty()).last().unwrap_or(name).to_string()
+    name.split("::")
+        .filter(|p| !p.is_empty())
+        .last()
+        .unwrap_or(name)
+        .to_string()
 }
 
 fn qualifier_parts(name: &str) -> Vec<String> {
     let parts: Vec<&str> = name.split("::").filter(|p| !p.is_empty()).collect();
     if parts.len() > 1 {
-        parts[..parts.len() - 1].iter().map(ToString::to_string).collect()
+        parts[..parts.len() - 1]
+            .iter()
+            .map(ToString::to_string)
+            .collect()
     } else {
         Vec::new()
     }
@@ -1102,7 +1159,9 @@ fn classify_c_family_node(node: NodeView<'_>) -> Option<CodeSymbolType> {
         return Some(CodeSymbolType::Alias);
     }
     if node.kind() == "field_declaration"
-        && node.find_descendant_by_type("function_declarator").is_some()
+        && node
+            .find_descendant_by_type("function_declarator")
+            .is_some()
     {
         return Some(CodeSymbolType::Function);
     }
@@ -1128,7 +1187,10 @@ fn name_field(node: NodeView<'_>) -> Option<String> {
             node.named_children()
                 .into_iter()
                 .find(|child| {
-                    matches!(child.kind(), "identifier" | "property_identifier" | "type_identifier")
+                    matches!(
+                        child.kind(),
+                        "identifier" | "property_identifier" | "type_identifier"
+                    )
                 })
                 .map(|child| child.text().to_string())
         })
@@ -1180,7 +1242,9 @@ fn contains_function_value(node: NodeView<'_>) -> bool {
     if node.kind() != "call_expression" && node.kind() != "arguments" {
         return false;
     }
-    node.named_children().iter().any(|child| contains_function_value(*child))
+    node.named_children()
+        .iter()
+        .any(|child| contains_function_value(*child))
 }
 
 fn exported_object_function_entities(node: NodeView<'_>) -> Vec<NodeView<'_>> {
@@ -1215,8 +1279,7 @@ fn exported_object_variable_name(node: NodeView<'_>) -> Option<String> {
 }
 
 fn is_exported_variable_declarator(node: NodeView<'_>) -> bool {
-    node.kind() == "variable_declarator"
-        && node.closest_ancestor("export_statement").is_some()
+    node.kind() == "variable_declarator" && node.closest_ancestor("export_statement").is_some()
 }
 
 fn is_object_member(node: NodeView<'_>) -> bool {
@@ -1226,9 +1289,9 @@ fn is_object_member(node: NodeView<'_>) -> bool {
 
 fn extract_js_ts_name(node: NodeView<'_>) -> Option<String> {
     if node.kind() == "pair" {
-        return node.field("key").map(|key| {
-            key.text().trim_matches(['\'', '"', '`']).to_string()
-        });
+        return node
+            .field("key")
+            .map(|key| key.text().trim_matches(['\'', '"', '`']).to_string());
     }
     node.field("name")
         .map(|n| n.text().to_string())
@@ -1236,7 +1299,10 @@ fn extract_js_ts_name(node: NodeView<'_>) -> Option<String> {
             node.named_children()
                 .into_iter()
                 .find(|child| {
-                    matches!(child.kind(), "identifier" | "property_identifier" | "type_identifier")
+                    matches!(
+                        child.kind(),
+                        "identifier" | "property_identifier" | "type_identifier"
+                    )
                 })
                 .map(|child| child.text().to_string())
         })

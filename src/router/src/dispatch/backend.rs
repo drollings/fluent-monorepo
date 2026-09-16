@@ -9,9 +9,9 @@ use bytes::Bytes;
 use common_core::hash::uuid_v4;
 use fluent_concurrency::ladder::first_accept_in_order;
 use fluent_concurrency::stream::StreamAbort;
-use fluent_llm::HttpClass;
 use fluent_llm::openai::drain_sse_lines;
 use fluent_llm::thinking::strip_thinking_blocks;
+use fluent_llm::HttpClass;
 use http_body::Frame;
 use serde_json::Value;
 
@@ -235,10 +235,7 @@ fn pin_thinking_kwargs(body: &mut Value, params: Option<&Value>, filter_thinking
             .get_mut("chat_template_kwargs")
             .and_then(|k| k.as_object_mut())
         {
-            kwargs.insert(
-                "enable_thinking".to_string(),
-                Value::Bool(false),
-            );
+            kwargs.insert("enable_thinking".to_string(), Value::Bool(false));
         }
         return;
     }
@@ -247,10 +244,7 @@ fn pin_thinking_kwargs(body: &mut Value, params: Option<&Value>, filter_thinking
             .get_mut("chat_template_kwargs")
             .and_then(|k| k.as_object_mut())
         {
-            kwargs.insert(
-                "enable_thinking".to_string(),
-                Value::Bool(true),
-            );
+            kwargs.insert("enable_thinking".to_string(), Value::Bool(true));
         } else {
             body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": true});
         }
@@ -456,10 +450,7 @@ impl DispatchBackend for OpenAiChatBackend {
                     // had no free member; surface it as a dedicated error so
                     // the sidecar can allocate fresh KV and retry once.
                     if status_u16 == 503 {
-                        let body = response
-                            .text()
-                            .await
-                            .unwrap_or_else(|_| String::new());
+                        let body = response.text().await.unwrap_or_else(|_| String::new());
                         if let Some(group) = parse_group_miss(&body) {
                             return Err(DispatchError::InstanceGroupMiss { group });
                         }
@@ -562,10 +553,7 @@ impl DispatchBackend for OpenAiChatBackend {
             if !status.is_success() {
                 let status_u16 = status.as_u16();
                 if status_u16 == 503 {
-                    let body = response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| String::new());
+                    let body = response.text().await.unwrap_or_else(|_| String::new());
                     if let Some(group) = parse_group_miss(&body) {
                         return Err(DispatchError::InstanceGroupMiss { group });
                     }
@@ -753,7 +741,11 @@ pub struct RetryBackend {
 }
 
 impl RetryBackend {
-    pub fn new(inner: Arc<dyn DispatchBackend>, retry_count: u32, retry_base_interval_s: u64) -> Self {
+    pub fn new(
+        inner: Arc<dyn DispatchBackend>,
+        retry_count: u32,
+        retry_base_interval_s: u64,
+    ) -> Self {
         Self {
             inner,
             retry_count,
@@ -871,9 +863,7 @@ impl BackendChain {
 /// predicate exactly.
 fn is_non_retryable_4xx(e: &DispatchError) -> bool {
     if let DispatchError::Http(ref msg) = e {
-        msg.starts_with("HTTP 4")
-            && !msg.starts_with("HTTP 408")
-            && !msg.starts_with("HTTP 429")
+        msg.starts_with("HTTP 4") && !msg.starts_with("HTTP 408") && !msg.starts_with("HTTP 429")
     } else {
         false
     }
@@ -1012,14 +1002,17 @@ impl OnnxDispatchBackend {
                 content: m.content.to_string_lossy(),
             })
             .collect();
-        let extras = params.cloned().unwrap_or_else(|| Value::Object(Default::default()));
+        let extras = params
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Default::default()));
         let text = backend
             .chat_complete_with_extras(&messages, &extras)
             .map_err(|e| DispatchError::Http(e.to_string()))?;
         let mut resp = crate::server::responses::make_text_completion(model, &text);
         if filter_thinking {
             for choice in &mut resp.choices {
-                if let crate::types::RouterMessageContent::Text(ref mut t) = choice.message.content {
+                if let crate::types::RouterMessageContent::Text(ref mut t) = choice.message.content
+                {
                     *t = strip_thinking_blocks(t);
                 }
             }
@@ -1075,9 +1068,11 @@ impl DispatchBackend for OnnxDispatchBackend {
             let request_id = uuid_v4();
             let model_for_task = model.clone();
             tokio::spawn(async move {
-                let mut handler =
-                    StreamingHandler::new(&request_id, &model_for_task).with_filter_thinking(filter_thinking);
-                let _ = tx.send_data(Bytes::from(handler.format_chunk(&content, Some("stop")))).await;
+                let mut handler = StreamingHandler::new(&request_id, &model_for_task)
+                    .with_filter_thinking(filter_thinking);
+                let _ = tx
+                    .send_data(Bytes::from(handler.format_chunk(&content, Some("stop"))))
+                    .await;
                 let _ = tx.send_data(Bytes::from(handler.format_done())).await;
                 answer_for_task.finalize(content);
             });

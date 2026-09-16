@@ -239,7 +239,10 @@ fn calibrated_threshold_separates_bands_with_margin() {
     let mut fp = 0usize;
     let mut failed = Vec::new();
     for case in corpus() {
-        match (run_case(&case, CALIBRATED_SCORE_THRESHOLD), case.should_stamp) {
+        match (
+            run_case(&case, CALIBRATED_SCORE_THRESHOLD),
+            case.should_stamp,
+        ) {
             (true, true) => tp += 1,
             (true, false) => {
                 fp += 1;
@@ -282,7 +285,10 @@ fn control_group_must_not_stamp() {
         };
         assert_eq!(reason, expected, "control {}", case.name);
     }
-    assert!(leaked.is_empty(), "control leaks (false positives): {leaked:?}");
+    assert!(
+        leaked.is_empty(),
+        "control leaks (false positives): {leaked:?}"
+    );
 }
 
 #[test]
@@ -291,8 +297,5 @@ fn gate_constants_carry_the_calibration_date() {
     // the constant without re-calibration fails here on purpose. No
     // production default exists — the gate stays opt-in (`new` only).
     assert_eq!(ENTITY_CALIBRATION_DATE, "2026-09-15");
-    assert_eq!(
-        CALIBRATED_SCORE_THRESHOLD.to_bits(),
-        0.75f64.to_bits()
-    );
+    assert_eq!(CALIBRATED_SCORE_THRESHOLD.to_bits(), 0.75f64.to_bits());
 }

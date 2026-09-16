@@ -31,10 +31,19 @@ fn dict_to_feats_sorts_fields_and_values() {
 #[test]
 fn normalize_features_canonicalizes() {
     let m = morphology();
-    assert_eq!(m.normalize_features("Number=Sing|Case=Nom"), "Case=Nom|Number=Sing");
-    assert_eq!(m.normalize_features("Case=Nom,Acc|Number=Sing"), "Case=Acc,Nom|Number=Sing");
+    assert_eq!(
+        m.normalize_features("Number=Sing|Case=Nom"),
+        "Case=Nom|Number=Sing"
+    );
+    assert_eq!(
+        m.normalize_features("Case=Nom,Acc|Number=Sing"),
+        "Case=Acc,Nom|Number=Sing"
+    );
     // POS canonicalized to the UPOS name
-    assert_eq!(m.normalize_features("POS=noun|Number=Sing"), "Number=Sing|POS=NOUN");
+    assert_eq!(
+        m.normalize_features("POS=noun|Number=Sing"),
+        "Number=Sing|POS=NOUN"
+    );
     // empty and placeholder both normalize to the placeholder
     assert_eq!(m.normalize_features(""), "_");
     assert_eq!(m.normalize_features("_"), "_");

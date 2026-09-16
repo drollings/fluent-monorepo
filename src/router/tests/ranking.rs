@@ -2,8 +2,8 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::ledger::ContentNodeLedger;
 use crate::ledger::nlp::record_parse_node;
+use crate::ledger::ContentNodeLedger;
 use fluent_llm::LlmError;
 use spacy_rs::routing::RoutingSignal;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,9 +28,9 @@ fn parse_signal(predicate_id: i64) -> RoutingSignal {
         interlingua: Some(spacy_rs::InterlinguaSignal {
             predicate_id: Some(fluent_types::InterlinguaId::from_u64(predicate_id as u64)),
             subject_id: None,
-            direct_object_id: Some(
-                fluent_types::InterlinguaId::from_u64(predicate_id as u64 + 1),
-            ),
+            direct_object_id: Some(fluent_types::InterlinguaId::from_u64(
+                predicate_id as u64 + 1,
+            )),
             indirect_object_id: None,
             concept_ids: vec![],
             token_ids: vec![],
@@ -43,7 +43,8 @@ fn parse_signal(predicate_id: i64) -> RoutingSignal {
 
 #[test]
 fn scorer_weights_lead_on_content_signals() {
-    let scorer = SalienceScorer::new();    let freq = SalienceSignal {
+    let scorer = SalienceScorer::new();
+    let freq = SalienceSignal {
         frame_frequency: 1.0,
         ..Default::default()
     };
@@ -87,7 +88,8 @@ fn score_matches_manual_dot() {
 #[test]
 fn scorer_orders_deterministically() {
     let scorer = SalienceScorer::new();
-    let mut signals = [SalienceSignal {
+    let mut signals = [
+        SalienceSignal {
             frame_frequency: 0.5,
             interlingua_centrality: 0.9,
             recency: 0.1,
@@ -104,7 +106,8 @@ fn scorer_orders_deterministically() {
             interlingua_centrality: 0.1,
             recency: 1.0,
             reference_count: 0.9,
-        }];
+        },
+    ];
     let scores: Vec<f64> = signals.iter().map(|s| scorer.score(s)).collect();
     signals.sort_by(|a, b| {
         scorer
@@ -115,7 +118,10 @@ fn scorer_orders_deterministically() {
     let sorted_scores: Vec<f64> = signals.iter().map(|s| scorer.score(s)).collect();
     let mut expected = scores.clone();
     expected.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    assert_eq!(sorted_scores, expected, "ordering is score-descending and reproducible");
+    assert_eq!(
+        sorted_scores, expected,
+        "ordering is score-descending and reproducible"
+    );
 }
 
 // ── PageRank ──────────────────────────────────────────────────────
@@ -131,7 +137,11 @@ fn pagerank_converges_on_a_star() {
     let ranks = pagerank(&graph, PAGERANK_ITERATIONS, PAGERANK_ALPHA);
     assert_eq!(ranks.len(), 4);
     assert!(ranks[&0] > ranks[&1], "hub outranks a leaf");
-    assert!(ranks[&0] >= 0.999, "hub normalizes near 1.0, got {}", ranks[&0]);
+    assert!(
+        ranks[&0] >= 0.999,
+        "hub normalizes near 1.0, got {}",
+        ranks[&0]
+    );
     assert!(ranks[&1] < 1.0);
     // Deterministic: a second run is bit-identical.
     let again = pagerank(&graph, PAGERANK_ITERATIONS, PAGERANK_ALPHA);
@@ -153,29 +163,57 @@ fn pagerank_is_well_defined_on_empty_and_single_nodes() {
 fn provider_signals_reflect_shared_predicates() {
     let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
     // A and B share predicate id 0x...0001; C is distinct.
-    let a = record_parse_node(&ledger, "s", "r1", "show me the report", &[parse_signal(0x0300_0000_0000_0001)])
-        .expect("a");
-    let b = record_parse_node(&ledger, "s", "r2", "show the sales", &[parse_signal(0x0300_0000_0000_0001)])
-        .expect("b");
-    let c = record_parse_node(&ledger, "s", "r3", "get the report", &[parse_signal(0x0300_0000_0000_0002)])
-        .expect("c");
-    let provider = LedgerSalienceProvider::new(
-        Arc::clone(ledger.node_store()),
-        common_core::now_secs(),
-    );
+    let a = record_parse_node(
+        &ledger,
+        "s",
+        "r1",
+        "show me the report",
+        &[parse_signal(0x0300_0000_0000_0001)],
+    )
+    .expect("a");
+    let b = record_parse_node(
+        &ledger,
+        "s",
+        "r2",
+        "show the sales",
+        &[parse_signal(0x0300_0000_0000_0001)],
+    )
+    .expect("b");
+    let c = record_parse_node(
+        &ledger,
+        "s",
+        "r3",
+        "get the report",
+        &[parse_signal(0x0300_0000_0000_0002)],
+    )
+    .expect("c");
+    let provider =
+        LedgerSalienceProvider::new(Arc::clone(ledger.node_store()), common_core::now_secs());
     let sigs = provider.signals_for(&[a, b, c]);
     assert_eq!(sigs.len(), 3);
     // Frequency normalized across the pool: A/B share predicate 1 (2 nodes),
     // C is alone (1 node).
-    assert!((sigs[0].1.frame_frequency - 1.0).abs() < 1e-9, "A freq {}", sigs[0].1.frame_frequency);
+    assert!(
+        (sigs[0].1.frame_frequency - 1.0).abs() < 1e-9,
+        "A freq {}",
+        sigs[0].1.frame_frequency
+    );
     assert!((sigs[1].1.frame_frequency - 1.0).abs() < 1e-9);
-    assert!((sigs[2].1.frame_frequency - 0.5).abs() < 1e-9, "C freq {}", sigs[2].1.frame_frequency);
+    assert!(
+        (sigs[2].1.frame_frequency - 0.5).abs() < 1e-9,
+        "C freq {}",
+        sigs[2].1.frame_frequency
+    );
     // Brand-new nodes → recency 1.0; centrality within [0,1].
     assert!((sigs[0].1.recency - 1.0).abs() < 1e-6);
     assert!((0.0..=1.0).contains(&sigs[0].1.interlingua_centrality));
     // A shares ids with B (predicate + direct object) → reference count > 0
     // (normalized against the pool's max).
-    assert!(sigs[0].1.reference_count > 0.0, "refs {}", sigs[0].1.reference_count);
+    assert!(
+        sigs[0].1.reference_count > 0.0,
+        "refs {}",
+        sigs[0].1.reference_count
+    );
 }
 
 #[test]
@@ -203,10 +241,7 @@ impl SalienceSource for FixtureSource {
             .map(|id| {
                 (
                     *id,
-                    self.signals
-                        .get(&id.as_int())
-                        .copied()
-                        .unwrap_or_default(),
+                    self.signals.get(&id.as_int()).copied().unwrap_or_default(),
                 )
             })
             .collect()
@@ -327,7 +362,11 @@ fn rank_candidates_models_exactly_the_shortlist_once() {
     assert_eq!(schema["items"]["properties"]["node_id"]["type"], "integer");
 
     assert_eq!(ranked.len(), SALIENCE_SHORTLIST_K);
-    assert_eq!(ranked[0].node_id.as_int(), 12, "model score wins within the shortlist");
+    assert_eq!(
+        ranked[0].node_id.as_int(),
+        12,
+        "model score wins within the shortlist"
+    );
     assert_eq!(ranked[1].node_id.as_int(), 11);
     assert!(ranked[0].model_score.is_some());
     // Unscored shortlist members keep salience order (10..5).
@@ -339,7 +378,11 @@ fn rank_candidates_models_exactly_the_shortlist_once() {
 fn rank_candidates_degrades_to_salience_order_on_failure() {
     let source = fixture(&[(1, 1.0), (2, 0.5), (3, 0.25)]);
     let backend = Arc::new(CaptureBackend::new("not json at all"));
-    let candidates = vec![NodeId::from_int(1), NodeId::from_int(2), NodeId::from_int(3)];
+    let candidates = vec![
+        NodeId::from_int(1),
+        NodeId::from_int(2),
+        NodeId::from_int(3),
+    ];
     let ranked = rank_candidates(
         "query",
         &candidates,
@@ -358,10 +401,18 @@ fn rank_candidates_degrades_to_salience_order_on_failure() {
 #[test]
 fn rank_candidates_without_backend_never_calls_a_model() {
     let source = fixture(&[(1, 1.0), (2, 0.5), (3, 0.25)]);
-    let candidates = vec![NodeId::from_int(3), NodeId::from_int(1), NodeId::from_int(2)];
+    let candidates = vec![
+        NodeId::from_int(3),
+        NodeId::from_int(1),
+        NodeId::from_int(2),
+    ];
     let ranked = rank_candidates("query", &candidates, &*source, None, &label_of);
     assert_eq!(ranked.len(), 3);
-    assert_eq!(ranked[0].node_id.as_int(), 1, "salience order, id tie-break");
+    assert_eq!(
+        ranked[0].node_id.as_int(),
+        1,
+        "salience order, id tie-break"
+    );
     assert_eq!(ranked[1].node_id.as_int(), 2);
     assert_eq!(ranked[2].node_id.as_int(), 3);
     assert!(ranked.iter().all(|r| r.model_score.is_none()));
@@ -372,7 +423,11 @@ fn rank_candidates_tied_salience_breaks_by_id_asc() {
     // M7.1: equal salience must order by node id ascending (the second
     // comparator leg), deterministically regardless of input order.
     let source = fixture(&[(3, 0.5), (1, 0.5), (2, 0.5)]);
-    let candidates = vec![NodeId::from_int(3), NodeId::from_int(1), NodeId::from_int(2)];
+    let candidates = vec![
+        NodeId::from_int(3),
+        NodeId::from_int(1),
+        NodeId::from_int(2),
+    ];
     let ranked = rank_candidates("query", &candidates, &*source, None, &label_of);
     let ids: Vec<i64> = ranked.iter().map(|r| r.node_id.as_int()).collect();
     assert_eq!(ids, vec![1, 2, 3], "ties keep id-ascending order");
@@ -400,8 +455,20 @@ fn rank_candidates_nan_salience_is_deterministic() {
     // M7.1: NaN salience must not panic and must order deterministically
     // (NaN comparisons fall back to Equal, preserving input order there).
     let mut signals = std::collections::HashMap::new();
-    signals.insert(1, SalienceSignal { frame_frequency: f64::NAN, ..Default::default() });
-    signals.insert(2, SalienceSignal { frame_frequency: 0.5, ..Default::default() });
+    signals.insert(
+        1,
+        SalienceSignal {
+            frame_frequency: f64::NAN,
+            ..Default::default()
+        },
+    );
+    signals.insert(
+        2,
+        SalienceSignal {
+            frame_frequency: 0.5,
+            ..Default::default()
+        },
+    );
     let source = Arc::new(FixtureSource { signals });
     let candidates = vec![NodeId::from_int(1), NodeId::from_int(2)];
     let once = rank_candidates("query", &candidates, &*source, None, &label_of);
@@ -419,7 +486,11 @@ fn hallucinated_ranking_ids_are_dropped() {
     let backend = Arc::new(CaptureBackend::new(
         r#"[{"node_id": 99, "score": 0.99}, {"node_id": 2, "score": 0.7}]"#,
     ));
-    let candidates = vec![NodeId::from_int(1), NodeId::from_int(2), NodeId::from_int(3)];
+    let candidates = vec![
+        NodeId::from_int(1),
+        NodeId::from_int(2),
+        NodeId::from_int(3),
+    ];
     let ranked = rank_candidates(
         "query",
         &candidates,
@@ -429,9 +500,16 @@ fn hallucinated_ranking_ids_are_dropped() {
     );
     assert_eq!(ranked.len(), 3);
     // Only the valid id keeps a model score; the hallucinated one is gone.
-    assert_eq!(ranked[0].node_id.as_int(), 2, "model score wins within the shortlist");
+    assert_eq!(
+        ranked[0].node_id.as_int(),
+        2,
+        "model score wins within the shortlist"
+    );
     assert_eq!(ranked[0].model_score, Some(0.7));
-    assert!(ranked.iter().all(|r| r.node_id.as_int() != 99), "hallucinated id dropped");
+    assert!(
+        ranked.iter().all(|r| r.node_id.as_int() != 99),
+        "hallucinated id dropped"
+    );
     assert!(ranked[1..].iter().all(|r| r.model_score.is_none()));
 }
 
@@ -469,15 +547,41 @@ fn ranking_scoped_does_not_scan_unrelated_session() {
 #[test]
 fn ledger_snapshot_scoped_to_single_session() {
     let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
-    let a = record_parse_node(&ledger, "sess-a", "r1", "show report", &[parse_signal(0x0300_0000_0000_0001)]).expect("a");
-    let b = record_parse_node(&ledger, "sess-b", "r1", "show report", &[parse_signal(0x0300_0000_0000_0002)]).expect("b");
+    let a = record_parse_node(
+        &ledger,
+        "sess-a",
+        "r1",
+        "show report",
+        &[parse_signal(0x0300_0000_0000_0001)],
+    )
+    .expect("a");
+    let b = record_parse_node(
+        &ledger,
+        "sess-b",
+        "r1",
+        "show report",
+        &[parse_signal(0x0300_0000_0000_0002)],
+    )
+    .expect("b");
     // Scoped provider for sess-a should not see sess-b's predicate
-    let provider_a = LedgerSalienceProvider::new(Arc::clone(ledger.node_store()), common_core::now_secs()).with_session("sess-a");
+    let provider_a =
+        LedgerSalienceProvider::new(Arc::clone(ledger.node_store()), common_core::now_secs())
+            .with_session("sess-a");
     let sigs_a = provider_a.signals_for(&[a, b]);
     // b is not in sess-a's snapshot, so its frame_frequency should be 0 (isolated)
     // a's frequency should be 1.0 (only itself in its session)
-    let freq_a = sigs_a.iter().find(|(id,_)| *id==a).unwrap().1.frame_frequency;
-    let freq_b_in_a = sigs_a.iter().find(|(id,_)| *id==b).unwrap().1.frame_frequency;
+    let freq_a = sigs_a
+        .iter()
+        .find(|(id, _)| *id == a)
+        .unwrap()
+        .1
+        .frame_frequency;
+    let freq_b_in_a = sigs_a
+        .iter()
+        .find(|(id, _)| *id == b)
+        .unwrap()
+        .1
+        .frame_frequency;
     assert!(freq_a > 0.0, "a should have freq in its own session");
     assert_eq!(freq_b_in_a, 0.0, "b should be absent in sess-a snapshot");
 }
@@ -486,11 +590,8 @@ fn ledger_snapshot_scoped_to_single_session() {
 fn salience_ranker_composes_source_backend_and_labels() {
     let source: Arc<dyn SalienceSource> = fixture(&[(1, 1.0), (2, 0.5)]);
     let backend = Arc::new(CaptureBackend::new(r#"[{"node_id": 1, "score": 0.4}]"#));
-    let ranker = SalienceRanker::new(
-        source,
-        Some(Arc::clone(&backend) as Arc<dyn ChatBackend>),
-    )
-    .with_label(Arc::new(label_of));
+    let ranker = SalienceRanker::new(source, Some(Arc::clone(&backend) as Arc<dyn ChatBackend>))
+        .with_label(Arc::new(label_of));
     let ranked = ranker.rank("query", &[NodeId::from_int(1), NodeId::from_int(2)]);
     assert_eq!(ranked.len(), 2);
     assert_eq!(ranked[0].node_id.as_int(), 1);

@@ -28,12 +28,12 @@
 //! The [`AssembledPrompt::node_plan`] output is the key testable artifact: the
 //! per-node fidelity decision, independent of the rendered text.
 
-use search_vector::math::cosine_similarity_f32;
 use fluent_types::NodeId;
+use search_vector::math::cosine_similarity_f32;
 
 use crate::ledger::{LOD0_FULL_TEXT, LOD5_LABEL};
 use crate::node_store::ContentNodeStore;
-use crate::views::{Lod, LedgerView};
+use crate::views::{LedgerView, Lod};
 
 /// The fidelity band a worker accepts. Intermediate nodes render between
 /// `max` (coarsest, e.g. `Lod::LOD5`) and `min` (finest, e.g. `Lod::LOD1`).
@@ -238,7 +238,11 @@ impl FidelitySelector for CosineRankSelector {
             .map(|id| {
                 let sim = store
                     .snapshot(*id)
-                    .and_then(|n| n.embedding.as_ref().map(|e| cosine_similarity_f32(&self.query, e)))
+                    .and_then(|n| {
+                        n.embedding
+                            .as_ref()
+                            .map(|e| cosine_similarity_f32(&self.query, e))
+                    })
                     .unwrap_or(f32::MIN);
                 (*id, sim)
             })
@@ -299,15 +303,10 @@ fn render_node(store: &ContentNodeStore, id: NodeId, requested: Lod) -> String {
     }
     // A lazy tier is only rendered if already cached on the node (never
     // triggers derivation).
-    let cached_level = store
-        .snapshot(id)
-        .and_then(|n| {
-            (requested_level..=LOD5_LABEL).find(|l| {
-                n.lod
-                    .get(*l as usize)
-                    .is_some_and(|t| !t.is_empty())
-            })
-        });
+    let cached_level = store.snapshot(id).and_then(|n| {
+        (requested_level..=LOD5_LABEL)
+            .find(|l| n.lod.get(*l as usize).is_some_and(|t| !t.is_empty()))
+    });
     let level = cached_level.unwrap_or(LOD0_FULL_TEXT);
     store.lod_text(id, level).unwrap_or_default()
 }
@@ -350,13 +349,9 @@ impl LedgerPromptAssembler {
                 let selector = CosineRankSelector::new(query.to_vec());
                 self.assemble_with_selector(view, worker, budget, Some(&selector), lod_spec)
             }
-            None => self.assemble_with_selector(
-                view,
-                worker,
-                budget,
-                Some(&UniformSelector),
-                lod_spec,
-            ),
+            None => {
+                self.assemble_with_selector(view, worker, budget, Some(&UniformSelector), lod_spec)
+            }
         }
     }
 
@@ -411,8 +406,7 @@ impl LedgerPromptAssembler {
         // Budget-fit the intermediates: degrade each toward coarser tiers until
         // it fits; drop it if even the coarsest does not fit. Priority order for
         // fitting is relevance order (most relevant kept first).
-        let head_tail_cost = estimate(store, first, Lod::LOD0)
-            + estimate(store, last, Lod::LOD0);
+        let head_tail_cost = estimate(store, first, Lod::LOD0) + estimate(store, last, Lod::LOD0);
         let inter_budget = budget.intermediate_budget(head_tail_cost);
         let mut used = head_tail_cost;
         let mut fitted: Vec<(NodeId, Lod)> = Vec::new();
@@ -437,8 +431,7 @@ impl LedgerPromptAssembler {
         // intermediates (kept in render order), last.
         let mut node_plan: Vec<(NodeId, Lod)> = Vec::with_capacity(ids.len());
         node_plan.push((first, Lod::LOD0));
-        let fitted_by_id: std::collections::HashMap<NodeId, Lod> =
-            fitted.into_iter().collect();
+        let fitted_by_id: std::collections::HashMap<NodeId, Lod> = fitted.into_iter().collect();
         for id in &intermediates {
             if let Some(lod) = fitted_by_id.get(id) {
                 node_plan.push((*id, *lod));
@@ -450,7 +443,10 @@ impl LedgerPromptAssembler {
         let mut lines: Vec<String> = Vec::with_capacity(node_plan.len());
         for (id, lod) in &node_plan {
             let node = store.snapshot(*id);
-            let name = node.as_ref().map(|n| n.name.to_string()).unwrap_or_default();
+            let name = node
+                .as_ref()
+                .map(|n| n.name.to_string())
+                .unwrap_or_default();
             let role = node
                 .as_ref()
                 .and_then(|n| n.role.clone())

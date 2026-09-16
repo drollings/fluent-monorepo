@@ -131,7 +131,14 @@ impl EntityLinkWorker {
                 let concepts = Arc::clone(&concepts_h);
                 let scorer = Arc::clone(&scorer_h);
                 async move {
-                    process_job(&job, &candidates, &concepts, &scorer, threshold, entity_root);
+                    process_job(
+                        &job,
+                        &candidates,
+                        &concepts,
+                        &scorer,
+                        threshold,
+                        entity_root,
+                    );
                 }
             },
         );
@@ -142,13 +149,10 @@ impl EntityLinkWorker {
     /// Enqueue an entity-link job, bounded by the credit gate (blocks only when
     /// credit is exhausted — the hot path returns immediately otherwise).
     pub async fn submit(&self, job: EntityLinkJob) -> Result<(), EntityLinkError> {
-        self.pool
-            .submit(job)
-            .await
-            .map_err(|e| match e {
-                PoolError::Closed => EntityLinkError::Closed("worker drained".into()),
-                PoolError::Full => EntityLinkError::Full(e.to_string()),
-            })
+        self.pool.submit(job).await.map_err(|e| match e {
+            PoolError::Closed => EntityLinkError::Closed("worker drained".into()),
+            PoolError::Full => EntityLinkError::Full(e.to_string()),
+        })
     }
 
     /// Whether the credit gate is currently blocking producers.

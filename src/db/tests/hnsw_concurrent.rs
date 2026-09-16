@@ -3,8 +3,8 @@
 
 use super::*;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
 };
 
 use crate::vector::{try_bytes_to_vec, vec_to_bytes};
@@ -52,7 +52,9 @@ fn concurrent_rebuild_never_mixes_generations() {
     // approximate index could never produce from a clean read.
     let a = dataset(0, N, DIM, 11);
     let b = dataset(10_000, N, DIM, 77);
-    let queries: Vec<Vec<f32>> = (0..4).map(|s| dataset(-1, 1, DIM, 1000 + s)[0].1.clone()).collect();
+    let queries: Vec<Vec<f32>> = (0..4)
+        .map(|s| dataset(-1, 1, DIM, 1000 + s)[0].1.clone())
+        .collect();
 
     let index = Arc::new(HnswIndex::new());
     index
@@ -63,12 +65,7 @@ fn concurrent_rebuild_never_mixes_generations() {
     let non_empty = Arc::new(AtomicUsize::new(0));
 
     std::thread::scope(|scope| {
-        let (index_rb, a_rb, b_rb, stop_rb) = (
-            Arc::clone(&index),
-            &a,
-            &b,
-            Arc::clone(&stop),
-        );
+        let (index_rb, a_rb, b_rb, stop_rb) = (Arc::clone(&index), &a, &b, Arc::clone(&stop));
         scope.spawn(move || {
             for round in 0..60 {
                 let rows = if round % 2 == 0 { b_rb } else { a_rb };
@@ -139,7 +136,9 @@ fn rebuild_counts_skipped_rows_as_examined() {
     rows.push((10_001, vec![1_u8, 2, 3])); // not a multiple of 4: undecodable
     rows.push((10_002, vec![])); // empty blob: skipped
     let index = HnswIndex::new();
-    let examined = index.rebuild_from(rows.into_iter(), decode).expect("rebuild");
+    let examined = index
+        .rebuild_from(rows.into_iter(), decode)
+        .expect("rebuild");
     assert_eq!(examined, 18, "every row counts as examined, valid or not");
     assert_eq!(index.len(), 16);
 }

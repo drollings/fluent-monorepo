@@ -115,7 +115,14 @@ pub fn record_parse_node_with_confidence(
     confidence: Option<&NlpConfidenceSummary>,
     token_confidence: Option<&[f64]>,
 ) -> Result<NodeId, LedgerError> {
-    let node = parse_node_with_confidence(session_id, request_id, text, signals, confidence, token_confidence);
+    let node = parse_node_with_confidence(
+        session_id,
+        request_id,
+        text,
+        signals,
+        confidence,
+        token_confidence,
+    );
     let id = ledger.record_content_node(&node)?;
     populate_interlingua_index(ledger, id, signals, confidence)?;
     Ok(id)
@@ -152,7 +159,11 @@ pub fn populate_interlingua_index(
             }
         }
     }
-    let status = if is_provisional { "provisional" } else { "unreviewed" };
+    let status = if is_provisional {
+        "provisional"
+    } else {
+        "unreviewed"
+    };
     store
         .transaction(|tx| {
             for (id, _local, role, conf) in &rows {

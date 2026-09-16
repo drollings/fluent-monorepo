@@ -36,7 +36,15 @@ fn twelve_vs_five_exposure_gap_is_deliberate() {
     // behavior unchanged). Any change to either side fails here first.
     assert_eq!(pii_patterns().len(), 5);
     let exposed: Vec<&str> = pii_patterns().iter().map(|p| p.name).collect();
-    for name in ["nino", "sin", "bearer", "aws_key", "generic_api_key", "ipv6", "ipv4"] {
+    for name in [
+        "nino",
+        "sin",
+        "bearer",
+        "aws_key",
+        "generic_api_key",
+        "ipv6",
+        "ipv4",
+    ] {
         assert!(!exposed.contains(&name), "{name} must stay unexposed");
     }
     // And the anonymize-only statics still match (they are load-bearing).

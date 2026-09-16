@@ -34,8 +34,12 @@ fn check_golden(name: &str, observed: &Value) {
         std::fs::write(&path, &rendered).expect("write golden");
         return;
     }
-    let expected = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("missing golden file {} — re-record with UPDATE_GOLDENS=1", path.display()));
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+        panic!(
+            "missing golden file {} — re-record with UPDATE_GOLDENS=1",
+            path.display()
+        )
+    });
     assert_eq!(rendered, expected, "golden drift: {name}");
 }
 
@@ -62,11 +66,7 @@ fn fork_info(id: &str, group: &str, pinned: bool, is_default: bool, last_used: i
 /// A stub-fork responder: method + path + body → status + JSON body.
 type ForkResponder = dyn Fn(&str, &str, &str) -> (u16, String) + Send + Sync;
 
-fn fork_handler(
-    method: &str,
-    path: &str,
-    _body: &str,
-) -> (u16, String) {
+fn fork_handler(method: &str, path: &str, _body: &str) -> (u16, String) {
     if method == "GET" && path == "/instances" {
         (
             200,
@@ -142,10 +142,7 @@ async fn pool_aggregate_envelope_golden() {
 
     let mut models = pool.list_models().await;
     normalize_models(&mut models);
-    check_golden(
-        "residency_engine_pool_models.json",
-        &Value::Array(models),
-    );
+    check_golden("residency_engine_pool_models.json", &Value::Array(models));
 }
 
 #[cfg(feature = "onnx")]
@@ -232,9 +229,6 @@ mod onnx_golden {
 
         let mut models = fleet.list_models().await;
         normalize_models(&mut models);
-        check_golden(
-            "residency_engine_fleet_models.json",
-            &Value::Array(models),
-        );
+        check_golden("residency_engine_fleet_models.json", &Value::Array(models));
     }
 }

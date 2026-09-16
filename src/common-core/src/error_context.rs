@@ -120,4 +120,3 @@ impl fmt::Display for HeapErrorContext {
         write!(f, ": {}]", self.message)
     }
 }
-

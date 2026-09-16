@@ -620,8 +620,7 @@ async fn passing_run_promotes_draft_and_resets_streak() {
 
     // One stale failure, then a passing run: the streak resets and the
     // draft is promoted to selectable.
-    let failing: Arc<dyn ChatBackend> =
-        Arc::new(StubChatBackend::always(r#"{"no_out": true}"#));
+    let failing: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::always(r#"{"no_out": true}"#));
     let plan = build_plan(&rubric_failing_chart_json(), &failing, &[]);
     let mut opts = default_opts();
     opts.health = Some(store.clone());

@@ -154,4 +154,3 @@ pub fn ensure_dir(path: impl AsRef<Path>) -> Result<(), IoError> {
 pub fn ensure_dir_or_panic(path: impl AsRef<Path>) {
     std::fs::create_dir_all(path.as_ref()).expect("ensure_dir");
 }
-

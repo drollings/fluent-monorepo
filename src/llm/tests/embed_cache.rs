@@ -73,10 +73,7 @@ fn cached_provider_calls_inner_once_per_text() {
 #[tokio::test]
 async fn cached_provider_batch_caches_per_text() {
     let cached = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(3), 16);
-    let batch = cached
-        .embed_batch_async(&["a", "bb", "a"])
-        .await
-        .unwrap();
+    let batch = cached.embed_batch_async(&["a", "bb", "a"]).await.unwrap();
     assert_eq!(batch.count, 3);
     assert_eq!(batch.dims, 3);
     assert_eq!(cached.inner.batch_calls(), 1);
@@ -167,4 +164,3 @@ fn cached_provider_evicts_when_full() {
         "eviction happened: {len} resident of {inserted} inserted"
     );
 }
-

@@ -1,9 +1,8 @@
 #![allow(unused_imports)]
+use fluent_wvr::prelude::*;
 #[allow(unused_imports)]
 use fluent_wvr::store::*;
-use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 #[test]
 fn store_roundtrips_typed_values_without_serde() {

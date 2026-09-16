@@ -55,7 +55,10 @@ fn concept_set(doc: &Doc) -> Vec<InterlinguaId> {
 fn parse_leaves_entity_ids_unstamped_by_default() {
     // Candidates-only default: no pipeline path stamps at parse time.
     let doc = paris_doc();
-    assert!(doc.tokens().iter().all(|t| t.interlingua_entity_id.is_none()));
+    assert!(doc
+        .tokens()
+        .iter()
+        .all(|t| t.interlingua_entity_id.is_none()));
 }
 
 #[test]
@@ -87,8 +90,20 @@ fn calibration_table_controls_never_stamp() {
     // boundary) must NOT stamp; only the clear high-score distinct case may.
     let cases: Vec<CalibrationCase<'_>> = vec![
         // (name, setup, score, entity-local, may_stamp)
-        ("low score ambiguous", Box::new(|_: &mut Doc| {}), 0.4, 0x1, false),
-        ("nan score", Box::new(|_: &mut Doc| {}), f64::NAN, 0x1, false),
+        (
+            "low score ambiguous",
+            Box::new(|_: &mut Doc| {}),
+            0.4,
+            0x1,
+            false,
+        ),
+        (
+            "nan score",
+            Box::new(|_: &mut Doc| {}),
+            f64::NAN,
+            0x1,
+            false,
+        ),
         (
             "duplicate entity already routed",
             Box::new(|doc: &mut Doc| {
@@ -116,8 +131,20 @@ fn calibration_table_controls_never_stamp() {
             0x8,
             false,
         ),
-        ("boundary score stamps", Box::new(|_: &mut Doc| {}), 0.7, 0x3, true),
-        ("clear distinct stamps", Box::new(|_: &mut Doc| {}), 0.95, 0x4, true),
+        (
+            "boundary score stamps",
+            Box::new(|_: &mut Doc| {}),
+            0.7,
+            0x3,
+            true,
+        ),
+        (
+            "clear distinct stamps",
+            Box::new(|_: &mut Doc| {}),
+            0.95,
+            0x4,
+            true,
+        ),
     ];
     for (name, setup, score, local, may_stamp) in cases {
         let mut doc = paris_doc();
@@ -161,15 +188,13 @@ fn duplicate_mention_of_routed_entity_stays_candidate() {
             score: 0.99,
         }],
     );
-    assert!(
-        matches!(
-            out[..],
-            [StampOutcome::Kept {
-                token: 2,
-                reason: KeepReason::AlreadyStamped,
-            }]
-        )
-    );
+    assert!(matches!(
+        out[..],
+        [StampOutcome::Kept {
+            token: 2,
+            reason: KeepReason::AlreadyStamped,
+        }]
+    ));
 }
 
 #[test]

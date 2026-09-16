@@ -174,7 +174,10 @@ fn scored_hits_maps_scores_preserving_ids_and_order() {
     assert_eq!(sim[1].0, 8);
     assert!((sim[1].1 - -0.5).abs() < 1e-6);
 
-    let clamped = scored_hits(vec![(7i64, 0.25f32), (8, 1.5)], distance_to_similarity_clamped);
+    let clamped = scored_hits(
+        vec![(7i64, 0.25f32), (8, 1.5)],
+        distance_to_similarity_clamped,
+    );
     assert!((clamped[0].1 - 0.75).abs() < 1e-6);
     assert_eq!(clamped[1].1, 0.0);
 
@@ -292,14 +295,29 @@ fn quantized_bytes_beat_fp32_four_to_one() {
 #[test]
 fn q8_knn_orders_like_fp32() {
     // Deterministic pseudo-vectors: q8 recall order must match fp32 order.
-    let query: Vec<f32> = (0..64).map(|i| ((i * 37) % 11) as f32 / 11.0 - 0.5).collect();
-    let candidates: Vec<Vec<f32>> = (0..20)
-        .map(|c| (0..64).map(|i| (((i + c) * 53) % 13) as f32 / 13.0 - 0.5).collect())
+    let query: Vec<f32> = (0..64)
+        .map(|i| ((i * 37) % 11) as f32 / 11.0 - 0.5)
         .collect();
-    let fp32 = knn_brute_force(&query, candidates.iter().enumerate().map(|(i, v)| (i, v.as_slice())), 5);
+    let candidates: Vec<Vec<f32>> = (0..20)
+        .map(|c| {
+            (0..64)
+                .map(|i| (((i + c) * 53) % 13) as f32 / 13.0 - 0.5)
+                .collect()
+        })
+        .collect();
+    let fp32 = knn_brute_force(
+        &query,
+        candidates
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (i, v.as_slice())),
+        5,
+    );
     let q_query = QuantizedEmbedding::from_f32(&query);
-    let q_candidates: Vec<QuantizedEmbedding> =
-        candidates.iter().map(|v| QuantizedEmbedding::from_f32(v)).collect();
+    let q_candidates: Vec<QuantizedEmbedding> = candidates
+        .iter()
+        .map(|v| QuantizedEmbedding::from_f32(v))
+        .collect();
     let q8 = knn_brute_force_q8(&q_query, q_candidates.iter().enumerate(), 5);
     let fp32_ids: Vec<usize> = fp32.iter().map(|(id, _)| *id).collect();
     let q8_ids: Vec<usize> = q8.iter().map(|(id, _)| *id).collect();
@@ -323,7 +341,11 @@ fn q8_knn_skips_dimension_mismatches() {
 fn brute_force_index_resolves_names_first_wins() {
     let index = BruteForceIndex::new(vec![
         (fluent_types::NodeId(1), vec![1.0, 0.0], "first".to_string()),
-        (fluent_types::NodeId(1), vec![1.0, 0.0], "second".to_string()),
+        (
+            fluent_types::NodeId(1),
+            vec![1.0, 0.0],
+            "second".to_string(),
+        ),
         (fluent_types::NodeId(2), vec![0.0, 1.0], "other".to_string()),
     ]);
     let hits = index.knn(&[1.0, 0.0], 2);

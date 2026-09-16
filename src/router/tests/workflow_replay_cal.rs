@@ -99,7 +99,10 @@ fn build_world() -> CalWorld {
             "sess",
             1,
         );
-        assert_eq!(outcome, crate::ledger::workflow_replay::RecordOutcome::Stored);
+        assert_eq!(
+            outcome,
+            crate::ledger::workflow_replay::RecordOutcome::Stored
+        );
         replay.note_reuse_outcome(audit, true);
         replay.note_reuse_outcome(audit, true);
     }
@@ -117,8 +120,14 @@ fn build_world() -> CalWorld {
         "sess",
         2,
     );
-    assert_eq!(outcome, crate::ledger::workflow_replay::RecordOutcome::RejectedGate);
-    CalWorld { replay, _store: store }
+    assert_eq!(
+        outcome,
+        crate::ledger::workflow_replay::RecordOutcome::RejectedGate
+    );
+    CalWorld {
+        replay,
+        _store: store,
+    }
 }
 
 /// Should-replay queries (query text, embedding, expected audit) and
@@ -145,7 +154,10 @@ fn must_not_replay() -> Vec<(&'static str, Vec<f32>, f64)> {
     ]
 }
 
-fn precision_recall(replay: &WorkflowReplay, cfg: &ReplayConfig) -> (f64, f64, usize, usize, usize) {
+fn precision_recall(
+    replay: &WorkflowReplay,
+    cfg: &ReplayConfig,
+) -> (f64, f64, usize, usize, usize) {
     let mut tp = 0usize;
     let mut fp = 0usize;
     let mut failed: Vec<String> = Vec::new();
@@ -194,7 +206,10 @@ fn calibration_curve_sets_threshold_with_margin() {
         .iter()
         .map(|e| f64::from(cosine_similarity_f32(&emb_a(), e)))
         .fold(f64::NEG_INFINITY, f64::max);
-    assert!(adv_max < para_min, "knee exists: adv {adv_max:.4} < para {para_min:.4}");
+    assert!(
+        adv_max < para_min,
+        "knee exists: adv {adv_max:.4} < para {para_min:.4}"
+    );
     assert!(
         adv_max < CALIBRATED_DISTANCE_THRESHOLD && CALIBRATED_DISTANCE_THRESHOLD < para_min,
         "threshold {CALIBRATED_DISTANCE_THRESHOLD} sits between adv {adv_max:.4} and para {para_min:.4}"
@@ -228,9 +243,15 @@ fn calibration_curve_sets_threshold_with_margin() {
             }
         }
         let total = (tp + fp + miss) as f64;
-        println!("threshold {threshold:.2}: tp={tp} fp={fp} miss={miss} exactness={:.3}", tp as f64 / total.max(1.0));
+        println!(
+            "threshold {threshold:.2}: tp={tp} fp={fp} miss={miss} exactness={:.3}",
+            tp as f64 / total.max(1.0)
+        );
         if threshold <= adv_max {
-            assert!(fp > 0, "below the adversarial band the control must leak (knee proof)");
+            assert!(
+                fp > 0,
+                "below the adversarial band the control must leak (knee proof)"
+            );
         }
         if (threshold - CALIBRATED_DISTANCE_THRESHOLD).abs() < f64::EPSILON {
             assert_eq!((tp, fp, miss), (4, 0, 0), "calibrated threshold is exact");
@@ -273,7 +294,11 @@ fn calibrated_gate_is_exact_and_frontier_trends_down() {
     let cfg = ReplayConfig::calibrated();
     assert!(cfg.enabled);
     let (precision, recall, tp, fp, r#fn) = precision_recall(&world.replay, &cfg);
-    assert_eq!((tp, fp, r#fn), (4, 0, 0), "gate exact on calibration traffic");
+    assert_eq!(
+        (tp, fp, r#fn),
+        (4, 0, 0),
+        "gate exact on calibration traffic"
+    );
     assert_eq!((precision, recall), (1.0, 1.0));
 
     // VISION metric projection: every replay hit replaces one frontier
@@ -300,8 +325,14 @@ fn gate_constants_carry_the_calibration_date() {
     let cfg = ReplayConfig::calibrated();
     // Bit-exact pins (not float `assert_eq`, which pedantic forbids): any
     // change to a constant without re-calibration fails here on purpose.
-    assert_eq!(cfg.distance_threshold.to_bits(), CALIBRATED_DISTANCE_THRESHOLD.to_bits());
-    assert_eq!(cfg.min_confidence.to_bits(), CALIBRATED_MIN_CONFIDENCE.to_bits());
+    assert_eq!(
+        cfg.distance_threshold.to_bits(),
+        CALIBRATED_DISTANCE_THRESHOLD.to_bits()
+    );
+    assert_eq!(
+        cfg.min_confidence.to_bits(),
+        CALIBRATED_MIN_CONFIDENCE.to_bits()
+    );
     assert_eq!(cfg.min_reuses, CALIBRATED_MIN_REUSES);
 }
 
@@ -401,7 +432,9 @@ fn record_calibration_precision_and_replay_success() {
     let precision = tp as f64 / (tp + fp).max(1) as f64;
     // Only the goldens persisted: the library holds exactly their entries.
     assert_eq!(
-        store.nearest(&embedder.embed(goldens[0]).unwrap(), 16).len(),
+        store
+            .nearest(&embedder.embed(goldens[0]).unwrap(), 16)
+            .len(),
         goldens.len(),
         "controls store nothing"
     );

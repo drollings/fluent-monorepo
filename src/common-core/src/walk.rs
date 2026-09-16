@@ -171,12 +171,8 @@ pub fn sniff_is_binary(window: &[u8]) -> bool {
 /// Every visited file produces exactly one callback: `visit` for accepted
 /// files (with stat metadata), `on_skip` with the [`SkipReason`] otherwise.
 /// Directory skipping matches [`walk_files`] plus `extra_skip_dirs`.
-pub fn walk_files_filtered<F, S>(
-    root: &Path,
-    filter: &WalkFilter,
-    visit: &mut F,
-    on_skip: &mut S,
-) where
+pub fn walk_files_filtered<F, S>(root: &Path, filter: &WalkFilter, visit: &mut F, on_skip: &mut S)
+where
     F: FnMut(WalkEntry),
     S: FnMut(&Path, SkipReason),
 {
@@ -331,4 +327,3 @@ impl GitignoreStack {
             .any(|gi| gi.matched(path, path.is_dir()).is_ignore())
     }
 }
-

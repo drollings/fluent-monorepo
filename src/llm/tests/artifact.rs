@@ -5,11 +5,10 @@
 
 use async_trait::async_trait;
 use fluent_llm::artifact::{
-    ArtifactBody, ArtifactError, ArtifactFetchError, ArtifactFetchResponse,
-    ArtifactFetcher, FailureKind, ModelArtifact, ModelArtifactSource, ResolvedModelArtifacts,
-    SourceKind, model_artifact_url, resolve_model_artifacts, snapshot_fingerprint,
-    snapshot_lock_path, snapshot_marker_path, DownloadProgressReporter,
-    EmbeddingProgress, ResolveArtifactsOptions,
+    model_artifact_url, resolve_model_artifacts, snapshot_fingerprint, snapshot_lock_path,
+    snapshot_marker_path, ArtifactBody, ArtifactError, ArtifactFetchError, ArtifactFetchResponse,
+    ArtifactFetcher, DownloadProgressReporter, EmbeddingProgress, FailureKind, ModelArtifact,
+    ModelArtifactSource, ResolveArtifactsOptions, ResolvedModelArtifacts, SourceKind,
 };
 use fluent_llm::artifact_lock::LockOptions;
 use std::collections::HashMap;
@@ -153,7 +152,11 @@ impl ArtifactFetcher for StubMirror {
                 chunks,
             }) => Ok(ArtifactFetchResponse {
                 status,
-                status_text: if status == 200 { "OK".into() } else { "Error".into() },
+                status_text: if status == 200 {
+                    "OK".into()
+                } else {
+                    "Error".into()
+                },
                 retry_after,
                 body: Box::new(StubBody { chunks }),
             }),
@@ -337,10 +340,12 @@ async fn rejects_same_size_corruption_and_installs_verified_bytes_atomically() {
         artifacts: vec![artifact("model.gguf", good, &sha_of(good))],
         on_progress: None,
         on_download_plan: Some(&|missing| {
-            plans_hook
-                .lock()
-                .unwrap()
-                .push(missing.iter().map(|artifact| artifact.path.clone()).collect());
+            plans_hook.lock().unwrap().push(
+                missing
+                    .iter()
+                    .map(|artifact| artifact.path.clone())
+                    .collect(),
+            );
         }),
         on_fallback: None,
         fetcher: &*mirror,
@@ -349,7 +354,10 @@ async fn rejects_same_size_corruption_and_installs_verified_bytes_atomically() {
     };
     let resolved = resolve_model_artifacts(&options).await.unwrap();
     assert_eq!(std::fs::read(&resolved.paths["model.gguf"]).unwrap(), good);
-    assert_eq!(plans.lock().unwrap().as_slice(), &[vec!["model.gguf".to_string()]]);
+    assert_eq!(
+        plans.lock().unwrap().as_slice(),
+        &[vec!["model.gguf".to_string()]]
+    );
     // No partial files leak beside the destination.
     let leftovers: Vec<_> = std::fs::read_dir(&cache)
         .unwrap()
@@ -513,10 +521,7 @@ async fn network_and_timeout_and_integrity_failures_fall_back() {
         };
         let resolved = resolve_model_artifacts(&options).await.unwrap();
         assert_eq!(resolved.source.kind, SourceKind::ModelScope);
-        assert_eq!(
-            std::fs::read(&resolved.paths["model.gguf"]).unwrap(),
-            bytes
-        );
+        assert_eq!(std::fs::read(&resolved.paths["model.gguf"]).unwrap(), bytes);
         let _ = dir.keep();
     }
 }
@@ -555,7 +560,11 @@ async fn caller_cancellation_never_triggers_source_fallback() {
         ),
         "cancelled fetch must surface as aborted, got {error:?}"
     );
-    assert_eq!(mirror.calls().len(), 1, "cancelled fetch must not fall back");
+    assert_eq!(
+        mirror.calls().len(),
+        1,
+        "cancelled fetch must not fall back"
+    );
 }
 
 #[tokio::test]
@@ -816,11 +825,7 @@ async fn concurrent_callers_serialize_and_recheck_the_cache() {
     for handle in handles {
         assert_eq!(handle.await.unwrap(), bytes);
     }
-    let downloads = fetcher
-        .calls()
-        .iter()
-        .filter(|url| *url == &route)
-        .count();
+    let downloads = fetcher.calls().iter().filter(|url| *url == &route).count();
     assert_eq!(downloads, 1, "one download must serve all callers");
 }
 
@@ -986,8 +991,9 @@ async fn rejects_unsafe_local_mappings_before_the_network() {
 fn download_progress_reporter_aggregates_per_artifact_bytes() {
     let events: Arc<Mutex<Vec<EmbeddingProgress>>> = Arc::new(Mutex::new(Vec::new()));
     let hook = Arc::clone(&events);
-    let reporter =
-        DownloadProgressReporter::new("local/test-model", move |event| hook.lock().unwrap().push(event));
+    let reporter = DownloadProgressReporter::new("local/test-model", move |event| {
+        hook.lock().unwrap().push(event)
+    });
     reporter.start();
     reporter.set_download_plan(&[
         artifact("a.gguf", &[0u8; 100], SHA_A),

@@ -21,17 +21,17 @@ use http_body_util::Full;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 
-use crate::tests::common::{
-    install_audit_capture, make_config, mock_for, post_chat, rigor_test_deps, spawn_mock_upstream,
-    spawn_test_server, spawn_test_server_with_deps, spawn_test_server_with_ledger,
-    spawn_test_server_with_sessions, test_deps, test_deps_with_ledger, TestServer,
-};
 use crate::config::RouterConfig;
 use crate::routes::plan::PlanRoute;
 use crate::routes::rigor::RigorRoute;
 use crate::server::handler::ServerDeps;
 use crate::server::serve_http;
 use crate::testing::mock::{MockDispatchContext, MockTranscriptEntry, TranscriptProvider};
+use crate::tests::common::{
+    install_audit_capture, make_config, mock_for, post_chat, rigor_test_deps, spawn_mock_upstream,
+    spawn_test_server, spawn_test_server_with_deps, spawn_test_server_with_ledger,
+    spawn_test_server_with_sessions, test_deps, test_deps_with_ledger, TestServer,
+};
 use fluent_llm::client::ChatBackend;
 
 /// Spawn a server with a plan route (interview round-trip tests). The
@@ -41,9 +41,9 @@ use fluent_llm::client::ChatBackend;
 /// so an exact hit executes server-side.
 async fn spawn_plan_server() -> TestServer {
     use crate::charts::store::{chart_from_str, ChartStore};
-    use fluent_db::hnsw::HnswIndexHandle;
     use crate::routes::plan::PlanRoute;
     use crate::test_stubs::StubChatBackend;
+    use fluent_db::hnsw::HnswIndexHandle;
 
     let triage = r#"{
         "name": "bug_triage",
@@ -172,7 +172,11 @@ async fn buffered_happy_path_returns_200_with_choices() {
         5000,
         2000,
     );
-    let server = Box::pin(spawn_test_server(config, Some(mock_for("What is 2+2?", "4")))).await;
+    let server = Box::pin(spawn_test_server(
+        config,
+        Some(mock_for("What is 2+2?", "4")),
+    ))
+    .await;
 
     let body = json!({
         "model": "fast",
@@ -274,8 +278,13 @@ async fn routed_dispatch_answer_recorded_in_ledger_lod0() {
     let upstream = upstream_answering("the ledger answer").await;
     let config = make_config(&upstream, false, false, 5000, 2000);
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
-    let server = Box::pin(spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger))))
-        .await;
+    let server = Box::pin(spawn_test_server_with_ledger(
+        config,
+        None,
+        None,
+        Some(Arc::clone(&ledger)),
+    ))
+    .await;
 
     let body = json!({
         "model": "fast",
@@ -287,7 +296,10 @@ async fn routed_dispatch_answer_recorded_in_ledger_lod0() {
         .expect("request must complete");
     assert_eq!(response.status(), 200);
     let value: Value = response.json().await.expect("response json");
-    assert_eq!(value["choices"][0]["message"]["content"], "the ledger answer");
+    assert_eq!(
+        value["choices"][0]["message"]["content"],
+        "the ledger answer"
+    );
 
     let nodes = ledger
         .get_session_nodes("sess-m5-routed", 10)
@@ -321,8 +333,13 @@ async fn ledger_with_summarizer_attached_derives_lod() {
             .unwrap()
             .with_summarizer(summarizer),
     );
-    let server = Box::pin(spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger))))
-        .await;
+    let server = Box::pin(spawn_test_server_with_ledger(
+        config,
+        None,
+        None,
+        Some(Arc::clone(&ledger)),
+    ))
+    .await;
 
     let body = json!({
         "model": "fast",
@@ -437,8 +454,13 @@ async fn routed_stream_dispatch_answer_recorded_on_completion() {
 
     let config = make_config(&upstream, true, false, 5000, 2000);
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
-    let server = Box::pin(spawn_test_server_with_ledger(config, None, None, Some(Arc::clone(&ledger))))
-        .await;
+    let server = Box::pin(spawn_test_server_with_ledger(
+        config,
+        None,
+        None,
+        Some(Arc::clone(&ledger)),
+    ))
+    .await;
 
     let body = json!({
         "model": "fast",
@@ -765,7 +787,15 @@ async fn classifier_fallback_dispatch_honors_stream_flag() {
         .await
         .expect("bind ephemeral port");
     let addr = listener.local_addr().expect("local addr");
-    let mut deps = test_deps(pipelines, &config, Some(mock), None, None, HashMap::new(), None);
+    let mut deps = test_deps(
+        pipelines,
+        &config,
+        Some(mock),
+        None,
+        None,
+        HashMap::new(),
+        None,
+    );
     deps.classifier = Some(("fast".to_string(), classifier_entry));
     let handle = tokio::spawn(async move {
         if let Err(e) = serve_http(listener, deps, None).await {
@@ -1502,7 +1532,8 @@ async fn rigor_route_unconfigured_returns_explicit_error() {
 /// A stub llama-server management backend answering the `/instances` envelope,
 /// create, and delete.
 fn instance_stub_handler() -> crate::instances::stub::StubHandler {
-    Arc::new(|method, path, _body| match (method, path) {
+    Arc::new(|method, path, _body| {
+        match (method, path) {
         ("GET", "/instances") => (
             200,
             json!({
@@ -1531,13 +1562,12 @@ fn instance_stub_handler() -> crate::instances::stub::StubHandler {
         ("DELETE", path) if path.starts_with("/instances/") => (200, "{}".into()),
         ("POST", path) if path.starts_with("/instances/") => (200, "{}".into()),
         _ => (404, "{}".into()),
+    }
     })
 }
 
 /// Spawn a server wired with a managed instance pool backed by `stub`.
-async fn spawn_instances_server(
-    stub: &crate::instances::stub::StubServer,
-) -> TestServer {
+async fn spawn_instances_server(stub: &crate::instances::stub::StubServer) -> TestServer {
     use crate::config::SidecarConfig;
     use crate::instances::{InstanceClient, InstanceManager, InstancePool};
 
@@ -1631,7 +1661,10 @@ async fn instances_api_aggregates_lists_and_proxies() {
 
     // The id grammar also works via ?model= + bare name.
     let resp = client
-        .delete(format!("{}/instances/ledger?model=swarm", server.base_url()))
+        .delete(format!(
+            "{}/instances/ledger?model=swarm",
+            server.base_url()
+        ))
         .send()
         .await
         .expect("DELETE ?model= route");
@@ -1652,7 +1685,11 @@ async fn instances_api_rejects_unknown_model_and_requires_specify_model() {
         .send()
         .await
         .expect("POST without model");
-    assert_eq!(resp.status(), 201, "single managed model is the implicit target");
+    assert_eq!(
+        resp.status(),
+        201,
+        "single managed model is the implicit target"
+    );
 
     let resp = client
         .post(format!("{}/instances", server.base_url()))
@@ -1713,7 +1750,9 @@ async fn knowledge_gate_is_open_inside_http_request_and_closed_outside() {
     );
 
     let gate = Arc::new(Mutex::new(None::<bool>));
-    let probe = KnowledgeProbeBackend { gate: Arc::clone(&gate) };
+    let probe = KnowledgeProbeBackend {
+        gate: Arc::clone(&gate),
+    };
     let backend: Arc<dyn ChatBackend> = Arc::new(probe);
     let config = make_config("http://127.0.0.1:1", false, false, 2000, 1000);
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(Some(&backend)));
@@ -1731,7 +1770,15 @@ async fn knowledge_gate_is_open_inside_http_request_and_closed_outside() {
         vec![],
     ));
 
-    let deps = test_deps(pipelines, &config, Some(mock), None, None, HashMap::new(), None);
+    let deps = test_deps(
+        pipelines,
+        &config,
+        Some(mock),
+        None,
+        None,
+        HashMap::new(),
+        None,
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
     let handle = tokio::spawn(async move {
@@ -1776,9 +1823,7 @@ async fn graceful_shutdown_drains_tracked_connections_within_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let serve = tokio::spawn(async move {
-        serve_http(listener, deps, Some(shutdown_rx)).await
-    });
+    let serve = tokio::spawn(async move { serve_http(listener, deps, Some(shutdown_rx)).await });
 
     // A completed request is served normally before shutdown.
     let client = reqwest::Client::new();
@@ -1798,7 +1843,10 @@ async fn graceful_shutdown_drains_tracked_connections_within_timeout() {
 
     let _ = shutdown_tx.send(true);
     let drained = tokio::time::timeout(Duration::from_secs(3), async {
-        serve.await.expect("serve task joined").expect("serve_http ok");
+        serve
+            .await
+            .expect("serve task joined")
+            .expect("serve_http ok");
     })
     .await;
 
@@ -1891,7 +1939,7 @@ async fn instances_api_key_auth_401_without_200_with() {
         .expect("DELETE /instances (key)");
     assert_eq!(resp.status(), 200);
 
-// Non-management endpoints (e.g. /v1/models) are NOT gated.
+    // Non-management endpoints (e.g. /v1/models) are NOT gated.
     let resp = client
         .get(format!("{base}/v1/models"))
         .send()
@@ -1949,8 +1997,8 @@ fn review_deps(
     use crate::ledger::nlp::record_parse_node;
     use crate::ledger::ContentNodeLedger;
     use crate::server::review::{ReviewFetch, ReviewWorker};
-    use fluent_concurrency::tokio_runtime;
     use fluent_concept::InMemoryConceptStore;
+    use fluent_concurrency::tokio_runtime;
     use spacy_rs::CorrectionIndex;
 
     let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
@@ -2034,7 +2082,8 @@ async fn review_parse_endpoints_enqueue_and_read_back_status() {
     // The candidate plane lists durable overlay candidates for the node (M6.5).
     // Seed one entity-link candidate and confirm the GET surfaces it.
     use crate::ledger::overlay::OverlayCandidateStore;
-    let candidate_store = OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"));
+    let candidate_store =
+        OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"));
     candidate_store
         .write_candidate(&crate::ledger::overlay::OverlayCandidate::entity_link(
             parse_id,
@@ -2052,7 +2101,11 @@ async fn review_parse_endpoints_enqueue_and_read_back_status() {
         .expect("GET review-parse");
     let body: Value = resp.json().await.expect("json");
     let candidates = body["candidates"].as_array().expect("candidates array");
-    assert_eq!(candidates.len(), 1, "the seeded entity-link candidate surfaces");
+    assert_eq!(
+        candidates.len(),
+        1,
+        "the seeded entity-link candidate surfaces"
+    );
     assert_eq!(candidates[0]["kind"], "entity_link");
     assert_eq!(candidates[0]["source"], "entity_link");
     assert_eq!(candidates[0]["status"], "pending");
@@ -2082,7 +2135,9 @@ async fn review_parse_endpoint_degrades_gracefully() {
     let config = make_config("http://127.0.0.1:1", false, false, 5000, 2000);
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(None));
     let mut deps = test_deps(pipelines, &config, None, None, None, HashMap::new(), None);
-    deps.ledger = Some(Arc::new(ContentNodeLedger::open_in_memory().expect("ledger")));
+    deps.ledger = Some(Arc::new(
+        ContentNodeLedger::open_in_memory().expect("ledger"),
+    ));
     let server = Box::pin(spawn_test_server_with_deps(deps)).await;
     let base = server.base_url();
     let client = reqwest::Client::new();
@@ -2105,4 +2160,3 @@ async fn review_parse_endpoint_degrades_gracefully() {
         .expect("POST review-parse");
     assert_eq!(resp.status(), 404, "no parse node for session → 404");
 }
-

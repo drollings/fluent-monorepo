@@ -43,7 +43,10 @@ fn smoke_live_enhance_function_structural() {
 
     // Structural invariants only: a comment was produced and is plausibly sized.
     let text = comment.unwrap_or_default();
-    assert!(!text.trim().is_empty(), "live enhancement must not be empty");
+    assert!(
+        !text.trim().is_empty(),
+        "live enhancement must not be empty"
+    );
     assert!(
         text.len() < 1_000_000,
         "live enhancement unexpectedly large ({} bytes)",

@@ -20,7 +20,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use fluent_types::{yago_class_id_for_iri, ConceptMetadata, InterlinguaId, InterlinguaNamespace, NodeId};
+use fluent_types::{
+    yago_class_id_for_iri, ConceptMetadata, InterlinguaId, InterlinguaNamespace, NodeId,
+};
 use guidance_rdf::normalize::hash_iri;
 use serde::Deserialize;
 

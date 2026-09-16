@@ -43,8 +43,7 @@ fn derived_set(derived: &[Triple]) -> Vec<(String, String)> {
 /// Local naive reference: the pre-change whole-graph fixpoint over string
 /// edge pairs (kept as the oracle for the property test).
 fn naive_closure(base: &[(String, String)]) -> Vec<(String, String)> {
-    let mut known: std::collections::HashSet<(String, String)> =
-        base.iter().cloned().collect();
+    let mut known: std::collections::HashSet<(String, String)> = base.iter().cloned().collect();
     loop {
         let edges: Vec<(String, String)> = known.iter().cloned().collect();
         let mut grown = false;
@@ -60,10 +59,8 @@ fn naive_closure(base: &[(String, String)]) -> Vec<(String, String)> {
             break;
         }
     }
-    let base_set: std::collections::HashSet<(String, String)> =
-        base.iter().cloned().collect();
-    let mut derived: Vec<(String, String)> =
-        known.difference(&base_set).cloned().collect();
+    let base_set: std::collections::HashSet<(String, String)> = base.iter().cloned().collect();
+    let mut derived: Vec<(String, String)> = known.difference(&base_set).cloned().collect();
     derived.sort();
     derived
 }
@@ -77,12 +74,7 @@ fn equiv_diamond() {
         triple("D", SUB, "C"),
     ];
     let got = derived_set(&engine().infer(&base).unwrap());
-    assert_eq!(
-        got,
-        vec![
-            ("D".to_string(), "A".to_string()),
-        ]
-    );
+    assert_eq!(got, vec![("D".to_string(), "A".to_string()),]);
 }
 
 #[test]

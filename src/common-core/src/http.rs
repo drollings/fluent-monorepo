@@ -42,4 +42,3 @@ pub fn test_http_client() -> &'static reqwest::Client {
 pub fn json_body(value: &serde_json::Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
-

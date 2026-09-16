@@ -367,9 +367,13 @@ pub fn absolute_or(path: PathBuf) -> PathBuf {
 fn guidance_json_path(source_path: &Path, source_dir: &Path, guidance_dir: &Path) -> PathBuf {
     let source_path = absolute_or(source_path.to_path_buf());
     let source_dir = absolute_or(source_dir.to_path_buf());
-    let relative = source_path.strip_prefix(&source_dir).unwrap_or(&source_path);
+    let relative = source_path
+        .strip_prefix(&source_dir)
+        .unwrap_or(&source_path);
     let json_name = format!("{}.json", relative.display());
-    absolute_or(guidance_dir.to_path_buf()).join("src").join(&json_name)
+    absolute_or(guidance_dir.to_path_buf())
+        .join("src")
+        .join(&json_name)
 }
 
 #[derive(Debug, Clone)]
@@ -488,7 +492,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod regen_determinism_tests {
     use super::*;
@@ -511,19 +514,26 @@ mod regen_determinism_tests {
         first.gen(&file).expect("first gen");
         let json = guidance_dir.join("src").join("m.rs.json");
         let bytes = std::fs::read(&json).expect("read");
-        let mtime = std::fs::metadata(&json).expect("stat").modified().expect("mtime");
+        let mtime = std::fs::metadata(&json)
+            .expect("stat")
+            .modified()
+            .expect("mtime");
         std::thread::sleep(std::time::Duration::from_millis(5));
 
         // Fresh engine, as the pool path constructs per regen.
-        let mut second = SyncEngine::with_parser(
-            guidance_dir.clone(),
-            source_dir.clone(),
-            AstParser::new(),
-        );
+        let mut second =
+            SyncEngine::with_parser(guidance_dir.clone(), source_dir.clone(), AstParser::new());
         second.gen(&file).expect("second gen");
-        assert_eq!(std::fs::read(&json).expect("read"), bytes, "regen must be byte-identical");
         assert_eq!(
-            std::fs::metadata(&json).expect("stat").modified().expect("mtime"),
+            std::fs::read(&json).expect("read"),
+            bytes,
+            "regen must be byte-identical"
+        );
+        assert_eq!(
+            std::fs::metadata(&json)
+                .expect("stat")
+                .modified()
+                .expect("mtime"),
             mtime,
             "identical regen must not bump the mtime"
         );
@@ -548,8 +558,7 @@ mod clock_gate_calibration_tests {
         let mut paths = Vec::new();
         for i in 0..10 {
             let file = source_dir.join(format!("c{i:02}.rs"));
-            std::fs::write(&file, format!("pub fn cal{i:02}() -> u64 {{ {i} }}\n"))
-                .expect("write");
+            std::fs::write(&file, format!("pub fn cal{i:02}() -> u64 {{ {i} }}\n")).expect("write");
             paths.push(file);
         }
         let mut engine = SyncEngine::new(guidance_dir.clone(), source_dir.clone());
@@ -592,8 +601,8 @@ mod clock_gate_calibration_tests {
             );
         }
         // Gated arms: precision then recall.
-        let mut gated = SyncEngine::new(guidance_dir.clone(), source_dir.clone())
-            .with_source_hashes(hashes);
+        let mut gated =
+            SyncEngine::new(guidance_dir.clone(), source_dir.clone()).with_source_hashes(hashes);
         for file in &paths[..5] {
             assert!(
                 !gated.gen_if_stale(file).expect("gate"),

@@ -6,7 +6,6 @@
 //! integration test pins the values so mirror drift fails here instead of at
 //! download time.
 
-
 /// Backend that serves a catalog entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbeddingBackend {
@@ -93,32 +92,27 @@ const BGE_SMALL_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "config.json",
         size: 867,
-        sha256:
-            "26ad1d93a1ba37422fc25472191cfa230010631fa6a01f9d9f81fa13df2d0917",
+        sha256: "26ad1d93a1ba37422fc25472191cfa230010631fa6a01f9d9f81fa13df2d0917",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 533_603,
-        sha256:
-            "ea77de727ef7fd34d177b83b4b1f1d3bb8884c95c90b6554a0adb0b3b65350a9",
+        sha256: "ea77de727ef7fd34d177b83b4b1f1d3bb8884c95c90b6554a0adb0b3b65350a9",
     },
     PinnedArtifact {
         path: "tokenizer_config.json",
         size: 1271,
-        sha256:
-            "eebe14d184cfbd65f6a11d2a5ff39385c4044c8a670a89acf1a13331e04faa60",
+        sha256: "eebe14d184cfbd65f6a11d2a5ff39385c4044c8a670a89acf1a13331e04faa60",
     },
     PinnedArtifact {
         path: "onnx/model_q4.onnx",
         size: 132_562,
-        sha256:
-            "266acb3edd98a1932f876d15bd8f7881a4955d0d53a6d5e79900f788b432de09",
+        sha256: "266acb3edd98a1932f876d15bd8f7881a4955d0d53a6d5e79900f788b432de09",
     },
     PinnedArtifact {
         path: "onnx/model_q4.onnx_data",
         size: 61_185_024,
-        sha256:
-            "77aff1dfb1e0591a40b61a91e5a97796f14c2aff56706e345bef5cbb3613b8cc",
+        sha256: "77aff1dfb1e0591a40b61a91e5a97796f14c2aff56706e345bef5cbb3613b8cc",
     },
 ];
 
@@ -126,32 +120,27 @@ const MINILM_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "config.json",
         size: 794,
-        sha256:
-            "fe5da868b77bdb104140822a5af0837cb6450ad6de8ff3dfcc8dd44ddd3e3ae7",
+        sha256: "fe5da868b77bdb104140822a5af0837cb6450ad6de8ff3dfcc8dd44ddd3e3ae7",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 533_808,
-        sha256:
-            "07805d116826679de90b4edeb2222269c4b8753bc0981be4399f732b2708e904",
+        sha256: "07805d116826679de90b4edeb2222269c4b8753bc0981be4399f732b2708e904",
     },
     PinnedArtifact {
         path: "tokenizer_config.json",
         size: 1463,
-        sha256:
-            "e10bb633ba0d7f69ed342ae7de607f36b39ce53b455fbda69c71700bf57e6f66",
+        sha256: "e10bb633ba0d7f69ed342ae7de607f36b39ce53b455fbda69c71700bf57e6f66",
     },
     PinnedArtifact {
         path: "onnx/model_q4.onnx",
         size: 69_663,
-        sha256:
-            "e4dcb918111189b7686147e309379832fce83d4ecbf17c395961749b5788c786",
+        sha256: "e4dcb918111189b7686147e309379832fce83d4ecbf17c395961749b5788c786",
     },
     PinnedArtifact {
         path: "onnx/model_q4.onnx_data",
         size: 54_429_696,
-        sha256:
-            "56fb7a55115e900196115a74e399beb45c2f41ae00b99525d46fb52935c4ee2a",
+        sha256: "56fb7a55115e900196115a74e399beb45c2f41ae00b99525d46fb52935c4ee2a",
     },
 ];
 
@@ -159,14 +148,12 @@ const POTION_RETRIEVAL_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "model.safetensors",
         size: 129_210_456,
-        sha256:
-            "07609e5bd33aad37900b3fd62f4ec96f6daec88ca4d46b9d8b928bfababf6ea0",
+        sha256: "07609e5bd33aad37900b3fd62f4ec96f6daec88ca4d46b9d8b928bfababf6ea0",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 1_493_150,
-        sha256:
-            "7d75cbc54318138807c401b0f0c9721117c628b39de8e8e0edb6cb17e0ee7d18",
+        sha256: "7d75cbc54318138807c401b0f0c9721117c628b39de8e8e0edb6cb17e0ee7d18",
     },
 ];
 
@@ -174,14 +161,12 @@ const POTION_MULTILINGUAL_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "model.safetensors",
         size: 512_361_560,
-        sha256:
-            "14b5eb39cb4ce5666da8ad1f3dc6be4346e9b2d601c073302fa0a31bf7943397",
+        sha256: "14b5eb39cb4ce5666da8ad1f3dc6be4346e9b2d601c073302fa0a31bf7943397",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 18_616_131,
-        sha256:
-            "19f1909063da3cfe3bd83a782381f040dccea475f4816de11116444a73e1b6a1",
+        sha256: "19f1909063da3cfe3bd83a782381f040dccea475f4816de11116444a73e1b6a1",
     },
 ];
 
@@ -189,14 +174,12 @@ const POTION_CODE_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "model.safetensors",
         size: 32_490_072,
-        sha256:
-            "75cf7a6c2171b230ad19b1e7d8e0b1aee86da5a02af8e7cacedd9921d227623c",
+        sha256: "75cf7a6c2171b230ad19b1e7d8e0b1aee86da5a02af8e7cacedd9921d227623c",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 1_024_340,
-        sha256:
-            "107bbdcbad4bff1d299b7a4c3a2fb17c52890688b7dd0e4c9deab79d3c4f3d45",
+        sha256: "107bbdcbad4bff1d299b7a4c3a2fb17c52890688b7dd0e4c9deab79d3c4f3d45",
     },
 ];
 
@@ -204,26 +187,22 @@ const E5_SMALL_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "config.json",
         size: 658,
-        sha256:
-            "cb99455288675345e1a4f411438d5d0adbba5fbd3a67ea4fb03c015433b996c1",
+        sha256: "cb99455288675345e1a4f411438d5d0adbba5fbd3a67ea4fb03c015433b996c1",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 17_082_730,
-        sha256:
-            "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+        sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
     },
     PinnedArtifact {
         path: "tokenizer_config.json",
         size: 443,
-        sha256:
-            "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b",
+        sha256: "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b",
     },
     PinnedArtifact {
         path: "onnx/model_quantized.onnx",
         size: 118_308_185,
-        sha256:
-            "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193",
+        sha256: "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193",
     },
 ];
 
@@ -231,26 +210,22 @@ const JINA_CODE_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "config.json",
         size: 1216,
-        sha256:
-            "e426aa684c7f9a95c5f020aa855faf93a24f065f5fad0c9e17b124670cabdea6",
+        sha256: "e426aa684c7f9a95c5f020aa855faf93a24f065f5fad0c9e17b124670cabdea6",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 2_561_316,
-        sha256:
-            "b01c78a902aa4facb2f47f95449f48e2f7bbfea5d2472ee2f6ce92323c6f86e5",
+        sha256: "b01c78a902aa4facb2f47f95449f48e2f7bbfea5d2472ee2f6ce92323c6f86e5",
     },
     PinnedArtifact {
         path: "tokenizer_config.json",
         size: 493,
-        sha256:
-            "f477aeb15ff9f78d3c1ddf2361d2b0b8b20cf55220f839f29a37f3a18efddd89",
+        sha256: "f477aeb15ff9f78d3c1ddf2361d2b0b8b20cf55220f839f29a37f3a18efddd89",
     },
     PinnedArtifact {
         path: "onnx/model_quantized.onnx",
         size: 161_895_621,
-        sha256:
-            "ed45870251c9f0cf656e78aab0d37a23489066df8a222bb1c8caf8a45f2cb16d",
+        sha256: "ed45870251c9f0cf656e78aab0d37a23489066df8a222bb1c8caf8a45f2cb16d",
     },
 ];
 
@@ -258,26 +233,22 @@ const GTE_MODERNBERT_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "config.json",
         size: 1184,
-        sha256:
-            "8ba54dc3d35d7194f5178a4194b649f146753e02dabd22bdca5c5cbac15069ed",
+        sha256: "8ba54dc3d35d7194f5178a4194b649f146753e02dabd22bdca5c5cbac15069ed",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 3_583_228,
-        sha256:
-            "6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30",
+        sha256: "6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30",
     },
     PinnedArtifact {
         path: "tokenizer_config.json",
         size: 20_867,
-        sha256:
-            "9654072f7c873161814043cf08cb5ed72f71d0b935abcd4e267935cb34352c21",
+        sha256: "9654072f7c873161814043cf08cb5ed72f71d0b935abcd4e267935cb34352c21",
     },
     PinnedArtifact {
         path: "onnx/model_q4.onnx",
         size: 224_152_761,
-        sha256:
-            "5d1278a1ba749c06b82f9a2f65c2c1c5765d36f2eb88b4888de62ff12b0724a2",
+        sha256: "5d1278a1ba749c06b82f9a2f65c2c1c5765d36f2eb88b4888de62ff12b0724a2",
     },
 ];
 
@@ -285,26 +256,22 @@ const NOMIC_ARTIFACTS: &[PinnedArtifact] = &[
     PinnedArtifact {
         path: "config.json",
         size: 2538,
-        sha256:
-            "9ab00bd92cee80a569f708140b7b6c1661a65891ff3765b1519e181ba2f2c92b",
+        sha256: "9ab00bd92cee80a569f708140b7b6c1661a65891ff3765b1519e181ba2f2c92b",
     },
     PinnedArtifact {
         path: "tokenizer.json",
         size: 711_396,
-        sha256:
-            "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+        sha256: "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
     },
     PinnedArtifact {
         path: "tokenizer_config.json",
         size: 1191,
-        sha256:
-            "d7e0000bcc80134debd2222220427e6bf5fa20a669f40a0d0d1409cc18e0a9bc",
+        sha256: "d7e0000bcc80134debd2222220427e6bf5fa20a669f40a0d0d1409cc18e0a9bc",
     },
     PinnedArtifact {
         path: "onnx/model_q4.onnx",
         size: 165_113_221,
-        sha256:
-            "314976b7b9fba83283f9c8a29ee680a159fa485f52104e3fa39d3d5858337003",
+        sha256: "314976b7b9fba83283f9c8a29ee680a159fa485f52104e3fa39d3d5858337003",
     },
 ];
 

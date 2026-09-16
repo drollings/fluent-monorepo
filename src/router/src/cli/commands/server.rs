@@ -9,14 +9,14 @@ use std::time::{Duration, Instant};
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use super::{cli_err, load_config, router_base_url};
 use super::SpeedtestArgs;
-use crate::config::RouterConfig;
+use super::{cli_err, load_config, router_base_url};
 use crate::cli::gguf::{
     compute_short_id, format_keep_alive, format_size, ollama_display, read_gguf_metadata,
     resolve_model,
 };
 use crate::cli::{CliContext, CliError, CliResult};
+use crate::config::RouterConfig;
 
 pub async fn ps(ctx: &CliContext, api_url: Option<&str>, config_path: Option<&Path>) -> CliResult {
     let base = router_base_url(api_url, config_path);
@@ -92,7 +92,10 @@ pub(crate) fn print_weight_block(
     model_key: &str,
     insts: &[Value],
 ) {
-    print!("{}", render_weight_block(config, gguf_dir, model_key, insts));
+    print!(
+        "{}",
+        render_weight_block(config, gguf_dir, model_key, insts)
+    );
 }
 
 /// Render one model's `ps` block. The llama block is byte-identical to the
@@ -168,24 +171,32 @@ pub(crate) fn render_weight_block(
         return out;
     }
 
-    let gguf_file = config_weights_path(config, model_key).or_else(|| gguf_weights_path(gguf_dir, model_key));
+    let gguf_file =
+        config_weights_path(config, model_key).or_else(|| gguf_weights_path(gguf_dir, model_key));
 
     // Weights identity. The router overlays `short_id`/`arch`/`quant` on the
     // `/instances` rows from the file IT loaded — authoritative even when the
     // weights file isn't on the CLI's host. Fall back to local resolution
     // (config path or GGUF layout) only when the router didn't report it.
-    let identity_from_insts = insts
-        .iter()
-        .find(|i| {
-            i.get("short_id")
-                .and_then(Value::as_str)
-                .is_some_and(|s| !s.is_empty())
-        });
+    let identity_from_insts = insts.iter().find(|i| {
+        i.get("short_id")
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.is_empty())
+    });
     let (short_id, arch, quant) = if let Some(inst) = identity_from_insts {
         (
-            inst.get("short_id").and_then(Value::as_str).unwrap_or("").to_string(),
-            inst.get("arch").and_then(Value::as_str).unwrap_or("").to_string(),
-            inst.get("quant").and_then(Value::as_str).unwrap_or("").to_string(),
+            inst.get("short_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            inst.get("arch")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            inst.get("quant")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
         )
     } else {
         let (sid, arc) = match &gguf_file {
@@ -212,7 +223,10 @@ pub(crate) fn render_weight_block(
     };
     let display = ollama_display(model_key, &quant);
 
-    let _ = writeln!(out, "{display}  (id={short_id}, arch={arch}, quant={quant})");
+    let _ = writeln!(
+        out,
+        "{display}  (id={short_id}, arch={arch}, quant={quant})"
+    );
     let _ = writeln!(out, "  weights   {:>12}", format_size(weights_bytes));
     if !insts.is_empty() {
         out.push_str("  instances\n");

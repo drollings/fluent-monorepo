@@ -39,8 +39,8 @@ pub use capability::{
     check_capability, Capability, CapabilityError, CapabilitySet, FsCapability, CURRENT_CAPS,
 };
 pub use coerce::{
-    coerce, escape_control_chars, escaped_char, literal_kind, parse_bool, parse_int,
-    parse_number, split_top_level, strip_outer_quotes, Coercion, LiteralKind,
+    coerce, escape_control_chars, escaped_char, literal_kind, parse_bool, parse_int, parse_number,
+    split_top_level, strip_outer_quotes, Coercion, LiteralKind,
 };
 pub use dynamic::{DynamicComponent, DynamicExecutor};
 pub use fluent_wvr_macros::{Describable, FieldAccess};
@@ -50,8 +50,7 @@ pub use runtime::{NoopRuntime, Runtime};
 pub use store::OutputStore;
 pub use traits::{
     component_downcast_mut, component_downcast_ref, describe_work_unit, Component, ComponentArcExt,
-    Describable, FieldAccess, FieldError, FieldSchema, SchemaProvider,
-    WorkUnit,
+    Describable, FieldAccess, FieldError, FieldSchema, SchemaProvider, WorkUnit,
 };
 pub use work::{WorkContext, WorkError, WorkOutput};
 

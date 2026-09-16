@@ -52,10 +52,21 @@ fn lemma(fragment_id: &str, lemma: &str, confidence: f64) -> FragmentLemma {
 
 fn seed_alpha(db: &GuidanceDb) {
     let fragments = vec![
-        frag("entity-a", Some("entity-a"), "AlphaSymbol", "export function AlphaSymbol() {}"),
-        frag("entity-a#1", Some("entity-a"), "AlphaSymbol", "AlphaSymbol helper window"),
+        frag(
+            "entity-a",
+            Some("entity-a"),
+            "AlphaSymbol",
+            "export function AlphaSymbol() {}",
+        ),
+        frag(
+            "entity-a#1",
+            Some("entity-a"),
+            "AlphaSymbol",
+            "AlphaSymbol helper window",
+        ),
     ];
-    db.upsert_fragments(&file_a(), &fragments, &[]).expect("upsert");
+    db.upsert_fragments(&file_a(), &fragments, &[])
+        .expect("upsert");
 }
 
 #[test]
@@ -103,37 +114,55 @@ fn fts_respects_filter_pushdown() {
         file_ids: Some(vec!["file-missing".to_string()]),
         ..Default::default()
     };
-    assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
     // Right file → hits.
     let filter = FragmentFilter {
         file_ids: Some(vec!["file-a".to_string()]),
         ..Default::default()
     };
-    assert!(!db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(!db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
     // Symbol-name allow-list.
     let filter = FragmentFilter {
         symbol_names: vec!["Nope".to_string()],
         ..Default::default()
     };
-    assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
     // Symbol-type allow-list.
     let filter = FragmentFilter {
         symbol_types: vec!["class".to_string()],
         ..Default::default()
     };
-    assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
     // mtime window excludes file-a (mtime 100).
     let filter = FragmentFilter {
         modified_after: Some(200),
         ..Default::default()
     };
-    assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
     let filter = FragmentFilter {
         modified_after: Some(50),
         modified_before: Some(250),
         ..Default::default()
     };
-    assert!(!db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(!db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
 }
 
 #[test]
@@ -142,12 +171,20 @@ fn upsert_replaces_file_fragments_and_fts_rows() {
     seed_alpha(&db);
     db.upsert_fragments(
         &file_a(),
-        &[frag("entity-b", None, "BetaSymbol", "export function BetaSymbol() {}")],
+        &[frag(
+            "entity-b",
+            None,
+            "BetaSymbol",
+            "export function BetaSymbol() {}",
+        )],
         &[],
     )
     .expect("re-upsert");
     let filter = FragmentFilter::default();
-    assert!(db.search_fts("AlphaSymbol", 10, &filter).expect("search").is_empty());
+    assert!(db
+        .search_fts("AlphaSymbol", 10, &filter)
+        .expect("search")
+        .is_empty());
     let hits = db.search_fts("BetaSymbol", 10, &filter).expect("search");
     assert_eq!(hits.len(), 1);
 }
@@ -170,12 +207,16 @@ fn lemmas_round_trip_per_fragment() {
         lemma("entity-a#1", "help", 0.8),
     ])
     .expect("lemmas");
-    let ids = db.fragments_for_lemmas(&["alpha".to_string()], 10).expect("lookup");
+    let ids = db
+        .fragments_for_lemmas(&["alpha".to_string()], 10)
+        .expect("lookup");
     assert_eq!(ids, vec!["entity-a".to_string()]);
     // Re-upsert replaces lemma rows with the file.
     db.upsert_fragments(&file_a(), &[frag("entity-b", None, "BetaSymbol", "x")], &[])
         .expect("re-upsert");
-    let ids = db.fragments_for_lemmas(&["alpha".to_string()], 10).expect("lookup");
+    let ids = db
+        .fragments_for_lemmas(&["alpha".to_string()], 10)
+        .expect("lookup");
     assert!(ids.is_empty());
 }
 
@@ -255,7 +296,8 @@ fn vector_search_orders_by_similarity_and_skips_dim_mismatch() {
     far.embedding = Some(vec![0.0, 1.0]);
     let mut wrong_dim = frag("wrong", None, "Wrong", "wrong dims");
     wrong_dim.embedding = Some(vec![1.0, 0.0, 0.0]);
-    db.upsert_fragments(&file_a(), &[near, far, wrong_dim], &[]).expect("upsert");
+    db.upsert_fragments(&file_a(), &[near, far, wrong_dim], &[])
+        .expect("upsert");
     let hits = db
         .search_vector_fragments(&[1.0, 0.0], 10, &FragmentFilter::default())
         .expect("search");
@@ -284,7 +326,9 @@ fn files_and_group_diagnostics_round_trip() {
     let files = db.list_files().expect("files");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].relative_path, "src/a.ts");
-    let groups = db.group_ids_for_files(&["file-a".to_string()]).expect("groups");
+    let groups = db
+        .group_ids_for_files(&["file-a".to_string()])
+        .expect("groups");
     assert_eq!(groups, vec!["entity-a".to_string()]);
 }
 
@@ -296,7 +340,8 @@ fn vector_search_prefers_q8_and_matches_fp32_order() {
     near.embedding = Some(vec![1.0, 0.0]);
     let mut far = frag("far", None, "Far", "far code");
     far.embedding = Some(vec![0.0, 1.0]);
-    db.upsert_fragments(&file_a(), &[near, far], &[]).expect("upsert");
+    db.upsert_fragments(&file_a(), &[near, far], &[])
+        .expect("upsert");
     let hits = db
         .search_vector_fragments(&[1.0, 0.0], 10, &FragmentFilter::default())
         .expect("search");
@@ -308,10 +353,13 @@ fn vector_search_prefers_q8_and_matches_fp32_order() {
 fn upsert_stores_q8_only_and_saves_bytes() {
     let db = GuidanceDb::open_in_memory().expect("db");
     let dims = 64;
-    let vec: Vec<f32> = (0..dims).map(|i| (i as f32) / (dims as f32) - 0.5).collect();
+    let vec: Vec<f32> = (0..dims)
+        .map(|i| (i as f32) / (dims as f32) - 0.5)
+        .collect();
     let mut with_vec = frag("vec-row", None, "VecRow", "vector row");
     with_vec.embedding = Some(vec.clone());
-    db.upsert_fragments(&file_a(), &[with_vec], &[]).expect("upsert");
+    db.upsert_fragments(&file_a(), &[with_vec], &[])
+        .expect("upsert");
     let (fp32_blob, q8_blob): (Option<Vec<u8>>, Option<Vec<u8>>) = db
         .store
         .query_row(
@@ -333,7 +381,8 @@ fn vector_search_reads_legacy_fp32_rows() {
     let db = GuidanceDb::open_in_memory().expect("db");
     let mut legacy = frag("legacy", None, "Legacy", "legacy code");
     legacy.embedding = Some(vec![1.0, 0.0]);
-    db.upsert_fragments(&file_a(), &[legacy], &[]).expect("upsert");
+    db.upsert_fragments(&file_a(), &[legacy], &[])
+        .expect("upsert");
     let fp32_blob = fluent_db::vector::vec_to_bytes(&[1.0f32, 0.0]);
     db.store
         .execute(
@@ -344,14 +393,20 @@ fn vector_search_reads_legacy_fp32_rows() {
     let hits = db
         .search_vector_fragments(&[1.0, 0.0], 10, &FragmentFilter::default())
         .expect("search");
-    assert!(hits.iter().any(|h| h.id == "legacy"), "legacy fp32 row found");
+    assert!(
+        hits.iter().any(|h| h.id == "legacy"),
+        "legacy fp32 row found"
+    );
 }
 
 #[test]
 fn fragment_freshness_none_for_unknown_file() {
     // No committed row → no fingerprint (caller must ingest).
     let db = GuidanceDb::open_in_memory().expect("db");
-    assert_eq!(db.fragment_freshness("never-ingested").expect("query"), None);
+    assert_eq!(
+        db.fragment_freshness("never-ingested").expect("query"),
+        None
+    );
 }
 
 #[test]
@@ -377,10 +432,22 @@ fn fragment_freshness_reports_embedded_flag() {
     let db = GuidanceDb::open_in_memory().expect("db");
     let mut plain = frag("plain-row", None, "Plain", "plain body");
     plain.embedding = None;
-    db.upsert_fragments(&file_a(), &[plain], &[]).expect("upsert");
-    assert!(!db.fragment_freshness("file-a").expect("query").expect("row").embedded);
+    db.upsert_fragments(&file_a(), &[plain], &[])
+        .expect("upsert");
+    assert!(
+        !db.fragment_freshness("file-a")
+            .expect("query")
+            .expect("row")
+            .embedded
+    );
     let mut with_vec = frag("vec-row", None, "VecRow", "vector body");
     with_vec.embedding = Some(vec![0.5, -0.5]);
-    db.upsert_fragments(&file_a(), &[with_vec], &[]).expect("upsert");
-    assert!(db.fragment_freshness("file-a").expect("query").expect("row").embedded);
+    db.upsert_fragments(&file_a(), &[with_vec], &[])
+        .expect("upsert");
+    assert!(
+        db.fragment_freshness("file-a")
+            .expect("query")
+            .expect("row")
+            .embedded
+    );
 }

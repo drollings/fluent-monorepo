@@ -83,13 +83,25 @@ fn derive_field_access_enforces_constraints() {
         internal: 0,
     };
     // min/max on port.
-    assert!(matches!(cfg.set_field("port", "0"), Err(FieldError::Constraint(_))));
-    assert!(matches!(cfg.set_field("port", "65536"), Err(FieldError::Constraint(_))));
+    assert!(matches!(
+        cfg.set_field("port", "0"),
+        Err(FieldError::Constraint(_))
+    ));
+    assert!(matches!(
+        cfg.set_field("port", "65536"),
+        Err(FieldError::Constraint(_))
+    ));
     // non-numeric parse error.
-    assert!(matches!(cfg.set_field("port", "abc"), Err(FieldError::Parse(_))));
+    assert!(matches!(
+        cfg.set_field("port", "abc"),
+        Err(FieldError::Parse(_))
+    ));
     // max_len on host.
     let long = "x".repeat(300);
-    assert!(matches!(cfg.set_field("host", &long), Err(FieldError::Constraint(_))));
+    assert!(matches!(
+        cfg.set_field("host", &long),
+        Err(FieldError::Constraint(_))
+    ));
     // pattern (substring) on endpoint.
     assert!(matches!(
         cfg.set_field("endpoint", "http://plain"),
@@ -97,7 +109,10 @@ fn derive_field_access_enforces_constraints() {
     ));
     cfg.set_field("endpoint", "https://ok").unwrap();
     // unknown field.
-    assert!(matches!(cfg.set_field("nope", "x"), Err(FieldError::NotFound(_))));
+    assert!(matches!(
+        cfg.set_field("nope", "x"),
+        Err(FieldError::NotFound(_))
+    ));
 }
 
 #[test]
@@ -162,7 +177,10 @@ fluent_wvr::impl_component!(FieldlessUnit);
 #[test]
 fn impl_fieldless_rejects_all_fields() {
     let mut unit = FieldlessUnit;
-    assert!(matches!(unit.set_field("x", "y"), Err(FieldError::NotFound(_))));
+    assert!(matches!(
+        unit.set_field("x", "y"),
+        Err(FieldError::NotFound(_))
+    ));
     assert!(matches!(unit.get_field("x"), Err(FieldError::NotFound(_))));
     assert!(unit.field_names().is_empty());
     // The type is still a full Component: it can be erased and downcast.
@@ -209,8 +227,6 @@ fluent_wvr::impl_component!(generic (U: Component + 'static) for Wrapper<U>);
 fn impl_component_generic_expands() {
     let inner: Arc<dyn Component> = Arc::new(FieldlessUnit);
     let comp: Arc<dyn Component> = Arc::new(Wrapper(Arc::clone(&inner)));
-    assert!(
-        fluent_wvr::component_downcast_ref::<Wrapper<Arc<dyn Component>>>(&*comp).is_some()
-    );
+    assert!(fluent_wvr::component_downcast_ref::<Wrapper<Arc<dyn Component>>>(&*comp).is_some());
     assert_eq!(comp.name(), "fieldless");
 }

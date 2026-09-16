@@ -15,31 +15,32 @@ use common_core::retry::backoff_ms;
 use fluent_concurrency::batch::SupervisedBatch;
 use fluent_concurrency::runtime::tokio::TokioRuntime;
 use fluent_dag::dep_graph::DependencyGraph;
-use fluent_llm::embeddings::{BatchEmbedding, CachedEmbeddingProvider, EmbeddingError, EmbeddingProvider};
+use fluent_llm::embeddings::{
+    BatchEmbedding, CachedEmbeddingProvider, EmbeddingError, EmbeddingProvider,
+};
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
-use search_vector::db::{FragmentLemma, GuidanceDb, FileRecord};
+use search_vector::db::{FileRecord, FragmentLemma, GuidanceDb};
 
 use crate::ast_parser::AstParser;
-use crate::diff::{ScannedFile, compute_diff, hash_file, make_file_id};
-use crate::extractor::{
-    ChunkOptions, ExtractSource, FragmentMetadata, PreparedFragment,
-};
+use crate::diff::{compute_diff, hash_file, make_file_id, ScannedFile};
 use crate::extractor::code::{CodeExtractor, HarvestedFile};
+use crate::extractor::{ChunkOptions, ExtractSource, FragmentMetadata, PreparedFragment};
 use crate::query::db_storage::{fragment_lemma, fragment_record};
 use crate::query::ingest::query_lemmas;
-use crate::selection::{FileSelection, ScanDiagnostics, SelectedFile, select_files};
 use crate::search_types::{
     CodeEntityModifier, EntityFragment, EntityMetadata, FileKind, FragmentContent, FragmentSpan,
 };
+use crate::selection::{select_files, FileSelection, ScanDiagnostics, SelectedFile};
 
 /// Files per bounded wave (named constant, tuned in P6).
 pub const INDEX_WAVE_FILES: usize = 64;
 /// Fragment-index schema version enforced by the `SyncEngine` gate.
-pub const INDEX_SCHEMA_VERSION: u32 = 1;/// Default cross-file embed packing size.
+pub const INDEX_SCHEMA_VERSION: u32 = 1;
+/// Default cross-file embed packing size.
 pub const INDEX_EMBED_BATCH: usize = 32;
 /// Transient embed retry budget (zvec C.4: 3×500ms).
 pub const EMBED_RETRY_ATTEMPTS: u32 = 3;
@@ -172,7 +173,8 @@ where
     let mut existing = db.list_files().map_err(|e| IndexError::Db(e.to_string()))?;
     if options.rebuild {
         for file in &existing {
-            db.delete_file(&file.id).map_err(|e| IndexError::Db(e.to_string()))?;
+            db.delete_file(&file.id)
+                .map_err(|e| IndexError::Db(e.to_string()))?;
         }
         existing.clear();
     }
@@ -184,30 +186,47 @@ where
 
     // Scoped runs only delete stored files under the selection scope:
     // out-of-scope files are untouched, never reaped (P3 reconcile).
-    let by_id: HashMap<&str, &search_vector::db::FileRecord> =
-        existing.iter().map(|file| (file.id.as_str(), file)).collect();
+    let by_id: HashMap<&str, &search_vector::db::FileRecord> = existing
+        .iter()
+        .map(|file| (file.id.as_str(), file))
+        .collect();
     let in_scope = |id: &str| {
         by_id.get(id).is_some_and(|record| {
             let path = Path::new(&record.absolute_path);
-            selection.roots.iter().any(|root| path == root || path.starts_with(root))
+            selection
+                .roots
+                .iter()
+                .any(|root| path == root || path.starts_with(root))
         })
     };
     for id in diff.deleted.iter().filter(|id| in_scope(id)) {
-        db.delete_file(id).map_err(|e| IndexError::Db(e.to_string()))?;
+        db.delete_file(id)
+            .map_err(|e| IndexError::Db(e.to_string()))?;
         stats.files_deleted += 1;
     }
 
-    let mut work: Vec<ScannedFile> =
-        diff.added.into_iter().chain(diff.modified).chain(diff.pending).collect();
+    let mut work: Vec<ScannedFile> = diff
+        .added
+        .into_iter()
+        .chain(diff.modified)
+        .chain(diff.pending)
+        .collect();
     // Deterministic file order via the dependency graph (P2 registers file
     // nodes; P3 adds symbol edges; cancellation rides `dependents_of`).
     let mut graph = DependencyGraph::<String>::new();
     for file in &work {
         let _ = graph.register(&file.id, &[], std::slice::from_ref(&file.id));
     }
-    let order = graph.topo_sort().map_err(|e| IndexError::Db(e.to_string()))?;
+    let order = graph
+        .topo_sort()
+        .map_err(|e| IndexError::Db(e.to_string()))?;
     let position: HashMap<&str, usize> = order.iter().map(String::as_str).zip(0..).collect();
-    work.sort_by_key(|file| position.get(file.id.as_str()).copied().unwrap_or(usize::MAX));
+    work.sort_by_key(|file| {
+        position
+            .get(file.id.as_str())
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
 
     let total = work.len();
     let shared = Arc::new(SharedPipeline {
@@ -221,7 +240,11 @@ where
     });
 
     let mut failed: Vec<(ScannedFile, String)> = Vec::new();
-    for (wave_index, chunk) in work.chunks(options.wave_files.max(1)).map(Vec::from).enumerate() {
+    for (wave_index, chunk) in work
+        .chunks(options.wave_files.max(1))
+        .map(Vec::from)
+        .enumerate()
+    {
         if cancel.load(Ordering::SeqCst) {
             return Err(IndexError::Cancelled);
         }
@@ -251,8 +274,7 @@ where
             files_failed: failed.len(),
             detail: format!("retrying {} failed files (pass 2)", failed.len()),
         });
-        let retry_files: Vec<ScannedFile> =
-            failed.iter().map(|(file, _)| file.clone()).collect();
+        let retry_files: Vec<ScannedFile> = failed.iter().map(|(file, _)| file.clone()).collect();
         let mut retry_failed = Vec::new();
         run_wave(
             "index-wave-retry",
@@ -348,8 +370,7 @@ where
         outcomes: Arc::clone(&outcomes),
     };
     // N.wvr: observability wraps the concrete unit before type erasure.
-    let instrumented =
-        fluent_wvr::wrapper::Instrumented::with_metrics(unit, name, wave_histogram);
+    let instrumented = fluent_wvr::wrapper::Instrumented::with_metrics(unit, name, wave_histogram);
     // Multi-thread runtime: shared provider seams (e.g. the embedding
     // cache) may `block_in_place`; waves still run sequentially.
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -358,8 +379,11 @@ where
         .build()
         .map_err(|e| IndexError::Db(e.to_string()))?;
     let summary = runtime.block_on(async {
-        let mut batch = SupervisedBatch::new(Arc::new(TokioRuntime), fluent_wvr::CapabilitySet::new());
-        batch.register(Arc::new(instrumented)).expect("wave unit registers");
+        let mut batch =
+            SupervisedBatch::new(Arc::new(TokioRuntime), fluent_wvr::CapabilitySet::new());
+        batch
+            .register(Arc::new(instrumented))
+            .expect("wave unit registers");
         batch.await
     });
     // Fail-fast aborts surface from the outcomes (the unit records the
@@ -412,11 +436,18 @@ where
 
 /// Per-file wave outcome (collected under a mutex; siblings continue).
 enum FileOutcome {
-    Indexed { fragments: usize },
+    Indexed {
+        fragments: usize,
+    },
     ImageSkipped,
-    Failed { file: ScannedFile, reason: String },
+    Failed {
+        file: ScannedFile,
+        reason: String,
+    },
     /// Fail-fast abort: stop scheduling at once (no retry, no second pass).
-    Abort { reason: String },
+    Abort {
+        reason: String,
+    },
 }
 
 struct SharedPipeline<P: EmbeddingProvider> {
@@ -469,7 +500,10 @@ where
         let (mut by_index, failures) = match embed_ready_files(&self.shared, &ready) {
             Ok((ok, failed)) => (ok.into_iter().collect::<HashMap<_, _>>(), failed),
             Err(reason) => {
-                outcomes.lock().expect("outcomes").push(FileOutcome::Abort { reason });
+                outcomes
+                    .lock()
+                    .expect("outcomes")
+                    .push(FileOutcome::Abort { reason });
                 return Err(WorkError::Execution(format!("{} aborted", self.name)));
             }
         };
@@ -479,14 +513,22 @@ where
                 .find(|prepared| prepared.index == index)
                 .map(|prepared| prepared.file.clone())
                 .expect("failed file is prepared");
-            outcomes.lock().expect("outcomes").push(FileOutcome::Failed { file, reason });
+            outcomes
+                .lock()
+                .expect("outcomes")
+                .push(FileOutcome::Failed { file, reason });
         }
         // Commit phase: per-file replace + vector-count validation.
         for prepared in &ready {
-            if outcomes.lock().expect("outcomes").iter().any(|outcome| match outcome {
-                FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
-                _ => false,
-            }) {
+            if outcomes
+                .lock()
+                .expect("outcomes")
+                .iter()
+                .any(|outcome| match outcome {
+                    FileOutcome::Failed { file, .. } => file.id == prepared.file.id,
+                    _ => false,
+                })
+            {
                 continue;
             }
             let vectors = by_index.remove(&prepared.index).unwrap_or_default();
@@ -637,7 +679,12 @@ where
     let mut file_failed: HashMap<usize, String> = HashMap::new();
     for pack in flat.chunks(shared.options.max_embed_batch.max(1)) {
         let refs: Vec<&str> = pack.iter().map(|(_, text)| *text).collect();
-        match embed_with_retry(&shared.provider, &refs, &shared.options, &shared.histogram_embed) {
+        match embed_with_retry(
+            &shared.provider,
+            &refs,
+            &shared.options,
+            &shared.histogram_embed,
+        ) {
             Ok(batch) => {
                 for ((index, _), vector) in pack.iter().zip(batch_vectors(&batch)) {
                     per_file.entry(*index).or_default().push(vector);
@@ -678,7 +725,10 @@ where
         if let Some(reason) = file_failed.remove(&prepared.index) {
             failed.push((prepared.index, reason));
         } else {
-            ok.push((prepared.index, per_file.remove(&prepared.index).unwrap_or_default()));
+            ok.push((
+                prepared.index,
+                per_file.remove(&prepared.index).unwrap_or_default(),
+            ));
         }
     }
     Ok((ok, failed))
@@ -736,7 +786,10 @@ where
     shared.histogram_commit.observe_duration(commit_started);
     match result {
         Ok(count) => FileOutcome::Indexed { fragments: count },
-        Err(reason) => FileOutcome::Failed { file: prepared.file.clone(), reason },
+        Err(reason) => FileOutcome::Failed {
+            file: prepared.file.clone(),
+            reason,
+        },
     }
 }
 
@@ -770,7 +823,11 @@ fn prepare_fragments(
                 }
                 _ => crate::extractor::text::extract_plain_text_fragments(source, options)?,
             };
-            Ok(if fragments.is_empty() { None } else { Some(fragments) })
+            Ok(if fragments.is_empty() {
+                None
+            } else {
+                Some(fragments)
+            })
         },
         |_: &crate::extractor::ExtractError| true,
     );
@@ -895,7 +952,12 @@ fn commit_graph(db: &GuidanceDb, path: &str, harvest: &HarvestedFile) -> Result<
     let symbols: Vec<(String, Vec<String>)> = harvest
         .symbols
         .iter()
-        .map(|symbol| (symbol.name.clone().unwrap_or_default(), symbol.calls.clone()))
+        .map(|symbol| {
+            (
+                symbol.name.clone().unwrap_or_default(),
+                symbol.calls.clone(),
+            )
+        })
         .collect();
     db.replace_file_graph(path, &harvest.imports, &symbols)
         .map_err(|e| format!("graph: {e}"))
@@ -912,7 +974,9 @@ fn prepared_to_entity(file: &ScannedFile, fragment: &PreparedFragment) -> Entity
             start_offset: fragment.range.start_offset as u64,
             end_offset: fragment.range.end_offset as u64,
         },
-        content: FragmentContent::Text { text: fragment.content_text.clone() },
+        content: FragmentContent::Text {
+            text: fragment.content_text.clone(),
+        },
         metadata: fragment.metadata.as_ref().map(prepared_metadata),
     }
 }
@@ -948,7 +1012,11 @@ fn prepared_metadata(metadata: &FragmentMetadata) -> EntityMetadata {
                 })
                 .collect(),
         },
-        FragmentMetadata::Markdown { heading, level, scope } => EntityMetadata::Markdown {
+        FragmentMetadata::Markdown {
+            heading,
+            level,
+            scope,
+        } => EntityMetadata::Markdown {
             heading: heading.clone(),
             level: *level,
             scope: scope.clone(),

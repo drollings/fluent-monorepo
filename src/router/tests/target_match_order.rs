@@ -102,16 +102,13 @@ impl fluent_llm::client::ChatBackend for DelayBackend {
 fn matcher_with_keys(
     pairs: Vec<(&str, Arc<dyn fluent_llm::client::ChatBackend>)>,
 ) -> TargetMatcher {
-    let by_key: HashMap<String, Arc<dyn fluent_llm::client::ChatBackend>> = pairs
-        .into_iter()
-        .map(|(k, b)| (k.to_string(), b))
-        .collect();
+    let by_key: HashMap<String, Arc<dyn fluent_llm::client::ChatBackend>> =
+        pairs.into_iter().map(|(k, b)| (k.to_string(), b)).collect();
     TargetMatcher::new(
         TargetBackends::new(
             by_key,
-            Arc::new(StubChatBackend::always(assessment(9, "default"))) as Arc<
-                dyn fluent_llm::client::ChatBackend,
-            >,
+            Arc::new(StubChatBackend::always(assessment(9, "default")))
+                as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         0,
@@ -189,28 +186,24 @@ fn empty_group_returns_none_without_calls() {
     let backend = Arc::new(CountingBackend::new(assessment(1, "x")));
     let calls_backend = Arc::clone(&backend);
     let matcher = TargetMatcher::new(
-        TargetBackends::new(HashMap::new(), calls_backend as Arc<
-            dyn fluent_llm::client::ChatBackend,
-        >),
+        TargetBackends::new(
+            HashMap::new(),
+            calls_backend as Arc<dyn fluent_llm::client::ChatBackend>,
+        ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         0,
     );
     let routing = routing_with("default", &[]);
-    assert!(
-        matcher
-            .match_target("local", "default", &routing, &[], Some(3), "hello")
-            .is_none()
-    );
+    assert!(matcher
+        .match_target("local", "default", &routing, &[], Some(3), "hello")
+        .is_none());
     assert_eq!(backend.calls(), 0);
 }
 
 #[test]
 fn all_failures_match_last() {
-    let failing = || {
-        Arc::new(StubChatBackend::new(Vec::new())) as Arc<
-            dyn fluent_llm::client::ChatBackend,
-        >
-    };
+    let failing =
+        || Arc::new(StubChatBackend::new(Vec::new())) as Arc<dyn fluent_llm::client::ChatBackend>;
     let matcher = matcher_with_keys(vec![
         ("m9-x", failing()),
         ("m9-y", failing()),
@@ -244,9 +237,8 @@ fn single_candidate_makes_exactly_one_call() {
                 "m9-only".to_string(),
                 Arc::clone(&backend) as Arc<dyn fluent_llm::client::ChatBackend>,
             )]),
-            Arc::new(StubChatBackend::always(assessment(9, "default"))) as Arc<
-                dyn fluent_llm::client::ChatBackend,
-            >,
+            Arc::new(StubChatBackend::always(assessment(9, "default")))
+                as Arc<dyn fluent_llm::client::ChatBackend>,
         ),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         0,
@@ -280,7 +272,14 @@ fn assess_suffix_outside_runtime_matches_sequential_outcomes() {
         .collect();
     let sequential: Vec<String> = suffix
         .iter()
-        .map(|c| format!("{:?}", matcher.assess_suffix(std::slice::from_ref(c), "hello").remove(0)))
+        .map(|c| {
+            format!(
+                "{:?}",
+                matcher
+                    .assess_suffix(std::slice::from_ref(c), "hello")
+                    .remove(0)
+            )
+        })
         .collect();
     assert_eq!(fanned, sequential);
 }

@@ -45,12 +45,18 @@ fn text_lines_offset(text: &str, target_line_idx: usize) -> usize {
     offset
 }
 
-fn extract_citation_at_colon(line: &str, colon_pos: usize, line_abs_start: usize) -> Option<Citation> {
+fn extract_citation_at_colon(
+    line: &str,
+    colon_pos: usize,
+    line_abs_start: usize,
+) -> Option<Citation> {
     let before = &line[..colon_pos];
     let after = &line[colon_pos + 1..];
 
     let file_start = before
-        .rfind(|c: char| !c.is_alphanumeric() && c != '/' && c != '\\' && c != '.' && c != '_' && c != '-')
+        .rfind(|c: char| {
+            !c.is_alphanumeric() && c != '/' && c != '\\' && c != '.' && c != '_' && c != '-'
+        })
         .map_or(0, |p| p + 1);
 
     let file_part = &before[file_start..];
@@ -77,7 +83,11 @@ fn extract_citation_at_colon(line: &str, colon_pos: usize, line_abs_start: usize
     let span_start = line_abs_start + file_start;
     let span_end = line_abs_start + colon_pos + 1 + digits_end;
 
-    Some(Citation { file: file_part.to_string(), line: line_num, span: (span_start, span_end) })
+    Some(Citation {
+        file: file_part.to_string(),
+        line: line_num,
+        span: (span_start, span_end),
+    })
 }
 
 /// Try to extract a `file:line` citation at the given byte offset.
@@ -89,4 +99,3 @@ pub fn extract_citation_at(text: &str, offset: usize) -> Option<Citation> {
         .into_iter()
         .find(|citation| offset >= citation.span.0 && offset < citation.span.1)
 }
-

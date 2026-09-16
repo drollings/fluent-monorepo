@@ -379,7 +379,10 @@ mod tests {
         let config_path = guidance_dir.join("guidance-config.json");
         std::fs::write(&config_path, r#"{"guidance_dir": ".guidance"}"#).expect("write");
         // A present project file always wins, regardless of ambient state.
-        assert_eq!(find_config_file(dir.path()).as_deref(), Some(config_path.as_path()));
+        assert_eq!(
+            find_config_file(dir.path()).as_deref(),
+            Some(config_path.as_path())
+        );
     }
 
     #[test]

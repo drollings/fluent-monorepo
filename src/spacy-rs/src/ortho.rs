@@ -23,8 +23,8 @@
 
 use std::sync::LazyLock;
 
-use common_core::blob_spec::BlobCursor;
 use crate::error::SpacyError;
+use common_core::blob_spec::BlobCursor;
 
 /// Magic bytes `"SOR1"` — tagger orthography artifact.
 pub const BLOB_MAGIC_SOR1: u32 = 0x534F_5231;
@@ -71,32 +71,46 @@ impl<'a> TaggerOrtho<'a> {
         // Absolute header reads + an advancing cursor for the list/scalar
         // walk (M2): the same `blob_spec` spelling as the lemma loader.
         let probe = BlobCursor::new(data);
-        let magic = probe.peek_u32(0).ok_or_else(|| err("truncated magic".to_string()))?;
+        let magic = probe
+            .peek_u32(0)
+            .ok_or_else(|| err("truncated magic".to_string()))?;
         if magic != BLOB_MAGIC_SOR1 {
             return Err(err(format!("bad magic {magic:#x}")));
         }
-        let version = probe.peek_u16(4).ok_or_else(|| err("truncated version".to_string()))?;
+        let version = probe
+            .peek_u16(4)
+            .ok_or_else(|| err("truncated version".to_string()))?;
         if version != BLOB_VERSION_SOR1 {
             return Err(err(format!("unsupported version {version}")));
         }
         let mut cur = BlobCursor::with_offset(data, 6);
         let mut lists = Vec::with_capacity(3);
         for what in ["trailing", "boundary", "bare_follow"] {
-            let count =
-                cur.u32_le().ok_or_else(|| err(format!("{what} truncated count")))? as usize;
-            let len =
-                cur.u32_le().ok_or_else(|| err(format!("{what} truncated length")))? as usize;
+            let count = cur
+                .u32_le()
+                .ok_or_else(|| err(format!("{what} truncated count")))?
+                as usize;
+            let len = cur
+                .u32_le()
+                .ok_or_else(|| err(format!("{what} truncated length")))?
+                as usize;
             if count == 0 {
                 return Err(err(format!("{what} must not be empty")));
             }
-            let body = cur.take(len).ok_or_else(|| err(format!("{what} truncated body")))?;
+            let body = cur
+                .take(len)
+                .ok_or_else(|| err(format!("{what} truncated body")))?;
             lists.push(split_list(body, count, what)?);
         }
         let mut scalars = Vec::with_capacity(5);
         for what in ["plural_s", "manner_ly", "past_ed", "part_ing", "comma"] {
-            let len =
-                cur.u32_le().ok_or_else(|| err(format!("{what} truncated length")))? as usize;
-            let body = cur.take(len).ok_or_else(|| err(format!("{what} truncated body")))?;
+            let len = cur
+                .u32_le()
+                .ok_or_else(|| err(format!("{what} truncated length")))?
+                as usize;
+            let body = cur
+                .take(len)
+                .ok_or_else(|| err(format!("{what} truncated body")))?;
             let s = std::str::from_utf8(body).map_err(|_| err(format!("{what} is not UTF-8")))?;
             if s.is_empty() || s.contains('\0') {
                 return Err(err(format!("{what} must be non-empty NUL-free")));

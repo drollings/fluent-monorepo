@@ -199,7 +199,11 @@ impl LedgerSalienceProvider {
     /// A provider over the shared node store, at `now` unix-seconds.
     #[must_use]
     pub fn new(store: Arc<ContentNodeStore>, now: u64) -> Self {
-        Self { store, now, session_id: None }
+        Self {
+            store,
+            now,
+            session_id: None,
+        }
     }
 
     /// Scoped to a session; snapshot loads only that session's rows (see M7).
@@ -243,7 +247,11 @@ impl SalienceSource for LedgerSalienceProvider {
                     id,
                     SalienceSignal {
                         frame_frequency: freq,
-                        interlingua_centrality: snapshot.centrality.get(&node).copied().unwrap_or(0.0),
+                        interlingua_centrality: snapshot
+                            .centrality
+                            .get(&node)
+                            .copied()
+                            .unwrap_or(0.0),
                         recency: snapshot.recency(node, self.now),
                         reference_count: refs,
                     },
@@ -371,11 +379,9 @@ impl LedgerSnapshot {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?
         } else {
-            store.query_rows(
-                "SELECT node_id, created_at FROM ledger",
-                &[],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?
+            store.query_rows("SELECT node_id, created_at FROM ledger", &[], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
         };
         let created_at: BTreeMap<i64, u64> =
             created.into_iter().map(|(n, t)| (n, t as u64)).collect();

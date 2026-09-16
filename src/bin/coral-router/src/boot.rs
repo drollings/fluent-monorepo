@@ -12,17 +12,16 @@
 //! the class counts must match and every reference class's `node_id` must
 //! resolve in both. The `InMemoryConceptStore` is never the production store.
 
-
 use std::sync::Arc;
 
 use coral_context::db::Library;
+use fluent_concept::{ConceptStore, TaxonomyHierarchy};
 use fluent_router::concept_store_sqlite::SqliteConceptStore;
 use fluent_router::config::RouterConfig;
 use fluent_router::ledger::ContentNodeLedger;
 use fluent_types::{ContentNode, NodeId};
 use guidance_ontology::yago::WHITELIST_IRIS;
 use guidance_ontology::yago_loader::YaGoLoader;
-use fluent_concept::{ConceptStore, TaxonomyHierarchy};
 
 /// Open the ledger the way the boot wants it: a
 /// configured `ledger` section opens its durable path (with a `warn!` for the
@@ -71,7 +70,10 @@ pub fn open_ledger(config: &RouterConfig) -> Result<Arc<ContentNodeLedger>, Stri
                 target: "coral-router",
                 "nlp/review/overlay configured without a `ledger` section - using an in-memory ledger (ephemeral)",
             );
-            Arc::new(ContentNodeLedger::open_in_memory().map_err(|e| format!("ledger open failed: {e}"))?)
+            Arc::new(
+                ContentNodeLedger::open_in_memory()
+                    .map_err(|e| format!("ledger open failed: {e}"))?,
+            )
         }
     };
     Ok(ledger)
@@ -94,9 +96,7 @@ pub struct ConceptStoreBoot {
 /// Build the shared concept store + correction index over `ledger`'s shared
 /// connection and reconcile YaGO across the two homes. `ledger` must be
 /// durable-backed (shared SQLite present).
-pub fn build_concept_store_boot(
-    ledger: &ContentNodeLedger,
-) -> Result<ConceptStoreBoot, String> {
+pub fn build_concept_store_boot(ledger: &ContentNodeLedger) -> Result<ConceptStoreBoot, String> {
     let shared_sqlite = ledger
         .node_store()
         .shared_sqlite()
@@ -180,8 +180,7 @@ pub fn load_yago_and_reconcile(
             .insert(c.clone())
             .map_err(|e| format!("sqlite insert of {} failed: {e}", c.canonical_name))?;
     }
-    store
-        .set_hierarchy(TaxonomyHierarchy::from_edges(&edges).map_err(|e| e.to_string())?);
+    store.set_hierarchy(TaxonomyHierarchy::from_edges(&edges).map_err(|e| e.to_string())?);
 
     // ── Reconciliation assert (M5): id-membership, never raw counts. ──
     // Distinct-id agreement (collision-tolerant): the loader dedupes by id, so
@@ -204,9 +203,9 @@ pub fn load_yago_and_reconcile(
         if store.get(c.id).is_ok() {
             router_resolved += 1;
         }
-        let node_id = c.node_id.ok_or_else(|| {
-            format!("concept {} missing node_id", c.canonical_name)
-        })?;
+        let node_id = c
+            .node_id
+            .ok_or_else(|| format!("concept {} missing node_id", c.canonical_name))?;
         if coral
             .get_node(node_id)
             .map_err(|e| format!("coral get {} failed: {e}", c.canonical_name))?
@@ -254,7 +253,11 @@ pub fn load_yago_and_reconcile(
         if !in_coral || !in_router {
             return Err(format!(
                 "reference class {iri} missing from {}",
-                if !in_coral { "coral" } else { "the router store" }
+                if !in_coral {
+                    "coral"
+                } else {
+                    "the router store"
+                }
             ));
         }
     }
@@ -269,9 +272,7 @@ pub fn load_yago_and_reconcile(
 /// Build a `SqliteConceptStore` over the shared ledger connection (the boot
 /// composition seam). Returns `None` when the ledger has no durable backing.
 #[allow(dead_code)]
-pub fn sqlite_store_from_ledger(
-    ledger: &ContentNodeLedger,
-) -> Option<SqliteConceptStore> {
+pub fn sqlite_store_from_ledger(ledger: &ContentNodeLedger) -> Option<SqliteConceptStore> {
     ledger
         .node_store()
         .shared_sqlite()
@@ -281,8 +282,8 @@ pub fn sqlite_store_from_ledger(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use guidance_ontology::yago::ALL_CLASSES;
+    use std::sync::Arc;
 
     #[test]
     fn embedded_taxonomy_reconciles_across_two_homes() {
@@ -427,10 +428,16 @@ mod tests {
         // Boot order (mirrors main.rs): open ledger → build store + reconcile →
         // thread NlpDeps → build pipelines.
         let ledger = open_ledger(&config).expect("ledger opens");
-        let store_boot = build_concept_store_boot(&ledger).expect("store + reconcile built before pipeline");
-        assert!(store_boot.stats.classes >= 7, "YaGO reconcile populated the store");
+        let store_boot =
+            build_concept_store_boot(&ledger).expect("store + reconcile built before pipeline");
+        assert!(
+            store_boot.stats.classes >= 7,
+            "YaGO reconcile populated the store"
+        );
         let nlp_deps = NlpDeps {
-            concept_store: Some(store_boot.concept_store as std::sync::Arc<dyn fluent_concept::ConceptStore>),
+            concept_store: Some(
+                store_boot.concept_store as std::sync::Arc<dyn fluent_concept::ConceptStore>,
+            ),
             strings_path: None,
         };
         let map = config.build_all_pipelines_with_backend_onnx_and_nlp(None, None, &nlp_deps);

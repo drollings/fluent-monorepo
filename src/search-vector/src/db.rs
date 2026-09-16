@@ -4,8 +4,8 @@ use std::path::Path;
 
 use fluent_db::error::DbError;
 use fluent_db::hnsw::HnswIndex;
-use fluent_db::vector;
 use fluent_db::store::SqliteStore;
+use fluent_db::vector;
 use rusqlite::params;
 use thiserror::Error;
 
@@ -588,9 +588,7 @@ impl GuidanceDb {
 
     /// Read the last successful node-sync watermark, if any. Corrupt
     /// values read as absent (the caller fails open toward a rebuild).
-    fn read_node_sync_watermark(
-        &self,
-    ) -> Result<Option<NodeSyncFingerprint>, VectorDbError> {
+    fn read_node_sync_watermark(&self) -> Result<Option<NodeSyncFingerprint>, VectorDbError> {
         let value: Option<String> = self
             .store
             .query_row(
@@ -613,10 +611,7 @@ impl GuidanceDb {
         &self,
         fingerprint: &NodeSyncFingerprint,
     ) -> Result<(), VectorDbError> {
-        let value = format!(
-            "{}:{}",
-            fingerprint.max_mtime_ms, fingerprint.file_count
-        );
+        let value = format!("{}:{}", fingerprint.max_mtime_ms, fingerprint.file_count);
         self.store
             .execute(
                 "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('node_sync', ?1)",
@@ -922,8 +917,10 @@ impl GuidanceDb {
             placeholders.join(","),
             lemmas.len() + 1
         );
-        let mut values: Vec<rusqlite::types::Value> =
-            lemmas.iter().map(|l| rusqlite::types::Value::Text(l.clone())).collect();
+        let mut values: Vec<rusqlite::types::Value> = lemmas
+            .iter()
+            .map(|l| rusqlite::types::Value::Text(l.clone()))
+            .collect();
         values.push(rusqlite::types::Value::Integer(limit as i64));
         self.store
             .with_conn(|conn| {
@@ -1221,8 +1218,10 @@ impl GuidanceDb {
              AND grp IS NOT NULL AND grp != '' ORDER BY grp",
             fluent_db::sqlite::in_clause(file_ids.len())
         );
-        let values: Vec<rusqlite::types::Value> =
-            file_ids.iter().map(|id| rusqlite::types::Value::Text(id.clone())).collect();
+        let values: Vec<rusqlite::types::Value> = file_ids
+            .iter()
+            .map(|id| rusqlite::types::Value::Text(id.clone()))
+            .collect();
         self.store
             .with_conn(|conn| {
                 fluent_db::query::query_rows_from_iter(conn, &sql, values, |row| row.get(0))
@@ -1320,7 +1319,10 @@ fn ensure_fragment_q8_column(conn: &rusqlite::Connection) -> rusqlite::Result<()
         existing.insert(name);
     }
     if !existing.contains("embedding_q8") {
-        conn.execute("ALTER TABLE fragments ADD COLUMN embedding_q8 BLOB", params![])?;
+        conn.execute(
+            "ALTER TABLE fragments ADD COLUMN embedding_q8 BLOB",
+            params![],
+        )?;
     }
     Ok(())
 }
@@ -1567,7 +1569,8 @@ fn append_fragment_filter(
             sql.push_str(" AND 1 = 0");
             return;
         }
-        let placeholders: Vec<String> = (0..ids.len()).map(|i| format!("?{}", *param + i)).collect();
+        let placeholders: Vec<String> =
+            (0..ids.len()).map(|i| format!("?{}", *param + i)).collect();
         let _ = write!(sql, " AND {column} IN ({})", placeholders.join(","));
         values.extend(ids.iter().map(|id| Value::Text(id.clone())));
         *param += ids.len();
@@ -1619,7 +1622,10 @@ pub fn build_fts_match(query: &str) -> Option<String> {
     let mut parts = Vec::new();
     if !ascii.is_empty() {
         let or: Vec<String> = ascii.iter().map(|t| quote(t)).collect();
-        parts.push(format!("{{content_text symbol_name}} : ({})", or.join(" OR ")));
+        parts.push(format!(
+            "{{content_text symbol_name}} : ({})",
+            or.join(" OR ")
+        ));
     }
     if !bigrams.is_empty() {
         let or: Vec<String> = bigrams.iter().map(|b| quote(b)).collect();
@@ -1762,7 +1768,10 @@ mod tests {
             vec!["twin-a", "twin-b"]
         );
         // k == 0 → empty.
-        assert!(db.bruteforce_vector_search(&near, 0).expect("search").is_empty());
+        assert!(db
+            .bruteforce_vector_search(&near, 0)
+            .expect("search")
+            .is_empty());
     }
 
     #[test]

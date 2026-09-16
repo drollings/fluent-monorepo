@@ -21,7 +21,10 @@ fn code_meta() -> FragmentMetadata {
 fn metadata_prefix_joins_code_lines() {
     let text = vector_content_for_fragment(&Some(code_meta()), "body", None);
     assert!(text.starts_with("symbol: function add\n"), "{text:?}");
-    assert!(text.contains("signature: async function add(value: number): Promise<number>\n"), "{text:?}");
+    assert!(
+        text.contains("signature: async function add(value: number): Promise<number>\n"),
+        "{text:?}"
+    );
     assert!(text.contains("modifiers: async\n"), "{text:?}");
     assert!(text.contains("doc: Adds one.\n"), "{text:?}");
     assert!(text.ends_with("\nbody"), "{text:?}");
@@ -39,7 +42,10 @@ fn metadata_budget_caps_prefix_at_quarter_chunk() {
 
 #[test]
 fn no_metadata_returns_content_unchanged() {
-    assert_eq!(vector_content_for_fragment(&None, "body", Some(100)), "body");
+    assert_eq!(
+        vector_content_for_fragment(&None, "body", Some(100)),
+        "body"
+    );
 }
 
 #[test]
@@ -68,5 +74,8 @@ fn markdown_metadata_uses_heading_lines() {
         scope: Some("Top".to_string()),
     });
     let text = vector_content_for_fragment(&meta, "body", None);
-    assert!(text.starts_with("heading: Guide\nheading_level: 2\nscope: Top\n"), "{text:?}");
+    assert!(
+        text.starts_with("heading: Guide\nheading_level: 2\nscope: Top\n"),
+        "{text:?}"
+    );
 }

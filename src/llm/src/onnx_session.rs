@@ -116,7 +116,9 @@ fn now_unix_ms() -> i64 {
 /// The model file's external-data sibling prefix: `<model>.onnx` →
 /// `<model>.onnx_data` (`onnx_data`, `onnx_data_1`, …).
 fn external_data_prefix(model_file_name: &str) -> String {
-    let base = model_file_name.strip_suffix(".onnx").unwrap_or(model_file_name);
+    let base = model_file_name
+        .strip_suffix(".onnx")
+        .unwrap_or(model_file_name);
     format!("{base}.onnx_data")
 }
 
@@ -145,7 +147,10 @@ fn compute_resident_bytes(config: &OnnxConfig) -> u64 {
         return 0;
     };
     let total = file_size(&model_file);
-    let Some(name) = model_file.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+    let Some(name) = model_file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+    else {
         return total;
     };
     let prefix = external_data_prefix(&name);
@@ -182,7 +187,11 @@ impl OrtSessionRegistry {
 
     /// Register a model. `Always` policies load at boot; `Unloadable` stay
     /// lazy until `ensure_loaded`.
-    pub fn register(&self, model_key: impl Into<String>, config: OnnxConfig) -> Result<(), OrtError> {
+    pub fn register(
+        &self,
+        model_key: impl Into<String>,
+        config: OnnxConfig,
+    ) -> Result<(), OrtError> {
         let policy = config.policy();
         self.register_with_policy(model_key, config, policy)
     }
@@ -265,10 +274,7 @@ impl OrtSessionRegistry {
 
     /// The residency policy a model was registered with.
     pub fn policy(&self, model_key: &str) -> Option<ResidencyPolicy> {
-        lock(&self.inner)
-            .entries
-            .get(model_key)
-            .map(|e| e.policy)
+        lock(&self.inner).entries.get(model_key).map(|e| e.policy)
     }
 
     /// Whether this entry is pinned (never released even when `Unloadable`).
@@ -329,7 +335,11 @@ impl OrtSessionRegistry {
         if entry.policy.is_always() || entry.pinned {
             return Err(OrtError::Other(format!(
                 "onnx model {model_key} is {} and refuses unload",
-                if entry.pinned { "pinned" } else { "Always-resident" }
+                if entry.pinned {
+                    "pinned"
+                } else {
+                    "Always-resident"
+                }
             )));
         }
         if entry.session.is_none() {
@@ -347,9 +357,7 @@ impl OrtSessionRegistry {
         let mut keys: Vec<String> = inner
             .entries
             .iter()
-            .filter(|(_, e)| {
-                !e.policy.is_always() && !e.pinned && e.session.is_some()
-            })
+            .filter(|(_, e)| !e.policy.is_always() && !e.pinned && e.session.is_some())
             .map(|(k, _)| k.clone())
             .collect();
         keys.sort_unstable();

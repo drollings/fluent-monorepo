@@ -31,11 +31,7 @@ use crate::error::OrtError;
 /// last token's end; its score is the mean of the covered tokens' scores.
 /// Pure and unit-testable — the classifier's deterministic half.
 #[must_use]
-pub fn decode_biluo(
-    offsets: &[(usize, usize)],
-    labels: &[String],
-    scores: &[f64],
-) -> Vec<PiiSpan> {
+pub fn decode_biluo(offsets: &[(usize, usize)], labels: &[String], scores: &[f64]) -> Vec<PiiSpan> {
     let n = offsets.len().min(labels.len()).min(scores.len());
     let mut spans: Vec<PiiSpan> = Vec::new();
     // An open span under construction: (start_token, label, accumulated score).
@@ -280,7 +276,9 @@ pub mod ort_pii {
                     OrtError::Other("session handle does not hold an ort session".to_string())
                 })?;
             let tokenizer_path = config.tokenizer_path.as_ref().ok_or_else(|| {
-                OrtError::Other(format!("PII classifier '{model_key}' missing tokenizer_path"))
+                OrtError::Other(format!(
+                    "PII classifier '{model_key}' missing tokenizer_path"
+                ))
             })?;
             let tokenizer = LfmTokenizer::from_file(tokenizer_path, config.max_seq_len)?;
             let id2label = label_map_for(config)?.ok_or_else(|| {
@@ -293,16 +291,16 @@ pub mod ort_pii {
             // Discover the stateful input schema from the session metadata so
             // the classifier is robust to the conv-cache configuration instead
             // of hardcoding a specific `layer_types` layout.
-            let guard = session.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let guard = session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut requires_position_ids = false;
             let mut state_inputs = Vec::new();
             for input in guard.inputs() {
                 let name = input.name();
                 if name == "position_ids" {
                     requires_position_ids = true;
-                } else if name.starts_with("past_conv.")
-                    || name.starts_with("past_key_values.")
-                {
+                } else if name.starts_with("past_conv.") || name.starts_with("past_key_values.") {
                     let declared = input
                         .dtype()
                         .tensor_shape()
@@ -358,7 +356,8 @@ pub mod ort_pii {
                 let state_shape = fresh_state_shape(&state.declared);
                 // Symbolic (negative) dims clamp to 0 so the zero-vector sizing
                 // never overflows; the concrete on-disk export has none.
-                let zeros: Vec<f32> = vec![0.0; state_shape.iter().map(|&d| d.max(0) as usize).product()];
+                let zeros: Vec<f32> =
+                    vec![0.0; state_shape.iter().map(|&d| d.max(0) as usize).product()];
                 let tensor = ort::value::Tensor::from_array((state_shape, zeros))
                     .map_err(|e| PiiError::Inference(e.to_string()))?;
                 feed.push((state.name.clone(), tensor.into()));
@@ -399,16 +398,16 @@ pub mod ort_pii {
             let mut scores = Vec::with_capacity(seq);
             for i in 0..seq {
                 let row = &logits[i * num_labels..(i + 1) * num_labels];
-                let (argmax, _) = row
-                    .iter()
-                    .enumerate()
-                    .fold((0usize, f32::NEG_INFINITY), |(bi, bs), (i, &v)| {
+                let (argmax, _) = row.iter().enumerate().fold(
+                    (0usize, f32::NEG_INFINITY),
+                    |(bi, bs), (i, &v)| {
                         if v > bs {
                             (i, v)
                         } else {
                             (bi, bs)
                         }
-                    });
+                    },
+                );
                 let score = softmax_row(row)[argmax];
                 let label = self
                     .id2label

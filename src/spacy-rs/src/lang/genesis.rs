@@ -165,7 +165,11 @@ impl InMemoryGenesisIndex {
 
     /// Load with distinct POS / NER thresholds.
     #[must_use]
-    pub fn load_or_empty_with_thresholds(path: &Path, pos_threshold: u32, ner_threshold: u32) -> Self {
+    pub fn load_or_empty_with_thresholds(
+        path: &Path,
+        pos_threshold: u32,
+        ner_threshold: u32,
+    ) -> Self {
         let mut map: HashMap<String, GenesisEntry> = std::fs::read_to_string(path)
             .ok()
             .and_then(|s| serde_json::from_str::<HashMap<String, GenesisEntry>>(&s).ok())

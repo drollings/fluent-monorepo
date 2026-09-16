@@ -24,9 +24,7 @@ impl SessionLoader for CountingLoader {
     fn load(&self, config: &OnnxConfig, model_key: &str) -> Result<SessionHandle, OrtError> {
         let _ = (config, model_key);
         self.loads.fetch_add(1, Ordering::SeqCst);
-        Ok(SessionHandle::new(StubSession {
-            marker: "stub",
-        }))
+        Ok(SessionHandle::new(StubSession { marker: "stub" }))
     }
 }
 
@@ -156,7 +154,10 @@ fn release_drops_unloadable_handle_and_refuses_always() {
         .register("always", test_config(OnnxTask::FillMask))
         .expect("register");
     assert!(registry.refuses_unload("always"));
-    assert!(matches!(registry.release("always"), Err(OrtError::Other(_))));
+    assert!(matches!(
+        registry.release("always"),
+        Err(OrtError::Other(_))
+    ));
 
     // Unknown key: nothing was released.
     assert!(!registry.release("nope").expect("unknown"));

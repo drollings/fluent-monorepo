@@ -1,13 +1,20 @@
 use super::*;
+use crate::vocab::Vocab;
 use fluent_concept::ConceptStore;
 use fluent_concept::InMemoryConceptStore;
-use crate::vocab::Vocab;
 use fluent_types::{local_id_of, NodeId};
 
-fn resolver() -> (Arc<InMemoryConceptStore>, Arc<StringStore>, InterlinguaResolver) {
+fn resolver() -> (
+    Arc<InMemoryConceptStore>,
+    Arc<StringStore>,
+    InterlinguaResolver,
+) {
     let store = Arc::new(InMemoryConceptStore::new());
     let strings = Arc::new(StringStore::new());
-    let r = InterlinguaResolver::new(Arc::clone(&store) as Arc<dyn ConceptStore>, Arc::clone(&strings));
+    let r = InterlinguaResolver::new(
+        Arc::clone(&store) as Arc<dyn ConceptStore>,
+        Arc::clone(&strings),
+    );
     (store, strings, r)
 }
 
@@ -27,7 +34,10 @@ fn meta(id: InterlinguaId, name: &str) -> ConceptMetadata {
 #[test]
 fn lemma_id_is_deterministic_and_pure() {
     let (store, strings, r1) = resolver();
-    let r2 = InterlinguaResolver::new(Arc::clone(&store) as Arc<dyn ConceptStore>, Arc::clone(&strings));
+    let r2 = InterlinguaResolver::new(
+        Arc::clone(&store) as Arc<dyn ConceptStore>,
+        Arc::clone(&strings),
+    );
     let a = r1.lemma_id("run");
     let b = r2.lemma_id("run");
     assert_eq!(a, b, "order-independence across resolver instances");
@@ -60,12 +70,16 @@ fn resolve_hash_flags_collision_for_second_canonical() {
     // *different* canonical (real 48-bit hash collisions are too rare to
     // construct deterministically, so we register the second canonical
     // directly — the store keeps both under the shared bucket id, §2.3).
-    store.insert(meta(id, "first_canonical")).expect("first canonical");
+    store
+        .insert(meta(id, "first_canonical"))
+        .expect("first canonical");
 
     let (id2, note) = r.resolve_hash(hash_utf8("lead"), "lead");
     assert_eq!(id2, id);
     match note {
-        CollisionNote::Collision { prior_canonical, .. } => {
+        CollisionNote::Collision {
+            prior_canonical, ..
+        } => {
             assert_eq!(prior_canonical, "first_canonical");
         }
         CollisionNote::None => panic!("expected a collision note"),
@@ -105,7 +119,11 @@ fn resolve_doc_stamps_lemma_ids_and_confidence_readonly() {
     assert!(notes.is_empty(), "no concepts registered → no collisions");
     for (i, l) in lemmas.iter().enumerate() {
         let t = doc.token(i);
-        assert_eq!(t.interlingua_lemma_id, Some(r.lemma_id(l)), "token {i} stamped");
+        assert_eq!(
+            t.interlingua_lemma_id,
+            Some(r.lemma_id(l)),
+            "token {i} stamped"
+        );
         assert_eq!(t.confidence, Some(conf[i]));
     }
     // The store was never written by the resolver (boot-only invariant).
@@ -132,7 +150,10 @@ fn resolve_doc_skips_uninterned_lemmas() {
     let notes = r.resolve_doc(&mut doc, None);
     assert!(notes.is_empty());
     assert!(doc.token(0).interlingua_lemma_id.is_some());
-    assert!(doc.token(1).interlingua_lemma_id.is_none(), "uninterned lemma skipped");
+    assert!(
+        doc.token(1).interlingua_lemma_id.is_none(),
+        "uninterned lemma skipped"
+    );
     assert!(doc.token(2).interlingua_lemma_id.is_some());
     // Store untouched.
     assert_eq!(store.iter_ids().count(), 0);
@@ -157,7 +178,11 @@ fn resolve_doc_shorter_confidence_slice_skips_not_panics() {
 
     assert_eq!(doc.token(0).confidence, Some(0.9));
     assert_eq!(doc.token(1).confidence, Some(0.8));
-    assert_eq!(doc.token(2).confidence, None, "out-of-range → unset, not panic");
+    assert_eq!(
+        doc.token(2).confidence,
+        None,
+        "out-of-range → unset, not panic"
+    );
     assert_eq!(doc.token(3).confidence, None);
     // Ids are still stamped for every resolvable token.
     assert!(doc.token(2).interlingua_lemma_id.is_some());

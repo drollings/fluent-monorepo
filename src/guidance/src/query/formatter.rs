@@ -278,7 +278,9 @@ mod tests {
     #[test]
     fn m10_formatter_execute_needs_stages_handoff() {
         let handle = std::sync::Arc::new(MarkdownFormatter);
-        let err = handle.execute(&WorkContext::default()).expect_err("missing stages");
+        let err = handle
+            .execute(&WorkContext::default())
+            .expect_err("missing stages");
         assert!(matches!(err, fluent_wvr::WorkError::Execution(_)));
     }
 

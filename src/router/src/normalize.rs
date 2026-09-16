@@ -18,9 +18,7 @@ pub use fluent_llm::openai::NormalizeError;
 /// `metadata["num_ctx"]` so the dispatch path's resize-to-demand can size a
 /// targeted context to the request's needs.
 pub fn normalize_request(body: serde_json::Value) -> Result<RouterRequest, NormalizeError> {
-    let num_ctx = body
-        .get("num_ctx")
-        .and_then(serde_json::Value::as_u64);
+    let num_ctx = body.get("num_ctx").and_then(serde_json::Value::as_u64);
     // Validate instance/snapshot grammar via the canonical primitive before
     // preserving them into the typed request.
     if let Some(v) = body.get("instance").and_then(|v| v.as_str()) {

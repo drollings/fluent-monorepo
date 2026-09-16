@@ -32,12 +32,9 @@ async fn cancelled_is_sticky_for_late_waiters() {
     let abort = StreamAbort::new();
     abort.cancel();
     // A waiter that registers after `cancel` must not block.
-    tokio::time::timeout(
-        std::time::Duration::from_millis(100),
-        abort.cancelled(),
-    )
-    .await
-    .expect("late waiter resolves immediately");
+    tokio::time::timeout(std::time::Duration::from_millis(100), abort.cancelled())
+        .await
+        .expect("late waiter resolves immediately");
 }
 
 #[tokio::test]
@@ -59,10 +56,7 @@ async fn cancel_wakes_every_waiter() {
 #[tokio::test]
 async fn uncancelled_waiter_blocks_until_timeout() {
     let abort = StreamAbort::new();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_millis(20),
-        abort.cancelled(),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_millis(20), abort.cancelled()).await;
     assert!(result.is_err(), "uncancelled waiter must not resolve");
 }

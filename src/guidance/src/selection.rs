@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use common_core::walk::{SkipReason, WalkEntry, WalkFilter, walk_files_filtered};
+use common_core::walk::{walk_files_filtered, SkipReason, WalkEntry, WalkFilter};
 
 use crate::query::glob::path_pattern_matches;
 use crate::search_constants::{
@@ -428,8 +428,7 @@ const DEFAULT_IGNORED_FILE_PATTERNS: &[&str] = &[
 ];
 
 pub(crate) fn named_file_type(name: &str) -> Option<(FileKind, String)> {
-    fluent_types::file_kind::named_file_kind(name)
-        .map(|(kind, format)| (kind, format.to_string()))
+    fluent_types::file_kind::named_file_kind(name).map(|(kind, format)| (kind, format.to_string()))
 }
 
 pub(crate) fn code_format(ext: &str) -> Option<String> {

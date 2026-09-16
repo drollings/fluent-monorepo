@@ -28,7 +28,11 @@ fn shared_stub_routes_to_registered_key() {
 #[test]
 fn shared_stub_falls_through_to_second_stub() {
     let mut registry = InferenceRegistry::new();
-    registry.register(Arc::new(StubBackend::new("first", vec!["model-a"], "first")));
+    registry.register(Arc::new(StubBackend::new(
+        "first",
+        vec!["model-a"],
+        "first",
+    )));
     registry.register(Arc::new(StubBackend::new(
         "second",
         vec!["model-b"],

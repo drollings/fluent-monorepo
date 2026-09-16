@@ -40,7 +40,12 @@ impl HealthProbe {
         Self::new(client, base_url, poll, 0, super::HEALTH_POLL)
     }
 
-    pub fn for_liveness(client: reqwest::Client, base_url: String, interval: Duration, threshold: u32) -> Self {
+    pub fn for_liveness(
+        client: reqwest::Client,
+        base_url: String,
+        interval: Duration,
+        threshold: u32,
+    ) -> Self {
         let poll = PollWithBackoff::new(interval, 1);
         Self::new(client, base_url, poll, threshold, interval)
     }
@@ -57,11 +62,7 @@ impl HealthProbe {
     /// Wait until healthy, driven by the shared `PollWithBackoff` config.
     pub async fn wait_until_healthy(&self) -> Result<(), String> {
         let base_url = self.base_url.clone();
-        match self
-            .poll
-            .run(|| async { self.probe_once().await })
-            .await
-        {
+        match self.poll.run(|| async { self.probe_once().await }).await {
             PollResult::Ready => Ok(()),
             PollResult::Exhausted { .. } => Err(format!(
                 "llama-server did not become healthy on {base_url} within deadline"

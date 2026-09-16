@@ -7,12 +7,12 @@ use fluent_llm::{ChatMessage, EmbeddingProvider, LlmError};
 
 use super::assemble::{parse_subtask_array, summarize_votes};
 use crate::config::FrontierConfig;
-use crate::server::dispatch::render_prompt;
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest, RouterResponse};
 use crate::dag_session::{SessionStep, StepResult};
 use crate::dispatch::backend::DispatchBackend;
 use crate::dispatch::backend::StreamHandle;
+use crate::server::dispatch::render_prompt;
 use crate::testing::mock::TranscriptProvider;
+use crate::types::{RouterMessage, RouterMessageContent, RouterRequest, RouterResponse};
 use fluent_types::ContextHit;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -518,8 +518,7 @@ async fn question_success_without_recorder_records_nothing() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn team_mode_accepts_after_judge_verdict() {
-    let classifier =
-        func_backend(|_| Ok(r#"{"approach": "decompose", "confidence": 0.9}"#.into()));
+    let classifier = func_backend(|_| Ok(r#"{"approach": "decompose", "confidence": 0.9}"#.into()));
     let draft = func_backend(|_| Ok(r#"["subtask A", "subtask B"]"#.into()));
     let judge = func_backend(|messages| {
         let msg = last_user_message(messages);

@@ -1,7 +1,7 @@
 use super::*;
 use crate::search_types::{
-    CodeSymbolType, Entity, EntityFragment, FileInfo, RecallPath, SearchPlan, SearchPlanRoute,
-    SearchPlanRouteMode, StorageFilter, StorageHit, FragmentContent, FragmentSpan,
+    CodeSymbolType, Entity, EntityFragment, FileInfo, FragmentContent, FragmentSpan, RecallPath,
+    SearchPlan, SearchPlanRoute, SearchPlanRouteMode, StorageFilter, StorageHit,
 };
 use std::sync::Mutex;
 

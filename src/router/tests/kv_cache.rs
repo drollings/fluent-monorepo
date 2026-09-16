@@ -119,7 +119,10 @@ async fn test_cold_cache_save_load() {
     // <slot_save_path>/<model_key>/<instance>/<name>.bin
     assert_eq!(
         loaded.file_path,
-        dir.path().join("test-model").join("scratch").join("readfiles.bin")
+        dir.path()
+            .join("test-model")
+            .join("scratch")
+            .join("readfiles.bin")
     );
 }
 
@@ -136,11 +139,7 @@ async fn test_cold_cache_load_nonexistent() {
 async fn test_kv_cache_manager_two_tier() {
     let dir = tempfile::tempdir().unwrap();
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
-    let cold = Arc::new(ColdSnapshotIndex::new(
-        dir.path(),
-        1024,
-        86400,
-    ));
+    let cold = Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400));
     let mgr = SnapshotStore::new(Arc::clone(&hot), Arc::clone(&cold));
 
     mgr.store(test_snapshot("sess-tier")).unwrap();
@@ -201,15 +200,13 @@ async fn save_snapshot_with_fork_records_metadata_and_posts() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "POST" && path == "/instances/scratch/snapshot" {
-                (200, "{}".into())
-            } else {
-                (200, "[]".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path == "/instances/scratch/snapshot" {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -221,11 +218,7 @@ async fn save_snapshot_with_fork_records_metadata_and_posts() {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-            )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     )
     .with_fork_io(fork);
 
@@ -252,11 +245,7 @@ async fn save_snapshot_without_fork_is_noop() {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-            )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     );
 
     // No fork handle -> metadata-only no-op returning Ok, nothing recorded.
@@ -273,21 +262,19 @@ async fn list_and_delete_delegate_to_fork_when_present() {
     use crate::instances::stub::StubServer;
     use crate::instances::InstanceClient;
 
-    let handler: StubHandler = Arc::new(
-        |method, path, _body| {
-            if method == "GET" && path == "/instances/scratch/snapshots" {
-                (
-                    200,
-                    serde_json::json!([
-                        { "name": "readfiles", "size": 512, "mtime": "x" }
-                    ])
-                    .to_string(),
-                )
-            } else {
-                (200, "{}".into())
-            }
-        },
-    );
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances/scratch/snapshots" {
+            (
+                200,
+                serde_json::json!([
+                    { "name": "readfiles", "size": 512, "mtime": "x" }
+                ])
+                .to_string(),
+            )
+        } else {
+            (200, "{}".into())
+        }
+    });
     let stub = StubServer::start(handler);
     let fork = Arc::new(InstanceClient::new(
         reqwest::Client::new(),
@@ -298,11 +285,7 @@ async fn list_and_delete_delegate_to_fork_when_present() {
     let hot = Arc::new(HotSnapshotIndex::new(10, 1024));
     let kv = SnapshotStore::new(
         Arc::clone(&hot),
-        Arc::new(ColdSnapshotIndex::new(
-            dir.path(),
-            1024,
-            86400,
-            )),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
     )
     .with_fork_io(fork);
 
@@ -347,7 +330,11 @@ async fn cold_evict_ttl_boundary_age_equals_ttl_is_evicted() {
     boundary.last_used_at = now.saturating_sub(ttl);
     cold.save(&boundary).unwrap();
 
-    assert_eq!(cold.evict().unwrap(), 1, "only the age == ttl entry is evicted");
+    assert_eq!(
+        cold.evict().unwrap(),
+        1,
+        "only the age == ttl entry is evicted"
+    );
     assert!(cold.load("test-model", None, "sess-fresh").is_ok());
     assert!(cold.load("test-model", None, "sess-boundary").is_err());
 }
@@ -362,5 +349,9 @@ async fn cold_new_takes_no_eviction_policy() {
     let cold = ColdSnapshotIndex::new(dir.path(), 1024, 86400);
     cold.save(&test_snapshot("sess-pol")).unwrap();
     assert!(cold.load("test-model", None, "sess-pol").is_ok());
-    assert_eq!(cold.evict().unwrap(), 0, "fresh entry survives the TTL sweep");
+    assert_eq!(
+        cold.evict().unwrap(),
+        0,
+        "fresh entry survives the TTL sweep"
+    );
 }

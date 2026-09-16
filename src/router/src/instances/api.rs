@@ -12,15 +12,12 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::client::{InstanceError, InstanceInfo, InstanceTotals, SnapshotInfo};
-use super::manager::{
-    instance_name_from_server_id, resume_snapshot_name, InstanceManager,
-};
 use super::instance_aliases;
+use super::manager::{instance_name_from_server_id, resume_snapshot_name, InstanceManager};
 use super::pool::InstancePool;
 use fluent_types::instance_id::InstanceId;
 
 impl InstancePool {
-
     /// Resolve the public instance id grammar `<model_id>:<name>` (or a bare
     /// `<model_id>` + name) to `(model key, instance name)`. `None` when the
     /// model is unmanaged, the id has more than one `:`, or the instance name
@@ -28,7 +25,10 @@ impl InstancePool {
     pub fn resolve_instance_id(&self, id: &str) -> Option<(String, String)> {
         let parsed = InstanceId::parse(id).ok()?;
         self.managers.get(&(**parsed.model()).to_string())?;
-        Some(((**parsed.model()).to_string(), (**parsed.name()).to_string()))
+        Some((
+            (**parsed.model()).to_string(),
+            (**parsed.name()).to_string(),
+        ))
     }
 
     /// `GET /instances` - the aggregate envelope across every managed model.
@@ -160,13 +160,13 @@ impl InstancePool {
         is_default: bool,
         resume: bool,
     ) -> Result<InstanceInfo, InstanceError> {
-        let manager = self
-            .managers
-            .get(&model_key.to_string())
-            .ok_or_else(|| InstanceError::Rejected {
-                status: 404,
-                body: format!("unknown model: {model_key}"),
-            })?;
+        let manager =
+            self.managers
+                .get(&model_key.to_string())
+                .ok_or_else(|| InstanceError::Rejected {
+                    status: 404,
+                    body: format!("unknown model: {model_key}"),
+                })?;
         let info = manager
             .client()
             .create(name, group, ctx_size, parallel, pinned, is_default)
@@ -204,13 +204,13 @@ impl InstancePool {
         name: &str,
         enabled: bool,
     ) -> Result<(), InstanceError> {
-        let manager = self
-            .managers
-            .get(&model_key.to_string())
-            .ok_or_else(|| InstanceError::Rejected {
-                status: 404,
-                body: format!("unknown model: {model_key}"),
-            })?;
+        let manager =
+            self.managers
+                .get(&model_key.to_string())
+                .ok_or_else(|| InstanceError::Rejected {
+                    status: 404,
+                    body: format!("unknown model: {model_key}"),
+                })?;
         if !enabled {
             let _ = manager
                 .client()
@@ -236,7 +236,10 @@ impl InstancePool {
         name: &str,
         ctx_size: u64,
     ) -> Result<(), InstanceError> {
-        self.manager_checked(model_key)?.client().resize(name, ctx_size).await
+        self.manager_checked(model_key)?
+            .client()
+            .resize(name, ctx_size)
+            .await
     }
 
     /// Proxy a per-instance operation to the owning model's server.
@@ -277,10 +280,7 @@ impl InstancePool {
             .await
     }
 
-    fn manager_checked(
-        &self,
-        model_key: &str,
-    ) -> Result<Arc<InstanceManager>, InstanceError> {
+    fn manager_checked(&self, model_key: &str) -> Result<Arc<InstanceManager>, InstanceError> {
         self.managers
             .get(&model_key.to_string())
             .map(|m| m.as_ref().clone())

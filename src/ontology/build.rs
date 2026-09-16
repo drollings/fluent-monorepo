@@ -13,10 +13,10 @@ fn main() {
     println!("cargo:rerun-if-changed=data/yago_classes.json");
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let path = Path::new(&manifest_dir).join("data/yago_classes.json");
-    let raw = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let entries: serde_json::Value = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("malformed yago_classes.json: {e}"));
+    let raw =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let entries: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("malformed yago_classes.json: {e}"));
     let arr = entries
         .as_array()
         .unwrap_or_else(|| panic!("yago_classes.json must be a JSON array"));
@@ -30,5 +30,8 @@ fn main() {
             "yago_classes.json entry {i} is missing a string 'label'"
         );
     }
-    println!("cargo:info=validated yago_classes.json ({} classes)", arr.len());
+    println!(
+        "cargo:info=validated yago_classes.json ({} classes)",
+        arr.len()
+    );
 }

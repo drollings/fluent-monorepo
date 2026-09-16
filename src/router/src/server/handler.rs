@@ -260,10 +260,7 @@ async fn coordinator_dispatch(
         model,
         "Answer the user's request using the provided ledger context.",
     );
-    let outcome = match coord
-        .run_agent(session_id, model, &worker, user_text)
-        .await
-    {
+    let outcome = match coord.run_agent(session_id, model, &worker, user_text).await {
         Ok(o) => o,
         Err(e) => {
             tracing::error!(
@@ -315,19 +312,8 @@ async fn record_dispatch_outcome(
 ) {
     let Some(finalizer) = stream_answer else {
         let answer = answer_text.unwrap_or_default();
-        let content = if answer.is_empty() {
-            label
-        } else {
-            answer
-        };
-        record_ledger_result(
-            ledger,
-            ledger_node_id,
-            true,
-            Some(1.0),
-            content.clone(),
-        )
-        .await;
+        let content = if answer.is_empty() { label } else { answer };
+        record_ledger_result(ledger, ledger_node_id, true, Some(1.0), content.clone()).await;
         if let Some(step) = session_step {
             step.complete(true, Some(1.0), content.clone(), None);
         }
@@ -676,13 +662,7 @@ async fn handle_chat_completion(
     // On-demand residency for the classifier: ensure its managed model is
     // loaded and its work-pool group is resident before the pipeline's
     // (sync, sidecar-less) classifier LLM call would 400 on a missing group.
-    ensure_classifier_ready(
-        classifier.as_ref(),
-        &models,
-        &roles,
-        instance_pool.as_ref(),
-    )
-    .await;
+    ensure_classifier_ready(classifier.as_ref(), &models, &roles, instance_pool.as_ref()).await;
 
     let pipeline_result = resolve_pipeline(
         &model_name,
@@ -866,9 +846,7 @@ async fn handle_chat_completion(
         session: session_step.as_ref().map(|s| s.session.clone()),
         instance_pool: instance_pool.map(|p| p.as_ref().clone()),
         onnx_llm_backend: onnx_llm_backend.clone(),
-        role_limiters: Arc::new(
-            crate::server::dispatch::RoleLimiters::from_roles(&roles),
-        ),
+        role_limiters: Arc::new(crate::server::dispatch::RoleLimiters::from_roles(&roles)),
         workflow_recorder: workflow_recorder.clone(),
     };
 
@@ -1056,7 +1034,8 @@ async fn handle_request_inner(
         //    contract; aggregated across every managed model) --------------
         ("GET", "/instances" | "/v1/instances") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
-            if let Some(resp) = crate::server::instances_api::check_management_key(&deps, req.headers())
+            if let Some(resp) =
+                crate::server::instances_api::check_management_key(&deps, req.headers())
             {
                 return Ok(resp);
             }
@@ -1065,7 +1044,8 @@ async fn handle_request_inner(
         }
         ("POST", "/instances" | "/v1/instances") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
-            if let Some(resp) = crate::server::instances_api::check_management_key(&deps, req.headers())
+            if let Some(resp) =
+                crate::server::instances_api::check_management_key(&deps, req.headers())
             {
                 return Ok(resp);
             }
@@ -1074,7 +1054,8 @@ async fn handle_request_inner(
         }
         ("GET", "/memory") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
-            if let Some(resp) = crate::server::instances_api::check_management_key(&deps, req.headers())
+            if let Some(resp) =
+                crate::server::instances_api::check_management_key(&deps, req.headers())
             {
                 return Ok(resp);
             }
@@ -1096,7 +1077,9 @@ async fn handle_request_inner(
             if !is_local_request(&req) {
                 return Ok(crate::server::responses::forbidden_response());
             }
-            Ok(crate::server::admin::handle_coordinator_rollback(&deps.coordinator_gate))
+            Ok(crate::server::admin::handle_coordinator_rollback(
+                &deps.coordinator_gate,
+            ))
         }
         // One-command frame rollback: loopback-only, closes the
         // frame-resolution runtime gate so new jobs drop before any index
@@ -1106,7 +1089,9 @@ async fn handle_request_inner(
             if !is_local_request(&req) {
                 return Ok(crate::server::responses::forbidden_response());
             }
-            Ok(crate::server::admin::handle_frame_rollback(&deps.frame_gate))
+            Ok(crate::server::admin::handle_frame_rollback(
+                &deps.frame_gate,
+            ))
         }
         ("GET", "/metrics") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);
@@ -1138,13 +1123,16 @@ async fn handle_request_inner(
                 return Ok(match route_instance_resource(method.as_str(), &path) {
                     Some((op, name, snapshot)) => {
                         crate::server::instances_api::handle_snapshot_op_or_instance_op(
-                            req, &deps, op, &name, snapshot.as_deref(), &query,
+                            req,
+                            &deps,
+                            op,
+                            &name,
+                            snapshot.as_deref(),
+                            &query,
                         )
                         .await
                     }
-                    None => crate::server::responses::empty_response(
-                        hyper::StatusCode::NOT_FOUND,
-                    ),
+                    None => crate::server::responses::empty_response(hyper::StatusCode::NOT_FOUND),
                 });
             }
             if method == hyper::Method::DELETE && path.starts_with("/admin/cache/") {
@@ -1190,7 +1178,10 @@ async fn handle_request_inner(
 /// - `POST /instances/:name/snapshot` -> `("save", name, None)`
 /// - `GET /instances/:name/snapshots` -> `("list", name, None)`
 /// - `DELETE /instances/:name/snapshot/:snapshot` -> `("delete_snapshot", name, Some(snapshot))`
-fn route_instance_resource(method: &str, path: &str) -> Option<(&'static str, String, Option<String>)> {
+fn route_instance_resource(
+    method: &str,
+    path: &str,
+) -> Option<(&'static str, String, Option<String>)> {
     let rest = path.strip_prefix("/instances/")?;
     let parts: Vec<&str> = rest.split('/').collect();
     match (method, parts.as_slice()) {
@@ -1202,9 +1193,11 @@ fn route_instance_resource(method: &str, path: &str) -> Option<(&'static str, St
         ("POST", [name, "resize"]) => Some(("resize", name.to_string(), None)),
         ("POST", [name, "snapshot"]) => Some(("save", name.to_string(), None)),
         ("GET", [name, "snapshots"]) => Some(("list", name.to_string(), None)),
-        ("DELETE", [name, "snapshot", snapshot]) => {
-            Some(("delete_snapshot", name.to_string(), Some(snapshot.to_string())))
-        }
+        ("DELETE", [name, "snapshot", snapshot]) => Some((
+            "delete_snapshot",
+            name.to_string(),
+            Some(snapshot.to_string()),
+        )),
         _ => None,
     }
 }
@@ -1276,7 +1269,11 @@ async fn handle_review_parse_post(
         .as_ref()
         .and_then(|m| m.get("token_confidence"))
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(serde_json::Value::as_f64).collect::<Vec<f64>>());
+        .map(|a| {
+            a.iter()
+                .filter_map(serde_json::Value::as_f64)
+                .collect::<Vec<f64>>()
+        });
 
     // Build the ReviewJob via the shared helper: the correction-cache patterns
     // are the aligned (lemma_id, entity_id) pairs from the sentinel-filtered
@@ -1320,10 +1317,7 @@ fn handle_review_parse_get(
     path: &str,
 ) -> HyperResponse {
     let Some(session_id) = extract_session_id_from_review_path(path) else {
-        return error_response(
-            hyper::StatusCode::BAD_REQUEST,
-            "invalid session id in path",
-        );
+        return error_response(hyper::StatusCode::BAD_REQUEST, "invalid session id in path");
     };
 
     let Some(ledger) = deps.ledger else {
@@ -1341,13 +1335,11 @@ fn handle_review_parse_get(
     };
 
     let Some(node) = ledger.get_node(node_id) else {
-        return error_response(
-            hyper::StatusCode::NOT_FOUND,
-            "parse node not found",
-        );
+        return error_response(hyper::StatusCode::NOT_FOUND, "parse node not found");
     };
 
-    let review_status = node.metadata
+    let review_status = node
+        .metadata
         .as_ref()
         .and_then(|m| m.get("review_status"))
         .cloned()
@@ -1425,27 +1417,23 @@ fn resolve_pipeline(
     // request-time fallback, never a fork.
 
     // One constructor for every immediate (non-pipeline) resolution below.
-    let direct_result =
-        |rt: RoutingTarget| crate::pipeline::PipelineResult {
-            decisions: vec![],
-            final_response: None,
-            rejected: false,
-            reject_reason: None,
-            routing_target: Some(rt),
-            classifier_response: None,
-        };
+    let direct_result = |rt: RoutingTarget| crate::pipeline::PipelineResult {
+        decisions: vec![],
+        final_response: None,
+        rejected: false,
+        reject_reason: None,
+        routing_target: Some(rt),
+        classifier_response: None,
+    };
     // One qualified-id constructor: `<base>[:<instance|group|latest>]`
     // resolves directly to the owning model's server.
-    let qualified_target =
-        |base: &str, qualifier: Option<&str>| -> Option<RoutingTarget> {
-            let entry = models.get(base)?;
-            Some(match qualifier {
-                Some("latest") | None => RoutingTarget::from_model_entry(base, entry),
-                Some(point) => {
-                    RoutingTarget::from_model_entry_instance(base, entry, point)
-                }
-            })
-        };
+    let qualified_target = |base: &str, qualifier: Option<&str>| -> Option<RoutingTarget> {
+        let entry = models.get(base)?;
+        Some(match qualifier {
+            Some("latest") | None => RoutingTarget::from_model_entry(base, entry),
+            Some(point) => RoutingTarget::from_model_entry_instance(base, entry, point),
+        })
+    };
 
     // The `model:` hatch addresses the models table directly, past any
     // route or group shadowing the same name. Intercepted before the key
@@ -1494,10 +1482,8 @@ fn resolve_pipeline(
     // Bare group name (routes → groups → models order): the cheapest static
     // member serves directly, the group attached for the audit trail.
     if route.is_none() && groups.contains_key(requested) {
-        let expanded =
-            crate::config::expanded_group_members(groups, roles, models, requested);
-        if let Some(member) =
-            crate::config::select_group_member(requested, &expanded, models, None)
+        let expanded = crate::config::expanded_group_members(groups, roles, models, requested);
+        if let Some(member) = crate::config::select_group_member(requested, &expanded, models, None)
         {
             let (base, qualifier) = crate::config::split_model_key(&member);
             if let Some(mut rt) = qualified_target(base, qualifier) {

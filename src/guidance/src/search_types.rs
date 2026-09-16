@@ -157,7 +157,9 @@ impl CodeEntityModifier {
     #[must_use]
     pub fn all() -> &'static [Self] {
         use CodeEntityModifier::{Async, Exported, Internal, Private, Protected, Public, Static};
-        &[Exported, Async, Static, Public, Private, Protected, Internal]
+        &[
+            Exported, Async, Static, Public, Private, Protected, Internal,
+        ]
     }
 }
 
@@ -727,9 +729,7 @@ pub fn validate_fragment_groups(
         let major_count = group.iter().filter(|f| f.id == *group_id).count();
         if major_count != 1 {
             return Err(FragmentError::InvalidFragmentGroup {
-                context: format!(
-                    "fileId={file_id} group={group_id} majorCount={major_count}"
-                ),
+                context: format!("fileId={file_id} group={group_id} majorCount={major_count}"),
             });
         }
     }

@@ -9,8 +9,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 fn managed_entry() -> ModelEntry {
-    let mut entry: ModelEntry =
-    serde_json::from_value(serde_json::json!({
+    let mut entry: ModelEntry = serde_json::from_value(serde_json::json!({
         "endpoint": "http://127.0.0.1:0/v1/chat/completions",
         "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
         "intelligence": 2,
@@ -126,7 +125,10 @@ fn resolve_llama_server_prefers_env_override() {
     let old = std::env::var_os(LLAMA_SERVER_ENV);
     std::env::set_var(LLAMA_SERVER_ENV, "/custom/llama-server");
     let resolved = resolve_llama_server();
-    assert_eq!(resolved.as_deref(), Some(std::path::Path::new("/custom/llama-server")));
+    assert_eq!(
+        resolved.as_deref(),
+        Some(std::path::Path::new("/custom/llama-server"))
+    );
     match old {
         Some(v) => std::env::set_var(LLAMA_SERVER_ENV, v),
         None => std::env::remove_var(LLAMA_SERVER_ENV),
@@ -155,14 +157,8 @@ fn server_args_declare_host_port_alias_and_model() {
 
 #[test]
 fn server_args_declare_default_params_run_defaults() {
-    let spec = LlamaServerSpec::from_entry(
-        "swarm",
-        &managed_entry(),
-        18080,
-        None,
-        None,
-        defaults(),
-    );
+    let spec =
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), 18080, None, None, defaults());
     let args = build_server_args(&spec);
     let joined = args.join(" ");
     assert!(joined.contains("--batch-size 4096"));
@@ -174,20 +170,20 @@ fn server_args_declare_default_params_run_defaults() {
 
 #[test]
 fn server_args_declare_only_pinned_instance_profiles() {
-    let spec = LlamaServerSpec::from_entry(
-        "swarm",
-        &managed_entry(),
-        18080,
-        None,
-        None,
-        defaults(),
-    );
+    let spec =
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), 18080, None, None, defaults());
     assert!(spec.boot, "pinned swarm profile -> boot model");
     let args = build_server_args(&spec);
     let instances: Vec<&String> = args
         .iter()
         .enumerate()
-        .filter_map(|(i, a)| if a == "--instance" { args.get(i + 1) } else { None })
+        .filter_map(|(i, a)| {
+            if a == "--instance" {
+                args.get(i + 1)
+            } else {
+                None
+            }
+        })
         .collect();
     // `ledger` is unpinned (no `pinned: true`) in the fixture, so only the
     // pinned count:2 swarm siblings are declared at spawn.
@@ -244,16 +240,29 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
         },
     ]);
     let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
-    assert!(!spec.boot, "no pinned instance -> all-lazy, loaded on demand");
+    assert!(
+        !spec.boot,
+        "no pinned instance -> all-lazy, loaded on demand"
+    );
     let args = build_server_args(&spec);
     let instances: Vec<&String> = args
         .iter()
         .enumerate()
-        .filter_map(|(i, a)| if a == "--instance" { args.get(i + 1) } else { None })
+        .filter_map(|(i, a)| {
+            if a == "--instance" {
+                args.get(i + 1)
+            } else {
+                None
+            }
+        })
         .collect();
     // The full grammar is declared so /instances registers when the model
     // is loaded on demand.
-    assert_eq!(instances.len(), 2, "all-unpinned pool declares full grammar");
+    assert_eq!(
+        instances.len(),
+        2,
+        "all-unpinned pool declares full grammar"
+    );
     assert!(instances.contains(&&"scratch:ctx=131072".to_string()));
     assert!(instances.contains(&&"ledger:ctx=65536:default".to_string()));
 }
@@ -268,7 +277,10 @@ fn plain_model_gets_default_ctx_and_idle_sleep() {
     let joined = args.join(" ");
     assert!(joined.contains("--ctx-size 16384"));
     assert!(joined.contains("--sleep-idle-seconds 15"));
-    assert!(!joined.contains("--instance"), "no instance grammar for plain models");
+    assert!(
+        !joined.contains("--instance"),
+        "no instance grammar for plain models"
+    );
 }
 
 #[test]
@@ -317,19 +329,22 @@ async fn spawn_health_server(up: Arc<AtomicBool>) -> u16 {
             };
             let up = up.clone();
             let io = TokioIo::new(stream);
-            let service =
-                hyper::service::service_fn(move |_req: hyper::Request<Incoming>| {
-                    let up = up.clone();
-                    async move {
-                        let status = if up.load(Ordering::SeqCst) { 200u16 } else { 503u16 };
-                        Ok::<_, std::convert::Infallible>(
-                            hyper::Response::builder()
-                                .status(status)
-                                .body(Full::new(Bytes::new()).boxed_unsync())
-                                .expect("build response"),
-                        )
-                    }
-                });
+            let service = hyper::service::service_fn(move |_req: hyper::Request<Incoming>| {
+                let up = up.clone();
+                async move {
+                    let status = if up.load(Ordering::SeqCst) {
+                        200u16
+                    } else {
+                        503u16
+                    };
+                    Ok::<_, std::convert::Infallible>(
+                        hyper::Response::builder()
+                            .status(status)
+                            .body(Full::new(Bytes::new()).boxed_unsync())
+                            .expect("build response"),
+                    )
+                }
+            });
             tokio::spawn(async move {
                 let _ = hyper::server::conn::http1::Builder::new()
                     .serve_connection(io, service)
@@ -381,8 +396,7 @@ fn write_crashing_llama(counter: &Path) -> PathBuf {
 }
 
 fn spawn_count(counter: &Path) -> usize {
-    std::fs::read_to_string(counter)
-        .map_or(0, |s| s.lines().count())
+    std::fs::read_to_string(counter).map_or(0, |s| s.lines().count())
 }
 
 async fn wait_for_spawn_count(counter: &Path, expected: usize, timeout: Duration) {
@@ -415,7 +429,11 @@ async fn liveness_restarts_hung_server_but_leaves_healthy_one() {
         0,
     ));
     server.spawn_child(&bin);
-    let supervise = tokio::spawn(server.clone().supervise(bin, Arc::new(build_shared_client())));
+    let supervise = tokio::spawn(
+        server
+            .clone()
+            .supervise(bin, Arc::new(build_shared_client())),
+    );
 
     // While the server answers 200, several liveness polls must NOT touch
     // the child.
@@ -457,7 +475,11 @@ async fn liveness_never_restarts_during_shutdown() {
         0,
     ));
     server.spawn_child(&bin);
-    let supervise = tokio::spawn(server.clone().supervise(bin.clone(), Arc::new(build_shared_client())));
+    let supervise = tokio::spawn(
+        server
+            .clone()
+            .supervise(bin.clone(), Arc::new(build_shared_client())),
+    );
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(spawn_count(&counter), 1, "server running");
 
@@ -491,7 +513,11 @@ async fn crash_loop_is_contained_after_max_restarts() {
         3,
     ));
     server.spawn_child(&bin);
-    let supervise = tokio::spawn(server.clone().supervise(bin.clone(), Arc::new(build_shared_client())));
+    let supervise = tokio::spawn(
+        server
+            .clone()
+            .supervise(bin.clone(), Arc::new(build_shared_client())),
+    );
 
     // Three spawns (initial + two restarts) exhaust the budget; then the
     // loop stops. Give the third child time to exit and be contained.
@@ -512,8 +538,15 @@ async fn crash_loop_is_contained_after_max_restarts() {
     // A load attempt after containment fails fast with the terminal error
     // instead of spawning again.
     let err = server.ensure_running(&bin).await.unwrap_err();
-    assert!(err.contains("containment"), "terminal error names containment: {err}");
-    assert_eq!(spawn_count(&counter), 3, "contained server is never re-spawned");
+    assert!(
+        err.contains("containment"),
+        "terminal error names containment: {err}"
+    );
+    assert_eq!(
+        spawn_count(&counter),
+        3,
+        "contained server is never re-spawned"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -530,11 +563,17 @@ async fn probe_health_uses_injected_client() {
         .timeout(Duration::from_secs(1))
         .build()
         .unwrap();
-    assert!(!server.probe_health_with_client(&client).await, "503 -> false");
+    assert!(
+        !server.probe_health_with_client(&client).await,
+        "503 -> false"
+    );
     up.store(true, Ordering::SeqCst);
     // give server time to toggle
     tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(server.probe_health_with_client(&client).await, "200 -> true");
+    assert!(
+        server.probe_health_with_client(&client).await,
+        "200 -> true"
+    );
     // verify identity reuse: same Arc reused for 100 probes
     let shared = Arc::new(client);
     for _ in 0..100 {

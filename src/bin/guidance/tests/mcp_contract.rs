@@ -105,9 +105,7 @@ fn assert_response_envelope(value: &serde_json::Value, context: &str) {
         "server-initiated request: {context}"
     );
     let has_result = value.get("result").is_some();
-    let has_error = value
-        .get("error")
-        .is_some_and(serde_json::Value::is_object);
+    let has_error = value.get("error").is_some_and(serde_json::Value::is_object);
     assert!(
         has_result ^ has_error,
         "result/error exclusivity: {context}"
@@ -271,16 +269,13 @@ fn explain_context_flag_off_is_byte_identical_and_on_matches_cli() {
     assert!(!cli_lines.is_empty(), "fixture must carry context");
     let mut client = McpClient::spawn(dir.path(), "full");
     let unset = client.explain(serde_json::json!({"query": "where is foo defined"}));
-    let off = client.explain(
-        serde_json::json!({"query": "where is foo defined", "context": false}),
-    );
+    let off =
+        client.explain(serde_json::json!({"query": "where is foo defined", "context": false}));
     // Flag-off is byte-identical to today: same result object, no
     // `context` key either way.
     assert_eq!(unset["result"], off["result"], "{unset} vs {off}");
     assert!(unset["result"].get("context").is_none(), "{unset}");
-    let on = client.explain(
-        serde_json::json!({"query": "where is foo defined", "context": true}),
-    );
+    let on = client.explain(serde_json::json!({"query": "where is foo defined", "context": true}));
     // Hits text untouched by the flag; context arrives as a separate
     // array beside — never inside — the hits payload.
     assert_eq!(
@@ -353,8 +348,7 @@ fn server_never_initiates_requests_or_elicitations() {
     ];
     for frame in &frames {
         let line = client.raw(frame);
-        let value: serde_json::Value =
-            serde_json::from_str(line.trim()).expect("framed JSON");
+        let value: serde_json::Value = serde_json::from_str(line.trim()).expect("framed JSON");
         assert_response_envelope(&value, frame);
     }
 }

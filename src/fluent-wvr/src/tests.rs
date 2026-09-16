@@ -1,5 +1,5 @@
-use crate::*;
 use crate::test_support::TestComponent;
+use crate::*;
 use internment::ArcIntern;
 
 #[test]

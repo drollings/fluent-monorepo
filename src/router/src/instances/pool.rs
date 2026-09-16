@@ -15,8 +15,8 @@ use common_core::registry::ConcurrentRegistry;
 use fluent_llm::runtime::{LlmResidencyEngine, MemoryPool};
 
 use super::client::InstanceError;
-use super::manager::InstanceManager;
 use super::management_base_url;
+use super::manager::InstanceManager;
 
 /// The router's aggregate `/instances` facade over every managed model's
 /// server. Public instance ids are `<model_id>:<instance_name>`; `total` is
@@ -52,7 +52,10 @@ impl InstancePool {
         let reg = ConcurrentRegistry::new();
         let by_base = ConcurrentRegistry::new();
         for (key, manager) in managers {
-            by_base.insert(management_base_url(manager.client().base_url()), key.clone());
+            by_base.insert(
+                management_base_url(manager.client().base_url()),
+                key.clone(),
+            );
             reg.insert(key, manager);
         }
         // The policy is shared across managers (it is cloned from the config
@@ -212,9 +215,7 @@ impl InstancePool {
             if need > cap {
                 return Err(InstanceError::Rejected {
                     status: 400,
-                    body: format!(
-                        "instance '{instance}' resize to {need} exceeds max_ctx {cap}"
-                    ),
+                    body: format!("instance '{instance}' resize to {need} exceeds max_ctx {cap}"),
                 });
             }
         }
@@ -253,11 +254,9 @@ impl InstancePool {
         let Some(supervisor) = &self.supervisor else {
             return;
         };
-        let weights =
-            super::traits::llama_weights_for_pool(self, supervisor, &self.policy);
+        let weights = super::traits::llama_weights_for_pool(self, supervisor, &self.policy);
         engine
             .make_room_for(&weights, model_key, required_bytes, MemoryPool::Vram)
             .await;
     }
-
 }

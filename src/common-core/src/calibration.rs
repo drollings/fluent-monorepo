@@ -195,4 +195,3 @@ pub fn emit_markdown_artifact(name: &str, reports: &[(f64, CalibrationReport)]) 
         let _ = std::fs::write(dir.join(format!("{name}.md")), &md);
     }
 }
-

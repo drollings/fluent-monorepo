@@ -43,10 +43,7 @@ fn prompt_builder_empty_labels() {
 #[test]
 fn label_regions_match_golden_layout() {
     let builder = PromptBuilder::new("Categories");
-    let assembled = builder.assemble(
-        &["abc".to_string(), "de".to_string()],
-        "hello",
-    );
+    let assembled = builder.assemble(&["abc".to_string(), "de".to_string()], "hello");
     // "Categories:\n" = 12 bytes; "- abc\n" = 18; "- de\n" = 23; "\nText:\n" = 30.
     assert_eq!(assembled.label_regions, vec![(14, 17), (20, 22)]);
     assert_eq!(assembled.text_region, (30, 35));
@@ -61,8 +58,14 @@ fn label_regions_handle_multibyte_utf8() {
     // "héllo" is 6 bytes; "中文" is 6 bytes. Regions are byte offsets.
     let builder = PromptBuilder::new("Categories");
     let assembled = builder.assemble(&["héllo".to_string(), "中文".to_string()], "x");
-    assert_eq!(&assembled.prompt[assembled.label_regions[0].0..assembled.label_regions[0].1], "héllo");
-    assert_eq!(&assembled.prompt[assembled.label_regions[1].0..assembled.label_regions[1].1], "中文");
+    assert_eq!(
+        &assembled.prompt[assembled.label_regions[0].0..assembled.label_regions[0].1],
+        "héllo"
+    );
+    assert_eq!(
+        &assembled.prompt[assembled.label_regions[1].0..assembled.label_regions[1].1],
+        "中文"
+    );
 }
 
 // ── Head parsing ──
@@ -350,10 +353,7 @@ fn token_scores_offsets_are_rebased_onto_the_input_text() {
     // matrix rather than a real session: the rebase itself is the
     // subtraction in `token_scores`, which the Policy-Linter depends on
     // for char-aligned spans.
-    let assembled = PromptBuilder::new("Policy").assemble(
-        &["rule".to_string()],
-        "hello world",
-    );
+    let assembled = PromptBuilder::new("Policy").assemble(&["rule".to_string()], "hello world");
     let (ts, _te) = assembled.text_region;
     assert_eq!(&assembled.prompt[ts..], "hello world");
     assert_eq!(ts, "Policy:\n- rule\n\nText:\n".len());

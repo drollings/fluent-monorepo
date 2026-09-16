@@ -81,7 +81,9 @@ impl GgufEmbeddingContext for StubContext {
     async fn embedding_for(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         self.calls.lock().unwrap().texts.push(text.to_string());
         if self.options.fail_embedding {
-            return Err(EmbeddingError::RequestFailed("embedding failed".to_string()));
+            return Err(EmbeddingError::RequestFailed(
+                "embedding failed".to_string(),
+            ));
         }
         Ok(vec![text.len() as f32, 1.0])
     }
@@ -165,12 +167,12 @@ impl GgufLlamaInstance for StubLlama {
         gpu_layers: Option<u32>,
     ) -> Result<Box<dyn GgufModel>, EmbeddingError> {
         let mut calls = self.calls.lock().unwrap();
-        calls
-            .model_loads
-            .push((path.to_path_buf(), gpu_layers));
+        calls.model_loads.push((path.to_path_buf(), gpu_layers));
         calls.model_attempts += 1;
         if self.options.fail_first_model && calls.model_attempts == 1 {
-            return Err(EmbeddingError::RequestFailed("model GPU failure".to_string()));
+            return Err(EmbeddingError::RequestFailed(
+                "model GPU failure".to_string(),
+            ));
         }
         Ok(Box::new(StubModel {
             calls: Arc::clone(&self.calls),
@@ -202,7 +204,9 @@ impl GgufRuntimeModule for StubModule {
             return Err(EmbeddingError::RequestFailed("GPU unavailable".to_string()));
         }
         if self.options.fail_cpu && gpu == GpuSelection::Cpu {
-            return Err(EmbeddingError::RequestFailed("CPU backend unavailable".to_string()));
+            return Err(EmbeddingError::RequestFailed(
+                "CPU backend unavailable".to_string(),
+            ));
         }
         Ok(Box::new(StubLlama {
             calls: Arc::clone(&self.calls),
@@ -222,7 +226,9 @@ impl GgufRuntimeLoader for StubLoader {
     async fn load_module(&self) -> Result<Box<dyn GgufRuntimeModule>, EmbeddingError> {
         self.calls.lock().unwrap().runtime_loads += 1;
         if self.options.fail_runtime_load {
-            return Err(EmbeddingError::RequestFailed("runtime import failed".to_string()));
+            return Err(EmbeddingError::RequestFailed(
+                "runtime import failed".to_string(),
+            ));
         }
         Ok(Box::new(StubModule {
             calls: Arc::clone(&self.calls),
@@ -248,7 +254,9 @@ impl GgufArtifactResolver for StubResolver {
         calls.lifecycle.push("resolveArtifacts");
         calls.resolve_sources.clone_from(&request.sources);
         if self.options.fail_artifact_resolution {
-            return Err(EmbeddingError::RequestFailed("artifact download failed".to_string()));
+            return Err(EmbeddingError::RequestFailed(
+                "artifact download failed".to_string(),
+            ));
         }
         if let Some(plan) = request.on_download_plan {
             plan(&request.artifacts);
@@ -423,7 +431,10 @@ async fn loads_gguf_formats_truncates_parallelizes_caches_and_disposes() {
         assert_eq!(calls.model_loads[0].0, fix.model_path);
         let sources = &calls.resolve_sources;
         assert_eq!(sources.len(), 2);
-        assert_eq!(sources[0].kind, fluent_llm::artifact::SourceKind::HuggingFace);
+        assert_eq!(
+            sources[0].kind,
+            fluent_llm::artifact::SourceKind::HuggingFace
+        );
         assert_eq!(sources[0].repo, "test/model");
         assert_eq!(sources[0].revision, "hf-revision");
         assert_eq!(sources[0].cache_directory, fix.cache_dir.path());
@@ -431,10 +442,18 @@ async fn loads_gguf_formats_truncates_parallelizes_caches_and_disposes() {
             sources[0].local_paths.get("model.gguf").map(String::as_str),
             Some("hf_test_model.gguf")
         );
-        assert_eq!(sources[1].kind, fluent_llm::artifact::SourceKind::ModelScope);
+        assert_eq!(
+            sources[1].kind,
+            fluent_llm::artifact::SourceKind::ModelScope
+        );
         assert_eq!(
             sources[1].cache_directory,
-            fix.cache_dir.path().join("modelscope").join("llama-cpp").join("mirror--test-model").join("ms-revision")
+            fix.cache_dir
+                .path()
+                .join("modelscope")
+                .join("llama-cpp")
+                .join("mirror--test-model")
+                .join("ms-revision")
         );
         assert_eq!(
             &calls.lifecycle[..2],
@@ -468,7 +487,11 @@ async fn loads_gguf_formats_truncates_parallelizes_caches_and_disposes() {
         let calls = fix.calls.lock().unwrap();
         assert_eq!(calls.model_loads.len(), 1);
         assert_eq!(
-            calls.lifecycle.iter().filter(|event| **event == "resolveArtifacts").count(),
+            calls
+                .lifecycle
+                .iter()
+                .filter(|event| **event == "resolveArtifacts")
+                .count(),
             1
         );
     }
@@ -564,7 +587,11 @@ async fn uses_modelscope_path_and_reports_source_fallback_once() {
         .filter(|event| matches!(event, EmbeddingProgress::Warning { .. }))
         .cloned()
         .collect();
-    assert_eq!(warnings.len(), 1, "duplicate fallback warning reported once");
+    assert_eq!(
+        warnings.len(),
+        1,
+        "duplicate fallback warning reported once"
+    );
     model.dispose().await;
 }
 
@@ -587,14 +614,20 @@ async fn artifact_failures_do_not_enter_gpu_fallback() {
         .embed_texts(&["value".to_string()], EmbedPurpose::Document, None)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("llama.cpp embedding failed"), "{error}");
+    assert!(
+        error.to_string().contains("llama.cpp embedding failed"),
+        "{error}"
+    );
     assert!(
         error.to_string().contains("artifact download failed"),
         "{error}"
     );
     {
         let calls = fix.calls.lock().unwrap();
-        assert!(calls.llama_gpus.is_empty(), "no runtime init on artifact failure");
+        assert!(
+            calls.llama_gpus.is_empty(),
+            "no runtime init on artifact failure"
+        );
         assert!(calls.model_loads.is_empty());
     }
     model.dispose().await;
@@ -619,7 +652,10 @@ async fn runtime_import_failures_do_not_enter_gpu_fallback() {
         .embed_texts(&["value".to_string()], EmbedPurpose::Document, None)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("runtime import failed"), "{error}");
+    assert!(
+        error.to_string().contains("runtime import failed"),
+        "{error}"
+    );
     {
         let calls = fix.calls.lock().unwrap();
         assert_eq!(calls.runtime_loads, 1);
@@ -648,7 +684,12 @@ async fn qwen_format_auto_parallelism_and_partial_context_capacity() {
     .unwrap();
     let result = model
         .embed_texts(
-            &["query-0".to_string(), "query-1".to_string(), "query-2".to_string(), "query-3".to_string()],
+            &[
+                "query-0".to_string(),
+                "query-1".to_string(),
+                "query-2".to_string(),
+                "query-3".to_string(),
+            ],
             EmbedPurpose::Query,
             None,
         )
@@ -657,7 +698,11 @@ async fn qwen_format_auto_parallelism_and_partial_context_capacity() {
     assert_eq!(result.vectors.len(), 4);
     {
         let calls = fix.calls.lock().unwrap();
-        assert_eq!(calls.contexts.len(), 3, "two contexts plus one failed attempt");
+        assert_eq!(
+            calls.contexts.len(),
+            3,
+            "two contexts plus one failed attempt"
+        );
         assert!(
             calls.texts[0].starts_with("Instruct:"),
             "qwen3 query format required, got {:?}",
@@ -704,12 +749,17 @@ async fn falls_back_from_gpu_init_to_cpu() {
         })
         .collect();
     assert!(
-        warnings.iter().any(|message| message.contains("GPU init failed")),
+        warnings
+            .iter()
+            .any(|message| message.contains("GPU init failed")),
         "GPU fallback warning required, got {warnings:?}"
     );
     {
         let calls = fix.calls.lock().unwrap();
-        assert_eq!(calls.llama_gpus, vec![GpuSelection::Metal, GpuSelection::Cpu]);
+        assert_eq!(
+            calls.llama_gpus,
+            vec![GpuSelection::Metal, GpuSelection::Cpu]
+        );
         assert_eq!(calls.lifecycle[0], "resolveArtifacts");
     }
     model.dispose().await;
@@ -756,7 +806,10 @@ async fn packaged_backend_fallback_and_model_retry_on_cpu() {
     );
     {
         let calls = fix.calls.lock().unwrap();
-        assert_eq!(calls.llama_gpus, vec![GpuSelection::Cpu, GpuSelection::Auto]);
+        assert_eq!(
+            calls.llama_gpus,
+            vec![GpuSelection::Cpu, GpuSelection::Auto]
+        );
     }
     model.dispose().await;
 
@@ -794,14 +847,20 @@ async fn packaged_backend_fallback_and_model_retry_on_cpu() {
         })
         .collect();
     assert!(
-        warnings.iter().any(|message| message.contains("GPU model load failed")),
+        warnings
+            .iter()
+            .any(|message| message.contains("GPU model load failed")),
         "model retry warning required, got {warnings:?}"
     );
     {
         let calls = retry.calls.lock().unwrap();
         assert_eq!(calls.model_loads.len(), 2);
         assert_eq!(
-            calls.lifecycle.iter().filter(|event| **event == "resolveArtifacts").count(),
+            calls
+                .lifecycle
+                .iter()
+                .filter(|event| **event == "resolveArtifacts")
+                .count(),
             1
         );
         assert_eq!(calls.model_loads[0].0, calls.model_loads[1].0);

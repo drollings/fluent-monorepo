@@ -55,34 +55,76 @@ impl Lcg {
 }
 
 const PROSE_WORDS: &[&str] = &[
-    "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog", "router",
-    "request", "response", "model", "context", "window", "budget", "cache",
-    "queue", "worker", "config", "server", "client", "retry", "timeout",
-    "stream", "chunk", "token", "prompt", "answer", "review", "policy",
-    "session", "ledger", "index", "search", "report", "sales", "plan",
-    "route", "chart", "stage", "filter", "score", "embed", "classify",
-    "summarize", "transform", "Pack", "my", "box", "with", "five",
+    "the",
+    "quick",
+    "brown",
+    "fox",
+    "jumps",
+    "over",
+    "lazy",
+    "dog",
+    "router",
+    "request",
+    "response",
+    "model",
+    "context",
+    "window",
+    "budget",
+    "cache",
+    "queue",
+    "worker",
+    "config",
+    "server",
+    "client",
+    "retry",
+    "timeout",
+    "stream",
+    "chunk",
+    "token",
+    "prompt",
+    "answer",
+    "review",
+    "policy",
+    "session",
+    "ledger",
+    "index",
+    "search",
+    "report",
+    "sales",
+    "plan",
+    "route",
+    "chart",
+    "stage",
+    "filter",
+    "score",
+    "embed",
+    "classify",
+    "summarize",
+    "transform",
+    "Pack",
+    "my",
+    "box",
+    "with",
+    "five",
 ];
 
 const CODE_TOKENS: &[&str] = &[
-    "fn", "let", "mut", "if", "else", "for", "in", "return", "struct",
-    "impl", "pub", "use", "match", "while", "loop", "self", "true",
-    "false", "None", "Some", "Ok", "Err", "vec", "String", "u64", "i32",
-    "bool", "push", "len", "new", "map", "filter", "collect", "async",
-    "await", "spawn", "config", "queue", "cache", "token", "{", "}", "(",
-    ")", "[", "]", ";", "=", "=>", "::", "->", ".", ",",
+    "fn", "let", "mut", "if", "else", "for", "in", "return", "struct", "impl", "pub", "use",
+    "match", "while", "loop", "self", "true", "false", "None", "Some", "Ok", "Err", "vec",
+    "String", "u64", "i32", "bool", "push", "len", "new", "map", "filter", "collect", "async",
+    "await", "spawn", "config", "queue", "cache", "token", "{", "}", "(", ")", "[", "]", ";", "=",
+    "=>", "::", "->", ".", ",",
 ];
 
 const CJK_CHARS: &[char] = &[
-    '安', '全', '世', '界', '日', '本', '語', '韓', '国', '中', '文', '報',
-    '告', '売', '上', '計', '画', '路', '由', '検', '索', '応', '答', '設',
-    '定', '文', '字', '混', '合', '서', '울', '한', '글', '테', '스', '트',
-    'あ', 'い', 'う', 'え', 'お', 'か', 'き', 'く', 'け', 'こ', 'さ', 'し',
+    '安', '全', '世', '界', '日', '本', '語', '韓', '国', '中', '文', '報', '告', '売', '上', '計',
+    '画', '路', '由', '検', '索', '応', '答', '設', '定', '文', '字', '混', '合', '서', '울', '한',
+    '글', '테', '스', '트', 'あ', 'い', 'う', 'え', 'お', 'か', 'き', 'く', 'け', 'こ', 'さ', 'し',
 ];
 
 const EMOJI: &[&str] = &[
-    "🌍", "🌏", "🌎", "😀", "🎉", "🎊", "✅", "❌", "⚠️", "🔍", "📊", "📝",
-    "🚀", "💡", "🧪", "📦", "🔧", "📌", "🎯", "💬", "📎", "🗂️", "⏱️", "🧠",
+    "🌍", "🌏", "🌎", "😀", "🎉", "🎊", "✅", "❌", "⚠️", "🔍", "📊", "📝", "🚀", "💡", "🧪", "📦",
+    "🔧", "📌", "🎯", "💬", "📎", "🗂️", "⏱️", "🧠",
 ];
 
 /// Class 0 prose, 1 code, 2 CJK, 3 emoji/mixed. Returns 200 samples.
@@ -203,7 +245,7 @@ fn ref_class(c: char) -> f64 {
         '\u{0000}'..='\u{001F}' | '\u{007F}'..='\u{009F}' => 0.0,
         c if c.is_ascii_alphanumeric() => 0.25,
         c if c.is_ascii_punctuation() => 0.8, // tiktoken: symbols ~1 each
-        _ => 0.35, // accented Latin etc.: tiktoken ~1 per 1-2 chars
+        _ => 0.35,                            // accented Latin etc.: tiktoken ~1 per 1-2 chars
     }
 }
 
@@ -271,10 +313,16 @@ fn m10_1_token_weight_divergence() {
         (mean_abs_err - 6.2267).abs() < 1e-3,
         "mean abs err moved: {mean_abs_err:.6}"
     );
-    assert_eq!(within20, 93, "samples within ±20% moved: {pct_within20:.2}%");
-    for (class, name, want) in
-        [(0, "prose", 0.7950), (1, "code", 8.9100), (2, "cjk", 11.7590), (3, "emoji", 3.4430)]
-    {
+    assert_eq!(
+        within20, 93,
+        "samples within ±20% moved: {pct_within20:.2}%"
+    );
+    for (class, name, want) in [
+        (0, "prose", 0.7950),
+        (1, "code", 8.9100),
+        (2, "cjk", 11.7590),
+        (3, "emoji", 3.4430),
+    ] {
         let class_mean = class_err[class][0] / class_err[class][1];
         assert!(
             (class_mean - want).abs() < 1e-3,
@@ -303,7 +351,10 @@ fn m10_1_truncate_within_budget() {
     // multibyte-driven (see `m10_1_truncate_multibyte_attribution`): ASCII
     // truncations overshoot by ~1 (the `...` suffix), CJK/emoji by ~100.
     assert_eq!(truncated, 196, "truncation coverage moved");
-    assert_eq!(max_overshoot, 10, "overshoot ceiling moved: {max_overshoot}");
+    assert_eq!(
+        max_overshoot, 10,
+        "overshoot ceiling moved: {max_overshoot}"
+    );
 }
 
 #[test]
@@ -323,7 +374,10 @@ fn m10_1_truncate_multibyte_attribution() {
         let budget = (est / 2).max(1);
         let out = TokenBudget(budget as usize).truncate_to_budget(&text);
         let overshoot = estimate_tokens(&out).saturating_sub(budget);
-        assert_eq!(overshoot, want, "TRUNC_{name} overshoot moved (est={est} budget={budget})");
+        assert_eq!(
+            overshoot, want,
+            "TRUNC_{name} overshoot moved (est={est} budget={budget})"
+        );
     }
 }
 
@@ -332,7 +386,11 @@ fn m10_1_whitespace_control_no_inflate() {
     // Control group: whitespace/control-heavy strings stay fractional/zero.
     let ws = "   \t\n  \t   \n ";
     assert_eq!(estimate_tokens(ws), 1, "whitespace control moved");
-    assert_eq!(estimate_tokens("\u{0}\u{1}\u{2}"), 0, "control-char control moved");
+    assert_eq!(
+        estimate_tokens("\u{0}\u{1}\u{2}"),
+        0,
+        "control-char control moved"
+    );
 }
 
 // ─── M10.2: think-stripping precision/recall ────────────────────────────────
@@ -343,17 +401,38 @@ struct ThinkCase {
 }
 
 const THINK_RECALL: &[ThinkCase] = &[
-    ThinkCase { input: "<think>reason</think>result", should_strip: true },
-    ThinkCase { input: "before <think>reason</think> after", should_strip: true },
-    ThinkCase { input: "<thinking>a</thinking>B<thinking>c</thinking>D", should_strip: true },
-    ThinkCase { input: "[THINK]hidden[/THINK]visible", should_strip: true },
+    ThinkCase {
+        input: "<think>reason</think>result",
+        should_strip: true,
+    },
+    ThinkCase {
+        input: "before <think>reason</think> after",
+        should_strip: true,
+    },
+    ThinkCase {
+        input: "<thinking>a</thinking>B<thinking>c</thinking>D",
+        should_strip: true,
+    },
+    ThinkCase {
+        input: "[THINK]hidden[/THINK]visible",
+        should_strip: true,
+    },
     ThinkCase {
         input: " thinking let me check response\nThe answer is 4",
         should_strip: true,
     },
-    ThinkCase { input: "start<thinking>unclosed", should_strip: true },
-    ThinkCase { input: "<think>unclosed", should_strip: true },
-    ThinkCase { input: "A<think>B</think>C<think>D</think>E", should_strip: true },
+    ThinkCase {
+        input: "start<thinking>unclosed",
+        should_strip: true,
+    },
+    ThinkCase {
+        input: "<think>unclosed",
+        should_strip: true,
+    },
+    ThinkCase {
+        input: "A<think>B</think>C<think>D</think>E",
+        should_strip: true,
+    },
 ];
 
 const THINK_CONTROLS_M1: &[&str] = &[
@@ -378,8 +457,7 @@ const THINK_CONTROLS_TICKS: &[&str] = &[
 ];
 
 fn think_report(cases: &[ThinkCase], controls: &[&str]) -> CalibrationReport {
-    let mut all: Vec<(&str, bool)> =
-        cases.iter().map(|c| (c.input, c.should_strip)).collect();
+    let mut all: Vec<(&str, bool)> = cases.iter().map(|c| (c.input, c.should_strip)).collect();
     all.extend(controls.iter().map(|s| (*s, false)));
     calibrate_threshold(&all, |(input, _)| fired(input), |(_, label)| *label, 0.5)
 }
@@ -397,7 +475,10 @@ fn m10_2_think_precision_recall() {
     // Full-spec set: M1 controls + roadmap tick controls. Measured on HEAD:
     // the three tagged tick cases fire (task-content deletion — see
     // CALIBRATION.md); everything else holds.
-    let full = think_report(THINK_RECALL, &[THINK_CONTROLS_M1, THINK_CONTROLS_TICKS].concat());
+    let full = think_report(
+        THINK_RECALL,
+        &[THINK_CONTROLS_M1, THINK_CONTROLS_TICKS].concat(),
+    );
     // Locked (measured HEAD values; see CALIBRATION.md): recall is total,
     // but the three tagged tick controls fire — precision 8/11, FPR 3/11,
     // `passes_gate()` false. Think-stripping has NOT earned truncate/cache/
@@ -405,10 +486,17 @@ fn m10_2_think_precision_recall() {
     // production change by milestone rule).
     assert_eq!((full.tp, full.r#fn), (8, 0), "recall must be total");
     assert_eq!((full.fp, full.tn), (3, 8), "measured FP locked");
-    assert!((full.precision - 8.0 / 11.0).abs() < 1e-12, "{}", full.precision);
+    assert!(
+        (full.precision - 8.0 / 11.0).abs() < 1e-12,
+        "{}",
+        full.precision
+    );
     assert_eq!(full.recall, 1.0);
     assert!((full.fpr - 3.0 / 11.0).abs() < 1e-12, "{}", full.fpr);
-    assert!(!full.passes_gate(), "gate must stay red until the FP is fixed");
+    assert!(
+        !full.passes_gate(),
+        "gate must stay red until the FP is fixed"
+    );
     // M1-subset: the previously-earned behavior stays clean.
     let m1 = think_report(THINK_RECALL, THINK_CONTROLS_M1);
     assert_eq!((m1.fp, m1.tn), (0, 6));

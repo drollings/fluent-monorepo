@@ -19,8 +19,8 @@ use futures_util::StreamExt as _;
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use super::{cli_err, sync_preset};
 use super::ShowFlags;
+use super::{cli_err, sync_preset};
 use crate::cli::gguf::{
     format_size, read_gguf_metadata, resolve_model, scan_gguf_models, GgufEntry,
 };
@@ -57,7 +57,11 @@ fn render_single_row_table(headers: &[String], cells: &[String]) -> String {
     let _ = writeln!(
         out,
         "| {} |",
-        headers.iter().map(|_| "---").collect::<Vec<_>>().join(" | ")
+        headers
+            .iter()
+            .map(|_| "---")
+            .collect::<Vec<_>>()
+            .join(" | ")
     );
     let _ = writeln!(out, "| {} |", cells.join(" | "));
     out
@@ -69,10 +73,8 @@ fn render_single_row_table(headers: &[String], cells: &[String]) -> String {
 pub fn render_config_listing(listing: &ConfigListing) -> String {
     let mut out = String::new();
     out.push_str("## Routes\n");
-    let route_headers: Vec<String> =
-        listing.routes.iter().map(|(r, _)| escape_cell(r)).collect();
-    let route_cells: Vec<String> =
-        listing.routes.iter().map(|(_, g)| escape_cell(g)).collect();
+    let route_headers: Vec<String> = listing.routes.iter().map(|(r, _)| escape_cell(r)).collect();
+    let route_cells: Vec<String> = listing.routes.iter().map(|(_, g)| escape_cell(g)).collect();
     out.push_str(&render_single_row_table(&route_headers, &route_cells));
     out.push('\n');
     out.push_str("## Model groups\n");
@@ -103,7 +105,9 @@ pub fn render_config_listing(listing: &ConfigListing) -> String {
             out,
             "| {} | {intelligence} | {} |",
             escape_cell(key),
-            weights.as_deref().map_or_else(|| "-".to_string(), escape_cell)
+            weights
+                .as_deref()
+                .map_or_else(|| "-".to_string(), escape_cell)
         );
     }
     out

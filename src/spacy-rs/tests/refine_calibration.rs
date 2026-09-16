@@ -9,13 +9,13 @@
 //! `RoutingSignal` so the decision is deterministic and hermetic, mirroring
 //! the unit-test truth table but grouped as a corpus with aggregate metrics.
 
+use fluent_types::InterlinguaId;
+use spacy_rs::routing::{InterlinguaSignal, RoutingSignal};
 use spacy_rs::{
     arc_eager::ParseConfidence, pipeline::refine_reason_aggregated, AnnotationResult,
-    AnnotationSet, AnnotationSource, ConfidenceReason, RefineMode, RefinePolicy,
-    RefineReason, TaskValueReason,
+    AnnotationSet, AnnotationSource, ConfidenceReason, RefineMode, RefinePolicy, RefineReason,
+    TaskValueReason,
 };
-use spacy_rs::routing::{InterlinguaSignal, RoutingSignal};
-use fluent_types::InterlinguaId;
 
 fn high_confidence_base() -> AnnotationResult {
     AnnotationResult::new(AnnotationSet::default(), AnnotationSource::ArcEager).with_confidence(
@@ -356,7 +356,11 @@ fn control_20_confident_sentences_no_trigger_both_paths() {
         signals_agg.push((routing, signal));
     }
     let agg_reason = refine_reason_aggregated(&base, &signals_agg, policy);
-    assert_eq!(agg_reason, RefineReason::NoTrigger, "20 confident aggregated must be NoTrigger");
+    assert_eq!(
+        agg_reason,
+        RefineReason::NoTrigger,
+        "20 confident aggregated must be NoTrigger"
+    );
     // 0.0 false-positive before OnUncertain is trusted
     let fp = i32::from(agg_reason != RefineReason::NoTrigger);
     assert_eq!(fp, 0);

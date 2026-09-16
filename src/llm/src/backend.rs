@@ -142,11 +142,7 @@ pub trait InferenceBackend: Component {
     /// The shared weights handle for a served key, if resident or loadable.
     fn weights(&self, key: &str) -> Option<Arc<dyn LlmWeights>>;
     /// The chat transport for a served key and optional instance.
-    fn chat_backend(
-        &self,
-        key: &str,
-        instance: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>>;
+    fn chat_backend(&self, key: &str, instance: Option<&str>) -> Option<Arc<dyn ChatBackend>>;
     /// The embedding transport for a served key. Defaults to `None` —
     /// only backends that serve embeddings override this.
     fn embed_provider(&self, _key: &str) -> Option<Arc<dyn EmbeddingProvider>> {
@@ -166,11 +162,7 @@ pub trait InferenceBackend: Component {
 pub trait NamedContexts: InferenceBackend {
     /// Ensure the named context exists under the model key, creating it
     /// on demand from `profile`.
-    fn ensure_context(
-        &self,
-        key: &str,
-        profile: ContextProfile,
-    ) -> Arc<dyn LlmContext>;
+    fn ensure_context(&self, key: &str, profile: ContextProfile) -> Arc<dyn LlmContext>;
 }
 
 // ─── Registry ───────────────────────────────────────────────────────────────
@@ -229,11 +221,7 @@ impl InferenceRegistry {
     /// and candidates reporting [`Readiness::Failed`] are skipped with that
     /// failure as the recorded cause. A miss falls through to the next
     /// candidate; every fallback therefore carries a genuine cause.
-    pub fn route_chat(
-        &self,
-        key: &str,
-        instance: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
+    pub fn route_chat(&self, key: &str, instance: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         let base = base_key(key);
         let rungs: Vec<Arc<dyn InferenceBackend>> =
             self.backends.values().map(Arc::clone).collect();
@@ -339,11 +327,7 @@ impl InferenceCapability {
     }
 
     /// Route a chat request through the shared registry.
-    pub fn route_chat(
-        &self,
-        key: &str,
-        instance: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
+    pub fn route_chat(&self, key: &str, instance: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         let registry = common_core::sync::lock_read(&self.registry);
         registry.route_chat(key, instance)
     }
@@ -517,8 +501,7 @@ pub struct RouteLabel {
 /// neutral crate stays free of domain imports; consumers instantiate it with
 /// their interlingua id (e.g. `EntityLinkScorer<InterlinguaId>` at the router
 /// seam). A scorer that yields no candidates is fail-open.
-pub type EntityLinkScorer<EntityId = u64> =
-    Arc<dyn Fn(&str) -> Vec<(EntityId, f64)> + Send + Sync>;
+pub type EntityLinkScorer<EntityId = u64> = Arc<dyn Fn(&str) -> Vec<(EntityId, f64)> + Send + Sync>;
 
 #[cfg(test)]
 #[path = "../tests/pii.rs"]

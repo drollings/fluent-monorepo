@@ -42,14 +42,22 @@ async fn is_blocked_reflects_exhaustion() {
         },
     ));
     assert!(!pool.is_blocked());
-    pool.submit(1).await.expect("first submit consumes the credit");
+    pool.submit(1)
+        .await
+        .expect("first submit consumes the credit");
     // A second submit must block on the exhausted credit and flip the flag.
     let p = Arc::clone(&pool);
     let second = tokio::spawn(async move { p.submit(2).await });
     tokio::time::sleep(Duration::from_millis(10)).await;
-    assert!(pool.is_blocked(), "credit exhausted → second submit blocked");
+    assert!(
+        pool.is_blocked(),
+        "credit exhausted → second submit blocked"
+    );
     second.await.expect("second completes").expect("ok");
-    assert!(!pool.is_blocked(), "credit replenished after the job processed");
+    assert!(
+        !pool.is_blocked(),
+        "credit replenished after the job processed"
+    );
     pool.drain().await;
 }
 
@@ -57,18 +65,13 @@ async fn is_blocked_reflects_exhaustion() {
 async fn handler_runs_once_and_releases_credit_per_job() {
     let counter = Arc::new(AtomicUsize::new(0));
     let c = Arc::clone(&counter);
-    let pool = Arc::new(CreditGatedPool::new(
-        runtime(),
-        1,
-        8,
-        move |_: usize| {
-            let c = Arc::clone(&c);
-            async move {
-                c.fetch_add(1, Ordering::SeqCst);
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        },
-    ));
+    let pool = Arc::new(CreditGatedPool::new(runtime(), 1, 8, move |_: usize| {
+        let c = Arc::clone(&c);
+        async move {
+            c.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }));
     // With credit 1, each submit proceeds only after the previous job's
     // `recv()` has released its token — the handler runs exactly once per
     // job and replenishes credit each time.
@@ -115,7 +118,10 @@ async fn queue_at_capacity_applies_backpressure() {
     let p = Arc::clone(&pool);
     let fourth = tokio::spawn(async move { p.submit(4).await });
     tokio::time::sleep(Duration::from_millis(10)).await;
-    assert!(!fourth.is_finished(), "submit waits while the queue is full");
+    assert!(
+        !fourth.is_finished(),
+        "submit waits while the queue is full"
+    );
     // Once the workers finish, the queued and waiting submits drain.
     tokio::time::sleep(Duration::from_millis(200)).await;
     fourth.await.expect("fourth completes").expect("ok");

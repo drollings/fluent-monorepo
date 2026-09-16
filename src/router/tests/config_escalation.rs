@@ -128,8 +128,7 @@ fn group_member_key_round_trips_through_raw() {
 fn model_group_models_shape_unchanged_with_sentinels_present() {
     // `models()` keeps returning the raw member strings; sentinel expansion
     // is a dispatch-time concern, not a config-shape one.
-    let group: ModelGroup =
-        serde_json::from_str(r#"["code:default", "last", "any"]"#).unwrap();
+    let group: ModelGroup = serde_json::from_str(r#"["code:default", "last", "any"]"#).unwrap();
     assert_eq!(
         group.models(),
         &[

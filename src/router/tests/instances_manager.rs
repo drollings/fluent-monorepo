@@ -18,7 +18,8 @@ fn write_gguf(path: &Path, arch: &str, file_type: u32) {
         f.write_all(value.as_bytes()).unwrap();
     };
     kv_str(&mut f, "general.architecture", arch);
-    f.write_all(&("general.file_type".len() as u64).to_le_bytes()).unwrap();
+    f.write_all(&("general.file_type".len() as u64).to_le_bytes())
+        .unwrap();
     f.write_all(b"general.file_type").unwrap();
     f.write_all(&4u32.to_le_bytes()).unwrap(); // uint32
     f.write_all(&file_type.to_le_bytes()).unwrap();
@@ -43,7 +44,11 @@ fn weights_identity_defaults_for_missing_file() {
     let idn = weights_identity(Path::new("/nonexistent/nope.gguf"));
     assert_eq!(idn.arch, "");
     assert_eq!(idn.quant, "");
-    assert_eq!(idn.short_id.len(), 12, "placeholder short id for missing file");
+    assert_eq!(
+        idn.short_id.len(),
+        12,
+        "placeholder short id for missing file"
+    );
 }
 
 #[test]
@@ -69,5 +74,9 @@ fn in_flight_lease_counts_active_dispatches() {
     drop(a);
     assert_eq!(manager.in_flight(), 1, "lease released on drop");
     drop(b);
-    assert_eq!(manager.in_flight(), 0, "last lease returns the count to zero");
+    assert_eq!(
+        manager.in_flight(),
+        0,
+        "last lease returns the count to zero"
+    );
 }

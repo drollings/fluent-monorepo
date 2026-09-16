@@ -11,8 +11,8 @@ use crate::scheduler::{
 };
 use fluent_concurrency::stream::StreamAbort;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Runtime revision authority (the daemon `RootRuntime` surface the
 /// coordinator drives: dirty/indexed/reconciled markers).
@@ -54,7 +54,11 @@ pub type ProgressSink = Arc<dyn Fn(JobProgress) + Send + Sync>;
 
 /// Reconcile body: drained snapshot → optional proof.
 pub type ReconcileRun = Arc<
-    dyn Fn(ChangeSetSnapshot, ProgressSink, StreamAbort) -> BoxFuture<Result<Option<ReconciliationProof>, JobError>>
+    dyn Fn(
+            ChangeSetSnapshot,
+            ProgressSink,
+            StreamAbort,
+        ) -> BoxFuture<Result<Option<ReconciliationProof>, JobError>>
         + Send
         + Sync,
 >;
@@ -128,11 +132,7 @@ pub struct IndexCoordinator {
 
 impl IndexCoordinator {
     /// Create a coordinator over a runtime, scheduler, and reconcile body.
-    pub fn new(
-        runtime: Arc<dyn RootRuntime>,
-        scheduler: JobScheduler,
-        run: ReconcileRun,
-    ) -> Self {
+    pub fn new(runtime: Arc<dyn RootRuntime>, scheduler: JobScheduler, run: ReconcileRun) -> Self {
         let pending_root = runtime.canonical_root();
         let pending = ChangeSet::new(ChangeSetOptions {
             root: Some(pending_root.clone()),
@@ -228,8 +228,7 @@ impl IndexCoordinator {
                             let job_revision = target.load(Ordering::SeqCst);
                             *pending = ChangeSet::new(ChangeSetOptions {
                                 root: Some(pending_root.clone()),
-                                max_changed_paths:
-                                    crate::search_constants::CHANGE_SET_PATH_BUDGET,
+                                max_changed_paths: crate::search_constants::CHANGE_SET_PATH_BUDGET,
                             });
                             *guard = Some((snapshot.clone(), job_revision));
                             (snapshot, job_revision)
@@ -271,7 +270,9 @@ impl IndexCoordinator {
                             complete_step(
                                 &steps,
                                 job_revision,
-                                StepPhase::Failed { message: error.message.clone() },
+                                StepPhase::Failed {
+                                    message: error.message.clone(),
+                                },
                             );
                             Err(error)
                         }

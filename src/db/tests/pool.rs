@@ -1,7 +1,7 @@
 use super::*;
 
-use fluent_wvr::capability::CURRENT_CAPS;
 use crate::tests::common::{db_caps, in_memory_pool};
+use fluent_wvr::capability::CURRENT_CAPS;
 
 fn pool() -> Arc<SqlitePool> {
     in_memory_pool()
@@ -210,10 +210,7 @@ async fn transaction_commit_and_rollback() {
                         .unwrap();
                     let result: Result<(), DbError> = pool
                         .transaction(move |tx| {
-                            tx.execute(
-                                "INSERT INTO t (id) VALUES (?1)",
-                                rusqlite::params![7],
-                            )?;
+                            tx.execute("INSERT INTO t (id) VALUES (?1)", rusqlite::params![7])?;
                             if commit {
                                 Ok(())
                             } else {
@@ -398,10 +395,9 @@ fn borrowed_execute_and_query_rows_use_borrowed_params() {
         "SELECT name FROM t WHERE name IN ({})",
         in_clause(names.len())
     );
-    let found = SqlitePool::query_rows_from_iter_borrowed(conn, &sql, names, |row| {
-        row.get::<_, String>(0)
-    })
-    .unwrap();
+    let found =
+        SqlitePool::query_rows_from_iter_borrowed(conn, &sql, names, |row| row.get::<_, String>(0))
+            .unwrap();
     assert_eq!(found, vec!["alpha".to_string()]);
 }
 
@@ -410,8 +406,7 @@ fn borrowed_query_row_no_rows_maps_to_none() {
     let pool = pool();
     let guard = pool.connections.lock().unwrap();
     let conn = &guard[0];
-    SqlitePool::execute_borrowed(conn, "CREATE TABLE t (id INTEGER)", rusqlite::params![])
-        .unwrap();
+    SqlitePool::execute_borrowed(conn, "CREATE TABLE t (id INTEGER)", rusqlite::params![]).unwrap();
     let val = SqlitePool::query_row_borrowed(
         conn,
         "SELECT id FROM t WHERE id = ?1",
@@ -576,8 +571,7 @@ async fn open_literal_memory_path_is_shared() {
     CURRENT_CAPS
         .scope(db_caps(), async {
             let pool = Arc::new(
-                SqlitePool::open(std::path::Path::new(":memory:"), &PoolConfig::new(3))
-                    .unwrap(),
+                SqlitePool::open(std::path::Path::new(":memory:"), &PoolConfig::new(3)).unwrap(),
             );
             pool.execute_batch("CREATE TABLE t (id INTEGER); INSERT INTO t VALUES (5)")
                 .await

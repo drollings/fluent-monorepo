@@ -77,10 +77,7 @@ pub fn curie_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> String {
 #[must_use]
 pub fn normalize_curie(curie: &str) -> String {
     let curie = curie.trim();
-    if let Some(inner) = curie
-        .strip_prefix('<')
-        .and_then(|s| s.strip_suffix('>'))
-    {
+    if let Some(inner) = curie.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
         // Full IRI: normalize the whole inner string (lowercase,
         // `_UXXXX` decode, `_`→space) like the Python shim — the local-name
         // extraction of `normalize_yago_name` does NOT apply here.
@@ -108,7 +105,9 @@ pub fn collect_edges(ttl: &str) -> (BTreeMap<String, String>, Vec<(String, Strin
 /// Transitive closure of `subClassOf`: subject → sorted ancestor list.
 /// Cycle-safe via memoization + an in-progress stack.
 #[must_use]
-pub fn transitive_ancestors(direct: &BTreeMap<String, Vec<String>>) -> BTreeMap<String, Vec<String>> {
+pub fn transitive_ancestors(
+    direct: &BTreeMap<String, Vec<String>>,
+) -> BTreeMap<String, Vec<String>> {
     fn dfs<'a>(
         node: &'a str,
         direct: &'a BTreeMap<String, Vec<String>>,
@@ -228,7 +227,10 @@ pub fn taxonomy_from_ttl(
 /// sorted keys, trailing newline.
 #[must_use]
 pub fn to_json_string(map: &BTreeMap<String, ClassEntry>) -> String {
-    format!("{}\n", serde_json::to_string_pretty(map).unwrap_or_default())
+    format!(
+        "{}\n",
+        serde_json::to_string_pretty(map).unwrap_or_default()
+    )
 }
 
 /// Flat mapping: class → ancestors list.
@@ -243,9 +245,17 @@ pub fn to_flat(map: &BTreeMap<String, ClassEntry>) -> BTreeMap<String, Vec<Strin
 
 /// Meta-vocabulary IRIs never survive the prune (mirrors the shim).
 fn is_meta_iri(iri: &str) -> bool {
-    ["rdf-schema", "rdf-syntax", "owl#", "shacl", "/sh#", "skos", "xsd#"]
-        .iter()
-        .any(|k| iri.contains(k))
+    [
+        "rdf-schema",
+        "rdf-syntax",
+        "owl#",
+        "shacl",
+        "/sh#",
+        "skos",
+        "xsd#",
+    ]
+    .iter()
+    .any(|k| iri.contains(k))
 }
 
 /// BFS from roots to `num_tiers`: tier 0 = roots (classes that never appear
@@ -260,10 +270,7 @@ pub fn compute_kept_iris(edges: &[(String, String)], num_tiers: usize) -> BTreeS
         .flat_map(|(s, o)| [s.as_str(), o.as_str()])
         .collect();
 
-    let mut roots: BTreeSet<String> = all
-        .difference(&subjects)
-        .map(ToString::to_string)
-        .collect();
+    let mut roots: BTreeSet<String> = all.difference(&subjects).map(ToString::to_string).collect();
     for (s, o) in edges {
         if is_meta_iri(o) && !is_meta_iri(s) {
             let has_non_meta_parent = edges
@@ -323,7 +330,11 @@ fn should_keep_line(
     edges_known: &BTreeSet<String>,
 ) -> bool {
     let stripped = line.trim();
-    if stripped.is_empty() || stripped.starts_with("@prefix") || stripped.starts_with("@base") || stripped.starts_with('#') {
+    if stripped.is_empty()
+        || stripped.starts_with("@prefix")
+        || stripped.starts_with("@base")
+        || stripped.starts_with('#')
+    {
         return true;
     }
     if line.contains("subClassOf") {

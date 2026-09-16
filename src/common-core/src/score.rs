@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 
 /// Normalize a raw score to a finite value: non-finite (NaN/±Inf) becomes 0.0.
 pub fn normalize_score(raw: f64) -> f64 {
-    if raw.is_finite() { raw } else { 0.0 }
+    if raw.is_finite() {
+        raw
+    } else {
+        0.0
+    }
 }
 
 pub fn is_below_threshold(value: f64, threshold: f64) -> bool {
@@ -19,11 +23,7 @@ pub fn is_above_threshold(value: f64, threshold: f64) -> bool {
 /// disjoint inputs yield `0.0`. Non-finite lanes propagate per IEEE-754
 /// (callers that need sanitizing compose `normalize_score` first).
 pub fn weighted_dot(signals: &[f64], weights: &[f64]) -> f64 {
-    signals
-        .iter()
-        .zip(weights.iter())
-        .map(|(s, w)| s * w)
-        .sum()
+    signals.iter().zip(weights.iter()).map(|(s, w)| s * w).sum()
 }
 
 /// Generic scored top-K select (P2 primitive).
@@ -37,17 +37,26 @@ pub fn weighted_dot(signals: &[f64], weights: &[f64]) -> f64 {
 /// Deliberately **no** score-filter parameter: filtering (`> 0.0`,
 /// `>= threshold`) stays call-site code so fail-open/filter semantics never
 /// move implicitly.
-pub fn top_k_by_score<T>(mut items: Vec<T>, k: usize, score: impl Fn(&T) -> f32, descending: bool) -> Vec<T> {
+pub fn top_k_by_score<T>(
+    mut items: Vec<T>,
+    k: usize,
+    score: impl Fn(&T) -> f32,
+    descending: bool,
+) -> Vec<T> {
     if k == 0 || items.is_empty() {
         return Vec::new();
     }
     if descending {
         items.sort_by(|a, b| {
-            score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal)
+            score(b)
+                .partial_cmp(&score(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     } else {
         items.sort_by(|a, b| {
-            score(a).partial_cmp(&score(b)).unwrap_or(std::cmp::Ordering::Equal)
+            score(a)
+                .partial_cmp(&score(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
     items.truncate(k);
@@ -120,8 +129,16 @@ impl<D> ScoreMatrix<D>
 where
     D: Eq + Hash + Clone,
 {
-    pub fn from_parts(dimensions: Vec<D>, weights: Vec<f64>, routes: HashMap<String, RouteBands<D>>) -> Self {
-        Self { dimensions, weights, routes }
+    pub fn from_parts(
+        dimensions: Vec<D>,
+        weights: Vec<f64>,
+        routes: HashMap<String, RouteBands<D>>,
+    ) -> Self {
+        Self {
+            dimensions,
+            weights,
+            routes,
+        }
     }
 
     pub fn resolve(&self, scores: &HashMap<D, f64>) -> Vec<ScoredRoute<D>>
@@ -166,4 +183,3 @@ where
         results
     }
 }
-

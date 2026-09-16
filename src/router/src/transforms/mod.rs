@@ -60,11 +60,8 @@ pub fn rewrite_text_messages(
 ///
 /// DRY helper (C2): the pii and codeword anonymize transforms share the
 /// identical 6-line conversion/guarded-insertion skeleton. Drains `map`.
-pub fn insert_string_map<S>(
-    request: &mut RouterRequest,
-    key: &str,
-    map: HashMap<String, String, S>,
-) where
+pub fn insert_string_map<S>(request: &mut RouterRequest, key: &str, map: HashMap<String, String, S>)
+where
     S: std::hash::BuildHasher,
 {
     if map.is_empty() {
@@ -74,7 +71,9 @@ pub fn insert_string_map<S>(
         .into_iter()
         .map(|(k, v)| (k, serde_json::Value::String(v)))
         .collect();
-    request.metadata.insert(key.into(), serde_json::Value::Object(obj));
+    request
+        .metadata
+        .insert(key.into(), serde_json::Value::Object(obj));
 }
 
 #[cfg(test)]
@@ -140,13 +139,17 @@ mod helper_tests {
         let obj = req.metadata.get("map").unwrap().as_object().unwrap();
         assert_eq!(obj.len(), 2);
         assert_eq!(obj["café"], serde_json::Value::String("北京".into()));
-        assert_eq!(obj["email"], serde_json::Value::String("user@example.com".into()));
+        assert_eq!(
+            obj["email"],
+            serde_json::Value::String("user@example.com".into())
+        );
     }
 
     #[test]
     fn preserves_existing_metadata_keys() {
         let mut req = request();
-        req.metadata.insert("pre".into(), serde_json::json!({"x": 1}));
+        req.metadata
+            .insert("pre".into(), serde_json::json!({"x": 1}));
         insert_string_map(&mut req, "map", map(&[("a", "1")]));
         assert!(req.metadata.contains_key("pre"));
         assert!(req.metadata.contains_key("map"));

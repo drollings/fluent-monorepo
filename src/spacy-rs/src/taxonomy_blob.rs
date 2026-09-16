@@ -6,8 +6,8 @@
 
 use std::sync::{Arc, LazyLock};
 
-use crate::lemma_blob::LemmaBlob;
 use crate::error::SpacyError;
+use crate::lemma_blob::LemmaBlob;
 
 /// Trait per `common-core::blob_spec::LemmaView` (re-exported here for crate-local use without cross-crate import cycle).
 pub trait LemmaView: Send + Sync {
@@ -35,9 +35,8 @@ impl LemmaView for LemmaBlob {
 /// The embedded `SLM2` bytes (or legacy `SLM1` during rollout).
 static EMBEDDED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/en_lemmas.bin"));
 
-static VIEW: LazyLock<Arc<LemmaBlob>> = LazyLock::new(|| {
-    Arc::new(LemmaBlob::from_bytes(EMBEDDED).expect("embedded lemma blob valid"))
-});
+static VIEW: LazyLock<Arc<LemmaBlob>> =
+    LazyLock::new(|| Arc::new(LemmaBlob::from_bytes(EMBEDDED).expect("embedded lemma blob valid")));
 
 /// Global lemma view.
 #[must_use]

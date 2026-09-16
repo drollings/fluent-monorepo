@@ -30,8 +30,12 @@ fn answer_text_is_none_without_choices() {
 fn answer_text_concatenates_text_parts() {
     let mut c = make_text_completion("fast", "ignored");
     c.choices[0].message.content = RouterMessageContent::Parts(vec![
-        crate::types::ContentPart::Text { text: "hello".into() },
-        crate::types::ContentPart::Text { text: "world".into() },
+        crate::types::ContentPart::Text {
+            text: "hello".into(),
+        },
+        crate::types::ContentPart::Text {
+            text: "world".into(),
+        },
     ]);
     assert_eq!(answer_text(&c).as_deref(), Some("hello world"));
 }

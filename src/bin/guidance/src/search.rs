@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 
+use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::{plan_from_query, stages_from_hits};
 use guidance_core::query::ingest::LazyNlp;
@@ -14,7 +15,6 @@ use guidance_core::query::recall::run_recall;
 use guidance_core::query::rg_backend::{RgBackend, RgOptions};
 use guidance_core::query::strategy::FsmEngine;
 use guidance_core::query::structure_enrich::{enrich_hits, EnrichedRgHit};
-use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
 use guidance_core::query_engine::{OutputFormat, QueryEngine};
 use guidance_core::search_types::{
     CodeSymbolType, SearchHit, SearchPlan, SearchPlanRoute, SearchPlanRouteMode,
@@ -468,7 +468,11 @@ pub fn context_lines_for_hits(
         .map(|hit| hit.file.absolute_path.as_str())
         .collect();
     edges.retain(|edge| !covered.contains(edge.file.as_str()));
-    Ok(build_context_lines(&edges, EXPLAIN_CONTEXT_BUDGET, workspace))
+    Ok(build_context_lines(
+        &edges,
+        EXPLAIN_CONTEXT_BUDGET,
+        workspace,
+    ))
 }
 
 /// Top-N distinct fused files (hit order) seeding the closure.
@@ -493,8 +497,7 @@ pub fn anchor_files(hits: &[SearchHit], count: usize) -> Vec<String> {
 /// renders separately below. Pure.
 #[must_use]
 pub fn build_explain_rows(hits: &[SearchHit]) -> Vec<ExplainRow> {
-    hits
-        .iter()
+    hits.iter()
         .map(|hit| {
             // File-level fragments carry no symbol metadata, so the
             // shared title rule falls back to the entity id (the
@@ -529,11 +532,7 @@ type ContextGroup<'a> = (
 /// "c"`) so provenance stays complete without doubling lines. Sorted
 /// edge order, capped at `cap` lines. Pure.
 #[must_use]
-pub fn build_context_lines(
-    edges: &[ContextEdge],
-    cap: usize,
-    workspace: &str,
-) -> Vec<String> {
+pub fn build_context_lines(edges: &[ContextEdge], cap: usize, workspace: &str) -> Vec<String> {
     // Group by (file, anchor, direction), merging families in sort order.
     let mut groups: Vec<ContextGroup<'_>> = Vec::new();
     for edge in edges {
@@ -607,11 +606,7 @@ pub struct ExplainRow {
 /// context section (present only when non-empty). The table section is
 /// byte-identical with and without expansion — pinned by test. Pure.
 #[must_use]
-pub fn render_explain_table(
-    query: &str,
-    rows: &[ExplainRow],
-    context: &[String],
-) -> String {
+pub fn render_explain_table(query: &str, rows: &[ExplainRow], context: &[String]) -> String {
     let mut out = format!("## Explain: {query}\n\n");
     if rows.is_empty() {
         out.push_str("No results found.\n");
@@ -620,7 +615,10 @@ pub fn render_explain_table(
     out.push_str("| Name | Source | Score |\n");
     out.push_str("|------|--------|-------|\n");
     for row in rows {
-        out.push_str(&format!("| {} | {} | {:.2} |\n", row.name, row.source, row.score));
+        out.push_str(&format!(
+            "| {} | {} | {:.2} |\n",
+            row.name, row.source, row.score
+        ));
     }
     if !context.is_empty() {
         out.push_str("\n### Context\n");

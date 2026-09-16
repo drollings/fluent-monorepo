@@ -139,7 +139,10 @@ async fn focused_refinement_runs_through_a_live_endpoint() {
     assert_eq!(doc.len(), 7);
     assert_eq!(result.records().len(), doc.len());
     assert!(
-        matches!(result.source(), AnnotationSource::ArcEager | AnnotationSource::Llm),
+        matches!(
+            result.source(),
+            AnnotationSource::ArcEager | AnnotationSource::Llm
+        ),
         "base kept or focused refinement adopted, never a worse rung"
     );
     // The refine contract is the one the prompt builder owns.

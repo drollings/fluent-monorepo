@@ -39,8 +39,20 @@ pub fn split_tokens(text: &str) -> Vec<String> {
 #[must_use]
 pub fn symbol_names(query: &str) -> Vec<String> {
     const KEYWORDS: &[&str] = &[
-        "class", "struct", "enum", "interface", "function", "method", "type", "const", "let",
-        "var", "namespace", "where", "find", "explain",
+        "class",
+        "struct",
+        "enum",
+        "interface",
+        "function",
+        "method",
+        "type",
+        "const",
+        "let",
+        "var",
+        "namespace",
+        "where",
+        "find",
+        "explain",
     ];
     let mut names = HashSet::new();
     let mut ordered = Vec::new();
@@ -113,18 +125,26 @@ mod tests {
     #[test]
     fn split_tokens_edges() {
         assert!(split_tokens("").is_empty());
-        assert_eq!(split_tokens("Foo.Bar"), vec!["foo".to_string(), "bar".to_string()]);
+        assert_eq!(
+            split_tokens("Foo.Bar"),
+            vec!["foo".to_string(), "bar".to_string()]
+        );
         // Underscore is not alphanumeric: it splits too.
-        assert_eq!(split_tokens("foo_bar"), vec!["foo".to_string(), "bar".to_string()]);
+        assert_eq!(
+            split_tokens("foo_bar"),
+            vec!["foo".to_string(), "bar".to_string()]
+        );
         assert_eq!(
             split_tokens("a::b c-d"),
-            vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()]
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string()
+            ]
         );
         // Duplicates preserved; empties dropped.
-        assert_eq!(
-            split_tokens("x..x"),
-            vec!["x".to_string(), "x".to_string()]
-        );
+        assert_eq!(split_tokens("x..x"), vec!["x".to_string(), "x".to_string()]);
     }
 
     #[test]

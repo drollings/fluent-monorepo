@@ -19,17 +19,16 @@
 
 use std::sync::Arc;
 
-use fluent_concept::{PlausibilityTriple, ScoredLemma};
 use crate::doc::{dep_in, sentence_root, sentence_spans, Doc};
 use crate::interlingua::InterlinguaResolver;
-use crate::labels::{DIRECT_OBJECT_DEPS, SUBJECT_DEPS};/// The knowledge-half scoring seam (M5): given the scorable triples the
+use crate::labels::{DIRECT_OBJECT_DEPS, SUBJECT_DEPS};
+use fluent_concept::{PlausibilityTriple, ScoredLemma};
+/// The knowledge-half scoring seam (M5): given the scorable triples the
 /// text half derived, return the taxonomy plausibility, or `None` when the
 /// taxonomy is not ready. The owner wires its kernel at the construction
 /// site (same pattern as the router injecting `LlmFetch`); unwired, the
 /// `YagoResolveStage` stays fail-closed (`None`, the pre-M3 behavior).
-pub type PlausibilityFetch =
-    Arc<dyn Fn(&[PlausibilityTriple]) -> Option<f64> + Send + Sync>;
-
+pub type PlausibilityFetch = Arc<dyn Fn(&[PlausibilityTriple]) -> Option<f64> + Send + Sync>;
 
 /// One deterministic triple from a single sentence: the predicate is the
 /// sentence root, `subject` is an `nsubj` dependent of that root, `object` is a

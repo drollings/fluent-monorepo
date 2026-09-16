@@ -268,8 +268,7 @@ impl SqlitePool {
         I::Item: Into<crate::query::OwnedValue> + Send + 'static,
     {
         let sql = sql.to_string();
-        let params: Vec<crate::query::OwnedValue> =
-            params.into_iter().map(Into::into).collect();
+        let params: Vec<crate::query::OwnedValue> = params.into_iter().map(Into::into).collect();
         self.with_conn(move |conn| {
             crate::query::execute(conn, &sql, rusqlite::params_from_iter(params))
         })
@@ -299,8 +298,7 @@ impl SqlitePool {
         I::Item: Into<crate::query::OwnedValue> + Send + 'static,
     {
         let sql = sql.to_string();
-        let params: Vec<crate::query::OwnedValue> =
-            params.into_iter().map(Into::into).collect();
+        let params: Vec<crate::query::OwnedValue> = params.into_iter().map(Into::into).collect();
         self.with_conn(move |conn| {
             crate::query::query_row(conn, &sql, rusqlite::params_from_iter(params), map)
         })
@@ -323,8 +321,7 @@ impl SqlitePool {
         I::Item: Into<crate::query::OwnedValue> + Send + 'static,
     {
         let sql = sql.to_string();
-        let params: Vec<crate::query::OwnedValue> =
-            params.into_iter().map(Into::into).collect();
+        let params: Vec<crate::query::OwnedValue> = params.into_iter().map(Into::into).collect();
         self.with_conn(move |conn| {
             crate::query::query_rows(conn, &sql, rusqlite::params_from_iter(params), map)
         })

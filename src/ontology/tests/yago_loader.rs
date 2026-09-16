@@ -24,10 +24,17 @@ fn ids_are_deterministic_and_truncated() {
         .expect("Person");
     // local is the 48-bit truncation; node_id the full 64-bit hash.
     assert_eq!(person.id, yago_class_id("http://schema.org/Person"));
-    assert_eq!(person.id.local_id(), local_id_of(hash_iri("http://schema.org/Person")));
+    assert_eq!(
+        person.id.local_id(),
+        local_id_of(hash_iri("http://schema.org/Person"))
+    );
     let node_id = person.node_id.expect("node_id set");
     assert_eq!(node_id.as_int(), hash_iri("http://schema.org/Person"));
-    assert_ne!(node_id.as_int(), person.id.local_id(), "F5: stored, never derived");
+    assert_ne!(
+        node_id.as_int(),
+        person.id.local_id(),
+        "F5: stored, never derived"
+    );
 }
 
 #[test]
@@ -47,12 +54,10 @@ fn subclass_edges_are_present() {
     let (l, _) = loader();
     let edges = l.subclass_edges();
     assert!(
-        edges
-            .iter()
-            .any(|(child, parent)| {
-                child == &yago_class_id("http://yago-knowledge.org/resource/Dog")
-                    && parent == &yago_class_id("http://yago-knowledge.org/resource/Mammal")
-            }),
+        edges.iter().any(|(child, parent)| {
+            child == &yago_class_id("http://yago-knowledge.org/resource/Dog")
+                && parent == &yago_class_id("http://yago-knowledge.org/resource/Mammal")
+        }),
         "Dog ← Mammal edge present"
     );
 }
@@ -90,7 +95,9 @@ fn to_metadata_parent_class_id_matches_subclass_edges() {
     for c in &concepts {
         if let Some(parent) = c.parent_class_id {
             assert!(
-                edges.iter().any(|(child, p)| child == &c.id && p == &parent),
+                edges
+                    .iter()
+                    .any(|(child, p)| child == &c.id && p == &parent),
                 "{} parent {parent} must appear in subclass_edges",
                 c.canonical_name
             );

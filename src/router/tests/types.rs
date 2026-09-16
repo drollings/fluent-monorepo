@@ -78,7 +78,11 @@ fn router_message_content_text() {
 fn router_message_content_parts() {
     let c = RouterMessageContent::Parts(vec![
         ContentPart::Text { text: "one".into() },
-        ContentPart::ImageUrl { image_url: ImageUrl { url: "http://img".into() } },
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: "http://img".into(),
+            },
+        },
         ContentPart::Text { text: "two".into() },
     ]);
     assert_eq!(c.as_text(), "");
@@ -97,7 +101,8 @@ fn router_message_content_untagged_serde() {
     assert!(matches!(parts, RouterMessageContent::Parts(_)));
     // Round trips preserve the variant.
     let back: RouterMessageContent =
-        serde_json::from_str(&serde_json::to_string(&parts).expect("serialize")).expect("round trip");
+        serde_json::from_str(&serde_json::to_string(&parts).expect("serialize"))
+            .expect("round trip");
     assert!(matches!(back, RouterMessageContent::Parts(_)));
 }
 
@@ -106,7 +111,8 @@ fn content_part_tagged_serde() {
     let t: ContentPart = serde_json::from_str(r#"{"type":"text","text":"x"}"#).expect("text part");
     assert!(matches!(t, ContentPart::Text { .. }));
     let i: ContentPart =
-        serde_json::from_str(r#"{"type":"image_url","image_url":{"url":"http://u"}}"#).expect("image");
+        serde_json::from_str(r#"{"type":"image_url","image_url":{"url":"http://u"}}"#)
+            .expect("image");
     assert!(matches!(i, ContentPart::ImageUrl { .. }));
 }
 
@@ -145,7 +151,8 @@ fn router_response_serde_round_trip() {
     assert_eq!(resp.choices[0].message.content.as_text(), "hi");
     assert_eq!(resp.usage.total_tokens, 3);
     let back: RouterResponse =
-        serde_json::from_str(&serde_json::to_string(&resp).expect("serialize")).expect("round trip");
+        serde_json::from_str(&serde_json::to_string(&resp).expect("serialize"))
+            .expect("round trip");
     assert_eq!(back.id, "cmpl-1");
 }
 

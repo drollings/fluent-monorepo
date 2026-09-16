@@ -14,24 +14,41 @@
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::plan_from_query;
 use guidance_core::query::ingest::{default_en_pipeline, ingest_text_file};
-use guidance_core::query::recall::{RecallStorage, run_recall};
+use guidance_core::query::recall::{run_recall, RecallStorage};
 use guidance_core::query::strategy::QueryIntent;
 use guidance_core::search_types::{FileInfo, SearchPlan, StorageFilter};
 use search_vector::GuidanceDb;
 
 const PROBES: &[(&str, &str, &str)] = &[
     // (query, relevant doc id, note)
-    ("runners", "doc-run", "plural absent; text has runner/Running"),
+    (
+        "runners",
+        "doc-run",
+        "plural absent; text has runner/Running",
+    ),
     ("functions", "doc-fn", "plural absent; text has function"),
     ("child", "doc-child", "singular absent; text has children"),
     ("box", "doc-box", "singular absent; text has boxes"),
-    ("needle", "doc-control", "control: literal present for both routes"),
+    (
+        "needle",
+        "doc-control",
+        "control: literal present for both routes",
+    ),
 ];
 
 const CORPUS: &[(&str, &str)] = &[
-    ("doc-run", "the runner finished early\nRunning daily builds the runner\n"),
-    ("doc-fn", "every function composes well\nfunction composition scales\n"),
-    ("doc-child", "the children play outside\nyoung children learn fast\n"),
+    (
+        "doc-run",
+        "the runner finished early\nRunning daily builds the runner\n",
+    ),
+    (
+        "doc-fn",
+        "every function composes well\nfunction composition scales\n",
+    ),
+    (
+        "doc-child",
+        "the children play outside\nyoung children learn fast\n",
+    ),
     ("doc-box", "the boxes sit there\nopen boxes carefully\n"),
     ("doc-control", "a needle hides here\nnothing else matters\n"),
 ];
@@ -84,7 +101,12 @@ fn precision_at_3(db: &GuidanceDb, plan: &SearchPlan, relevant: &str) -> f64 {
     let storage = GuidanceDbStorage::new(db);
     let nlp = default_en_pipeline().expect("hermetic pipeline");
     let output = run_recall(plan, &storage, None, Some(&nlp)).expect("recall");
-    if output.hits.iter().take(3).any(|hit| hit.file.id == relevant) {
+    if output
+        .hits
+        .iter()
+        .take(3)
+        .any(|hit| hit.file.id == relevant)
+    {
         1.0
     } else {
         0.0
@@ -109,6 +131,12 @@ fn l2_inflected_recall_beats_lexical_only() {
     let fused_mean = fused_sum / PROBES.len() as f64;
     let fts_mean = fts_sum / PROBES.len() as f64;
     println!("mean fused-P@3 = {fused_mean:.3}, mean fts-P@3 = {fts_mean:.3}");
-    assert!(fused_mean > fts_mean, "L2 must beat lexical-only on inflections");
-    assert_eq!(fused_mean, 1.0, "every probe (incl. control) must hit top-3");
+    assert!(
+        fused_mean > fts_mean,
+        "L2 must beat lexical-only on inflections"
+    );
+    assert_eq!(
+        fused_mean, 1.0,
+        "every probe (incl. control) must hit top-3"
+    );
 }

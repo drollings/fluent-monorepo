@@ -72,8 +72,10 @@ pub fn hash_file(path: &std::path::Path) -> Option<String> {
 #[must_use]
 pub fn compute_diff(scanned: &[ScannedFile], existing: &[FileRecord]) -> DiffResult {
     let mut diff = DiffResult::default();
-    let by_id: std::collections::HashMap<&str, &FileRecord> =
-        existing.iter().map(|file| (file.id.as_str(), file)).collect();
+    let by_id: std::collections::HashMap<&str, &FileRecord> = existing
+        .iter()
+        .map(|file| (file.id.as_str(), file))
+        .collect();
     let mut seen = std::collections::HashSet::new();
     for file in scanned {
         seen.insert(file.id.as_str());
@@ -93,7 +95,8 @@ pub fn compute_diff(scanned: &[ScannedFile], existing: &[FileRecord]) -> DiffRes
             continue;
         }
         // Fast path disagrees: the content hash decides (G0.7).
-        if let (Some(want), Some(have)) = (stored.content_hash.as_ref(), file.content_hash.as_ref()) {
+        if let (Some(want), Some(have)) = (stored.content_hash.as_ref(), file.content_hash.as_ref())
+        {
             if want == have && stored.size_bytes == file.size_bytes {
                 diff.unchanged.push(file.clone());
                 continue;

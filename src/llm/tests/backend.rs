@@ -41,8 +41,16 @@ fn registry_returns_none_for_unregistered_key() {
 #[test]
 fn registry_falls_through_to_second_backend() {
     let mut registry = InferenceRegistry::new();
-    registry.register(Arc::new(StubBackend::new("first", vec!["model-a"], "first")));
-    registry.register(Arc::new(StubBackend::new("second", vec!["model-b"], "second")));
+    registry.register(Arc::new(StubBackend::new(
+        "first",
+        vec!["model-a"],
+        "first",
+    )));
+    registry.register(Arc::new(StubBackend::new(
+        "second",
+        vec!["model-b"],
+        "second",
+    )));
     let out = registry
         .route_chat("model-b", None)
         .expect("second backend must serve its key")
@@ -132,8 +140,7 @@ fn residual_and_contribution_serde_round_trip() {
         text: "show me the report".into(),
         meta: serde_json::json!({ "overall": 0.3 }),
     };
-    let back: Residual =
-        serde_json::from_str(&serde_json::to_string(&residual).unwrap()).unwrap();
+    let back: Residual = serde_json::from_str(&serde_json::to_string(&residual).unwrap()).unwrap();
     assert_eq!(back, residual);
 
     let contribution = OverlayContribution {
@@ -166,7 +173,6 @@ fn route_label_serde_golden() {
 // the serde goldens above and the router's build-graph manifest test); there
 // is no second `fluent_onnx::…` path to assert equivalence with.
 
-
 #[test]
 fn overlay_error_and_detector_shape() {
     struct NoopOverlay;
@@ -174,10 +180,7 @@ fn overlay_error_and_detector_shape() {
         fn kind(&self) -> ResidualKind {
             ResidualKind::Disambiguation
         }
-        fn run(
-            &self,
-            residual: &Residual,
-        ) -> Result<OverlayContribution, OverlayError> {
+        fn run(&self, residual: &Residual) -> Result<OverlayContribution, OverlayError> {
             Err(OverlayError::Rejected(format!("noop: {}", residual.text)))
         }
     }

@@ -189,7 +189,8 @@ pub fn named_file_kind(name: &str) -> Option<(FileKind, &'static str)> {
 pub fn is_binary_extension(ext: &str) -> bool {
     matches!(
         ext,
-        "zip" | "tar"
+        "zip"
+            | "tar"
             | "gz"
             | "bz2"
             | "xz"
@@ -224,9 +225,9 @@ pub fn is_binary_extension(ext: &str) -> bool {
 
 /// Extensions classified `Code` by the ingest map.
 pub const CODE_EXTENSIONS: &[&str] = &[
-    "c", "cc", "cpp", "cxx", "h", "hpp", "go", "java", "js", "mjs", "cjs", "jsx", "ts",
-    "tsx", "py", "rs", "rb", "php", "swift", "kt", "kts", "cs", "scala", "sh", "bash",
-    "zsh", "sql", "css", "scss", "less", "vue", "svelte",
+    "c", "cc", "cpp", "cxx", "h", "hpp", "go", "java", "js", "mjs", "cjs", "jsx", "ts", "tsx",
+    "py", "rs", "rb", "php", "swift", "kt", "kts", "cs", "scala", "sh", "bash", "zsh", "sql",
+    "css", "scss", "less", "vue", "svelte",
 ];
 
 /// Discovery scope: extensions the walker collects. Mirrors

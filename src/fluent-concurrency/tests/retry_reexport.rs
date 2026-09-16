@@ -25,13 +25,19 @@ fn reexport_is_the_same_function() {
 async fn retry_async_succeeds_first_try() {
     let calls = Arc::new(AtomicU32::new(0));
     let probe = Arc::clone(&calls);
-    let out = crate::retry::retry_async(3, 1, 0, |_: &String| true, || {
-        let probe = Arc::clone(&probe);
-        async move {
-            probe.fetch_add(1, Ordering::SeqCst);
-            Ok::<_, String>(7u32)
-        }
-    })
+    let out = crate::retry::retry_async(
+        3,
+        1,
+        0,
+        |_: &String| true,
+        || {
+            let probe = Arc::clone(&probe);
+            async move {
+                probe.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, String>(7u32)
+            }
+        },
+    )
     .await;
     assert_eq!(out.unwrap(), 7);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -41,13 +47,19 @@ async fn retry_async_succeeds_first_try() {
 async fn retry_async_retries_then_returns_last_error() {
     let calls = Arc::new(AtomicU32::new(0));
     let probe = Arc::clone(&calls);
-    let out = crate::retry::retry_async(3, 1, 0, |_: &String| true, || {
-        let probe = Arc::clone(&probe);
-        async move {
-            let n = probe.fetch_add(1, Ordering::SeqCst) + 1;
-            Err::<u32, String>(format!("boom-{n}"))
-        }
-    })
+    let out = crate::retry::retry_async(
+        3,
+        1,
+        0,
+        |_: &String| true,
+        || {
+            let probe = Arc::clone(&probe);
+            async move {
+                let n = probe.fetch_add(1, Ordering::SeqCst) + 1;
+                Err::<u32, String>(format!("boom-{n}"))
+            }
+        },
+    )
     .await;
     assert_eq!(out.unwrap_err(), "boom-3");
     assert_eq!(calls.load(Ordering::SeqCst), 3);
@@ -57,13 +69,19 @@ async fn retry_async_retries_then_returns_last_error() {
 async fn retry_async_short_circuits_non_retryable() {
     let calls = Arc::new(AtomicU32::new(0));
     let probe = Arc::clone(&calls);
-    let out = crate::retry::retry_async(5, 1_000, 50, |_: &String| false, || {
-        let probe = Arc::clone(&probe);
-        async move {
-            probe.fetch_add(1, Ordering::SeqCst);
-            Err::<u32, String>("fatal".into())
-        }
-    })
+    let out = crate::retry::retry_async(
+        5,
+        1_000,
+        50,
+        |_: &String| false,
+        || {
+            let probe = Arc::clone(&probe);
+            async move {
+                probe.fetch_add(1, Ordering::SeqCst);
+                Err::<u32, String>("fatal".into())
+            }
+        },
+    )
     .await;
     // No sleep burned (base 1s would be observable); exactly one attempt.
     assert_eq!(out.unwrap_err(), "fatal");

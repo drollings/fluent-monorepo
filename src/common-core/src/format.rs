@@ -207,4 +207,3 @@ impl Table {
         out
     }
 }
-

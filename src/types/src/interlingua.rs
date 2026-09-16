@@ -333,8 +333,14 @@ mod tests {
 
     #[test]
     fn namespace_from_u16_unknown_is_reserved() {
-        assert_eq!(InterlinguaNamespace::from_u16(0x9999), InterlinguaNamespace::Reserved);
-        assert_eq!(InterlinguaNamespace::from_u16(0x0300), InterlinguaNamespace::SpacyLemma);
+        assert_eq!(
+            InterlinguaNamespace::from_u16(0x9999),
+            InterlinguaNamespace::Reserved
+        );
+        assert_eq!(
+            InterlinguaNamespace::from_u16(0x0300),
+            InterlinguaNamespace::SpacyLemma
+        );
     }
 
     #[test]
@@ -419,7 +425,8 @@ mod tests {
         let a = yago_class_id_for_iri(iri);
         assert_eq!(a.namespace(), InterlinguaNamespace::YagoClass);
         assert!(a.is_yago());
-        let manual = InterlinguaId::new(InterlinguaNamespace::YagoClass, local_id_of(hash_iri(iri)));
+        let manual =
+            InterlinguaId::new(InterlinguaNamespace::YagoClass, local_id_of(hash_iri(iri)));
         assert_eq!(a, manual);
     }
 
@@ -428,7 +435,8 @@ mod tests {
         let iri = "http://yago-knowledge.org/resource/Paris";
         let a = yago_entity_id_for_iri(iri);
         assert_eq!(a.namespace(), InterlinguaNamespace::YagoEntity);
-        let manual = InterlinguaId::new(InterlinguaNamespace::YagoEntity, local_id_of(hash_iri(iri)));
+        let manual =
+            InterlinguaId::new(InterlinguaNamespace::YagoEntity, local_id_of(hash_iri(iri)));
         assert_eq!(a, manual);
     }
 
@@ -437,7 +445,10 @@ mod tests {
         let iri = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
         let a = property_id_for_iri(iri);
         assert_eq!(a.namespace(), InterlinguaNamespace::RdfProperty);
-        let manual = InterlinguaId::new(InterlinguaNamespace::RdfProperty, local_id_of(hash_iri(iri)));
+        let manual = InterlinguaId::new(
+            InterlinguaNamespace::RdfProperty,
+            local_id_of(hash_iri(iri)),
+        );
         assert_eq!(a, manual);
     }
 
@@ -459,7 +470,10 @@ mod tests {
     fn helpers_edge_inputs_empty_unicode_large() {
         // Empty string and single-char.
         let empty_a = lemma_id_for_str("");
-        let empty_b = InterlinguaId::new(InterlinguaNamespace::SpacyLemma, local_id_of(hash_utf8("") as i64));
+        let empty_b = InterlinguaId::new(
+            InterlinguaNamespace::SpacyLemma,
+            local_id_of(hash_utf8("") as i64),
+        );
         assert_eq!(empty_a, empty_b);
         let one = lemma_id_for_str("X");
         assert_eq!(one.namespace(), InterlinguaNamespace::SpacyLemma);
@@ -508,7 +522,10 @@ mod tests {
         // and that `from_u64` is only for reconstruction. This test guards the F1
         // invariant: ids are content-derived. We grep for `from_raw` at review time;
         // here we at least ensure helpers never produce a Reserved namespace.
-        for iri in ["http://schema.org/Person", "http://yago-knowledge.org/resource/Dog"] {
+        for iri in [
+            "http://schema.org/Person",
+            "http://yago-knowledge.org/resource/Dog",
+        ] {
             let id = yago_class_id_for_iri(iri);
             assert_ne!(id.namespace(), InterlinguaNamespace::Reserved);
         }
@@ -531,7 +548,10 @@ mod tests {
         );
         assert_eq!(local_id_of(-1), 0x0000_FFFF_FFFF_FFFFu64 as i64);
         // Low 48 bits survive verbatim; high 16 never leak into the local id.
-        assert_eq!(local_id_of(0x1234_5678_9ABC_DEF0u64 as i64) as u64, 0x5678_9ABC_DEF0);
+        assert_eq!(
+            local_id_of(0x1234_5678_9ABC_DEF0u64 as i64) as u64,
+            0x5678_9ABC_DEF0
+        );
         let once = local_id_of(example_hash("report"));
         assert_eq!(local_id_of(once), once, "masking is idempotent");
     }

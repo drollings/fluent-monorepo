@@ -37,10 +37,7 @@ pub fn sorted_vec<T: Ord>(mut values: Vec<T>) -> Vec<T> {
 /// Sort an owned vector with a custom comparator and return it (stable:
 /// equal keys keep insertion order).
 #[must_use]
-pub fn sorted_by_vec<T>(
-    mut values: Vec<T>,
-    compare: impl FnMut(&T, &T) -> Ordering,
-) -> Vec<T> {
+pub fn sorted_by_vec<T>(mut values: Vec<T>, compare: impl FnMut(&T, &T) -> Ordering) -> Vec<T> {
     values.sort_by(compare);
     values
 }

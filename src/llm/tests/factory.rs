@@ -5,10 +5,10 @@
 
 use fluent_llm::embeddings::EmbeddingError;
 use fluent_llm::factory::{
-    CreateModelOptions, RebuildField, create_embedding_model, require_compatible_embedding,
-    EmbeddingIdentity,
+    create_embedding_model, require_compatible_embedding, CreateModelOptions, EmbeddingIdentity,
+    RebuildField,
 };
-use fluent_llm::resolution::{ResolveEmbeddingReferenceOptions, resolve_embedding_reference};
+use fluent_llm::resolution::{resolve_embedding_reference, ResolveEmbeddingReferenceOptions};
 use std::collections::HashMap;
 
 fn qwen_options() -> CreateModelOptions {
@@ -28,8 +28,7 @@ fn factory_resolves_remote_dispatch_and_rejects_unknown_models() {
     assert_eq!(provider.name(), "qwen");
     assert_eq!(provider.dimensions(), 1024);
 
-    let provider =
-        create_embedding_model("qwen/qwen3.7-text-embedding", &qwen_options()).unwrap();
+    let provider = create_embedding_model("qwen/qwen3.7-text-embedding", &qwen_options()).unwrap();
     assert_eq!(provider.dimensions(), 1024);
 
     // Default endpoint applies without an explicit override.
@@ -126,7 +125,11 @@ fn resolution_order_flag_env_default_builtin() {
         Some("qwen/text-embedding-v4".to_string())
     );
     assert_eq!(
-        resolve(None, Some("local/bge-small-en-v1.5"), Some("local/all-minilm-l6-v2")),
+        resolve(
+            None,
+            Some("local/bge-small-en-v1.5"),
+            Some("local/all-minilm-l6-v2")
+        ),
         Some("local/bge-small-en-v1.5".to_string())
     );
     assert_eq!(
@@ -151,12 +154,7 @@ fn rebuild_triggers_on_model_or_endpoint_change_only() {
     // Identical: no rebuild.
     require_compatible_embedding(Some(&existing), &existing, "rebuild").unwrap();
     // No existing index: no rebuild.
-    require_compatible_embedding(
-        None,
-        &existing,
-        "rebuild",
-    )
-    .unwrap();
+    require_compatible_embedding(None, &existing, "rebuild").unwrap();
 
     // Model change (any of provider/model/dimension/metric) requires rebuild.
     let mut changed = existing.clone();
@@ -180,7 +178,6 @@ fn rebuild_triggers_on_model_or_endpoint_change_only() {
     // Endpoint added where none existed requires rebuild too.
     let mut no_endpoint = existing.clone();
     no_endpoint.endpoint = None;
-    let error =
-        require_compatible_embedding(Some(&no_endpoint), &existing, "rebuild").unwrap_err();
+    let error = require_compatible_embedding(Some(&no_endpoint), &existing, "rebuild").unwrap_err();
     assert_eq!(error.field, RebuildField::Endpoint);
 }

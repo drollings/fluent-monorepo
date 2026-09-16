@@ -124,8 +124,7 @@ async fn queue_submit_dispatches_through_test_runtime() {
     use std::sync::Arc;
 
     let handle = tokio::runtime::Handle::current();
-    let runtime: Arc<dyn fluent_wvr::Runtime> =
-        Arc::new(TestRuntime::new(handle, 0x5eed));
+    let runtime: Arc<dyn fluent_wvr::Runtime> = Arc::new(TestRuntime::new(handle, 0x5eed));
     let queue = Arc::new(LlmRequestQueue::new(
         runtime,
         &LlmQueueConfig {
@@ -160,8 +159,7 @@ async fn queue_propagates_handler_errors() {
     use std::sync::Arc;
 
     let handle = tokio::runtime::Handle::current();
-    let runtime: Arc<dyn fluent_wvr::Runtime> =
-        Arc::new(TestRuntime::new(handle, 0x5eed));
+    let runtime: Arc<dyn fluent_wvr::Runtime> = Arc::new(TestRuntime::new(handle, 0x5eed));
     let queue = LlmRequestQueue::new(
         runtime,
         &LlmQueueConfig::default(),

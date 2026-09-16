@@ -211,22 +211,14 @@ fn sync_log_and_continue_on_non_short_circuit_error() {
 #[test]
 fn sync_clean_exhaustion_returns_ok_none() {
     let rungs = vec![1u32, 2, 3];
-    let out = first_accept_in_order_sync(
-        rungs,
-        |_| Ok::<Option<u32>, u8>(None),
-        |_: &u8| false,
-    );
+    let out = first_accept_in_order_sync(rungs, |_| Ok::<Option<u32>, u8>(None), |_: &u8| false);
     assert_eq!(out, Ok(None));
 }
 
 #[test]
 fn sync_empty_rungs_returns_ok_none() {
     let rungs: Vec<u32> = Vec::new();
-    let out = first_accept_in_order_sync(
-        rungs,
-        |_| Ok::<Option<u32>, u8>(Some(1)),
-        |_: &u8| false,
-    );
+    let out = first_accept_in_order_sync(rungs, |_| Ok::<Option<u32>, u8>(Some(1)), |_: &u8| false);
     assert_eq!(out, Ok(None));
 }
 
@@ -272,11 +264,7 @@ async fn ladder_walk_exhaustion_is_last_err() {
         |_: &u8| false,
     )
     .await;
-    let sync_out = first_accept_in_order_sync(
-        rungs,
-        |_| Err::<Option<u32>, u8>(7),
-        |_: &u8| false,
-    );
+    let sync_out = first_accept_in_order_sync(rungs, |_| Err::<Option<u32>, u8>(7), |_: &u8| false);
     assert_eq!(async_out, Err(7));
     assert_eq!(sync_out, Err(7));
     // Clean exhaustion must be Ok(None) on both
@@ -286,8 +274,11 @@ async fn ladder_walk_exhaustion_is_last_err() {
         |_: &u8| false,
     )
     .await;
-    let sync_none =
-        first_accept_in_order_sync(vec![1u32, 2], |_| Ok::<Option<u32>, u8>(None), |_: &u8| false);
+    let sync_none = first_accept_in_order_sync(
+        vec![1u32, 2],
+        |_| Ok::<Option<u32>, u8>(None),
+        |_: &u8| false,
+    );
     assert_eq!(async_none, Ok(None));
     assert_eq!(sync_none, Ok(None));
 }

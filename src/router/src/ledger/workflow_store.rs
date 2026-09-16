@@ -19,7 +19,6 @@ use fluent_dag::target::Target;
 use fluent_db::hnsw::HnswIndex;
 use search_vector::math::cosine_similarity_f32;
 
-
 /// A workflow entry — one prior `query → local_attempts → escalation → frontier → assembly` chain.
 #[derive(Debug, Clone)]
 pub struct WorkflowEntry {
@@ -41,7 +40,12 @@ pub trait WorkflowStore: Send + Sync {
     fn insert(&self, entry: WorkflowEntry) -> Result<(), StoreError>;
     fn nearest(&self, embedding: &[f32], k: usize) -> Vec<(WorkflowEntry, f64)>;
     /// Verified nearest with minimum cosine (default 0.75) — the replay path.
-    fn nearest_verified(&self, embedding: &[f32], k: usize, min_score: f64) -> Vec<(WorkflowEntry, f64)> {
+    fn nearest_verified(
+        &self,
+        embedding: &[f32],
+        k: usize,
+        min_score: f64,
+    ) -> Vec<(WorkflowEntry, f64)> {
         self.nearest(embedding, k)
             .into_iter()
             .filter(|(e, score)| e.verified && *score >= min_score)
@@ -174,7 +178,11 @@ pub const CALIBRATED_WRITE_NOVELTY: f64 = 0.15;
 /// `assembler_confidence` is the self-doubt signal; `distance_to_nearest` is
 /// `1 - cosine` to nearest existing entry.
 /// Returns `true` when the gated write path may insert.
-pub fn gated_insert_allowed(assembler_confidence: f64, distance_to_nearest: f64, verified: bool) -> bool {
+pub fn gated_insert_allowed(
+    assembler_confidence: f64,
+    distance_to_nearest: f64,
+    verified: bool,
+) -> bool {
     assembler_confidence >= CALIBRATED_WRITE_CONFIDENCE
         && distance_to_nearest > CALIBRATED_WRITE_NOVELTY
         && verified

@@ -30,8 +30,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use super::{
-    expand_group_keys, expanded_candidates_for_group, GroupRecency, TargetBackends,
-    TargetMatcher,
+    expand_group_keys, expanded_candidates_for_group, GroupRecency, TargetBackends, TargetMatcher,
 };
 use crate::config::{
     split_model_key, ConfidenceGate, FilterOutcome, FilterScope, GroupMember, InstanceProfile,
@@ -146,10 +145,7 @@ fn fixture_routing(case: &serde_json::Value, group: &str) -> RoutingConfig {
             },
         )]),
         models,
-        model_groups: HashMap::from([(
-            group.into(),
-            ModelGroup::Array(strings(case, "members")),
-        )]),
+        model_groups: HashMap::from([(group.into(), ModelGroup::Array(strings(case, "members")))]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
@@ -199,9 +195,7 @@ fn last_resolves(routing: &RoutingConfig, group: &str, recency: &GroupRecency) -
             if routing.onnx_keys.contains(base) {
                 m == &wire
             } else {
-                routing
-                    .target_for_key(m)
-                    .is_some_and(|rt| rt.model == wire)
+                routing.target_for_key(m).is_some_and(|rt| rt.model == wire)
             }
         })
 }
@@ -294,9 +288,9 @@ fn run_ladder_case(case: &serde_json::Value) -> CaseResult {
                 .position(|r| r == c)
                 .is_some_and(|p| p > idx)
         });
-        let later_servable = rung_ids[idx + 1..].iter().any(|r| {
-            !matches!(split_behavior(&behavior_of(r)).0, "err-terminal")
-        });
+        let later_servable = rung_ids[idx + 1..]
+            .iter()
+            .any(|r| !matches!(split_behavior(&behavior_of(r)).0, "err-terminal"));
         let followed_or_exhausted = later_consulted || !later_servable;
         match split_behavior(&behavior_of(rid)).0 {
             "miss" | "err-continue" if consulted => {
@@ -330,20 +324,14 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
     let recency = fixture_recency(&routing, case);
     let loaded: Vec<String> = strings(case, "loaded");
     let probes = Arc::new(Mutex::new(Vec::<String>::new()));
-    let order = expand_group_keys(
-        &routing,
-        group,
-        Some(&recency),
-        Some("fixture"),
-        &{
-            let probes = Arc::clone(&probes);
-            let loaded = loaded.clone();
-            move |base: &str| {
-                probes.lock().expect("log").push(base.to_string());
-                loaded.iter().any(|l| l == base)
-            }
-        },
-    );
+    let order = expand_group_keys(&routing, group, Some(&recency), Some("fixture"), &{
+        let probes = Arc::clone(&probes);
+        let loaded = loaded.clone();
+        move |base: &str| {
+            probes.lock().expect("log").push(base.to_string());
+            loaded.iter().any(|l| l == base)
+        }
+    });
     let probes = probes.lock().expect("log").clone();
 
     // Cause + failure attribution from the observed order and the inputs.
@@ -380,12 +368,12 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
             // Present in the output: the on-demand path absorbs the gap.
             failures.push(format!("unloaded:{member}"));
             if loaded_set.iter().any(|l| {
-                order
-                    .iter()
-                    .position(|o| o == l)
-                    .is_some_and(|lp| {
-                        order.iter().position(|o| o == member).is_some_and(|up| lp < up)
-                    })
+                order.iter().position(|o| o == l).is_some_and(|lp| {
+                    order
+                        .iter()
+                        .position(|o| o == member)
+                        .is_some_and(|up| lp < up)
+                })
             }) {
                 causes.push(format!("unloaded:{member}"));
             }
@@ -411,13 +399,11 @@ fn assessment_script(script: &str) -> Vec<String> {
     } else if let Some(text) = script.strip_prefix("raw:") {
         vec![text.to_string()]
     } else if let Some((complexity, reason)) = script.split_once(':') {
-        vec![
-            serde_json::json!({
-                "complexity": complexity.parse::<u8>().expect("complexity"),
-                "reason": reason,
-            })
-            .to_string(),
-        ]
+        vec![serde_json::json!({
+            "complexity": complexity.parse::<u8>().expect("complexity"),
+            "reason": reason,
+        })
+        .to_string()]
     } else {
         panic!("bad assess script {script}");
     }
@@ -433,9 +419,10 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
     let expanded = expand_group_keys(&routing, group, Some(&recency), Some("fixture"), &|base| {
         loaded.iter().any(|l| l == base)
     });
-    let candidates = expanded_candidates_for_group(&routing, group, Some(&recency), Some("fixture"), &|base| {
-        loaded.iter().any(|l| l == base)
-    });
+    let candidates =
+        expanded_candidates_for_group(&routing, group, Some(&recency), Some("fixture"), &|base| {
+            loaded.iter().any(|l| l == base)
+        });
     assert_eq!(
         candidates
             .iter()
@@ -487,7 +474,11 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
                     matched_key = record.model_key.clone();
                 }
             }
-            (consults, Observed::Some(tm.primary.model.clone()), matched_key)
+            (
+                consults,
+                Observed::Some(tm.primary.model.clone()),
+                matched_key,
+            )
         }
         None => (Vec::new(), Observed::None, String::new()),
     };
@@ -616,9 +607,7 @@ fn run_prefilter_case(case: &serde_json::Value) -> CaseResult {
         regexes: strings(case, "patterns"),
     };
     let mut engine = DeterministicFilterEngine::new();
-    engine.add_filter(Box::new(
-        RegexFilter::from_entry(&entry).expect("filter"),
-    ));
+    engine.add_filter(Box::new(RegexFilter::from_entry(&entry).expect("filter")));
     // The counting backend is never handed to the filter path: a
     // deterministic hit resolves with zero model consultations by
     // construction. The assertion below pins that contract.
@@ -663,7 +652,9 @@ fn run_oneshot_case(case: &serde_json::Value) -> CaseResult {
     for (name, spec) in &profiles {
         let profile: InstanceProfile =
             serde_json::from_value(spec.clone()).expect("profile parses");
-        let want = expected.get(name).unwrap_or_else(|| panic!("expected {name}"));
+        let want = expected
+            .get(name)
+            .unwrap_or_else(|| panic!("expected {name}"));
         assert_eq!(
             profile.session,
             want["session"].as_bool().expect("session"),
@@ -729,10 +720,9 @@ fn is_genuine_cause(case: &serde_json::Value, cause: &str) -> bool {
     }
     if cause == "last-miss:no-record" {
         return strings(case, "members").iter().any(|m| m == "last")
-            && case["recency"].as_object().is_none_or(|m| {
-                m.get(case["group"].as_str().unwrap_or(""))
-                    .is_none()
-            });
+            && case["recency"]
+                .as_object()
+                .is_none_or(|m| m.get(case["group"].as_str().unwrap_or("")).is_none());
     }
     if cause == "last-miss:removed-member" {
         return strings(case, "members").iter().any(|m| m == "last")
@@ -778,7 +768,11 @@ fn expected_outcome(case: &serde_json::Value) -> Option<Observed> {
         Some(Observed::Some(marker.to_string()))
     } else if expected["none"].as_bool().unwrap_or(false) {
         Some(Observed::None)
-    } else { expected["err"].as_str().map(|msg| Observed::Err(msg.to_string())) }
+    } else {
+        expected["err"]
+            .as_str()
+            .map(|msg| Observed::Err(msg.to_string()))
+    }
 }
 
 #[test]
@@ -895,7 +889,10 @@ fn routing_sentinel_corpus_and_report() {
                 let want_aux: Vec<String> = if case.get("rewrite").is_some() {
                     vec![
                         want(&case["expected_first"]),
-                        want(case.get("expected_second").unwrap_or(&case["expected_first"])),
+                        want(
+                            case.get("expected_second")
+                                .unwrap_or(&case["expected_first"]),
+                        ),
                     ]
                 } else {
                     vec![want(&case["expected_first"])]
@@ -1004,7 +1001,11 @@ fn routing_sentinel_corpus_and_report() {
         "report total drift"
     );
     for (name, recomputed, filed) in [
-        ("precision", precision, report["precision"].as_f64().unwrap_or(-1.0)),
+        (
+            "precision",
+            precision,
+            report["precision"].as_f64().unwrap_or(-1.0),
+        ),
         ("recall", recall, report["recall"].as_f64().unwrap_or(-1.0)),
         (
             "control_pass_rate",

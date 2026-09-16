@@ -1,8 +1,7 @@
 use super::*;
 
 fn blob() -> LemmaBlob {
-    LemmaBlob::from_bytes(crate::lang::en::LEMMAS_BLOB)
-        .expect("embedded English lemma blob parses")
+    LemmaBlob::from_bytes(crate::lang::en::LEMMAS_BLOB).expect("embedded English lemma blob parses")
 }
 
 #[test]

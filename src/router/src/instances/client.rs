@@ -208,10 +208,7 @@ impl InstanceClient {
                 .await
                 .map_err(|e| InstanceError::Other(e.to_string()));
         }
-        let body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| String::new());
+        let body = response.text().await.unwrap_or_else(|_| String::new());
         let status_u16 = status.as_u16();
         if status_u16 == 409 {
             return Err(InstanceError::Duplicate);
@@ -239,17 +236,15 @@ impl InstanceClient {
             .request(reqwest::Method::GET, "/instances", None)
             .await?;
         if let Some(arr) = value.as_array() {
-            let instances: Vec<InstanceInfo> =
-                serde_json::from_value(Value::Array(arr.clone()))
-                    .map_err(|e| InstanceError::Other(format!("list: {e}")))?;
+            let instances: Vec<InstanceInfo> = serde_json::from_value(Value::Array(arr.clone()))
+                .map_err(|e| InstanceError::Other(format!("list: {e}")))?;
             return Ok(InstanceList {
                 instances,
                 snapshots: vec![],
                 total: InstanceTotals::default(),
             });
         }
-        serde_json::from_value(value)
-            .map_err(|e| InstanceError::Other(format!("list: {e}")))
+        serde_json::from_value(value).map_err(|e| InstanceError::Other(format!("list: {e}")))
     }
 
     /// `POST /instances` - allocate a NEW context from the shared weights.
@@ -280,23 +275,25 @@ impl InstanceClient {
         let value = self
             .request(reqwest::Method::POST, "/instances", Some(&body))
             .await?;
-        Ok(serde_json::from_value::<InstanceInfo>(value).unwrap_or_else(|_| InstanceInfo {
-            id: name.to_string(),
-            aliases: vec![],
-            group: group.to_string(),
-            n_ctx: ctx_size,
-            parallel: parallel.unwrap_or(1),
-            pinned,
-            is_default,
-            resume: false,
-            state: "loaded".into(),
-            model_bytes: 0,
-            context_bytes: 0,
-            compute_bytes: 0,
-            total_bytes: 0,
-            vram_bytes: 0,
-            last_used: -1,
-        }))
+        Ok(
+            serde_json::from_value::<InstanceInfo>(value).unwrap_or_else(|_| InstanceInfo {
+                id: name.to_string(),
+                aliases: vec![],
+                group: group.to_string(),
+                n_ctx: ctx_size,
+                parallel: parallel.unwrap_or(1),
+                pinned,
+                is_default,
+                resume: false,
+                state: "loaded".into(),
+                model_bytes: 0,
+                context_bytes: 0,
+                compute_bytes: 0,
+                total_bytes: 0,
+                vram_bytes: 0,
+                last_used: -1,
+            }),
+        )
     }
 
     /// `DELETE /instances/:name` - free KV + compute (the primary eviction
@@ -391,11 +388,7 @@ impl InstanceClient {
     }
 
     /// `DELETE /instances/:name/snapshot/:snapshot` - remove a snapshot file.
-    pub async fn delete_snapshot(
-        &self,
-        instance: &str,
-        name: &str,
-    ) -> Result<(), InstanceError> {
+    pub async fn delete_snapshot(&self, instance: &str, name: &str) -> Result<(), InstanceError> {
         self.request(
             reqwest::Method::DELETE,
             &format!("/instances/{instance}/snapshot/{name}"),
@@ -411,7 +404,9 @@ impl InstanceClient {
     /// context size and idle-sleep state Coral Router uses to synthesize its
     /// resident footprint.
     pub async fn props(&self) -> Option<Value> {
-        self.request(reqwest::Method::GET, "/props", None).await.ok()
+        self.request(reqwest::Method::GET, "/props", None)
+            .await
+            .ok()
     }
 
     /// `POST /abort` - ask the server to stop the generation running in a

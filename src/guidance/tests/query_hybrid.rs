@@ -66,7 +66,9 @@ fn indexed_workspace_answers_symbol_search() {
 #[test]
 fn uncitable_code_hits_never_reach_render() {
     use crate::query::hybrid::stages_from_hits;
-    use crate::search_types::{Entity, FileInfo, SearchHit, SearchMatchedBy, FragmentContent, FragmentSpan};
+    use crate::search_types::{
+        Entity, FileInfo, FragmentContent, FragmentSpan, SearchHit, SearchMatchedBy,
+    };
     let hit = SearchHit {
         entity: Entity {
             id: "e".to_string(),

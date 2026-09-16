@@ -63,7 +63,11 @@ fn save_and_load_roundtrip_preserves_ner() {
 #[test]
 fn non_pos_correction_ignored() {
     let g = InMemoryGenesisIndex::new();
-    for field in [CorrectionField::Dep, CorrectionField::Head, CorrectionField::Lemma] {
+    for field in [
+        CorrectionField::Dep,
+        CorrectionField::Head,
+        CorrectionField::Lemma,
+    ] {
         let c = Correction {
             token_index: 0,
             field,
@@ -94,7 +98,9 @@ fn genesis_ner_promotes_after_threshold_and_overrides_rule() {
     // RuleAnnotator consults genesis.get_ner for ent_type
     let annotator = crate::pipeline::RuleAnnotator::en_default()
         .with_genesis(g.clone() as std::sync::Arc<dyn crate::lang::genesis::GenesisIndex>);
-    let vocab = std::sync::Arc::new(crate::vocab::Vocab::new(crate::lexeme::LexiconConfig::default()));
+    let vocab = std::sync::Arc::new(crate::vocab::Vocab::new(
+        crate::lexeme::LexiconConfig::default(),
+    ));
     let mut doc = crate::doc::Doc::new(vocab);
     doc.push_back("london", true).expect("push");
     let set = annotator.annotate(&doc);
@@ -181,7 +187,10 @@ fn default_thresholds_preserved_at_new_home() {
     for _ in 0..4 {
         g.record(&ner_corr("Person"), "washington");
     }
-    assert!(g.get_ner("washington").is_none(), "NER needs 5 evidence writes");
+    assert!(
+        g.get_ner("washington").is_none(),
+        "NER needs 5 evidence writes"
+    );
     g.record(&ner_corr("Person"), "washington");
     assert_eq!(g.get_ner("washington"), Some(NerType::Person));
 }

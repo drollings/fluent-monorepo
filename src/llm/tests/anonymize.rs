@@ -103,7 +103,11 @@ fn test_double_apply_is_idempotent() {
     for input in cases {
         let once = anonymize(input);
         assert_ne!(once, input, "case must actually redact: {input}");
-        assert_eq!(anonymize(&once), once, "double-apply must be fixed-point: {input}");
+        assert_eq!(
+            anonymize(&once),
+            once,
+            "double-apply must be fixed-point: {input}"
+        );
     }
 }
 
@@ -139,7 +143,10 @@ fn test_whitespace_obfuscated_pii_is_a_known_limit() {
     // M6.1: the regex baseline does not catch whitespace-split PII
     // (documents the limit — the ORT classifier rung covers these).
     assert_eq!(anonymize("user @ example.com"), "user @ example.com");
-    assert_eq!(anonymize("Call me at 555 123 4567"), "Call me at 555 123 4567");
+    assert_eq!(
+        anonymize("Call me at 555 123 4567"),
+        "Call me at 555 123 4567"
+    );
 }
 
 #[test]
@@ -166,6 +173,9 @@ fn test_placeholder_golden_table() {
             out.contains(placeholder),
             "{input:?} must yield {placeholder}, got {out:?}"
         );
-        assert!(!out.contains(input), "{input:?} must not survive, got {out:?}");
+        assert!(
+            !out.contains(input),
+            "{input:?} must not survive, got {out:?}"
+        );
     }
 }

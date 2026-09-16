@@ -50,11 +50,18 @@ fn fixture_tree() -> ClassificationTree {
 
 #[test]
 fn regenerate_root_description_flows_into_prompt() {
-    let tree = regenerate_description(&fixture_tree(), &[], "root router v2".into()).expect("regen");
+    let tree =
+        regenerate_description(&fixture_tree(), &[], "root router v2".into()).expect("regen");
     let prompt = tree.derive_system_prompt().expect("prompt derives");
-    assert!(prompt.contains("root router v2"), "prompt rebuilt from regen: {prompt}");
+    assert!(
+        prompt.contains("root router v2"),
+        "prompt rebuilt from regen: {prompt}"
+    );
     // Topology untouched: same children, same routes.
-    assert_eq!(topology_fingerprint(&tree), topology_fingerprint(&fixture_tree()));
+    assert_eq!(
+        topology_fingerprint(&tree),
+        topology_fingerprint(&fixture_tree())
+    );
 }
 
 #[test]
@@ -62,7 +69,10 @@ fn regenerate_nested_terminal_description() {
     let tree = regenerate_description(&fixture_tree(), &["sub", "deep"], "deeper things".into())
         .expect("regen");
     let views = tree.terminal_views();
-    let deep = views.iter().find(|(route, _, _)| route == "deep").expect("deep terminal");
+    let deep = views
+        .iter()
+        .find(|(route, _, _)| route == "deep")
+        .expect("deep terminal");
     assert_eq!(deep.2, "deeper things");
 }
 
@@ -71,8 +81,14 @@ fn regenerate_thresholds_render_in_prompt() {
     let tree =
         regenerate_thresholds(&fixture_tree(), &["sub"], Some(0.9), Some(0.42)).expect("regen");
     let prompt = prompt_for_path(&tree, &["sub"]).expect("nested prompt");
-    assert!(prompt.contains("coherence < 0.90"), "new coherence renders: {prompt}");
-    assert!(prompt.contains("safety < 0.42"), "new safety renders: {prompt}");
+    assert!(
+        prompt.contains("coherence < 0.90"),
+        "new coherence renders: {prompt}"
+    );
+    assert!(
+        prompt.contains("safety < 0.42"),
+        "new safety renders: {prompt}"
+    );
     // Unset fields stay untouched (node had no safety threshold; coherence
     // was 0.7 → now 0.9 only where asked).
     let untouched = regenerate_thresholds(&fixture_tree(), &["sub"], None, None).expect("noop");
@@ -171,14 +187,21 @@ fn rollback_restores_one_generation_then_exhausts() {
     let back = holder.rollback().expect("rollback");
     assert_eq!(back, 3, "rollback mints a new version (monotonic)");
     assert_eq!(holder.current().1, fixture_tree(), "content restored");
-    assert!(matches!(holder.rollback(), Err(ReloadError::NoHistory)), "one-reload depth");
+    assert!(
+        matches!(holder.rollback(), Err(ReloadError::NoHistory)),
+        "one-reload depth"
+    );
 }
 
 #[test]
 fn rebootless_reload_never_tears_readers() {
     use std::sync::Arc;
     let holder = Arc::new(VersionedTree::new(fixture_tree()));
-    let v1_print = holder.current().1.derive_system_prompt().expect("v1 prompt");
+    let v1_print = holder
+        .current()
+        .1
+        .derive_system_prompt()
+        .expect("v1 prompt");
     let v2 = regenerate_description(&fixture_tree(), &[], "live v2".into()).expect("regen");
     let v2_print = v2.derive_system_prompt().expect("v2 prompt");
     std::thread::scope(|scope| {
@@ -253,7 +276,11 @@ fn fingerprint_ignores_tuning_but_catches_structure() {
     let tuned = regenerate_thresholds(&fixture_tree(), &["sub"], Some(0.1), Some(0.2))
         .map(|t| regenerate_description(&t, &["plan"], "new".into()).expect("desc"))
         .expect("thresholds");
-    assert_eq!(topology_fingerprint(&tuned), base, "tuning is fingerprint-silent");
+    assert_eq!(
+        topology_fingerprint(&tuned),
+        base,
+        "tuning is fingerprint-silent"
+    );
     let mut added_filter = fixture_tree();
     if let ClassificationNode::Classifier { children, .. } = &mut added_filter.root {
         children.push(ClassificationChild {
@@ -372,7 +399,9 @@ fn topology_guard_accept_reject_table() {
 
     // Control: tuning-only change needs no alias and is accepted.
     let tuned = regenerate_description(&live, &[], "root router v2".into()).expect("regen");
-    assert!(holder.reload_topology(tuned, "tuning", &no_aliases()).is_ok());
+    assert!(holder
+        .reload_topology(tuned, "tuning", &no_aliases())
+        .is_ok());
 
     // Control: pure addition (no live key removed) needs no alias.
     let mut added = live.clone();
@@ -390,7 +419,9 @@ fn topology_guard_accept_reject_table() {
             always_route: false,
         },
     });
-    assert!(holder.reload_topology(added, "addition", &no_aliases()).is_ok());
+    assert!(holder
+        .reload_topology(added, "addition", &no_aliases())
+        .is_ok());
 
     // Must fire: key removal without an alias is rejected.
     // (Fresh holder per case: each swap changes the live tree the guard
@@ -421,11 +452,9 @@ fn topology_guard_accept_reject_table() {
         ),
         "uncovered rename must be rejected"
     );
-    assert!(
-        holder2
-            .reload_topology(renamed, "rename aliased", &aliases(&[("plan", "project")]))
-            .is_ok()
-    );
+    assert!(holder2
+        .reload_topology(renamed, "rename aliased", &aliases(&[("plan", "project")]))
+        .is_ok());
 
     // Unknown alias targets are rejected: aliases must point at live keys.
     let holder3 = VersionedTree::new(live.clone());
@@ -445,21 +474,17 @@ fn topology_reload_validates_prompts_and_thresholds() {
     let holder = VersionedTree::new(live.clone());
     // Out-of-range threshold in the payload is rejected with its path.
     let broken = with_broken_threshold(&live);
-    assert!(
-        matches!(
-            holder.reload_topology(broken, "bad threshold", &no_aliases()),
-            Err(ReloadError::ThresholdOutOfRange { .. })
-        )
-    );
+    assert!(matches!(
+        holder.reload_topology(broken, "bad threshold", &no_aliases()),
+        Err(ReloadError::ThresholdOutOfRange { .. })
+    ));
     // A classifier left with no routeable children cannot regenerate its
     // prompt: rejected as invalid topology, not swapped.
     let emptied = with_emptied_sub(&live);
-    assert!(
-        matches!(
-            holder.reload_topology(emptied, "emptied", &no_aliases()),
-            Err(ReloadError::TopologyInvalid { .. })
-        )
-    );
+    assert!(matches!(
+        holder.reload_topology(emptied, "emptied", &no_aliases()),
+        Err(ReloadError::TopologyInvalid { .. })
+    ));
     assert_eq!(holder.version(), 1, "rejected payloads mint no version");
 }
 
@@ -475,7 +500,11 @@ fn topology_swap_is_atomic_under_concurrent_readers() {
         Arc::new(std::sync::Mutex::new(Vec::new()));
     let readers: Vec<_> = (0..4)
         .map(|_| {
-            let (h, s, stop) = (Arc::clone(&holder), Arc::clone(&snapshots), Arc::clone(&stop));
+            let (h, s, stop) = (
+                Arc::clone(&holder),
+                Arc::clone(&snapshots),
+                Arc::clone(&stop),
+            );
             std::thread::spawn(move || {
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     let snap = h.current();
@@ -522,7 +551,9 @@ fn topology_reload_emits_audit_record() {
         tracing_subscriber::fmt::layer()
             .json()
             .with_writer(audit_nb)
-            .with_filter(tracing_subscriber::filter::EnvFilter::new("router.audit=info")),
+            .with_filter(tracing_subscriber::filter::EnvFilter::new(
+                "router.audit=info",
+            )),
     );
     let holder = VersionedTree::new(fixture_tree());
     tracing::subscriber::with_default(subscriber, || {
@@ -538,8 +569,14 @@ fn topology_reload_emits_audit_record() {
         .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap_or_default())
         .collect();
     let all = logged.join("\n") + &content;
-    assert!(all.contains("tree_topology_reload"), "audit record missing:\n{all}");
+    assert!(
+        all.contains("tree_topology_reload"),
+        "audit record missing:\n{all}"
+    );
     assert!(all.contains("drop plan"), "reason missing:\n{all}");
     assert!(all.contains(r#"\"version\":2"#), "version missing:\n{all}");
-    assert!(all.contains(r#"\"removed_keys\":[\"plan\"]"#), "guard decision missing:\n{all}");
+    assert!(
+        all.contains(r#"\"removed_keys\":[\"plan\"]"#),
+        "guard decision missing:\n{all}"
+    );
 }

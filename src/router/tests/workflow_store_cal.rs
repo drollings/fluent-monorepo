@@ -14,8 +14,7 @@
 //! controls leak below the band.
 
 use crate::ledger::workflow_store::{
-    gated_insert_allowed, CALIBRATED_WRITE_CONFIDENCE, CALIBRATED_WRITE_NOVELTY,
-    CALIBRATION_DATE,
+    gated_insert_allowed, CALIBRATED_WRITE_CONFIDENCE, CALIBRATED_WRITE_NOVELTY, CALIBRATION_DATE,
 };
 use common_core::calibration::{calibrate_threshold, sweep_thresholds};
 
@@ -54,20 +53,86 @@ fn should_store_cases() -> Vec<Case> {
 fn control_cases() -> Vec<Case> {
     vec![
         // Confident-but-unverified: high [A], failing provenance.
-        Case { name: "confident-but-unverified", confidence: 0.95, novelty: 0.50, verified: false, should_store: false },
-        Case { name: "confident-but-unverified-2", confidence: 0.99, novelty: 0.80, verified: false, should_store: false },
+        Case {
+            name: "confident-but-unverified",
+            confidence: 0.95,
+            novelty: 0.50,
+            verified: false,
+            should_store: false,
+        },
+        Case {
+            name: "confident-but-unverified-2",
+            confidence: 0.99,
+            novelty: 0.80,
+            verified: false,
+            should_store: false,
+        },
         // Near-duplicate: verified and confident, failing [B].
-        Case { name: "near-duplicate", confidence: 0.95, novelty: 0.00, verified: true, should_store: false },
-        Case { name: "near-duplicate-2", confidence: 0.90, novelty: 0.05, verified: true, should_store: false },
-        Case { name: "near-duplicate-3", confidence: 0.99, novelty: 0.10, verified: true, should_store: false },
-        Case { name: "near-duplicate-edge", confidence: 0.92, novelty: 0.14, verified: true, should_store: false },
+        Case {
+            name: "near-duplicate",
+            confidence: 0.95,
+            novelty: 0.00,
+            verified: true,
+            should_store: false,
+        },
+        Case {
+            name: "near-duplicate-2",
+            confidence: 0.90,
+            novelty: 0.05,
+            verified: true,
+            should_store: false,
+        },
+        Case {
+            name: "near-duplicate-3",
+            confidence: 0.99,
+            novelty: 0.10,
+            verified: true,
+            should_store: false,
+        },
+        Case {
+            name: "near-duplicate-edge",
+            confidence: 0.92,
+            novelty: 0.14,
+            verified: true,
+            should_store: false,
+        },
         // Low self-doubt signal: verified and novel, failing [A].
-        Case { name: "low-confidence", confidence: 0.50, novelty: 0.50, verified: true, should_store: false },
-        Case { name: "low-confidence-2", confidence: 0.65, novelty: 0.40, verified: true, should_store: false },
-        Case { name: "low-confidence-3", confidence: 0.75, novelty: 0.60, verified: true, should_store: false },
-        Case { name: "low-confidence-edge", confidence: 0.80, novelty: 0.30, verified: true, should_store: false },
+        Case {
+            name: "low-confidence",
+            confidence: 0.50,
+            novelty: 0.50,
+            verified: true,
+            should_store: false,
+        },
+        Case {
+            name: "low-confidence-2",
+            confidence: 0.65,
+            novelty: 0.40,
+            verified: true,
+            should_store: false,
+        },
+        Case {
+            name: "low-confidence-3",
+            confidence: 0.75,
+            novelty: 0.60,
+            verified: true,
+            should_store: false,
+        },
+        Case {
+            name: "low-confidence-edge",
+            confidence: 0.80,
+            novelty: 0.30,
+            verified: true,
+            should_store: false,
+        },
         // Fails everything.
-        Case { name: "fails-all", confidence: 0.40, novelty: 0.02, verified: false, should_store: false },
+        Case {
+            name: "fails-all",
+            confidence: 0.40,
+            novelty: 0.02,
+            verified: false,
+            should_store: false,
+        },
     ]
 }
 
@@ -119,7 +184,10 @@ fn write_gate_confidence_knee_with_margin() {
         }))
         .collect();
     let below = calibrate_threshold(&axis_cases, |c| c.confidence, |c| c.should_store, 0.80);
-    assert!(below.fpr > 0.0, "below the [A] band the controls must leak (knee proof)");
+    assert!(
+        below.fpr > 0.0,
+        "below the [A] band the controls must leak (knee proof)"
+    );
     let at_floor = calibrate_threshold(
         &axis_cases,
         |c| c.confidence,
@@ -127,7 +195,10 @@ fn write_gate_confidence_knee_with_margin() {
         CALIBRATED_WRITE_CONFIDENCE,
     );
     assert_eq!((at_floor.tp, at_floor.fp, at_floor.r#fn), (4, 0, 0));
-    assert!(at_floor.passes_gate(), "calibrated [A] floor passes the harness gate");
+    assert!(
+        at_floor.passes_gate(),
+        "calibrated [A] floor passes the harness gate"
+    );
 }
 
 #[test]
@@ -167,7 +238,10 @@ fn write_gate_novelty_knee_with_margin() {
         }))
         .collect();
     let below = calibrate_threshold(&axis_cases, |c| c.novelty, |c| c.should_store, 0.10);
-    assert!(below.fpr > 0.0, "below the [B] band the controls must leak (knee proof)");
+    assert!(
+        below.fpr > 0.0,
+        "below the [B] band the controls must leak (knee proof)"
+    );
     let at_floor = calibrate_threshold(
         &axis_cases,
         |c| c.novelty,
@@ -176,7 +250,10 @@ fn write_gate_novelty_knee_with_margin() {
         CALIBRATED_WRITE_NOVELTY + f64::EPSILON,
     );
     assert_eq!((at_floor.tp, at_floor.fp, at_floor.r#fn), (4, 0, 0));
-    assert!(at_floor.passes_gate(), "calibrated [B] floor passes the harness gate");
+    assert!(
+        at_floor.passes_gate(),
+        "calibrated [B] floor passes the harness gate"
+    );
 }
 
 #[test]
@@ -187,7 +264,10 @@ fn control_group_must_not_store() {
             leaked.push(c.name);
         }
     }
-    assert!(leaked.is_empty(), "control leaks (false positives): {leaked:?}");
+    assert!(
+        leaked.is_empty(),
+        "control leaks (false positives): {leaked:?}"
+    );
 }
 
 #[test]
@@ -223,7 +303,10 @@ fn calibrated_write_gate_is_exact_on_corpus() {
         .filter(|c| !c.should_store)
         .filter(|c| c.confidence >= 0.80 && c.novelty > CALIBRATED_WRITE_NOVELTY && c.verified)
         .count();
-    assert!(relaxed_leaks > 0, "lowering the [A] floor must admit a control");
+    assert!(
+        relaxed_leaks > 0,
+        "lowering the [A] floor must admit a control"
+    );
     let _sweep = sweep_thresholds(
         &cases,
         |c| c.confidence,
@@ -238,9 +321,6 @@ fn write_gate_constants_carry_the_calibration_date() {
     // the replay-side date): a change to any constant without
     // re-calibration fails here on purpose.
     assert_eq!(CALIBRATION_DATE, "2026-09-15");
-    assert_eq!(
-        CALIBRATED_WRITE_CONFIDENCE.to_bits(),
-        0.85f64.to_bits()
-    );
+    assert_eq!(CALIBRATED_WRITE_CONFIDENCE.to_bits(), 0.85f64.to_bits());
     assert_eq!(CALIBRATED_WRITE_NOVELTY.to_bits(), 0.15f64.to_bits());
 }

@@ -147,12 +147,11 @@ pub fn typed_request(ctx: &WorkContext) -> Option<std::sync::Arc<RouterRequest>>
 /// extractable text (e.g. image-only) is skipped so an earlier text message
 /// still resolves, matching the historical skip of non-string content.
 pub fn extract_user_message(ctx: &WorkContext) -> Result<String, WorkError> {
-    let request = typed_request(ctx).ok_or_else(|| {
-        match ctx.structured::<serde_json::Value>("request") {
+    let request =
+        typed_request(ctx).ok_or_else(|| match ctx.structured::<serde_json::Value>("request") {
             Err(e) => WorkError::Execution(format!("missing request: {e}")),
             Ok(_) => WorkError::Execution("missing request: not a valid RouterRequest".into()),
-        }
-    })?;
+        })?;
 
     request
         .messages

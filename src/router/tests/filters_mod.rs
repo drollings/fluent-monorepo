@@ -20,7 +20,9 @@ fn hard_reject_filter(name: &str, pattern: &str) -> Box<dyn Filter> {
 fn empty_engine_returns_none() {
     let engine = DeterministicFilterEngine::new();
     assert!(engine.is_empty());
-    assert!(engine.evaluate(&FilterContext::pipeline("anything".into())).is_none());
+    assert!(engine
+        .evaluate(&FilterContext::pipeline("anything".into()))
+        .is_none());
 }
 
 #[test]
@@ -30,7 +32,9 @@ fn engine_runs_filters_in_insertion_order_and_short_circuits() {
     engine.add_filter(hard_reject_filter("second", "second-secret"));
     // First filter matches -> short-circuits, first decision wins.
     let d = engine
-        .evaluate(&FilterContext::pipeline("first-secret second-secret".into()))
+        .evaluate(&FilterContext::pipeline(
+            "first-secret second-secret".into(),
+        ))
         .expect("decision");
     match d {
         FilterDecision::HardReject { pattern, .. } => assert_eq!(pattern, "first"),
@@ -45,7 +49,9 @@ fn engine_runs_filters_in_insertion_order_and_short_circuits() {
         other => panic!("unexpected {other:?}"),
     }
     // Neither matches -> None.
-    assert!(engine.evaluate(&FilterContext::pipeline("clean".into())).is_none());
+    assert!(engine
+        .evaluate(&FilterContext::pipeline("clean".into()))
+        .is_none());
 }
 
 #[test]
@@ -63,19 +69,30 @@ fn engine_scope_applies_to_each_filter() {
         regexes: vec!["secret".into()],
     };
     engine.add_filter(Box::new(regex_filter::RegexFilter::from_entry(&e).unwrap()));
-    assert!(engine.evaluate(&FilterContext::pipeline("secret".into())).is_none());
-    assert!(engine.evaluate(&FilterContext::frontier("secret".into())).is_some());
+    assert!(engine
+        .evaluate(&FilterContext::pipeline("secret".into()))
+        .is_none());
+    assert!(engine
+        .evaluate(&FilterContext::frontier("secret".into()))
+        .is_some());
     // Ledger-write scope adds ContentNodeWrite but not FrontierBound.
     e.scope = vec![FilterScope::ContentNodeWrite];
     let mut engine2 = DeterministicFilterEngine::new();
     engine2.add_filter(Box::new(regex_filter::RegexFilter::from_entry(&e).unwrap()));
-    assert!(engine2.evaluate(&FilterContext::ledger_write("secret".into())).is_some());
-    assert!(engine2.evaluate(&FilterContext::frontier("secret".into())).is_none());
+    assert!(engine2
+        .evaluate(&FilterContext::ledger_write("secret".into()))
+        .is_some());
+    assert!(engine2
+        .evaluate(&FilterContext::frontier("secret".into()))
+        .is_none());
 }
 
 #[test]
 fn filter_context_scope_helpers() {
-    assert_eq!(FilterContext::pipeline("m".into()).active_scopes, &[FilterScope::Any]);
+    assert_eq!(
+        FilterContext::pipeline("m".into()).active_scopes,
+        &[FilterScope::Any]
+    );
     assert_eq!(
         FilterContext::frontier("m".into()).active_scopes,
         &[FilterScope::Any, FilterScope::FrontierBound]

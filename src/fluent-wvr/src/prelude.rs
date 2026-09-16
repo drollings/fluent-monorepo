@@ -8,14 +8,14 @@ pub use crate::wrapper::{
     retry_call, ComponentAdapter, ComponentCascade, ExecuteFn, Instrumented, Middleware,
     MiddlewareChain, Pipeline, SuffixedComponent,
 };
-pub use crate::{impl_component, impl_fieldless};
 pub use crate::{
     boundary::{
         decode_boundary, decode_boundary_typed, extract_members, repair_boundary, BoundaryError,
         BoundaryOptions,
     },
-    Capability, CapabilitySet, Component, Describable, DynamicComponent, DynamicExecutor,
-    FieldAccess, FieldError, MetadataValue, OutputStore, WorkContext, WorkError, WorkOutput,
-    WorkUnit, describe_work_unit,
+    describe_work_unit, Capability, CapabilitySet, Component, Describable, DynamicComponent,
+    DynamicExecutor, FieldAccess, FieldError, MetadataValue, OutputStore, WorkContext, WorkError,
+    WorkOutput, WorkUnit,
 };
+pub use crate::{impl_component, impl_fieldless};
 pub use internment::ArcIntern;

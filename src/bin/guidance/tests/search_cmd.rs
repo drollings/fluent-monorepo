@@ -415,28 +415,28 @@ async fn vector_mode_declines_without_embedder() {
 
 use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
 use guidance_core::search_types::{
-    Entity, EntityMetadata, FileInfo, SearchHit, SearchHitEvidence, SearchMatchedBy,
-    FragmentContent, FragmentSpan,
+    Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan, SearchHit, SearchHitEvidence,
+    SearchMatchedBy,
 };
 
 fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> SearchHit {
-    let metadata = symbol.map(|name| {
-        EntityMetadata::Code {
-            symbol_type: guidance_core::search_types::CodeSymbolType::Function,
-            symbol_name: Some(name.to_string()),
-            scope: None,
-            node_type: None,
-            signature: None,
-            doc: None,
-            modifiers: Vec::new(),
-        }
+    let metadata = symbol.map(|name| EntityMetadata::Code {
+        symbol_type: guidance_core::search_types::CodeSymbolType::Function,
+        symbol_name: Some(name.to_string()),
+        scope: None,
+        node_type: None,
+        signature: None,
+        doc: None,
+        modifiers: Vec::new(),
     });
     SearchHit {
         entity: Entity {
             id: id.to_string(),
             file_id: abs.to_string(),
             range: FragmentSpan::File,
-            content: FragmentContent::Text { text: String::new() },
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
             metadata: None,
         },
         file: FileInfo {
@@ -453,7 +453,9 @@ fn hit(id: &str, abs: &str, rel: &str, symbol: Option<&str>, score: f64) -> Sear
         },
         evidence: vec![SearchHitEvidence {
             range: FragmentSpan::File,
-            content: FragmentContent::Text { text: String::new() },
+            content: FragmentContent::Text {
+                text: String::new(),
+            },
             metadata,
             is_entity: true,
             path: guidance_core::search_types::RecallPath::Fts,
@@ -478,7 +480,10 @@ fn anchor_files_dedupes_and_caps() {
         hit("b::z", "/repo/b.rs", "b.rs", Some("z"), 0.03),
         hit("c::w", "/repo/c.rs", "c.rs", Some("w"), 0.02),
     ];
-    assert_eq!(anchor_files(&hits, 2), vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]);
+    assert_eq!(
+        anchor_files(&hits, 2),
+        vec!["/repo/a.rs".to_string(), "/repo/b.rs".to_string()]
+    );
     assert_eq!(
         anchor_files(&hits, 10).len(),
         3,
@@ -539,7 +544,11 @@ fn explain_table_section_ignores_expansion() {
         score: 0.05,
     }];
     let without = render_explain_table("q", &rows, &[]);
-    let rendered = render_explain_table("q", &rows, &["- b.rs — dependent of a.rs via import \"m\"".to_string()]);
+    let rendered = render_explain_table(
+        "q",
+        &rows,
+        &["- b.rs — dependent of a.rs via import \"m\"".to_string()],
+    );
     assert!(rendered.starts_with(&without));
     assert!(rendered.contains("### Context\n"));
     assert!(rendered.starts_with("## Explain: q\n\n"));

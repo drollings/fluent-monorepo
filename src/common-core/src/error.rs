@@ -98,4 +98,3 @@ macro_rules! impl_from_io_error {
         }
     };
 }
-

@@ -1,10 +1,8 @@
 #![allow(unused_imports)]
+use fluent_wvr::prelude::*;
 #[allow(unused_imports)]
 use fluent_wvr::work::*;
-use fluent_wvr::prelude::*;
-use fluent_wvr::{FieldAccess, WorkUnit, Component, Describable, FieldError};
-
-
+use fluent_wvr::{Component, Describable, FieldAccess, FieldError, WorkUnit};
 
 #[test]
 fn test_work_context_default() {
@@ -132,8 +130,7 @@ fn typed_lossy_serializes_ok() {
 fn typed_lossy_never_panics_on_unserializable_payload() {
     // A map with non-string keys cannot serialize to JSON: `typed` reports
     // `Err`, while `typed_lossy` stores the error as a string.
-    let bad: std::collections::HashMap<Vec<u8>, i32> =
-        [(vec![0u8], 1)].into_iter().collect();
+    let bad: std::collections::HashMap<Vec<u8>, i32> = [(vec![0u8], 1)].into_iter().collect();
     assert!(WorkOutput::typed::<std::collections::HashMap<Vec<u8>, i32>>("ok", &bad).is_err());
     let output = WorkOutput::typed_lossy("ok", &bad);
     assert!(output.success);
@@ -200,7 +197,10 @@ fn structured_owned_delegates_to_borrowed() {
     let owned: u32 = ctx.structured("n").expect("reads");
     assert_eq!(owned, 42);
     let missing = ctx.structured::<u32>("absent").unwrap_err().to_string();
-    assert!(missing.contains("absent"), "missing-key error names the key");
+    assert!(
+        missing.contains("absent"),
+        "missing-key error names the key"
+    );
     ctx.set_structured("s", &"not-a-number");
     assert!(ctx.structured::<u32>("s").is_err());
 }
@@ -234,13 +234,12 @@ fn data_ref_agrees_with_owned_paths() {
         n: u32,
     }
     let out = WorkOutput::typed("ok", &Payload { n: 7 }).expect("typed");
-    assert_eq!(out.data_ref::<Payload>().expect("borrowed"), Payload { n: 7 });
+    assert_eq!(
+        out.data_ref::<Payload>().expect("borrowed"),
+        Payload { n: 7 }
+    );
     assert_eq!(out.data_as::<Payload>().expect("owned"), Payload { n: 7 });
     let borrowed_err = out.data_ref::<Vec<u8>>().unwrap_err().to_string();
-    let owned_err = out
-        .clone()
-        .data_take::<Vec<u8>>()
-        .unwrap_err()
-        .to_string();
+    let owned_err = out.clone().data_take::<Vec<u8>>().unwrap_err().to_string();
     assert_eq!(borrowed_err, owned_err, "identical error text on all paths");
 }

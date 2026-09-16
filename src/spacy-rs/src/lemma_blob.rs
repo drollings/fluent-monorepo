@@ -10,9 +10,9 @@
 
 use std::cmp::Ordering;
 
-use common_core::blob_spec::{slice, BlobCursor};
 use crate::error::SpacyError;
 use crate::labels::Upos;
+use common_core::blob_spec::{slice, BlobCursor};
 
 /// Magic bytes `"SLM1"` legacy.
 pub const BLOB_MAGIC: u32 = 0x534C_4D31;
@@ -56,16 +56,29 @@ impl LemmaBlob {
         let magic = probe.peek_u32(0).ok_or_else(|| err("truncated magic"))?;
         let (n, section_off) = if magic == BLOB_MAGIC_SLM2 {
             // SLM2: header 44 bytes, count at offset 16 (u32), dir starts at section_off (44)
-            let header_version = probe.peek_u16(4).ok_or_else(|| err("truncated header version"))?;
+            let header_version = probe
+                .peek_u16(4)
+                .ok_or_else(|| err("truncated header version"))?;
             if header_version != 1 {
-                return Err(err(&format!("unsupported SLM2 header version {header_version}")));
+                return Err(err(&format!(
+                    "unsupported SLM2 header version {header_version}"
+                )));
             }
-            let section_version = probe.peek_u16(6).ok_or_else(|| err("truncated section version"))?;
+            let section_version = probe
+                .peek_u16(6)
+                .ok_or_else(|| err("truncated section version"))?;
             if section_version != BLOB_VERSION_SLM2 {
-                return Err(err(&format!("unsupported SLM2 section version {section_version}")));
+                return Err(err(&format!(
+                    "unsupported SLM2 section version {section_version}"
+                )));
             }
-            let count = probe.peek_u32(16).ok_or_else(|| err("truncated pos count"))? as usize;
-            let section_off = probe.peek_u32(20).ok_or_else(|| err("truncated section off"))? as usize;
+            let count = probe
+                .peek_u32(16)
+                .ok_or_else(|| err("truncated pos count"))? as usize;
+            let section_off = probe
+                .peek_u32(20)
+                .ok_or_else(|| err("truncated section off"))?
+                as usize;
             // optional crc/sha validation (skip foot)
             (count, section_off)
         } else if magic == BLOB_MAGIC {
@@ -73,7 +86,11 @@ impl LemmaBlob {
             if version != BLOB_VERSION {
                 return Err(err(&format!("unsupported blob version {version}")));
             }
-            let count = usize::from(probe.peek_u16(6).ok_or_else(|| err("truncated pos count"))?);
+            let count = usize::from(
+                probe
+                    .peek_u16(6)
+                    .ok_or_else(|| err("truncated pos count"))?,
+            );
             (count, 8usize)
         } else {
             return Err(err("bad magic (expected \"SLM1\" or \"SLM2\")"));
@@ -82,10 +99,18 @@ impl LemmaBlob {
         let mut pos = Vec::with_capacity(n);
         for _ in 0..n {
             let key = dir.sized_str().ok_or_else(|| err("truncated pos key"))?;
-            let rules_off = dir.usize_le().ok_or_else(|| err("truncated rules offset"))?;
-            let rules_len = dir.usize_le().ok_or_else(|| err("truncated rules length"))?;
-            let index_off = dir.usize_le().ok_or_else(|| err("truncated index offset"))?;
-            let index_len = dir.usize_le().ok_or_else(|| err("truncated index length"))?;
+            let rules_off = dir
+                .usize_le()
+                .ok_or_else(|| err("truncated rules offset"))?;
+            let rules_len = dir
+                .usize_le()
+                .ok_or_else(|| err("truncated rules length"))?;
+            let index_off = dir
+                .usize_le()
+                .ok_or_else(|| err("truncated index offset"))?;
+            let index_len = dir
+                .usize_le()
+                .ok_or_else(|| err("truncated index length"))?;
             let exc_off = dir.usize_le().ok_or_else(|| err("truncated exc offset"))?;
             let exc_len = dir.usize_le().ok_or_else(|| err("truncated exc length"))?;
             let rules_raw = slice(data, rules_off, rules_len)
@@ -97,7 +122,12 @@ impl LemmaBlob {
             let rules = parse_rules(rules_raw)?;
             let index = parse_index(index_raw)?;
             let exc = parse_exc(exc_raw)?;
-            pos.push(PosEntry { key, rules, index, exc });
+            pos.push(PosEntry {
+                key,
+                rules,
+                index,
+                exc,
+            });
         }
         Ok(Self { pos })
     }
@@ -222,12 +252,18 @@ fn parse_rules(raw: &'static [u8]) -> Result<Vec<(&'static str, &'static str)>, 
         return Ok(Vec::new());
     }
     let view = BlobCursor::new(raw);
-    let n = view.peek_u32(0).ok_or_else(|| err("truncated rule count"))? as usize;
+    let n = view
+        .peek_u32(0)
+        .ok_or_else(|| err("truncated rule count"))? as usize;
     let mut cur = BlobCursor::with_offset(raw, 4);
     let mut out = Vec::with_capacity(n);
     for _ in 0..n {
-        let old = cur.sized_str().ok_or_else(|| err("truncated rule suffix"))?;
-        let new = cur.sized_str().ok_or_else(|| err("truncated rule replacement"))?;
+        let old = cur
+            .sized_str()
+            .ok_or_else(|| err("truncated rule suffix"))?;
+        let new = cur
+            .sized_str()
+            .ok_or_else(|| err("truncated rule replacement"))?;
         out.push((old, new));
     }
     Ok(out)
@@ -239,8 +275,12 @@ fn parse_index(raw: &'static [u8]) -> Result<&'static [u8], SpacyError> {
         return Ok(&[]);
     }
     let view = BlobCursor::new(raw);
-    let _n_words = view.peek_u32(0).ok_or_else(|| err("truncated index count"))?;
-    let words_len = view.peek_u32(4).ok_or_else(|| err("truncated index words len"))? as usize;
+    let _n_words = view
+        .peek_u32(0)
+        .ok_or_else(|| err("truncated index count"))?;
+    let words_len = view
+        .peek_u32(4)
+        .ok_or_else(|| err("truncated index words len"))? as usize;
     slice(raw, 8, words_len).ok_or_else(|| err("index words out of range"))
 }
 
@@ -256,20 +296,29 @@ fn parse_exc(raw: &'static [u8]) -> Result<ExcSection, SpacyError> {
     }
     let view = BlobCursor::new(raw);
     let n = view.peek_u32(0).ok_or_else(|| err("truncated exc count"))? as usize;
-    let surfaces_len = view.peek_u32(4).ok_or_else(|| err("truncated exc surfaces len"))? as usize;
-    let surfaces =
-        slice(raw, 8, surfaces_len).ok_or_else(|| err("exc surfaces out of range"))?;
+    let surfaces_len = view
+        .peek_u32(4)
+        .ok_or_else(|| err("truncated exc surfaces len"))? as usize;
+    let surfaces = slice(raw, 8, surfaces_len).ok_or_else(|| err("exc surfaces out of range"))?;
     let o = 8 + surfaces_len;
-    let offsets_len = view.peek_u32(o).ok_or_else(|| err("truncated exc offsets len"))? as usize;
+    let offsets_len = view
+        .peek_u32(o)
+        .ok_or_else(|| err("truncated exc offsets len"))? as usize;
     if offsets_len != n * 4 {
         return Err(err("exc offset table size mismatch"));
     }
     let offsets = slice(raw, o + 4, offsets_len).ok_or_else(|| err("exc offsets out of range"))?;
-    let lemmas_len = view.peek_u32(o + 4 + offsets_len)
+    let lemmas_len = view
+        .peek_u32(o + 4 + offsets_len)
         .ok_or_else(|| err("truncated exc lemmas len"))? as usize;
-    let lemmas =
-        slice(raw, o + 8 + offsets_len, lemmas_len).ok_or_else(|| err("exc lemmas out of range"))?;
-    Ok(ExcSection { n, surfaces, offsets, lemmas })
+    let lemmas = slice(raw, o + 8 + offsets_len, lemmas_len)
+        .ok_or_else(|| err("exc lemmas out of range"))?;
+    Ok(ExcSection {
+        n,
+        surfaces,
+        offsets,
+        lemmas,
+    })
 }
 
 #[cfg(test)]

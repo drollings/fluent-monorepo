@@ -13,7 +13,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-
 /// Tuning for lock acquisition.
 #[derive(Debug, Clone, Copy)]
 pub struct LockOptions {
@@ -256,10 +255,7 @@ fn is_directory_conflict(error: &io::Error, path: &Path) -> bool {
     }
 }
 
-fn remove_abandoned_lock(
-    lock_path: &Path,
-    options: &LockOptions,
-) -> Result<bool, LockError> {
+fn remove_abandoned_lock(lock_path: &Path, options: &LockOptions) -> Result<bool, LockError> {
     let Some(observed) = inspect_lock(lock_path)? else {
         return Ok(true);
     };
@@ -367,15 +363,24 @@ fn is_known_dead_owner(lock_path: &Path, owner_name: &str) -> Result<bool, LockE
         Ok(value) => value,
         Err(_) => return Ok(false),
     };
-    let token = owner.get("token").and_then(serde_json::Value::as_str).unwrap_or("");
+    let token = owner
+        .get("token")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
     if token.is_empty() || format!(".owner-{token}") != owner_name {
         return Ok(false);
     }
-    let hostname = owner.get("hostname").and_then(serde_json::Value::as_str).unwrap_or("");
+    let hostname = owner
+        .get("hostname")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
     if hostname != local_hostname() {
         return Ok(false);
     }
-    let pid = owner.get("pid").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let pid = owner
+        .get("pid")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     if pid == 0 || pid > u64::from(u32::MAX) {
         return Ok(false);
     }

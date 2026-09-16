@@ -1,7 +1,7 @@
 use super::*;
+use fluent_concept::InMemoryConceptStore;
 use fluent_concurrency::tokio_runtime;
 use fluent_db::migrate::migrate;
-use fluent_concept::InMemoryConceptStore;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn open_index() -> (Arc<SqliteStore>, SqlitePreferredSenseIndex) {
@@ -28,7 +28,9 @@ fn res(id: i64) -> Resolution {
 fn record_and_query_roundtrip_per_ambiguity_kind() {
     let (_store, idx) = open_index();
     let p = pid(7);
-    assert!(idx.preferred_sense(p, AmbiguityKind::PredicatePolysemy).is_none());
+    assert!(idx
+        .preferred_sense(p, AmbiguityKind::PredicatePolysemy)
+        .is_none());
     idx.record_preferred_sense(p, AmbiguityKind::PredicatePolysemy, res(1))
         .expect("record");
     let back = idx
@@ -36,9 +38,13 @@ fn record_and_query_roundtrip_per_ambiguity_kind() {
         .expect("query");
     assert_eq!(back, res(1));
     // A different ambiguity kind is a distinct pattern.
-    assert!(idx.preferred_sense(p, AmbiguityKind::AttachmentNearTie).is_none());
+    assert!(idx
+        .preferred_sense(p, AmbiguityKind::AttachmentNearTie)
+        .is_none());
     // A different predicate is a distinct pattern.
-    assert!(idx.preferred_sense(pid(8), AmbiguityKind::PredicatePolysemy).is_none());
+    assert!(idx
+        .preferred_sense(pid(8), AmbiguityKind::PredicatePolysemy)
+        .is_none());
 }
 
 #[test]
@@ -65,7 +71,9 @@ fn sense_rows_do_not_collide_with_correction_rows() {
         })
         .expect("correction row");
 
-    assert!(idx.preferred_sense(p, AmbiguityKind::PredicatePolysemy).is_some());
+    assert!(idx
+        .preferred_sense(p, AmbiguityKind::PredicatePolysemy)
+        .is_some());
     // The role columns are distinct — no accidental collision.
     let count: i64 = store
         .query_row(
@@ -230,10 +238,7 @@ fn trait_is_implementable_over_hermetic_store() {
     let _mem = InMemoryConceptStore::new();
 }
 
-fn polysemy_request(
-    predicate: i64,
-    candidates: Vec<InterlinguaId>,
-) -> FrameResolutionRequest {
+fn polysemy_request(predicate: i64, candidates: Vec<InterlinguaId>) -> FrameResolutionRequest {
     FrameResolutionRequest {
         predicate_lemma_id: pid(predicate),
         ambiguity_kind: AmbiguityKind::PredicatePolysemy,
@@ -287,7 +292,11 @@ async fn validator_failures_never_promote() {
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     worker.drain().await;
 
-    assert_eq!(fetched.load(Ordering::SeqCst), 1, "wave still batches one fetch");
+    assert_eq!(
+        fetched.load(Ordering::SeqCst),
+        1,
+        "wave still batches one fetch"
+    );
     assert!(
         index
             .preferred_sense(pid(11), AmbiguityKind::PredicatePolysemy)
@@ -429,10 +438,7 @@ async fn closed_gate_drops_jobs_before_fetch_or_promote() {
 
     worker
         .enqueue(FrameResolutionJob {
-            requests: vec![polysemy_request(
-                41,
-                vec![InterlinguaId::from_u64(401)],
-            )],
+            requests: vec![polysemy_request(41, vec![InterlinguaId::from_u64(401)])],
         })
         .await
         .expect("enqueue still accepted");

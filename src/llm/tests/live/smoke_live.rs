@@ -41,7 +41,10 @@ fn smoke_live_chat_completion_structural() {
         .expect("live chat completion should return Ok");
 
     // Structural invariants only: non-empty, plausibly bounded text.
-    assert!(!response.trim().is_empty(), "live response must not be empty");
+    assert!(
+        !response.trim().is_empty(),
+        "live response must not be empty"
+    );
     assert!(
         response.len() < 1_000_000,
         "live response unexpectedly large ({} bytes)",

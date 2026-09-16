@@ -90,12 +90,7 @@ fn retry_builds_context_with_correct_metadata() {
 #[test]
 fn retry_reuses_last_prompt_when_out_of_prompts() {
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![false]));
-    let retry = RetryClassifier::new(
-        inner.clone(),
-        inner.clone(),
-        2,
-        vec!["only_prompt".into()],
-    );
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 2, vec!["only_prompt".into()]);
 
     let base = WorkContext::default();
 
@@ -183,7 +178,11 @@ impl StageDecisionProducer for ScriptedClassifier {
         PipelineStage::Classifier
     }
 
-    fn evaluate(&self, _ctx: &WorkContext, _prior: &[StageDecision]) -> Result<StageDecision, WorkError> {
+    fn evaluate(
+        &self,
+        _ctx: &WorkContext,
+        _prior: &[StageDecision],
+    ) -> Result<StageDecision, WorkError> {
         Ok(if self.next_is_fallback() {
             fallback_decision()
         } else {
@@ -236,9 +235,17 @@ fn max_retries_zero_still_re_executes_final() {
 fn exhausted_retries_return_final_fallback() {
     // 1 initial + max_retries loop calls + 1 final re-execute == 4.
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![true; 8]));
-    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 2, vec!["p1".into(), "p2".into()]);
+    let retry = RetryClassifier::new(
+        inner.clone(),
+        inner.clone(),
+        2,
+        vec!["p1".into(), "p2".into()],
+    );
     let out = retry.execute(&WorkContext::default()).expect("execute");
-    assert!(RetryClassifier::is_fallback(&out), "final output is fallback");
+    assert!(
+        RetryClassifier::is_fallback(&out),
+        "final output is fallback"
+    );
     assert_eq!(inner.calls(), 4, "1 + 2 retries + final re-execute");
 }
 
@@ -252,7 +259,10 @@ fn non_fallback_output_passes_through_verbatim() {
         .get("reason")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    assert!(reason.contains("intent=code"), "passthrough keeps body: {reason}");
+    assert!(
+        reason.contains("intent=code"),
+        "passthrough keeps body: {reason}"
+    );
 }
 
 // ── Producer-path characterization ──────────────────────────────────────
@@ -304,7 +314,11 @@ impl TargetScriptedProducer {
 
     fn next(&self) -> (bool, Option<RoutingTarget>) {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.script.lock().unwrap().pop_front().unwrap_or((true, None))
+        self.script
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or((true, None))
     }
 }
 
@@ -345,7 +359,11 @@ impl StageDecisionProducer for TargetScriptedProducer {
         PipelineStage::Classifier
     }
 
-    fn evaluate(&self, _ctx: &WorkContext, _prior: &[StageDecision]) -> Result<StageDecision, WorkError> {
+    fn evaluate(
+        &self,
+        _ctx: &WorkContext,
+        _prior: &[StageDecision],
+    ) -> Result<StageDecision, WorkError> {
         let (fallback, _) = self.next();
         Ok(if fallback {
             fallback_decision()
@@ -443,7 +461,11 @@ impl StageDecisionProducer for EvaluateOnlyProducer {
         PipelineStage::Classifier
     }
 
-    fn evaluate(&self, _ctx: &WorkContext, _prior: &[StageDecision]) -> Result<StageDecision, WorkError> {
+    fn evaluate(
+        &self,
+        _ctx: &WorkContext,
+        _prior: &[StageDecision],
+    ) -> Result<StageDecision, WorkError> {
         Ok(success_decision())
     }
 }

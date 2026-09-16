@@ -15,7 +15,10 @@ fn candidate(key: &str, intelligence: u8, cost: f64) -> TargetCandidate {
 }
 
 fn candidates(entries: &[(&str, u8, f64)]) -> Vec<TargetCandidate> {
-    entries.iter().map(|(k, i, c)| candidate(k, *i, *c)).collect()
+    entries
+        .iter()
+        .map(|(k, i, c)| candidate(k, *i, *c))
+        .collect()
 }
 
 fn assessment(complexity: u8, reason: &str) -> String {
@@ -50,7 +53,7 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         hf_file: None,
         template: None,
         role_params: None,
-            api_key: None,
+        api_key: None,
     }
 }
 
@@ -63,7 +66,7 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
                 role: None,
                 pipelines: vec!["default".into()],
                 description: "local".into(),
-        always_route: false,
+                always_route: false,
             },
         )]),
         models: keys
@@ -217,7 +220,10 @@ fn matcher_with_per_key(by_key: Vec<(&str, Vec<String>)>) -> TargetMatcher {
                     )
                 })
                 .collect(),
-            Arc::new(StubChatBackend::always(assessment(9, "default fan-out tail"))),
+            Arc::new(StubChatBackend::always(assessment(
+                9,
+                "default fan-out tail",
+            ))),
         ),
         Arc::new(Limiter::new(4)),
         0,
@@ -228,8 +234,7 @@ fn matcher_with_per_key(by_key: Vec<(&str, Vec<String>)>) -> TargetMatcher {
 fn target_backends_get_prefers_dedicated_then_default() {
     let dedicated: Arc<dyn ChatBackend> =
         Arc::new(StubChatBackend::always(assessment(2, "dedicated")));
-    let default: Arc<dyn ChatBackend> =
-        Arc::new(StubChatBackend::always(assessment(8, "default")));
+    let default: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::always(assessment(8, "default")));
     let backends = TargetBackends::new(
         HashMap::from([("swarm".to_string(), Arc::clone(&dedicated))]),
         Arc::clone(&default),
@@ -421,7 +426,12 @@ fn fallbacks_are_group_tail_then_cross_group() {
         .expect("match");
     assert_eq!(tm.primary.model, "swarm");
     // Fallback tail = the more-intelligent members of the group, in order.
-    let fb_models: Vec<&str> = tm.primary.fallbacks.iter().map(|f| f.model.as_str()).collect();
+    let fb_models: Vec<&str> = tm
+        .primary
+        .fallbacks
+        .iter()
+        .map(|f| f.model.as_str())
+        .collect();
     assert_eq!(fb_models, vec!["qwen3.5-9b", "qwen3.6-27b"]);
 }
 
@@ -429,11 +439,9 @@ fn fallbacks_are_group_tail_then_cross_group() {
 fn empty_candidates_is_none() {
     let routing = routing_with("default", &[]);
     let matcher = matcher_with(vec![]);
-    assert!(
-        matcher
-            .match_target("local", "default", &routing, &[], Some(3), "hello")
-            .is_none()
-    );
+    assert!(matcher
+        .match_target("local", "default", &routing, &[], Some(3), "hello")
+        .is_none());
 }
 
 // ── Availability-sentinel expansion (`last` / `any`) ────────────────────
@@ -645,8 +653,8 @@ fn check_case(case: &serde_json::Value) -> bool {
         "case {} walk length is deterministic",
         case["name"]
     );
-    let winner_ok = first.primary.model.as_str()
-        == case["expected_winner"].as_str().expect("expected winner");
+    let winner_ok =
+        first.primary.model.as_str() == case["expected_winner"].as_str().expect("expected winner");
     let count_ok = first.assessments.len()
         == case["expected_assessments"]
             .as_u64()
@@ -677,7 +685,9 @@ fn ladder_corpus_selection_agreement() {
 #[test]
 fn control_trivial_prompts_never_escalate() {
     let corpus = ladder_corpus();
-    let cases = corpus["control_no_escalate"].as_array().expect("control array");
+    let cases = corpus["control_no_escalate"]
+        .as_array()
+        .expect("control array");
     assert!(!cases.is_empty(), "control group must not be empty");
     for case in cases {
         let tm = run_case(case);
@@ -765,7 +775,8 @@ fn confidence_gap_terminates_with_truthful_record() {
     let recorded = tm.assessments[0].assessed.expect("assessed recorded");
     let gap = (case["label_truth_complexity"]
         .as_i64()
-        .expect("label truth") - i64::from(recorded))
+        .expect("label truth")
+        - i64::from(recorded))
     .abs();
     assert!(
         gap >= 3,
@@ -926,8 +937,7 @@ fn last_never_fires_without_session_recency() {
         let routing = last_any_routing(&["a", "last", "b"]);
         let recency = GroupRecency::new();
         seed(&recency);
-        let expanded =
-            expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+        let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
         assert_eq!(expanded, head, "control case {name} falls back to the head");
     }
     // The no-session channel is the same fallback.
@@ -946,15 +956,13 @@ fn any_orders_loaded_first_around_last_fallback() {
     let routing = last_any_routing(&["last", "any", "a", "b"]);
     let recency = GroupRecency::new();
     // No recency anywhere: Last falls back (audited), Any partitions.
-    let expanded =
-        expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b");
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b");
     assert_eq!(
         expanded,
         vec!["b".to_string(), "a".to_string()],
         "loaded-first ordering survives the Last fallback"
     );
-    let expanded =
-        expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -970,8 +978,7 @@ fn ordering_never_outranks_capability() {
     let routing = last_any_routing(&["last", "a", "b"]);
     let recency = GroupRecency::new();
     recency.record("s", "g", "b");
-    let expanded =
-        expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
     let cands = candidates(&[("b", 5, 1.0), ("a", 1, 1.0)]);
     for _ in 0..2 {

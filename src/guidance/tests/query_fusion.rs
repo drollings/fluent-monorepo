@@ -262,8 +262,7 @@ fn fuse_candidates_is_deterministic_across_runs() {
             .map(|(rank, id)| {
                 let mut candidate = candidate(id);
                 candidate.rank = rank;
-                candidate.score =
-                    crate::search_types::RrfScore::new(1.0 / (rank as f64 + 1.0));
+                candidate.score = crate::search_types::RrfScore::new(1.0 / (rank as f64 + 1.0));
                 candidate.sources = vec![RecallPath::Fts, RecallPath::Vector];
                 candidate
             })
@@ -328,12 +327,7 @@ fn lemma_route_carries_full_recall_where_fts_finds_nothing() {
     assert_eq!(output.hits[0].entity.id, "file-a");
     let trace = output.hits[0].trace.as_ref().expect("trace");
     // FTS found nothing: it contributes no recall trace at all.
-    assert!(
-        trace
-            .recall
-            .iter()
-            .all(|item| item.path != RecallPath::Fts)
-    );
+    assert!(trace.recall.iter().all(|item| item.path != RecallPath::Fts));
     // The lemma route carries the full recall at rank 1.
     let lemma = trace
         .recall
@@ -376,7 +370,6 @@ fn rank_only_rrf_boundary_two_mid_ranks_outvote_one_top_rank() {
         fused[1].score.value()
     );
 }
-
 
 #[test]
 fn rrf_score_orders_like_its_magnitude_and_reads_through_value() {

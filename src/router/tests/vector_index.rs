@@ -1,6 +1,6 @@
 use super::*;
-use std::sync::Arc;
 use fluent_types::NodeId;
+use std::sync::Arc;
 
 fn random_embedding(dim: usize, seed: u64) -> Vec<f32> {
     // Deterministic pseudo-random embedding via hash
@@ -38,8 +38,10 @@ fn vector_index_brute_force_vs_hnsw_recall() {
     let hnsw_hits = hnsw.search(&query, k);
 
     // Recall@k vs brute-force ground truth
-    let brute_set: std::collections::HashSet<i64> = brute_hits.iter().map(|(id,_)| id.as_int()).collect();
-    let hnsw_set: std::collections::HashSet<i64> = hnsw_hits.iter().map(|(id,_)| id.as_int()).collect();
+    let brute_set: std::collections::HashSet<i64> =
+        brute_hits.iter().map(|(id, _)| id.as_int()).collect();
+    let hnsw_set: std::collections::HashSet<i64> =
+        hnsw_hits.iter().map(|(id, _)| id.as_int()).collect();
     let intersect = brute_set.intersection(&hnsw_set).count();
     let recall = intersect as f64 / k as f64;
     assert!(
@@ -56,11 +58,15 @@ fn vector_index_seam_is_concern_separated() {
     // Use a mock VectorIndex that panics if searched.
     struct PanicIndex;
     impl VectorIndex for PanicIndex {
-        fn insert(&self, _: NodeId, _: &[f32]) -> Result<(), fluent_db::error::DbError> { Ok(()) }
+        fn insert(&self, _: NodeId, _: &[f32]) -> Result<(), fluent_db::error::DbError> {
+            Ok(())
+        }
         fn search(&self, _: &[f32], _: usize) -> Vec<(NodeId, f64)> {
             panic!("salience must never call VectorIndex::search")
         }
-        fn len(&self) -> usize { 0 }
+        fn len(&self) -> usize {
+            0
+        }
     }
     let _panic: Arc<dyn VectorIndex> = Arc::new(PanicIndex);
     // LedgerSalienceProvider signals are deterministic graph signals, no vector search.
@@ -89,7 +95,9 @@ fn ann_calibration_control_50_unrelated_queries_must_not_fire_high_confidence() 
     let index = BruteForceIndex::new();
     for i in 0..n {
         let emb = random_embedding(dim, i as u64 * 7919 + 7);
-        index.insert(NodeId::from_int(i64::from(i) + 1), &emb).unwrap();
+        index
+            .insert(NodeId::from_int(i64::from(i) + 1), &emb)
+            .unwrap();
     }
     // Unrelated queries: use seeds far from ledger seeds
     let mut false_high = 0;
@@ -126,10 +134,18 @@ fn ann_calibration_recall_and_latency_baseline() {
     let start = std::time::Instant::now();
     let hnsw_hits = hnsw.search(&query, k);
     let hnsw_lat = start.elapsed();
-    let brute_set: std::collections::HashSet<i64> = brute_hits.iter().map(|(id,_)| id.as_int()).collect();
-    let hnsw_set: std::collections::HashSet<i64> = hnsw_hits.iter().map(|(id,_)| id.as_int()).collect();
+    let brute_set: std::collections::HashSet<i64> =
+        brute_hits.iter().map(|(id, _)| id.as_int()).collect();
+    let hnsw_set: std::collections::HashSet<i64> =
+        hnsw_hits.iter().map(|(id, _)| id.as_int()).collect();
     let recall = hnsw_set.intersection(&brute_set).count() as f64 / k as f64;
-    assert!(recall >= 0.8, "recall@{k} baseline must be >=0.8, got {recall}");
+    assert!(
+        recall >= 0.8,
+        "recall@{k} baseline must be >=0.8, got {recall}"
+    );
     // Latency: HNSW should be <= brute-force (or at least not 10x slower) for 500 nodes
-    assert!(hnsw_lat <= brute_lat * 10, "HNSW latency {hnsw_lat:?} should not be 10x brute {brute_lat:?}");
+    assert!(
+        hnsw_lat <= brute_lat * 10,
+        "HNSW latency {hnsw_lat:?} should not be 10x brute {brute_lat:?}"
+    );
 }

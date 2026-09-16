@@ -67,10 +67,8 @@ fn control_non_embedding_tables_untouched() {
     // The DDL creates exactly one table and no indexes/triggers of its own;
     // a pre-existing table survives init untouched with its rows intact.
     let conn = fluent_db::sqlite::open_in_memory().unwrap();
-    fluent_db::sqlite::run_batch(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY)")
-        .unwrap();
-    conn.execute("INSERT INTO t (id) VALUES (1)", [])
-        .unwrap();
+    fluent_db::sqlite::run_batch(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY)").unwrap();
+    conn.execute("INSERT INTO t (id) VALUES (1)", []).unwrap();
     init_embedding_cache(&conn).unwrap();
     let tables: Vec<String> = {
         let mut stmt = conn

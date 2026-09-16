@@ -16,10 +16,10 @@
 
 use std::sync::Arc;
 
-use fluent_concept::ConceptStore;
 use crate::doc::Doc;
 use crate::hash::hash_utf8;
 use crate::strings::StringStore;
+use fluent_concept::ConceptStore;
 use fluent_types::{lemma_id_for_str, ConceptMetadata, InterlinguaId};
 
 /// Recorded when a second canonical claims an already-taken id (first-wins).
@@ -36,8 +36,14 @@ impl std::fmt::Display for CollisionNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CollisionNote::None => write!(f, "no collision"),
-            CollisionNote::Collision { id, prior_canonical } => {
-                write!(f, "interlingua collision on {id}: prior canonical {prior_canonical:?}")
+            CollisionNote::Collision {
+                id,
+                prior_canonical,
+            } => {
+                write!(
+                    f,
+                    "interlingua collision on {id}: prior canonical {prior_canonical:?}"
+                )
             }
         }
     }
@@ -51,7 +57,8 @@ pub struct InterlinguaResolver {
 
 impl std::fmt::Debug for InterlinguaResolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InterlinguaResolver").finish_non_exhaustive()
+        f.debug_struct("InterlinguaResolver")
+            .finish_non_exhaustive()
     }
 }
 

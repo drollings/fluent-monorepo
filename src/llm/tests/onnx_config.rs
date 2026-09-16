@@ -145,10 +145,13 @@ fn validate_rejects_mismatched_architecture() {
     let dir = tempfile::tempdir().unwrap();
     let model_dir = dir.path().join("router");
     std::fs::create_dir_all(model_dir.join("onnx")).unwrap();
-    std::fs::write(model_dir.join("config.json"), r#"{
+    std::fs::write(
+        model_dir.join("config.json"),
+        r#"{
         "architectures": ["TwoTowerGraph"],
         "onnx": {"inputs": ["input_ids","attention_mask"], "outputs": ["token_proj","rule_proj"]}
-    }"#)
+    }"#,
+    )
     .unwrap();
     let cfg = OnnxConfig::new()
         .model_path(model_dir.join("onnx/model_q8.onnx"))
@@ -334,7 +337,11 @@ fn role_serde_round_trip_defaults_task_and_lifecycle() {
         "total_timeout_ms": 120000
     }"#;
     let cfg: OnnxRoleConfig = serde_json::from_str(json).unwrap();
-    assert_eq!(cfg.model.task, OnnxTask::FillMask, "task defaults when omitted");
+    assert_eq!(
+        cfg.model.task,
+        OnnxTask::FillMask,
+        "task defaults when omitted"
+    );
     assert!(cfg.pinned);
     assert_eq!(cfg.total_timeout_ms, 120000);
     assert!(!cfg.no_sleep);
@@ -450,7 +457,12 @@ fn llm_io_defaults_match_transformers_js_export() {
     assert_eq!(io.attention_layers, vec![2, 5, 9, 13, 17, 21, 24, 27]);
     assert_eq!(io.conv_layers.len(), 22);
     // The two layer lists are disjoint and together cover every layer 0..30.
-    let mut all: Vec<usize> = io.attention_layers.iter().chain(io.conv_layers.iter()).copied().collect();
+    let mut all: Vec<usize> = io
+        .attention_layers
+        .iter()
+        .chain(io.conv_layers.iter())
+        .copied()
+        .collect();
     all.sort_unstable();
     all.dedup();
     assert_eq!(all, (0..30).collect::<Vec<usize>>());
@@ -500,11 +512,14 @@ fn validate_accepts_causal_lm_config() {
     std::fs::create_dir_all(model_dir.join("onnx")).unwrap();
     // The LFM2.5-2.6B export declares `Lfm2ForCausalLM` and carries no
     // `onnx.outputs` block — the architecture check is the loud surface.
-    std::fs::write(model_dir.join("config.json"), r#"{
+    std::fs::write(
+        model_dir.join("config.json"),
+        r#"{
         "architectures": ["Lfm2ForCausalLM"],
         "use_cache": true,
         "vocab_size": 128000
-    }"#)
+    }"#,
+    )
     .unwrap();
     let cfg = OnnxConfig::new()
         .model_path(model_dir.join("onnx/model_q4.onnx"))
@@ -516,15 +531,15 @@ fn validate_accepts_causal_lm_config() {
     cfg.validate().unwrap();
 
     // A mismatched architecture is still a loud boot error for CausalLm.
-    std::fs::write(model_dir.join("config.json"), r#"{
+    std::fs::write(
+        model_dir.join("config.json"),
+        r#"{
         "architectures": ["TwoTowerGraph"],
         "onnx": {"outputs": ["token_proj", "rule_proj"]}
-    }"#)
+    }"#,
+    )
     .unwrap();
-    assert!(matches!(
-        cfg.validate(),
-        Err(OrtError::TaskMismatch { .. })
-    ));
+    assert!(matches!(cfg.validate(), Err(OrtError::TaskMismatch { .. })));
 }
 
 // ── M3: onnx context-declaration vocabulary (`instances` + `max_ctx`) ──
@@ -536,11 +551,13 @@ fn onnx_config_max_ctx_defaults_absent_and_round_trips() {
         serde_json::from_str(r#"{"model_path":"m.onnx","tokenizer_path":"t.json"}"#).unwrap();
     assert_eq!(plain.max_ctx, None);
 
-    let with_cap: OnnxConfig = serde_json::from_str(r#"{
+    let with_cap: OnnxConfig = serde_json::from_str(
+        r#"{
         "model_path": "m.onnx",
         "tokenizer_path": "t.json",
         "max_ctx": 8192
-    }"#)
+    }"#,
+    )
     .unwrap();
     assert_eq!(with_cap.max_ctx, Some(8192));
 
@@ -553,11 +570,13 @@ fn onnx_config_max_ctx_defaults_absent_and_round_trips() {
 fn onnx_role_config_instances_absent_defaults_to_none() {
     // An `OnnxRoleConfig` without an `instances` block keeps today's
     // single-shot decode (None) — byte-identical for existing configs.
-    let cfg: OnnxRoleConfig = serde_json::from_str(r#"{
+    let cfg: OnnxRoleConfig = serde_json::from_str(
+        r#"{
         "model_path": "/models/pii.onnx",
         "tokenizer_path": "/models/pii/tokenizer.json",
         "pinned": true
-    }"#)
+    }"#,
+    )
     .unwrap();
     assert!(cfg.instances.is_none());
 }
@@ -610,8 +629,7 @@ fn onnx_instance_profile_max_ctx_clamps() {
     above.apply_max_ctx();
     assert_eq!(above.num_ctx, 4096, "cap above num_ctx is a no-op");
 
-    let mut absent: OnnxInstanceProfile =
-        serde_json::from_str(r#"{"num_ctx": 16384}"#).unwrap();
+    let mut absent: OnnxInstanceProfile = serde_json::from_str(r#"{"num_ctx": 16384}"#).unwrap();
     absent.apply_max_ctx();
     assert_eq!(absent.num_ctx, 16384, "absent max_ctx is a no-op");
 }

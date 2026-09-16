@@ -14,12 +14,27 @@ fn join(root: &str, parts: &[&str]) -> String {
 
 #[test]
 fn folds_child_paths_and_invalidates_gitignore_subtrees() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["change-set-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["change-set-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions::default());
-    changes.add(&join(&root, &["src", "a.ts"]), ChangeKind::Changed, false).unwrap();
-    changes.add(&join(&root, &["src", "b.ts"]), ChangeKind::Changed, false).unwrap();
-    changes.add(&join(&root, &["src"]), ChangeKind::Created, true).unwrap();
-    changes.add(&join(&root, &["packages", ".gitignore"]), ChangeKind::Changed, false).unwrap();
+    changes
+        .add(&join(&root, &["src", "a.ts"]), ChangeKind::Changed, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["src", "b.ts"]), ChangeKind::Changed, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["src"]), ChangeKind::Created, true)
+        .unwrap();
+    changes
+        .add(
+            &join(&root, &["packages", ".gitignore"]),
+            ChangeKind::Changed,
+            false,
+        )
+        .unwrap();
     let snapshot = changes.snapshot();
     let mut expected_dirs = vec![join(&root, &["packages"]), join(&root, &["src"])];
     expected_dirs.sort();
@@ -31,15 +46,26 @@ fn folds_child_paths_and_invalidates_gitignore_subtrees() {
 
 #[test]
 fn collapses_deleted_prefixes() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["change-set-storm-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["change-set-storm-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions {
         root: Some(root.clone()),
         max_changed_paths: 10,
     });
-    changes.add(&join(&root, &["src", "a.ts"]), ChangeKind::Deleted, false).unwrap();
-    changes.add(&join(&root, &["src"]), ChangeKind::Deleted, true).unwrap();
-    changes.add(&join(&root, &["other.ts"]), ChangeKind::Changed, false).unwrap();
-    changes.add(&join(&root, &["third.ts"]), ChangeKind::Changed, false).unwrap();
+    changes
+        .add(&join(&root, &["src", "a.ts"]), ChangeKind::Deleted, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["src"]), ChangeKind::Deleted, true)
+        .unwrap();
+    changes
+        .add(&join(&root, &["other.ts"]), ChangeKind::Changed, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["third.ts"]), ChangeKind::Changed, false)
+        .unwrap();
     let snapshot = changes.snapshot();
     assert_eq!(snapshot.deleted_prefixes, vec![join(&root, &["src"])]);
     assert!(!snapshot.force_full_reconcile);
@@ -47,7 +73,10 @@ fn collapses_deleted_prefixes() {
 
 #[test]
 fn batches_large_watcher_bursts_without_blocking() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["change-set-large-burst-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["change-set-large-burst-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions {
         root: None,
         max_changed_paths: 1_000,
@@ -63,19 +92,31 @@ fn batches_large_watcher_bursts_without_blocking() {
     let snapshot = changes.snapshot();
     let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
     assert_eq!(snapshot.deleted_prefixes.len(), 200);
-    assert!(elapsed_ms < 1_500.0, "processing 200 watcher paths took {elapsed_ms:.0}ms");
+    assert!(
+        elapsed_ms < 1_500.0,
+        "processing 200 watcher paths took {elapsed_ms:.0}ms"
+    );
 }
 
 #[test]
 fn compacts_exact_event_storms_without_full_reconciliation() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["change-set-exact-overflow-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["change-set-exact-overflow-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions {
         root: Some(root.clone()),
         max_changed_paths: 3,
     });
-    changes.add(&join(&root, &["src", "a.ts"]), ChangeKind::Changed, false).unwrap();
-    changes.add(&join(&root, &["src", "b.ts"]), ChangeKind::Changed, false).unwrap();
-    changes.add(&join(&root, &["src", "c.ts"]), ChangeKind::Changed, false).unwrap();
+    changes
+        .add(&join(&root, &["src", "a.ts"]), ChangeKind::Changed, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["src", "b.ts"]), ChangeKind::Changed, false)
+        .unwrap();
+    changes
+        .add(&join(&root, &["src", "c.ts"]), ChangeKind::Changed, false)
+        .unwrap();
     let snapshot = changes.snapshot();
     assert!(snapshot.touched_files.is_empty(), "{snapshot:?}");
     assert_eq!(snapshot.rescan_directories, vec![join(&root, &["src"])]);
@@ -85,7 +126,10 @@ fn compacts_exact_event_storms_without_full_reconciliation() {
 
 #[test]
 fn bounds_twelve_thousand_exact_paths_to_directory_scopes() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["change-set-twelve-thousand-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["change-set-twelve-thousand-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions {
         root: Some(root.clone()),
         max_changed_paths: 1_000,
@@ -103,15 +147,23 @@ fn bounds_twelve_thousand_exact_paths_to_directory_scopes() {
     assert!(!snapshot.force_full_reconcile);
     assert!(snapshot.touched_files.is_empty(), "{snapshot:?}");
     assert_eq!(snapshot.rescan_directories.len(), 24, "{snapshot:?}");
-    assert!(elapsed_ms < 1_500.0, "processing 12000 paths took {elapsed_ms:.0}ms");
+    assert!(
+        elapsed_ms < 1_500.0,
+        "processing 12000 paths took {elapsed_ms:.0}ms"
+    );
 }
 
 #[test]
 fn retains_a_path_after_explicit_full_reconciliation_request() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["change-set-reconciliation-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["change-set-reconciliation-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions::default());
     changes.require_full_reconcile();
-    changes.add(&join(&root, &["changed.ts"]), ChangeKind::Changed, false).unwrap();
+    changes
+        .add(&join(&root, &["changed.ts"]), ChangeKind::Changed, false)
+        .unwrap();
     let snapshot = changes.snapshot();
     assert_eq!(snapshot.touched_files, vec![join(&root, &["changed.ts"])]);
     assert!(snapshot.rescan_directories.is_empty(), "{snapshot:?}");
@@ -122,8 +174,13 @@ fn retains_a_path_after_explicit_full_reconciliation_request() {
 #[test]
 fn rejects_relative_paths_at_the_boundary() {
     let mut changes = ChangeSet::new(ChangeSetOptions::default());
-    let error = changes.add("relative/path.ts", ChangeKind::Changed, false).unwrap_err();
-    assert!(matches!(error, crate::change_set::ChangeSetError::NotAbsolute(_)));
+    let error = changes
+        .add("relative/path.ts", ChangeKind::Changed, false)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        crate::change_set::ChangeSetError::NotAbsolute(_)
+    ));
 }
 
 // M1.1 characterization: lexical path helpers pinned verbatim before the
@@ -198,13 +255,20 @@ fn m1_is_absolute_path_matrix() {
 fn m1_add_observes_normalization() {
     // Normalization is observable through the public `add`/`snapshot` path:
     // separators collapse and `.`/`..` resolve before storage.
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["m1-normalize-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["m1-normalize-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions::default());
     changes
         .add(&format!("{root}//src/./a.ts"), ChangeKind::Changed, false)
         .unwrap();
     changes
-        .add(&format!("{root}/src/../src/b.ts"), ChangeKind::Changed, false)
+        .add(
+            &format!("{root}/src/../src/b.ts"),
+            ChangeKind::Changed,
+            false,
+        )
         .unwrap();
     let snapshot = changes.snapshot();
     assert_eq!(
@@ -239,18 +303,27 @@ fn m2_snapshot_sorts_reverse_insertions_and_dedups() {
 
 #[test]
 fn m2_collapse_prunes_nested_prefixes_shortest_first() {
-    let root = join(&std::env::temp_dir().to_string_lossy(), &["m2-collapse-repo"]);
+    let root = join(
+        &std::env::temp_dir().to_string_lossy(),
+        &["m2-collapse-repo"],
+    );
     let mut changes = ChangeSet::new(ChangeSetOptions {
         root: Some(root.clone()),
         max_changed_paths: 100,
     });
     changes
-        .add(&join(&root, &["src", "nested", "deep.ts"]), ChangeKind::Deleted, false)
+        .add(
+            &join(&root, &["src", "nested", "deep.ts"]),
+            ChangeKind::Deleted,
+            false,
+        )
         .unwrap();
     changes
         .add(&join(&root, &["src", "nested"]), ChangeKind::Deleted, true)
         .unwrap();
-    changes.add(&join(&root, &["src"]), ChangeKind::Deleted, true).unwrap();
+    changes
+        .add(&join(&root, &["src"]), ChangeKind::Deleted, true)
+        .unwrap();
     let snapshot = changes.snapshot();
     assert_eq!(snapshot.deleted_prefixes, vec![join(&root, &["src"])]);
 }

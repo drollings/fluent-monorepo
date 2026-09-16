@@ -18,7 +18,10 @@ fn eq_matches_only_the_same_label() {
     let stored = toy_hash("nsubj");
     assert!(label_eq(stored, "nsubj", toy_hash));
     assert!(!label_eq(stored, "dobj", toy_hash));
-    assert!(!label_eq(stored, "NSUBJ", toy_hash), "case-sensitive, like the callers");
+    assert!(
+        !label_eq(stored, "NSUBJ", toy_hash),
+        "case-sensitive, like the callers"
+    );
     assert!(!label_eq(stored, "", toy_hash));
 }
 
@@ -35,8 +38,14 @@ fn in_matches_membership_and_empty_is_false() {
     let stored = toy_hash("pobj");
     assert!(label_in(stored, &["prep", "pobj"], toy_hash));
     assert!(!label_in(stored, &["prep", "det"], toy_hash));
-    assert!(!label_in(stored, &[], toy_hash), "empty table matches nothing");
-    assert!(!label_in(0, &["root"], toy_hash), "sentinel matches nothing");
+    assert!(
+        !label_in(stored, &[], toy_hash),
+        "empty table matches nothing"
+    );
+    assert!(
+        !label_in(0, &["root"], toy_hash),
+        "sentinel matches nothing"
+    );
 }
 
 #[test]

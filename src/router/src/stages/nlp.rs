@@ -86,9 +86,7 @@ pub(crate) fn chat_backend_to_fetch_sync(
 /// The shared prompt contract for both fetch twins: system prompt from the
 /// canonical record contract, the fixed user line, and the grammar extras.
 /// One function so the twins cannot drift apart.
-fn annotation_request(
-    tokens: &[String],
-) -> (Vec<fluent_llm::ChatMessage>, serde_json::Value) {
+fn annotation_request(tokens: &[String]) -> (Vec<fluent_llm::ChatMessage>, serde_json::Value) {
     use fluent_llm::ChatMessage;
     let system = spacy_rs::AnnotationRecord::prompt(tokens);
     let messages = vec![

@@ -46,7 +46,10 @@ impl EntityPromotion {
     /// The armed seam: promotion runs through `gate` (the calibrated
     /// constant once wired behind the config flag).
     pub fn new(gate: EntityStampGate) -> Self {
-        Self { enabled: true, gate }
+        Self {
+            enabled: true,
+            gate,
+        }
     }
 
     /// Whether promotion runs.

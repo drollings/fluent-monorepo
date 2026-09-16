@@ -417,9 +417,9 @@ impl ClassificationNode {
             ClassificationNode::Terminal {
                 route: name, role, ..
             } if name == route => role.clone(),
-            ClassificationNode::Classifier { children, .. } => {
-                children.iter().find_map(|c| c.node.find_terminal_role(route))
-            }
+            ClassificationNode::Classifier { children, .. } => children
+                .iter()
+                .find_map(|c| c.node.find_terminal_role(route)),
             ClassificationNode::Fallback { node, .. } => node.find_terminal_role(route),
             _ => None,
         }

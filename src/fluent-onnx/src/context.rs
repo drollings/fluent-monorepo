@@ -224,11 +224,7 @@ impl OnnxContext {
         };
         let state = Arc::new(Mutex::new(None));
         let snapshots = Arc::new(Mutex::new(HashMap::new()));
-        let kv = OnnxKVCache::new(
-            Arc::clone(&state),
-            snapshots,
-            name.clone(),
-        );
+        let kv = OnnxKVCache::new(Arc::clone(&state), snapshots, name.clone());
         Self {
             name,
             group: profile.group,
@@ -310,9 +306,7 @@ impl OnnxContext {
 
     /// Current KV occupancy in tokens.
     pub fn seq_len(&self) -> u64 {
-        lock(&self.state)
-            .as_ref()
-            .map_or(0, |p| p.seq_len as u64)
+        lock(&self.state).as_ref().map_or(0, |p| p.seq_len as u64)
     }
 
     /// Resident KV bytes at current occupancy.

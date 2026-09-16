@@ -1,6 +1,6 @@
 use super::*;
-use fluent_types::ProvenanceTier;
 use crate::test_support::capture_logs;
+use fluent_types::ProvenanceTier;
 
 fn temp_ledger() -> ContentNodeLedger {
     // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
@@ -15,7 +15,9 @@ fn temp_ledger() -> ContentNodeLedger {
 #[test]
 fn write_annotation_facade_supersedes_by_tier() {
     let ledger = temp_ledger();
-    let id = ledger.record_request("sess", "req", "show me the report").unwrap();
+    let id = ledger
+        .record_request("sess", "req", "show me the report")
+        .unwrap();
     let hash = ledger.get_node(id).unwrap().content_hash;
     assert_ne!(hash, 0, "LOD0 present → non-zero hash");
 
@@ -28,16 +30,34 @@ fn write_annotation_facade_supersedes_by_tier() {
             common_core::now_secs(),
         )
     };
-    ledger.write_annotation(id, &claim(ProvenanceTier::LocalModel)).unwrap().unwrap();
-    ledger.write_annotation(id, &claim(ProvenanceTier::HumanReview)).unwrap().unwrap();
+    ledger
+        .write_annotation(id, &claim(ProvenanceTier::LocalModel))
+        .unwrap()
+        .unwrap();
+    ledger
+        .write_annotation(id, &claim(ProvenanceTier::HumanReview))
+        .unwrap()
+        .unwrap();
 
     // A lower-tier re-write after HumanReview becomes provisional.
-    let status = ledger.write_annotation(id, &claim(ProvenanceTier::LocalModel)).unwrap().unwrap();
-    assert_eq!(status, ClaimStatus::Provisional, "lower tier after HumanReview is provisional");
+    let status = ledger
+        .write_annotation(id, &claim(ProvenanceTier::LocalModel))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        status,
+        ClaimStatus::Provisional,
+        "lower tier after HumanReview is provisional"
+    );
 
     // The authoritative claim is the HumanReview one, confirmed.
-    let ann = crate::ledger::annotations::AnnotationStore::new(ledger.node_store().shared_sqlite().unwrap());
-    let cur = ann.read(hash, "frame:report").unwrap().expect("authoritative claim");
+    let ann = crate::ledger::annotations::AnnotationStore::new(
+        ledger.node_store().shared_sqlite().unwrap(),
+    );
+    let cur = ann
+        .read(hash, "frame:report")
+        .unwrap()
+        .expect("authoritative claim");
     assert_eq!(cur.tier, ProvenanceTier::HumanReview);
     assert_eq!(cur.status, ClaimStatus::Confirmed);
     // The superseded + provisional rows are retained (audit, never deleted).
@@ -156,7 +176,10 @@ fn record_content_node_stores_canonical_type() {
     let id = ledger.record_content_node(&node).unwrap();
 
     let fetched = ledger.get_node(id).unwrap();
-    assert_eq!(fetched.role.as_ref().map(fluent_types::OriginRole::as_str), Some("assistant"));
+    assert_eq!(
+        fetched.role.as_ref().map(fluent_types::OriginRole::as_str),
+        Some("assistant")
+    );
     assert_eq!(fetched.acceptance_score, Some(0.9));
     assert_eq!(fetched.step_id.as_deref(), Some("step-1"));
     assert_eq!(fetched.lod[5], "An accepted assistant answer.");
@@ -532,7 +555,9 @@ fn migration_6_fresh_db_creates_v2_schema() {
     )
     .unwrap();
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM interlingua_concepts", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM interlingua_concepts", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(count, 2, "both colliding canonicals stored");
 }
@@ -719,7 +744,8 @@ fn lod_derivation_is_from_lod0_only() {
     use std::sync::Arc;
     // Summarizer that echoes LOD0 prefix to prove derivation source — counting backend repeats same response
     let backend = Arc::new(CountingBackend::new("derived-from-lod0"));
-    let client: Arc<dyn fluent_llm::client::ChatBackend> = backend.clone() as Arc<dyn fluent_llm::client::ChatBackend>;
+    let client: Arc<dyn fluent_llm::client::ChatBackend> =
+        backend.clone() as Arc<dyn fluent_llm::client::ChatBackend>;
     let summarizer = Summarizer::new(client, 20);
     let ledger = temp_ledger().with_summarizer(summarizer);
     let id = ledger
@@ -733,10 +759,15 @@ fn lod_derivation_is_from_lod0_only() {
         .record_request("sess-lod0-2", "r2", "different LOD0 second node")
         .unwrap();
     // Manually set LOD1 to fake on id2 via store (to simulate chained derivation attempt)
-    ledger.node_store().with_node_mut(id2, |n| {
-        while n.lod.len() < 5 { n.lod.push(String::new()); }
-        n.lod[1] = "FAKE LOD1 SHOULD NOT BE SOURCE".into();
-    }).unwrap();
+    ledger
+        .node_store()
+        .with_node_mut(id2, |n| {
+            while n.lod.len() < 5 {
+                n.lod.push(String::new());
+            }
+            n.lod[1] = "FAKE LOD1 SHOULD NOT BE SOURCE".into();
+        })
+        .unwrap();
     let node2 = ledger.ensure_lod(id2, 4).unwrap();
     // Still derived from LOD0 (counting backend returns same), but importantly not equal to LOD1 fake
     assert_ne!(node2.lod[4], "FAKE LOD1 SHOULD NOT BE SOURCE");
@@ -750,9 +781,14 @@ fn lod_derivation_is_from_lod0_only() {
 fn ledger_tier_worker_is_idempotent() {
     use crate::test_stubs::CountingBackend;
     use std::sync::Arc;
-    let backend = Arc::new(CountingBackend::new("SUMMARY: cached summary\nDESCRIPTION: desc"));
+    let backend = Arc::new(CountingBackend::new(
+        "SUMMARY: cached summary\nDESCRIPTION: desc",
+    ));
     // Wrap counting backend as ChatBackend for Summarizer
-    let summarizer = Summarizer::new(backend.clone() as Arc<dyn fluent_llm::client::ChatBackend>, 20);
+    let summarizer = Summarizer::new(
+        backend.clone() as Arc<dyn fluent_llm::client::ChatBackend>,
+        20,
+    );
     let ledger = temp_ledger().with_summarizer(summarizer);
     let id = ledger
         .record_request("sess-idempotent", "r1", "text for idempotent derivation")
@@ -762,10 +798,18 @@ fn ledger_tier_worker_is_idempotent() {
     assert_eq!(backend.calls(), 1, "first derive hits backend");
     // Second derivation must hit cache, not backend
     let _ = ledger.ensure_lod(id, 4).unwrap();
-    assert_eq!(backend.calls(), 1, "second derive hits cache, no second call");
+    assert_eq!(
+        backend.calls(),
+        1,
+        "second derive hits cache, no second call"
+    );
     // Different level also caches separately but still only one call per level
     let _ = ledger.ensure_lod(id, 2).unwrap();
-    assert_eq!(backend.calls(), 2, "different LOD level triggers new derivation");
+    assert_eq!(
+        backend.calls(),
+        2,
+        "different LOD level triggers new derivation"
+    );
     let _ = ledger.ensure_lod(id, 2).unwrap();
     assert_eq!(backend.calls(), 2, "second hit for LOD2 also cached");
 }

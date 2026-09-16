@@ -119,21 +119,17 @@ fn seeded_store() -> Arc<ContentNodeStore> {
 }
 
 fn status_of(store: &ContentNodeStore, id: NodeId, kind: OverlayKind) -> OverlayStatus {
-    store
-        .get_node(id)
-        .map_or(OverlayStatus::Absent, |arc| lock_read(&arc).overlay(kind).status)
+    store.get_node(id).map_or(OverlayStatus::Absent, |arc| {
+        lock_read(&arc).overlay(kind).status
+    })
 }
 
 async fn wait_until_all_ready(store: &ContentNodeStore, id: NodeId) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
-        let ready = [
-            OverlayKind::Spacy,
-            OverlayKind::Llm,
-            OverlayKind::Embedding,
-        ]
-        .iter()
-        .all(|k| status_of(store, id, *k) == OverlayStatus::Ready);
+        let ready = [OverlayKind::Spacy, OverlayKind::Llm, OverlayKind::Embedding]
+            .iter()
+            .all(|k| status_of(store, id, *k) == OverlayStatus::Ready);
         if ready {
             return;
         }
@@ -164,7 +160,9 @@ async fn at_most_once_under_many_concurrent_requests_plus_worker() {
     store.set_overlay_events(worker.sender());
     worker.start();
 
-    let id = store.record_request("s", "r1", "buy apple stock today").unwrap();
+    let id = store
+        .record_request("s", "r1", "buy apple stock today")
+        .unwrap();
 
     // Many simultaneous "requests" racing on the same node while the worker
     // also enqueued it.
@@ -217,7 +215,10 @@ async fn overlays_derive_from_lod0_not_other_overlays() {
     });
 
     // Derive the spacy + embedding overlays in isolation.
-    let ann = store.annotation_for(id).expect("derive").expect("annotation");
+    let ann = store
+        .annotation_for(id)
+        .expect("derive")
+        .expect("annotation");
     let emb = store.embedding_for(id).expect("derive").expect("embedding");
     assert!(!emb.is_empty());
 
@@ -229,15 +230,13 @@ async fn overlays_derive_from_lod0_not_other_overlays() {
     );
     // The embedding reflects the node's LOD0 tokens (hash embedder over the
     // sales text), not the pre-seeded summary.
-    assert_ne!(
-        emb,
-        vec![0.0; 8],
-        "embedding derived from LOD0 content"
-    );
+    assert_ne!(emb, vec![0.0; 8], "embedding derived from LOD0 content");
     // The LLM overlay was NOT overwritten by the spacy/embedding runs.
     let node = store.snapshot(id).unwrap();
     assert_eq!(
-        node.metadata.as_ref().and_then(|m| m.get(LLM_OVERLAY_META_KEY)),
+        node.metadata
+            .as_ref()
+            .and_then(|m| m.get(LLM_OVERLAY_META_KEY)),
         Some(&serde_json::json!("unrelated prior summary")),
         "one overlay's derivation must not clobber another"
     );
@@ -277,7 +276,10 @@ async fn llm_backend_failure_does_not_block_spacy_or_embedding() {
 
     let node = store.snapshot(id).unwrap();
     assert!(node.annotation.is_some(), "spacy unaffected by LLM failure");
-    assert!(node.embedding.is_some(), "embedding unaffected by LLM failure");
+    assert!(
+        node.embedding.is_some(),
+        "embedding unaffected by LLM failure"
+    );
     assert_eq!(node.overlay(OverlayKind::Llm).status, OverlayStatus::Failed);
 
     worker.abort();
@@ -312,15 +314,25 @@ async fn audit_records_are_kind_overlay() {
         if done {
             break;
         }
-        assert!(std::time::Instant::now() < deadline, "overlays never settled");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "overlays never settled"
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     tokio::time::sleep(Duration::from_millis(50)).await;
     let joined = crate::test_support::global_capture_since(&capture, base).join("\n");
     let nid = id.as_int().to_string();
-    assert!(joined.contains("kind=\"overlay\""), "records on router.audit with kind=overlay");
-    for (kind, status) in [("spacy", "ready"), ("embedding", "ready"), ("llm", "failed")] {
+    assert!(
+        joined.contains("kind=\"overlay\""),
+        "records on router.audit with kind=overlay"
+    );
+    for (kind, status) in [
+        ("spacy", "ready"),
+        ("embedding", "ready"),
+        ("llm", "failed"),
+    ] {
         assert!(
             joined.contains(&format!("\"kind\":\"{kind}\""))
                 && joined.contains(&format!("\"status\":\"{status}\""))

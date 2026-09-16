@@ -1,7 +1,7 @@
 use super::*;
 use crate::charts::store::{chart_from_str, ChartStore};
-use fluent_db::hnsw::HnswIndexHandle;
 use crate::test_stubs::{HashEmbedder, StubChatBackend};
+use fluent_db::hnsw::HnswIndexHandle;
 use tempfile::TempDir;
 
 fn triage_chart_json() -> String {
@@ -416,7 +416,10 @@ fn replay_test_recorder() -> (
     // calibrated N), so consultation can hit.
     let outcome = recorder.record_question_run(
         "how do i bake bread",
-        &["hypothetical one".to_string(), "hypothetical two".to_string()],
+        &[
+            "hypothetical one".to_string(),
+            "hypothetical two".to_string(),
+        ],
         &["first answer".to_string(), "second answer".to_string()],
         "assembled solution",
         0.9,

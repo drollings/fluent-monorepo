@@ -19,9 +19,9 @@ use std::sync::{Arc, Mutex};
 use fluent_wvr::prelude::*;
 use internment::ArcIntern;
 
-use fluent_concept::ConceptStore;
 use crate::pipeline::PipelineState;
 use crate::triple::PlausibilityFetch;
+use fluent_concept::ConceptStore;
 
 const STATE_KEY: &str = "spacy.pipeline_state";
 
@@ -98,11 +98,15 @@ impl YagoResolveStage {
 
     /// Whether the guarded semantic-plausibility spike is enabled.
     #[must_use]
-    pub fn is_enabled(&self) -> bool { self.enabled }
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
 
     /// Whether a knowledge-half fetch is wired.
     #[must_use]
-    pub fn has_fetch(&self) -> bool { self.fetch.is_some() }
+    pub fn has_fetch(&self) -> bool {
+        self.fetch.is_some()
+    }
 
     fn resolver_for(&self, doc: &crate::doc::Doc) -> Arc<crate::interlingua::InterlinguaResolver> {
         let mut guard = common_core::sync::lock(&self.cached_resolver);
@@ -119,19 +123,28 @@ impl YagoResolveStage {
 }
 
 impl WorkUnit for YagoResolveStage {
-    fn name(&self) -> &str { "yago_resolve" }
+    fn name(&self) -> &str {
+        "yago_resolve"
+    }
     fn depends(&self) -> &[ArcIntern<str>] {
-        static DEPS: std::sync::LazyLock<[ArcIntern<str>;1]> = std::sync::LazyLock::new(|| [ArcIntern::from("annotated_doc")]);
+        static DEPS: std::sync::LazyLock<[ArcIntern<str>; 1]> =
+            std::sync::LazyLock::new(|| [ArcIntern::from("annotated_doc")]);
         &*DEPS
     }
     fn provides(&self) -> &[ArcIntern<str>] {
-        static PROVIDES: std::sync::LazyLock<[ArcIntern<str>;1]> = std::sync::LazyLock::new(|| [ArcIntern::from("yago_resolved")]);
+        static PROVIDES: std::sync::LazyLock<[ArcIntern<str>; 1]> =
+            std::sync::LazyLock::new(|| [ArcIntern::from("yago_resolved")]);
         &*PROVIDES
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let state = ctx.get::<Arc<Mutex<PipelineState>>>(STATE_KEY).ok_or_else(|| WorkError::Dependency(STATE_KEY.into()))?;
+        let state = ctx
+            .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
+            .ok_or_else(|| WorkError::Dependency(STATE_KEY.into()))?;
         let mut state = common_core::sync::lock(state);
-        let doc = state.doc.as_ref().ok_or_else(|| WorkError::Dependency("doc missing".into()))?;
+        let doc = state
+            .doc
+            .as_ref()
+            .ok_or_else(|| WorkError::Dependency("doc missing".into()))?;
         // Guarded M3 spike + M5 injection: when disabled (default) or when no
         // knowledge fetch is wired, leave plausibility as None (pre-M3
         // behavior). Never touches oracle_margins (E7).
@@ -165,9 +178,15 @@ impl Describable for YagoResolveStage {
     }
 }
 impl FieldAccess for YagoResolveStage {
-    fn set_field(&mut self, n: &str, _v: &str) -> Result<(), FieldError> { Err(FieldError::NotFound(n.into())) }
-    fn get_field(&self, n: &str) -> Result<String, FieldError> { Err(FieldError::NotFound(n.into())) }
-    fn field_names(&self) -> &'static [&'static str] { &[] }
+    fn set_field(&mut self, n: &str, _v: &str) -> Result<(), FieldError> {
+        Err(FieldError::NotFound(n.into()))
+    }
+    fn get_field(&self, n: &str) -> Result<String, FieldError> {
+        Err(FieldError::NotFound(n.into()))
+    }
+    fn field_names(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 impl_component!(YagoResolveStage);
 

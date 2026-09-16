@@ -15,7 +15,10 @@ fn source(text: &str) -> ExtractSource {
 }
 
 fn opts(max: usize, overlap: usize) -> ChunkOptions {
-    ChunkOptions { max_chunk_chars: max, chunk_overlap_chars: overlap }
+    ChunkOptions {
+        max_chunk_chars: max,
+        chunk_overlap_chars: overlap,
+    }
 }
 
 #[test]
@@ -67,7 +70,11 @@ fn small_sections_emit_single_fragments_with_metadata() {
         .expect("extract");
     assert_eq!(frags.len(), 1, "{frags:?}");
     match &frags[0].metadata {
-        Some(FragmentMetadata::Markdown { heading, level, scope }) => {
+        Some(FragmentMetadata::Markdown {
+            heading,
+            level,
+            scope,
+        }) => {
             assert_eq!(heading.as_deref(), Some("Guide"));
             assert_eq!(*level, Some(1));
             assert!(scope.is_none());
@@ -79,7 +86,10 @@ fn small_sections_emit_single_fragments_with_metadata() {
 
 #[test]
 fn oversize_sections_emit_outline_major_plus_windows() {
-    let body = (0..40).map(|i| format!("paragraph {i} with enough words to fill the budget")).collect::<Vec<_>>().join("\n");
+    let body = (0..40)
+        .map(|i| format!("paragraph {i} with enough words to fill the budget"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let text = format!("# Big\n\n{body}\n");
     let frags = extract_markdown_fragments(&source(&text), opts(300, 30)).expect("extract");
     assert!(frags.len() >= 3, "{:?}", frags.len());
@@ -87,8 +97,15 @@ fn oversize_sections_emit_outline_major_plus_windows() {
     assert_eq!(major.group.as_deref(), Some(major.id.as_str()));
     assert_eq!(major.content_text, "Big");
     for window in &frags[1..] {
-        assert_eq!(window.group.as_deref(), Some(major.id.as_str()), "{window:?}");
-        assert!(crate::extractor::utf16_len(&window.content_text) <= 300, "{window:?}");
+        assert_eq!(
+            window.group.as_deref(),
+            Some(major.id.as_str()),
+            "{window:?}"
+        );
+        assert!(
+            crate::extractor::utf16_len(&window.content_text) <= 300,
+            "{window:?}"
+        );
     }
     // Ids are unique positional hashes.
     let mut ids: Vec<&str> = frags.iter().map(|f| f.id.as_str()).collect();
@@ -101,5 +118,7 @@ fn oversize_sections_emit_outline_major_plus_windows() {
 fn non_markdown_source_yields_nothing() {
     let mut src = source("# x");
     src.format = "text".to_string();
-    assert!(extract_markdown_fragments(&src, opts(100, 10)).expect("extract").is_empty());
+    assert!(extract_markdown_fragments(&src, opts(100, 10))
+        .expect("extract")
+        .is_empty());
 }

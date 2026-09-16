@@ -41,7 +41,8 @@ use tokio::net::TcpListener;
 use crate::config::{RouteRef, RouterConfig};
 use crate::server::serve_http;
 use crate::testing::mock::{
-    load_transcript_file, transcript_provider_from_entries, MockDispatchContext, MockTranscriptEntry,
+    load_transcript_file, transcript_provider_from_entries, MockDispatchContext,
+    MockTranscriptEntry,
 };
 use crate::tests::common::{get, post_chat, TestServer};
 use fluent_llm::client::ChatBackend;
@@ -116,15 +117,16 @@ static ROUTE_PROBE_SEEDS: &[(&str, &str)] = &[
 /// without a code change.
 fn probe_for_route(route: &str, rref: &RouteRef) -> String {
     let seeds = ROUTE_PROBE_SEEDS;
-    seeds
-        .iter()
-        .find(|(name, _)| *name == route).map_or_else(|| {
+    seeds.iter().find(|(name, _)| *name == route).map_or_else(
+        || {
             if rref.description.is_empty() {
                 format!("Please help with: {route}")
             } else {
                 rref.description.clone()
             }
-        }, |(_, p)| p.to_string())
+        },
+        |(_, p)| p.to_string(),
+    )
 }
 
 /// Additional phrasings per route so the dispatch path is exercised across
@@ -453,7 +455,13 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
     let always: Vec<(String, String, String)> = view
         .iter()
         .filter(|(_, rref)| rref.always_route)
-        .map(|(route, rref)| (route.clone(), rref.group.clone(), probe_for_route(route, rref)))
+        .map(|(route, rref)| {
+            (
+                route.clone(),
+                rref.group.clone(),
+                probe_for_route(route, rref),
+            )
+        })
         .collect();
     assert!(
         !always.is_empty(),
@@ -488,7 +496,13 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
     let control = view
         .iter()
         .find(|(_, r)| !r.always_route)
-        .map(|(route, rref)| (route.clone(), rref.group.clone(), probe_for_route(route, rref)));
+        .map(|(route, rref)| {
+            (
+                route.clone(),
+                rref.group.clone(),
+                probe_for_route(route, rref),
+            )
+        });
     let is_control = control.is_some();
     if let Some((route, group, probe)) = &control {
         entries.push(MockTranscriptEntry {
@@ -570,7 +584,11 @@ async fn deterministic_commands_dispatch() {
         let response = post_chat(&server.base_url(), body, 15_000)
             .await
             .unwrap_or_else(|e| panic!("command '{command}' request failed: {e}"));
-        assert_eq!(response.status(), 200, "command '{command}' must answer 200");
+        assert_eq!(
+            response.status(),
+            200,
+            "command '{command}' must answer 200"
+        );
         let text = response
             .text()
             .await
@@ -635,12 +653,20 @@ async fn pii_requests_are_blocked() {
         let response = post_chat(&server.base_url(), body, 15_000)
             .await
             .unwrap_or_else(|e| panic!("PII probe '{:?}' failed: {e}", entry.user_message));
-        assert_eq!(response.status(), 200, "PII probe '{:?}' must answer", entry.user_message);
+        assert_eq!(
+            response.status(),
+            200,
+            "PII probe '{:?}' must answer",
+            entry.user_message
+        );
         let text = response
             .text()
             .await
             .unwrap_or_else(|e| panic!("PII probe '{:?}' body: {e}", entry.user_message));
-        let fragment = entry.reject_reason_contains.as_deref().expect("reason fragment");
+        let fragment = entry
+            .reject_reason_contains
+            .as_deref()
+            .expect("reason fragment");
         assert!(
             text.contains(fragment),
             "PII probe '{:?}' must carry '{fragment}', got: {text}",
@@ -675,8 +701,14 @@ async fn health_and_stats_endpoints_report_ok() {
         .expect("stats request must complete");
     assert_eq!(stats.status(), 200, "stats must be 200");
     let stats_json: Value = stats.json().await.expect("stats body must be JSON");
-    assert!(stats_json.get("requests").is_some(), "stats must report requests");
-    assert!(stats_json.get("errors").is_some(), "stats must report errors");
+    assert!(
+        stats_json.get("requests").is_some(),
+        "stats must report requests"
+    );
+    assert!(
+        stats_json.get("errors").is_some(),
+        "stats must report errors"
+    );
 }
 
 /// Unknown paths return 404.
@@ -716,9 +748,13 @@ fn mock_transcript_fixture_stays_synced_with_config() {
                 entry.user_message
             );
         }
-        let output: TreeClassifierVerdict = serde_json::from_str(&entry.classifier_response).unwrap_or_else(
-            |e| panic!("mock-transcripts.json: unparseable classifier_response for '{:?}': {e}", entry.user_message),
-        );
+        let output: TreeClassifierVerdict = serde_json::from_str(&entry.classifier_response)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "mock-transcripts.json: unparseable classifier_response for '{:?}': {e}",
+                    entry.user_message
+                )
+            });
         if let Some(target) = &output.route {
             assert!(
                 resolved(target),
@@ -793,7 +829,10 @@ async fn mock_transcript_entries_serve_their_expected_answers() {
                 entry.user_message
             );
         } else {
-            let expected = entry.dispatch_response.as_deref().expect("dispatch response");
+            let expected = entry
+                .dispatch_response
+                .as_deref()
+                .expect("dispatch response");
             assert!(
                 text.contains(expected),
                 "routed probe '{:?}' must return its dispatch response, got: {text}",

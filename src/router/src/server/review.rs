@@ -22,13 +22,13 @@
 
 use std::sync::Arc;
 
+use fluent_concept::ConceptStore;
 use fluent_concurrency::credit_pool::CreditGatedPool;
 use fluent_concurrency::pool::PoolError;
 use fluent_llm::backend::{PiiSpan, PiiSpanDetector};
-use fluent_wvr::Runtime;
 use fluent_types::{AnnotationClaim, InterlinguaId, NodeId, ProvenanceTier};
+use fluent_wvr::Runtime;
 use spacy_rs::review::{apply_corrections, review_prompt, ParseReview};
-use fluent_concept::ConceptStore;
 use spacy_rs::{AnnotationResult, CorrectionIndex};
 use thiserror::Error;
 
@@ -145,7 +145,15 @@ impl ReviewWorker {
                 let model = model_h.clone();
                 let prefilter = prefilter_h.clone();
                 async move {
-                    process_job(&job, &index, &concepts, &fetch, &ledger, &model, prefilter.as_deref());
+                    process_job(
+                        &job,
+                        &index,
+                        &concepts,
+                        &fetch,
+                        &ledger,
+                        &model,
+                        prefilter.as_deref(),
+                    );
                 }
             },
         );
@@ -242,13 +250,10 @@ impl ReviewWorker {
         if job.pii_spans.is_empty() && self.prefilter.is_some() {
             job.pii_spans = self.detect_spans(&job.text);
         }
-        self.pool
-            .submit(job)
-            .await
-            .map_err(|e| match e {
-                PoolError::Closed => ReviewError::Closed("worker drained".into()),
-                PoolError::Full => ReviewError::Full(e.to_string()),
-            })
+        self.pool.submit(job).await.map_err(|e| match e {
+            PoolError::Closed => ReviewError::Closed("worker drained".into()),
+            PoolError::Full => ReviewError::Full(e.to_string()),
+        })
     }
 
     /// Whether the credit gate is currently blocking producers.
@@ -336,7 +341,14 @@ fn process_job(
     if !job.patterns.is_empty() && misses.is_empty() && !reuse.is_empty() {
         // Zero LLM cost: reuse the recorded corrections.
         let corrected = apply_corrections(&job.parse, &reuse);
-        let meta = review_metadata(ledger, job.node_id, "reused", &corrected, review_model, &pii_spans);
+        let meta = review_metadata(
+            ledger,
+            job.node_id,
+            "reused",
+            &corrected,
+            review_model,
+            &pii_spans,
+        );
         if let Err(e) = ledger.apply_review(job.node_id, meta, None, &[]) {
             // Best-effort, never blocks the pool — but the failure is visible.
             tracing::warn!(
@@ -415,13 +427,15 @@ fn process_job(
             review_model,
         ))
     };
-    let meta = review_metadata(ledger, job.node_id, "reviewed", &corrected, review_model, &pii_spans);
-    match ledger.apply_review(
+    let meta = review_metadata(
+        ledger,
         job.node_id,
-        meta,
-        review_node.as_ref(),
-        &correction_rows,
-    ) {
+        "reviewed",
+        &corrected,
+        review_model,
+        &pii_spans,
+    );
+    match ledger.apply_review(job.node_id, meta, review_node.as_ref(), &correction_rows) {
         Ok(_) => {}
         // Best-effort, never blocks the pool — but the failure is visible
         // (red-team M1: no silent `let _ =` swallowing).
@@ -573,10 +587,7 @@ pub(crate) fn build_annotation_result_from_signals(
         .as_ref()
         .map_or(spacy_rs::AnnotationSource::RuleRung, |c| c.source);
     let record_count = records.len();
-    let mut result = spacy_rs::AnnotationResult::new(
-        spacy_rs::llm::AnnotationSet(records),
-        source,
-    );
+    let mut result = spacy_rs::AnnotationResult::new(spacy_rs::llm::AnnotationSet(records), source);
     if let Some(c) = confidence {
         let token_conf = token_confidence
             .filter(|v| !v.is_empty())
@@ -617,7 +628,10 @@ pub(crate) fn build_review_job(
         request_id: request_id.to_string(),
         text: text.to_string(),
         parse: build_annotation_result_from_signals(signals, confidence, token_confidence),
-        patterns: extract_lemma_ids(signals).into_iter().map(|l| (l, None)).collect(),
+        patterns: extract_lemma_ids(signals)
+            .into_iter()
+            .map(|l| (l, None))
+            .collect(),
         review_model: review_model.to_string(),
         pii_spans: Vec::new(),
     }

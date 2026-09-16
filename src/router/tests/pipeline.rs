@@ -319,8 +319,7 @@ fn json_only_payload_no_longer_dispatches() {
     let expected = decision.clone();
     let stage: std::sync::Arc<dyn fluent_wvr::prelude::Component> =
         std::sync::Arc::new(crate::test_stubs::SimplePassStage::new("stub", "legacy"));
-    let producer: StageProducer =
-        std::sync::Arc::new(move |_, _| Ok((expected.clone(), None)));
+    let producer: StageProducer = std::sync::Arc::new(move |_, _| Ok((expected.clone(), None)));
     let orch = PipelineOrchestrator::builder()
         .push_with_producer(stage, producer)
         .build();
@@ -341,9 +340,8 @@ fn error_branch_propagates_err_without_decision() {
     // `Err` directly).
     let stage: std::sync::Arc<dyn fluent_wvr::prelude::Component> =
         std::sync::Arc::new(crate::test_stubs::SimplePassStage::new("stub", "boom"));
-    let producer: StageProducer = std::sync::Arc::new(move |_, _| {
-        Err(fluent_wvr::WorkError::Execution("boom".into()))
-    });
+    let producer: StageProducer =
+        std::sync::Arc::new(move |_, _| Err(fluent_wvr::WorkError::Execution("boom".into())));
     let orch = PipelineOrchestrator::builder()
         .push_with_producer(stage, producer)
         .build();
@@ -363,40 +361,38 @@ fn cache_probe_stage(
     name: &'static str,
     seen: Arc<Mutex<Vec<(u64, String)>>>,
 ) -> Arc<dyn Component> {
-    Arc::new(
-        fluent_wvr_testutil::StubComponent::new(name).with_handler(move |ctx: &WorkContext| {
-            match crate::stages::common::typed_request(ctx) {
-                Some(req) => {
-                    let text = req
-                        .messages
-                        .iter()
-                        .rev()
-                        .find(|m| m.role == "user")
-                        .map(|m| m.content.to_string_lossy())
-                        .unwrap_or_default();
-                    seen.lock().unwrap().push((
-                        ctx.get::<crate::stages::common::TypedRequest>(
-                            crate::stages::common::TYPED_REQUEST_KEY,
-                        )
-                        .map_or(u64::MAX, |(gen, _)| *gen),
-                        text,
-                    ));
-                    Ok(WorkOutput::typed_lossy(
-                        "probed",
-                        &StageDecision {
-                            stage: PipelineStage::DeterministicPreFilter,
-                            verdict: StageVerdict::Passed,
-                            score: Some(1.0),
-                            reason: "probe".into(),
-                            latency_ms: 0,
-                            metadata: serde_json::json!({}),
-                        },
-                    ))
-                }
-                None => Err(WorkError::Execution("no typed request".into())),
+    Arc::new(fluent_wvr_testutil::StubComponent::new(name).with_handler(
+        move |ctx: &WorkContext| match crate::stages::common::typed_request(ctx) {
+            Some(req) => {
+                let text = req
+                    .messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "user")
+                    .map(|m| m.content.to_string_lossy())
+                    .unwrap_or_default();
+                seen.lock().unwrap().push((
+                    ctx.get::<crate::stages::common::TypedRequest>(
+                        crate::stages::common::TYPED_REQUEST_KEY,
+                    )
+                    .map_or(u64::MAX, |(gen, _)| *gen),
+                    text,
+                ));
+                Ok(WorkOutput::typed_lossy(
+                    "probed",
+                    &StageDecision {
+                        stage: PipelineStage::DeterministicPreFilter,
+                        verdict: StageVerdict::Passed,
+                        score: Some(1.0),
+                        reason: "probe".into(),
+                        latency_ms: 0,
+                        metadata: serde_json::json!({}),
+                    },
+                ))
             }
-        }),
-    )
+            None => Err(WorkError::Execution("no typed request".into())),
+        },
+    ))
 }
 
 /// A non-rerouted request parses exactly once at pipeline entry: every

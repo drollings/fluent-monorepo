@@ -32,9 +32,15 @@ pub struct HostEquivalence {
 
 impl HostEquivalence {
     /// The LLM-transport (SSRF) class: case-folded, full `127/8` loopback.
-    pub const LOCAL_SSRF: Self = Self { fold_case: true, loopback_range_127: true };
+    pub const LOCAL_SSRF: Self = Self {
+        fold_case: true,
+        loopback_range_127: true,
+    };
     /// The router self-routing class: trim-only, three exact loopback forms.
-    pub const EXACT_LOOPBACK: Self = Self { fold_case: false, loopback_range_127: false };
+    pub const EXACT_LOOPBACK: Self = Self {
+        fold_case: false,
+        loopback_range_127: false,
+    };
 }
 
 fn canonical_host(host: &str, opts: HostEquivalence) -> String {

@@ -136,7 +136,10 @@ impl<'de> serde::Deserialize<'de> for PipelineStage {
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineError {
     #[error("stage {stage:?} failed: {source}")]
-    Stage { stage: PipelineStage, source: WorkError },
+    Stage {
+        stage: PipelineStage,
+        source: WorkError,
+    },
     #[error("pipeline internal error: {0}")]
     Internal(String),
 }
@@ -386,8 +389,12 @@ impl StageMetadata {
 
     /// Publish the `Nlp` stage's per-token confidence vector (L3).
     pub fn set_nlp_token_confidence(&mut self, token_confidence: &[f64]) {
-        self.0["nlp_token_confidence"] =
-            serde_json::Value::Array(token_confidence.iter().map(|c| serde_json::json!(c)).collect());
+        self.0["nlp_token_confidence"] = serde_json::Value::Array(
+            token_confidence
+                .iter()
+                .map(|c| serde_json::json!(c))
+                .collect(),
+        );
     }
 
     /// Publish the `Overlay` stage's route hints for the classifier (§2.6).
@@ -398,7 +405,10 @@ impl StageMetadata {
     }
 
     /// Publish the `Overlay` stage's raw contributions for audit (§2.4).
-    pub fn set_overlay_contributions(&mut self, contributions: &[fluent_llm::backend::OverlayContribution]) {
+    pub fn set_overlay_contributions(
+        &mut self,
+        contributions: &[fluent_llm::backend::OverlayContribution],
+    ) {
         if let Ok(v) = serde_json::to_value(contributions) {
             self.0["overlay_contributions"] = v;
         }
@@ -483,9 +493,7 @@ impl<'a> StageMetadataRef<'a> {
             .and_then(|v| <Vec<RouteHint>>::deserialize(v).ok())
     }
 
-    pub fn overlay_contributions(
-        self,
-    ) -> Option<Vec<fluent_llm::backend::OverlayContribution>> {
+    pub fn overlay_contributions(self) -> Option<Vec<fluent_llm::backend::OverlayContribution>> {
         self.0
             .get("overlay_contributions")
             .and_then(|v| <Vec<fluent_llm::backend::OverlayContribution>>::deserialize(v).ok())

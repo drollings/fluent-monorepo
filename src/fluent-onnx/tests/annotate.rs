@@ -75,19 +75,19 @@ fn aggregate_maps_subwords_and_resolves_heads_to_spacy() {
     // spacy token 0. Give both NOUN(0). token3 "world" = VERB(1).
     let mut upos = vec![0.0f32; seq * n_pos];
     upos[n_pos] = 8.0; // "un" → NOUN
-    upos[2 * n_pos ] = 9.0; // "##happy" → NOUN
+    upos[2 * n_pos] = 9.0; // "##happy" → NOUN
     upos[3 * n_pos + 1] = 7.0; // "world" → VERB
 
     let mut dep = vec![0.0f32; seq * n_dep];
     dep[n_dep + 2] = 6.0; // "un" → obj
     dep[2 * n_dep + 2] = 7.0; // "##happy" → obj (mean keeps obj)
-    dep[3 * n_dep ] = 5.0; // "world" → root
+    dep[3 * n_dep] = 5.0; // "world" → root
 
     // Head rows. spacy token 0's first subword is LFM token 1 → head 3
     // (world). spacy token 1 (LFM 3) → head 0 (a spacy token) → spacy 0.
     let mut head = vec![0.0f32; seq * seq];
     head[seq + 3] = 5.0; // token1 → head 3 (world, spacy 1)
-    head[3 * seq ] = 6.0; // token3 → head 0 (special [CLS]) → None → ROOT
+    head[3 * seq] = 6.0; // token3 → head 0 (special [CLS]) → None → ROOT
     let tokens = aggregate_to_spacy(&align, &upos, &dep, &head, &labels, seq).unwrap();
     assert_eq!(tokens.len(), 2);
     let t0 = tokens[0].as_ref().expect("spacy 0 covered");

@@ -6,7 +6,7 @@
 use crate::change_set::ChangeSetSnapshot;
 use crate::scheduler::BoxFuture;
 use crate::watcher::{
-    FileEventKind, ManualBackend, WatchBackend, WatchOptions, WatchManager, WatchPlatform,
+    FileEventKind, ManualBackend, WatchBackend, WatchManager, WatchOptions, WatchPlatform,
     WatchReason, WatchRoot,
 };
 use std::path::PathBuf;
@@ -63,7 +63,10 @@ where
 }
 
 fn temp_repo(name: &str) -> tempfile::TempDir {
-    tempfile::Builder::new().prefix(name).tempdir().expect("tempdir")
+    tempfile::Builder::new()
+        .prefix(name)
+        .tempdir()
+        .expect("tempdir")
 }
 
 #[tokio::test]
@@ -97,7 +100,8 @@ async fn scheduled_reconciliation_does_not_count_as_activity() {
     std::fs::write(root.join("a.ts"), "export const a = 1;\n").unwrap();
     let backend = ManualBackend::new();
     let activities = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let reasons: Arc<std::sync::Mutex<Vec<WatchReason>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reasons: Arc<std::sync::Mutex<Vec<WatchReason>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
     let activities_sink = Arc::clone(&activities);
     let reasons_sink = Arc::clone(&reasons);
     let manager = WatchManager::new(WatchOptions {
@@ -109,7 +113,11 @@ async fn scheduled_reconciliation_does_not_count_as_activity() {
             reasons_sink.lock().unwrap().push(reason);
             Box::pin(async {}) as BoxFuture<()>
         }),
-        ..test_options(root.clone(), backend.clone(), Arc::new(|_, _| Box::pin(async {}) as BoxFuture<()>))
+        ..test_options(
+            root.clone(),
+            backend.clone(),
+            Arc::new(|_, _| Box::pin(async {}) as BoxFuture<()>),
+        )
     });
     manager.start();
     wait_for(|| reasons.lock().unwrap().contains(&WatchReason::Reconcile)).await;
@@ -135,7 +143,10 @@ async fn uses_per_directory_watchers_on_linux() {
     });
     manager.start();
     wait_for(|| backend.is_watched(&nested)).await;
-    assert!(!backend.used_recursive(), "recursive watcher must not be attempted on linux");
+    assert!(
+        !backend.used_recursive(),
+        "recursive watcher must not be attempted on linux"
+    );
     backend.emit(&nested, "a.ts", FileEventKind::Changed);
     wait_for(|| batches.lock().unwrap().len() == 1).await;
     assert_eq!(
@@ -292,7 +303,11 @@ async fn compacts_an_exact_event_storm_into_one_directory_scan() {
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     for index in 0..4 {
-        std::fs::write(root.join(format!("{index}.ts")), format!("export const value{index} = {index};\n")).unwrap();
+        std::fs::write(
+            root.join(format!("{index}.ts")),
+            format!("export const value{index} = {index};\n"),
+        )
+        .unwrap();
     }
     let backend = ManualBackend::new();
     let (batches, sink) = collect_sink();
@@ -309,7 +324,10 @@ async fn compacts_an_exact_event_storm_into_one_directory_scan() {
     wait_for(|| batches.lock().unwrap().len() == 1).await;
     let snapshot = batches.lock().unwrap()[0].0.clone();
     assert!(snapshot.touched_files.is_empty(), "{snapshot:?}");
-    assert_eq!(snapshot.rescan_directories, vec![root.to_string_lossy().into_owned()]);
+    assert_eq!(
+        snapshot.rescan_directories,
+        vec![root.to_string_lossy().into_owned()]
+    );
     assert!(snapshot.deleted_prefixes.is_empty(), "{snapshot:?}");
     assert!(!snapshot.force_full_reconcile);
     assert_eq!(batches.lock().unwrap().len(), 1);
@@ -344,7 +362,8 @@ async fn resume_drift_requests_reconciliation_and_pending_spans_debounce() {
     std::fs::write(root.join("a.ts"), "export const a = 1;\n").unwrap();
     let backend = ManualBackend::new();
     let pending: Arc<std::sync::Mutex<Vec<bool>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let reasons: Arc<std::sync::Mutex<Vec<WatchReason>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reasons: Arc<std::sync::Mutex<Vec<WatchReason>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
     let pending_sink = Arc::clone(&pending);
     let reasons_sink = Arc::clone(&reasons);
     let manager = WatchManager::new(WatchOptions {
@@ -358,7 +377,11 @@ async fn resume_drift_requests_reconciliation_and_pending_spans_debounce() {
             reasons_sink.lock().unwrap().push(reason);
             Box::pin(async {}) as BoxFuture<()>
         }),
-        ..test_options(root.clone(), backend.clone(), Arc::new(|_, _| Box::pin(async {}) as BoxFuture<()>))
+        ..test_options(
+            root.clone(),
+            backend.clone(),
+            Arc::new(|_, _| Box::pin(async {}) as BoxFuture<()>),
+        )
     });
     manager.start();
     backend.emit(&root, "a.ts", FileEventKind::Changed);
@@ -378,7 +401,8 @@ async fn errors_trigger_reconciliation_and_replace_the_failed_watcher() {
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
     let backend = ManualBackend::new();
-    let reasons: Arc<std::sync::Mutex<Vec<WatchReason>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reasons: Arc<std::sync::Mutex<Vec<WatchReason>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
     let reasons_sink = Arc::clone(&reasons);
     let sink: Arc<dyn Fn(ChangeSetSnapshot, WatchReason) -> BoxFuture<()> + Send + Sync> =
         Arc::new(move |_, reason| {

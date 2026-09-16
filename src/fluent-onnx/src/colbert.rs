@@ -212,7 +212,9 @@ mod ort_colbert {
                     OrtError::Other("session handle does not hold an ort session".to_string())
                 })?;
             let tokenizer_path = config.tokenizer_path.as_ref().ok_or_else(|| {
-                OrtError::Other(format!("colbert retriever '{model_key}' missing tokenizer_path"))
+                OrtError::Other(format!(
+                    "colbert retriever '{model_key}' missing tokenizer_path"
+                ))
             })?;
             let tokenizer = LfmTokenizer::from_file(tokenizer_path, COLBERT_MAX_SEQ_LEN)?;
             let dims = config.dims.unwrap_or(DEFAULT_COLBERT_DIMS);
@@ -244,18 +246,23 @@ mod ort_colbert {
         fn run_encoding(&self, encoding: &LfmEncoding) -> Result<Vec<Vec<f32>>, OrtError> {
             let seq = encoding.len().max(1);
             let ids: Vec<i64> = encoding.ids.iter().map(|&i| i64::from(i)).collect();
-            let mask: Vec<i64> = encoding.attention_mask.iter().map(|&m| i64::from(m)).collect();
+            let mask: Vec<i64> = encoding
+                .attention_mask
+                .iter()
+                .map(|&m| i64::from(m))
+                .collect();
             let shape = [1usize, seq];
-            let input = ort::value::Tensor::from_array((shape, ids))
-                .map_err(|e| OrtError::SessionRun {
+            let input =
+                ort::value::Tensor::from_array((shape, ids)).map_err(|e| OrtError::SessionRun {
                     model: self.model_key.clone(),
                     detail: e.to_string(),
                 })?;
-            let mask_t = ort::value::Tensor::from_array((shape, mask))
-                .map_err(|e| OrtError::SessionRun {
+            let mask_t = ort::value::Tensor::from_array((shape, mask)).map_err(|e| {
+                OrtError::SessionRun {
                     model: self.model_key.clone(),
                     detail: e.to_string(),
-                })?;
+                }
+            })?;
             let mut guard = self
                 .session
                 .lock()
@@ -318,10 +325,7 @@ mod ort_colbert {
         /// Encode multiple documents, returning per-document per-token
         /// embeddings. Dynamic batch: pads to the longest document in the
         /// batch.
-        pub fn encode_docs(
-            &self,
-            texts: &[&str],
-        ) -> Result<Vec<Vec<Vec<f32>>>, OrtError> {
+        pub fn encode_docs(&self, texts: &[&str]) -> Result<Vec<Vec<Vec<f32>>>, OrtError> {
             if texts.is_empty() {
                 return Ok(Vec::new());
             }
@@ -336,7 +340,12 @@ mod ort_colbert {
                 })?;
 
             let batch = encodings.len();
-            let max_len = encodings.iter().map(LfmEncoding::len).max().unwrap_or(0).max(1);
+            let max_len = encodings
+                .iter()
+                .map(LfmEncoding::len)
+                .max()
+                .unwrap_or(0)
+                .max(1);
             let dims = self.dims as usize;
 
             // Build batched tensors.
@@ -352,16 +361,17 @@ mod ort_colbert {
             }
 
             let shape = [batch, max_len];
-            let input = ort::value::Tensor::from_array((shape, ids))
-                .map_err(|e| OrtError::SessionRun {
+            let input =
+                ort::value::Tensor::from_array((shape, ids)).map_err(|e| OrtError::SessionRun {
                     model: self.model_key.clone(),
                     detail: e.to_string(),
                 })?;
-            let mask_t = ort::value::Tensor::from_array((shape, mask))
-                .map_err(|e| OrtError::SessionRun {
+            let mask_t = ort::value::Tensor::from_array((shape, mask)).map_err(|e| {
+                OrtError::SessionRun {
                     model: self.model_key.clone(),
                     detail: e.to_string(),
-                })?;
+                }
+            })?;
             let mut guard = self
                 .session
                 .lock()
@@ -452,7 +462,10 @@ mod ort_colbert {
         if concepts.is_empty() {
             return Ok(EntitySimilarityIndex::empty(threshold));
         }
-        let labels: Vec<&str> = concepts.iter().map(|(_, _, label)| label.as_str()).collect();
+        let labels: Vec<&str> = concepts
+            .iter()
+            .map(|(_, _, label)| label.as_str())
+            .collect();
         let encoded = retriever.encode_docs(&labels)?;
         let entries = concept_encodings_from_docs(concepts, encoded);
         Ok(EntitySimilarityIndex::new(entries, threshold))
@@ -468,11 +481,13 @@ mod ort_colbert {
         concepts
             .iter()
             .zip(encoded)
-            .map(|((namespace, canonical, _), token_embeddings)| ConceptEncoding {
-                namespace: namespace.clone(),
-                canonical: canonical.clone(),
-                token_embeddings,
-            })
+            .map(
+                |((namespace, canonical, _), token_embeddings)| ConceptEncoding {
+                    namespace: namespace.clone(),
+                    canonical: canonical.clone(),
+                    token_embeddings,
+                },
+            )
             .collect()
     }
 }
@@ -568,7 +583,11 @@ impl EntitySimilarityIndex {
                 }
             })
             .collect();
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits
     }
 
@@ -644,7 +663,11 @@ mod factory_tests {
     fn concept_encodings_preserve_identity_order() {
         let concepts = vec![
             ("YagoEntity".into(), "yago:Paris".into(), "Paris".into()),
-            ("YagoClass".into(), "schema:Person".into(), "a person".into()),
+            (
+                "YagoClass".into(),
+                "schema:Person".into(),
+                "a person".into(),
+            ),
         ];
         let encoded = vec![vec![vec![1.0, 0.0]], vec![vec![0.0, 1.0], vec![1.0, 0.0]]];
         let entries = super::ort_colbert::concept_encodings_from_docs(&concepts, encoded);

@@ -209,12 +209,11 @@ mod tests {
     #[test]
     fn m9_default_memory_db_path_shape() {
         let path = default_memory_db_path();
+        assert_eq!(path.file_name().and_then(|n| n.to_str()), Some("memory.db"));
         assert_eq!(
-            path.file_name().and_then(|n| n.to_str()),
-            Some("memory.db")
-        );
-        assert_eq!(
-            path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
             Some(".guidance")
         );
     }

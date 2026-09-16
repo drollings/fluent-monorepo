@@ -26,7 +26,12 @@ fn base_target() -> RoutingTarget {
 
 #[test]
 fn apply_pending_snapshot_sets_request_fields() {
-    let rt = apply_pending_snapshot(&base_target(), "readfiles".into(), Some("scratch".into()), 2);
+    let rt = apply_pending_snapshot(
+        &base_target(),
+        "readfiles".into(),
+        Some("scratch".into()),
+        2,
+    );
     assert_eq!(rt.snapshot.as_deref(), Some("readfiles"));
     assert_eq!(rt.instance.as_deref(), Some("scratch"));
     assert_eq!(rt.id_slot, Some(2));
@@ -37,7 +42,11 @@ fn apply_pending_snapshot_preserves_existing_instance() {
     let mut t = base_target();
     t.instance = Some("ledger".into());
     let rt = apply_pending_snapshot(&t, "readfiles".into(), Some("scratch".into()), 0);
-    assert_eq!(rt.instance.as_deref(), Some("ledger"), "existing instance wins");
+    assert_eq!(
+        rt.instance.as_deref(),
+        Some("ledger"),
+        "existing instance wins"
+    );
     assert_eq!(rt.snapshot.as_deref(), Some("readfiles"));
 }
 
@@ -48,35 +57,34 @@ fn apply_pending_snapshot_preserves_existing_instance() {
 /// allocate-on-503 retry.
 #[tokio::test]
 async fn allocate_on_503_creates_instance_and_retries_once() {
+    use crate::config::InstanceProfile;
     use crate::instances::stub::StubServer;
     use crate::instances::{management_base_url, InstanceClient, InstanceManager, InstancePool};
-    use crate::config::InstanceProfile;
     use std::sync::Arc as StdArc;
     use std::sync::Mutex;
 
     let chat_calls = StdArc::new(Mutex::new(0usize));
     let chat_calls_c = chat_calls.clone();
-    let handler: StubHandler =
-        StdArc::new(move |method, path, _body| {
-            if method == "POST" && path.ends_with("/chat/completions") {
-                let mut n = chat_calls_c.lock().unwrap();
-                *n += 1;
-                if *n == 1 {
-                    // The fork's 503 group-miss payload.
-                    return (
+    let handler: StubHandler = StdArc::new(move |method, path, _body| {
+        if method == "POST" && path.ends_with("/chat/completions") {
+            let mut n = chat_calls_c.lock().unwrap();
+            *n += 1;
+            if *n == 1 {
+                // The fork's 503 group-miss payload.
+                return (
                         503,
                         r#"{"error":{"code":503,"message":"no free instance in group 'swarm'","type":"unavailable_error"}}"#
                             .into(),
                     );
-                }
-                return (
+            }
+            return (
                     200,
                     r#"{"id":"x","object":"chat.completion","model":"base:swarm","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
                         .into(),
                 );
-            }
-            (201, "{}".into())
-        });
+        }
+        (201, "{}".into())
+    });
     let stub = StubServer::start(handler);
 
     let endpoint = format!("{}/v1/chat/completions", stub.base_url());
@@ -86,11 +94,7 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
     target.stream = false; // buffered dispatch for simplicity
 
     // A manager whose client points at the same server's management API.
-    let client = InstanceClient::new(
-        reqwest::Client::new(),
-        management_base_url(&endpoint),
-        None,
-    );
+    let client = InstanceClient::new(reqwest::Client::new(), management_base_url(&endpoint), None);
     let profile = InstanceProfile {
         embedding: None,
         name: Some("swarm0".into()),
@@ -198,8 +202,7 @@ fn dispatch_audit_emits_without_router_stage() {
         "src/server/dispatch.rs",
         "src/test_stubs.rs",
     ] {
-        let content =
-            std::fs::read_to_string(manifest.join(rel)).expect("source readable");
+        let content = std::fs::read_to_string(manifest.join(rel)).expect("source readable");
         let count = content.matches("PipelineStage::Router").count();
         if count > 0 {
             hits.push((rel, count));
@@ -209,8 +212,8 @@ fn dispatch_audit_emits_without_router_stage() {
         hits.is_empty(),
         "fresh code must not reference PipelineStage::Router: {hits:?}"
     );
-    let types = std::fs::read_to_string(manifest.join("src/pipeline_types.rs"))
-        .expect("source readable");
+    let types =
+        std::fs::read_to_string(manifest.join("src/pipeline_types.rs")).expect("source readable");
     assert!(
         !types.contains("\n    Router,"),
         "the Router variant arm must be deleted"
@@ -256,8 +259,11 @@ async fn role_limiter_bounds_concurrent_admissions() {
     let peak = std::sync::Arc::new(AtomicUsize::new(0));
     let mut handles = Vec::new();
     for _ in 0..8 {
-        let (limiter, live, peak) =
-            (std::sync::Arc::clone(&limiter), std::sync::Arc::clone(&live), std::sync::Arc::clone(&peak));
+        let (limiter, live, peak) = (
+            std::sync::Arc::clone(&limiter),
+            std::sync::Arc::clone(&live),
+            std::sync::Arc::clone(&peak),
+        );
         handles.push(tokio::spawn(async move {
             limiter
                 .run(|| async {

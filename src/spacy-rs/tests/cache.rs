@@ -1,7 +1,7 @@
 use super::*;
+use crate::lang;
 use crate::review::CorrectionField;
 use crate::vocab::Vocab;
-use crate::lang;
 
 fn doc_from(text: &str) -> Doc {
     static SHARED: std::sync::LazyLock<crate::tokenizer::Tokenizer> =

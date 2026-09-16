@@ -13,7 +13,11 @@ fn plural_nouns_reduce() {
     assert_eq!(l.lemmatize("cats", Upos::Noun, 0)[0], "cat");
     assert_eq!(l.lemmatize("boxes", Upos::Noun, 0)[0], "box");
     assert_eq!(l.lemmatize("wives", Upos::Noun, 0)[0], "wife");
-    assert_eq!(l.lemmatize("children", Upos::Noun, 0)[0], "child", "exception");
+    assert_eq!(
+        l.lemmatize("children", Upos::Noun, 0)[0],
+        "child",
+        "exception"
+    );
 }
 
 #[test]

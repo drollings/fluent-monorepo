@@ -82,7 +82,14 @@ struct Accum {
 }
 
 impl Accum {
-    fn add(&mut self, pred_pos: &str, pred_dep: &str, pred_head: i32, pred_lemma: &str, gold: &RefRec) {
+    fn add(
+        &mut self,
+        pred_pos: &str,
+        pred_dep: &str,
+        pred_head: i32,
+        pred_lemma: &str,
+        gold: &RefRec,
+    ) {
         self.tokens += 1;
         if pred_pos == gold.pos {
             self.upos += 1;
@@ -116,7 +123,8 @@ impl Accum {
 /// inflating the lemma metric — an incomplete rubric is a dishonest meter.
 #[test]
 fn refs_are_fully_annotated() {
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.refs.json")).expect("refs readable");
+    let raw =
+        std::fs::read_to_string(data_dir().join("parse_bench.refs.json")).expect("refs readable");
     let refs: Refs = serde_json::from_str(&raw).expect("refs parse");
     let mut gaps: Vec<String> = Vec::new();
     for (id, recs) in &refs.refs {
@@ -139,7 +147,8 @@ fn refs_are_fully_annotated() {
 
 #[test]
 fn dataset_is_stratified() {
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.json")).expect("dataset readable");
+    let raw =
+        std::fs::read_to_string(data_dir().join("parse_bench.json")).expect("dataset readable");
     let dataset: Dataset = serde_json::from_str(&raw).expect("dataset parses");
     assert!(!dataset.items.is_empty(), "dataset is non-empty");
     let mut per_category: BTreeMap<&str, usize> = BTreeMap::new();
@@ -147,18 +156,28 @@ fn dataset_is_stratified() {
         *per_category.entry(item.category.as_str()).or_default() += 1;
     }
     for (category, count) in &per_category {
-        assert!(*count >= 3, "category '{category}' needs ≥3 items, has {count}");
+        assert!(
+            *count >= 3,
+            "category '{category}' needs ≥3 items, has {count}"
+        );
     }
-    eprintln!("bench dataset: {} items across {} categories", dataset.items.len(), per_category.len());
+    eprintln!(
+        "bench dataset: {} items across {} categories",
+        dataset.items.len(),
+        per_category.len()
+    );
 }
 
 #[test]
 fn parse_bench_accuracy_floors() {
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.json")).expect("dataset readable");
+    let raw =
+        std::fs::read_to_string(data_dir().join("parse_bench.json")).expect("dataset readable");
     let dataset: Dataset = serde_json::from_str(&raw).expect("dataset parses");
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.refs.json")).expect("refs readable");
+    let raw =
+        std::fs::read_to_string(data_dir().join("parse_bench.refs.json")).expect("refs readable");
     let refs: Refs = serde_json::from_str(&raw).expect("refs parse");
-    let raw = std::fs::read_to_string(data_dir().join("parse_bench.floors.json")).expect("floors readable");
+    let raw = std::fs::read_to_string(data_dir().join("parse_bench.floors.json"))
+        .expect("floors readable");
     let floors: Floors = serde_json::from_str(&raw).expect("floors parse");
 
     let pipe = spacy_rs::NlpPipeline::en_default().expect("en pipeline");
@@ -185,12 +204,7 @@ fn parse_bench_accuracy_floors() {
         };
         let item_start = std::time::Instant::now();
         let (doc, result) = pipe
-            .process_sync_with_confidence(
-                &item.text,
-                None,
-                None,
-                spacy_rs::RefinePolicy::default(),
-            )
+            .process_sync_with_confidence(&item.text, None, None, spacy_rs::RefinePolicy::default())
             .expect("deterministic parse");
         let item_elapsed = item_start.elapsed();
         let _ = doc;
@@ -225,15 +239,30 @@ fn parse_bench_accuracy_floors() {
     );
     eprintln!(
         "overall : upos={:.3} uas={:.3} las={:.3} lemma={:.3} ({} tokens) [{}/{}/{}/{}]",
-        overall_scores.upos, overall_scores.uas, overall_scores.las, overall_scores.lemma,
-        overall.tokens, overall.upos, overall.uas, overall.las, overall.lemma
+        overall_scores.upos,
+        overall_scores.uas,
+        overall_scores.las,
+        overall_scores.lemma,
+        overall.tokens,
+        overall.upos,
+        overall.uas,
+        overall.las,
+        overall.lemma
     );
     for (category, accum) in &per_category {
         let s = accum.scores();
         eprintln!(
             "  {:<14} upos={:.3} uas={:.3} las={:.3} lemma={:.3} ({} tokens) [{}/{}/{}/{}]",
-            category, s.upos, s.uas, s.las, s.lemma, accum.tokens,
-            accum.upos, accum.uas, accum.las, accum.lemma
+            category,
+            s.upos,
+            s.uas,
+            s.las,
+            s.lemma,
+            accum.tokens,
+            accum.upos,
+            accum.uas,
+            accum.las,
+            accum.lemma
         );
     }
     {
@@ -264,7 +293,10 @@ fn parse_bench_accuracy_floors() {
         // bury the scoreboard under 50+ lines.
         let mut by_category: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (category, u) in &unscored {
-            by_category.entry(category.clone()).or_default().push(u.clone());
+            by_category
+                .entry(category.clone())
+                .or_default()
+                .push(u.clone());
         }
         eprintln!("  unscored: {} (generate via live ref-gen)", unscored.len());
         for (category, ids) in &by_category {
@@ -289,8 +321,28 @@ fn parse_bench_accuracy_floors() {
 
 fn assert_no_regress(name: &str, actual: &MetricFloor, floor: &MetricFloor) {
     const EPS: f64 = 1e-9;
-    assert!(actual.upos + EPS >= floor.upos, "{name}: upos regressed {:.3} < {:.3}", actual.upos, floor.upos);
-    assert!(actual.uas + EPS >= floor.uas, "{name}: uas regressed {:.3} < {:.3}", actual.uas, floor.uas);
-    assert!(actual.las + EPS >= floor.las, "{name}: las regressed {:.3} < {:.3}", actual.las, floor.las);
-    assert!(actual.lemma + EPS >= floor.lemma, "{name}: lemma regressed {:.3} < {:.3}", actual.lemma, floor.lemma);
+    assert!(
+        actual.upos + EPS >= floor.upos,
+        "{name}: upos regressed {:.3} < {:.3}",
+        actual.upos,
+        floor.upos
+    );
+    assert!(
+        actual.uas + EPS >= floor.uas,
+        "{name}: uas regressed {:.3} < {:.3}",
+        actual.uas,
+        floor.uas
+    );
+    assert!(
+        actual.las + EPS >= floor.las,
+        "{name}: las regressed {:.3} < {:.3}",
+        actual.las,
+        floor.las
+    );
+    assert!(
+        actual.lemma + EPS >= floor.lemma,
+        "{name}: lemma regressed {:.3} < {:.3}",
+        actual.lemma,
+        floor.lemma
+    );
 }

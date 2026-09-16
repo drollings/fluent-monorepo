@@ -36,12 +36,10 @@ fn is_forbidden_use(line: &str) -> Option<String> {
     if t.starts_with("//") || t.starts_with("///") || t.starts_with("//!") || t.starts_with('*') {
         return None;
     }
-    let rest = t.strip_prefix("pub use ").or_else(|| t.strip_prefix("use "))?;
-    let head = rest
-        .split([':', ';', ' ', '{'])
-        .next()
-        .unwrap_or("")
-        .trim();
+    let rest = t
+        .strip_prefix("pub use ")
+        .or_else(|| t.strip_prefix("use "))?;
+    let head = rest.split([':', ';', ' ', '{']).next().unwrap_or("").trim();
     // `fluent_llm` self-mentions in doc comments are filtered above; a real
     // `use fluent_llm::…` inside the crate itself would be a cycle worth flagging.
     let all: Vec<&str> = FORBIDDEN.iter().copied().chain(["fluent_llm"]).collect();
@@ -73,7 +71,12 @@ fn check_tree(root: &Path) -> Vec<String> {
         let content = std::fs::read_to_string(&f).expect("read rs file");
         for (i, line) in content.lines().enumerate() {
             if let Some(head) = is_forbidden_use(line) {
-                hits.push(format!("{}:{}: forbidden `use {}`", f.display(), i + 1, head));
+                hits.push(format!(
+                    "{}:{}: forbidden `use {}`",
+                    f.display(),
+                    i + 1,
+                    head
+                ));
             }
         }
     }
@@ -101,9 +104,7 @@ fn protocol_types_still_resolve_via_fluent_llm() {
     // Ownership lock (M9, completed by M11): protocol types are owned by
     // fluent_llm::protocol (M11 deleted the fluent-concurrency::llm_queue
     // shims). This test pins the canonical path.
-    fn assert_same_type(
-        c: fluent_llm::protocol::LlmConfig,
-    ) -> fluent_llm::LlmConfig {
+    fn assert_same_type(c: fluent_llm::protocol::LlmConfig) -> fluent_llm::LlmConfig {
         c
     }
     let _ = assert_same_type;

@@ -33,8 +33,7 @@ impl fluent_llm::client::ChatBackend for RecordingBackend {
         messages: &[fluent_llm::ChatMessage],
         extras: &serde_json::Value,
     ) -> Result<String, fluent_llm::LlmError> {
-        *self.seen.lock().expect("seen lock") =
-            Some((messages.to_vec(), extras.clone()));
+        *self.seen.lock().expect("seen lock") = Some((messages.to_vec(), extras.clone()));
         Ok(self.response.clone())
     }
 }
@@ -45,7 +44,12 @@ fn sync_twin_forwards_prompt_contract_and_response() {
     let fetch = chat_backend_to_fetch_sync(backend.clone());
     let out = fetch(vec!["hello".to_string()]).expect("stub responds");
     assert_eq!(out, "[1,2]");
-    let (messages, extras) = backend.seen.lock().expect("seen lock").clone().expect("called");
+    let (messages, extras) = backend
+        .seen
+        .lock()
+        .expect("seen lock")
+        .clone()
+        .expect("called");
     assert_eq!(messages.len(), 2);
     assert_eq!(
         messages[0].content,
@@ -78,8 +82,7 @@ async fn twins_agree_on_response_and_error() {
         "ok-array".to_string(),
         "ok-array".to_string(),
     ]));
-    let sync_out =
-        chat_backend_to_fetch_sync(Arc::clone(&backend))(vec!["t".to_string()]);
+    let sync_out = chat_backend_to_fetch_sync(Arc::clone(&backend))(vec!["t".to_string()]);
     let async_out = chat_backend_to_fetch(Arc::clone(&backend))(vec!["t".to_string()]).await;
     assert_eq!(
         sync_out.expect("sync responds"),
@@ -88,8 +91,7 @@ async fn twins_agree_on_response_and_error() {
 
     let failing: Arc<dyn fluent_llm::client::ChatBackend> =
         Arc::new(StubChatBackend::new(Vec::new()));
-    let sync_err =
-        chat_backend_to_fetch_sync(Arc::clone(&failing))(vec!["t".to_string()]);
+    let sync_err = chat_backend_to_fetch_sync(Arc::clone(&failing))(vec!["t".to_string()]);
     let async_err = chat_backend_to_fetch(Arc::clone(&failing))(vec!["t".to_string()]).await;
     assert!(sync_err.is_err() && async_err.is_err());
 }

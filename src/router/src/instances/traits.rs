@@ -249,9 +249,7 @@ impl LlmWeights for LlamaWeights {
             .iter()
             .find(|p| p.name.as_deref() == Some(name))
             .ok_or_else(|| {
-                LlmRuntimeError::NotLoaded(format!(
-                    "no configured profile for instance '{name}'"
-                ))
+                LlmRuntimeError::NotLoaded(format!("no configured profile for instance '{name}'"))
             })?;
         Ok(Arc::new(LlamaContext::from_profile(
             Arc::clone(&self.manager),
@@ -792,7 +790,11 @@ impl LlmFleet {
         if let Some(onnx) = &onnx {
             weights.extend(crate::ort::onnx_weights_impls(onnx, config));
         }
-        Self { pool, weights, onnx }
+        Self {
+            pool,
+            weights,
+            onnx,
+        }
     }
 
     /// Whether the fleet is empty (no llama pool, no onnx weights).
@@ -848,8 +850,8 @@ impl LlmFleet {
             total.model = total.model.saturating_add(model_bytes);
             total.total = total.total.saturating_add(model_bytes);
             for row in &rows {
-                let mut entry = serde_json::to_value(row_to_info(w.model_key(), row))
-                    .unwrap_or_default();
+                let mut entry =
+                    serde_json::to_value(row_to_info(w.model_key(), row)).unwrap_or_default();
                 if let Value::Object(ref mut obj) = entry {
                     obj.insert("runtime".into(), Value::String("onnx".into()));
                 }
@@ -956,7 +958,12 @@ impl LlmFleet {
         let is_onnx = self.weights.iter().any(|w| {
             w.model_key() == &**parsed.model() && w.eviction_policy() == EvictionPolicy::LruLargest
         });
-        is_onnx.then(|| ((**parsed.model()).to_string(), (**parsed.name()).to_string()))
+        is_onnx.then(|| {
+            (
+                (**parsed.model()).to_string(),
+                (**parsed.name()).to_string(),
+            )
+        })
     }
 }
 /// The llama inference backend: a thin [`InferenceBackend`] adapter over the
@@ -1068,11 +1075,7 @@ impl InferenceBackend for LlamaBackend {
             self.sidecar.clone(),
         )))
     }
-    fn chat_backend(
-        &self,
-        key: &str,
-        instance: Option<&str>,
-    ) -> Option<Arc<dyn ChatBackend>> {
+    fn chat_backend(&self, key: &str, instance: Option<&str>) -> Option<Arc<dyn ChatBackend>> {
         let (base, _) = crate::config::split_model_key(key);
         if self.onnx_keys.contains(base) {
             return None;
@@ -1082,12 +1085,7 @@ impl InferenceBackend for LlamaBackend {
         match instance {
             // Entries arrive boot-materialized (effective pools composed),
             // so the shared constructors resolve through one code path.
-            Some(name) => llama_chat_backend_for_instance(
-                &self.models,
-                &self.roles,
-                key,
-                name,
-            ),
+            Some(name) => llama_chat_backend_for_instance(&self.models, &self.roles, key, name),
             None => llama_chat_backend_for_key(&self.models, &self.roles, key),
         }
     }
