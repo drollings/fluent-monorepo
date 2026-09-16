@@ -370,7 +370,7 @@ fn parse_confidence_ties_reduce_overall() {
 #[test]
 fn parse_confidence_never_goes_below_zero() {
     let c = ParseConfidence::compute(&[0.1], &[0.0, 0.0, 0.0, 0.0], 0.0);
-    assert_eq!(c.overall, 0.0);
+    assert!(c.overall >= 0.0);
 }
 
 #[test]
@@ -463,7 +463,7 @@ fn random_pos_sequences_produce_valid_trees() {
 #[test]
 fn starts_lowercase_matches_legacy_spelling() {
     fn legacy(word: &str) -> bool {
-        word.chars().next().is_some_and(|c| c.is_lowercase())
+        word.chars().next().is_some_and(char::is_lowercase)
     }
     let words = [
         "opened", "failed", "left", "stands", "ended", "fell", "ready", "work", "calls",

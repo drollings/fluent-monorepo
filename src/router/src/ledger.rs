@@ -7,7 +7,7 @@
 //! session/role index keys and a durable `content_json` column. The facade
 //! keeps the server-facing surface (`record_request`, `record_result`,
 //! `record_content_node`, `get_session_nodes`, `get_session_entries`,
-//! `ensure_lod`, `compact_session`, `collapse_node`) signature-identical and
+//! `ensure_lod`, `compact_session`) signature-identical and
 //! delegates to the store.
 //!
 //!  The facade also owns the **write-path guard**: every write delegate
@@ -210,17 +210,6 @@ impl ContentNodeLedger {
         self.store.record_content_node(&node)
     }
 
-    /// Collapse a node: replace LOD0's content with `summary` and mark it
-    /// `active_lod = lod`. Used by compaction.
-    pub fn collapse_node(
-        &self,
-        node_id: NodeId,
-        summary: &str,
-        lod: u8,
-    ) -> Result<(), LedgerError> {
-        self.store.collapse_node(node_id, summary, lod)
-    }
-
     /// Derive (or return the cached) LOD level for a node, **from LOD0 only**
     /// via the `Summarizer` — never chained from a lower tier.
     ///
@@ -310,9 +299,9 @@ impl ContentNodeLedger {
     }
 
     /// Render a session through a `ParallelLedger` at `default_lod`. The
-    /// view's single `render()` exit. A compacted (collapsed) node renders its
-    /// collapsed LOD0 — compaction mutates LOD0, so the view's fidelity policy
-    /// never "defeats" compaction.
+    /// view's single `render()` exit. Compaction is a view-fidelity
+    /// (`active_lod`) operation: LOD0 stays authoritative and immutable, so
+    /// a LOD0 view always shows the original full text.
     pub fn render_session(&self, session_id: &str, default_lod: Lod) -> String {
         let view = ParallelLedger::for_session(Arc::clone(&self.store), session_id)
             .with_default_lod(default_lod);

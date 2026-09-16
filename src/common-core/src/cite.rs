@@ -85,11 +85,8 @@ fn extract_citation_at_colon(line: &str, colon_pos: usize, line_abs_start: usize
 /// If `offset` lies inside a citation's `span` (as returned by `extract_citations`),
 /// returns that citation; otherwise `None`.
 pub fn extract_citation_at(text: &str, offset: usize) -> Option<Citation> {
-    for citation in extract_citations(text) {
-        if offset >= citation.span.0 && offset < citation.span.1 {
-            return Some(citation);
-        }
-    }
-    None
+    extract_citations(text)
+        .into_iter()
+        .find(|citation| offset >= citation.span.0 && offset < citation.span.1)
 }
 

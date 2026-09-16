@@ -5,6 +5,8 @@ use internment::ArcIntern;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use crate::sync::{lock_read, lock_write};
+
 pub struct CapabilityRegistry {
     names: RwLock<HashMap<ArcIntern<str>, usize>>,
     indices: RwLock<Vec<ArcIntern<str>>>,
@@ -20,29 +22,28 @@ impl CapabilityRegistry {
 
     pub fn intern(&self, name: &str) -> usize {
         let interned: ArcIntern<str> = ArcIntern::from(name);
-        {
-            let names = self.names.read().unwrap();
-            if let Some(&idx) = names.get(&interned) {
-                return idx;
-            }
+        if let Some(&idx) = lock_read(&self.names).get(&interned) {
+            return idx;
         }
-        let mut names = self.names.write().unwrap();
+        let mut names = lock_write(&self.names);
+        // Re-check under the write lock: another thread may have interned
+        // the same name between the read and the write.
         if let Some(&idx) = names.get(&interned) {
             return idx;
         }
         let idx = names.len();
         names.insert(interned.clone(), idx);
-        self.indices.write().unwrap().push(interned);
+        lock_write(&self.indices).push(interned);
         idx
     }
 
     pub fn get_index(&self, name: &str) -> Option<usize> {
         let interned: ArcIntern<str> = ArcIntern::from(name);
-        self.names.read().unwrap().get(&interned).copied()
+        lock_read(&self.names).get(&interned).copied()
     }
 
     pub fn get_name(&self, idx: usize) -> Option<ArcIntern<str>> {
-        self.indices.read().unwrap().get(idx).cloned()
+        lock_read(&self.indices).get(idx).cloned()
     }
 
     pub fn intern_list(&self, names: &[&str]) {
@@ -64,14 +65,24 @@ impl CapabilityRegistry {
     }
 
     pub fn bitvec_to_names(&self, bits: &BitVec) -> Vec<ArcIntern<str>> {
-        let indices = self.indices.read().unwrap();
+        let indices = lock_read(&self.indices);
         bits.iter_ones()
             .filter_map(|i| indices.get(i).cloned())
             .collect()
     }
 
     pub fn count(&self) -> usize {
-        self.names.read().unwrap().len()
+        lock_read(&self.names).len()
+    }
+
+    /// Test-only probe: take the `names` write lock and panic while holding
+    /// it, deliberately poisoning the lock so the poison-safe
+    /// [`crate::sync`] recovery can be exercised. Hidden from the public
+    /// API surface.
+    #[doc(hidden)]
+    pub fn poison_names_for_test(&self) {
+        let _guard = self.names.write().unwrap();
+        panic!("intentional interner lock poison (test)");
     }
 }
 

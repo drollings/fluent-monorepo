@@ -20,6 +20,8 @@ use std::sync::Arc;
 
 use fluent_wvr::prelude::*;
 
+use crate::pipeline_types::StageDecisionProducer;
+
 /// Maximum number of attempts key.  Injected into the `WorkContext` typed
 /// store (`ctx.set::<i64>(METADATA_RETRY_ATTEMPT, attempt)`) so the inner
 /// stage can include it in tracing/logging. The attempt number is a concrete
@@ -35,8 +37,10 @@ pub const METADATA_SYSTEM_PROMPT: &str = "classifier_system_prompt";
 
 pub struct RetryClassifier {
     name: ArcIntern<str>,
-    /// The wrapped classifier stage.
-    inner: Arc<dyn Component>,
+    /// Uniform handle for the `WorkUnit::execute` path.
+    inner_component: Arc<dyn Component>,
+    /// Second handle to the same allocation for the typed producer path.
+    inner_producer: Arc<dyn StageDecisionProducer>,
     /// Maximum number of retry attempts (total attempts = 1 + max_retries).
     max_retries: usize,
     /// Escalating system prompts for each retry attempt.
@@ -49,10 +53,21 @@ pub struct RetryClassifier {
 }
 
 impl RetryClassifier {
-    pub fn new(inner: Arc<dyn Component>, max_retries: usize, retry_prompts: Vec<String>) -> Self {
+    /// Both handles must point at the same allocation: clone one
+    /// `Arc<ClassifierStage>` into each trait object at the call site.
+    pub fn new(
+        inner_component: Arc<dyn Component>,
+        inner_producer: Arc<dyn StageDecisionProducer>,
+        max_retries: usize,
+        retry_prompts: Vec<String>,
+    ) -> Self {
         Self {
-            name: ArcIntern::from(format!("pipeline.stage2.retry({})", inner.name())),
-            inner,
+            name: ArcIntern::from(format!(
+                "pipeline.stage2.retry({})",
+                inner_component.name()
+            )),
+            inner_component,
+            inner_producer,
             max_retries,
             retry_prompts,
             depends: vec![],
@@ -155,20 +170,8 @@ impl RetryClassifier {
         ),
         WorkError,
     > {
-        let Some(classifier) = self.inner.as_any().downcast_ref::<crate::stages::classifier::ClassifierStage>()
-        else {
-            // Unknown inner: the serialization boundary carries no target.
-            let decision: crate::pipeline_types::StageDecision =
-                self.inner.execute(ctx).and_then(|output| {
-                    output
-                        .data_take()
-                        .map_err(|e| WorkError::Execution(e.to_string()))
-                })?;
-            return Ok((decision, None));
-        };
-
         // Attempt 0 (initial, no retry prompt).
-        let (decision, target) = classifier.evaluate_with_target(ctx, prior)?;
+        let (decision, target) = self.inner_producer.evaluate_with_target(ctx, prior)?;
         if !Self::is_fallback_decision(&decision) {
             return Ok((decision, target));
         }
@@ -183,8 +186,9 @@ impl RetryClassifier {
                 "classifier fallback detected, retrying",
             );
             let retry_ctx = self.build_retry_context(ctx, retry_index, &last_error);
-            let (retry_decision, retry_target) =
-                classifier.evaluate_with_target(&retry_ctx, prior)?;
+            let (retry_decision, retry_target) = self
+                .inner_producer
+                .evaluate_with_target(&retry_ctx, prior)?;
             if !Self::is_fallback_decision(&retry_decision) {
                 return Ok((retry_decision, retry_target));
             }
@@ -200,7 +204,7 @@ impl RetryClassifier {
 
         // Re-evaluate on the original context for the final attempt so the
         // classifier's own fallback logic handles the response.
-        classifier.evaluate_with_target(ctx, prior)
+        self.inner_producer.evaluate_with_target(ctx, prior)
     }
 }
 
@@ -219,7 +223,7 @@ impl WorkUnit for RetryClassifier {
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         // Attempt 0 (initial, no retry prompt)
-        let output = self.inner.execute(ctx)?;
+        let output = self.inner_component.execute(ctx)?;
 
         if !Self::is_fallback(&output) {
             return Ok(output);
@@ -237,7 +241,7 @@ impl WorkUnit for RetryClassifier {
             );
 
             let retry_ctx = self.build_retry_context(ctx, retry_index, &last_error);
-            let retry_output = self.inner.execute(&retry_ctx)?;
+            let retry_output = self.inner_component.execute(&retry_ctx)?;
 
             if !Self::is_fallback(&retry_output) {
                 return Ok(retry_output);
@@ -255,7 +259,7 @@ impl WorkUnit for RetryClassifier {
 
         // Re-execute on the original context for the final attempt so the
         // ClassifierStage's own fallback logic handles the response.
-        self.inner.execute(ctx)
+        self.inner_component.execute(ctx)
     }
 }
 

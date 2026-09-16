@@ -22,8 +22,7 @@ use std::sync::Arc;
 use fluent_concept::{PlausibilityTriple, ScoredLemma};
 use crate::doc::{dep_in, sentence_root, sentence_spans, Doc};
 use crate::interlingua::InterlinguaResolver;
-
-/// The knowledge-half scoring seam (M5): given the scorable triples the
+use crate::labels::{DIRECT_OBJECT_DEPS, SUBJECT_DEPS};/// The knowledge-half scoring seam (M5): given the scorable triples the
 /// text half derived, return the taxonomy plausibility, or `None` when the
 /// taxonomy is not ready. The owner wires its kernel at the construction
 /// site (same pattern as the router injecting `LlmFetch`); unwired, the
@@ -47,11 +46,9 @@ pub struct Triple {
     pub sentence_span: (usize, usize),
 }
 
-/// Dep labels naming the subject/object roles (same closed vocabulary as the
-/// router's `routing.rs` and the frame extractor).
-const SUBJECT_DEPS: &[&str] = &["nsubj", "nsubjpass", "csubj", "csubjpass"];
-const OBJECT_DEPS: &[&str] = &["dobj"];
-
+/// Dep labels naming the subject/object roles — the canonical sets from
+/// `labels.rs` (same closed vocabulary as the router's `routing.rs` and the
+/// frame extractor).
 /// Extract triples deterministically from an **attached** doc (deps/heads set).
 /// One triple per sentence — the predicate is always the root, arguments are the
 /// first matching child per role (matching `routing.rs` single-slot extraction).
@@ -73,7 +70,7 @@ pub fn extract_triples(doc: &Doc) -> Vec<Triple> {
             if subject.is_none() && dep_in(doc.token(child), SUBJECT_DEPS) {
                 subject = Some(child);
             }
-            if object.is_none() && dep_in(doc.token(child), OBJECT_DEPS) {
+            if object.is_none() && dep_in(doc.token(child), DIRECT_OBJECT_DEPS) {
                 object = Some(child);
             }
             if subject.is_some() && object.is_some() {

@@ -73,6 +73,86 @@ pub fn pii_patterns() -> &'static [PiiPattern] {
     PATTERNS
 }
 
+/// One `anonymize` rewrite: a compiled static plus its stable `[TYPE]`
+/// placeholder.
+pub struct AnonymizeAction {
+    pub name: &'static str,
+    pub regex: &'static LazyLock<Regex>,
+    pub placeholder: &'static str,
+}
+
+/// The `anonymize` action table (M12): all 12 compiled statics with their
+/// placeholders, in the historical application order. Derived beside the
+/// statics so the mapping can never drift from them — `anonymize` consumes
+/// this table instead of an inline chain, making `pii_patterns.rs` the
+/// single pattern home both consumers read (the request-path table above,
+/// the rewrite table here).
+pub fn anonymize_actions() -> &'static [AnonymizeAction] {
+    static ACTIONS: &[AnonymizeAction] = &[
+        AnonymizeAction {
+            name: "email",
+            regex: &EMAIL_RE,
+            placeholder: "[EMAIL]",
+        },
+        AnonymizeAction {
+            name: "credit_card",
+            regex: &CREDIT_CARD_RE,
+            placeholder: "[CREDIT_CARD]",
+        },
+        AnonymizeAction {
+            name: "ssn_us",
+            regex: &SSN_US_RE,
+            placeholder: "[SSN]",
+        },
+        AnonymizeAction {
+            name: "nino_uk",
+            regex: &NINO_UK_RE,
+            placeholder: "[NINO]",
+        },
+        AnonymizeAction {
+            name: "sin_ca",
+            regex: &SIN_CA_RE,
+            placeholder: "[SIN]",
+        },
+        AnonymizeAction {
+            name: "bearer",
+            regex: &BEARER_RE,
+            placeholder: "[BEARER_TOKEN]",
+        },
+        AnonymizeAction {
+            name: "aws_key",
+            regex: &AWS_KEY_RE,
+            placeholder: "[AWS_KEY]",
+        },
+        AnonymizeAction {
+            name: "generic_api_key",
+            regex: &GENERIC_API_KEY_RE,
+            placeholder: "[API_KEY]",
+        },
+        AnonymizeAction {
+            name: "ipv6",
+            regex: &IPV6_RE,
+            placeholder: "[IPv6]",
+        },
+        AnonymizeAction {
+            name: "ipv4",
+            regex: &IPV4_RE,
+            placeholder: "[IP_ADDRESS]",
+        },
+        AnonymizeAction {
+            name: "phone_us",
+            regex: &PHONE_US_RE,
+            placeholder: "[PHONE]",
+        },
+        AnonymizeAction {
+            name: "api_key",
+            regex: &API_KEY_RE,
+            placeholder: "[REDACTED]",
+        },
+    ];
+    ACTIONS
+}
+
 #[cfg(test)]
 #[path = "../tests/pii_patterns.rs"]
 mod tests;

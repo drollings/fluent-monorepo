@@ -85,6 +85,43 @@ fn build_body_stream_flag() {
     assert_eq!(body["stream"], true);
 }
 
+/// The exact serialized request body for representative params — the
+/// outbound-bytes contract (M12): any refactor of the body builder must
+/// produce byte-identical JSON. Pins key set, defaults, and the params merge
+/// (overlay wins, reserved keys protected) in one golden.
+#[test]
+fn build_body_serialized_golden() {
+    let messages = json!([
+        {"role": "system", "content": "You are terse."},
+        {"role": "user", "content": "hi"},
+    ]);
+    let body = build_openai_chat_body(
+        "gemma",
+        &messages,
+        Some(&json!({"temperature": 0.2, "num_ctx": 4096})),
+        false,
+        None,
+    );
+    assert_eq!(
+        body,
+        json!({
+            "model": "gemma",
+            "messages": [
+                {"role": "system", "content": "You are terse."},
+                {"role": "user", "content": "hi"},
+            ],
+            "stream": false,
+            "chat_template_kwargs": {"enable_thinking": false},
+            "temperature": 0.2,
+            "num_ctx": 4096,
+        })
+    );
+    // The wire bytes round-trip: serialize → deserialize → identical value.
+    let bytes = serde_json::to_vec(&body).expect("serialize");
+    let reparsed: serde_json::Value = serde_json::from_slice(&bytes).expect("reparse");
+    assert_eq!(reparsed, body);
+}
+
 // ── stream-delta parser ──────────────────────────────────────────────
 
 #[test]

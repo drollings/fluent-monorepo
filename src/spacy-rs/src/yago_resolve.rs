@@ -130,14 +130,12 @@ impl WorkUnit for YagoResolveStage {
     }
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         let state = ctx.get::<Arc<Mutex<PipelineState>>>(STATE_KEY).ok_or_else(|| WorkError::Dependency(STATE_KEY.into()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         let doc = state.doc.as_ref().ok_or_else(|| WorkError::Dependency("doc missing".into()))?;
         // Guarded M3 spike + M5 injection: when disabled (default) or when no
         // knowledge fetch is wired, leave plausibility as None (pre-M3
         // behavior). Never touches oracle_margins (E7).
-        let plausibility = if !self.enabled {
-            None
-        } else {
+        let plausibility = if self.enabled {
             let resolver = self.resolver_for(doc);
             let triples = crate::triple::extract_triples(doc);
             crate::triple::semantic_plausibility_via_fetch(
@@ -146,6 +144,8 @@ impl WorkUnit for YagoResolveStage {
                 &resolver,
                 self.fetch.as_ref(),
             )
+        } else {
+            None
         };
         state.semantic_plausibility = plausibility;
         if let Some(ann) = state.annotation.as_mut() {
@@ -165,8 +165,8 @@ impl Describable for YagoResolveStage {
     }
 }
 impl FieldAccess for YagoResolveStage {
-    fn set_field(&mut self, _n: &str, _v: &str) -> Result<(), FieldError> { Err(FieldError::NotFound(_n.into())) }
-    fn get_field(&self, _n: &str) -> Result<String, FieldError> { Err(FieldError::NotFound(_n.into())) }
+    fn set_field(&mut self, n: &str, _v: &str) -> Result<(), FieldError> { Err(FieldError::NotFound(n.into())) }
+    fn get_field(&self, n: &str) -> Result<String, FieldError> { Err(FieldError::NotFound(n.into())) }
     fn field_names(&self) -> &'static [&'static str] { &[] }
 }
 impl_component!(YagoResolveStage);

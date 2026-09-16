@@ -90,6 +90,20 @@ pub struct RouterServer {
     /// The arc_ready annotation-overlay worker (OVERLAYS §7). Owned by the
     /// server, drained on graceful shutdown so in-flight derivations complete.
     overlay_worker: Option<Arc<crate::ledger::overlay_worker::OverlayWorker>>,
+    /// The wave-batched frame-resolution worker. Owned by the server,
+    /// drained on graceful shutdown. `None` (the default) leaves frame
+    /// resolution idle — no model calls, no promotions.
+    frame_worker: Option<Arc<crate::ledger::frame_index::FrameResolutionWorker>>,
+    /// Runtime gate for the frame worker (one-command rollback). Open at
+    /// boot; closing it (via `POST /admin/frame/rollback`) drops new jobs
+    /// before any index read or model call without a restart.
+    frame_gate: crate::ledger::frame_index::FrameResolutionGate,
+    /// The workflow-learning recorder: solved question-mode runs are distilled
+    /// into the embedding-keyed library through it (best-effort, default-off).
+    /// Built by the composition root only when `ledger.replay` is enabled
+    /// with a resolvable embedding model; `None` leaves the ladder
+    /// byte-identical.
+    workflow_recorder: Option<Arc<crate::ledger::workflow_replay::WorkflowRecorder>>,
     /// The ort ONNX session registry: one session
     /// per onnx-declared model. The llama.cpp supervisor, sidecar, and
     /// `/instances` never touch onnx models; the registry backs
@@ -150,6 +164,9 @@ impl RouterServer {
             review_fetch: None,
             entity_link_worker: None,
             overlay_worker: None,
+            frame_worker: None,
+            frame_gate: crate::ledger::frame_index::FrameResolutionGate::open(),
+            workflow_recorder: None,
             onnx: None,
             fleet: None,
             onnx_llm_backend: None,
@@ -339,6 +356,39 @@ impl RouterServer {
         self
     }
 
+    /// Attach the wave-batched frame-resolution worker. Owned by the server
+    /// and drained on graceful shutdown. Opt-in — without it frame
+    /// resolution stays idle.
+    #[must_use]
+    pub fn with_frame_worker(
+        mut self,
+        worker: Arc<crate::ledger::frame_index::FrameResolutionWorker>,
+    ) -> Self {
+        self.frame_worker = Some(worker);
+        self
+    }
+
+    /// Attach a shared frame-resolution runtime gate. `Clone` bumps the
+    /// `Arc`, so the server and the operator observe the same state.
+    /// Defaults to a fresh open gate.
+    #[must_use]
+    pub fn with_frame_gate(mut self, gate: crate::ledger::frame_index::FrameResolutionGate) -> Self {
+        self.frame_gate = gate;
+        self
+    }
+
+    /// Attach the workflow-learning recorder (record solved question-mode
+    /// runs into the embedding-keyed library). Opt-in — without it the
+    /// escalation ladder runs exactly as before.
+    #[must_use]
+    pub fn with_workflow_recorder(
+        mut self,
+        recorder: Arc<crate::ledger::workflow_replay::WorkflowRecorder>,
+    ) -> Self {
+        self.workflow_recorder = Some(recorder);
+        self
+    }
+
     /// Attach the ort ONNX session registry. Backs `/models/unload` refusals
     /// for `Always`-resident onnx models and the onnx `EmbeddingProvider`
     /// branch of the chart embedder. `None` (the default) leaves dispatch
@@ -462,6 +512,8 @@ impl RouterServer {
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
             groups: Arc::new(self.groups.clone()),
+            workflow_recorder: self.workflow_recorder.clone(),
+            frame_gate: self.frame_gate.clone(),
         };
 
         // Reconcile configured pinned instances at boot (retrying until the
@@ -541,6 +593,12 @@ impl RouterServer {
             Arc::clone(worker).drain().await;
         }
 
+        // Graceful shutdown: drain the frame-resolution worker so in-flight
+        // waves complete before exit.
+        if let Some(worker) = &self.frame_worker {
+            Arc::clone(worker).drain().await;
+        }
+
         // Graceful shutdown: abort the background tasks and await their
         // completion so no process-lifetime task is left detached.
         background.abort_all();
@@ -604,6 +662,8 @@ impl WorkUnit for RouterServer {
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
             groups: Arc::new(self.groups.clone()),
+            workflow_recorder: self.workflow_recorder.clone(),
+            frame_gate: self.frame_gate.clone(),
         };
         let rt = ctx.rt.clone();
 

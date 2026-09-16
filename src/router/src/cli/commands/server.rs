@@ -394,6 +394,41 @@ pub async fn stop(
     )))
 }
 
+/// One-command frame rollback: close the running router's frame-resolution
+/// runtime gate so new jobs drop before any index read or model call without
+/// a restart. Loopback-only server side; idempotent.
+pub async fn frame_rollback(
+    ctx: &CliContext,
+    api_url: Option<&str>,
+    config_path: Option<&Path>,
+) -> CliResult {
+    let base = router_base_url(api_url, config_path);
+    ctx.log_debug("frame-rollback: closing the frame-resolution runtime gate");
+    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
+    let resp = client
+        .post(format!("{base}/admin/frame/rollback"))
+        .send()
+        .await
+        .map_err(|e| cli_err(format!("Cannot connect to {base}: {e}")))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(cli_err(format!(
+            "/admin/frame/rollback failed: HTTP {status}: {text}"
+        )));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| cli_err(format!("rollback reply unreadable: {e}")))?;
+    if body.get("status").and_then(Value::as_str) == Some("rolled_back") {
+        println!("Frame resolution rolled back: new jobs drop before any model call");
+    } else {
+        println!("Rollback reply: {body}");
+    }
+    Ok(())
+}
+
 /// One-command coordinator rollback (M14c): close the running router's
 /// coordinator runtime gate so dispatch returns to the pre-coordinator
 /// pipeline without a restart. Loopback-only server side; idempotent.

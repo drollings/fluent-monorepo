@@ -65,6 +65,10 @@ pub struct DispatchDeps {
     /// capped role hold a permit for the attempt; uncapped roles and
     /// role-less targets (direct/qualified) pass through unbounded.
     pub role_limiters: Arc<RoleLimiters>,
+    /// The workflow-learning recorder: solved question-mode runs are distilled
+    /// into the embedding-keyed library through it (best-effort, default-off).
+    /// `None` leaves the escalation ladder byte-identical.
+    pub workflow_recorder: Option<Arc<crate::ledger::workflow_replay::WorkflowRecorder>>,
 }
 
 /// Per-role admission gates for `roles.<role>.concurrency.max_parallel`:
@@ -724,9 +728,9 @@ pub async fn dispatch_real(
             model_name,
             context_cache: deps.context_cache.as_ref(),
             session: deps.session.as_ref(),
-            // No embedding source is threaded to dispatch yet: the loop
-            // stays inert until boot composes a recorder with one.
-            recorder: None,
+            // Composed at boot only when `ledger.replay` is enabled with a
+            // real embedding source; `None` keeps the loop inert.
+            recorder: deps.workflow_recorder.as_deref(),
         };
         if let Some(resp) = ladder.try_escalate(&esc_ctx).await {
             return Ok(DispatchOutcome {

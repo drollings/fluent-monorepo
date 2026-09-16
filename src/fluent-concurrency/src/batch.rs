@@ -240,8 +240,28 @@ impl SupervisedBatch {
         self.active_count += 1;
     }
 
-    fn cancel_dependents_of(&mut self, name: &ArcIntern<str>) {
-        // Delegate the dependency traversal to `DependencyGraph::dependents_of`,
+    /// Per-task bookkeeping still held: `(task_names, abort_handles)` entry
+    /// counts. Test-only: every terminal outcome removes its entries, so a
+    /// drained batch must read `(0, 0)`.
+    #[cfg(test)]
+    pub(crate) fn pending_bookkeeping(&self) -> (usize, usize) {
+        (self.task_names.len(), self.abort_handles.len())
+    }
+
+    /// Remove a finished task's entries from both bookkeeping maps and
+    /// return its name. Removing before dependent cancellation is safe:
+    /// aborting a completed task is a no-op, and the dependent lookup
+    /// already tolerates a missing handle.
+    fn take_finished_name(&mut self, id: tokio::task::Id) -> ArcIntern<str> {
+        let name = self
+            .task_names
+            .remove(&id)
+            .unwrap_or_else(|| ArcIntern::from("unknown"));
+        self.abort_handles.remove(&name);
+        name
+    }
+
+    fn cancel_dependents_of(&mut self, name: &ArcIntern<str>) {        // Delegate the dependency traversal to `DependencyGraph::dependents_of`,
         // which performs the DFS with cycle detection (ported verbatim from
         // the original hand-rolled implementation). The graph returns the
         // transitive set of nodes that depend on `name`; SupervisedBatch applies the
@@ -272,10 +292,7 @@ impl Future for SupervisedBatch {
             let mut join_set = std::pin::Pin::new(&mut this.join_set);
             match join_set.as_mut().poll_join_next_with_id(cx) {
                 Poll::Ready(Some(Ok((id, Ok(output))))) => {
-                    let name = this
-                        .task_names
-                        .remove(&id)
-                        .unwrap_or_else(|| ArcIntern::from("unknown"));
+                    let name = this.take_finished_name(id);
                     this.summary
                         .completed
                         .push(SupervisedBatchEvent::Completed { name, output });
@@ -283,10 +300,7 @@ impl Future for SupervisedBatch {
                     budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(Some(Ok((id, Err(WorkError::Timeout { .. }))))) => {
-                    let name = this
-                        .task_names
-                        .remove(&id)
-                        .unwrap_or_else(|| ArcIntern::from("unknown"));
+                    let name = this.take_finished_name(id);
                     this.cancel_dependents_of(&name);
                     this.summary.cancelled.push(SupervisedBatchEvent::Cancelled {
                         name,
@@ -296,10 +310,7 @@ impl Future for SupervisedBatch {
                     budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(Some(Ok((id, Err(e))))) => {
-                    let name = this
-                        .task_names
-                        .remove(&id)
-                        .unwrap_or_else(|| ArcIntern::from("unknown"));
+                    let name = this.take_finished_name(id);
                     this.cancel_dependents_of(&name);
                     this.summary
                         .failed
@@ -308,10 +319,7 @@ impl Future for SupervisedBatch {
                     budget = budget.saturating_sub(1);
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    let name = this
-                        .task_names
-                        .remove(&e.id())
-                        .unwrap_or_else(|| ArcIntern::from("unknown"));
+                    let name = this.take_finished_name(e.id());
                     if e.is_cancelled() {
                         let reason = if this.cancelled_tasks.remove(&name) {
                             CancelReason::DependencyFailed

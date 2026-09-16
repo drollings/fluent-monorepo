@@ -657,6 +657,69 @@ async fn test_batch_config_budget_one() {
     assert_eq!(summary.completed.len(), 1);
 }
 
+/// A batch of N units that all complete must release every per-task
+/// bookkeeping entry: no `task_names` or `abort_handles` residue may survive
+/// a finished task.
+#[tokio::test(start_paused = true)]
+async fn test_batch_completed_tasks_release_bookkeeping() {
+    let mut batch = make_batch();
+    for i in 0..8 {
+        batch
+            .register(Arc::new(StubComponent::ok(&format!("task_{i}"))))
+            .unwrap();
+    }
+    let summary: SupervisedBatchSummary = (&mut batch).await;
+    assert_eq!(summary.completed.len(), 8);
+    assert_eq!(
+        batch.pending_bookkeeping(),
+        (0, 0),
+        "completed tasks must leave both bookkeeping maps empty"
+    );
+}
+
+/// Every terminal outcome (completed / failed / panicked / cancelled) must
+/// release its bookkeeping, and a live dependent must still be aborted when
+/// its provider fails — cleanup must not break cancellation.
+#[tokio::test(start_paused = true)]
+async fn test_batch_all_outcomes_release_bookkeeping() {
+    let mut batch = make_batch();
+    batch.register(Arc::new(StubComponent::ok("good"))).unwrap();
+    batch
+        .register(Arc::new(StubComponent::fail("bad").with_provides("shared")))
+        .unwrap();
+    batch
+        .register_with_context(
+            Arc::new(StubComponent::dep_fail("child").with_dep("shared")),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .unwrap();
+    batch.register(Arc::new(StubComponent::panic("boom"))).unwrap();
+
+    let summary: SupervisedBatchSummary = (&mut batch).await;
+    assert_eq!(summary.completed.len(), 1, "good completes");
+    assert_eq!(summary.failed.len(), 1, "bad fails");
+    assert_eq!(summary.panicked.len(), 1, "boom panics");
+    assert_eq!(summary.cancelled.len(), 1, "child is cancelled");
+    match &summary.cancelled[0] {
+        SupervisedBatchEvent::Cancelled { name, reason } => {
+            assert_eq!(&**name, "child");
+            assert!(
+                matches!(reason, CancelReason::DependencyFailed),
+                "live dependent is aborted, got: {reason:?}"
+            );
+        }
+        _ => panic!("expected Cancelled event"),
+    }
+    assert_eq!(
+        batch.pending_bookkeeping(),
+        (0, 0),
+        "every terminal outcome must leave both bookkeeping maps empty"
+    );
+}
+
 /// Verify that registering a duplicate name returns `Err(BatchError::DuplicateName)`.
 #[tokio::test(start_paused = true)]
 async fn test_batch_register_duplicate_returns_error() {

@@ -35,26 +35,17 @@ use std::sync::Arc;
 use fluent_concept::ConceptStore;
 use crate::doc::{dep_in, dep_is, lemma_of, sentence_root, sentence_spans, Doc};
 use crate::interlingua::InterlinguaResolver;
+use crate::labels::{
+    ARGUMENT_DEPS, AUX_DEP, DIRECT_OBJECT_DEPS, INDIRECT_OBJECT_DEPS, MODIFIER_DEPS, NEG_DEP,
+    SUBJECT_DEPS,
+};
+use crate::routing::{InterlinguaSignal, RoutingSignal};
 use fluent_types::InterlinguaId;
 
 /// A margin at or below this magnitude is treated as an oracle tie (near-tie →
 /// [`AmbiguityKind::AttachmentNearTie`]).
 pub const TIE_MARGIN_EPSILON: f64 = 1e-6;
 
-/// Dep labels that name the sentence's subject argument.
-const SUBJECT_DEPS: &[&str] = &["nsubj", "nsubjpass", "csubj", "csubjpass"];
-/// Dep labels that name the direct object.
-const DIRECT_OBJECT_DEPS: &[&str] = &["dobj"];
-/// Dep labels that name the indirect object.
-const INDIRECT_OBJECT_DEPS: &[&str] = &["iobj"];
-/// Dep labels that carry modifiers of the head.
-const MODIFIER_DEPS: &[&str] = &["compound", "amod", "nummod"];
-/// Dep labels that form the prepositional argument frame.
-const ARGUMENT_DEPS: &[&str] = &["prep", "pobj", "pcomp"];
-/// The negation dependency label.
-const NEG_DEP: &str = "neg";
-/// The auxiliary dependency label.
-const AUX_DEP: &str = "aux";
 /// Modal auxiliaries conveying necessity.
 const NECESSITY_AUX: &[&str] = &["must", "should", "shall", "need"];
 /// Modal auxiliaries conveying possibility.
@@ -370,6 +361,39 @@ pub fn extract_frames(
     FrameAnalysis { frames, ambiguities }
 }
 
+/// Task-value gate for sense promotion into the ledger-owner
+/// `PreferredSenseIndex` (router `ledger::frame_index`): whether a resolved
+/// `(predicate, ambiguity_kind)` pattern may persist. Both legs must hold
+/// (never blended):
+///
+/// - **valid**: the choice is a genuine sense id — nonzero (the `0` sentinel
+///   is the unparseable-output placeholder, never a sense) and, for
+///   sense-choice patterns, one of the offered candidates.
+/// - **ambiguity-free**: the choice settles the pattern. Only
+///   `PredicatePolysemy` names a sense choice; tie/scope kinds carry no
+///   candidates, so no resolution can leave them unambiguous and they never
+///   promote.
+///
+/// Pure: no store, no model. The worker calls this before every promotion
+/// write; sense-promotion precision/recall over promoted patterns is measured
+/// separately (a well-formed choice can still be the wrong sense — the gate
+/// is shape, not correctness).
+#[must_use]
+pub fn accept_resolution_for_promotion(
+    kind: AmbiguityKind,
+    candidate_ids: &[InterlinguaId],
+    resolution: &Resolution,
+) -> bool {
+    if !matches!(kind, AmbiguityKind::PredicatePolysemy) {
+        return false;
+    }
+    if candidate_ids.is_empty() {
+        return false;
+    }
+    let chosen = resolution.chosen_candidate_id.as_u64();
+    chosen != 0 && candidate_ids.contains(&resolution.chosen_candidate_id)
+}
+
 /// Mint the provisional-or-permanent key for a frame. A frame with any open
 /// ambiguity entry gets a provisional key; an ambiguity-free frame a permanent
 /// one (the only kind persisted to the ledger/graph).
@@ -439,6 +463,67 @@ fn sentence_modality(doc: &Doc, root: usize, s: usize, e: usize) -> Modality {
         }
     }
     Modality::Declarative
+}
+
+/// Fraction of routing-critical roles (predicate, subject, direct object)
+/// that are both structurally present AND interlingua-resolved. Used only
+/// as a non-regression gate on refiner adoption — never as a replacement
+/// for the 7-check validator, which remains the sole well-formedness
+/// arbiter. A refined result must pass BOTH gates: valid, and not worse.
+///
+/// `routing` provides structural presence (predicate always present,
+/// subject/direct_object `Option`); `signal` provides resolution state.
+/// When no critical role is structurally present, coverage is defined as
+/// `1.0` (nothing to resolve → not a regression).
+pub fn frame_coverage(routing: &RoutingSignal, signal: &InterlinguaSignal) -> f64 {
+    let mut present = 0u32;
+    let mut resolved = 0u32;
+    // Predicate is always structurally present (RoutingSignal.predicate is a
+    // non-empty String for a non-empty sentence).
+    present += 1;
+    if signal.predicate_id.is_some_and(|id| id.as_u64() != 0) {
+        resolved += 1;
+    }
+    if routing.subject.is_some() {
+        present += 1;
+        if signal.subject_id.is_some_and(|id| id.as_u64() != 0) {
+            resolved += 1;
+        }
+    }
+    if routing.direct_object.is_some() {
+        present += 1;
+        if signal.direct_object_id.is_some_and(|id| id.as_u64() != 0) {
+            resolved += 1;
+        }
+    }
+    if present == 0 {
+        1.0
+    } else {
+        f64::from(resolved) / f64::from(present)
+    }
+}
+
+/// Backward-compat shim for callers that only have an `InterlinguaSignal`
+/// (tests, calibration). Treats all three roles as structurally present
+/// (the pre-F3 `total = 3` shape) so existing golden values are preserved
+/// when no `RoutingSignal` is available. New code should call
+/// [`frame_coverage`] with the routing signal.
+pub fn frame_coverage_signal(signal: &InterlinguaSignal) -> f64 {
+    let mut present_and_resolved = 0u32;
+    let total = 3u32;
+    if signal.predicate_id.is_some_and(|id| id.as_u64() != 0) {
+        present_and_resolved += 1;
+    }
+    if signal.subject_id.is_some_and(|id| id.as_u64() != 0) {
+        present_and_resolved += 1;
+    }
+    if signal
+        .direct_object_id
+        .is_some_and(|id| id.as_u64() != 0)
+    {
+        present_and_resolved += 1;
+    }
+    f64::from(present_and_resolved) / f64::from(total)
 }
 
 #[cfg(test)]

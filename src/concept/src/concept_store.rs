@@ -10,9 +10,7 @@
 //! *records* which canonicals claim which ids (first-wins, §2.3) and resolves
 //! names/IRIs back to ids.
 
-use std::collections::HashMap;
-
-use fluent_dag::dep_graph::DependencyGraph;
+use fluent_dag::hierarchy::HierarchyIndex;
 use fluent_types::{ConceptMetadata, InterlinguaId};
 
 /// Store readiness — `Loading` until batched WAL completes, `Ready` thereafter.
@@ -80,73 +78,50 @@ pub trait ConceptStore: Send + Sync {
 }
 
 /// A subclass hierarchy keyed by [`InterlinguaId`], built once at boot from
-/// the `rdfs:subClassOf` edges. Composes `fluent_dag::dep_graph::DependencyGraph`
-/// (dag/SKILL prime directive — never hand-roll graph algorithms); it backs
-/// [`ConceptStore::ancestors_of`]/[`ConceptStore::is_subclass_of`] on every
-/// store.
+/// the `rdfs:subClassOf` edges. Composes the shared
+/// [`HierarchyIndex`] (the workspace's single hierarchy-closure primitive); it
+/// backs [`ConceptStore::ancestors_of`]/[`ConceptStore::is_subclass_of`] on
+/// every store.
 ///
 /// The coral `is_a()` CTE remains the authoritative *durable* traversal over
 /// `context_nodes`; this is the runtime mirror built from the same edges.
 pub struct TaxonomyHierarchy {
-    graph: DependencyGraph<InterlinguaId>,
+    index: HierarchyIndex<InterlinguaId>,
 }
 
 impl Default for TaxonomyHierarchy {
     fn default() -> Self {
         Self {
-            graph: DependencyGraph::new(),
+            index: HierarchyIndex::new(),
         }
     }
 }
 
 impl TaxonomyHierarchy {
-    /// Register `(child ← parent)` subclass edges so that
-    /// [`ancestors`](Self::ancestors) (a `DependencyGraph::dependents_of`
-    /// walk) yields the transitive superclass chain, nearest first.
-    ///
-    /// Edge encoding: each **parent** is registered as depending on its
-    /// **child**, and every node **self-provides** (the concrete-target
-    /// semantic — `dependents_of` only expands nodes that provide the asset
-    /// being walked). `dependents_of(child)` therefore walks child → parent →
-    /// grandparent — the ancestor closure. Repeated parents (multiple
-    /// subclasses) aggregate their children into one registration.
+    /// Build from `(child ← parent)` subclass edges, so
+    /// [`ancestors`](Self::ancestors) yields the transitive superclass chain,
+    /// nearest first. Both endpoints are registered — a parent that only ever
+    /// appears as an object is still queryable.
     pub fn from_edges(edges: &[(InterlinguaId, InterlinguaId)]) -> Result<Self, ConceptStoreError> {
-        let mut graph = DependencyGraph::new();
-        let mut by_parent: HashMap<InterlinguaId, Vec<InterlinguaId>> = HashMap::new();
-        for (child, parent) in edges {
-            by_parent.entry(*parent).or_default().push(*child);
-        }
-        for (parent, children) in &by_parent {
-            graph
-                .register(parent, children, &[*parent])
-                .map_err(|e| ConceptStoreError::Storage(e.to_string()))?;
-        }
-        // Register any child that appears only as a dependency (a leaf in the
-        // depends-on view) so it is itself a queryable node.
-        for (child, _) in edges {
-            if !graph.contains(child) {
-                graph
-                    .register(child, &[], &[*child])
-                    .map_err(|e| ConceptStoreError::Storage(e.to_string()))?;
-            }
-        }
-        Ok(Self { graph })
+        Ok(Self {
+            index: HierarchyIndex::from_edges(edges.iter().copied()),
+        })
     }
 
     /// All transitive superclasses of `id`, nearest first, cycle-resilient.
     /// Empty when `id` is unregistered or has no ancestors.
     pub fn ancestors(&self, id: InterlinguaId) -> Vec<InterlinguaId> {
-        self.graph.dependents_of(&id)
+        self.index.ancestors(&id)
     }
 
     /// Transitive `rdfs:subClassOf` check; identity returns true.
     pub fn is_subclass(&self, child: InterlinguaId, parent: InterlinguaId) -> bool {
-        child == parent || self.ancestors(child).contains(&parent)
+        self.index.is_subclass_of(&child, &parent)
     }
 
     /// Whether `id` is a registered node in the hierarchy.
     pub fn contains(&self, id: InterlinguaId) -> bool {
-        self.graph.contains(&id)
+        self.index.contains(&id)
     }
 }
 

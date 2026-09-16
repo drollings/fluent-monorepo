@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Mutex;
 
 fn test_entry() -> ModelEntry {
     serde_json::from_value(serde_json::json!({
@@ -248,13 +249,15 @@ fn routing_target_typed_preferred_over_json() {
     ctx.set(ROUTING_TARGET_TYPED_KEY, typed_rt.clone());
 
     let mut current_request = serde_json::json!({});
+    let mut request_generation = 0u64;
     let mut routing_target = None;
     let mut classifier_response = None;
     // handle_stage_verdict should prefer typed
     let _ = PipelineOrchestrator::handle_stage_verdict(
-        &ctx,
+        &mut ctx,
         PipelineStage::Classifier,
         &mut current_request,
+        &mut request_generation,
         &mut routing_target,
         &mut classifier_response,
     );
@@ -351,5 +354,124 @@ fn error_branch_propagates_err_without_decision() {
     assert!(
         !message.is_empty(),
         "the propagated error carries its reason"
+    );
+}
+
+// ── M14: typed-request cache with generational invalidation ────────────────
+
+fn cache_probe_stage(
+    name: &'static str,
+    seen: Arc<Mutex<Vec<(u64, String)>>>,
+) -> Arc<dyn Component> {
+    Arc::new(
+        fluent_wvr_testutil::StubComponent::new(name).with_handler(move |ctx: &WorkContext| {
+            match crate::stages::common::typed_request(ctx) {
+                Some(req) => {
+                    let text = req
+                        .messages
+                        .iter()
+                        .rev()
+                        .find(|m| m.role == "user")
+                        .map(|m| m.content.to_string_lossy())
+                        .unwrap_or_default();
+                    seen.lock().unwrap().push((
+                        ctx.get::<crate::stages::common::TypedRequest>(
+                            crate::stages::common::TYPED_REQUEST_KEY,
+                        )
+                        .map_or(u64::MAX, |(gen, _)| *gen),
+                        text,
+                    ));
+                    Ok(WorkOutput::typed_lossy(
+                        "probed",
+                        &StageDecision {
+                            stage: PipelineStage::DeterministicPreFilter,
+                            verdict: StageVerdict::Passed,
+                            score: Some(1.0),
+                            reason: "probe".into(),
+                            latency_ms: 0,
+                            metadata: serde_json::json!({}),
+                        },
+                    ))
+                }
+                None => Err(WorkError::Execution("no typed request".into())),
+            }
+        }),
+    )
+}
+
+/// A non-rerouted request parses exactly once at pipeline entry: every
+/// downstream stage reads the same generation-0 `Arc` (no per-stage
+/// re-deserialization).
+#[test]
+fn typed_request_cache_parses_once_per_generation() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let stage_a = cache_probe_stage("probe_a", Arc::clone(&seen));
+    let stage_b = cache_probe_stage("probe_b", Arc::clone(&seen));
+    let pipeline = PipelineOrchestrator::builder()
+        .push(stage_a)
+        .push(stage_b)
+        .build();
+    let mut ctx = WorkContext::default();
+    ctx.set_structured(
+        "request",
+        &serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "hello"}],
+        }),
+    );
+    pipeline.execute(&ctx).expect("pipeline executes");
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![(0, "hello".into()), (0, "hello".into())],
+        "every stage reads generation 0"
+    );
+}
+
+/// A reroute mid-pipeline invalidates the cache: the generation increments
+/// and downstream stages see the NEW request text.
+#[test]
+fn reroute_invalidates_typed_request_cache() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let rerouter = {
+        let mut metadata = StageMetadata::default();
+        let rewritten = serde_json::to_string(&serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "rewritten"}],
+        }))
+        .expect("serialize");
+        metadata.set_rewritten_request(rewritten);
+        let decision = StageDecision {
+            stage: PipelineStage::DeterministicPreFilter,
+            verdict: StageVerdict::Rerouted,
+            score: Some(1.0),
+            reason: "rerouted".into(),
+            latency_ms: 0,
+            metadata: metadata.into_value(),
+        };
+        Arc::new(
+            fluent_wvr_testutil::StubComponent::new("rerouter")
+                .with_handler(move |_| Ok(WorkOutput::typed_lossy("rerouted", &decision))),
+        ) as Arc<dyn Component>
+    };
+    let downstream = cache_probe_stage("downstream", Arc::clone(&seen));
+    let pipeline = PipelineOrchestrator::builder()
+        .push(rerouter)
+        .push(downstream)
+        .build();
+    let mut ctx = WorkContext::default();
+    ctx.set_structured(
+        "request",
+        &serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "original"}],
+        }),
+    );
+    pipeline.execute(&ctx).expect("pipeline executes");
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![(1, "rewritten".into())],
+        "downstream reads the new request at generation 1"
     );
 }

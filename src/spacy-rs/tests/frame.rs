@@ -34,12 +34,12 @@ fn attached(text_json: &str, tokens: &[&str]) -> Doc {
     doc
 }
 
-fn extractor(store: Arc<InMemoryConceptStore>) -> FrameExtractor {
+fn extractor(store: &Arc<InMemoryConceptStore>) -> FrameExtractor {
     let resolver = Arc::new(InterlinguaResolver::new(
-        Arc::clone(&store) as Arc<dyn ConceptStore>,
+        Arc::clone(store) as Arc<dyn ConceptStore>,
         Arc::clone(vocab().strings()),
     ));
-    FrameExtractor::new(resolver, Arc::clone(&store) as Arc<dyn ConceptStore>)
+    FrameExtractor::new(resolver, Arc::clone(store) as Arc<dyn ConceptStore>)
 }
 
 const FULL_PARSE: &str = r#"[
@@ -78,7 +78,7 @@ fn meta(id: InterlinguaId, name: &str) -> ConceptMetadata {
 fn extracts_roles_polarity_and_modality() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
 
     assert_eq!(analysis.frames.len(), 1, "one sentence");
@@ -103,7 +103,7 @@ fn extracts_roles_polarity_and_modality() {
 fn ambiguity_free_frame_mints_permanent_key() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
     assert!(analysis.ambiguities.is_empty(), "no ambiguity on a clean parse");
     let keys = ex.keys(&doc, &analysis);
@@ -116,7 +116,7 @@ fn ambiguity_free_frame_mints_permanent_key() {
 fn near_tie_margin_marks_attachment_ambiguity_and_provisional_key() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     // A near-zero margin → the oracle doubted an attachment.
     let margins = [0.0f64, 1.0, 0.5];
     let analysis = ex.extract(&doc, Some(&margins));
@@ -136,7 +136,7 @@ fn near_tie_margin_marks_attachment_ambiguity_and_provisional_key() {
 fn two_candidate_predicate_lemma_marks_polysemy() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
 
     // Register two canonicals under the same predicate lemma id bucket —
     // the store keeps both, so `candidates` yields 2 → polysemy.
@@ -166,7 +166,7 @@ fn neg_plus_modal_marks_scope_conflict() {
         NEG_MODAL_PARSE,
         &["The", "dog", "will", "not", "sleep"],
     );
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
 
     let frame = &analysis.frames[0];
@@ -188,7 +188,7 @@ fn interrogative_punct_is_modality() {
         {"text":"?","pos":"punct","dep":"punct","head":-1,"lemma":"?"}
     ]"#;
     let doc = attached(json, &["What", "happened", "?"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
     assert_eq!(analysis.frames[0].modality, Modality::Interrogative);
 }
@@ -197,7 +197,7 @@ fn interrogative_punct_is_modality() {
 fn serde_roundtrip_frame_and_key() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = attached(FULL_PARSE, &["Show", "me", "the", "sales", "report", "for", "yesterday", "please"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
     let keys = ex.keys(&doc, &analysis);
 
@@ -214,7 +214,7 @@ fn serde_roundtrip_frame_and_key() {
 #[test]
 fn empty_doc_yields_no_frames() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&Doc::new(vocab()), None);
     assert!(analysis.frames.is_empty());
     assert!(analysis.ambiguities.is_empty());
@@ -259,7 +259,7 @@ fn property_random_parses_extract_frames_and_keep_one_root() {
     let vocab = vocab();
     let annotator = crate::arc_eager::ArcEagerAnnotator::en_default(Arc::clone(&vocab));
     let store = Arc::new(InMemoryConceptStore::new());
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     for _ in 0..110 {
         let len = 1 + (next() % 14) as usize;
         let mut doc = crate::doc::Doc::new(Arc::clone(&vocab));
@@ -275,7 +275,7 @@ fn property_random_parses_extract_frames_and_keep_one_root() {
             let _ = k;
         }
         // validator still passes exactly one ROOT
-        assert!(doc.len() == 0 || crate::validate::AnnotationValidator::new().validate(&doc, result.records()).is_ok());
+        assert!(doc.is_empty() || crate::validate::AnnotationValidator::new().validate(&doc, result.records()).is_ok());
     }
 }
 
@@ -287,7 +287,7 @@ fn property_random_parses_extract_frames_and_keep_one_root() {
 fn unattached_doc_frame_has_fallback_predicate_and_no_roles() {
     let store = Arc::new(InMemoryConceptStore::new());
     let doc = doc_for(&["Show", "me"]);
-    let ex = extractor(Arc::clone(&store));
+    let ex = extractor(&store);
     let analysis = ex.extract(&doc, None);
     assert_eq!(analysis.frames.len(), 1, "fallback sentence [0, len)");
     let frame = &analysis.frames[0];
@@ -295,4 +295,85 @@ fn unattached_doc_frame_has_fallback_predicate_and_no_roles() {
     assert!(frame.roles.is_empty(), "dep 0 fills no frame slot");
     assert_eq!(frame.polarity, Polarity::Positive, "no neg dep present");
     assert_eq!(frame.modality, Modality::Declarative, "no ? or modal aux");
+}
+
+fn sense_id(v: u64) -> fluent_types::InterlinguaId {
+    fluent_types::InterlinguaId::from_u64(v)
+}
+
+fn resolution_for(chosen: u64) -> Resolution {
+    Resolution {
+        chosen_candidate_id: sense_id(chosen),
+        detail: "chose sense".into(),
+    }
+}
+
+/// The promotion gate accepts a genuine sense choice: polysemy with the
+/// chosen id among the offered candidates.
+#[test]
+fn promotion_gate_accepts_valid_sense_choice() {
+    let candidates = vec![sense_id(11), sense_id(12)];
+    assert!(
+        accept_resolution_for_promotion(
+            AmbiguityKind::PredicatePolysemy,
+            &candidates,
+            &resolution_for(12)
+        ),
+        "in-candidate choice promotes"
+    );
+}
+
+/// Validator leg: the unparseable-output placeholder (id 0) and choices
+/// outside the offered candidates never promote, however confident.
+#[test]
+fn promotion_gate_rejects_malformed_choices() {
+    let candidates = vec![sense_id(11), sense_id(12)];
+    assert!(
+        !accept_resolution_for_promotion(
+            AmbiguityKind::PredicatePolysemy,
+            &candidates,
+            &resolution_for(0)
+        ),
+        "zero sentinel never promotes"
+    );
+    assert!(
+        !accept_resolution_for_promotion(
+            AmbiguityKind::PredicatePolysemy,
+            &candidates,
+            &resolution_for(99)
+        ),
+        "foreign id never promotes"
+    );
+    assert!(
+        !accept_resolution_for_promotion(
+            AmbiguityKind::PredicatePolysemy,
+            &[],
+            &resolution_for(11)
+        ),
+        "empty candidates never promote"
+    );
+}
+
+/// Ambiguity-free leg: tie/scope kinds carry no sense choice, so no
+/// resolution can settle them — they never promote, even with a
+/// well-formed-looking output.
+#[test]
+fn promotion_gate_rejects_ambiguity_kinds_without_sense_choice() {
+    for kind in [
+        AmbiguityKind::AttachmentNearTie,
+        AmbiguityKind::NegationModalScope,
+    ] {
+        assert!(
+            !accept_resolution_for_promotion(kind, &[], &resolution_for(11)),
+            "{kind:?} without candidates never promotes"
+        );
+        assert!(
+            !accept_resolution_for_promotion(
+                kind,
+                &[sense_id(11)],
+                &resolution_for(11)
+            ),
+            "{kind:?} never promotes even with candidates"
+        );
+    }
 }

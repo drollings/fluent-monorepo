@@ -99,6 +99,14 @@ pub struct ServerDeps {
     /// Model-group table (mirrors `RouterConfig.model_groups`): bare group
     /// names in requests resolve through it (routes → groups → models).
     pub groups: Arc<HashMap<String, ModelGroup>>,
+    /// The workflow-learning recorder: solved question-mode runs are distilled
+    /// into the embedding-keyed library through it (best-effort, default-off).
+    /// `None` leaves the escalation ladder byte-identical.
+    pub workflow_recorder: Option<Arc<crate::ledger::workflow_replay::WorkflowRecorder>>,
+    /// Runtime gate for the frame-resolution worker (one-command rollback).
+    /// Open at boot; closing it drops new jobs before any index read or
+    /// model call without a restart.
+    pub frame_gate: crate::ledger::frame_index::FrameResolutionGate,
 }
 
 impl ServerDeps {
@@ -481,6 +489,8 @@ async fn handle_chat_completion(
         onnx_llm_backend,
         roles,
         groups,
+        workflow_recorder,
+        frame_gate: _,
     } = deps;
     // The dispatch post-processing hook (workflow extraction), if the
     // operator configured it. Passed through to successful dispatches only.
@@ -859,6 +869,7 @@ async fn handle_chat_completion(
         role_limiters: Arc::new(
             crate::server::dispatch::RoleLimiters::from_roles(&roles),
         ),
+        workflow_recorder: workflow_recorder.clone(),
     };
 
     if let Some(ref rt) = pipeline_result.routing_target {
@@ -1086,6 +1097,16 @@ async fn handle_request_inner(
                 return Ok(crate::server::responses::forbidden_response());
             }
             Ok(crate::server::admin::handle_coordinator_rollback(&deps.coordinator_gate))
+        }
+        // One-command frame rollback: loopback-only, closes the
+        // frame-resolution runtime gate so new jobs drop before any index
+        // read or model call without a restart. Audit-logged; idempotent.
+        ("POST", "/admin/frame/rollback") => {
+            stats.requests.fetch_add(1, Ordering::Relaxed);
+            if !is_local_request(&req) {
+                return Ok(crate::server::responses::forbidden_response());
+            }
+            Ok(crate::server::admin::handle_frame_rollback(&deps.frame_gate))
         }
         ("GET", "/metrics") => {
             stats.requests.fetch_add(1, Ordering::Relaxed);

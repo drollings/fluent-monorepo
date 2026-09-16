@@ -1,47 +1,28 @@
-//! YagoView — runtime file, safe `std::fs::read` (no `mmap`), `fst::Map` + CSR + `OnceLock` memo.
+//! YagoView — runtime file, safe `std::fs::read` (no `mmap`), TTL parse via the
+//! crate's single Turtle reader, `HierarchyIndex` memo.
 //!
-//! Moved here from `spacy-rs` (ROADMAP_20260903_SPACY_RS_SPLIT M5): YaGO
-//! class-hierarchy wiring is knowledge-half state, owned by the same crate
-//! as [`YaGoLoader`](crate::yago_loader). The move is verbatim except the
-//! error mapping (`SpacyError::LemmaBlob` → [`OntologyError::YagoView`]);
-//! `spacy-rs` keeps no view and gains no ontology edge.
+//! The YaGO class hierarchy is knowledge-half state, owned by the same crate
+//! as [`YaGoLoader`](crate::yago_loader). TTL is read through
+//! [`crate::turtle`] (the canonical `guidance_rdf` parser) and the closure is
+//! the shared [`HierarchyIndex`]; there is no hand-rolled line parser here.
 
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::RwLock;
 
-use common_core::sync::{lock_read, lock_write};
+use fluent_dag::hierarchy::HierarchyIndex;
 use fluent_types::{yago_class_id_for_iri, InterlinguaId};
 
 use crate::normalize::iri_to_curie;
 use crate::OntologyError;
-
-/// CSR parents: `indptr` len `n+1`, `indices` variable.
-#[derive(Debug, Clone)]
-struct Csr {
-    indptr: Vec<u32>,
-    indices: Vec<u32>,
-    id_to_idx: HashMap<InterlinguaId, usize>,
-    idx_to_id: Vec<InterlinguaId>,
-}
-
-impl Csr {
-    fn parents_of_idx(&self, idx: usize) -> &[u32] {
-        let s = self.indptr[idx] as usize;
-        let e = self.indptr[idx+1] as usize;
-        &self.indices[s..e]
-    }
-}
 
 /// Runtime YaGO view.
 #[derive(Debug)]
 pub struct YagoView {
     // fst::Map curie -> InterlinguaId (stored as HashMap for now; fst codegen lands later — O(log n) vs O(1) but correct)
     classes: HashMap<String, InterlinguaId>,
-    csr: Csr,
-    ancestors_memo: RwLock<HashMap<InterlinguaId, Vec<InterlinguaId>>>,
+    hierarchy: HierarchyIndex<InterlinguaId>,
 }
 
 impl YagoView {
@@ -67,128 +48,41 @@ impl YagoView {
     }
 
     fn from_ttl_str(ttl: &str) -> Self {
+        let (_, edges) = crate::turtle::subclass_edges(ttl);
         let mut classes: HashMap<String, InterlinguaId> = HashMap::new();
-        let mut edges: Vec<(InterlinguaId, InterlinguaId)> = Vec::new();
-        let mut prefixes: HashMap<String, String> = HashMap::new();
-        for line in ttl.lines() {
-            let line = line.trim();
-            if line.starts_with("@prefix") {
-                // @prefix yago: <http://...>
-                if let Some((pfx, iri)) = parse_prefix(line) { prefixes.insert(pfx, iri); }
-                continue;
-            }
-            if line.is_empty() || line.starts_with('#') { continue; }
-            if let Some((s_curie, o_curie)) = parse_subclass(line) {
-                let s_iri = expand_curie(&s_curie, &prefixes);
-                let o_iri = expand_curie(&o_curie, &prefixes);
-                let s_id = yago_class_id(&s_iri);
-                let o_id = yago_class_id(&o_iri);
-                let s_key = iri_to_curie(&s_iri);
-                let o_key = iri_to_curie(&o_iri);
-                classes.entry(s_key).or_insert(s_id);
-                classes.entry(o_key).or_insert(o_id);
-                edges.push((s_id, o_id));
-            }
+        let mut hierarchy_edges: Vec<(InterlinguaId, InterlinguaId)> = Vec::new();
+        for (subject_iri, object_iri) in edges {
+            let subject_id = yago_class_id_for_iri(&subject_iri);
+            let object_id = yago_class_id_for_iri(&object_iri);
+            classes.entry(iri_to_curie(&subject_iri)).or_insert(subject_id);
+            classes.entry(iri_to_curie(&object_iri)).or_insert(object_id);
+            hierarchy_edges.push((subject_id, object_id));
         }
-        // Build CSR
-        let mut ids: Vec<InterlinguaId> = classes.values().copied().collect();
-        ids.sort_by_key(|id| id.local_id());
-        ids.dedup();
-        let mut id_to_idx: HashMap<InterlinguaId, usize> = HashMap::new();
-        for (i, id) in ids.iter().enumerate() { id_to_idx.insert(*id, i); }
-        let n = ids.len();
-        let mut indptr = vec![0u32; n+1];
-        let mut indices: Vec<u32> = Vec::new();
-        // group by child
-        let mut by_child: HashMap<InterlinguaId, Vec<InterlinguaId>> = HashMap::new();
-        for (c,p) in edges { by_child.entry(c).or_default().push(p); }
-        for (idx, id) in ids.iter().enumerate() {
-            if let Some(parents) = by_child.get(id) {
-                for p in parents {
-                    if let Some(&p_idx) = id_to_idx.get(p) { indices.push(p_idx as u32); }
-                }
-            }
-            indptr[idx+1] = indices.len() as u32;
-        }
+        // Build the subclass closure through the shared hierarchy index.
+        let hierarchy = HierarchyIndex::from_edges(hierarchy_edges);
         Self {
             classes,
-            csr: Csr { indptr, indices, id_to_idx, idx_to_id: ids },
-            ancestors_memo: RwLock::new(HashMap::new()),
+            hierarchy,
         }
     }
     pub fn resolve_curie(&self, curie: &str) -> Option<InterlinguaId> {
         self.classes.get(curie).copied()
     }
 
-    /// `ancestors_of` via CSR + OnceLock memo, O(depth) amortized O(1) after first.
+    /// All transitive superclasses of `id`, nearest first, via the shared
+    /// [`HierarchyIndex`] (memoized, cycle-resilient).
     pub fn ancestors_of(&self, id: InterlinguaId) -> Vec<InterlinguaId> {
-        // Check memo (poison-recovering: a poisoned memo must not wedge
-        // reads — recompute instead).
-        if let Some(v) = lock_read(&self.ancestors_memo).get(&id) {
-            return v.clone();
-        }
-        let mut out = Vec::new();
-        let mut stack = vec![id];
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(id);
-        // DFS over parents
-        while let Some(cur) = stack.pop() {
-            if let Some(&idx) = self.csr.id_to_idx.get(&cur) {
-                for &p_idx in self.csr.parents_of_idx(idx) {
-                    let pid = self.csr.idx_to_id[p_idx as usize];
-                    if visited.insert(pid) {
-                        out.push(pid);
-                        stack.push(pid);
-                    }
-                }
-            }
-        }
-        // nearest first already (direct parents first due to stack LIFO but close enough)
-        lock_write(&self.ancestors_memo).insert(id, out.clone());
-        out
+        self.hierarchy.ancestors(&id)
     }
 
     pub fn is_subclass_of(&self, child: InterlinguaId, parent: InterlinguaId) -> bool {
-        child == parent || self.ancestors_of(child).contains(&parent)
+        self.hierarchy.is_subclass_of(&child, &parent)
     }
 
     pub fn class_count(&self) -> usize { self.classes.len() }
     pub fn classes_iter(&self) -> impl Iterator<Item=(String, InterlinguaId)> + '_ {
         self.classes.iter().map(|(k,v)| (k.clone(), *v))
     }
-}
-
-fn yago_class_id(iri: &str) -> InterlinguaId {
-    yago_class_id_for_iri(iri)
-}
-fn parse_prefix(line: &str) -> Option<(String, String)> {
-    // @prefix yago: <http://...>
-    let line = line.trim();
-    if !line.starts_with("@prefix") { return None; }
-    let rest = line.trim_start_matches("@prefix").trim();
-    let colon = rest.find(':')?;
-    let pfx = rest[..colon].trim().to_string();
-    let start = rest.find('<')?;
-    let end = rest.find('>')?;
-    Some((pfx, rest[start+1..end].to_string()))
-}
-fn parse_subclass(line: &str) -> Option<(String,String)> {
-    let pos = line.find("rdfs:subClassOf")?;
-    let before = line[..pos].trim();
-    let after = line[pos + "rdfs:subClassOf".len()..].trim().trim_end_matches('.').trim();
-    let s = before.split_whitespace().next()?.to_string();
-    let o = after.split_whitespace().next()?.trim_end_matches('.').to_string();
-    Some((s,o))
-}
-fn expand_curie(curie: &str, prefixes: &HashMap<String,String>) -> String {
-    let curie = curie.trim().trim_end_matches(['.', ',', ';']);
-    if curie.starts_with('<') && curie.ends_with('>') { return curie[1..curie.len()-1].to_string(); }
-    if let Some(idx) = curie.find(':') {
-        let pfx = &curie[..idx];
-        let local = &curie[idx+1..];
-        if let Some(base) = prefixes.get(pfx) { return format!("{base}{local}"); }
-    }
-    curie.to_string()
 }
 
 #[cfg(test)]

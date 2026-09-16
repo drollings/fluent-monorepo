@@ -100,6 +100,10 @@ enum Command {
     /// close its runtime gate so dispatch returns to the pre-coordinator
     /// pipeline without a restart. Idempotent; loopback-only server side.
     CoordinatorRollback(ServerArgs),
+    /// Roll back frame resolution on a running router: close its runtime
+    /// gate so new jobs drop before any index read or model call without a
+    /// restart. Idempotent; loopback-only server side.
+    FrameRollback(ServerArgs),
     /// Measure generation throughput via /metrics.
     Speedtest(SpeedtestArgs),
     /// Print the derived config schema inventory (from the config types via
@@ -308,6 +312,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::CoordinatorRollback(args) => {
             commands::coordinator_rollback(
+                &ctx,
+                args.api_url.as_deref(),
+                Some(std::path::Path::new(&config_path)),
+            )
+            .await?
+        }
+        Command::FrameRollback(args) => {
+            commands::frame_rollback(
                 &ctx,
                 args.api_url.as_deref(),
                 Some(std::path::Path::new(&config_path)),
@@ -963,6 +975,53 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         }
     }
 
+    // The workflow-learning recorder (question-mode record half): opt-in
+    // (`ledger.replay.enabled`) with a real embedding source
+    // (`ledger.replay.embedding_model`, resolved through the single
+    // OpenAI-compatible embedding factory). Without both, no recorder is
+    // composed and the escalation ladder runs byte-identically; a missing
+    // embedder refuses the record rather than recording garbage keys.
+    let mut workflow_recorder: Option<
+        Arc<fluent_router::ledger::workflow_replay::WorkflowRecorder>,
+    > = None;
+    if let Some(ledger_cfg) = &config.ledger {
+        if ledger_cfg.replay.enabled {
+            let embedder = ledger_cfg
+                .replay
+                .embedding_model
+                .as_deref()
+                .and_then(|key| openai_embedding_provider(&config, key));
+            match embedder {
+                Some(embedder) => {
+                    let store: Arc<
+                        dyn fluent_router::ledger::workflow_store::WorkflowStore,
+                    > = Arc::new(
+                        fluent_router::ledger::workflow_store::InMemoryWorkflowStore::new(),
+                    );
+                    workflow_recorder = Some(Arc::new(
+                        fluent_router::ledger::workflow_replay::WorkflowRecorder::new(
+                            store,
+                            Some(embedder),
+                            ledger_cfg.replay.clone(),
+                        ),
+                    ));
+                    tracing::info!(
+                        target: "coral-router",
+                        embedding_model = ?ledger_cfg.replay.embedding_model,
+                        "workflow-learning recorder enabled",
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        target: "coral-router",
+                        "ledger.replay.enabled but no embedding model resolves — \
+                         workflow learning loop stays inert",
+                    );
+                }
+            }
+        }
+    }
+
     // Boot reconciliation: load YaGO taxonomy into both coral's content-addressed
     // graph and the router's SqliteConceptStore, then assert they match.
     // Requires both a ledger (for the shared SQLite
@@ -1278,6 +1337,92 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         }
     }
 
+    // Wave-batched frame-resolution worker: opt-in (`frame_resolution`
+    // block), fail-open. Resolves open frame ambiguities in wave batches
+    // through one model call per tick and promotes only validated,
+    // ambiguity-free senses (the promotion gate refuses everything else, so
+    // an ungrammatical model reply can never poison the index). Requires a
+    // ledger (the shared SQLite sense-pattern rows). The runtime gate boots
+    // open; `POST /admin/frame/rollback` closes it without a restart.
+    let mut frame_worker: Option<
+        Arc<fluent_router::ledger::frame_index::FrameResolutionWorker>,
+    > = None;
+    let frame_gate = fluent_router::ledger::frame_index::FrameResolutionGate::open();
+    if let (Some(ledger_arc), Some(frame_cfg)) = (&ledger, &config.frame_resolution) {
+        let Some(sqlite) = ledger_arc.node_store().shared_sqlite() else {
+            tracing::warn!(
+                target: "coral-router",
+                "frame_resolution configured but the ledger has no shared sqlite — skipping",
+            );
+            return Err("frame_resolution requires a durable ledger".into());
+        };
+        // Resolution-model backend: the frame key, else the classifier key,
+        // else the onnx LLM key (mirrors the review fallback chain).
+        let frame_model_key = frame_cfg
+            .model
+            .clone()
+            .or_else(|| config.classifier_role_key())
+            .or_else(|| config.onnx_llm_key());
+        let frame_backend: Option<Arc<dyn ChatBackend>> = frame_model_key
+            .as_deref()
+            .and_then(|key| config.local_backend(key));
+        let model_name = frame_model_key.unwrap_or_else(|| "frame-model".into());
+        let fetch: fluent_router::ledger::frame_index::FrameResolutionFetch =
+            if let Some(backend) = frame_backend {
+                Arc::new(move |reqs: Vec<fluent_router::ledger::frame_index::FrameResolutionRequest>| {
+                    let items: Vec<serde_json::Value> = reqs
+                        .iter()
+                        .map(|r| {
+                            serde_json::json!({
+                                "predicate_lemma_id": r.predicate_lemma_id.as_i64(),
+                                "ambiguity_kind": format!("{:?}", r.ambiguity_kind),
+                                "detail": r.detail,
+                                "candidate_ids": r.candidate_ids.iter().map(|c| c.as_u64()).collect::<Vec<_>>(),
+                            })
+                        })
+                        .collect();
+                    let prompt = format!(
+                        "Resolve each frame ambiguity by choosing one candidate id. \
+                         Reply with a JSON array aligned by index: \
+                         [{{\"chosen_candidate_id\": <u64>, \"detail\": \"...\"}}].\n\
+                         Ambiguities: {}",
+                        serde_json::to_string(&items).unwrap_or_default()
+                    );
+                    let messages = vec![ChatMessage {
+                        role: "user".into(),
+                        content: prompt,
+                    }];
+                    backend
+                        .chat_complete(&messages)
+                        .map_err(|e| format!("frame resolution model call failed: {e}"))
+                })
+            } else {
+                // No resolution backend derivable — return an error closure so
+                // the worker logs and continues without the LLM call.
+                Arc::new(|_reqs| Err("no frame resolution backend configured".into()))
+            };
+        let index: Arc<dyn fluent_router::ledger::frame_index::PreferredSenseIndex> =
+            Arc::new(fluent_router::ledger::frame_index::SqlitePreferredSenseIndex::new(sqlite));
+        frame_worker = Some(Arc::new(
+            fluent_router::ledger::frame_index::FrameResolutionWorker::new(
+                &index,
+                &fetch,
+                model_name.clone(),
+                frame_cfg.queue_capacity,
+                frame_cfg.credit_limit,
+                fluent_concurrency::tokio_runtime(),
+                &frame_gate,
+            ),
+        ));
+        tracing::info!(
+            target: "coral-router",
+            model = %model_name,
+            queue_capacity = frame_cfg.queue_capacity,
+            credit_limit = frame_cfg.credit_limit,
+            "frame-resolution worker enabled",
+        );
+    }
+
     let mut server =
         RouterServer::new(pipelines, routes, config.models, &config.server, classifier)
             .with_roles(config.roles.clone())
@@ -1298,6 +1443,9 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     if let Some(coordinator) = coordinator {
         server = server.with_coordinator(coordinator);
     }
+    if let Some(recorder) = workflow_recorder {
+        server = server.with_workflow_recorder(recorder);
+    }
     if let Some(worker) = review_worker {
         server = server.with_review_worker(worker);
     }
@@ -1310,6 +1458,10 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     if let Some(worker) = overlay_worker {
         server = server.with_overlay_worker(worker);
     }
+    if let Some(worker) = frame_worker {
+        server = server.with_frame_worker(worker);
+    }
+    server = server.with_frame_gate(frame_gate);
 
     if !instance_pool.is_empty() {
         server = server.with_instance_pool(instance_pool);

@@ -237,3 +237,85 @@ fn normalize_curie_preserves_lowercased_prefix() {
         "<http://yago-knowledge.org/resource/city>"
     );
 }
+
+// ── Turtle-reader parity: the streaming parser and the line scanner ────────
+
+fn n2_fixture() -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../env/yago-taxonomy-n2.ttl");
+    std::fs::read_to_string(&path).expect("n2 taxonomy TTL readable")
+}
+
+/// The line scanner is the per-line reader `prune_ttl` uses; the streaming
+/// `collect_edges` reader backs the taxonomy converter and `YagoView`. On the
+/// line-oriented YaGO fixtures they must return the identical edge sequence.
+fn assert_readers_agree(ttl: &str, label: &str) {
+    let (prefixes, streaming) = collect_edges(ttl);
+    let mut line_reader: Vec<(String, String)> = Vec::new();
+    for line in ttl.lines() {
+        line_reader.extend(crate::turtle::subclass_edges_in_line(line, &prefixes));
+    }
+    assert_eq!(streaming, line_reader, "{label}: reader edge sets differ");
+}
+
+#[test]
+fn parity_readers_agree_on_mini_fixture() {
+    assert_readers_agree(&fixture_ttl(), "yago_mini.ttl");
+}
+
+#[test]
+fn parity_readers_agree_on_real_n2_taxonomy() {
+    let ttl = n2_fixture();
+    assert_readers_agree(&ttl, "yago-taxonomy-n2.ttl");
+    let (_, edges) = collect_edges(&ttl);
+    assert!(edges.len() > 1_000, "n2 has a large edge set: {}", edges.len());
+    assert!(
+        edges.contains(&(
+            "http://schema.org/Person".to_string(),
+            "http://schema.org/Thing".to_string()
+        )),
+        "Person → Thing present"
+    );
+}
+
+#[test]
+fn malformed_trailing_statement_is_dropped_by_both_readers() {
+    let ttl = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n\
+               @prefix yago: <http://yago-knowledge.org/resource/> .\n\
+               yago:A rdfs:subClassOf yago:Root .\n\
+               yago:B rdfs:subClassOf <http://yago-knowledge.org/unterminated";
+    let (prefixes, streaming) = collect_edges(ttl);
+    let mut line_reader: Vec<(String, String)> = Vec::new();
+    for line in ttl.lines() {
+        line_reader.extend(crate::turtle::subclass_edges_in_line(line, &prefixes));
+    }
+    // Both keep the valid statement and drop the malformed trailer.
+    assert_eq!(streaming, line_reader, "malformed trailer parity");
+    assert_eq!(
+        streaming,
+        vec![(
+            "http://yago-knowledge.org/resource/A".to_string(),
+            "http://yago-knowledge.org/resource/Root".to_string()
+        )]
+    );
+}
+
+#[test]
+fn malformed_inputs_never_panic() {
+    let malformed = [
+        "",
+        "@prefix yago: <http://yago-knowledge.org/resource/> .\n",
+        "yago:A rdfs:subClassOf",                 // missing object + dot
+        "yago:A rdfs:subClassOf yago:B",          // missing dot
+        "\"unterminated literal",
+        "<http://x",
+        "@@@ not turtle @@@",
+        "yago:A rdfs:subClassOf yago:B . yago:C rdfs:subClassOf yago:D",
+    ];
+    for input in malformed {
+        let (prefixes, _) = collect_edges(input);
+        for line in input.lines() {
+            let _ = crate::turtle::subclass_edges_in_line(line, &prefixes);
+        }
+    }
+}

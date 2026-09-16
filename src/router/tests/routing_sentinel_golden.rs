@@ -612,6 +612,7 @@ fn run_prefilter_case(case: &serde_json::Value) -> CaseResult {
         scope: vec![FilterScope::Any],
         http_code: 403,
         error_message: None,
+        route: None,
         regexes: strings(case, "patterns"),
     };
     let mut engine = DeterministicFilterEngine::new();

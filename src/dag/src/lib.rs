@@ -7,6 +7,7 @@ pub(crate) mod closure;
 pub mod checkpointed;
 pub mod dep_graph;
 pub mod error;
+pub mod hierarchy;
 pub mod middleware;
 pub(crate) mod narrowing;
 pub mod resolver;

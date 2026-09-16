@@ -94,6 +94,10 @@ pub trait GenesisIndex: Send + Sync {
     fn promoted_len(&self) -> usize;
     /// Total evidence entries.
     fn len(&self) -> usize;
+    /// Whether any evidence has landed (`len() == 0`).
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /// Persist to `path` (JSON blob — version-pinned data).
     fn save(&self, path: &Path) -> Result<(), std::io::Error>;
 }

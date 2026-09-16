@@ -242,14 +242,19 @@ impl HnswIndex {
                     .map(|n| (n.d_id, n.distance))
                     .collect()
             };
-            let id_map = lock(&self.id_map).clone();
+            // Resolve only the `k` hits under a short id-map guard — no
+            // full-map clone. The index read guard is already released, so
+            // the `index → map` lock order holds and the map is never held
+            // across the traversal.
+            let resolved: Vec<(i64, f32)> = {
+                let id_map = lock(&self.id_map);
+                hits.into_iter()
+                    .filter_map(|(d_id, distance)| id_map.get(d_id).map(|key| (*key, distance)))
+                    .collect()
+            };
             if self.generation.load(Ordering::Acquire) != generation {
                 continue; // swapped mid-episode; retry once
             }
-            let resolved: Vec<(i64, f32)> = hits
-                .into_iter()
-                .filter_map(|(d_id, distance)| id_map.get(d_id).map(|key| (*key, distance)))
-                .collect();
             if resolved.is_empty() {
                 return None;
             }

@@ -425,7 +425,6 @@ impl ClassificationNode {
         }
     }
 }
-#[allow(dead_code)] pub fn prompt_from(_tree: &ClassificationTree) -> String { String::new() }
 #[cfg(test)]
 #[path = "../../tests/config_classification.rs"]
 mod tests;

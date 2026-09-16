@@ -77,12 +77,15 @@ fn high_score_distinct_entity_stamps_and_moves_the_signal() {
     assert_eq!(concept_set(&doc), vec![ent(0x9a1)]);
 }
 
+/// One calibration row: (name, setup, score, entity-local, may_stamp).
+type CalibrationCase<'a> = (&'a str, Box<dyn Fn(&mut Doc) + 'a>, f64, i64, bool);
+
 #[test]
 fn calibration_table_controls_never_stamp() {
     // Precision/recall calibration: labeled cases with expected decisions.
     // The control group (ambiguous, duplicate, non-PROPN, pre-stamped,
     // boundary) must NOT stamp; only the clear high-score distinct case may.
-    let cases: Vec<(&str, Box<dyn Fn(&mut Doc)>, f64, i64, bool)> = vec![
+    let cases: Vec<CalibrationCase<'_>> = vec![
         // (name, setup, score, entity-local, may_stamp)
         ("low score ambiguous", Box::new(|_: &mut Doc| {}), 0.4, 0x1, false),
         ("nan score", Box::new(|_: &mut Doc| {}), f64::NAN, 0x1, false),
@@ -182,11 +185,11 @@ fn content_mutation_invalidates_stamp_by_keying() {
         }],
     );
     let stamped = match &out[..] {
-        [StampOutcome::Stamped(s)] => s.clone(),
+        [StampOutcome::Stamped(s)] => *s,
         _ => panic!("must stamp"),
     };
     // Untouched text verifies clean.
-    assert!(verify_stamps(&mut doc, &[stamped.clone()]).is_empty());
+    assert!(verify_stamps(&mut doc, &[stamped]).is_empty());
     assert_eq!(doc.token(2).interlingua_entity_id, Some(ent(0x6)));
     // Mutating the token text invalidates: cleared and reported.
     doc.token_mut(2).lexeme = doc.token(0).lexeme.clone();

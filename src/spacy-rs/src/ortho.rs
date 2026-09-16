@@ -52,7 +52,7 @@ fn split_list<'a>(body: &'a [u8], count: usize, what: &str) -> Result<Vec<&'a st
     let text = std::str::from_utf8(body).map_err(|_| err(format!("{what} is not UTF-8")))?;
     // NUL-joined with a trailing NUL: exactly count + 1 splits.
     let parts: Vec<&str> = text.split('\0').collect();
-    if parts.len() != count + 1 || parts[count] != "" {
+    if parts.len() != count + 1 || !parts[count].is_empty() {
         return Err(err(format!("{what} framing drift")));
     }
     let items: Vec<&str> = parts[..count].to_vec();
@@ -164,15 +164,15 @@ impl<'a> TaggerOrtho<'a> {
     }
     #[inline]
     pub fn is_trailing_punct(&self, token: &str) -> bool {
-        self.trailing.iter().any(|p| *p == token)
+        self.trailing.contains(&token)
     }
     #[inline]
     pub fn is_boundary(&self, token: &str) -> bool {
-        self.boundary.iter().any(|p| *p == token)
+        self.boundary.contains(&token)
     }
     #[inline]
     pub fn is_bare_follow(&self, token: &str) -> bool {
-        self.bare_follow.iter().any(|p| *p == token)
+        self.bare_follow.contains(&token)
     }
 
     /// Whether only clause-terminating punctuation follows position `from`.

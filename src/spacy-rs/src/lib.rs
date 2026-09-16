@@ -20,7 +20,6 @@
 //!   hashes resolved through the shared [`strings::StringStore`].
 
 #![forbid(unsafe_code)]
-#![allow(clippy::pedantic, clippy::all)]
 
 pub mod arc_eager;
 pub mod attrs;
@@ -73,9 +72,9 @@ pub use doc::{
 };
 pub use error::SpacyError;
 pub use frame::{
-    extract_frames, mint_frame_key, AmbiguityEntry, AmbiguityKind, Frame, FrameAnalysis,
-    FrameExtractor, FrameKey, Modality, Polarity, Resolution, RoleType,
-    TIE_MARGIN_EPSILON,
+    accept_resolution_for_promotion, extract_frames, frame_coverage, frame_coverage_signal,
+    mint_frame_key, AmbiguityEntry, AmbiguityKind, Frame, FrameAnalysis, FrameExtractor, FrameKey,
+    Modality, Polarity, Resolution, RoleType, TIE_MARGIN_EPSILON,
 };
 pub use hash::{hash_utf8, murmur64a, HASH_SEED};
 pub use interlingua::{CollisionNote, InterlinguaResolver};
@@ -92,8 +91,7 @@ pub use pipeline::{
     LlmRefineRung, LlmRung, NlpPipeline, NlpPipelineConfig, PipelineError,
     PipelineStageFailure, PipelineState, RefineMetrics, RefineMetricsSnapshot, RefineMode,
     RefinePolicy, RefineReason, RefineSeams, ResolveStage, RuleAnnotator, RuleRung,
-    SentencizeStage, StagePipeline, TaskValueReason, frame_coverage, frame_coverage_signal,
-    refine_focus, refine_reason, should_refine,
+    SentencizeStage, StagePipeline, TaskValueReason, refine_focus, refine_reason, should_refine,
 };
 pub use cache::{span_key, SpanCacheGet, SpanCacheInvalidate, SpanCachePut, SpanCacheSeam};
 pub use lang::genesis::{GenesisEntry, GenesisIndex, InMemoryGenesisIndex};

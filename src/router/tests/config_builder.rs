@@ -1226,3 +1226,57 @@ fn duty_key_resolves_role_head_or_literal() {
         "unknown names pass through"
     );
 }
+
+// ── M13: deprecated score_matrix surface parses + warns, absent = silent ──
+
+/// A config that sets the pipeline `score_matrix` still parses (backward
+/// compat) and emits the boot deprecation warning when the pipeline builds.
+#[test]
+fn score_matrix_config_parses_and_warns_at_boot() {
+    let config: RouterConfig = serde_json::from_str(
+        r#"{
+            "pipelines": {
+                "default": {
+                    "deterministic_prefilter": false,
+                    "classifier": false,
+                    "score_matrix": {
+                        "dimensions": ["coherence"],
+                        "weights": [1.0],
+                        "routes": {
+                            "local": { "bands": { "coherence": [0.0, 1.0] } }
+                        }
+                    },
+                    "score_matrix_authoritative": true
+                }
+            },
+            "models": {},
+            "model_groups": {}
+        }"#,
+    )
+    .expect("config with score_matrix parses");
+    let params = config.pipelines.get("default").expect("pipeline");
+    assert!(params.score_matrix.is_some(), "parsing is preserved");
+    assert!(params.score_matrix_authoritative);
+
+    let (_, logs) = capture_logs(|| config.build_named_pipeline("default"));
+    let warns = logs
+        .iter()
+        .filter(|l| l.contains("deprecated") && l.contains("score_matrix"))
+        .count();
+    assert!(warns >= 2, "boot warns for both deprecated fields: {logs:?}");
+}
+
+/// A config without `score_matrix` parses and builds with no deprecation
+/// warning — the unaffected baseline.
+#[test]
+fn config_without_score_matrix_emits_no_deprecation_warning() {
+    let config = config_with_unresolvable_classifier();
+    assert!(config.pipelines["default"].score_matrix.is_none());
+    assert!(!config.pipelines["default"].score_matrix_authoritative);
+
+    let (_, logs) = capture_logs(|| config.build_all_pipelines());
+    assert!(
+        !logs.iter().any(|l| l.contains("score_matrix")),
+        "no deprecation warning: {logs:?}"
+    );
+}

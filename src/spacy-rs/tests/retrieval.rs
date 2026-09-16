@@ -37,7 +37,7 @@ fn lemma_grep_returns_hits_with_confidence_and_lemma_id() {
     let hit = &hits[0];
     assert_eq!(hit.lemma, "show");
     assert_eq!(hit.lemma_id, Some(InterlinguaId::from_u64(7)));
-    assert_eq!(hit.parse_confidence, 0.9);
+    assert!((hit.parse_confidence - 0.9).abs() < 1e-12);
     // Byte span of the first token in "Show me the report".
     assert_eq!(hit.span, Span { start: 0, end: 4 });
 }

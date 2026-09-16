@@ -1,29 +1,35 @@
 use super::*;
-use crate::pipeline_types::StageDecision;
-use crate::test_stubs;
+use crate::pipeline::RoutingTarget;
+use crate::pipeline_types::{PipelineStage, StageDecision, StageDecisionProducer, StageMetadata};
 
-fn make_fallback_output() -> WorkOutput {
-    let decision = StageDecision {
-        stage: crate::pipeline_types::PipelineStage::Classifier,
+fn fallback_decision() -> StageDecision {
+    StageDecision {
+        stage: PipelineStage::Classifier,
         verdict: crate::pipeline_types::StageVerdict::Passed,
         score: Some(1.0),
         reason: "parse error: trailing characters".into(),
         latency_ms: 0,
         metadata: serde_json::json!({"fallback": true}),
-    };
-    WorkOutput::typed_lossy("classified", &decision)
+    }
 }
 
-fn make_success_output() -> WorkOutput {
-    let decision = StageDecision {
-        stage: crate::pipeline_types::PipelineStage::Classifier,
+fn success_decision() -> StageDecision {
+    StageDecision {
+        stage: PipelineStage::Classifier,
         verdict: crate::pipeline_types::StageVerdict::Passed,
         score: Some(0.95),
         reason: "intent=code, action=route".into(),
         latency_ms: 0,
         metadata: serde_json::json!({"intent": "code", "action": "route", "fallback": false}),
-    };
-    WorkOutput::typed_lossy("classified", &decision)
+    }
+}
+
+fn make_fallback_output() -> WorkOutput {
+    WorkOutput::typed_lossy("classified", &fallback_decision())
+}
+
+fn make_success_output() -> WorkOutput {
+    WorkOutput::typed_lossy("classified", &success_decision())
 }
 
 #[test]
@@ -40,12 +46,13 @@ fn parse_error_extraction() {
 
 #[test]
 fn retry_injects_prompt_into_context() {
-    let inner = Arc::new(test_stubs::FailingStage::new(
+    let inner = Arc::new(ScriptedClassifier::new(
         "failing_classifier",
-        2, // fail twice, then succeed
+        vec![true, true, false], // fail twice, then succeed
     ));
     let retry = RetryClassifier::new(
-        inner,
+        inner.clone(),
+        inner.clone(),
         2,
         vec!["retry prompt 1".into(), "retry prompt 2".into()],
     );
@@ -53,13 +60,15 @@ fn retry_injects_prompt_into_context() {
     let ctx = WorkContext::default();
     let _ = retry.execute(&ctx);
     // The test asserts that retry_context was built correctly — the inner
-    // test_stubs::FailingStage handles the actual failure verification.
+    // scripted stub handles the actual failure verification.
 }
 
 #[test]
 fn retry_builds_context_with_correct_metadata() {
+    let inner = Arc::new(ScriptedClassifier::new("inner", vec![false]));
     let retry = RetryClassifier::new(
-        Arc::new(test_stubs::SimplePassStage::new("inner", "ok")),
+        inner.clone(),
+        inner.clone(),
         3,
         vec!["prompt1".into(), "prompt2".into(), "prompt3".into()],
     );
@@ -80,8 +89,10 @@ fn retry_builds_context_with_correct_metadata() {
 
 #[test]
 fn retry_reuses_last_prompt_when_out_of_prompts() {
+    let inner = Arc::new(ScriptedClassifier::new("inner", vec![false]));
     let retry = RetryClassifier::new(
-        Arc::new(test_stubs::SimplePassStage::new("inner", "ok")),
+        inner.clone(),
+        inner.clone(),
         2,
         vec!["only_prompt".into()],
     );
@@ -105,11 +116,8 @@ fn retry_reuses_last_prompt_when_out_of_prompts() {
 
 #[test]
 fn retry_with_empty_prompts_omits_prompt_override() {
-    let retry = RetryClassifier::new(
-        Arc::new(test_stubs::SimplePassStage::new("inner", "ok")),
-        1,
-        vec![],
-    );
+    let inner = Arc::new(ScriptedClassifier::new("inner", vec![false]));
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 1, vec![]);
 
     let base = WorkContext::default();
     let ctx = retry.build_retry_context(&base, 0, "err");
@@ -141,6 +149,11 @@ impl ScriptedClassifier {
     fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    fn next_is_fallback(&self) -> bool {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.script.lock().unwrap().pop_front().unwrap_or(true)
+    }
 }
 
 impl WorkUnit for ScriptedClassifier {
@@ -157,12 +170,24 @@ impl WorkUnit for ScriptedClassifier {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        let fallback = self.script.lock().unwrap().pop_front().unwrap_or(true);
-        Ok(if fallback {
+        Ok(if self.next_is_fallback() {
             make_fallback_output()
         } else {
             make_success_output()
+        })
+    }
+}
+
+impl StageDecisionProducer for ScriptedClassifier {
+    fn stage_kind(&self) -> PipelineStage {
+        PipelineStage::Classifier
+    }
+
+    fn evaluate(&self, _ctx: &WorkContext, _prior: &[StageDecision]) -> Result<StageDecision, WorkError> {
+        Ok(if self.next_is_fallback() {
+            fallback_decision()
+        } else {
+            success_decision()
         })
     }
 }
@@ -180,7 +205,7 @@ impl_component!(ScriptedClassifier);
 fn success_first_try_makes_no_second_call() {
     // Characterization (M6): a non-fallback first output short-circuits.
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![false]));
-    let retry = RetryClassifier::new(inner.clone(), 3, vec!["p".into()]);
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 3, vec!["p".into()]);
     let out = retry.execute(&WorkContext::default()).expect("execute");
     assert!(!RetryClassifier::is_fallback(&out));
     assert_eq!(inner.calls(), 1, "no second call on first-try success");
@@ -189,7 +214,7 @@ fn success_first_try_makes_no_second_call() {
 #[test]
 fn fallback_then_success_returns_success() {
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![true, false]));
-    let retry = RetryClassifier::new(inner.clone(), 3, vec!["p".into()]);
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 3, vec!["p".into()]);
     let out = retry.execute(&WorkContext::default()).expect("execute");
     assert!(!RetryClassifier::is_fallback(&out));
     assert_eq!(inner.calls(), 2);
@@ -201,7 +226,7 @@ fn max_retries_zero_still_re_executes_final() {
     // but the stage still re-executes once on the original context for the
     // final fallback — 2 calls total, fallback output.
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![true, true]));
-    let retry = RetryClassifier::new(inner.clone(), 0, vec!["p".into()]);
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 0, vec!["p".into()]);
     let out = retry.execute(&WorkContext::default()).expect("execute");
     assert!(RetryClassifier::is_fallback(&out));
     assert_eq!(inner.calls(), 2, "initial + final re-execute");
@@ -211,7 +236,7 @@ fn max_retries_zero_still_re_executes_final() {
 fn exhausted_retries_return_final_fallback() {
     // 1 initial + max_retries loop calls + 1 final re-execute == 4.
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![true; 8]));
-    let retry = RetryClassifier::new(inner.clone(), 2, vec!["p1".into(), "p2".into()]);
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 2, vec!["p1".into(), "p2".into()]);
     let out = retry.execute(&WorkContext::default()).expect("execute");
     assert!(RetryClassifier::is_fallback(&out), "final output is fallback");
     assert_eq!(inner.calls(), 4, "1 + 2 retries + final re-execute");
@@ -220,7 +245,7 @@ fn exhausted_retries_return_final_fallback() {
 #[test]
 fn non_fallback_output_passes_through_verbatim() {
     let inner = Arc::new(ScriptedClassifier::new("inner", vec![false]));
-    let retry = RetryClassifier::new(inner.clone(), 2, vec!["p".into()]);
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 2, vec!["p".into()]);
     let out = retry.execute(&WorkContext::default()).expect("execute");
     let reason = out
         .data
@@ -228,4 +253,212 @@ fn non_fallback_output_passes_through_verbatim() {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     assert!(reason.contains("intent=code"), "passthrough keeps body: {reason}");
+}
+
+// ── Producer-path characterization ──────────────────────────────────────
+
+fn test_target(group: &str) -> RoutingTarget {
+    RoutingTarget {
+        url: "http://localhost:8080".into(),
+        model: "test-model".into(),
+        group: Some(group.into()),
+        target_name: Some("test".into()),
+        role: None,
+        params: None,
+        instance: None,
+        snapshot: None,
+        id_slot: None,
+        filter_thinking: false,
+        retry_count: 0,
+        retry_base_interval_s: 1,
+        stream: false,
+        idle_timeout_ms: 1000,
+        total_timeout_ms: 10_000,
+        api_key: None,
+        fallbacks: vec![],
+        is_onnx: false,
+    }
+}
+
+/// A scripted producer that reports a routing target on success: each script
+/// entry is `(fallback, target)`. Pops one entry per evaluation, like the
+/// real classifier's typed path.
+struct TargetScriptedProducer {
+    name: ArcIntern<str>,
+    script: std::sync::Mutex<VecDeque<(bool, Option<RoutingTarget>)>>,
+    calls: AtomicUsize,
+}
+
+impl TargetScriptedProducer {
+    fn new(script: Vec<(bool, Option<RoutingTarget>)>) -> Self {
+        Self {
+            name: ArcIntern::from("target_scripted".to_string()),
+            script: std::sync::Mutex::new(script.into()),
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+
+    fn next(&self) -> (bool, Option<RoutingTarget>) {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.script.lock().unwrap().pop_front().unwrap_or((true, None))
+    }
+}
+
+impl WorkUnit for TargetScriptedProducer {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        let (fallback, _) = self.next();
+        Ok(if fallback {
+            make_fallback_output()
+        } else {
+            make_success_output()
+        })
+    }
+}
+
+impl_fieldless!(TargetScriptedProducer);
+
+impl Describable for TargetScriptedProducer {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({})
+    }
+}
+impl_component!(TargetScriptedProducer);
+
+impl StageDecisionProducer for TargetScriptedProducer {
+    fn stage_kind(&self) -> PipelineStage {
+        PipelineStage::Classifier
+    }
+
+    fn evaluate(&self, _ctx: &WorkContext, _prior: &[StageDecision]) -> Result<StageDecision, WorkError> {
+        let (fallback, _) = self.next();
+        Ok(if fallback {
+            fallback_decision()
+        } else {
+            success_decision()
+        })
+    }
+
+    fn evaluate_with_target(
+        &self,
+        _ctx: &WorkContext,
+        _prior: &[StageDecision],
+    ) -> Result<(StageDecision, Option<RoutingTarget>), WorkError> {
+        let (fallback, target) = self.next();
+        Ok(if fallback {
+            (fallback_decision(), None)
+        } else {
+            (success_decision(), target)
+        })
+    }
+}
+
+#[test]
+fn retry_producer_path_publishes_routing_target_on_fallback_then_success() {
+    let inner = Arc::new(TargetScriptedProducer::new(vec![
+        (true, None),
+        (false, Some(test_target("local"))),
+    ]));
+    let retry = RetryClassifier::new(inner.clone(), inner.clone(), 3, vec!["p".into()]);
+    let (decision, target) = retry
+        .evaluate_with_target(&WorkContext::default(), &[])
+        .expect("producer path");
+    assert!(
+        !StageMetadata::metadata_ref(&decision.metadata)
+            .fallback()
+            .unwrap_or(true),
+        "final decision must be the success, not a fallback"
+    );
+    let target = target.expect("success must publish a routing target");
+    assert_eq!(target.group.as_deref(), Some("local"));
+    assert_eq!(inner.calls(), 2, "fallback then success is two evaluations");
+}
+
+/// A producer with no target override: `evaluate` succeeds while `execute`
+/// always fails, so reaching the decision through the default
+/// `evaluate_with_target` proves the `WorkOutput.data` boundary is untouched.
+struct EvaluateOnlyProducer {
+    name: ArcIntern<str>,
+    execute_calls: AtomicUsize,
+}
+
+impl EvaluateOnlyProducer {
+    fn new() -> Self {
+        Self {
+            name: ArcIntern::from("evaluate_only".to_string()),
+            execute_calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn execute_calls(&self) -> usize {
+        self.execute_calls.load(Ordering::SeqCst)
+    }
+}
+
+impl WorkUnit for EvaluateOnlyProducer {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        self.execute_calls.fetch_add(1, Ordering::SeqCst);
+        Err(WorkError::Execution("must not be called".into()))
+    }
+}
+
+impl_fieldless!(EvaluateOnlyProducer);
+
+impl Describable for EvaluateOnlyProducer {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({})
+    }
+}
+impl_component!(EvaluateOnlyProducer);
+
+impl StageDecisionProducer for EvaluateOnlyProducer {
+    fn stage_kind(&self) -> PipelineStage {
+        PipelineStage::Classifier
+    }
+
+    fn evaluate(&self, _ctx: &WorkContext, _prior: &[StageDecision]) -> Result<StageDecision, WorkError> {
+        Ok(success_decision())
+    }
+}
+
+#[test]
+fn default_evaluate_with_target_returns_none_without_touching_data() {
+    let inner = Arc::new(EvaluateOnlyProducer::new());
+    let (decision, target) = inner
+        .evaluate_with_target(&WorkContext::default(), &[])
+        .expect("default producer path");
+    assert!(target.is_none(), "no override means no target");
+    assert_eq!(decision.reason, "intent=code, action=route");
+    assert_eq!(
+        inner.execute_calls(),
+        0,
+        "the default must not touch execute/WorkOutput.data"
+    );
 }

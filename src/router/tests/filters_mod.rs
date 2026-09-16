@@ -10,6 +10,7 @@ fn hard_reject_filter(name: &str, pattern: &str) -> Box<dyn Filter> {
         scope: vec![FilterScope::Any],
         http_code: 403,
         error_message: None,
+        route: None,
         regexes: vec![pattern.into()],
     };
     Box::new(regex_filter::RegexFilter::from_entry(&e).unwrap())
@@ -58,6 +59,7 @@ fn engine_scope_applies_to_each_filter() {
         scope: vec![FilterScope::FrontierBound],
         http_code: 403,
         error_message: None,
+        route: None,
         regexes: vec!["secret".into()],
     };
     engine.add_filter(Box::new(regex_filter::RegexFilter::from_entry(&e).unwrap()));

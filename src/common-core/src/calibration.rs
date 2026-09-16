@@ -116,7 +116,7 @@ pub fn sweep_thresholds<S>(
 
 /// Default sweep grid 0.0..1.0 step 0.05 (21 points) plus caller-supplied extras.
 pub fn default_thresholds() -> Vec<f64> {
-    (0..=20).map(|i| i as f64 * 0.05).collect()
+    (0..=20).map(|i| f64::from(i) * 0.05).collect()
 }
 
 /// Render a markdown table for `reports` (from `sweep_thresholds`) to `path`.

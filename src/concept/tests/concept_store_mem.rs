@@ -106,3 +106,32 @@ fn ancestors_and_is_subclass_backed_by_hierarchy() {
     assert!(store.is_subclass_of(dog, dog));
     assert!(!store.is_subclass_of(animal, dog));
 }
+
+#[test]
+fn lazy_hierarchy_matches_direct_construction() {
+    // The hierarchy is built once on first read from the accumulated edges;
+    // it must equal a `TaxonomyHierarchy` built directly from those edges.
+    let store = InMemoryConceptStore::new();
+    let animal = cid(InterlinguaNamespace::YagoClass, 1);
+    let mammal = cid(InterlinguaNamespace::YagoClass, 2);
+    let dog = cid(InterlinguaNamespace::YagoClass, 3);
+    for (id, name, parent) in [
+        (animal, "schema:Animal", None),
+        (mammal, "schema:Mammal", Some(animal)),
+        (dog, "schema:Dog", Some(mammal)),
+    ] {
+        let mut m = meta(id, name, None);
+        m.parent_class_id = parent;
+        store.insert(m).expect("insert");
+    }
+
+    let direct = TaxonomyHierarchy::from_edges(&[(mammal, animal), (dog, mammal)])
+        .expect("hierarchy");
+    assert_eq!(store.ancestors_of(dog), direct.ancestors(dog));
+    assert_eq!(
+        store.is_subclass_of(dog, animal),
+        direct.is_subclass(dog, animal)
+    );
+    // Reads are idempotent — a second read does not change the closure.
+    assert_eq!(store.ancestors_of(dog), vec![mammal, animal]);
+}

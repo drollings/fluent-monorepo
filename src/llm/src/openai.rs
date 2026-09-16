@@ -23,6 +23,23 @@ pub use crate::sse::drain_sse_lines;
 // Request-body builder
 // ---------------------------------------------------------------------------
 
+/// Merge wire-format `params` into `body` in place, skipping `protected`
+/// keys. The single parameter-merge implementation (M12): overlay wins on
+/// key conflicts, non-object `params` degrade to a no-op. Both wire-format
+/// consumers (the chat body below, the embeddings request body) and the
+/// client's config-layer merge (`client.rs::merge_extra_params`, composed on
+/// top of this) route through it, so no merge site can drift from the others.
+pub fn apply_params(body: &mut Value, params: Option<&Value>, protected: &[&str]) {
+    let Some(obj) = params.and_then(Value::as_object) else {
+        return;
+    };
+    for (k, v) in obj {
+        if !protected.contains(&k.as_str()) {
+            body[k] = v.clone();
+        }
+    }
+}
+
 /// Build an OpenAI-compatible chat completion request body.
 ///
 /// Always includes `"chat_template_kwargs": {"enable_thinking": false}` as a
@@ -52,15 +69,7 @@ pub fn build_openai_chat_body(
 
     // Merge model-level params (can override defaults above, e.g. when
     // `params` contains `chat_template_kwargs`).
-    if let Some(params) = params {
-        if let Some(obj) = params.as_object() {
-            for (k, v) in obj {
-                if k != "model" && k != "messages" && k != "stream" {
-                    body[k] = v.clone();
-                }
-            }
-        }
-    }
+    apply_params(&mut body, params, &["model", "messages", "stream"]);
     // think override from the caller wins over everything.
     if think_override == Some(true) {
         body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": true});

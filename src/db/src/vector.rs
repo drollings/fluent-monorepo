@@ -19,25 +19,45 @@ pub trait VectorIndex {
     fn knn(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit>;
 }
 
-/// Brute-force index wrapping `knn_brute_force`.
+/// Brute-force index wrapping `knn_brute_force`, with the id → name lookup
+/// precomputed once at construction (not rebuilt per query).
 pub struct BruteForceIndex {
     pub entries: Vec<(fluent_types::NodeId, Vec<f32>, String)>,
+    /// id → first-seen name; first entry wins on duplicate ids, matching the
+    /// historical per-call linear `find`.
+    names: std::collections::HashMap<fluent_types::NodeId, String>,
 }
+
+impl BruteForceIndex {
+    /// Build the index and its id → name map in one pass.
+    #[must_use]
+    pub fn new(entries: Vec<(fluent_types::NodeId, Vec<f32>, String)>) -> Self {
+        let mut names = std::collections::HashMap::with_capacity(entries.len());
+        for (id, _, name) in &entries {
+            names.entry(*id).or_insert_with(|| name.clone());
+        }
+        Self { entries, names }
+    }
+}
+
 impl VectorIndex for BruteForceIndex {
     fn knn(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit> {
-        // One `HashMap` built per call instead of one linear `find` per hit
-        // (`O(N·k)`): first entry wins on duplicate ids, matching the old
-        // `find` (which returned the first match).
-        let mut names: std::collections::HashMap<fluent_types::NodeId, &str> =
-            std::collections::HashMap::with_capacity(self.entries.len());
-        for (id, _, name) in &self.entries {
-            names.entry(*id).or_insert(name.as_str());
-        }
-        let results = knn_brute_force(query, self.entries.iter().map(|(id, emb, _)| (*id, emb.as_slice())), k);
-        results.into_iter().map(|(id, dist)| {
-            let name = names.get(&id).copied().unwrap_or_default();
-            fluent_types::KnnHit { node_id: id, distance: dist, name: name.into() }
-        }).collect()
+        let results = knn_brute_force(
+            query,
+            self.entries.iter().map(|(id, emb, _)| (*id, emb.as_slice())),
+            k,
+        );
+        results
+            .into_iter()
+            .map(|(id, dist)| {
+                let name = self.names.get(&id).cloned().unwrap_or_default();
+                fluent_types::KnnHit {
+                    node_id: id,
+                    distance: dist,
+                    name: name.into(),
+                }
+            })
+            .collect()
     }
 }
 

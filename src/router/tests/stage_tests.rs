@@ -8,7 +8,7 @@ mod tests {
         ConfidenceGate, FilterAction, FilterOutcome, FilterScope, PatternEntry, RejectPatterns,
     };
     use crate::pipeline::PipelineOrchestrator;
-    use crate::pipeline_types::{PipelineStage, StageDecision, StageMetadata, StageVerdict};
+    use crate::pipeline_types::{PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict};
     use crate::stages::deterministic::DeterministicPreFilter;
     use crate::test_support::capture_logs;
 
@@ -23,6 +23,7 @@ mod tests {
                     scope: vec![FilterScope::Any],
                     http_code: 422,
                     error_message: Some("SSN detected".into()),
+                    route: None,
                     regexes: vec![r"\b\d{3}-\d{2}-\d{4}\b".into()],
                 },
                 PatternEntry {
@@ -33,6 +34,7 @@ mod tests {
                     scope: vec![FilterScope::Any],
                     http_code: 422,
                     error_message: Some("Credit card detected".into()),
+                    route: None,
                     regexes: vec![r"\b(?:\d[ -]*?){13,19}\b".into()],
                 },
                 PatternEntry {
@@ -43,6 +45,7 @@ mod tests {
                     scope: vec![FilterScope::Any],
                     http_code: 422,
                     error_message: Some("Email detected".into()),
+                    route: None,
                     regexes: vec![r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b".into()],
                 },
                 PatternEntry {
@@ -53,6 +56,7 @@ mod tests {
                     scope: vec![FilterScope::Any],
                     http_code: 422,
                     error_message: Some("Phone detected".into()),
+                    route: None,
                     regexes: vec![
                         r"\b(?:\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b".into(),
                     ],
@@ -65,6 +69,7 @@ mod tests {
                     scope: vec![FilterScope::Any],
                     http_code: 422,
                     error_message: Some("API key detected".into()),
+                    route: None,
                     regexes: vec![
                         r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]\s*[^\s]{8,}".into(),
                     ],
@@ -862,9 +867,12 @@ mod tests {
         let mut orchestrator = PipelineOrchestrator::builder();
         orchestrator = orchestrator.push(Arc::new(DeterministicPreFilter::new()));
         if params.classifier_retry_max > 0 {
+            let component = Arc::clone(&classifier) as Arc<dyn Component>;
+            let producer_handle = Arc::clone(&classifier) as Arc<dyn StageDecisionProducer>;
             let retry: Arc<crate::stages::retry_classifier::RetryClassifier> =
                 Arc::new(crate::stages::retry_classifier::RetryClassifier::new(
-                    classifier,
+                    component,
+                    producer_handle,
                     params.classifier_retry_max as usize,
                     params.classifier_retry_prompts.clone(),
                 ));
@@ -1857,5 +1865,117 @@ mod tests {
         assert_eq!(signals[0].predicate, "show");
         assert_eq!(signals[0].direct_object.as_deref(), Some("report"));
     }
-}
 
+    // ── Stage 1: deterministic soft_redirect ─────────────────────────────────
+
+    fn soft_redirect_routing_config() -> crate::config::RoutingConfig {
+        serde_json::from_value(serde_json::json!({
+            "routes": {
+                "prose": { "group": "prose", "pipelines": ["default"], "description": "creative" }
+            },
+            "models": {
+                "gemma": { "endpoint": "http://x/v1/chat/completions", "name": "gemma", "intelligence": 6, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 }
+            },
+            "model_groups": {
+                "prose": ["gemma"]
+            },
+            "system_prompt": "",
+            "safety_threshold": 0.5,
+            "default_route": "prose"
+        }))
+        .expect("valid routing config")
+    }
+
+    fn soft_redirect_prefilter(
+        route: Option<&str>,
+        routing: Option<crate::config::RoutingConfig>,
+    ) -> DeterministicPreFilter {
+        let entry = PatternEntry {
+            name: "story".into(),
+            outcome: FilterOutcome::SoftRedirect,
+            filter_action: None,
+            confidence_gate: ConfidenceGate::None,
+            scope: vec![FilterScope::Any],
+            http_code: 200,
+            error_message: None,
+            route: route.map(String::from),
+            regexes: vec![r"(?i)write .*story".into()],
+        };
+        let patterns = RejectPatterns {
+            patterns: vec![entry],
+            commands: None,
+        };
+        let filter = DeterministicPreFilter::from_config(&patterns);
+        match routing {
+            Some(rc) => filter.with_routing_config(Arc::new(rc)),
+            None => filter,
+        }
+    }
+
+    #[test]
+    fn soft_redirect_short_circuits_to_named_model() {
+        let filter = soft_redirect_prefilter(Some("prose"), Some(soft_redirect_routing_config()));
+        let (decision, target) = filter
+            .evaluate_with_target(&make_ctx("please write me a story"), &[])
+            .expect("evaluate");
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert_eq!(decision.stage, PipelineStage::DeterministicPreFilter);
+        let rt = target.expect("soft redirect must dispatch");
+        assert_eq!(rt.model, "gemma");
+        assert_eq!(rt.target_name.as_deref(), Some("prose"));
+    }
+
+    #[test]
+    fn soft_redirect_route_unresolved_passes_through() {
+        // No routing config: the pattern cannot resolve a target and the
+        // stage passes through instead of dispatching.
+        let filter = soft_redirect_prefilter(Some("prose"), None);
+        let (decision, target) = filter
+            .evaluate_with_target(&make_ctx("please write me a story"), &[])
+            .expect("evaluate");
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert!(target.is_none());
+    }
+
+    #[test]
+    fn soft_redirect_route_less_pattern_unchanged() {
+        // A soft_redirect pattern without `route` never fires — byte-identical
+        // to the pre-wiring behavior for existing configs.
+        let filter = soft_redirect_prefilter(None, Some(soft_redirect_routing_config()));
+        let (decision, target) = filter
+            .evaluate_with_target(&make_ctx("please write me a story"), &[])
+            .expect("evaluate");
+        assert_eq!(decision.verdict, StageVerdict::Passed);
+        assert!(target.is_none());
+    }
+
+    #[test]
+    fn soft_redirect_short_circuits_classifier_in_pipeline() {
+        use fluent_wvr_testutil::StubComponent;
+
+        use crate::pipeline::PipelineOrchestrator;
+
+        let filter = soft_redirect_prefilter(Some("prose"), Some(soft_redirect_routing_config()));
+        // The classifier stub fails hard: if the pipeline reached it the
+        // orchestration would return Err. Success proves the redirect
+        // short-circuited the dispatch. The pre-filter is registered as a
+        // producer (as the boot path does) so the target reaches the
+        // orchestrator through the typed channel.
+        let producer_stage = Arc::new(filter);
+        let stage_for_push = Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>;
+        let producer: crate::pipeline::StageProducer =
+            Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
+        let pipeline = PipelineOrchestrator::builder()
+            .push_with_producer(stage_for_push, producer)
+            .push(Arc::new(StubComponent::fail("classifier")))
+            .build();
+        let output = pipeline
+            .execute(&make_ctx("please write me a story"))
+            .expect("pipeline executes");
+        let result: crate::pipeline::PipelineResult = output.data_as().expect("pipeline result");
+        assert!(!result.rejected);
+        assert_eq!(result.decisions.len(), 1, "classifier must not run");
+        let rt = result.routing_target.expect("routing target published");
+        assert_eq!(rt.model, "gemma");
+    }
+}

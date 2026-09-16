@@ -151,6 +151,10 @@ impl_component!(ResultScorer);
 /// - `"content"` — the text to summarize
 ///
 /// Output: `{"summary": "..."}` in `WorkOutput.data`
+///
+/// `Clone` so lock owners can snapshot the handle and drop the guard before
+/// the model call (M15) — every field is `Arc`/primitive/`Vec`.
+#[derive(Clone)]
 pub struct Summarizer {
     name: ArcIntern<str>,
     client: Arc<dyn ChatBackend>,

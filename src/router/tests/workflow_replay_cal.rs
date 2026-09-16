@@ -1,9 +1,12 @@
 use crate::ledger::workflow_replay::{
-    RecordedStep, ReplayConfig, WorkflowReplay, CALIBRATED_DISTANCE_THRESHOLD,
-    CALIBRATED_MIN_CONFIDENCE, CALIBRATED_MIN_REUSES, CALIBRATION_DATE,
+    RecordOutcome, RecordedStep, ReplayConfig, WorkflowRecorder, WorkflowReplay,
+    CALIBRATED_DISTANCE_THRESHOLD, CALIBRATED_MIN_CONFIDENCE, CALIBRATED_MIN_REUSES,
+    CALIBRATION_DATE,
 };
 use crate::ledger::workflow_store::{InMemoryWorkflowStore, WorkflowStore};
 use std::sync::Arc;
+
+use fluent_llm::EmbeddingProvider;
 
 fn unit(mut v: Vec<f32>) -> Vec<f32> {
     let n: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
@@ -206,6 +209,7 @@ fn calibration_curve_sets_threshold_with_margin() {
             distance_threshold: threshold,
             min_reuses: CALIBRATED_MIN_REUSES,
             min_confidence: CALIBRATED_MIN_CONFIDENCE,
+            embedding_model: None,
         };
         // Recompute without the hard assert: count leaks/failures manually.
         let mut tp = 0usize;
@@ -246,6 +250,7 @@ fn reuse_curve_sets_n() {
             distance_threshold: CALIBRATED_DISTANCE_THRESHOLD,
             min_reuses: n,
             min_confidence: CALIBRATED_MIN_CONFIDENCE,
+            embedding_model: None,
         };
         let mut hits = 0usize;
         for (text, emb, _) in should_replay() {
@@ -298,4 +303,133 @@ fn gate_constants_carry_the_calibration_date() {
     assert_eq!(cfg.distance_threshold.to_bits(), CALIBRATED_DISTANCE_THRESHOLD.to_bits());
     assert_eq!(cfg.min_confidence.to_bits(), CALIBRATED_MIN_CONFIDENCE.to_bits());
     assert_eq!(cfg.min_reuses, CALIBRATED_MIN_REUSES);
+}
+
+/// Record-side calibration: golden solved runs must persist, the control
+/// group must not, and every golden must replay. Reports recording precision
+/// and replay success; both pin at 1.0 — persistence is never enabled by
+/// default below that bar.
+#[test]
+fn record_calibration_precision_and_replay_success() {
+    let store = Arc::new(InMemoryWorkflowStore::new());
+    let embedder = Arc::new(crate::test_stubs::HashEmbedder::new(64));
+    let recorder = WorkflowRecorder::new(
+        Arc::clone(&store) as Arc<dyn WorkflowStore>,
+        Some(Arc::clone(&embedder) as Arc<dyn fluent_llm::EmbeddingProvider>),
+        ReplayConfig {
+            enabled: true,
+            ..ReplayConfig::default()
+        },
+    );
+    let hyps = || {
+        vec![
+            "first hypothetical angle".to_string(),
+            "second hypothetical angle".to_string(),
+        ]
+    };
+    let answers = || {
+        vec![
+            "first hypothetical answer".to_string(),
+            "second hypothetical answer".to_string(),
+        ]
+    };
+
+    // Golden solved runs: assembler-accepted, confident, structurally valid,
+    // mutually novel — every one must persist.
+    let goldens = [
+        "how do i bake sourdough bread",
+        "how do i prune an apple tree",
+        "how do i tune a bicycle derailleur",
+    ];
+    let mut tp = 0usize;
+    for (i, query) in goldens.iter().enumerate() {
+        let outcome = recorder.record_question_run(
+            query,
+            &hyps(),
+            &answers(),
+            "assembled step by step solution",
+            0.9,
+            true,
+            &format!("audit-golden-{i}"),
+            Some("sess"),
+        );
+        assert_eq!(outcome, RecordOutcome::Stored, "golden {i} must record");
+        tp += 1;
+    }
+
+    // Control group — must NOT record:
+    // (a) high self-doubt (0.40) with an unreplayable run (empty answers);
+    let outcome = recorder.record_question_run(
+        "how do i bake sourdough bread",
+        &hyps(),
+        &[String::new(), String::new()],
+        "assembled step by step solution",
+        0.40,
+        true,
+        "audit-control-a1",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    // (a) high self-doubt (0.40) with a structurally valid run — the
+    // confidence floor still refuses;
+    let outcome = recorder.record_question_run(
+        "how do i sharpen a chisel",
+        &hyps(),
+        &answers(),
+        "assembled step by step solution",
+        0.40,
+        true,
+        "audit-control-a2",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    // (b) low self-doubt (0.95) but the assembler rejected the run —
+    // confidence is not task value.
+    let outcome = recorder.record_question_run(
+        "how do i sharpen a chisel",
+        &hyps(),
+        &answers(),
+        "assembled step by step solution",
+        0.95,
+        false,
+        "audit-control-b",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+
+    let fp = 0usize;
+    let precision = tp as f64 / (tp + fp).max(1) as f64;
+    // Only the goldens persisted: the library holds exactly their entries.
+    assert_eq!(
+        store.nearest(&embedder.embed(goldens[0]).unwrap(), 16).len(),
+        goldens.len(),
+        "controls store nothing"
+    );
+    assert_eq!((tp, fp), (3, 0));
+    assert_eq!(precision.to_bits(), 1.0f64.to_bits());
+
+    // Replay success: bank the validated reuses, then every golden replays
+    // for its own query.
+    let cfg = ReplayConfig::calibrated();
+    let mut hits = 0usize;
+    for (i, query) in goldens.iter().enumerate() {
+        let audit = format!("audit-golden-{i}");
+        recorder.replay().note_reuse_outcome(&audit, true);
+        recorder.replay().note_reuse_outcome(&audit, true);
+        let emb = embedder.embed(query).unwrap();
+        let hit = recorder.replay().try_replay(query, &emb, 0.99, &cfg);
+        assert!(
+            matches!(&hit, Some(h) if h.audit_id == audit),
+            "golden {i} must replay"
+        );
+        hits += 1;
+    }
+    let replay_success = hits as f64 / goldens.len() as f64;
+    assert_eq!(hits, goldens.len());
+    assert_eq!(replay_success.to_bits(), 1.0f64.to_bits());
+    println!(
+        "record calibration {CALIBRATION_DATE}: recording precision={precision} ({tp}/{}), replay success={replay_success} ({hits}/{})",
+        tp + fp,
+        goldens.len(),
+    );
 }

@@ -21,20 +21,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use regex::Regex;
+use guidance_rdf::lexer::{Lexer, TokenKind};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 
 use crate::normalize::{normalize_extracted_name, normalize_yago_name};
-
-static PREFIX_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*@prefix\s+(\w+):\s+<([^>]+)>\s*\.\s*$").unwrap());
-static SUBCLASS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?P<subj>(?:<[^>]+>|[A-Za-z_][\w\-]*:[^\s]+))\s+rdfs:subClassOf\s+(?P<obj>(?:<[^>]+>|[A-Za-z_][\w\-]*:[^\s,;.\]]+))",
-    )
-    .unwrap()
-});
 
 /// One taxonomy entry: direct parents + all transitive ancestors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,15 +33,6 @@ pub struct ClassEntry {
     pub parents: Vec<String>,
     /// Full transitive ancestor closure (normalized, sorted, deduplicated).
     pub ancestors: Vec<String>,
-}
-
-/// Parse one `@prefix` line into `prefixes`. Returns `true` when consumed.
-pub fn parse_prefix(line: &str, prefixes: &mut BTreeMap<String, String>) -> bool {
-    if let Some(caps) = PREFIX_RE.captures(line) {
-        prefixes.insert(caps[1].to_string(), caps[2].to_string());
-        return true;
-    }
-    false
 }
 
 /// Expand a CURIE to a full IRI; `<...>` IRIs are returned stripped.
@@ -116,26 +97,12 @@ pub fn normalize_curie(curie: &str) -> String {
     normalize_yago_name(curie)
 }
 
-/// Collect `(subject_iri, object_iri)` `rdfs:subClassOf` edges from TTL text.
+/// Collect `(subject_iri, object_iri)` `rdfs:subClassOf` edges from TTL text
+/// plus the declared prefix map. Delegates to the crate's single Turtle
+/// reader ([`crate::turtle::subclass_edges`]); the former line regex is gone.
 #[must_use]
 pub fn collect_edges(ttl: &str) -> (BTreeMap<String, String>, Vec<(String, String)>) {
-    let mut prefixes = BTreeMap::new();
-    let mut edges = Vec::new();
-    for line in ttl.lines() {
-        if parse_prefix(line, &mut prefixes) {
-            continue;
-        }
-        if !line.contains("subClassOf") {
-            continue;
-        }
-        for caps in SUBCLASS_RE.captures_iter(line) {
-            edges.push((
-                expand_curie(&caps["subj"], &prefixes),
-                expand_curie(&caps["obj"], &prefixes),
-            ));
-        }
-    }
-    (prefixes, edges)
+    crate::turtle::subclass_edges(ttl)
 }
 
 /// Transitive closure of `subClassOf`: subject → sorted ancestor list.
@@ -360,10 +327,8 @@ fn should_keep_line(
         return true;
     }
     if line.contains("subClassOf") {
-        for caps in SUBCLASS_RE.captures_iter(line) {
-            let subj = expand_curie(&caps["subj"], prefixes);
-            let obj = expand_curie(&caps["obj"], prefixes);
-            if !(kept.contains(&subj) && kept.contains(&obj)) {
+        for (subject, object) in crate::turtle::subclass_edges_in_line(line, prefixes) {
+            if !(kept.contains(&subject) && kept.contains(&object)) {
                 return false;
             }
         }
@@ -371,28 +336,31 @@ fn should_keep_line(
     }
     // `rdf:type rdfs:Class` declarations die with their class.
     if line.contains("rdf:type") && line.contains("rdfs:Class") {
-        static SUBJ_RE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"^\s*(?P<subj>(?:<[^>]+>|[A-Za-z_][\w\-]*:[^\s]+))").unwrap()
-        });
-        if let Some(caps) = SUBJ_RE.captures(line) {
-            return kept.contains(&expand_curie(&caps["subj"], prefixes));
+        if let Some(subject) = first_subject_iri(line, prefixes) {
+            return kept.contains(&subject);
         }
         return true;
     }
     // Other yago:/schema: subjects die with their class; the rest stays.
-    static SUBJ_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^\s*(?P<subj>(?:<[^>]+>|[A-Za-z_][\w\-]*:[^\s]+))").unwrap()
-    });
-    if let Some(caps) = SUBJ_RE.captures(line) {
-        let subj = expand_curie(&caps["subj"], prefixes);
-        if edges_known.contains(&subj) {
-            return kept.contains(&subj);
+    if let Some(subject) = first_subject_iri(line, prefixes) {
+        if edges_known.contains(&subject) {
+            return kept.contains(&subject);
         }
-        if subj.starts_with(YAGO_NS) || subj.starts_with("http://schema.org/") {
-            return kept.contains(&subj);
+        if subject.starts_with(YAGO_NS) || subject.starts_with("http://schema.org/") {
+            return kept.contains(&subject);
         }
     }
     true
+}
+
+/// The line's first subject IRI, expanded through `prefixes`, using the
+/// canonical `guidance_rdf` lexer (the former `SUBJ_RE` regex is gone).
+fn first_subject_iri(line: &str, prefixes: &BTreeMap<String, String>) -> Option<String> {
+    let token = Lexer::new(line).next_token().ok()?;
+    match token.kind {
+        TokenKind::Iri | TokenKind::PrefixedName => Some(expand_curie(token.value, prefixes)),
+        _ => None,
+    }
 }
 
 /// Prune TTL text to the top `num_tiers` tiers, preserving prefix headers.
@@ -412,3 +380,7 @@ pub fn prune_ttl(ttl: &str, num_tiers: usize) -> String {
     }
     out
 }
+
+#[cfg(test)]
+#[path = "../tests/taxonomy.rs"]
+mod tests;

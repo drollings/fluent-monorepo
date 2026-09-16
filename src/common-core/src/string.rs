@@ -218,7 +218,7 @@ pub fn strip_html(s: &str) -> String {
             let name_empty = tag_start
                 .chars()
                 .next()
-                .map_or(true, |c| !c.is_alphanumeric());
+                .is_none_or(|c| !c.is_alphanumeric());
 
             // Check for closing tags first — in_script/in_style flags block the
             // normal tag handler, so we must detect </script>/</style> here.
@@ -272,7 +272,7 @@ pub fn strip_html(s: &str) -> String {
         if in_script || in_style {
             // Advance one char (tags inside skipped content are handled
             // by the `<` branch above on the next iteration).
-            i += s[i..].chars().next().map_or(1, |c| c.len_utf8());
+            i += s[i..].chars().next().map_or(1, char::len_utf8);
             continue;
         }
 
@@ -320,7 +320,7 @@ fn emit_collapsed(out: &mut String, prev_space: &mut bool, c: char) {
 /// Byte length of the leading ASCII-alphanumeric run of `s`.
 fn alnum_run_len(s: &str) -> usize {
     s.bytes()
-        .take_while(|b| b.is_ascii_alphanumeric())
+        .take_while(u8::is_ascii_alphanumeric)
         .count()
 }
 
@@ -331,7 +331,7 @@ fn run_eq_word(s: &str, lit: &str) -> bool {
     let run = alnum_run_len(s);
     run == lit.len()
         && s.as_bytes()[..run].eq_ignore_ascii_case(lit.as_bytes())
-        && s[run..].chars().next().map_or(true, |c| !c.is_alphanumeric())
+        && s[run..].chars().next().is_none_or(|c| !c.is_alphanumeric())
 }
 
 /// Tag-name prefix match without allocating (opening `<script…>` / `<style…>`).
@@ -570,6 +570,9 @@ pub fn slugify(text: &str) -> String {
 /// router's chart-name slug is `CHART_OPTIONS` (separator `'_'`, run
 /// collapsing, trailing-separator strip, char-bounded length cap).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Four independent option flags; a bitflags struct would break the public
+// `CHART_OPTIONS` / `legacy_default()` field-init API for no gain.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SlugOptions {
     /// `true`: ASCII-lowercase and map every other non-kept char to the
     /// separator. `false` (legacy): Unicode-lowercase, map only `' '` to the
@@ -682,11 +685,10 @@ pub fn slugify_with(text: &str, opts: &SlugOptions) -> String {
 pub fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
     // Single walk: count chars, remember the cut point and the last `.`
     // (byte offset + char index) seen inside the first `max_chars` chars.
-    let mut count: usize = 0;
     let mut cut_byte = text.len();
     let mut last_period: Option<(usize, usize)> = None;
     let mut fits = true;
-    for (i, c) in text.char_indices() {
+    for (count, (i, c)) in text.char_indices().enumerate() {
         if count >= max_chars {
             cut_byte = i;
             fits = false;
@@ -695,7 +697,6 @@ pub fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
         if c == '.' {
             last_period = Some((i, count));
         }
-        count += 1;
     }
     if fits {
         return text.to_string();

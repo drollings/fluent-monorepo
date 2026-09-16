@@ -51,8 +51,8 @@ pub const CALIBRATED_SCORE_THRESHOLD: f64 = 0.75;
 /// The two-gate promotion policy. Stamping is per-pattern opt-in: nothing in
 /// the pipeline constructs this by default (candidates-only default holds).
 /// There is deliberately no `Default` impl and no production default value —
-/// callers pass an explicit threshold (the calibrated constant once M16
-/// wires the flag) so the gate stays opt-in.
+/// callers pass an explicit threshold (the calibrated constant) so the gate
+/// stays opt-in.
 #[derive(Debug, Clone, Copy)]
 pub struct EntityStampGate {
     /// Gate-1 bar: candidate scores reach (`>=`) this to stamp. NaN never
@@ -125,7 +125,7 @@ pub fn stamp_gated(
 ) -> Vec<StampOutcome> {
     cands
         .iter()
-        .map(|cand| match decide(doc, gate, cand) {
+        .map(|cand| match decide(doc, *gate, cand) {
             Ok(stamped) => {
                 doc.token_mut(stamped.token).interlingua_entity_id = Some(stamped.entity);
                 StampOutcome::Stamped(stamped)
@@ -163,7 +163,7 @@ pub fn verify_stamps(doc: &mut Doc, stamps: &[StampedSpan]) -> Vec<usize> {
 /// The two gates as a pure decision (no doc mutation).
 fn decide(
     doc: &Doc,
-    gate: &EntityStampGate,
+    gate: EntityStampGate,
     cand: &StampCandidate,
 ) -> Result<StampedSpan, KeepReason> {
     let token = doc.tokens().get(cand.token).ok_or(KeepReason::UnknownToken)?;
@@ -173,7 +173,13 @@ fn decide(
     if token.interlingua_entity_id.is_some() {
         return Err(KeepReason::AlreadyStamped);
     }
-    if !(cand.score >= gate.score_threshold) {
+    // NaN compares less than nothing: `partial_cmp` is `None` when either
+    // side is NaN, and `None` fails the bar exactly like `!(score >= t)`.
+    if cand
+        .score
+        .partial_cmp(&gate.score_threshold)
+        .is_none_or(|ord| ord == std::cmp::Ordering::Less)
+    {
         return Err(KeepReason::BelowThreshold);
     }
     // Gate 2 (task-value): the stamp must introduce a distinct YaGO entity
@@ -209,7 +215,7 @@ fn sentence_concept_set(doc: &Doc, token: usize) -> HashSet<InterlinguaId> {
         Some(idx) => signals
             .get(idx)
             .and_then(|signal| signal.interlingua.as_ref())
-            .map(|frame| frame.concept_ids.iter().cloned().collect())
+            .map(|frame| frame.concept_ids.iter().copied().collect())
             .unwrap_or_default(),
         None => signals
             .into_iter()

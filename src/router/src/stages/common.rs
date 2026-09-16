@@ -86,6 +86,46 @@ pub(crate) fn coerce_string(obj: &mut Map<String, Value>, key: &str, default: &s
     }
 }
 
+/// Typed handoff key for the cached parsed request. The value is a
+/// `(generation, Option<Arc<RouterRequest>>)` pair: the orchestrator parses
+/// `structured["request"]` once at pipeline entry (generation 0) and replaces
+/// the entry — generation incremented — whenever a `Rerouted` verdict swaps
+/// the request. Stage readers take the cached `Arc` and re-parse only when
+/// the generation changed; `None` marks an unparseable request for this
+/// generation so readers fail exactly as the per-stage parse would.
+pub const TYPED_REQUEST_KEY: &str = "request.typed";
+
+/// The cached typed request entry (see [`TYPED_REQUEST_KEY`]).
+pub type TypedRequest = (u64, Option<std::sync::Arc<RouterRequest>>);
+
+/// Parse `value` into the typed request cache entry for `generation`.
+/// `Some(request)` only when the value deserializes; a failure yields
+/// `(generation, None)` so the cache never serves a stale generation.
+pub fn parse_typed_request(value: &serde_json::Value, generation: u64) -> TypedRequest {
+    (
+        generation,
+        serde_json::from_value::<RouterRequest>(value.clone())
+            .ok()
+            .map(std::sync::Arc::new),
+    )
+}
+
+/// Read the cached typed request, falling back to a one-off parse of
+/// `structured["request"]` for composition paths that never entered through
+/// the orchestrator (handlers, direct `execute` calls in tests).
+pub fn typed_request(ctx: &WorkContext) -> Option<std::sync::Arc<RouterRequest>> {
+    match ctx.get::<TypedRequest>(TYPED_REQUEST_KEY) {
+        Some((_, Some(req))) => Some(std::sync::Arc::clone(req)),
+        // Unparseable this generation — don't re-attempt; the fallback parse
+        // below would fail identically.
+        Some((_, None)) => None,
+        None => ctx
+            .structured("request")
+            .ok()
+            .map(|r: RouterRequest| std::sync::Arc::new(r)),
+    }
+}
+
 /// Extract the last user message from the request carried in
 /// `ctx.structured["request"]`.
 ///
@@ -98,15 +138,21 @@ pub(crate) fn coerce_string(obj: &mut Map<String, Value>, key: &str, default: &s
 /// `RouterMessageContent::to_string_lossy` — this function only picks the
 /// message, it never re-implements content rendering.
 ///
+/// The request is read from the typed cache ([`typed_request`], M14) — one
+/// deserialization per generation, not per stage.
+///
 /// Selection semantics: the last `role == "user"` message whose content
 /// renders to text. A `Text` message is returned verbatim (an empty string is
 /// a valid — if degenerate — user message). A `Parts` message with no
 /// extractable text (e.g. image-only) is skipped so an earlier text message
 /// still resolves, matching the historical skip of non-string content.
 pub fn extract_user_message(ctx: &WorkContext) -> Result<String, WorkError> {
-    let request: RouterRequest = ctx
-        .structured("request")
-        .map_err(|e| WorkError::Execution(format!("missing request: {e}")))?;
+    let request = typed_request(ctx).ok_or_else(|| {
+        match ctx.structured::<serde_json::Value>("request") {
+            Err(e) => WorkError::Execution(format!("missing request: {e}")),
+            Ok(_) => WorkError::Execution("missing request: not a valid RouterRequest".into()),
+        }
+    })?;
 
     request
         .messages

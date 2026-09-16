@@ -265,10 +265,13 @@ impl Ladder {
         );
 
         if accepted {
-            // Learning loop: the solved frontier-assisted run is distilled
-            // into the reusable-DAG library (best-effort, never fails the
-            // request — the outcome is audit, not control flow). The write
-            // gate still applies its calibrated [A]/[B] floors inside.
+            // Learning loop: the solved frontier-assisted run is proposed for
+            // the reusable-DAG library (best-effort, never fails the request
+            // — the outcome is audit, not control flow). Persistence needs the
+            // task-value acceptance inside (assembler verdict plus a replay
+            // dry-run that reproduces the run's structure) and the calibrated
+            // write gate (confidence floor, novelty, verified flag) —
+            // confidence alone never persists.
             if let Some(recorder) = ctx.recorder {
                 let audit_id = format!(
                     "escalation:question:{:016x}",

@@ -65,6 +65,12 @@ pub struct PatternEntry {
     pub http_code: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
+    /// Soft-redirect target route. Present only on `soft_redirect` patterns:
+    /// a regex match short-circuits the classifier dispatch and resolves this
+    /// route through the terminal target resolution. Absent (the default) on
+    /// every other outcome — a route-less soft_redirect pattern never fires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
     #[serde(default)]
     pub regexes: Vec<String>,
 }

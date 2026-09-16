@@ -103,7 +103,7 @@ fn unicode_punct_from_default_set() {
     let s = Sentencizer::new();
     let d = doc("Bonjour le monde 。 Comment ça va ？");
     let g = s.predict(&d);
-    assert_eq!(g[0], true);
+    assert!(g[0]);
     // the token after the fullwidth 。 starts a new sentence
-    assert!(g.iter().filter(|&&b| b).count() == 2);
+    assert_eq!(g.iter().filter(|&&b| b).count(), 2);
 }

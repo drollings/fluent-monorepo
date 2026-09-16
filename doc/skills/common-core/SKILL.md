@@ -46,8 +46,9 @@ use common_core::sqlite::open_wal;           // feature-gated
 
 When a cross-crate constant or utility has **two or more consumers**, it
 MUST be promoted to `common-core`. Single-consumer items stay in their
-domain crate temporarily — see `ROADMAP_20260625_CONSOLIDATE.md` for the
-active promotion plan.
+domain crate temporarily until a second consumer appears — at which point
+the *second* consumer must move to the shared home rather than copy the
+consumer copy.
 
 ## Promotion candidates (canonical homes — compose, don't copy)
 

@@ -55,7 +55,7 @@ fn strings_persist_across_restart() {
     {
         let pipe = NlpPipeline::en_default().expect("first boot");
         let doc = pipe.process_sync("The cat sat on the mat.", None).expect("process");
-        assert!(doc.len() > 0);
+        assert!(!doc.is_empty());
         pipe.persist_strings(&strings_path).expect("persist");
     }
 
@@ -63,7 +63,7 @@ fn strings_persist_across_restart() {
     // strings interned in the first run resolve again.
     let pipe = NlpPipeline::en_default_with_strings(&strings_path).expect("second boot");
     let doc = pipe.process_sync("The cat sat on the mat.", None).expect("process");
-    assert!(doc.len() > 0);
+    assert!(!doc.is_empty());
     let store = pipe.vocab().strings();
     assert!(store.contains("cat"), "lemma interned in run 1 survives restart");
     assert!(store.contains("the"));
@@ -721,7 +721,7 @@ fn process_sync_resolves_after_attach() {
         assert!(doc.token(i).interlingua_lemma_id.is_some(), "token {i} stamped");
     }
     let signals = signals_of(&doc);
-    assert!(signals[0].interlingua.as_ref().unwrap().token_ids.len() == doc.len());
+    assert_eq!(signals[0].interlingua.as_ref().unwrap().token_ids.len(), doc.len());
 }
 
 #[tokio::test]
@@ -792,7 +792,7 @@ fn encoder_source_rides_like_arc_eager() {
     assert_eq!(result.source(), AnnotationSource::Encoder);
     assert_eq!(result.token_confidence(), Some(&[0.4, 0.9][..]));
     let pc = result.parse_confidence.as_ref().expect("parse confidence");
-    assert_eq!(pc.overall, 0.6);
+    assert!((pc.overall - 0.6).abs() < 1e-9);
 }
 
 // ── Deterministic-first contract ──
@@ -920,6 +920,7 @@ fn empty_doc_falls_to_rule() {
 // ── M1.1: RefineMode / RefinePolicy / should_refine / refine_focus / frame_coverage ──
 
 use crate::arc_eager::ParseConfidence;
+use crate::frame::frame_coverage_signal;
 use crate::routing::{InterlinguaSignal, RoutingSignal};
 use fluent_types::InterlinguaId;
 
@@ -1320,7 +1321,7 @@ fn frame_coverage_is_bounded() {
             d.map(InterlinguaId::from_u64),
         );
         let cov = frame_coverage_signal(&signal);
-        assert!(cov >= 0.0 && cov <= 1.0, "coverage {cov} out of bounds");
+        assert!((0.0..=1.0).contains(&cov), "coverage {cov} out of bounds");
     }
 }
 
@@ -1364,7 +1365,8 @@ fn frame_coverage_zero_sentinel_is_not_counted() {
 #[test]
 fn frame_coverage_golden_values() {
     // Golden cases: every distinct (p,s,d) combination → expected coverage.
-    let cases: &[(Option<u64>, Option<u64>, Option<u64>, f64)] = &[
+    type CoverageCase = (Option<u64>, Option<u64>, Option<u64>, f64);
+    let cases: &[CoverageCase] = &[
         (None, None, None, 0.0),
         (Some(1), None, None, 1.0 / 3.0),
         (None, Some(2), None, 1.0 / 3.0),
@@ -2422,7 +2424,7 @@ fn span_cache_hit_avoids_llm_call() {
     let focus = refine_focus(
         &r1,
         &crate::routing::extract_routing_signals(&pipeline.process_sync("show me the report", None).expect("sync"))
-            .into_iter().next().map(|s| s.interlingua).flatten()
+            .into_iter().next().and_then(|s| s.interlingua)
             .unwrap_or_else(|| crate::routing::InterlinguaSignal {
                 predicate_id: None, subject_id: None, direct_object_id: None,
                 indirect_object_id: None, concept_ids: vec![], token_ids: vec![], confidence: None,
@@ -2544,8 +2546,7 @@ fn async_sync_refine_agree() {
         for (idx, cov) in refined_covs.iter().enumerate() {
             match cov {
                 Some(c) if *c >= base_cov => return Some(idx),
-                Some(_) => continue, // regression -> try next
-                None => continue,    // refiner produced no result -> skip
+                _ => {} // regression or no result -> try next
             }
         }
         None
@@ -3032,7 +3033,7 @@ fn eager_annotator_is_shared_across_calls() {
         Arc::ptr_eq(pipe.eager(), pipe.eager()),
         "eager() must return the same shared allocation"
     );
-    let before: *const () = Arc::as_ptr(pipe.eager()) as *const ();
+    let before: *const () = Arc::as_ptr(pipe.eager()).cast::<()>();
     let (_doc_a, _res_a) = pipe
         .process_sync_with_confidence("The cat sat.", None, None, RefinePolicy::default())
         .expect("first parse");
@@ -3043,7 +3044,7 @@ fn eager_annotator_is_shared_across_calls() {
         Arc::ptr_eq(pipe.eager(), pipe.eager()),
         "eager allocation must survive annotation calls"
     );
-    let after: *const () = Arc::as_ptr(pipe.eager()) as *const ();
+    let after: *const () = Arc::as_ptr(pipe.eager()).cast::<()>();
     assert_eq!(before, after, "no rebuild across process_sync calls");
 }
 
@@ -3101,7 +3102,7 @@ fn stage_metadata_and_describes_are_pinned() {
     ));
 
     let ascii = |deps: &[internment::ArcIntern<str>]| -> Vec<String> {
-        deps.iter().map(|d| d.to_string()).collect()
+        deps.iter().map(std::string::ToString::to_string).collect()
     };
 
     let annotate = AnnotateStage;

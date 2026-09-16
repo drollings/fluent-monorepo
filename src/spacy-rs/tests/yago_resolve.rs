@@ -9,7 +9,7 @@ use std::sync::Arc;
 use fluent_concept::{ConceptStore, InMemoryConceptStore};
 
 fn ascii(deps: &[internment::ArcIntern<str>]) -> Vec<String> {
-    deps.iter().map(|d| d.to_string()).collect()
+    deps.iter().map(std::string::ToString::to_string).collect()
 }
 
 #[test]

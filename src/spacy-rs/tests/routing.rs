@@ -164,8 +164,8 @@ fn interlingua_signal_carries_role_ids() {
             )
         })
         .collect();
-    for i in 0..doc.len() {
-        doc.token_mut(i).interlingua_lemma_id = Some(ids[i]);
+    for (i, id) in ids.iter().enumerate() {
+        doc.token_mut(i).interlingua_lemma_id = Some(*id);
     }
     // A PROPN token with a YaGO entity id → concept id.
     doc.token_mut(3).interlingua_entity_id =

@@ -96,8 +96,8 @@ cost except where a vtable or serialization boundary genuinely exists.
 >   the `Component` interface uniform and forward-compatible for future
 >   runtime assembly. These are **intentional**; do not prune them as dead
 >   code. Examples: `FieldAccess`/`Describable` on router stages,
->   `PersistableComponent` (trait only, no implementor), `SchemaProvider`
->   (derive-only, never invoked in production), `DynamicComponent`.
+>   `SchemaProvider` (derive-only, never invoked in production),
+>   `DynamicComponent`.
 > - **Planned** — described as the intended end-state but not yet built.
 >
 > Where this document says a pattern is "in production use," read it as
@@ -144,15 +144,19 @@ that single theme.
 Every unit of work in this system — a DAG target, a WASM plugin, a query strategy, an embedding provider — presents the **same interface** to the orchestrator regardless of whether it was assembled at compile time or at runtime. The orchestrator iterates over uniform handles and calls trait methods. The compiler enforces the interface at every implementation site.
 
 > **The one sanctioned exception.** `PipelineOrchestrator` (the router's
-> hot path) downcasts `Arc<dyn Component>` to the two known stage types via
-> `as_producer` (`pipeline.rs`) and calls `StageDecisionProducer::evaluate`
-> directly — a typed handoff that avoids serializing each `StageDecision`
-> through `WorkOutput.data` once per request. This is a measured exception to
-> "never branch on type": it exists because a serialize→deserialize round-trip
-> on the request path costs more than one downcast, and it falls back to the
-> uniform `execute` path for unknown components. New code should **not** copy
-> this pattern; it is reserved for the one place where the per-request
-> serialization cost was measured and the downcast won.
+> hot path) keeps a builder-registered typed handoff next to the uniform
+> handles: each stage's `Arc<dyn Component>` is paired with an optional
+> `StageProducer` (`Arc<dyn StageDecisionProducer>`, `pipeline.rs`), and the
+> orchestrator calls `StageDecisionProducer::evaluate` directly — a handoff
+> that avoids serializing each `StageDecision` through `WorkOutput.data` once
+> per request. This is a measured exception to "never branch on type": it
+> exists because a serialize→deserialize round-trip on the request path costs
+> more than one typed call, and it falls back to the uniform `execute` path
+> for stages with no registered producer. There is no `downcast_ref` on this
+> path — the two handles are cloned from the same allocation at registration
+> time. New code should **not** copy this pattern; it is reserved for the one
+> place where the per-request serialization cost was measured and the typed
+> handoff won.
 
 The `Component` supertrait is the concrete expression of this principle:
 
@@ -287,8 +291,8 @@ the `FieldAccess` no-op trio. There is **no blanket
 `impl Component for Arc<dyn Component>`; the macro is the mechanism.
 
 The full annotated definitions (every `FieldError` variant, the
-`SchemaProvider`/`PersistableComponent` scaffold types, the `Arc<dyn
-Component>` blanket-impl details) live in `src/fluent-wvr/src/traits.rs` —
+`SchemaProvider` scaffold trait, the `Arc<dyn Component>` blanket-impl
+details) live in `src/fluent-wvr/src/traits.rs` —
 read them there when you need the complete contract, not here.
 
 > **The one subtle requirement to remember:** `field_names` and `describe` are
@@ -407,12 +411,9 @@ use fluent_wvr::prelude::*;
 // ArcIntern.
 ```
 
-> `ComponentArcExt`, `FieldSchema`, `SchemaProvider`, and
-> `PersistableComponent` are **not** in the prelude — they are niche
-> types that should be imported from `fluent_wvr::traits` or
-> `fluent_wvr::capability` when actually needed. The milestone
-> removed them from the prelude because no consumer in the in-tree
-> call graph imported them through the prelude.
+> `ComponentArcExt`, `FieldSchema`, and `SchemaProvider` are **not** in the
+> prelude — they are niche types that should be imported from
+> `fluent_wvr::traits` or `fluent_wvr::capability` when actually needed.
 
 > **Critical design note on `field_names` and `describe`:** Both are defined as `&self` instance methods, not static associated functions. This is deliberate: it makes them callable through `dyn Component`. A `fn field_names() -> &'static [&'static str]` associated function is not object-safe and cannot be dispatched through a trait object. Always use the instance method form.
 
@@ -932,7 +933,7 @@ pub enum ProviderConfig {
 
 ### Component serialization (deferred)
 
-Adding `Serialize` to the `Component` trait would require every implementor to be serializable — a breaking change for types holding `Arc<dyn Provider>`, `Mutex<Plugin>`, etc. A `PersistableComponent` trait stub exists in `fluent-wvr/src/traits.rs` as a design placeholder. Do NOT implement it until a second consumer materializes that needs to persist component state.
+Adding `Serialize` to the `Component` trait would require every implementor to be serializable — a breaking change for types holding `Arc<dyn Provider>`, `Mutex<Plugin>`, etc. There is deliberately no persistence trait on the `Component` surface today: do NOT add one until a second consumer materializes that needs to persist component state.
 
 ### Rules
 
@@ -2194,7 +2195,6 @@ rules of thumb.
 | `ComponentAdapter` | `Send + Sync` required; closures must be `Send + Sync` |
 | `Scope` (`fluent-concurrency`) | Holds a `JoinSet` internally; not `Sync`. Use `Scope::defer()` to guarantee cleanup on drop. Dropping without `close().await` panics (a structured-concurrency violation). |
 | `SupervisedBatch` (`fluent-concurrency`) | Holds a `JoinSet` and a per-batch `Runtime` reference. `SupervisedBatch::register` returns `Result<&mut Self, SupervisedBatchError>` — duplicate names are rejected with `Err(SupervisedBatchError::DuplicateName(_))`. |
-| `Reserve` (`fluent-concurrency`) | RAII permit from a shared `AtomicUsize` counter. `Send + Sync` because the counter is `Arc`-shared. Drop without `commit()` returns the permit; `commit()` consumes it permanently. |
 | Observability (Pattern 11) | There is **no** standalone `LogContext` type. Timing/observability compose `Instrumented` (wraps `WorkUnit`, logs via `tracing`) + `common_core::metrics::LatencyHistogram` (lock-free atomic histogram) — see §14. |
 
 ### Detailed rules
@@ -2378,9 +2378,9 @@ When writing new code in `rust-src/`:
 
 ### The throwaway rule
 
-25. **Never add a new public API surface (function, type, error variant, or builder helper) without at least one in-tree production consumer.** The codebase has a documented rule against throwaway additions — three APIs shipped in a prior roadmap cycle (`Reserve`, `FieldError::ReadOnly`, `WorkContext::for_unit_in_batch`) had no production consumer on landing. The cost shows up in unused code paths, surprise behaviour, and dead documentation. If a feature must ship ahead of its consumer, file a tracking issue and link it from the API's doc comment.
+25. **Never add a new public API surface (function, type, error variant, or builder helper) without at least one in-tree production consumer.** The codebase has a documented rule against throwaway additions — prior cycles shipped APIs with no production consumer on landing. Some earned one (`FieldError::ReadOnly`, now returned by the shared-`Arc` blanket impl; `WorkContext::for_unit_in_batch`, now the registration-site constructor); the ones that never did were pruned with their tests (the `Reserve` permit scaffold, the `PartitionedRouter` sharding shim, the `PersistableComponent` stub). The cost shows up in unused code paths, surprise behaviour, and dead documentation. If a feature must ship ahead of its consumer, file a tracking issue and link it from the API's doc comment.
 
-26. **Compatibility surface is a deliberate, marked exception.** A trait/type kept for forward compatibility (the `FieldAccess`/`Describable` reflection surface, `SchemaProvider`, `PersistableComponent`, `DynamicComponent`, `Reserve`, `PartitionedRouter`) is not "throwaway" *when it is explicitly marked as such in its doc comment and in the §0 status taxonomy*. Marking is what distinguishes scaffold (keep, maintain contract) from dead code (prune). Any API that is neither production-composed nor marked scaffold is a throwaway-rule candidate and should be pruned.
+26. **Compatibility surface is a deliberate, marked exception.** A trait/type kept for forward compatibility (the `FieldAccess`/`Describable` reflection surface, `SchemaProvider`, `DynamicComponent`) is not "throwaway" *when it is explicitly marked as such in its doc comment and in the §0 status taxonomy*. Marking is what distinguishes scaffold (keep, maintain contract) from dead code (prune). Any API that is neither production-composed nor marked scaffold is a throwaway-rule candidate and should be pruned.
 
 ### Verification
 
@@ -2421,10 +2421,8 @@ runtime in `fluent-concurrency`. The full surface is documented in
 | `Limiter` | `fluent-concurrency/src/pool.rs` | Concurrency cap (N-at-a-time), no queue |
 | `Queue<T>` | `fluent-concurrency/src/pool.rs` | Bounded async FIFO; `PoolError::Full` on overflow; `std::sync::Mutex` backing (never held across an await) |
 | `PriorityQueue<T>` | `fluent-concurrency/src/queue.rs` | O(log P) for distinct priorities, O(1) for all-zero fast path; `BoundedPriorityQueue` adds the `Queue`-style close-wakes-waiters wrapper |
-| `PartitionedRouter<K, J>` | `fluent-concurrency/src/router.rs` | Hash-based sharding; preserves causal ordering per key; **compatibility surface (scaffold)** |
 | `first_accept_in_order` | `fluent-concurrency/src/ladder.rs` | Monomorphized first-Ok-wins fallback combinator ("try rungs in order, take the first success"); the canonical ladder primitive composed by `BackendChain`, `dispatch_real`, and the router's escalation ladder |
 | `CreditFlow` | `fluent-concurrency/src/flow.rs` | Sender/receiver backpressure with `CreditSpec { initial, more_after }`; **production** — gates the router's ledger tier feed (`LedgerTierWorker::enqueue_with_credit` / `recv()` per processed node) |
-| `Reserve` | `fluent-concurrency/src/reserve.rs` | RAII permit from a shared `AtomicUsize`; `try_acquire`/`commit`; **compatibility surface (scaffold)** — no in-tree production consumer; kept as the low-level permit seam |
 
 A `SupervisedBatch` is a `Scope` plus the `WorkUnit` integration: tasks implement
 `Component` and are registered with `batch.register(arc).unwrap()`.

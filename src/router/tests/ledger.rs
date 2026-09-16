@@ -246,6 +246,97 @@ fn compact_session_demotes_oldest_nodes() {
     assert_eq!(oldest.active_lod, Some(3));
 }
 
+// LOD0 is authoritative and immutable: compaction is a view-fidelity
+// (`active_lod`) operation. LOD0 bytes must survive `compact_session`
+// unchanged, and every lazy tier (LOD1-4) derives from the original LOD0.
+#[test]
+fn compact_session_leaves_lod0_immutable_and_derives_from_original() {
+    use crate::test_stubs::CountingBackend;
+    use std::sync::Arc;
+
+    let backend = Arc::new(CountingBackend::new("derived summary"));
+    let ledger = temp_ledger().with_summarizer(Summarizer::new(backend, 64));
+    let mut originals = Vec::new();
+    for i in 0..5 {
+        let text = format!("original full text of message {i}");
+        ledger
+            .record_request("sess-lod0-immutable", &format!("r{i}"), &text)
+            .unwrap();
+        originals.push(text);
+    }
+
+    // Capture LOD0 bytes before compaction.
+    let before: Vec<String> = (0..5)
+        .map(|i| {
+            ledger
+                .node_store()
+                .lod_text(
+                    ledger
+                        .get_session_nodes("sess-lod0-immutable", 10)
+                        .unwrap()
+                        .iter()
+                        .find(|n| n.request_id.as_deref() == Some(&format!("r{i}")))
+                        .unwrap()
+                        .id
+                        .unwrap(),
+                    LOD0_FULL_TEXT,
+                )
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(before, originals);
+
+    let demoted = ledger.compact_session("sess-lod0-immutable", 4).unwrap();
+    assert!(!demoted.is_empty(), "some nodes must be demoted");
+
+    // LOD0 bytes are unchanged for every node after compaction.
+    for (i, expected) in originals.iter().enumerate() {
+        let id = ledger
+            .get_session_nodes("sess-lod0-immutable", 10)
+            .unwrap()
+            .iter()
+            .find(|n| n.request_id.as_deref() == Some(&format!("r{i}")))
+            .unwrap()
+            .id
+            .unwrap();
+        assert_eq!(
+            ledger.node_store().lod_text(id, LOD0_FULL_TEXT).unwrap(),
+            *expected,
+            "LOD0 of r{i} must be byte-identical after compact_session"
+        );
+        assert_eq!(
+            ledger.get_node(id).unwrap().lod[0],
+            *expected,
+            "in-memory LOD0 of r{i} must be untouched"
+        );
+    }
+
+    // Lazy tiers derive from the original LOD0 even for a demoted node.
+    let oldest_id = ledger
+        .get_session_nodes("sess-lod0-immutable", 10)
+        .unwrap()
+        .iter()
+        .find(|n| n.request_id.as_deref() == Some("r0"))
+        .unwrap()
+        .id
+        .unwrap();
+    assert!(
+        demoted.contains(&oldest_id),
+        "oldest node must be demoted so the derivation runs under compaction"
+    );
+    for level in LAZY_LOD_RANGE {
+        let node = ledger.ensure_lod(oldest_id, level).unwrap();
+        assert_eq!(
+            node.lod[level as usize], "derived summary",
+            "LOD{level} must derive (stub output)"
+        );
+        assert_eq!(
+            node.lod[0], originals[0],
+            "deriving LOD{level} must not touch LOD0"
+        );
+    }
+}
+
 #[test]
 fn recency_compaction_under_max() {
     let nodes = make_nodes(3);
@@ -386,21 +477,29 @@ fn render_session_renders_three_nodes_as_three_lines() {
 }
 
 #[test]
-fn render_session_renders_collapsed_node_lod0() {
+fn render_session_after_compaction_still_shows_original_lod0() {
     let ledger = temp_ledger();
-    let id = ledger
-        .record_request("sess-collapse", "r1", "original long content")
-        .unwrap();
-    ledger
-        .collapse_node(id, "collapsed summary", LOD0_FULL_TEXT)
-        .unwrap();
+    for i in 0..5 {
+        ledger
+            .record_request(
+                "sess-compact-view",
+                &format!("r{i}"),
+                &format!("original long content {i}"),
+            )
+            .unwrap();
+    }
+    let demoted = ledger.compact_session("sess-compact-view", 4).unwrap();
+    assert!(!demoted.is_empty(), "some nodes must be demoted");
 
-    // Compaction mutates LOD0, so a LOD0 view shows the collapsed text —
-    // the fidelity policy never "defeats" compaction.
-    assert_eq!(
-        ledger.render_session("sess-collapse", Lod::LOD0),
-        "collapsed summary"
-    );
+    // Compaction is view-fidelity (`active_lod`) only: LOD0 is authoritative
+    // and immutable, so a LOD0 view shows the original full text.
+    let rendered = ledger.render_session("sess-compact-view", Lod::LOD0);
+    for i in 0..5 {
+        assert!(
+            rendered.contains(&format!("original long content {i}")),
+            "LOD0 view must keep the original text of r{i}, got: {rendered}"
+        );
+    }
 }
 
 // ── Migration 6: interlingua schema rebuild (red-team M2/M3) ───────

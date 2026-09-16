@@ -208,25 +208,21 @@ impl ChatBackend for LlmClient {
 /// `extra_body_params` (extras win on key conflicts). Returns `None` only when
 /// both are absent; non-object values degrade to an empty object so the merge
 /// never drops configured params.
+///
+/// Composed on top of the single wire-format merge (`openai::apply_params`,
+/// M12) — this is the config-layer variant: it merges two `Option` layers
+/// into one instead of applying onto a request body.
 fn merge_extra_params(
     base: Option<&serde_json::Value>,
     extras: Option<&serde_json::Value>,
 ) -> Option<serde_json::Value> {
-    let mut merged = base
-        .and_then(serde_json::Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    if let Some(extras) = extras {
-        if let Some(obj) = extras.as_object() {
-            for (k, v) in obj {
-                merged.insert(k.clone(), v.clone());
-            }
-        }
-    }
-    if merged.is_empty() {
+    let mut merged = serde_json::Value::Object(serde_json::Map::new());
+    crate::openai::apply_params(&mut merged, base, &[]);
+    crate::openai::apply_params(&mut merged, extras, &[]);
+    if merged.as_object().is_some_and(serde_json::Map::is_empty) {
         None
     } else {
-        Some(serde_json::Value::Object(merged))
+        Some(merged)
     }
 }
 

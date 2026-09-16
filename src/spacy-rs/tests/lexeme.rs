@@ -183,7 +183,7 @@ fn poisoned_lexicon_recovers_instead_of_panicking() {
         panic!("intentional poison");
     }));
     assert!(poisoned.is_err(), "poison setup must panic");
-    assert!(lex.len() >= 1);
+    assert!(!lex.is_empty());
     let _ = lex.get_or_create("hello");
     let _ = lex.get_or_create("world");
     assert!(lex.get_by_orth(hash_utf8("hello")).is_some());

@@ -18,7 +18,6 @@
 //! (neither `fluent-types` nor `common-core` depends on `dag`).
 
 #![forbid(unsafe_code)]
-#![allow(clippy::pedantic, clippy::all)]
 
 pub mod concept_store;
 pub mod concept_store_mem;

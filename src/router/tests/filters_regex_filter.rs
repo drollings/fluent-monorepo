@@ -12,6 +12,7 @@ fn entry(name: &str, outcome: FilterOutcome, regexes: &[&str]) -> PatternEntry {
         scope: vec![FilterScope::Any],
         http_code: 403,
         error_message: None,
+        route: None,
         regexes: regexes.iter().map(std::string::ToString::to_string).collect(),
     }
 }
@@ -116,7 +117,51 @@ fn output_filter_default_action_redacts() {
 }
 
 #[test]
-fn soft_redirect_not_wired_for_regex() {
+fn soft_redirect_without_route_is_inert() {
+    // A route-less soft_redirect pattern never fires — existing configs
+    // without `route` behave exactly as before the outcome was wired.
     let f = RegexFilter::from_entry(&entry("r", FilterOutcome::SoftRedirect, &["x"])).unwrap();
     assert!(f.evaluate(&FilterContext::pipeline("x".into())).is_none());
+}
+
+#[test]
+fn soft_redirect_emits_route_decision() {
+    let mut e = entry("billing", FilterOutcome::SoftRedirect, &["pay .* bill"]);
+    e.route = Some("finance".into());
+    let f = RegexFilter::from_entry(&e).unwrap();
+    let decision = f
+        .evaluate(&FilterContext::pipeline("please pay my bill".into()))
+        .expect("decision");
+    match decision {
+        FilterDecision::SoftRedirect { route, reason } => {
+            assert_eq!(route, "finance");
+            assert!(reason.contains("billing"));
+        }
+        other => panic!("expected soft redirect, got {other:?}"),
+    }
+    // No match → no decision.
+    assert!(f
+        .evaluate(&FilterContext::pipeline("hello".into()))
+        .is_none());
+}
+
+#[test]
+fn soft_redirect_luhn_invalid_does_not_redirect() {
+    let mut e = entry(
+        "card",
+        FilterOutcome::SoftRedirect,
+        &["\\d{4}-\\d{4}-\\d{4}-\\d{4}"],
+    );
+    e.route = Some("finance".into());
+    e.confidence_gate = ConfidenceGate::LuhnValid;
+    let f = RegexFilter::from_entry(&e).unwrap();
+    // Luhn-invalid number: the match is regex-shaped but not a card — no
+    // redirect.
+    assert!(f
+        .evaluate(&FilterContext::pipeline("card 1234-5678-9012-3456".into()))
+        .is_none());
+    // Luhn-valid number redirects.
+    assert!(f
+        .evaluate(&FilterContext::pipeline("card 4111-1111-1111-1111".into()))
+        .is_some());
 }

@@ -1,14 +1,14 @@
 pub const NS_YAGO: &str = "http://yago-knowledge.org/resource/";
-pub const NS_RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-pub const NS_RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
+// Re-homed in `guidance_rdf` (single source for the RDF/RDFS/XSD namespaces).
+pub use guidance_rdf::{NS_RDF, NS_RDFS, NS_XSD};
 pub const NS_OWL: &str = "http://www.w3.org/2002/07/owl#";
-pub const NS_XSD: &str = "http://www.w3.org/2001/XMLSchema#";
 pub const NS_SCHEMA: &str = "http://schema.org/";
 pub const NS_SKOS: &str = "http://www.w3.org/2004/02/skos/core#";
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
+use fluent_dag::hierarchy::HierarchyIndex;
 use fluent_types::{local_id_of, property_id_for_iri, InterlinguaId};
 use guidance_rdf::normalize::hash_iri;
 
@@ -127,35 +127,27 @@ pub fn lookup_class(iri: &str) -> Option<&'static OntologyClass> {
     BY_IRI.get(iri).copied()
 }
 
-pub fn superclass_chain(iri: &str) -> Vec<String> {
-    let mut chain: Vec<String> = Vec::new();
-    let mut current: Option<&str> = Some(iri);
-    while let Some(cur) = current {
-        chain.push(cur.to_string());
-        match lookup_class(cur) {
-            Some(cls) => current = cls.superclass,
-            None => break,
+/// The static class hierarchy, built once from [`ALL_CLASSES`] through the
+/// shared [`HierarchyIndex`] (the workspace's single closure implementation).
+static CLASS_HIERARCHY: LazyLock<HierarchyIndex<String>> = LazyLock::new(|| {
+    let mut index = HierarchyIndex::new();
+    for cls in ALL_CLASSES {
+        index.add_node(cls.iri.to_string());
+        if let Some(parent) = cls.superclass {
+            index.add_edge(&cls.iri.to_string(), &parent.to_string());
         }
     }
+    index
+});
+
+pub fn superclass_chain(iri: &str) -> Vec<String> {
+    let mut chain: Vec<String> = vec![iri.to_string()];
+    chain.extend(CLASS_HIERARCHY.ancestors(&iri.to_string()));
     chain
 }
 
 pub fn is_subclass_of(child_iri: &str, parent_iri: &str) -> bool {
-    if child_iri == parent_iri {
-        return true;
-    }
-    let mut current: Option<&str> = Some(child_iri);
-    while let Some(cur) = current {
-        match lookup_class(cur) {
-            Some(cls) => match cls.superclass {
-                Some(superclass) if superclass == parent_iri => return true,
-                Some(superclass) => current = Some(superclass),
-                None => break,
-            },
-            None => break,
-        }
-    }
-    false
+    CLASS_HIERARCHY.is_subclass_of(&child_iri.to_string(), &parent_iri.to_string())
 }
 
 pub const WHITELIST_IRIS: &[&str] = &[

@@ -730,8 +730,7 @@ fn latest_parse_node_id_returns_latest_per_session() {
 }
 
 #[test]
-fn knn_search_multi_node_nearest_order_without_hnsw() {
-    // Degraded-mode contract: with no HNSW built, search is brute force and
+fn knn_search_multi_node_nearest_order_without_hnsw() {    // Degraded-mode contract: with no HNSW built, search is brute force and
     // returns neighbors nearest-first. This pins the fallback the serving
     // path degrades to when the index is unavailable.
     let store = temp_store();
@@ -759,4 +758,89 @@ fn knn_search_multi_node_nearest_order_without_hnsw() {
     assert_eq!(hits[0].node_id, ids[0], "exact match first");
     assert_eq!(hits[1].node_id, ids[2], "near match second");
     assert_eq!(hits[2].node_id, ids[1], "orthogonal last");
+}
+
+/// M15: the summarizer mutex is not held across the model call. A stub
+/// backend that signals "entered the call" and then blocks proves a
+/// concurrent `set_summarizer` — which needs the same mutex — succeeds while
+/// the summarize call is in flight. The in-flight call completes against its
+/// snapshot (the swapped-in summarizer does not retroactively change it).
+#[test]
+fn summarizer_lock_is_free_during_the_model_call() {
+    use std::sync::Condvar;
+
+    struct BlockingBackend {
+        entered: Arc<(Mutex<bool>, Condvar)>,
+        release: Arc<(Mutex<bool>, Condvar)>,
+    }
+    impl fluent_llm::client::ChatBackend for BlockingBackend {
+        fn chat_complete(
+            &self,
+            _messages: &[fluent_llm::ChatMessage],
+        ) -> Result<String, fluent_llm::LlmError> {
+                    {
+                let (lock, cvar) = &*self.entered;
+                let mut entered = lock.lock().unwrap();
+                *entered = true;
+                cvar.notify_all();
+            } // the entered guard must drop before blocking — otherwise the
+              // test's wait loop can never acquire the mutex
+            let (lock, cvar) = &*self.release;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = cvar.wait(released).unwrap();
+            }
+            Ok("blocked summary".into())
+        }
+    }
+
+    let entered = Arc::new((Mutex::new(false), Condvar::new()));
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let backend = Arc::new(BlockingBackend {
+        entered: Arc::clone(&entered),
+        release: Arc::clone(&release),
+    });
+    let store = Arc::new(
+        temp_store().with_summarizer(Summarizer::new(
+            backend as Arc<dyn fluent_llm::client::ChatBackend>,
+            20,
+        )),
+    );
+    let id = store
+        .record_request("s", "r1", "The full text to summarize.")
+        .unwrap();
+
+    let worker_store = Arc::clone(&store);
+    let worker = std::thread::spawn(move || worker_store.ensure_lod(id, 1));
+
+    // Wait until the summarize call is in flight.
+    let (lock, cvar) = &*entered;
+    let mut entered_flag = lock.lock().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !*entered_flag {
+        let (guard, _timeout) = cvar
+            .wait_timeout(entered_flag, std::time::Duration::from_millis(100))
+            .unwrap();
+        entered_flag = guard;
+        assert!(
+            std::time::Instant::now() < deadline,
+            "backend never entered the call"
+        );
+    }
+    drop(entered_flag);
+
+    // The store mutex is free: a concurrent `set_summarizer` must not block
+    // on the in-flight model call.
+    store.set_summarizer(Summarizer::new(
+        Arc::new(StubChatBackend::always("swapped")) as Arc<dyn fluent_llm::client::ChatBackend>,
+        20,
+    ));
+
+    // Release the in-flight call; it completes against its snapshot.
+    let (lock, cvar) = &*release;
+    *lock.lock().unwrap() = true;
+    cvar.notify_all();
+
+    let node = worker.join().unwrap().expect("ensure_lod succeeds");
+    assert_eq!(node.lod[1], "blocked summary");
 }

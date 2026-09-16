@@ -314,6 +314,43 @@ impl DepRel {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Canonical role-dependency sets
+// ─────────────────────────────────────────────────────────────────────────
+//
+// The closed dependency-label vocabularies the extractors classify roles
+// with. These are the single definitions: the frame extractor, the routing
+// extractor, and the triple extractor all match against these tables via
+// [`crate::doc::dep_in`] (a table must never be re-declared at a call site —
+// a copy can drift while the others stay behind). Every label below is a
+// `DepRel` member, so a set edit and the reference enum stay inspectable
+// side by side.
+
+/// Dep labels that name the sentence's subject argument.
+pub const SUBJECT_DEPS: &[&str] = &["nsubj", "nsubjpass", "csubj", "csubjpass"];
+/// Dep labels that name the direct object.
+pub const DIRECT_OBJECT_DEPS: &[&str] = &["dobj"];
+/// Dep labels that name the indirect object.
+pub const INDIRECT_OBJECT_DEPS: &[&str] = &["iobj"];
+/// Dep labels that carry modifiers of the head.
+pub const MODIFIER_DEPS: &[&str] = &["compound", "amod", "nummod"];
+/// Dep labels that qualify intent (auxiliaries, negation, manner adverbials).
+pub const QUALIFIER_DEPS: &[&str] = &["aux", "auxpass", "neg", "advmod"];
+/// Dep labels whose dependents open a prepositional argument frame.
+pub const PREP_DEPS: &[&str] = &["prep"];
+/// Dep labels completing a prepositional argument frame (the object side).
+pub const POBJ_DEPS: &[&str] = &["pobj", "pcomp"];
+/// Dep labels that form the prepositional argument frame as a whole — the
+/// union of [`PREP_DEPS`] and [`POBJ_DEPS`]. Kept as its own named set
+/// (not derived) because the frame extractor classifies a token into a
+/// single role slot without distinguishing the prep head from its object,
+/// while the routing extractor needs the split to pair `(prep, pobj)`.
+pub const ARGUMENT_DEPS: &[&str] = &["prep", "pobj", "pcomp"];
+/// The negation dependency label.
+pub const NEG_DEP: &str = "neg";
+/// The auxiliary dependency label.
+pub const AUX_DEP: &str = "aux";
+
 /// A configurable set of dependency labels accepted by the annotation
 /// validator (§10.2 check 2). The default starts from the canonical
 /// [`DepRel`] reference set and adds the Universal-Dependencies labels a

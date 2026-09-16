@@ -196,7 +196,10 @@ impl QwenTextCore {
             endpoint: config.endpoint,
             extra_headers: options.extra_headers.clone(),
             timeout: config.timeout,
-            client: reqwest::Client::new(),
+            // The workspace's shared pooled client (connection reuse across the
+            // embedding fleet); the per-request `.timeout(...)` in `post`
+            // overrides the shared client's 30s envelope with the model's.
+            client: common_core::http::shared_http_client().clone(),
         })
     }
 
@@ -610,7 +613,10 @@ impl Qwen3VlEmbedding {
             timeout: Duration::from_millis(
                 options.timeout_ms.unwrap_or(DEFAULT_REMOTE_EMBEDDING_TIMEOUT_MS),
             ),
-            client: reqwest::Client::new(),
+            // The workspace's shared pooled client (connection reuse across the
+            // embedding fleet); the per-request `.timeout(...)` in `post`
+            // overrides the shared client's 30s envelope with the model's.
+            client: common_core::http::shared_http_client().clone(),
         })
     }
 

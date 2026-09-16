@@ -4,14 +4,16 @@ use std::sync::{Arc, LazyLock};
 use fluent_wvr::prelude::*;
 use regex::Regex;
 
-use crate::config::RejectPatterns;
+use crate::config::{RejectPatterns, RoutingConfig};
 use crate::filters::injection_detect::InjectionDetectFilter;
 use crate::filters::regex_filter::RegexFilter;
 use crate::filters::{DeterministicFilterEngine, FilterContext, FilterDecision};
+use crate::pipeline::RoutingTarget;
 use crate::pipeline_types::{
     PiiVerdict, PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict,
 };
 use crate::stages::common::extract_user_message;
+use crate::target_match::{resolve_route_to_target, GroupExpansion};
 
 static COMMAND_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[/.,](\w[\w-]*)(?:\s+(.*))?$").unwrap());
@@ -23,6 +25,10 @@ pub struct DeterministicPreFilter {
     command_registry: HashMap<String, CommandHandler>,
     filter_engine: DeterministicFilterEngine,
     commands_enabled: bool,
+    /// Route table for soft-redirect target resolution. `None` (no boot
+    /// routing config) leaves soft-redirect patterns inert — they pass
+    /// through, exactly as when the pattern names no route.
+    routing_config: Option<Arc<RoutingConfig>>,
     depends: Vec<ArcIntern<str>>,
     provides: Vec<ArcIntern<str>>,
 }
@@ -60,9 +66,18 @@ impl DeterministicPreFilter {
             command_registry,
             filter_engine,
             commands_enabled: true,
+            routing_config: None,
             depends: vec![],
             provides: vec![ArcIntern::from("pipeline.stage1.output")],
         }
+    }
+
+    /// Attach the boot routing config so `soft_redirect` patterns can resolve
+    /// their target route. Without it a route-bearing pattern passes through.
+    #[must_use]
+    pub fn with_routing_config(mut self, routing_config: Arc<RoutingConfig>) -> Self {
+        self.routing_config = Some(routing_config);
+        self
     }
 
     /// Run the stage-1 filter engine over output text — the response
@@ -94,6 +109,7 @@ impl DeterministicPreFilter {
             command_registry,
             filter_engine: engine,
             commands_enabled: true,
+            routing_config: None,
             depends: vec![],
             provides: vec![ArcIntern::from("pipeline.stage1.output")],
         }
@@ -147,6 +163,7 @@ pub(crate) fn builtin_filter_engine() -> DeterministicFilterEngine {
             scope: vec![crate::config::FilterScope::Any],
             http_code: 422,
             error_message: Some("SSN detected".into()),
+            route: None,
             regexes: vec![pii_regex(map, "ssn", r"\b\d{3}-\d{2}-\d{4}\b")],
         },
         PatternEntry {
@@ -157,6 +174,7 @@ pub(crate) fn builtin_filter_engine() -> DeterministicFilterEngine {
             scope: vec![crate::config::FilterScope::Any],
             http_code: 422,
             error_message: Some("Credit card number detected".into()),
+            route: None,
             regexes: vec![r"\b(?:\d[ -]*?){13,19}\b".into()],
         },
         PatternEntry {
@@ -167,6 +185,7 @@ pub(crate) fn builtin_filter_engine() -> DeterministicFilterEngine {
             scope: vec![crate::config::FilterScope::Any],
             http_code: 422,
             error_message: Some("Email detected".into()),
+            route: None,
             regexes: vec![pii_regex(
                 map,
                 "email",
@@ -181,6 +200,7 @@ pub(crate) fn builtin_filter_engine() -> DeterministicFilterEngine {
             scope: vec![crate::config::FilterScope::Any],
             http_code: 422,
             error_message: Some("Phone number detected".into()),
+            route: None,
             regexes: vec![pii_regex(
                 map,
                 "phone",
@@ -195,6 +215,7 @@ pub(crate) fn builtin_filter_engine() -> DeterministicFilterEngine {
             scope: vec![crate::config::FilterScope::Any],
             http_code: 422,
             error_message: Some("API key detected".into()),
+            route: None,
             regexes: vec![pii_regex(
                 map,
                 "api_key",
@@ -236,11 +257,15 @@ fn build_command_registry(handlers: &HashMap<String, String>) -> HashMap<String,
 }
 
 impl DeterministicPreFilter {
-    /// Produce the stage decision and its `WorkOutput` message. The
+    /// Produce the stage decision, its `WorkOutput` message, and — when a
+    /// `soft_redirect` pattern matched — the resolved dispatch target. The
     /// typed `StageDecision` is built here once and consumed directly by the
     /// orchestrator's typed handoff; `WorkUnit::execute` wraps the same result
     /// into `WorkOutput` for the composition path.
-    fn decide(&self, ctx: &WorkContext) -> Result<(String, StageDecision), WorkError> {
+    fn decide(
+        &self,
+        ctx: &WorkContext,
+    ) -> Result<(String, StageDecision, Option<RoutingTarget>), WorkError> {
         let input = extract_user_message(ctx)?;
         let trimmed = input.trim();
 
@@ -279,6 +304,7 @@ impl DeterministicPreFilter {
                                     latency_ms: 0,
                                     metadata: metadata.into_value(),
                                 },
+                                None,
                             ));
                         }
                         Err(e) => {
@@ -302,6 +328,7 @@ impl DeterministicPreFilter {
                                     latency_ms: 0,
                                     metadata: serde_json::json!({}),
                                 },
+                                None,
                             ));
                         }
                     }
@@ -332,6 +359,7 @@ impl DeterministicPreFilter {
                             latency_ms: 0,
                             metadata: serde_json::json!({ "blacklist": pattern, "http_code": 422 }),
                         },
+                        None,
                     ));
                 }
 
@@ -354,6 +382,7 @@ impl DeterministicPreFilter {
                         latency_ms: 0,
                         metadata: serde_json::json!({}),
                     },
+                    None,
                 ));
             }
         }
@@ -383,6 +412,7 @@ impl DeterministicPreFilter {
                             latency_ms: 0,
                             metadata: serde_json::json!({ "blacklist": pattern, "http_code": 422 }),
                         },
+                        None,
                     ));
                 }
                 FilterDecision::OutputFilter {
@@ -420,9 +450,72 @@ impl DeterministicPreFilter {
                             latency_ms: 0,
                             metadata: metadata.into_value(),
                         },
+                        None,
                     ));
                 }
-                FilterDecision::SoftRedirect { .. } => {}
+                FilterDecision::SoftRedirect { route, reason } => {
+                    // A route-bearing pattern short-circuits the classifier
+                    // dispatch: the target resolves through the same route→
+                    // target resolution the classifier's static fallback uses.
+                    // The self-assessment ladder is intentionally not wired
+                    // here — the pre-filter makes no model calls — so the
+                    // static group resolution serves, exactly as it does for
+                    // terminals when the matcher is absent. An unresolvable
+                    // route (or a stage built without a routing config)
+                    // passes through (fail-open, mirroring the tree engine's
+                    // missing-target arm).
+                    if self.routing_config.is_none() {
+                        tracing::debug!(
+                            target: "router.pipeline.stage1",
+                            route = %route,
+                            "soft_redirect route configured but no routing config — passing through",
+                        );
+                    }
+                    let resolved = self.routing_config.as_deref().and_then(|routing_config| {
+                        let expansion = GroupExpansion::from_ctx(ctx);
+                        resolve_route_to_target(
+                            routing_config,
+                            None,
+                            &route,
+                            None,
+                            &input,
+                            &expansion,
+                        )
+                    });
+                    if let Some(rt) = resolved {
+                        tracing::info!(
+                            target: "router.pipeline.stage1",
+                            route = %route,
+                            model = %rt.model,
+                            "soft_redirect dispatching deterministically",
+                        );
+                        crate::audit::emit(
+                            "filter",
+                            serde_json::json!({
+                                "stage": "deterministic",
+                                "verdict": "soft_redirect",
+                                "route": route,
+                            }),
+                        );
+                        return Ok((
+                            "soft_redirect".into(),
+                            StageDecision {
+                                stage: PipelineStage::DeterministicPreFilter,
+                                verdict: StageVerdict::Passed,
+                                score: Some(1.0),
+                                reason: format!("soft redirect to '{route}': {reason}"),
+                                latency_ms: 0,
+                                metadata: serde_json::json!({ "soft_redirect": route }),
+                            },
+                            Some(rt),
+                        ));
+                    }
+                    tracing::warn!(
+                        target: "router.pipeline.stage1",
+                        route = %route,
+                        "soft_redirect target unresolved — passing through",
+                    );
+                }
             }
         }
 
@@ -444,6 +537,7 @@ impl DeterministicPreFilter {
                 latency_ms: 0,
                 metadata: serde_json::json!({ "pii_classes": <Vec<String>>::new() }),
             },
+            None,
         ))
     }
 }
@@ -462,7 +556,7 @@ impl WorkUnit for DeterministicPreFilter {
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let (message, decision) = self.decide(ctx)?;
+        let (message, decision, _target) = self.decide(ctx)?;
         WorkOutput::typed(message, &decision)
     }
 }
@@ -479,6 +573,16 @@ impl StageDecisionProducer for DeterministicPreFilter {
     ) -> Result<StageDecision, WorkError> {
         Ok(self.decide(ctx)?.1)
     }
+
+    fn evaluate_with_target(
+        &self,
+        ctx: &WorkContext,
+        prior: &[StageDecision],
+    ) -> Result<(StageDecision, Option<RoutingTarget>), WorkError> {
+        let (_, decision, target) = self.decide(ctx)?;
+        let _ = prior;
+        Ok((decision, target))
+    }
 }
 
 impl_fieldless!(DeterministicPreFilter);
@@ -494,3 +598,4 @@ impl Describable for DeterministicPreFilter {
 }
 
 impl_component!(DeterministicPreFilter);
+

@@ -45,6 +45,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The `@prefix` declarations seen so far — the single source for
+    /// CURIE expansion, exposed so callers (e.g. the taxonomy converter) can
+    /// compress IRIs back to CURIEs without re-scanning the source.
+    #[must_use]
+    pub fn prefixes(&self) -> &HashMap<String, String> {
+        &self.prefix_map
+    }
+
     fn peek_tok(&mut self) -> Result<Token<'a>, RdfError> {
         if self.peeked.is_none() {
             self.peeked = Some(self.lex.next_token()?);
@@ -134,7 +142,7 @@ impl Parser<'_> {
         let raw = name_tok.value;
         let colon_pos = raw.rfind(':').ok_or(RdfError::InvalidPrefix)?;
         let label = &raw[..colon_pos];
-        let iri_inner = Self::extract_iri(iri_tok.value);
+        let iri_inner = extract_iri(iri_tok.value);
 
         self.prefix_map.insert(label.to_string(), iri_inner);
         Ok(())
@@ -143,7 +151,7 @@ impl Parser<'_> {
     fn parse_base(&mut self) -> Result<(), RdfError> {
         let iri_tok = self.expect_tok(TokenKind::Iri)?;
         self.expect_tok(TokenKind::Dot)?;
-        self.base = Some(Self::extract_iri(iri_tok.value));
+        self.base = Some(extract_iri(iri_tok.value));
         Ok(())
     }
 
@@ -219,7 +227,7 @@ impl Parser<'_> {
         match tok.kind {
             TokenKind::Iri => {
                 self.consume_tok()?;
-                Ok(Some(Term::Iri(Self::extract_iri(tok.value))))
+                Ok(Some(Term::Iri(extract_iri(tok.value))))
             }
             TokenKind::PrefixedName => {
                 self.consume_tok()?;
@@ -271,7 +279,7 @@ impl Parser<'_> {
             })));
         }
 
-        let content = Self::extract_literal_content(raw);
+        let content = extract_literal_content(raw);
         let pk = self.peek_tok()?;
         if pk.kind == TokenKind::LangTag {
             self.consume_tok()?;
@@ -285,7 +293,7 @@ impl Parser<'_> {
             self.consume_tok()?;
             let dt_tok = self.consume_tok()?;
             let dt_iri = match dt_tok.kind {
-                TokenKind::Iri => Self::extract_iri(dt_tok.value),
+                TokenKind::Iri => extract_iri(dt_tok.value),
                 TokenKind::PrefixedName => self.expand_prefixed_name(dt_tok.value),
                 _ => {
                     return Err(RdfError::UnexpectedToken {
@@ -325,14 +333,6 @@ impl Parser<'_> {
         Ok(Some(bn_term))
     }
 
-    fn extract_iri(raw: &str) -> String {
-        if raw.len() >= 2 && raw.starts_with('<') && raw.ends_with('>') {
-            raw[1..raw.len() - 1].to_string()
-        } else {
-            raw.to_string()
-        }
-    }
-
     fn expand_prefixed_name(&self, raw: &str) -> String {
         if let Some(colon) = raw.find(':') {
             let prefix_label = &raw[..colon];
@@ -360,15 +360,27 @@ impl Parser<'_> {
             }),
         }
     }
+}
 
-    fn extract_literal_content(raw: &str) -> String {
-        if raw.len() >= 6 && raw.starts_with("\"\"\"") && raw.ends_with("\"\"\"") {
-            raw[3..raw.len() - 3].to_string()
-        } else if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
-            raw[1..raw.len() - 1].to_string()
-        } else {
-            raw.to_string()
-        }
+/// Strip the angle brackets from a raw `<...>` IRI token value. Shared with
+/// the N-Quads parser so the two term readers agree on IRI spelling.
+pub(crate) fn extract_iri(raw: &str) -> String {
+    if raw.len() >= 2 && raw.starts_with('<') && raw.ends_with('>') {
+        raw[1..raw.len() - 1].to_string()
+    } else {
+        raw.to_string()
+    }
+}
+
+/// Extract the content of a quoted literal token value (single- or
+/// triple-quoted). Shared with the N-Quads parser.
+pub(crate) fn extract_literal_content(raw: &str) -> String {
+    if raw.len() >= 6 && raw.starts_with("\"\"\"") && raw.ends_with("\"\"\"") {
+        raw[3..raw.len() - 3].to_string()
+    } else if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
+        raw[1..raw.len() - 1].to_string()
+    } else {
+        raw.to_string()
     }
 }
 

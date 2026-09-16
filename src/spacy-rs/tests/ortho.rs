@@ -85,7 +85,7 @@ fn predicates_match_legacy_spellings() {
         vec!["Sit", ".", "Call", "."],
     ]
     .iter()
-    .map(|s| s.iter().map(|t| t.to_string()).collect())
+    .map(|s| s.iter().map(std::string::ToString::to_string).collect())
     .collect();
     for texts in &streams {
         for from in 0..=texts.len() {

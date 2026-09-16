@@ -434,6 +434,214 @@ fn recorder_is_noop_without_embedder() {
 }
 
 #[test]
+fn task_value_gate_rejects_degenerate_runs_despite_high_confidence() {
+    // High producer confidence must never pass the task-value gate alone:
+    // a run with missing answers or an empty assembly is unvalidated and
+    // must not persist.
+    for (hyps, answers, assembled) in [
+        (
+            vec!["hypothetical one".to_string()],
+            vec![String::new()],
+            "assembled solution".to_string(),
+        ),
+        (
+            vec!["hypothetical one".to_string()],
+            vec![],
+            "assembled solution".to_string(),
+        ),
+        (
+            vec!["hypothetical one".to_string(), "hypothetical two".to_string()],
+            vec!["first answer".to_string(), "second answer".to_string()],
+            String::new(),
+        ),
+        (vec![], vec![], "assembled solution".to_string()),
+    ] {
+        let store = std::sync::Arc::new(InMemoryWorkflowStore::new());
+        let recorder = WorkflowRecorder::new(
+            std::sync::Arc::clone(&store) as std::sync::Arc<dyn WorkflowStore>,
+            Some(hash_embedder()),
+            ReplayConfig {
+                enabled: true,
+                ..ReplayConfig::default()
+            },
+        );
+        let outcome = recorder.record_question_run(
+            "how do i bake bread",
+            &hyps,
+            &answers,
+            &assembled,
+            0.95,
+            true,
+            "audit-degenerate",
+            Some("sess"),
+        );
+        assert_eq!(
+            outcome,
+            RecordOutcome::RejectedGate,
+            "degenerate run must not record (hyps={hyps:?}, answers={answers:?})"
+        );
+        assert!(
+            store.nearest(&emb_a(), 3).is_empty(),
+            "degenerate run stores nothing"
+        );
+    }
+}
+
+#[test]
+fn task_value_gate_rejects_assembler_rejected_runs_despite_high_confidence() {
+    // Low self-doubt (0.95) but the assembler verdict rejected the run:
+    // confidence is not task value — nothing persists.
+    let (recorder, store) = recorder_with(true, Some(hash_embedder()));
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.95,
+        false,
+        "audit-rejected",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    assert!(store.nearest(&emb_a(), 3).is_empty());
+}
+
+#[test]
+fn task_value_gate_rejects_doubtful_unreplayable_runs() {
+    // High self-doubt (0.40) and an unreplayable run: neither axis passes.
+    let (recorder, store) = recorder_with(true, Some(hash_embedder()));
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &["hypothetical one".to_string()],
+        &[String::new()],
+        "assembled solution",
+        0.40,
+        true,
+        "audit-doubtful",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::RejectedGate);
+    assert!(store.nearest(&emb_a(), 3).is_empty());
+}
+
+#[test]
+fn accept_question_run_validates_shape_and_structure() {
+    // Valid solved run: acceptance yields the exact steps the record path
+    // persists (two hypothetical steps, then the assemble step joining every
+    // hypothetical answer).
+    let (hyps, answers, assembled) = question_run();
+    let steps = WorkflowRecorder::accept_question_run("how do i bake bread", &hyps, &answers, &assembled, true)
+        .expect("valid solved run is accepted");
+    assert_eq!(steps.len(), 3);
+    assert_eq!(steps[0].step_id, "hypothetical-0");
+    assert_eq!(steps[1].prompt_lod0, "hypothetical two");
+    assert_eq!(steps[2].step_id, "assemble");
+    assert_eq!(steps[2].depends_on, vec!["hyp-answer-0".to_string(), "hyp-answer-1".to_string()]);
+    assert_eq!(steps[2].provides, vec!["solution".to_string()]);
+
+    // Every degenerate shape is refused.
+    assert!(WorkflowRecorder::accept_question_run("q", &hyps, &answers, &assembled, false).is_none());
+    assert!(
+        WorkflowRecorder::accept_question_run(
+            "q",
+            &hyps,
+            &["only first".to_string()],
+            &assembled,
+            true
+        )
+        .is_none(),
+        "short answers are degenerate"
+    );
+    assert!(
+        WorkflowRecorder::accept_question_run("", &hyps, &answers, &assembled, true).is_none(),
+        "empty query is degenerate"
+    );
+}
+
+#[test]
+fn dry_run_reproduces_structure_rejects_unreplayable() {
+    // The valid chain round-trips through DAG build + envelope split.
+    assert!(super::dry_run_reproduces_structure(&steps_ok()));
+    // A dependency cycle never builds.
+    assert!(!super::dry_run_reproduces_structure(&[
+        RecordedStep {
+            step_id: "x".into(),
+            prompt_lod0: "x".into(),
+            response_lod0: "x".into(),
+            depends_on: vec!["b1".into()],
+            provides: vec!["a1".into()],
+            outcome_ok: true,
+        },
+        RecordedStep {
+            step_id: "y".into(),
+            prompt_lod0: "y".into(),
+            response_lod0: "y".into(),
+            depends_on: vec!["a1".into()],
+            provides: vec!["b1".into()],
+            outcome_ok: true,
+        },
+    ]));
+    // Collapsed step ids cannot reproduce their structure.
+    assert!(!super::dry_run_reproduces_structure(&[
+        RecordedStep {
+            step_id: "same".into(),
+            prompt_lod0: "first".into(),
+            response_lod0: "r1".into(),
+            depends_on: vec![],
+            provides: vec!["p1".into()],
+            outcome_ok: true,
+        },
+        RecordedStep {
+            step_id: "same".into(),
+            prompt_lod0: "second".into(),
+            response_lod0: "r2".into(),
+            depends_on: vec!["p1".into()],
+            provides: vec!["p2".into()],
+            outcome_ok: true,
+        },
+    ]));
+}
+
+#[test]
+fn recorded_question_run_replays_its_own_structure() {
+    // Replay round-trip golden for the question shape: the replayed steps
+    // reproduce the recorded decomposition (ids, prompts, edges).
+    let (recorder, _) = recorder_with(true, Some(hash_embedder()));
+    let (hyps, answers, assembled) = question_run();
+    let outcome = recorder.record_question_run(
+        "how do i bake bread",
+        &hyps,
+        &answers,
+        &assembled,
+        0.9,
+        true,
+        "audit-q",
+        Some("sess"),
+    );
+    assert_eq!(outcome, RecordOutcome::Stored);
+    recorder.replay().note_reuse_outcome("audit-q", true);
+    recorder.replay().note_reuse_outcome("audit-q", true);
+
+    let cfg = ReplayConfig::calibrated();
+    let embedder = hash_embedder();
+    let near_emb = embedder.embed("how do i bake bread").unwrap();
+    let hit = recorder
+        .replay()
+        .try_replay("how do i bake bread", &near_emb, 0.99, &cfg)
+        .expect("near-neighbor replays");
+    let ids: Vec<&str> = hit.steps.iter().map(|s| s.step_id.as_str()).collect();
+    assert_eq!(ids, vec!["hypothetical-0", "hypothetical-1", "assemble"]);
+    assert_eq!(hit.steps[0].prompt_lod0, "hypothetical one");
+    assert_eq!(hit.steps[1].response_lod0, "second answer");
+    assert_eq!(
+        hit.steps[2].depends_on,
+        vec!["hyp-answer-0".to_string(), "hyp-answer-1".to_string()]
+    );
+    assert_eq!(hit.steps[2].provides, vec!["solution".to_string()]);
+}
+
+#[test]
 fn recorded_run_replays_for_near_neighbor_not_dissimilar() {
     let (recorder, _) = recorder_with(true, Some(hash_embedder()));
     let (hyps, answers, assembled) = question_run();

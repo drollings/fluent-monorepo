@@ -37,6 +37,7 @@ use crate::stages::common::{coerce_float, coerce_string, coerce_u8, extract_user
 use crate::stages::tree::ClassificationEngine;
 use crate::target_match::TargetMatcher;
 use crate::target_match::GroupExpansion;
+use crate::target_match::resolve_route_to_target;
 
 pub mod action;
 pub use action::{ClassifierAction, UnknownAction};
@@ -319,65 +320,6 @@ fn check_thresholds(
     })
 }
 
-/// Resolve a route to a typed `RoutingTarget` through the target-matching
-/// ladder when one is available, falling back to the static
-/// cheapest-qualifying pick.
-///
-/// The ladder only runs for 2+ member groups (a single-member group has
-/// nothing to climb — it resolves statically, byte-identical to today, with no
-/// extra LLM call). The matcher never fails hard: on absence, an unresolvable
-/// group, an empty candidate list, or an internal `None`, the static
-/// `routing_target` path runs (defense in depth).
-///
-/// This is the one selection algorithm shared by the LLM-driven flat path and
-/// the matrix-authoritative branch (DRY — §4.3 of the roadmap).
-fn resolve_via_matcher(
-    routing_config: &RoutingConfig,
-    matcher: Option<&TargetMatcher>,
-    route: &str,
-    complexity: Option<u8>,
-    user_text: &str,
-    expansion: &GroupExpansion,
-) -> Option<RoutingTarget> {
-    if let Some(matcher) = matcher {
-        if let Some(group) = routing_config.route_group(route) {
-            let candidates = crate::target_match::expanded_candidates_for_group(
-                routing_config,
-                group,
-                expansion.recency(),
-                expansion.session(),
-                &|base| expansion.supervisor_loaded(base),
-            );
-            if candidates.len() >= 2 {
-                if let Some(tm) = matcher.match_target(
-                    route,
-                    group,
-                    routing_config,
-                    &candidates,
-                    complexity,
-                    user_text,
-                ) {
-                    tracing::info!(
-                        target: "router.pipeline.stage2",
-                        route = %route,
-                        group = %group,
-                        model = %tm.primary.model,
-                        assessments = tm.assessments.len(),
-                        "routing target resolved via self-assessment ladder",
-                    );
-                    return Some(tm.primary);
-                }
-                tracing::warn!(
-                    target: "router.pipeline.stage2",
-                    route = %route,
-                    "target-matching ladder produced no target — static fallback",
-                );
-            }
-        }
-    }
-    routing_config.routing_target(route, complexity)
-}
-
 /// Typed resolver for `ClassifierAction` — exhaustive, no stringly fallback.
 ///
 /// Unknown `action` values are **not** coerced to `Route` — they surface as
@@ -407,7 +349,14 @@ fn try_resolve_routing_target(
         }
     };
 
-    if let Some(rt) = resolve_via_matcher(routing_config, matcher, route, output.complexity, user_text, expansion) {
+    if let Some(rt) = crate::target_match::resolve_route_to_target(
+        routing_config,
+        matcher,
+        route,
+        output.complexity,
+        user_text,
+        expansion,
+    ) {
         tracing::info!(target: "router.pipeline.stage2",
             route = %route,
             model = %rt.model,
@@ -811,11 +760,10 @@ impl ClassifierStage {
         let expansion = GroupExpansion::from_ctx(ctx);
         // The route the client requested (the request's `model`). Used to
         // enforce route-level `always_route`: a route configured to always
-        // dispatch never lets the classifier answer directly.
-        let requested_route: Option<String> = ctx
-            .structured("request")
-            .ok()
-            .map(|r: crate::types::RouterRequest| r.model)
+        // dispatch never lets the classifier answer directly. Read through
+        // the typed-request cache (M14) — no per-call re-parse.
+        let requested_route: Option<String> = crate::stages::common::typed_request(ctx)
+            .map(|r| r.model.clone())
             .filter(|m| !m.is_empty());
 
         // Classification-tree mode — the engine produces the final
@@ -1060,7 +1008,7 @@ impl ClassifierStage {
                         // response (build_decision sets the response metadata).
                         None
                     } else {
-                        resolve_via_matcher(
+                        resolve_route_to_target(
                             &self.routing_config,
                             self.target_matcher.as_ref(),
                             &top.route_name,
@@ -1198,14 +1146,12 @@ impl StageDecisionProducer for ClassifierStage {
     ) -> Result<StageDecision, WorkError> {
         Ok(self.evaluate_with_target(ctx, prior)?.0)
     }
-}
 
-impl ClassifierStage {
     /// Typed evaluation: the decision plus the dispatch target by value.
     /// The orchestrator's producer path calls this so the target reaches the
     /// typed store without a JSON round-trip; the `StageDecisionProducer`
     /// boundary (`evaluate`) keeps returning the decision alone.
-    pub(crate) fn evaluate_with_target(
+    fn evaluate_with_target(
         &self,
         ctx: &WorkContext,
         prior: &[StageDecision],

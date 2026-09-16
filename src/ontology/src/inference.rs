@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use fluent_dag::hierarchy::HierarchyIndex;
 use fluent_dag::type_inference::TypeInference;
 use guidance_rdf::parser::Term;
 use guidance_rdf::parser::Triple;
@@ -150,11 +151,9 @@ fn build_subclass_triple(subject_iri: &str, predicate_iri: &str, object_iri: &st
 }
 
 pub struct CapabilityInference {
-    hierarchy: HashMap<String, Vec<String>>,
-    /// Reverse index (parent → children) maintained alongside `hierarchy`
-    /// so invalidation can scope to the affected subtree instead of
-    /// clearing the whole memo.
-    children: HashMap<String, Vec<String>>,
+    /// The subclass hierarchy, composed from the shared [`HierarchyIndex`]
+    /// (one closure implementation workspace-wide).
+    hierarchy: HierarchyIndex<String>,
     direct_capabilities: HashMap<String, HashSet<String>>,
     inferred_cache: HashMap<String, HashSet<String>>,
 }
@@ -162,8 +161,7 @@ pub struct CapabilityInference {
 impl CapabilityInference {
     pub fn new() -> Self {
         Self {
-            hierarchy: HashMap::new(),
-            children: HashMap::new(),
+            hierarchy: HierarchyIndex::new(),
             direct_capabilities: HashMap::new(),
             inferred_cache: HashMap::new(),
         }
@@ -180,8 +178,7 @@ impl CapabilityInference {
             let Some(parent) = triple_object_iri(t) else {
                 continue;
             };
-            self.hierarchy.entry(child.clone()).or_default().push(parent.clone());
-            self.children.entry(parent).or_default().push(child);
+            self.hierarchy.add_edge(&child, &parent);
         }
         // Bulk load touches an unbounded subtree; a full clear is the
         // sound (and rare — boot-time) choice. Incremental mutators below
@@ -191,13 +188,7 @@ impl CapabilityInference {
 
     pub fn add_subclass_edge(&mut self, child_iri: &str, parent_iri: &str) {
         self.hierarchy
-            .entry(child_iri.to_string())
-            .or_default()
-            .push(parent_iri.to_string());
-        self.children
-            .entry(parent_iri.to_string())
-            .or_default()
-            .push(child_iri.to_string());
+            .add_edge(&child_iri.to_string(), &parent_iri.to_string());
         self.invalidate(child_iri);
     }
 
@@ -214,16 +205,10 @@ impl CapabilityInference {
     /// mention `class_iri` (capabilities flow child ← ancestors). Unrelated
     /// subtrees keep their memos.
     pub fn invalidate(&mut self, class_iri: &str) {
-        let mut stack = vec![class_iri.to_string()];
-        let mut visited = HashSet::new();
-        while let Some(current) = stack.pop() {
-            if !visited.insert(current.clone()) {
-                continue;
-            }
-            self.inferred_cache.remove(&current);
-            if let Some(kids) = self.children.get(&current) {
-                stack.extend(kids.iter().cloned());
-            }
+        let mut affected = vec![class_iri.to_string()];
+        affected.extend(self.hierarchy.descendants(&class_iri.to_string()));
+        for class in affected {
+            self.inferred_cache.remove(&class);
         }
     }
 
@@ -238,34 +223,14 @@ impl CapabilityInference {
             merged.extend(direct.iter().cloned());
         }
 
-        let mut visited = HashSet::new();
-        self.collect_ancestor_caps(class_iri, &mut merged, &mut visited);
+        for ancestor in self.hierarchy.ancestors(&class_iri.to_string()) {
+            if let Some(direct) = self.direct_capabilities.get(&ancestor) {
+                merged.extend(direct.iter().cloned());
+            }
+        }
 
         self.inferred_cache.insert(class_iri.to_string(), merged);
         &self.inferred_cache[class_iri]
-    }
-
-    fn collect_ancestor_caps(
-        &self,
-        class_iri: &str,
-        out: &mut HashSet<String>,
-        visited: &mut HashSet<String>,
-    ) {
-        if !visited.insert(class_iri.to_string()) {
-            return;
-        }
-
-        let parents = match self.hierarchy.get(class_iri) {
-            Some(p) => p.clone(),
-            None => return,
-        };
-
-        for parent in &parents {
-            if let Some(direct) = self.direct_capabilities.get(parent) {
-                out.extend(direct.iter().cloned());
-            }
-            self.collect_ancestor_caps(parent, out, visited);
-        }
     }
 
     pub fn duck_type(&mut self, class_iri: &str, capability_name: &str) -> bool {

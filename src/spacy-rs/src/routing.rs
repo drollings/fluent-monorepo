@@ -23,22 +23,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::doc::{dep_in, lemma_of, sentence_root, sentence_spans, Doc};
+use crate::labels::{
+    DIRECT_OBJECT_DEPS, INDIRECT_OBJECT_DEPS, MODIFIER_DEPS, POBJ_DEPS, PREP_DEPS, QUALIFIER_DEPS,
+    SUBJECT_DEPS,
+};
 use fluent_types::InterlinguaId;
-
-/// Dep labels that name the sentence's subject argument.
-const SUBJECT_DEPS: &[&str] = &["nsubj", "nsubjpass", "csubj", "csubjpass"];
-/// Dep labels that name the direct object.
-const DIRECT_OBJECT_DEPS: &[&str] = &["dobj"];
-/// Dep labels that name the indirect object.
-const INDIRECT_OBJECT_DEPS: &[&str] = &["iobj"];
-/// Dep labels that carry modifiers of the head.
-const MODIFIER_DEPS: &[&str] = &["compound", "amod", "nummod"];
-/// Dep labels that qualify intent (auxiliaries, negation, manner adverbials).
-const QUALIFIER_DEPS: &[&str] = &["aux", "auxpass", "neg", "advmod"];
-/// Dep labels whose `pobj` children form the argument frame.
-const PREP_DEPS: &[&str] = &["prep"];
-/// The objects of a `prep` that complete an argument frame.
-const POBJ_DEPS: &[&str] = &["pobj", "pcomp"];
 
 /// The interlingua frame of one sentence: the content-
 /// addressed ids of the routing-relevant tokens. This is what lets Coral

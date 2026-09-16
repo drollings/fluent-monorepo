@@ -241,11 +241,10 @@ impl GroupExpansion {
             // The handler stamps the effective session id into the request
             // before the pipeline runs, so the structured request always
             // carries it on served paths; `None` off those paths means
-            // "unknown session" (Last falls back to the head).
-            session: ctx
-                .structured("request")
-                .ok()
-                .and_then(|r: crate::types::RouterRequest| r.session_id),
+            // "unknown session" (Last falls back to the head). Read through
+            // the typed-request cache (M14) — no per-call re-parse.
+            session: crate::stages::common::typed_request(ctx)
+                .and_then(|r| r.session_id.clone()),
         }
     }
 
@@ -918,6 +917,60 @@ impl TargetMatcher {
 
         result
     }
+}
+
+/// Resolve a route name to a typed `RoutingTarget` through the target-matching
+/// ladder when one is available, falling back to the static
+/// cheapest-qualifying pick.
+///
+/// The ladder only runs for 2+ member groups (a single-member group has
+/// nothing to climb — it resolves statically, byte-identical to the static
+/// path, with no extra LLM call). The matcher never fails hard: on absence, an
+/// unresolvable group, an empty candidate list, or an internal `None`, the
+/// static `routing_target` path runs (defense in depth).
+///
+/// This is the one route→target resolution shared by the flat classifier, the
+/// deterministic soft-redirect pre-filter, and the matrix-authoritative branch.
+pub(crate) fn resolve_route_to_target(
+    routing_config: &RoutingConfig,
+    matcher: Option<&TargetMatcher>,
+    route: &str,
+    complexity: Option<u8>,
+    user_text: &str,
+    expansion: &GroupExpansion,
+) -> Option<RoutingTarget> {
+    if let Some(matcher) = matcher {
+        if let Some(group) = routing_config.route_group(route) {
+            let candidates = expanded_candidates_for_group(
+                routing_config,
+                group,
+                expansion.recency(),
+                expansion.session(),
+                &|base| expansion.supervisor_loaded(base),
+            );
+            if candidates.len() >= 2 {
+                if let Some(tm) =
+                    matcher.match_target(route, group, routing_config, &candidates, complexity, user_text)
+                {
+                    tracing::info!(
+                        target: "router.pipeline.stage2",
+                        route = %route,
+                        group = %group,
+                        model = %tm.primary.model,
+                        assessments = tm.assessments.len(),
+                        "routing target resolved via self-assessment ladder",
+                    );
+                    return Some(tm.primary);
+                }
+                tracing::warn!(
+                    target: "router.pipeline.stage2",
+                    route = %route,
+                    "target-matching ladder produced no target — static fallback",
+                );
+            }
+        }
+    }
+    routing_config.routing_target(route, complexity)
 }
 
 #[cfg(test)]

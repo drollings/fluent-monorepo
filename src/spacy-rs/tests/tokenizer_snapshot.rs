@@ -51,7 +51,9 @@ fn constructor_rules_visible_after_freeze() {
 #[test]
 fn byte_range_equivalence_adversarial_fixture() {
     let t = en_tokenizer();
-    let cases: &[(&str, &[(&str, u32, bool)])] = &[
+    /// One golden token: (orth, char-idx, spacy).
+    type GoldenToken<'a> = (&'a str, u32, bool);
+    let cases: &[(&str, &[GoldenToken<'_>])] = &[
         ("Hello world", &[("Hello", 0, true), ("world", 6, false)]),
         (
             "caf\u{e9} na\u{ef}ve r\u{e9}sum\u{e9}",

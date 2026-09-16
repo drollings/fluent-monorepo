@@ -29,7 +29,9 @@ pub struct InMemoryConceptStore {
     meta: RwLock<HashMap<InterlinguaId, Vec<ConceptMetadata>>>,
     names: RwLock<HashMap<String, InterlinguaId>>,
     yago_iris: RwLock<HashMap<String, InterlinguaId>>,
-    hierarchy: RwLock<TaxonomyHierarchy>,
+    /// `None` until first read (or explicit [`Self::set_hierarchy`]); built
+    /// lazily from `edges` so N inserts are O(N+E) once, not O(N²).
+    hierarchy: RwLock<Option<TaxonomyHierarchy>>,
     /// Accumulated `(child ← parent)` edges collected from `insert` metadata.
     edges: RwLock<Vec<(InterlinguaId, InterlinguaId)>>,
     state: RwLock<ConceptStoreState>,
@@ -51,7 +53,7 @@ impl Default for InMemoryConceptStore {
             meta: RwLock::new(HashMap::new()),
             names: RwLock::new(HashMap::new()),
             yago_iris: RwLock::new(HashMap::new()),
-            hierarchy: RwLock::new(TaxonomyHierarchy::default()),
+            hierarchy: RwLock::new(None),
             edges: RwLock::new(Vec::new()),
             state: RwLock::new(ConceptStoreState::Ready),
         }
@@ -71,7 +73,29 @@ impl InMemoryConceptStore {
     /// hierarchy from each `insert`'s `parent_class_id` metadata (the same
     /// field the router store hydrates from).
     pub fn set_hierarchy(&self, hierarchy: TaxonomyHierarchy) {
-        *self.hierarchy.write().expect("concept store write lock poisoned") = hierarchy;
+        *self.hierarchy.write().expect("concept store write lock poisoned") = Some(hierarchy);
+    }
+
+    /// Build the hierarchy lazily on first read: inserts only accumulate
+    /// edges and mark the hierarchy dirty, so a boot load is O(N+E) once
+    /// rather than O(N²) (a full rebuild per insert).
+    fn ensure_hierarchy(&self) {
+        if self
+            .hierarchy
+            .read()
+            .expect("concept store read lock poisoned")
+            .is_some()
+        {
+            return;
+        }
+        let built = {
+            let edges = self.edges.read().expect("concept store read lock poisoned");
+            TaxonomyHierarchy::from_edges(&edges).unwrap_or_default()
+        };
+        let mut guard = self.hierarchy.write().expect("concept store write lock poisoned");
+        if guard.is_none() {
+            *guard = Some(built);
+        }
     }
 
     /// Override the store readiness (tests only — production readiness is
@@ -134,26 +158,17 @@ impl ConceptStore for InMemoryConceptStore {
         }
         // Derive the hierarchy from the same metadata field the loader fills
         // (C5 — the router store hydrates `parent_class_id` from `insert`;
-        // this store rebuilds the `TaxonomyHierarchy` from the accumulated
-        // edges so both share the construction path).
+        // this store accumulates the edges and rebuilds the
+        // `TaxonomyHierarchy` lazily on first read, so both share the
+        // construction path without an O(N²) rebuild per insert).
         if let Some(parent) = meta.parent_class_id {
-            {
-                let mut edges = self.edges.write().expect("concept store write lock poisoned");
-                if !edges.contains(&(meta.id, parent)) {
-                    edges.push((meta.id, parent));
-                }
+            let mut edges = self.edges.write().expect("concept store write lock poisoned");
+            if !edges.contains(&(meta.id, parent)) {
+                edges.push((meta.id, parent));
             }
-            let edges = self
-                .edges
-                .read()
-                .expect("concept store read lock poisoned")
-                .clone();
-            let built = TaxonomyHierarchy::from_edges(&edges)
-                .map_err(|e| ConceptStoreError::Storage(e.to_string()))?;
-            *self
-                .hierarchy
-                .write()
-                .expect("concept store write lock poisoned") = built;
+            drop(edges);
+            // Mark dirty; `ensure_hierarchy` rebuilds from the accumulated edges.
+            *self.hierarchy.write().expect("concept store write lock poisoned") = None;
         }
         Ok(())
     }
@@ -187,17 +202,21 @@ impl ConceptStore for InMemoryConceptStore {
     }
 
     fn ancestors_of(&self, id: InterlinguaId) -> Vec<InterlinguaId> {
+        self.ensure_hierarchy();
         self.hierarchy
             .read()
             .expect("concept store read lock poisoned")
-            .ancestors(id)
+            .as_ref()
+            .map_or_else(Vec::new, |h| h.ancestors(id))
     }
 
     fn is_subclass_of(&self, child: InterlinguaId, parent: InterlinguaId) -> bool {
+        self.ensure_hierarchy();
         self.hierarchy
             .read()
             .expect("concept store read lock poisoned")
-            .is_subclass(child, parent)
+            .as_ref()
+            .is_some_and(|h| h.is_subclass(child, parent))
     }
 
     fn state(&self) -> ConceptStoreState {

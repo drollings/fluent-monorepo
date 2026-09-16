@@ -23,10 +23,15 @@ This document specifies `fluent-concurrency`, a thin, safe, composable extension
 The crate exports the following modules from `src/lib.rs:3-24`:
 
 ```text
-affinity  capability  credit_pool  feed_worker  flow  io  ladder  pool  queue  reserve  router  runtime  scope  stream  thread_resource  batch
+affinity  capability  credit_pool  feed_worker  flow  io  ladder  pool  queue  runtime  scope  stream  thread_resource  batch
 ```
 
-Each is described below. The spec primitives are in §3.1–§3.9; the bonus primitives (`AffinityScheduler`, `ResultPool`, `PriorityResultPool`, `Reserve`, `StreamAbort`, `thread_local_resource!`) are in §3.10; the canonical first-Ok fallback combinator (`first_accept_in_order`) is in §3.11.
+> The `reserve` (RAII permit) and `router` (keyed-sharding) scaffold modules
+> were pruned — a genuine second consumer never materialized. Use `Limiter`
+> for permit-gated work and submit keyed jobs to the appropriate `WorkerPool`
+> directly.
+
+Each is described below. The spec primitives are in §3.1–§3.7 plus §3.9; the bonus primitives (`AffinityScheduler`, `ResultPool`, `PriorityResultPool`, `StreamAbort`, `thread_local_resource!`) are in §3.10; the canonical first-Ok fallback combinator (`first_accept_in_order`) is in §3.11. (§3.8 is retired — see below.)
 
 > ROADMAP_20260903_LLM M11 removed the `llm_queue` module. The LLM
 > protocol types (`ChatMessage`, `LlmConfig`, `LlmError`, `LlmTask`,
@@ -237,25 +242,14 @@ The sender's `send` is a CAS loop: load credit, if `> 0` decrement and run `op()
 
 This maps 1:1 to the Erlang `credit_flow` semantics: `send` decrements credit, `ack` (called `recv` here) counts down and sends a `bump_credit` when the counter hits zero.
 
-### 3.8 `PartitionedRouter` — Delegate / Sharding
+### 3.8 Keyed sharding — retired
 
-RabbitMQ's `delegate` module groups PIDs by node and routes them to local delegates to reduce inter-node chatter. In a single-process Rust system, this becomes a key-based router (`router.rs:7-21`).
-
-**API**:
-
-```rust
-pub struct PartitionedRouter<K, J: Send + 'static> {
-    shards: Vec<WorkerPool<J>>,
-    hash: fn(&K) -> usize,
-}
-
-impl<K, J: Send + Sync + 'static> PartitionedRouter<K, J> {
-    pub fn new(shards: Vec<WorkerPool<J>>, hash: fn(&K) -> usize) -> Self;
-    pub async fn submit(&self, key: &K, job: J) -> Result<(), PoolError>;
-}
-```
-
-The implementation is intentionally thin: it hashes once per submit and forwards to the appropriate shard. This preserves causal ordering: all jobs with the same key always go to the same shard. There is no per-shard statistics, no shard rebalancing, and no fail-over — the primitive is a shim, not a full delegate supervisor. If you need shard observability, build it on top. **Status: compatibility surface (scaffold).** No production caller exists outside its own tests (`tests/m3.rs`) — the 2026-08-15 scaffold review kept it as the keyed-sharding seam (delete `router.rs` + its tests if a genuine second consumer never materializes).
+The former `PartitionedRouter` keyed-sharding shim (`router.rs`) was pruned
+along with its tests: a genuine second consumer never materialized, and the
+prune rule for unmarked scaffold applies. Keyed workloads submit to the
+appropriate `WorkerPool` directly, which preserves per-key causal ordering
+when each key maps to its own pool. Do not reintroduce a sharding router
+until two independent consumers need it.
 
 ### 3.9 `Runtime` Trait — Pluggable Backend
 
@@ -319,7 +313,11 @@ use fluent_llm::protocol::{
 
 `LlmConfig.extra_body_params` is arbitrary JSON merged into every request body (e.g. `num_ctx`, `temperature`, `stop`); `"model"`, `"messages"`, and `"stream"` keys are ignored because those are set explicitly by the chat-completion logic. `LlmConfig::new()` is a `bon` builder (`start_fn = new`).
 
-**`Reserve`** (`reserve.rs:7-94`) — RAII permit on a shared `Arc<AtomicUsize>`. `try_acquire(counter) -> Option<Self>` atomically decrements and returns the permit, or `None` if already at zero. `commit(self)` consumes the permit permanently; otherwise `Drop` returns it to the counter. This is a lower-level primitive than `Limiter`: it does not own the counter (the caller supplies it), and it does not run a closure. Use `Limiter` for "run this with a permit" and `Reserve` for "acquire now, release later" patterns. **Status: compatibility surface (scaffold)** — the crate's own tests are the only in-tree consumer today; the 2026-08-15 scaffold review kept it as the documented low-level permit seam (delete `reserve.rs` + its tests if a genuine second consumer never materializes).
+**`Reserve` — retired.** The former RAII-permit scaffold (`reserve.rs`) was
+pruned along with its tests: a genuine second consumer never materialized.
+Use `Limiter` for "run this with a permit" work; for "acquire now, release
+later" shapes, hold the guarding state in the caller rather than
+reintroducing a shared-counter permit type until two consumers need it.
 
 **`StreamAbort`** (`stream.rs:1-...`) — a sticky, `Clone` cancellation signal for long-lived streams. Fires once (`cancel`, idempotent), wakes every currently- and future-waiting task (`cancelled`, sticky), and can be inspected (`is_cancelled`). Carries no I/O — transports drop their connections and management planes issue explicit aborts as a *reaction* to it. `Clone` is an `Arc` bump, so every task that touches a stream (the forwarding task, the downstream body-drop guard, the management-abort watcher) holds its own clone and observes the same state. The canonical wiring is the **body-lifetime rule**: the HTTP body handed to the client is wrapped so its `Drop` fires `cancel()` — the body's lifetime is the single source of truth for "the consumer is gone" — and the forwarding task `select!`s its upstream read against `cancelled()`. **Status: production.** Consumed by the router's streaming dispatch (`OpenAiChatBackend::stream_complete_with_abort`, `dispatch/backend.rs`), which selects its upstream read *and* its body sends against the signal so a blocked `send_data` never wedges the task.
 
@@ -425,7 +423,6 @@ with dependency cancellation, whereas the helper is per-call.
 | SupervisedBatch poll budget | `poll_budget=64`, `wake_by_ref` only when ready-budget exhausted | Prevents one batch starving the executor when many tasks complete in the same wake; no spin when `JoinSet` is `Pending`. |
 | Capability gating | `HashMap<TypeId, Arc<dyn Any>>` lookup on `CURRENT_CAPS` via `try_with` | `TypeId` is pointer-sized; no string comparison. `name()` is informational only; absence is `PermissionDenied` (fail-closed). |
 | Data transformation | Concrete enums + pattern matching | `WorkUnit::execute` is one vtable call per task; inside it, all work is monomorphized. |
-| `Reserve` permit | `AtomicUsize` `fetch_sub`/`fetch_add` | Lock-free, no heap allocation. |
 | Poison recovery | `common_core::sync::lock` (`into_inner` on poison) | Queue holds only `VecDeque`/`BTreeMap` with `push`/`pop` that leaves structure valid; wedging on poison would be worse availability loss than recovering the valid deque. |
 
 ## 6. Crate Layout (Actual)
@@ -458,7 +455,7 @@ No `async-trait` crate (native AFIT is used for the `Pool` traits — no proc-ma
 
 1. **No `async_trait` crate; native AFIT allowed for control-plane traits.** `fluent-concurrency` forbids the `async_trait` proc-macro crate (its `Box<dyn Future>` hides an allocation per call). Native `async fn` in trait (AFIT/RPITIT, stable since Rust 1.75) is allowed for non-object-safe, non-hot-loop control-plane traits — the canonical example is the `Pool` family (`SinkPool`/`RequestPool`/`PriorityRequestPool` in `pool.rs`/`credit_pool.rs`). Hot-loop dispatch (`Limiter::run`, queue `pop`, per-item work) stays concrete generics per `fluent-wvr/SKILL.md:70` ("dyn at request boundary, concrete in tight loop"). The orchestration core (`SupervisedBatch` hand-written `impl Future` `batch.rs:251-365`; `Scope` via `JoinSet`) stays manual `Future` so poll budgets, dependency cancellation, and capability propagation remain compiler-visible.
 2. **No `tokio::spawn` without a scope/batch.** The `tokio::spawn` calls in the crate are limited to: `Scope::spawn` (which installs `CURRENT_CAPS`); `SupervisedBatch::spawn_unit` (which installs `CURRENT_CAPS` from `WorkContext.caps`, `batch.rs:206-235`); `Scope::close`/`close_graceful` drains; `WorkerPool`/`ResultPool`/`PriorityResultPool` worker loops; and `DbCapability::query`/`execute` in `fluent-db` (which `spawn_blocking` for sync `rusqlite` work). Every async effect outside these sites flows through `Scope::spawn` or `SupervisedBatch` (both capability-scoped and handle-tracked) or through a pool (which tracks workers). Raw `tokio::spawn` without a scope is an anti-pattern because it loses `CURRENT_CAPS` and is denied at the first gated I/O.
-3. **No `dyn Trait` in a per-item loop.** The `PartitionedRouter` hashes once per submit; `PriorityQueue` dispatches via `BTreeMap` keys, not vtables; `CapabilitySet::get` uses `TypeId` (pointer-sized) rather than string comparison; `PartitionedRouter` does no per-job vtable dispatch.
+3. **No `dyn Trait` in a per-item loop.** `PriorityQueue` dispatches via `BTreeMap` keys, not vtables; `CapabilitySet::get` uses `TypeId` (pointer-sized) rather than string comparison. Keyed dispatch hashes once per submit and forwards to the owning pool — no per-job vtable dispatch.
 4. **No ambient `tokio::fs::read` or `tokio::time::sleep`.** All I/O is called through a capability method (`FsCapability::read`, `NetCapability::http_get`, `DbCapability::query`, etc.) which calls `check_capability(self)` first. `tokio::time::sleep` is allowed in the framework's own internals (SupervisedBatch retry, SupervisedBatch timeout) and in the `Runtime::sleep` backend, but consumer code is expected to use `Limiter::run`, `common_core::retry`, or `SupervisedBatch` rather than calling it directly.
 5. **No automatic restart.** SupervisedBatch instances contain; they do not restart. Restart is a deliberate operator action.
 

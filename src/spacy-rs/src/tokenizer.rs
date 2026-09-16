@@ -241,7 +241,7 @@ impl Tokenizer {
     /// read lands here only after publication.
     fn tables(&self) -> &FrozenTables {
         static EMPTY: std::sync::LazyLock<FrozenTables> = std::sync::LazyLock::new(FrozenTables::default);
-        self.frozen.get().map(|t| &**t).unwrap_or(&EMPTY)
+        self.frozen.get().map_or(&EMPTY, |t| &**t)
     }
 
     /// Tokenize `text` into a `Doc` (`__call__` — `tokenizer.pyx:152-162`):
@@ -271,7 +271,7 @@ impl Tokenizer {
         let mut run_is_ws = text
             .chars()
             .next()
-            .map_or(false, |c| c.is_whitespace());
+            .is_some_and(char::is_whitespace);
         for (i, c) in text.char_indices() {
             if c.is_whitespace() != run_is_ws {
                 if run_start < i {

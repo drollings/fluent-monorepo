@@ -69,8 +69,8 @@ impl Lemmatizer {
     }
 
     /// From a shared `LemmaView` (taxonomy_blob) — read-biased `RwLock` retained, no `dashmap` swap this roadmap.
-    pub fn from_view(view: std::sync::Arc<LemmaBlob>) -> Self {
-        Self::from_blob((*view).clone())
+    pub fn from_view(view: &LemmaBlob) -> Self {
+        Self::from_blob(view.clone())
     }
 
     /// A rule-mode lemmatizer over the generated English tables
@@ -166,7 +166,7 @@ impl Lemmatizer {
             // (acronyms, never title-case names). Title-case nominals keep
             // surface per the proper-noun convention (`French`, `John`;
             // unit-pinned alongside `proper_nouns_keep_case`).
-            let shouty = orth.chars().any(|c| c.is_alphabetic())
+            let shouty = orth.chars().any(char::is_alphabetic)
                 && orth.chars().all(|c| !c.is_lowercase());
             self.apply_rules(orth, pos, pos == Upos::Verb || shouty)
         };

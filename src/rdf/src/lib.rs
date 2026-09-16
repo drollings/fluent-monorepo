@@ -33,5 +33,11 @@ pub enum RdfError {
     OutOfMemory,
 }
 
+pub const NS_RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+pub const NS_RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
+pub const NS_XSD: &str = "http://www.w3.org/2001/XMLSchema#";
 pub const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-pub const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema#";
+pub const RDFS_SUBCLASS_OF: &str = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+
+/// The XSD namespace, historically spelled `XSD_NS` in this crate.
+pub const XSD_NS: &str = NS_XSD;

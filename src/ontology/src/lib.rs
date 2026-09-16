@@ -9,6 +9,7 @@ pub mod migration;
 pub mod normalize;
 pub mod plausibility;
 pub mod taxonomy;
+pub(crate) mod turtle;
 pub mod yago;
 pub mod yago_loader;
 pub mod yago_view;

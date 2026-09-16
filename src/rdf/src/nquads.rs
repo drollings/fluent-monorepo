@@ -1,5 +1,5 @@
 use crate::lexer::{Lexer, TokenKind};
-use crate::parser::{Literal, Term};
+use crate::parser::{extract_iri, extract_literal_content, Literal, Term};
 use crate::RdfError;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +28,7 @@ impl NQuadsParser {
             match tok.kind {
                 TokenKind::Eof | TokenKind::Dot => break,
                 TokenKind::Iri => {
-                    let iri = Self::extract_iri(tok.value);
+                    let iri = extract_iri(tok.value);
                     terms.push(Term::Iri(iri));
                 }
                 TokenKind::PrefixedName => {
@@ -74,16 +74,8 @@ impl NQuadsParser {
         }
     }
 
-    fn extract_iri(raw: &str) -> String {
-        if raw.len() >= 2 && raw.starts_with('<') && raw.ends_with('>') {
-            raw[1..raw.len() - 1].to_string()
-        } else {
-            raw.to_string()
-        }
-    }
-
     fn parse_literal(lex: &mut Lexer, value: &str) -> Result<Literal, RdfError> {
-        let content = Self::extract_literal_content(value);
+        let content = extract_literal_content(value);
         let pk = lex.next_token()?;
         if pk.kind == TokenKind::LangTag {
             let lang = pk.value[1..].to_string();
@@ -96,7 +88,7 @@ impl NQuadsParser {
         if pk.kind == TokenKind::DatatypeMarker {
             let dt_tok = lex.next_token()?;
             let dt_iri = match dt_tok.kind {
-                TokenKind::Iri => Self::extract_iri(dt_tok.value),
+                TokenKind::Iri => extract_iri(dt_tok.value),
                 TokenKind::PrefixedName => dt_tok.value.to_string(),
                 _ => {
                     return Err(RdfError::UnexpectedToken {
@@ -118,16 +110,6 @@ impl NQuadsParser {
             lang: None,
             datatype: None,
         })
-    }
-
-    fn extract_literal_content(raw: &str) -> String {
-        if raw.len() >= 6 && raw.starts_with("\"\"\"") && raw.ends_with("\"\"\"") {
-            raw[3..raw.len() - 3].to_string()
-        } else if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
-            raw[1..raw.len() - 1].to_string()
-        } else {
-            raw.to_string()
-        }
     }
 }
 

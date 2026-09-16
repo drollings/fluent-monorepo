@@ -143,6 +143,13 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub overlay: Option<OverlayConfig>,
+    /// Frame-resolution composition section. `Some` opts the boot path into
+    /// the `FrameResolutionWorker` (wave-batched ambiguity resolution with
+    /// validated-only sense promotion) behind its runtime gate. `None` (the
+    /// default) leaves today's behavior — no frame worker at boot.
+    #[field(skip)]
+    #[serde(default)]
+    pub frame_resolution: Option<FrameResolutionConfig>,
     /// Session composition section. `Some` opts the boot path into a
     /// `SessionRegistry` (canonical session home) so rigor rewind and
     /// checkpoint/rewind state exist at runtime. `None` (the default) leaves
@@ -231,6 +238,7 @@ impl Default for RouterConfig {
             ledger: None,
             review: None,
             overlay: None,
+            frame_resolution: None,
             session: None,
             onnx_limiter_cap: common_core::constants::DEFAULT_ONNX_LIMITER_CAP,
             onnx_threads: common_core::constants::DEFAULT_ONNX_THREADS,
@@ -2517,6 +2525,33 @@ pub struct OverlayConfig {
     /// a deployment with no `overlay.arc_ready` block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arc_ready: Option<ArcReadyConfig>,
+}
+
+/// Frame-resolution worker configuration. `None` (the default, i.e. no
+/// `frame_resolution` block) leaves the worker unbuilt — byte-identical to a
+/// deployment without it. `Some` composes the worker behind its runtime gate
+/// (open at boot, closable via `POST /admin/frame/rollback`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FrameResolutionConfig {
+    /// Model key for the resolution model (batched, grammar-shaped JSON).
+    /// Falls back to the classifier key, then the onnx LLM key when absent —
+    /// no key resolvable means the worker is skipped (fail-open).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Bounded frame-resolution queue capacity (the pool queue cap).
+    #[serde(default = "default_frame_queue_capacity")]
+    pub queue_capacity: usize,
+    /// Credit granted up front to the frame feed (backpressure).
+    #[serde(default = "default_frame_credit_limit")]
+    pub credit_limit: usize,
+}
+
+fn default_frame_queue_capacity() -> usize {
+    32
+}
+
+fn default_frame_credit_limit() -> usize {
+    16
 }
 
 /// The `arc_ready` annotation-overlay configuration (OVERLAYS §8). Opt-in and

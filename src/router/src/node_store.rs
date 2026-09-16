@@ -71,7 +71,10 @@ pub struct ContentNodeStore {
     durable: Option<Arc<SqliteStore>>,
     /// Lazy LOD derivation. `Mutex` for interior mutability so the summarizer
     /// can be attached after the store is `Arc`-shared
-    /// (`ContentNodeLedger::with_summarizer`).
+    /// (`ContentNodeLedger::with_summarizer`). The guard is never held across
+    /// a model call: `ensure_tier` snapshots a `Clone` under the lock and
+    /// drops the guard before `summarize_text` (M15, R7), so a concurrent
+    /// `set_summarizer` swaps the handle without affecting an in-flight call.
     summarizer: Mutex<Option<Summarizer>>,
     /// Optional tier-event feed: a sender the background
     /// `LedgerTierWorker` drains to fill LOD4/LOD5. `None` (the default) leaves
@@ -191,7 +194,9 @@ impl ContentNodeStore {
     }
 
     /// Set the summarizer on an already-shared store (the facade's
-    /// `with_summarizer` uses this through the `Arc`).
+    /// `with_summarizer` uses this through the `Arc`). Swap semantics are
+    /// snapshot-based (M15): an in-flight `ensure_tier` keeps its cloned
+    /// handle and completes unaffected.
     pub fn set_summarizer(&self, summarizer: Summarizer) {
         *lock(&self.summarizer) = Some(summarizer);
     }
@@ -1068,23 +1073,6 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
         Ok(node)
     }
 
-    /// Collapse a node: replace LOD0's content with `summary` and mark it
-    /// `active_lod = lod`. Used by compaction.
-    pub fn collapse_node(
-        &self,
-        node_id: NodeId,
-        summary: &str,
-        lod: u8,
-    ) -> Result<(), LedgerError> {
-        self.with_node_mut(node_id, |node| {
-            node.lod[LOD0_FULL_TEXT as usize] = summary.to_string();
-            node.lod[LOD5_LABEL as usize] =
-                derive_label(node.role.as_ref().map(OriginRole::as_str).unwrap_or_default(), summary);
-            node.active_lod = Some(lod);
-        })?;
-        Ok(())
-    }
-
     /// Derive (or return the cached) LOD level for a node, **from LOD0 only**
     /// via the `Summarizer` — never chained from a lower tier.
     ///
@@ -1127,10 +1115,14 @@ pub fn latest_parse_node_id(&self, session_id: &str) -> Option<NodeId> {
         if !cached.is_empty() {
             return Ok(());
         }
-
         let derived = {
-            let summarizer = lock(&self.summarizer);
-            let summarizer = summarizer.as_ref().ok_or(LedgerError::NoSummarizer)?;
+            // Snapshot semantics (M15): clone the handle under the lock and
+            // drop the guard before the call — the summarizer mutex is never
+            // held across an LLM call (R7), and a concurrent
+            // `set_summarizer` swaps the store's handle without affecting
+            // this in-flight call.
+            let summarizer = lock(&self.summarizer).clone().ok_or(LedgerError::NoSummarizer)?;
+            eprintln!("DBG: guard dropped, calling summarize");
             summarizer
                 .summarize_text(&full_text)
                 .map_err(|e| LedgerError::Summary(e.to_string()))?

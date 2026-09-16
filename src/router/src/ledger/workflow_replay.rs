@@ -65,6 +65,13 @@ pub struct ReplayConfig {
     /// Minimum current-plan confidence (self-doubt axis).
     #[serde(default = "default_min_confidence")]
     pub min_confidence: f64,
+    /// Name of the `models` key whose `EmbeddingProvider` keys recorded
+    /// workflows by query embedding. `None` (the default) leaves the loop
+    /// uncomposed — hash or stub embeddings would corrupt the near-neighbor
+    /// keys, so without a real source the recorder is never built and the
+    /// ladder runs byte-identically.
+    #[serde(default)]
+    pub embedding_model: Option<String>,
 }
 
 fn default_distance_threshold() -> f64 {
@@ -84,6 +91,7 @@ impl Default for ReplayConfig {
             distance_threshold: default_distance_threshold(),
             min_reuses: default_min_reuses(),
             min_confidence: default_min_confidence(),
+            embedding_model: None,
         }
     }
 }
@@ -428,6 +436,45 @@ impl WorkflowRecorder {
         }
     }
 
+    /// Task-value acceptance for a solved question-mode run: the explicit
+    /// gate between a candidate run and persistence. Returns the validated
+    /// steps, or `None` when the run must not persist — the assembler
+    /// rejected it, the run is degenerate (empty query, no hypotheticals, a
+    /// missing/empty answer, an empty assembly), or the decomposition does
+    /// not survive a replay dry-run.
+    ///
+    /// This is task-value, never producer confidence: a high assembler score
+    /// alone never passes it, and a low score never stops a validated run
+    /// from being *proposed* — persistence is what this gates.
+    pub fn accept_question_run(
+        user_text: &str,
+        hypotheticals: &[String],
+        answers: &[String],
+        assembled: &str,
+        accepted: bool,
+    ) -> Option<Vec<RecordedStep>> {
+        if !accepted
+            || user_text.is_empty()
+            || hypotheticals.is_empty()
+            || assembled.is_empty()
+            || answers.len() < hypotheticals.len()
+        {
+            return None;
+        }
+        if hypotheticals
+            .iter()
+            .zip(answers.iter())
+            .any(|(h, a)| h.is_empty() || a.is_empty())
+        {
+            return None;
+        }
+        let steps = question_run_steps(user_text, hypotheticals, answers, assembled, accepted);
+        if !dry_run_reproduces_structure(&steps) {
+            return None;
+        }
+        Some(steps)
+    }
+
     /// The replay handle for consulting the recorded library (M14).
     pub fn replay(&self) -> &WorkflowReplay {
         &self.replay
@@ -462,8 +509,14 @@ impl WorkflowRecorder {
     /// `accepted` is the scorer verdict — the local-model verification rung
     /// for the `verified` provenance flag (human review stays the stronger
     /// provenance; the calibrated write gate still applies). Never fails:
-    /// a disabled flag, a missing/failed embedding, or a gate refusal all
-    /// map to [`RecordOutcome::RejectedGate`] and the request is untouched.
+    /// a disabled flag, a missing/failed embedding, a task-value refusal, or
+    /// a gate refusal all map to [`RecordOutcome::RejectedGate`] and the
+    /// request is untouched.
+    ///
+    /// Persistence requires both axes separately: the task-value acceptance
+    /// ([`WorkflowRecorder::accept_question_run`] — assembler verdict plus a
+    /// replay dry-run that reproduces the run's structure) *and* the
+    /// calibrated write gate (confidence floor, novelty, verified flag).
     #[allow(clippy::too_many_arguments)]
     pub fn record_question_run(
         &self,
@@ -486,27 +539,11 @@ impl WorkflowRecorder {
             },
             None => return RecordOutcome::RejectedGate,
         };
-        let mut steps = Vec::with_capacity(hypotheticals.len() + 1);
-        for (i, hyp) in hypotheticals.iter().enumerate() {
-            steps.push(RecordedStep {
-                step_id: format!("hypothetical-{i}"),
-                prompt_lod0: hyp.clone(),
-                response_lod0: answers.get(i).cloned().unwrap_or_default(),
-                depends_on: vec![],
-                provides: vec![format!("hyp-answer-{i}")],
-                outcome_ok: accepted,
-            });
-        }
-        steps.push(RecordedStep {
-            step_id: "assemble".into(),
-            prompt_lod0: user_text.to_string(),
-            response_lod0: assembled.to_string(),
-            depends_on: (0..hypotheticals.len())
-                .map(|i| format!("hyp-answer-{i}"))
-                .collect(),
-            provides: vec!["solution".into()],
-            outcome_ok: accepted,
-        });
+        let Some(steps) =
+            Self::accept_question_run(user_text, hypotheticals, answers, assembled, accepted)
+        else {
+            return RecordOutcome::RejectedGate;
+        };
         self.replay.record_workflow(
             &*self.store,
             None,
@@ -519,6 +556,71 @@ impl WorkflowRecorder {
             lod0_hash_of(user_text),
         )
     }
+}
+
+/// One step per hypothetical plus the assemble step, mirroring a solved
+/// question-mode run's own decomposition. Shared by the acceptance dry-run
+/// and the record path so the validated shape is exactly the persisted shape.
+fn question_run_steps(
+    user_text: &str,
+    hypotheticals: &[String],
+    answers: &[String],
+    assembled: &str,
+    accepted: bool,
+) -> Vec<RecordedStep> {
+    let mut steps = Vec::with_capacity(hypotheticals.len() + 1);
+    for (i, hyp) in hypotheticals.iter().enumerate() {
+        steps.push(RecordedStep {
+            step_id: format!("hypothetical-{i}"),
+            prompt_lod0: hyp.clone(),
+            response_lod0: answers.get(i).cloned().unwrap_or_default(),
+            depends_on: vec![],
+            provides: vec![format!("hyp-answer-{i}")],
+            outcome_ok: accepted,
+        });
+    }
+    steps.push(RecordedStep {
+        step_id: "assemble".into(),
+        prompt_lod0: user_text.to_string(),
+        response_lod0: assembled.to_string(),
+        depends_on: (0..hypotheticals.len())
+            .map(|i| format!("hyp-answer-{i}"))
+            .collect(),
+        provides: vec!["solution".into()],
+        outcome_ok: accepted,
+    });
+    steps
+}
+
+/// Replay dry-run: the decomposition must build a DAG *and* the stored
+/// envelopes must reproduce the recorded structure — prompt, response, and
+/// edges per step id. A run that cannot round-trip its own structure is
+/// unreplayable and must never persist.
+fn dry_run_reproduces_structure(steps: &[RecordedStep]) -> bool {
+    let Some(dag) = build_target_dag(steps) else {
+        return false;
+    };
+    if dag.len() != steps.len() {
+        return false;
+    }
+    let by_id: HashMap<&str, &RecordedStep> =
+        steps.iter().map(|s| (s.step_id.as_str(), s)).collect();
+    // Collapsed step ids cannot reproduce their structure.
+    if by_id.len() != steps.len() {
+        return false;
+    }
+    dag.iter().all(|t| {
+        let envelope = split_step_envelope(t);
+        match by_id.get(t.name.to_string().as_str()) {
+            Some(step) => {
+                envelope.prompt == step.prompt_lod0
+                    && envelope.response == step.response_lod0
+                    && envelope.depends_on == step.depends_on
+                    && envelope.provides == step.provides
+            }
+            None => false,
+        }
+    })
 }
 
 /// Cosine distance (`1 − cosine`) to the nearest stored entry; `f64::INFINITY`

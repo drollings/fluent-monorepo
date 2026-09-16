@@ -151,6 +151,7 @@ where
     /// for subsequent mutation. This is the previous `Clone` behavior,
     /// now explicit — prefer shared `Clone` unless fork isolation is
     /// actually required.
+    #[must_use]
     pub fn snapshot(&self) -> Self
     where
         K: Clone,

@@ -12,10 +12,14 @@ fn doc_from(text: &str) -> Doc {
     SHARED.tokenize(text).expect("tokenize")
 }
 
+/// Shared correction map behind the test seam.
+type SharedCorrectionMap =
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<u64, Vec<Correction>>>>;
+
 /// A hermetic [`SpanCacheSeam`] over a shared map (test-only double).
 /// The ledger owns the production `SpanCache` trait + `InMemorySpanCache`;
 /// the ladder only needs these three legs, so tests build the seam directly.
-fn test_seam() -> (SpanCacheSeam, std::sync::Arc<std::sync::Mutex<std::collections::HashMap<u64, Vec<Correction>>>>) {
+fn test_seam() -> (SpanCacheSeam, SharedCorrectionMap) {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     let map: Arc<Mutex<HashMap<u64, Vec<Correction>>>> = Arc::new(Mutex::new(HashMap::new()));

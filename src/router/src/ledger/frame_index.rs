@@ -16,6 +16,7 @@
 //! array shape), then applies + promotes.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use fluent_concurrency::credit_pool::CreditGatedPool;
 use fluent_concurrency::pool::PoolError;
@@ -66,6 +67,44 @@ pub enum FrameResolutionError {
     Closed(String),
     #[error("frame resolution queue full: {0}")]
     Full(String),
+}
+
+/// Runtime gate for the frame-resolution worker (the coordinator-gate shape:
+/// an `Arc<AtomicBool>` shared by clone, open at boot, closable at runtime
+/// without a restart or touching the attached worker). A closed gate drops
+/// jobs before any reuse read, fetch, or promotion write — gate-off is
+/// observationally identical to no worker.
+#[derive(Debug, Clone)]
+pub struct FrameResolutionGate {
+    open: Arc<AtomicBool>,
+}
+
+impl FrameResolutionGate {
+    /// A fresh gate admits frame-resolution traffic (boot default when the
+    /// worker is composed).
+    pub fn open() -> Self {
+        Self {
+            open: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Whether frame-resolution traffic is currently admitted.
+    pub fn is_open(&self) -> bool {
+        self.open.load(Ordering::SeqCst)
+    }
+
+    /// Admit (`true`) or refuse (`false`) frame-resolution traffic. `false`
+    /// is the rollback direction: in-flight waves finish, new jobs are
+    /// dropped before any index read or model call.
+    pub fn set_open(&self, open: bool) {
+        self.open.store(open, Ordering::SeqCst);
+    }
+}
+
+impl Default for FrameResolutionGate {
+    fn default() -> Self {
+        Self::open()
+    }
 }
 
 /// The promotion seam for resolved ambiguity patterns (mirrors
@@ -193,19 +232,24 @@ impl PreferredSenseIndex for SqlitePreferredSenseIndex {
 /// 2. On any miss, the worker issues **one** batched call returning N
 ///    resolutions (one per pending ambiguity), applies them, and promotes
 ///    each resolved pattern back into the index (so the next occurrence is
-///    deterministic).
+///    deterministic) — promotion only through the task-value gate
+///    (`accept_resolution_for_promotion`: validated and ambiguity-free), and
+///    never over an already established sense.
 ///
 /// Built to mirror `ReviewWorker`'s shape (CreditGatedPool + reuse-then-fetch);
 /// the hot path enqueues and returns immediately.
 pub struct FrameResolutionWorker {
     pool: CreditGatedPool<FrameResolutionJob>,
     model: String,
+    gate: FrameResolutionGate,
 }
 
 impl FrameResolutionWorker {
     /// Construct the worker. `credit_limit` bounds in-flight jobs; `queue_capacity`
     /// bounds the pool queue; `index` is the promotion seam; `fetch` the
-    /// batched resolution call (grammar-constrained by the router).
+    /// batched resolution call (grammar-constrained by the router); `gate`
+    /// admits or drops jobs at runtime (closed drops before any index read,
+    /// fetch, or promotion write).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: &Arc<dyn PreferredSenseIndex>,
@@ -214,10 +258,12 @@ impl FrameResolutionWorker {
         queue_capacity: usize,
         credit_limit: usize,
         runtime: Arc<dyn Runtime>,
+        gate: &FrameResolutionGate,
     ) -> Self {
         let index_h = Arc::clone(index);
         let fetch_h = Arc::clone(fetch);
         let model_h = model.clone();
+        let gate_h = gate.clone();
         let pool = CreditGatedPool::new(
             runtime,
             credit_limit,
@@ -226,18 +272,29 @@ impl FrameResolutionWorker {
                 let index = Arc::clone(&index_h);
                 let fetch = Arc::clone(&fetch_h);
                 let model = model_h.clone();
+                let gate = gate_h.clone();
                 async move {
-                    process_job(&job, &index, &fetch, &model);
+                    process_job(&job, &index, &fetch, &model, &gate);
                 }
             },
         );
-        Self { pool, model }
+        Self {
+            pool,
+            model,
+            gate: gate.clone(),
+        }
     }
 
     /// The resolution-model key this worker uses.
     #[must_use]
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// The runtime gate admitting or dropping jobs.
+    #[must_use]
+    pub fn gate(&self) -> &FrameResolutionGate {
+        &self.gate
     }
 
     /// Whether the credit gate is currently blocking producers.
@@ -264,15 +321,27 @@ impl FrameResolutionWorker {
     }
 }
 
-/// Process one job: reuse-check → (any miss) one batched resolution call →
-/// apply + promote. Best-effort by design — a failure logs and never blocks
-/// the pool.
+/// Process one job: gate → reuse-check → (any miss) one batched resolution
+/// call → apply + promote. Best-effort by design — a failure logs and never
+/// blocks the pool.
 fn process_job(
     job: &FrameResolutionJob,
     index: &Arc<dyn PreferredSenseIndex>,
     fetch: &FrameResolutionFetch,
     model: &str,
+    gate: &FrameResolutionGate,
 ) {
+    // 0. Runtime gate: closed drops the job before any index read, fetch, or
+    //    promotion write — observationally identical to no worker.
+    if !gate.is_open() {
+        tracing::debug!(
+            target: "router.frame",
+            model = model,
+            pending = job.requests.len(),
+            "frame resolution gate closed — job dropped",
+        );
+        return;
+    }
     // 1. Reuse: every already-resolved pattern is served from the index.
     let mut reuse: Vec<Resolution> = Vec::new();
     let mut misses: Vec<FrameResolutionRequest> = Vec::new();
@@ -314,12 +383,44 @@ fn process_job(
     let resolutions: Vec<Resolution> = serde_json::from_str(&reply)
         .unwrap_or_else(|_| parse_naive(&reply, misses.len()));
 
-    // 3. Apply + promote: record each resolved pattern back into the index so
-    //    the next occurrence is deterministic (zero LLM cost).
+    // 3. Apply + promote: each resolved pattern is recorded back into the
+    //    index so the next occurrence is deterministic (zero LLM cost) —
+    //    but only through the task-value gate, and never over an already
+    //    established sense.
     for (i, req) in misses.iter().enumerate() {
         let Some(res) = resolutions.get(i) else {
             continue;
         };
+        if !spacy_rs::frame::accept_resolution_for_promotion(
+            req.ambiguity_kind,
+            &req.candidate_ids,
+            res,
+        ) {
+            tracing::debug!(
+                target: "router.frame",
+                model = model,
+                predicate = req.predicate_lemma_id.as_i64(),
+                ambiguity_kind = ?req.ambiguity_kind,
+                "resolution refused promotion (invalid or still ambiguous)",
+            );
+            continue;
+        }
+        // The fetch raced promotion (a concurrent wave, or a golden seed):
+        // model output never overwrites an established sense, so a
+        // route-changing wrong sense cannot displace golden ground truth.
+        if index
+            .preferred_sense(req.predicate_lemma_id, req.ambiguity_kind)
+            .is_some()
+        {
+            tracing::debug!(
+                target: "router.frame",
+                model = model,
+                predicate = req.predicate_lemma_id.as_i64(),
+                ambiguity_kind = ?req.ambiguity_kind,
+                "pattern already resolved — model output does not overwrite",
+            );
+            continue;
+        }
         if let Err(e) = index.record_preferred_sense(
             req.predicate_lemma_id,
             req.ambiguity_kind,
@@ -361,3 +462,7 @@ fn parse_naive(reply: &str, len: usize) -> Vec<Resolution> {
 #[cfg(test)]
 #[path = "../../tests/ledger_frame_index.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/ledger_frame_index_cal.rs"]
+mod calibration_tests;

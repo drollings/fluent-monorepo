@@ -520,21 +520,15 @@ impl OpenAiEmbedding {
     }
 
     /// Build the request body merging model-level `params` into the standard
-    /// `{"model", "input"}` shape. Core fields cannot be overwritten.
+    /// `{"model", "input"}` shape. Core fields cannot be overwritten. The
+    /// merge is the shared wire-format helper (`openai::apply_params`, M12) —
+    /// same overlay-wins/protected-keys discipline as the chat body.
     fn request_body(&self, input: &serde_json::Value) -> serde_json::Value {
         let mut body = serde_json::json!({
             "model": self.model,
             "input": input,
         });
-        if let Some(params) = self.params.as_ref() {
-            if let Some(obj) = params.as_object() {
-                for (k, v) in obj {
-                    if k != "model" && k != "input" {
-                        body[k] = v.clone();
-                    }
-                }
-            }
-        }
+        crate::openai::apply_params(&mut body, self.params.as_ref(), &["model", "input"]);
         body
     }
 

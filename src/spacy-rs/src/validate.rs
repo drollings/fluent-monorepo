@@ -122,7 +122,10 @@ impl Clone for AnnotationError {
     }
 }
 
-impl PartialEq for AnnotationError {
+ impl PartialEq for AnnotationError {
+    // The single-field tuple arms share bodies textually but bind different
+    // types (`String` vs `Vec<usize>`), so or-patterns cannot merge them.
+    #[allow(clippy::match_same_arms)]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::CountMismatch { expected: a1, got: b1 }, Self::CountMismatch { expected: a2, got: b2 }) => a1 == a2 && b1 == b2,
@@ -133,7 +136,6 @@ impl PartialEq for AnnotationError {
             (Self::SelfLoop { token: t1 }, Self::SelfLoop { token: t2 }) => t1 == t2,
             (Self::RootHeadMismatch { token: t1, head: h1 }, Self::RootHeadMismatch { token: t2, head: h2 }) => t1 == t2 && h1 == h2,
             (Self::RootCount { expected: e1, found: f1 }, Self::RootCount { expected: e2, found: f2 }) => e1 == e2 && f1 == f2,
-            (Self::Unreachable(a), Self::Unreachable(b)) => a == b,
             (Self::Cycle(a), Self::Cycle(b)) => a == b,
             (Self::MalformedBiluo { index: i1, detail: d1 }, Self::MalformedBiluo { index: i2, detail: d2 }) => i1 == i2 && d1 == d2,
             (Self::NonProjective { token: t1, head: h1, blocked: b1 }, Self::NonProjective { token: t2, head: h2, blocked: b2 }) => t1 == t2 && h1 == h2 && b1 == b2,

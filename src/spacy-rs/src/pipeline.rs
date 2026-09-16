@@ -51,15 +51,16 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::arc_eager::{ArcEagerAnnotator, ArcEagerRung};
-use crate::routing::{InterlinguaSignal, RoutingSignal};
 use crate::doc::Doc;
 use crate::error::SpacyError;
+use crate::frame::frame_coverage;
 use crate::interlingua::InterlinguaResolver;
 use crate::lang;
 use crate::lemmatizer::Lemmatizer;
 use crate::llm::{
     apply_with, attach, AnnotationRecord, AnnotationResult, AnnotationSet, AnnotationSource,
 };
+use crate::routing::{InterlinguaSignal, RoutingSignal};
 use crate::sentencizer::Sentencizer;
 use crate::tokenizer::Tokenizer;
 use crate::validate::{AnnotationError, AnnotationValidator};
@@ -178,7 +179,7 @@ impl WorkUnit for AnnotateStage {
             .map_err(|e| WorkError::Execution(e.to_string()))?;
         let set =
             AnnotationSet::parse_json(&json).map_err(|e| WorkError::Execution(e.to_string()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         state.annotations = Some(set);
         Ok(WorkOutput::ok("annotations parsed"))
     }
@@ -228,7 +229,7 @@ impl WorkUnit for ValidateStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         let doc = state
             .doc
             .as_ref()
@@ -279,7 +280,7 @@ impl WorkUnit for AttachStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         let set = state
             .annotations
             .clone()
@@ -349,7 +350,7 @@ impl WorkUnit for FrameStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         let doc = state
             .doc
             .as_ref()
@@ -415,7 +416,7 @@ fn depends(&self) -> &[ArcIntern<str>] {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         // Clone the confidence out first so the doc borrow below is exclusive.
         let confidence = state
             .annotation
@@ -483,7 +484,7 @@ impl WorkUnit for SentencizeStage {
         let state = ctx
             .get::<Arc<Mutex<PipelineState>>>(STATE_KEY)
             .ok_or_else(|| WorkError::Dependency(STATE_KEY.to_string()))?;
-        let mut state = common_core::sync::lock(&state);
+        let mut state = common_core::sync::lock(state);
         let doc = state
             .doc
             .as_mut()
@@ -790,8 +791,12 @@ fn default_unresolved_token_threshold() -> f64 { 0.3 }
 
 /// The decision policy for when the model refiners run after the
 /// deterministic base parse. Pure data — no I/O, no side effects.
+///
+/// Four independent serde-configured toggles; folding them into a bitflags
+/// word would break the config schema for no gain.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct RefinePolicy {
     /// Whether refiners are off, conditional, or always-on.
     #[serde(default)]
@@ -1164,67 +1169,6 @@ pub fn refine_focus(
     refine_focus_inner(base, &[(dummy, signal.clone())], policy)
 }
 
-/// Fraction of routing-critical roles (predicate, subject, direct object)
-/// that are both structurally present AND interlingua-resolved. Used only
-/// as a non-regression gate on refiner adoption — never as a replacement
-/// for the 7-check validator, which remains the sole well-formedness
-/// arbiter. A refined result must pass BOTH gates: valid, and not worse.
-///
-/// `routing` provides structural presence (predicate always present,
-/// subject/direct_object `Option`); `signal` provides resolution state.
-/// When no critical role is structurally present, coverage is defined as
-/// `1.0` (nothing to resolve → not a regression).
-pub fn frame_coverage(routing: &RoutingSignal, signal: &InterlinguaSignal) -> f64 {
-    let mut present = 0u32;
-    let mut resolved = 0u32;
-    // Predicate is always structurally present (RoutingSignal.predicate is a
-    // non-empty String for a non-empty sentence).
-    present += 1;
-    if signal.predicate_id.is_some_and(|id| id.as_u64() != 0) {
-        resolved += 1;
-    }
-    if routing.subject.is_some() {
-        present += 1;
-        if signal.subject_id.is_some_and(|id| id.as_u64() != 0) {
-            resolved += 1;
-        }
-    }
-    if routing.direct_object.is_some() {
-        present += 1;
-        if signal.direct_object_id.is_some_and(|id| id.as_u64() != 0) {
-            resolved += 1;
-        }
-    }
-    if present == 0 {
-        1.0
-    } else {
-        f64::from(resolved) / f64::from(present)
-    }
-}
-
-/// Backward-compat shim for callers that only have an `InterlinguaSignal`
-/// (tests, calibration). Treats all three roles as structurally present
-/// (the pre-F3 `total = 3` shape) so existing golden values are preserved
-/// when no `RoutingSignal` is available. New code should call
-/// [`frame_coverage`] with the routing signal.
-pub fn frame_coverage_signal(signal: &InterlinguaSignal) -> f64 {
-    let mut present_and_resolved = 0u32;
-    let total = 3u32;
-    if signal.predicate_id.is_some_and(|id| id.as_u64() != 0) {
-        present_and_resolved += 1;
-    }
-    if signal.subject_id.is_some_and(|id| id.as_u64() != 0) {
-        present_and_resolved += 1;
-    }
-    if signal
-        .direct_object_id
-        .is_some_and(|id| id.as_u64() != 0)
-    {
-        present_and_resolved += 1;
-    }
-    f64::from(present_and_resolved) / f64::from(total)
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 // Per-reason trigger-rate counters (M5.4) — instance-owned, lightweight
 // atomics, no alloc, lock-free. Owned by the router's `NlpStage` (A3a);
@@ -1385,13 +1329,11 @@ impl AnnotationRefiner for LlmRefiner {
     > {
         Box::pin(async move {
             let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-            let json = match (self.fetch)(tokens).await {
-                Ok(j) => j,
-                Err(_) => return Ok(None),
+            let Ok(json) = (self.fetch)(tokens).await else {
+                return Ok(None);
             };
-            let set = match AnnotationSet::parse_json(&json) {
-                Ok(s) => s,
-                Err(_) => return Ok(None),
+            let Ok(set) = AnnotationSet::parse_json(&json) else {
+                return Ok(None);
             };
             if self.validator.validate(doc, &set).is_err() {
                 return Ok(None);
@@ -1421,9 +1363,8 @@ impl AnnotationRefiner for EncoderRefiner {
         >,
     > {
         Box::pin(async move {
-            let set = match (self.encoder)(doc) {
-                Ok(s) => s,
-                Err(_) => return Ok(None),
+            let Ok(set) = (self.encoder)(doc) else {
+                return Ok(None);
             };
             if self.validator.validate(doc, &set).is_err() {
                 return Ok(None);
@@ -1672,9 +1613,8 @@ impl AnnotationRefiner for EncoderResidualRung {
                     }
                 }
             }
-            let corrections = match (self.fetch)(doc, focus) {
-                Ok(c) => c,
-                Err(_) => return Ok(None),
+            let Ok(corrections) = (self.fetch)(doc, focus) else {
+                return Ok(None);
             };
             let result = crate::review::apply_scoped(
                 doc,
@@ -2881,10 +2821,7 @@ fn run_sync_refiner(
                         doc, base, focus, &cached, validator, AnnotationSource::Encoder,
                     )
                 } else {
-                    let corrections = match (fetch)(doc, focus) {
-                        Ok(c) => Some(c),
-                        Err(_) => None,
-                    };
+                    let corrections = (fetch)(doc, focus).ok();
                     corrections.and_then(|corrections| {
                         let result = crate::review::apply_scoped(
                             doc, base, focus, &corrections, validator,
@@ -2898,10 +2835,7 @@ fn run_sync_refiner(
                     })
                 }
             } else {
-                let corrections = match (fetch)(doc, focus) {
-                    Ok(c) => Some(c),
-                    Err(_) => None,
-                };
+                let corrections = (fetch)(doc, focus).ok();
                 corrections.and_then(|corrections| {
                     let result = crate::review::apply_scoped(
                         doc, base, focus, &corrections, validator,

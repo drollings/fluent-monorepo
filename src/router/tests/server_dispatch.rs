@@ -149,6 +149,7 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
         instance_pool: Some(pool),
         onnx_llm_backend: None,
         role_limiters: Arc::new(RoleLimiters::default()),
+        workflow_recorder: None,
     };
     let outcome = dispatch_real(&target, &request, "base", &deps, false, "hello")
         .await

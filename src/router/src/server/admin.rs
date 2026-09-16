@@ -10,6 +10,7 @@ use http_body_util::BodyExt;
 use http_body_util::Full;
 use hyper::body::Incoming;
 
+use crate::ledger::frame_index::FrameResolutionGate;
 use crate::ledger::orchestrator::CoordinatorGate;
 use crate::server::handler::ServerDeps;
 use crate::server::responses::{add_cors_headers, error_response, json_response, HyperResponse};
@@ -35,6 +36,30 @@ pub fn handle_coordinator_rollback(gate: &CoordinatorGate) -> HyperResponse {
     json_response(
         hyper::StatusCode::OK,
         &serde_json::json!({ "status": "rolled_back", "coordinator_open": false }),
+    )
+}
+
+/// `POST /admin/frame/rollback` — the one-command frame rollback: close
+/// the frame-resolution runtime gate so new jobs drop before any index read
+/// or model call without a restart. Loopback-guarded by the caller;
+/// audit-logged; idempotent (a second call reports the already-closed
+/// state). The attached worker is untouched — reopening the gate (or
+/// restarting, which boots it open) restores frame traffic.
+pub fn handle_frame_rollback(gate: &FrameResolutionGate) -> HyperResponse {
+    let was_open = gate.is_open();
+    gate.set_open(false);
+    crate::audit::emit(
+        "frame_rollback",
+        serde_json::json!({ "was_open": was_open }),
+    );
+    tracing::warn!(
+        target: "router.audit",
+        was_open = was_open,
+        "frame-resolution runtime gate closed by operator rollback"
+    );
+    json_response(
+        hyper::StatusCode::OK,
+        &serde_json::json!({ "status": "rolled_back", "frame_open": false }),
     )
 }
 

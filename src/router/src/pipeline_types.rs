@@ -26,6 +26,17 @@ pub trait StageDecisionProducer: Send + Sync + 'static {
         ctx: &WorkContext,
         prior: &[StageDecision],
     ) -> Result<StageDecision, WorkError>;
+
+    /// Produce the typed decision plus the dispatch target by value, so the
+    /// target reaches the typed store without a JSON round-trip. The default
+    /// reports no target; stages that resolve one override this.
+    fn evaluate_with_target(
+        &self,
+        ctx: &WorkContext,
+        prior: &[StageDecision],
+    ) -> Result<(StageDecision, Option<crate::pipeline::RoutingTarget>), WorkError> {
+        Ok((self.evaluate(ctx, prior)?, None))
+    }
 }
 
 /// Emitted by every pipeline stage. Flows through tracing spans.

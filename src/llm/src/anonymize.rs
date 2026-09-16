@@ -18,24 +18,19 @@
 /// Idempotent (fixed-point) and placeholder/codeword pass-through — locked
 /// by `tests/anonymize.rs` (M6.1 taxonomy + M6.2 golden table).
 pub fn anonymize(text: &str) -> String {
-    use crate::pii_patterns::{
-        API_KEY_RE, AWS_KEY_RE, BEARER_RE, CREDIT_CARD_RE, EMAIL_RE, GENERIC_API_KEY_RE, IPV4_RE,
-        IPV6_RE, NINO_UK_RE, PHONE_US_RE, SIN_CA_RE, SSN_US_RE,
-    };
-
-    let text = EMAIL_RE.replace_all(text, "[EMAIL]");
-    let text = CREDIT_CARD_RE.replace_all(&text, "[CREDIT_CARD]");
-    let text = SSN_US_RE.replace_all(&text, "[SSN]");
-    let text = NINO_UK_RE.replace_all(&text, "[NINO]");
-    let text = SIN_CA_RE.replace_all(&text, "[SIN]");
-    let text = BEARER_RE.replace_all(&text, "[BEARER_TOKEN]");
-    let text = AWS_KEY_RE.replace_all(&text, "[AWS_KEY]");
-    let text = GENERIC_API_KEY_RE.replace_all(&text, "[API_KEY]");
-    let text = IPV6_RE.replace_all(&text, "[IPv6]");
-    let text = IPV4_RE.replace_all(&text, "[IP_ADDRESS]");
-    let text = PHONE_US_RE.replace_all(&text, "[PHONE]");
-    let text = API_KEY_RE.replace_all(&text, "[REDACTED]");
-    text.to_string()
+    // Table-driven (M12): the pattern → placeholder mapping lives in the
+    // canonical `pii_patterns` home (`anonymize_actions`), not inline here —
+    // the same single source `RegexPiiDetector` and the router's filter
+    // engine read their patterns from. Order and placeholders are locked by
+    // the golden table in `tests/anonymize.rs`.
+    let mut text = text.to_string();
+    for action in crate::pii_patterns::anonymize_actions() {
+        text = action
+            .regex
+            .replace_all(&text, action.placeholder)
+            .to_string();
+    }
+    text
 }
 
 /// Rebuild the placeholder → original-value reverse map by byte-diffing

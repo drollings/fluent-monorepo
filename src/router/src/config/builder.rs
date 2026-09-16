@@ -36,7 +36,30 @@ use super::{
     RejectPatterns, RouterConfig,
 };
 use crate::pipeline::PipelineOrchestrator;
+use crate::pipeline_types::StageDecisionProducer;
 use crate::score_matrix::ScoreMatrix;
+
+/// M13 deprecation notice: the pipeline `score_matrix` /
+/// `score_matrix_authoritative` fields are deprecated control-plane surface —
+/// parsing is preserved (configs containing them still boot and run), but a
+/// config that sets either is warned at boot so deployments migrate off the
+/// surface before it is removed.
+fn warn_deprecated_score_matrix(pipeline: &str, params: &PipelineParams) {
+    if params.score_matrix.is_some() {
+        tracing::warn!(
+            target: "router.config",
+            pipeline = %pipeline,
+            "score_matrix is deprecated control-plane surface: it still parses and runs, but is scheduled for removal",
+        );
+    }
+    if params.score_matrix_authoritative {
+        tracing::warn!(
+            target: "router.config",
+            pipeline = %pipeline,
+            "score_matrix_authoritative is deprecated control-plane surface: it still parses and runs, but is scheduled for removal",
+        );
+    }
+}
 use crate::stages::classifier::ClassifierBackendResolver;
 use crate::target_match::{TargetBackends, TargetMatcher};
 
@@ -115,6 +138,9 @@ pub struct PipelineParams {
     pub classifier_max_concurrency: Option<usize>,
     #[serde(default)]
     pub blacklist: Option<String>,
+    /// **Deprecated control-plane surface** (M13): parsing is preserved for
+    /// config compatibility — a config that sets it still boots and runs —
+    /// but the field is scheduled for removal and emits a boot warning.
     #[serde(default)]
     pub score_matrix: Option<ScoreMatrix>,
     /// When `true` and a `score_matrix` is configured, the matrix's
@@ -123,6 +149,10 @@ pub struct PipelineParams {
     /// metadata-only. Coherence/safety thresholds and the `reject` action stay
     /// as hard gates that run first. Default `false` so existing behavior
     /// and goldens are untouched until a deployment opts in.
+    ///
+    /// **Deprecated control-plane surface** (M13): parsing is preserved for
+    /// config compatibility, but the field is scheduled for removal and
+    /// emits a boot warning.
     #[serde(default)]
     pub score_matrix_authoritative: bool,
     /// Maximum retry attempts for the classifier when its LLM response fails
@@ -507,6 +537,7 @@ impl RouterConfig {
         nlp_deps: &NlpDeps,
     ) -> Option<PipelineOrchestrator> {
         let params = self.pipelines.get(name)?;
+        warn_deprecated_score_matrix(name, params);
         let mut orchestrator = PipelineOrchestrator::builder();
 
         // Overlay is enabled exactly when `overlay_models` is non-empty.
@@ -531,18 +562,29 @@ impl RouterConfig {
         };
 
         if params.deterministic_prefilter {
-            if let Some(ref blacklist_path) = params.blacklist {
+            // The soft-redirect resolution shares the boot routing table; the
+            // pre-filter makes no model calls, so only the static resolution
+            // applies here.
+            let deterministic_routing = Arc::new(self.routing_config());
+            let prefilter = if let Some(ref blacklist_path) = params.blacklist {
                 let reject_patterns = Self::load_reject_patterns(blacklist_path);
-                orchestrator = orchestrator.push(Arc::new(
-                    crate::stages::deterministic::DeterministicPreFilter::from_config(
-                        &reject_patterns,
-                    ),
-                ));
+                crate::stages::deterministic::DeterministicPreFilter::from_config(
+                    &reject_patterns,
+                )
+                .with_routing_config(deterministic_routing)
             } else {
-                orchestrator = orchestrator.push(Arc::new(
-                    crate::stages::deterministic::DeterministicPreFilter::new(),
-                ));
-            }
+                crate::stages::deterministic::DeterministicPreFilter::new()
+                    .with_routing_config(deterministic_routing)
+            };
+            // Registered as a producer so a soft-redirect target reaches the
+            // orchestrator through the typed channel (the `execute` fallback
+            // carries no target).
+            let producer_stage = Arc::new(prefilter);
+            let stage_for_push = Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>;
+            let producer: crate::pipeline::StageProducer = Arc::new(move |ctx, prior| {
+                producer_stage.evaluate_with_target(ctx, prior)
+            });
+            orchestrator = orchestrator.push_with_producer(stage_for_push, producer);
         }
 
         if nlp_cfg.enabled {
@@ -860,9 +902,14 @@ impl RouterConfig {
                     retry_prompt_count = retry_prompts.len(),
                     "classifier wrapped in RetryClassifier",
                 );
+                let component =
+                    Arc::clone(&classifier) as Arc<dyn fluent_wvr::Component>;
+                let producer_handle =
+                    Arc::clone(&classifier) as Arc<dyn StageDecisionProducer>;
                 let retry: Arc<crate::stages::retry_classifier::RetryClassifier> =
                     Arc::new(crate::stages::retry_classifier::RetryClassifier::new(
-                        classifier,
+                        component,
+                        producer_handle,
                         retry_max,
                         retry_prompts,
                     ));

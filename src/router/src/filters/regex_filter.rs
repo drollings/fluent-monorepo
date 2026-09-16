@@ -14,6 +14,8 @@ pub struct RegexFilter {
     pub confidence_gate: ConfidenceGate,
     pub scopes: Vec<FilterScope>,
     pub error_message: String,
+    /// The soft-redirect target route (`soft_redirect` outcomes only).
+    pub route: Option<String>,
 }
 
 impl RegexFilter {
@@ -37,6 +39,7 @@ impl RegexFilter {
                 .error_message
                 .clone()
                 .unwrap_or_else(|| format!("blocked by '{}'", entry.name)),
+            route: entry.route.clone(),
         })
     }
 }
@@ -51,6 +54,7 @@ impl Default for RegexFilter {
             confidence_gate: ConfidenceGate::None,
             scopes: Vec::new(),
             error_message: String::new(),
+            route: None,
         }
     }
 }
@@ -122,10 +126,27 @@ impl Filter for RegexFilter {
                 })
             }
             FilterOutcome::SoftRedirect => {
-                // SoftRedirect needs a target route — for now, only
-                // hard_reject and output_filter are wired through
-                // regex patterns. SoftRedirect is model-classification only.
-                None
+                // A soft_redirect fires only when the pattern names a target
+                // route; a route-less entry never fires (existing configs
+                // without `route` behave exactly as before). The gate is the
+                // same task-value check the hard-reject arm applies.
+                let route = self.route.clone()?;
+                let matched = self
+                    .regexes
+                    .iter()
+                    .find(|re| re.is_match(&ctx.user_message))?;
+                let m = matched.find(&ctx.user_message)?;
+
+                if let ConfidenceGate::LuhnValid = self.confidence_gate {
+                    if !super::luhn::luhn_valid(m.as_str()) {
+                        return None;
+                    }
+                }
+
+                Some(FilterDecision::SoftRedirect {
+                    route,
+                    reason: format!("pattern match '{}'", self.name),
+                })
             }
         }
     }

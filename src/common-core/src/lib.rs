@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![allow(clippy::pedantic, clippy::all)]
 
 //! common-core: Zero-domain generic utility crate (hashing, formatting, I/O,
 //! shell, metrics, string utilities, watchdogs, time helpers, sync→async

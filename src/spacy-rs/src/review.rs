@@ -286,7 +286,7 @@ pub(crate) fn apply_scoped(
     }
     let mut result = AnnotationResult::new(set, source)
         .with_confidence(base.token_confidence.clone(), base.parse_confidence.clone());
-    result.oracle_margins = base.oracle_margins.clone();
+    result.oracle_margins.clone_from(&base.oracle_margins);
     result.collision_count = base.collision_count;
     Some(result)
 }

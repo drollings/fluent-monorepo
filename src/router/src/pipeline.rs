@@ -82,9 +82,7 @@ impl std::fmt::Display for QualifiedModelId {
         f.write_str(&self.as_wire())
     }
 }
-use crate::pipeline_types::{
-    PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict,
-};
+use crate::pipeline_types::{PipelineStage, StageDecision, StageMetadata, StageVerdict};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingTarget {
@@ -300,13 +298,6 @@ pub type StageProducer = Arc<
         + Sync,
 >;
 
-pub fn producer_for<T>(arc: Arc<T>) -> StageProducer
-where
-    T: StageDecisionProducer + 'static,
-{
-    Arc::new(move |ctx, prior| arc.evaluate(ctx, prior).map(|d| (d, None)))
-}
-
 /// Holds pipeline stages as `Arc<dyn Component>` and executes them sequentially.
 pub struct PipelineOrchestrator {
     name: ArcIntern<str>,
@@ -367,18 +358,57 @@ impl PipelineOrchestrator {
     /// `WorkOutput.data`. Returns `Some(WorkOutput)` when the pipeline should
     /// short-circuit (rejected / error); `None` otherwise.
     fn handle_stage_verdict(
-        ctx: &WorkContext,
+        running: &mut WorkContext,
         stage_name: PipelineStage,
         current_request: &mut serde_json::Value,
+        request_generation: &mut u64,
         routing_target: &mut Option<RoutingTarget>,
         classifier_response: &mut Option<String>,
     ) -> Option<Result<WorkOutput, WorkError>> {
         // Typed handoff: the orchestrator published the decision to the store,
         // so we read it by reference — no per-stage JSON round-trip.
-        let decision = ctx.get::<StageDecision>(STAGE_DECISION_KEY)?;
+        let decision = running.get::<StageDecision>(STAGE_DECISION_KEY)?;
         let metadata = StageMetadata::metadata_ref(&decision.metadata);
         match decision.verdict {
             StageVerdict::Passed | StageVerdict::Skipped => {
+                if stage_name == PipelineStage::DeterministicPreFilter {
+                    // A deterministic soft-redirect published a dispatch
+                    // target: short-circuit the pipeline so the classifier
+                    // never runs (the route was decided without a model
+                    // call). Enrichment stages are skipped with it — the
+                    // redirect is terminal for this request.
+                    if let Some(rt) = running
+                        .get::<RoutingTarget>(crate::stages::common::ROUTING_TARGET_TYPED_KEY)
+                        .cloned()
+                    {
+                        tracing::info!(target: "router.pipeline",
+                            target_route = ?rt.target_name,
+                            target_model = %rt.model,
+                            "deterministic soft redirect set routing target"
+                        );
+                        crate::audit::AuditRecord::route(
+                            stage_name,
+                            StageVerdict::Passed,
+                            Some(&rt),
+                            None,
+                            Some("soft_redirect"),
+                        )
+                        .emit();
+                        *routing_target = Some(rt);
+                        return Some(WorkOutput::typed(
+                            "soft_redirect",
+                            &PipelineResult {
+                                decisions: vec![decision.clone()],
+                                final_response: None,
+                                rejected: false,
+                                reject_reason: None,
+                                routing_target: routing_target.clone(),
+                                classifier_response: None,
+                            },
+                        ));
+                    }
+                    return None;
+                }
                 if stage_name == PipelineStage::Classifier {
                     if let Some(resp) = metadata.response() {
                         tracing::info!(target: "router.pipeline",
@@ -396,7 +426,7 @@ impl PipelineOrchestrator {
                         *classifier_response = Some(resp.to_string());
                     }
                     // The typed channel is the only routing-target handoff.
-                    if let Some(rt) = ctx
+                    if let Some(rt) = running
                         .get::<RoutingTarget>(crate::stages::common::ROUTING_TARGET_TYPED_KEY)
                         .cloned()
                     {
@@ -438,6 +468,17 @@ impl PipelineOrchestrator {
                     // into the structured channel's Value form.
                     *current_request = serde_json::from_str(rewritten)
                         .unwrap_or_else(|_| serde_json::Value::String(rewritten.to_string()));
+                    // Generational invalidation (M14): the request was
+                    // replaced, so the typed cache re-parses under a new
+                    // generation — downstream readers re-parse only here.
+                    *request_generation += 1;
+                    running.set(
+                        crate::stages::common::TYPED_REQUEST_KEY,
+                        crate::stages::common::parse_typed_request(
+                            current_request,
+                            *request_generation,
+                        ),
+                    );
                 }
                 None
             }
@@ -542,6 +583,11 @@ impl WorkUnit for PipelineOrchestrator {
             .unwrap_or(serde_json::Value::Null);
         let mut routing_target: Option<RoutingTarget> = None;
         let mut classifier_response: Option<String> = None;
+        // M14: the typed request parses once per generation. Entry parse here
+        // (generation 0); a `Rerouted` verdict re-parses under an incremented
+        // generation. Stage readers take the cached `Arc` — no per-stage
+        // re-deserialization.
+        let mut request_generation: u64 = 0;
 
         // The running accumulator is cloned once from the caller's context
         // and mutated in place across stages — never re-cloned per stage.
@@ -554,6 +600,10 @@ impl WorkUnit for PipelineOrchestrator {
             .structured
             .entry("request".to_owned())
             .or_insert(serde_json::Value::Null);
+        running.set(
+            crate::stages::common::TYPED_REQUEST_KEY,
+            crate::stages::common::parse_typed_request(&current_request, request_generation),
+        );
 
         for (idx, stage) in self.stages.iter().enumerate() {
             Self::swap_request_in(&mut running, &mut current_request);
@@ -622,9 +672,10 @@ impl WorkUnit for PipelineOrchestrator {
                     }
 
                     if let Some(early_return) = Self::handle_stage_verdict(
-                        &running,
+                        &mut running,
                         stage_name,
                         &mut current_request,
+                        &mut request_generation,
                         &mut routing_target,
                         &mut classifier_response,
                     ) {

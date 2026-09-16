@@ -21,9 +21,9 @@ fn attached(json: &str, tokens: &[&str]) -> Doc {
     doc
 }
 
-fn resolver_for(store: Arc<InMemoryConceptStore>) -> InterlinguaResolver {
+fn resolver_for(store: &Arc<InMemoryConceptStore>) -> InterlinguaResolver {
     InterlinguaResolver::new(
-        Arc::clone(&store) as Arc<dyn ConceptStore>,
+        Arc::clone(store) as Arc<dyn ConceptStore>,
         Arc::clone(vocab().strings()),
     )
 }
@@ -98,7 +98,7 @@ fn multi_sentence_yields_one_triple_per_sentence() {
 #[test]
 fn plausibility_inputs_carry_ids_and_lemmas() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
     let triples = extract_triples(&doc);
     let inputs = build_plausibility_inputs(&doc, &triples, &resolver);
@@ -114,7 +114,7 @@ fn plausibility_inputs_carry_ids_and_lemmas() {
 #[test]
 fn via_fetch_returns_stub_score_and_is_deterministic() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
     let triples = extract_triples(&doc);
     // Stub knowledge half: the seam round-trips the text-half input.
@@ -148,7 +148,7 @@ fn unattached_doc_triple_has_fallback_predicate_and_no_roles() {
 #[test]
 fn via_fetch_without_fetch_is_fail_closed_none() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let doc = attached(DOG_BARK_PARSE, &["The", "dog", "barks", "."]);
     let triples = extract_triples(&doc);
     assert!(semantic_plausibility_via_fetch(&doc, &triples, &resolver, None).is_none());
@@ -157,7 +157,7 @@ fn via_fetch_without_fetch_is_fail_closed_none() {
 #[test]
 fn via_fetch_empty_triples_is_none_even_with_fetch() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let fetch: PlausibilityFetch = Arc::new(|_| Some(1.0));
     let empty: Vec<Triple> = Vec::new();
     let doc = attached(CAT_SAT_PARSE, &["The", "cat", "sat", "."]);
@@ -171,7 +171,7 @@ fn via_fetch_empty_triples_is_none_even_with_fetch() {
 #[test]
 fn scored_lemma_keeps_empty_fallback_distinct_from_surface() {
     let store = Arc::new(InMemoryConceptStore::new());
-    let resolver = resolver_for(Arc::clone(&store));
+    let resolver = resolver_for(&store);
     let mut doc = Doc::new(vocab());
     doc.push_back("Show", true).expect("push");
     doc.push_back("me", true).expect("push");

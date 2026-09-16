@@ -345,17 +345,16 @@ fn narrowed_checks_match_stringly_behavior() {
     // space including near-misses the old parse accepted or rejected.
     let old_upos_known = |pos: &str| {
         pos.parse::<Upos>()
-            .map(|p: Upos| Upos::UPOS.contains(&p))
-            .unwrap_or(false)
+            .is_ok_and(|p: Upos| Upos::UPOS.contains(&p))
     };
-    let mut pos_cases: Vec<String> = Upos::UPOS.iter().map(|p| p.to_string()).collect();
+    let mut pos_cases: Vec<String> = Upos::UPOS.iter().map(std::string::ToString::to_string).collect();
     pos_cases.extend(
         [
             "NOUN", "Verb", "PROPN", "Aux", "X", "notapos", "", "conj", "eol", "space", "NOUNX",
             " noun", "noun ", "SYM",
         ]
         .iter()
-        .map(|s| s.to_string()),
+        .map(std::string::ToString::to_string),
     );
     for pos in &pos_cases {
         assert_eq!(upos_known(pos), old_upos_known(pos), "pos {pos:?}");

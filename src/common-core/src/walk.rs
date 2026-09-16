@@ -259,8 +259,7 @@ fn visit_or_skip<F, S>(
             .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0),
+            .map_or(0, |d| d.as_millis() as i64),
     });
 }
 
@@ -303,7 +302,7 @@ impl GitignoreStack {
             builder.add(&ignore_file);
             match builder.build() {
                 Ok(gi) => self.stack.push(gi),
-                Err(e) => eprintln!("walk: gitignore build failed for {dir:?}: {e}"),
+                Err(e) => eprintln!("walk: gitignore build failed for {}: {e}", dir.display()),
             }
         }
     }

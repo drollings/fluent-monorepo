@@ -166,6 +166,8 @@ pub fn test_deps(
         onnx_llm_backend: None,
         roles: Arc::new(config.roles.clone()),
         groups: Arc::new(config.model_groups.clone()),
+        workflow_recorder: None,
+        frame_gate: crate::ledger::frame_index::FrameResolutionGate::open(),
     }
 }
 

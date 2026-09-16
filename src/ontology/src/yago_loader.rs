@@ -83,6 +83,9 @@ fn to_metadata(entry: &ClassEntry) -> ConceptMetadata {
 #[derive(Debug, Default)]
 pub struct YaGoLoader {
     class_iri_to_id: HashMap<String, InterlinguaId>,
+    /// id → index into `concepts` (first-wins). Lets label application be O(1)
+    /// instead of a linear scan over `concepts` per label entry.
+    id_to_concept_idx: HashMap<InterlinguaId, usize>,
     concepts: Vec<ConceptMetadata>,
     edges: Vec<(InterlinguaId, InterlinguaId)>,
     stats: LoadStats,
@@ -120,6 +123,9 @@ impl YaGoLoader {
                 continue;
             }
             self.class_iri_to_id.insert(entry.iri.clone(), meta.id);
+            self.id_to_concept_idx
+                .entry(meta.id)
+                .or_insert(self.concepts.len());
             self.concepts.push(meta.clone());
             if let Some(superclass) = &entry.superclass {
                 self.edges.push((meta.id, yago_class_id(superclass)));
@@ -146,9 +152,11 @@ impl YaGoLoader {
         let mut applied = 0;
         for e in &entries {
             if let Some(id) = self.class_iri_to_id.get(&e.iri) {
-                if let Some(meta) = self.concepts.iter_mut().find(|c| &c.id == id) {
-                    meta.label = Some(e.label.clone());
-                    applied += 1;
+                if let Some(&idx) = self.id_to_concept_idx.get(id) {
+                    if let Some(meta) = self.concepts.get_mut(idx) {
+                        meta.label = Some(e.label.clone());
+                        applied += 1;
+                    }
                 }
             }
         }
