@@ -424,6 +424,16 @@ async fn ensure_classifier_ready(
     if !entry.is_managed() {
         return;
     }
+    // Duties never cold-load (dispatch owns loading through its readiness
+    // path): when the classifier's server isn't running, skip the ensure
+    // entirely instead of spawning it. A down pick then fails closed through
+    // the classifier's own error path below, instead of materializing 2 GB
+    // of weights for a duty another running model could serve.
+    let (base, _) = crate::config::split_model_key(key);
+    let running = pool.supervisor().and_then(|s| s.is_running(base));
+    if running != Some(true) {
+        return;
+    }
     let Some(group) = crate::config::resolve_inference_point(models, roles, key, None) else {
         return;
     };

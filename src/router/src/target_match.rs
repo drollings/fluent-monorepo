@@ -390,13 +390,30 @@ pub fn viable_last_key(
             }
         }
     }
-    crate::config::select_viable_member(
+    let picked = crate::config::select_viable_member(
         "classifier",
         &["last".to_string()],
         &routing.models,
         None,
         Some(&|base| duty_fittable(routing, base, is_running(base))),
-    )
+    )?;
+    // Duties never cold-load: when the cheapest viable pick is a managed
+    // model whose server is down (no remote/onnx/running candidate won),
+    // fail closed instead of materializing weights for a duty. The caller
+    // falls back to the literal sentinel (served by the boot default, whose
+    // own call fails loudly when unreachable), and dispatch-time ensure
+    // remains the only path that loads models.
+    let (base, _) = crate::config::split_model_key(&picked);
+    if duty_fittable(routing, base, is_running(base)) {
+        Some(picked)
+    } else {
+        tracing::warn!(
+            target: "router.target_match",
+            model = %picked,
+            "classifier duty vetoed cold managed pick - no running model; failing closed",
+        );
+        None
+    }
 }
 
 /// Expand a group's raw members (literal keys plus the `last`/`any`

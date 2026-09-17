@@ -1449,6 +1449,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         RouterServer::new(pipelines, routes, config.models, &config.server, classifier)
             .with_roles(config.roles.clone())
             .with_model_groups(config.model_groups.clone())
+            .with_default_route(config.default_route.clone())
             .with_plan_route(plan_route)
             .with_rigor_route(rigor_route)
             .with_ladders(ladders);

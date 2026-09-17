@@ -663,6 +663,40 @@ fn last_viable_classifier_key_empty_recency_uses_fleet_viable() {
     assert_eq!(picked.as_deref(), Some("b"));
 }
 
+#[test]
+fn last_viable_classifier_key_vetoes_cold_managed_fleet() {
+    // Every fleet member is pool-managed and down: the static fallback must
+    // fail closed (None) instead of cold-loading the cheapest weights for
+    // a duty. Duties never cold-load; dispatch owns loading.
+    let mut routing = routing_with_members("g", &["m1", "m2"], &["last", "m1", "m2"]);
+    for key in ["m1", "m2"] {
+        routing.models.get_mut(key).expect("member").weights =
+            Some(format!("/models/{key}.gguf"));
+    }
+    let picked = viable_last_key(&routing, None, &|_| false);
+    assert_eq!(
+        picked, None,
+        "cold managed fleet fails closed instead of cold-picking"
+    );
+}
+
+#[test]
+fn last_viable_classifier_key_prefers_running_managed_over_cheap_cold() {
+    // Both managed; `cheap` is down and `big` is running and pricier:
+    // residency outranks price, so the running model serves without any
+    // load instead of cold-loading the cheap one.
+    let mut routing = routing_with_members("g", &["cheap", "big"], &["last", "cheap", "big"]);
+    let cheap = routing.models.get_mut("cheap").expect("cheap");
+    cheap.cost_input = 0.1;
+    cheap.cost_output = 0.1;
+    cheap.weights = Some("/models/cheap.gguf".into());
+    let big = routing.models.get_mut("big").expect("big");
+    big.intelligence = 5;
+    big.weights = Some("/models/big.gguf".into());
+    let picked = viable_last_key(&routing, None, &|m| m == "big");
+    assert_eq!(picked.as_deref(), Some("big"));
+}
+
 /// Calibration for the recency fallback (measurement only).
 ///
 /// Replays empty / stale / valid history against a fixed capability split

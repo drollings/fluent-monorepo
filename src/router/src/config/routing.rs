@@ -615,11 +615,14 @@ impl RoutingConfig {
     /// member serves through the entry default. A **pinned** role forces its
     /// qualifier wherever it binds — the profile is boot-materialized, so
     /// the target resolves identically pre/post boot. An unpinned role
-    /// qualifies only through a materialized profile (best effort). An
-    /// explicit member qualifier (`base:point`) wins for the where — the
-    /// target keeps its qualifier and the role is only recorded for the
-    /// audit trail. Unknown roles and unserved models keep the target as
-    /// built (graceful at dispatch — boot validation fails closed on the
+    /// qualifies through a materialized window — matching by instance name
+    /// or by group (sibling-expanded roles like `quick-0`/`quick-1` share
+    /// the `quick` group the fork routes). Best effort: a role with no
+    /// window in the pool leaves the entry default in place. An explicit
+    /// member qualifier (`base:point`) wins for the where — the target
+    /// keeps its qualifier and the role is only recorded for the audit
+    /// trail. Unknown roles and unserved models keep the target as built
+    /// (graceful at dispatch — boot validation fails closed on the
     /// unfillable pinned shapes instead).
     fn apply_terminal_role(&self, rt: &mut RoutingTarget, member: &str, role: &str) {
         rt.role = Some(role.to_string());
@@ -639,13 +642,14 @@ impl RoutingConfig {
         // A bound role dispatches through its window. Forcing a qualifier
         // the pool never materialized would target a nonexistent fork
         // instance, so the force applies only where the role binds the
-        // model (the pool then carries the profile post-boot).
+        // model and the pool carries the window — matched by instance name
+        // or by group (sibling-expanded roles share the group the fork
+        // routes, e.g. `quick-0`/`quick-1` serve the `quick` qualifier).
         let role_profile = role_entry.serves(base)
             && (role_entry.pinned
-                || entry
-                    .effective_pool()
-                    .iter()
-                    .any(|p| p.name.as_deref() == Some(role)));
+                || entry.effective_pool().iter().any(|p| {
+                    p.name.as_deref() == Some(role) || p.group.as_deref() == Some(role)
+                }));
         let mut qualified = if role_profile {
             RoutingTarget::from_model_entry_instance(base, entry, role)
         } else {
