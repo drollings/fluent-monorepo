@@ -620,7 +620,7 @@ fn role_binding_synthesizes_role_profile() {
     }));
     materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 2, "base plus the bound role");
+    assert_eq!(profiles.len(), 1, "the bound role window only — no base phantom");
     let work = profiles
         .iter()
         .find(|p| p.name.as_deref() == Some("work"))
@@ -632,29 +632,26 @@ fn role_binding_synthesizes_role_profile() {
         Some(&serde_json::json!(0.6)),
         "role sampling composes over the entry params"
     );
-    assert!(!work.default, "base stays the dispatch point");
+    assert!(!work.default, "role windows are never the default flag");
 }
 
 #[test]
 fn pinned_composes_role_or_model_and_boots() {
     // `pinned` composes as role OR model: either true pins the synthesized
     // profile, and a pinned profile is what boots a model at startup.
+    // Bound models keep role windows only — no base profile beside them.
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
         "work": {"pinned": true, "models": ["m"]}
     }));
     materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
+    assert_eq!(profiles.len(), 1, "role window only");
     let work = profiles
         .iter()
         .find(|p| p.name.as_deref() == Some("work"))
         .unwrap();
-    let base = profiles
-        .iter()
-        .find(|p| p.name.as_deref() == Some("base"))
-        .unwrap();
     assert!(work.pinned, "role pin lands on the role profile");
-    assert!(!base.pinned, "the entry is not pinned");
     assert!(profiles.iter().any(|p| p.pinned), "the model boots");
 
     let mut pinned_entry = bare_entry();
@@ -729,9 +726,10 @@ fn pre_boot_pool_is_empty() {
 // -- Single inference-point resolver -------------------------------
 
 #[test]
-fn inference_point_bare_key_answers_entry_default() {
-    // One resolver, one answer for a bare key: the entry default (the
-    // `default: true` profile's group — the synthesized `base` profile).
+fn inference_point_bare_key_answers_role_window() {
+    // One resolver, one answer for a bare key: the bound role's window.
+    // Bound models keep no synthetic `base` — the qualifier names the real
+    // window the fork serves.
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
         "work": {"models": ["m"]}
@@ -740,8 +738,8 @@ fn inference_point_bare_key_answers_entry_default() {
     let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
         resolve_inference_point(&models, &roles, "m", None).as_deref(),
-        Some("base"),
-        "bare key serves the default profile's group"
+        Some("work"),
+        "bare key serves the bound role window"
     );
 }
 
@@ -762,82 +760,90 @@ fn inference_point_role_carries_no_qualifier() {
     );
 }
 
-// -- Resident-point duty (sync clients) -------------------------------
-// The entry default beside pinned profiles is unpinned: declared at spawn
-// but cold until first demand. Sync clients (no sidecar to pre-warm a cold
-// window on the blocking path) retarget through `default_resident_point`;
-// dispatch keeps the entry default and builds it on demand through the
-// sidecar.
+// -- Entry-default precedence (no base phantom) -----------------------
+// Bound models keep role windows only. The default step of the single
+// precedence: the `default: true` profile's group (unbound pools), else the
+// cheapest pinned group (resident by construction), else the single shared
+// group. Every qualifier names a real window the fork serves.
 
 #[test]
-fn resident_point_prefers_cheapest_pinned_group() {
-    // Mirrors the fleet shape: an unpinned base default beside two pinned
-    // role windows. The sync duty belongs on the cheapest resident window,
-    // not the cold default.
+fn entry_default_prefers_cheapest_pinned_group() {
+    // Mirrors the fleet shape: two pinned role windows, no base. The
+    // default belongs on the cheapest resident window.
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
         "ledger": {"pinned": true, "params": {"num_ctx": 262144}, "models": ["m"]},
         "quick": {"pinned": true, "params": {"num_ctx": 8192}, "models": ["m"]}
     }));
     materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
-        default_resident_point(&entry).as_deref(),
+        resolve_inference_point(&models, &roles, "m", None).as_deref(),
         Some("quick"),
-        "cheapest pinned group wins over the undeclared base default"
+        "cheapest pinned group wins the default"
     );
 }
 
 #[test]
-fn resident_point_breaks_pinned_ties_by_group_name() {
+fn entry_default_breaks_pinned_ties_by_group_name() {
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
         "zeta": {"pinned": true, "params": {"num_ctx": 8192}, "models": ["m"]},
         "alpha": {"pinned": true, "params": {"num_ctx": 8192}, "models": ["m"]}
     }));
     materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
-        default_resident_point(&entry).as_deref(),
+        resolve_inference_point(&models, &roles, "m", None).as_deref(),
         Some("alpha"),
         "equal windows break ties deterministically by group name"
     );
 }
 
 #[test]
-fn resident_point_keeps_default_when_nothing_pinned() {
-    // All-lazy pools declare their full grammar at spawn, so the entry
-    // default already names a live instance — no retarget.
+fn entry_default_falls_to_single_shared_group() {
+    // One unpinned binding, no pinned profiles: the lone window serves
+    // (declared at spawn through the all-lazy full grammar).
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
         "work": {"params": {"num_ctx": 16384}, "models": ["m"]}
     }));
     materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
-        default_resident_point(&entry),
-        None,
-        "unpinned pools keep the entry default"
+        resolve_inference_point(&models, &roles, "m", None).as_deref(),
+        Some("work"),
+        "single shared group serves the default"
     );
 }
 
 #[test]
-fn resident_point_keeps_pinned_default() {
-    // A pinned base is declared at spawn, so the default is live.
+fn entry_default_keeps_unbound_base() {
+    // No bindings: the entry keeps its synthetic `base` dispatch point
+    // (the all-lazy full grammar declares it at spawn).
     let mut entry = bare_entry();
-    entry.pinned = true;
-    materialize("m", &mut entry, &role_table(serde_json::json!({})));
+    let roles = role_table(serde_json::json!({}));
+    materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
-        default_resident_point(&entry),
-        None,
-        "a pinned default needs no fallback"
+        resolve_inference_point(&models, &roles, "m", None).as_deref(),
+        Some("base"),
+        "unbound entries keep the base default"
     );
 }
 
 #[test]
-fn resident_point_none_pre_boot() {
+fn inference_point_none_pre_boot() {
     let entry = bare_entry();
     assert_eq!(
-        default_resident_point(&entry),
+        resolve_inference_point(
+            &std::collections::HashMap::from([("m".to_string(), entry)]),
+            &role_table(serde_json::json!({})),
+            "m",
+            None
+        ),
         None,
-        "no materialized pool — keep the legacy bare resolution"
+        "no materialized pool — bare resolution"
     );
 }
 
@@ -1332,8 +1338,9 @@ fn router_config_field_access_round_trip() {
 #[test]
 fn synthesized_pool_groups_never_collide() {
     // Boot-path regression for the startup fatal: synthesized profiles are
-    // one per binding role plus `base`, each its own group, so the
-    // `validate_instances` grammar gate must always accept the pool.
+    // one per binding role (plus `base` only when nothing binds), each its
+    // own group, so the `validate_instances` grammar gate must always accept
+    // the pool.
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
         "aaa": {"models": ["m"]},
@@ -1341,7 +1348,7 @@ fn synthesized_pool_groups_never_collide() {
     }));
     materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 3, "base plus one profile per binding role");
+    assert_eq!(profiles.len(), 2, "one profile per binding role, no base");
     crate::instances::validate_instances(profiles).expect("synthesized groups validate");
 }
 
@@ -1602,7 +1609,7 @@ fn synthesized_profiles_are_one_shot_by_default() {
     }));
     materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles.len(), 1);
     for profile in profiles {
         assert!(!profile.session, "undeclared session defaults to one-shot");
         assert!(!profile.resume, "one-shot materializes resume:false");
@@ -1631,7 +1638,7 @@ fn inference_point_explicit_qualifier_wins() {
     );
     assert_eq!(
         resolve_inference_point(&models, &roles, "m:latest", None).as_deref(),
-        Some("base"),
+        Some("work"),
         "latest falls through to the entry default"
     );
     assert_eq!(
@@ -1659,7 +1666,7 @@ fn inference_point_entry_default_then_bare() {
     );
     assert_eq!(
         resolve_inference_point(&models, &roles, "m", None).as_deref(),
-        Some("base"),
+        Some("work"),
         "bare model key falls to the entry default"
     );
     assert_eq!(
@@ -2179,14 +2186,14 @@ fn fixture_boot_composition_single_model_multi_window() {
     // pool; group duties resolve through the same precedence as production.
     let cfg = ls_fixture_config();
 
-    // Bound models compose a base profile plus their role profiles.
+    // Bound models keep their role windows only — no base phantom.
     for member in ["m1", "m2"] {
         let names: Vec<&str> = cfg.models[member]
             .effective_pool()
             .iter()
             .map(|p| p.name.as_deref().unwrap())
             .collect();
-        assert_eq!(names[0], "base", "{member} keeps its base profile");
+        assert_eq!(names, vec!["quick"], "{member} serves its role window");
     }
 
     // Group duty resolves to the bare member key; the inference point
@@ -2200,7 +2207,7 @@ fn fixture_boot_composition_single_model_multi_window() {
 
     // Role-wins-last dispatch on the fixture chain: model, role, override.
     let params = cfg.models["m2"]
-        .answer_params_for(Some("base"), Some(("quick", &cfg.roles["quick"])), None)
+        .answer_params_for(Some("quick"), Some(("quick", &cfg.roles["quick"])), None)
         .expect("composes");
     let get = |k: &str| {
         params

@@ -427,16 +427,6 @@ async fn ensure_classifier_ready(
     let Some(group) = crate::config::resolve_inference_point(models, roles, key, None) else {
         return;
     };
-    // The backend factory retargets the entry default to the cheapest
-    // resident group (same rule — `default_resident_point`); the ensure must
-    // name the same group the backend actually calls, or it heals a phantom
-    // while the request still 400s. Explicit `base:point` keys are never
-    // rewritten on either side.
-    let (_, embedded) = crate::config::split_model_key(key);
-    let group = match embedded {
-        Some(_) => group,
-        None => crate::config::default_resident_point(entry).unwrap_or(group),
-    };
     let Some(manager) = pool.manager_for_url(&entry.endpoint) else {
         return;
     };

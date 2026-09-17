@@ -375,7 +375,6 @@
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
-        "lfm2.5-2.6b",
         "qwen3.5-9b"
       ],
       "params": {
@@ -392,7 +391,7 @@
       "filter_thinking": true,
       "max_parallel": 2,
       "models": [
-        "lfm2.5-2.6b",
+        "qwen3.5-9b",
         "last"
       ],
       "params": {

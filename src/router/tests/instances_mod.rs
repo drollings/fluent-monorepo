@@ -1761,6 +1761,86 @@ async fn list_models_includes_plain_model_entry() {
 }
 
 #[tokio::test]
+async fn list_models_synthesizes_unloaded_rows_when_server_down() {
+    // A lazy (never-loaded) server: `/instances` is unreachable, so the
+    // manager reports nothing live — `list_models` still emits one
+    // `unloaded` row per configured profile (zero bytes, same id/alias
+    // vocabulary) so `ps` and clients see the fleet before first use.
+    use crate::config::InstanceProfile;
+    let client = crate::instances::InstanceClient::new(
+        reqwest::Client::new(),
+        "http://127.0.0.1:1".to_string(),
+        None,
+    );
+    let profiles = vec![
+        InstanceProfile {
+            name: Some("quick-0".into()),
+            group: Some("quick".into()),
+            count: 1,
+            num_ctx: 8192,
+            parallel: None,
+            pinned: true,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: false,
+            resume: false,
+            params: None,
+            embedding: None,
+            max_ctx: None,
+            session: false,
+        },
+        InstanceProfile {
+            name: Some("ledger".into()),
+            group: Some("ledger".into()),
+            count: 1,
+            num_ctx: 65536,
+            parallel: None,
+            pinned: true,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: false,
+            resume: false,
+            params: None,
+            embedding: None,
+            max_ctx: None,
+            session: false,
+        },
+    ];
+    let manager = Arc::new(crate::instances::InstanceManager::new(
+        "lfm",
+        client,
+        profiles,
+        sidecar_policy(),
+    ));
+    let mut managers = HashMap::new();
+    managers.insert("lfm".into(), manager);
+    let pool = InstancePool::from_managers(managers, None);
+
+    let models = pool.list_models().await;
+    assert_eq!(models.len(), 2, "one row per configured profile");
+    let quick = models
+        .iter()
+        .find(|m| m["id"] == "lfm:quick-0")
+        .expect("quick-0 row");
+    assert_eq!(quick["state"], "unloaded");
+    assert_eq!(quick["n_ctx"], 8192);
+    assert_eq!(quick["pinned"], true);
+    let aliases: Vec<&str> = quick["aliases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str())
+        .collect();
+    assert!(aliases.contains(&"lfm:quick"), "aliases: {aliases:?}");
+    let ledger = models
+        .iter()
+        .find(|m| m["id"] == "lfm:ledger")
+        .expect("ledger row");
+    assert_eq!(ledger["state"], "unloaded");
+    assert_eq!(ledger["n_ctx"], 65536);
+}
+
+#[tokio::test]
 async fn touch_advances_plain_model_last_used() {
     let props = serde_json::json!({
         "is_sleeping": false,

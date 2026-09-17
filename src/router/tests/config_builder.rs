@@ -289,8 +289,8 @@ fn local_backend_single_resolver_with_role_work_point() {
     assert_eq!(
         crate::config::resolve_inference_point(&config.models, &config.roles, "swarm", None)
             .as_deref(),
-        Some("base"),
-        "bare key serves the entry default (the synthesized base profile)"
+        Some("work"),
+        "bare key serves the cheapest pinned window (no base phantom)"
     );
     assert_eq!(
         crate::config::resolve_inference_point(&config.models, &config.roles, "work", None),
@@ -309,20 +309,19 @@ fn local_backend_single_resolver_with_role_work_point() {
         "explicit qualifier wins over every default"
     );
 
-    // The canonical target builder keeps bare-base default dispatch.
+    // The canonical target builder serves the cheapest pinned window.
     let rt = crate::pipeline::RoutingTarget::from_model_entry("swarm", entry);
     assert_eq!(
-        rt.model, "abiray/lfm2.5-2.6b-heretic-abliterated:base",
-        "client-facing default dispatch is unchanged (goldens preserved)"
+        rt.model, "abiray/lfm2.5-2.6b-heretic-abliterated:work",
+        "default dispatch names the resident window, never a base phantom"
     );
 }
 
 #[test]
-fn sync_backend_prefers_resident_group_over_cold_default() {
-    // The split contract: dispatch keeps the entry default (golden above —
-    // spawn-declared, built on demand through the sidecar when cold), while
-    // sync `LlmClient` construction (no sidecar on the blocking path)
-    // prefers the resident window through `default_resident_point`.
+fn sync_backend_serves_cheapest_pinned_window() {
+    // One precedence for every construction path: the bare key resolves the
+    // cheapest pinned window (spawn-declared, resident), explicit qualifiers
+    // still win outright.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {"pinned": true, "params": {"num_ctx": 16384}, "models": ["swarm"]},
@@ -342,19 +341,12 @@ fn sync_backend_prefers_resident_group_over_cold_default() {
     .expect("valid config");
     config.apply_defaults();
 
-    // Dispatch precedence is untouched: bare still resolves `:base`.
+    // Bare resolves the cheapest pinned window through the single precedence.
     assert_eq!(
         crate::config::resolve_inference_point(&config.models, &config.roles, "swarm", None)
             .as_deref(),
-        Some("base"),
-        "dispatch default is unchanged"
-    );
-    // The sync duty retargets to the resident window.
-    let entry = config.models.get("swarm").expect("swarm");
-    assert_eq!(
-        crate::config::default_resident_point(entry).as_deref(),
         Some("work"),
-        "the lone pinned group serves sync clients"
+        "bare key serves the lone pinned window"
     );
     // Explicit points are never rewritten by either side.
     assert_eq!(

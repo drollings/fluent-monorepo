@@ -534,6 +534,20 @@ impl RouterServer {
                     manager.bootstrap().await;
                 });
             }
+            // Boot warmup: build every pinned instance window once so `ps`
+            // shows `loaded` from the outset and the first real request never
+            // pays the cold KV build. Skipped in mock mode (transcript
+            // backends must see no real traffic). Best-effort and sequential
+            // (parallel KV builds spike VRAM); a drained JoinSet task, never
+            // detached and never blocking `/health`.
+            if self.mock_dispatch.is_none() {
+                let models = self.models.clone();
+                let roles = self.roles.clone();
+                let pool = Arc::clone(pool);
+                background.spawn(async move {
+                    warm_pinned_instances(models, roles, pool).await;
+                });
+            }
         }
         // Session KV snapshot metadata sweep: expire cold-tier entries past
         // their TTL so the in-memory index cannot grow without bound (fork
@@ -621,6 +635,88 @@ impl RouterServer {
         }
 
         result
+    }
+}
+
+/// Boot warmup: build every pinned instance window once, sequentially, so
+/// `ps` shows `loaded` from the outset and the first real request never pays
+/// the cold KV build.
+///
+/// One 1-token generation per pinned instance name through the single
+/// `llama_chat_backend_for_instance` factory (no second construction path;
+/// the `n_predict` cap keeps it to prompt processing plus one token).
+/// Sequential, never parallel — concurrent KV builds spike VRAM.
+/// Best-effort per instance: the server may still be coming up (its own
+/// `ensure_target_ready` heals that first) or out of VRAM; either way the
+/// failure is logged and warmup continues, degrading to on-demand builds.
+/// The sync backend seam crosses threads via `spawn_blocking` (the
+/// `stages/nlp.rs` precedent), never blocking a tokio worker.
+async fn warm_pinned_instances(
+    models: HashMap<String, ModelEntry>,
+    roles: HashMap<String, RoleEntry>,
+    pool: Arc<crate::instances::InstancePool>,
+) {
+    let mut keys: Vec<&String> = models.keys().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let entry = &models[key];
+        if !entry.is_managed() {
+            continue;
+        }
+        let mut names: Vec<&str> = entry
+            .effective_pool()
+            .iter()
+            .filter(|p| p.pinned)
+            .filter_map(|p| p.name.as_deref())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        for name in names {
+            pool.ensure_target_ready(&entry.endpoint, Some(name)).await;
+            let Some(backend) =
+                crate::config::builder::llama_chat_backend_for_instance(&models, &roles, key, name)
+            else {
+                tracing::warn!(
+                    target: "router.server",
+                    model = %key,
+                    instance = %name,
+                    "warmup skipped - no backend for pinned instance",
+                );
+                continue;
+            };
+            let wire = format!("{}:{name}", entry.name.as_deref().unwrap_or(key));
+            let extras = serde_json::json!({"n_predict": 1});
+            let messages = vec![fluent_llm::protocol::ChatMessage {
+                role: "user".into(),
+                content: "ping".into(),
+            }];
+            let outcome = tokio::task::spawn_blocking(move || {
+                backend.chat_complete_with_extras(&messages, &extras)
+            })
+            .await;
+            match outcome {
+                Ok(Ok(_)) => tracing::info!(
+                    target: "router.server",
+                    model = %wire,
+                    instance = %name,
+                    "warmup built pinned instance",
+                ),
+                Ok(Err(e)) => tracing::warn!(
+                    target: "router.server",
+                    model = %wire,
+                    instance = %name,
+                    error = %e,
+                    "warmup generation failed - instance builds on first demand",
+                ),
+                Err(e) => tracing::warn!(
+                    target: "router.server",
+                    model = %key,
+                    instance = %name,
+                    error = %e,
+                    "warmup task failed - instance builds on first demand",
+                ),
+            }
+        }
     }
 }
 

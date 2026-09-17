@@ -66,6 +66,24 @@ fn ps_weights_prefer_router_model_bytes_over_config_and_gguf() {
 }
 
 #[test]
+fn ps_empty_block_states_unloaded_outright() {
+    // A model with no instance detail (lazy server down): the block still
+    // lists it, and the instances section states `unloaded` instead of
+    // silently omitting the state.
+    let dir = tempfile::tempdir().unwrap();
+    let block =
+        crate::cli::commands::server::render_weight_block(None, dir.path(), "swarm", &[]);
+    assert!(
+        block.contains("unloaded"),
+        "lazy block states its state, got:\n{block}"
+    );
+    assert!(
+        !block.contains("state "),
+        "no per-instance rows to carry a state column, got:\n{block}"
+    );
+}
+
+#[test]
 fn ls_markdown_shape_is_pinned() {
     use crate::cli::commands::filesystem::{render_config_listing, ConfigListing};
     let listing = ConfigListing {

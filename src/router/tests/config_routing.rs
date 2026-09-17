@@ -404,13 +404,18 @@ fn routing_target_without_role_unchanged() {
     let rt = cfg.routing_target("plain", Some(5)).expect("target");
     assert_eq!(rt.role, None, "no terminal role means no role");
     assert_eq!(
-        rt.model, "big:base",
+        rt.model, "big:quick",
         "entry default point for a pooled model, role or not"
     );
     let params = rt.params.as_ref().expect("params");
-    assert!(
-        params.get("ok").is_none(),
-        "no terminal role means the model-side override leg stays out"
+    // Role-less dispatch still serves the entry-default window, so it
+    // carries that window's composed sampling (entry + role run block +
+    // model-side override) — the same body a role-qualified dispatch to the
+    // same window sends. `rt.role` stays None: no terminal role was declared.
+    assert_eq!(
+        params.get("ok").and_then(|v| v.as_str()),
+        Some("ov"),
+        "the serving window's model-side override composes"
     );
     assert_eq!(
         params.get("mk").and_then(|v| v.as_str()),
@@ -535,7 +540,7 @@ fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
     );
     let rt = cfg.routing_target("solo", None).expect("target");
     // `lonely` was inserted after pool materialization, so its entry default
-    // is the bare wire id (materialized entries resolve `<base>:base`).
+    // is the bare wire id (unmaterialized entries resolve bare).
     assert_eq!(rt.model, "lonely", "unbound member serves entry default");
     assert!(!rt.model.contains(":quick"), "no forced qualifier without binding");
     assert_eq!(rt.role.as_deref(), Some("quick"), "role still recorded");

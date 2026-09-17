@@ -17,6 +17,45 @@ use super::manager::{instance_name_from_server_id, resume_snapshot_name, Instanc
 use super::pool::InstancePool;
 use fluent_types::instance_id::InstanceId;
 
+/// Synthesize `unloaded` `/v1/models` rows for a manager whose server is
+/// down (lazy, never loaded): one row per configured instance profile, zero
+/// bytes, `last_used: -1`, in the same id/alias vocabulary as live rows.
+/// The fork reports nothing while down; without this the model is invisible
+/// to `ps` and model listings until first use. Skips profiles with no
+/// materialized name (pre-boot entries resolve bare through the legacy path).
+fn unloaded_model_rows(model_key: &str, manager: &InstanceManager) -> Vec<Value> {
+    let created = common_core::now_secs();
+    manager
+        .profiles()
+        .iter()
+        .filter_map(|p| {
+            let name = p.name.as_deref()?;
+            let group = p.group.as_deref().unwrap_or(name);
+            let instance_id = format!("{model_key}:{name}");
+            let mut entry = serde_json::json!({
+                "id": instance_id,
+                "object": "model",
+                "created": created,
+                "owned_by": "coral-router",
+                "n_ctx": p.num_ctx,
+                "parallel": p.parallel,
+                "pinned": p.pinned,
+                "resume": manager.resume_for(name),
+                "is_default": p.default,
+                "state": "unloaded",
+                "last_used": -1,
+            });
+            entry["aliases"] = Value::Array(
+                instance_aliases(model_key, &instance_id, group, p.default)
+                    .into_iter()
+                    .map(Value::String)
+                    .collect(),
+            );
+            Some(entry)
+        })
+        .collect()
+}
+
 impl InstancePool {
     /// Resolve the public instance id grammar `<model_id>:<name>` (or a bare
     /// `<model_id>` + name) to `(model key, instance name)`. `None` when the
@@ -108,6 +147,10 @@ impl InstancePool {
     /// `GET /v1/models` - one entry per instance across every managed model,
     /// plus aliases for the bare model, group, and `latest` forms. Plain
     /// (no-instance-grammar) models contribute one synthesized entry.
+    /// Managers whose servers are down (lazy, never loaded) contribute one
+    /// `unloaded` row per configured profile — zero bytes, same id/alias
+    /// vocabulary — so `ps` and OpenAI clients see the whole fleet before
+    /// first use instead of only resident windows.
     pub async fn list_models(&self) -> Vec<Value> {
         let mut out = Vec::new();
         for model_key in self.managers.keys() {
@@ -115,6 +158,7 @@ impl InstancePool {
                 continue;
             };
             let Some((envelope, _plain)) = manager.list_with_fallback().await else {
+                out.extend(unloaded_model_rows(&model_key, &manager));
                 continue;
             };
             let created = common_core::now_secs();

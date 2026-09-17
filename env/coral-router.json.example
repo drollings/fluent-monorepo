@@ -52,7 +52,7 @@
       "enable_thinking": true,
       "filter_thinking": true,
       "preserve_thinking": false,
-      "max_ctx": 262144,
+      "max_ctx": 128000,
       "params": {
         "repeat_penalty": 1.01,
         "temperature": 0.7
@@ -83,7 +83,7 @@
       "enable_thinking": false,
       "filter_thinking": true,
       "preserve_thinking": false,
-      "max_ctx": 65536,
+      "max_ctx": 262144,
       "params": {
         "num_ctx": 32768,
         "repeat_penalty": 1.03,
@@ -143,13 +143,17 @@
       "filter_thinking": true,
       "preserve_thinking": false,
       "pinned": true,
+      "snapshot": {
+        "mode": "manual"
+      },
       "params": {
         "num_ctx": 8192,
         "temperature": 0.6,
         "repeat_penalty": 1.0
       },
       "models": [
-        "lfm2.5-2.6b"
+        "qwen3.5-9b",
+        "last"
       ]
     },
 

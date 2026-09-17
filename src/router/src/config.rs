@@ -39,8 +39,6 @@ pub use self::normalize::warn_on_non_object_params;
 pub use self::refine_policy::{RouterRefineMode, RouterRefinePolicy};
 #[allow(unused_imports)]
 pub(crate) use self::root::materialize_effective_pool;
-#[allow(unused_imports)]
-pub(crate) use self::root::default_resident_point;
 pub use self::root::split_model_key;
 pub use self::root::{
     detect_device_vram_total, models_serving_role, overlay_params, resolve_group_head_key,

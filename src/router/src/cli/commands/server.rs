@@ -30,21 +30,17 @@ pub async fn ps(ctx: &CliContext, api_url: Option<&str>, config_path: Option<&Pa
                 "Error: llama-server not reachable. Is it running? {e}"
             ))
         })?;
-    let loaded: Vec<Value> = models
+    // Every known model is listed — `loaded`/`sleeping` (resident) and
+    // `unloaded` (registered, builds on first demand) alike — so a fresh
+    // boot shows the fleet before any traffic flows. Each instance row
+    // carries its own `state`; the per-model block is informational, never
+    // a residency filter.
+    let listed: Vec<Value> = models
         .get("data")
         .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter(|m| {
-                    m.get("state")
-                        .and_then(Value::as_str)
-                        .is_some_and(|s| s == "loaded" || s == "sleeping")
-                })
-                .cloned()
-                .collect()
-        })
+        .cloned()
         .unwrap_or_default();
-    if loaded.is_empty() {
+    if listed.is_empty() {
         println!("(no loaded models)");
         return Ok(());
     }
@@ -72,7 +68,7 @@ pub async fn ps(ctx: &CliContext, api_url: Option<&str>, config_path: Option<&Pa
         print_weight_block(config.as_ref(), &ctx.gguf_dir, key, insts);
         printed += 1;
     }
-    for m in &loaded {
+    for m in &listed {
         let id = m.get("id").and_then(Value::as_str).unwrap_or_default();
         let key = id.split(':').next().unwrap_or(id).to_string();
         if !by_model.contains_key(&key) {
@@ -228,6 +224,12 @@ pub(crate) fn render_weight_block(
         "{display}  (id={short_id}, arch={arch}, quant={quant})"
     );
     let _ = writeln!(out, "  weights   {:>12}", format_size(weights_bytes));
+    if insts.is_empty() {
+        // No instance detail: the server is down (lazy, never loaded) — the
+        // block still lists the model (weights from config/disk) so `ps`
+        // shows the whole fleet, with the state stated outright.
+        out.push_str("  instances     (unloaded - builds on first demand)\n");
+    }
     if !insts.is_empty() {
         out.push_str("  instances\n");
         for inst in insts {
@@ -482,11 +484,19 @@ async fn loaded_model_ids(client: &Client, base: &str) -> Vec<String> {
     let Ok(models) = get_json(client, &format!("{base}/v1/models")).await else {
         return Vec::new();
     };
+    // Residency, not mere presence: `/v1/models` also lists registered but
+    // unloaded windows (lazy servers, config-synthesized rows), which never
+    // drain — `stop` waits only for built contexts to go away.
     models
         .get("data")
         .and_then(Value::as_array)
         .map(|arr| {
             arr.iter()
+                .filter(|m| {
+                    m.get("state")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| s == "loaded" || s == "sleeping")
+                })
                 .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_string))
                 .collect()
         })

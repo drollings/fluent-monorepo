@@ -760,13 +760,15 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
 /// The config declares no instance pools; profiles are synthesized from the
 /// model entry and the roles that bind it:
 ///
-/// - a `base` profile (the entry's own params, `pinned`, `max_ctx`,
-///   `max_parallel`), marked `default: true` — the bare-model dispatch
-///   point;
 /// - one profile per role whose `models` list binds this model (sorted
 ///   role order), composing role run-block sampling and the model-side
 ///   `roles.<role>` override over the entry params, with `pinned`
-///   composing as role OR model and `max_ctx` as override-else-entry.
+///   composing as role OR model and `max_ctx` as override-else-entry;
+/// - when no role binds the model, a single `base` profile (the entry's own
+///   params, `pinned`, `max_ctx`, `max_parallel`), marked `default: true` —
+///   the bare-model dispatch point. Role-bound models have no `base`
+///   phantom: every dispatch and backend qualifier names a real role
+///   window, never a synthetic default.
 ///
 /// A pinned profile is what boots a model at startup
 /// (`supervisor::LlamaServerSpec::from_entry`); everything else loads on
@@ -787,31 +789,36 @@ pub(crate) fn materialize_effective_pool(
             .unwrap_or_else(|| RoleParams::default().num_ctx)
     };
     let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
-    merged.insert(
-        "base".to_string(),
-        InstanceProfile {
-            name: None,
-            group: None,
-            count: 1,
-            num_ctx: entry_num_ctx(),
-            parallel: entry.max_parallel,
-            pinned: entry.pinned,
-            no_sleep: false,
-            sleep_idle_seconds: None,
-            default: true,
-            resume: false,
-            params: entry.params.clone(),
-            embedding: None,
-            max_ctx: entry.max_ctx,
-            session: false,
-        },
-    );
     let mut binding_roles: Vec<&str> = roles
         .iter()
         .filter(|(_, role)| role.serves(model_key))
         .map(|(name, _)| name.as_str())
         .collect();
     binding_roles.sort_unstable();
+    // No bindings: the entry stands alone, so it keeps its synthetic `base`
+    // dispatch point. Bound models serve only through their role windows —
+    // no `base` phantom beside them (every qualifier names a real window).
+    if binding_roles.is_empty() {
+        merged.insert(
+            "base".to_string(),
+            InstanceProfile {
+                name: None,
+                group: None,
+                count: 1,
+                num_ctx: entry_num_ctx(),
+                parallel: entry.max_parallel,
+                pinned: entry.pinned,
+                no_sleep: false,
+                sleep_idle_seconds: None,
+                default: true,
+                resume: false,
+                params: entry.params.clone(),
+                embedding: None,
+                max_ctx: entry.max_ctx,
+                session: false,
+            },
+        );
+    }
     for role_name in binding_roles {
         let role = &roles[role_name];
         let over = entry.role_params.as_ref().and_then(|o| o.get(role_name));
@@ -1053,13 +1060,16 @@ pub fn warn_on_unknown_model_bindings(
 }
 
 /// The entry-default step of the inference-point precedence: the `default:
-/// true` profile's group, else the single shared group across all profiles,
-/// else `None` (bare `<base>`). `None` also when no pool was materialized.
-/// Runs over the boot-materialized effective pool, so unbound entries inherit
-/// the `default` role's pool through the same code path. Shared by
-/// the single precedence function below and `RoutingTarget` construction
-/// (whose entries arrive materialized) so backend model ids and dispatch wire
-/// ids agree; not a second path — the rule lives here once.
+/// true` profile's group (unbound models keep their synthetic `base`
+/// dispatch point), else the cheapest pinned group (resident by
+/// construction — smallest window first, ties broken by group name, per the
+/// cheap-before-expensive principle), else the single shared group across
+/// all profiles, else `None` (bare `<base>`). `None` also when no pool was
+/// materialized. Runs over the boot-materialized effective pool, so unbound
+/// entries inherit the `default` role's pool through the same code path.
+/// Shared by the single precedence function below and `RoutingTarget`
+/// construction (whose entries arrive materialized) so backend model ids and
+/// dispatch wire ids agree; not a second path — the rule lives here once.
 pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
     let profiles = entry.effective_pool();
     if profiles.is_empty() {
@@ -1067,6 +1077,14 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
     }
     if let Some(d) = profiles.iter().find(|p| p.default) {
         return d.group.clone();
+    }
+    if let Some((group, _)) = profiles
+        .iter()
+        .filter(|p| p.pinned)
+        .filter_map(|p| p.group.as_deref().map(|g| (g, p.num_ctx)))
+        .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)))
+    {
+        return Some(group.to_string());
     }
     let first = profiles[0].group.clone()?;
     if profiles
@@ -1078,51 +1096,6 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
         None
     }
 }
-
-/// The resident-duty step for sync (sidecar-less) clients: the cheapest
-/// spawn-declared pinned group, else `None` (keep the entry default).
-///
-/// The entry default is an unpinned `base` phantom beside pinned profiles;
-/// the supervisor declares it at spawn (`supervisor::build_server_args`) so
-/// default wire ids route, but unpinned it registers without building and
-/// materializes on first demand. Sync clients (`LlmClient`
-/// classifier/escalation backends, the pre-pipeline classifier ensure) run
-/// on the blocking request path with no sidecar to pre-warm a cold window,
-/// so they prefer a group that is resident by construction: the pinned group
-/// with the smallest window (cheapest resident KV per the
-/// cheap-before-expensive principle), ties broken by group name for
-/// determinism.
-///
-/// Returns `None` when the entry default is already resident — no pinned
-/// profiles (an all-lazy pool declares its full grammar at spawn) or the
-/// `default: true` profile itself pinned — and when no pool was
-/// materialized. Callers compose it as `default_resident_point(entry).or(point)`.
-///
-/// This is classifier/dispatch-adjacent duty only: `RoutingTarget` dispatch
-/// ids keep the entry default (golden-locked) and build it on demand through
-/// the sidecar when cold.
-pub(crate) fn default_resident_point(entry: &ModelEntry) -> Option<String> {
-    let profiles = entry.effective_pool();
-    if profiles.is_empty() {
-        return None;
-    }
-    if !profiles.iter().any(|p| p.pinned) {
-        return None;
-    }
-    if profiles
-        .iter()
-        .find(|p| p.default)
-        .is_some_and(|d| d.pinned)
-    {
-        return None;
-    }
-    profiles
-        .iter()
-        .filter(|p| p.pinned)
-        .filter_map(|p| p.group.as_deref().map(|g| (g, p.num_ctx)))
-        .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)))
-        .map(|(group, _)| group.to_string())
-}
 /// Resolve the inference point a role or model key serves, as the qualifier
 /// of the dispatch `base:qualifier` id (`None` = bare `<base>`). The single
 /// qualifier resolver — every construction path and adapter composes it, so
@@ -1131,8 +1104,8 @@ pub(crate) fn default_resident_point(entry: &ModelEntry) -> Option<String> {
 /// 1. Explicit qualifier — embedded (`base:point`) or parametric — wins,
 ///    except `latest`, which normalizes away and falls through.
 /// 2. The entry default over the boot-materialized effective pool (the
-///    `default: true` profile's group, else the single shared group —
-///    [`default_inference_point`]).
+///    `default: true` profile's group, else the cheapest pinned group, else
+///    the single shared group — [`default_inference_point`]).
 /// 3. Bare key (`None`): no pool materialized, or no rule matched.
 ///
 /// A role carries no qualifier of its own: it resolves from the route, which

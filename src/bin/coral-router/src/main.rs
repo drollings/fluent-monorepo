@@ -84,7 +84,8 @@ enum Command {
     /// List routes, model groups, and models from the resolved config file.
     #[command(alias = "ls")]
     List(ListArgs),
-    /// List running models via the router's /v1/models and /instances API.
+    /// List models via the router's /v1/models and /instances API — resident
+    /// and registered (unloaded) alike, so a fresh boot shows the fleet.
     Ps(ServerArgs),
     /// Pull a model from a registry (HuggingFace) or a local GGUF file.
     Pull(PullArgs),

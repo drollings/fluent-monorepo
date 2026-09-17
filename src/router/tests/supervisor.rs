@@ -169,7 +169,7 @@ fn server_args_declare_default_params_run_defaults() {
 }
 
 #[test]
-fn server_args_declare_pinned_plus_default_instance_profiles() {
+fn server_args_declare_only_pinned_instance_profiles() {
     let spec =
         LlamaServerSpec::from_entry("swarm", &managed_entry(), 18080, None, None, defaults());
     assert!(spec.boot, "pinned swarm profile -> boot model");
@@ -185,22 +185,14 @@ fn server_args_declare_pinned_plus_default_instance_profiles() {
             }
         })
         .collect();
-    // The pinned count:2 swarm siblings are declared at spawn, plus the
-    // `default: true` ledger profile: it is the target of bare and
-    // entry-default wire ids, so it must be registered (carrying the fork's
-    // `:default` marker) even though it is unpinned. Unpinned, it registers
-    // without building and materializes on first demand — declaration costs
-    // no VRAM. Other unpinned profiles stay deferred to on-demand creation.
-    assert_eq!(
-        instances.len(),
-        3,
-        "pinned instances plus the default profile declared at boot"
-    );
+    // `ledger` is unpinned (no `pinned: true`) in the fixture, so only the
+    // pinned count:2 swarm siblings are declared at spawn.
+    assert_eq!(instances.len(), 2, "only pinned instances declared at boot");
     assert!(instances.contains(&&"swarm-0:group=swarm:ctx=8192:pinned".to_string()));
     assert!(instances.contains(&&"swarm-1:group=swarm:ctx=8192:pinned".to_string()));
     assert!(
-        instances.contains(&&"ledger:ctx=65536:default".to_string()),
-        "unpinned default registers (lazy) so default wire ids route, got: {instances:?}"
+        !instances.iter().any(|s| s.contains("ledger")),
+        "unpinned ledger deferred to on-demand creation"
     );
 }
 
