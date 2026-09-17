@@ -551,7 +551,9 @@ impl<'de> serde::Deserialize<'de> for OriginRole {
 /// A non-empty LOD0 hashes to `0` with probability 2⁻⁶⁴ and is treated as
 /// unstamped (annotations rejected). This sentinel reservation is accepted,
 /// not accidental.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default,
+)]
 #[serde(transparent)]
 pub struct ContentHash(u64);
 

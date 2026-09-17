@@ -195,27 +195,31 @@ fn routing_target_resolves_onnx_role_group_member() {
 }
 
 #[test]
-fn role_entry_deserializes_pool_and_params() {
-    // Roles carry no candidate list and no qualifier: membership lives on
-    // the model side, and the point resolves from the route-selected model.
+fn role_entry_deserializes_flat_fields() {
+    // Roles are flat: params, model list, residency and admission fields.
     // Unknown role fields fail loudly.
     let role: RoleEntry = serde_json::from_value(serde_json::json!({
         "params": {"num_ctx": 8192},
-        "instances": {"default": {"num_ctx": 8192}}
+        "models": ["m"],
+        "pinned": true,
+        "max_parallel": 2
     }))
     .expect("role entry");
     assert_eq!(role.params.num_ctx, 8192);
-    assert!(role.instances.contains_key("default"));
+    assert_eq!(role.models, vec!["m".to_string()]);
+    assert!(role.pinned);
+    assert_eq!(role.max_parallel, Some(2));
 
     let bare: RoleEntry = serde_json::from_value(serde_json::json!({})).expect("bare role");
-    assert!(bare.instances.is_empty());
+    assert!(bare.models.is_empty());
+    assert!(bare.max_parallel.is_none());
 
     let back: RoleEntry = serde_json::from_str(&serde_json::to_string(&role).expect("serialize"))
         .expect("round trip");
     assert_eq!(back.params.num_ctx, role.params.num_ctx);
-    assert!(back.instances.contains_key("default"));
+    assert_eq!(back.models, role.models);
 
-    for key in ["models", "instance"] {
+    for key in ["context", "concurrency", "instances", "instance"] {
         let mut obj = serde_json::Map::new();
         obj.insert(key.to_string(), serde_json::json!([]));
         assert!(
@@ -252,7 +256,7 @@ fn role_config() -> RoutingConfig {
             "smart": ["big"]
         },
         "roles": {
-            "quick": {"models": {"tiny": {}, "big": {}}}
+            "quick": {"models": ["tiny", "big"]}
         },
         "system_prompt": "sys",
         "safety_threshold": 0.5,
@@ -315,7 +319,7 @@ fn unbound_role_expands_to_nothing() {
         "safety_threshold": 0.5,
         "default_route": "fast",
         "roles": {
-            "default": {"models": {"svc": {}}},
+            "default": {"models": ["svc"]},
             "spare": {}
         }
     }))
@@ -349,8 +353,7 @@ fn role_routing_config() -> RoutingConfig {
             "default": {"params": {"duty": "duty-only"}},
             "quick": {
                 "params": {"rk": "rv"},
-                "instances": {"fast": {"num_ctx": 8192}},
-                "models": {"big": {"select": "fast"}, "tiny": {"select": "fast"}},
+                "models": ["big", "tiny"],
             },
         },
         "system_prompt": "sys",
@@ -361,7 +364,8 @@ fn role_routing_config() -> RoutingConfig {
     // Materialize pools the way boot does so role profiles resolve.
     let keys: Vec<String> = cfg.models.keys().cloned().collect();
     for key in &keys {
-        let pool = crate::config::materialize_effective_pool(key, &cfg.roles);
+        let entry = cfg.models.get(key).cloned().expect("member");
+        let pool = crate::config::materialize_effective_pool(key, &entry, &cfg.roles);
         cfg.models.get_mut(key).expect("member").effective_profiles = Some(pool);
     }
     cfg
@@ -375,7 +379,7 @@ fn routing_target_applies_terminal_role() {
     let rt = cfg.routing_target("code", Some(5)).expect("target");
     assert_eq!(rt.role.as_deref(), Some("quick"));
     assert_eq!(
-        rt.model, "big:fast",
+        rt.model, "big:quick",
         "role selects the profile, not a new model"
     );
     let params = rt.params.as_ref().expect("params");
@@ -400,7 +404,7 @@ fn routing_target_without_role_unchanged() {
     let rt = cfg.routing_target("plain", Some(5)).expect("target");
     assert_eq!(rt.role, None, "no terminal role means no role");
     assert_eq!(
-        rt.model, "big:fast",
+        rt.model, "big:base",
         "entry default point for a pooled model, role or not"
     );
     let params = rt.params.as_ref().expect("params");
@@ -660,9 +664,8 @@ fn concurrency_config() -> RoutingConfig {
         "model_groups": {"dev": ["m"]},
         "roles": {
             "quick": {
-                "instances": {"fast": {"num_ctx": 8192}},
-                "models": {"m": {"select": "fast"}},
-                "concurrency": {"max_parallel": 8},
+                "models": ["m"],
+                "max_parallel": 8,
             },
             "plain": {},
         },
@@ -671,7 +674,8 @@ fn concurrency_config() -> RoutingConfig {
         "default_route": "code",
     }))
     .expect("concurrency config parses");
-    let pool = crate::config::materialize_effective_pool("m", &cfg.roles);
+    let entry = cfg.models.get("m").cloned().expect("member");
+    let pool = crate::config::materialize_effective_pool("m", &entry, &cfg.roles);
     cfg.models.get_mut("m").expect("member").effective_profiles = Some(pool);
     cfg
 }
@@ -679,28 +683,17 @@ fn concurrency_config() -> RoutingConfig {
 #[test]
 fn role_concurrency_parses_and_defaults_unbounded() {
     let cfg = concurrency_config();
-    assert_eq!(
-        cfg.roles["quick"]
-            .concurrency
-            .as_ref()
-            .expect("cap present")
-            .max_parallel,
-        8
-    );
+    assert_eq!(cfg.roles["quick"].max_parallel, Some(8));
     assert!(
-        cfg.roles["plain"].concurrency.is_none(),
-        "absent table means unbounded"
+        cfg.roles["plain"].max_parallel.is_none(),
+        "absent cap means unbounded"
     );
 }
 
 #[test]
 fn role_concurrency_zero_rejected() {
-    let err = serde_json::from_value::<RoutingConfig>(serde_json::json!({
-        "routes": {}, "models": {}, "model_groups": {},
-        "roles": {"quick": {"concurrency": {"max_parallel": 0}}},
-        "system_prompt": "sys",
-        "safety_threshold": 0.5,
-        "default_route": "code",
+    let err = crate::config::RouterConfig::from_json_value(serde_json::json!({
+        "roles": {"quick": {"max_parallel": 0}}
     }))
     .expect_err("a zero cap admits nothing and must not parse");
     assert!(
@@ -725,8 +718,7 @@ fn capacity_mismatch_warns_with_counts() {
 #[test]
 fn capacity_match_stays_silent() {
     let mut cfg = concurrency_config();
-    cfg.roles.get_mut("quick").expect("role").concurrency =
-        Some(crate::config::RoleConcurrency { max_parallel: 1 });
+    cfg.roles.get_mut("quick").expect("role").max_parallel = Some(1);
     let ((), logs) = crate::test_support::capture_logs(|| {
         cfg.warn_on_role_capacity_mismatch();
     });

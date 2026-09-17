@@ -2086,7 +2086,7 @@ mod config_tests {
                 "embed": {"endpoint": "", "intelligence": 1}
             },
             "model_groups": {},
-            "roles": {"embedding": {"models": {"embed": {}}}},
+            "roles": {"embedding": {"models": ["embed"]}},
             "embedding_model": "embedding",
         }))
         .expect("fixture parses");

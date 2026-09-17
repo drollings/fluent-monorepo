@@ -28,6 +28,7 @@ use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
 use fluent_wvr::prelude::*;
 
+use crate::config::GroupMember;
 use crate::config::RoutingConfig;
 use crate::pipeline::RoutingTarget;
 use crate::stages::common::{coerce_string, coerce_u8};
@@ -197,6 +198,28 @@ impl GroupRecency {
             .map(|(model_wire, _)| model_wire.to_string())
     }
 
+    /// Record `model_wire` as the globally last-answered model, regardless
+    /// of session or group. Backs `last` sentinels in sentinel-only groups
+    /// and the `model: "last"` classifier duty — whichever LLM actually
+    /// answered last, with no per-session scoping.
+    pub fn record_any(&self, model_wire: &str) {
+        let stamped = self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut inner = common_core::sync::lock(&self.inner);
+        let session_key: ArcIntern<str> = ArcIntern::from("");
+        let group_key: ArcIntern<str> = ArcIntern::from("");
+        let model: ArcIntern<str> = ArcIntern::from(model_wire);
+        inner
+            .entry(session_key)
+            .or_default()
+            .insert(group_key, (model, stamped));
+    }
+
+    /// The globally last-answered model wire id, if any dispatch has been
+    /// recorded.
+    pub fn last_any(&self) -> Option<String> {
+        self.last_for("", "")
+    }
+
     /// Entry count (bounded by [`RECENCY_CAPACITY`]).
     pub fn len(&self) -> usize {
         let inner = common_core::sync::lock(&self.inner);
@@ -364,6 +387,33 @@ pub fn expand_group_keys(
             GroupMember::Last => {
                 if let Some(last) = last_member {
                     push(last, &mut out, &mut seen);
+                } else if literals.is_empty() {
+                    // Sentinel-only group: `last` means whichever LLM
+                    // actually last answered, with no member constraint —
+                    // session recency first, then the global last-answered
+                    // model, then any currently-loaded model.
+                    let global = recency.and_then(GroupRecency::last_any);
+                    let resolved = global
+                        .filter(|wire| routing.target_for_key(wire).is_some())
+                        .or_else(|| {
+                            routing.models.keys().find_map(|key| {
+                                let _ = crate::config::split_model_key(key);
+                                is_loaded(key).then(|| key.clone())
+                            })
+                        });
+                    if let Some(key) = resolved {
+                        push(&key, &mut out, &mut seen);
+                    } else if wants_last && !fallback_audited {
+                        fallback_audited = true;
+                        crate::audit::emit(
+                            "target_match",
+                            serde_json::json!({
+                                "stage": "expansion",
+                                "group": group,
+                                "reason": "last-empty-fallback",
+                            }),
+                        );
+                    }
                 } else if wants_last && !fallback_audited {
                     // Unknown session (or a stale wire id): the head serves.
                     // Audited once per expansion so the fallback stays
@@ -995,6 +1045,33 @@ pub(crate) fn resolve_route_to_target(
                     route = %route,
                     "target-matching ladder produced no target — static fallback",
                 );
+            }
+        }
+    }
+    // Sentinel-bearing groups (the `last`/`any` availability vocabulary)
+    // resolve through the runtime expansion — session/global recency and
+    // fleet liveness — before the static fallback, so `last` serves
+    // whichever LLM actually last answered rather than a fixed member.
+    if let Some(group) = routing_config.route_group(route) {
+        let declares_sentinel = routing_config.model_groups.get(group).is_some_and(|g| {
+            g.models()
+                .iter()
+                .any(|m| matches!(GroupMember::parse(m), GroupMember::Last | GroupMember::Any))
+        });
+        if declares_sentinel {
+            let keys = expand_group_keys(
+                routing_config,
+                group,
+                expansion.recency(),
+                expansion.session(),
+                &|base| expansion.supervisor_loaded(base),
+            );
+            if let Some(key) = keys.first() {
+                if let Some(mut rt) = routing_config.target_for_key(key) {
+                    rt.group = Some(group.to_string());
+                    rt.target_name = Some(route.to_string());
+                    return Some(rt);
+                }
             }
         }
     }

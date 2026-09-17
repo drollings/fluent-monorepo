@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use common_core::constants::default_true;
 
-use super::root::{overlay_params, strip_declaration_params, PRESERVE_THINKING_KEY};
+use super::root::{overlay_params, strip_declaration_params};
+use crate::config::routing::RoleEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,16 +51,32 @@ pub struct ModelEntry {
     pub idle_timeout_ms: u64,
     #[serde(default = "default_true")]
     pub stream: bool,
+    /// Whether thinking blocks are stripped for dispatches through this
+    /// model. Composes with [`Self::enable_thinking`] /
+    /// [`Self::preserve_thinking`] (see [`Self::filter_thinking_for`]).
     #[serde(default)]
     pub filter_thinking: bool,
-    /// Explicit thinking level for this model (`off` | `on` | a
-    /// model-specific level such as `low`/`high`/`max`). Additive with
-    /// [`Self::filter_thinking`]: absent behaves exactly as today; present
-    /// resolves through [`Self::resolve_thinking`] (model → role → override)
-    /// and an explicit level wins over `filter_thinking: true` with a loud
-    /// warn (`filter_thinking: true` alone still means `off`).
+    /// Whether the model's chat template emits thinking blocks
+    /// (`on`/`off` in the composed `thinking` level).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<String>,
+    pub enable_thinking: Option<bool>,
+    /// Keep generated thinking blocks in the response (router-local; never
+    /// forwarded to the server).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserve_thinking: Option<bool>,
+    /// Context-size cap (tokens) for this model: bounds `num_ctx` in every
+    /// composed params object and the spawned window. `None` = no cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_ctx: Option<u64>,
+    /// Boot the model's server process at startup instead of lazily on
+    /// first dispatch. Role-level `pinned` composes over this (either
+    /// true pins the synthesized profile).
+    #[serde(default)]
+    pub pinned: bool,
+    /// Instance slots the synthesized pool profile admits; also the
+    /// per-model parallelism hint for the capacity audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_parallel: Option<u32>,
     #[serde(default)]
     pub retry_count: u32,
     #[serde(default = "default_retry_interval")]
@@ -103,13 +120,20 @@ pub struct ModelEntry {
     /// the server still serves with its baked-in template).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
-    /// Sparse per-role sampling override for this model, keyed by role name
-    /// (serde name `roles`). Params-only: it carries a sampling update for
-    /// the named role and never confers membership — a model listed here but
-    /// in no role's `models` map is still served only through the `default`
-    /// role's pool. `None` (the default) contributes nothing.
+    /// Sparse per-role override for this model, keyed by role name (serde
+    /// name `roles`). Params-only: it carries a per-task update (thinking
+    /// policy, `max_ctx` cap, sampling `params`) for the named role and
+    /// never confers membership — a model is served through the roles that
+    /// bind it in their `models` list. `None` (the default) contributes
+    /// nothing.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "roles")]
     pub role_params: Option<HashMap<String, ModelRoleOverride>>,
+}
+
+impl Default for ModelEntry {
+    fn default() -> Self {
+        serde_json::from_value(serde_json::json!({})).expect("the all-defaults ModelEntry parses")
+    }
 }
 
 impl ModelEntry {
@@ -134,48 +158,33 @@ impl ModelEntry {
     }
 }
 
-/// One role-side model binding: the value type of `RoleEntry.models`, keyed
-/// by model key. Roles and models stay separate tables; the binding is where
-/// they compose — a role names the models that serve it, never the reverse.
-///
-/// `select` names a profile in the role's own `instances` pool, and that
-/// profile IS the model's pool contribution for the role (a binding narrows;
-/// a bound model with no `select` uses the pool as authored). Absent selects
-/// the pool's `default: true` profile (else the single profile, else
-/// nothing). `params` is a sparse sampling update composed over the bound
-/// profile's params at boot; absent contributes nothing. A wholly-absent
-/// binding (every field `None`) is "pool as authored" — no narrowing.
-///
-/// Unknown fields are rejected: a legacy pool profile deserializes here only
-/// by accident, and silently dropping its keys would misroute — fail loud.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct ModelBinding {
-    /// Pool profile name selected for the model; see above for the absent rule.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub select: Option<String>,
-    /// Sparse sampling update over the selected profile's params.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
-    /// Sparse embedding-model override for the selected profile, composed
-    /// into it at boot (this binding wins over the profile's own).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub embedding: Option<String>,
-}
-
 /// One model-side per-role override: the value type of
 /// `ModelEntry.role_params` (serde name `roles`), keyed by role name.
-/// Params-only by construction — the struct carries a single sparse sampling
-/// update and has no membership fields, so a model can tune its behavior for
-/// a task without joining (or redefining) the role's serving set.
+/// Params-only by construction — the struct carries per-task tuning (a
+/// sparse sampling update, thinking policy, and a `max_ctx` cap) and no
+/// membership fields, so a model can be tuned for a task without joining
+/// (or redefining) the role's serving set.
 ///
-/// Unknown fields are rejected: `models`/`select` belong on the role-side
-/// binding (`roles.<role>.models.<model>`), and silently dropping them here
-/// would look like a per-task tune while actually being ignored — fail loud
-/// with a pointer at the role side instead.
+/// Unknown fields are rejected: `models` belongs on the role side
+/// (`roles.<role>.models`), and silently dropping it here would look like a
+/// per-task tune while actually being ignored — fail loud with a pointer at
+/// the role side instead.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ModelRoleOverride {
+    /// Whether the named role's dispatches emit thinking blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
+    /// Whether thinking blocks are stripped for the named role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_thinking: Option<bool>,
+    /// Keep generated thinking blocks for the named role (router-local).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserve_thinking: Option<bool>,
+    /// Context-size cap for the named role; bounds `num_ctx` in the
+    /// composed params object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_ctx: Option<u64>,
     /// Sparse sampling update for the named role, composed last in the
     /// params chain (absent contributes nothing).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -268,41 +277,39 @@ impl ModelEntry {
     /// Resolve the sampling params to send when dispatching to `qualifier`
     /// (an instance name or group of this model's boot-materialized pool):
     /// the qualifier-only shorthand for [`Self::answer_params_for`] with no
-    /// role, no role sampling, and no classification duty. `None` when no
-    /// profile matches `qualifier` — callers fall back to the entry's bare
-    /// params. The composition rule lives in `answer_params_for` once; this
-    /// stays so qualifier-only callers do not restate the chain.
+    /// role and no classification duty. `None` when no profile matches
+    /// `qualifier` — callers fall back to the entry's bare params. The
+    /// composition rule lives in `answer_params_for` once; this stays so
+    /// qualifier-only callers do not restate the chain.
     pub fn instance_params_for(&self, qualifier: &str) -> Option<serde_json::Value> {
-        self.answer_params_for(Some(qualifier), None, None, None)
+        self.answer_params_for(Some(qualifier), None, None)
     }
 
-    /// The single five-leg answer-params chain, every leg through
-    /// [`overlay_params`] (shallow: each key wins wholesale, never
-    /// deep-merged) with the role applied exactly once:
-    ///
+    /// The single answer-params chain, every leg through [`overlay_params`]
+    /// (shallow: each key wins wholesale, never deep-merged), with the role
+    /// applied exactly once:    ///
     /// 1. classification-duty params (the classifier serving key's params;
     ///    `None` on paths without a classifier duty),
-    /// 2. the group-selected model's entry (`models.default`
-    ///    sparse-inheritance already applied at parse),
-    /// 3. `model.params`,
-    /// 4. `role.params` (the role run block's sampling, passed in as
-    ///    `role_sampling`),
+    /// 2. the model's entry `params` (`models.default` sparse-inheritance
+    ///    already applied at parse),
+    /// 3. `role.params` (the role run block's sampling, when a role is
+    ///    dispatched through),
+    /// 4. the pool profile's composed params (when `qualifier` matches one),
     /// 5. `models.<model>.roles.<role>.params` (the model-specific override
     ///    for the task; wins when present, absent contributes nothing).
     ///
-    /// The instance profile (`qualifier`) resolves *where* on the model and
-    /// reads through the boot-materialized [`Self::effective_pool`] — it is
-    /// the qualifier step underneath the chain, not a sixth leg. The
-    /// resolved thinking level (see [`Self::resolve_thinking`]) is written
-    /// into the composed object as `thinking`; declaration-only keys are
-    /// stripped at the body boundary. `None` when a named `qualifier`
-    /// matches no profile — callers fall back to the entry's bare params
-    /// (the `instance_params_for` contract, preserved).
+    /// `max_ctx`, if specified (model-side role override, then the entry),
+    /// limits the size of `num_ctx` in the composed object — the cap clamps
+    /// the composed window. The resolved thinking level (see
+    /// [`Self::resolve_thinking`]) is written into the composed object as
+    /// `thinking`; declaration-only keys are stripped at the body boundary.
+    /// `None` when a named `qualifier` matches no profile — callers fall
+    /// back to the entry's bare params (the `instance_params_for` contract,
+    /// preserved).
     pub fn answer_params_for(
         &self,
         qualifier: Option<&str>,
-        role: Option<&str>,
-        role_sampling: Option<&serde_json::Value>,
+        role: Option<(&str, &RoleEntry)>,
         classification_params: Option<&serde_json::Value>,
     ) -> Option<serde_json::Value> {
         let profile = match qualifier {
@@ -315,16 +322,37 @@ impl ModelEntry {
         if qualifier.is_some() && profile.is_none() {
             return None;
         }
-        let override_params: Option<&serde_json::Value> = role
-            .and_then(|r| self.role_params.as_ref()?.get(r))
-            .and_then(|o| o.params.as_ref());
+        let role_name = role.map(|(name, _)| name);
+        let role_entry = role.map(|(_, entry)| entry);
+        let role_sampling = role_entry.and_then(|r| r.params.sampling_value());
+        let over: Option<&ModelRoleOverride> =
+            role_name.and_then(|name| self.role_params.as_ref()?.get(name));
+        let override_params: Option<&serde_json::Value> = over.and_then(|o| o.params.as_ref());
         let mut merged = overlay_params(classification_params, self.params.as_ref());
-        merged = overlay_params(Some(&merged), role_sampling);
+        if let Some(sampling) = role_sampling.as_ref() {
+            merged = overlay_params(Some(&merged), Some(sampling));
+        }
         if let Some(p) = profile {
             merged = overlay_params(Some(&merged), p.params.as_ref());
         }
-        merged = overlay_params(Some(&merged), override_params);
-        if let Some(level) = self.resolve_thinking(role_sampling, override_params) {
+        if let Some(op) = override_params {
+            merged = overlay_params(Some(&merged), Some(op));
+        }
+        // The max_ctx cap bounds the composed window: the model-side role
+        // override wins, then the entry cap. A composed num_ctx above the
+        // cap is clamped down (never silently dropped).
+        if let Some(cap) = over.and_then(|o| o.max_ctx).or(self.max_ctx) {
+            if let Some(obj) = merged.as_object_mut() {
+                for key in ["num_ctx", "ctx_size"] {
+                    if let Some(n) = obj.get(key).and_then(serde_json::Value::as_u64) {
+                        if n > cap {
+                            obj.insert(key.to_string(), serde_json::Value::from(cap));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(level) = self.resolve_thinking(role_entry, over) {
             if let Some(obj) = merged.as_object_mut() {
                 obj.insert("thinking".to_string(), serde_json::Value::String(level));
             }
@@ -333,53 +361,51 @@ impl ModelEntry {
     }
 
     /// Resolve the thinking level for a dispatch through `role`: the
-    /// model-side override wins, then the role sampling, then the entry's
-    /// explicit [`Self::thinking`]. Within one params layer the precedence is
-    /// `thinking` (explicit level string), then `enable_thinking` (bool →
-    /// `on`/`off`, the llama.cpp chat-template switch), then
+    /// model-side override wins, then the role entry, then this entry's own
+    /// declaration. Within one layer the precedence is `enable_thinking`
+    /// (bool → `on`/`off`, the llama.cpp chat-template switch) then
     /// `reasoning_effort` (a model-specific effort string such as
-    /// `low`/`medium`/`high`/`max`, passed through verbatim). `None` means no
-    /// level was declared anywhere (a `filter_thinking: true` entry with no
-    /// level still filters via [`Self::filter_thinking_for`] — the bool
-    /// alias). An explicit level wins over `filter_thinking: true` with a
-    /// loud warn; `off` always filters. Contradictory layers
-    /// (`enable_thinking: false` beside a `reasoning_effort`, `preserve`
-    /// beside `off`) warn loudly with the winner named.
+    /// `low`/`high`, read from the role's or override's sampling `params`).
+    /// `None` means no level was declared anywhere (a `filter_thinking:
+    /// true` entry with no level still filters via
+    /// [`Self::filter_thinking_for`] — the bool alias). An explicit live
+    /// level over `filter_thinking: true` warns loudly; `off` always
+    /// filters.
     pub fn resolve_thinking(
         &self,
-        role_sampling: Option<&serde_json::Value>,
-        override_params: Option<&serde_json::Value>,
+        role: Option<&RoleEntry>,
+        over: Option<&ModelRoleOverride>,
     ) -> Option<String> {
-        fn level(params: Option<&serde_json::Value>) -> Option<String> {
-            let obj = params?.as_object()?;
-            if let Some(t) = obj.get("thinking").and_then(|t| t.as_str()) {
-                return Some(t.to_string());
-            }
-            if let Some(enabled) = obj
-                .get("enable_thinking")
-                .and_then(serde_json::Value::as_bool)
-            {
-                if !enabled && obj.contains_key("reasoning_effort") {
-                    tracing::warn!(
-                        target: "router.config",
-                        "enable_thinking:false beside reasoning_effort — effort ignored, level resolves off",
-                    );
-                }
-                return Some(if enabled {
-                    "on".to_string()
-                } else {
-                    "off".to_string()
-                });
-            }
-            obj.get("reasoning_effort")
+        fn params_level(params: Option<&serde_json::Value>) -> Option<String> {
+            params
+                .and_then(|p| p.as_object())
+                .and_then(|obj| obj.get("reasoning_effort"))
                 .and_then(|e| e.as_str())
                 .map(str::to_string)
         }
-        let explicit = level(override_params)
-            .or_else(|| level(role_sampling))
-            .or_else(|| self.thinking.clone());
+        fn bool_level(b: bool) -> String {
+            if b { "on" } else { "off" }.to_string()
+        }
+        // Override layer: the typed field wins, then the override's params.
+        let mut level = over
+            .and_then(|o| o.enable_thinking)
+            .map(bool_level)
+            .or_else(|| over.and_then(|o| params_level(o.params.as_ref())));
+        // Role layer.
+        if level.is_none() {
+            if let Some(role) = role {
+                level = role
+                    .enable_thinking
+                    .map(bool_level)
+                    .or_else(|| params_level(role.params.sampling_value().as_ref()));
+            }
+        }
+        // Entry layer.
+        if level.is_none() {
+            level = self.enable_thinking.map(bool_level);
+        }
         if self.filter_thinking {
-            if let Some(ref set) = explicit {
+            if let Some(ref set) = level {
                 if set != "off" {
                     tracing::warn!(
                         target: "router.config",
@@ -389,38 +415,27 @@ impl ModelEntry {
                 }
             }
         }
-        explicit
-    }
-
-    /// Whether `preserve_thinking` (see [`PRESERVE_THINKING_KEY`]) keeps
-    /// thinking blocks for a dispatch: the model-side override wins, then the
-    /// role sampling. Absent everywhere contributes nothing (`None`).
-    pub fn preserve_thinking(
-        role_sampling: Option<&serde_json::Value>,
-        override_params: Option<&serde_json::Value>,
-    ) -> Option<bool> {
-        fn keep(params: Option<&serde_json::Value>) -> Option<bool> {
-            params?.as_object()?.get(PRESERVE_THINKING_KEY)?.as_bool()
-        }
-        keep(override_params).or_else(|| keep(role_sampling))
+        level
     }
 
     /// Whether thinking blocks are stripped for a dispatch whose resolved
     /// level is `resolved_thinking`: an explicit `off` always filters;
-    /// `preserve_thinking: true` (model-side override, then role sampling,
-    /// then the entry's own params) keeps the blocks for any live level,
-    /// beating the entry bool; otherwise the entry bool decides. A preserve
-    /// beside `off` warns loudly — there is nothing generated to keep, so
-    /// the filter wins. Instance-profile params carry pools, never thinking
-    /// policy — a profile-level `preserve_thinking` is not consulted.
+    /// `preserve_thinking: true` (model-side override, then the role entry,
+    /// then this entry) keeps the blocks for any live level, beating the
+    /// entry bool; otherwise the entry bool decides. A preserve beside
+    /// `off` warns loudly — there is nothing generated to keep, so the
+    /// filter wins. Pool profiles carry windows, never thinking policy — a
+    /// profile-level `preserve_thinking` is not consulted.
     pub fn filter_thinking_for(
         &self,
         resolved_thinking: Option<&str>,
-        role_sampling: Option<&serde_json::Value>,
-        override_params: Option<&serde_json::Value>,
+        role: Option<&RoleEntry>,
+        over: Option<&ModelRoleOverride>,
     ) -> bool {
-        let preserve = Self::preserve_thinking(role_sampling, override_params)
-            .or_else(|| Self::preserve_thinking(None, self.params.as_ref()));
+        let preserve = over
+            .and_then(|o| o.preserve_thinking)
+            .or_else(|| role.and_then(|r| r.preserve_thinking))
+            .or(self.preserve_thinking);
         if matches!(resolved_thinking, Some("off")) {
             if preserve == Some(true) {
                 tracing::warn!(
@@ -433,7 +448,10 @@ impl ModelEntry {
         if preserve == Some(true) {
             return false;
         }
-        self.filter_thinking
+        // The model-side role override's filter flag wins over the entry
+        // bool; the entry bool decides otherwise.
+        over.and_then(|o| o.filter_thinking)
+            .unwrap_or(self.filter_thinking)
     }
 
     /// Resolve the embedding-model reference serving `qualifier` (an

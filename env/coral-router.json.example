@@ -16,13 +16,17 @@
       "tok_s": 20,
       "total_timeout_ms": 30000,
       "idle_timeout_ms": 10000,
+      "max_parallel": 1,
+      "pinned": false,
       "stream": true,
-      "filter_thinking": true,
+      "enable_thinking": false,
+      "filter_thinking": false,
+      "preserve_thinking": true,
       "retry_count": 0,
       "retry_base_interval_s": 2,
+      "max_ctx": 262144,
       "params": {
         "num_ctx": 8192,
-        "max_ctx": 262144,
         "batch_size": 2048,
         "ubatch_size": 512,
         "cache_type_k": "q4_0",
@@ -31,8 +35,6 @@
         "n_gpu_layers": 999,
         "n_cpu_moe": 0,
         "sleep_idle_seconds": 60,
-        "stream": true,
-        "filter_thinking": true,
         "temperature": 0.1
       }
     },
@@ -45,19 +47,43 @@
     "lfm2.5-2.6b": {
       "name": "liquidai/lfm2.6-2.6b",
       "weights": "/app/ai/models/gguf/liquidai/lfm2.5-2.6b-gguf/latest.gguf",
-      "intelligence": 1,
-      "tok_s": 160
+      "intelligence": 2,
+      "tok_s": 160,
+      "enable_thinking": true,
+      "filter_thinking": true,
+      "preserve_thinking": false,
+      "max_ctx": 262144,
+      "params": {
+        "repeat_penalty": 1.01,
+        "temperature": 0.7
+      },
+      "roles": {
+        "quick": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "preserve_thinking": false,
+          "max_ctx": 16384,
+          "params": {
+            "temperature": 0.6,
+            "repeat_penalty": 1.02
+          }
+        }
+      }
     },
-    "qwen3.6-27b": {
-      "name": "vinpix/ternary-bonsai-27b-stock-mtp",
-      "weights": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/latest.gguf",
-      "template": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/template.txt",
-      "intelligence": 5,
-      "tok_s": 35,
+    "qwen3.5-9b": {
+      "name": "qwen3.5-9b",
+      "weights": "/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf",
+      "template": "/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/template.txt",
+      "intelligence": 4,
+      "tok_s": 50,
       "retry_count": 1,
       "retry_base_interval_s": 5,
       "total_timeout_ms": 300000,
       "idle_timeout_ms": 30000,
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "preserve_thinking": false,
+      "max_ctx": 65536,
       "params": {
         "num_ctx": 32768,
         "repeat_penalty": 1.03,
@@ -65,7 +91,12 @@
       },
       "roles": {
         "quick": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "preserve_thinking": false,
+          "max_ctx": 65536,
           "params": {
+            "num_ctx": 8192,
             "temperature": 0.6,
             "repeat_penalty": 1.02
           }
@@ -82,142 +113,95 @@
       "retry_base_interval_s": 5,
       "total_timeout_ms": 300000,
       "idle_timeout_ms": 30000,
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "preserve_thinking": false,
+      "max_ctx": 65536,
       "params": {
-        "num_ctx": 32768,
         "repeat_penalty": 1.03,
         "temperature": 0.7
       },
       "roles": {
         "quick": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "preserve_thinking": false,
+          "max_ctx": 65536,
           "params": {
+            "num_ctx": 8192,
             "temperature": 0.6,
             "repeat_penalty": 1.02
           }
         }
       }
-    },
-    "qwen3.5-9b": {
-      "name": "qwen3.5-9b",
-      "weights": "/app/ai/models/gguf/mannix-ita/jackod-9b-coder-mtp-gguf/latest.gguf",
-      "intelligence": 4,
-      "tok_s": 50,
-      "params": {
-        "num_ctx": 32768,
-        "repeat_penalty": 1.02,
-        "temperature": 0.7
-      }
-    },
-    "gemma4-12b": {
-      "name": "mradermacher/gemma-4-12b-styletune-i1",
-      "weights": "/app/ai/models/gguf/mradermacher/gemma-4-12b-styletune-i1-gguf/latest.gguf",
-      "intelligence": 4,
-      "tok_s": 60,
-      "params": {
-        "temperature": 0.6
-      }
     }
   },
   "roles": {
     "quick": {
-      "context": {
-        "num_ctx": 8192,
-        "pinned": true
-      },
-      "concurrency": {
-        "max_parallel": 2
-      },
+      "max_parallel": 2,
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "preserve_thinking": false,
+      "pinned": true,
       "params": {
+        "num_ctx": 8192,
         "temperature": 0.6,
         "repeat_penalty": 1.0
       },
-      "instances": {
-        "quick": {
-          "num_ctx": 8192,
-          "pinned": true
-        }
-      },
-      "models": {
-        "lfm2.5-2.6b": {},
-        "qwen3.5-9b": {},
-        "qwen3.8-27b": {}
-      }
+      "models": [
+        "lfm2.5-2.6b"
+      ]
     },
+
     "ledger": {
-      "context": {
-        "num_ctx": 128000
-      },
+      "max_parallel": 1,
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "preserve_thinking": false,
+      "pinned": true,
       "params": {
-        "sleep_idle_seconds": 7200,
+        "sleep_idle_seconds": 28800,
+        "num_ctx": 262144,
         "temperature": 0.1,
         "repeat_penalty": 1.01
       },
-      "models": {
-        "qwen3.5-9b": {}
-      }
+      "models": [
+        "qwen3.5-9b"
+      ]
     },
-    "json": {
-      "context": {
-        "num_ctx": 16384,
-        "pinned": true
-      },
-      "params": {
-        "temperature": 0.1,
-        "repeat_penalty": 1.0
-      }
-    },
+
     "scratch": {
-      "context": {
-        "num_ctx": 128000
-      },
-      "concurrency": {
-        "max_parallel": 1
-      },
+      "max_parallel": 1,
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "preserve_thinking": false,
+      "pinned": false,
       "params": {
         "sleep_idle_seconds": 60,
+        "num_ctx": 65536,
         "temperature": 0.7,
-        "top_p": 0.95,
-        "repeat_penalty": 1.03
+        "repeat_penalty": 1.01
       },
-      "instances": {
-        "scratch": {
-          "num_ctx": 128000
-        }
-      },
-      "models": {
-        "lfm2.5-2.6b": {},
-        "qwen3.5-9b": {},
-        "gemma4-12b": {}
-      }
+      "models": [
+        "qwen3.5-9b"
+      ]
     },
+
     "reasoning": {
-      "context": {
-        "num_ctx": 128000
-      },
-      "concurrency": {
-        "max_parallel": 1
-      },
+      "max_parallel": 1,
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "preserve_thinking": false,
       "params": {
-        "chat_template_kwargs": {
-          "enable_thinking": true
-        },
         "reasoning_effort": "high",
         "reasoning_budget_tokens": 4096,
-        "preserve_thinking": true,
-        "sleep_idle_seconds": 300,
-        "temperature": 0.7,
-        "top_p": 0.95,
-        "repeat_penalty": 1.03
+        "num_ctx": 65536,
+        "temperature": 0.1,
+        "repeat_penalty": 1.01
       },
-      "instances": {
-        "reasoning": {
-          "num_ctx": 128000
-        }
-      },
-      "models": {
-        "lfm2.5-2.6b": {},
-        "qwen3.5-9b": {},
-        "qwen3.8-27b": {}
-      }
+      "models": [
+        "qwen3.8-27b"
+      ]
     }
   },
   "classification": {
@@ -237,7 +221,7 @@
             "role": "quick",
             "group": "default",
             "description": "General Q&A",
-            "always_route": false
+            "always_route": true
           }
         },
         {
@@ -318,7 +302,6 @@
   "model_groups": {
     "default": [
       "last",
-      "lfm2.5-2.6b",
       "qwen3.5-9b"
     ],
     "code": [
@@ -326,27 +309,20 @@
       "qwen3.8-27b"
     ],
     "reason": [
-      "qwen3.5-9b",
-      "qwen3.8-27b",
-      "last"
+      "last",
+      "qwen3.5-9b"
     ],
     "summarize": [
       "last",
       "qwen3.5-9b"
     ],
     "explore": [
-      "lfm2.5-2.6b",
-      "qwen3.5-9b",
       "last"
     ],
     "translate": [
-      "lfm2.5-2.6b",
-      "qwen3.8-27b",
       "last"
     ],
     "prose": [
-      "lfm2.5-2.6b",
-      "gemma4-12b",
       "last"
     ]
   },

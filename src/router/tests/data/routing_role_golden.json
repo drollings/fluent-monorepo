@@ -16,10 +16,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -32,10 +30,8 @@
         "group": "default",
         "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "scout/scout-1b:scout",
-        "params": {
-          "temperature": 0.1
-        },
+        "model": "scout/scout-1b:base",
+        "params": {},
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
@@ -52,10 +48,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -68,10 +62,8 @@
         "group": "default",
         "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "scout/scout-1b:scout",
-        "params": {
-          "temperature": 0.1
-        },
+        "model": "scout/scout-1b:base",
+        "params": {},
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
@@ -88,10 +80,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -104,12 +94,8 @@
         "group": "default",
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -126,10 +112,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -142,10 +126,8 @@
         "group": "default",
         "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "scout/scout-1b:scout",
-        "params": {
-          "temperature": 0.1
-        },
+        "model": "scout/scout-1b:base",
+        "params": {},
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
@@ -162,10 +144,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -178,12 +158,8 @@
         "group": "code",
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -200,10 +176,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -216,12 +190,8 @@
         "group": "code",
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -238,10 +208,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -254,12 +222,8 @@
         "group": "code",
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -276,10 +240,8 @@
             "filter_thinking": true,
             "idle_timeout_ms": 3000,
             "is_onnx": false,
-            "model": "scout/scout-1b:scout",
-            "params": {
-              "temperature": 0.1
-            },
+            "model": "scout/scout-1b:base",
+            "params": {},
             "retry_base_interval_s": 1,
             "retry_count": 1,
             "stream": true,
@@ -292,12 +254,8 @@
         "group": "code",
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -315,9 +273,7 @@
         "is_onnx": false,
         "model": "code:default",
         "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
+          "temperature": 0.1
         },
         "retry_base_interval_s": 2,
         "retry_count": 1,
@@ -333,12 +289,8 @@
         "filter_thinking": true,
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -353,12 +305,8 @@
         "filter_thinking": true,
         "idle_timeout_ms": 30000,
         "is_onnx": false,
-        "model": "code:default",
-        "params": {
-          "temperature": 0.6,
-          "top_k": 40,
-          "top_p": 0.9
-        },
+        "model": "code:base",
+        "params": {},
         "retry_base_interval_s": 2,
         "retry_count": 1,
         "stream": true,
@@ -375,9 +323,6 @@
         "instance": "scout",
         "is_onnx": false,
         "model": "scout/scout-1b:scout",
-        "params": {
-          "temperature": 0.1
-        },
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,
@@ -392,10 +337,8 @@
         "filter_thinking": true,
         "idle_timeout_ms": 3000,
         "is_onnx": false,
-        "model": "scout/scout-1b:scout",
-        "params": {
-          "temperature": 0.1
-        },
+        "model": "scout/scout-1b:base",
+        "params": {},
         "retry_base_interval_s": 1,
         "retry_count": 1,
         "stream": true,

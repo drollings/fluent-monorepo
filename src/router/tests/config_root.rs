@@ -561,18 +561,12 @@ fn pipeline_params_target_match_round_trips() {
     assert_eq!(back.pipelines["default"].target_match_timeout_ms, 12345);
 }
 
-// -- Instance-pool declaration -------------------------------------
+// -- Effective-pool synthesis ---------------------------------------
+// The config declares no instance pools: profiles are synthesized from the
+// model entry plus the roles that bind it (a `base` profile marked
+// `default: true`, plus one profile per binding role).
 
-fn profile_json(name: &str, count: u32, group: &str, num_ctx: u64) -> serde_json::Value {
-    serde_json::json!({
-        "name": name,
-        "count": count,
-        "group": group,
-        "num_ctx": num_ctx,
-    })
-}
-
-/// Parse a `roles`-table fixture. Pools live on roles now (`roles.<role>.instances`).
+/// Parse a `roles`-table fixture.
 fn role_table(
     json: serde_json::Value,
 ) -> std::collections::HashMap<String, crate::config::RoleEntry> {
@@ -586,973 +580,185 @@ fn materialize(
     entry: &mut ModelEntry,
     roles: &std::collections::HashMap<String, crate::config::RoleEntry>,
 ) {
-    entry.effective_profiles = Some(crate::config::materialize_effective_pool(key, roles));
+    entry.effective_profiles = Some(crate::config::materialize_effective_pool(key, entry, roles));
 }
 
 /// A bare model entry: models never name roles, so every entry parses the
-/// same way — bindings live on the roles table. An entry listed in no
-/// role's `models` map inherits the fleet `default` pool; tests that need a
-/// bound model add `"models": {"<key>": {<binding>}}` to the role-table
-/// fixture and materialize under the same key.
+/// same way — bindings live on the roles table.
 fn bare_entry() -> ModelEntry {
     serde_json::from_value(serde_json::json!({
         "endpoint": "http://x/v1/chat/completions",
         "intelligence": 1,
         "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
         "tok_s": 1,
+        "params": {"num_ctx": 8192}
     }))
     .unwrap()
 }
 
 #[test]
-fn instances_count_expansion_names_siblings_in_shared_group() {
+fn synthesized_pool_has_base_profile_marked_default() {
     let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": {
-                "swarm": profile_json("swarm", 3, "swarm", 16384),
-                "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-            },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 4);
-    // Profiles are emitted in sorted map-key order: ledger < swarm.
-    assert_eq!(profiles[0].name.as_deref(), Some("ledger"));
-    assert_eq!(profiles[0].group.as_deref(), Some("ledger"));
-    assert!(profiles[0].pinned);
-    assert!(profiles[0].default);
-    // count: 3 -> `<key>-0` .. `<key>-2` in the shared group.
-    assert_eq!(profiles[1].name.as_deref(), Some("swarm-0"));
-    assert_eq!(profiles[1].group.as_deref(), Some("swarm"));
-    assert_eq!(profiles[2].name.as_deref(), Some("swarm-1"));
-    assert_eq!(profiles[3].name.as_deref(), Some("swarm-2"));
-    assert_eq!(profiles[3].group.as_deref(), Some("swarm"));
-    assert_eq!(profiles[3].num_ctx, 16384);
-}
-
-#[test]
-fn instances_single_profile_defaults_name_to_map_key() {
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": {
-                "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-            },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
+    materialize("m", &mut entry, &role_table(serde_json::json!({})));
     let profiles = entry.effective_pool();
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].name.as_deref(), Some("scratch"));
-    assert_eq!(profiles[0].group.as_deref(), Some("scratch"));
-    assert_eq!(profiles[0].sleep_idle_seconds, Some(30));
-    assert_eq!(profiles[0].count, 1);
+    assert_eq!(profiles[0].name.as_deref(), Some("base"));
+    assert_eq!(profiles[0].group.as_deref(), Some("base"));
+    assert_eq!(profiles[0].num_ctx, 8192, "window from the entry params");
+    assert!(profiles[0].default, "base is the dispatch point");
+    assert!(!profiles[0].pinned);
 }
 
 #[test]
-fn unknown_sessions_key_fails_at_parse() {
-    // The pre-R7 `sessions` pool key no longer exists: like the top level,
-    // `ModelEntry` rejects unknown fields, so an old config carrying a pool
-    // fails loudly at parse instead of silently losing it — pools live in
-    // `roles.<role>.instances`.
-    let err = serde_json::from_value::<ModelEntry>(serde_json::json!({
+fn role_binding_synthesizes_role_profile() {
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {
+            "params": {"num_ctx": 16384, "temperature": 0.6},
+            "models": ["m"]
+        }
+    }));
+    materialize("m", &mut entry, &roles);
+    let profiles = entry.effective_pool();
+    assert_eq!(profiles.len(), 2, "base plus the bound role");
+    let work = profiles
+        .iter()
+        .find(|p| p.name.as_deref() == Some("work"))
+        .expect("role profile synthesized");
+    assert_eq!(work.group.as_deref(), Some("work"));
+    assert_eq!(work.num_ctx, 16384, "role run-block window wins");
+    assert_eq!(
+        work.params.as_ref().and_then(|p| p.get("temperature")),
+        Some(&serde_json::json!(0.6)),
+        "role sampling composes over the entry params"
+    );
+    assert!(!work.default, "base stays the dispatch point");
+}
+
+#[test]
+fn pinned_composes_role_or_model_and_boots() {
+    // `pinned` composes as role OR model: either true pins the synthesized
+    // profile, and a pinned profile is what boots a model at startup.
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {"pinned": true, "models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    let profiles = entry.effective_pool();
+    let work = profiles
+        .iter()
+        .find(|p| p.name.as_deref() == Some("work"))
+        .unwrap();
+    let base = profiles
+        .iter()
+        .find(|p| p.name.as_deref() == Some("base"))
+        .unwrap();
+    assert!(work.pinned, "role pin lands on the role profile");
+    assert!(!base.pinned, "the entry is not pinned");
+    assert!(profiles.iter().any(|p| p.pinned), "the model boots");
+
+    let mut pinned_entry = bare_entry();
+    pinned_entry.pinned = true;
+    materialize("m", &mut pinned_entry, &role_table(serde_json::json!({})));
+    assert!(
+        pinned_entry.effective_pool().iter().all(|p| p.pinned),
+        "an entry-level pin pins every synthesized profile"
+    );
+}
+
+#[test]
+fn max_ctx_caps_num_ctx_at_materialization() {
+    // `max_ctx`, if specified, limits the size of `num_ctx`: a window above
+    // the cap clamps down at materialization.
+    let mut entry: ModelEntry = serde_json::from_value(serde_json::json!({
         "endpoint": "http://x/v1/chat/completions",
         "intelligence": 1,
         "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
         "tok_s": 1,
-        "sessions": { "ctx16384": { "num_ctx": 16384 } }
+        "max_ctx": 8192,
+        "params": {"num_ctx": 65536}
     }))
-    .expect_err("retired sessions key must not parse");
-    assert!(err.to_string().contains("sessions"), "got: {err}");
+    .unwrap();
+    materialize("m", &mut entry, &role_table(serde_json::json!({})));
+    let base = &entry.effective_pool()[0];
+    assert_eq!(base.num_ctx, 8192, "clamped to max_ctx");
+    assert_eq!(base.max_ctx, Some(8192));
 }
 
 #[test]
-fn no_instances_yields_empty_profile_list() {
+fn model_side_role_override_caps_and_samples() {
+    // `models.<model>.roles.<role>` is a params-only per-task tune: its
+    // sampling composes last over the role run block, and its `max_ctx`
+    // caps the role profile's window.
+    let mut entry = bare_entry();
+    entry.role_params = Some(std::collections::HashMap::from([(
+        "work".to_string(),
+        serde_json::from_value(serde_json::json!({
+            "max_ctx": 4096,
+            "params": {"temperature": 0.9}
+        }))
+        .unwrap(),
+    )]));
+    let roles = role_table(serde_json::json!({
+        "work": {
+            "params": {"num_ctx": 65536, "temperature": 0.6},
+            "models": ["m"]
+        }
+    }));
+    materialize("m", &mut entry, &roles);
+    let work = entry
+        .effective_pool()
+        .iter()
+        .find(|p| p.name.as_deref() == Some("work"))
+        .expect("role profile synthesized");
+    assert_eq!(work.max_ctx, Some(4096), "override cap wins over the entry");
+    assert_eq!(work.num_ctx, 4096, "the cap clamps the composed window");
+    assert_eq!(
+        work.params.as_ref().and_then(|p| p.get("temperature")),
+        Some(&serde_json::json!(0.9)),
+        "override sampling wins over the role run block"
+    );
+}
+
+#[test]
+fn pre_boot_pool_is_empty() {
     let entry = bare_entry();
     assert!(entry.effective_pool().is_empty(), "pre-boot pool is empty");
-    let mut entry = bare_entry();
-    materialize("m", &mut entry, &role_table(serde_json::json!({})));
-    assert!(
-        entry.effective_pool().is_empty(),
-        "no roles and no selection materialize nothing"
-    );
-}
-
-#[test]
-fn warm_alias_maps_to_no_sleep() {
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": { "swarm": { "num_ctx": 16384, "warm": true } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert!(profiles[0].no_sleep);
-}
-
-// -- M3: per-profile `max_ctx` context-size cap ---------------------
-
-#[test]
-fn instance_profile_max_ctx_absent_defaults_to_none() {
-    // An absent `max_ctx` (the default) deserializes to `None` — an
-    // existing config without the new key is byte-identical.
-    let profile: InstanceProfile =
-        serde_json::from_value(profile_json("swarm", 1, "swarm", 16384)).unwrap();
-    assert!(profile.max_ctx.is_none());
-}
-
-#[test]
-fn instance_profile_max_ctx_round_trips() {
-    let profile: InstanceProfile = serde_json::from_value(serde_json::json!({
-        "name": "swarm",
-        "count": 1,
-        "group": "swarm",
-        "num_ctx": 16384,
-        "max_ctx": 8192,
-    }))
-    .unwrap();
-    assert_eq!(profile.max_ctx, Some(8192));
-    let back: InstanceProfile =
-        serde_json::from_str(&serde_json::to_string(&profile).unwrap()).unwrap();
-    assert_eq!(back.max_ctx, Some(8192));
-    assert_eq!(back.num_ctx, 16384);
-}
-
-#[test]
-fn instance_profiles_clamps_num_ctx_to_max_ctx() {
-    // A profile whose `max_ctx` cap sits below its `num_ctx` is clamped
-    // down at materialization: the materialized context window is the cap.
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": { "swarm": { "num_ctx": 65536, "max_ctx": 8192 } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].num_ctx, 8192, "clamped to max_ctx");
-    assert_eq!(profiles[0].max_ctx, Some(8192));
-}
-
-#[test]
-fn instance_profiles_max_ctx_absent_is_noop() {
-    // The clamp is a no-op when `max_ctx` is absent (the default): the
-    // materialized `num_ctx` is untouched.
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": { "swarm": { "num_ctx": 16384 } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles[0].num_ctx, 16384);
-    assert!(profiles[0].max_ctx.is_none());
-}
-
-#[test]
-fn instance_profiles_cap_above_num_ctx_is_noop() {
-    // A cap at/above `num_ctx` never inflates the window — the declared
-    // `num_ctx` is the upper bound.
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": { "swarm": { "num_ctx": 16384, "max_ctx": 32768 } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles[0].num_ctx, 16384, "cap above num_ctx is a no-op");
-}
-
-// -- Fleet-wide `roles.default.instances` inheritance ---------------------
-
-/// Parse a role-pool profile map (`roles.<role>.instances` shape).
-fn fleet_defaults(json: serde_json::Value) -> std::collections::HashMap<String, InstanceProfile> {
-    serde_json::from_value(json).unwrap()
-}
-
-/// Wrap a pool map as the `default` role's table (the fleet-inherit source).
-fn default_role_with(
-    pool: std::collections::HashMap<String, InstanceProfile>,
-) -> std::collections::HashMap<String, crate::config::RoleEntry> {
-    std::collections::HashMap::from([(
-        "default".to_string(),
-        crate::config::RoleEntry {
-            context: crate::config::RoleContext::default(),
-            concurrency: None,
-            params: crate::config::RoleParams::default(),
-            instances: pool,
-            models: std::collections::HashMap::new(),
-        },
-    )])
-}
-
-#[test]
-fn fleet_default_key_inherited_when_entry_declares_none() {
-    // An entry serving no role and declaring no selection inherits the
-    // `default` role's pool (the fleet-inherit fallback, same code path).
-    let mut entry = bare_entry();
-    assert!(entry.effective_pool().is_empty());
-    let roles = default_role_with(fleet_defaults(serde_json::json!({
-        "scratch": { "num_ctx": 4096 }
-    })));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].name.as_deref(), Some("scratch"));
-    assert_eq!(profiles[0].group.as_deref(), Some("scratch"));
-    assert_eq!(profiles[0].num_ctx, 4096);
-}
-
-#[test]
-fn cross_role_profile_collision_first_role_wins_whole() {
-    // Same profile name in two contributing roles: the first role's profile
-    // wins whole — no field-level merge fuses the two declarations.
-    // Membership lives on the model: the entry binds both roles.
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "aaa": {
-            "instances": {
-                "scratch": { "num_ctx": 4096, "pinned": true, "default": true,
-                             "params": { "temperature": 0.9 } },
-                "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-            },
-            "models": {"m": {}}
-        },
-        "zzz": {
-            "instances": {
-                "scratch": { "num_ctx": 16384 }
-            },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 2);
-    // Sorted map-key order: ledger < scratch.
-    let ledger = &profiles[0];
-    assert_eq!(ledger.name.as_deref(), Some("ledger"));
-    assert_eq!(ledger.num_ctx, 131072);
-    let scratch = &profiles[1];
-    assert_eq!(scratch.name.as_deref(), Some("scratch"));
-    assert_eq!(scratch.num_ctx, 4096, "first role wins");
-    assert!(scratch.pinned, "winning profile keeps its flags");
-    assert!(scratch.params.is_some(), "winning profile keeps its params");
-}
-
-#[test]
-fn both_roles_default_collision_first_wins() {
-    // Two `default: true` flags from two contributing roles must never fuse
-    // silently: exactly one profile answers the default lookup — the
-    // lexicographically-first key in deterministic map order.
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "aaa": {
-            "instances": { "alpha": { "num_ctx": 4096, "default": true } },
-            "models": {"m": {}}
-        },
-        "zzz": {
-            "instances": { "beta": { "num_ctx": 8192, "default": true } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    let defaulted: Vec<&str> = profiles
-        .iter()
-        .filter(|p| p.default)
-        .filter_map(|p| p.name.as_deref())
-        .collect();
-    assert_eq!(defaulted.len(), 2, "both flags survive the merge");
-    let winner = profiles
-        .iter()
-        .find(|p| p.default)
-        .and_then(|p| p.name.clone())
-        .expect("a default exists");
-    assert_eq!(winner.as_str(), "alpha", "first in map order wins");
-}
-
-#[test]
-fn inherited_profile_expands_count_and_clamps_max_ctx() {
-    // `count` sibling expansion and the `max_ctx` clamp run on the composed
-    // map through the same code path — never a fork.
-    let mut entry = bare_entry();
-    let roles = default_role_with(fleet_defaults(serde_json::json!({
-        "worker": { "num_ctx": 65536, "max_ctx": 16384, "count": 3 }
-    })));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 3);
-    for (i, profile) in profiles.iter().enumerate() {
-        assert_eq!(
-            profile.name.as_deref(),
-            Some(format!("worker-{i}").as_str())
-        );
-        assert_eq!(profile.group.as_deref(), Some("worker"));
-        assert_eq!(profile.num_ctx, 16384, "inherited clamp applies");
-    }
-}
-
-#[test]
-fn role_selection_narrows_pool_and_composes_sampling() {
-    // The role pools compose into each model's effective pool: one model
-    // selects the fleet `base` profile (sampling composes role-base under
-    // the profile knobs), and another selects its capped override (its own
-    // group, role base composed in). Synthetic roles — never the shipped
-    // file, which is an operator artifact, not a test oracle.
-    let roles = role_table(serde_json::json!({
-        "fleet": {
-            "params": {"temperature": 0.1},
-            "instances": {
-                "base": {
-                    "num_ctx": 8192, "max_ctx": 262144, "default": true,
-                    "params": {"temperature": 0.6}
-                },
-                "scout": {"num_ctx": 4096, "max_ctx": 32768}
-            },
-            "models": {
-                "base-svc": {"select": "base"},
-                "scout-svc": {"select": "scout"}
-            }
-        }
-    }));
-    let mut base = bare_entry();
-    materialize("base-svc", &mut base, &roles);
-    let profiles = base.effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].name.as_deref(), Some("base"));
-    assert_eq!(profiles[0].num_ctx, 8192);
-    assert_eq!(profiles[0].max_ctx, Some(262144));
-    assert!(
-        profiles[0].default,
-        "selection designates the dispatch point"
-    );
-    assert_eq!(
-        profiles[0]
-            .params
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.6)),
-        "profile knobs win over the role base"
-    );
-    // The override narrows to its own profile with the role base composed.
-    let mut scout = bare_entry();
-    materialize("scout-svc", &mut scout, &roles);
-    let profiles = scout.effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].name.as_deref(), Some("scout"));
-    assert_eq!(profiles[0].group.as_deref(), Some("scout"));
-    assert_eq!(profiles[0].max_ctx, Some(32768), "distinct cap survives");
-    assert_eq!(profiles[0].num_ctx, 4096);
-    assert!(
-        profiles[0].default,
-        "selection designates the dispatch point"
-    );
-    assert_eq!(
-        profiles[0]
-            .params
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1)),
-        "role base reaches the selected override"
-    );
-}
-#[test]
-fn role_head_key_resolves_bound_models() {
-    // Membership lives on the role side: a role fans out to the models it
-    // names (sorted model-key order); unknown keys pass through.
-    let roles = role_table(serde_json::json!({
-        "default": {"models": {"svc": {}}},
-        "spare": {"models": {"svc": {}}},
-        "lonely": {}
-    }));
-    let mut models: std::collections::HashMap<String, ModelEntry> =
-        std::collections::HashMap::new();
-    models.insert("svc".to_string(), bare_entry());
-    assert_eq!(
-        crate::config::role_head_key(&models, &roles, "spare", false).as_deref(),
-        Some("svc"),
-        "role resolves to its bound model"
-    );
-    assert_eq!(
-        crate::config::role_head_key(&models, &roles, "default", false).as_deref(),
-        Some("svc"),
-        "the default role resolves to its bound model"
-    );
-    assert_eq!(
-        crate::config::role_head_key(&models, &roles, "ghost", false).as_deref(),
-        Some("ghost"),
-        "unknown keys pass through"
-    );
-    assert!(
-        crate::config::role_head_key(&models, &roles, "lonely", false).is_none(),
-        "declared role with no bound models stays unresolvable"
-    );
-    // The classifier key honors the same membership.
-    let mut cfg_models: std::collections::HashMap<String, ModelEntry> =
-        std::collections::HashMap::new();
-    cfg_models.insert("svc".to_string(), bare_entry());
-    let cfg = RouterConfig {
-        roles: role_table(serde_json::json!({
-            "default": {"models": {"svc": {}}},
-            "classifier": {"models": {"svc": {}}}
-        })),
-        models: cfg_models,
-        ..RouterConfig::default()
-    };
-    assert_eq!(
-        cfg.classifier_role_key().as_deref(),
-        Some("svc"),
-        "classifier resolves to its bound model"
-    );
-}
-
-#[test]
-fn non_object_params_warn_and_degrade() {
-    // `params` is valid on pool profiles, selections, and model entries
-    // alike — but only as JSON objects. (Role run blocks carry no nested
-    // `params` object: sampling keys are flattened into `roles.<role>.params`
-    // itself.) Non-object values would vanish silently inside
-    // `overlay_params`, so boot warns loudly over each one (fail-open: the
-    // merge itself is unchanged).
-    use crate::test_support::capture_logs;
-    let mut cfg: RouterConfig = serde_json::from_value(serde_json::json!({
-        "roles": {
-            "fleet": {
-                "params": {"temperature": 0.1},
-                "instances": {
-                    "p": {"num_ctx": 8192, "params": [1, 2]}
-                },
-                "models": {"m": {"select": "p", "params": "x"}}
-            }
-        },
-        "models": {
-            "m": {
-                "endpoint": "http://x/v1/chat/completions",
-                "intelligence": 1,
-                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
-                "tok_s": 1,
-                "params": 42
-            }
-        }
-    }))
-    .expect("junk params still deserialize");
-    let ((), logs) = capture_logs(|| cfg.apply_defaults());
-    let joined = logs.join("\n");
-    for path in [
-        "roles.fleet.instances.p.params",
-        "models.m.params",
-        "roles.fleet.models.m.params",
-    ] {
-        assert!(joined.contains(path), "warns over {path}, logs:\n{joined}");
-    }
-    // Fail-open: junk sides contribute nothing, boot still composes — the
-    // valid role sampling base survives underneath.
-    let profiles = cfg.models["m"].effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(
-        profiles[0].params,
-        Some(serde_json::json!({"temperature": 0.1}))
-    );
-}
-
-#[test]
-fn role_binding_to_unknown_model_warns_and_is_ignored() {
-    // A role-side binding naming a model with no `models` entry can never
-    // contribute to a pool: boot warns loudly (fail-open) and the binding
-    // is ignored — membership and pools observe only declared models.
-    use crate::test_support::capture_logs;
-    let mut cfg: RouterConfig = serde_json::from_value(serde_json::json!({
-        "roles": {
-            "work": {
-                "instances": {
-                    "scratch": {"num_ctx": 8192}
-                },
-                "models": {
-                    "m": {},
-                    "ghost": {"select": "scratch"}
-                }
-            }
-        },
-        "models": {
-            "m": {
-                "endpoint": "http://x/v1/chat/completions",
-                "intelligence": 1,
-                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
-                "tok_s": 1
-            }
-        }
-    }))
-    .expect("dangling binding parses");
-    let ((), logs) = capture_logs(|| cfg.apply_defaults());
-    let joined = logs.join("\n");
-    assert!(
-        joined.contains("ghost"),
-        "warns over the unknown bound model, logs:\n{joined}"
-    );
-    assert_eq!(
-        crate::config::models_serving_role(&cfg.roles, &cfg.models, "work"),
-        vec!["m"],
-        "unknown names never join membership"
-    );
-    assert_eq!(
-        cfg.models["m"].effective_pool().len(),
-        1,
-        "declared model's pool composes despite the dangling sibling"
-    );
-}
-
-#[test]
-fn legacy_nested_role_params_hoist_flat_at_parse() {
-    // The retired `params`-inside-`params` shape is not a composition layer:
-    // `from_json_str` hoists the nested sampling keys into the enclosing run
-    // block (enclosing keys win on collision) and drops the nested object.
-    let cfg = RouterConfig::from_json_str(
-        r#"{
-            "roles": {
-                "default": {
-                    "params": {
-                        "num_ctx": 8192,
-                        "params": {"temperature": 0.1, "top_k": 40}
-                    }
-                },
-                "spare": {
-                    "params": {"batch_size": 1024, "params": {"top_k": 10}}
-                }
-            }
-        }"#,
-    )
-    .expect("legacy nested roles parse");
-    let fleet = cfg.default_role_params();
-    assert_eq!(
-        fleet
-            .sampling_value()
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1)),
-        "nested sampling key hoisted into the run block"
-    );
-    let spare = &cfg.roles["spare"].params;
-    assert_eq!(spare.batch_size, 1024, "declared scalar wins");
-    assert_eq!(
-        spare.sampling_value().as_ref().and_then(|p| p.get("top_k")),
-        Some(&serde_json::json!(10)),
-        "declared nested key wins over the fleet value"
-    );
-    assert_eq!(
-        spare
-            .sampling_value()
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1)),
-        "fleet sampling key inherited"
-    );
-    assert!(
-        !spare.sampling.contains_key("params"),
-        "no params-inside-params survives typing"
-    );
-}
-
-#[test]
-fn fleet_run_block_sparse_merges_over_roles_at_parse() {
-    // Roles declare only deltas: absent run-block keys inherit the fleet
-    // block at parse (before typing), declared keys win per key, shallowly.
-    // Sampling keys are flat members of the run block itself — never a
-    // nested `params` object.
-    let cfg = RouterConfig::from_json_str(
-        r#"{
-            "roles": {
-                "default": {
-                    "params": {
-                        "num_ctx": 8192, "batch_size": 512,
-                        "temperature": 0.1, "top_k": 40
-                    }
-                },
-                "spare": {
-                    "params": {"batch_size": 1024, "top_k": 10}
-                },
-                "bare": {}
-            }
-        }"#,
-    )
-    .expect("sparse roles parse");
-    let spare = &cfg.roles["spare"].params;
-    assert_eq!(spare.num_ctx, 8192, "absent scalar inherits fleet");
-    assert_eq!(spare.batch_size, 1024, "declared scalar wins");
-    assert_eq!(
-        spare
-            .sampling_value()
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1)),
-        "fleet sampling key inherited"
-    );
-    assert_eq!(
-        spare.sampling_value().as_ref().and_then(|p| p.get("top_k")),
-        Some(&serde_json::json!(10)),
-        "declared sampling key wins"
-    );
-    let bare = &cfg.roles["bare"].params;
-    assert_eq!(
-        bare.num_ctx, 8192,
-        "role without a params block inherits whole"
-    );
-    assert_eq!(bare.batch_size, 512);
-    assert_eq!(
-        bare.sampling_value()
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1))
-    );
-    // Direct serde (no constructor) skips the leg — struct defaults apply.
-    let raw: RouterConfig = serde_json::from_str(r#"{"roles": {"spare": {}}}"#).unwrap();
-    assert_eq!(
-        raw.roles["spare"].params.num_ctx, 16384,
-        "no fleet leg without the constructor"
-    );
-}
-
-#[test]
-fn models_default_template_sparse_fills_sibling_entries_at_parse() {
-    // `models.default` is the fleet template: every sibling entry inherits
-    // its absent top-level keys (and its absent `params` sampling keys,
-    // shallowly) at parse; declared keys win at both levels.
-    let cfg = RouterConfig::from_json_str(
-        r#"{
-            "models": {
-                "default": {
-                    "intelligence": 1,
-                    "cost_input": 0.000001,
-                    "tok_s": 20,
-                    "total_timeout_ms": 50000,
-                    "embedding": "/models/base-embed.gguf",
-                    "params": {"num_ctx": 8192, "temperature": 0.1}
-                },
-                "bare": {
-                    "endpoint": "http://x/v1/chat/completions"
-                },
-                "tuned": {
-                    "endpoint": "http://y/v1/chat/completions",
-                    "intelligence": 5,
-                    "tok_s": 42,
-                    "params": {"temperature": 0.9}
-                }
-            }
-        }"#,
-    )
-    .expect("template parses");
-    let bare = &cfg.models["bare"];
-    assert_eq!(bare.intelligence, 1, "absent scalar inherits template");
-    assert_eq!(bare.tok_s, 20.0, "absent tok_s inherits template");
-    assert_eq!(bare.total_timeout_ms, 50000);
-    assert_eq!(
-        bare.embedding.as_deref(),
-        Some("/models/base-embed.gguf"),
-        "absent embedding inherits template"
-    );
-    assert_eq!(
-        bare.params.as_ref().and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1)),
-        "absent sampling key inherits template"
-    );
-    let tuned = &cfg.models["tuned"];
-    assert_eq!(tuned.intelligence, 5, "declared scalar wins");
-    assert_eq!(tuned.tok_s, 42.0, "declared tok_s wins");
-    assert_eq!(
-        tuned.params.as_ref().and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.9)),
-        "declared sampling key wins"
-    );
-    assert_eq!(
-        tuned.params.as_ref().and_then(|p| p.get("num_ctx")),
-        Some(&serde_json::json!(8192)),
-        "template fills the sibling's missing sampling keys"
-    );
-    // Direct serde (no constructor) skips the leg — struct defaults apply.
-    let raw: RouterConfig = serde_json::from_value(serde_json::json!({
-        "models": {"m": {"endpoint": "http://x/v1/chat/completions"}}
-    }))
-    .unwrap();
-    assert_eq!(
-        raw.models["m"].tok_s, 20.0,
-        "struct default without the leg"
-    );
-    assert!(raw.models["m"].embedding.is_none());
-}
-
-#[test]
-fn models_default_template_feeds_fleet_run_block() {
-    // The models template is the fleet base even when `roles.default` is an
-    // empty `{}`: its launch knobs fill the fleet run block's absent keys at
-    // parse, so the supervisor's spawn defaults come from one place.
-    let cfg = RouterConfig::from_json_str(
-        r#"{
-            "models": {
-                "default": {
-                    "params": {"num_ctx": 8192, "batch_size": 2048, "temperature": 0.1}
-                }
-            },
-            "roles": {"default": {}}
-        }"#,
-    )
-    .expect("template-fed fleet parses");
-    let fleet = cfg.default_role_params();
-    assert_eq!(fleet.num_ctx, 8192, "fleet inherits template launch knob");
-    assert_eq!(fleet.batch_size, 2048);
-    assert_eq!(
-        fleet
-            .sampling_value()
-            .as_ref()
-            .and_then(|p| p.get("temperature")),
-        Some(&serde_json::json!(0.1)),
-        "fleet inherits template sampling key"
-    );
-}
-
-#[test]
-fn group_duties_move_together_on_rebind() {
-    // Classifier, ledger, and chart-selector duties all name groups: one
-    // rebinding moves every duty together. The classifier duty is driven by
-    // the classification tree's root group (pipelines carry no group key);
-    // ledger and chart-selector duties name groups directly.
-    fn duty_config(group: &str) -> RouterConfig {
-        serde_json::from_value(serde_json::json!({
-            "roles": {
-                "default": {"models": {"svc-main": {}}},
-                "code": {"models": {"code": {}}}
-            },
-            "models": {
-                "svc-main": {
-                    "endpoint": "http://x/v1/chat/completions",
-                    "intelligence": 1,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
-                    "tok_s": 1
-                },
-                "code": {
-                    "endpoint": "http://x/v1/chat/completions",
-                    "intelligence": 4,
-                    "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
-                    "tok_s": 1
-                }
-            },
-            "model_groups": {
-                "default": ["default"],
-                "code": ["code"]
-            },
-            "pipelines": {
-                "default": {"classifier": true}
-            },
-            "classification": {"root": {
-                "type": "classifier",
-                "description": "duty router",
-                "model_group": group,
-                "children": [
-                    {"key": "local", "description": "general",
-                     "node": {"type": "terminal", "route": "local", "group": "default"}}
-                ]
-            }},
-            "ledger": {"path": "data/l.sqlite", "group": group},
-            "charts": {"selector_group": group}
-        }))
-        .expect("duty config parses")
-    }
-    for (group, head) in [("code", "code"), ("default", "svc-main")] {
-        let cfg = duty_config(group);
-        let params = cfg.pipelines["default"].clone();
-        assert_eq!(
-            crate::config::builder::resolve_classifier_model_key(&cfg, &params).as_deref(),
-            Some(head),
-            "classifier follows group {group}"
-        );
-        assert_eq!(
-            cfg.ledger_head_key().as_deref(),
-            Some(head),
-            "ledger follows group {group}"
-        );
-        assert_eq!(
-            cfg.chart_selector_key().as_deref(),
-            Some(head),
-            "selector follows group {group}"
-        );
-    }
-}
-
-#[test]
-fn missing_endpoint_warns_only_for_external_models() {
-    // Managed models (weights/hf_repo) omit `endpoint` — the supervisor
-    // assigns it. Only external models without one warn at boot.
-    use crate::test_support::capture_logs;
-    fn entry(extra: &serde_json::Value) -> ModelEntry {
-        let mut base = serde_json::json!({
-            "intelligence": 1,
-            "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
-            "tok_s": 1
-        });
-        for (k, v) in extra.as_object().unwrap() {
-            base[k] = v.clone();
-        }
-        serde_json::from_value(base).unwrap()
-    }
-    let mut cfg = RouterConfig::default();
-    cfg.models.insert(
-        "managed".to_string(),
-        entry(&serde_json::json!({"weights": "/m.gguf"})),
-    );
-    cfg.models
-        .insert("external".to_string(), entry(&serde_json::json!({})));
-    let ((), logs) = capture_logs(|| cfg.apply_defaults());
-    let joined = logs.join("\n");
-    assert!(
-        joined.contains("external"),
-        "external model without endpoint warns, logs:\n{joined}"
-    );
-    assert!(
-        !joined.contains("managed"),
-        "managed model without endpoint stays silent, logs:\n{joined}"
-    );
 }
 
 // -- Single inference-point resolver -------------------------------
-// (Covers the removed `pool_qualifier` / `default_dispatch_qualifier` pair:
-// the work-pool intent now rides a role's instance point, the entry default
-// is one step of the single precedence. The shipped-config equivalence is
-// pinned by the role golden.)
-
-/// The reference swarm entry: bare (models never name roles) — the count=3
-/// non-default `swarm` work pool, the pinned `default: true` ledger, and the
-/// non-default scratch profile live in the role pool below, which binds it.
-fn reference_swarm_entry() -> ModelEntry {
-    serde_json::from_value(serde_json::json!({
-        "endpoint": "http://x/v1/chat/completions",
-        "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
-        "intelligence": 2,
-        "cost_input": 1e-06, "cost_output": 6e-06, "cost_cached_read": 4e-07,
-        "tok_s": 8
-    }))
-    .expect("reference swarm entry parses")
-}
-
-/// The reference swarm pool on the `work` role (roles carry no qualifier:
-/// the point always resolves from the route-selected model's entry default).
-/// The role binds the `swarm` model — that binding is what makes the pool
-/// contribute to the entry.
-fn swarm_pool_roles() -> std::collections::HashMap<String, crate::config::RoleEntry> {
-    serde_json::from_value(serde_json::json!({
-        "work": {
-            "instances": {
-                "swarm": profile_json("swarm", 3, "swarm", 16384),
-                "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-            },
-            "models": {"swarm": {}}
-        }
-    }))
-    .expect("swarm pool roles parse")
-}
-
-fn reference_swarm_models(
-    roles: &std::collections::HashMap<String, crate::config::RoleEntry>,
-) -> std::collections::HashMap<String, ModelEntry> {
-    let mut entry = reference_swarm_entry();
-    materialize("swarm", &mut entry, roles);
-    std::collections::HashMap::from([("swarm".to_string(), entry)])
-}
-
-fn work_role() -> std::collections::HashMap<String, crate::config::RoleEntry> {
-    swarm_pool_roles()
-}
-
-fn no_roles() -> std::collections::HashMap<String, crate::config::RoleEntry> {
-    std::collections::HashMap::new()
-}
 
 #[test]
 fn inference_point_bare_key_answers_entry_default() {
     // One resolver, one answer for a bare key: the entry default (the
-    // `default: true` profile's group, else the single shared group, else
-    // bare). The pool answers without a role instance point — that intent
-    // rides a role only when the role names it.
-    let roles = swarm_pool_roles();
-    let models = reference_swarm_models(&roles);
+    // `default: true` profile's group — the synthesized `base` profile).
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {"models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
-        resolve_inference_point(&models, &roles, "swarm", None).as_deref(),
-        Some("ledger"),
-        "bare key serves the default instance"
+        resolve_inference_point(&models, &roles, "m", None).as_deref(),
+        Some("base"),
+        "bare key serves the default profile's group"
     );
 }
 
 #[test]
 fn inference_point_role_carries_no_qualifier() {
     // Roles carry no qualifier of their own: the point resolves from the
-    // route-selected model. The work pool is reachable through the bound
-    // model's bare key (its entry default), never through the bare role.
-    let roles = work_role();
-    let models = reference_swarm_models(&roles);
+    // route-selected model.
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {"models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
         resolve_inference_point(&models, &roles, "work", None),
         None,
         "a bare role carries no qualifier"
-    );
-    assert_eq!(
-        resolve_inference_point(&models, &roles, "swarm", None).as_deref(),
-        Some("ledger"),
-        "the bound model's bare key serves its default"
-    );
-}
-
-#[test]
-fn inference_point_entry_default_shapes() {
-    // The entry-default step across profile shapes (the kept rule, now one
-    // step of the single precedence).
-    let mut ledger_only = bare_entry();
-    let ledger_roles = role_table(serde_json::json!({
-        "work": {
-            "instances": { "ledger": { "num_ctx": 131072, "default": true } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut ledger_only, &ledger_roles);
-    let models = std::collections::HashMap::from([("m".to_string(), ledger_only)]);
-    assert_eq!(
-        resolve_inference_point(&models, &ledger_roles, "m", None).as_deref(),
-        Some("ledger")
-    );
-
-    let mut shared = bare_entry();
-    let shared_roles = role_table(serde_json::json!({
-        "work": {
-            "instances": {
-                "a": { "num_ctx": 8192, "group": "shared" },
-                "b": { "num_ctx": 8192, "group": "shared" }
-            },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut shared, &shared_roles);
-    let models = std::collections::HashMap::from([("m".to_string(), shared)]);
-    assert_eq!(
-        resolve_inference_point(&models, &shared_roles, "m", None).as_deref(),
-        Some("shared")
-    );
-
-    let bare = bare_entry();
-    let models = std::collections::HashMap::from([("m".to_string(), bare)]);
-    assert_eq!(
-        resolve_inference_point(&models, &no_roles(), "m", None),
-        None,
-        "no pool stays bare"
     );
 }
 
@@ -2045,33 +1251,19 @@ fn router_config_field_access_round_trip() {
 }
 
 #[test]
-fn boot_inherited_pool_with_colliding_group_fails_grammar() {
-    // Boot-path regression for the startup fatal: a model that inherits a
-    // role pool as authored receives every profile in it — when one
-    // profile's group collides with a sibling's name, `validate_instances`
-    // (the `build_instance_managers` gate) must reject the pool instead of
-    // POSTing a grammar the fork refuses. The fork itself rejects the same
-    // shape; the pool here is synthetic, never the shipped file.
-    let colliding = default_role_with(fleet_defaults(serde_json::json!({
-        "alpha": {"num_ctx": 8192, "default": true},
-        "beta": {"num_ctx": 4096, "group": "alpha"}
-    })));
+fn synthesized_pool_groups_never_collide() {
+    // Boot-path regression for the startup fatal: synthesized profiles are
+    // one per binding role plus `base`, each its own group, so the
+    // `validate_instances` grammar gate must always accept the pool.
     let mut entry = bare_entry();
-    materialize("inheritor", &mut entry, &colliding);
+    let roles = role_table(serde_json::json!({
+        "aaa": {"models": ["m"]},
+        "zzz": {"models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 2, "pool inherited as authored");
-    assert!(
-        crate::instances::validate_instances(profiles).is_err(),
-        "beta's group collides with sibling instance alpha"
-    );
-    // The same pool with each profile in its own group validates.
-    let fixed = default_role_with(fleet_defaults(serde_json::json!({
-        "alpha": {"num_ctx": 8192, "default": true},
-        "beta": {"num_ctx": 4096}
-    })));
-    let mut entry = bare_entry();
-    materialize("inheritor", &mut entry, &fixed);
-    crate::instances::validate_instances(entry.effective_pool()).expect("namesake groups validate");
+    assert_eq!(profiles.len(), 3, "base plus one profile per binding role");
+    crate::instances::validate_instances(profiles).expect("synthesized groups validate");
 }
 
 #[test]
@@ -2154,25 +1346,16 @@ fn legacy_config_without_routing_additions_loads_inert() {
 #[test]
 fn role_vocabulary_references_roles_and_sentinels() {
     // The role-first vocabulary mechanics on a synthetic config: declared
-    // roles, a hoisted fleet-default profile, per-model selections, the
+    // roles with flat residency and admission fields, model lists, the
     // classifier head candidate, and groups built from roles + sentinels.
-    // (Covers the R0 absence test alongside the role golden — on owned
-    // data, never the operator-editable shipped file.)
     let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "default": {
                 "params": {"num_ctx": 8192},
-                "instances": {
-                    "default": {"num_ctx": 8192, "default": true},
-                    "scout": {"num_ctx": 4096}
-                },
-                "models": {
-                    "code": {"select": "default"},
-                    "scout-svc": {"select": "scout"}
-                }
+                "models": ["code", "scout-svc"]
             },
-            "classifier": {"models": {"code": {}}},
-            "code": {"models": {"code": {}}}
+            "classifier": {"models": ["code"]},
+            "code": {"models": ["code"]}
         },
         "models": {
             "code": {
@@ -2202,43 +1385,12 @@ fn role_vocabulary_references_roles_and_sentinels() {
         fleet.num_ctx, 8192,
         "fleet run block lives on the default role"
     );
-    let pool = &cfg.roles["default"].instances;
-    let hoisted = pool.get("default").expect("fleet default profile");
-    assert_eq!(hoisted.num_ctx, 8192);
-    assert!(hoisted.default, "fleet profile is the default point");
-    assert!(
-        pool.contains_key("scout"),
-        "the capped override lives in the default pool"
-    );
     for role in ["classifier", "code"] {
         assert!(
-            cfg.roles[role].instances.is_empty(),
-            "role '{role}' defines no extra pool"
+            cfg.roles[role].models.contains(&"code".to_string()),
+            "code serves the {role} role"
         );
     }
-    let default_bindings = &cfg.roles["default"].models;
-    assert_eq!(
-        default_bindings
-            .get("code")
-            .and_then(|s| s.select.as_deref()),
-        Some("default"),
-        "code binds the fleet default profile"
-    );
-    assert!(
-        cfg.roles["code"].models.contains_key("code"),
-        "code serves the code role"
-    );
-    assert!(
-        cfg.roles["classifier"].models.contains_key("code"),
-        "code serves the classifier role"
-    );
-    assert_eq!(
-        default_bindings
-            .get("scout-svc")
-            .and_then(|s| s.select.as_deref()),
-        Some("scout"),
-        "scout binds its capped override"
-    );
     assert_eq!(
         cfg.classifier_role_key().as_deref(),
         Some("code"),
@@ -2267,7 +1419,7 @@ fn classifier_role_key_absent_without_binding() {
     let cfg = RouterConfig::default();
     assert!(cfg.classifier_role_key().is_none());
     let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
-        "roles": {"classifier": {"models": {"code": {}}}},
+        "roles": {"classifier": {"models": ["code"]}},
         "models": {
             "code": {
                 "endpoint": "http://x/v1/chat/completions",
@@ -2292,7 +1444,7 @@ fn unknown_classifier_model_key_fails_at_parse() {
     .expect_err("retired classifier key must not parse");
     assert!(err.to_string().contains("classifier_model"), "got: {err}");
     let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
-        "roles": {"classifier": {"models": {"code": {}}}},
+        "roles": {"classifier": {"models": ["code"]}},
         "models": {
             "code": {
                 "endpoint": "http://x/v1/chat/completions",
@@ -2312,19 +1464,15 @@ fn unknown_classifier_model_key_fails_at_parse() {
 
 #[test]
 fn routing_additions_round_trip_byte_identically() {
-    // A fixture carrying the role params/pools plus a role-side model
-    // binding survives a serde round trip with every value intact (derived
-    // pools never serialize).
+    // A fixture carrying role params plus model lists survives a serde
+    // round trip with every value intact (derived pools never serialize).
     let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "code": {
+                "max_parallel": 2,
+                "pinned": true,
                 "params": {"num_ctx": 8192, "temperature": 0.6},
-                "instances": {
-                    "scratch": {"num_ctx": 4096, "session": true}
-                },
-                "models": {
-                    "code": {"select": "scratch", "params": {"temperature": 0.4}}
-                }
+                "models": ["code"]
             },
             "default": {}
         },
@@ -2341,23 +1489,17 @@ fn routing_additions_round_trip_byte_identically() {
     }))
     .expect("fixture with routing additions");
     assert_eq!(cfg.roles.len(), 2);
-    let bindings = &cfg.roles["code"].models;
-    assert!(bindings.contains_key("code"));
+    assert!(cfg.roles["code"].models.contains(&"code".to_string()));
     assert_eq!(cfg.roles["code"].params.num_ctx, 8192);
-    let scratch = &cfg.roles["code"].instances["scratch"];
-    assert!(scratch.session, "session:true survives the round trip");
-    let sel = &cfg.roles["code"].models["code"];
-    assert_eq!(sel.select.as_deref(), Some("scratch"));
+    assert_eq!(cfg.roles["code"].max_parallel, Some(2));
+    assert!(cfg.roles["code"].pinned);
 
     let back: RouterConfig =
         serde_json::from_str(&serde_json::to_string(&cfg).expect("serialize")).expect("round trip");
     assert_eq!(back.roles.len(), 2);
     assert_eq!(back.roles["code"].params.num_ctx, 8192);
-    assert!(back.roles["code"].instances["scratch"].session);
-    assert_eq!(
-        back.roles["code"].models["code"].select.as_deref(),
-        Some("scratch")
-    );
+    assert_eq!(back.roles["code"].max_parallel, Some(2));
+    assert!(back.roles["code"].pinned);
 }
 
 #[test]
@@ -2372,151 +1514,47 @@ fn instance_profile_session_defaults_to_one_shot() {
 }
 
 #[test]
-fn one_shot_profile_forces_resume_false_at_materialization() {
-    // A one-shot profile (`session` absent/false) carrying `resume: true`
-    // materializes with `resume: false` — fail-open, never an error.
+fn synthesized_profiles_are_one_shot_by_default() {
+    // Synthesized profiles declare no `session` flags: every profile
+    // materializes one-shot with `resume: false` (no snapshots flow).
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": { "scratch": { "num_ctx": 8192, "resume": true } },
-            "models": {"m": {}}
-        }
-    }));
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert!(!profiles[0].session, "absent session → one-shot");
-    assert!(
-        !profiles[0].resume,
-        "one-shot + resume:true materializes as resume:false"
-    );
-}
-
-#[test]
-fn session_profile_keeps_resume_semantics() {
-    // `session: true` keeps today's `resume` semantics byte-identically.
-    let mut entry = bare_entry();
-    let roles = role_table(serde_json::json!({
-        "work": {
-            "instances": {
-                "agent": { "num_ctx": 8192, "session": true, "resume": true },
-                "plain": { "num_ctx": 8192, "session": true }
-            },
-            "models": {"m": {}}
-        }
+        "fleet": {"models": ["m"]}
     }));
     materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
     assert_eq!(profiles.len(), 2);
-    let agent = profiles
-        .iter()
-        .find(|p| p.name.as_deref() == Some("agent"))
-        .expect("agent profile");
-    assert!(agent.session);
-    assert!(agent.resume, "session:true + resume:true unchanged");
-    let plain = profiles
-        .iter()
-        .find(|p| p.name.as_deref() == Some("plain"))
-        .expect("plain profile");
-    assert!(plain.session);
-    assert!(!plain.resume, "session:true without resume stays false");
-}
-
-#[test]
-fn boot_materializes_one_shot_without_resume_by_default() {
-    // A pool declaring no `session` flags materializes every profile
-    // one-shot with `resume: false` (no snapshots flow); a `session: true`
-    // profile keeps its declared `resume`. Synthetic pool — the shipped
-    // file's contents are not a test oracle.
-    let roles = role_table(serde_json::json!({
-        "fleet": {
-            "instances": {
-                "work": {"num_ctx": 8192},
-                "stateful": {"num_ctx": 8192, "session": true, "resume": true}
-            },
-            "models": {"m": {}}
-        }
-    }));
-    let mut entry = bare_entry();
-    materialize("m", &mut entry, &roles);
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 2);
-    let work = profiles
-        .iter()
-        .find(|p| p.name.as_deref() == Some("work"))
-        .expect("work profile");
-    assert!(!work.session, "undeclared session defaults to one-shot");
-    assert!(!work.resume, "one-shot materializes resume:false");
-    let stateful = profiles
-        .iter()
-        .find(|p| p.name.as_deref() == Some("stateful"))
-        .expect("session profile");
-    assert!(stateful.session);
-    assert!(stateful.resume, "session profile keeps declared resume");
-}
-
-fn inference_point_fixture() -> (
-    std::collections::HashMap<String, ModelEntry>,
-    std::collections::HashMap<String, crate::config::RoleEntry>,
-) {
-    let mut models: std::collections::HashMap<String, ModelEntry> =
-        serde_json::from_value(serde_json::json!({
-            "swarm": {
-                "endpoint": "http://x/v1/chat/completions",
-                "name": "workhorse",
-                "intelligence": 2,
-                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
-                "tok_s": 8
-            },
-            "plain": {
-                "endpoint": "http://y/v1/chat/completions",
-                "name": "plain",
-                "intelligence": 1,
-                "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0,
-                "tok_s": 1
-            }
-        }))
-        .expect("models parse");
-    let roles: std::collections::HashMap<String, crate::config::RoleEntry> =
-        serde_json::from_value(serde_json::json!({
-            "work": {
-                "instances": {
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                },
-                "models": {"swarm": {}}
-            },
-            "bare-role": {"models": {"plain": {}}}
-        }))
-        .expect("roles parse");
-    for (key, entry) in &mut models {
-        materialize(key, entry, &roles);
+    for profile in profiles {
+        assert!(!profile.session, "undeclared session defaults to one-shot");
+        assert!(!profile.resume, "one-shot materializes resume:false");
     }
-    (models, roles)
 }
 
 #[test]
 fn inference_point_explicit_qualifier_wins() {
     // An explicit qualifier (embedded or parametric) beats the entry default —
     // and `latest` normalizes away so the remaining precedence applies.
-    let (models, roles) = inference_point_fixture();
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {"models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
-        resolve_inference_point(&models, &roles, "swarm:scratch", None).as_deref(),
+        resolve_inference_point(&models, &roles, "m:scratch", None).as_deref(),
         Some("scratch"),
         "embedded qualifier pins the point"
     );
     assert_eq!(
-        resolve_inference_point(&models, &roles, "swarm", Some("scratch")).as_deref(),
+        resolve_inference_point(&models, &roles, "m", Some("scratch")).as_deref(),
         Some("scratch"),
         "parametric qualifier pins the point"
     );
     assert_eq!(
-        resolve_inference_point(&models, &roles, "swarm:latest", None).as_deref(),
-        Some("ledger"),
+        resolve_inference_point(&models, &roles, "m:latest", None).as_deref(),
+        Some("base"),
         "latest falls through to the entry default"
     );
-    // Roles carry no qualifier of their own: the point comes from the
-    // route-selected model. An explicit qualifier still wins for a role key.
     assert_eq!(
         resolve_inference_point(&models, &roles, "work", Some("scratch")).as_deref(),
         Some("scratch"),
@@ -2529,26 +1567,21 @@ fn inference_point_entry_default_then_bare() {
     // Two-step precedence: explicit qualifier, else the entry default over
     // the boot-materialized pool, else bare. A bare role name carries no
     // point — the route selects the model whose default supplies it.
-    let (models, roles) = inference_point_fixture();
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {"models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
         resolve_inference_point(&models, &roles, "work", None),
         None,
         "a bare role carries no qualifier"
     );
     assert_eq!(
-        resolve_inference_point(&models, &roles, "bare-role", None),
-        None,
-        "a bare role carries no qualifier"
-    );
-    assert_eq!(
-        resolve_inference_point(&models, &roles, "swarm", None).as_deref(),
-        Some("ledger"),
+        resolve_inference_point(&models, &roles, "m", None).as_deref(),
+        Some("base"),
         "bare model key falls to the entry default"
-    );
-    assert_eq!(
-        resolve_inference_point(&models, &roles, "plain", None),
-        None,
-        "model without a pool stays bare"
     );
     assert_eq!(
         resolve_inference_point(&models, &roles, "nope", None),
@@ -2559,32 +1592,6 @@ fn inference_point_entry_default_then_bare() {
         resolve_inference_point(&models, &roles, "empty-role", None),
         None,
         "unknown roles fail closed"
-    );
-}
-
-#[test]
-fn inference_point_inherits_fleet_default_map() {
-    // An entry serving no role and declaring no selection inherits the
-    // `default` role's pool through the same code path (the fleet-inherit
-    // fallback): its bare key serves the fleet default point, and without
-    // the default role the bare key stays bare.
-    let mut bare = bare_entry();
-    let roles = default_role_with(fleet_defaults(serde_json::json!({
-        "default": {"num_ctx": 8192, "default": true}
-    })));
-    materialize("m", &mut bare, &roles);
-    let models = std::collections::HashMap::from([("m".to_string(), bare)]);
-    assert_eq!(
-        resolve_inference_point(&models, &roles, "m", None).as_deref(),
-        Some("default"),
-        "fleet default supplies the point"
-    );
-    let bare = bare_entry();
-    let models = std::collections::HashMap::from([("m".to_string(), bare)]);
-    assert_eq!(
-        resolve_inference_point(&models, &no_roles(), "m", None),
-        None,
-        "without the default role the bare key stays bare"
     );
 }
 
@@ -2652,33 +1659,6 @@ fn roles_split_fixture_text() -> String {
     )
     .expect("split fixture readable")
 }
-
-#[test]
-fn role_context_block_parses() {
-    let cfg = RouterConfig::from_json_str(&roles_split_fixture_text()).expect("split shape parses");
-    let quick = cfg.roles.get("quick").expect("quick role present");
-    assert_eq!(quick.context.num_ctx, Some(8192));
-    assert_eq!(quick.context.max_ctx, Some(262144));
-    assert!(quick.context.pinned);
-    assert_eq!(quick.context.count, 1);
-    assert!(
-        quick.models.contains_key("code"),
-        "membership stays on the role side"
-    );
-}
-
-#[test]
-fn flat_role_keys_rejected_with_migration_pointer() {
-    let err =
-        RouterConfig::from_json_str(r#"{"roles": {"quick": {"num_ctx": 8192, "pinned": true}}}"#)
-            .expect_err("flat residency keys at the role top level must not parse");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("roles.quick.context"),
-        "migration error must point at the typed context block, got: {msg}"
-    );
-}
-
 #[test]
 fn model_role_params_override_parses() {
     let cfg = RouterConfig::from_json_str(&roles_split_fixture_text()).expect("split shape parses");
@@ -2697,31 +1677,38 @@ fn model_role_params_override_parses() {
 }
 
 #[test]
-fn model_role_membership_keys_rejected() {
-    let err = RouterConfig::from_json_str(
-        r#"{"models": {"code": {"roles": {"quick": {"models": ["code"], "select": "default"}}}}}"#,
-    )
-    .expect_err("membership keys on the model side must not parse");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("roles.quick.models"),
-        "migration error must point at the role-side membership map, got: {msg}"
-    );
+fn role_flat_fields_parse() {
+    // The role vocabulary is flat: `pinned`, `max_parallel`, and the
+    // thinking policy sit beside `params` and `models` — no nested blocks.
+    let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {"quick": {
+            "max_parallel": 2, "pinned": true,
+            "enable_thinking": false, "filter_thinking": true,
+            "preserve_thinking": false,
+            "params": {"num_ctx": 8192},
+            "models": ["code"]
+        }}
+    }))
+    .expect("flat role shape parses");
+    let quick = &cfg.roles["quick"];
+    assert_eq!(quick.max_parallel, Some(2));
+    assert!(quick.pinned);
+    assert_eq!(quick.enable_thinking, Some(false));
+    assert!(quick.filter_thinking);
+    assert_eq!(quick.preserve_thinking, Some(false));
 }
 
 #[test]
-fn role_max_parallel_rejected_with_limiter_pointer() {
-    let err = RouterConfig::from_json_str(r#"{"roles": {"quick": {"max_parallel": 4}}}"#)
-        .expect_err("max_parallel is not a RoleEntry field");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("concurrency"),
-        "migration error must point at the per-role limiter table, got: {msg}"
-    );
+fn zero_role_max_parallel_fails_closed() {
+    let err = RouterConfig::from_json_str(r#"{"roles": {"quick": {"max_parallel": 0}}}"#)
+        .expect_err("a zero admission cap would wedge every dispatch");
+    assert!(err.to_string().contains("at least 1"), "got: {err}");
 }
 
-// -- Five-leg answer params chain + additive thinking (M2) -------------------
+// -- Answer params chain + thinking policy -----------------------------------
 
+/// A model entry with a `quick` model-side override, a `fast` pool profile,
+/// and per-layer sampling keys — the synthetic composition fixture.
 fn chain_entry() -> ModelEntry {
     let mut entry: ModelEntry = serde_json::from_value(serde_json::json!({
         "endpoint": "http://x/v1/chat/completions",
@@ -2751,16 +1738,21 @@ fn chain_entry() -> ModelEntry {
     entry
 }
 
+fn quick_role() -> crate::config::RoleEntry {
+    serde_json::from_value(serde_json::json!({
+        "params": {"b": "role", "c": "role"}
+    }))
+    .unwrap()
+}
+
 #[test]
 fn answer_chain_each_leg_wins_in_order() {
     let entry = chain_entry();
-    let role_sampling = serde_json::json!({"b": "role", "c": "role"});
     let classification = serde_json::json!({"a": "classification", "d": "classification"});
     let out = entry
         .answer_params_for(
             Some("fast"),
-            Some("quick"),
-            Some(&role_sampling),
+            Some(("quick", &quick_role())),
             Some(&classification),
         )
         .expect("profile matches");
@@ -2788,20 +1780,19 @@ fn answer_chain_absent_legs_contribute_nothing() {
     let full = entry
         .answer_params_for(
             Some("fast"),
-            Some("quick"),
-            Some(&serde_json::json!({"b": "role", "c": "role"})),
+            Some(("quick", &quick_role())),
             Some(&serde_json::json!({"a": "classification", "d": "classification"})),
         )
         .expect("profile matches");
     let bare = entry
-        .answer_params_for(Some("fast"), None, None, None)
+        .answer_params_for(Some("fast"), None, None)
         .expect("profile matches");
     assert_eq!(
         bare,
         entry
             .instance_params_for("fast")
-            .expect("legacy path agrees"),
-        "absent legs behave exactly like the legacy qualifier path"
+            .expect("qualifier path agrees"),
+        "absent legs behave exactly like the qualifier-only path"
     );
     assert_ne!(full, bare, "present legs change the composition");
 }
@@ -2813,9 +1804,8 @@ fn answer_chain_strips_declaration_keys() {
     let out = entry
         .answer_params_for(
             Some("fast"),
-            Some("quick"),
-            Some(&serde_json::json!({"parallel": 8})),
-            Some(&serde_json::json!({"sleep_idle_seconds": 3})),
+            Some(("quick", &quick_role())),
+            Some(&serde_json::json!({"parallel": 8, "sleep_idle_seconds": 3})),
         )
         .expect("profile matches");
     for key in [
@@ -2836,29 +1826,54 @@ fn answer_chain_strips_declaration_keys() {
 }
 
 #[test]
+fn spawn_defaults_max_ctx_caps_num_ctx() {
+    // `max_ctx`, if specified, limits the size of `num_ctx` at spawn: the
+    // fleet run block overlaid with the model's own launch knobs clamps.
+    let base = crate::config::RoleParams {
+        num_ctx: 65536,
+        max_ctx: Some(8192),
+        ..Default::default()
+    };
+    let out = base.with_model_launch_overrides(Some(&serde_json::json!({"num_ctx": 32768})));
+    assert_eq!(out.num_ctx, 8192, "the cap clamps the overridden window");
+    let out = base.with_model_launch_overrides(None);
+    assert_eq!(out.num_ctx, 8192, "the cap clamps the base window");
+}
+
+#[test]
 fn answer_chain_unknown_qualifier_falls_back() {
     let entry = chain_entry();
     assert!(
-        entry
-            .answer_params_for(Some("nope"), Some("quick"), None, None)
-            .is_none(),
+        entry.answer_params_for(Some("nope"), None, None).is_none(),
         "unknown qualifier returns None so callers fall back to bare params"
     );
 }
 
 #[test]
+fn answer_chain_idempotent() {
+    let entry = chain_entry();
+    let role = quick_role();
+    let first = entry
+        .answer_params_for(Some("fast"), Some(("quick", &role)), None)
+        .expect("composes");
+    let again = entry
+        .answer_params_for(Some("fast"), Some(("quick", &role)), None)
+        .expect("composes");
+    assert_eq!(first, again, "composition is pure");
+}
+
+#[test]
 fn thinking_truth_table() {
-    fn entry_with(filter: bool, thinking: Option<&str>) -> ModelEntry {
-        let mut entry: ModelEntry = serde_json::from_value(serde_json::json!({
+    fn entry_with(filter: bool, enable: Option<bool>) -> ModelEntry {
+        serde_json::from_value(serde_json::json!({
             "endpoint": "http://x/v1/chat/completions",
             "intelligence": 1,
             "filter_thinking": filter,
+            "enable_thinking": enable,
         }))
-        .unwrap();
-        entry.thinking = thinking.map(str::to_string);
-        entry
+        .unwrap()
     }
-    // Absent everywhere: no level, no filtering (today's behavior).
+    // Absent everywhere: no level, no filtering.
     let e = entry_with(false, None);
     assert_eq!(e.resolve_thinking(None, None), None);
     assert!(!e.filter_thinking_for(None, None, None));
@@ -2867,73 +1882,32 @@ fn thinking_truth_table() {
     assert_eq!(e.resolve_thinking(None, None), None);
     assert!(e.filter_thinking_for(None, None, None));
     // Explicit model level wins over the bool (warn path), filtering off.
-    let e = entry_with(true, Some("high"));
+    let e = entry_with(true, Some(true));
     assert_eq!(
         e.resolve_thinking(None, None).as_deref(),
-        Some("high"),
+        Some("on"),
         "explicit level wins over the bool"
     );
-    // Role leg beats the model leg; override leg beats the role leg.
-    let e = entry_with(false, Some("low"));
-    let role = serde_json::json!({"thinking": "high"});
-    let over = serde_json::json!({"thinking": "max"});
-    assert_eq!(
-        e.resolve_thinking(Some(&role), None).as_deref(),
-        Some("high")
+    assert!(
+        e.filter_thinking_for(e.resolve_thinking(None, None).as_deref(), None, None),
+        "the entry filter bool still filters a live level without preserve"
     );
+    // Role leg beats the model leg; override leg beats the role leg.
+    let e = entry_with(false, Some(false));
+    let role: crate::config::RoleEntry =
+        serde_json::from_value(serde_json::json!({"enable_thinking": true})).unwrap();
+    let over: crate::config::ModelRoleOverride =
+        serde_json::from_value(serde_json::json!({"enable_thinking": false})).unwrap();
+    assert_eq!(e.resolve_thinking(Some(&role), None).as_deref(), Some("on"));
     assert_eq!(
         e.resolve_thinking(Some(&role), Some(&over)).as_deref(),
-        Some("max")
+        Some("off")
     );
     // Explicit off filters.
-    let e = entry_with(false, Some("off"));
+    let e = entry_with(false, Some(false));
     let resolved = e.resolve_thinking(None, None);
     assert_eq!(resolved.as_deref(), Some("off"));
     assert!(e.filter_thinking_for(resolved.as_deref(), None, None));
-}
-
-#[test]
-fn thinking_enable_flag_maps_to_on_off() {
-    fn entry_with(filter: bool, thinking: Option<&str>) -> ModelEntry {
-        let mut entry: ModelEntry = serde_json::from_value(serde_json::json!({
-            "endpoint": "http://x/v1/chat/completions",
-            "intelligence": 1,
-            "filter_thinking": filter,
-        }))
-        .unwrap();
-        entry.thinking = thinking.map(str::to_string);
-        entry
-    }
-    let e = entry_with(false, None);
-    let role = serde_json::json!({"enable_thinking": true});
-    assert_eq!(
-        e.resolve_thinking(Some(&role), None).as_deref(),
-        Some("on"),
-        "enable_thinking:true resolves to the on level"
-    );
-    let role = serde_json::json!({"enable_thinking": false});
-    let resolved = e.resolve_thinking(Some(&role), None);
-    assert_eq!(resolved.as_deref(), Some("off"));
-    assert!(
-        e.filter_thinking_for(resolved.as_deref(), Some(&role), None),
-        "enable_thinking:false filters like off"
-    );
-    // Explicit `thinking` beats the bool inside one layer.
-    let role = serde_json::json!({"thinking": "high", "enable_thinking": false});
-    assert_eq!(
-        e.resolve_thinking(Some(&role), None).as_deref(),
-        Some("high")
-    );
-    // Override layer beats the role layer across vocabularies.
-    let over = serde_json::json!({"enable_thinking": false});
-    assert_eq!(
-        e.resolve_thinking(
-            Some(&serde_json::json!({"enable_thinking": true})),
-            Some(&over)
-        )
-        .as_deref(),
-        Some("off")
-    );
 }
 
 #[test]
@@ -2943,72 +1917,55 @@ fn thinking_effort_passes_through_verbatim() {
         "intelligence": 1,
     }))
     .unwrap();
-    let role = serde_json::json!({"reasoning_effort": "high"});
+    let role: crate::config::RoleEntry = serde_json::from_value(serde_json::json!({
+        "params": {"reasoning_effort": "high"}
+    }))
+    .unwrap();
     assert_eq!(
         entry.resolve_thinking(Some(&role), None).as_deref(),
-        Some("high")
-    );
-    // The effort key itself forwards (it is a server knob); only the
-    // synthesized `thinking` level is additive.
-    let out = entry
-        .answer_params_for(None, Some("reasoning"), Some(&role), None)
-        .expect("composes");
-    assert_eq!(
-        out.get("reasoning_effort").and_then(|v| v.as_str()),
-        Some("high")
+        Some("high"),
+        "the role run block's effort passes through verbatim"
     );
 }
 
 #[test]
 fn preserve_thinking_beats_filter_bool_but_not_off() {
-    let entry: ModelEntry = serde_json::from_value(serde_json::json!({
-        "endpoint": "http://x/v1/chat/completions",
-        "intelligence": 1,
-        "filter_thinking": true,
-    }))
-    .unwrap();
-    let role = serde_json::json!({"enable_thinking": true, "preserve_thinking": true});
-    let resolved = entry.resolve_thinking(Some(&role), None);
-    assert_eq!(resolved.as_deref(), Some("on"));
+    fn entry_with(filter: bool, preserve: Option<bool>) -> ModelEntry {
+        serde_json::from_value(serde_json::json!({
+            "endpoint": "http://x/v1/chat/completions",
+            "intelligence": 1,
+            "filter_thinking": filter,
+            "preserve_thinking": preserve,
+        }))
+        .unwrap()
+    }
+    let e = entry_with(true, Some(true));
     assert!(
-        !entry.filter_thinking_for(resolved.as_deref(), Some(&role), None),
-        "preserve keeps blocks for a live level despite the entry bool"
+        !e.filter_thinking_for(Some("on"), None, None),
+        "preserve beats the bool"
     );
-    // Entry-level preserve counts too (role-less paths consult it).
-    let entry: ModelEntry = serde_json::from_value(serde_json::json!({
-        "endpoint": "http://x/v1/chat/completions",
-        "intelligence": 1,
-        "filter_thinking": true,
-        "params": {"preserve_thinking": true},
-    }))
-    .unwrap();
-    let resolved = entry.resolve_thinking(None, None);
-    assert!(!entry.filter_thinking_for(resolved.as_deref(), None, None));
-    // Off wins over preserve (warn path): nothing generated to keep.
-    let off = serde_json::json!({"thinking": "off", "preserve_thinking": true});
-    let resolved = entry.resolve_thinking(Some(&off), None);
-    assert!(entry.filter_thinking_for(resolved.as_deref(), Some(&off), None));
+    let e = entry_with(true, Some(true));
+    assert!(
+        e.filter_thinking_for(Some("off"), None, None),
+        "off always filters"
+    );
+    // The override layer wins over the entry bool.
+    let e = entry_with(true, None);
+    let over: crate::config::ModelRoleOverride =
+        serde_json::from_value(serde_json::json!({"preserve_thinking": true})).unwrap();
+    assert!(!e.filter_thinking_for(Some("on"), None, Some(&over)));
 }
 
 #[test]
 fn preserve_thinking_never_reaches_the_body() {
     let mut entry = chain_entry();
-    entry.params = Some(serde_json::json!({"preserve_thinking": true, "temp": 0.5}));
+    entry.preserve_thinking = Some(true);
     let out = entry
-        .answer_params_for(
-            Some("fast"),
-            Some("quick"),
-            Some(&serde_json::json!({"preserve_thinking": true})),
-            None,
-        )
-        .expect("profile matches");
+        .answer_params_for(Some("fast"), None, None)
+        .expect("composes");
     assert!(
         out.get("preserve_thinking").is_none(),
-        "router-local key must not reach the wire"
-    );
-    assert_eq!(
-        out.get("temp").and_then(serde_json::Value::as_f64),
-        Some(0.5)
+        "preserve_thinking is router-local and stripped at the body boundary"
     );
 }
 
@@ -3087,32 +2044,6 @@ fn schema_conformance_accepts_round_trip_and_rejects_bare() {
 }
 
 #[test]
-fn answer_chain_idempotent() {
-    let entry = chain_entry();
-    let role_sampling = serde_json::json!({"b": "role"});
-    let classification = serde_json::json!({"d": "classification"});
-    let once = entry
-        .answer_params_for(
-            Some("fast"),
-            Some("quick"),
-            Some(&role_sampling),
-            Some(&classification),
-        )
-        .expect("profile matches");
-    let folded = overlay_params(Some(&once), Some(&once));
-    assert_eq!(folded, once, "re-applying the composition changes nothing");
-    let twice = entry
-        .answer_params_for(
-            Some("fast"),
-            Some("quick"),
-            Some(&role_sampling),
-            Some(&classification),
-        )
-        .expect("profile matches");
-    assert_eq!(twice, once, "the chain is a pure function of its legs");
-}
-
-#[test]
 fn routes_view_carries_terminal_role() {
     let cfg = RouterConfig::from_json_str(
         r#"{
@@ -3163,21 +2094,20 @@ fn routing_config_fixture_round_trip() {
     assert_eq!(back.routes_view().len(), cfg.routes_view().len());
     assert_eq!(back.models.len(), cfg.models.len());
 }
-
 #[test]
 fn fixture_boot_composition_single_model_multi_window() {
     // One weights file serves role windows composed into a single effective
     // pool; group duties resolve through the same precedence as production.
     let cfg = ls_fixture_config();
 
-    // Bound models compose their role's pool: exactly the selected window.
+    // Bound models compose a base profile plus their role profiles.
     for member in ["m1", "m2"] {
         let names: Vec<&str> = cfg.models[member]
             .effective_pool()
             .iter()
             .map(|p| p.name.as_deref().unwrap())
             .collect();
-        assert_eq!(names, vec!["fast"], "{member} serves its role window");
+        assert_eq!(names[0], "base", "{member} keeps its base profile");
     }
 
     // Group duty resolves to the bare member key; the inference point
@@ -3191,13 +2121,8 @@ fn fixture_boot_composition_single_model_multi_window() {
 
     // Role-wins-last dispatch on the fixture chain: model, role, override.
     let params = cfg.models["m2"]
-        .answer_params_for(
-            Some("fast"),
-            Some("quick"),
-            Some(&serde_json::json!({"rq": "rv"})),
-            None,
-        )
-        .expect("fast resolves");
+        .answer_params_for(Some("base"), Some(("quick", &cfg.roles["quick"])), None)
+        .expect("composes");
     let get = |k: &str| {
         params
             .get(k)

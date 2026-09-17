@@ -25,12 +25,9 @@ fn golden_corpus_config() -> RouterConfig {
         },
         "roles": {
             "work": {
-                "instances": {
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                },
-                "models": {"swarm": {}}
+                "pinned": true,
+                "params": {"num_ctx": 16384},
+                "models": ["swarm"]
             }
         },
         "onnx": {
@@ -95,11 +92,11 @@ fn local_backend_golden_corpus() {
     let cases: &[(&str, Option<&str>)] = &[
         ("swarm", None),
         ("swarm:latest", None),
-        ("swarm:ledger", None),
+        ("swarm:work", None),
         ("missing", None),
         (ONNX_LLM_KEY, None),
-        ("swarm", Some("ledger")),
-        ("swarm", Some("scratch")),
+        ("swarm", Some("work")),
+        ("swarm", Some("work")),
         ("swarm", Some("ghost")),
         ("missing", Some("scratch")),
         (ONNX_LLM_KEY, Some("swarm")),
@@ -114,11 +111,11 @@ fn local_backend_golden_corpus() {
     let expected = serde_json::json!([
         {"key": "swarm", "instance": null, "some": true, "marker": null},
         {"key": "swarm:latest", "instance": null, "some": true, "marker": null},
-        {"key": "swarm:ledger", "instance": null, "some": true, "marker": null},
+        {"key": "swarm:work", "instance": null, "some": true, "marker": null},
         {"key": "missing", "instance": null, "some": false, "marker": null},
         {"key": "onnx/llm", "instance": null, "some": true, "marker": "onnx-llm"},
-        {"key": "swarm", "instance": "ledger", "some": true, "marker": null},
-        {"key": "swarm", "instance": "scratch", "some": true, "marker": null},
+        {"key": "swarm", "instance": "work", "some": true, "marker": null},
+        {"key": "swarm", "instance": "work", "some": true, "marker": null},
         {"key": "swarm", "instance": "ghost", "some": false, "marker": null},
         {"key": "missing", "instance": "scratch", "some": false, "marker": null},
         {"key": "onnx/llm", "instance": "swarm", "some": true, "marker": "onnx-instance"},
@@ -172,7 +169,7 @@ fn registry_prefers_llama_for_llama_keys_and_onnx_for_onnx_keys() {
     )));
     // Llama keys route to the llama adapter (built clients, never called).
     assert!(registry.route_chat("swarm", None).is_some());
-    assert!(registry.route_chat("swarm", Some("ledger")).is_some());
+    assert!(registry.route_chat("swarm", Some("work")).is_some());
     // Onnx keys route to the onnx adapter (stub marker proves the backend).
     let marker = registry
         .route_chat(ONNX_LLM_KEY, None)

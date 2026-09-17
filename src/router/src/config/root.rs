@@ -16,8 +16,7 @@ use crate::config::classification::ClassificationTree;
 use crate::config::escalation::ModelGroup;
 use crate::config::filters::MockConfig;
 use crate::config::normalize::{
-    normalize_fleet_role_params, normalize_model_defaults, reject_legacy_role_shapes,
-    warn_on_non_object_params,
+    normalize_fleet_role_params, normalize_model_defaults, warn_on_non_object_params,
 };
 use crate::config::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 use crate::config::routing::{RoleEntry, RouteRef};
@@ -287,12 +286,19 @@ impl RouterConfig {
 
     /// [`Self::from_json_str`] over an already-parsed value.
     pub fn from_json_value(mut value: serde_json::Value) -> serde_json::Result<Self> {
-        if let Err(msg) = reject_legacy_role_shapes(&value) {
-            return Err(<serde_json::Error as serde::de::Error>::custom(msg));
-        }
         normalize_model_defaults(&mut value);
         normalize_fleet_role_params(&mut value);
-        serde_json::from_value(value)
+        let config: Self = serde_json::from_value(value)?;
+        // A zero admission cap would admit nothing and wedge every dispatch
+        // through the role — fail closed at parse.
+        for (name, role) in &config.roles {
+            if role.max_parallel == Some(0) {
+                return Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                    "roles.{name}.max_parallel must be at least 1 (0 would admit nothing)"
+                )));
+            }
+        }
+        Ok(config)
     }
 
     /// Boot composition: materialize every model's effective instance pool
@@ -329,8 +335,15 @@ impl RouterConfig {
         // instead of nested under `onnx`.
         self.normalize_onnx();
         warn_on_missing_endpoint(self);
-        for (key, entry) in &mut self.models {
-            entry.effective_profiles = Some(materialize_effective_pool(key, &self.roles));
+        let entries: Vec<(String, ModelEntry)> = self
+            .models
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.clone()))
+            .collect();
+        for (key, entry) in &entries {
+            if let Some(slot) = self.models.get_mut(key) {
+                slot.effective_profiles = Some(materialize_effective_pool(key, entry, &self.roles));
+            }
         }
     }
 
@@ -378,7 +391,7 @@ impl RouterConfig {
             }
         }
         for role in self.roles.values() {
-            referenced.extend(role.models.keys().cloned());
+            referenced.extend(role.models.iter().cloned());
         }
         let mut keys: Vec<&String> = self.models.keys().collect();
         keys.sort();
@@ -740,139 +753,104 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
 }
 
 /// Compose one model's effective instance pool at boot: the single
-/// role → per-model-instance params chain, deserialized and composed here so
-/// every qualifier, sampling, backend, and supervision path reads composed
-/// values through `ModelEntry::effective_pool`.
+/// role → per-model-instance params chain, synthesized here so every
+/// qualifier, sampling, backend, and supervision path reads composed values
+/// through `ModelEntry::effective_pool`.
 ///
-/// Contributing roles (deterministic sorted order): every role whose
-/// `models` binding names this model. A model listed in no role's `models`
-/// map inherits the `default` role's pool (the fleet-inherit fallback). A
-/// `select` naming an unknown pool profile warns loudly and resolves to the
-/// pool as authored.
+/// The config declares no instance pools; profiles are synthesized from the
+/// model entry and the roles that bind it:
 ///
-/// Per contributing role, the sampling chain composes role-base ← pool
-/// profile ← per-model binding into each profile's `params` (each sparser
-/// layer wins; the role side is the final layer over the model entry
-/// top-level at dispatch — see [`ModelEntry::instance_params_for`]).
-/// A binding's `embedding` override composes into the chosen profile the
-/// same way (binding wins over the profile's own). Profiles collide
-/// first-role-wins with a loud warn; a non-empty binding narrows the
-/// role's contribution to the resolved target (the selected instance IS the
-/// model's pool for that role) and designates it the dispatch point
-/// (`default: true`, displacing a pool default with a loud warn).
+/// - a `base` profile (the entry's own params, `pinned`, `max_ctx`,
+///   `max_parallel`), marked `default: true` — the bare-model dispatch
+///   point;
+/// - one profile per role whose `models` list binds this model (sorted
+///   role order), composing role run-block sampling and the model-side
+///   `roles.<role>` override over the entry params, with `pinned`
+///   composing as role OR model and `max_ctx` as override-else-entry.
+///
+/// A pinned profile is what boots a model at startup
+/// (`supervisor::LlamaServerSpec::from_entry`); everything else loads on
+/// demand. `expand_instance_map` clamps each profile's `num_ctx` to its
+/// `max_ctx` cap and resolves names/groups.
 #[allow(clippy::implicit_hasher)]
 pub(crate) fn materialize_effective_pool(
     model_key: &str,
+    entry: &ModelEntry,
     roles: &HashMap<String, RoleEntry>,
 ) -> Vec<InstanceProfile> {
-    let mut contributing: Vec<&str> = roles
+    let entry_num_ctx = || {
+        entry
+            .params
+            .as_ref()
+            .and_then(|p| p.get("num_ctx"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| RoleParams::default().num_ctx)
+    };
+    let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
+    merged.insert(
+        "base".to_string(),
+        InstanceProfile {
+            name: None,
+            group: None,
+            count: 1,
+            num_ctx: entry_num_ctx(),
+            parallel: entry.max_parallel,
+            pinned: entry.pinned,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: true,
+            resume: false,
+            params: entry.params.clone(),
+            embedding: None,
+            max_ctx: entry.max_ctx,
+            session: false,
+        },
+    );
+    let mut binding_roles: Vec<&str> = roles
         .iter()
-        .filter(|(_, role)| role.models.contains_key(model_key))
+        .filter(|(_, role)| role.serves(model_key))
         .map(|(name, _)| name.as_str())
         .collect();
-    contributing.sort_unstable();
-    if contributing.is_empty() && roles.contains_key("default") {
-        contributing.push("default");
-    }
-    let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
-    for role_name in &contributing {
-        let role = &roles[*role_name];
-        for (profile_name, profile) in &role.instances {
-            if merged.contains_key(profile_name) {
-                tracing::warn!(
-                    target: "router.config",
-                    model = %model_key,
-                    profile = %profile_name,
-                    role = %role_name,
-                    "instance profile collides across contributing roles; \
-                     first role wins",
-                );
-                continue;
-            }
-            let mut composed = profile.clone();
-            composed.params = Some(overlay_params(
-                role.params.sampling_value().as_ref(),
-                composed.params.as_ref(),
-            ));
-            merged.insert(profile_name.clone(), composed);
+    binding_roles.sort_unstable();
+    for role_name in binding_roles {
+        let role = &roles[role_name];
+        let over = entry.role_params.as_ref().and_then(|o| o.get(role_name));
+        // role run-block sampling, then the model-side override, over the
+        // entry params — the same chain `answer_params_for` composes at
+        // dispatch. The role run block owns the role profile's window: its
+        // `num_ctx` wins over the entry params, and the `max_ctx` cap
+        // (override, then entry) clamps it.
+        let mut params =
+            overlay_params(entry.params.as_ref(), role.params.sampling_value().as_ref());
+        if let Some(op) = over.and_then(|o| o.params.as_ref()) {
+            params = overlay_params(Some(&params), Some(op));
         }
-    }
-    for role_name in &contributing {
-        // Fleet-inherited models carry no binding on the role: pool as
-        // authored, nothing to narrow or designate.
-        let Some(binding) = roles[*role_name].models.get(model_key) else {
-            continue;
-        };
-        // A wholly-absent binding ("pool as authored") contributes
-        // nothing beyond the merge above.
-        if binding.select.is_none() && binding.params.is_none() && binding.embedding.is_none() {
-            continue;
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert(
+                "num_ctx".to_string(),
+                serde_json::Value::from(role.params.num_ctx),
+            );
         }
-        let target = match &binding.select {
-            Some(name) => {
-                if merged.contains_key(name) {
-                    Some(name.clone())
-                } else {
-                    tracing::warn!(
-                        target: "router.config",
-                        model = %model_key,
-                        role = %role_name,
-                        select = %name,
-                        "binding selects an unknown pool profile; \
-                         pool used as authored",
-                    );
-                    None
-                }
-            }
-            None => {
-                // Pool as authored: the pool default, else the single
-                // profile, else nothing to designate.
-                merged
-                    .iter()
-                    .find(|(_, p)| p.default)
-                    .map(|(k, _)| k.clone())
-                    .or_else(|| {
-                        if merged.len() == 1 {
-                            merged.keys().next().cloned()
-                        } else {
-                            None
-                        }
-                    })
-            }
-        };
-        let Some(target) = target else { continue };
-        // The binding narrows the role's contribution to the resolved
-        // target: the selected instance IS the model's pool for the role.
-        // Only profiles this role contributed are removed — another
-        // role's same-named profile (first-wins above) stays.
-        let role_names: Vec<String> = roles[*role_name].instances.keys().cloned().collect();
-        merged.retain(|name, _| *name == target || !role_names.contains(name));
-        // The binding designates the role's dispatch point, displacing
-        // a pool default with a loud warn.
-        for (name, profile) in &mut merged {
-            if *name != target && profile.default {
-                tracing::warn!(
-                    target: "router.config",
-                    model = %model_key,
-                    role = %role_name,
-                    profile = %name,
-                    "explicit binding displaces pool default profile",
-                );
-                profile.default = false;
-            }
-        }
-        if let Some(chosen) = merged.get_mut(&target) {
-            chosen.default = true;
-            if binding.params.is_some() {
-                chosen.params = Some(overlay_params(
-                    chosen.params.as_ref(),
-                    binding.params.as_ref(),
-                ));
-            }
-            if let Some(embedding) = binding.embedding.clone() {
-                chosen.embedding = Some(embedding);
-            }
-        }
+        let num_ctx = role.params.num_ctx;
+        merged.insert(
+            role_name.to_string(),
+            InstanceProfile {
+                name: None,
+                group: None,
+                count: 1,
+                num_ctx,
+                parallel: entry.max_parallel,
+                pinned: role.pinned || entry.pinned,
+                no_sleep: false,
+                sleep_idle_seconds: None,
+                default: false,
+                resume: false,
+                params: Some(params),
+                embedding: None,
+                max_ctx: over.and_then(|o| o.max_ctx).or(entry.max_ctx),
+                session: false,
+            },
+        );
     }
     expand_instance_map(&merged)
 }
@@ -1000,22 +978,6 @@ pub fn warn_on_unknown_param_keys(cfg: &RouterConfig) {
             &format!("roles.{role_name}.params"),
             &unknown_in(sampling.as_ref()),
         );
-        let mut profiles: Vec<&String> = role.instances.keys().collect();
-        profiles.sort();
-        for profile in profiles {
-            report(
-                &format!("roles.{role_name}.instances.{profile}.params"),
-                &unknown_in(role.instances[profile].params.as_ref()),
-            );
-        }
-        let mut bound: Vec<&String> = role.models.keys().collect();
-        bound.sort();
-        for model in bound {
-            report(
-                &format!("roles.{role_name}.models.{model}.params"),
-                &unknown_in(role.models[model].params.as_ref()),
-            );
-        }
     }
 }
 
@@ -1066,10 +1028,11 @@ pub fn warn_on_unknown_model_bindings(
     for role_name in role_names {
         let mut unknown: Vec<&String> = roles[role_name]
             .models
-            .keys()
+            .iter()
             .filter(|m| !models.contains_key(*m))
             .collect();
         unknown.sort();
+        unknown.dedup();
         if !unknown.is_empty() {
             tracing::warn!(
                 target: "router.config",
@@ -1170,13 +1133,14 @@ pub fn models_serving_role(
         .map(|entry| {
             entry
                 .models
-                .keys()
+                .iter()
                 .filter(|key| models.contains_key(key.as_str()))
                 .cloned()
                 .collect()
         })
         .unwrap_or_default();
     out.sort_unstable();
+    out.dedup();
     out
 }
 

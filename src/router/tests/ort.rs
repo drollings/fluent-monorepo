@@ -15,7 +15,6 @@ fn plain_entry() -> ModelEntry {
         idle_timeout_ms: 0,
         stream: true,
         filter_thinking: false,
-        thinking: None,
         retry_count: 0,
         retry_base_interval_s: 0,
         params: None,
@@ -26,6 +25,7 @@ fn plain_entry() -> ModelEntry {
         template: None,
         role_params: None,
         api_key: None,
+        ..ModelEntry::default()
     }
 }
 

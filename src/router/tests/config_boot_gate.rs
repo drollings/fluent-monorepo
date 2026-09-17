@@ -67,7 +67,8 @@ fn boot_gate_validates_terminal_roles() {
     let mut cfg = cfg;
     let keys: Vec<String> = cfg.models.keys().cloned().collect();
     for key in &keys {
-        let pool = crate::config::materialize_effective_pool(key, &cfg.roles);
+        let entry = cfg.models.get(key).cloned().expect("member");
+        let pool = crate::config::materialize_effective_pool(key, &entry, &cfg.roles);
         cfg.models.get_mut(key).expect("member").effective_profiles = Some(pool);
     }
     cfg.validate_for_boot(Some(&tree))

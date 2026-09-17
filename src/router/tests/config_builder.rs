@@ -261,14 +261,9 @@ fn local_backend_single_resolver_with_role_work_point() {
     // golden.)
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": {
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                },
-                "models": {"swarm": {}}
-            }
+            "work": {"pinned": true, "params": {"num_ctx": 16384}, "models": ["swarm"]},
+            "ledger": {"models": ["swarm"]},
+            "scratch": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -289,13 +284,13 @@ fn local_backend_single_resolver_with_role_work_point() {
     // pinned through the single precedence below.
     assert!(config.local_backend("swarm").is_some());
     assert!(config.local_backend("work").is_some());
-    assert!(config.local_backend("swarm:scratch").is_some());
+    assert!(config.local_backend("swarm:work").is_some());
     let entry = config.models.get("swarm").expect("swarm");
     assert_eq!(
         crate::config::resolve_inference_point(&config.models, &config.roles, "swarm", None)
             .as_deref(),
-        Some("ledger"),
-        "bare key serves the entry default"
+        Some("base"),
+        "bare key serves the entry default (the synthesized base profile)"
     );
     assert_eq!(
         crate::config::resolve_inference_point(&config.models, &config.roles, "work", None),
@@ -307,17 +302,17 @@ fn local_backend_single_resolver_with_role_work_point() {
             &config.models,
             &config.roles,
             "swarm",
-            Some("scratch")
+            Some("work")
         )
         .as_deref(),
-        Some("scratch"),
+        Some("work"),
         "explicit qualifier wins over every default"
     );
 
-    // The canonical target builder keeps bare-base default dispatch: :ledger.
+    // The canonical target builder keeps bare-base default dispatch.
     let rt = crate::pipeline::RoutingTarget::from_model_entry("swarm", entry);
     assert_eq!(
-        rt.model, "abiray/lfm2.5-2.6b-heretic-abliterated:ledger",
+        rt.model, "abiray/lfm2.5-2.6b-heretic-abliterated:base",
         "client-facing default dispatch is unchanged (goldens preserved)"
     );
 }
@@ -330,14 +325,9 @@ fn summarizer_for_ledger_builds_when_ledger_section_present() {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "ledger": { "model": "swarm", "max_summary_tokens": 300 },
         "roles": {
-            "classifier": {"models": {"swarm": {}}},
-            "work": {
-                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
-                },
-                "models": {"swarm": {}}
-            }
+            "classifier": {"models": ["swarm"]},
+            "work": {"pinned": true, "params": {"num_ctx": 16384}, "models": ["swarm"]},
+            "ledger": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -371,20 +361,10 @@ fn ledger_tier_backend_builds_when_ledger_section_present() {
             "background_tiering": true
         },
         "roles": {
-            "classifier": {"models": {"swarm": {}}},
-            "work": {
-                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 }
-                },
-                "models": {"swarm": {}}
-            },
-            "tier": {
-                                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                },
-                "models": {"qwen3.5-4b": {}}
-            }
+            "classifier": {"models": ["swarm"]},
+            "work": {"pinned": true, "params": {"num_ctx": 16384}, "models": ["swarm"]},
+            "ledger": {"models": ["swarm", "qwen3.5-4b"]},
+            "tier": {"models": ["qwen3.5-4b"]}
         },
         "models": {
             "swarm": {
@@ -413,7 +393,7 @@ fn ledger_tier_backend_builds_when_ledger_section_present() {
 fn ledger_tier_backend_none_without_ledger_section() {
     let config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "classifier": {"models": {"swarm": {}}}
+            "classifier": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -434,7 +414,7 @@ fn ledger_tier_backend_none_without_ledger_section() {
 fn summarizer_for_ledger_none_without_ledger_section() {
     let config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "classifier": {"models": {"swarm": {}}}
+            "classifier": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -461,13 +441,8 @@ fn local_backend_for_instance_builds_ledger_and_scratch_backends() {
     // and `RoutingTarget::from_model_entry_instance` mirrors the model id.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true },
-                    "scratch": { "num_ctx": 131072, "sleep_idle_seconds": 30 }
-                },
-                "models": {"swarm": {}}
-            }
+            "ledger": {"models": ["swarm"]},
+            "scratch": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -519,16 +494,7 @@ fn local_backend_for_instance_role_params_win_over_entry_params() {
     // params and nothing else.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": {
-                    "scratch": {
-                        "num_ctx": 131072,
-                        "sleep_idle_seconds": 30,
-                        "params": { "temperature": 0.4, "num_ctx": 99999 }
-                    }
-                },
-                "models": {"swarm": {}}
-            }
+            "scratch": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -537,7 +503,8 @@ fn local_backend_for_instance_role_params_win_over_entry_params() {
                 "intelligence": 2,
                 "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
                 "tok_s": 8,
-                "params": { "temperature": 0.9, "repeat_penalty": 1.05, "num_ctx": 0 }
+                "params": { "temperature": 0.9, "repeat_penalty": 1.05, "num_ctx": 0 },
+                "roles": { "scratch": { "params": { "temperature": 0.4 } } }
             }
         }
     }))
@@ -594,10 +561,7 @@ fn local_backend_for_instance_entry_params_unchanged_without_profile_params() {
     // (sampling params preserved, declaration keys stripped).
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": { "scratch": { "num_ctx": 131072 } },
-                "models": {"swarm": {}}
-            }
+            "scratch": {"models": ["swarm"]}
         },
         "models": {
             "swarm": {
@@ -899,11 +863,7 @@ fn encoder_model_serde_round_trips() {
 fn config_with_onnx_stub() -> RouterConfig {
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": {
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                }
-            }
+            "work": {"pinned": true}
         },
         "models": {
             "swarm": {
@@ -1193,13 +1153,8 @@ fn local_backend_resolves_role_keys_to_candidate_backends() {
     // exactly as before.
     let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": {
-                    "swarm": { "count": 3, "group": "swarm", "num_ctx": 16384 },
-                    "ledger": { "num_ctx": 131072, "pinned": true, "default": true }
-                },
-                "models": {"swarm": {}}
-            },
+            "work": {"pinned": true, "params": {"num_ctx": 16384}, "models": ["swarm"]},
+            "ledger": {"models": ["swarm"]},
             "empty": {}
         },
         "models": {
@@ -1260,10 +1215,10 @@ fn duty_key_resolves_role_head_or_literal() {
     // (`onnx/<role>`); anything else passes through as a literal key.
     let config: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "default": {"models": {"enc": {}}},
+            "default": {"models": ["enc"]},
             "encoder": {},
             "spare": {},
-            "llama-overlay": {"models": {"enc": {}}}
+            "llama-overlay": {"models": ["enc"]}
         },
         "models": {
             "enc": {

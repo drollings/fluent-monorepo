@@ -427,7 +427,7 @@ impl RouterConfig {
             .map(|(key, entry)| {
                 let mut effective = entry.clone();
                 effective.effective_profiles =
-                    Some(super::materialize_effective_pool(key, &self.roles));
+                    Some(super::materialize_effective_pool(key, entry, &self.roles));
                 (key.clone(), effective)
             })
             .collect();
@@ -1048,6 +1048,14 @@ pub(crate) fn resolve_classifier_model_key(
             }
         }
         if let Some(model) = super::ClassificationTree::root_classifier_model(tree) {
+            // The `last`/`any` availability sentinels: the classifier duty
+            // works with whatever model is loaded rather than loading
+            // another. With no dispatch history yet, the fleet default
+            // member (the first declared model) serves.
+            if model == "last" || model == "any" {
+                return super::fleet_default_member(&config.models)
+                    .or_else(|| Some(model.to_string()));
+            }
             return Some(model.to_string());
         }
     }

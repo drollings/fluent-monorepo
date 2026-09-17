@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 
 use super::ModelEntry;
-use super::{InstanceProfile, ModelBinding, RoleParams};
+use super::RoleParams;
 use crate::config::split_model_key;
 use crate::config::ModelGroup;
 use crate::pipeline::RoutingTarget;
@@ -73,139 +73,71 @@ pub fn strip_model_prefix(name: &str) -> Option<&str> {
         .filter(|rest| !rest.is_empty())
 }
 
-/// A role's KV-window/residency axis: the context sizes and residency
-/// predicates shared by every model serving the role. All-optional: an
-/// absent key contributes nothing, so a role without a `context` block
-/// behaves exactly as before. Sampling never lives here — it composes
-/// through `RoleEntry.params` (and the model-side override) instead, so a
-/// residency knob and a sampling key can never silently diverge under the
-/// same name. Defaults mirror [`InstanceProfile`] semantics.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct RoleContext {
-    /// Context size in tokens both the supervisor and the sidecar read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub num_ctx: Option<u64>,
-    /// Context-size cap; clamps the window at materialization.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_ctx: Option<u64>,
-    /// Exempt from auto-sleep and eviction; implies no_sleep.
-    #[serde(default, skip_serializing_if = "RoleContext::is_false")]
-    pub pinned: bool,
-    /// Sibling instances sharing the profile's group (1 = single instance).
-    #[serde(
-        default = "default_role_count",
-        skip_serializing_if = "RoleContext::is_one"
-    )]
-    pub count: u32,
-}
-
-impl RoleContext {
-    pub fn is_empty(&self) -> bool {
-        self.num_ctx.is_none() && self.max_ctx.is_none() && !self.pinned && self.count == 1
-    }
-
-    // `skip_serializing_if` hands these a reference by contract; the
-    // by-value lint does not apply to the serde call shape.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn is_false(b: &bool) -> bool {
-        !b
-    }
-
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn is_one(n: &u32) -> bool {
-        *n == 1
-    }
-}
-
-const fn default_role_count() -> u32 {
-    1
-}
-
 /// One entry of the routing-vocabulary table: a role names *what the request
-/// needs* — its KV-window/residency axis (`context`), its run block
-/// (`params`), its fleet named pool (`instances`), and the models that serve
-/// it (`models`). Membership lives on the role side (`roles.<role>.models`
-/// names the serving model keys); models never name roles for membership, so
-/// the two tables stay separate and compose only through the binding.
-/// Resolution to a concrete
-/// `base:qualifier` target happens per request at dispatch time, never at
-/// boot, so lazy models load correctly.
+/// needs* — its residency axis (`pinned`), its admission cap
+/// (`max_parallel`), its thinking policy, its run block (`params`), and the
+/// models that serve it (`models`). Membership lives on the role side
+/// (`roles.<role>.models` names the serving model keys); models never name
+/// roles for membership, so the two tables stay separate and compose only
+/// through the binding. Resolution to a concrete `base:qualifier` target
+/// happens per request at dispatch time, never at boot, so lazy models load
+/// correctly.
 ///
-/// A role owns its run configuration: `params` is the role's full "how a
-/// model is run" block (launch knobs plus flat sampling keys — never a
-/// nested `params` object; the fleet block lives as `roles.default.params`),
-/// and `instances` is the role's fleet named pool — the profiles a model's
-/// role-side binding (`select`) resolves against. Sampling composes
-/// `models.default` → model entry → role-base → pool profile → per-model
-/// binding (the role side wins over the entry at dispatch), materialized
-/// at boot into each model's effective pool. A role's qualifier
-/// is never stored here: it resolves from the route, which selects a model
-/// from a group, and the model's entry default supplies the point
-/// (explicit `base:point` still wins).
-/// Per-role admission table: how many simultaneous dispatches the role
-/// admits, enforced per-role globally at the dispatch gate. Absent (the
-/// default) leaves the role unbounded — today's behavior. `max_parallel`
-/// must be at least 1 (a zero cap would admit nothing and wedge every
-/// dispatch through the role, so it fails closed at parse).
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct RoleConcurrency {
-    /// Maximum simultaneous dispatches admitted for the role.
-    pub max_parallel: usize,
-}
-
-impl<'de> Deserialize<'de> for RoleConcurrency {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Raw {
-            max_parallel: usize,
-        }
-        let raw = Raw::deserialize(deserializer)?;
-        if raw.max_parallel == 0 {
-            return Err(serde::de::Error::custom(
-                "concurrency.max_parallel must be at least 1 (0 would admit nothing)",
-            ));
-        }
-        Ok(Self {
-            max_parallel: raw.max_parallel,
-        })
-    }
-}
-
+/// A role owns its run configuration: `params` is the role's "how a model
+/// is run" block (launch knobs plus flat sampling keys — never a nested
+/// `params` object; the fleet block lives as `roles.default.params`).
+/// Sampling composes `models.default` → model entry → role params →
+/// `models.<model>.roles.<role>.params` (each sparser layer wins; the
+/// model-side override wins at dispatch), materialized at boot into each
+/// model's effective pool. A role's qualifier is never stored here: it
+/// resolves from the route, which selects a model from a group, and the
+/// model's entry default supplies the point (explicit `base:point` still
+/// wins).
+///
+/// `max_parallel` is the per-role admission cap: how many simultaneous
+/// dispatches the role admits, enforced per-role globally at the dispatch
+/// gate. `None` (the default) leaves the role unbounded. A zero cap would
+/// admit nothing and wedge every dispatch through the role, so it fails
+/// closed at parse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleEntry {
-    /// The role's KV-window/residency axis (context sizes, pinning, sibling
-    /// count). Absent (the default) contributes nothing — today's pool path
-    /// is unchanged.
-    #[serde(default, skip_serializing_if = "RoleContext::is_empty")]
-    pub context: RoleContext,
-    /// Admission cap for the role (see [`RoleConcurrency`]). Absent means
-    /// unbounded.
+    /// Maximum simultaneous dispatches admitted for the role. `None` =
+    /// unbounded; `0` fails closed at parse.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub concurrency: Option<RoleConcurrency>,
-    /// The role's run block: launch knobs plus flat sampling keys (no nested
-    /// `params` object) every binding for this role composes over. Absent
-    /// (the default) contributes no sampling base.
+    pub max_parallel: Option<usize>,
+    /// Boot the role's serving models at startup and exempt their windows
+    /// from auto-sleep and eviction. Composes with the model entry's own
+    /// `pinned` (either true pins the synthesized profile).
+    #[serde(default)]
+    pub pinned: bool,
+    /// Whether dispatches through this role emit thinking blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
+    /// Whether thinking blocks are stripped for dispatches through this
+    /// role (the model-side override wins when present).
+    #[serde(default)]
+    pub filter_thinking: bool,
+    /// Keep generated thinking blocks for dispatches through this role
+    /// (router-local; never forwarded to the server).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserve_thinking: Option<bool>,
+    /// The role's run block: launch knobs plus flat sampling keys (no
+    /// nested `params` object) every dispatch through this role composes
+    /// over. Absent (the default) contributes no sampling base.
     #[serde(default)]
     pub params: RoleParams,
-    /// The role's fleet named instance pool. Models serve the role through
-    /// the `models` binding below; empty (the default) means the role
-    /// defines no shared profiles.
+    /// The models serving this role, keyed by `models` key. A model listed
+    /// in no role's `models` list serves only its entry default.
     #[serde(default)]
-    pub instances: HashMap<String, InstanceProfile>,
-    /// The models serving this role, keyed by `models` key: the composition
-    /// point where the separate tables meet. Each binding narrows the role's
-    /// pool to the model's contribution (`select`), with a sparse sampling
-    /// update (`params`) and embedding override. A model listed in no role's
-    /// `models` map inherits the `default` role's pool (the fleet-inherit
-    /// fallback, same code path).
-    #[serde(default)]
-    pub models: HashMap<String, ModelBinding>,
+    pub models: Vec<String>,
+}
+
+impl RoleEntry {
+    /// Whether `model_key` serves this role.
+    pub fn serves(&self, model_key: &str) -> bool {
+        self.models.iter().any(|m| m == model_key)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -310,9 +242,8 @@ impl RoutingConfig {
         let mut names: Vec<&String> = self.roles.keys().collect();
         names.sort();
         for role in names {
-            let cap = match self.roles[role].concurrency.as_ref() {
-                Some(concurrency) => concurrency.max_parallel,
-                None => continue,
+            let Some(cap) = self.roles[role].max_parallel else {
+                continue;
             };
             let mut serving = crate::config::models_serving_role(&self.roles, &self.models, role);
             if role == "default" {
@@ -320,7 +251,10 @@ impl RoutingConfig {
                     .models
                     .keys()
                     .filter(|key| {
-                        !self.roles.values().any(|r| r.models.contains_key(*key))
+                        !self
+                            .roles
+                            .values()
+                            .any(|r| r.models.iter().any(|m| m == *key))
                             && !serving.iter().any(|s| s == *key)
                     })
                     .cloned()
@@ -395,12 +329,29 @@ pub fn expanded_group_members(
     out
 }
 
+/// The static fallback member for a group whose members are all availability
+/// sentinels (`last`/`any`): the first declared model key in sorted order
+/// (the `default` template key excluded — it is never servable). `last`
+/// means "work with whatever model is loaded rather than load another"; with
+/// no dispatch history the lightest-declared model is the fleet default. The
+/// runtime target-match expansion supersedes this with true recency whenever
+/// the ladder runs.
+#[allow(clippy::implicit_hasher)]
+pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<String> {
+    let mut keys: Vec<&String> = models.keys().filter(|k| k.as_str() != "default").collect();
+    keys.sort();
+    keys.first().map(|k| (*k).clone())
+}
+
 /// Cheapest-passing member selection over expanded members — the shared core
 /// behind the static group resolution: the cheapest member whose base
 /// `models` entry's `intelligence` meets `min_complexity`, else the cheapest
-/// member in the group. Availability sentinels (`last`/`any`) have no meaning
-/// on the static path (no recency/liveness) and are skipped — the dispatch
-/// climb owns them. Returns the full member key (possibly qualified).
+/// member in the group. Availability sentinels (`last`/`any`) carry no
+/// static meaning: they are skipped when literal members exist, and a
+/// sentinel-only group resolves to the fleet default member
+/// ([`fleet_default_member`]) — the runtime recency expansion supersedes
+/// that whenever the target-match ladder runs. Returns the full member key
+/// (possibly qualified).
 #[allow(clippy::implicit_hasher)]
 pub fn select_group_member(
     group: &str,
@@ -412,6 +363,19 @@ pub fn select_group_member(
         .iter()
         .filter(|m| *m != "last" && *m != "any")
         .collect();
+
+    if model_keys.is_empty() {
+        // Sentinel-only group: the fleet default serves statically.
+        if let Some(fallback) = fleet_default_member(models) {
+            tracing::info!(target: "router.config",
+                group = %group,
+                model = %fallback,
+                "sentinel-only group resolves to the fleet default member statically; runtime recency supersedes",
+            );
+            return Some(fallback);
+        }
+        return None;
+    }
 
     tracing::debug!(target: "router.config",
         group = %group,
@@ -577,75 +541,37 @@ impl RoutingConfig {
         Some(rt)
     }
 
-    /// Qualifier the terminal `role` selects inside model `base`'s
-    /// boot-materialized pool: the role-side binding's `select` resolved by
-    /// the `instance_params_for` name-or-group rule, or the entry default
-    /// point for default-inherited models. The shared core behind dispatch
-    /// ([`Self::apply_terminal_role`], graceful on error) and boot validation
-    /// ([`Self::validate_terminal_roles`], fail-closed). Requires
-    /// boot-materialized pools (`apply_defaults` first).
-    fn terminal_role_qualifier(&self, base: &str, role: &str) -> Result<String, String> {
+    /// Whether model `base` serves `role`: the role binds it in its
+    /// `models` list, or the role is the fleet `default` and the model is
+    /// bound to no other role (the fleet-inherit rule). The single
+    /// serve-check behind dispatch (`apply_terminal_role`) and boot
+    /// validation (`validate_terminal_roles`).
+    fn model_serves_role(&self, base: &str, role: &str) -> Result<(), String> {
         let role_entry = self
             .roles
             .get(role)
             .ok_or_else(|| format!("unknown role '{role}' (no roles.{role} entry)"))?;
-        let entry = self
-            .models
-            .get(base)
-            .ok_or_else(|| format!("unknown model '{base}'"))?;
-        let selected: Option<String> = if let Some(binding) = role_entry.models.get(base) {
-            binding.select.clone().or_else(|| {
-                // Bound without a select: the role pool's default-marked
-                // profile, else its single profile — the documented
-                // absent-select rule, at key level.
-                Self::role_pool_default(&role_entry.instances)
-            })
-        } else {
-            // No binding: only default-inherited models serve the role (a
-            // model bound nowhere inherits the `default` pool).
-            let bound_anywhere = self.roles.values().any(|r| r.models.contains_key(base));
-            if role != "default" || bound_anywhere {
-                return Err(format!("model '{base}' serves no role '{role}'"));
-            }
-            crate::config::root::default_inference_point(entry)
-        };
-        let name = selected
-            .ok_or_else(|| format!("role '{role}' selects no dispatch point in model '{base}'"))?;
-        let found = entry.effective_pool().iter().any(|p| {
-            p.name.as_deref() == Some(name.as_str()) || p.group.as_deref() == Some(name.as_str())
-        });
-        if !found {
-            return Err(format!(
-                "role '{role}' selects profile '{name}' with no pool contribution in model '{base}'"
-            ));
+        if role_entry.serves(base) {
+            return Ok(());
         }
-        Ok(name)
-    }
-
-    /// The role pool's default profile key: the `default: true` instance,
-    /// else the single instance, else nothing — the key-level form of the
-    /// absent-select rule.
-    fn role_pool_default(
-        instances: &std::collections::HashMap<String, crate::config::InstanceProfile>,
-    ) -> Option<String> {
-        if let Some((key, _)) = instances.iter().find(|(_, p)| p.default) {
-            return Some(key.clone());
+        let bound_anywhere = self.roles.values().any(|r| r.serves(base));
+        if role == "default" && !bound_anywhere {
+            return Ok(());
         }
-        if instances.len() == 1 {
-            return instances.keys().next().cloned();
-        }
-        None
+        Err(format!("model '{base}' serves no role '{role}'"))
     }
 
     /// Apply a terminal role to a resolved target, in place. The group has
-    /// already picked the weights (`member` → `rt`); the role picks the
-    /// window inside the winner's own pool and composes the role legs over
-    /// its params (the M2 chain with the role sampling and the model-side
-    /// override). An explicit member qualifier (`base:point`) wins for the
-    /// where — the target keeps its qualifier and the role is only recorded
-    /// for the audit trail. Unknown roles, unserved models, and missing
-    /// profiles keep the target as built (graceful at dispatch — boot
-    /// validation fails closed on the same shapes instead).
+    /// already picked the weights (`member` → `rt`); the role composes its
+    /// params legs over the entry (the role run block, then the model-side
+    /// override) and picks the window: a role that binds the model
+    /// dispatches through the role's synthesized pool profile (its own
+    /// residency group); an unbound member serves through the entry default.
+    /// An explicit member qualifier (`base:point`) wins for the where — the
+    /// target keeps its qualifier and the role is only recorded for the
+    /// audit trail. Unknown roles and unserved models keep the target as
+    /// built (graceful at dispatch — boot validation fails closed on the
+    /// same shapes instead).
     fn apply_terminal_role(&self, rt: &mut RoutingTarget, member: &str, role: &str) {
         rt.role = Some(role.to_string());
         let (base, qualifier) = split_model_key(member);
@@ -655,30 +581,35 @@ impl RoutingConfig {
         let Some(entry) = self.models.get(base) else {
             return;
         };
-        let Ok(qualifier) = self.terminal_role_qualifier(base, role) else {
+        if self.model_serves_role(base, role).is_err() {
             return;
-        };
-        let mut qualified = RoutingTarget::from_model_entry_instance(base, entry, &qualifier);
+        }
         let Some(role_entry) = self.roles.get(role) else {
             return;
         };
-        let role_sampling = role_entry.params.sampling_value();
-        let override_params = entry
-            .role_params
-            .as_ref()
-            .and_then(|overrides| overrides.get(role))
-            .and_then(|o| o.params.as_ref());
+        // A bound role dispatches through its synthesized profile (the role
+        // name keys the pool profile materialized at boot); an unbound
+        // member serves through the entry default point.
+        let role_profile = role_entry.serves(base)
+            && entry
+                .effective_pool()
+                .iter()
+                .any(|p| p.name.as_deref() == Some(role));
+        let mut qualified = if role_profile {
+            RoutingTarget::from_model_entry_instance(base, entry, role)
+        } else {
+            RoutingTarget::from_model_entry(base, entry)
+        };
         if let Some(params) =
-            entry.answer_params_for(Some(&qualifier), Some(role), role_sampling.as_ref(), None)
+            entry.answer_params_for(role_profile.then_some(role), Some((role, role_entry)), None)
         {
             qualified.params = Some(params);
         }
+        let over = entry.role_params.as_ref().and_then(|o| o.get(role));
         qualified.filter_thinking = entry.filter_thinking_for(
-            entry
-                .resolve_thinking(role_sampling.as_ref(), override_params)
-                .as_deref(),
-            role_sampling.as_ref(),
-            override_params,
+            entry.resolve_thinking(Some(role_entry), over).as_deref(),
+            Some(role_entry),
+            over,
         );
         qualified.role = Some(role.to_string());
         *rt = qualified;
@@ -686,12 +617,12 @@ impl RoutingConfig {
 
     /// Boot reference check for terminal roles (wired into the startup gate;
     /// unit-tested here): every terminal declaring `role` names a `roles`
-    /// entry, and every bare model member of its group serves the role with
-    /// a resolvable profile. Requires boot-materialized pools. Deterministic:
-    /// routes visit in sorted order, so the first reported failure is stable.
-    /// Explicitly qualified members, sentinels, onnx members, and unknown
-    /// model keys are skipped here — owned by the explicit-point rule, the
-    /// stateful climb, the onnx path, and the reference check respectively.
+    /// entry, and every bare model member of its group serves that role.
+    /// Deterministic: routes visit in sorted order, so the first reported
+    /// failure is stable. Explicitly qualified members, sentinels, onnx
+    /// members, and unknown model keys are skipped here — owned by the
+    /// explicit-point rule, the stateful climb, the onnx path, and the
+    /// reference check respectively.
     pub fn validate_terminal_roles(
         &self,
         tree: &crate::config::ClassificationTree,
@@ -721,7 +652,7 @@ impl RoutingConfig {
                 if !self.models.contains_key(base) {
                     continue;
                 }
-                if let Err(reason) = self.terminal_role_qualifier(base, &role) {
+                if let Err(reason) = self.model_serves_role(base, &role) {
                     return Err(format!("terminal route '{route}' role '{role}': {reason}"));
                 }
             }

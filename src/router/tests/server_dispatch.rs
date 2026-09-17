@@ -226,7 +226,7 @@ fn dispatch_audit_emits_without_router_stage() {
 
 fn gated_roles() -> std::collections::HashMap<String, crate::config::RoleEntry> {
     serde_json::from_value(serde_json::json!({
-        "quick": {"concurrency": {"max_parallel": 2}},
+        "quick": {"max_parallel": 2},
         "plain": {},
     }))
     .expect("roles parse")
@@ -291,7 +291,7 @@ async fn role_limiter_releases_permit_on_task_panic() {
     // next admission must still proceed (no wedged scope).
     let one: std::collections::HashMap<String, crate::config::RoleEntry> =
         serde_json::from_value(serde_json::json!({
-            "solo": {"concurrency": {"max_parallel": 1}},
+            "solo": {"max_parallel": 1},
         }))
         .expect("roles parse");
     let gates = RoleLimiters::from_roles(&one);

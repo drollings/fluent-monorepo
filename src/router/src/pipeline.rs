@@ -159,7 +159,7 @@ fn base_target(entry: &ModelEntry, model_key: &str) -> (String, Option<serde_jso
     // legs contribute nothing, so this resolves exactly as before.
     let params = qualifier
         .as_deref()
-        .and_then(|q| entry.answer_params_for(Some(q), None, None, None))
+        .and_then(|q| entry.answer_params_for(Some(q), None, None))
         .or_else(|| entry.params.clone().map(strip_declaration_params));
     (model, params, base)
 }
@@ -216,7 +216,7 @@ impl RoutingTarget {
             target_name: Some(model_key.to_string()),
             role: None,
             params: entry
-                .answer_params_for(Some(instance_or_group), None, None, None)
+                .answer_params_for(Some(instance_or_group), None, None)
                 .or_else(|| entry.params.clone().map(strip_declaration_params)),
             instance: Some(instance_or_group.to_string()),
             snapshot: None,

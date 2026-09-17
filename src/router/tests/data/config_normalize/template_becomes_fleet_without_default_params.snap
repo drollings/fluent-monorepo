@@ -8,9 +8,6 @@
   },
   "roles": {
     "default": {
-      "models": {
-        "m": {}
-      },
       "params": {
         "temperature": 0.1
       }

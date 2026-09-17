@@ -354,7 +354,7 @@ fn test_e2e_tree_config_unknown_route_uses_fallback() {
         .routing_target
         .expect("fallback terminal should produce a routing target");
     assert_eq!(rt.target_name.as_deref(), Some("local"));
-    assert_eq!(rt.model, "fast");
+    assert_eq!(rt.model, "fast:base");
 }
 
 // ── Checkpoint/Rewind Cycle (DAG session-level) ─────────────────────────

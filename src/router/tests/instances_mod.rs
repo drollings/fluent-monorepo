@@ -1575,40 +1575,6 @@ async fn pool_residency_without_budget_never_evicts() {
 }
 
 #[test]
-fn build_instance_managers_rejects_duplicate_name_within_model() {
-    // Two profiles in ONE model resolve to the same instance name: the
-    // profile key `swarm0` and another profile whose explicit `name` is
-    // also `swarm0`. The pool grammar is invalid and boot fails fast.
-    let config: crate::config::RouterConfig = serde_json::from_value(serde_json::json!({
-        "roles": {
-            "work": {
-                "instances": {
-                    "swarm0": { "num_ctx": 16384 },
-                    "x": { "name": "swarm0", "num_ctx": 32768 }
-                },
-                "models": {"a": {}}
-            }
-        },
-        "models": {
-            "a": {
-                "endpoint": "http://x/v1/chat/completions",
-                "intelligence": 1,
-                "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 1,
-                "weights": "/models/a.gguf"
-            }
-        }
-    }))
-    .unwrap();
-    let Err(err) = build_instance_managers(&config, None) else {
-        panic!("duplicate-name config must fail validation")
-    };
-    assert!(
-        err.contains("duplicate instance name 'swarm0'"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
 fn residency_backoff_progresses_and_caps() {
     // The residency/bootstrap poll backoff is `common_core::retry::
     // capped_backoff_ms` (base * min(failures+1, cap)). Healthy -> base
@@ -1634,10 +1600,7 @@ fn residency_backoff_progresses_and_caps() {
 fn build_instance_managers_ok_on_valid_config() {
     let config: crate::config::RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
-            "work": {
-                "instances": { "swarm": { "num_ctx": 16384, "count": 2 } },
-                "models": {"a": {}}
-            }
+            "work": {"models": ["a"]}
         },
         "models": {
             "a": {

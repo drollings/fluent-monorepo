@@ -744,7 +744,7 @@ mod tests {
             .routing_target
             .expect("tree should produce a routing target");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
-        assert_eq!(rt.model, "code-model");
+        assert_eq!(rt.model, "code-model:base");
         assert_eq!(rt.group.as_deref(), Some("code"));
 
         // The auto-generated prompt was sent to the backend.
@@ -1471,7 +1471,7 @@ mod tests {
         let rt = result
             .routing_target
             .expect("tree engine must produce a target");
-        assert_eq!(rt.model, "code-model");
+        assert_eq!(rt.model, "code-model:base");
     }
 
     // ── Target-matching ladder wired into the flat classifier path ───────

@@ -71,7 +71,7 @@ pub struct DispatchDeps {
     pub workflow_recorder: Option<Arc<crate::ledger::workflow_replay::WorkflowRecorder>>,
 }
 
-/// Per-role admission gates for `roles.<role>.concurrency.max_parallel`:
+/// Per-role admission gates for `roles.<role>.max_parallel`:
 /// one shared [`Limiter`] per capped role, built once at boot from the
 /// roles table and cloned (cheap — [`Limiter`] is internally an `Arc`) into
 /// every dispatch. Scope is per-role globally: all models serving the role
@@ -87,7 +87,7 @@ pub struct RoleLimiters {
 }
 
 impl RoleLimiters {
-    /// Build the gates for every role declaring `concurrency.max_parallel`.
+    /// Build the gates for every role declaring `max_parallel`.
     /// A zero cap cannot parse (fail-closed), but a default-constructed one
     /// could smuggle zero in — skipped loudly here, defense in depth.
     #[allow(clippy::implicit_hasher)]
@@ -96,9 +96,8 @@ impl RoleLimiters {
         let mut names: Vec<&String> = roles.keys().collect();
         names.sort();
         for name in names {
-            let cap = match roles[name].concurrency.as_ref() {
-                Some(concurrency) => concurrency.max_parallel,
-                None => continue,
+            let Some(cap) = roles[name].max_parallel else {
+                continue;
             };
             if cap == 0 {
                 tracing::warn!(
@@ -618,6 +617,11 @@ pub async fn dispatch_real(
                             let session = router_request.session_id.as_deref().unwrap_or("");
                             deps.stats.recency.record(session, group, &target.model);
                         }
+                        // The global last-answered model backs `last`
+                        // sentinels in sentinel-only groups and the
+                        // `model: "last"` classifier duty: whichever LLM
+                        // actually answered last, regardless of group.
+                        deps.stats.recency.record_any(&target.model);
                         crate::audit::AuditRecord::route(
                             crate::pipeline_types::PipelineStage::Classifier,
                             crate::pipeline_types::StageVerdict::Passed,

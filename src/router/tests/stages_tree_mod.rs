@@ -28,7 +28,6 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         idle_timeout_ms: 8_000,
         stream: true,
         filter_thinking: true,
-        thinking: None,
         retry_count: 0,
         retry_base_interval_s: 1,
         params: None,
@@ -39,6 +38,7 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
         template: None,
         role_params: None,
         api_key: None,
+        ..ModelEntry::default()
     }
 }
 

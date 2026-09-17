@@ -93,7 +93,6 @@ fn validate_ok_when_models_point_upstream() {
             idle_timeout_ms: 2000,
             stream: false,
             filter_thinking: false,
-            thinking: None,
             retry_count: 0,
             retry_base_interval_s: 1,
             params: None,
@@ -104,6 +103,7 @@ fn validate_ok_when_models_point_upstream() {
             template: None,
             role_params: None,
             api_key: None,
+            ..ModelEntry::default()
         },
     );
     assert!(validate_no_self_routing("0.0.0.0:8079", &models).is_ok());
@@ -127,7 +127,6 @@ fn validate_rejects_self_loop_localhost() {
             idle_timeout_ms: 2000,
             stream: false,
             filter_thinking: false,
-            thinking: None,
             retry_count: 0,
             retry_base_interval_s: 1,
             params: None,
@@ -138,6 +137,7 @@ fn validate_rejects_self_loop_localhost() {
             template: None,
             role_params: None,
             api_key: None,
+            ..ModelEntry::default()
         },
     );
     let err = validate_no_self_routing("127.0.0.1:8079", &models)
@@ -166,7 +166,6 @@ fn validate_rejects_self_loop_exact_match() {
             idle_timeout_ms: 2000,
             stream: false,
             filter_thinking: false,
-            thinking: None,
             retry_count: 0,
             retry_base_interval_s: 1,
             params: None,
@@ -177,6 +176,7 @@ fn validate_rejects_self_loop_exact_match() {
             template: None,
             role_params: None,
             api_key: None,
+            ..ModelEntry::default()
         },
     );
     let err = validate_no_self_routing("127.0.0.1:8079", &models)
@@ -202,7 +202,6 @@ fn validate_rejects_when_port_differs_but_host_is_same() {
             idle_timeout_ms: 2000,
             stream: false,
             filter_thinking: false,
-            thinking: None,
             retry_count: 0,
             retry_base_interval_s: 1,
             params: None,
@@ -213,6 +212,7 @@ fn validate_rejects_when_port_differs_but_host_is_same() {
             template: None,
             role_params: None,
             api_key: None,
+            ..ModelEntry::default()
         },
     );
     // Different port (8080 vs 8079) should be OK
@@ -247,7 +247,6 @@ fn validate_skips_managed_models_with_no_endpoint() {
             idle_timeout_ms: 2000,
             stream: false,
             filter_thinking: false,
-            thinking: None,
             retry_count: 0,
             retry_base_interval_s: 1,
             params: None,
@@ -258,6 +257,7 @@ fn validate_skips_managed_models_with_no_endpoint() {
             template: None,
             role_params: None,
             api_key: None,
+            ..ModelEntry::default()
         },
     );
     assert!(

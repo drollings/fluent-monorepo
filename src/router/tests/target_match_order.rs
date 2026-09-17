@@ -53,7 +53,6 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
                         idle_timeout_ms: 8_000,
                         stream: true,
                         filter_thinking: true,
-                        thinking: None,
                         retry_count: 0,
                         retry_base_interval_s: 1,
                         params: None,
@@ -64,6 +63,7 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
                         template: None,
                         role_params: None,
                         api_key: None,
+                        ..crate::config::ModelEntry::default()
                     },
                 )
             })

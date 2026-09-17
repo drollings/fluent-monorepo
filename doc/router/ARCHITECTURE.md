@@ -23,8 +23,11 @@ deterministic before probabilistic, cheap before expensive, condensed context
 via a ledger, and frontier as a bounded, audited exception.
 
 Local serving is owned, not proxied. Coral Router spawns and supervises one
-`llama-server` process per model weights file (`supervisor.rs`), serves the
-`/instances` management contract at its own address (`server/instances_api.rs`),
+`llama-server` process per model weights file (`supervisor/` — `supervisor.rs`
+holds `LlamaServerSupervisor`/`ManagedServer`, `supervisor/adopt.rs` reaps
+pre-existing servers at boot, `supervisor/health.rs` the liveness probes),
+serves the `/instances` management contract at its own address
+(`server/instances_api.rs`),
 and is the single routing element between those llama-server tasks and every
 other OpenAI-compatible endpoint. The llama.cpp router mode is never used; a
 local dispatch is a direct HTTP call to the owning server.
@@ -46,7 +49,7 @@ local dispatch is a direct HTTP call to the owning server.
 │  on routing_target: server/dispatch.rs (ChatBackend chain)              │
 │  management: /instances /v1/models /models /memory /props + model-less  │
 │  proxies; /health /stats /v1/chat/completions /v1/plan /v1/rigor        │
-│  /admin/cache/invalidate, DELETE /admin/cache/{key}; admin /models/unload │
+│  POST /admin/cache/invalidate; admin /models/unload │
 │  + /metrics                                                              │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -77,7 +80,7 @@ local dispatch is a direct HTTP call to the owning server.
               chain)            → frontier modes)      routes/rigor/)
                     │
                     ▼
-        ┌─ Serving layer (supervisor.rs + instances/) ───────────────────┐
+         ┌─ Serving layer (supervisor/ + instances/) ───────────────────┐
         │  one llama-server per weights file on a free localhost port    │
         │  direct /instances + generation calls, no llama.cpp router     │
         │  sidecar: footprint-weighted eviction (weights included) when  │
@@ -156,12 +159,13 @@ exactly once and published to the same typed store.
 | File | Role |
 |------|------|
 | `types.rs` | `RouterRequest`, `RouterResponse`, `RouterMessage`, `RouterChoice`, `Usage` — serde-serializable OpenAI protocol. `RouterRequest` also carries the routing fields the owning llama-server reads: `instance`, `snapshot`, `id_slot` |
-| `pipeline_types.rs` | `StageDecision`, `PipelineStage`, `StageVerdict`, `StageDecisionProducer`, `StageMetadata` (typed metadata handoff keys, incl. the `nlp_parse` handoff key), `PiiVerdict` |
+| `pipeline_types.rs` | `StageDecision`, `PipelineStage`, `StageVerdict`, `StageDecisionProducer`, `StageMetadata` (typed metadata handoff keys, incl. the `nlp_parse` handoff key; `StageMetadata::empty()` is the single empty-metadata constructor), `PiiVerdict` |
 | `pipeline.rs` | `PipelineOrchestrator`, `PipelineResult`, `RoutingTarget` (url/model/group/params/filter_thinking/retry/stream/timeouts/fallbacks, plus `instance`/`snapshot`/`id_slot` request fields), `STAGE_DECISION_KEY` |
 | `error.rs` | `ServerError` — the single typed server error (Bind / Http / Addr / transparent `DispatchError`) |
-| `config.rs` | `RouterConfig` + sub-config types, split into re-exported submodules: `addr`, `builder` (`PipelineParams`), `classification` (`ClassificationTree`/`ClassificationNode`/`ClassificationChild`), `escalation` (`EscalationLadderConfig`, `FrontierConfig`), `filters` (`RejectPatterns`/`PatternEntry`/`FilterAction`/`FilterScope`/`ConfidenceGate`), `routing` (`RoutingConfig`, `RouteRef` with `always_route`). Top-level `ledger`/`session`/`review`/`overlay` sections (`LedgerConfig`, `ReviewConfig`, `OverlayConfig`). `ModelEntry` adds the weights source for managed models (`weights`, `hf_repo`, `hf_file`), an `onnx` block (`fluent_onnx::config::OnnxConfig` — makes the model router-served from the ort registry instead of a llama-server), and `is_managed()`. Top-level `gguf_dir` is the admin-CLI GGUF root; `sidecar.resume_ttl_s` bounds resume snapshot lifetime |
+| `config.rs` | `RouterConfig` + sub-config types, split into re-exported submodules: `addr`, `builder` (`PipelineParams`, `NlpConfig`, `NlpOrdering`, `TargetMatchMode`), `classification` (`ClassificationTree`/`ClassificationNode`/`ClassificationChild`), `compiled_tree` (`CompiledTree`), `escalation` (`EscalationLadderConfig`, `FrontierConfig`, `GroupMember`, `ModelGroup`), `filters` (`RejectPatterns`/`PatternEntry`/`FilterAction`/`FilterScope`/`ConfidenceGate`), `fleet` (`RoleParams`), `ledger_group`, `models` (`ModelEntry`, `ModelBinding`, `InstanceProfile`), `normalize` (the raw-`Value` normalization passes), `refine_policy` (`RouterRefinePolicy`), `rounds`, `routing` (`RoutingConfig`, `RouteRef` with `always_route`), `runtime`, `serving`, `tree_reload`. Top-level `ledger`/`session`/`review`/`overlay` sections (`LedgerConfig`, `ReviewConfig`, `OverlayConfig`). `ModelEntry` adds the weights source for managed models (`weights`, `hf_repo`, `hf_file`), an `onnx` block (`fluent_onnx::config::OnnxConfig` — makes the model router-served from the ort registry instead of a llama-server), and `is_managed()`. Top-level `gguf_dir` is the admin-CLI GGUF root; `sidecar.resume_ttl_s` bounds resume snapshot lifetime |
 | `normalize.rs` | Thin adapter over `fluent_llm::openai`: OpenAI JSON ↔ `RouterRequest`/`RouterResponse`, `error_response()`, `messages_to_json()`, `parse_openai_stream_delta`. Re-attaches the routing fields the shared normalizer strips |
-| `target_match.rs` | `TargetMatcher` — the in-group complexity ladder: `build_self_assessment_prompt`, `parse_self_assessment`, `candidates_for_group`, `start_index`/`is_match` selection core. DRY-shared by the flat classifier path (`stages/classifier.rs`) and the classification-tree engine (`stages/tree/engine.rs`) |
+| `routing_context.rs` | `RoutingContext` — the routing fields (`model`/`instance`/`snapshot`/`id_slot`/…) read from the query string and the JSON body (body wins via `merge`), then carried as params through normalize and dispatch |
+| `target_match.rs` | `TargetMatcher` — the in-group complexity ladder: `build_self_assessment_prompt`, `parse_self_assessment`, `candidates_for_group`, `start_index`/`is_match` selection core. DRY-shared by the flat classifier path (`stages/classifier.rs`) and the classification-tree engine (`stages/tree/engine.rs`). `GroupRecency` — the bounded (4096) `(session, group) → model` recency map with interned keys and a monotonic sequence for total-ordered eviction |
 
 ### Pipeline & Stages
 
@@ -170,7 +174,7 @@ exactly once and published to the same typed store.
 | `stages/deterministic.rs` | `DeterministicPreFilter` — delegates to `DeterministicFilterEngine`; slash-command dispatch (`/help`, `/stats`, `/checkpoint`) |
 | `stages/nlp.rs` | `NlpStage` — runs `spacy-rs` on the inbound text and publishes per-sentence `RoutingSignal`s (predicate/subject/object + interlingua ids) under the `"nlp_parse"` handoff key. Enrichment, never a gate. Deterministic-first ladder: base `[ArcEager, Rule]` always runs; gated refine `[Encoder, Llm]` (in that order) on confidence OR task-value via `RefinePolicy` (fallback keeps base); `annotation_fetch` bridges a `ChatBackend` to `spacy_rs::LlmFetchSync` |
 | `stages/overlay.rs` | `OverlayStage` — under `nlp_ordering: "deterministic_first"`, scores the parser's residuals with configured onnx overlays (`PromptRouterOverlay`, from two-tower `zero_shot_routing` sessions via `ort::disambiguation_overlays`) and publishes route hints the classifier merges as deterministic context. Enrichment, never a gate |
-| `stages/classifier.rs` | `ClassifierStage` — single LLM call (flat) or the `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds the `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the "Dispatch rules" section of the system prompt from routes marked `always_route` |
+| `stages/classifier.rs` + `stages/classifier/` | `ClassifierStage` — single LLM call (flat) or the `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds the `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the "Dispatch rules" section of the system prompt from routes marked `always_route`. `stages/classifier/action.rs` (`ClassifierAction`) types the flat verdict; `stages/classifier/prompt.rs` renders the route list and threshold substitutions |
 | `stages/tree/` | `ClassificationEngine` — recursive nested-tree evaluation; filter / classifier / terminal / fallback nodes; `tree_path` audit trail; `kind = "tree_node"` records. Split into `mod.rs` (re-exports), `engine.rs` (the recursive walk + `cost` + the `match_interlingua` filter that dispatches on the NLP stage's parsed interlingua ids), `verdict.rs` (`TreeClassifierVerdict` + `parse_tree_verdict`), `decisions.rs` (`TreeOutcome`/`TreeEvaluation` + the `StageDecision` builders); the classifier-node prompt builders live in `config/classification.rs` (`ClassificationNode::build_prompt`) |
 | `stages/common.rs` | Shared stage helpers — `extract_user_message()`, `get_metadata_string()`, JSON-field ensure helpers |
 | `stages/prompt_parse.rs` | `chat_json` + `PromptParseError` — the router-local LLM-JSON round-trip codec over `fluent_llm::parse::parse_typed` (call + tolerant parse/coerce in one envelope) |
@@ -203,7 +207,9 @@ exactly once and published to the same typed store.
 | `ledger.rs` | `ContentNodeLedger` — **thin facade** over the shared `ContentNodeStore`; owns the LOD lifecycle (LOD0/LOD5 eager, LOD1–4 lazy from LOD0 via `Summarizer`, at most once); `CompactionStrategy` / `RecencyCompaction` (folded in from the deleted `compaction.rs`); routes all writes through the write-path scrub; `write_annotation` is the public tiered-annotation facade over `ContentNodeStore::write_annotation` (provenance tiers + `content_hash` keying) |
 | `ledger/nlp.rs` | Ledger writer for the NLP parse — `record_parse_node_with_confidence` writes the parse `ContentNode` **and** the per-sentence × role `interlingua_index` rows (id, role, confidence, `review_status='unreviewed'`) in one transaction, so "requests whose `direct_object_id` is X" is a real SQL query. `record_parse_node` is a thin wrapper over it |
 | `ledger/overlay.rs` | `OverlayCandidateStore` over `overlay_candidates` — the durable candidate plane for async overlay outputs (entity links, PII-shaped spans, parse corrections, concept summaries). The **only** surface overlays write: nothing ever writes `TokenRecord.interlingua_entity_id`/`concept_ids` at runtime (boot-only registration is an invariant) |
-| `ledger/overlay_worker.rs` | `OverlayWorker` — the background node-annotation worker. Composes the shared `CreditedFeedWorker<NodeId>` primitive (the **same** feed shape as `LedgerTierWorker` — it deliberately does **not** reimplement that worker's shape): per node it fans out three independent derivation jobs (`annotation_for` / `embedding_for` / `llm_overlay_for`, each from LOD0, at-most-once, fail-open) **in parallel** on the injected `Runtime`, so a slow LLM never delays the spacy/embedding overlays. Emits a `kind = "overlay"` audit record per derived overlay; boot backfill via `node_ids_needing_overlays()`. Driven by `OverlayKind`/`OverlayState` (`fluent-types`) |
+| `ledger/overlay_worker.rs` | `OverlayWorker` — the background node-annotation worker. Composes the shared `CreditedFeedWorker<NodeId>` primitive (the **same** feed shape as `LedgerTierWorker` — it deliberately does **not** reimplement that worker's shape): per node it fans out three independent derivation jobs (`annotation_for` / `embedding_for` / `llm_overlay_for`, each from LOD0, at-most-once, fail-open) **in parallel** on the injected `Runtime`, so a slow LLM never delays the spacy/embedding overlays. Emits a `kind = "overlay"` audit record per derived overlay; boot backfill via `node_ids_needing_overlays()`. Driven by `OverlayKind`/`OverlayState` (`fluent-types`). Its end-to-end acceptance bar (at-most-once under concurrency, LOD0-only derivation, per-overlay fail-open, audit presence, idempotent backfill, config-absent byte-identity) lives in the private `ledger/overlay_acceptance.rs` suite — behavior assertions, not runtime code |
+| `ledger/entity_promotion.rs` | `EntityPromotion` — the flag-gated seam that accepts worker-plane entity-link **candidates** through the calibrated stamp gate into parse-time `interlingua_entity_id` stamps (refused candidates stay pending; human review owns dismissal) |
+| `ledger/workflow_replay.rs` + `ledger/workflow_store.rs` | Solved question-mode runs distilled into an embedding-keyed library (`WorkflowStore`/`InMemoryWorkflowStore`, gated inserts) and replayed when a new query is close enough (`WorkflowReplay`/`WorkflowRecorder`, calibrated confidence gate, reuse outcomes audited) — the dispatch learning loop's memory |
 | `ledger/correction_index.rs` | `SqliteCorrectionIndex` — the router's `spacy_rs::CorrectionIndex` over `interlingua_index`. Pattern-cache rows use the sentinel `PATTERN_NODE` node id and `role = "correction"` so they never collide with real parse-node audit rows |
 | `ledger/span_cache.rs` | `SpanCache` trait + `InMemorySpanCache` hermetic double (ledger view owner, M2b — moved from `spacy-rs::cache`) + `SqliteSpanCache` read-through view over the same `interlingua_index` (`role = "span_cache"`, hex `span_key TEXT`); `span_cache_seam` adapts an `Arc<dyn SpanCache>` into the dependency-free `spacy_rs::cache::SpanCacheSeam` the ladder consults, so no router edge enters spacy-rs |
 | `ledger/annotations.rs` | `AnnotationStore` — the tiered annotation ledger over `nr_annotations`, keyed `(content_hash, claim_key)`. A higher `ProvenanceTier` upsert supersedes (never deletes) the prior claim; equal/lower marks it `Provisional`. Written via `ContentNodeStore::write_annotation` / `ContentNodeLedger::write_annotation` |
@@ -227,7 +233,8 @@ exactly once and published to the same typed store.
 | File | Role |
 |------|------|
 | `server.rs` | `RouterServer` (`WorkUnit`) — hyper HTTP/1.1 accept loop on tokio; assembles `ServerDeps` and fans out to the `server/` submodule; `serve_http` is `pub(crate)` for integration tests; runs each `InstanceManager`'s boot reconcile + residency task from the attached `InstancePool` (in a drained `JoinSet`, never detached) |
-| `server/handler.rs` | HTTP routing + request orchestration; `ServerDeps` (the collapsed former 12-`Option` dependency bundle): pipelines, routes, models, stats, cache, ledger, plan/rigor routes, sessions, ladders, context_cache, mock_dispatch, http_client, `instance_pool`, `api_key_env_name`, `supervisor`, `coordinator`. Merges query-string routing fields into the body, resolves the model-id grammar (`<model_id>[:<instance|group|latest>]`) in `resolve_pipeline`, and routes the management/model-less endpoints |
+| `server/handler.rs` | HTTP routing + request orchestration; `ServerDeps`: pipelines, routes, models, stats, cache, ledger, plan/rigor routes, sessions, ladders, context_cache, mock_dispatch, http_client, `instance_pool`, `api_key_env_name`, `supervisor`, `onnx` (+ `onnx_llm_backend`), `fleet` (the unified llama+onnx weights facade), `coordinator` + `coordinator_gate`, `review_worker` + `review_fetch`, `entity_link_worker`, `roles`/`groups` routing-vocabulary tables, `workflow_recorder`, `frame_gate`. Merges query-string routing fields into the body (via `RoutingContext`: body wins), resolves the model-id grammar (`<model_id>[:<instance|group|latest>]`) in `resolve_pipeline`, and routes the management/model-less endpoints |
+| `server/cors.rs` | Permissive CORS header helpers (`CORS_ALLOW_*` + `add_cors_headers`) applied to API responses |
 | `server/instances_api.rs` | The public `/instances` management facade: aggregate envelope across models, `POST /instances`, per-instance ops (delete/pin/unpin/resume/no-resume/resize/snapshot), `/memory` compat reshape, `/v1/models`, `/props`, model-less proxies (`/tokenize`, `/detokenize`, `/apply-template`, `/control`); management API-key enforcement; query parse/percent-decode helpers |
 | `server/dispatch.rs` | `handle_dispatch` / `dispatch_real` — primary + `fallbacks` chain through `ChatBackend` (each wrapped in `RetryBackend`), short-circuit on non-retryable errors, response cache read/write, workflow extraction, allocate-on-503 via the `InstancePool` |
 | `server/responses.rs` | OpenAI-completion response builders, SSE/CORS headers, `ServerStats` counters |
@@ -237,24 +244,26 @@ exactly once and published to the same typed store.
 | `streaming.rs` | `StreamingHandler` — SSE delta formatting for OpenAI-compatible streaming chunks; cross-chunk think-block filtering via `StreamingThinkFilter` |
 | `kv_cache.rs` | Two-tier: `HotSnapshotIndex` (RAM LRU over `common_core::cache::LoadCache`, metadata only) + `ColdSnapshotIndex` (disk tree `model/adapter/session`); `SnapshotStore` composes both; the router never reads/writes raw KV bytes — it manages filesystem layout + sidecar metadata for llama.cpp slot save/restore |
 | `instances/` | Instance-pool grammar generation + validation (`instance_grammar_string`, `validate_instances`, `is_valid_instance_name`) and the sidecar. Split into `mod.rs` (grammar/validation helpers + test stub), `client.rs` (`InstanceClient` — one server's `/instances` API over raw `reqwest`, `HttpClass`-classified; `InstanceError`/`InstanceInfo`/`InstanceTotals`/`SnapshotInfo`), `manager.rs` (`InstanceManager` — boot reconcile; per-instance `resume` map; `is_sleeping` residency probe; `list_with_fallback` synthesizing a resident footprint for plain — weights-only, no-instance-grammar — models; `weights_bytes`; `ensure_instance` on-demand creation; `ensure_group` allocate-on-503), and `pool.rs` (`InstancePool` — the router's aggregate facade: `<model_id>:<name>` ids, 64-bit-summed `total`, `/v1/models`, op proxies; footprint-weighted eviction `Evictable::{Context, Model}` + `evict_to_fit`; load-time admission control `make_room_for`; `resume` snapshot/expiry and control ops; the residency engine `run_residency`). The public `/instances` surface lives in `instances/api.rs` |
-| `supervisor.rs` | `LlamaServerSupervisor` + `ManagedServer` — resolves `llama-server` from `$PATH` (or `LLAMA_SERVER`), spawns one process per managed model on a free localhost port (`--alias`, `-m`/`-hf`, `--instance` grammar, `--slot-save-path`, `--api-key`), waits for `/health`, and supervises each child (logs its output, restarts with capped backoff; post-boot **liveness** supervision probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only models with a pinned instance (`start_all`); lazy models load on demand via `ensure_running` (spawn-locked, no double-spawn) and unload via `unload` (spec stays registered). `free_port`, `build_server_args`, `shutdown`. **Onnx-declared models (`ModelEntry.onnx`) are excluded** — they are served by the ort registry (`ort.rs`), never by a llama-server |
-| `ort.rs` | The onnx composition root (crate `fluent-onnx`). `build_onnx_registry(config)` turns every `ModelEntry.onnx` block into a boot-built `OrtSessionRegistry` (validates task-vs-model-file sanity and `weights`/`hf_repo`/`instances` exclusivity; `resident: true` loads at boot, else lazily; fail-open to an empty registry or to plain-HTTP entries when the `onnx` feature is off). **`onnx_chat_backend(key)`** wraps a `CausalLm` session as the generative `fluent_llm::client::ChatBackend` (`OnnxRole::Llm`, `onnx/llm`) — the single wiring point for the LLM rung, review, enrichment, tiering, summarization, ranking, and retrieval; `grammar_from_json_schema` (in `fluent-onnx`) constrains structured decodes. **`OrtResidencyLoop`** (in `fluent-onnx::residency`) is the CPU-RAM residency parity sibling of the llama sidecar. The encoder-role builders — `disambiguation_overlays` (`PromptRouterOverlay` per `overlay_models` key), `nlp_encoder_fetch` (the legacy trained-encoder `EncoderFetchSync`), `pii_prefilter` (PII-Detector or `RegexPiiDetector` baseline), `colbert_entity_scorer` (entity-link `EntitySimilarityIndex`), `onnx_colbert_reranker`/`ColbertChartReranker` (chart MaxSim re-rank) — remain as feature-gated legacy seams behind `cfg(feature = "onnx")`; no encoder-role model is configured in the reference deployment |
+| `supervisor.rs` + `supervisor/` | `LlamaServerSupervisor` + `ManagedServer` (`LlamaServerSpec`, `build_server_args`, `free_port`, `resolve_llama_server`) — resolves `llama-server` from `$PATH` (or `LLAMA_SERVER`), spawns one process per managed model on a free localhost port (`--alias`, `-m`/`-hf`, `--instance` grammar, `--slot-save-path`, `--api-key`), waits for `/health`, and supervises each child (logs its output, restarts with capped backoff; post-boot **liveness** supervision probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only models with a pinned instance (`start_all`); lazy models load on demand via `ensure_running` (spawn-locked, no double-spawn) and unload via `unload` (spec stays registered). `supervisor/adopt.rs` reaps pre-existing servers into management at boot; `supervisor/health.rs` owns the liveness probes. **Onnx-declared models (`ModelEntry.onnx`) are excluded** — they are served by the ort registry (`ort.rs`), never by a llama-server |
+| `ort.rs` | The onnx composition root (crate `fluent-onnx`). `build_onnx_registry(config)` turns every `ModelEntry.onnx` block into a boot-built `OrtSessionRegistry` (validates task-vs-model-file sanity and `weights`/`hf_repo`/`instances` exclusivity; `resident: true` loads at boot, else lazily; fail-open to an empty registry or to plain-HTTP entries when the `onnx` feature is off). **`onnx_chat_backend(key)`** wraps a `CausalLm` session as the generative `fluent_llm::client::ChatBackend` (`OnnxRole::Llm`, `onnx/llm`) — the single wiring point for the LLM rung, review, enrichment, tiering, summarization, ranking, and retrieval; `grammar_from_json_schema` (in `fluent-onnx`) constrains structured decodes. Onnx CPU-RAM residency runs on the shared `LlmResidencyEngine` (`fluent-llm::runtime`), the parity sibling of the llama sidecar loop. The encoder-role builders — `disambiguation_overlays` (`PromptRouterOverlay` per `overlay_models` key), `nlp_encoder_fetch` (the legacy trained-encoder `EncoderFetchSync`), `pii_prefilter` (PII-Detector or `RegexPiiDetector` baseline), `colbert_entity_scorer` (entity-link `EntitySimilarityIndex`), `onnx_colbert_reranker`/`ColbertChartReranker` (chart MaxSim re-rank) — remain as feature-gated legacy seams behind `cfg(feature = "onnx")`; no encoder-role model is configured in the reference deployment |
 | `concept_store_sqlite.rs` | `SqliteConceptStore` — the router's durable `fluent_concept::ConceptStore` over the shared ledger SQLite connection (`interlingua_concepts` table, keyed `(namespace, canonical_name)` with the content-addressed `id` + coral `node_id` cross-reference). The **second home** of the one-loader/two-homes YaGO design; boot reconciliation locks it equal to coral's content-addressed graph |
-| `scheduler.rs` | Re-exports `AffinityScheduler` / `ScheduledTask` / `AgingConfig` from `fluent_concurrency::affinity` |
+| `ledger/orchestrator.rs` (affinity) | Composes `AffinityScheduler` / `ScheduledTask` from `fluent_concurrency::affinity` directly (no router-level scheduler shim) — opt-in via `ledger.orchestrator.affinity_cap` |
 | `summarization.rs` | `ResultScorer` + `Summarizer` — `WorkUnit` impls that call an LLM (via `Arc<dyn ChatBackend>`) to score/condense responses; feeds the ledger's lazy LOD tiers |
 | `score_matrix.rs` | `ScoreMatrix` — multi-dimensional weighted scoring (coherence/complexity/completeness/risk) with per-route dimension bands |
 | `metrics.rs` | `FailureClass` + `classify_error` — typed-first error classification with a string-regex fallback for opaque shell/command output (D10) |
 | `audit.rs` | The canonical durable-audit surface — a single `tracing` target `router.audit`; `AuditRecord` + `emit(kind, detail)`; audit kinds are distinguished by the `kind` field (`route`, `filter`, `tree_node`, `escalation`, `rigor`, `chart_target`, …) |
 | `logging.rs` | Two-stream `tracing` subscriber: operational JSON/console rolling file + the durable audit stream (separate retention, always JSON, gated on `router.audit=info`) |
 | `frontier/modes.rs` | `EscalationMode` ladder taxonomy — `Filter`, `Question`, `Team`, `Turnover` (D8; the old `FrontierMode` enum is gone), serde snake_case; `FrontierResult` and `AuditEntry`. Taxonomy and audit types only — the runtime lives in `dispatch/escalation/` (mode implementations in `dispatch/escalation/modes.rs`) |
-| `hnsw.rs` | `HnswIndexHandle` — the single HNSW index handle type for the chart store's brute-force / `knn_brute_force` fallback |
+| `overlay.rs` + `overlay/canonical.rs` | The overlay plane's pure, model-free data: `CanonicalFormTable` — a versioned, offline-clustered `(surface lemma → canonical lemma)` table for predicate canonicalization, loaded like the lemmatizer blob and consulted by plain lookup (never an inference call), keeping the "ids are pure functions of content" contract |
+| `instances/traits.rs` | The unified fleet adapters — `LlamaWeights`/`LlamaContext`/`LlamaKVCache` implement the shared `fluent-llm::runtime` control-plane traits (`LlmWeights`/`LlmContext`/`LlmKVCache`), composed by `LlmFleet` (llama adapters + onnx implementors) so `/instances`, `/v1/models`, and unload drive both fleets uniformly |
 | `telemetry.rs` | Structured telemetry events with a controlled vocabulary (`ToolName`/`ProviderCategory`/`FeatureName`), the `TelemetryEvent` enum, and `TelemetrySink` (`TracingSink`/`NoopSink`) — no free strings, no PII |
 | `transforms/` | `TransformStrategy` trait + the `rewrite_text_messages` and `insert_string_map` shared helpers: `NoTransform`, `PiiAnonymize`, `DecomposeToAnonymizedHypothetical`, `DecomposeToSubtasks` (metadata intentionally bespoke — its `subtasks` payload is a structured object, not a string map), `CodewordAnonymizer`, `Sanitize`, `SecretMask` |
-| `ranking.rs` | The M6 ranking pipeline — `SalienceSignal`/`SalienceScorer` (weighted, pure), `pagerank` (minimal power-iteration over the `interlingua_index` co-reference + `parent_id` graph), `SalienceSource`/`LedgerSalienceProvider` (read-only snapshot), `rank_candidates` (salience prefilter to top-K then **one** grammar-constrained call over the shortlist; degrades to salience order), and `SalienceRanker` (the composable step the retrieval service composes) |
-| `retrieval.rs` | The M5/M6 live dispatch seam + the subagent tool owner (M4): `NodeRetrievalService` parses a candidate node's LOD0, runs spacy-rs' pure `lemma_grep` + the router-owned fuzzy axis (`EmbeddingProvider`/`FuzzyRetrieval`/`InMemoryFuzzyIndex`) + the `cross_check` combiner (`RetrievalSource`/`RetrievalHit`/`CrossCheckReport`/`RegionVerdict`), and pre-filters the pool through the `SalienceRanker`; exposed on `LedgerAgentCoordinator` via `with_retrieval`/`retrieve_nodes` |
+| `ranking.rs` | The ranking pipeline — `SalienceSignal`/`SalienceScorer` (weighted, pure), `pagerank` (minimal power-iteration over the `interlingua_index` co-reference + `parent_id` graph), `SalienceSource`/`LedgerSalienceProvider` (read-only snapshot), `rank_candidates` (salience prefilter to top-K then **one** grammar-constrained call over the shortlist; degrades to salience order), and `SalienceRanker` (the composable step the retrieval service composes) |
+| `retrieval.rs` | The live dispatch seam + the subagent tool owner: `NodeRetrievalService` parses a candidate node's LOD0, runs spacy-rs' pure `lemma_grep` + the router-owned fuzzy axis (`EmbeddingProvider`/`FuzzyRetrieval`/`InMemoryFuzzyIndex`) + the `cross_check` combiner (`RetrievalSource`/`RetrievalHit`/`CrossCheckReport`/`RegionVerdict`), and pre-filters the pool through the `SalienceRanker`; exposed on `LedgerAgentCoordinator` via `with_retrieval`/`retrieve_nodes`. Reports also carry per-sentence `predicate_ids`, and `filter_by_interlingua` drops candidates whose predicates are neither equal to nor a subclass of the query predicate (candidate-side `ancestors_of` walk; fail-open on missing signal/store/query; never consults parse confidence; default-off via `with_interlingua_filter`) |
 | `cli/` | Admin CLI support backing the `coral-router` binary's `list`/`ps`/`pull`/`scan`/`rm`/`show`/`stop`/`speedtest` subcommands (ported from `gguf_tool.py`): `gguf.rs` (GGUF-directory scanning + `models.json` cache), `preset.rs` (`models-preset.ini` rendering), `commands/` (`filesystem.rs` for the GGUF commands, `server.rs` for the HTTP-driven `ps`/`stop`/`speedtest`), and `CliContext`/`CliError` in `mod.rs` |
 | `testing/` | `TranscriptProvider`, `MockTranscriptEntry`, `MockDispatchContext` — transcript-driven integration-test harness for E2E and golden tests |
 | `test_stubs.rs` | `StubChatBackend`, `HashEmbedder` — test-only backends (cfg(test)) |
+| `test_support.rs` | Test-only log capture (`capture_logs`) — installs a global subscriber and rebuilds the callsite-interest cache so parallel tests assert logs deterministically |
 
 ### Adapter architecture (`dispatch/`)
 
@@ -392,7 +401,7 @@ pipeline pre-filter and the write-path scrubber (`ledger_guard.rs`).
 | `ArcIntern<str>` | `internment` | `ContentNodeStore` session/role index keys; work-unit and graph asset names |
 | `LatencyHistogram` | `common-core::metrics` | `Instrumented::with_metrics` wiring |
 | `retry_async` | `common-core::retry` | `RetryBackend`, `RetryClassifier`, `SupervisedBatch` retries |
-| `make_hnsw()` / `knn_brute_force` | `common-core::sqlite` / `fluent-db::vector` | `ContentNodeStore` KNN; `hnsw.rs` chart-store fallback |
+| `AdaptiveHnsw` / `HnswIndex` / `knn_brute_force` | `fluent-db::hnsw` / `fluent-db::vector` | `ContentNodeStore` KNN (`AdaptiveHnsw`: exact brute-force below the corpus-size threshold, HNSW above); `charts/store.rs` chart index (`HnswIndex`/`HnswIndexHandle`) |
 | `HttpClass` | `guidance-llm` | `dispatch/backend.rs` — status classification in `OpenAiChatBackend` (streaming + buffered) |
 | `DispatchError::is_retryable()` | `fluent-router` (`dispatch/frontier.rs`) | retry/fallback decisions in `dispatch/backend.rs` and `server/dispatch.rs` |
 | `LlmError::is_retryable()` | `fluent-concurrency::llm_queue` | `guidance-llm` client error classification |
@@ -400,7 +409,7 @@ pipeline pre-filter and the write-path scrubber (`ledger_guard.rs`).
 | `Decomposer` | `fluent_llm` | `dispatch/escalation/modes.rs` — question-mode hypothetical decomposition |
 | `first_accept_in_order` / `first_accept_in_order_sync` | `fluent-concurrency::ladder` | The spacy-rs annotation ladder (async + the sync `run_ladder_sync`), the escalation `Ladder::try_escalate`, the `BackendChain` complete/stream-complete fallback, and the `dispatch_real` fallback walk. **`TargetMatcher::match_target` is the documented exception** — a different ladder shape (start-index skip + last-member-always-wins + per-rung audit emission) |
 | `NlpPipeline` / `AnnotationRung` / `CorrectionIndex` / `lemma_grep` | `spacy-rs` (+ `fluent-concept` for `ConceptStore`) | `NlpStage` runs the pipeline; `SqliteConceptStore` / `SqliteCorrectionIndex` implement the `fluent-concept::ConceptStore` / spacy-rs `CorrectionIndex` traits; `PreferredSenseIndex` / `SqlitePreferredSenseIndex` are ledger-owned (`ledger::frame_index`, M2a); `match_interlingua` tree filters dispatch on the ids; `FrameResolutionWorker` resolves + promotes frames; the router-owned `retrieval` module (M4 — hit tagging, fuzzy axis, `cross_check` beside `NodeRetrievalService`) composes spacy-rs' pure `lemma_grep` |
-| `OrtSessionRegistry` / `OrtLlmSession` / `OrtResidencyLoop` / `grammar` | `fluent-onnx` | `ort.rs` builds the registry; `onnx_chat_backend` wraps a `CausalLm` session as the generative `ChatBackend` (LLM rung / review / enrichment / tiering / ranking / retrieval); `OrtResidencyLoop` is the CPU-RAM residency parity sibling of the llama sidecar; `JsonObjectGrammar`/`JsonArrayGrammar` constrain structured decodes. Legacy encoder seams: `nlp_encoder_fetch`, `pii_prefilter`, `colbert_entity_scorer`, `onnx_colbert_reranker`, `disambiguation_overlays` |
+| `OrtSessionRegistry` / `OrtLlmSession` / `grammar` | `fluent-onnx` (`OrtLlmSession`), `fluent-llm::onnx_session` (`OrtSessionRegistry`) | `ort.rs` builds the registry; `onnx_chat_backend` wraps a `CausalLm` session as the generative `ChatBackend` (LLM rung / review / enrichment / tiering / ranking / retrieval); onnx residency runs on the shared `LlmResidencyEngine`; `JsonObjectGrammar`/`JsonArrayGrammar` constrain structured decodes. Legacy encoder seams: `nlp_encoder_fetch`, `pii_prefilter`, `colbert_entity_scorer`, `onnx_colbert_reranker`, `disambiguation_overlays` |
 
 ## HttpClass: where it lives and why
 
@@ -975,7 +984,7 @@ LOD that fits the token budget; only *cached* tiers are rendered — it never
 triggers a summarization cost. Pure (no I/O), unit-tested in isolation, and
 shared by the coordinator (`orchestrator.rs`) and the plan route.
 
-### Agent coordinator (`ledger/orchestrator.rs`) — opt-in
+### Agent coordinator (`ledger/orchestrator.rs`) — default-on wherever a ledger exists
 
 `LedgerAgentCoordinator` runs the agent loop over a session's shared ledger:
 restore a KV snapshot (`KvSnapshotPolicy`: never / always / restore-if-same-model)
@@ -984,9 +993,13 @@ guard dropped — never held across the call) → record the exchange → snapsh
 the KV state (`advance_and_snapshot` → `SnapshotStore`) → enqueue a tier
 derivation (credit-gated, see above) → complete the step. `last_resident_model`
 is session-scoped (walks the session's own checkpoint-node index, not all
-sessions' nodes). Enabled only when `ledger.orchestrator.enabled = true`;
-config supplies the backend, adapter, prompt-budget, and snapshot policy.
-`node_plan` metadata on recorded nodes feeds a future workflow-learning replay.
+sessions' nodes). A present `ledger` section attaches the coordinator unless
+the operator opts out (`ledger.orchestrator.enabled = false`) or rolls back at
+runtime (`POST /admin/coordinator/rollback`, `coordinator_gate` on
+`ServerDeps`); `None` leaves dispatch on the pre-coordinator pipeline.
+Config supplies the backend, adapter, prompt-budget, and snapshot policy.
+`node_plan` metadata on recorded nodes feeds the workflow-learning replay
+(`ledger/workflow_replay.rs`).
 
 KV-affinity scheduling is an opt-in layer on the coordinator: setting
 `ledger.orchestrator.affinity_cap = <cap>` attaches an `AffinityScheduler`
@@ -999,10 +1012,11 @@ affinity bookkeeping off.
 
 Live retrieval is another opt-in layer on the coordinator: composing a
 `router::retrieval::NodeRetrievalService` via `with_retrieval` exposes
-`retrieve_nodes(query, nodes)` — the M5 lemma-grep/fuzzy/cross-check tools
-pre-filtered through the M6 `SalienceRanker` — as the entry point a future
-tool-calling agent loop calls. `None` (default) → `retrieve_nodes` returns
-empty (fail-open).
+`retrieve_nodes(query, nodes)` — the lemma-grep/fuzzy/cross-check tools
+pre-filtered through the `SalienceRanker` (plus the default-off
+`filter_by_interlingua` topical prefilter when enabled) — as the entry point
+a future tool-calling agent loop calls. `None` (default) → `retrieve_nodes`
+returns empty (fail-open).
 
 Both opt-in layers reuse the shared primitives (`ContentNodeStore`,
 `SnapshotStore`, `DependencySession`/`CheckpointedStepGraph`, `Limiter`,
@@ -1113,11 +1127,14 @@ grammar-constrained onnx call over the shortlist only (degrading to the
 salience order on failure). This is the model-ranks-shortlist invariant.
 
 **Live retrieval seam (`retrieval.rs`).** `NodeRetrievalService` is the live
-dispatch seam for the M5 subagent tools and their M4 tool owner: it parses a
+dispatch seam for the subagent tools and their tool owner: it parses a
 candidate node's LOD0, runs spacy-rs' pure `lemma_grep` (every hit carries
 `ParseConfidence`) + the router-owned fuzzy paraphrase axis (over an injected
 `EmbeddingProvider`) + the `cross_check` combiner (material disagreement surfaces both axes), and
-pre-filters the pool through the `SalienceRanker`. `LedgerAgentCoordinator`
+pre-filters the pool through the `SalienceRanker`. Each report also carries the
+node's per-sentence `predicate_ids`, and `filter_by_interlingua` (default-off,
+`with_interlingua_filter`) drops topically unrelated candidates before
+ranking. `LedgerAgentCoordinator`
 exposes it via `with_retrieval`/`retrieve_nodes` (fail-open without it) — the
 entry point a future tool-calling agent loop calls.
 
@@ -1149,8 +1166,8 @@ llama, CPU RAM for onnx) and eviction orderings (`FootprintColdness` for llama,
 **named contexts** from an in-process `OnnxContextPool` (one weights load, N
 context windows, per-context KV) — the defining capability of the llama fork —
 and `POST /instances/:name/resize` routes onnx contexts through
-`LlmContext::resize` (bounded by `max_ctx`). The old
-`OrtResidencyLoop` is a delegating compatibility shim over the shared engine.
+`LlmContext::resize` (bounded by `max_ctx`). There is no onnx-side residency
+loop of its own — the shared engine is the only residency pass.
 
 **ONNX residency parity.** The shared `LlmResidencyEngine` (spawned once, over
 the fleet of llama adapters + onnx implementors) applies the same

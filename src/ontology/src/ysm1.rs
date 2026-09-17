@@ -74,8 +74,7 @@ pub fn encode_ttl(ttl: &str) -> Vec<u8> {
         ids.entry(iri_to_curie(object_iri)).or_insert(object_id);
         id_edges.push((subject_id, object_id));
     }
-    let mut classes: Vec<(String, InterlinguaId)> =
-        ids.into_iter().collect();
+    let mut classes: Vec<(String, InterlinguaId)> = ids.into_iter().collect();
     classes.sort_by(|a, b| a.0.cmp(&b.0));
     encode(&classes, &id_edges)
 }

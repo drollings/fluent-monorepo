@@ -396,9 +396,9 @@ impl NodeRetrievalService {
                 if r.predicate_ids.is_empty() {
                     return true;
                 }
-                r.predicate_ids.iter().any(|p| {
-                    *p == q || store.ancestors_of(*p).contains(&q)
-                })
+                r.predicate_ids
+                    .iter()
+                    .any(|p| *p == q || store.ancestors_of(*p).contains(&q))
             })
             .collect()
     }

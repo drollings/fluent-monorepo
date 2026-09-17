@@ -145,21 +145,19 @@ fn golden_spot_checks_dispatch_contract() {
     let target = by_id
         .get("group.default.route.local.complexity.none")
         .expect("group case");
-    assert_eq!(target["model"], "scout/scout-1b:scout");
+    assert_eq!(target["model"], "scout/scout-1b:base");
     assert_eq!(target["group"], "default");
-    assert_eq!(target["params"]["temperature"], 0.1);
     let target = by_id
         .get("group.code.route.code.complexity.none")
         .expect("group case");
-    assert_eq!(target["model"], "code:default", "group code serves code");
+    assert_eq!(target["model"], "code:base", "group code serves code");
     assert_eq!(target["group"], "code");
-    assert_eq!(target["params"]["temperature"], 0.6);
     assert!(
         by_id["target_for_key.nope:default"].is_null(),
         "unknown base fails closed"
     );
     assert_eq!(
-        by_id["target_for_key.code:latest"]["model"], "code:default",
+        by_id["target_for_key.code:latest"]["model"], "code:base",
         "latest normalizes to the default point"
     );
     let backends = &corpus["backends"];

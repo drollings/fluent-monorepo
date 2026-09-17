@@ -382,8 +382,7 @@ fn prefilter_drops_strict_superclass_predicates() {
     // `allowed = {q} ∪ ancestors_of(q)` variant, which would keep these.
     let (store, show, _, _, act, _) = calibration_store();
     let svc = filter_service(store);
-    let reports: Vec<NodeRetrievalReport> =
-        (0..20).map(|i| pred_report(i, vec![act])).collect();
+    let reports: Vec<NodeRetrievalReport> = (0..20).map(|i| pred_report(i, vec![act])).collect();
     let kept = svc.filter_by_interlingua(Some(show), reports);
     assert!(
         kept.is_empty(),
@@ -447,7 +446,9 @@ fn prefilter_mixed_adversarial_set_keep_recall() {
         recall >= 0.98,
         "keep-recall {recall} below 0.98 ({kept_eligible}/{keep_eligible})"
     );
-    let wrongly_kept = (120..200).filter(|i| kept_ids.contains(&i64::from(*i))).count();
+    let wrongly_kept = (120..200)
+        .filter(|i| kept_ids.contains(&i64::from(*i)))
+        .count();
     assert_eq!(wrongly_kept, 0, "removal precision must be 1.0");
 }
 

@@ -123,38 +123,44 @@ impl RoleParams {
     #[must_use]
     pub fn with_model_launch_overrides(&self, params: Option<&serde_json::Value>) -> RoleParams {
         let mut out = self.clone();
-        let Some(obj) = params.and_then(|p| p.as_object()) else {
-            return out;
-        };
-        fn set<T>(obj: &serde_json::Map<String, serde_json::Value>, key: &str, slot: &mut T)
-        where
-            T: serde::de::DeserializeOwned,
-        {
-            if let Some(value) = obj.get(key) {
-                match T::deserialize(value.clone()) {
-                    Ok(parsed) => *slot = parsed,
-                    Err(e) => tracing::warn!(
-                        target: "router.config",
-                        key = %key,
-                        error = %e,
-                        "model params launch knob unparseable — fleet value kept",
-                    ),
+        if let Some(obj) = params.and_then(|p| p.as_object()) {
+            fn set<T>(obj: &serde_json::Map<String, serde_json::Value>, key: &str, slot: &mut T)
+            where
+                T: serde::de::DeserializeOwned,
+            {
+                if let Some(value) = obj.get(key) {
+                    match T::deserialize(value.clone()) {
+                        Ok(parsed) => *slot = parsed,
+                        Err(e) => tracing::warn!(
+                            target: "router.config",
+                            key = %key,
+                            error = %e,
+                            "model params launch knob unparseable — fleet value kept",
+                        ),
+                    }
                 }
             }
+            set(obj, "num_ctx", &mut out.num_ctx);
+            set(obj, "ctx_size", &mut out.num_ctx);
+            set(obj, "batch_size", &mut out.batch_size);
+            set(obj, "ubatch_size", &mut out.ubatch_size);
+            set(obj, "cache_type_k", &mut out.cache_type_k);
+            set(obj, "cache_type_v", &mut out.cache_type_v);
+            set(obj, "flash_attn", &mut out.flash_attn);
+            set(obj, "n_gpu_layers", &mut out.n_gpu_layers);
+            set(obj, "n_cpu_moe", &mut out.n_cpu_moe);
+            set(obj, "sleep_idle_seconds", &mut out.sleep_idle_seconds);
+            set(obj, "stream", &mut out.stream);
+            set(obj, "filter_thinking", &mut out.filter_thinking);
+            set(obj, "max_ctx", &mut out.max_ctx);
         }
-        set(obj, "num_ctx", &mut out.num_ctx);
-        set(obj, "ctx_size", &mut out.num_ctx);
-        set(obj, "batch_size", &mut out.batch_size);
-        set(obj, "ubatch_size", &mut out.ubatch_size);
-        set(obj, "cache_type_k", &mut out.cache_type_k);
-        set(obj, "cache_type_v", &mut out.cache_type_v);
-        set(obj, "flash_attn", &mut out.flash_attn);
-        set(obj, "n_gpu_layers", &mut out.n_gpu_layers);
-        set(obj, "n_cpu_moe", &mut out.n_cpu_moe);
-        set(obj, "sleep_idle_seconds", &mut out.sleep_idle_seconds);
-        set(obj, "stream", &mut out.stream);
-        set(obj, "filter_thinking", &mut out.filter_thinking);
-        set(obj, "max_ctx", &mut out.max_ctx);
+        // The max_ctx cap limits the size of num_ctx: a model whose cap
+        // sits below its (possibly overridden) window clamps at spawn.
+        if let Some(cap) = out.max_ctx {
+            if out.num_ctx > cap {
+                out.num_ctx = cap;
+            }
+        }
         out
     }
 }
