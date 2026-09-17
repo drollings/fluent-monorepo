@@ -6,7 +6,7 @@ use common_core::hash::uuid_v4;
 use fluent_llm::cache::ResponseCache;
 use http_body_util::BodyExt;
 
-use crate::config::{ModelEntry, ModelGroup, RoleEntry, RouteRef};
+use crate::config::{ModelEntry, RoleEntry, RouteRef};
 use crate::dag_session::{DependencySession, SessionRegistry, SessionStep, StepResult};
 use crate::dispatch::escalation::{EscalationContext, Ladder};
 use crate::ledger::ContentNodeLedger;
@@ -45,8 +45,8 @@ pub struct ServerDeps {
     pub rigor_route: Option<Arc<RigorRoute>>,
     pub sessions: Option<Arc<SessionRegistry>>,
     pub http_client: Arc<reqwest::Client>,
-    /// Per-model-group escalation ladders. Keyed by
-    /// `RoutingTarget.group`; resolved after the local chain exhausts.
+    /// Per-role escalation ladders. Keyed by `RoutingTarget.role`;
+    /// resolved after the local chain exhausts.
     pub ladders: HashMap<String, Arc<Ladder>>,
     /// Deterministic-fact cache consulted before escalating.
     pub context_cache: Option<Arc<dyn fluent_types::ContextCache>>,
@@ -67,7 +67,7 @@ pub struct ServerDeps {
     /// appear); `POST /models/unload` routes onnx roles through it.
     pub fleet: Option<Arc<crate::instances::traits::LlmFleet>>,
     /// The in-process onnx generative `ChatBackend` (the `onnx/llm` routing
-    /// model). Routes whose `model_groups` resolve to an onnx role dispatch
+    /// model). Routes whose role `models` resolve to an onnx role dispatch
     /// through it. `None` when no onnx LLM is wired (mock mode / no fleet).
     pub onnx_llm_backend: Option<Arc<dyn fluent_llm::client::ChatBackend>>,
     /// The `LedgerAgentCoordinator`, attached by default wherever a ledger is
@@ -96,9 +96,6 @@ pub struct ServerDeps {
     /// for the single inference-point precedence and role expansion on paths
     /// that only carry the `models` map otherwise.
     pub roles: Arc<HashMap<String, RoleEntry>>,
-    /// Model-group table (mirrors `RouterConfig.model_groups`): bare group
-    /// names in requests resolve through it (routes → groups → models).
-    pub groups: Arc<HashMap<String, ModelGroup>>,
     /// The workflow-learning recorder: solved question-mode runs are distilled
     /// into the embedding-keyed library through it (best-effort, default-off).
     /// `None` leaves the escalation ladder byte-identical.
@@ -110,12 +107,12 @@ pub struct ServerDeps {
 }
 
 impl ServerDeps {
-    /// The escalation ladder for a model's route group, if the group
-    /// configured one. Direct-model requests (no route - no group) get `None`
+    /// The escalation ladder for a model's route role, if the role
+    /// configured one. Direct-model requests (no route - no role) get `None`
     /// - they never escalate.
     pub fn ladder_for_model(&self, model_name: &str) -> Option<&Arc<Ladder>> {
-        let group = self.routes.get(model_name).map(|r| &r.group)?;
-        self.ladders.get(group)
+        let role = self.routes.get(model_name).map(|r| r.role.as_str())?;
+        self.ladders.get(role)
     }
 }
 
@@ -484,7 +481,6 @@ async fn handle_chat_completion(
         fleet: _,
         onnx_llm_backend,
         roles,
-        groups,
         workflow_recorder,
         frame_gate: _,
     } = deps;
@@ -644,8 +640,8 @@ async fn handle_chat_completion(
     if let Some(step) = &session_step {
         let frontier_owned = step.session.lock().is_ok_and(|s| s.is_frontier_owned());
         if frontier_owned {
-            let group = routes.get(&model_name).map(|r| r.group.as_str());
-            if let Some(ladder) = group.and_then(|g| ladders.get(g)) {
+            let role = routes.get(&model_name).map(|r| r.role.as_str());
+            if let Some(ladder) = role.and_then(|r| ladders.get(r)) {
                 tracing::info!(
                     target: "router.server",
                     session_id = %session_id,
@@ -682,7 +678,6 @@ async fn handle_chat_completion(
         &model_name,
         &routes,
         &models,
-        &groups,
         &roles,
         &pipelines,
         &router_request,
@@ -1416,7 +1411,6 @@ fn resolve_pipeline(
     model_name: &str,
     routes: &std::collections::HashMap<String, RouteRef>,
     models: &std::collections::HashMap<String, ModelEntry>,
-    groups: &std::collections::HashMap<String, ModelGroup>,
     roles: &std::collections::HashMap<String, RoleEntry>,
     pipelines: &std::collections::HashMap<String, Arc<PipelineOrchestrator>>,
     router_request: &RouterRequest,
@@ -1439,7 +1433,7 @@ fn resolve_pipeline(
         routing_target: Some(rt),
         classifier_response: None,
     };
-    // One qualified-id constructor: `<base>[:<instance|group|latest>]`
+    // One qualified-id constructor: `<base>[:<instance|role|latest>]`
     // resolves directly to the owning model's server.
     let qualified_target = |base: &str, qualifier: Option<&str>| -> Option<RoutingTarget> {
         let entry = models.get(base)?;
@@ -1450,7 +1444,7 @@ fn resolve_pipeline(
     };
 
     // The `model:` hatch addresses the models table directly, past any
-    // route or group shadowing the same name. Intercepted before the key
+    // route or role shadowing the same name. Intercepted before the key
     // grammar runs — the split below would otherwise read `model` as the
     // base. A hatch naming no entry warns and resolves the remainder
     // through the normal order.
@@ -1474,7 +1468,7 @@ fn resolve_pipeline(
         requested = rest;
     }
 
-    // The model id grammar `<model_id>[:<instance|group|latest>]`: a qualified
+    // The model id grammar `<model_id>[:<instance|role|latest>]`: a qualified
     // id resolves directly to the owning model's server, bypassing the route
     // table. `<id>:latest` means the pool's default instance.
     // Canonical model-id split — zero-alloc callers use split_model_key (see pipeline.rs).
@@ -1493,22 +1487,22 @@ fn resolve_pipeline(
 
     let route = routes.get(requested).cloned();
 
-    // Bare group name (routes → groups → models order): the cheapest static
-    // member serves directly, the group attached for the audit trail.
-    if route.is_none() && groups.contains_key(requested) {
-        let expanded = crate::config::expanded_group_members(groups, roles, models, requested);
-        if let Some(member) = crate::config::select_group_member(requested, &expanded, models, None)
+    // Bare role name (routes → roles → models order): the cheapest static
+    // member serves directly, the role attached for the audit trail.
+    if route.is_none() && roles.contains_key(requested) {
+        let expanded = crate::config::expanded_role_members(roles, models, requested);
+        if let Some(member) = crate::config::select_role_member(requested, &expanded, models, None)
         {
             let (base, qualifier) = crate::config::split_model_key(&member);
             if let Some(mut rt) = qualified_target(base, qualifier) {
-                rt.group = Some(requested.to_string());
+                rt.role = Some(requested.to_string());
                 rt.target_name = Some(requested.to_string());
                 tracing::info!(
                     target: "router.server",
                     model = %model_name,
                     target = %rt.model,
-                    group = %requested,
-                    "model group resolved to owning server",
+                    role = %requested,
+                    "role resolved to owning server",
                 );
                 return direct_result(rt);
             }
@@ -1528,7 +1522,7 @@ fn resolve_pipeline(
 
     let mut ctx = WorkContext::default();
     ctx.set_structured("request", router_request);
-    // Availability view for group-member sentinel expansion: the shared
+    // Availability view for role-member sentinel expansion: the shared
     // dispatch-success recency beside the stats, plus the supervisor liveness
     // probe. Stages without these channels degrade to unexpanded behavior.
     ctx.set(

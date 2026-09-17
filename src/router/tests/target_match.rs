@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::config::{ModelEntry, ModelGroup, RouteRef};
+use crate::config::{ModelEntry, RoleEntry, RouteRef};
 use crate::test_stubs::StubChatBackend;
 
 use super::*;
@@ -57,13 +57,12 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
     }
 }
 
-fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
+fn routing_with(role: &str, keys: &[&str]) -> RoutingConfig {
     RoutingConfig {
         routes: HashMap::from([(
             "local".into(),
             RouteRef {
-                group: group.into(),
-                role: None,
+                role: role.into(),
                 pipelines: vec!["default".into()],
                 description: "local".into(),
                 always_route: false,
@@ -73,16 +72,12 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
             .iter()
             .map(|k| (k.to_string(), model_entry(k, 0, 1.0)))
             .collect(),
-        model_groups: HashMap::from([(
-            group.into(),
-            ModelGroup::Array(keys.iter().map(ToString::to_string).collect()),
-        )]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
         score_matrix: None,
         onnx_keys: std::collections::BTreeSet::new(),
-        roles: Default::default(),
+        roles: HashMap::from([(role.into(), role_entry(keys))]),
     }
 }
 
@@ -270,7 +265,7 @@ fn climb_matches_first_candidate_within_intelligence() {
     // intelligence >= 3). It self-assesses 4 <= 4 → match.
     assert_eq!(tm.primary.model, "qwen3.5-9b");
     assert_eq!(tm.primary.target_name.as_deref(), Some("local"));
-    assert_eq!(tm.primary.group.as_deref(), Some("default"));
+    assert_eq!(tm.primary.role.as_deref(), Some("default"));
     // Exactly 1 self-assessment: swarm skipped by the start index, qwen3.5-9b
     // assessed and matched.
     assert_eq!(tm.assessments.len(), 1);
@@ -446,13 +441,26 @@ fn empty_candidates_is_none() {
 
 // ── Availability-sentinel expansion (`last` / `any`) ────────────────────
 
-fn routing_with_members(group: &str, entries: &[&str], members: &[&str]) -> RoutingConfig {
+fn role_entry(members: &[&str]) -> RoleEntry {
+    RoleEntry {
+        max_parallel: None,
+        pinned: false,
+        enable_thinking: None,
+        filter_thinking: true,
+        preserve_thinking: None,
+        params: Default::default(),
+        models: members.iter().map(ToString::to_string).collect(),
+        snapshot: None,
+        escalation: None,
+    }
+}
+
+fn routing_with_members(role: &str, entries: &[&str], members: &[&str]) -> RoutingConfig {
     RoutingConfig {
         routes: HashMap::from([(
             "local".into(),
             RouteRef {
-                group: group.into(),
-                role: None,
+                role: role.into(),
                 pipelines: vec!["default".into()],
                 description: "local".into(),
                 always_route: false,
@@ -462,16 +470,12 @@ fn routing_with_members(group: &str, entries: &[&str], members: &[&str]) -> Rout
             .iter()
             .map(|k| (k.to_string(), model_entry(k, 0, 1.0)))
             .collect(),
-        model_groups: HashMap::from([(
-            group.into(),
-            ModelGroup::Array(members.iter().map(ToString::to_string).collect()),
-        )]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
         score_matrix: None,
         onnx_keys: std::collections::BTreeSet::new(),
-        roles: Default::default(),
+        roles: HashMap::from([(role.into(), role_entry(members))]),
     }
 }
 
@@ -485,48 +489,48 @@ fn wire_of(routing: &RoutingConfig, key: &str) -> String {
 #[test]
 fn expansion_without_sentinels_is_identity() {
     let routing = routing_with_members("g", &["a", "b"], &["a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
 #[test]
 fn expansion_last_with_recorded_success_orders_first() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "b"]);
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s", "g", &wire_of(&routing, "b"));
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
 }
 
 #[test]
 fn expansion_last_without_success_skips_sentinel() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
 #[test]
 fn expansion_last_pointing_at_removed_member_skips() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a"]);
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s", "g", "zzz-removed-model");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string()]);
 }
 
 #[test]
 fn expansion_any_orders_loaded_first() {
     let routing = routing_with_members("g", &["a", "b"], &["any", "a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|m| m == "b", None);
+    let expanded = expand_role_keys(&routing, "g", None, None, &|m| m == "b", None);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|m| m == "a", None);
+    let expanded = expand_role_keys(&routing, "g", None, None, &|m| m == "a", None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
 #[test]
 fn expansion_any_all_down_keeps_config_order() {
     let routing = routing_with_members("g", &["a", "b"], &["any", "a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
@@ -536,7 +540,7 @@ fn expansion_any_onnx_members_count_as_loaded() {
     routing.onnx_keys.insert("onnx/llm".to_string());
     // No server is running anywhere; the onnx role still orders first via the
     // existing registry readiness (no new probe).
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["onnx/llm".to_string(), "a".to_string()]);
 }
 
@@ -564,9 +568,9 @@ fn last_viable_routing() -> RoutingConfig {
 #[test]
 fn last_viable_session_pick_serves_when_viable() {
     let routing = last_viable_routing();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s", "g", &wire_of(&routing, "b"));
-    let expanded = expand_group_keys(
+    let expanded = expand_role_keys(
         &routing,
         "g",
         Some(&recency),
@@ -584,13 +588,13 @@ fn last_viable_session_pick_serves_when_viable() {
 #[test]
 fn last_viable_stale_pick_falls_through_with_single_audit() {
     let routing = last_viable_routing();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     // Session pick `a` is stale (intelligence 1 < complexity 4); the global
     // pick `b` serves instead. The session miss audits exactly once.
     recency.record("s", "g", &wire_of(&routing, "a"));
     recency.record_any(&wire_of(&routing, "b"));
     let (expanded, logs) = crate::test_support::capture_logs(|| {
-        expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, Some(4))
+        expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, Some(4))
     });
     assert_eq!(
         expanded,
@@ -610,7 +614,7 @@ fn last_viable_absent_recency_promotes_viable_first() {
     // No history anywhere and nothing running: viability (cheapest passing)
     // promotes `b` ahead of the pricey config head `a`.
     let (expanded, logs) = crate::test_support::capture_logs(|| {
-        expand_group_keys(&routing, "g", None, None, &|_| false, None)
+        expand_role_keys(&routing, "g", None, None, &|_| false, None)
     });
     assert_eq!(
         expanded,
@@ -627,7 +631,7 @@ fn last_viable_absent_recency_promotes_viable_first() {
 #[test]
 fn last_viable_classifier_key_serves_global_when_fittable() {
     let routing = last_viable_routing();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record_any(&wire_of(&routing, "b"));
     // `b` is remote (no weights): always fittable, no load to trigger.
     let picked = viable_last_key(&routing, Some(&recency), &|_| false);
@@ -637,7 +641,7 @@ fn last_viable_classifier_key_serves_global_when_fittable() {
 #[test]
 fn last_viable_classifier_key_vetoes_cold_managed_pick() {
     let routing = last_viable_routing();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record_any(&wire_of(&routing, "c"));
     // `c` is pool-managed but cold: the cheap duty must not cold-load it.
     // Fleet fallback prefers resident-cheapest (`b`, not the vetoed `c`).
@@ -648,7 +652,7 @@ fn last_viable_classifier_key_vetoes_cold_managed_pick() {
 #[test]
 fn last_viable_classifier_key_ghost_falls_back_to_fleet() {
     let routing = last_viable_routing();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record_any("ghost-wire");
     let picked = viable_last_key(&routing, Some(&recency), &|m| m == "b");
     // Unresolvable wire vetoed; fleet viable with `b` running: all fittable,
@@ -816,7 +820,7 @@ fn last_calibration_fallback_precision_recall() {
     let mut mismatches = Vec::new();
     for case in &cases {
         let routing = last_viable_routing();
-        let recency = GroupRecency::new();
+        let recency = RoleRecency::new();
         if case.use_recency {
             if let Some(wire) = &case.session_wire {
                 // Session records always land on "s" except the unknown-session
@@ -833,9 +837,9 @@ fn last_calibration_fallback_precision_recall() {
             }
         }
         let recency_opt = if case.use_recency { Some(&recency) } else { None };
-        let run_once = |routing: &RoutingConfig, recency: Option<&GroupRecency>| {
+        let run_once = |routing: &RoutingConfig, recency: Option<&RoleRecency>| {
             crate::test_support::capture_logs(|| {
-                expand_group_keys(routing, "g", recency, Some(case.session_key), &|_| false, Some(4))
+                expand_role_keys(routing, "g", recency, Some(case.session_key), &|_| false, Some(4))
             })
         };
         let (expanded, logs) = run_once(&routing, recency_opt);
@@ -909,7 +913,7 @@ fn last_calibration_fallback_precision_recall() {
 
 #[test]
 fn recency_record_and_last_for_roundtrip() {
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     assert!(recency.last_for("s", "g").is_none());
     recency.record("s", "g", "b-wire");
     assert_eq!(recency.last_for("s", "g").as_deref(), Some("b-wire"));
@@ -921,9 +925,9 @@ fn recency_record_and_last_for_roundtrip() {
 #[test]
 fn expanded_candidates_yield_literal_targets_only() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "any", "zzz-unknown"]);
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s", "g", &wire_of(&routing, "a"));
-    let cands = expanded_candidates_for_group(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+    let cands = expanded_candidates_for_role(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     let keys: Vec<&str> = cands.iter().map(|c| c.model_key.as_str()).collect();
     // Sentinels never become candidates; unknown literals are skipped exactly
     // as the literal path skips members with no `models` entry.
@@ -1164,16 +1168,16 @@ fn last_group_routing() -> RoutingConfig {
 
 fn last_group_with_sentinel() -> RoutingConfig {
     let mut routing = last_group_routing();
-    routing.model_groups.insert(
+    routing.roles.insert(
         "g".into(),
-        ModelGroup::Array(vec!["a".into(), "last".into(), "b".into()]),
+        role_entry(&["a", "last", "b"]),
     );
     routing
 }
 
 #[test]
 fn recency_is_session_scoped() {
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s1", "g", "a");
     recency.record("s2", "g", "b");
     assert_eq!(recency.last_for("s1", "g").as_deref(), Some("a"));
@@ -1191,10 +1195,10 @@ fn recency_is_session_scoped() {
 #[test]
 fn unknown_session_falls_back_to_head() {
     let routing = last_group_with_sentinel();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     // Another session's recency must not leak in.
     recency.record("other-session", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -1205,9 +1209,9 @@ fn unknown_session_falls_back_to_head() {
 #[test]
 fn known_session_expands_last_in_place() {
     let routing = last_group_with_sentinel();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s1", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -1218,10 +1222,10 @@ fn known_session_expands_last_in_place() {
 #[test]
 fn last_naming_non_member_is_skipped() {
     let routing = last_group_with_sentinel();
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     // Recorded wire id is no longer a group member (evicted model).
     recency.record("s1", "g", "zzz-removed-model");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -1231,7 +1235,7 @@ fn last_naming_non_member_is_skipped() {
 
 #[test]
 fn recency_map_is_bounded() {
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     for i in 0..(crate::target_match::RECENCY_CAPACITY + 16) {
         recency.record(&format!("session-{i}"), "g", "a");
     }
@@ -1247,7 +1251,7 @@ fn recency_map_is_bounded() {
 #[test]
 fn recency_concurrent_records_serialize() {
     use std::sync::Arc;
-    let recency = Arc::new(GroupRecency::new());
+    let recency = Arc::new(RoleRecency::new());
     let handles: Vec<_> = (0..8)
         .map(|t| {
             let recency = Arc::clone(&recency);
@@ -1277,10 +1281,7 @@ fn recency_concurrent_records_serialize() {
 
 fn last_any_routing(members: &[&str]) -> RoutingConfig {
     let mut routing = routing_with("g", &["a", "b"]);
-    routing.model_groups.insert(
-        "g".into(),
-        ModelGroup::Array(members.iter().map(ToString::to_string).collect()),
-    );
+    routing.roles.insert("g".into(), role_entry(members));
     routing
 }
 
@@ -1288,30 +1289,30 @@ fn last_any_routing(members: &[&str]) -> RoutingConfig {
 fn last_never_fires_without_session_recency() {
     // Control group: every case must fall back to the head at 100%.
     let head = vec!["a".to_string(), "b".to_string()];
-    type Seed = Box<dyn Fn(&GroupRecency)>;
+    type Seed = Box<dyn Fn(&RoleRecency)>;
     let cases: Vec<(&str, Seed)> = vec![
-        ("first-in-session", Box::new(|_: &GroupRecency| {})),
+        ("first-in-session", Box::new(|_: &RoleRecency| {})),
         (
             "other-session-only",
-            Box::new(|r: &GroupRecency| r.record("s-other", "g", "b")),
+            Box::new(|r: &RoleRecency| r.record("s-other", "g", "b")),
         ),
         (
             "stale-wire",
-            Box::new(|r: &GroupRecency| r.record("s", "g", "zzz-removed")),
+            Box::new(|r: &RoleRecency| r.record("s", "g", "zzz-removed")),
         ),
     ];
     for (name, seed) in &cases {
         let routing = last_any_routing(&["a", "last", "b"]);
-        let recency = GroupRecency::new();
+        let recency = RoleRecency::new();
         seed(&recency);
-        let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+        let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
         assert_eq!(expanded, head, "control case {name} falls back to the head");
     }
     // The no-session channel is the same fallback.
     let routing = last_any_routing(&["a", "last", "b"]);
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), None, &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), None, &|_| false, None);
     assert_eq!(
         expanded, head,
         "no session channel falls back even with records present"
@@ -1321,15 +1322,15 @@ fn last_never_fires_without_session_recency() {
 #[test]
 fn any_orders_loaded_first_around_last_fallback() {
     let routing = last_any_routing(&["last", "any", "a", "b"]);
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     // No recency anywhere: Last falls back (audited), Any partitions.
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b", None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b", None);
     assert_eq!(
         expanded,
         vec!["b".to_string(), "a".to_string()],
         "loaded-first ordering survives the Last fallback"
     );
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -1343,9 +1344,9 @@ fn ordering_never_outranks_capability() {
     // hard, a assesses fitting — a wins from second position. Run twice:
     // identical walks (no hidden verdict cache anywhere).
     let routing = last_any_routing(&["last", "a", "b"]);
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     recency.record("s", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
     let cands = candidates(&[("b", 5, 1.0), ("a", 1, 1.0)]);
     for _ in 0..2 {
@@ -1372,7 +1373,7 @@ fn group_recency_eviction_is_seq_total_ordered() {
     // the re-recorded entry must survive and the true oldest must leave.
     // Sequence stamps are totally ordered, so same-instant re-records can
     // never tie with (and lose to) the entry they just refreshed.
-    let recency = GroupRecency::new();
+    let recency = RoleRecency::new();
     for i in 0..RECENCY_CAPACITY {
         recency.record("sess", &format!("group-{i}"), &format!("model-{i}"));
     }

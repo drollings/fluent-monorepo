@@ -28,8 +28,7 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
         routes: HashMap::from([(
             "local".into(),
             crate::config::RouteRef {
-                group: group.into(),
-                role: None,
+                role: group.into(),
                 pipelines: vec!["default".into()],
                 description: "local".into(),
                 always_route: false,
@@ -68,16 +67,25 @@ fn routing_with(group: &str, keys: &[&str]) -> RoutingConfig {
                 )
             })
             .collect(),
-        model_groups: HashMap::from([(
+        roles: std::collections::HashMap::from([(
             group.into(),
-            crate::config::ModelGroup::Array(keys.iter().map(ToString::to_string).collect()),
+            crate::config::RoleEntry {
+                max_parallel: None,
+                pinned: false,
+                enable_thinking: None,
+                filter_thinking: true,
+                preserve_thinking: None,
+                params: Default::default(),
+                models: keys.iter().map(ToString::to_string).collect(),
+                snapshot: None,
+                escalation: None,
+            },
         )]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
         score_matrix: None,
         onnx_keys: std::collections::BTreeSet::new(),
-        roles: Default::default(),
     }
 }
 

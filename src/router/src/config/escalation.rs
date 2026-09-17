@@ -1,145 +1,48 @@
 //! Escalation-ladder configuration
 //!
-//! `model_groups[group]` accepts either the shipped array form
-//! (`["fast", "small"]`) or a new object form
-//! (`{"models": [...], "escalation": {...}}`) that attaches a
-//! [`EscalationLadderConfig`] to the group. The ladder types are plain data;
-//! the runtime that consumes them lives in `crate::dispatch::escalation`.
+//! Roles carry the routing member lists; an [`EscalationLadderConfig`] may be
+//! attached to a role (`roles.<role>.escalation`). The ladder types are plain
+//! data; the runtime that consumes them lives in
+//! `crate::dispatch::escalation`.
 
 use serde::{Deserialize, Serialize};
 
 use crate::frontier::modes::EscalationMode;
 
-/// A `model_groups[group]` value. The array form (a list of model keys) keeps
-/// existing configs deserializing byte-identically; the object form attaches
-/// an optional escalation ladder to the group.
-///
-/// The size difference between variants is accepted: both are constructed
-/// once at config load, never in a hot loop.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-#[allow(clippy::large_enum_variant)]
-pub enum ModelGroup {
-    /// The shipped shape: a plain list of model keys.
-    Array(Vec<String>),
-    /// The escalated shape: an explicit `models` list plus an optional
-    /// `escalation` ladder.
-    Object {
-        #[serde(default)]
-        models: Vec<String>,
-        #[serde(default)]
-        escalation: Option<EscalationLadderConfig>,
-        /// Whether the `last`/`any` availability sentinels are appended
-        /// after the declared members (default `true`). The array form
-        /// always appends; declare the object form with
-        /// `"sentinels": false` to opt out.
-        #[serde(default = "default_sentinels")]
-        sentinels: bool,
-    },
-}
-
-fn default_sentinels() -> bool {
-    true
-}
-
-/// One member of a `model_groups` list: either a literal model key or an
-/// availability-ordering sentinel. `Last` expands to the group's
+/// One member of a role `models` list: either a literal model key or an
+/// availability-ordering sentinel. `Last` expands to the role's
 /// most-recently-successful key (when still a member); `Any` orders the
 /// currently-loaded members first, in config order. Both only *order*
 /// candidates — the intelligence climb underneath is unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GroupMember {
-    /// A literal model key (possibly qualified, e.g. `code:default`).
+pub enum RoleMember {
+    /// A literal model key (possibly qualified, e.g. `qwen3.5-9b:quick`).
     Key(String),
-    /// The group's most-recently-successful member.
+    /// The role's most-recently-successful member.
     Last,
     /// Any loaded member first, then the rest in config order.
     Any,
 }
 
-impl GroupMember {
-    /// Parse one raw group member. Only the bare, lowercase `last`/`any`
+impl RoleMember {
+    /// Parse one raw role member. Only the bare, lowercase `last`/`any`
     /// spellings are sentinels (case-sensitive); every other spelling —
-    /// including qualified forms like `base:last` — stays a literal key and
+    /// including qualified forms like `quick:last` — stays a literal key and
     /// keeps today's fail-closed lookup when unknown.
     pub fn parse(raw: &str) -> Self {
         match raw {
-            "last" => GroupMember::Last,
-            "any" => GroupMember::Any,
-            _ => GroupMember::Key(raw.to_string()),
+            "last" => RoleMember::Last,
+            "any" => RoleMember::Any,
+            _ => RoleMember::Key(raw.to_string()),
         }
     }
 
     /// The raw member spelling this parsed from (identity round trip).
     pub fn raw(&self) -> &str {
         match self {
-            GroupMember::Key(key) => key,
-            GroupMember::Last => "last",
-            GroupMember::Any => "any",
-        }
-    }
-}
-
-impl ModelGroup {
-    /// The member model keys, regardless of which form was configured.
-    pub fn models(&self) -> &[String] {
-        match self {
-            ModelGroup::Array(models) | ModelGroup::Object { models, .. } => models,
-        }
-    }
-
-    /// The effective member list: the duty members (see
-    /// [`Self::duty_members`]) plus the implicit `last`/`any` availability
-    /// suffix (each appended only when not already declared). Dispatch
-    /// expansion (`role_expanded_members`, route resolution) composes through
-    /// this; serialization keeps the declared form so configs round-trip
-    /// byte-identically.
-    pub fn effective_models(&self) -> Vec<String> {
-        let duty = self.duty_members();
-        let append = match self {
-            ModelGroup::Array(_) => true,
-            ModelGroup::Object { sentinels, .. } => *sentinels,
-        };
-        let mut out = duty;
-        if append {
-            for sentinel in ["last", "any"] {
-                if !out.iter().any(|m| m == sentinel) {
-                    out.push(sentinel.to_string());
-                }
-            }
-        }
-        out
-    }
-
-    /// The members a group dispatches through: the declared members — or,
-    /// when the group declares no role/model members (empty, or sentinels
-    /// only), the `default` role. An empty group rides the fleet default
-    /// instead of resolving to nothing.
-    pub fn duty_members(&self) -> Vec<String> {
-        if self.models().iter().any(|m| m != "last" && m != "any") {
-            self.models().to_vec()
-        } else {
-            vec!["default".to_string()]
-        }
-    }
-
-    /// The members parsed into literal keys vs. availability sentinels, in
-    /// config order — over the effective list, so the implicit suffix
-    /// participates in sentinel ordering exactly like a declared one. Pure
-    /// parsing — no registry or residency reads.
-    pub fn members(&self) -> Vec<GroupMember> {
-        self.effective_models()
-            .iter()
-            .map(|m| GroupMember::parse(m))
-            .collect()
-    }
-
-    /// The escalation ladder configured for this group, if any. Array-form
-    /// groups never have one.
-    pub fn escalation(&self) -> Option<&EscalationLadderConfig> {
-        match self {
-            ModelGroup::Array(_) => None,
-            ModelGroup::Object { escalation, .. } => escalation.as_ref(),
+            RoleMember::Key(key) => key,
+            RoleMember::Last => "last",
+            RoleMember::Any => "any",
         }
     }
 }
@@ -160,8 +63,7 @@ pub struct FrontierConfig {
     pub model: String,
 }
 
-/// The full escalation ladder for one model group
-/// (`model_groups[group].escalation`).
+/// The full escalation ladder for one role (`roles.<role>.escalation`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscalationLadderConfig {
     /// Ordered escalation modes; tried filter → question → team → turnover.

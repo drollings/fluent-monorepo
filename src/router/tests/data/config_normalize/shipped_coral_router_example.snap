@@ -5,7 +5,7 @@
     "index_path": "data/workflow_library.sqlite",
     "max_candidates": 6,
     "min_score": 0.6,
-    "selector_group": "default"
+    "selector_role": "quick"
   },
   "classification": {
     "root": {
@@ -16,7 +16,6 @@
           "node": {
             "always_route": true,
             "description": "General Q&A",
-            "group": "default",
             "role": "quick",
             "route": "local",
             "type": "terminal"
@@ -28,7 +27,6 @@
           "node": {
             "always_route": true,
             "description": "Code",
-            "group": "code",
             "role": "reasoning",
             "route": "code",
             "type": "terminal"
@@ -40,7 +38,6 @@
           "node": {
             "always_route": false,
             "description": "Summarize",
-            "group": "summarize",
             "role": "scratch",
             "route": "summarize",
             "type": "terminal"
@@ -52,7 +49,6 @@
           "node": {
             "always_route": true,
             "description": "Explore",
-            "group": "explore",
             "role": "scratch",
             "route": "explore",
             "type": "terminal"
@@ -64,7 +60,6 @@
           "node": {
             "always_route": true,
             "description": "Explain",
-            "group": "reason",
             "role": "reasoning",
             "route": "reasoning",
             "type": "terminal"
@@ -76,7 +71,6 @@
           "node": {
             "always_route": false,
             "description": "Translate",
-            "group": "translate",
             "role": "reasoning",
             "route": "translate",
             "type": "terminal"
@@ -88,7 +82,6 @@
           "node": {
             "always_route": true,
             "description": "Prose",
-            "group": "prose",
             "role": "scratch",
             "route": "prose",
             "type": "terminal"
@@ -105,8 +98,8 @@
   "default_route": "local",
   "gguf_dir": "/app/ai/models/gguf",
   "ledger": {
-    "group": "code",
-    "path": "data/ledger.sqlite"
+    "path": "data/ledger.sqlite",
+    "role": "ledger"
   },
   "logging": {
     "audit_log": {
@@ -123,33 +116,6 @@
     "max_age_days": 3,
     "max_file_size_mb": 10,
     "max_files": 4
-  },
-  "model_groups": {
-    "code": [
-      "qwen3.5-9b",
-      "qwen3.8-27b"
-    ],
-    "default": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "explore": [
-      "last"
-    ],
-    "prose": [
-      "last"
-    ],
-    "reason": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "summarize": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "translate": [
-      "last"
-    ]
   },
   "models": {
     "default": {
@@ -281,7 +247,7 @@
         "flash_attn": "on",
         "n_cpu_moe": 0,
         "n_gpu_layers": 999,
-        "num_ctx": 32768,
+        "num_ctx": 8192,
         "repeat_penalty": 1.03,
         "sleep_idle_seconds": 60,
         "temperature": 0.7,
@@ -337,8 +303,8 @@
       },
       "pinned": false,
       "preserve_thinking": false,
-      "retry_base_interval_s": 5,
-      "retry_count": 1,
+      "retry_base_interval_s": 8,
+      "retry_count": 3,
       "roles": {
         "quick": {
           "enable_thinking": false,
@@ -350,11 +316,23 @@
             "temperature": 0.6
           },
           "preserve_thinking": false
+        },
+        "reasoning": {
+          "enable_thinking": true,
+          "filter_thinking": true,
+          "max_ctx": 65536,
+          "params": {
+            "num_ctx": 32768,
+            "reasoning_effort": "medium",
+            "repeat_penalty": 1.02,
+            "temperature": 0.6
+          },
+          "preserve_thinking": false
         }
       },
       "stream": true,
       "template": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/template.txt",
-      "tok_s": 35,
+      "tok_s": 30,
       "total_timeout_ms": 300000,
       "weights": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/latest.gguf"
     }
@@ -375,10 +353,11 @@
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
+        "last",
         "qwen3.5-9b"
       ],
       "params": {
-        "num_ctx": 262144,
+        "num_ctx": 65536,
         "repeat_penalty": 1.01,
         "sleep_idle_seconds": 28800,
         "temperature": 0.1
@@ -399,25 +378,25 @@
         "repeat_penalty": 1.0,
         "temperature": 0.6
       },
-      "pinned": true,
+      "pinned": false,
       "preserve_thinking": false,
       "snapshot": {
         "mode": "manual"
       }
     },
     "reasoning": {
-      "enable_thinking": false,
+      "enable_thinking": true,
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
-        "qwen3.8-27b"
+        "qwen3.5-9b"
       ],
       "params": {
         "num_ctx": 65536,
         "reasoning_budget_tokens": 4096,
-        "reasoning_effort": "high",
+        "reasoning_effort": "medium",
         "repeat_penalty": 1.01,
-        "temperature": 0.1
+        "temperature": 0.7
       },
       "preserve_thinking": false
     },
@@ -432,7 +411,7 @@
         "num_ctx": 65536,
         "repeat_penalty": 1.01,
         "sleep_idle_seconds": 60,
-        "temperature": 0.7
+        "temperature": 0.6
       },
       "pinned": false,
       "preserve_thinking": false

@@ -6,7 +6,6 @@ fn fixture_tree() -> ClassificationTree {
         root: ClassificationNode::Classifier {
             description: "root router".into(),
             model: None,
-            model_group: None,
             coherence_threshold: None,
             safety_threshold: None,
             children: vec![
@@ -15,7 +14,6 @@ fn fixture_tree() -> ClassificationTree {
                     description: "planning".into(),
                     node: ClassificationNode::Terminal {
                         route: "plan".into(),
-                        group: None,
                         role: None,
                         description: "plan things".into(),
                         always_route: false,
@@ -27,7 +25,6 @@ fn fixture_tree() -> ClassificationTree {
                     node: ClassificationNode::Classifier {
                         description: "nested".into(),
                         model: Some("m".into()),
-                        model_group: None,
                         coherence_threshold: Some(0.7),
                         safety_threshold: None,
                         children: vec![ClassificationChild {
@@ -35,8 +32,7 @@ fn fixture_tree() -> ClassificationTree {
                             description: "deep terminal".into(),
                             node: ClassificationNode::Terminal {
                                 route: "deep".into(),
-                                group: Some("g".into()),
-                                role: None,
+                                role: Some("g".into()),
                                 description: "deep things".into(),
                                 always_route: false,
                             },
@@ -71,9 +67,9 @@ fn regenerate_nested_terminal_description() {
     let views = tree.terminal_views();
     let deep = views
         .iter()
-        .find(|(route, _, _)| route == "deep")
+        .find(|(route, _)| route == "deep")
         .expect("deep terminal");
-    assert_eq!(deep.2, "deeper things");
+    assert_eq!(deep.1, "deeper things");
 }
 
 #[test]
@@ -134,7 +130,7 @@ fn reload_versions_and_rejects_no_change_and_topology_edits() {
     assert_eq!(holder.version(), 2);
 
     // Topology edits are excluded, however small: added child, renamed
-    // route, changed group, changed model each fail the fingerprint check.
+    // route, changed role, changed model each fail the fingerprint check.
     let mut topo = holder.current().1;
     if let ClassificationNode::Classifier { children, .. } = &mut topo.root {
         children.push(ClassificationChild {
@@ -142,7 +138,6 @@ fn reload_versions_and_rejects_no_change_and_topology_edits() {
             description: String::new(),
             node: ClassificationNode::Terminal {
                 route: "extra".into(),
-                group: None,
                 role: None,
                 description: String::new(),
                 always_route: false,
@@ -411,13 +406,12 @@ fn topology_guard_accept_reject_table() {
     children.push(ClassificationChild {
         key: "extra".into(),
         description: "new branch".into(),
-        node: ClassificationNode::Terminal {
-            route: "extra".into(),
-            group: None,
-            role: None,
-            description: "extra things".into(),
-            always_route: false,
-        },
+            node: ClassificationNode::Terminal {
+                route: "extra".into(),
+                role: None,
+                description: "extra things".into(),
+                always_route: false,
+            },
     });
     assert!(holder
         .reload_topology(added, "addition", &no_aliases())

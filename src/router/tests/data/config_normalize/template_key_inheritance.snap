@@ -1,5 +1,4 @@
 {
-  "model_groups": {},
   "models": {
     "a": {
       "endpoint": "http://x/v1/chat/completions",

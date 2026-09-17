@@ -631,21 +631,21 @@ pub async fn dispatch_real(
                 match outcome {
                     Ok(outcome) => {
                         // Recency for `last`-sentinel expansion: the serving
-                        // target's wire id, recorded per (session, group)
+                        // target's wire id, recorded per (session, role)
                         // behind the existing audit path (failed targets
                         // never record — this arm runs on `Ok` only).
                         // Ordering only — the intelligence climb above
                         // still decides capability fit.
-                        if let Some(group) = rt.group.as_deref() {
+                        if let Some(role) = rt.role.as_deref() {
                             // The handler stamps the effective session id
                             // into the request; empty only off served paths.
                             let session = router_request.session_id.as_deref().unwrap_or("");
-                            deps.stats.recency.record(session, group, &target.model);
+                            deps.stats.recency.record(session, role, &target.model);
                         }
                         // The global last-answered model backs `last`
-                        // sentinels in sentinel-only groups and the
+                        // sentinels in sentinel-only roles and the
                         // `model: "last"` classifier duty: whichever LLM
-                        // actually answered last, regardless of group.
+                        // actually answered last, regardless of role.
                         deps.stats.recency.record_any(&target.model);
                         crate::audit::AuditRecord::route(
                             crate::pipeline_types::PipelineStage::Classifier,
@@ -735,12 +735,12 @@ pub async fn dispatch_real(
     };
 
     // Escalation: only after the local chain is exhausted do we engage the
-    // frontier ladder. The ladder is resolved from the resolved route's group
-    // (`RoutingTarget.group`); direct-model targets (no group) get `None`.
-    if let Some(ladder) = rt.group.as_deref().and_then(|g| deps.ladders.get(g)) {
+    // frontier ladder. The ladder is resolved from the resolved route's role
+    // (`RoutingTarget.role`); direct-model targets (no role) get `None`.
+    if let Some(ladder) = rt.role.as_deref().and_then(|r| deps.ladders.get(r)) {
         tracing::info!(
             target: "router.server",
-            group = ?rt.group,
+            role = ?rt.role,
             model = %model_name,
             last_error = ?last_error,
             "local chain exhausted — engaging escalation ladder"

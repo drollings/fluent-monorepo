@@ -82,18 +82,19 @@ pub fn default_transcript() -> TranscriptProvider {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MockTranscriptEntry {
     pub user_message: String,
     pub classifier_response: String,
     #[serde(default)]
     pub expected_route: Option<String>,
     /// When set, the resolved routing target must have dispatched through this
-    /// `model_groups` name (i.e. `RoutingTarget.group` equals it). This is the
-    /// intent→model_group assertion hook for the config-synced integration
+    /// role (i.e. `RoutingTarget.role` equals it). This is the
+    /// intent→role assertion hook for the config-synced integration
     /// tests: `expected_route` proves the *route* resolved, this proves the
-    /// dispatch went through the *group* the route maps to in the config.
+    /// dispatch went through the *role* the route maps to in the config.
     #[serde(default)]
-    pub expect_model_group: Option<String>,
+    pub expect_role: Option<String>,
     #[serde(default)]
     pub dispatch_response: Option<String>,
     #[serde(default)]
@@ -192,17 +193,17 @@ impl MockDispatchContext {
             lock(&self.failures).push(msg);
         }
 
-        // Independent model-group check: when the entry declares the expected
-        // `model_groups` name, verify the resolved target was dispatched
-        // through exactly that group (intent → model_group, config-derived).
-        if let (Some(expected_group), Some(actual)) = (&entry.expect_model_group, routing_target) {
-            let actual_group = actual.group.as_deref().unwrap_or("");
-            if actual_group != expected_group {
+        // Independent role check: when the entry declares the expected
+        // role name, verify the resolved target was dispatched
+        // through exactly that role (intent → role, config-derived).
+        if let (Some(expected_role), Some(actual)) = (&entry.expect_role, routing_target) {
+            let actual_role = actual.role.as_deref().unwrap_or("");
+            if actual_role != expected_role {
                 lock(&self.failures).push(format!(
-                    "group mismatch for '{}': expected model_group '{}', got '{}' (route={}, model={})",
+                    "role mismatch for '{}': expected role '{}', got '{}' (route={}, model={})",
                     entry.user_message,
-                    expected_group,
-                    actual_group,
+                    expected_role,
+                    actual_role,
                     actual.target_name.as_deref().unwrap_or(""),
                     actual.model,
                 ));

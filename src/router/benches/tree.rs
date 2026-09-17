@@ -63,11 +63,11 @@ fn tree_json() -> &'static str {
                 "outcome": "hard_reject"
             }},
             {"key": "code", "description": "programming and implementation",
-             "node": {"type": "terminal", "route": "code", "group": "code"}},
+             "node": {"type": "terminal", "route": "code", "role": "code"}},
             {"key": "general", "description": "everything else", "node": {
                 "type": "fallback",
                 "description": "default branch",
-                "node": {"type": "terminal", "route": "local", "group": "question"}
+                "node": {"type": "terminal", "route": "local", "role": "question"}
             }}
         ]
     }}"#
@@ -80,7 +80,6 @@ fn engine() -> fluent_router::stages::tree::ClassificationEngine {
     let routing = fluent_router::config::RoutingConfig {
         routes: HashMap::new(),
         models: HashMap::new(),
-        model_groups: HashMap::new(),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
@@ -119,7 +118,7 @@ fn compiled_filter_tree() -> fluent_router::config::CompiledTree {
                 "outcome": "hard_reject"
             }},
             {"key": "o", "description": "other",
-             "node": {"type": "terminal", "route": "o", "group": "o"}}
+             "node": {"type": "terminal", "route": "o", "role": "o"}}
         ]}}"#,
     )
     .expect("bench filter tree parses");

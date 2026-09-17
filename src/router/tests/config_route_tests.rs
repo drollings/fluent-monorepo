@@ -4,18 +4,18 @@
 //! which drifted from `env/coral-router.json` (it hardcoded model names and
 //! route expectations that no longer exist). The assertions here are *derived
 //! from* the config at runtime — every route (intent) declared there is probed
-//! and the expected outcome is read from the config's `routes` → `model_groups`
+//! and the expected outcome is read from the config's `routes` → `roles`
 //! mapping — so the tests cannot fall out of sync with the config. The
 //! protocol-level checks (health, stats, 404, streaming, malformed input,
 //! commands, PII) reproduce the retired script's breadth.
 //!
 //! Coverage:
-//! 1. **Config sanity** (`config_route_groups_resolve_to_models`): every
-//!    route's `group` names a non-empty `model_groups` ladder of declared
+//! 1. **Config sanity** (route sanity below): every
+//!    route's `role` names a non-empty role `models` ladder of declared
 //!    models; `default_route` is declared.
-//! 2. **Intent → model_group** (`route_intents_dispatch_to_their_model_groups`):
+//! 2. **Intent → role** (`route_intents_dispatch_to_their_roles`):
 //!    every route is probed (multiple phrasings); the router's own route +
-//!    group validation records zero mismatches and each probe is answered.
+//!    role validation records zero mismatches and each probe is answered.
 //! 3. **Direct model dispatch** (`every_declared_model_answers_directly`):
 //!    every declared model answers when requested by key.
 //! 4. **`always_route` semantics** (`always_route_routes_force_dispatch_over_classifier_respond`):
@@ -201,13 +201,13 @@ fn route_classifier_response(route: &str) -> String {
 }
 
 /// A mock transcript entry for a probe that must be routed to `route` and
-/// dispatched through `expect_model_group`.
-fn route_entry(route: &str, expect_model_group: &str, user_message: &str) -> MockTranscriptEntry {
+/// dispatched through `expect_role`.
+fn route_entry(route: &str, expect_role: &str, user_message: &str) -> MockTranscriptEntry {
     MockTranscriptEntry {
         user_message: user_message.to_string(),
         classifier_response: route_classifier_response(route),
         expected_route: Some(route.to_string()),
-        expect_model_group: Some(expect_model_group.to_string()),
+        expect_role: Some(expect_role.to_string()),
         dispatch_response: Some(format!("mock {route} answer")),
         rejected: false,
         reject_reason_contains: None,
@@ -216,7 +216,7 @@ fn route_entry(route: &str, expect_model_group: &str, user_message: &str) -> Moc
 
 /// Derive mock transcript entries per route from the config: the primary probe
 /// plus every variation. Each entry records the expected *route* and the
-/// expected *model_group* (from the tree-derived view's `group`) for the
+/// expected *role* (from the tree-derived view's `role`) for the
 /// router's own validation.
 fn transcripts_from_config(config: &RouterConfig) -> Vec<MockTranscriptEntry> {
     config
@@ -227,7 +227,7 @@ fn transcripts_from_config(config: &RouterConfig) -> Vec<MockTranscriptEntry> {
             probes.extend(varied_probes_for_route(&route));
             probes
                 .into_iter()
-                .map(|probe| route_entry(&route, &rref.group, &probe))
+                .map(|probe| route_entry(&route, &rref.role, &probe))
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -235,7 +235,7 @@ fn transcripts_from_config(config: &RouterConfig) -> Vec<MockTranscriptEntry> {
 
 /// Boot the real `serve_http` accept loop with the given config, a transcript
 /// classifier that returns each probe's canned `target`, and a dispatch mock
-/// that validates route + model_group resolution. Returns the server and the
+/// that validates route + role resolution. Returns the server and the
 /// shared mock context (whose `take_failures()` is the routing verdict).
 async fn spawn_config_mock_server(
     config: RouterConfig,
@@ -315,7 +315,7 @@ fn route_probe_seeds_stay_synced_with_config() {
 
 /// Every declaring terminal passes the boot reference gate: unpinned roles
 /// fall back gracefully and pinned roles are fillable (bound member or
-/// sentinel-bearing group). This fails while any terminal keeps the router
+/// sentinel-bearing role). This fails while any terminal keeps the router
 /// from starting — the config-synced home for the operator-file assertion
 /// hermetic tests must not carry.
 #[test]
@@ -332,11 +332,11 @@ fn terminal_role_shipped_terminals_pass_boot_gate() {
 }
 
 /// Every route (intent) in the config dispatches through its configured
-/// `model_group`, across every probe (primary + variations): the router's own
-/// route + group validation records zero mismatches, and each probe is
+/// role, across every probe (primary + variations): the router's own
+/// route + role validation records zero mismatches, and each probe is
 /// answered with its canned dispatch response (HTTP 200).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn route_intents_dispatch_to_their_model_groups() {
+async fn route_intents_dispatch_to_their_roles() {
     let config = load_config();
     let route_count = config.routes_view().len();
     let entries = transcripts_from_config(&config);
@@ -377,13 +377,13 @@ async fn route_intents_dispatch_to_their_model_groups() {
         "expected at least one probe per declared route, probed {probed}"
     );
 
-    // The router's own route/group validation (recorded on every mock
+    // The router's own route/role validation (recorded on every mock
     // dispatch) must be clean: any mismatch means an intent did not reach the
-    // model_group its route maps to in the config.
+    // role its route maps to in the config.
     let failures = mock.take_failures();
     assert!(
         failures.is_empty(),
-        "intent -> model_group mismatches:\n  {}",
+        "intent -> role mismatches:\n  {}",
         failures.join("\n  ")
     );
 }
@@ -410,7 +410,7 @@ async fn every_declared_model_answers_directly() {
                 // the direct path, so the verdict is never consulted for them.
                 classifier_response: route_classifier_response(key),
                 expected_route: Some(key.clone()),
-                expect_model_group: None,
+                expect_role: None,
                 dispatch_response: Some(format!("mock answer from {key}")),
                 rejected: false,
                 reject_reason_contains: None,
@@ -455,7 +455,7 @@ async fn every_declared_model_answers_directly() {
     );
 }
 
-/// `always_route: true` terminals dispatch through their group end-to-end:
+/// `always_route: true` terminals dispatch through their role end-to-end:
 /// every `always_route` route declared in `env/coral-router.json` answers
 /// with its dispatched response (it reads the live config at runtime, so it
 /// cannot drift and protects the config's flags from silent removal).
@@ -476,7 +476,7 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         .map(|(route, rref)| {
             (
                 route.clone(),
-                rref.group.clone(),
+                rref.role.clone(),
                 probe_for_route(route, rref),
             )
         })
@@ -498,11 +498,11 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
 
     let mut entries: Vec<MockTranscriptEntry> = always
         .iter()
-        .map(|(route, group, probe)| MockTranscriptEntry {
+        .map(|(route, role, probe)| MockTranscriptEntry {
             user_message: probe.clone(),
             classifier_response: route_classifier_response(route),
             expected_route: Some(route.clone()),
-            expect_model_group: Some(group.clone()),
+            expect_role: Some(role.clone()),
             dispatch_response: Some("DISPATCHED-ANSWER".into()),
             rejected: false,
             reject_reason_contains: None,
@@ -517,17 +517,17 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         .map(|(route, rref)| {
             (
                 route.clone(),
-                rref.group.clone(),
+                rref.role.clone(),
                 probe_for_route(route, rref),
             )
         });
     let is_control = control.is_some();
-    if let Some((route, group, probe)) = &control {
+    if let Some((route, role, probe)) = &control {
         entries.push(MockTranscriptEntry {
             user_message: probe.clone(),
             classifier_response: route_classifier_response(route),
             expected_route: Some(route.clone()),
-            expect_model_group: Some(group.clone()),
+            expect_role: Some(role.clone()),
             dispatch_response: Some("DISPATCHED-ANSWER".into()),
             rejected: false,
             reject_reason_contains: None,
@@ -536,7 +536,7 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
             user_message: format!("{probe} [no-pick]"),
             classifier_response: no_pick_response.clone(),
             expected_route: Some(route.clone()),
-            expect_model_group: None,
+            expect_role: None,
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("no valid child".into()),
@@ -637,7 +637,7 @@ async fn pii_requests_are_blocked() {
             user_message: "My SSN is 123-45-6789".into(),
             classifier_response: json!({"route": null, "coherence": 1.0, "safety": 0.05, "complexity": 5, "reason": "SSN scores unsafe"}).to_string(),
             expected_route: None,
-            expect_model_group: None,
+            expect_role: None,
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("safety".into()),
@@ -646,7 +646,7 @@ async fn pii_requests_are_blocked() {
             user_message: "Email me@test.com please".into(),
             classifier_response: json!({"route": null, "coherence": 0.05, "safety": 1.0, "complexity": 5, "reason": "email scores incoherent"}).to_string(),
             expected_route: None,
-            expect_model_group: None,
+            expect_role: None,
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("coherence".into()),
@@ -655,7 +655,7 @@ async fn pii_requests_are_blocked() {
             user_message: "api_key=sk-abcdefghijklmnop123456".into(),
             classifier_response: json!({"route": null, "coherence": 1.0, "safety": 1.0, "complexity": 5, "reason": "api key detected"}).to_string(),
             expected_route: None,
-            expect_model_group: None,
+            expect_role: None,
             dispatch_response: None,
             rejected: true,
             reject_reason_contains: Some("api_key".into()),
@@ -787,16 +787,16 @@ fn mock_transcript_fixture_stays_synced_with_config() {
                 entry.user_message
             );
         }
-        if let Some(expected_group) = &entry.expect_model_group {
-            let declared_group = entry
+        if let Some(expected_role) = &entry.expect_role {
+            let declared_role = entry
                 .expected_route
                 .as_ref()
                 .and_then(|r| view.get(r))
-                .map(|r| r.group.as_str());
+                .map(|r| r.role.as_str());
             assert_eq!(
-                declared_group,
-                Some(expected_group.as_str()),
-                "mock-transcripts.json: expect_model_group '{expected_group}' for '{:?}' must name the model_groups the expected_route maps to",
+                declared_role,
+                Some(expected_role.as_str()),
+                "mock-transcripts.json: expect_role '{expected_role}' for '{:?}' must name the role the expected_route maps to",
                 entry.user_message
             );
         }

@@ -42,12 +42,11 @@ mod server_tests {
     }
 
     /// Boot-materialized routing tables for warmup-target tests: models,
-    /// roles, routes, groups.
+    /// roles, routes.
     type WarmupTables = (
         HashMap<String, crate::config::ModelEntry>,
         HashMap<String, crate::config::RoleEntry>,
         HashMap<String, crate::config::RouteRef>,
-        HashMap<String, crate::config::ModelGroup>,
     );
 
     fn warmup_tables() -> WarmupTables {
@@ -94,25 +93,20 @@ mod server_tests {
         let routes = HashMap::from([(
             "local".to_string(),
             crate::config::RouteRef {
-                group: "default".to_string(),
-                role: Some("quick".to_string()),
+                role: "quick".to_string(),
                 pipelines: vec!["default".into()],
                 description: String::new(),
                 always_route: false,
             },
         )]);
-        let groups = HashMap::from([(
-            "default".to_string(),
-            crate::config::ModelGroup::Array(vec!["qwen".into()]),
-        )]);
-        (models, roles, routes, groups)
+        (models, roles, routes)
     }
 
     #[test]
     fn warmup_targets_cover_pinned_and_default_windows() {
-        let (models, roles, routes, groups) = warmup_tables();
+        let (models, roles, routes) = warmup_tables();
         let targets =
-            crate::server::warmup_targets(&models, &roles, &routes, &groups, "local");
+            crate::server::warmup_targets(&models, &roles, &routes, "local");
         // Pinned ledger plus both quick siblings through the default route's
         // terminal role — unpinned scratch/tiny/plain windows stay lazy.
         assert_eq!(
@@ -128,8 +122,8 @@ mod server_tests {
 
     #[test]
     fn warmup_targets_without_default_route_warm_pinned_only() {
-        let (models, roles, routes, groups) = warmup_tables();
-        let targets = crate::server::warmup_targets(&models, &roles, &routes, &groups, "");
+        let (models, roles, routes) = warmup_tables();
+        let targets = crate::server::warmup_targets(&models, &roles, &routes, "");
         assert_eq!(
             targets,
             vec![("qwen".to_string(), "ledger".to_string())],

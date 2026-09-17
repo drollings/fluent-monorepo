@@ -85,7 +85,6 @@
       "preserve_thinking": false,
       "max_ctx": 262144,
       "params": {
-        "num_ctx": 32768,
         "repeat_penalty": 1.03,
         "temperature": 0.7
       },
@@ -108,9 +107,9 @@
       "weights": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/latest.gguf",
       "template": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/template.txt",
       "intelligence": 6,
-      "tok_s": 35,
-      "retry_count": 1,
-      "retry_base_interval_s": 5,
+      "tok_s": 30,
+      "retry_count": 3,
+      "retry_base_interval_s": 8,
       "total_timeout_ms": 300000,
       "idle_timeout_ms": 30000,
       "enable_thinking": false,
@@ -132,6 +131,18 @@
             "temperature": 0.6,
             "repeat_penalty": 1.02
           }
+        },
+        "reasoning": {
+          "enable_thinking": true,
+          "filter_thinking": true,
+          "preserve_thinking": false,
+          "max_ctx": 65536,
+          "params": {
+            "reasoning_effort": "medium",
+            "num_ctx": 32768,
+            "temperature": 0.6,
+            "repeat_penalty": 1.02
+          }
         }
       }
     }
@@ -142,7 +153,7 @@
       "enable_thinking": false,
       "filter_thinking": true,
       "preserve_thinking": false,
-      "pinned": true,
+      "pinned": false,
       "snapshot": {
         "mode": "manual"
       },
@@ -156,7 +167,6 @@
         "last"
       ]
     },
-
     "ledger": {
       "max_parallel": 1,
       "enable_thinking": false,
@@ -165,15 +175,15 @@
       "pinned": true,
       "params": {
         "sleep_idle_seconds": 28800,
-        "num_ctx": 262144,
+        "num_ctx": 65536,
         "temperature": 0.1,
         "repeat_penalty": 1.01
       },
       "models": [
+        "last",
         "qwen3.5-9b"
       ]
     },
-
     "scratch": {
       "max_parallel": 1,
       "enable_thinking": false,
@@ -183,28 +193,27 @@
       "params": {
         "sleep_idle_seconds": 60,
         "num_ctx": 65536,
-        "temperature": 0.7,
+        "temperature": 0.6,
         "repeat_penalty": 1.01
       },
       "models": [
         "qwen3.5-9b"
       ]
     },
-
     "reasoning": {
       "max_parallel": 1,
-      "enable_thinking": false,
+      "enable_thinking": true,
       "filter_thinking": true,
       "preserve_thinking": false,
       "params": {
-        "reasoning_effort": "high",
+        "reasoning_effort": "medium",
         "reasoning_budget_tokens": 4096,
         "num_ctx": 65536,
-        "temperature": 0.1,
+        "temperature": 0.7,
         "repeat_penalty": 1.01
       },
       "models": [
-        "qwen3.8-27b"
+        "qwen3.5-9b"
       ]
     }
   },
@@ -223,7 +232,6 @@
             "type": "terminal",
             "route": "local",
             "role": "quick",
-            "group": "default",
             "description": "General Q&A",
             "always_route": true
           }
@@ -235,7 +243,6 @@
             "type": "terminal",
             "route": "code",
             "role": "reasoning",
-            "group": "code",
             "description": "Code",
             "always_route": true
           }
@@ -247,7 +254,6 @@
             "type": "terminal",
             "route": "summarize",
             "role": "scratch",
-            "group": "summarize",
             "description": "Summarize",
             "always_route": false
           }
@@ -259,7 +265,6 @@
             "type": "terminal",
             "route": "explore",
             "role": "scratch",
-            "group": "explore",
             "description": "Explore",
             "always_route": true
           }
@@ -271,7 +276,6 @@
             "type": "terminal",
             "route": "reasoning",
             "role": "reasoning",
-            "group": "reason",
             "description": "Explain",
             "always_route": true
           }
@@ -283,7 +287,6 @@
             "type": "terminal",
             "route": "translate",
             "role": "reasoning",
-            "group": "translate",
             "description": "Translate",
             "always_route": false
           }
@@ -295,7 +298,6 @@
             "type": "terminal",
             "route": "prose",
             "role": "scratch",
-            "group": "prose",
             "description": "Prose",
             "always_route": true
           }
@@ -303,48 +305,21 @@
       ]
     }
   },
-  "model_groups": {
-    "default": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "code": [
-      "qwen3.5-9b",
-      "qwen3.8-27b"
-    ],
-    "reason": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "summarize": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "explore": [
-      "last"
-    ],
-    "translate": [
-      "last"
-    ],
-    "prose": [
-      "last"
-    ]
-  },
   "default_route": "local",
   "charts": {
     "dir": "env/workflows/charts",
     "index_path": "data/workflow_library.sqlite",
-    "selector_group": "default",
     "max_candidates": 6,
     "min_score": 0.6,
-    "entity_context": true
+    "entity_context": true,
+    "selector_role": "quick"
   },
   "post_process": {
     "workflow_extraction": false
   },
   "ledger": {
     "path": "data/ledger.sqlite",
-    "group": "code"
+    "role": "ledger"
   },
   "session": {
     "root": "data/sessions"

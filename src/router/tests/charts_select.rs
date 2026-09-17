@@ -104,7 +104,7 @@ fn selector(
             dir: None,
             index_path: None,
             selector_model: None,
-            selector_group: None,
+            selector_role: None,
             max_candidates: 5,
             min_score,
             entity_context: true,

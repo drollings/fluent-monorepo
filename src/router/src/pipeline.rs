@@ -89,18 +89,16 @@ pub struct RoutingTarget {
     pub url: String,
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_name: Option<String>,
-    /// Context-profile role the answer serves in, subordinate to `group`
-    /// (the group picks the weights, the role picks the window). `None`
-    /// resolves the entry default point, exactly as before.
+    /// Role the answer serves in: the role's `models` list picked the
+    /// weights, the role's window serves them. `None` resolves the entry
+    /// default point, exactly as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     /// Model inference params to merge into the request body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
-    /// Instance or group name to route to (explicit request field).
+    /// Instance or role name to route to (explicit request field).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
     /// KV snapshot to switch into the target slot before serving.
@@ -178,7 +176,6 @@ impl RoutingTarget {
         Self {
             url: entry.endpoint.clone(),
             model,
-            group: None,
             target_name: Some(model_key.to_string()),
             role: None,
             params,
@@ -212,7 +209,6 @@ impl RoutingTarget {
         Self {
             url: entry.endpoint.clone(),
             model,
-            group: None,
             target_name: Some(model_key.to_string()),
             role: None,
             params: entry
@@ -245,7 +241,6 @@ impl RoutingTarget {
         Self {
             url: String::new(),
             model: model_key.to_string(),
-            group: None,
             target_name: Some(model_key.to_string()),
             role: None,
             params: None,

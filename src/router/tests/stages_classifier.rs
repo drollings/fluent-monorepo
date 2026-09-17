@@ -305,7 +305,6 @@ fn classifier_sends_response_format_through_extras_seam() {
     let routing_config = RoutingConfig {
         routes: std::collections::HashMap::new(),
         models: std::collections::HashMap::new(),
-        model_groups: std::collections::HashMap::new(),
         system_prompt: String::new(),
         safety_threshold: 0.5,
         default_route: "local".into(),
@@ -451,7 +450,6 @@ fn classifier_merges_overlay_route_hints_into_the_prompt() {
     let routing_config = RoutingConfig {
         routes: std::collections::HashMap::new(),
         models: std::collections::HashMap::new(),
-        model_groups: std::collections::HashMap::new(),
         system_prompt: "You are a router.".into(),
         safety_threshold: 0.5,
         default_route: "local".into(),
@@ -530,7 +528,6 @@ fn nlp_overlay_hints_merge_into_classifier_context() {
     let routing_config = RoutingConfig {
         routes: std::collections::HashMap::new(),
         models: std::collections::HashMap::new(),
-        model_groups: std::collections::HashMap::new(),
         system_prompt: "You are a router.".into(),
         safety_threshold: 0.5,
         default_route: "local".into(),
@@ -619,7 +616,6 @@ fn classifier_prompt_unchanged_without_overlay_hints() {
     let routing_config = RoutingConfig {
         routes: std::collections::HashMap::new(),
         models: std::collections::HashMap::new(),
-        model_groups: std::collections::HashMap::new(),
         system_prompt: "You are a router.".into(),
         safety_threshold: 0.5,
         default_route: "local".into(),
@@ -772,7 +768,6 @@ fn empty_routing_config() -> RoutingConfig {
     RoutingConfig {
         routes: std::collections::HashMap::new(),
         models: std::collections::HashMap::new(),
-        model_groups: std::collections::HashMap::new(),
         system_prompt: String::new(),
         safety_threshold: 0.5,
         default_route: "local".into(),
@@ -1089,8 +1084,7 @@ fn flat_system_prompt_is_byte_identical() {
         (
             "local".to_string(),
             RouteRef {
-                group: "local".into(),
-                role: None,
+                role: "local".into(),
                 pipelines: vec!["default".into()],
                 description: String::new(),
                 always_route: false,
@@ -1099,8 +1093,7 @@ fn flat_system_prompt_is_byte_identical() {
         (
             "code".to_string(),
             RouteRef {
-                group: "code".into(),
-                role: None,
+                role: "code".into(),
                 pipelines: vec!["default".into()],
                 description: "programming and implementation".into(),
                 always_route: true,
@@ -1112,7 +1105,6 @@ fn flat_system_prompt_is_byte_identical() {
     let routing_config = RoutingConfig {
         routes,
         models: std::collections::HashMap::new(),
-        model_groups: std::collections::HashMap::new(),
         system_prompt:
             "Route with care (coherence {coherence_threshold}, safety {safety_threshold}).".into(),
         safety_threshold: 0.5,

@@ -3,17 +3,17 @@
     "user_message": "What is 2+2?",
     "classifier_response": "{\"route\": \"local\", \"coherence\": 0.95, \"safety\": 0.9, \"complexity\": 5, \"reason\": \"simple factual query\"}",
     "expected_route": "local",
-    "expect_model_group": "default",
     "dispatch_response": "2 + 2 = 4",
-    "rejected": false
+    "rejected": false,
+    "expect_role": "quick"
   },
   {
     "user_message": "What is the capital of France?",
     "classifier_response": "{\"route\": \"local\", \"coherence\": 0.95, \"safety\": 0.9, \"complexity\": 5, \"reason\": \"factual query\"}",
     "expected_route": "local",
-    "expect_model_group": "default",
     "dispatch_response": "The capital of France is Paris.",
-    "rejected": false
+    "rejected": false,
+    "expect_role": "quick"
   },
   {
     "user_message": "My SSN is 123-45-6789",
@@ -43,24 +43,24 @@
     "user_message": "Write a Rust function to compute Fibonacci numbers.",
     "classifier_response": "{\"route\": \"code\", \"coherence\": 0.95, \"safety\": 0.9, \"complexity\": 4, \"reason\": \"code generation request\"}",
     "expected_route": "code",
-    "expect_model_group": "code",
     "dispatch_response": "fn fibonacci(n: u32) -> u64 { ... }",
-    "rejected": false
+    "rejected": false,
+    "expect_role": "reasoning"
   },
   {
     "user_message": "What color is the sky?",
     "classifier_response": "{\"route\": \"local\", \"coherence\": 0.95, \"safety\": 0.9, \"complexity\": 5, \"reason\": \"factual query about natural phenomena\"}",
     "expected_route": "local",
-    "expect_model_group": "default",
     "dispatch_response": "The sky appears blue during the day due to Rayleigh scattering.",
-    "rejected": false
+    "rejected": false,
+    "expect_role": "quick"
   },
   {
     "user_message": "hi",
     "classifier_response": "{\"route\": \"local\", \"coherence\": 0.95, \"safety\": 0.9, \"complexity\": 5, \"reason\": \"simple greeting\"}",
     "expected_route": "local",
-    "expect_model_group": "default",
     "dispatch_response": "Hello! How can I help you today?",
-    "rejected": false
+    "rejected": false,
+    "expect_role": "quick"
   }
 ]

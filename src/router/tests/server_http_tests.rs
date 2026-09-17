@@ -1327,7 +1327,7 @@ fn escalated_config(frontier_url: &str) -> RouterConfig {
             "retry_count": 0,
             "retry_base_interval_s": 1
         }},
-        "model_groups": {"fast": {
+        "roles": {"fast": {
             "models": ["fast"],
             "escalation": {
                 "modes": ["turnover"],
@@ -1339,7 +1339,7 @@ fn escalated_config(frontier_url: &str) -> RouterConfig {
             "description": "test router",
             "model": "fast",
             "children": [
-                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "group": "fast"}}
+                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "role": "fast"}}
             ]
         }},
         "default_route": "fast"
@@ -1879,7 +1879,7 @@ async fn knowledge_gate_is_open_inside_http_request_and_closed_outside() {
             user_message: "What is 2+2?".into(),
             classifier_response: String::new(),
             expected_route: Some("fast".into()),
-            expect_model_group: Some("fast".into()),
+            expect_role: Some("fast".into()),
             dispatch_response: Some("four".into()),
             rejected: false,
             reject_reason_contains: None,

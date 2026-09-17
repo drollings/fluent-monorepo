@@ -234,7 +234,7 @@ The classification tree replaces four previously-separate config sections:
 | `system_prompt` | Auto-generated from the tree children + descriptions |
 | `score_matrix` | Coherence/safety thresholds at each classifier node + complexity-based model selection |
 
-`models`, `model_groups`, `server`, and `logging` are unchanged.
+`models`, `roles`, `server`, and `logging` are unchanged.
 
 ## The Escalation Ladder: progressive frontier engagement
 

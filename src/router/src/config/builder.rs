@@ -434,7 +434,6 @@ impl RouterConfig {
         let routing = super::RoutingConfig {
             routes: self.routes_view(),
             models,
-            model_groups: self.model_groups.clone(),
             system_prompt,
             safety_threshold: self.effective_safety_threshold(),
             default_route: self.default_route.clone(),
@@ -443,7 +442,7 @@ impl RouterConfig {
             roles: self.roles.clone(),
         };
         // Boot-scoped shadow report: every requested name shadowed by an
-        // earlier namespace in the routes → groups → models order.
+        // earlier namespace in the routes → roles → models order.
         routing.warn_on_lookup_collisions();
         // Boot-scoped capacity report: capped roles admitting more
         // simultaneity than their counted instance slots.
@@ -452,7 +451,7 @@ impl RouterConfig {
     }
 
     /// The registry keys of the configured in-process onnx roles (e.g.
-    /// `onnx/llm`). A `model_groups` member that names one is a valid dispatch
+    /// `onnx/llm`). A role `models` member that names one is a valid dispatch
     /// target served by the onnx `ChatBackend`. Empty when no onnx fleet (or
     /// this build's `onnx` feature) is configured.
     pub fn onnx_role_keys(&self) -> std::collections::BTreeSet<String> {
@@ -1037,16 +1036,6 @@ pub(crate) fn resolve_classifier_model_key(
         return Some(key);
     }
     if let Some(tree) = config.classification.as_ref() {
-        if let Some(group) = tree.root_classifier_group() {
-            if let Some(key) = super::resolve_group_head_key(
-                &config.models,
-                &config.roles,
-                &config.model_groups,
-                group,
-            ) {
-                return Some(key);
-            }
-        }
         if let Some(model) = super::ClassificationTree::root_classifier_model(tree) {
             // The `last`/`any` availability sentinels: the classifier duty
             // works with whatever model is loaded rather than loading
@@ -1067,10 +1056,7 @@ pub(crate) fn resolve_classifier_model_key(
             return Some(model.to_string());
         }
     }
-    config
-        .model_groups
-        .get("fast")
-        .and_then(|group| group.effective_models().first().cloned())
+    config.classifier_role_key()
 }
 
 /// Resolve an onnx-duty knob (`encoder_model`, each of `overlay_models`)
@@ -1157,14 +1143,6 @@ fn build_classification_engine(
 ) -> crate::stages::tree::ClassificationEngine {
     let default_pipeline_params = PipelineParams::default();
     let default_model_key = resolve_classifier_model_key(config, &default_pipeline_params);
-    if tree.has_nested_model_group() {
-        tracing::warn!(
-            target: "router.config",
-            "model_group on a nested classifier node is ignored — only the \
-             tree root's group feeds the classifier duty; nested classifiers \
-             use their literal `model`",
-        );
-    }
     let mut clients = HashMap::new();
     if use_per_node_backends {
         for key in tree.classifier_model_keys() {
@@ -1276,12 +1254,12 @@ pub(crate) fn llama_chat_backend_for_instance(
 }
 
 impl RouterConfig {
-    /// Build the escalation ladder for every model group that configures one
-    /// (`model_groups[g].escalation`). Groups without a ladder (or without a
+    /// Build the escalation ladder for every role that configures one
+    /// (`roles.<role>.escalation`). Roles without a ladder (or without a
     /// frontier endpoint) are absent - dispatch falls back to
     /// `fallback_completion` as before.
     ///
-    /// The ladders are keyed by group name; `RoutingTarget.group` resolves
+    /// The ladders are keyed by role name; `RoutingTarget.role` resolves
     /// which one a failed local chain escalates through
     pub fn build_escalation_ladders(
         &self,
@@ -1291,8 +1269,8 @@ impl RouterConfig {
         use crate::dispatch::escalation::{EscalationBackends, Ladder};
 
         let mut ladders = HashMap::new();
-        for (group, group_cfg) in &self.model_groups {
-            let Some(ladder_cfg) = group_cfg.escalation() else {
+        for (role, role_entry) in &self.roles {
+            let Some(ladder_cfg) = role_entry.escalation.as_ref() else {
                 continue;
             };
             let Some(frontier) = &ladder_cfg.frontier else {
@@ -1327,13 +1305,13 @@ impl RouterConfig {
             };
             tracing::info!(
                 target: "router.config",
-                group = %group,
+                role = %role,
                 modes = ?ladder_cfg.modes,
                 frontier_model = %frontier.model,
                 "escalation ladder built",
             );
             ladders.insert(
-                group.clone(),
+                role.clone(),
                 Arc::new(Ladder::new(ladder_cfg.clone(), backends)),
             );
         }
@@ -1554,19 +1532,20 @@ impl RouterConfig {
     /// reuses the private `local_backend` helper, the single `LlmClient`
     /// factory; no second construction site).
     ///
-    /// Iterates every model key referenced by any `model_groups` member and
-    /// maps it to its dedicated `ChatBackend`. Role members fan out to their
-    /// candidate keys (availability sentinels build nothing, exactly as
-    /// unknown keys today). The matcher's `default` (for keys absent from the
-    /// map) is supplied by the caller: the injected mock/transcript backend
-    /// when one is provided, otherwise a real client (defense in depth - every
-    /// real group member has a dedicated backend, so the default is only
-    /// reached for a key outside all groups).
+    /// Iterates every model key referenced by any role `models` list and
+    /// maps it to its dedicated `ChatBackend`. Role-naming members fan out
+    /// to their candidate keys (availability sentinels build nothing,
+    /// exactly as unknown keys today). The matcher's `default` (for keys
+    /// absent from the map) is supplied by the caller: the injected
+    /// mock/transcript backend when one is provided, otherwise a real
+    /// client (defense in depth - every real role member has a dedicated
+    /// backend, so the default is only reached for a key outside all
+    /// roles).
     pub fn target_backends(&self) -> HashMap<String, Arc<dyn ChatBackend>> {
         let mut backends = HashMap::new();
         let routing = self.routing_config();
-        for group_key in self.model_groups.keys() {
-            for key in routing.role_expanded_members(group_key) {
+        for role_key in self.roles.keys() {
+            for key in routing.role_dispatch_members(role_key) {
                 if key == "last" || key == "any" {
                     continue;
                 }

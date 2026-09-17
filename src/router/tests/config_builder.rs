@@ -17,8 +17,7 @@ fn config_with_unresolvable_classifier() -> RouterConfig {
             "pipelines": {
                 "default": {"deterministic_prefilter": true, "classifier": true}
             },
-            "models": {},
-            "model_groups": {}
+            "models": {}
         }"#,
     )
     .expect("valid config")
@@ -52,7 +51,7 @@ fn resolvable_classifier_builds_pipeline_without_warnings() {
         r#"{
             "pipelines": {"default": {"classifier": true}},
             "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10}},
-            "model_groups": {"fast": ["fast"]}
+            "roles": {"fast": {"models": ["fast"]}}
         }"#,
     )
     .expect("valid config");
@@ -106,7 +105,7 @@ fn overlay_config(
                     "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10
                 }}
             }},
-            "model_groups": {{"fast": ["fast"]}}
+            "roles": {{"fast": {{"models": ["fast"]}}}}
         }}"#
     ))
     .expect("valid config")
@@ -120,7 +119,7 @@ fn default_nlp_ordering_is_llm_first() {
     );
     assert!(!PipelineParams::default().overlay_enabled());
     let config: RouterConfig = serde_json::from_str(
-        r#"{"pipelines":{"default":{"nlp":true}},"models":{},"model_groups":{}}"#,
+        r#"{"pipelines":{"default":{"nlp":true}},"models":{}}"#,
     )
     .expect("valid");
     assert_eq!(
@@ -209,7 +208,7 @@ fn overlay_bool_key_ignored_without_warning() {
                     "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10
                 }
             },
-            "model_groups": {"fast": ["fast"]}
+            "roles": {"fast": {"models": ["fast"]}}
         }"#,
     )
     .expect("config with legacy overlay key deserializes (key ignored)");
@@ -648,8 +647,8 @@ fn target_backends_builds_every_group_member_key() {
                 "qwen3.6-27b": {"endpoint": "http://b/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 3.0, "cost_output": 3.0, "cost_cached_read": 1.0, "tok_s": 4},
                 "unused": {"endpoint": "http://c/v1/chat/completions", "name": "unused", "intelligence": 9, "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 3.0, "tok_s": 2}
             },
-            "model_groups": {
-                "default": ["swarm", "qwen3.6-27b"],
+            "roles": {
+                "default": {"models": ["swarm", "qwen3.6-27b"]},
                 "translation": {"models": ["qwen3.6-27b"]}
             }
         }"#,
@@ -657,8 +656,8 @@ fn target_backends_builds_every_group_member_key() {
     .expect("valid config");
 
     let backends = config.target_backends();
-    // Exactly the model keys referenced by any model_groups member are
-    // built (deduplicated across groups) - `unused` is not a group member.
+    // Exactly the model keys referenced by any role `models` member are
+    // built (deduplicated across roles) - `unused` is not a role member.
     let mut keys: Vec<&str> = backends.keys().map(String::as_str).collect();
     keys.sort_unstable();
     assert_eq!(keys, vec!["qwen3.6-27b", "swarm"]);
@@ -685,8 +684,8 @@ fn builder_threads_target_match_timeout_ms_into_matcher() {
                 "swarm": {"endpoint": "http://b/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 9},
                 "qwen3.6-27b": {"endpoint": "http://c/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "tok_s": 4}
             },
-            "model_groups": {
-                "default": ["swarm", "qwen3.6-27b"]
+            "roles": {
+                "default": {"models": ["swarm", "qwen3.6-27b"]}
             },
             "default_route": "fast"
         }"#,
@@ -877,7 +876,7 @@ fn chart_compile_rejects_unbound_chart_at_build_time() {
 fn encoder_model_field_defaults_to_none() {
     assert_eq!(PipelineParams::default().encoder_model, None);
     let config: RouterConfig = serde_json::from_str(
-        r#"{"pipelines":{"default":{"nlp":true}},"models":{},"model_groups":{}}"#,
+        r#"{"pipelines":{"default":{"nlp":true}},"models":{}}"#,
     )
     .expect("valid");
     assert_eq!(config.pipelines["default"].encoder_model, None);
@@ -886,7 +885,7 @@ fn encoder_model_field_defaults_to_none() {
 #[test]
 fn encoder_model_serde_round_trips() {
     let config: RouterConfig = serde_json::from_str(
-        r#"{"pipelines":{"default":{"nlp":true,"encoder_model":"lfm-encoder"}},"models":{},"model_groups":{}}"#,
+        r#"{"pipelines":{"default":{"nlp":true,"encoder_model":"lfm-encoder"}},"models":{}}"#,
     )
     .expect("valid");
     assert_eq!(
@@ -986,7 +985,7 @@ fn builder_refine_policy_from_ordering() {
             "models": {
                 "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10}
             },
-            "model_groups": {"fast": ["fast"]}
+            "roles": {"fast": {"models": ["fast"]}}
         }"#,
     )
     .expect("valid config");
@@ -1014,7 +1013,7 @@ fn builder_refine_policy_from_ordering() {
             "models": {
                 "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10}
             },
-            "model_groups": {"fast": ["fast"]}
+            "roles": {"fast": {"models": ["fast"]}}
         }"#,
     )
     .expect("valid config");
@@ -1050,7 +1049,7 @@ fn builder_refine_policy_from_ordering() {
             "models": {
                 "fast": {"endpoint": "http://a/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 10}
             },
-            "model_groups": {"fast": ["fast"]}
+            "roles": {"fast": {"models": ["fast"]}}
         }"#,
     )
     .expect("valid config");
@@ -1133,7 +1132,7 @@ fn late_bound_test_config(endpoint: &str) -> RouterConfig {
                 "idle_timeout_ms": 1000
             }
         },
-        "model_groups": {"g": ["clf"]}
+        "roles": {"g": {"models": ["clf"]}}
     }))
     .expect("valid config")
 }
@@ -1320,8 +1319,7 @@ fn score_matrix_config_parses_and_warns_at_boot() {
                     "score_matrix_authoritative": true
                 }
             },
-            "models": {},
-            "model_groups": {}
+            "models": {}
         }"#,
     )
     .expect("config with score_matrix parses");

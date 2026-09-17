@@ -367,7 +367,6 @@ mod tests {
         let routing_config = RoutingConfig {
             routes: HashMap::new(),
             models: HashMap::new(),
-            model_groups: HashMap::new(),
             system_prompt: String::new(),
             safety_threshold: 0.5,
             default_route: "fast".into(),
@@ -451,7 +450,6 @@ mod tests {
         let routing_config = crate::config::RoutingConfig {
             routes: std::collections::HashMap::new(),
             models: std::collections::HashMap::new(),
-            model_groups: std::collections::HashMap::new(),
             system_prompt: String::new(),
             safety_threshold: 0.5,
             default_route: "fast".into(),
@@ -567,7 +565,6 @@ mod tests {
         let mut routing_config = crate::config::RoutingConfig {
             routes: std::collections::HashMap::new(),
             models: std::collections::HashMap::new(),
-            model_groups: std::collections::HashMap::new(),
             system_prompt: String::new(),
             safety_threshold: 0.5,
             default_route: "fast".into(),
@@ -578,8 +575,7 @@ mod tests {
         routing_config.routes.insert(
             "test".into(),
             crate::config::RouteRef {
-                group: "fast".into(),
-                role: None,
+                role: "fast".into(),
                 pipelines: vec!["default".into()],
                 description: String::new(),
                 always_route: true,
@@ -670,9 +666,9 @@ mod tests {
                     "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "tok_s": 8},
                     "code-model": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 5e-6, "cost_output": 3e-5, "cost_cached_read": 2e-6, "tok_s": 5}
                 },
-                "model_groups": {
-                    "fast": ["fast"],
-                    "code": ["code-model"]
+                "roles": {
+                    "fast": {"models": ["fast"]},
+                    "code": {"models": ["code-model"]}
                 },
                 "default_route": "local",
                 "classification": {
@@ -686,14 +682,14 @@ mod tests {
                             {
                                 "key": "code",
                                 "description": "programming and implementation",
-                                "node": { "type": "terminal", "route": "code", "group": "code" }
+                                "node": { "type": "terminal", "route": "code", "role": "code" }
                             },
                             {
                                 "key": "general",
                                 "description": "everything else",
                                 "node": {
                                     "type": "fallback",
-                                    "node": { "type": "terminal", "route": "local", "group": "fast" }
+                                    "node": { "type": "terminal", "route": "local", "role": "fast" }
                                 }
                             }
                         ]
@@ -744,8 +740,8 @@ mod tests {
             .routing_target
             .expect("tree should produce a routing target");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
-        assert_eq!(rt.model, "code-model:base");
-        assert_eq!(rt.group.as_deref(), Some("code"));
+        assert_eq!(rt.model, "code-model:code");
+        assert_eq!(rt.role.as_deref(), Some("code"));
 
         // The auto-generated prompt was sent to the backend, then the
         // single-member terminal climbed (one self-assessment through the
@@ -830,12 +826,11 @@ mod tests {
         let routing = RoutingConfig {
             routes: routes
                 .iter()
-                .map(|(route, group)| {
+                .map(|(route, role)| {
                     (
                         (*route).to_string(),
                         RouteRef {
-                            group: (*group).to_string(),
-                            role: None,
+                            role: (*role).to_string(),
                             pipelines: vec!["default".into()],
                             description: String::new(),
                             always_route: false,
@@ -844,13 +839,12 @@ mod tests {
                 })
                 .collect(),
             models: config.models.clone(),
-            model_groups: config.model_groups.clone(),
             system_prompt: String::new(),
             safety_threshold: config.effective_safety_threshold(),
             default_route: config.default_route.clone(),
             score_matrix: None,
             onnx_keys: BTreeSet::new(),
-            roles: Default::default(),
+            roles: config.roles.clone(),
         };
         let client = Arc::clone(&backend);
         let limiter = Arc::new(fluent_concurrency::pool::Limiter::new(4));
@@ -932,9 +926,9 @@ mod tests {
                     "code-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 }},
                     "local-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "local-model", "intelligence": 3, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 8 }}
                 }},
-                "model_groups": {{
-                    "code": ["code-model"],
-                    "local": ["local-model"]
+                "roles": {{
+                    "code": {{"models": ["code-model"]}},
+                    "local": {{"models": ["local-model"]}}
                 }},
                 "default_route": "fast"
             }}"#
@@ -1243,9 +1237,9 @@ mod tests {
                     "fast": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10 }},
                     "code-model": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 }}
                 }},
-                "model_groups": {{
-                    "fast": ["fast"],
-                    "code": ["code-model"]
+                "roles": {{
+                    "fast": {{"models": ["fast"]}},
+                    "code": {{"models": ["code-model"]}}
                 }},
                 "default_route": "fast"
             }}"#
@@ -1397,7 +1391,7 @@ mod tests {
                 "models": {
                     "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 10}
                 },
-                "model_groups": {"fast": ["fast"]},
+                "roles": {"fast": {"models": ["fast"]}},
                 "default_route": "fast"
             }"#,
         )
@@ -1473,7 +1467,7 @@ mod tests {
         let rt = result
             .routing_target
             .expect("tree engine must produce a target");
-        assert_eq!(rt.model, "code-model:base");
+        assert_eq!(rt.model, "code-model:code");
     }
 
     // ── Target-matching ladder wired into the flat classifier path ───────
@@ -1496,8 +1490,8 @@ mod tests {
                     "swarm": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 9 }},
                     "qwen3.6-27b": {{ "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "tok_s": 4 }}
                 }},
-                "model_groups": {{
-                    "code": ["swarm", "qwen3.6-27b"]
+                "roles": {{
+                    "code": {{"models": ["swarm", "qwen3.6-27b"]}}
                 }},
                 "default_route": "fast"
             }}"#
@@ -1606,11 +1600,11 @@ mod tests {
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
-        assert_eq!(rt.group.as_deref(), Some("code"));
+        assert_eq!(rt.role.as_deref(), Some("code"));
         assert_eq!(rt.model, "qwen3.6-27b");
-        // Mechanical-failure fallbacks = the group tail (empty after the last
+        // Mechanical-failure fallbacks = the role tail (empty after the last
         // member) plus any `all_dispatch_targets` entries not already included
-        // — here the primary group's other member, preserving today's
+        // — here the primary role's other member, preserving today's
         // cross-group resilience list.
         let fb: Vec<&str> = rt.fallbacks.iter().map(|f| f.model.as_str()).collect();
         assert_eq!(fb, vec!["swarm"]);
@@ -1647,20 +1641,21 @@ mod tests {
         let rt = result.routing_target.expect("must dispatch");
         assert_eq!(rt.model, "swarm");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
-        assert_eq!(rt.group.as_deref(), Some("code"));
+        assert_eq!(rt.role.as_deref(), Some("code"));
     }
 
     #[test]
     fn target_match_single_member_group_skips_ladder() {
-        // Default `self_assess` with a single-member group: nothing to climb,
+        // Default `self_assess` with a single-member role: nothing to climb,
         // so it resolves statically (no extra LLM call). An extra call would
         // pop `None` and — if the ladder erroneously ran — land on the sole
         // member anyway; the audit/assessment path must stay silent. We assert
         // via the queued response count: exactly the one classifier call.
         let mut config = ladder_config("self_assess");
-        config.model_groups.insert(
+        config.roles.insert(
             "code".into(),
-            crate::config::ModelGroup::Array(vec!["qwen3.6-27b".into()]),
+            serde_json::from_value(serde_json::json!({"models": ["qwen3.6-27b"]}))
+                .expect("role parses"),
         );
         let result = run_ladder_pipeline(&config, vec![classifier_verdict(1, "code")]);
         assert!(!result.rejected);
@@ -1695,8 +1690,8 @@ mod tests {
                     "swarm": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.4, "tok_s": 9 },
                     "qwen3.6-27b": { "endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "qwen3.6-27b", "intelligence": 6, "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 2.0, "tok_s": 4 }
                 },
-                "model_groups": {
-                    "code": ["swarm", "qwen3.6-27b"]
+                "roles": {
+                    "code": {"models": ["swarm", "qwen3.6-27b"]}
                 },
                 "default_route": "fast"
             }"#,
@@ -1749,16 +1744,16 @@ mod tests {
         });
         let routing_config: RoutingConfig = serde_json::from_value(serde_json::json!({
             "routes": {
-                "prose": { "group": "prose", "pipelines": ["default"], "description": "creative", "always_route": true },
-                "local": { "group": "default", "pipelines": ["default"], "description": "qa" }
+                "prose": { "role": "prose", "pipelines": ["default"], "description": "creative", "always_route": true },
+                "local": { "role": "default", "pipelines": ["default"], "description": "qa" }
             },
             "models": {
                 "gemma": { "endpoint": "http://x/v1/chat/completions", "name": "gemma", "intelligence": 6, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 },
                 "swarm": { "endpoint": "http://y/v1/chat/completions", "name": "swarm", "intelligence": 2, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 8 }
             },
-            "model_groups": {
-                "prose": ["gemma"],
-                "default": ["swarm"]
+            "roles": {
+                "prose": {"models": ["gemma"]},
+                "default": {"models": ["swarm"]}
             },
             "system_prompt": "",
             "safety_threshold": 0.5,
@@ -1880,13 +1875,13 @@ mod tests {
     fn soft_redirect_routing_config() -> crate::config::RoutingConfig {
         serde_json::from_value(serde_json::json!({
             "routes": {
-                "prose": { "group": "prose", "pipelines": ["default"], "description": "creative" }
+                "prose": { "role": "prose", "pipelines": ["default"], "description": "creative" }
             },
             "models": {
                 "gemma": { "endpoint": "http://x/v1/chat/completions", "name": "gemma", "intelligence": 6, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5 }
             },
-            "model_groups": {
-                "prose": ["gemma"]
+            "roles": {
+                "prose": {"models": ["gemma"]}
             },
             "system_prompt": "",
             "safety_threshold": 0.5,

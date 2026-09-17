@@ -19,7 +19,7 @@ use fluent_wvr::prelude::*;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-use crate::config::{ModelEntry, ModelGroup, RoleEntry, RouteRef, ServerConfig};
+use crate::config::{ModelEntry, RoleEntry, RouteRef, ServerConfig};
 use crate::dag_session::SessionRegistry;
 use crate::dispatch::escalation::Ladder;
 use crate::ledger::ContentNodeLedger;
@@ -39,10 +39,6 @@ pub struct RouterServer {
     /// in `models` arrive boot-materialized (effective pools composed), so no
     /// fleet-default map is carried — one code path, never a fork.
     roles: HashMap<String, RoleEntry>,
-    /// Model-group table (mirrors `RouterConfig.model_groups`): bare group
-    /// names in requests resolve through it (routes → groups → models).
-    /// Absent (the default) leaves group-named requests to the default route.
-    groups: HashMap<String, ModelGroup>,
     /// Default route name (mirrors `RouterConfig.default_route`): the boot
     /// warmup builds its serving windows alongside pinned instances so the
     /// first real request never pays a cold KV build. Absent (the default)
@@ -61,7 +57,7 @@ pub struct RouterServer {
     rigor_route: Option<Arc<RigorRoute>>,
     /// Per-`session_id` `DependencySession` registry (canonical session).
     sessions: Option<Arc<SessionRegistry>>,
-    /// Per-model-group escalation ladders.
+    /// Per-role escalation ladders.
     ladders: HashMap<String, Arc<Ladder>>,
     /// Deterministic-fact cache consulted before escalating.
     context_cache: Option<Arc<dyn fluent_types::ContextCache>>,
@@ -120,7 +116,7 @@ pub struct RouterServer {
     /// onnx branch of `POST /models/unload`.
     fleet: Option<Arc<crate::instances::traits::LlmFleet>>,
     /// The in-process onnx generative `ChatBackend` (the `onnx/llm` routing
-    /// model). Routes whose `model_groups` resolve to an onnx role dispatch
+    /// model). Routes whose role `models` resolve to an onnx role dispatch
     /// through it. Wired by the composition root alongside the onnx registry.
     onnx_llm_backend: Option<Arc<dyn fluent_llm::client::ChatBackend>>,
     /// The shared residency engine: ONE loop over the fleet's
@@ -147,7 +143,6 @@ impl RouterServer {
             routes,
             models,
             roles: HashMap::new(),
-            groups: HashMap::new(),
             default_route: String::new(),
             bind_addr: config.bind_addr.clone(),
             max_payload: config.max_payload,
@@ -188,15 +183,6 @@ impl RouterServer {
     #[must_use]
     pub fn with_roles(mut self, roles: HashMap<String, RoleEntry>) -> Self {
         self.roles = roles;
-        self
-    }
-
-    /// Attach the model-group table (`RouterConfig.model_groups`) so bare
-    /// group names resolve (routes → groups → models). Absent (the default)
-    /// leaves group-named requests to the default route.
-    #[must_use]
-    pub fn with_model_groups(mut self, groups: HashMap<String, ModelGroup>) -> Self {
-        self.groups = groups;
         self
     }
 
@@ -244,7 +230,7 @@ impl RouterServer {
         self
     }
 
-    /// Attach the per-model-group escalation ladders.
+    /// Attach the per-role escalation ladders.
     #[must_use]
     pub fn with_ladders(mut self, ladders: HashMap<String, Arc<Ladder>>) -> Self {
         tracing::info!(
@@ -424,7 +410,7 @@ impl RouterServer {
     }
 
     /// Attach the in-process onnx generative `ChatBackend` (the `onnx/llm`
-    /// routing model) so routes whose `model_groups` resolve to an onnx role
+    /// routing model) so routes whose role `models` resolve to an onnx role
     /// dispatch through it. Wired by the composition root alongside the onnx
     /// registry; `None` leaves onnx targets unserved (mock intercepts first in
     /// tests).
@@ -532,7 +518,6 @@ impl RouterServer {
             onnx_llm_backend: self.onnx_llm_backend.clone(),
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
-            groups: Arc::new(self.groups.clone()),
             workflow_recorder: self.workflow_recorder.clone(),
             frame_gate: self.frame_gate.clone(),
         };
@@ -560,11 +545,10 @@ impl RouterServer {
                 let models = self.models.clone();
                 let roles = self.roles.clone();
                 let routes = self.routes.clone();
-                let groups = self.groups.clone();
                 let default_route = self.default_route.clone();
                 let pool = Arc::clone(pool);
                 background.spawn(async move {
-                    warm_instances(models, roles, routes, groups, default_route, pool).await;
+                    warm_instances(models, roles, routes, default_route, pool).await;
                 });
             }
         }
@@ -666,7 +650,6 @@ pub(crate) fn warmup_targets(
     models: &HashMap<String, ModelEntry>,
     roles: &HashMap<String, RoleEntry>,
     routes: &HashMap<String, RouteRef>,
-    groups: &HashMap<String, ModelGroup>,
     default_route: &str,
 ) -> Vec<(String, String)> {
     use std::collections::BTreeSet;
@@ -687,7 +670,6 @@ pub(crate) fn warmup_targets(
         let routing = crate::config::RoutingConfig {
             routes: routes.clone(),
             models: models.clone(),
-            model_groups: groups.clone(),
             system_prompt: String::new(),
             safety_threshold: 0.0,
             default_route: default_route.to_string(),
@@ -698,7 +680,7 @@ pub(crate) fn warmup_targets(
         if let Some(rt) = routing.routing_target(default_route, None) {
             let (base, qualifier) = crate::config::split_model_key(&rt.model);
             if let Some(entry) = models.get(base) {
-                // Every sibling window serving the qualifier group: the
+                // Every sibling window serving the qualifier role: the
                 // default route must find each slot ready, not just one.
                 let group = qualifier.unwrap_or(base);
                 for profile in entry.effective_pool() {
@@ -734,13 +716,12 @@ async fn warm_instances(
     models: HashMap<String, ModelEntry>,
     roles: HashMap<String, RoleEntry>,
     routes: HashMap<String, RouteRef>,
-    groups: HashMap<String, ModelGroup>,
     default_route: String,
     pool: Arc<crate::instances::InstancePool>,
 ) {
     use common_core::retry::{PollResult, PollWithBackoff};
 
-    let targets = warmup_targets(&models, &roles, &routes, &groups, &default_route);
+    let targets = warmup_targets(&models, &roles, &routes, &default_route);
     if targets.is_empty() {
         return;
     }
@@ -842,7 +823,6 @@ impl WorkUnit for RouterServer {
             onnx_llm_backend: self.onnx_llm_backend.clone(),
             fleet: self.fleet.clone(),
             roles: Arc::new(self.roles.clone()),
-            groups: Arc::new(self.groups.clone()),
             workflow_recorder: self.workflow_recorder.clone(),
             frame_gate: self.frame_gate.clone(),
         };

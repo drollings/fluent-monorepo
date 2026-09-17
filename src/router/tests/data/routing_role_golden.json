@@ -9,7 +9,7 @@
   },
   "cases": [
     {
-      "id": "group.default.route.local.complexity.none",
+      "id": "role.default.route.local.complexity.none",
       "target": {
         "fallbacks": [
           {
@@ -29,8 +29,8 @@
           }
         ],
         "filter_thinking": true,
-        "group": "default",
         "idle_timeout_ms": 3000,
+        "instance": "default",
         "is_onnx": false,
         "model": "scout/scout-1b:default",
         "params": {
@@ -38,6 +38,7 @@
         },
         "retry_base_interval_s": 1,
         "retry_count": 1,
+        "role": "default",
         "stream": true,
         "target_name": "local",
         "total_timeout_ms": 50000,
@@ -45,7 +46,7 @@
       }
     },
     {
-      "id": "group.default.route.local.complexity.zero",
+      "id": "role.default.route.local.complexity.zero",
       "target": {
         "fallbacks": [
           {
@@ -65,8 +66,8 @@
           }
         ],
         "filter_thinking": true,
-        "group": "default",
         "idle_timeout_ms": 3000,
+        "instance": "default",
         "is_onnx": false,
         "model": "scout/scout-1b:default",
         "params": {
@@ -74,6 +75,7 @@
         },
         "retry_base_interval_s": 1,
         "retry_count": 1,
+        "role": "default",
         "stream": true,
         "target_name": "local",
         "total_timeout_ms": 50000,
@@ -81,7 +83,7 @@
       }
     },
     {
-      "id": "group.default.route.local.complexity.four",
+      "id": "role.default.route.local.complexity.four",
       "target": {
         "fallbacks": [
           {
@@ -101,12 +103,16 @@
           }
         ],
         "filter_thinking": true,
-        "group": "default",
         "idle_timeout_ms": 30000,
+        "instance": "default",
         "is_onnx": false,
-        "model": "code",
+        "model": "code:default",
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 2,
         "retry_count": 1,
+        "role": "default",
         "stream": true,
         "target_name": "local",
         "total_timeout_ms": 150000,
@@ -114,7 +120,7 @@
       }
     },
     {
-      "id": "group.default.route.local.complexity.ten",
+      "id": "role.default.route.local.complexity.ten",
       "target": {
         "fallbacks": [
           {
@@ -134,8 +140,8 @@
           }
         ],
         "filter_thinking": true,
-        "group": "default",
         "idle_timeout_ms": 3000,
+        "instance": "default",
         "is_onnx": false,
         "model": "scout/scout-1b:default",
         "params": {
@@ -143,6 +149,7 @@
         },
         "retry_base_interval_s": 1,
         "retry_count": 1,
+        "role": "default",
         "stream": true,
         "target_name": "local",
         "total_timeout_ms": 50000,
@@ -150,7 +157,7 @@
       }
     },
     {
-      "id": "group.code.route.code.complexity.none",
+      "id": "role.code.route.code.complexity.none",
       "target": {
         "fallbacks": [
           {
@@ -170,12 +177,16 @@
           }
         ],
         "filter_thinking": true,
-        "group": "code",
         "idle_timeout_ms": 30000,
+        "instance": "code",
         "is_onnx": false,
-        "model": "code",
+        "model": "code:code",
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 2,
         "retry_count": 1,
+        "role": "code",
         "stream": true,
         "target_name": "code",
         "total_timeout_ms": 150000,
@@ -183,7 +194,7 @@
       }
     },
     {
-      "id": "group.code.route.code.complexity.zero",
+      "id": "role.code.route.code.complexity.zero",
       "target": {
         "fallbacks": [
           {
@@ -203,12 +214,16 @@
           }
         ],
         "filter_thinking": true,
-        "group": "code",
         "idle_timeout_ms": 30000,
+        "instance": "code",
         "is_onnx": false,
-        "model": "code",
+        "model": "code:code",
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 2,
         "retry_count": 1,
+        "role": "code",
         "stream": true,
         "target_name": "code",
         "total_timeout_ms": 150000,
@@ -216,7 +231,7 @@
       }
     },
     {
-      "id": "group.code.route.code.complexity.four",
+      "id": "role.code.route.code.complexity.four",
       "target": {
         "fallbacks": [
           {
@@ -236,12 +251,16 @@
           }
         ],
         "filter_thinking": true,
-        "group": "code",
         "idle_timeout_ms": 30000,
+        "instance": "code",
         "is_onnx": false,
-        "model": "code",
+        "model": "code:code",
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 2,
         "retry_count": 1,
+        "role": "code",
         "stream": true,
         "target_name": "code",
         "total_timeout_ms": 150000,
@@ -249,7 +268,7 @@
       }
     },
     {
-      "id": "group.code.route.code.complexity.ten",
+      "id": "role.code.route.code.complexity.ten",
       "target": {
         "fallbacks": [
           {
@@ -269,12 +288,16 @@
           }
         ],
         "filter_thinking": true,
-        "group": "code",
         "idle_timeout_ms": 30000,
+        "instance": "code",
         "is_onnx": false,
-        "model": "code",
+        "model": "code:code",
+        "params": {
+          "temperature": 0.1
+        },
         "retry_base_interval_s": 2,
         "retry_count": 1,
+        "role": "code",
         "stream": true,
         "target_name": "code",
         "total_timeout_ms": 150000,

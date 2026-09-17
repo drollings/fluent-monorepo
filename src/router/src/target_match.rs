@@ -1,11 +1,11 @@
-//! Classifier-driven target matching — the in-group complexity ladder.
+//! Classifier-driven target matching — the in-role complexity ladder.
 //!
-//! VISION §"Target selection within a group": after the classifier resolves a
-//! route to a `model_group`, each candidate target self-assesses the prompt's
+//! VISION §"Target selection within a role": after the classifier resolves a
+//! route to a role, each candidate target self-assesses the prompt's
 //! complexity and defers to the next, more-intelligent member when the
 //! assessed complexity exceeds its configured `intelligence`. The first target
 //! whose `intelligence` meets or exceeds the assessed complexity — or the last
-//! member of the group — actually answers, and its answer is recorded in the
+//! member of the role — actually answers, and its answer is recorded in the
 //! session ledger.
 //!
 //! This module owns the *matching* concern only (§4.1 of the roadmap): the
@@ -28,7 +28,7 @@ use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
 use fluent_wvr::prelude::*;
 
-use crate::config::GroupMember;
+use crate::config::RoleMember;
 use crate::config::RoutingConfig;
 use crate::pipeline::RoutingTarget;
 use crate::stages::common::{coerce_string, coerce_u8};
@@ -74,9 +74,9 @@ pub fn parse_self_assessment(response: &str) -> Result<SelfAssessment, WorkError
     .map_err(|e| WorkError::Execution(format!("self-assessment verdict parse error: {e}")))
 }
 
-/// One ordered member of a `model_group` the matcher climbs over.
+/// One ordered member of a role the matcher climbs over.
 ///
-/// `model_key` is the config key (`models`/`model_groups`), `model_name` the
+/// `model_key` is the config key (`models`/role `models`), `model_name` the
 /// resolved display name (`ModelEntry.name` or the key when absent).
 #[derive(Debug, Clone)]
 pub struct TargetCandidate {
@@ -84,18 +84,18 @@ pub struct TargetCandidate {
     pub model_name: String,
     pub intelligence: u8,
     /// `cost_input + cost_output` — informational, used to keep the ordered
-    /// group's cost ordering visible to callers and tests.
+    /// role's cost ordering visible to callers and tests.
     pub cost: f64,
 }
 
-/// Build the ordered `TargetCandidate` list for a `model_group` — the DRY
+/// Build the ordered `TargetCandidate` list for a role — the DRY
 /// shape both the flat classifier path and the classification-tree engine feed
 /// the matcher. Role members fan out to their candidate keys first; members
 /// with no `models` entry are skipped (defense-in-depth — the caller falls
 /// back to static resolution when the resulting list is empty or
 /// single-member).
-pub fn candidates_for_group(routing: &RoutingConfig, group: &str) -> Vec<TargetCandidate> {
-    candidates_for_keys(routing, &routing.role_expanded_members(group))
+pub fn candidates_for_role(routing: &RoutingConfig, role: &str) -> Vec<TargetCandidate> {
+    candidates_for_keys(routing, &routing.role_dispatch_members(role))
 }
 
 /// The shared member-keys → candidates mapping: literal keys resolve through
@@ -117,8 +117,8 @@ fn candidates_for_keys(routing: &RoutingConfig, keys: &[String]) -> Vec<TargetCa
         .collect()
 }
 
-/// Per-(session, group) most-recently-successful dispatch: the wire `model`
-/// id of the target that last served the group *in that session*. Written by
+/// Per-(session, role) most-recently-successful dispatch: the wire `model`
+/// id of the target that last served the role *in that session*. Written by
 /// the dispatch path on every `Ok` outcome (failed targets never record),
 /// read by sentinel expansion at match time. A plain mutex map beside the
 /// server stats — not a subsystem.
@@ -131,19 +131,19 @@ fn candidates_for_keys(routing: &RoutingConfig, keys: &[String]) -> Vec<TargetCa
 /// stamps are totally ordered, so the least-recently-written entry always
 /// leaves. A failed `Last` target falls through to the next rung via the
 /// existing fallback combinator.
-/// Session → group → (serving model, sequence stamp).
+/// Session → role → (serving model, sequence stamp).
 type RecencyMap = HashMap<ArcIntern<str>, HashMap<ArcIntern<str>, (ArcIntern<str>, u64)>>;
 
 #[derive(Debug, Default)]
-pub struct GroupRecency {
+pub struct RoleRecency {
     inner: std::sync::Mutex<RecencyMap>,
     seq: std::sync::atomic::AtomicU64,
 }
 
-/// Maximum `(session, group)` recency entries (see [`GroupRecency`]).
+/// Maximum `(session, role)` recency entries (see [`RoleRecency`]).
 pub const RECENCY_CAPACITY: usize = 4096;
 
-impl GroupRecency {
+impl RoleRecency {
     pub fn new() -> Self {
         Self {
             inner: std::sync::Mutex::new(HashMap::new()),
@@ -151,33 +151,33 @@ impl GroupRecency {
         }
     }
 
-    /// Record a successful dispatch of `group` in `session`, served by the
+    /// Record a successful dispatch of `role` in `session`, served by the
     /// target whose wire `model` id is `model_wire`. Lock-serialized with
     /// reads — concurrent requests in one session observe one winner.
-    pub fn record(&self, session: &str, group: &str, model_wire: &str) {
+    pub fn record(&self, session: &str, role: &str, model_wire: &str) {
         let stamped = self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut inner = common_core::sync::lock(&self.inner);
         let session_key: ArcIntern<str> = ArcIntern::from(session);
-        let group_key: ArcIntern<str> = ArcIntern::from(group);
+        let role_key: ArcIntern<str> = ArcIntern::from(role);
         let model: ArcIntern<str> = ArcIntern::from(model_wire);
         inner
             .entry(session_key)
             .or_default()
-            .insert(group_key, (model, stamped));
+            .insert(role_key, (model, stamped));
         if Self::len_locked(&inner) > RECENCY_CAPACITY {
             let mut oldest: Option<(ArcIntern<str>, ArcIntern<str>, u64)> = None;
-            for (session_key, groups) in &*inner {
-                for (group_key, (_, stamped)) in groups {
+            for (session_key, roles) in &*inner {
+                for (role_key, (_, stamped)) in roles {
                     let replace = oldest.as_ref().is_none_or(|(_, _, min)| *stamped < *min);
                     if replace {
-                        oldest = Some((session_key.clone(), group_key.clone(), *stamped));
+                        oldest = Some((session_key.clone(), role_key.clone(), *stamped));
                     }
                 }
             }
-            if let Some((session_key, group_key, _)) = oldest {
-                if let Some(groups) = inner.get_mut(&session_key) {
-                    groups.remove(&group_key);
-                    if groups.is_empty() {
+            if let Some((session_key, role_key, _)) = oldest {
+                if let Some(roles) = inner.get_mut(&session_key) {
+                    roles.remove(&role_key);
+                    if roles.is_empty() {
                         inner.remove(&session_key);
                     }
                 }
@@ -185,21 +185,21 @@ impl GroupRecency {
         }
     }
 
-    /// The wire `model` id of the group's last successful dispatch in
+    /// The wire `model` id of the role's last successful dispatch in
     /// `session`, if any. An unknown session resolves to nothing — the
-    /// caller falls back to the group head.
-    pub fn last_for(&self, session: &str, group: &str) -> Option<String> {
+    /// caller falls back to the role head.
+    pub fn last_for(&self, session: &str, role: &str) -> Option<String> {
         let inner = common_core::sync::lock(&self.inner);
         let session_key: ArcIntern<str> = ArcIntern::from(session);
-        let group_key: ArcIntern<str> = ArcIntern::from(group);
+        let role_key: ArcIntern<str> = ArcIntern::from(role);
         inner
             .get(&session_key)
-            .and_then(|groups| groups.get(&group_key))
+            .and_then(|roles| roles.get(&role_key))
             .map(|(model_wire, _)| model_wire.to_string())
     }
 
     /// Record `model_wire` as the globally last-answered model, regardless
-    /// of session or group. Backs `last` sentinels in sentinel-only groups
+    /// of session or role. Backs `last` sentinels in sentinel-only roles
     /// and the `model: "last"` classifier duty — whichever LLM actually
     /// answered last, with no per-session scoping.
     pub fn record_any(&self, model_wire: &str) {
@@ -262,22 +262,22 @@ impl LivenessProbe {
 /// the per-request context channels the handler populates. Absent channels
 /// (unit tests, paths that bypass the handler) degrade gracefully: no recency,
 /// no session, and an all-down fleet, so expansion is identity for
-/// sentinel-free groups.
+/// sentinel-free roles.
 #[derive(Clone, Default)]
-pub struct GroupExpansion {
-    recency: Option<Arc<GroupRecency>>,
+pub struct RoleExpansion {
+    recency: Option<Arc<RoleRecency>>,
     liveness: LivenessProbe,
     session: Option<String>,
 }
 
-/// The per-request context channels [`GroupExpansion::from_ctx`] reads.
-pub const RECENCY_CTX_KEY: &str = "group_recency";
-pub const LIVENESS_CTX_KEY: &str = "group_liveness";
+/// The per-request context channels [`RoleExpansion::from_ctx`] reads.
+pub const RECENCY_CTX_KEY: &str = "role_recency";
+pub const LIVENESS_CTX_KEY: &str = "role_liveness";
 
-impl GroupExpansion {
+impl RoleExpansion {
     pub fn from_ctx(ctx: &WorkContext) -> Self {
         Self {
-            recency: ctx.get::<Arc<GroupRecency>>(RECENCY_CTX_KEY).cloned(),
+            recency: ctx.get::<Arc<RoleRecency>>(RECENCY_CTX_KEY).cloned(),
             liveness: ctx
                 .get::<LivenessProbe>(LIVENESS_CTX_KEY)
                 .cloned()
@@ -291,7 +291,7 @@ impl GroupExpansion {
         }
     }
 
-    pub fn recency(&self) -> Option<&GroupRecency> {
+    pub fn recency(&self) -> Option<&RoleRecency> {
         self.recency.as_deref()
     }
 
@@ -309,7 +309,7 @@ impl GroupExpansion {
     }
 }
 
-/// The wire `model` id a literal group member dispatches as: the built
+/// The wire `model` id a literal role member dispatches as: the built
 /// target's `model` for `models` entries, the raw member string for in-process
 /// onnx roles (served by the onnx backend, with no `models` entry). `None`
 /// when the member resolves to nothing.
@@ -379,10 +379,10 @@ fn rung_viable(routing: &RoutingConfig, member: &str, min_complexity: Option<u8>
 /// dispatch ladder owns capability fit. `None` only on an empty fleet.
 pub fn viable_last_key(
     routing: &RoutingConfig,
-    recency: Option<&GroupRecency>,
+    recency: Option<&RoleRecency>,
     is_running: &dyn Fn(&str) -> bool,
 ) -> Option<String> {
-    if let Some(wire) = recency.and_then(GroupRecency::last_any) {
+    if let Some(wire) = recency.and_then(RoleRecency::last_any) {
         if let Some(key) = key_for_wire(routing, &wire) {
             let (base, _) = crate::config::split_model_key(&key);
             if duty_fittable(routing, base, is_running(base)) {
@@ -416,17 +416,17 @@ pub fn viable_last_key(
     }
 }
 
-/// Expand a group's raw members (literal keys plus the `last`/`any`
-/// availability sentinels) into ordered literal keys. Role members fan out to
-/// their candidate keys first; without roles or sentinels the expansion is
-/// identity, so role-free configs resolve byte-identically.
+/// Expand a role's effective members (literal keys plus the `last`/`any`
+/// availability sentinels) into ordered literal keys. Role-naming members
+/// fan out to their candidate keys first; without sentinels the expansion is
+/// identity, so sentinel-free configs resolve byte-identically.
 ///
 /// `Last` resolves preference-ordered, each rung vetted (resolvability +
 /// intelligence-pass; loaded-ness is deliberately NOT a veto — unloaded
 /// members load on demand through the unchanged readiness path, while `Any`
 /// keeps the loaded-first preference):
-/// session-last → global-last → viable-first (the M1 rule over the group,
-/// or the fleet for sentinel-only groups). A rung that fails vetting falls
+/// session-last → global-last → viable-first (the M1 rule over the role,
+/// or the fleet for sentinel-only roles). A rung that fails vetting falls
 /// to the next; when no recency rung serves, one `last-empty-fallback`
 /// audit note is emitted (recency coverage signal, not the outcome — the
 /// viable rung may still serve). No expiry heuristic: a failed target falls
@@ -439,22 +439,22 @@ pub fn viable_last_key(
 ///   (`is_running == Some(true)` counts as loaded).
 /// - Sentinels only order candidates; the vetted climb underneath keeps
 ///   capability fit, so recency never outranks capability.
-pub fn expand_group_keys(
+pub fn expand_role_keys(
     routing: &RoutingConfig,
-    group: &str,
-    recency: Option<&GroupRecency>,
+    role: &str,
+    recency: Option<&RoleRecency>,
     session: Option<&str>,
     is_running: &dyn Fn(&str) -> bool,
     min_complexity: Option<u8>,
 ) -> Vec<String> {
-    use crate::config::GroupMember;
-    if !routing.model_groups.contains_key(group) {
+use crate::config::RoleMember;
+    if !routing.roles.contains_key(role) {
         return Vec::new();
     }
-    let raw = routing.role_expanded_members(group);
+    let raw = routing.role_dispatch_members(role);
     let literals: Vec<&String> = raw
         .iter()
-        .filter(|m| matches!(GroupMember::parse(m), GroupMember::Key(_)))
+        .filter(|m| matches!(RoleMember::parse(m), RoleMember::Key(_)))
         .collect();
     // Memoized liveness: the viable rung and the `Any` partition share one
     // probe per base key per expansion (fewer supervisor locks; deterministic
@@ -479,7 +479,7 @@ pub fn expand_group_keys(
     // Viable-`last` pick, resolved once per expansion: session-last →
     // global-last → viable-first, each rung vetted (resolvable +
     // intelligence-pass). The viable rung reuses the M1 rule over the raw
-    // members (sentinel-only groups resolve over the fleet); resident-first
+    // members (sentinel-only roles resolve over the fleet); resident-first
     // ordering comes from the same loaded probe as `Any`. `bool` tracks
     // whether a recency rung served (drives the coverage audit below).
     let find_literal = |wire: &str| {
@@ -499,17 +499,17 @@ pub fn expand_group_keys(
     }
     let wants_last = raw
         .iter()
-        .any(|m| matches!(GroupMember::parse(m), GroupMember::Last));
+        .any(|m| matches!(RoleMember::parse(m), RoleMember::Last));
     let (last_pick, session_hit, global_hit): (Option<String>, bool, bool) = if !wants_last {
         (None, true, true)
     } else if let Some(member) = recency
-        .and_then(|r| session.and_then(|s| r.last_for(s, group)))
+        .and_then(|r| session.and_then(|s| r.last_for(s, role)))
         .and_then(|wire| find_literal(&wire))
         .and_then(|m| vetted(routing, m, min_complexity))
     {
         (Some(member.to_string()), true, false)
     } else if let Some(member) = recency
-        .and_then(GroupRecency::last_any)
+        .and_then(RoleRecency::last_any)
         .and_then(|wire| find_literal(&wire))
         .and_then(|m| vetted(routing, m, min_complexity))
     {
@@ -517,9 +517,9 @@ pub fn expand_group_keys(
     } else {
         // Viable-first: "work with whatever is loaded rather than load
         // another", ordered by capability-fit, then loaded-ness, then cost.
-        // For sentinel-only groups this resolves over the fleet.
+        // For sentinel-only roles this resolves over the fleet.
         let viable = crate::config::select_viable_member(
-            group,
+            role,
             &raw,
             &routing.models,
             min_complexity,
@@ -537,7 +537,7 @@ pub fn expand_group_keys(
     };
     // The coverage audit: the session rung missed (unknown session, stale
     // wire id, or no session channel at all) — or, for sentinel-only
-    // groups with no session rung, the global rung missed. Emitted once
+    // roles with no session rung, the global rung missed. Emitted once
     // per expansion even when a later rung serves: it measures recency
     // coverage, not the outcome.
     let recency_missed = if literals.is_empty() {
@@ -550,20 +550,20 @@ pub fn expand_group_keys(
             "target_match",
             serde_json::json!({
                 "stage": "expansion",
-                "group": group,
+                "role": role,
                 "reason": "last-empty-fallback",
             }),
         );
     }
     for member in &raw {
-        match GroupMember::parse(member) {
-            GroupMember::Key(key) => push(&key, &mut out, &mut seen),
-            GroupMember::Last => {
+        match RoleMember::parse(member) {
+            RoleMember::Key(key) => push(&key, &mut out, &mut seen),
+            RoleMember::Last => {
                 if let Some(pick) = &last_pick {
                     push(pick, &mut out, &mut seen);
                 }
             }
-            GroupMember::Any => {
+            RoleMember::Any => {
                 // Single partition pass: each literal is probed once, loaded
                 // members keep config order ahead of the unloaded remainder.
                 let (loaded, unloaded): (Vec<&&String>, Vec<&&String>) =
@@ -577,20 +577,20 @@ pub fn expand_group_keys(
     out
 }
 
-/// The expanded-candidate variant of [`candidates_for_group`]: sentinel
+/// The expanded-candidate variant of [`candidates_for_role`]: sentinel
 /// members resolve to ordered literal keys first (session-scoped `last`
 /// included), then the same entry-resolution mapping runs (unknown keys
 /// skipped, onnx roles excluded — they carry no `models` entry and are
 /// served outside the climb, as today).
-pub fn expanded_candidates_for_group(
+pub fn expanded_candidates_for_role(
     routing: &RoutingConfig,
-    group: &str,
-    recency: Option<&GroupRecency>,
+    role: &str,
+    recency: Option<&RoleRecency>,
     session: Option<&str>,
     is_running: &dyn Fn(&str) -> bool,
     min_complexity: Option<u8>,
 ) -> Vec<TargetCandidate> {
-    let keys = expand_group_keys(routing, group, recency, session, is_running, min_complexity);
+    let keys = expand_role_keys(routing, role, recency, session, is_running, min_complexity);
     candidates_for_keys(routing, &keys)
 }
 
@@ -644,7 +644,7 @@ pub fn is_match(candidate: &TargetCandidate, assessed: u8) -> bool {
 /// (the single `LlmClient` factory — DIP) and shared by every pipeline.
 ///
 /// `by_key` holds one `ChatBackend` per model key referenced by any
-/// `model_groups` member. `default` serves any candidate key absent from
+/// role `models` member. `default` serves any candidate key absent from
 /// `by_key`: the injected mock/transcript backend in mock runs (covering every
 /// key), or a defense-in-depth real client in real mode — mirroring the
 /// classification-tree engine's `default_client` fallback.
@@ -685,7 +685,7 @@ impl TargetBackends {
     }
 
     /// Whether no dedicated per-key backends exist (mock/transcript mode, or
-    /// a config with no `model_groups` members).
+    /// a config with no role `models` members).
     pub fn is_empty(&self) -> bool {
         self.by_key.is_empty()
     }
@@ -755,13 +755,13 @@ impl TargetMatcher {
     /// promoted into any persistent index as a correctness label.
     ///
     /// `route` is the resolved route name (the primary's `target_name`),
-    /// `group` its model group. `candidates` is the group's ordered member
+    /// `role` its dispatch role. `candidates` is the role's ordered member
     /// list. `routing` supplies the `ModelEntry`s for fallback construction and
-    /// the cross-group `all_dispatch_targets` resilience list.
+    /// the cross-role `all_dispatch_targets` resilience list.
     pub fn match_target(
         &self,
         route: &str,
-        group: &str,
+        role: &str,
         routing: &RoutingConfig,
         candidates: &[TargetCandidate],
         classifier_complexity: Option<u8>,
@@ -771,8 +771,8 @@ impl TargetMatcher {
             tracing::warn!(
                 target: "router.pipeline.stage2.target_match",
                 route = %route,
-                group = %group,
-                "target-matching ladder: empty candidate group",
+                role = %role,
+                "target-matching ladder: empty candidate role",
             );
             return None;
         }
@@ -816,7 +816,7 @@ impl TargetMatcher {
                 serde_json::json!({
                     "stage": "assessment",
                     "route": route,
-                    "group": group,
+                    "role": role,
                     "model_key": candidate.model_key,
                     "model_name": candidate.model_name,
                     "intelligence": candidate.intelligence,
@@ -835,7 +835,7 @@ impl TargetMatcher {
         }
 
         let matched_candidate = &candidates[matched_index];
-        let primary = Self::build_primary(matched_candidate, route, group, routing);
+        let primary = Self::build_primary(matched_candidate, route, role, routing);
         let fallbacks = Self::build_fallbacks(
             routing,
             route,
@@ -853,7 +853,7 @@ impl TargetMatcher {
             serde_json::json!({
                 "stage": "match",
                 "route": route,
-                "group": group,
+                "role": role,
                 "matched_model_key": matched_candidate.model_key,
                 "matched_model_name": matched_candidate.model_name,
                 "assessed": assessments[matched_index - start].assessed,
@@ -1053,11 +1053,11 @@ impl TargetMatcher {
     }
 
     /// Primary target for the matched candidate (§4.1 step 3): the matched
-    /// model's `RoutingTarget` with `group = G` and `target_name = route`.
+    /// model's `RoutingTarget` with `role = R` and `target_name = route`.
     fn build_primary(
         candidate: &TargetCandidate,
         route: &str,
-        group: &str,
+        role: &str,
         routing: &RoutingConfig,
     ) -> RoutingTarget {
         let mut rt = match routing.target_for_key(&candidate.model_key) {
@@ -1065,7 +1065,6 @@ impl TargetMatcher {
             None => RoutingTarget {
                 url: String::new(),
                 model: candidate.model_name.clone(),
-                group: None,
                 target_name: Some(candidate.model_key.clone()),
                 role: None,
                 params: None,
@@ -1083,15 +1082,15 @@ impl TargetMatcher {
                 is_onnx: false,
             },
         };
-        rt.group = Some(group.to_string());
+        rt.role = Some(role.to_string());
         rt.target_name = Some(route.to_string());
         rt
     }
 
     /// Fallback construction (§4.1 step 3): the matched index's more-intelligent
-    /// group tail `G[i+1..=n]` as `RoutingTarget`s (mechanical-failure walk, in
-    /// order), then any cross-group models from `all_dispatch_targets` not
-    /// already included (dedup by model name, preserving today's cross-group
+    /// role tail `R[i+1..=n]` as `RoutingTarget`s (mechanical-failure walk, in
+    /// order), then any cross-role models from `all_dispatch_targets` not
+    /// already included (dedup by model name, preserving today's cross-role
     /// resilience).
     fn build_fallbacks(
         routing: &RoutingConfig,
@@ -1131,10 +1130,10 @@ impl TargetMatcher {
 /// ladder when one is available, falling back to the static
 /// cheapest-qualifying pick.
 ///
-/// The ladder only runs for 2+ member groups (a single-member group has
+/// The ladder only runs for 2+ member roles (a single-member role has
 /// nothing to climb — it resolves statically, byte-identical to the static
 /// path, with no extra LLM call). The matcher never fails hard: on absence, an
-/// unresolvable group, an empty candidate list, or an internal `None`, the
+/// unresolvable role, an empty candidate list, or an internal `None`, the
 /// static `routing_target` path runs (defense in depth).
 ///
 /// This is the one route→target resolution shared by the flat classifier, the
@@ -1145,13 +1144,13 @@ pub(crate) fn resolve_route_to_target(
     route: &str,
     complexity: Option<u8>,
     user_text: &str,
-    expansion: &GroupExpansion,
+    expansion: &RoleExpansion,
 ) -> Option<RoutingTarget> {
     if let Some(matcher) = matcher {
-        if let Some(group) = routing_config.route_group(route) {
-            let candidates = expanded_candidates_for_group(
+        if let Some(role) = routing_config.route_role(route) {
+            let candidates = expanded_candidates_for_role(
                 routing_config,
-                group,
+                role,
                 expansion.recency(),
                 expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
@@ -1160,7 +1159,7 @@ pub(crate) fn resolve_route_to_target(
             if candidates.len() >= 2 {
                 if let Some(tm) = matcher.match_target(
                     route,
-                    group,
+                    role,
                     routing_config,
                     &candidates,
                     complexity,
@@ -1169,7 +1168,7 @@ pub(crate) fn resolve_route_to_target(
                     tracing::info!(
                         target: "router.pipeline.stage2",
                         route = %route,
-                        group = %group,
+                        role = %role,
                         model = %tm.primary.model,
                         assessments = tm.assessments.len(),
                         "routing target resolved via self-assessment ladder",
@@ -1184,20 +1183,20 @@ pub(crate) fn resolve_route_to_target(
             }
         }
     }
-    // Sentinel-bearing groups (the `last`/`any` availability vocabulary)
+    // Sentinel-bearing roles (the `last`/`any` availability vocabulary)
     // resolve through the runtime expansion — session/global recency and
     // fleet liveness — before the static fallback, so `last` serves
     // whichever LLM actually last answered rather than a fixed member.
-    if let Some(group) = routing_config.route_group(route) {
-        let declares_sentinel = routing_config.model_groups.get(group).is_some_and(|g| {
-            g.models()
+    if let Some(role) = routing_config.route_role(route) {
+        let declares_sentinel = routing_config.roles.get(role).is_some_and(|r| {
+            r.effective_models()
                 .iter()
-                .any(|m| matches!(GroupMember::parse(m), GroupMember::Last | GroupMember::Any))
+                .any(|m| matches!(RoleMember::parse(m), RoleMember::Last | RoleMember::Any))
         });
         if declares_sentinel {
-            let keys = expand_group_keys(
+            let keys = expand_role_keys(
                 routing_config,
-                group,
+                role,
                 expansion.recency(),
                 expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
@@ -1205,7 +1204,7 @@ pub(crate) fn resolve_route_to_target(
             );
             if let Some(key) = keys.first() {
                 if let Some(mut rt) = routing_config.target_for_key(key) {
-                    rt.group = Some(group.to_string());
+                    rt.role = Some(role.to_string());
                     rt.target_name = Some(route.to_string());
                     return Some(rt);
                 }

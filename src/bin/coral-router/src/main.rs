@@ -359,7 +359,7 @@ fn resolve_config_path(explicit: &str) -> String {
 /// Resolve the classifier model key for logging/attribution, entirely from
 /// config (never a hardcoded name): the first pipeline's `classifier_model`,
 /// else the `classifier` role's head candidate (the classifier is a role),
-/// else the tree root's group/model, else the default route's first servable
+/// else the tree root's model, else the default route's first servable
 /// member, else the first configured model key. Empty when nothing resolves.
 fn resolve_classifier_model_name(config: &RouterConfig) -> String {
     if let Some(m) = config.classifier_role_key() {
@@ -371,26 +371,16 @@ fn resolve_classifier_model_name(config: &RouterConfig) -> String {
         }
     }
     if let Some(tree) = config.classification.as_ref() {
-        if let Some(group) = tree.root_classifier_group() {
-            if let Some(key) = fluent_router::config::resolve_group_head_key(
-                &config.models,
-                &config.roles,
-                &config.model_groups,
-                group,
-            ) {
-                return key;
-            }
-        }
         if let Some(m) = tree.root_classifier_model() {
             return m.to_string();
         }
     }
     if let Some(route) = config.routes_view().get(&config.default_route) {
-        if let Some(key) = fluent_router::config::resolve_group_head_key(
+        if let Some(key) = fluent_router::config::role_head_key(
             &config.models,
             &config.roles,
-            &config.model_groups,
-            &route.group,
+            &route.role,
+            false,
         ) {
             return key;
         }
@@ -848,7 +838,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     ));
     let rigor_route = Arc::new(build_rigor_route(&config, ledger_store.as_ref()));
 
-    // Escalation ladders: one per `model_groups[g].escalation` config.
+    // Escalation ladders: one per `roles.<role>.escalation` config.
     let http_client = reqwest::Client::new();
     let ladders = config.build_escalation_ladders(&http_client);
 
@@ -1448,7 +1438,6 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     let mut server =
         RouterServer::new(pipelines, routes, config.models, &config.server, classifier)
             .with_roles(config.roles.clone())
-            .with_model_groups(config.model_groups.clone())
             .with_default_route(config.default_route.clone())
             .with_plan_route(plan_route)
             .with_rigor_route(rigor_route)
@@ -2104,7 +2093,6 @@ mod config_tests {
             "models": {
                 "embed": {"endpoint": "", "intelligence": 1}
             },
-            "model_groups": {},
             "roles": {"embedding": {"models": ["embed"]}},
             "embedding_model": "embedding",
         }))

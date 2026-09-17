@@ -28,14 +28,14 @@ use crate::cli::preset::{render_aichat_config, render_litellm_yaml, write_models
 use crate::cli::{CliContext, CliResult};
 use crate::config::RouterConfig;
 
-/// One config section listing: routes (route → group), model groups (group
+/// One config section listing: routes (route → role), roles (role
 /// → members), and models (key, intelligence, weights path) — each sorted
 /// by key for deterministic output (serde maps are sorted; file order is
 /// not preserved). Built from the resolved config file, never synthesized.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigListing {
     pub routes: Vec<(String, String)>,
-    pub groups: Vec<(String, Vec<String>)>,
+    pub roles: Vec<(String, Vec<String>)>,
     pub models: Vec<(String, u8, Option<String>)>,
 }
 
@@ -67,8 +67,8 @@ fn render_single_row_table(headers: &[String], cells: &[String]) -> String {
     out
 }
 
-/// Render the full listing as Markdown: the routes row, one `group | models`
-/// row per model group (members comma-separated), then one row per model as
+/// Render the full listing as Markdown: the routes row, one `role | models`
+/// row per role (members comma-separated), then one row per model as
 /// found in the configuration file.
 pub fn render_config_listing(listing: &ConfigListing) -> String {
     let mut out = String::new();
@@ -77,17 +77,17 @@ pub fn render_config_listing(listing: &ConfigListing) -> String {
     let route_cells: Vec<String> = listing.routes.iter().map(|(_, g)| escape_cell(g)).collect();
     out.push_str(&render_single_row_table(&route_headers, &route_cells));
     out.push('\n');
-    out.push_str("## Model groups\n");
-    if listing.groups.is_empty() {
+    out.push_str("## Roles\n");
+    if listing.roles.is_empty() {
         out.push_str("(none)\n");
     } else {
-        out.push_str("| group | models |\n");
+        out.push_str("| role | models |\n");
         out.push_str("| --- | --- |\n");
-        for (group, members) in &listing.groups {
+        for (role, members) in &listing.roles {
             let _ = writeln!(
                 out,
                 "| {} | {} |",
-                escape_cell(group),
+                escape_cell(role),
                 members
                     .iter()
                     .map(|m| escape_cell(m))
@@ -119,14 +119,14 @@ pub fn render_config_json(listing: &ConfigListing) -> Value {
     let routes: serde_json::Map<String, Value> = listing
         .routes
         .iter()
-        .map(|(route, group)| (route.clone(), Value::String(group.clone())))
+        .map(|(route, role)| (route.clone(), Value::String(role.clone())))
         .collect();
-    let groups: serde_json::Map<String, Value> = listing
-        .groups
+    let roles: serde_json::Map<String, Value> = listing
+        .roles
         .iter()
-        .map(|(group, members)| {
+        .map(|(role, members)| {
             (
-                group.clone(),
+                role.clone(),
                 Value::Array(members.iter().map(|m| Value::String(m.clone())).collect()),
             )
         })
@@ -142,25 +142,25 @@ pub fn render_config_json(listing: &ConfigListing) -> Value {
             })
         })
         .collect();
-    json!({ "routes": routes, "groups": groups, "models": models })
+    json!({ "routes": routes, "roles": roles, "models": models })
 }
 
 /// Build the listing from a parsed config: tree-derived routes (route →
-/// group), groups with their declared members, and models with intelligence
+/// role), roles with their effective members, and models with intelligence
 /// and weights as declared. Sorted by key throughout.
 pub fn listing_from_config(cfg: &RouterConfig) -> ConfigListing {
     let mut routes: Vec<(String, String)> = cfg
         .routes_view()
         .into_iter()
-        .map(|(route, rref)| (route, rref.group))
+        .map(|(route, rref)| (route, rref.role))
         .collect();
     routes.sort();
-    let mut groups: Vec<(String, Vec<String>)> = cfg
-        .model_groups
+    let mut roles: Vec<(String, Vec<String>)> = cfg
+        .roles
         .iter()
-        .map(|(group, members)| (group.clone(), members.models().to_vec()))
+        .map(|(role, entry)| (role.clone(), entry.effective_models()))
         .collect();
-    groups.sort();
+    roles.sort();
     let mut models: Vec<(String, u8, Option<String>)> = cfg
         .models
         .iter()
@@ -169,7 +169,7 @@ pub fn listing_from_config(cfg: &RouterConfig) -> ConfigListing {
     models.sort();
     ConfigListing {
         routes,
-        groups,
+        roles,
         models,
     }
 }

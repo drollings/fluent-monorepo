@@ -15,12 +15,12 @@ fn tree_json() -> &'static str {
                 {
                     "key": "code",
                     "description": "programming and implementation",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 },
                 {
                     "key": "translation",
                     "description": "translation between languages",
-                    "node": { "type": "terminal", "route": "translation", "group": "translation" }
+                    "node": { "type": "terminal", "route": "translation", "role": "translation" }
                 },
                 {
                     "key": "blocked",
@@ -38,7 +38,7 @@ fn tree_json() -> &'static str {
                     "node": {
                         "type": "fallback",
                         "description": "default branch",
-                        "node": { "type": "terminal", "route": "local", "group": "question" }
+                        "node": { "type": "terminal", "route": "local", "role": "question" }
                     }
                 }
             ]
@@ -101,8 +101,7 @@ fn tree_round_trips() {
                     description: Some("default branch".into()),
                     node: Box::new(ClassificationNode::Terminal {
                         route: "local".into(),
-                        group: Some("question".into()),
-                        role: None,
+                        role: Some("question".into()),
                         description: String::new(),
                         always_route: false,
                     })
@@ -116,7 +115,7 @@ fn tree_round_trips() {
 #[test]
 fn router_config_parses_classification_section() {
     let json = format!(
-        r#"{{ "classification": {tree}, "models": {{}}, "model_groups": {{}} }}"#,
+        r#"{{ "classification": {tree}, "models": {{}} }}"#,
         tree = tree_json()
     );
     let cfg: RouterConfig = serde_json::from_str(&json).unwrap();
@@ -134,42 +133,57 @@ fn flat_config_without_classification_is_none() {
 fn root_classifier_model_resolved() {
     let tree: ClassificationTree = serde_json::from_str(tree_json()).unwrap();
     assert_eq!(tree.root_classifier_model(), Some("fast"));
-    assert_eq!(tree.root_classifier_group(), None);
-    assert!(!tree.has_nested_model_group());
 }
 
 #[test]
-fn root_classifier_group_resolved_and_nested_detected() {
-    // Duties name groups: the root's `model_group` resolves the duty while
-    // the literal stays as fallback; a nested `model_group` is detected so
-    // the builder can warn (only the root feeds the duty).
-    let tree: ClassificationTree = serde_json::from_str(
+fn retired_group_spellings_fail_closed_at_parse() {
+    // The retired `model_group` (classifier) and `group` (terminal)
+    // spellings are not schema fields: `deny_unknown_fields` rejects them
+    // at parse with the field name, so a stale file fails fast at boot
+    // instead of silently dropping the duty/route binding.
+    let err = serde_json::from_str::<ClassificationTree>(
         r#"{
             "root": {
                 "type": "classifier",
                 "description": "root",
-                "model": "stale:literal",
+                "model": "duty",
                 "model_group": "code",
+                "children": []
+            }
+        }"#,
+    )
+    .expect_err("retired model_group must not parse");
+    assert!(
+        err.to_string().contains("model_group"),
+        "error names the retired field, got: {err}"
+    );
+    let err = serde_json::from_str::<ClassificationTree>(
+        r#"{
+            "root": {
+                "type": "classifier",
+                "description": "root",
+                "model": "duty",
                 "children": [
                     {
                         "key": "sub",
                         "description": "sub",
                         "node": {
-                            "type": "classifier",
-                            "description": "nested",
-                            "model": "small",
-                            "model_group": "code",
-                            "children": []
+                            "type": "terminal",
+                            "route": "code",
+                            "group": "code",
+                            "role": "quick",
+                            "description": ""
                         }
                     }
                 ]
             }
         }"#,
     )
-    .unwrap();
-    assert_eq!(tree.root_classifier_group(), Some("code"));
-    assert_eq!(tree.root_classifier_model(), Some("stale:literal"));
-    assert!(tree.has_nested_model_group());
+    .expect_err("retired terminal group must not parse");
+    assert!(
+        err.to_string().contains("group"),
+        "error names the retired field, got: {err}"
+    );
 }
 
 #[test]
@@ -217,18 +231,17 @@ fn classifier_model_keys_dedup_across_depth() {
 }
 
 #[test]
-fn terminal_views_collect_routes_and_groups() {
+fn terminal_views_collect_routes_and_roles() {
     let tree: ClassificationTree = serde_json::from_str(tree_json()).unwrap();
     let mut views = tree.terminal_views();
     views.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
         views,
         vec![
-            ("code".into(), Some("code".into()), String::new()),
-            ("local".into(), Some("question".into()), String::new()),
+            ("code".into(), String::new()),
+            ("local".into(), String::new()),
             (
                 "translation".into(),
-                Some("translation".into()),
                 String::new()
             ),
         ]
@@ -372,7 +385,7 @@ fn terminal_role_parses_and_defaults_none() {
             "model": "m",
             "children": [
                 {"key": "code", "description": "", "node": {
-                    "type": "terminal", "route": "code", "group": "g",
+                    "type": "terminal", "route": "code",
                     "role": "quick", "description": "",
                 }},
                 {"key": "chat", "description": "", "node": {
@@ -398,7 +411,7 @@ fn terminal_role_parses_and_defaults_none() {
 #[test]
 fn top_safety_absent_means_hard_default() {
     let cfg: RouterConfig =
-        serde_json::from_str(r#"{"models": {}, "model_groups": {}}"#).expect("parses");
+        serde_json::from_str(r#"{"models": {}}"#).expect("parses");
     assert_eq!(cfg.safety_threshold, None);
     assert_eq!(cfg.effective_safety_threshold(), 0.5);
 }
@@ -406,7 +419,7 @@ fn top_safety_absent_means_hard_default() {
 #[test]
 fn top_safety_present_is_the_default() {
     let cfg: RouterConfig =
-        serde_json::from_str(r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#)
+        serde_json::from_str(r#"{"models": {}, "safety_threshold": 0.4}"#)
             .expect("parses");
     assert_eq!(cfg.safety_threshold, Some(0.4));
     assert_eq!(cfg.effective_safety_threshold(), 0.4);
@@ -415,14 +428,14 @@ fn top_safety_present_is_the_default() {
 #[test]
 fn top_safety_omitted_when_unset() {
     let cfg: RouterConfig =
-        serde_json::from_str(r#"{"models": {}, "model_groups": {}}"#).expect("parses");
+        serde_json::from_str(r#"{"models": {}}"#).expect("parses");
     let value = serde_json::to_value(&cfg).expect("serializes");
     assert!(
         value.get("safety_threshold").is_none(),
         "unset default stays out of the serialized form"
     );
     let set: RouterConfig =
-        serde_json::from_str(r#"{"models": {}, "model_groups": {}, "safety_threshold": 0.4}"#)
+        serde_json::from_str(r#"{"models": {}, "safety_threshold": 0.4}"#)
             .expect("parses");
     let back: RouterConfig =
         serde_json::from_str(&serde_json::to_string(&set).expect("serializes"))

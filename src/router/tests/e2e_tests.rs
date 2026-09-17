@@ -65,13 +65,13 @@ fn make_test_config() -> RouterConfig {
         r#"{
         "pipelines": {"default": {"deterministic_prefilter": true, "classifier": true, "blacklist": "env/pii-patterns.json"}},
         "models": {"fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 0.000001, "cost_output": 0.000006, "cost_cached_read": 0.0000004, "tok_s": 10, "total_timeout_ms": 5000, "idle_timeout_ms": 2000, "stream": false, "filter_thinking": false, "retry_count": 0, "retry_base_interval_s": 1}},
-        "model_groups": {"fast": ["fast"]},
+        "roles": {"fast": {"models": ["fast"]}},
         "classification": {"root": {
             "type": "classifier",
             "description": "test router",
             "model": "fast",
             "children": [
-                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "group": "fast"}}
+                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "role": "fast"}}
             ]
         }},
         "default_route": "fast"
@@ -294,7 +294,7 @@ fn make_tree_config() -> RouterConfig {
                 "fast": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "tok_s": 10},
                 "code-model": {"endpoint": "http://upstream.test:8080/v1/chat/completions", "name": "code-model", "intelligence": 5, "cost_input": 5e-6, "cost_output": 3e-5, "cost_cached_read": 2e-6, "tok_s": 5}
             },
-            "model_groups": {"fast": ["fast"], "code": ["code-model"]},
+            "roles": {"fast": {"models": ["fast"]}, "code": {"models": ["code-model"]}},
             "default_route": "local",
             "classification": {
                 "root": {
@@ -305,14 +305,14 @@ fn make_tree_config() -> RouterConfig {
                         {
                             "key": "code",
                             "description": "programming and implementation",
-                            "node": { "type": "terminal", "route": "code", "group": "code" }
+                            "node": { "type": "terminal", "route": "code", "role": "code" }
                         },
                         {
                             "key": "general",
                             "description": "everything else",
                             "node": {
                                 "type": "fallback",
-                                "node": { "type": "terminal", "route": "local", "group": "fast" }
+                                "node": { "type": "terminal", "route": "local", "role": "fast" }
                             }
                         }
                     ]
@@ -354,7 +354,7 @@ fn test_e2e_tree_config_unknown_route_uses_fallback() {
         .routing_target
         .expect("fallback terminal should produce a routing target");
     assert_eq!(rt.target_name.as_deref(), Some("local"));
-    assert_eq!(rt.model, "fast:base");
+    assert_eq!(rt.model, "fast:fast");
 }
 
 // ── Checkpoint/Rewind Cycle (DAG session-level) ─────────────────────────

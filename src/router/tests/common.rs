@@ -111,13 +111,13 @@ pub fn make_config(
             "retry_count": 0,
             "retry_base_interval_s": 1
         }},
-        "model_groups": {"fast": ["fast"]},
+        "roles": {"fast": {"models": ["fast"]}},
         "classification": {"root": {
             "type": "classifier",
             "description": "test router",
             "model": "fast",
             "children": [
-                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "group": "fast"}}
+                {"key": "fast", "description": "test route", "node": {"type": "terminal", "route": "fast", "role": "fast"}}
             ]
         }},
         "default_route": "fast"
@@ -165,7 +165,6 @@ pub fn test_deps(
         fleet: None,
         onnx_llm_backend: None,
         roles: Arc::new(config.roles.clone()),
-        groups: Arc::new(config.model_groups.clone()),
         workflow_recorder: None,
         frame_gate: crate::ledger::frame_index::FrameResolutionGate::open(),
     }
@@ -296,7 +295,7 @@ pub fn mock_for(user_message: &str, dispatch_response: &str) -> MockDispatchCont
             user_message: user_message.to_string(),
             classifier_response: String::new(),
             expected_route: None,
-            expect_model_group: None,
+            expect_role: None,
             dispatch_response: Some(dispatch_response.to_string()),
             rejected: false,
             reject_reason_contains: None,

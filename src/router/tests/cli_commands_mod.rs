@@ -91,7 +91,7 @@ fn ls_markdown_shape_is_pinned() {
             ("code".into(), "code".into()),
             ("local".into(), "default".into()),
         ],
-        groups: vec![
+        roles: vec![
             ("code".into(), vec!["qwen".into()]),
             ("default".into(), vec!["lfm".into(), "tiny".into()]),
         ],
@@ -107,8 +107,8 @@ fn ls_markdown_shape_is_pinned() {
          | --- | --- |\n\
          | code | default |\n\
          \n\
-         ## Model groups\n\
-         | group | models |\n\
+         ## Roles\n\
+         | role | models |\n\
          | --- | --- |\n\
          | code | qwen |\n\
          | default | lfm, tiny |\n\
@@ -126,14 +126,14 @@ fn ls_markdown_escapes_pipes() {
     use crate::cli::commands::filesystem::{render_config_listing, ConfigListing};
     let listing = ConfigListing {
         routes: vec![("a|b".into(), "g".into())],
-        groups: vec![],
+        roles: vec![],
         models: vec![],
     };
     let text = render_config_listing(&listing);
     assert!(text.contains("a\\|b"), "pipes escaped, got:\n{text}");
     assert!(
         text.contains("(none)"),
-        "empty groups section marked, got:\n{text}"
+        "empty roles section marked, got:\n{text}"
     );
 }
 
@@ -142,12 +142,12 @@ fn ls_empty_config_has_headers_no_rows() {
     use crate::cli::commands::filesystem::{render_config_listing, ConfigListing};
     let listing = ConfigListing {
         routes: vec![],
-        groups: vec![],
+        roles: vec![],
         models: vec![],
     };
     let text = render_config_listing(&listing);
     assert!(text.contains("## Routes"));
-    assert!(text.contains("## Model groups"));
+    assert!(text.contains("## Roles"));
     assert!(text.contains("| model | intelligence | weights |"));
     assert!(!text.contains("| tiny |"), "no model rows");
 }
@@ -157,13 +157,13 @@ fn ls_json_round_trips_losslessly() {
     use crate::cli::commands::filesystem::{render_config_json, ConfigListing};
     let listing = ConfigListing {
         routes: vec![("local".into(), "default".into())],
-        groups: vec![("default".into(), vec!["lfm".into(), "tiny".into()])],
+        roles: vec![("default".into(), vec!["lfm".into(), "tiny".into()])],
         models: vec![("tiny".into(), 1, None)],
     };
     let value = render_config_json(&listing);
     assert_eq!(value["routes"]["local"], serde_json::json!("default"));
     assert_eq!(
-        value["groups"]["default"],
+        value["roles"]["default"],
         serde_json::json!(["lfm", "tiny"])
     );
     assert_eq!(value["models"][0]["key"], serde_json::json!("tiny"));
@@ -198,13 +198,13 @@ fn ls_lists_fixture_config_sections() {
     assert_eq!(
         listing.routes,
         vec![
-            ("code".to_string(), "dev".to_string()),
-            ("local".to_string(), "dev".to_string()),
+            ("code".to_string(), "quick".to_string()),
+            ("local".to_string(), "quick".to_string()),
         ]
     );
     assert_eq!(
-        listing.groups,
-        vec![("dev".to_string(), vec!["m1".to_string(), "m2".to_string()])]
+        listing.roles,
+        vec![("quick".to_string(), vec!["m1".to_string(), "m2".to_string()])]
     );
     assert_eq!(
         listing.models,

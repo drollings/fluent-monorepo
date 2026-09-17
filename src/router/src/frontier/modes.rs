@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// less-permissive stages are tried first so frontier calls are
 /// progressively more expensive, never all-or-nothing.
 ///
-/// `serde` is derived so a configured `model_groups[g].escalation.modes`
+/// `serde` is derived so a configured `roles.<role>.escalation.modes`
 /// list deserializes from config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

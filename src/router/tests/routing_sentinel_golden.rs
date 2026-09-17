@@ -30,11 +30,11 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use super::{
-    expand_group_keys, expanded_candidates_for_group, GroupRecency, TargetBackends, TargetMatcher,
+    expand_role_keys, expanded_candidates_for_role, RoleRecency, TargetBackends, TargetMatcher,
 };
 use crate::config::{
-    split_model_key, ConfidenceGate, FilterOutcome, FilterScope, GroupMember, InstanceProfile,
-    ModelEntry, ModelGroup, PatternEntry, RouteRef, RoutingConfig,
+    split_model_key, ConfidenceGate, FilterOutcome, FilterScope, RoleMember, InstanceProfile,
+    ModelEntry, PatternEntry, RoleEntry, RouteRef, RoutingConfig,
 };
 use crate::filters::{
     regex_filter::RegexFilter, DeterministicFilterEngine, FilterContext, FilterDecision,
@@ -121,7 +121,7 @@ fn model_entry(_key: &str, intelligence: u8) -> ModelEntry {
     }
 }
 
-fn fixture_routing(case: &serde_json::Value, group: &str) -> RoutingConfig {
+fn fixture_routing(case: &serde_json::Value, role: &str) -> RoutingConfig {
     let mut models = HashMap::new();
     if let Some(entries) = case["entries"].as_object() {
         for (key, spec) in entries {
@@ -137,28 +137,39 @@ fn fixture_routing(case: &serde_json::Value, group: &str) -> RoutingConfig {
         routes: HashMap::from([(
             "local".into(),
             RouteRef {
-                group: group.into(),
-                role: None,
+                role: role.into(),
                 pipelines: vec!["default".into()],
                 description: "local".into(),
                 always_route: false,
             },
         )]),
         models,
-        model_groups: HashMap::from([(group.into(), ModelGroup::Array(strings(case, "members")))]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
         score_matrix: None,
         onnx_keys,
-        roles: HashMap::new(),
+        roles: HashMap::from([(
+            role.into(),
+            RoleEntry {
+                max_parallel: None,
+                pinned: false,
+                enable_thinking: None,
+                filter_thinking: true,
+                preserve_thinking: None,
+                params: Default::default(),
+                models: strings(case, "members"),
+                snapshot: None,
+                escalation: None,
+            },
+        )]),
     }
 }
 
-fn fixture_recency(routing: &RoutingConfig, case: &serde_json::Value) -> GroupRecency {
-    let recency = GroupRecency::new();
+fn fixture_recency(routing: &RoutingConfig, case: &serde_json::Value) -> RoleRecency {
+    let recency = RoleRecency::new();
     if let Some(map) = case["recency"].as_object() {
-        for (group, reference) in map {
+        for (role, reference) in map {
             let reference = reference.as_str().expect("recency reference");
             let wire = if let Some(member) = reference.strip_prefix("key:") {
                 routing
@@ -170,26 +181,26 @@ fn fixture_recency(routing: &RoutingConfig, case: &serde_json::Value) -> GroupRe
             } else {
                 panic!("bad recency reference {reference}");
             };
-            recency.record("fixture", group, &wire);
+            recency.record("fixture", role, &wire);
         }
     }
     recency
 }
 
-/// Whether a recorded wire still names a literal member of the group — the
+/// Whether a recorded wire still names a literal member of the role — the
 /// test-side attribution for `last-miss` causes, reusing the production wire
 /// mapping (never a copy of the expansion walk itself).
-fn last_resolves(routing: &RoutingConfig, group: &str, recency: &GroupRecency) -> bool {
-    let Some(wire) = recency.last_for("fixture", group) else {
+fn last_resolves(routing: &RoutingConfig, role: &str, recency: &RoleRecency) -> bool {
+    let Some(wire) = recency.last_for("fixture", role) else {
         return false;
     };
-    let Some(group_cfg) = routing.model_groups.get(group) else {
+    let Some(role_entry) = routing.roles.get(role) else {
         return false;
     };
-    group_cfg
-        .models()
+    role_entry
+        .effective_models()
         .iter()
-        .filter(|m| matches!(GroupMember::parse(m), GroupMember::Key(_)))
+        .filter(|m| matches!(RoleMember::parse(m), RoleMember::Key(_)))
         .any(|m| {
             let (base, _) = split_model_key(m);
             if routing.onnx_keys.contains(base) {
@@ -319,12 +330,12 @@ fn run_ladder_case(case: &serde_json::Value) -> CaseResult {
 fn run_expand_case(case: &serde_json::Value) -> CaseResult {
     let id = case["id"].as_str().expect("id").to_string();
     let kind = case["kind"].as_str().expect("kind").to_string();
-    let group = case["group"].as_str().expect("group");
-    let routing = fixture_routing(case, group);
+    let role = case["role"].as_str().expect("role");
+    let routing = fixture_routing(case, role);
     let recency = fixture_recency(&routing, case);
     let loaded: Vec<String> = strings(case, "loaded");
     let probes = Arc::new(Mutex::new(Vec::<String>::new()));
-    let order = expand_group_keys(&routing, group, Some(&recency), Some("fixture"), &{
+    let order = expand_role_keys(&routing, role, Some(&recency), Some("fixture"), &{
         let probes = Arc::clone(&probes);
         let loaded = loaded.clone();
         move |base: &str| {
@@ -340,8 +351,8 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
     let mut causes = Vec::new();
     let mut failures = Vec::new();
     let unfollowed = Vec::new();
-    if has_last && !last_resolves(&routing, group, &recency) {
-        let reason = if recency.last_for("fixture", group).is_none() {
+    if has_last && !last_resolves(&routing, role, &recency) {
+        let reason = if recency.last_for("fixture", role).is_none() {
             "no-record"
         } else {
             "removed-member"
@@ -354,7 +365,7 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
     }
     let loaded_set: Vec<&str> = members
         .iter()
-        .filter(|m| matches!(GroupMember::parse(m), GroupMember::Key(_)))
+        .filter(|m| matches!(RoleMember::parse(m), RoleMember::Key(_)))
         .filter(|m| {
             let (base, _) = split_model_key(m);
             routing.onnx_keys.contains(base) || loaded.iter().any(|l| l == base)
@@ -412,15 +423,15 @@ fn assessment_script(script: &str) -> Vec<String> {
 fn run_climb_case(case: &serde_json::Value) -> CaseResult {
     let id = case["id"].as_str().expect("id").to_string();
     let kind = case["kind"].as_str().expect("kind").to_string();
-    let group = case["group"].as_str().expect("group");
-    let routing = fixture_routing(case, group);
+    let role = case["role"].as_str().expect("role");
+    let routing = fixture_routing(case, role);
     let recency = fixture_recency(&routing, case);
     let loaded: Vec<String> = strings(case, "loaded");
-    let expanded = expand_group_keys(&routing, group, Some(&recency), Some("fixture"), &|base| {
+    let expanded = expand_role_keys(&routing, role, Some(&recency), Some("fixture"), &|base| {
         loaded.iter().any(|l| l == base)
     }, None);
     let candidates =
-        expanded_candidates_for_group(&routing, group, Some(&recency), Some("fixture"), &|base| {
+        expanded_candidates_for_role(&routing, role, Some(&recency), Some("fixture"), &|base| {
             loaded.iter().any(|l| l == base)
         }, None);
     assert_eq!(
@@ -455,7 +466,7 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
         0,
     );
     let complexity = case["classifier_complexity"].as_u64().map(|c| c as u8);
-    let matched = matcher.match_target("local", group, &routing, &candidates, complexity, "hello");
+    let matched = matcher.match_target("local", role, &routing, &candidates, complexity, "hello");
 
     let mut causes = Vec::new();
     let mut failures = Vec::new();
@@ -722,13 +733,13 @@ fn is_genuine_cause(case: &serde_json::Value, cause: &str) -> bool {
         return strings(case, "members").iter().any(|m| m == "last")
             && case["recency"]
                 .as_object()
-                .is_none_or(|m| m.get(case["group"].as_str().unwrap_or("")).is_none());
+                .is_none_or(|m| m.get(case["role"].as_str().unwrap_or("")).is_none());
     }
     if cause == "last-miss:removed-member" {
         return strings(case, "members").iter().any(|m| m == "last")
             && case["recency"]
                 .as_object()
-                .and_then(|m| m.get(case["group"].as_str().unwrap_or("")))
+                .and_then(|m| m.get(case["role"].as_str().unwrap_or("")))
                 .and_then(|v| v.as_str())
                 .is_some_and(|r| r.starts_with("wire:"));
     }
@@ -833,10 +844,10 @@ fn routing_sentinel_corpus_and_report() {
                 if case["kind"].as_str() == Some("control") {
                     // Sentinel-free controls expand through the literal path
                     // byte-identically.
-                    let group = case["group"].as_str().expect("group");
-                    let routing = fixture_routing(case, group);
-                    let literal: Vec<String> = routing.model_groups[group]
-                        .models()
+                    let role = case["role"].as_str().expect("role");
+                    let routing = fixture_routing(case, role);
+                    let literal: Vec<String> = routing.roles[role]
+                        .effective_models()
                         .iter()
                         .filter(|k| routing.entry_for_key(k).is_some())
                         .cloned()

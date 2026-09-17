@@ -54,19 +54,10 @@
       "retry_base_interval_s": 2
     }
   },
-  "model_groups": {
-    "default": [
-      "default"
-    ],
-    "code": [
-      "code"
-    ]
-  },
   "classification": {
     "root": {
       "type": "classifier",
       "description": "Fixture request router",
-      "model_group": "code",
       "coherence_threshold": 0.5,
       "safety_threshold": 0.3,
       "children": [
@@ -76,9 +67,9 @@
           "node": {
             "type": "terminal",
             "route": "local",
-            "group": "default",
             "description": "General Q&A",
-            "always_route": false
+            "always_route": false,
+            "role": "default"
           }
         },
         {
@@ -87,12 +78,13 @@
           "node": {
             "type": "terminal",
             "route": "code",
-            "group": "code",
             "description": "Code",
-            "always_route": true
+            "always_route": true,
+            "role": "code"
           }
         }
-      ]
+      ],
+      "model": "code"
     }
   },
   "default_route": "local"

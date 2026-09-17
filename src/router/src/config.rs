@@ -26,7 +26,7 @@ pub use self::addr::{hosts_equivalent, parse_bind_addr, validate_no_self_routing
 pub use self::builder::{NlpConfig, NlpOrdering, PipelineParams, TargetMatchMode};
 pub use self::classification::{ClassificationChild, ClassificationNode, ClassificationTree};
 pub use self::compiled_tree::{CompileError, CompiledTree};
-pub use self::escalation::{EscalationLadderConfig, FrontierConfig, GroupMember, ModelGroup};
+pub use self::escalation::{EscalationLadderConfig, FrontierConfig, RoleMember};
 pub use self::filters::{
     CommandConfig, ConfidenceGate, FilterAction, FilterOutcome, FilterScope, MockConfig,
     PatternEntry, RejectPatterns,
@@ -41,16 +41,16 @@ pub use self::refine_policy::{RouterRefineMode, RouterRefinePolicy};
 pub(crate) use self::root::materialize_effective_pool;
 pub use self::root::split_model_key;
 pub use self::root::{
-    detect_device_vram_total, models_serving_role, overlay_params, resolve_group_head_key,
-    resolve_inference_point, role_head_key, strip_declaration_params, ArcReadyConfig,
-    AuditLogConfig, ChartsConfig, ClassifierFailurePolicy, ClassifierOutput, EvictionPolicy,
-    LedgerConfig, OrchestratorSection, OverlayConfig, PostProcessConfig, ReviewConfig, RigorConfig,
-    RouterConfig, ServerConfig, SessionConfig, SidecarConfig, WorkflowExtractionMode,
-    DECLARATION_PARAM_KEYS, DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
+    detect_device_vram_total, models_serving_role, overlay_params, resolve_inference_point,
+    role_head_key, strip_declaration_params, ArcReadyConfig, AuditLogConfig, ChartsConfig,
+    ClassifierFailurePolicy, ClassifierOutput, EvictionPolicy, LedgerConfig, OrchestratorSection,
+    OverlayConfig, PostProcessConfig, ReviewConfig, RigorConfig, RouterConfig, ServerConfig,
+    SessionConfig, SidecarConfig, WorkflowExtractionMode, DECLARATION_PARAM_KEYS,
+    DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
 };
 pub use self::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 pub use self::routing::{
-    expanded_group_members, fleet_default_member, select_group_member, select_viable_member,
+    expanded_role_members, fleet_default_member, select_role_member, select_viable_member,
     strip_model_prefix, RequestedRef, RoleEntry, RouteRef, RoutingConfig, MODEL_PREFIX,
 };
 pub use common_core::constants::default_true;

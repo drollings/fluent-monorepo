@@ -17,7 +17,7 @@ use crate::config::RoutingConfig;
 use crate::pipeline::RoutingTarget;
 use crate::pipeline_types::{StageDecision, StageVerdict};
 use crate::stages::classifier::ClassifierBackendResolver;
-use crate::target_match::{AssessmentRecord, GroupExpansion, TargetMatcher};
+use crate::target_match::{AssessmentRecord, RoleExpansion, TargetMatcher};
 
 use super::decisions::{
     fallback_child, final_decision, node_decision, terminal_decision, TreeEvaluation, TreeOutcome,
@@ -93,7 +93,7 @@ impl ClassificationEngine {
             user_text,
             interlingua,
             route_hints,
-            &GroupExpansion::default(),
+            &RoleExpansion::default(),
         )
     }
 
@@ -106,7 +106,7 @@ impl ClassificationEngine {
         user_text: &str,
         interlingua: Option<&[spacy_rs::routing::InterlinguaSignal]>,
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> Result<TreeEvaluation, WorkError> {
         let mut visited: Vec<StageDecision> = Vec::new();
         let siblings = HashMap::new();
@@ -149,20 +149,18 @@ impl ClassificationEngine {
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
         complexity: Option<u8>,
         visited: &mut Vec<StageDecision>,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> Result<TreeOutcome, WorkError> {
         match node {
             CompiledNode::Classifier {
                 description,
                 model,
-                model_group,
                 coherence_threshold,
                 safety_threshold,
                 children,
                 ..
             } => {
-                // The node's duty key: its group (first servable member)
-                // wins when set, else its literal model, else the pipeline's
+                // The node's duty key: its literal model, else the pipeline's
                 // resolved classifier client serves (unknown keys behave as
                 // before — `call_classifier` falls back to the default).
                 // Availability sentinels never reach a backend literally:
@@ -174,18 +172,7 @@ impl ClassificationEngine {
                 // observes post-build registrations; dispatch-time ensure
                 // remains the hard guarantee. Empty fleets keep the literal
                 // (the default-client path serves as before).
-                let model_key: String = model_group
-                    .as_deref()
-                    .and_then(|group| {
-                        crate::config::resolve_group_head_key(
-                            &self.routing.models,
-                            &self.routing.roles,
-                            &self.routing.model_groups,
-                            group,
-                        )
-                    })
-                    .or_else(|| model.clone())
-                    .unwrap_or_default();
+                let model_key: String = model.clone().unwrap_or_default();
                 let model_key: String =
                     if model_key == "last" || model_key == "any" {
                         crate::target_match::viable_last_key(
@@ -213,12 +200,12 @@ impl ClassificationEngine {
             }
             CompiledNode::Terminal {
                 route,
-                group,
+                role,
                 description,
                 ..
             } => Ok(self.evaluate_terminal(
                 route,
-                group.as_deref(),
+                role.as_deref(),
                 description,
                 complexity,
                 user_text,
@@ -263,7 +250,7 @@ impl ClassificationEngine {
         interlingua: Option<&[spacy_rs::routing::InterlinguaSignal]>,
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
         visited: &mut Vec<StageDecision>,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> Result<TreeOutcome, WorkError> {
         // Deterministic filter children short-circuit before any LLM call.
         let siblings: HashMap<String, CompiledNode> = children
@@ -451,20 +438,20 @@ impl ClassificationEngine {
     }
 
     /// Terminal node: resolve a dispatch target. When the pipeline opts into
-    /// target-matching (`target_match: "self_assess"`), a 2+ member group
+    /// target-matching (`target_match: "self_assess"`), a 2+ member role
     /// resolves through the shared self-assessment ladder
     /// (`crate::target_match::TargetMatcher`); otherwise the static
     /// cheapest-qualifying pick runs (`RoutingConfig::routing_target` /
-    /// [`Self::resolve_group_target`]).
+    /// [`Self::resolve_role_target`]).
     fn evaluate_terminal(
         &self,
         route: &str,
-        group: Option<&str>,
+        role: Option<&str>,
         description: &str,
         complexity: Option<u8>,
         user_text: &str,
         visited: &mut Vec<StageDecision>,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> TreeOutcome {
         // Strict resolution: a terminal names an explicit route. Unknown route
         // names must not silently divert to the default route — `resolve_route`
@@ -478,11 +465,11 @@ impl ClassificationEngine {
             }
         }
 
-        // The terminal carries its own `group`: resolve directly through the
-        // group's models (the flat routes map has no entry for this route).
-        if let Some(group) = group {
+        // The terminal carries its own `role`: resolve directly through the
+        // role's models (the flat routes map has no entry for this route).
+        if let Some(role) = role {
             if let Some((rt, assessments)) =
-                self.resolve_group_target(route, group, complexity, user_text, expansion)
+                self.resolve_role_target(route, role, complexity, user_text, expansion)
             {
                 visited.push(terminal_decision(description, &rt, complexity, assessments));
                 return TreeOutcome::Route(Box::new(rt));
@@ -503,31 +490,31 @@ impl ClassificationEngine {
     /// Flat-route terminal resolution through the shared target-matching
     /// ladder when available, falling back to the static
     /// `RoutingConfig::routing_target` (defense-in-depth — never fails harder
-    /// than today). Singleton groups climb too (one assessment, terminating
+    /// than today). Singleton roles climb too (one assessment, terminating
     /// on last-always-wins).
     fn resolve_route_with_matcher(
         &self,
         route: &str,
         complexity: Option<u8>,
         user_text: &str,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> Option<(RoutingTarget, Option<Vec<AssessmentRecord>>)> {
         if let Some(matcher) = &self.target_matcher {
-            if let Some(group) = self.routing.route_group(route) {
-                let candidates = crate::target_match::expanded_candidates_for_group(
+            if let Some(role) = self.routing.route_role(route) {
+                let candidates = crate::target_match::expanded_candidates_for_role(
                     &self.routing,
-                    group,
+                    role,
                     expansion.recency(),
                     expansion.session(),
                     &|base| expansion.supervisor_loaded(base),
                     complexity,
                 );
-                // No minimum size: singleton groups climb too (the ladder
+                // No minimum size: singleton roles climb too (the ladder
                 // terminates on last-always-wins, so one candidate needs
                 // exactly one assessment, never an extra LLM call spiral).
                 if let Some(tm) = matcher.match_target(
                     route,
-                    group,
+                    role,
                     &self.routing,
                     &candidates,
                     complexity,
@@ -542,33 +529,33 @@ impl ClassificationEngine {
             .map(|rt| (rt, None))
     }
 
-    /// Resolve a terminal's own `model_group` when no flat `routes` entry
+    /// Resolve a terminal's own role when no flat `routes` entry
     /// exists. When the target-matching ladder is available, runs the
-    /// self-assessment climb for any non-empty group; otherwise picks the
-    /// viable model in the group (intelligence-passing, loaded-first,
+    /// self-assessment climb for any non-empty role; otherwise picks the
+    /// viable model in the role (intelligence-passing, loaded-first,
     /// cheapest — the shared static rule).
-    fn resolve_group_target(
+    fn resolve_role_target(
         &self,
         route: &str,
-        group: &str,
+        role: &str,
         min_complexity: Option<u8>,
         user_text: &str,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> Option<(RoutingTarget, Option<Vec<AssessmentRecord>>)> {
         if let Some(matcher) = &self.target_matcher {
-            let candidates = crate::target_match::expanded_candidates_for_group(
+            let candidates = crate::target_match::expanded_candidates_for_role(
                 &self.routing,
-                group,
+                role,
                 expansion.recency(),
                 expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
                 min_complexity,
             );
-            // No minimum size: singleton groups climb too (last-always-wins
+            // No minimum size: singleton roles climb too (last-always-wins
             // terminates after one assessment).
             if let Some(tm) = matcher.match_target(
                 route,
-                group,
+                role,
                 &self.routing,
                 &candidates,
                 min_complexity,
@@ -582,16 +569,16 @@ impl ClassificationEngine {
         // recency/liveness here, so residency input is `None` — identical to
         // the flat static path; unknown literals fall out through the entry
         // lookup, as today).
-        let model_keys: Vec<String> = self.routing.role_expanded_members(group);
+        let model_keys: Vec<String> = self.routing.role_dispatch_members(role);
         let entry_key = crate::config::select_viable_member(
-            group,
+            role,
             &model_keys,
             &self.routing.models,
             min_complexity,
             None,
         )?;
         let mut rt = self.routing.target_for_key(&entry_key)?;
-        rt.group = Some(group.to_string());
+        rt.role = Some(role.to_string());
         rt.target_name = Some(route.to_string());
         Some((rt, None))
     }
@@ -612,7 +599,7 @@ impl ClassificationEngine {
         route_hints: Option<&[crate::pipeline_types::RouteHint]>,
         complexity: Option<u8>,
         visited: &mut Vec<StageDecision>,
-        expansion: &GroupExpansion,
+        expansion: &RoleExpansion,
     ) -> Result<TreeOutcome, WorkError> {
         let description = filter.description.as_str();
         let matched = if let Some(m) = filter.match_interlingua.as_ref() {

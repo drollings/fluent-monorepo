@@ -1,7 +1,7 @@
 //! Role-first resolved-target golden.
 //!
 //! Pins the dispatch-relevant resolution of the test-owned fixture
-//! (`tests/data/routing_role_fixture.json`): every model group (via a
+//! (`tests/data/routing_role_fixture.json`): every role (via a
 //! representative route at several complexities), every qualifier spelling
 //! the fixture's keys admit, and backend resolvability per member. The corpus
 //! lives in `tests/data/routing_role_golden.json`; the test fails on any
@@ -37,9 +37,9 @@ fn load_fixture_config() -> RouterConfig {
         .unwrap_or_else(|e| panic!("fixture config must deserialize: {e}"))
 }
 
-/// Representative route per model group (the tree derives one route per group,
-//  `local` rides the `default` group).
-fn group_routes() -> Vec<(&'static str, &'static str)> {
+/// Representative route per role (the tree derives one route per role,
+///  `local` rides the `default` role).
+fn role_routes() -> Vec<(&'static str, &'static str)> {
     vec![("default", "local"), ("code", "code")]
 }
 
@@ -73,16 +73,16 @@ fn build_corpus() -> serde_json::Value {
     let routing = config.routing_config();
 
     let mut cases = Vec::new();
-    for (group, route) in group_routes() {
-        // The group must resolve in the fixture config, or the corpus is stale.
+    for (role, route) in role_routes() {
+        // The role must resolve in the fixture config, or the corpus is stale.
         assert!(
-            routing.model_groups.contains_key(group),
-            "fixture config must declare group '{group}'"
+            routing.roles.contains_key(role),
+            "fixture config must declare role '{role}'"
         );
         for (label, complexity) in complexities() {
             let target = routing.routing_target(route, complexity);
             cases.push(serde_json::json!({
-                "id": format!("group.{group}.route.{route}.complexity.{label}"),
+                "id": format!("role.{role}.route.{route}.complexity.{label}"),
                 "target": target,
             }));
         }
@@ -129,10 +129,10 @@ fn resolved_targets_match_golden() {
 #[test]
 fn golden_spot_checks_dispatch_contract() {
     // The golden is opaque by design; these spot checks state its meaning:
-    // every group dispatches to its cheapest qualifying bound model with
+    // every role dispatches to its cheapest qualifying bound model with
     // the profile's sampling params, and unknown keys fail closed.
     // Membership lives on the roles: both fixture models are bound by
-    // `default`, so the `default` group serves the cheaper scout; only
+    // `default`, so the `default` role serves the cheaper scout; only
     // `code` is bound by the `code` role.
     let corpus = build_corpus();
     let by_id: std::collections::HashMap<&str, &serde_json::Value> = corpus["cases"]
@@ -143,15 +143,15 @@ fn golden_spot_checks_dispatch_contract() {
         .collect();
 
     let target = by_id
-        .get("group.default.route.local.complexity.none")
-        .expect("group case");
+        .get("role.default.route.local.complexity.none")
+        .expect("role case");
     assert_eq!(target["model"], "scout/scout-1b:default");
-    assert_eq!(target["group"], "default");
+    assert_eq!(target["role"], "default");
     let target = by_id
-        .get("group.code.route.code.complexity.none")
-        .expect("group case");
-    assert_eq!(target["model"], "code", "group code serves code");
-    assert_eq!(target["group"], "code");
+        .get("role.code.route.code.complexity.none")
+        .expect("role case");
+    assert_eq!(target["model"], "code:code", "role code serves code through its window");
+    assert_eq!(target["role"], "code");
     assert!(
         by_id["target_for_key.nope:default"].is_null(),
         "unknown base fails closed"
@@ -177,14 +177,14 @@ fn role_vocabulary_serves_fixture_groups() {
     let routing = config.routing_config();
 
     assert_eq!(
-        routing.role_expanded_members("default"),
-        vec!["code", "scout-1b", "last", "any"],
-        "role fans out to bound models, sentinels pass through"
+        routing.role_dispatch_members("default"),
+        vec!["scout-1b", "code"],
+        "role lists its bound models in declared order"
     );
     assert_eq!(
-        routing.role_expanded_members("code"),
-        vec!["code", "last", "any"],
-        "role fans out to its bound model"
+        routing.role_dispatch_members("code"),
+        vec!["code"],
+        "role lists its bound model"
     );
 
     assert!(

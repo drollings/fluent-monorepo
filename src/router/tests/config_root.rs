@@ -410,12 +410,12 @@ fn tree_section() -> serde_json::Value {
                     {
                         "key": "code",
                         "description": "programming",
-                        "node": { "type": "terminal", "route": "code", "group": "code", "always_route": true }
+                        "node": { "type": "terminal", "route": "code", "role": "code", "always_route": true }
                     },
                     {
                         "key": "brand_new",
                         "description": "not in flat routes",
-                        "node": { "type": "terminal", "route": "brand_new", "group": "question" }
+                        "node": { "type": "terminal", "route": "brand_new", "role": "question" }
                     }
                 ]
             }
@@ -423,10 +423,10 @@ fn tree_section() -> serde_json::Value {
         "models": {
             "fast": {"endpoint": "http://upstream.test/v1/chat/completions", "name": "fast", "intelligence": 1, "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "tok_s": 8}
         },
-        "model_groups": {
-            "fast": ["fast"],
-            "code": ["fast"],
-            "question": ["fast"]
+        "roles": {
+            "fast": {"models": ["fast"]},
+            "code": {"models": ["fast"]},
+            "question": {"models": ["fast"]}
         }
     })
 }
@@ -435,11 +435,11 @@ fn tree_section() -> serde_json::Value {
 fn routes_view_synthesizes_terminal_routes() {
     let cfg: RouterConfig = serde_json::from_value(tree_section()).unwrap();
     let routes = cfg.routes_view();
-    // Terminal routes resolve through their own group; always_route rides along.
-    assert_eq!(routes["code"].group, "code");
+    // Terminal routes resolve through their own role; always_route rides along.
+    assert_eq!(routes["code"].role, "code");
     assert_eq!(routes["code"].pipelines, vec!["default".to_string()]);
     assert!(routes["code"].always_route);
-    assert_eq!(routes["brand_new"].group, "question");
+    assert_eq!(routes["brand_new"].role, "question");
     assert_eq!(routes["brand_new"].pipelines, vec!["default".to_string()]);
     assert!(!routes["brand_new"].always_route);
 }
@@ -1364,11 +1364,11 @@ fn view_consumers_match_direct_reads() {
             "fast": {"endpoint": "http://x/v1/chat/completions", "intelligence": 1,
                      "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7, "tok_s": 8}
         },
-        "model_groups": {"g1": ["fast"], "g2": ["fast"]},
+        "roles": {"g1": {"models": ["fast"]}, "g2": {"models": ["fast"]}},
         "classification": {"root": {"type": "classifier", "description": "r", "model": "fast",
             "children": [
-                {"key": "a", "description": "a", "node": {"type": "terminal", "route": "a", "group": "g1"}},
-                {"key": "b", "description": "b", "node": {"type": "terminal", "route": "b", "group": "g2"}}
+                {"key": "a", "description": "a", "node": {"type": "terminal", "route": "a", "role": "g1"}},
+                {"key": "b", "description": "b", "node": {"type": "terminal", "route": "b", "role": "g2"}}
             ]}},
         "default_route": "a"
     }))
@@ -1381,10 +1381,10 @@ fn view_consumers_match_direct_reads() {
     assert_eq!(routing.routes.len(), view.len());
     for (route, rref) in &view {
         let got = &routing.routes[route];
-        assert_eq!(&got.group, &rref.group);
+        assert_eq!(&got.role, &rref.role);
         assert_eq!(&got.pipelines, &rref.pipelines);
     }
-    assert_eq!(routing.route_group("b"), Some("g2"));
+    assert_eq!(routing.route_role("b"), Some("g2"));
     assert!(
         !routing.system_prompt.is_empty(),
         "tree derives a prompt when none is explicit"
@@ -1430,10 +1430,10 @@ fn legacy_config_without_routing_additions_loads_inert() {
 }
 
 #[test]
-fn role_vocabulary_references_roles_and_sentinels() {
+fn role_vocabulary_references_models_and_sentinels() {
     // The role-first vocabulary mechanics on a synthetic config: declared
     // roles with flat residency and admission fields, model lists, the
-    // classifier head candidate, and groups built from roles + sentinels.
+    // classifier head candidate, and roles built from models + sentinels.
     let cfg: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "default": {
@@ -1456,10 +1456,6 @@ fn role_vocabulary_references_roles_and_sentinels() {
                 "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0,
                 "tok_s": 1
             }
-        },
-        "model_groups": {
-            "default": ["default", "last", "any"],
-            "code": ["code", "last", "any"]
         }
     }))
     .expect("synthetic role vocabulary deserializes");
@@ -1482,17 +1478,12 @@ fn role_vocabulary_references_roles_and_sentinels() {
         Some("code"),
         "the classifier resolves to its bound model"
     );
-    // Every group resolves through roles + sentinels only.
-    for (group, members) in &cfg.model_groups {
-        let models = members.models();
-        assert!(
-            models.iter().any(|m| cfg.roles.contains_key(m)),
-            "group '{group}' references a role"
-        );
-        for m in models {
+    // Every role resolves through models + sentinels only.
+    for (role, entry) in &cfg.roles {
+        for m in entry.effective_models() {
             assert!(
-                cfg.roles.contains_key(m) || m == "last" || m == "any",
-                "group '{group}' member '{m}' is a role or a sentinel"
+                cfg.models.contains_key(&m) || m == "last" || m == "any",
+                "role '{role}' member '{m}' is a model or a sentinel"
             );
         }
     }
@@ -1570,7 +1561,6 @@ fn routing_additions_round_trip_byte_identically() {
                 "tok_s": 4
             }
         },
-        "model_groups": {"code": ["code", "last", "any"]},
         "default_route": "local"
     }))
     .expect("fixture with routing additions");
@@ -1687,7 +1677,7 @@ fn router_config_serde_round_trip_preserves_all_fields() {
         r#"{
             "server": {"bind_addr": "127.0.0.1:9090"},
             "models": {"m1": {"name": "test", "endpoint": "http://localhost:8080", "intelligence": 5, "cost_input": 0.0, "cost_output": 0.0, "cost_cached_read": 0.0, "tok_s": 5}},
-            "model_groups": {"default": ["m1"]},
+            "roles": {"default": {"models": ["m1"]}},
             "pipelines": {"default": {"nlp": true, "encoder_model": "enc"}},
             "overlay": {"entity_link_enabled": true, "entity_link_threshold": 0.8},
             "rigor": {"blue_model": "m1", "red_model": "m1", "judge_model": "m1"},
@@ -1700,7 +1690,7 @@ fn router_config_serde_round_trip_preserves_all_fields() {
     let back: RouterConfig = serde_json::from_value(json).expect("deserialize");
     assert_eq!(cfg.server.bind_addr, back.server.bind_addr);
     assert_eq!(cfg.models.len(), back.models.len());
-    assert_eq!(cfg.model_groups.len(), back.model_groups.len());
+    assert_eq!(cfg.roles.len(), back.roles.len());
     assert_eq!(
         cfg.overlay.as_ref().unwrap().entity_link_enabled,
         back.overlay.as_ref().unwrap().entity_link_enabled
@@ -2063,7 +2053,7 @@ fn template_sparse_inherits_and_parses() {
             "a": {"endpoint": "http://x/v1/chat/completions"},
             "b": {"endpoint": "http://x/v1/chat/completions", "template": "/own/t.txt"},
         },
-        "model_groups": {},
+        "roles": {"local": {"models": ["a", "b"]}},
         "classification": {
             "root": {
                 "type": "classifier",
@@ -2071,7 +2061,7 @@ fn template_sparse_inherits_and_parses() {
                 "children": [
                     {"key": "local", "description": "General Q&A", "node": {
                         "type": "terminal", "route": "local",
-                        "group": "default", "always_route": false,
+                        "role": "local", "always_route": false,
                         "description": "General Q&A",
                     }},
                 ],
@@ -2095,7 +2085,7 @@ fn template_sparse_inherits_and_parses() {
 fn schema_conformance_accepts_round_trip_and_rejects_bare() {
     let ok = RouterConfig::from_json_value(serde_json::json!({
         "models": {},
-        "model_groups": {},
+        "roles": {"local": {}},
         "pipelines": {"default": {}},
         "classification": {
             "root": {
@@ -2104,7 +2094,7 @@ fn schema_conformance_accepts_round_trip_and_rejects_bare() {
                 "children": [
                     {"key": "local", "description": "General Q&A", "node": {
                         "type": "terminal", "route": "local",
-                        "group": "default", "always_route": false,
+                        "role": "local", "always_route": false,
                         "description": "General Q&A",
                     }},
                 ],
@@ -2134,18 +2124,17 @@ fn routes_view_carries_terminal_role() {
     let cfg = RouterConfig::from_json_str(
         r#"{
             "models": {"m": {"endpoint": "http://x", "intelligence": 1}},
-            "model_groups": {"g": ["m"]},
-            "roles": {},
+            "roles": {"g": {"models": ["m"]}, "quick": {"models": ["m"]}},
             "classification": {"root": {
                 "type": "classifier", "description": "d", "model": "m",
                 "children": [
                     {"key": "code", "description": "", "node": {
                         "type": "terminal", "route": "code",
-                        "group": "g", "role": "quick", "description": ""
+                        "role": "quick", "description": ""
                     }},
                     {"key": "chat", "description": "", "node": {
                         "type": "terminal", "route": "chat",
-                        "group": "g", "description": ""
+                        "role": "g", "description": ""
                     }}
                 ]
             }}
@@ -2153,8 +2142,8 @@ fn routes_view_carries_terminal_role() {
     )
     .expect("tree config parses");
     let view = cfg.routes_view();
-    assert_eq!(view["code"].role.as_deref(), Some("quick"));
-    assert_eq!(view["chat"].role, None, "role defaults to None");
+    assert_eq!(view["code"].role.as_str(), "quick");
+    assert_eq!(view["chat"].role.as_str(), "g");
 }
 
 fn ls_fixture_config() -> RouterConfig {
@@ -2183,7 +2172,7 @@ fn routing_config_fixture_round_trip() {
 #[test]
 fn fixture_boot_composition_single_model_multi_window() {
     // One weights file serves role windows composed into a single effective
-    // pool; group duties resolve through the same precedence as production.
+    // pool; role duties resolve through the same precedence as production.
     let cfg = ls_fixture_config();
 
     // Bound models keep their role windows only — no base phantom.
@@ -2196,13 +2185,12 @@ fn fixture_boot_composition_single_model_multi_window() {
         assert_eq!(names, vec!["quick"], "{member} serves its role window");
     }
 
-    // Group duty resolves to the bare member key; the inference point
+    // Role duty resolves to the bare member key; the inference point
     // qualifies later at dispatch (the two-step duty rule).
     assert_eq!(
-        crate::config::resolve_group_head_key(&cfg.models, &cfg.roles, &cfg.model_groups, "dev")
-            .as_deref(),
+        crate::config::role_head_key(&cfg.models, &cfg.roles, "quick", false).as_deref(),
         Some("m1"),
-        "dev duty is m1"
+        "quick duty is m1"
     );
 
     // Role-wins-last dispatch on the fixture chain: model, role, override.
@@ -2233,9 +2221,51 @@ fn fixture_tree_view_keys_and_flags() {
     let key_strs: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
     assert_eq!(key_strs, vec!["code", "local"]);
     for route in ["code", "local"] {
-        assert_eq!(view[route].group, "dev");
+        assert_eq!(view[route].role.as_str(), "quick");
         assert!(!view[route].always_route, "{route} may answer directly");
     }
+}
+
+#[test]
+fn from_json_str_reports_true_location_for_unknown_fields() {
+    // The normalized leg reports 0:0 (spans do not survive the Value
+    // round-trip); the structural pre-pass must promote the raw error so
+    // boot names the retired field AND its true line/column.
+    let stale = r#"{
+        "models": {},
+        "model_groups": {"g": ["m"]},
+        "classification": {"root": {
+            "type": "classifier", "description": "d", "model": "m",
+            "children": []
+        }}
+    }"#;
+    let err = RouterConfig::from_json_str(stale).expect_err("stale top-level must fail");
+    assert!(
+        err.to_string().contains("model_groups"),
+        "error names the retired section, got: {err}"
+    );
+    assert_eq!((err.line(), err.column()), (3, 22), "true location, got: {err}");
+
+    let stale_terminal = r#"{
+        "models": {},
+        "classification": {"root": {
+            "type": "classifier", "description": "d", "model": "m",
+            "children": [
+                {"key": "code", "description": "", "node": {
+                    "type": "terminal", "route": "code",
+                    "group": "code", "role": "quick", "description": ""
+                }}
+            ]
+        }}
+    }"#;
+    let err =
+        RouterConfig::from_json_str(stale_terminal).expect_err("stale terminal must fail");
+    assert!(
+        err.to_string().contains("`group`"),
+        "error names the retired field, got: {err}"
+    );
+    assert!(err.line() == 11, "true line, got: {err}");
+    assert!(err.column() > 0, "true column, got: {err}");
 }
 
 #[test]

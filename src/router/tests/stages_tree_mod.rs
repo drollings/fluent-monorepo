@@ -6,7 +6,7 @@ use fluent_concurrency::pool::Limiter;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::{ChatMessage, LlmError};
 
-use crate::config::{ClassificationTree, ModelEntry, ModelGroup, RouteRef, RoutingConfig};
+use crate::config::{ClassificationTree, ModelEntry, RoleEntry, RouteRef, RoutingConfig};
 use crate::pipeline::RoutingTarget;
 use crate::pipeline_types::StageVerdict;
 use crate::target_match::{TargetBackends, TargetMatcher};
@@ -42,14 +42,27 @@ fn model_entry(key: &str, intelligence: u8, cost: f64) -> ModelEntry {
     }
 }
 
+fn role_entry(members: &[&str]) -> RoleEntry {
+    RoleEntry {
+        max_parallel: None,
+        pinned: false,
+        enable_thinking: None,
+        filter_thinking: true,
+        preserve_thinking: None,
+        params: Default::default(),
+        models: members.iter().map(ToString::to_string).collect(),
+        snapshot: None,
+        escalation: None,
+    }
+}
+
 fn test_routing() -> RoutingConfig {
     RoutingConfig {
         routes: HashMap::from([
             (
                 "code".into(),
                 RouteRef {
-                    group: "code".into(),
-                    role: None,
+                    role: "code".into(),
                     pipelines: vec!["default".into()],
                     description: "code".into(),
                     always_route: false,
@@ -58,8 +71,7 @@ fn test_routing() -> RoutingConfig {
             (
                 "translation".into(),
                 RouteRef {
-                    group: "translation".into(),
-                    role: None,
+                    role: "translation".into(),
                     pipelines: vec!["default".into()],
                     description: "translation".into(),
                     always_route: false,
@@ -68,8 +80,7 @@ fn test_routing() -> RoutingConfig {
             (
                 "local".into(),
                 RouteRef {
-                    group: "question".into(),
-                    role: None,
+                    role: "question".into(),
                     pipelines: vec!["default".into()],
                     description: "local".into(),
                     always_route: false,
@@ -89,27 +100,17 @@ fn test_routing() -> RoutingConfig {
                 model_entry("question-model", 2, 2e-6),
             ),
         ]),
-        model_groups: HashMap::from([
-            ("code".into(), ModelGroup::Array(vec!["code-model".into()])),
-            (
-                "translation".into(),
-                ModelGroup::Array(vec!["translation-model".into()]),
-            ),
-            (
-                "question".into(),
-                ModelGroup::Array(vec!["question-model".into()]),
-            ),
-            (
-                "fast".into(),
-                ModelGroup::Array(vec!["fast".into(), "small".into()]),
-            ),
-        ]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "local".into(),
         score_matrix: None,
         onnx_keys: std::collections::BTreeSet::new(),
-        roles: Default::default(),
+        roles: HashMap::from([
+            ("code".into(), role_entry(&["code-model"])),
+            ("translation".into(), role_entry(&["translation-model"])),
+            ("question".into(), role_entry(&["question-model"])),
+            ("fast".into(), role_entry(&["fast", "small"])),
+        ]),
     }
 }
 
@@ -204,19 +205,19 @@ fn simple_tree() -> ClassificationTree {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 },
                 {
                     "key": "translation",
                     "description": "translation",
-                    "node": { "type": "terminal", "route": "translation", "group": "translation" }
+                    "node": { "type": "terminal", "route": "translation", "role": "translation" }
                 },
                 {
                     "key": "general",
                     "description": "everything else",
                     "node": {
                         "type": "fallback",
-                        "node": { "type": "terminal", "route": "local", "group": "question" }
+                        "node": { "type": "terminal", "route": "local", "role": "question" }
                     }
                 }
             ]
@@ -242,7 +243,7 @@ fn terminal_node_resolves_route() {
     let rt = routed_target(&evaluation);
     assert_eq!(rt.target_name.as_deref(), Some("code"));
     assert_eq!(rt.model, "code-model");
-    assert_eq!(rt.group.as_deref(), Some("code"));
+    assert_eq!(rt.role.as_deref(), Some("code"));
 }
 
 #[test]
@@ -275,9 +276,9 @@ fn terminal_unresolvable_route_rejects() {
 }
 
 #[test]
-fn terminal_with_own_group_resolves_without_flat_route() {
+fn terminal_with_own_role_resolves_without_flat_route() {
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
-        "root": { "type": "terminal", "route": "fresh", "group": "fast" }
+        "root": { "type": "terminal", "route": "fresh", "role": "fast" }
     }))
     .unwrap();
     let engine = engine(&tree, Arc::new(StubChatBackend::always("{}")));
@@ -286,17 +287,17 @@ fn terminal_with_own_group_resolves_without_flat_route() {
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let rt = routed_target(&evaluation);
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
-    // Cheapest in "fast" group meeting no-complexity: fast (cost 1e-6 vs small 2e-6).
+    // Cheapest in "fast" role meeting no-complexity: fast (cost 1e-6 vs small 2e-6).
     assert_eq!(rt.model, "fast");
 }
 
 #[test]
-fn terminal_group_ladder_self_assesses_and_matches() {
-    // The "fast" group has 2 members (fast intelligence 1, small
-    // intelligence 2). A root terminal on that group climbs: fast
+fn terminal_role_ladder_self_assesses_and_matches() {
+    // The "fast" role has 2 members (fast intelligence 1, small
+    // intelligence 2). A root terminal on that role climbs: fast
     // self-assesses above its intelligence, small matches.
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
-        "root": { "type": "terminal", "route": "fresh", "group": "fast" }
+        "root": { "type": "terminal", "route": "fresh", "role": "fast" }
     }))
     .unwrap();
     let matcher = ladder_matcher_keyed(vec![
@@ -317,10 +318,10 @@ fn terminal_group_ladder_self_assesses_and_matches() {
         "ladder climbs past the too-weak cheap member",
     );
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
-    assert_eq!(rt.group.as_deref(), Some("fast"));
+    assert_eq!(rt.role.as_deref(), Some("fast"));
 
     // The terminal's tree_path audit carries the ladder walk (additive over
-    // the existing route/group/model/complexity fields).
+    // the existing route/role/model/complexity fields).
     let path = decision.metadata["tree_path"]
         .as_array()
         .expect("tree_path");
@@ -343,7 +344,7 @@ fn terminal_group_ladder_self_assesses_and_matches() {
 
 #[test]
 fn terminal_flat_route_ladder_matches_within_group() {
-    // The route's own group ("code" is a single-member group — static).
+    // The route's own role ("code" is a single-member role — static).
     // Use a 2-member group via a flat route: "local" → group "question"
     // is single-member too. Build a flat route on the 2-member "fast"
     // group to exercise the resolve_route_with_matcher path.
@@ -351,8 +352,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
     routing.routes.insert(
         "fresh".into(),
         RouteRef {
-            group: "fast".into(),
-            role: None,
+            role: "fast".into(),
             pipelines: vec!["default".into()],
             description: "fresh".into(),
             always_route: false,
@@ -381,7 +381,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
     let rt = routed_target(&evaluation);
     assert_eq!(rt.model, "small");
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
-    assert_eq!(rt.group.as_deref(), Some("fast"));
+    assert_eq!(rt.role.as_deref(), Some("fast"));
 
     let path = decision.metadata["tree_path"]
         .as_array()
@@ -397,12 +397,12 @@ fn terminal_flat_route_ladder_matches_within_group() {
 }
 
 #[test]
-fn terminal_single_member_group_climbs() {
-    // A single-member group ("code") climbs with a matcher present: exactly
+fn terminal_single_member_role_climbs() {
+    // A single-member role ("code") climbs with a matcher present: exactly
     // one self-assessment call, terminating on last-always-wins with the
     // member as primary (same target the static path would pick).
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
-        "root": { "type": "terminal", "route": "code", "group": "code" }
+        "root": { "type": "terminal", "route": "code", "role": "code" }
     }))
     .unwrap();
     let counting = Arc::new(CountingBackend::new("{}"));
@@ -426,16 +426,16 @@ fn terminal_single_member_group_climbs() {
     assert_eq!(
         counting.calls(),
         1,
-        "single-member group climbs with exactly one assessment",
+        "single-member role climbs with exactly one assessment",
     );
 }
 
 #[test]
 fn terminal_ladder_assessment_failure_escalates_to_last_member() {
-    // The "fast" group: fast's self-assessment is unparseable (conservative
+    // The "fast" role: fast's self-assessment is unparseable (conservative
     // escalate), small matches as the last member regardless.
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
-        "root": { "type": "terminal", "route": "fresh", "group": "fast" }
+        "root": { "type": "terminal", "route": "fresh", "role": "fast" }
     }))
     .unwrap();
     let matcher = ladder_matcher_keyed(vec![
@@ -490,7 +490,7 @@ fn filter_hard_reject_short_circuits() {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 }
             ]
         }
@@ -524,7 +524,7 @@ fn filter_non_match_falls_through_to_llm() {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 }
             ]
         }
@@ -564,7 +564,7 @@ fn filter_soft_redirect_jumps_to_sibling() {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 }
             ]
         }
@@ -596,7 +596,7 @@ fn filter_output_filter_continues() {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 }
             ]
         }
@@ -694,7 +694,7 @@ fn classifier_no_fallback_rejects_on_llm_failure() {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 }
             ]
         }
@@ -719,7 +719,7 @@ fn classifier_empty_route_rejects_when_no_fallback() {
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 }
             ]
         }
@@ -753,12 +753,12 @@ fn multi_level_domain_to_subdomain_to_terminal() {
                             {
                                 "key": "debug",
                                 "description": "debugging help",
-                                "node": { "type": "terminal", "route": "code", "group": "code" }
+                                "node": { "type": "terminal", "route": "code", "role": "code" }
                             },
                             {
                                 "key": "general",
                                 "description": "general programming",
-                                "node": { "type": "terminal", "route": "code", "group": "code" }
+                                "node": { "type": "terminal", "route": "code", "role": "code" }
                             }
                         ]
                     }
@@ -766,7 +766,7 @@ fn multi_level_domain_to_subdomain_to_terminal() {
                 {
                     "key": "prose",
                     "description": "general questions",
-                    "node": { "type": "terminal", "route": "local", "group": "question" }
+                    "node": { "type": "terminal", "route": "local", "role": "question" }
                 }
             ]
         }
@@ -882,12 +882,12 @@ fn report_tree() -> ClassificationTree {
                 {
                     "key": "report",
                     "description": "report requests (deterministic target)",
-                    "node": { "type": "terminal", "route": "translation", "group": "translation" }
+                    "node": { "type": "terminal", "route": "translation", "role": "translation" }
                 },
                 {
                     "key": "code",
                     "description": "programming",
-                    "node": { "type": "terminal", "route": "code", "group": "code" }
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
                 },
                 {
                     "key": "route_to_report",
@@ -908,7 +908,7 @@ fn report_tree() -> ClassificationTree {
                     "description": "everything else",
                     "node": {
                         "type": "fallback",
-                        "node": { "type": "terminal", "route": "local", "group": "question" }
+                        "node": { "type": "terminal", "route": "local", "role": "question" }
                     }
                 }
             ]
@@ -1035,7 +1035,7 @@ fn interlingua_filter_can_hard_reject() {
                 },
                 {
                     "key": "general",
-                    "node": { "type": "terminal", "route": "local", "group": "question" }
+                    "node": { "type": "terminal", "route": "local", "role": "question" }
                 }
             ]
         }
@@ -1131,8 +1131,7 @@ fn last_viable_singleton_routing() -> RoutingConfig {
         routes: HashMap::from([(
             "solo".into(),
             RouteRef {
-                group: "solo".into(),
-                role: None,
+                role: "solo".into(),
                 pipelines: vec!["default".into()],
                 description: "solo".into(),
                 always_route: false,
@@ -1142,16 +1141,12 @@ fn last_viable_singleton_routing() -> RoutingConfig {
             ("solo".into(), model_entry("solo", 2, 1.0)),
             ("m".into(), model_entry("m", 1, 1.0)),
         ]),
-        model_groups: HashMap::from([(
-            "solo".into(),
-            ModelGroup::Array(vec!["solo".into()]),
-        )]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "solo".into(),
         score_matrix: None,
         onnx_keys: std::collections::BTreeSet::new(),
-        roles: Default::default(),
+        roles: HashMap::from([("solo".into(), role_entry(&["solo"]))]),
     }
 }
 
@@ -1165,7 +1160,7 @@ fn last_viable_tree(root_model: &str) -> ClassificationTree {
                 {
                     "key": "solo",
                     "description": "only route",
-                    "node": { "type": "terminal", "route": "solo", "group": "solo" }
+                    "node": { "type": "terminal", "route": "solo", "role": "solo" }
                 },
             ],
         },
@@ -1217,24 +1212,19 @@ fn last_viable_classifier_duty_resolves_recency_free_key() {
         routes: HashMap::from([(
             "solo".into(),
             RouteRef {
-                group: "solo".into(),
-                role: None,
+                role: "solo".into(),
                 pipelines: vec!["default".into()],
                 description: "solo".into(),
                 always_route: false,
             },
         )]),
         models,
-        model_groups: HashMap::from([(
-            "solo".into(),
-            ModelGroup::Array(vec!["aaa".into()]),
-        )]),
         system_prompt: String::new(),
         safety_threshold: 0.3,
         default_route: "solo".into(),
         score_matrix: None,
         onnx_keys: std::collections::BTreeSet::new(),
-        roles: Default::default(),
+        roles: HashMap::from([("solo".into(), role_entry(&["aaa"]))]),
     };
     let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let seen_in = Arc::clone(&seen);
@@ -1255,7 +1245,7 @@ fn last_viable_classifier_duty_resolves_recency_free_key() {
         Some(resolver),
     );
     let evaluation = engine
-        .evaluate_with_expansion("hi", None, None, &crate::target_match::GroupExpansion::default())
+        .evaluate_with_expansion("hi", None, None, &crate::target_match::RoleExpansion::default())
         .expect("evaluates");
     assert_eq!(
         lock(&seen).as_slice(),

@@ -18,7 +18,6 @@ fn apply_request_routing_overrides_target_fields() {
     let target = crate::pipeline::RoutingTarget {
         url: "http://x/v1/chat/completions".into(),
         model: "base:ledger".into(),
-        group: None,
         target_name: None,
         role: None,
         params: None,

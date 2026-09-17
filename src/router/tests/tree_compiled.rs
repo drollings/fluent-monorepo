@@ -21,7 +21,6 @@ fn filter_tree(patterns: &[&str]) -> ClassificationTree {
         root: ClassificationNode::Classifier {
             description: "corpus router".into(),
             model: None,
-            model_group: None,
             coherence_threshold: None,
             safety_threshold: None,
             children: vec![
@@ -41,7 +40,6 @@ fn filter_tree(patterns: &[&str]) -> ClassificationTree {
                     description: "other branch".into(),
                     node: ClassificationNode::Terminal {
                         route: "other".into(),
-                        group: None,
                         role: None,
                         description: String::new(),
                         always_route: false,
@@ -111,8 +109,8 @@ fn compiled_prompt_renders_identically() {
     let tree: ClassificationTree = serde_json::from_str(
         r#"{"root": {"type": "classifier", "description": "corpus router", "model": "fast",
             "children": [
-                {"key": "a", "description": "route a", "node": {"type": "terminal", "route": "a", "group": "a"}},
-                {"key": "b", "description": "", "node": {"type": "terminal", "route": "b", "group": "b"}}
+                {"key": "a", "description": "route a", "node": {"type": "terminal", "route": "a", "role": "a"}},
+                {"key": "b", "description": "", "node": {"type": "terminal", "route": "b", "role": "b"}}
             ]}}"#,
     )
     .unwrap();

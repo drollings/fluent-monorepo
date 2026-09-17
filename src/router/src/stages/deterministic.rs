@@ -13,7 +13,7 @@ use crate::pipeline_types::{
     PiiVerdict, PipelineStage, StageDecision, StageDecisionProducer, StageMetadata, StageVerdict,
 };
 use crate::stages::common::extract_user_message;
-use crate::target_match::{resolve_route_to_target, GroupExpansion};
+use crate::target_match::{resolve_route_to_target, RoleExpansion};
 
 static COMMAND_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[/.,](\w[\w-]*)(?:\s+(.*))?$").unwrap());
@@ -472,7 +472,7 @@ impl DeterministicPreFilter {
                         );
                     }
                     let resolved = self.routing_config.as_deref().and_then(|routing_config| {
-                        let expansion = GroupExpansion::from_ctx(ctx);
+                        let expansion = RoleExpansion::from_ctx(ctx);
                         resolve_route_to_target(
                             routing_config,
                             None,

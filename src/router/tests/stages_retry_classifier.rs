@@ -267,13 +267,12 @@ fn non_fallback_output_passes_through_verbatim() {
 
 // ── Producer-path characterization ──────────────────────────────────────
 
-fn test_target(group: &str) -> RoutingTarget {
+fn test_target(role: &str) -> RoutingTarget {
     RoutingTarget {
         url: "http://localhost:8080".into(),
         model: "test-model".into(),
-        group: Some(group.into()),
         target_name: Some("test".into()),
-        role: None,
+        role: Some(role.into()),
         params: None,
         instance: None,
         snapshot: None,
@@ -403,7 +402,7 @@ fn retry_producer_path_publishes_routing_target_on_fallback_then_success() {
         "final decision must be the success, not a fallback"
     );
     let target = target.expect("success must publish a routing target");
-    assert_eq!(target.group.as_deref(), Some("local"));
+    assert_eq!(target.role.as_deref(), Some("local"));
     assert_eq!(inner.calls(), 2, "fallback then success is two evaluations");
 }
 

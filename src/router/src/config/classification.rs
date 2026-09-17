@@ -8,7 +8,7 @@
 //! §"The Classification Tree"), so adding a route updates the prompt with no
 //! manual maintenance.
 //!
-//! The `pipelines` stage table, `models`, and `model_groups` are unchanged
+//! The `pipelines` stage table and `models` are unchanged
 //! and still load; the flat *views* the rest of the server expects
 //! (route→pipeline mapping, system prompt) are derived from the tree (M3c:
 //! flat `routes` / `system_prompt` / root `score_matrix` are gone).
@@ -39,6 +39,7 @@ pub struct InterlinguaMatch {
 
 /// The top-level classification tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClassificationTree {
     /// Root node — typically a `classifier` node that branches on the request's
     /// domain/coherence/safety/complexity.
@@ -56,37 +57,6 @@ impl ClassificationTree {
         }
     }
 
-    /// The model group of the root node when it is a `classifier` with one
-    /// set — the group-duty spelling of the root model. Resolved through the
-    /// groups table by the pipeline builder; wins over the literal `model`.
-    pub fn root_classifier_group(&self) -> Option<&str> {
-        match &self.root {
-            ClassificationNode::Classifier { model_group, .. } => model_group.as_deref(),
-            _ => None,
-        }
-    }
-
-    /// Whether any non-root `classifier` node sets `model_group`. Only the
-    /// root node's group feeds the pipeline-wide classifier duty; nested
-    /// groups warn at build and are otherwise ignored.
-    pub fn has_nested_model_group(&self) -> bool {
-        fn walk(node: &ClassificationNode, is_root: bool) -> bool {
-            match node {
-                ClassificationNode::Classifier {
-                    model_group,
-                    children,
-                    ..
-                } => {
-                    (!is_root && model_group.is_some())
-                        || children.iter().any(|c| walk(&c.node, false))
-                }
-                ClassificationNode::Fallback { node, .. } => walk(node, is_root),
-                _ => false,
-            }
-        }
-        walk(&self.root, true)
-    }
-
     /// Every `classifier` model key referenced anywhere in the tree, deduplicated
     /// (root first). The pipeline builder uses this to construct per-node
     /// backends so a sub-classifier on a different model dispatches to its own
@@ -98,9 +68,9 @@ impl ClassificationTree {
         keys
     }
 
-    /// `(route, group, description)` for every `terminal` node in the tree —
+    /// `(route, description)` for every `terminal` node in the tree —
     /// the source for the derived flat `routes` view.
-    pub fn terminal_views(&self) -> Vec<(String, Option<String>, String)> {
+    pub fn terminal_views(&self) -> Vec<(String, String)> {
         let mut out = Vec::new();
         self.root.collect_terminals(&mut out);
         out
@@ -170,6 +140,7 @@ pub(crate) fn default_safety_threshold() -> f64 {
 /// A named branch of a classifier node. The LLM picks exactly one `key`; the
 /// tree engine then evaluates that child's `node` recursively.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClassificationChild {
     pub key: String,
     #[serde(default)]
@@ -186,26 +157,16 @@ pub struct ClassificationChild {
 /// | `filter` | Deterministic regex check that short-circuits (`hard_reject` / `soft_redirect` / `output_filter`) | No |
 /// | `fallback` | Child evaluated when a classifier picks no named child or its LLM call fails | Only if the wrapped node is a classifier |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 #[allow(clippy::large_enum_variant)]
 pub enum ClassificationNode {
     Classifier {
         description: String,
         /// Model key (from `models`) used for this classifier's LLM call.
-        /// Legacy spelling: prefer `model_group` (duties name groups); an
-        /// explicit `model` still resolves when no group is set. Honored on
-        /// every classifier node for its own backend; the tree-level duty
-        /// (root) additionally feeds `resolve_classifier_model_key`.
-        /// Absent serves through the pipeline's resolved classifier client.
+        /// An explicit `model` always resolves. Absent serves through the
+        /// pipeline's resolved classifier client.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
-        /// Model group serving this classifier's LLM call, resolved through
-        /// the groups table. Wins over `model` when set. Only the root
-        /// node's group feeds the pipeline-wide classifier duty; a
-        /// `model_group` on a nested classifier warns at build and is
-        /// otherwise ignored.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        model_group: Option<String>,
         /// Per-node coherence threshold; defaults to the pipeline's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         coherence_threshold: Option<f64>,
@@ -215,17 +176,14 @@ pub enum ClassificationNode {
         #[serde(default)]
         children: Vec<ClassificationChild>,
     },
-    /// A dispatch target. `route` names the routed intent; `group` selects
-    /// the dispatch model group for the derived flat view. `role` (default
-    /// `None`) selects the context profile inside the winning model's pool
-    /// — subordinate to `group`, never a peer: the group picks the weights,
-    /// the role picks the window. `always_route`
+    /// A dispatch target. `route` names the routed intent; the route's
+    /// `role` selects the dispatch candidate set and the context profile
+    /// inside the winning model's pool. `role` (default `None`) resolves
+    /// the entry default point, exactly as before. `always_route`
     /// (default `false`) forces dispatch even when the classifier answers
     /// directly — the tree-carried copy of the former flat flag (M3c).
     Terminal {
         route: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        group: Option<String>,
         /// Context-profile role for the answer target (see above). `None`
         /// resolves the entry default point, exactly as before.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -375,14 +333,13 @@ impl ClassificationNode {
         }
     }
 
-    fn collect_terminals(&self, out: &mut Vec<(String, Option<String>, String)>) {
+    fn collect_terminals(&self, out: &mut Vec<(String, String)>) {
         match self {
             ClassificationNode::Terminal {
                 route,
-                group,
                 description,
                 ..
-            } => out.push((route.clone(), group.clone(), description.clone())),
+            } => out.push((route.clone(), description.clone())),
             ClassificationNode::Classifier { children, .. } => {
                 for child in children {
                     child.node.collect_terminals(out);

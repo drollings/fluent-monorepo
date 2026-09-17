@@ -2945,6 +2945,7 @@ fn snapshot_identity_mode_resolution_prefers_model_then_role_then_auto() {
             snapshot: Some(SnapshotConfig {
                 mode: SnapshotMode::Manual,
             }),
+            escalation: None,
         },
     );
     // Unset everywhere → Auto (today's behavior).

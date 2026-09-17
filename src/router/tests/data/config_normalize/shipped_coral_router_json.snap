@@ -5,7 +5,7 @@
     "index_path": "data/workflow_library.sqlite",
     "max_candidates": 6,
     "min_score": 0.6,
-    "selector_group": "default"
+    "selector_role": "quick"
   },
   "classification": {
     "root": {
@@ -16,7 +16,6 @@
           "node": {
             "always_route": true,
             "description": "General Q&A",
-            "group": "default",
             "role": "quick",
             "route": "local",
             "type": "terminal"
@@ -28,7 +27,6 @@
           "node": {
             "always_route": true,
             "description": "Code",
-            "group": "code",
             "role": "reasoning",
             "route": "code",
             "type": "terminal"
@@ -40,7 +38,6 @@
           "node": {
             "always_route": false,
             "description": "Summarize",
-            "group": "summarize",
             "role": "scratch",
             "route": "summarize",
             "type": "terminal"
@@ -52,7 +49,6 @@
           "node": {
             "always_route": true,
             "description": "Explore",
-            "group": "explore",
             "role": "scratch",
             "route": "explore",
             "type": "terminal"
@@ -64,7 +60,6 @@
           "node": {
             "always_route": true,
             "description": "Explain",
-            "group": "reason",
             "role": "reasoning",
             "route": "reasoning",
             "type": "terminal"
@@ -76,7 +71,6 @@
           "node": {
             "always_route": false,
             "description": "Translate",
-            "group": "translate",
             "role": "reasoning",
             "route": "translate",
             "type": "terminal"
@@ -88,7 +82,6 @@
           "node": {
             "always_route": true,
             "description": "Prose",
-            "group": "prose",
             "role": "scratch",
             "route": "prose",
             "type": "terminal"
@@ -105,8 +98,8 @@
   "default_route": "local",
   "gguf_dir": "/app/ai/models/gguf",
   "ledger": {
-    "group": "code",
-    "path": "data/ledger.sqlite"
+    "path": "data/ledger.sqlite",
+    "role": "ledger"
   },
   "logging": {
     "audit_log": {
@@ -123,33 +116,6 @@
     "max_age_days": 3,
     "max_file_size_mb": 10,
     "max_files": 4
-  },
-  "model_groups": {
-    "code": [
-      "qwen3.5-9b",
-      "qwen3.8-27b"
-    ],
-    "default": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "explore": [
-      "last"
-    ],
-    "prose": [
-      "last"
-    ],
-    "reason": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "summarize": [
-      "last",
-      "qwen3.5-9b"
-    ],
-    "translate": [
-      "last"
-    ]
   },
   "models": {
     "default": {
@@ -387,11 +353,10 @@
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
-        "last",
-        "qwen3.5-9b"
+        "last"
       ],
       "params": {
-        "num_ctx": 65536,
+        "num_ctx": 262144,
         "repeat_penalty": 1.01,
         "sleep_idle_seconds": 28800,
         "temperature": 0.1
@@ -403,10 +368,6 @@
       "enable_thinking": false,
       "filter_thinking": true,
       "max_parallel": 2,
-      "models": [
-        "qwen3.5-9b",
-        "last"
-      ],
       "params": {
         "num_ctx": 8192,
         "repeat_penalty": 1.0,
@@ -423,7 +384,7 @@
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
-        "qwen3.8-27b"
+        "qwen3.5-9b"
       ],
       "params": {
         "num_ctx": 65536,
@@ -438,9 +399,6 @@
       "enable_thinking": false,
       "filter_thinking": true,
       "max_parallel": 1,
-      "models": [
-        "qwen3.5-9b"
-      ],
       "params": {
         "num_ctx": 65536,
         "repeat_penalty": 1.01,

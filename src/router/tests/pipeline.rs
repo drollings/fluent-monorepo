@@ -194,7 +194,6 @@ fn routing_target_typed_preferred_over_json() {
     let typed_rt = RoutingTarget {
         url: "http://typed".into(),
         model: "typed-model".into(),
-        group: None,
         target_name: Some("typed".into()),
         role: None,
         params: None,
@@ -214,7 +213,6 @@ fn routing_target_typed_preferred_over_json() {
     let json_rt = RoutingTarget {
         url: "http://json".into(),
         model: "json-model".into(),
-        group: None,
         target_name: Some("json".into()),
         role: None,
         params: None,

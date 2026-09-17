@@ -361,21 +361,19 @@ pub fn prompt_for_path(tree: &ClassificationTree, path: &[&str]) -> Option<Strin
 /// Structural fingerprint of the tree: everything EXCEPT descriptions and
 /// thresholds (the tunable surface). Two trees share a fingerprint iff a
 /// reload between them is tuning-only. Hashes node kinds, child keys and
-/// order, routes, groups, roles, `always_route`, models, model groups,
-/// patterns, outcomes, redirect targets, and interlingua matches.
+/// order, routes, roles, `always_route`, models, patterns, outcomes,
+/// redirect targets, and interlingua matches.
 pub fn topology_fingerprint(tree: &ClassificationTree) -> u64 {
     use std::hash::{Hash, Hasher};
     fn feed<H: Hasher>(node: &ClassificationNode, state: &mut H) {
         match node {
             ClassificationNode::Classifier {
                 model,
-                model_group,
                 children,
                 ..
             } => {
                 0u8.hash(state);
                 model.hash(state);
-                model_group.hash(state);
                 children.len().hash(state);
                 for child in children {
                     child.key.hash(state);
@@ -384,14 +382,12 @@ pub fn topology_fingerprint(tree: &ClassificationTree) -> u64 {
             }
             ClassificationNode::Terminal {
                 route,
-                group,
                 role,
                 always_route,
                 ..
             } => {
                 1u8.hash(state);
                 route.hash(state);
-                group.hash(state);
                 role.hash(state);
                 always_route.hash(state);
             }

@@ -106,7 +106,6 @@ pub(crate) enum CompiledNode {
     Classifier {
         description: String,
         model: Option<String>,
-        model_group: Option<String>,
         coherence_threshold: Option<f64>,
         safety_threshold: Option<f64>,
         children: Vec<CompiledChild>,
@@ -114,7 +113,6 @@ pub(crate) enum CompiledNode {
     },
     Terminal {
         route: String,
-        group: Option<String>,
         #[allow(dead_code)]
         role: Option<String>,
         description: String,
@@ -223,7 +221,6 @@ impl CompiledNode {
             ClassificationNode::Classifier {
                 description,
                 model,
-                model_group,
                 coherence_threshold,
                 safety_threshold,
                 children,
@@ -239,7 +236,6 @@ impl CompiledNode {
                 Ok(CompiledNode::Classifier {
                     description: description.clone(),
                     model: model.clone(),
-                    model_group: model_group.clone(),
                     coherence_threshold: *coherence_threshold,
                     safety_threshold: *safety_threshold,
                     children: compiled,
@@ -248,13 +244,12 @@ impl CompiledNode {
             }
             ClassificationNode::Terminal {
                 route,
-                group,
                 role,
                 description,
                 always_route,
+                ..
             } => Ok(CompiledNode::Terminal {
                 route: route.clone(),
-                group: group.clone(),
                 role: role.clone(),
                 description: description.clone(),
                 always_route: *always_route,

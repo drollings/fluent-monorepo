@@ -22,12 +22,6 @@
       }
     }
   },
-  "model_groups": {
-    "dev": [
-      "m1",
-      "m2"
-    ]
-  },
   "roles": {
     "quick": {
       "params": {
@@ -51,8 +45,8 @@
           "node": {
             "type": "terminal",
             "route": "code",
-            "group": "dev",
-            "description": ""
+            "description": "",
+            "role": "quick"
           }
         },
         {
@@ -61,8 +55,8 @@
           "node": {
             "type": "terminal",
             "route": "local",
-            "group": "dev",
-            "description": ""
+            "description": "",
+            "role": "quick"
           }
         }
       ]

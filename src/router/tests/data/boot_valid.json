@@ -1,12 +1,11 @@
 {
   "routes": {
     "code": {
-      "group": "dev",
       "role": "quick",
       "description": "code"
     },
     "plain": {
-      "group": "dev",
+      "role": "quick",
       "description": "plain"
     }
   },
@@ -42,12 +41,6 @@
         }
       }
     }
-  },
-  "model_groups": {
-    "dev": [
-      "tiny",
-      "big"
-    ]
   },
   "roles": {
     "quick": {

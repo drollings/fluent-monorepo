@@ -36,7 +36,7 @@ use crate::score_matrix::ScoreMatrix;
 use crate::stages::common::{coerce_float, coerce_string, coerce_u8, extract_user_message};
 use crate::stages::tree::ClassificationEngine;
 use crate::target_match::resolve_route_to_target;
-use crate::target_match::GroupExpansion;
+use crate::target_match::RoleExpansion;
 use crate::target_match::TargetMatcher;
 
 pub mod action;
@@ -332,7 +332,7 @@ fn try_resolve_routing_target(
     routing_config: &RoutingConfig,
     matcher: Option<&TargetMatcher>,
     user_text: &str,
-    expansion: &GroupExpansion,
+    expansion: &RoleExpansion,
 ) -> Option<RoutingTarget> {
     let route = match action {
         ClassifierAction::Respond(_) => {
@@ -361,7 +361,7 @@ fn try_resolve_routing_target(
             route = %route,
             model = %rt.model,
             url = %rt.url,
-            group = ?rt.group,
+            role = ?rt.role,
             idle_timeout_ms = rt.idle_timeout_ms,
             total_timeout_ms = rt.total_timeout_ms,
             retry_count = rt.retry_count,
@@ -382,7 +382,7 @@ fn resolve_routing_target(
     routing_config: &RoutingConfig,
     matcher: Option<&TargetMatcher>,
     user_text: &str,
-    expansion: &GroupExpansion,
+    expansion: &RoleExpansion,
 ) -> Result<Option<RoutingTarget>, UnknownAction> {
     let typed = ClassifierAction::from_output(output)?;
     // Guard against caller passing mismatched action string vs output.action (defensive)
@@ -765,7 +765,7 @@ impl ClassifierStage {
         let input = extract_user_message(ctx)?;
         // Availability view for group-member sentinel expansion, carried on
         // the per-request context the handler populated.
-        let expansion = GroupExpansion::from_ctx(ctx);
+        let expansion = RoleExpansion::from_ctx(ctx);
         // The route the client requested (the request's `model`). Used to
         // enforce route-level `always_route`: a route configured to always
         // dispatch never lets the classifier answer directly. Read through
@@ -1127,7 +1127,7 @@ impl ClassifierStage {
                     &self.routing_config,
                     self.target_matcher.as_ref(),
                     "",
-                    &GroupExpansion::default(),
+                    &RoleExpansion::default(),
                 )
                 .ok()
                 .flatten();

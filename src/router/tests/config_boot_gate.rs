@@ -16,18 +16,6 @@ fn boot_gate_accepts_valid_shape() {
 }
 
 #[test]
-fn boot_gate_rejects_unknown_group() {
-    let cfg = boot_fixture("boot_invalid_group.json");
-    let err = cfg
-        .validate_for_boot(None)
-        .expect_err("unknown group must fail closed");
-    assert!(
-        err.contains("no-such-group") && err.contains("code"),
-        "error names the group and the route, got: {err}"
-    );
-}
-
-#[test]
 fn boot_gate_rejects_unknown_role() {
     let cfg = boot_fixture("boot_invalid_role.json");
     let err = cfg
@@ -47,7 +35,7 @@ fn boot_gate_rejects_unknown_member() {
         .expect_err("unknown member must fail closed");
     assert!(
         err.contains("zzz-unknown") && err.contains("dev"),
-        "error names the member and the group, got: {err}"
+        "error names the member and the role, got: {err}"
     );
 }
 
@@ -58,7 +46,7 @@ fn boot_gate_validates_terminal_roles() {
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
             {"key": "code", "description": "", "node": {
                 "type": "terminal", "route": "code",
-                "group": "dev", "role": "quick", "description": "",
+                "role": "quick", "description": "",
             }},
         ]}
     }))
@@ -81,7 +69,7 @@ fn presence_gate_rejects_missing_referenced_weights() {
         "models": {
             "m": {"weights": "/nonexistent-dir-xyz/m.gguf", "intelligence": 1}
         },
-        "model_groups": {"g": ["m"]},
+        "roles": {"g": {"models": ["m"]}},
         "default_route": "local",
     }))
     .expect("parses");
@@ -106,7 +94,7 @@ fn presence_gate_accepts_present_weights_and_skips_template() {
             "m": {"weights": gguf.to_string_lossy(), "intelligence": 1},
             "idle": {"weights": "/nonexistent-dir-xyz/idle.gguf", "intelligence": 1}
         },
-        "model_groups": {"g": ["m"]},
+        "roles": {"g": {"models": ["m"]}},
         "default_route": "local",
     }))
     .expect("parses");
@@ -122,7 +110,7 @@ fn presence_gate_warns_over_unreferenced_missing_weights() {
             "m": {"endpoint": "http://a", "intelligence": 1},
             "idle": {"weights": "/nonexistent-dir-xyz/idle.gguf", "intelligence": 1}
         },
-        "model_groups": {"g": ["m"]},
+        "roles": {"g": {"models": ["m"]}},
         "default_route": "local",
     }))
     .expect("parses");
@@ -142,7 +130,7 @@ fn presence_gate_rejects_endpointless_external_model() {
         "models": {
             "m": {"intelligence": 1}
         },
-        "model_groups": {"g": ["m"]},
+        "roles": {"g": {"models": ["m"]}},
         "default_route": "local",
     }))
     .expect("parses");

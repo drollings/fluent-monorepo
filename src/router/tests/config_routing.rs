@@ -3,8 +3,8 @@ use super::*;
 fn sample_config() -> RoutingConfig {
     serde_json::from_value(serde_json::json!({
         "routes": {
-            "fast": {"group": "fast", "pipelines": ["default"], "description": "fast route"},
-            "smart": {"group": "smart", "pipelines": ["default"], "always_route": true},
+            "fast": {"role": "fast", "pipelines": ["default"], "description": "fast route"},
+            "smart": {"role": "smart", "pipelines": ["default"], "always_route": true},
         },
         "models": {
             "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
@@ -14,7 +14,7 @@ fn sample_config() -> RoutingConfig {
             "huge": {"endpoint": "http://c", "name": "huge", "intelligence": 8,
                      "cost_input": 20.0, "cost_output": 20.0, "cost_cached_read": 0.0, "tok_s": 10},
         },
-        "model_groups": {"fast": ["tiny"], "smart": ["big", "huge"]},
+        "roles": {"fast": {"models": ["tiny"]}, "smart": {"models": ["big", "huge"]}},
         "system_prompt": "sys",
         "safety_threshold": 0.5,
         "default_route": "fast",
@@ -25,63 +25,63 @@ fn sample_config() -> RoutingConfig {
 #[test]
 fn route_ref_serde_round_trip() {
     let r: RouteRef = serde_json::from_value(serde_json::json!({
-        "group": "g", "pipelines": ["a"], "description": "d", "always_route": true
+        "role": "q", "pipelines": ["a"], "description": "d", "always_route": true
     }))
     .expect("deserialize");
-    assert_eq!(r.group, "g");
+    assert_eq!(r.role, "q");
     assert_eq!(r.pipelines, vec!["a"]);
     assert!(r.always_route);
     let back: RouteRef =
         serde_json::from_str(&serde_json::to_string(&r).expect("serialize")).expect("round trip");
-    assert_eq!(back.group, "g");
+    assert_eq!(back.role, "q");
 }
 
 #[test]
 fn route_ref_pipelines_defaults_to_default() {
     let r: RouteRef =
-        serde_json::from_value(serde_json::json!({"group": "g"})).expect("deserialize");
+        serde_json::from_value(serde_json::json!({"role": "q"})).expect("deserialize");
     assert_eq!(r.pipelines, vec!["default"]);
     assert!(!r.always_route);
 }
 
 #[test]
-fn route_group_resolves_route_or_default() {
+fn route_role_resolves_route_or_default() {
     let c = sample_config();
-    assert_eq!(c.route_group("fast"), Some("fast"));
-    assert_eq!(c.route_group("smart"), Some("smart"));
-    // Unknown route falls back to the default route's group.
-    assert_eq!(c.route_group("nope"), Some("fast"));
+    assert_eq!(c.route_role("fast"), Some("fast"));
+    assert_eq!(c.route_role("smart"), Some("smart"));
+    // Unknown route falls back to the default route's role.
+    assert_eq!(c.route_role("nope"), Some("fast"));
 }
 
 #[test]
-fn route_group_none_when_no_groups() {
+fn route_role_none_when_no_roles() {
     let c: RoutingConfig = serde_json::from_value(serde_json::json!({
-        "routes": {"r": {"group": "missing"}},
+        "routes": {"r": {"role": "missing"}},
         "models": {},
-        "model_groups": {},
+        "roles": {},
         "system_prompt": "s",
         "safety_threshold": 0.5,
         "default_route": "r",
     }))
     .expect("config");
-    assert_eq!(c.route_group("r"), Some("missing"));
-    // Unknown route and default route both groupless -> None.
+    assert_eq!(c.route_role("r"), Some("missing"));
+    // Unknown route and default route both roleless -> None.
     let c2: RoutingConfig = serde_json::from_value(serde_json::json!({
         "routes": {},
         "models": {},
-        "model_groups": {},
+        "roles": {},
         "system_prompt": "s",
         "safety_threshold": 0.5,
         "default_route": "missing",
     }))
     .expect("config");
-    assert_eq!(c2.route_group("r"), None);
+    assert_eq!(c2.route_role("r"), None);
 }
 
 #[test]
 fn resolve_route_picks_cheapest_passing_complexity() {
     let c = sample_config();
-    // smart group has big(int 5, cost 18) and huge(int 8, cost 40).
+    // smart role has big(int 5, cost 18) and huge(int 8, cost 40).
     let (entry, name) = c.resolve_route("smart", Some(6)).expect("resolve");
     // big is int 5 < 6 so filtered out; huge (8 >= 6) is the only candidate.
     assert_eq!(name, "huge");
@@ -94,13 +94,13 @@ fn resolve_route_picks_cheapest_passing_complexity() {
 #[test]
 fn resolve_route_falls_back_to_cheapest_when_none_pass() {
     let c = sample_config();
-    // min_complexity 9 filters everything; cheapest in group wins.
+    // min_complexity 9 filters everything; cheapest in role wins.
     let (entry, _) = c.resolve_route("smart", Some(9)).expect("resolve");
-    assert_eq!(entry.intelligence, 5, "big is cheapest in the smart group");
+    assert_eq!(entry.intelligence, 5, "big is cheapest in the smart role");
 }
 
 #[test]
-fn resolve_route_unknown_route_uses_default_group() {
+fn resolve_route_unknown_route_uses_default_role() {
     let c = sample_config();
     let (_, name) = c.resolve_route("nope", None).expect("resolve via default");
     assert_eq!(name, "tiny");
@@ -116,7 +116,6 @@ fn resolve_route_direct_model_by_name() {
             "big": {"endpoint": "http://b", "name": "big", "intelligence": 5,
                     "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 0.0, "tok_s": 10},
         },
-        "model_groups": {},
         "system_prompt": "s",
         "safety_threshold": 0.5,
         "default_route": "missing",
@@ -130,12 +129,12 @@ fn resolve_route_direct_model_by_name() {
 }
 
 #[test]
-fn resolve_route_missing_group_returns_none() {
+fn resolve_route_missing_role_returns_none() {
     let c: RoutingConfig = serde_json::from_value(serde_json::json!({
-        "routes": {"r": {"group": "missing"}},
+        "routes": {"r": {"role": "missing"}},
         "models": {"m": {"endpoint": "http://a", "name": "m", "intelligence": 1,
                          "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10}},
-        "model_groups": {},
+        "roles": {},
         "system_prompt": "s",
         "safety_threshold": 0.5,
         "default_route": "r",
@@ -145,11 +144,11 @@ fn resolve_route_missing_group_returns_none() {
 }
 
 #[test]
-fn routing_target_attaches_group_target_and_fallbacks() {
+fn routing_target_attaches_role_target_and_fallbacks() {
     let c = sample_config();
     let rt = c.routing_target("smart", None).expect("routing target");
     assert_eq!(rt.model, "big");
-    assert_eq!(rt.group.as_deref(), Some("smart"));
+    assert_eq!(rt.role.as_deref(), Some("smart"));
     assert_eq!(rt.target_name.as_deref(), Some("smart"));
     // Primary (big) is skipped; fallbacks are the remaining dispatch
     // targets in preference order.
@@ -163,19 +162,19 @@ fn routing_target_unknown_route_uses_default() {
     let c = sample_config();
     let rt = c.routing_target("nope", None).expect("routing target");
     assert_eq!(rt.model, "tiny");
-    assert_eq!(rt.group.as_deref(), Some("fast"));
+    assert_eq!(rt.role.as_deref(), Some("fast"));
 }
 
-/// A route whose `model_groups` member is a configured in-process onnx
+/// A route whose role `models` member is a configured in-process onnx
 /// role (e.g. the generative `onnx/llm` routing model) resolves to an onnx
 /// `RoutingTarget` — not a `models` entry — so the dispatch layer serves it
 /// through the onnx `ChatBackend` (is_onnx, no HTTP url).
 #[test]
-fn routing_target_resolves_onnx_role_group_member() {
+fn routing_target_resolves_onnx_role_member() {
     let mut c: RoutingConfig = serde_json::from_value(serde_json::json!({
-        "routes": {"local": {"group": "default"}},
+        "routes": {"local": {"role": "default"}},
         "models": {},
-        "model_groups": {"default": ["onnx/llm"]},
+        "roles": {"default": {"models": ["onnx/llm"]}},
         "system_prompt": "s",
         "safety_threshold": 0.5,
         "default_route": "local",
@@ -190,7 +189,7 @@ fn routing_target_resolves_onnx_role_group_member() {
     );
     assert_eq!(rt.model, "onnx/llm");
     assert!(rt.url.is_empty(), "onnx targets have no HTTP url");
-    assert_eq!(rt.group.as_deref(), Some("default"));
+    assert_eq!(rt.role.as_deref(), Some("default"));
     assert_eq!(rt.target_name.as_deref(), Some("local"));
 }
 
@@ -230,12 +229,12 @@ fn role_entry_deserializes_flat_fields() {
 }
 
 #[test]
-fn all_dispatch_targets_orders_primary_group_first() {
+fn all_dispatch_targets_orders_primary_role_first() {
     let c = sample_config();
     let targets = c.all_dispatch_targets("smart", None);
     let names: Vec<&str> = targets.iter().map(|(n, _)| n.as_str()).collect();
-    // Primary group (smart) first, ordered by intelligence descending
-    // (huge int 8 before big int 5), then other groups (tiny).
+    // Primary role (smart) first, ordered by intelligence descending
+    // (huge int 8 before big int 5), then other roles (tiny).
     assert_eq!(&names[..2], &["huge", "big"]);
     assert!(names.contains(&"tiny"));
 }
@@ -243,7 +242,7 @@ fn all_dispatch_targets_orders_primary_group_first() {
 fn role_config() -> RoutingConfig {
     serde_json::from_value(serde_json::json!({
         "routes": {
-            "fast": {"group": "fast", "pipelines": ["default"], "description": "fast route"},
+            "fast": {"role": "fast", "pipelines": ["default"], "description": "fast route"},
         },
         "models": {
             "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
@@ -251,11 +250,9 @@ fn role_config() -> RoutingConfig {
             "big": {"endpoint": "http://b", "name": "big", "intelligence": 5,
                     "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 0.0, "tok_s": 10},
         },
-        "model_groups": {
-            "fast": ["quick", "last", "tiny", "any", "unknown-key"],
-            "smart": ["big"]
-        },
         "roles": {
+            "fast": {"models": ["quick", "last", "tiny", "any", "unknown-key"]},
+            "smart": {"models": ["big"]},
             "quick": {"models": ["tiny", "big"]}
         },
         "system_prompt": "sys",
@@ -272,11 +269,11 @@ fn role_members_expand_to_bound_models_in_order() {
     // downstream stage (sentinel expansion / fail-closed lookup) to own.
     let c = role_config();
     assert_eq!(
-        c.role_expanded_members("fast"),
+        c.role_dispatch_members("fast"),
         vec!["big", "tiny", "last", "tiny", "any", "unknown-key"],
     );
-    assert_eq!(c.role_expanded_members("smart"), vec!["big", "last", "any"]);
-    assert!(c.role_expanded_members("missing").is_empty());
+    assert_eq!(c.role_dispatch_members("smart"), vec!["big"]);
+    assert!(c.role_dispatch_members("missing").is_empty());
 }
 
 #[test]
@@ -289,43 +286,42 @@ fn static_route_resolution_reaches_through_roles() {
         .routing_target("fast", Some(1))
         .expect("role resolves to a target");
     assert_eq!(rt.model, "tiny", "cheapest candidate meeting complexity");
-    assert_eq!(rt.group.as_deref(), Some("fast"));
+    assert_eq!(rt.role.as_deref(), Some("fast"));
 }
 
 #[test]
-fn roles_absent_leaves_groups_untouched() {
-    // No roles table: expansion is identity apart from the implicit
-    // `last`/`any` suffix, which rides along exactly like a declared one.
+fn unlisted_roles_ride_last_sentinel() {
+    // No roles table entry at all: expansion is empty (fail-closed), while
+    // a declared-but-empty role rides `["last"]` (see
+    // `RoleEntry::effective_models`).
     let c = sample_config();
-    assert_eq!(c.role_expanded_members("fast"), vec!["tiny", "last", "any"]);
-    assert_eq!(
-        c.role_expanded_members("smart"),
-        vec!["big", "huge", "last", "any"]
-    );
+    assert!(c.role_dispatch_members("missing").is_empty());
+    let bare: RoleEntry = serde_json::from_value(serde_json::json!({})).expect("bare role");
+    assert_eq!(bare.effective_models(), vec!["last".to_string()]);
 }
 
 #[test]
 fn unbound_role_expands_to_nothing() {
     // A role no model binds to fans out to nothing — the sentinels still
-    // pass through, so the group degrades to availability ordering.
+    // pass through, so the role degrades to availability ordering.
     let routing: RoutingConfig = serde_json::from_value(serde_json::json!({
         "routes": {},
         "models": {
             "svc": {"endpoint": "http://a", "name": "svc", "intelligence": 1,
                     "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10}
         },
-        "model_groups": {"g": ["spare", "last", "any"]},
+        "roles": {
+            "default": {"models": ["svc"]},
+            "spare": {},
+            "g": {"models": ["spare", "last", "any"]}
+        },
         "system_prompt": "sys",
         "safety_threshold": 0.5,
         "default_route": "fast",
-        "roles": {
-            "default": {"models": ["svc"]},
-            "spare": {}
-        }
     }))
     .expect("valid routing config");
     assert_eq!(
-        routing.role_expanded_members("g"),
+        routing.role_dispatch_members("g"),
         vec!["last", "any"],
         "unbound role contributes no candidates"
     );
@@ -334,9 +330,9 @@ fn unbound_role_expands_to_nothing() {
 fn role_routing_config() -> RoutingConfig {
     let mut cfg: RoutingConfig = serde_json::from_value(serde_json::json!({
         "routes": {
-            "code": {"group": "dev", "role": "quick", "description": "code"},
-            "plain": {"group": "dev", "description": "plain"},
-            "pinned": {"group": "pinned", "description": "pinned"},
+            "code": {"role": "quick", "description": "code"},
+            "plain": {"role": "dev", "description": "plain"},
+            "pinned": {"role": "pinned", "description": "pinned"},
         },
         "models": {
             "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
@@ -348,13 +344,14 @@ fn role_routing_config() -> RoutingConfig {
                     "params": {"mk": "mv"},
                     "roles": {"quick": {"params": {"ok": "ov"}}}},
         },
-        "model_groups": {"dev": ["tiny", "big"], "pinned": ["big:fast"]},
         "roles": {
             "default": {"params": {"duty": "duty-only"}},
             "quick": {
                 "params": {"rk": "rv"},
                 "models": ["big", "tiny"],
             },
+            "dev": {"models": ["tiny", "big"]},
+            "pinned": {"models": ["big:fast"]},
         },
         "system_prompt": "sys",
         "safety_threshold": 0.5,
@@ -399,24 +396,14 @@ fn routing_target_applies_terminal_role() {
 }
 
 #[test]
-fn routing_target_without_role_unchanged() {
+fn routing_target_role_serves_own_window() {
+    // Route "plain" names role "dev", which binds big — dispatch serves
+    // big through the dev window with the role recorded.
     let cfg = role_routing_config();
     let rt = cfg.routing_target("plain", Some(5)).expect("target");
-    assert_eq!(rt.role, None, "no terminal role means no role");
-    assert_eq!(
-        rt.model, "big:quick",
-        "entry default point for a pooled model, role or not"
-    );
+    assert_eq!(rt.role.as_deref(), Some("dev"), "role recorded");
+    assert_eq!(rt.model, "big:dev", "role serves its own window");
     let params = rt.params.as_ref().expect("params");
-    // Role-less dispatch still serves the entry-default window, so it
-    // carries that window's composed sampling (entry + role run block +
-    // model-side override) — the same body a role-qualified dispatch to the
-    // same window sends. `rt.role` stays None: no terminal role was declared.
-    assert_eq!(
-        params.get("ok").and_then(|v| v.as_str()),
-        Some("ov"),
-        "the serving window's model-side override composes"
-    );
     assert_eq!(
         params.get("mk").and_then(|v| v.as_str()),
         Some("mv"),
@@ -426,10 +413,14 @@ fn routing_target_without_role_unchanged() {
 
 #[test]
 fn explicit_qualifier_wins_over_terminal_role() {
+    // The role would force its own window on a bare member (see
+    // `routing_target_applies_terminal_role`), but an explicit member
+    // qualifier is kept verbatim with the role recorded for the audit
+    // trail.
     let mut cfg = role_routing_config();
-    cfg.routes.get_mut("pinned").expect("route").role = Some("quick".into());
-    let rt = cfg.routing_target("pinned", None).expect("target");
-    assert_eq!(rt.model, "big:fast", "explicit member qualifier kept");
+    cfg.roles.get_mut("quick").expect("role").models = vec!["tiny:ledger".into(), "big".into()];
+    let rt = cfg.routing_target("code", None).expect("target");
+    assert_eq!(rt.model, "tiny:ledger", "explicit member qualifier kept");
     assert_eq!(
         rt.role.as_deref(),
         Some("quick"),
@@ -444,7 +435,7 @@ fn terminal_role_validation_rejects_unknown_role() {
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
             {"key": "code", "description": "", "node": {
                 "type": "terminal", "route": "code",
-                "group": "dev", "role": "nope", "description": "",
+                "role": "nope", "description": "",
             }},
         ]}
     }))
@@ -468,8 +459,8 @@ fn terminal_role_validation_rejects_unknown_role() {
 fn terminal_role_pinned_config() -> RoutingConfig {
     serde_json::from_value(serde_json::json!({
         "routes": {
-            "code": {"group": "dev", "role": "quick", "description": "code"},
-            "pinned": {"group": "pinned", "description": "pinned"},
+            "code": {"role": "quick", "description": "code"},
+            "pinned": {"role": "pinned", "description": "pinned"},
         },
         "models": {
             "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
@@ -481,7 +472,6 @@ fn terminal_role_pinned_config() -> RoutingConfig {
                     "params": {"mk": "mv"},
                     "roles": {"quick": {"params": {"ok": "ov"}}}},
         },
-        "model_groups": {"dev": ["tiny", "big"], "pinned": ["big:fast"]},
         "roles": {
             "default": {"params": {"duty": "duty-only"}},
             "quick": {
@@ -489,6 +479,7 @@ fn terminal_role_pinned_config() -> RoutingConfig {
                 "params": {"rk": "rv"},
                 "models": ["big", "tiny"],
             },
+            "pinned": {"models": ["big:fast"]},
         },
         "system_prompt": "sys",
         "safety_threshold": 0.5,
@@ -509,11 +500,12 @@ fn terminal_role_pinned_forces_qualifier_without_materialized_pool() {
 
 #[test]
 fn terminal_role_pinned_explicit_point_still_wins() {
-    let mut cfg = terminal_role_pinned_config();
-    cfg.routes.get_mut("pinned").expect("route").role = Some("quick".into());
+    // The pinned fixture's "pinned" route already carries an explicit
+    // qualifier in its role members: it is kept verbatim, role recorded.
+    let cfg = terminal_role_pinned_config();
     let rt = cfg.routing_target("pinned", None).expect("target");
     assert_eq!(rt.model, "big:fast", "explicit member qualifier kept");
-    assert_eq!(rt.role.as_deref(), Some("quick"), "role recorded for audit");
+    assert_eq!(rt.role.as_deref(), Some("pinned"), "role recorded for audit");
 }
 
 #[test]
@@ -529,13 +521,21 @@ fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
         }))
         .expect("member"),
     );
-    cfg.model_groups.insert(
+    cfg.roles.insert(
         "solo".into(),
-        crate::config::ModelGroup::Array(vec!["lonely".into()]),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
+            .expect("role"),
     );
+    // Point the solo route at unpinned quick, which does not bind lonely:
+    // the member resolves through quick's list below.
+    cfg.roles
+        .get_mut("quick")
+        .expect("role")
+        .models
+        .push("lonely".into());
     cfg.routes.insert(
         "solo".into(),
-        serde_json::from_value(serde_json::json!({"group": "solo", "role": "quick", "description": "solo"}))
+        serde_json::from_value(serde_json::json!({"role": "quick", "description": "solo"}))
             .expect("route"),
     );
     let rt = cfg.routing_target("solo", None).expect("target");
@@ -563,19 +563,20 @@ fn terminal_role_validation_rejects_unserved_member() {
         }))
         .expect("member"),
     );
-    // Object form with `sentinels: false`: the Array form always appends the
-    // `last`/`any` suffix (`ModelGroup::effective_models`), so only the
-    // explicit opt-out names a window that can never exist at runtime.
-    cfg.model_groups.insert(
+    // A bare-only role member that serves no role, with no runtime
+    // flexibility (no `last`/`any` sentinel): a pinned role naming it
+    // through fan-out names a window that can never exist at runtime.
+    cfg.roles.insert(
         "mixed".into(),
-        serde_json::from_value(serde_json::json!({"models": ["lonely"], "sentinels": false}))
-            .expect("bare-only group"),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
+            .expect("bare-only role"),
     );
+    cfg.roles.get_mut("quick").expect("role").models = vec!["mixed".into()];
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
             {"key": "m", "description": "", "node": {
                 "type": "terminal", "route": "m",
-                "group": "mixed", "role": "quick", "description": "",
+                "role": "quick", "description": "",
             }},
         ]}
     }))
@@ -600,15 +601,16 @@ fn terminal_role_validation_accepts_unpinned_unserved_member() {
         }))
         .expect("member"),
     );
-    cfg.model_groups.insert(
+    cfg.roles.insert(
         "mixed".into(),
-        crate::config::ModelGroup::Array(vec!["lonely".into()]),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
+            .expect("role"),
     );
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
             {"key": "m", "description": "", "node": {
                 "type": "terminal", "route": "m",
-                "group": "mixed", "role": "quick", "description": "",
+                "role": "mixed", "description": "",
             }},
         ]}
     }))
@@ -619,9 +621,10 @@ fn terminal_role_validation_accepts_unpinned_unserved_member() {
 
 #[test]
 fn terminal_role_validation_accepts_pinned_with_sentinel_flexibility() {
-    // Pinned quick, but the group carries `last`: recency may fill the role
-    // at runtime, so boot passes (the winner still qualifies only if it
-    // binds the role — force never invents a window).
+    // Pinned quick, but the role carries `last` alongside a fanned-out
+    // unbound member: recency may fill the role at runtime, so boot passes
+    // (the winner still qualifies only if it binds the role — force never
+    // invents a window).
     let mut cfg = role_routing_config();
     cfg.roles.get_mut("quick").expect("role").pinned = true;
     cfg.models.insert(
@@ -632,44 +635,46 @@ fn terminal_role_validation_accepts_pinned_with_sentinel_flexibility() {
         }))
         .expect("member"),
     );
-    cfg.model_groups.insert(
+    cfg.roles.insert(
         "flex".into(),
-        crate::config::ModelGroup::Array(vec!["last".into(), "lonely".into()]),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
+            .expect("role"),
     );
+    cfg.roles.get_mut("quick").expect("role").models = vec!["last".into(), "flex".into()];
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
             {"key": "m", "description": "", "node": {
                 "type": "terminal", "route": "m",
-                "group": "flex", "role": "quick", "description": "",
+                "role": "quick", "description": "",
             }},
         ]}
     }))
     .expect("tree parses");
     cfg.validate_terminal_roles(&tree)
-        .expect("sentinel-bearing group may fill the pinned role at runtime");
+        .expect("sentinel-bearing role may fill the pinned role at runtime");
 }
 
 #[test]
-fn terminal_role_validation_accepts_served_group() {
+fn terminal_role_validation_accepts_served_role() {
     let cfg = role_routing_config();
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
             {"key": "code", "description": "", "node": {
                 "type": "terminal", "route": "code",
-                "group": "dev", "role": "quick", "description": "",
+                "role": "quick", "description": "",
             }},
         ]}
     }))
     .expect("tree parses");
     cfg.validate_terminal_roles(&tree)
-        .expect("served group validates");
+        .expect("served role validates");
 }
 
 fn lookup_config() -> RoutingConfig {
     serde_json::from_value(serde_json::json!({
         "routes": {
-            "shared": {"group": "g1", "description": "route wins"},
-            "plain": {"group": "g1", "description": "plain"},
+            "shared": {"role": "g1", "description": "route wins"},
+            "plain": {"role": "g1", "description": "plain"},
         },
         "models": {
             "m1": {"endpoint": "http://a", "name": "m1", "intelligence": 1,
@@ -681,11 +686,11 @@ fn lookup_config() -> RoutingConfig {
             "duo": {"endpoint": "http://d", "name": "duo-model", "intelligence": 2,
                     "cost_input": 1.5, "cost_output": 1.5, "cost_cached_read": 0.0, "tok_s": 10},
         },
-        "model_groups": {
-            "g1": ["m1"],
-            "shared": ["m2"],
-            "duo": ["m2"],
-            "dev": ["m1", "m2"],
+        "roles": {
+            "g1": {"models": ["m1"]},
+            "shared": {"models": ["m2"]},
+            "duo": {"models": ["m2"]},
+            "dev": {"models": ["m1", "m2"]},
         },
         "system_prompt": "sys",
         "safety_threshold": 0.5,
@@ -700,12 +705,12 @@ fn requested_name_classification_order() {
     assert_eq!(
         cfg.classify_requested("shared"),
         crate::config::RequestedRef::Route("shared".into()),
-        "route wins over group and model"
+        "route wins over role and model"
     );
     assert_eq!(
         cfg.classify_requested("duo"),
-        crate::config::RequestedRef::Group("duo".into()),
-        "group wins over model"
+        crate::config::RequestedRef::Role("duo".into()),
+        "role wins over model"
     );
     assert_eq!(
         cfg.classify_requested("m1"),
@@ -724,23 +729,22 @@ fn requested_name_classification_order() {
 }
 
 #[test]
-fn route_shadows_group_and_model() {
+fn route_shadows_role_and_model() {
     let cfg = lookup_config();
-    // "shared" names a route (→ g1 → m1), a group, and a model.
+    // "shared" names a route (→ g1 → m1), a role, and a model.
     let (_, name) = cfg.resolve_route("shared", None).expect("resolves");
-    assert_eq!(name, "m1", "bare name serves the route's group member");
+    assert_eq!(name, "m1", "bare name serves the route's role member");
 }
 
 #[test]
-fn group_wins_over_model() {
+fn role_wins_over_model() {
     let cfg = lookup_config();
-    // "duo" names a group ([m2]) and a model; the group wins.
+    // "duo" names a role ([m2]) and a model; the role wins.
     let (_, name) = cfg.resolve_route("duo", None).expect("resolves");
-    assert_eq!(name, "m2", "group member served");
-    let rt = cfg.routing_target("dev", None).expect("group target");
-    assert_eq!(rt.group.as_deref(), Some("dev"));
+    assert_eq!(name, "m2", "role member served");
+    let rt = cfg.routing_target("dev", None).expect("role target");
+    assert_eq!(rt.role.as_deref(), Some("dev"));
     assert_eq!(rt.target_name.as_deref(), Some("dev"));
-    assert_eq!(rt.role, None, "group hits carry no terminal role");
 }
 
 #[test]
@@ -756,7 +760,7 @@ fn model_hatch_bypasses_route() {
     let rt = cfg.routing_target("model:shared", None).expect("target");
     assert_eq!(rt.model, "shared-model");
     assert_eq!(
-        rt.group, None,
+        rt.role, None,
         "hatch is a direct address, like direct models"
     );
     assert_eq!(rt.target_name.as_deref(), Some("shared"));
@@ -815,12 +819,11 @@ fn lookup_collisions_name_every_shadow() {
 
 fn concurrency_config() -> RoutingConfig {
     let mut cfg: RoutingConfig = serde_json::from_value(serde_json::json!({
-        "routes": {"code": {"group": "dev", "description": "code"}},
+        "routes": {"code": {"role": "quick", "description": "code"}},
         "models": {
             "m": {"endpoint": "http://a", "name": "m", "intelligence": 1,
                   "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10},
         },
-        "model_groups": {"dev": ["m"]},
         "roles": {
             "quick": {
                 "models": ["m"],
@@ -914,7 +917,7 @@ fn viability_all_resident_passing_matches_legacy() {
     let members = vec!["aaa_first".to_string(), "mmm_mid".to_string(), "zzz_big".to_string()];
     let all_resident = |_: &str| true;
     let viable = super::select_viable_member("g", &members, &models, Some(1), Some(&all_resident as &dyn Fn(&str) -> bool));
-    let legacy = super::select_group_member("g", &members, &models, Some(1));
+    let legacy = super::select_role_member("g", &members, &models, Some(1));
     assert_eq!(viable, legacy, "all-resident-passing must stay byte-identical");
     assert_eq!(viable.as_deref(), Some("aaa_first"));
 }
@@ -997,7 +1000,7 @@ fn viability_calibration_matrix_locks_threshold() {
         Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "mmm_mid", control: false },
         Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "mmm_mid", control: false },
         Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&[]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
-        // Note: `select_group_member` now delegates to the viable rule, so its
+        // Note: `select_role_member` now delegates to the viable rule, so its
         // sentinel-only answer is viable too (the M1 behavior change). The
         // pre-M1 lexicographic answer would have been `aaa_first`.
         Case { members: s(&["last"]), complexity: Some(5), resident: s(&[]), probe: false, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
@@ -1023,7 +1026,7 @@ fn viability_calibration_matrix_locks_threshold() {
         } else {
             super::select_viable_member("g", &case.members, &models, case.complexity, None)
         };
-        let legacy = super::select_group_member("g", &case.members, &models, case.complexity);
+        let legacy = super::select_role_member("g", &case.members, &models, case.complexity);
         if viable.as_deref() != Some(case.expected_viable) {
             mismatches.push(format!(
                 "case {i}: viable {:?}, expected {}",

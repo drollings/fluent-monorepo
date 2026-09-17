@@ -115,7 +115,7 @@ pub fn terminal_decision(
 ) -> StageDecision {
     let mut extra = serde_json::json!({
         "route": rt.target_name,
-        "group": rt.group,
+        "role": rt.role,
         "model": rt.model,
         "complexity": complexity,
     });

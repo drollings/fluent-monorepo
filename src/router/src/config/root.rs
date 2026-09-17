@@ -13,7 +13,6 @@ use super::fleet::{default_onnx_limiter_cap, default_onnx_threads, RoleParams};
 use super::models::{InstanceProfile, ModelEntry};
 use crate::config::builder::PipelineParams;
 use crate::config::classification::ClassificationTree;
-use crate::config::escalation::ModelGroup;
 use crate::config::filters::MockConfig;
 use crate::config::normalize::{
     normalize_fleet_role_params, normalize_model_defaults, warn_on_non_object_params,
@@ -47,7 +46,7 @@ pub fn split_model_key(key: &str) -> (&str, Option<&str>) {
 pub struct RouterConfig {
     /// Named pipeline stage tables (keyed by pipeline name). This is stage
     /// configuration — not flat route authoring — so it stays past M3c: the
-    /// tree carries routes/groups/descriptions, never stage knobs
+    /// tree carries routes/roles/descriptions, never stage knobs
     /// (deterministic prefilter, blacklist, nlp flags, thresholds).
     #[field(skip)]
     #[serde(default)]
@@ -55,13 +54,12 @@ pub struct RouterConfig {
     #[field(skip)]
     #[serde(default)]
     pub models: HashMap<String, ModelEntry>,
-    #[field(skip)]
-    #[serde(default)]
-    pub model_groups: HashMap<String, ModelGroup>,
     /// Routing-vocabulary table: role name → candidate model keys + the
-    /// inference point each candidate serves. Absent (the default) leaves
-    /// today's key-based routing untouched; roles resolve to concrete
-    /// `base:qualifier` targets per request once consumed.
+    /// inference point each candidate serves. A role's `models` list is the
+    /// dispatch candidate set for every route naming the role (empty lists
+    /// ride the `last` sentinel — see `RoleEntry::effective_models`); roles
+    /// resolve to concrete `base:qualifier` targets per request at dispatch
+    /// time, never at boot, so lazy models load correctly.
     #[field(skip)]
     #[serde(default)]
     pub roles: HashMap<String, RoleEntry>,
@@ -225,7 +223,6 @@ impl Default for RouterConfig {
         Self {
             pipelines,
             models: HashMap::new(),
-            model_groups: HashMap::new(),
             roles: HashMap::new(),
             safety_threshold: None,
             default_route: "local".into(),
@@ -258,6 +255,13 @@ impl Default for RouterConfig {
     }
 }
 
+/// Whether a serde_json error is an unknown-field rejection (as opposed to
+/// a syntax error, type mismatch, or custom semantic failure). Matched on
+/// the canonical message prefix — the only discriminator serde_json offers.
+fn is_unknown_field_error(e: &serde_json::Error) -> bool {
+    e.to_string().starts_with("unknown field")
+}
+
 impl RouterConfig {
     /// Reserved `models` key: the fleet template, never a routable model.
     /// Every other `models` entry sparse-inherits from it at parse (see
@@ -280,8 +284,24 @@ impl RouterConfig {
     /// Direct `serde_json::from_str::<RouterConfig>` skips both legs (absent
     /// keys then read as struct defaults) — composition roots must use this
     /// constructor; unit tests that need the inheritance use it too.
+    ///
+    /// Location-rich errors: the normalized `from_value` leg below reports
+    /// `0:0` (spans do not survive the `Value` round-trip), so a structural
+    /// pre-pass parses the raw text first. Only an unknown-field failure is
+    /// promoted from it — the normalizers solely *add* keys, so an unknown
+    /// field in the raw text is still unknown after normalization, while any
+    /// other pre-pass failure (e.g. a non-object `params` the merge rescues)
+    /// is discarded in favor of the normalized verdict. Boot therefore names
+    /// the retired field *and* its true line/column.
     pub fn from_json_str(s: &str) -> serde_json::Result<Self> {
-        Self::from_json_value(serde_json::from_str(s)?)
+        let structural: Result<Self, serde_json::Error> = serde_json::from_str(s);
+        match Self::from_json_value(serde_json::from_str(s)?) {
+            Ok(config) => Ok(config),
+            Err(normalized_err) => match structural {
+                Err(raw_err) if is_unknown_field_error(&raw_err) => Err(raw_err),
+                _ => Err(normalized_err),
+            },
+        }
     }
 
     /// [`Self::from_json_str`] over an already-parsed value.
@@ -370,15 +390,15 @@ impl RouterConfig {
     ///
     /// The `default` key is always the sparse-inheritance template, never
     /// a servable model — skipped. Referenced means: classifier duty keys,
-    /// group literal bases (role members fanned out), or role-bound
+    /// role member bases (role-naming members fanned out), or role-bound
     /// models.
     pub fn validate_model_presence(&self, gguf_dir: &std::path::Path) -> Result<(), String> {
         let mut referenced = std::collections::BTreeSet::new();
         if let Some(tree) = self.classification.as_ref() {
             referenced.extend(tree.classifier_model_keys());
         }
-        for cfg in self.model_groups.values() {
-            for member in cfg.effective_models() {
+        for role_entry in self.roles.values() {
+            for member in role_entry.effective_models() {
                 if member == "last" || member == "any" {
                     continue;
                 }
@@ -389,9 +409,6 @@ impl RouterConfig {
                     referenced.insert(base.to_string());
                 }
             }
-        }
-        for role in self.roles.values() {
-            referenced.extend(role.models.iter().cloned());
         }
         let mut keys: Vec<&String> = self.models.keys().collect();
         keys.sort();
@@ -493,16 +510,14 @@ impl RouterConfig {
             .next()
     }
 
-    /// The ledger duty's serving key: the `ledger` section's `group`
-    /// (resolved through [`resolve_group_head_key`]), else its literal
-    /// `model`, else the classifier key. Group wins when set; the literal is
-    /// the legacy fallback.
+    /// The ledger duty's serving key: the `ledger` section's `role`
+    /// (resolved through [`role_head_key`]), else its literal `model`,
+    /// else the classifier key. Role wins when set; the literal is the
+    /// legacy fallback.
     pub fn ledger_head_key(&self) -> Option<String> {
         if let Some(ledger) = &self.ledger {
-            if let Some(group) = ledger.group.as_deref() {
-                if let Some(key) =
-                    resolve_group_head_key(&self.models, &self.roles, &self.model_groups, group)
-                {
+            if let Some(role) = ledger.role.as_deref() {
+                if let Some(key) = role_head_key(&self.models, &self.roles, role, false) {
                     return Some(key);
                 }
             }
@@ -514,14 +529,12 @@ impl RouterConfig {
     }
 
     /// The chart-selector duty's serving key: the `charts` section's
-    /// `selector_group` (resolved through [`resolve_group_head_key`]), else
-    /// its literal `selector_model`. Group wins when set; the literal is the
+    /// `selector_role` (resolved through [`role_head_key`]), else its
+    /// literal `selector_model`. Role wins when set; the literal is the
     /// legacy fallback.
     pub fn chart_selector_key(&self) -> Option<String> {
-        if let Some(group) = self.charts.selector_group.as_deref() {
-            if let Some(key) =
-                resolve_group_head_key(&self.models, &self.roles, &self.model_groups, group)
-            {
+        if let Some(role) = self.charts.selector_role.as_deref() {
+            if let Some(key) = role_head_key(&self.models, &self.roles, role, false) {
                 return Some(key);
             }
         }
@@ -639,19 +652,20 @@ impl RouterConfig {
     /// The `routes` view the server consumes (model - pipeline mapping).
     ///
     /// Derived solely from the classification tree's `terminal` nodes: each
-    /// terminal synthesizes a `RouteRef` routed through its own `group` (or
-    /// the route name when no group is given) carrying the terminal's
-    /// `always_route` and `role`, so `RoutingConfig::resolve_route` and
+    /// terminal synthesizes a `RouteRef` through its `role` carrying the
+    /// terminal's `always_route`, so `RoutingConfig::resolve_route` and
     /// `resolve_pipeline` work with no structural change to the server.
+    /// Terminals without a `role` fall back to the route name (resolved as
+    /// a bare role at dispatch, which fails closed for unknown names).
     pub fn routes_view(&self) -> HashMap<String, RouteRef> {
         let mut routes = HashMap::new();
         if let Some(tree) = &self.classification {
-            for (route, group, description) in tree.terminal_views() {
+            for (route, description) in tree.terminal_views() {
+                let role = tree.terminal_role(&route).unwrap_or_else(|| route.clone());
                 routes.insert(
                     route.clone(),
                     RouteRef {
-                        group: group.unwrap_or_else(|| route.clone()),
-                        role: tree.terminal_role(&route),
+                        role,
                         pipelines: vec!["default".into()],
                         description,
                         always_route: tree.terminal_always_route(&route),
@@ -1143,7 +1157,7 @@ pub fn resolve_inference_point(
 /// the role is unknown, binds nothing, or names only undeclared models (the
 /// last case warns loudly at boot via [`warn_on_unknown_model_bindings`]).
 /// The single membership source for every "who serves this role" question
-/// (`role_head_key`, `classifier_role_key`, `role_expanded_members`).
+/// (`role_head_key`, `classifier_role_key`, `role_dispatch_members`).
 /// Pools (`materialize_effective_pool`) deliberately resolve bindings
 /// through the same map rather than this helper: params composition stays
 /// on declared pools only.
@@ -1167,28 +1181,6 @@ pub fn models_serving_role(
     out.sort_unstable();
     out.dedup();
     out
-}
-
-/// Resolve a model group to its serving model key: the first non-sentinel
-/// member, with bare role names fanned out to their head candidate.
-/// Qualified members (`base:point`) and unknown literals pass through
-/// unchanged. `None` for unknown groups and groups with no servable member.
-/// The single group-duty resolver: classifier, ledger, and chart-selector
-/// duties name groups, never models, and all three compose through this
-/// function.
-#[allow(clippy::implicit_hasher)]
-pub fn resolve_group_head_key(
-    models: &HashMap<String, ModelEntry>,
-    roles: &HashMap<String, RoleEntry>,
-    groups: &HashMap<String, ModelGroup>,
-    group: &str,
-) -> Option<String> {
-    groups
-        .get(group)?
-        .effective_models()
-        .iter()
-        .filter(|m| *m != "last" && *m != "any")
-        .find_map(|m| role_head_key(models, roles, m, false))
 }
 
 /// Resolve a role or model key to its serving model key: a bare role name
@@ -1493,6 +1485,7 @@ fn default_route() -> String {
 /// `workflow_library` HNSW/SQLite path for retrieval, and the model key
 /// used by chart-selection LLM adjudication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChartsConfig {
     /// Directory of `*.json` chart files loaded at boot. `None` - empty
     /// store (a missing directory is tolerated with a `warn!`).
@@ -1503,14 +1496,14 @@ pub struct ChartsConfig {
     #[serde(default)]
     pub index_path: Option<String>,
     /// Chart-selection classifier model key (LLM adjudication step).
-    /// Legacy spelling: prefer `selector_group` (duties name groups); an
-    /// explicit `selector_model` still resolves when no group is set.
+    /// Legacy spelling: prefer `selector_role` (duties name roles); an
+    /// explicit `selector_model` still resolves when no role is set.
     #[serde(default)]
     pub selector_model: Option<String>,
-    /// Model group serving the chart-selector duty, resolved through
-    /// [`resolve_group_head_key`]. Wins over `selector_model` when set.
+    /// Role serving the chart-selector duty, resolved through
+    /// [`role_head_key`]. Wins over `selector_model` when set.
     #[serde(default)]
-    pub selector_group: Option<String>,
+    pub selector_role: Option<String>,
     /// Max candidates surfaced to the selector's LLM adjudication.
     #[serde(default = "default_charts_max_candidates")]
     pub max_candidates: usize,
@@ -1528,7 +1521,7 @@ impl Default for ChartsConfig {
             dir: None,
             index_path: None,
             selector_model: None,
-            selector_group: None,
+            selector_role: None,
             max_candidates: default_charts_max_candidates(),
             min_score: default_charts_min_score(),
             entity_context: default_charts_entity_context(),
@@ -1606,6 +1599,7 @@ pub const DEFAULT_LEDGER_MAX_SUMMARY_TOKENS: u32 = 200;
 /// named `ledger` instance. `None` (absent) keeps today's behavior - no
 /// ledger at boot - so existing deployments are untouched until they opt in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LedgerConfig {
     /// Durable store path. `None` falls back to an in-memory ledger with a
     /// `warn!` (ephemeral, still functional for LOD derivation).
@@ -1613,14 +1607,14 @@ pub struct LedgerConfig {
     pub path: Option<String>,
     /// Model key for the ledger `Summarizer`. `None` falls back to the
     /// classifier model key, then to no summarizer. Legacy spelling: prefer
-    /// `group` (duties name groups); an explicit `model` still resolves when
-    /// no group is set.
+    /// `role` (duties name roles); an explicit `model` still resolves when
+    /// no role is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Model group serving the ledger duty, resolved through
-    /// [`resolve_group_head_key`]. Wins over `model` when set.
+    /// Role serving the ledger duty, resolved through [`role_head_key`].
+    /// Wins over `model` when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
+    pub role: Option<String>,
     /// Max summary length (tokens) for LOD1-LOD4 derivation.
     #[serde(default = "default_ledger_max_summary_tokens")]
     pub max_summary_tokens: u32,
@@ -1701,7 +1695,7 @@ impl Default for LedgerConfig {
         Self {
             path: None,
             model: None,
-            group: None,
+            role: None,
             max_summary_tokens: DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
             background_tiering: false,
             tier_model: None,

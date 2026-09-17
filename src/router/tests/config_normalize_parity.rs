@@ -149,7 +149,6 @@ fn parity_template_key_inheritance() {
                 "a": {"endpoint": "http://x/v1/chat/completions"},
                 "b": {"endpoint": "http://x/v1/chat/completions", "template": "/own/t.txt"},
             },
-            "model_groups": {},
         }),
     );
 }

@@ -5,7 +5,6 @@ fn base_target() -> RoutingTarget {
     crate::pipeline::RoutingTarget {
         url: "http://x/v1/chat/completions".into(),
         model: "base:swarm".into(),
-        group: None,
         target_name: Some("swarm".into()),
         role: None,
         params: None,
