@@ -331,7 +331,7 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
             probes.lock().expect("log").push(base.to_string());
             loaded.iter().any(|l| l == base)
         }
-    });
+    }, None);
     let probes = probes.lock().expect("log").clone();
 
     // Cause + failure attribution from the observed order and the inputs.
@@ -418,11 +418,11 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
     let loaded: Vec<String> = strings(case, "loaded");
     let expanded = expand_group_keys(&routing, group, Some(&recency), Some("fixture"), &|base| {
         loaded.iter().any(|l| l == base)
-    });
+    }, None);
     let candidates =
         expanded_candidates_for_group(&routing, group, Some(&recency), Some("fixture"), &|base| {
             loaded.iter().any(|l| l == base)
-        });
+        }, None);
     assert_eq!(
         candidates
             .iter()

@@ -502,13 +502,18 @@ async fn red_prompt_contains_live_lod0_and_excludes_dead_end() {
     let live = store
         .record_request("sess-rigor", "r-live", "LIVE CLAIM TEXT at LOD0")
         .unwrap();
-    let dead = store
-        .record_request("sess-rigor", "r-dead", "DEAD END TEXT to exclude")
+    store
+        .record_result(live, true, Some(1.0), "live answer stands")
+        .unwrap();
+    let dead_question = store
+        .record_request("sess-rigor", "r-dead", "another question")
         .unwrap();
 
-    // Mark the dead node rejected (accepted = false).
+    // Reject the dead turn's answer: the rejected assistant node (and only
+    // it) is excluded — the dead question itself still renders as context,
+    // exactly like a production blue dead end (a dedicated rejected node).
     store
-        .record_result(dead, false, Some(0.1), "DEAD END TEXT to exclude")
+        .record_result(dead_question, false, Some(0.1), "DEAD END TEXT to exclude")
         .unwrap();
     let _ = live;
 

@@ -748,9 +748,14 @@ impl ContentNodeStore {
         Ok(id)
     }
 
-    /// Update the result of a previously recorded request node: acceptance,
-    /// score, and final content. Keeps the shared node and the `content_json`
-    /// column in sync (LOD0/LOD5 recomputed eagerly).
+    /// Append the turn's answer as an `assistant` node linked to the request
+    /// node, instead of overwriting the request's LOD0. The request node
+    /// stays pristine (its LOD0 is the user's text forever); the new node
+    /// carries the assistant origin, the same session + request ids, a
+    /// `parent_id` link to the request node, and the outcome flags. It rides
+    /// the single write funnel (`insert_node`: scrub, index, persist, tier +
+    /// overlay enqueue), so no SQLite atomicity change — the parse +
+    /// `interlingua_index` path is untouched (deferred question).
     pub fn record_result(
         &self,
         node_id: NodeId,
@@ -760,24 +765,25 @@ impl ContentNodeStore {
     ) -> Result<(), LedgerError> {
         let scrubbed = crate::ledger_guard::scrub_for_ledger(content);
         crate::ledger_guard::emit_write_audit(&scrubbed);
-        let scrubbed_text = scrubbed.text.clone();
-        self.with_node_mut(node_id, |node| {
-            node.accepted = Some(accepted);
-            node.acceptance_score = score;
-            if !scrubbed_text.is_empty() {
-                node.lod[LOD0_FULL_TEXT as usize].clone_from(&scrubbed_text);
-                node.lod[LOD5_LABEL as usize] = derive_label(
-                    node.role
-                        .as_ref()
-                        .map(OriginRole::as_str)
-                        .unwrap_or_default(),
-                    &scrubbed_text,
-                );
-                node.active_lod = Some(LOD0_FULL_TEXT);
-            }
-        })?;
-        self.enqueue_if_needs_tier(node_id);
-        self.enqueue_if_needs_overlay(node_id);
+        let request = self
+            .get_node(node_id)
+            .ok_or(LedgerError::NotFound(node_id))?;
+        let request = lock_read(&request);
+        let session_id = request.session_id.clone().unwrap_or_default();
+        let request_id = request.request_id.clone().unwrap_or_default();
+        drop(request);
+        let assistant_id = NodeId::from_int(self.next_id.fetch_add(1, Ordering::SeqCst));
+        let mut answer = new_node(
+            assistant_id,
+            &session_id,
+            &request_id,
+            "assistant",
+            &scrubbed.text,
+            Some(accepted),
+        );
+        answer.acceptance_score = score;
+        answer.parent_id = Some(node_id);
+        self.insert_node(&answer)?;
         Ok(())
     }
 

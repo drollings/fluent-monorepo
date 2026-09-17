@@ -81,12 +81,14 @@ local dispatch is a direct HTTP call to the owning server.
                     │
                     ▼
          ┌─ Serving layer (supervisor/ + instances/) ───────────────────┐
-        │  one llama-server per weights file on a free localhost port    │
-        │  direct /instances + generation calls, no llama.cpp router     │
-        │  sidecar: footprint-weighted eviction (weights included) when  │
-        │  over the VRAM budget; admission control before cold loads;    │
-        │  resume-marked contexts KV-snapshotted before they drop        │
-        └─────────────────────────────────────────────────────────────────┘
+         │  one llama-server per weights file on a free localhost port    │
+         │  direct /instances + generation calls, no llama.cpp router     │
+         │  sidecar: footprint-weighted eviction (weights included) when  │
+         │  over the VRAM budget; pre-admission (weights + incoming KV    │
+         │  window) against the allocation budget before cold loads;      │
+         │  resume-marked contexts KV-snapshotted before they drop        │
+         │  (auto snapshot mode; manual destroys without saving)          │
+         └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Pipeline: ordered stage list
@@ -105,15 +107,18 @@ telemetry never emits `"Router"`). Stage failures surface as
 | Stage | File | Model call? | Produces |
 |-------|------|-------------|----------|
 | 1. DeterministicPreFilter | `stages/deterministic.rs` | No | Command result, PII flag, or pass-through |
-| 2. NlpStage *(opt-in)* | `stages/nlp.rs` | *Deterministic base `[ArcEager, Rule]` always; gated refine `[Encoder, Llm]` on confidence OR task-value via `RefinePolicy` (fallback keeps base)* | `RoutingSignal`s under `"nlp_parse"` (predicate/subject/object + interlingua ids) |
-| 3. OverlayStage *(opt-in)* | `stages/overlay.rs` | Yes — onnx overlay models (Prompt-Router) | Route hints the classifier merges as deterministic context |
+| 2. NlpStage *(opt-in)* | `stages/nlp.rs` | *Deterministic base `[ArcEager, Rule]` always; gated refine `[Encoder, Llm]` on confidence OR task-value via `RefinePolicy` (fallback keeps base)* | `RoutingSignal`s under `"nlp_parse"` (predicate/subject/object + interlingua ids), the confidence summary, and the typed `NlpResidual` handover (`overall`, `role_coverage`, `oracle_tie_count`, `collision_count`, `refine_reason`, `uncovered_roles`) |
+| 3. OverlayStage *(opt-in)* | `stages/overlay.rs` | Yes — onnx overlay models (Prompt-Router) | Route hints the classifier merges as deterministic context (enabled by non-empty `overlay_models`; required for `deterministic_first`, with fallback + warn) |
 | 4. ClassifierStage | `stages/classifier.rs` | Yes | Direct response, rejection, or routing target |
 
 The NLP and overlay stages are gated on config (`pipelines.<name>.nlp`,
-`pipelines.<name>.overlay` + `nlp_ordering: "deterministic_first"`), so the
-default pipeline — filter → classifier — is byte-identical to the historical
-two-stage shape until a deployment opts in. See §"Natural-language processing
-spine" below for the NLP/overlay integration in full.
+non-empty `pipelines.<name>.overlay_models` + `nlp_ordering:
+"deterministic_first"`), so the default pipeline — filter → classifier — is
+byte-identical to the historical two-stage shape until a deployment opts in.
+`deterministic_first` without `overlay_models` warns and falls back to
+`llm_first` (today's behavior) — the ordering never ships without the
+residual-consultation machinery that justifies it. See §"Natural-language
+processing spine" below for the NLP/overlay integration in full.
 
 The classifier stage has two modes. Flat mode performs a single LLM call that
 returns structured JSON — a direct response, a rejection, or a `RoutingTarget`.
@@ -158,11 +163,11 @@ exactly once and published to the same typed store.
 
 | File | Role |
 |------|------|
-| `types.rs` | `RouterRequest`, `RouterResponse`, `RouterMessage`, `RouterChoice`, `Usage` — serde-serializable OpenAI protocol. `RouterRequest` also carries the routing fields the owning llama-server reads: `instance`, `snapshot`, `id_slot` |
-| `pipeline_types.rs` | `StageDecision`, `PipelineStage`, `StageVerdict`, `StageDecisionProducer`, `StageMetadata` (typed metadata handoff keys, incl. the `nlp_parse` handoff key; `StageMetadata::empty()` is the single empty-metadata constructor), `PiiVerdict` |
+| `types.rs` | `RouterRequest`, `RouterResponse`, `RouterMessage`, `RouterChoice`, `Usage` — serde-serializable OpenAI protocol. `RouterRequest` also carries the routing fields the owning llama-server reads: `instance`, `snapshot`, `id_slot`, plus the LoRA `adapter` name a request serves under |
+| `pipeline_types.rs` | `StageDecision`, `PipelineStage`, `StageVerdict`, `StageDecisionProducer`, `StageMetadata` (typed metadata handoff keys, incl. the `nlp_parse` handoff key; `StageMetadata::empty()` is the single empty-metadata constructor), `NlpResidual` (the typed residual handover under `nlp_residual`, built from the confidence summary + the signals' uncovered roles — never raw string keys), `PiiVerdict` |
 | `pipeline.rs` | `PipelineOrchestrator`, `PipelineResult`, `RoutingTarget` (url/model/group/params/filter_thinking/retry/stream/timeouts/fallbacks, plus `instance`/`snapshot`/`id_slot` request fields), `STAGE_DECISION_KEY` |
 | `error.rs` | `ServerError` — the single typed server error (Bind / Http / Addr / transparent `DispatchError`) |
-| `config.rs` | `RouterConfig` + sub-config types, split into re-exported submodules: `addr`, `builder` (`PipelineParams`, `NlpConfig`, `NlpOrdering`, `TargetMatchMode`), `classification` (`ClassificationTree`/`ClassificationNode`/`ClassificationChild`), `compiled_tree` (`CompiledTree`), `escalation` (`EscalationLadderConfig`, `FrontierConfig`, `GroupMember`, `ModelGroup`), `filters` (`RejectPatterns`/`PatternEntry`/`FilterAction`/`FilterScope`/`ConfidenceGate`), `fleet` (`RoleParams`), `ledger_group`, `models` (`ModelEntry`, `ModelBinding`, `InstanceProfile`), `normalize` (the raw-`Value` normalization passes), `refine_policy` (`RouterRefinePolicy`), `rounds`, `routing` (`RoutingConfig`, `RouteRef` with `always_route`), `runtime`, `serving`, `tree_reload`. Top-level `ledger`/`session`/`review`/`overlay` sections (`LedgerConfig`, `ReviewConfig`, `OverlayConfig`). `ModelEntry` adds the weights source for managed models (`weights`, `hf_repo`, `hf_file`), an `onnx` block (`fluent_onnx::config::OnnxConfig` — makes the model router-served from the ort registry instead of a llama-server), and `is_managed()`. Top-level `gguf_dir` is the admin-CLI GGUF root; `sidecar.resume_ttl_s` bounds resume snapshot lifetime |
+| `config.rs` | `RouterConfig` + sub-config types, split into re-exported submodules: `addr`, `builder` (`PipelineParams`, `NlpConfig`, `NlpOrdering`, `TargetMatchMode`), `classification` (`ClassificationTree`/`ClassificationNode`/`ClassificationChild`), `compiled_tree` (`CompiledTree`), `escalation` (`EscalationLadderConfig`, `FrontierConfig`, `GroupMember`, `ModelGroup`), `filters` (`RejectPatterns`/`PatternEntry`/`FilterAction`/`FilterScope`/`ConfidenceGate`), `fleet` (`RoleParams`), `ledger_group`, `models` (`ModelEntry`, `ModelBinding`, `InstanceProfile`), `normalize` (the raw-`Value` normalization passes), `refine_policy` (`RouterRefinePolicy`), `rounds`, `routing` (`RoutingConfig`, `RouteRef` with `always_route`), `runtime`, `serving`, `tree_reload`. Top-level `ledger`/`session`/`review`/`overlay` sections (`LedgerConfig`, `ReviewConfig`, `OverlayConfig`). `ModelEntry` adds the weights source for managed models (`weights`, `hf_repo`, `hf_file`), the `snapshot` save-mode block (`SnapshotConfig`/`SnapshotMode`, beside `weights`), and `is_managed()`. In-process ONNX models are *not* `ModelEntry`s — they are declared in the top-level `onnx` role section and managed by the ort registry (`RouterConfig::onnx`). `RoleEntry` binds serving models via `roles.<role>.models` and likewise carries an optional `snapshot` block. Top-level `gguf_dir` is the admin-CLI GGUF root; `sidecar.resume_ttl_s` bounds resume snapshot lifetime |
 | `normalize.rs` | Thin adapter over `fluent_llm::openai`: OpenAI JSON ↔ `RouterRequest`/`RouterResponse`, `error_response()`, `messages_to_json()`, `parse_openai_stream_delta`. Re-attaches the routing fields the shared normalizer strips |
 | `routing_context.rs` | `RoutingContext` — the routing fields (`model`/`instance`/`snapshot`/`id_slot`/…) read from the query string and the JSON body (body wins via `merge`), then carried as params through normalize and dispatch |
 | `target_match.rs` | `TargetMatcher` — the in-group complexity ladder: `build_self_assessment_prompt`, `parse_self_assessment`, `candidates_for_group`, `start_index`/`is_match` selection core. DRY-shared by the flat classifier path (`stages/classifier.rs`) and the classification-tree engine (`stages/tree/engine.rs`). `GroupRecency` — the bounded (4096) `(session, group) → model` recency map with interned keys and a monotonic sequence for total-ordered eviction |
@@ -172,7 +177,7 @@ exactly once and published to the same typed store.
 | File | Role |
 |------|------|
 | `stages/deterministic.rs` | `DeterministicPreFilter` — delegates to `DeterministicFilterEngine`; slash-command dispatch (`/help`, `/stats`, `/checkpoint`) |
-| `stages/nlp.rs` | `NlpStage` — runs `spacy-rs` on the inbound text and publishes per-sentence `RoutingSignal`s (predicate/subject/object + interlingua ids) under the `"nlp_parse"` handoff key. Enrichment, never a gate. Deterministic-first ladder: base `[ArcEager, Rule]` always runs; gated refine `[Encoder, Llm]` (in that order) on confidence OR task-value via `RefinePolicy` (fallback keeps base); `annotation_fetch` bridges a `ChatBackend` to `spacy_rs::LlmFetchSync` |
+| `stages/nlp.rs` | `NlpStage` — runs `spacy-rs` on the inbound text and publishes per-sentence `RoutingSignal`s (predicate/subject/object + interlingua ids) under the `"nlp_parse"` handoff key, plus the confidence summary and the typed `NlpResidual`. Enrichment, never a gate. Deterministic-first ladder: base `[ArcEager, Rule]` always runs; gated refine `[Encoder, Llm]` (in that order) on confidence OR task-value via `RefinePolicy` (fallback keeps base); `chat_backend_to_fetch_sync` bridges a `ChatBackend` to `spacy_rs::LlmFetchSync` (via `process_sync_with_refine_and_reason`) |
 | `stages/overlay.rs` | `OverlayStage` — under `nlp_ordering: "deterministic_first"`, scores the parser's residuals with configured onnx overlays (`PromptRouterOverlay`, from two-tower `zero_shot_routing` sessions via `ort::disambiguation_overlays`) and publishes route hints the classifier merges as deterministic context. Enrichment, never a gate |
 | `stages/classifier.rs` + `stages/classifier/` | `ClassifierStage` — single LLM call (flat) or the `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds the `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the "Dispatch rules" section of the system prompt from routes marked `always_route`. `stages/classifier/action.rs` (`ClassifierAction`) types the flat verdict; `stages/classifier/prompt.rs` renders the route list and threshold substitutions |
 | `stages/tree/` | `ClassificationEngine` — recursive nested-tree evaluation; filter / classifier / terminal / fallback nodes; `tree_path` audit trail; `kind = "tree_node"` records. Split into `mod.rs` (re-exports), `engine.rs` (the recursive walk + `cost` + the `match_interlingua` filter that dispatches on the NLP stage's parsed interlingua ids), `verdict.rs` (`TreeClassifierVerdict` + `parse_tree_verdict`), `decisions.rs` (`TreeOutcome`/`TreeEvaluation` + the `StageDecision` builders); the classifier-node prompt builders live in `config/classification.rs` (`ClassificationNode::build_prompt`) |
@@ -233,7 +238,7 @@ exactly once and published to the same typed store.
 | File | Role |
 |------|------|
 | `server.rs` | `RouterServer` (`WorkUnit`) — hyper HTTP/1.1 accept loop on tokio; assembles `ServerDeps` and fans out to the `server/` submodule; `serve_http` is `pub(crate)` for integration tests; runs each `InstanceManager`'s boot reconcile + residency task from the attached `InstancePool` (in a drained `JoinSet`, never detached) |
-| `server/handler.rs` | HTTP routing + request orchestration; `ServerDeps`: pipelines, routes, models, stats, cache, ledger, plan/rigor routes, sessions, ladders, context_cache, mock_dispatch, http_client, `instance_pool`, `api_key_env_name`, `supervisor`, `onnx` (+ `onnx_llm_backend`), `fleet` (the unified llama+onnx weights facade), `coordinator` + `coordinator_gate`, `review_worker` + `review_fetch`, `entity_link_worker`, `roles`/`groups` routing-vocabulary tables, `workflow_recorder`, `frame_gate`. Merges query-string routing fields into the body (via `RoutingContext`: body wins), resolves the model-id grammar (`<model_id>[:<instance|group|latest>]`) in `resolve_pipeline`, and routes the management/model-less endpoints |
+| `server/handler.rs` | HTTP routing + request orchestration; `ServerDeps`: pipelines, routes, models, stats, `max_payload`, `classifier`, cache, ledger, plan/rigor routes, sessions, ladders, context_cache, mock_dispatch, http_client, `instance_pool`, `api_key_env_name`, `supervisor`, `onnx` (+ `onnx_llm_backend`), `fleet` (the unified llama+onnx weights facade), `coordinator` + `coordinator_gate`, `review_worker` + `review_fetch`, `entity_link_worker`, `roles`/`groups` routing-vocabulary tables, `workflow_recorder`, `frame_gate`. Merges query-string routing fields into the body (via `RoutingContext`: body wins), resolves the model-id grammar (`<model_id>[:<instance|group|latest>]`) in `resolve_pipeline`, and routes the management/model-less endpoints |
 | `server/cors.rs` | Permissive CORS header helpers (`CORS_ALLOW_*` + `add_cors_headers`) applied to API responses |
 | `server/instances_api.rs` | The public `/instances` management facade: aggregate envelope across models, `POST /instances`, per-instance ops (delete/pin/unpin/resume/no-resume/resize/snapshot), `/memory` compat reshape, `/v1/models`, `/props`, model-less proxies (`/tokenize`, `/detokenize`, `/apply-template`, `/control`); management API-key enforcement; query parse/percent-decode helpers |
 | `server/dispatch.rs` | `handle_dispatch` / `dispatch_real` — primary + `fallbacks` chain through `ChatBackend` (each wrapped in `RetryBackend`), short-circuit on non-retryable errors, response cache read/write, workflow extraction, allocate-on-503 via the `InstancePool` |
@@ -242,10 +247,10 @@ exactly once and published to the same typed store.
 | `server/review.rs` | `ReviewWorker` — the async parse-review boundary. A credit-gated `WorkerPool<ReviewJob>` via the shared `CreditGatedPool` primitive (the ledger-tier-worker pattern) that runs `spacy_rs::review_prompt` (taxonomy-grounded) + `apply_corrections` against the `SqliteCorrectionIndex` and writes corrected annotations back with `HumanReview` provenance. The review call is served by the onnx LLM with the `ParseReview` grammar (constrained at generation). Served at `POST`/`GET /v1/sessions/{id}/review-parse`; an optional PII pre-filter (`fluent_onnx::pii::PiiSpanDetector` or the `RegexPiiDetector` baseline) flags review candidates when `review.auto_enqueue` is on |
 | `server/entity_link.rs` | `EntityLinkWorker` — the async entity-link overlay. A credit-gated `WorkerPool<EntityLinkJob>` via the shared `CreditGatedPool` primitive that scores unresolved PROPN spans against the boot-baked ColBERT `EntitySimilarityIndex` (via the injected `EntityLinkScorer` seam) and writes **candidates only** to the `overlay_candidates` ledger table — never a doc-level `interlingua_entity_id` write at parse time |
 | `streaming.rs` | `StreamingHandler` — SSE delta formatting for OpenAI-compatible streaming chunks; cross-chunk think-block filtering via `StreamingThinkFilter` |
-| `kv_cache.rs` | Two-tier: `HotSnapshotIndex` (RAM LRU over `common_core::cache::LoadCache`, metadata only) + `ColdSnapshotIndex` (disk tree `model/adapter/session`); `SnapshotStore` composes both; the router never reads/writes raw KV bytes — it manages filesystem layout + sidecar metadata for llama.cpp slot save/restore |
-| `instances/` | Instance-pool grammar generation + validation (`instance_grammar_string`, `validate_instances`, `is_valid_instance_name`) and the sidecar. Split into `mod.rs` (grammar/validation helpers + test stub), `client.rs` (`InstanceClient` — one server's `/instances` API over raw `reqwest`, `HttpClass`-classified; `InstanceError`/`InstanceInfo`/`InstanceTotals`/`SnapshotInfo`), `manager.rs` (`InstanceManager` — boot reconcile; per-instance `resume` map; `is_sleeping` residency probe; `list_with_fallback` synthesizing a resident footprint for plain — weights-only, no-instance-grammar — models; `weights_bytes`; `ensure_instance` on-demand creation; `ensure_group` allocate-on-503), and `pool.rs` (`InstancePool` — the router's aggregate facade: `<model_id>:<name>` ids, 64-bit-summed `total`, `/v1/models`, op proxies; footprint-weighted eviction `Evictable::{Context, Model}` + `evict_to_fit`; load-time admission control `make_room_for`; `resume` snapshot/expiry and control ops; the residency engine `run_residency`). The public `/instances` surface lives in `instances/api.rs` |
-| `supervisor.rs` + `supervisor/` | `LlamaServerSupervisor` + `ManagedServer` (`LlamaServerSpec`, `build_server_args`, `free_port`, `resolve_llama_server`) — resolves `llama-server` from `$PATH` (or `LLAMA_SERVER`), spawns one process per managed model on a free localhost port (`--alias`, `-m`/`-hf`, `--instance` grammar, `--slot-save-path`, `--api-key`), waits for `/health`, and supervises each child (logs its output, restarts with capped backoff; post-boot **liveness** supervision probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only models with a pinned instance (`start_all`); lazy models load on demand via `ensure_running` (spawn-locked, no double-spawn) and unload via `unload` (spec stays registered). `supervisor/adopt.rs` reaps pre-existing servers into management at boot; `supervisor/health.rs` owns the liveness probes. **Onnx-declared models (`ModelEntry.onnx`) are excluded** — they are served by the ort registry (`ort.rs`), never by a llama-server |
-| `ort.rs` | The onnx composition root (crate `fluent-onnx`). `build_onnx_registry(config)` turns every `ModelEntry.onnx` block into a boot-built `OrtSessionRegistry` (validates task-vs-model-file sanity and `weights`/`hf_repo`/`instances` exclusivity; `resident: true` loads at boot, else lazily; fail-open to an empty registry or to plain-HTTP entries when the `onnx` feature is off). **`onnx_chat_backend(key)`** wraps a `CausalLm` session as the generative `fluent_llm::client::ChatBackend` (`OnnxRole::Llm`, `onnx/llm`) — the single wiring point for the LLM rung, review, enrichment, tiering, summarization, ranking, and retrieval; `grammar_from_json_schema` (in `fluent-onnx`) constrains structured decodes. Onnx CPU-RAM residency runs on the shared `LlmResidencyEngine` (`fluent-llm::runtime`), the parity sibling of the llama sidecar loop. The encoder-role builders — `disambiguation_overlays` (`PromptRouterOverlay` per `overlay_models` key), `nlp_encoder_fetch` (the legacy trained-encoder `EncoderFetchSync`), `pii_prefilter` (PII-Detector or `RegexPiiDetector` baseline), `colbert_entity_scorer` (entity-link `EntitySimilarityIndex`), `onnx_colbert_reranker`/`ColbertChartReranker` (chart MaxSim re-rank) — remain as feature-gated legacy seams behind `cfg(feature = "onnx")`; no encoder-role model is configured in the reference deployment |
+| `kv_cache.rs` | Two-tier snapshot **metadata index** (the router never reads/writes raw KV bytes — the fork owns them): `HotSnapshotIndex` (RAM LRU over `common_core::cache::LoadCache`) + `ColdSnapshotIndex` (in-memory `(model, adapter, session)` map with a TTL predicate sweep; derives each record's `file_path` to the fork's slot-save layout). `SnapshotIdentity` (weights fingerprint + quant + fork version, filled from the `ModelEntry` by `snapshot_identity_for_model`); `KvSnapshot::check_compatible` rejects restores on known-vs-known hash/quant/version drift (`ModelHashMismatch`/`QuantMismatch`/`VersionMismatch` — unknown fields never reject); `SnapshotStore::save_snapshot_for_model` requires an adapter name when a LoRA is attached (`AdapterRequired`), so base and base+LoRA records never share a key |
+| `instances/` | Instance-pool grammar generation + validation (`instance_grammar_string`, `validate_instances`, `is_valid_instance_name`) and the sidecar. Split into `mod.rs` (grammar/validation helpers + test stub), `client.rs` (`InstanceClient` — one server's `/instances` API over raw `reqwest`, `HttpClass`-classified; `InstanceError`/`InstanceInfo`/`InstanceTotals`/`SnapshotInfo`), `manager.rs` (`InstanceManager` — boot reconcile; per-instance `resume` map; `is_sleeping` residency probe; `list_with_fallback` synthesizing a resident footprint for plain — weights-only, no-instance-grammar — models; `weights_bytes` + `load_bytes_for` (weights + the incoming KV window via `estimated_kv_bytes`); `snapshot_mode` resolved at build (model entry, else sorted serving roles, else `Auto`); `ensure_instance` on-demand creation; `ensure_group` allocate-on-503), and `pool.rs` (`InstancePool` — the router's aggregate facade: `<model_id>:<name>` ids, 64-bit-summed `total`, `/v1/models`, op proxies; footprint-weighted eviction `Evictable::{Context, Model}` + `evict_to_fit`; load-time admission control `make_room_for` against the allocation budget (`total − minimum_remaining`, never the reactive watermark floor); `resume` snapshot/expiry and control ops; the residency engine `run_residency`). The public `/instances` surface lives in `instances/api.rs` |
+| `supervisor.rs` + `supervisor/` | `LlamaServerSupervisor` + `ManagedServer` (`LlamaServerSpec`, `build_server_args`, `free_port`, `resolve_llama_server`) — resolves `llama-server` from `$PATH` (or `LLAMA_SERVER`), spawns one process per managed model on a free localhost port (`--alias`, `-m`/`-hf`, `--instance` grammar, `--slot-save-path`, `--api-key`), waits for `/health`, and supervises each child (logs its output, restarts with capped backoff; post-boot **liveness** supervision probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only models with a pinned instance (`start_all`); lazy models load on demand via `ensure_running` (spawn-locked, no double-spawn) and unload via `unload` (spec stays registered). `supervisor/adopt.rs` reaps pre-existing servers into management at boot; `supervisor/health.rs` owns the liveness probes. **Onnx-declared models (top-level `onnx` fleet section, not `ModelEntry`s) are excluded** — they are served by the ort registry (`ort.rs`), never by a llama-server |
+| `ort.rs` | The onnx composition root (crate `fluent-onnx`). `build_onnx_registry(config)` turns the top-level `onnx` fleet section into a boot-built `OrtSessionRegistry` (validates task-vs-model-file sanity; `resident: true` loads at boot, else lazily; fail-open to an empty registry or to plain-HTTP entries when the `onnx` feature is off). **`onnx_chat_backend(key)`** wraps a `CausalLm` session as the generative `fluent_llm::client::ChatBackend` (`OnnxRole::Llm`, `onnx/llm`) — the single wiring point for the LLM rung, review, enrichment, tiering, summarization, ranking, and retrieval; `grammar_from_json_schema` (in `fluent-onnx`) constrains structured decodes. Onnx CPU-RAM residency runs on the shared `LlmResidencyEngine` (`fluent-llm::runtime`), the parity sibling of the llama sidecar loop. The encoder-role builders — `disambiguation_overlays` (`PromptRouterOverlay` per `overlay_models` key), `nlp_encoder_fetch` (the legacy trained-encoder `EncoderFetchSync`), `pii_prefilter` (PII-Detector or `RegexPiiDetector` baseline), `colbert_entity_scorer` (entity-link `EntitySimilarityIndex`), `onnx_colbert_reranker`/`ColbertChartReranker` (chart MaxSim re-rank) — remain as feature-gated legacy seams behind `cfg(feature = "onnx")`; no encoder-role model is configured in the reference deployment |
 | `concept_store_sqlite.rs` | `SqliteConceptStore` — the router's durable `fluent_concept::ConceptStore` over the shared ledger SQLite connection (`interlingua_concepts` table, keyed `(namespace, canonical_name)` with the content-addressed `id` + coral `node_id` cross-reference). The **second home** of the one-loader/two-homes YaGO design; boot reconciliation locks it equal to coral's content-addressed graph |
 | `ledger/orchestrator.rs` (affinity) | Composes `AffinityScheduler` / `ScheduledTask` from `fluent_concurrency::affinity` directly (no router-level scheduler shim) — opt-in via `ledger.orchestrator.affinity_cap` |
 | `summarization.rs` | `ResultScorer` + `Summarizer` — `WorkUnit` impls that call an LLM (via `Arc<dyn ChatBackend>`) to score/condense responses; feeds the ledger's lazy LOD tiers |
@@ -255,7 +260,7 @@ exactly once and published to the same typed store.
 | `logging.rs` | Two-stream `tracing` subscriber: operational JSON/console rolling file + the durable audit stream (separate retention, always JSON, gated on `router.audit=info`) |
 | `frontier/modes.rs` | `EscalationMode` ladder taxonomy — `Filter`, `Question`, `Team`, `Turnover` (D8; the old `FrontierMode` enum is gone), serde snake_case; `FrontierResult` and `AuditEntry`. Taxonomy and audit types only — the runtime lives in `dispatch/escalation/` (mode implementations in `dispatch/escalation/modes.rs`) |
 | `overlay.rs` + `overlay/canonical.rs` | The overlay plane's pure, model-free data: `CanonicalFormTable` — a versioned, offline-clustered `(surface lemma → canonical lemma)` table for predicate canonicalization, loaded like the lemmatizer blob and consulted by plain lookup (never an inference call), keeping the "ids are pure functions of content" contract |
-| `instances/traits.rs` | The unified fleet adapters — `LlamaWeights`/`LlamaContext`/`LlamaKVCache` implement the shared `fluent-llm::runtime` control-plane traits (`LlmWeights`/`LlmContext`/`LlmKVCache`), composed by `LlmFleet` (llama adapters + onnx implementors) so `/instances`, `/v1/models`, and unload drive both fleets uniformly |
+| `instances/traits.rs` | The unified fleet adapters — `LlamaWeights`/`LlamaContext`/`LlamaKVCache` implement the shared `fluent-llm::runtime` control-plane traits (`LlmWeights`/`LlmContext`/`LlmKVCache`), composed by `LlmFleet` (llama adapters + onnx implementors) so `/instances`, `/v1/models`, and unload drive both fleets uniformly. `LlamaContext::evict` snapshots resume contexts only in `auto` snapshot mode (`manual` destroys without saving and audits `evict_skip_snapshot`). `LlamaKVCache` carries the adapter + expected identity (`with_store`/`with_adapter`/`with_expected_identity`) and its restore rejects on identity drift |
 | `telemetry.rs` | Structured telemetry events with a controlled vocabulary (`ToolName`/`ProviderCategory`/`FeatureName`), the `TelemetryEvent` enum, and `TelemetrySink` (`TracingSink`/`NoopSink`) — no free strings, no PII |
 | `transforms/` | `TransformStrategy` trait + the `rewrite_text_messages` and `insert_string_map` shared helpers: `NoTransform`, `PiiAnonymize`, `DecomposeToAnonymizedHypothetical`, `DecomposeToSubtasks` (metadata intentionally bespoke — its `subtasks` payload is a structured object, not a string map), `CodewordAnonymizer`, `Sanitize`, `SecretMask` |
 | `ranking.rs` | The ranking pipeline — `SalienceSignal`/`SalienceScorer` (weighted, pure), `pagerank` (minimal power-iteration over the `interlingua_index` co-reference + `parent_id` graph), `SalienceSource`/`LedgerSalienceProvider` (read-only snapshot), `rank_candidates` (salience prefilter to top-K then **one** grammar-constrained call over the shortlist; degrades to salience order), and `SalienceRanker` (the composable step the retrieval service composes) |
@@ -408,6 +413,7 @@ pipeline pre-filter and the write-path scrubber (`ledger_guard.rs`).
 | `parse_json_response` | `fluent_llm::parse` | `routes/rigor/` (red/judge parses), `dispatch/escalation/assemble.rs` |
 | `Decomposer` | `fluent_llm` | `dispatch/escalation/modes.rs` — question-mode hypothetical decomposition |
 | `first_accept_in_order` / `first_accept_in_order_sync` | `fluent-concurrency::ladder` | The spacy-rs annotation ladder (async + the sync `run_ladder_sync`), the escalation `Ladder::try_escalate`, the `BackendChain` complete/stream-complete fallback, and the `dispatch_real` fallback walk. **`TargetMatcher::match_target` is the documented exception** — a different ladder shape (start-index skip + last-member-always-wins + per-rung audit emission) |
+| `CachedEmbeddingProvider::with_adapter` | `fluent-llm::embeddings` | The embedding cache is namespaced by `(model, adapter)`: a hit in one namespace never serves another, key-equality reuse is preserved inside a namespace, and the default (no adapter) keys byte-identically to before |
 | `NlpPipeline` / `AnnotationRung` / `CorrectionIndex` / `lemma_grep` | `spacy-rs` (+ `fluent-concept` for `ConceptStore`) | `NlpStage` runs the pipeline; `SqliteConceptStore` / `SqliteCorrectionIndex` implement the `fluent-concept::ConceptStore` / spacy-rs `CorrectionIndex` traits; `PreferredSenseIndex` / `SqlitePreferredSenseIndex` are ledger-owned (`ledger::frame_index`, M2a); `match_interlingua` tree filters dispatch on the ids; `FrameResolutionWorker` resolves + promotes frames; the router-owned `retrieval` module (M4 — hit tagging, fuzzy axis, `cross_check` beside `NodeRetrievalService`) composes spacy-rs' pure `lemma_grep` |
 | `OrtSessionRegistry` / `OrtLlmSession` / `grammar` | `fluent-onnx` (`OrtLlmSession`), `fluent-llm::onnx_session` (`OrtSessionRegistry`) | `ort.rs` builds the registry; `onnx_chat_backend` wraps a `CausalLm` session as the generative `ChatBackend` (LLM rung / review / enrichment / tiering / ranking / retrieval); onnx residency runs on the shared `LlmResidencyEngine`; `JsonObjectGrammar`/`JsonArrayGrammar` constrain structured decodes. Legacy encoder seams: `nlp_encoder_fetch`, `pii_prefilter`, `colbert_entity_scorer`, `onnx_colbert_reranker`, `disambiguation_overlays` |
 
@@ -545,20 +551,26 @@ Each pipeline entry controls:
 
 The two decision stages and their knobs are above. The opt-in NLP/ONNX
 stages are enabled the same way (`build_named_pipeline_with_backend_onnx_and_nlp`):
-`nlp: true` inserts the `NlpStage` (requires a ledger for the concept store;
-without one it fails open) which runs the deterministic-first ladder — base
-`[ArcEager, Rule]` unconditional, then gated refine `[Encoder, Llm]` on
-confidence OR task-value via `RefinePolicy` (fallback keeps base). `overlay:
-true` + `nlp_ordering: "deterministic_first"` inserts the `OverlayStage` for
-residual scoring, and `classifier_retry_max` wraps the classifier in a
+`nlp: true` inserts the `NlpStage` (needs a concept store, built when NLP is
+enabled; without one it warns and fails open to `en_default`) which runs the
+deterministic-first ladder — base `[ArcEager, Rule]` unconditional, then gated
+refine `[Encoder, Llm]` on confidence OR task-value via `RefinePolicy`
+(fallback keeps base). Non-empty `overlay_models` + `nlp_ordering:
+"deterministic_first"` inserts the `OverlayStage` for residual scoring (a
+`deterministic_first` without `overlay_models` warns and falls back to
+`llm_first`), and `classifier_retry_max` wraps the classifier in a
 `RetryClassifier`. `nlp_ordering` (`"llm_first"` default ⇒ `RefinePolicy::Always`,
 `"deterministic_first"` ⇒ `RefinePolicy::OnUncertain` with default thresholds,
 unless `pipelines.<name>.refine_policy` overrides) and the explicit
 `refine_policy` knob (`mode`/`min_overall`/`min_role_coverage`/`refine_on_ties`/
 `min_token_score`/`refine_on_unresolved_critical_role`/
 `refine_on_unresolved_propn`/`refine_on_collision_note` — each independently
-tunable) control when the refiner is consulted. The generative ONNX LLM
-(`models.<key>.onnx.task = "causal_lm"`, the `onnx/llm` role) is wired once and
+tunable) control when the refiner is consulted. The stage publishes the typed
+`NlpResidual` handover alongside the parse and confidence summary; the default
+pipeline without these knobs is byte-identical to filter → classifier.
+
+The generative ONNX LLM (the `onnx/llm` role in the top-level `onnx` fleet
+section) is wired once and
 reached everywhere through `onnx_llm_backend()` — the LLM rung, review
 (`ParseReview` grammar), enrichment, tiering, summarization, ranking, and
 retrieval — the single `ChatBackend` wiring point. `encoder_model` (a legacy
@@ -710,9 +722,10 @@ names are internal. `ModelEntry::llama_model_name` resolves the server's
 `--alias`, and dispatch always sends the translated id (`<llama-name>[:<instance>]`).
 Roles are the routing vocabulary: `model_groups` members name roles (fanning
 out per request to the models bound to them) or literal keys, plus the
-`last`/`any` availability sentinels. Membership lives on the model side —
-`models.<model>.roles` names the roles a model serves (roles carry no
-candidate list). Each role owns its run configuration —
+`last`/`any` availability sentinels. Membership lives on the role side —
+`roles.<role>.models` lists the model keys serving the role, while
+`models.<model>.roles` is a params-only per-role override map (never
+membership). Each role owns its run configuration —
 `roles.<role>.params` (the full run block; the fleet block is
 `roles.default.params`, which also supplies the supervisor's spawn defaults)
 and `roles.<role>.instances` (the fleet named pool). A model's `roles`
@@ -812,21 +825,40 @@ with zero contexts are unloaded (`unload_empty_models`).
 
 **Load-time admission control.** `ensure_target_ready` (called on every
 dispatch) never spawns or wakes a cold model without first making room:
-`make_room_for(model_key, weights_bytes)` runs the same eviction until
-`used + required ≤ budget`. Residency is judged by the *actual* resident
-state, not the process flag — a plain model whose fork has slept its weights
-out of VRAM (`/props is_sleeping = true`) is treated as not resident, so
-waking it reloads its weights only after room is freed. This prevents the
-OOM abort a naive wake causes when a second big model has since loaded.
+`make_room_for(model_key, required_bytes)` runs the same eviction until
+`used + required ≤ budget`, where `required_bytes` is the full incoming
+footprint — weights *plus* the KV window the new context needs
+(`InstanceManager::load_bytes_for`: its own profile's window, else the
+largest configured window, else weights alone). The budget is the
+pre-admission hard gate `allocation_limit()` (`total − minimum_remaining`);
+the `vram_low_watermark_bytes` floor belongs to the reactive residency loop
+only and never gates admission, so a load that fits allocation stays quiet
+even past watermark-implied usage. Residency is judged by the *actual*
+resident state, not the process flag — a plain model whose fork has slept
+its weights out of VRAM (`/props is_sleeping = true`) is treated as not
+resident, so waking it reloads its weights only after room is freed. This
+prevents the OOM abort a naive wake causes when a second big model has since
+loaded. The shared engine carries the two budgets separately (reactive
+budget at construction, admission budget via `with_admission_budget`); a
+missing budget disables that half entirely.
 
 **Resume (preserve-on-evict).** An instance can be marked `resume` (config
 profile, `POST /instances` body, or `POST /instances/<model>:<name>/resume`).
 When a `resume` context is evicted it is first KV-snapshotted under the
 deterministic name `<name>-resume` (best-effort; a failed save logs and the
-eviction still proceeds); the session transcript is already durable in the
-ledger, so KV + text log together preserve the workload. A later dispatch to
-the same instance with `snapshot=<name>-resume` and the same `session_id`
-restores it. Coral Router concludes the work is done — clearing the flag and
+eviction still proceeds) — **but only in `auto` snapshot mode**. `manual`
+mode destroys without saving and audits the skip (`evict_skip_snapshot`):
+the operator asked for no silent saves. The mode resolves per model from
+`models.<model>.snapshot`, else its serving roles' `snapshot` blocks
+(`roles.<role>.snapshot`, first sorted role that sets one wins), else `Auto`;
+`snapshot: {mode: manual|auto}` is unset-everywhere-`Auto`, so existing
+deployments behave exactly as today. The session transcript is already
+durable in the ledger, so KV + text log together preserve the workload. A later
+dispatch to the same instance with `snapshot=<name>-resume` and the same `session_id`
+restores it — subject to the identity gate: a stored record whose known
+weights hash / quant / fork version differs from the live server rejects
+instead of serving stale KV (unknown fields never reject, so legacy rows
+always restore). Coral Router concludes the work is done — clearing the flag and
 deleting the snapshot — explicitly via `POST /instances/<model>:<name>/no-resume`
 or automatically once the context is idle past `sidecar.resume_ttl_s` (checked
 each residency pass). `resume` is moot on `pinned` instances, which are never
@@ -1038,9 +1070,9 @@ them.
 two-phase** ladder (ROADMAP_20260831_ARCEAGER): base phase `first_accept_in_order`
 over `[ArcEagerRung, RuleRung]` (always produces a validated parse), then — when
 `RefinePolicy` says so — refine phase `first_accept_in_order` over
-`[EncoderRung, LlmRung]` (in that order; `LlmRung` via `stages/nlp.rs::annotation_fetch`
-and the general-purpose onnx LLM default, `EncoderRung` feature-gated and not
-configured by default). Refinement is **gated** on confidence (low
+`[EncoderRung, LlmRung]` (in that order; `LlmRung` via
+`stages/nlp.rs::chat_backend_to_fetch_sync` and the general-purpose onnx LLM
+default, `EncoderRung` feature-gated and not configured by default). Refinement is **gated** on confidence (low
 `overall`/`role_coverage`/near-tie `oracle_margins`) **OR** task-value (a
 routing-critical role present but interlingua-unresolved, a PROPN with no entity
 id, a surfaced `CollisionNote` — each behind its own `refine_on_*` flag) and
@@ -1059,7 +1091,7 @@ The `NlpStage` carries the effective `RefinePolicy` (derived from
 `nlp_ordering` unless `refine_policy` overrides, via `RouterRefinePolicy` DTO
 `config/refine_policy.rs` field-for-field mirror with `From` both ways —
 `spacy-rs` never deserializes router config directly, F5) and threads it to
-`process_sync_with_confidence`; `NlpStage::new` defaults to `Off`
+`process_sync_with_refine_and_reason`; `NlpStage::new` defaults to `Off`
 unconditionally, the builder is the single source of `Always`/`OnUncertain`
 (F1/R6); `confidence_summary` treats refined products
 (`Llm`/`Encoder` sources that are *not* confidence-bearing) as `1.0` by
@@ -1205,13 +1237,19 @@ yes/no).
 
 ## Config format (`env/coral-router.json`)
 
-The file is a deployment artifact, not a test oracle — no test freezes its
-contents. Its shape (see `env/coral-router.json.example`):
+The file is a deployment artifact. Its *normalized* shape is pinned by the
+byte-parity oracle (`config_normalize_parity` snapshots under
+`src/router/tests/data/config_normalize/`, re-recorded with
+`UPDATE_SNAPSHOTS=1` only after an intentional change and a hand review of
+the diff) — not its raw contents, which remain operator-owned. Its shape
+(see `env/coral-router.json.example`):
 
 - **Roles are the routing vocabulary.** Groups reference roles (expanded per
-  request to the models bound to them). Membership lives on the model side:
-  `models.<model>.roles` names the roles a model serves — roles carry no
-  candidate list. Each role owns its run block (`roles.<role>.params`; the
+  request to the models bound to them). Membership lives on the role side:
+  `roles.<role>.models` lists the model keys serving the role;
+  `models.<model>.roles` is a params-only per-role override map (thinking
+  policy, `max_ctx` cap, sampling `params`) that never confers membership.
+  Each role owns its run block (`roles.<role>.params`; the
   fleet block is `roles.default.params`) and its fleet named pool
   (`roles.<role>.instances`). Roles other than `default` declare only deltas:
   at parse, the fleet run block sparse-merges over every other role's
@@ -1225,7 +1263,11 @@ contents. Its shape (see `env/coral-router.json.example`):
   boot warns loudly over non-objects. Declaration-only keys (`num_ctx`,
   `parallel`, `sleep_idle_seconds`, `rope_freq_base`) never reach the request
   body.
-- **Duties name groups, never models.** `pipelines.<p>.classifier_group`,
+- **Snapshot mode is per model or role.** `models.<model>.snapshot` or
+  `roles.<role>.snapshot` (`{mode: manual|auto}`, default `auto`) controls
+  whether eviction snapshots resume contexts before destroying them; the
+  model entry wins, else the first sorted serving role that sets one.
+- **Duties name groups, never models.**
   `ledger.group`, `charts.selector_group`, and the classification root's
   `model_group` resolve through the groups table (first servable member
   serves, sentinels skipped), so one group rebinding moves every duty

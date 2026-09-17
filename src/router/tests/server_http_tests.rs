@@ -304,13 +304,25 @@ async fn routed_dispatch_answer_recorded_in_ledger_lod0() {
     let nodes = ledger
         .get_session_nodes("sess-m5-routed", 10)
         .expect("session nodes");
-    assert_eq!(nodes.len(), 1, "request + result recorded as one node");
+    assert_eq!(nodes.len(), 2, "request + answer recorded as two nodes");
+    let user = nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::User))
+        .expect("user node");
     assert_eq!(
-        nodes[0].lod[0], "the ledger answer",
+        user.lod[0], "What is 2+2?",
+        "the user LOD0 survives the turn"
+    );
+    let answer = nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::Assistant))
+        .expect("assistant node");
+    assert_eq!(
+        answer.lod[0], "the ledger answer",
         "matched target's answer must be durably recorded at LOD0"
     );
-    assert_eq!(nodes[0].accepted, Some(true));
-    assert_eq!(nodes[0].acceptance_score, Some(1.0));
+    assert_eq!(answer.accepted, Some(true));
+    assert_eq!(answer.acceptance_score, Some(1.0));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -354,15 +366,19 @@ async fn ledger_with_summarizer_attached_derives_lod() {
     let nodes = ledger
         .get_session_nodes("sess-m2-summarizer", 10)
         .expect("session nodes");
-    assert_eq!(nodes.len(), 1);
+    assert_eq!(nodes.len(), 2);
+    let answer = nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::Assistant))
+        .expect("assistant node");
     assert_eq!(
-        nodes[0].lod[0], "the summarized ledger answer",
+        answer.lod[0], "the summarized ledger answer",
         "answer durably recorded at LOD0"
     );
 
     // The Summarizer is attached: ensure_lod succeeds and derives from LOD0.
     let derived = ledger
-        .ensure_lod(nodes[0].id.expect("node id"), 2)
+        .ensure_lod(answer.id.expect("node id"), 2)
         .expect("lazy LOD derivation succeeds (Summarizer attached)");
     assert_eq!(derived.lod[2], "lazy summary");
 
@@ -494,6 +510,107 @@ async fn routed_stream_dispatch_answer_recorded_on_completion() {
         recorded.is_some(),
         "streamed answer must be finalized into the ledger LOD0"
     );
+}
+
+// -- Handler persistence: last user message + assistant appends -----------
+
+/// Persistence selects the same last user message the dispatch path uses:
+/// with two user turns in one request, the recorded user node is the last.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn server_handler_persists_last_user_message() {
+    use crate::ledger::ContentNodeLedger;
+
+    let upstream = upstream_answering("four").await;
+    let config = make_config(&upstream, false, false, 5000, 2000);
+    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let server = Box::pin(spawn_test_server_with_ledger(
+        config,
+        Some(mock_for("What is 2+2?", "four")),
+        None,
+        Some(Arc::clone(&ledger)),
+    ))
+    .await;
+
+    let body = json!({
+        "model": "fast",
+        "messages": [
+            {"role": "user", "content": "please ignore this"},
+            {"role": "user", "content": "What is 2+2?"},
+        ],
+        "session_id": "sess-handler-last"
+    });
+    let response = post_chat(&server.base_url(), body, 5000)
+        .await
+        .expect("request must complete");
+    assert_eq!(response.status(), 200);
+
+    let nodes = ledger
+        .get_session_nodes("sess-handler-last", 10)
+        .expect("session nodes");
+    let users: Vec<_> = nodes
+        .iter()
+        .filter(|n| n.role == Some(fluent_types::OriginRole::User))
+        .collect();
+    assert_eq!(users.len(), 1);
+    assert_eq!(
+        users[0].lod[0], "What is 2+2?",
+        "persisted request is the last user message, like dispatch"
+    );
+    let assistants: Vec<_> = nodes
+        .iter()
+        .filter(|n| n.role == Some(fluent_types::OriginRole::Assistant))
+        .collect();
+    assert_eq!(assistants.len(), 1);
+    assert_eq!(assistants[0].lod[0], "four");
+}
+
+/// A classifier direct response (no dispatch) appends an assistant node too:
+/// this drives the exact `classifier_response` branch body
+/// (`record_ledger_result` + step completion) the handler runs for direct
+/// answers. (Over HTTP the builder always wires the classification tree,
+/// whose verdicts route or reject — flat direct-respond is unreachable
+/// there; the branch body is identical either way.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn server_handler_direct_response_appends_assistant_node() {
+    use crate::ledger::ContentNodeLedger;
+    use crate::server::handler::{record_ledger_request, record_ledger_result};
+
+    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let node = record_ledger_request(
+        Some(&ledger),
+        "sess-handler-direct".to_string(),
+        "req-1".to_string(),
+        "say hi".to_string(),
+    )
+    .await
+    .expect("request recorded");
+    // Exactly what the `classifier_response` branch passes: accepted, 1.0,
+    // the direct text.
+    record_ledger_result(
+        Some(&ledger),
+        Some(node),
+        true,
+        Some(1.0),
+        "direct hi".to_string(),
+    )
+    .await;
+
+    let nodes = ledger
+        .get_session_nodes("sess-handler-direct", 10)
+        .expect("session nodes");
+    assert_eq!(nodes.len(), 2, "direct response appends, never overwrites");
+    let user = nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::User))
+        .expect("user node");
+    assert_eq!(user.lod[0], "say hi");
+    let answer = nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::Assistant))
+        .expect("assistant node");
+    assert_eq!(answer.lod[0], "direct hi");
+    assert_eq!(answer.accepted, Some(true));
+    assert_eq!(answer.parent_id, Some(node), "linked to the request node");
 }
 
 // -- Scenario 2: SSE stream -----------------------------------------------

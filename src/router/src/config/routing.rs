@@ -131,6 +131,11 @@ pub struct RoleEntry {
     /// in no role's `models` list serves only its entry default.
     #[serde(default)]
     pub models: Vec<String>,
+    /// Snapshot save mode for the role's serving models
+    /// (`snapshot: {mode: manual|auto}`). `None` contributes nothing; a
+    /// model's own entry wins over every role binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<crate::config::SnapshotConfig>,
 }
 
 impl RoleEntry {
@@ -343,15 +348,109 @@ pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<Stri
     keys.first().map(|k| (*k).clone())
 }
 
-/// Cheapest-passing member selection over expanded members — the shared core
-/// behind the static group resolution: the cheapest member whose base
-/// `models` entry's `intelligence` meets `min_complexity`, else the cheapest
-/// member in the group. Availability sentinels (`last`/`any`) carry no
-/// static meaning: they are skipped when literal members exist, and a
-/// sentinel-only group resolves to the fleet default member
-/// ([`fleet_default_member`]) — the runtime recency expansion supersedes
-/// that whenever the target-match ladder runs. Returns the full member key
-/// (possibly qualified).
+/// Viability-ordered member selection over expanded members — the shared core
+/// behind static group resolution and every availability-sentinel fallback.
+///
+/// Ordering (task-value, never producer confidence): intelligence-passing
+/// members first (else the whole pool when nothing passes), then resident
+/// members first (via `is_resident` over the base key; `None` treats every
+/// candidate as resident, which reduces exactly to the legacy
+/// cheapest-passing rule), then cheapest `cost_input + cost_output` with a
+/// key-ascending tie-break for determinism. Availability sentinels
+/// (`last`/`any`) carry no static meaning: they are skipped when literal
+/// members exist, and a sentinel-only group resolves over every servable
+/// model (the `default` template excluded) — the runtime recency expansion
+/// supersedes that whenever the target-match ladder runs. Returns the full
+/// member key (possibly qualified).
+#[allow(clippy::implicit_hasher)]
+pub fn select_viable_member(
+    group: &str,
+    members: &[String],
+    models: &HashMap<String, ModelEntry>,
+    min_complexity: Option<u8>,
+    is_resident: Option<&dyn Fn(&str) -> bool>,
+) -> Option<String> {
+    // Sentinel-only group (no literal members): every servable model is a
+    // candidate, key-sorted for a deterministic tie-break base; the viability
+    // ordering below decides. Otherwise the literal members compete.
+    let sentinel_only = !members
+        .iter()
+        .any(|m| m != "last" && m != "any");
+    let pool: Vec<&String> = if sentinel_only {
+        let mut fleet: Vec<&String> = models
+            .keys()
+            .filter(|k| k.as_str() != "default")
+            .collect();
+        fleet.sort();
+        fleet
+    } else {
+        members
+            .iter()
+            .filter(|m| *m != "last" && *m != "any")
+            .collect()
+    };
+    if pool.is_empty() {
+        return None;
+    }
+
+    // Passing subset (intelligence bar); when nothing passes the whole pool
+    // competes so dispatch still has a cheapest target. Refs borrow from
+    // `members` / `models` — no allocation.
+    let passing: Vec<&String> = pool
+        .iter()
+        .copied()
+        .filter(|key| {
+            let (base, _) = split_model_key(key);
+            models
+                .get(base)
+                .map(|m| m.intelligence)
+                .is_some_and(|i| i >= min_complexity.unwrap_or(0))
+        })
+        .collect();
+    let pool: Vec<&String> = if passing.is_empty() { pool } else { passing };
+
+    let is_resident_key = |key: &String| {
+        let (base, _) = split_model_key(key);
+        is_resident.is_none_or(|probe| probe(base))
+    };
+    let cost_of = |key: &String| {
+        let (base, _) = split_model_key(key);
+        models
+            .get(base)
+            .map_or(f64::MAX, |m| m.cost_input + m.cost_output)
+    };
+    // Inline comparator (not a `let` binding): `min_by` needs a higher-ranked
+    // `FnMut(&Item, &Item)`, which only infers at the call site.
+    let entry_key = pool
+        .iter()
+        .min_by(|a, b| {
+            is_resident_key(a)
+                .cmp(&is_resident_key(b))
+                .reverse()
+                .then_with(|| {
+                    cost_of(a)
+                        .partial_cmp(&cost_of(b))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| a.cmp(b))
+        })?;
+    if sentinel_only {
+        tracing::info!(target: "router.config",
+            group = %group,
+            model = %entry_key,
+            "sentinel-only group resolves to the viable fleet member statically; runtime recency supersedes",
+        );
+    } else {
+        tracing::info!(target: "router.config", group = %group, model = %entry_key, "group member resolved (viability match)");
+    }
+    Some((*entry_key).clone())
+}
+
+/// Cheapest-passing member selection over expanded members — kept as the
+/// signature-compatible wrapper over [`select_viable_member`] with no
+/// residency signal, so literal groups with no liveness input resolve
+/// byte-identically to before. Sentinel-only groups now resolve by viability
+/// (intended behavior change: lexicographic accident → viable member).
 #[allow(clippy::implicit_hasher)]
 pub fn select_group_member(
     group: &str,
@@ -359,60 +458,7 @@ pub fn select_group_member(
     models: &HashMap<String, ModelEntry>,
     min_complexity: Option<u8>,
 ) -> Option<String> {
-    let model_keys: Vec<&String> = members
-        .iter()
-        .filter(|m| *m != "last" && *m != "any")
-        .collect();
-
-    if model_keys.is_empty() {
-        // Sentinel-only group: the fleet default serves statically.
-        if let Some(fallback) = fleet_default_member(models) {
-            tracing::info!(target: "router.config",
-                group = %group,
-                model = %fallback,
-                "sentinel-only group resolves to the fleet default member statically; runtime recency supersedes",
-            );
-            return Some(fallback);
-        }
-        return None;
-    }
-
-    tracing::debug!(target: "router.config",
-        group = %group,
-        model_count = model_keys.len(),
-        min_complexity = ?min_complexity,
-        "resolving group member"
-    );
-
-    let intelligence = |key: &String| {
-        let (base, _) = split_model_key(key);
-        models.get(base).map(|m| m.intelligence)
-    };
-    let passing: Vec<&&String> = model_keys
-        .iter()
-        .filter(|n| intelligence(n).is_some_and(|i| i >= min_complexity.unwrap_or(0)))
-        .collect();
-
-    let cost = |key: &String| {
-        let (base, _) = split_model_key(key);
-        models
-            .get(base)
-            .map_or(f64::MAX, |m| m.cost_input + m.cost_output)
-    };
-    let cheapest = |a: &&&String, b: &&&String| {
-        cost(a)
-            .partial_cmp(&cost(b))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    };
-
-    if passing.is_empty() {
-        tracing::debug!(target: "router.config", group = %group, "no candidates passed complexity filter, falling back to cheapest in group");
-        model_keys.iter().min_by(cheapest).map(|s| (*s).clone())
-    } else {
-        let entry_key = passing.into_iter().min_by(cheapest)?;
-        tracing::info!(target: "router.config", group = %group, model = %entry_key, "group member resolved (complexity match)");
-        Some((*entry_key).clone())
-    }
+    select_viable_member(group, members, models, min_complexity, None)
 }
 
 /// The `model_group` a route resolves through — the route's own `RouteRef`
@@ -565,13 +611,16 @@ impl RoutingConfig {
     /// already picked the weights (`member` → `rt`); the role composes its
     /// params legs over the entry (the role run block, then the model-side
     /// override) and picks the window: a role that binds the model
-    /// dispatches through the role's synthesized pool profile (its own
-    /// residency group); an unbound member serves through the entry default.
-    /// An explicit member qualifier (`base:point`) wins for the where — the
+    /// dispatches through the role's window (`<base>:<role>`); an unbound
+    /// member serves through the entry default. A **pinned** role forces its
+    /// qualifier wherever it binds — the profile is boot-materialized, so
+    /// the target resolves identically pre/post boot. An unpinned role
+    /// qualifies only through a materialized profile (best effort). An
+    /// explicit member qualifier (`base:point`) wins for the where — the
     /// target keeps its qualifier and the role is only recorded for the
     /// audit trail. Unknown roles and unserved models keep the target as
     /// built (graceful at dispatch — boot validation fails closed on the
-    /// same shapes instead).
+    /// unfillable pinned shapes instead).
     fn apply_terminal_role(&self, rt: &mut RoutingTarget, member: &str, role: &str) {
         rt.role = Some(role.to_string());
         let (base, qualifier) = split_model_key(member);
@@ -587,14 +636,16 @@ impl RoutingConfig {
         let Some(role_entry) = self.roles.get(role) else {
             return;
         };
-        // A bound role dispatches through its synthesized profile (the role
-        // name keys the pool profile materialized at boot); an unbound
-        // member serves through the entry default point.
+        // A bound role dispatches through its window. Forcing a qualifier
+        // the pool never materialized would target a nonexistent fork
+        // instance, so the force applies only where the role binds the
+        // model (the pool then carries the profile post-boot).
         let role_profile = role_entry.serves(base)
-            && entry
-                .effective_pool()
-                .iter()
-                .any(|p| p.name.as_deref() == Some(role));
+            && (role_entry.pinned
+                || entry
+                    .effective_pool()
+                    .iter()
+                    .any(|p| p.name.as_deref() == Some(role)));
         let mut qualified = if role_profile {
             RoutingTarget::from_model_entry_instance(base, entry, role)
         } else {
@@ -617,12 +668,16 @@ impl RoutingConfig {
 
     /// Boot reference check for terminal roles (wired into the startup gate;
     /// unit-tested here): every terminal declaring `role` names a `roles`
-    /// entry, and every bare model member of its group serves that role.
-    /// Deterministic: routes visit in sorted order, so the first reported
-    /// failure is stable. Explicitly qualified members, sentinels, onnx
-    /// members, and unknown model keys are skipped here — owned by the
-    /// explicit-point rule, the stateful climb, the onnx path, and the
-    /// reference check respectively.
+    /// entry. An unserved bare member fails boot only when the pinned role
+    /// can never fill it — a group with no runtime flexibility (no `last` /
+    /// `any` sentinel, which recency may resolve to a serving model) names
+    /// a window that will never exist. Sentinel-bearing groups may fill a
+    /// pinned role at runtime, and unpinned roles fall back to the entry
+    /// default at dispatch, so both pass. Deterministic: routes visit in
+    /// sorted order, so the first reported failure is stable. Explicitly
+    /// qualified members, sentinels, onnx members, and unknown model keys
+    /// are skipped here — owned by the explicit-point rule, the stateful
+    /// climb, the onnx path, and the reference check respectively.
     pub fn validate_terminal_roles(
         &self,
         tree: &crate::config::ClassificationTree,
@@ -641,18 +696,26 @@ impl RoutingConfig {
             let group_name = group.unwrap_or_else(|| route.clone());
             let mut members = self.role_expanded_members(&group_name);
             members.sort();
-            for member in members {
+            let runtime_flexible = members.iter().any(|m| m == "last" || m == "any");
+            for member in &members {
                 if member == "last" || member == "any" {
                     continue;
                 }
-                let (base, qualifier) = split_model_key(&member);
+                let (base, qualifier) = split_model_key(member);
                 if qualifier.is_some() || self.onnx_keys.contains(base) {
                     continue;
                 }
                 if !self.models.contains_key(base) {
                     continue;
                 }
-                if let Err(reason) = self.model_serves_role(base, &role) {
+                if self.model_serves_role(base, &role).is_ok() {
+                    continue;
+                }
+                let pinned = self.roles.get(&role).is_some_and(|r| r.pinned);
+                if pinned && !runtime_flexible {
+                    let reason = self
+                        .model_serves_role(base, &role)
+                        .expect_err("serves check just failed");
                     return Err(format!("terminal route '{route}' role '{role}': {reason}"));
                 }
             }

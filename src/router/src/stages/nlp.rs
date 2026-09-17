@@ -279,6 +279,12 @@ impl NlpStage {
                     .filter_map(|s| s.interlingua.clone())
                     .collect();
                 let summary = confidence_summary_with_reason(&annotation, Some(refine_reason));
+                // The typed residual handover: the summary plus the signals'
+                // uncovered roles, published beside the existing keys so the
+                // overlay and the classifier share one record.
+                let residual = crate::pipeline_types::NlpResidual::from_summary_and_signals(
+                    &summary, &signals,
+                );
                 // A3a: router owns the per-reason counters; pipeline is pure
                 // and only returns the reason — record here.
                 self.metrics.record(refine_reason);
@@ -292,6 +298,7 @@ impl NlpStage {
                 meta.set_nlp_parse(&signals);
                 meta.set_nlp_interlingua(&interlingua);
                 meta.set_nlp_confidence(&summary);
+                meta.set_nlp_residual(&residual);
                 // L3: the per-token confidence rides along so the review
                 // endpoint can rebuild the parse with token fidelity.
                 if let Some(tc) = annotation.token_confidence() {

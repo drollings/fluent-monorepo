@@ -300,6 +300,11 @@ type CacheShard = Arc<Mutex<LruCache<String, Arc<Vec<f32>>>>>;
 pub struct CachedEmbeddingProvider<T: EmbeddingProvider> {
     inner: T,
     shards: [CacheShard; CACHE_SHARDS],
+    /// LoRA adapter namespace. `None` (the default) is today's behavior:
+    /// the key is `(model, text)`. `Some` extends the key to
+    /// `(model, adapter, text)`, so a hit in one namespace never serves
+    /// another while key-equality reuse is preserved inside a namespace.
+    adapter: Option<String>,
 }
 
 /// Lock-striping shard count. Pure concurrency tuning — NOT a quality,
@@ -328,11 +333,34 @@ impl<T: EmbeddingProvider> CachedEmbeddingProvider<T> {
         Self {
             inner,
             shards: [(); CACHE_SHARDS].map(|()| Arc::new(Mutex::new(LruCache::new(per_shard)))),
+            adapter: None,
         }
     }
 
+    /// Serve the `adapter` namespace: base and base+LoRA embeddings never
+    /// share a key. The default (no adapter) keys exactly as before.
+    #[must_use]
+    pub fn with_adapter(mut self, adapter: impl Into<String>) -> Self {
+        self.adapter = Some(adapter.into());
+        self
+    }
+
+    /// The adapter namespace, if any.
+    #[must_use]
+    pub fn adapter(&self) -> Option<&str> {
+        self.adapter.as_deref()
+    }
+
     fn cache_key(&self, text: &str) -> String {
-        let bytes = content_hash_with_model(text, self.inner.name());
+        // The model side of the hash already namespaces providers by model
+        // name; the adapter extends it with a `\x00` separator that can never
+        // collide with a bare model name, so `None` keys are byte-identical
+        // to today.
+        let model = match &self.adapter {
+            Some(adapter) => format!("{}\x00{adapter}", self.inner.name()),
+            None => self.inner.name().to_string(),
+        };
+        let bytes = content_hash_with_model(text, &model);
         hex_encode(&bytes)
     }
 

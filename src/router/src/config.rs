@@ -32,11 +32,15 @@ pub use self::filters::{
     PatternEntry, RejectPatterns,
 };
 pub use self::fleet::RoleParams;
-pub use self::models::{InstanceProfile, ModelEntry, ModelRoleOverride};
+pub use self::models::{
+    InstanceProfile, ModelEntry, ModelRoleOverride, SnapshotConfig, SnapshotMode,
+};
 pub use self::normalize::warn_on_non_object_params;
 pub use self::refine_policy::{RouterRefineMode, RouterRefinePolicy};
 #[allow(unused_imports)]
 pub(crate) use self::root::materialize_effective_pool;
+#[allow(unused_imports)]
+pub(crate) use self::root::default_resident_point;
 pub use self::root::split_model_key;
 pub use self::root::{
     detect_device_vram_total, models_serving_role, overlay_params, resolve_group_head_key,
@@ -48,8 +52,8 @@ pub use self::root::{
 };
 pub use self::rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 pub use self::routing::{
-    expanded_group_members, fleet_default_member, select_group_member, strip_model_prefix,
-    RequestedRef, RoleEntry, RouteRef, RoutingConfig, MODEL_PREFIX,
+    expanded_group_members, fleet_default_member, select_group_member, select_viable_member,
+    strip_model_prefix, RequestedRef, RoleEntry, RouteRef, RoutingConfig, MODEL_PREFIX,
 };
 pub use common_core::constants::default_true;
 

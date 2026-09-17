@@ -485,7 +485,7 @@ fn wire_of(routing: &RoutingConfig, key: &str) -> String {
 #[test]
 fn expansion_without_sentinels_is_identity() {
     let routing = routing_with_members("g", &["a", "b"], &["a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false);
+    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
@@ -494,14 +494,14 @@ fn expansion_last_with_recorded_success_orders_first() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "b"]);
     let recency = GroupRecency::new();
     recency.record("s", "g", &wire_of(&routing, "b"));
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
 }
 
 #[test]
 fn expansion_last_without_success_skips_sentinel() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false);
+    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
@@ -510,23 +510,23 @@ fn expansion_last_pointing_at_removed_member_skips() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a"]);
     let recency = GroupRecency::new();
     recency.record("s", "g", "zzz-removed-model");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string()]);
 }
 
 #[test]
 fn expansion_any_orders_loaded_first() {
     let routing = routing_with_members("g", &["a", "b"], &["any", "a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|m| m == "b");
+    let expanded = expand_group_keys(&routing, "g", None, None, &|m| m == "b", None);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|m| m == "a");
+    let expanded = expand_group_keys(&routing, "g", None, None, &|m| m == "a", None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
 #[test]
 fn expansion_any_all_down_keeps_config_order() {
     let routing = routing_with_members("g", &["a", "b"], &["any", "a", "b"]);
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false);
+    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["a".to_string(), "b".to_string()]);
 }
 
@@ -536,8 +536,341 @@ fn expansion_any_onnx_members_count_as_loaded() {
     routing.onnx_keys.insert("onnx/llm".to_string());
     // No server is running anywhere; the onnx role still orders first via the
     // existing registry readiness (no new probe).
-    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false);
+    let expanded = expand_group_keys(&routing, "g", None, None, &|_| false, None);
     assert_eq!(expanded, vec!["onnx/llm".to_string(), "a".to_string()]);
+}
+
+/// Fixture with separated capability and cost axes: `a` weak but pricey
+/// (the config head), `b` capable and cheap, `c` most capable, pricey, and
+/// pool-managed (weights set, so coldness vetoes it for cheap duties).
+fn last_viable_routing() -> RoutingConfig {
+    let mut routing = routing_with_members("g", &["a", "b", "c"], &["last", "a", "b", "c"]);
+    let entry = routing.models.get_mut("a").expect("a");
+    entry.intelligence = 1;
+    entry.cost_input = 9.0;
+    entry.cost_output = 9.0;
+    let entry = routing.models.get_mut("b").expect("b");
+    entry.intelligence = 5;
+    entry.cost_input = 1.0;
+    entry.cost_output = 1.0;
+    let entry = routing.models.get_mut("c").expect("c");
+    entry.intelligence = 9;
+    entry.cost_input = 5.0;
+    entry.cost_output = 5.0;
+    entry.weights = Some("/models/c.gguf".into());
+    routing
+}
+
+#[test]
+fn last_viable_session_pick_serves_when_viable() {
+    let routing = last_viable_routing();
+    let recency = GroupRecency::new();
+    recency.record("s", "g", &wire_of(&routing, "b"));
+    let expanded = expand_group_keys(
+        &routing,
+        "g",
+        Some(&recency),
+        Some("s"),
+        &|_| false,
+        Some(4),
+    );
+    assert_eq!(
+        expanded,
+        vec!["b".to_string(), "a".to_string(), "c".to_string()],
+        "viable session pick orders first"
+    );
+}
+
+#[test]
+fn last_viable_stale_pick_falls_through_with_single_audit() {
+    let routing = last_viable_routing();
+    let recency = GroupRecency::new();
+    // Session pick `a` is stale (intelligence 1 < complexity 4); the global
+    // pick `b` serves instead. The session miss audits exactly once.
+    recency.record("s", "g", &wire_of(&routing, "a"));
+    recency.record_any(&wire_of(&routing, "b"));
+    let (expanded, logs) = crate::test_support::capture_logs(|| {
+        expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, Some(4))
+    });
+    assert_eq!(
+        expanded,
+        vec!["b".to_string(), "a".to_string(), "c".to_string()],
+        "stale session pick vetoed, global pick wins"
+    );
+    assert_eq!(
+        logs.iter().filter(|l| l.contains("last-empty-fallback")).count(),
+        1,
+        "stale session recency audits exactly once"
+    );
+}
+
+#[test]
+fn last_viable_absent_recency_promotes_viable_first() {
+    let routing = last_viable_routing();
+    // No history anywhere and nothing running: viability (cheapest passing)
+    // promotes `b` ahead of the pricey config head `a`.
+    let (expanded, logs) = crate::test_support::capture_logs(|| {
+        expand_group_keys(&routing, "g", None, None, &|_| false, None)
+    });
+    assert_eq!(
+        expanded,
+        vec!["b".to_string(), "a".to_string(), "c".to_string()],
+        "viable-first orders ahead of config order on cold start"
+    );
+    assert_eq!(
+        logs.iter().filter(|l| l.contains("last-empty-fallback")).count(),
+        1,
+        "missing recency still audits once (coverage signal, not outcome)"
+    );
+}
+
+#[test]
+fn last_viable_classifier_key_serves_global_when_fittable() {
+    let routing = last_viable_routing();
+    let recency = GroupRecency::new();
+    recency.record_any(&wire_of(&routing, "b"));
+    // `b` is remote (no weights): always fittable, no load to trigger.
+    let picked = viable_last_key(&routing, Some(&recency), &|_| false);
+    assert_eq!(picked.as_deref(), Some("b"));
+}
+
+#[test]
+fn last_viable_classifier_key_vetoes_cold_managed_pick() {
+    let routing = last_viable_routing();
+    let recency = GroupRecency::new();
+    recency.record_any(&wire_of(&routing, "c"));
+    // `c` is pool-managed but cold: the cheap duty must not cold-load it.
+    // Fleet fallback prefers resident-cheapest (`b`, not the vetoed `c`).
+    let picked = viable_last_key(&routing, Some(&recency), &|_| false);
+    assert_eq!(picked.as_deref(), Some("b"), "cold managed pick vetoed");
+}
+
+#[test]
+fn last_viable_classifier_key_ghost_falls_back_to_fleet() {
+    let routing = last_viable_routing();
+    let recency = GroupRecency::new();
+    recency.record_any("ghost-wire");
+    let picked = viable_last_key(&routing, Some(&recency), &|m| m == "b");
+    // Unresolvable wire vetoed; fleet viable with `b` running: all fittable,
+    // cheapest (`b`) wins.
+    assert_eq!(picked.as_deref(), Some("b"));
+}
+
+#[test]
+fn last_viable_classifier_key_empty_recency_uses_fleet_viable() {
+    let routing = last_viable_routing();
+    let picked = viable_last_key(&routing, None, &|_| false);
+    assert_eq!(picked.as_deref(), Some("b"));
+}
+
+/// Calibration for the recency fallback (measurement only).
+///
+/// Replays empty / stale / valid history against a fixed capability split
+/// (`a` too weak, `b` capable and cheap, `c` capable but pool-managed and
+/// cold) at complexity 4. The control rows (valid session pick that passes
+/// the capability bar) must never emit the coverage audit; every other row
+/// must still land on a capability-passing head. Precision (fallback implies
+/// a viable head) and recall (session-viable implies no fallback) are
+/// asserted as exact bounds so later decision caching cannot silently change
+/// the threshold. Each row runs twice to pin determinism.
+#[test]
+fn last_calibration_fallback_precision_recall() {
+    struct Case {
+        name: &'static str,
+        session_key: &'static str,
+        session_wire: Option<String>,
+        global_wire: Option<String>,
+        use_recency: bool,
+        expected_head: &'static str,
+        expect_fallback: bool,
+        session_viable_present: bool,
+    }
+    let wire_b = wire_of(&last_viable_routing(), "b");
+    let wire_a = wire_of(&last_viable_routing(), "a");
+    let wire_c = wire_of(&last_viable_routing(), "c");
+    let cases = vec![
+        Case {
+            name: "valid session capable-cheap serves",
+            session_key: "s",
+            session_wire: Some(wire_b.clone()),
+            global_wire: None,
+            use_recency: true,
+            expected_head: "b",
+            expect_fallback: false,
+            session_viable_present: true,
+        },
+        Case {
+            name: "valid session most-capable serves",
+            session_key: "s",
+            session_wire: Some(wire_c.clone()),
+            global_wire: None,
+            use_recency: true,
+            expected_head: "c",
+            expect_fallback: false,
+            session_viable_present: true,
+        },
+        Case {
+            name: "stale session yields to viable global",
+            session_key: "s",
+            session_wire: Some(wire_a.clone()),
+            global_wire: Some(wire_b.clone()),
+            use_recency: true,
+            expected_head: "b",
+            expect_fallback: true,
+            session_viable_present: false,
+        },
+        Case {
+            name: "ghost session falls back to viable",
+            session_key: "s",
+            session_wire: Some("ghost-wire".to_string()),
+            global_wire: None,
+            use_recency: true,
+            expected_head: "b",
+            expect_fallback: true,
+            session_viable_present: false,
+        },
+        Case {
+            name: "both rungs stale fall back to viable",
+            session_key: "s",
+            session_wire: Some(wire_a.clone()),
+            global_wire: Some(wire_a.clone()),
+            use_recency: true,
+            expected_head: "b",
+            expect_fallback: true,
+            session_viable_present: false,
+        },
+        Case {
+            name: "unknown session with viable global still audits",
+            session_key: "s-new",
+            session_wire: None,
+            global_wire: Some(wire_b.clone()),
+            use_recency: true,
+            expected_head: "b",
+            expect_fallback: true,
+            session_viable_present: false,
+        },
+        Case {
+            name: "empty history falls back to viable",
+            session_key: "s",
+            session_wire: None,
+            global_wire: None,
+            use_recency: true,
+            expected_head: "b",
+            expect_fallback: true,
+            session_viable_present: false,
+        },
+        Case {
+            name: "missing recency channel falls back to viable",
+            session_key: "s",
+            session_wire: None,
+            global_wire: None,
+            use_recency: false,
+            expected_head: "b",
+            expect_fallback: true,
+            session_viable_present: false,
+        },
+    ];
+    // Seed the "unknown session" row with a record from another session so
+    // the global rung is genuinely populated while the requesting session
+    // has no history.
+    let mut fallback_total = 0;
+    let mut fallback_viable = 0;
+    let mut session_viable_total = 0;
+    let mut session_viable_clean = 0;
+    let mut control_fallbacks = 0;
+    let mut control_total = 0;
+    let mut mismatches = Vec::new();
+    for case in &cases {
+        let routing = last_viable_routing();
+        let recency = GroupRecency::new();
+        if case.use_recency {
+            if let Some(wire) = &case.session_wire {
+                // Session records always land on "s" except the unknown-session
+                // row, which seeds "s-other" to keep the requester unknown.
+                let session = if case.name == "unknown session with viable global still audits" {
+                    "s-other"
+                } else {
+                    "s"
+                };
+                recency.record(session, "g", wire);
+            }
+            if let Some(wire) = &case.global_wire {
+                recency.record_any(wire);
+            }
+        }
+        let recency_opt = if case.use_recency { Some(&recency) } else { None };
+        let run_once = |routing: &RoutingConfig, recency: Option<&GroupRecency>| {
+            crate::test_support::capture_logs(|| {
+                expand_group_keys(routing, "g", recency, Some(case.session_key), &|_| false, Some(4))
+            })
+        };
+        let (expanded, logs) = run_once(&routing, recency_opt);
+        let (expanded2, _) = run_once(&routing, recency_opt);
+        if expanded != expanded2 {
+            mismatches.push(format!("case {}: expansion not deterministic", case.name));
+        }
+        let head = expanded.first().cloned().unwrap_or_default();
+        if head != case.expected_head {
+            mismatches.push(format!(
+                "case {}: head {head:?}, expected {:?}",
+                case.name, case.expected_head
+            ));
+        }
+        let fallbacks = logs.iter().filter(|l| l.contains("last-empty-fallback")).count();
+        let fired = fallbacks > 0;
+        if fired != case.expect_fallback {
+            mismatches.push(format!(
+                "case {}: fallback fired={fired} ({} events), expected {}",
+                case.name, fallbacks, case.expect_fallback
+            ));
+        }
+        if fallbacks > 1 {
+            mismatches.push(format!(
+                "case {}: {} fallback events, expected at most 1",
+                case.name, fallbacks
+            ));
+        }
+        // Viability of the head: passes the capability bar at complexity 4.
+        let head_viable = routing
+            .models
+            .get(head.as_str())
+            .is_some_and(|e| e.intelligence >= 4);
+        if fired {
+            fallback_total += 1;
+            if head_viable {
+                fallback_viable += 1;
+            }
+        }
+        if case.session_viable_present {
+            session_viable_total += 1;
+            control_total += 1;
+            if fired {
+                control_fallbacks += 1;
+            } else {
+                session_viable_clean += 1;
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "calibration mismatches:\n{}",
+        mismatches.join("\n")
+    );
+    assert_eq!(
+        (control_total, control_fallbacks),
+        (2, 0),
+        "control (valid session-viable) must emit zero fallbacks"
+    );
+    assert_eq!(
+        (fallback_viable, fallback_total),
+        (6, 6),
+        "fallback precision must be 1.0: every fallback lands on a viable head"
+    );
+    assert_eq!(
+        (session_viable_clean, session_viable_total),
+        (2, 2),
+        "fallback recall must be 1.0: session-viable never falls back"
+    );
 }
 
 #[test]
@@ -556,7 +889,7 @@ fn expanded_candidates_yield_literal_targets_only() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "any", "zzz-unknown"]);
     let recency = GroupRecency::new();
     recency.record("s", "g", &wire_of(&routing, "a"));
-    let cands = expanded_candidates_for_group(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let cands = expanded_candidates_for_group(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     let keys: Vec<&str> = cands.iter().map(|c| c.model_key.as_str()).collect();
     // Sentinels never become candidates; unknown literals are skipped exactly
     // as the literal path skips members with no `models` entry.
@@ -827,7 +1160,7 @@ fn unknown_session_falls_back_to_head() {
     let recency = GroupRecency::new();
     // Another session's recency must not leak in.
     recency.record("other-session", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -840,7 +1173,7 @@ fn known_session_expands_last_in_place() {
     let routing = last_group_with_sentinel();
     let recency = GroupRecency::new();
     recency.record("s1", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -854,7 +1187,7 @@ fn last_naming_non_member_is_skipped() {
     let recency = GroupRecency::new();
     // Recorded wire id is no longer a group member (evicted model).
     recency.record("s1", "g", "zzz-removed-model");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s1"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -937,14 +1270,14 @@ fn last_never_fires_without_session_recency() {
         let routing = last_any_routing(&["a", "last", "b"]);
         let recency = GroupRecency::new();
         seed(&recency);
-        let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+        let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
         assert_eq!(expanded, head, "control case {name} falls back to the head");
     }
     // The no-session channel is the same fallback.
     let routing = last_any_routing(&["a", "last", "b"]);
     let recency = GroupRecency::new();
     recency.record("s", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), None, &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), None, &|_| false, None);
     assert_eq!(
         expanded, head,
         "no session channel falls back even with records present"
@@ -956,13 +1289,13 @@ fn any_orders_loaded_first_around_last_fallback() {
     let routing = last_any_routing(&["last", "any", "a", "b"]);
     let recency = GroupRecency::new();
     // No recency anywhere: Last falls back (audited), Any partitions.
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b");
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b", None);
     assert_eq!(
         expanded,
         vec!["b".to_string(), "a".to_string()],
         "loaded-first ordering survives the Last fallback"
     );
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(
         expanded,
         vec!["a".to_string(), "b".to_string()],
@@ -978,7 +1311,7 @@ fn ordering_never_outranks_capability() {
     let routing = last_any_routing(&["last", "a", "b"]);
     let recency = GroupRecency::new();
     recency.record("s", "g", "b");
-    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false);
+    let expanded = expand_group_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     assert_eq!(expanded, vec!["b".to_string(), "a".to_string()]);
     let cands = candidates(&[("b", 5, 1.0), ("a", 1, 1.0)]);
     for _ in 0..2 {

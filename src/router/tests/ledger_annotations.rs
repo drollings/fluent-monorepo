@@ -369,29 +369,23 @@ fn node_store_hash_change_invalidates_annotations() {
         .unwrap()
         .is_some());
 
-    // Mutating LOD0 changes the hash (record_result → with_node_mut →
-    // ensure_lod_eager recomputes).
+    // Appending the turn's answer leaves the request node's LOD0 (and its
+    // hash) untouched: the claim stays reachable under the same key. The
+    // answer rides its own node with its own stamped hash.
     store
         .record_result(id, true, Some(0.9), "display the sales report")
         .unwrap();
     let hash_after = store.snapshot(id).unwrap().content_hash;
-    assert_ne!(hash_before, hash_after, "content change → new hash");
-
-    // Under the new hash the old claim is unreachable (invalidation is
-    // keying, not a scheduler).
+    assert_eq!(hash_before, hash_after, "append never mutates the request");
     assert!(
         annotations
             .read(hash_after, "frame:report")
             .unwrap()
-            .is_none(),
-        "old annotation invalidated by the hash change"
+            .is_some(),
+        "claim under the stable hash stays reachable"
     );
-    // The old-hash row remains (audit), and re-derivation under the new
-    // hash writes fresh.
-    assert!(annotations
-        .read(hash_before, "frame:report")
-        .unwrap()
-        .is_some());
+    // Re-derivation under the stable hash supersedes in place (audit rows
+    // retained), and the appended answer node carries its own stamped hash.
     store
         .write_annotation(
             id,
@@ -407,4 +401,17 @@ fn node_store_hash_change_invalidates_annotations() {
         .read(hash_after, "frame:report")
         .unwrap()
         .is_some());
+    let nodes = store.get_session_nodes("sess", 10).unwrap();
+    let answer = nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::Assistant))
+        .expect("appended answer");
+    assert!(
+        !answer.content_hash.is_unstamped(),
+        "answer node has its own stamped hash"
+    );
+    assert_ne!(
+        answer.content_hash, hash_before,
+        "answer hash differs from the request hash"
+    );
 }

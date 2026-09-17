@@ -165,6 +165,15 @@ impl ClassificationEngine {
                 // wins when set, else its literal model, else the pipeline's
                 // resolved classifier client serves (unknown keys behave as
                 // before — `call_classifier` falls back to the default).
+                // Availability sentinels never reach a backend literally:
+                // they resolve per request through viable-last (global
+                // recency when fittable without a cold load, else the
+                // fleet-viable member). The sync stage cannot host async
+                // `ensure_target_ready`, so readiness is by construction —
+                // the resolver prefers running models and the live registry
+                // observes post-build registrations; dispatch-time ensure
+                // remains the hard guarantee. Empty fleets keep the literal
+                // (the default-client path serves as before).
                 let model_key: String = model_group
                     .as_deref()
                     .and_then(|group| {
@@ -177,6 +186,17 @@ impl ClassificationEngine {
                     })
                     .or_else(|| model.clone())
                     .unwrap_or_default();
+                let model_key: String =
+                    if model_key == "last" || model_key == "any" {
+                        crate::target_match::viable_last_key(
+                            &self.routing,
+                            expansion.recency(),
+                            &|base| expansion.supervisor_loaded(base),
+                        )
+                        .unwrap_or(model_key)
+                    } else {
+                        model_key
+                    };
                 self.evaluate_classifier(
                     description,
                     &model_key,
@@ -483,7 +503,8 @@ impl ClassificationEngine {
     /// Flat-route terminal resolution through the shared target-matching
     /// ladder when available, falling back to the static
     /// `RoutingConfig::routing_target` (defense-in-depth — never fails harder
-    /// than today). Single-member groups skip the ladder entirely.
+    /// than today). Singleton groups climb too (one assessment, terminating
+    /// on last-always-wins).
     fn resolve_route_with_matcher(
         &self,
         route: &str,
@@ -499,18 +520,20 @@ impl ClassificationEngine {
                     expansion.recency(),
                     expansion.session(),
                     &|base| expansion.supervisor_loaded(base),
+                    complexity,
                 );
-                if candidates.len() >= 2 {
-                    if let Some(tm) = matcher.match_target(
-                        route,
-                        group,
-                        &self.routing,
-                        &candidates,
-                        complexity,
-                        user_text,
-                    ) {
-                        return Some((tm.primary, Some(tm.assessments)));
-                    }
+                // No minimum size: singleton groups climb too (the ladder
+                // terminates on last-always-wins, so one candidate needs
+                // exactly one assessment, never an extra LLM call spiral).
+                if let Some(tm) = matcher.match_target(
+                    route,
+                    group,
+                    &self.routing,
+                    &candidates,
+                    complexity,
+                    user_text,
+                ) {
+                    return Some((tm.primary, Some(tm.assessments)));
                 }
             }
         }
@@ -520,10 +543,10 @@ impl ClassificationEngine {
     }
 
     /// Resolve a terminal's own `model_group` when no flat `routes` entry
-    /// exists. When the target-matching ladder is available and the group has
-    /// 2+ members, runs the self-assessment climb; otherwise picks the
-    /// cheapest model in the group whose `intelligence` meets the request
-    /// complexity (else cheapest in the group) — today's static behavior.
+    /// exists. When the target-matching ladder is available, runs the
+    /// self-assessment climb for any non-empty group; otherwise picks the
+    /// viable model in the group (intelligence-passing, loaded-first,
+    /// cheapest — the shared static rule).
     fn resolve_group_target(
         &self,
         route: &str,
@@ -539,55 +562,35 @@ impl ClassificationEngine {
                 expansion.recency(),
                 expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
+                min_complexity,
             );
-            if candidates.len() >= 2 {
-                if let Some(tm) = matcher.match_target(
-                    route,
-                    group,
-                    &self.routing,
-                    &candidates,
-                    min_complexity,
-                    user_text,
-                ) {
-                    return Some((tm.primary, Some(tm.assessments)));
-                }
+            // No minimum size: singleton groups climb too (last-always-wins
+            // terminates after one assessment).
+            if let Some(tm) = matcher.match_target(
+                route,
+                group,
+                &self.routing,
+                &candidates,
+                min_complexity,
+                user_text,
+            ) {
+                return Some((tm.primary, Some(tm.assessments)));
             }
         }
 
-        // Static fallback: role members fan out to candidate keys;
-        // availability sentinels have no meaning here (no recency/liveness)
-        // and unknown literals fall out through the entry lookup, as today.
-        let model_keys: Vec<String> = self
-            .routing
-            .role_expanded_members(group)
-            .into_iter()
-            .filter(|k| k != "last" && k != "any")
-            .collect();
-        let candidates: Vec<&String> = model_keys
-            .iter()
-            .filter(|k| {
-                self.routing
-                    .entry_for_key(k)
-                    .is_some_and(|m| m.intelligence >= min_complexity.unwrap_or(0))
-            })
-            .collect();
-        let cheapest = |a: &&String, b: &&String| {
-            let ca = self
-                .routing
-                .entry_for_key(a)
-                .map_or(f64::MAX, |m| m.cost_input + m.cost_output);
-            let cb = self
-                .routing
-                .entry_for_key(b)
-                .map_or(f64::MAX, |m| m.cost_input + m.cost_output);
-            ca.partial_cmp(&cb).unwrap_or(std::cmp::Ordering::Equal)
-        };
-        let entry_key = if candidates.is_empty() {
-            model_keys.iter().min_by(cheapest)?
-        } else {
-            candidates.into_iter().min_by(cheapest)?
-        };
-        let mut rt = self.routing.target_for_key(entry_key)?;
+        // Static fallback through the shared viability rule (no
+        // recency/liveness here, so residency input is `None` — identical to
+        // the flat static path; unknown literals fall out through the entry
+        // lookup, as today).
+        let model_keys: Vec<String> = self.routing.role_expanded_members(group);
+        let entry_key = crate::config::select_viable_member(
+            group,
+            &model_keys,
+            &self.routing.models,
+            min_complexity,
+            None,
+        )?;
+        let mut rt = self.routing.target_for_key(&entry_key)?;
         rt.group = Some(group.to_string());
         rt.target_name = Some(route.to_string());
         Some((rt, None))

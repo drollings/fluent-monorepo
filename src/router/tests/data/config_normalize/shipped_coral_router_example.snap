@@ -14,7 +14,7 @@
           "description": "General Q&A, simple questions, chitchat, research queries, brainstorming, and help formulating prompts. Answered directly by the classifier when simple.",
           "key": "local",
           "node": {
-            "always_route": false,
+            "always_route": true,
             "description": "General Q&A",
             "group": "default",
             "role": "quick",
@@ -131,31 +131,23 @@
     ],
     "default": [
       "last",
-      "lfm2.5-2.6b",
       "qwen3.5-9b"
     ],
     "explore": [
-      "lfm2.5-2.6b",
-      "qwen3.5-9b",
       "last"
     ],
     "prose": [
-      "lfm2.5-2.6b",
-      "gemma4-12b",
       "last"
     ],
     "reason": [
-      "qwen3.5-9b",
-      "qwen3.8-27b",
-      "last"
+      "last",
+      "qwen3.5-9b"
     ],
     "summarize": [
       "last",
       "qwen3.5-9b"
     ],
     "translate": [
-      "lfm2.5-2.6b",
-      "qwen3.8-27b",
       "last"
     ]
   },
@@ -165,87 +157,73 @@
       "cost_input": 1e-6,
       "cost_output": 6e-6,
       "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
-      "filter_thinking": true,
+      "enable_thinking": false,
+      "filter_thinking": false,
       "idle_timeout_ms": 10000,
       "intelligence": 1,
+      "max_ctx": 262144,
+      "max_parallel": 1,
       "params": {
         "batch_size": 2048,
         "cache_type_k": "q4_0",
         "cache_type_v": "q4_0",
-        "filter_thinking": true,
         "flash_attn": "on",
-        "max_ctx": 262144,
         "n_cpu_moe": 0,
         "n_gpu_layers": 999,
         "num_ctx": 8192,
         "sleep_idle_seconds": 60,
-        "stream": true,
         "temperature": 0.1,
         "ubatch_size": 512
       },
+      "pinned": false,
+      "preserve_thinking": true,
       "retry_base_interval_s": 2,
       "retry_count": 0,
       "stream": true,
       "tok_s": 20,
       "total_timeout_ms": 30000
     },
-    "gemma4-12b": {
-      "cost_cached_read": 4e-7,
-      "cost_input": 1e-6,
-      "cost_output": 6e-6,
-      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
-      "filter_thinking": true,
-      "idle_timeout_ms": 10000,
-      "intelligence": 4,
-      "name": "mradermacher/gemma-4-12b-styletune-i1",
-      "params": {
-        "batch_size": 2048,
-        "cache_type_k": "q4_0",
-        "cache_type_v": "q4_0",
-        "filter_thinking": true,
-        "flash_attn": "on",
-        "max_ctx": 262144,
-        "n_cpu_moe": 0,
-        "n_gpu_layers": 999,
-        "num_ctx": 8192,
-        "sleep_idle_seconds": 60,
-        "stream": true,
-        "temperature": 0.6,
-        "ubatch_size": 512
-      },
-      "retry_base_interval_s": 2,
-      "retry_count": 0,
-      "stream": true,
-      "tok_s": 60,
-      "total_timeout_ms": 30000,
-      "weights": "/app/ai/models/gguf/mradermacher/gemma-4-12b-styletune-i1-gguf/latest.gguf"
-    },
     "lfm2.5-2.6b": {
       "cost_cached_read": 4e-7,
       "cost_input": 1e-6,
       "cost_output": 6e-6,
       "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "enable_thinking": true,
       "filter_thinking": true,
       "idle_timeout_ms": 10000,
-      "intelligence": 1,
+      "intelligence": 2,
+      "max_ctx": 262144,
+      "max_parallel": 1,
       "name": "liquidai/lfm2.6-2.6b",
       "params": {
         "batch_size": 2048,
         "cache_type_k": "q4_0",
         "cache_type_v": "q4_0",
-        "filter_thinking": true,
         "flash_attn": "on",
-        "max_ctx": 262144,
         "n_cpu_moe": 0,
         "n_gpu_layers": 999,
         "num_ctx": 8192,
+        "repeat_penalty": 1.01,
         "sleep_idle_seconds": 60,
-        "stream": true,
-        "temperature": 0.1,
+        "temperature": 0.7,
         "ubatch_size": 512
       },
+      "pinned": false,
+      "preserve_thinking": false,
       "retry_base_interval_s": 2,
       "retry_count": 0,
+      "roles": {
+        "quick": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "max_ctx": 16384,
+          "params": {
+            "repeat_penalty": 1.02,
+            "temperature": 0.6
+          },
+          "preserve_thinking": false
+        }
+      },
       "stream": true,
       "tok_s": 160,
       "total_timeout_ms": 30000,
@@ -256,25 +234,27 @@
       "cost_input": 1e-6,
       "cost_output": 6e-6,
       "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
-      "filter_thinking": true,
+      "enable_thinking": false,
+      "filter_thinking": false,
       "idle_timeout_ms": 10000,
       "intelligence": 1,
+      "max_ctx": 262144,
+      "max_parallel": 1,
       "name": "liquidai/lfm2.5-350m",
       "params": {
         "batch_size": 2048,
         "cache_type_k": "q4_0",
         "cache_type_v": "q4_0",
-        "filter_thinking": true,
         "flash_attn": "on",
-        "max_ctx": 262144,
         "n_cpu_moe": 0,
         "n_gpu_layers": 999,
         "num_ctx": 8192,
         "sleep_idle_seconds": 60,
-        "stream": true,
         "temperature": 0.1,
         "ubatch_size": 512
       },
+      "pinned": false,
+      "preserve_thinking": true,
       "retry_base_interval_s": 2,
       "retry_count": 0,
       "stream": true,
@@ -287,107 +267,89 @@
       "cost_input": 1e-6,
       "cost_output": 6e-6,
       "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "enable_thinking": false,
       "filter_thinking": true,
-      "idle_timeout_ms": 10000,
+      "idle_timeout_ms": 30000,
       "intelligence": 4,
+      "max_ctx": 65536,
+      "max_parallel": 1,
       "name": "qwen3.5-9b",
       "params": {
         "batch_size": 2048,
         "cache_type_k": "q4_0",
         "cache_type_v": "q4_0",
-        "filter_thinking": true,
         "flash_attn": "on",
-        "max_ctx": 262144,
-        "n_cpu_moe": 0,
-        "n_gpu_layers": 999,
-        "num_ctx": 32768,
-        "repeat_penalty": 1.02,
-        "sleep_idle_seconds": 60,
-        "stream": true,
-        "temperature": 0.7,
-        "ubatch_size": 512
-      },
-      "retry_base_interval_s": 2,
-      "retry_count": 0,
-      "stream": true,
-      "tok_s": 50,
-      "total_timeout_ms": 30000,
-      "weights": "/app/ai/models/gguf/mannix-ita/jackod-9b-coder-mtp-gguf/latest.gguf"
-    },
-    "qwen3.6-27b": {
-      "cost_cached_read": 4e-7,
-      "cost_input": 1e-6,
-      "cost_output": 6e-6,
-      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
-      "filter_thinking": true,
-      "idle_timeout_ms": 30000,
-      "intelligence": 5,
-      "name": "vinpix/ternary-bonsai-27b-stock-mtp",
-      "params": {
-        "batch_size": 2048,
-        "cache_type_k": "q4_0",
-        "cache_type_v": "q4_0",
-        "filter_thinking": true,
-        "flash_attn": "on",
-        "max_ctx": 262144,
         "n_cpu_moe": 0,
         "n_gpu_layers": 999,
         "num_ctx": 32768,
         "repeat_penalty": 1.03,
         "sleep_idle_seconds": 60,
-        "stream": true,
         "temperature": 0.7,
         "ubatch_size": 512
       },
+      "pinned": false,
+      "preserve_thinking": false,
       "retry_base_interval_s": 5,
       "retry_count": 1,
       "roles": {
         "quick": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "max_ctx": 65536,
           "params": {
+            "num_ctx": 8192,
             "repeat_penalty": 1.02,
             "temperature": 0.6
-          }
+          },
+          "preserve_thinking": false
         }
       },
       "stream": true,
-      "template": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/template.txt",
-      "tok_s": 35,
+      "template": "/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/template.txt",
+      "tok_s": 50,
       "total_timeout_ms": 300000,
-      "weights": "/app/ai/models/gguf/vinpix/ternary-bonsai-27b-stock-mtp-gguf/latest.gguf"
+      "weights": "/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf"
     },
     "qwen3.8-27b": {
       "cost_cached_read": 4e-7,
       "cost_input": 1e-6,
       "cost_output": 6e-6,
       "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "enable_thinking": false,
       "filter_thinking": true,
       "idle_timeout_ms": 30000,
       "intelligence": 6,
+      "max_ctx": 65536,
+      "max_parallel": 1,
       "name": "davidau/turbo-fable-cold-fusion",
       "params": {
         "batch_size": 2048,
         "cache_type_k": "q4_0",
         "cache_type_v": "q4_0",
-        "filter_thinking": true,
         "flash_attn": "on",
-        "max_ctx": 262144,
         "n_cpu_moe": 0,
         "n_gpu_layers": 999,
-        "num_ctx": 32768,
+        "num_ctx": 8192,
         "repeat_penalty": 1.03,
         "sleep_idle_seconds": 60,
-        "stream": true,
         "temperature": 0.7,
         "ubatch_size": 512
       },
+      "pinned": false,
+      "preserve_thinking": false,
       "retry_base_interval_s": 5,
       "retry_count": 1,
       "roles": {
         "quick": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "max_ctx": 65536,
           "params": {
+            "num_ctx": 8192,
             "repeat_penalty": 1.02,
             "temperature": 0.6
-          }
+          },
+          "preserve_thinking": false
         }
       },
       "stream": true,
@@ -408,106 +370,68 @@
     "workflow_extraction": false
   },
   "roles": {
-    "json": {
-      "context": {
-        "num_ctx": 16384,
-        "pinned": true
-      },
-      "params": {
-        "repeat_penalty": 1.0,
-        "temperature": 0.1
-      }
-    },
     "ledger": {
-      "context": {
-        "num_ctx": 128000
-      },
-      "models": {
-        "qwen3.5-9b": {}
-      },
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "max_parallel": 1,
+      "models": [
+        "qwen3.5-9b"
+      ],
       "params": {
+        "num_ctx": 262144,
         "repeat_penalty": 1.01,
-        "sleep_idle_seconds": 7200,
+        "sleep_idle_seconds": 28800,
         "temperature": 0.1
-      }
+      },
+      "pinned": true,
+      "preserve_thinking": false
     },
     "quick": {
-      "concurrency": {
-        "max_parallel": 2
-      },
-      "context": {
-        "num_ctx": 8192,
-        "pinned": true
-      },
-      "instances": {
-        "quick": {
-          "num_ctx": 8192,
-          "pinned": true
-        }
-      },
-      "models": {
-        "lfm2.5-2.6b": {},
-        "qwen3.5-9b": {},
-        "qwen3.8-27b": {}
-      },
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "max_parallel": 2,
+      "models": [
+        "lfm2.5-2.6b"
+      ],
       "params": {
+        "num_ctx": 8192,
         "repeat_penalty": 1.0,
         "temperature": 0.6
-      }
+      },
+      "pinned": true,
+      "preserve_thinking": false
     },
     "reasoning": {
-      "concurrency": {
-        "max_parallel": 1
-      },
-      "context": {
-        "num_ctx": 128000
-      },
-      "instances": {
-        "reasoning": {
-          "num_ctx": 128000
-        }
-      },
-      "models": {
-        "lfm2.5-2.6b": {},
-        "qwen3.5-9b": {},
-        "qwen3.8-27b": {}
-      },
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "max_parallel": 1,
+      "models": [
+        "qwen3.8-27b"
+      ],
       "params": {
-        "chat_template_kwargs": {
-          "enable_thinking": true
-        },
-        "preserve_thinking": true,
+        "num_ctx": 65536,
         "reasoning_budget_tokens": 4096,
         "reasoning_effort": "high",
-        "repeat_penalty": 1.03,
-        "sleep_idle_seconds": 300,
-        "temperature": 0.7,
-        "top_p": 0.95
-      }
+        "repeat_penalty": 1.01,
+        "temperature": 0.1
+      },
+      "preserve_thinking": false
     },
     "scratch": {
-      "concurrency": {
-        "max_parallel": 1
-      },
-      "context": {
-        "num_ctx": 128000
-      },
-      "instances": {
-        "scratch": {
-          "num_ctx": 128000
-        }
-      },
-      "models": {
-        "gemma4-12b": {},
-        "lfm2.5-2.6b": {},
-        "qwen3.5-9b": {}
-      },
+      "enable_thinking": false,
+      "filter_thinking": true,
+      "max_parallel": 1,
+      "models": [
+        "qwen3.5-9b"
+      ],
       "params": {
-        "repeat_penalty": 1.03,
+        "num_ctx": 65536,
+        "repeat_penalty": 1.01,
         "sleep_idle_seconds": 60,
-        "temperature": 0.7,
-        "top_p": 0.95
-      }
+        "temperature": 0.7
+      },
+      "pinned": false,
+      "preserve_thinking": false
     }
   },
   "server": {

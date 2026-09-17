@@ -1829,11 +1829,12 @@ type ResidencyEngine = Arc<fluent_llm::runtime::LlmResidencyEngine>;
 fn engine_for_policy(policy: &crate::config::SidecarConfig) -> ResidencyEngine {
     fluent_llm::runtime::LlmResidencyEngine::new(
         std::time::Duration::from_secs(1),
-        policy.allocation_limit(),
+        policy.reactive_limit(),
         policy.onnx_working_set_budget_bytes,
         30,
         policy.evict_batch,
     )
+    .with_admission_budget(policy.allocation_limit())
 }
 
 /// One shared-engine residency pass over the pool's managers, through the
@@ -1985,6 +1986,292 @@ async fn make_room_for_excludes_target_and_skips_without_supervisor() {
         gemma_stub.recorded().is_empty(),
         "the cold target must be excluded from the gather: {:?}",
         gemma_stub.recorded()
+    );
+}
+
+// -- pre-admission against the allocation budget ---------------------------
+//
+// A cold load must free room BEFORE the spawn, sized as the incoming
+// footprint (weights + the KV window the new context needs), against the
+// allocation budget (`total - minimum_remaining`). The reactive watermark
+// floor never gates admission: a load that fits the allocation budget stays
+// quiet even when it would trip the watermark.
+
+fn ledger_profile() -> InstanceProfile {
+    InstanceProfile {
+        name: Some("ledger".into()),
+        ..profile("ledger", "ledger")
+    }
+}
+
+fn ledger_sized_profile() -> InstanceProfile {
+    InstanceProfile {
+        num_ctx: 262144,
+        ..ledger_profile()
+    }
+}
+
+fn quick_profile() -> InstanceProfile {
+    InstanceProfile {
+        name: Some("quick".into()),
+        ..profile("quick", "quick")
+    }
+}
+
+#[test]
+fn residency_admission_load_bytes_adds_kv_window() {
+    use super::manager::{estimated_kv_bytes, KV_BYTES_PER_TOKEN};
+    assert_eq!(
+        estimated_kv_bytes(8192),
+        8192 * KV_BYTES_PER_TOKEN,
+        "KV estimate scales linearly with context size"
+    );
+    assert_eq!(
+        estimated_kv_bytes(262144),
+        262144 * KV_BYTES_PER_TOKEN,
+        "ledger window KV is weights-independent"
+    );
+    let weights = 1_600_000_000u64;
+    let manager = Arc::new(
+        InstanceManager::new(
+            "ledger-model",
+            InstanceClient::new(reqwest::Client::new(), "http://x", None),
+            vec![ledger_sized_profile()],
+            sidecar_policy(),
+        )
+        .with_weights_bytes(weights),
+    );
+    assert_eq!(
+        manager.load_bytes_for(Some("ledger")),
+        weights + estimated_kv_bytes(262144),
+        "targeted load sizes weights plus its own KV window"
+    );
+    assert_eq!(
+        manager.load_bytes_for(Some("ghost")),
+        weights,
+        "unknown instance falls back to weights alone"
+    );
+    assert_eq!(
+        manager.load_bytes_for(None),
+        weights + estimated_kv_bytes(262144),
+        "bare load sizes the largest configured window"
+    );
+    let plain = Arc::new(
+        InstanceManager::new(
+            "qwen",
+            InstanceClient::new(reqwest::Client::new(), "http://x", None),
+            Vec::new(),
+            sidecar_policy(),
+        )
+        .with_weights_bytes(weights),
+    );
+    assert_eq!(
+        plain.load_bytes_for(None),
+        weights,
+        "window-less servers load weights alone"
+    );
+}
+
+#[tokio::test]
+async fn residency_admission_ledger_load_evicts_before_spawn() {
+    // Allocation budget 16G - 1G = 15G. The victim holds 2G shared weights +
+    // a 1G unpinned scratch window (3G used) plus a pinned ledger window that
+    // must survive. The incoming ledger load (1.6G weights + 262144-ctx KV)
+    // projects far over budget, so admission evicts scratch before the spawn
+    // is even attempted.
+    let mut pinned = instance_info("ledger", "ledger", true, 1);
+    pinned.model_bytes = 2_000_000_000;
+    pinned.vram_bytes = 500_000_000;
+    let mut scratch = instance_info("scratch", "scratch", false, 5);
+    scratch.model_bytes = 2_000_000_000;
+    scratch.vram_bytes = 1_000_000_000;
+    let victim_env = serde_json::json!({
+        "instances": [ pinned, scratch ],
+        "snapshots": [],
+        "total": { "model": 2000000000u64, "context": 1500000000u64, "compute": 0, "total": 3500000000u64 }
+    });
+    let victim_stub = residency_stub(&victim_env);
+    let mut policy = sidecar_policy();
+    policy.vram_total_bytes = Some(16_000_000_000);
+    policy.minimum_remaining_vram = Some(1_000_000_000);
+    let victim = Arc::new(InstanceManager::new(
+        "swarm",
+        InstanceClient::new(reqwest::Client::new(), victim_stub.base_url(), None),
+        Vec::new(),
+        policy.clone(),
+    ));
+    let target = Arc::new(
+        InstanceManager::new(
+            "ledger-model",
+            InstanceClient::new(reqwest::Client::new(), "http://x", None),
+            vec![ledger_sized_profile()],
+            policy.clone(),
+        )
+        .with_weights_bytes(1_600_000_000),
+    );
+    let required = target.load_bytes_for(Some("ledger"));
+    let mut managers = HashMap::new();
+    managers.insert("swarm".into(), victim);
+    managers.insert("ledger-model".into(), Arc::clone(&target));
+    let pool = InstancePool::from_managers(
+        managers,
+        Some(supervisor_with_servers(&["swarm", "ledger-model"])),
+    );
+    pool.set_admission_engine(engine_for_policy(&policy));
+    pool.make_room_for("ledger-model", required).await;
+    let deletes: Vec<String> = victim_stub
+        .recorded()
+        .iter()
+        .filter(|(m, _, _)| m == "DELETE")
+        .map(|(_, p, _)| p.clone())
+        .collect();
+    assert!(
+        deletes.iter().any(|p| p.ends_with("/instances/scratch")),
+        "unpinned scratch evicted before the ledger spawn: {deletes:?}"
+    );
+    assert!(
+        deletes.iter().all(|p| !p.contains("ledger")),
+        "pinned ledger window never evicted: {deletes:?}"
+    );
+}
+
+#[tokio::test]
+async fn residency_admission_small_load_within_allocation_ignores_watermark() {
+    // Allocation budget 48G - 8G = 40G; the reactive floor is 48G - 40G = 8G.
+    // Used is 9G (past the reactive floor) and the small incoming load (0.5G
+    // weights + a 16384-ctx KV window, ~2.6G) projects ~11.6G: still inside
+    // the allocation budget. Admission must stay quiet — the watermark is the
+    // reactive loop's floor, never a pre-admission gate.
+    let mut pinned = instance_info("keep", "g", true, 1);
+    pinned.model_bytes = 6_000_000_000;
+    pinned.vram_bytes = 0;
+    let mut warm = instance_info("warm", "g", false, 5);
+    warm.model_bytes = 6_000_000_000;
+    warm.vram_bytes = 3_000_000_000;
+    let victim_env = serde_json::json!({
+        "instances": [ pinned, warm ],
+        "snapshots": [],
+        "total": { "model": 6000000000u64, "context": 3000000000u64, "compute": 0, "total": 9000000000u64 }
+    });
+    let victim_stub = residency_stub(&victim_env);
+    let mut policy = sidecar_policy();
+    policy.vram_total_bytes = Some(48_000_000_000);
+    policy.minimum_remaining_vram = Some(8_000_000_000);
+    policy.vram_low_watermark_bytes = 40_000_000_000;
+    let victim = Arc::new(InstanceManager::new(
+        "swarm",
+        InstanceClient::new(reqwest::Client::new(), victim_stub.base_url(), None),
+        Vec::new(),
+        policy.clone(),
+    ));
+    let target = Arc::new(
+        InstanceManager::new(
+            "small-model",
+            InstanceClient::new(reqwest::Client::new(), "http://x", None),
+            vec![quick_profile()],
+            policy.clone(),
+        )
+        .with_weights_bytes(500_000_000),
+    );
+    let required = target.load_bytes_for(Some("quick"));
+    let mut managers = HashMap::new();
+    managers.insert("swarm".into(), victim);
+    managers.insert("small-model".into(), Arc::clone(&target));
+    let pool = InstancePool::from_managers(
+        managers,
+        Some(supervisor_with_servers(&["swarm", "small-model"])),
+    );
+    pool.set_admission_engine(engine_for_policy(&policy));
+    pool.make_room_for("small-model", required).await;
+    assert!(
+        victim_stub.recorded().iter().all(|(m, _, _)| m != "DELETE"),
+        "fitting load stays quiet despite the watermark floor: {:?}",
+        victim_stub.recorded()
+    );
+}
+
+#[tokio::test]
+async fn residency_admission_pinned_instances_never_evict() {
+    // Over budget with only pinned candidates: admission has nothing to free
+    // and the load proceeds best-effort (the loop corrects any overshoot).
+    let mut pinned = instance_info("ledger", "ledger", true, 1);
+    pinned.model_bytes = 2_000_000_000;
+    pinned.vram_bytes = 1_000_000_000;
+    let victim_env = serde_json::json!({
+        "instances": [ pinned ],
+        "snapshots": [],
+        "total": { "model": 2000000000u64, "context": 1000000000u64, "compute": 0, "total": 3000000000u64 }
+    });
+    let victim_stub = residency_stub(&victim_env);
+    let mut policy = sidecar_policy();
+    policy.vram_total_bytes = Some(16_000_000_000);
+    policy.minimum_remaining_vram = Some(1_000_000_000);
+    let victim = Arc::new(InstanceManager::new(
+        "swarm",
+        InstanceClient::new(reqwest::Client::new(), victim_stub.base_url(), None),
+        Vec::new(),
+        policy.clone(),
+    ));
+    let target = Arc::new(
+        InstanceManager::new(
+            "ledger-model",
+            InstanceClient::new(reqwest::Client::new(), "http://x", None),
+            vec![ledger_sized_profile()],
+            policy.clone(),
+        )
+        .with_weights_bytes(1_600_000_000),
+    );
+    let required = target.load_bytes_for(Some("ledger"));
+    let mut managers = HashMap::new();
+    managers.insert("swarm".into(), victim);
+    managers.insert("ledger-model".into(), Arc::clone(&target));
+    let pool = InstancePool::from_managers(
+        managers,
+        Some(supervisor_with_servers(&["swarm", "ledger-model"])),
+    );
+    pool.set_admission_engine(engine_for_policy(&policy));
+    pool.make_room_for("ledger-model", required).await;
+    assert!(
+        victim_stub.recorded().iter().all(|(m, _, _)| m != "DELETE"),
+        "pinned instances are never eviction candidates: {:?}",
+        victim_stub.recorded()
+    );
+}
+
+#[tokio::test]
+async fn residency_admission_none_budget_disables() {
+    // No ceiling and no floor: admission is off, so even a huge load frees
+    // nothing (and the engine issues no fork polls deciding that).
+    let mut warm = instance_info("warm", "g", false, 5);
+    warm.model_bytes = 6_000_000_000;
+    warm.vram_bytes = 1_000_000_000;
+    let victim_env = serde_json::json!({
+        "instances": [ warm ],
+        "snapshots": [],
+        "total": { "model": 6000000000u64, "context": 1000000000u64, "compute": 0, "total": 7000000000u64 }
+    });
+    let victim_stub = residency_stub(&victim_env);
+    let mut policy = sidecar_policy();
+    policy.vram_total_bytes = None;
+    policy.minimum_remaining_vram = None;
+    let victim = Arc::new(InstanceManager::new(
+        "swarm",
+        InstanceClient::new(reqwest::Client::new(), victim_stub.base_url(), None),
+        Vec::new(),
+        policy.clone(),
+    ));
+    let mut managers = HashMap::new();
+    managers.insert("swarm".into(), victim);
+    let pool = InstancePool::from_managers(
+        managers,
+        Some(supervisor_with_servers(&["swarm"])),
+    );
+    pool.set_admission_engine(engine_for_policy(&policy));
+    pool.make_room_for("cold", 1_000_000_000_000).await;
+    assert!(
+        victim_stub.recorded().is_empty(),
+        "no budget means no admission I/O at all: {:?}",
+        victim_stub.recorded()
     );
 }
 
@@ -2557,5 +2844,233 @@ async fn session_evict_snapshots_before_destroy() {
             "DELETE /instances/work".to_string(),
         ],
         "session eviction snapshots before destroying"
+    );
+}
+
+#[test]
+fn snapshot_identity_mode_resolution_prefers_model_then_role_then_auto() {
+    use crate::config::{ModelEntry, SnapshotConfig, SnapshotMode};
+    use std::collections::HashMap;
+    let mut roles = HashMap::new();
+    roles.insert(
+        "quick".to_string(),
+        crate::config::routing::RoleEntry {
+            max_parallel: None,
+            pinned: false,
+            enable_thinking: None,
+            filter_thinking: false,
+            preserve_thinking: None,
+            params: Default::default(),
+            models: vec!["m".into()],
+            snapshot: Some(SnapshotConfig {
+                mode: SnapshotMode::Manual,
+            }),
+        },
+    );
+    // Unset everywhere → Auto (today's behavior).
+    assert_eq!(
+        super::manager::snapshot_mode_for("m", &ModelEntry::default(), &HashMap::new()),
+        SnapshotMode::Auto
+    );
+    // Serving role with a mode → inherited.
+    assert_eq!(
+        super::manager::snapshot_mode_for("m", &ModelEntry::default(), &roles),
+        SnapshotMode::Manual
+    );
+    // A non-serving role never leaks in.
+    assert_eq!(
+        super::manager::snapshot_mode_for("other", &ModelEntry::default(), &roles),
+        SnapshotMode::Auto
+    );
+    // The model's own entry wins over every role binding.
+    let entry = ModelEntry {
+        snapshot: Some(SnapshotConfig {
+            mode: SnapshotMode::Auto,
+        }),
+        ..ModelEntry::default()
+    };
+    assert_eq!(
+        super::manager::snapshot_mode_for("m", &entry, &roles),
+        SnapshotMode::Auto
+    );
+}
+
+#[tokio::test]
+async fn snapshot_identity_restore_rejects_on_quant_drift() {
+    // The fork lists the snapshot (exists), but the stored record's quant
+    // differs from the live identity → restore rejects instead of serving
+    // stale KV. A matching identity restores.
+    use fluent_llm::runtime::LlmKVCache as _LlmKVCache;
+
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances/work/snapshots" {
+            (
+                200,
+                serde_json::json!([{ "name": "snap", "size": 1, "mtime": 0, "n_ctx_seq": 1 }])
+                    .to_string(),
+            )
+        } else {
+            (200, "{}".into())
+        }
+    });
+    let stub = StubServer::start(handler);
+    let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
+    let store = Arc::new(crate::kv_cache::SnapshotStore::new(
+        Arc::new(crate::kv_cache::HotSnapshotIndex::new(10, 1024)),
+        Arc::new(crate::kv_cache::ColdSnapshotIndex::metadata_only(86400)),
+    ));
+    store
+        .store(crate::kv_cache::KvSnapshot {
+            model: "base".into(),
+            adapter: None,
+            session_id: "work".into(),
+            snapshot_name: "snap".into(),
+            instance: Some("work".into()),
+            file_path: std::path::PathBuf::new(),
+            token_count: None,
+            created_at: 0,
+            last_used_at: 0,
+            llama_cpp_version: None,
+            model_quant: Some("Q4_K_M".into()),
+            base_model_hash: None,
+            turn_seq: None,
+        })
+        .expect("store record");
+    let drifted = LlamaKVCache::new(client.clone(), "work".into(), "base".into())
+        .with_store(Arc::clone(&store))
+        .with_expected_identity(crate::kv_cache::SnapshotIdentity {
+            base_model_hash: None,
+            model_quant: Some("Q8_0".into()),
+            llama_cpp_version: None,
+        });
+    assert!(
+        drifted.restore("snap").await.is_err(),
+        "quant drift must reject the restore"
+    );
+    let matching = LlamaKVCache::new(client, "work".into(), "base".into())
+        .with_store(store)
+        .with_expected_identity(crate::kv_cache::SnapshotIdentity {
+            base_model_hash: None,
+            model_quant: Some("Q4_K_M".into()),
+            llama_cpp_version: None,
+        });
+    assert!(
+        matching.restore("snap").await.is_ok(),
+        "matching identity restores"
+    );
+    // No store attached → today's existence check, never an identity reject.
+    let bare_handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "GET" && path == "/instances/work/snapshots" {
+            (
+                200,
+                serde_json::json!([{ "name": "snap", "size": 1, "mtime": 0, "n_ctx_seq": 1 }])
+                    .to_string(),
+            )
+        } else {
+            (200, "{}".into())
+        }
+    });
+    let bare_stub = StubServer::start(bare_handler);
+    let bare_client = InstanceClient::new(reqwest::Client::new(), bare_stub.base_url(), None);
+    let bare = LlamaKVCache::new(bare_client, "work".into(), "base".into());
+    assert!(bare.restore("snap").await.is_ok());
+    assert!(bare.restore("ghost").await.is_err());
+}
+
+#[tokio::test]
+async fn snapshot_identity_manual_evict_saves_nothing() {
+    // `manual` snapshot mode: a resume-marked session context is destroyed
+    // WITHOUT the snapshot-before-destroy save — the operator asked for no
+    // silent saves. The destroy still happens.
+    use fluent_llm::runtime::LlmContext as _LlmContext;
+
+    let stub = residency_stub(&serde_json::json!({
+        "instances": [],
+        "snapshots": [],
+        "total": { "model": 0, "context": 0, "compute": 0, "total": 0 }
+    }));
+    let manager = Arc::new(
+        InstanceManager::new(
+            "base",
+            InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
+            vec![session_profile("work", "g", true)],
+            sidecar_policy(),
+        )
+        .with_snapshot_mode(crate::config::SnapshotMode::Manual),
+    );
+    assert_eq!(manager.snapshot_mode(), crate::config::SnapshotMode::Manual);
+    let info = instance_info("work", "g", false, 100);
+    let ctx = LlamaContext::from_info(Arc::clone(&manager), manager.client().clone(), &info, None);
+    ctx.evict().await.expect("evict");
+
+    let posts: Vec<String> = stub
+        .recorded()
+        .iter()
+        .filter(|(m, p, _)| *m == "POST" && p.as_str().ends_with("/snapshot"))
+        .map(|(m, p, _)| format!("{m} {p}"))
+        .collect();
+    assert!(
+        posts.is_empty(),
+        "manual eviction must issue zero snapshot calls, got: {posts:?}"
+    );
+    assert!(
+        stub.recorded()
+            .iter()
+            .any(|(m, p, _)| *m == "DELETE" && p.as_str() == "/instances/work"),
+        "manual eviction still destroys the context"
+    );
+}
+
+#[tokio::test]
+async fn snapshot_identity_auto_evict_preserves_save_before_destroy() {
+    // Explicit `auto` is today's behavior: the save-before-destroy order
+    // holds, and the default mode is `auto` (compat: unset behaves as today).
+    use fluent_llm::runtime::LlmContext as _LlmContext;
+
+    let stub = residency_stub(&serde_json::json!({
+        "instances": [],
+        "snapshots": [],
+        "total": { "model": 0, "context": 0, "compute": 0, "total": 0 }
+    }));
+    let default_manager = Arc::new(InstanceManager::new(
+        "base",
+        InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
+        vec![session_profile("work", "g", true)],
+        sidecar_policy(),
+    ));
+    assert_eq!(
+        default_manager.snapshot_mode(),
+        crate::config::SnapshotMode::Auto,
+        "unset snapshot mode defaults to auto"
+    );
+    let manager = Arc::new(
+        InstanceManager::new(
+            "base",
+            InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
+            vec![session_profile("work", "g", true)],
+            sidecar_policy(),
+        )
+        .with_snapshot_mode(crate::config::SnapshotMode::Auto),
+    );
+    let info = instance_info("work", "g", false, 100);
+    let ctx = LlamaContext::from_info(Arc::clone(&manager), manager.client().clone(), &info, None);
+    ctx.evict().await.expect("evict");
+
+    let order: Vec<String> = stub
+        .recorded()
+        .iter()
+        .filter(|(m, p, _)| {
+            (*m == "POST" && p.as_str() == "/instances/work/snapshot")
+                || (*m == "DELETE" && p.as_str() == "/instances/work")
+        })
+        .map(|(m, p, _)| format!("{m} {p}"))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            "POST /instances/work/snapshot".to_string(),
+            "DELETE /instances/work".to_string(),
+        ],
+        "auto eviction keeps save-before-destroy"
     );
 }

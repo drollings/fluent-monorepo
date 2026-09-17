@@ -517,6 +517,97 @@ fn classifier_merges_overlay_route_hints_into_the_prompt() {
     );
 }
 
+/// The full handover — typed residual on the NLP decision, route hints on
+/// the overlay decision — reaches the classifier with hints merged as
+/// deterministic context (feed-first, no redirect).
+#[test]
+fn nlp_overlay_hints_merge_into_classifier_context() {
+    use crate::pipeline_types::{NlpResidual, RouteHint};
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let backend = SystemPromptRecordingBackend {
+        seen_system: Arc::clone(&seen),
+    };
+    let routing_config = RoutingConfig {
+        routes: std::collections::HashMap::new(),
+        models: std::collections::HashMap::new(),
+        model_groups: std::collections::HashMap::new(),
+        system_prompt: "You are a router.".into(),
+        safety_threshold: 0.5,
+        default_route: "local".into(),
+        score_matrix: None,
+        onnx_keys: std::collections::BTreeSet::new(),
+        roles: Default::default(),
+    };
+    let stage = ClassifierStage::new(
+        Arc::new(backend),
+        routing_config,
+        0.2,
+        None,
+        false,
+        1,
+        "lfm2.5-2.6b",
+        Arc::new(fluent_concurrency::pool::Limiter::new(4)),
+        None,
+        crate::config::ClassifierFailurePolicy::Reject,
+        None,
+        None,
+    );
+
+    let mut ctx = WorkContext::default();
+    ctx.set_structured(
+        "request",
+        &serde_json::json!({
+            "model": "local",
+            "messages": [{"role": "user", "content": "write a parser"}],
+        }),
+    );
+
+    // The NLP decision carries the typed residual; the overlay decision
+    // carries the scored hints. Both ride the same prior chain.
+    let mut nlp_meta = StageMetadata::new(serde_json::json!({}));
+    nlp_meta.set_nlp_residual(&NlpResidual {
+        overall: 0.4,
+        role_coverage: 0.5,
+        oracle_tie_count: 1,
+        collision_count: 0,
+        refine_reason: None,
+        uncovered_roles: vec!["nsubj".into()],
+    });
+    let mut overlay_meta = StageMetadata::new(serde_json::json!({}));
+    overlay_meta.set_overlay_route_hints(&[
+        RouteHint {
+            route: "code".into(),
+            score: 0.91,
+        },
+        RouteHint {
+            route: "prose".into(),
+            score: 0.06,
+        },
+    ]);
+    let prior = vec![
+        StageDecision::new(PipelineStage::Nlp, StageVerdict::Passed, "parsed")
+            .with_metadata(nlp_meta.into_value()),
+        StageDecision::new(PipelineStage::Overlay, StageVerdict::Passed, "scored")
+            .with_metadata(overlay_meta.into_value()),
+    ];
+
+    let decision = stage.evaluate(&ctx, &prior).expect("evaluate");
+    assert_eq!(decision.verdict, StageVerdict::Passed);
+    let system = seen.lock().expect("lock").first().expect("system").clone();
+    assert!(
+        system.contains("Route hints"),
+        "hints merged, system:\n{system}"
+    );
+    assert!(
+        system.contains("- code: 0.910"),
+        "top hint listed with score, system:\n{system}"
+    );
+    assert!(
+        system.find("code: 0.910").unwrap() < system.find("prose: 0.060").unwrap(),
+        "highest-score hint listed first"
+    );
+}
+
 /// No overlay hints in the prior decisions → the prompt is unchanged
 /// (byte-identical to today when the overlay stage is absent).
 #[test]

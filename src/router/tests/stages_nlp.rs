@@ -536,6 +536,547 @@ fn on_uncertain_refined_parse_summary_is_well_formed() {
     ));
 }
 
+fn on_uncertain() -> spacy_rs::RefinePolicy {
+    spacy_rs::RefinePolicy {
+        mode: spacy_rs::RefineMode::OnUncertain,
+        ..spacy_rs::RefinePolicy::default()
+    }
+}
+
+/// The typed residual handoff: exactly the six documented keys, built from
+/// the confidence summary plus the signals' uncovered roles — never raw
+/// string-key traversal outside `StageMetadata`.
+#[test]
+fn residual_shape_golden_is_typed_handoff() {
+    use crate::pipeline_types::NlpResidual;
+    let summary = crate::pipeline_types::NlpConfidenceSummary {
+        source: spacy_rs::AnnotationSource::ArcEager,
+        overall: 0.82,
+        role_coverage: 0.5,
+        oracle_tie_count: 1,
+        collision_count: 0,
+        semantic_plausibility: None,
+        refine_reason: Some(spacy_rs::RefineReason::Confidence(
+            spacy_rs::ConfidenceReason::RoleCoverage,
+        )),
+    };
+    let signals = vec![
+        spacy_rs::routing::RoutingSignal {
+            sentence: "show me the report".into(),
+            predicate: "show".into(),
+            subject: None,
+            direct_object: Some("report".into()),
+            indirect_object: None,
+            modifiers: vec![],
+            qualifiers: vec![],
+            arguments: vec![],
+            dependents: vec![],
+            tokens: vec![],
+            lemmas: vec![],
+            pos: vec![],
+            deps: vec![],
+            heads: vec![],
+            interlingua: None,
+        },
+        spacy_rs::routing::RoutingSignal {
+            sentence: "the cat sat".into(),
+            predicate: "sat".into(),
+            subject: Some("cat".into()),
+            direct_object: None,
+            indirect_object: None,
+            modifiers: vec![],
+            qualifiers: vec![],
+            arguments: vec![],
+            dependents: vec![],
+            tokens: vec![],
+            lemmas: vec![],
+            pos: vec![],
+            deps: vec![],
+            heads: vec![],
+            interlingua: None,
+        },
+    ];
+    let residual = NlpResidual::from_summary_and_signals(&summary, &signals);
+    assert!((residual.overall - 0.82).abs() < f64::EPSILON);
+    assert!((residual.role_coverage - 0.5).abs() < f64::EPSILON);
+    assert_eq!(residual.oracle_tie_count, 1);
+    assert_eq!(residual.collision_count, 0);
+    assert_eq!(
+        residual.refine_reason,
+        Some(spacy_rs::RefineReason::Confidence(
+            spacy_rs::ConfidenceReason::RoleCoverage
+        ))
+    );
+    // Sentence one lacks the subject, sentence two lacks the object.
+    assert_eq!(residual.uncovered_roles, vec!["dobj", "nsubj"]);
+    let value = serde_json::to_value(&residual).expect("serializes");
+    let keys: std::collections::BTreeSet<&str> = value
+        .as_object()
+        .expect("object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "collision_count",
+            "oracle_tie_count",
+            "overall",
+            "refine_reason",
+            "role_coverage",
+            "uncovered_roles",
+        ]
+        .into_iter()
+        .collect(),
+        "exactly the six documented handoff keys"
+    );
+    // The typed round-trip through `StageMetadata` preserves the record.
+    let mut meta = StageMetadata::empty();
+    meta.set_nlp_residual(&residual);
+    let back = meta.nlp_residual().expect("nlp_residual");
+    assert_eq!(back, residual);
+    let reread = StageMetadata::metadata_ref(&meta.as_value().clone()).nlp_residual();
+    assert_eq!(reread, Some(residual));
+}
+
+/// Fully-covered signals leave no uncovered roles.
+#[test]
+fn residual_uncovered_roles_empty_when_covered() {
+    use crate::pipeline_types::{NlpConfidenceSummary, NlpResidual};
+    let summary = NlpConfidenceSummary {
+        source: spacy_rs::AnnotationSource::ArcEager,
+        overall: 0.95,
+        role_coverage: 1.0,
+        oracle_tie_count: 0,
+        collision_count: 0,
+        semantic_plausibility: None,
+        refine_reason: Some(spacy_rs::RefineReason::NoTrigger),
+    };
+    let signals = vec![spacy_rs::routing::RoutingSignal {
+        sentence: "the cat chased the mouse".into(),
+        predicate: "chased".into(),
+        subject: Some("cat".into()),
+        direct_object: Some("mouse".into()),
+        indirect_object: None,
+        modifiers: vec![],
+        qualifiers: vec![],
+        arguments: vec![],
+        dependents: vec![],
+        tokens: vec![],
+        lemmas: vec![],
+        pos: vec![],
+        deps: vec![],
+        heads: vec![],
+        interlingua: None,
+    }];
+    let residual = NlpResidual::from_summary_and_signals(&summary, &signals);
+    assert!(residual.uncovered_roles.is_empty());
+}
+
+/// Deterministic-certain input under `OnUncertain` never consults the refine
+/// fetch: zero LLM calls, `NoTrigger` recorded on the summary and residual.
+#[test]
+fn residual_certain_parse_makes_no_refine_call() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls_c = Arc::clone(&calls);
+    let fetch: spacy_rs::pipeline::LlmFetchSync = Arc::new(move |_tokens: Vec<String>| {
+        calls_c.fetch_add(1, Ordering::SeqCst);
+        Ok("[]".to_string())
+    });
+    let vocab = std::sync::Arc::new(spacy_rs::vocab::Vocab::new(
+        spacy_rs::lang::en::lexicon_config(),
+    ));
+    let tokenizer = spacy_rs::lang::en::tokenizer(vocab.clone()).expect("tokenizer");
+    let store = std::sync::Arc::new(fluent_concept::InMemoryConceptStore::new());
+    let resolver = std::sync::Arc::new(spacy_rs::interlingua::InterlinguaResolver::new(
+        std::sync::Arc::clone(&store) as std::sync::Arc<dyn fluent_concept::ConceptStore>,
+        std::sync::Arc::clone(vocab.strings()),
+    ));
+    let pipeline = std::sync::Arc::new(
+        spacy_rs::NlpPipeline::new_with_resolver(
+            vocab,
+            tokenizer,
+            spacy_rs::AnnotationValidator::new(),
+            Some(resolver),
+        )
+        .expect("pipeline"),
+    );
+    let stage = NlpStage::with_strings(pipeline, Some(fetch), None, None)
+        .with_refine_policy(on_uncertain());
+    let (_, decision) = stage.decide(&ctx_for("The cat sat on the mat."));
+    assert_eq!(decision.verdict, StageVerdict::Passed);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "certain parse must not consult the refiner"
+    );
+    let meta = StageMetadata::from(decision.metadata);
+    let conf = meta.nlp_confidence().expect("nlp_confidence");
+    assert_eq!(
+        conf.refine_reason,
+        Some(spacy_rs::RefineReason::NoTrigger),
+        "no trigger recorded, got {:?}",
+        conf.refine_reason
+    );
+    let residual = meta.nlp_residual().expect("nlp_residual");
+    assert_eq!(
+        residual.refine_reason,
+        Some(spacy_rs::RefineReason::NoTrigger)
+    );
+    assert!((residual.overall - conf.overall).abs() < f64::EPSILON);
+    assert!((residual.role_coverage - conf.role_coverage).abs() < f64::EPSILON);
+}
+
+/// Genuinely uncertain input under `OnUncertain` consults the refine fetch;
+/// the recorded reason is never `NoTrigger`.
+#[test]
+fn residual_uncertain_parse_makes_refine_call() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let full = r#"[{"text":"John","pos":"propn","dep":"nsubj","head":1,"lemma":"John"},{"text":"left","pos":"verb","dep":"root","head":0,"lemma":"leave"}]"#;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls_c = Arc::clone(&calls);
+    let fetch: spacy_rs::pipeline::LlmFetchSync = Arc::new(move |_tokens: Vec<String>| {
+        calls_c.fetch_add(1, Ordering::SeqCst);
+        Ok(full.to_string())
+    });
+    let pipeline = std::sync::Arc::new(spacy_rs::NlpPipeline::en_default().expect("en pipeline"));
+    let stage = NlpStage::with_strings(pipeline, Some(fetch), None, None)
+        .with_refine_policy(on_uncertain());
+    let (_, decision) = stage.decide(&ctx_for("Xylophone zzzqx blorpt."));
+    assert_eq!(decision.verdict, StageVerdict::Passed);
+    assert!(
+        calls.load(Ordering::SeqCst) >= 1,
+        "uncertain parse must consult the refiner"
+    );
+    let meta = StageMetadata::from(decision.metadata);
+    let conf = meta.nlp_confidence().expect("nlp_confidence");
+    assert_ne!(
+        conf.refine_reason,
+        Some(spacy_rs::RefineReason::NoTrigger),
+        "a trigger must be recorded"
+    );
+    let residual = meta.nlp_residual().expect("nlp_residual");
+    assert_eq!(residual.refine_reason, conf.refine_reason);
+}
+
+/// Refine/residual trigger calibration (measurement only): a labeled
+/// certain/uncertain × complete/incomplete corpus pins the trigger table
+/// before any parse/correction caching or `CorrectionIndex` writes.
+///
+/// Axes (roadmap trigger note): certainty is producer self-doubt
+/// (`RefineReason::NoTrigger` vs any trigger); completeness is task-value
+/// (typed residual `uncovered_roles` empty vs not). The control group —
+/// certain-complete — must record zero refine calls. Precision (fire implies
+/// the refiner actually changed the parse) and recall (changed implies
+/// fired) are exact bounds on this fixed corpus; the deterministic pipeline
+/// makes them stable, never fitted noise. Each case runs twice on a fresh
+/// pipeline to pin determinism. Thresholds are locked in-test so silent
+/// tuning breaks loudly.
+#[test]
+fn refine_calibration_fire_vs_changed_route() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    struct Case {
+        text: &'static str,
+        expect_certain: bool,
+        expect_complete: bool,
+        /// Seed a colliding canonical for this lemma: the resolve step
+        /// surfaces a `CollisionNote`, firing the task-value collision
+        /// trigger on an otherwise certain-complete sentence. This is the
+        /// uncertain-complete quadrant — confidence intact, route incomplete.
+        collide_lemma: Option<&'static str>,
+    }
+    let cases = vec![
+        // Control: certain-complete, zero refine calls.
+        Case {
+            text: "The cat chased the mouse.",
+            expect_certain: true,
+            expect_complete: true,
+            collide_lemma: None,
+        },
+        Case {
+            text: "The teacher praised the student.",
+            expect_certain: true,
+            expect_complete: true,
+            collide_lemma: None,
+        },
+        // Certain-incomplete: confident parses missing a role never refine.
+        Case {
+            text: "Show me the report.",
+            expect_certain: true,
+            expect_complete: false,
+            collide_lemma: None,
+        },
+        Case {
+            text: "The blorpt wugged.",
+            expect_certain: true,
+            expect_complete: false,
+            collide_lemma: None,
+        },
+        // Uncertain-complete: the control sentences with a seeded collision.
+        Case {
+            text: "The cat chased the mouse.",
+            expect_certain: false,
+            expect_complete: true,
+            collide_lemma: Some("mouse"),
+        },
+        Case {
+            text: "The teacher praised the student.",
+            expect_certain: false,
+            expect_complete: true,
+            collide_lemma: Some("student"),
+        },
+        // Uncertain-incomplete: low role coverage.
+        Case {
+            text: "Xylophone zzzqx blorpt.",
+            expect_certain: false,
+            expect_complete: false,
+            collide_lemma: None,
+        },
+        Case {
+            text: "Run the tests.",
+            expect_certain: false,
+            expect_complete: false,
+            collide_lemma: None,
+        },
+    ];
+
+    // Threshold lock: the defaults the bounds below were measured against.
+    // Any silent tuning fails here first, never as a quiet drift.
+    let defaults = spacy_rs::RefinePolicy::default();
+    assert_eq!(defaults.mode, spacy_rs::RefineMode::Off);
+    assert!((defaults.min_overall - 0.7).abs() < f64::EPSILON);
+    assert!((defaults.min_role_coverage - 0.5).abs() < f64::EPSILON);
+    assert!((defaults.min_token_score - 0.5).abs() < f64::EPSILON);
+    assert!((defaults.unresolved_token_threshold - 0.3).abs() < f64::EPSILON);
+    assert!(defaults.refine_on_ties);
+    assert!(defaults.refine_on_unresolved_critical_role);
+    assert!(defaults.refine_on_unresolved_propn);
+    assert!(defaults.refine_on_collision_note);
+
+    fn resolver_pipeline_with_collision(collide_lemma: Option<&str>) -> Arc<spacy_rs::NlpPipeline> {
+        let vocab = Arc::new(spacy_rs::vocab::Vocab::new(
+            spacy_rs::lang::en::lexicon_config(),
+        ));
+        let tokenizer = spacy_rs::lang::en::tokenizer(vocab.clone()).expect("tokenizer");
+        let store = Arc::new(fluent_concept::InMemoryConceptStore::new());
+        if let Some(lemma) = collide_lemma {
+            store
+                .insert(fluent_types::ConceptMetadata {
+                    id: fluent_types::lemma_id_for_str(lemma),
+                    canonical_name: "colliding-canonical".into(),
+                    namespace: fluent_types::InterlinguaNamespace::SpacyLemma,
+                    yago_iri: None,
+                    yago_class_iri: None,
+                    label: None,
+                    node_id: None,
+                    parent_class_id: None,
+                })
+                .expect("insert colliding canonical");
+        }
+        let resolver = Arc::new(spacy_rs::interlingua::InterlinguaResolver::new(
+            Arc::clone(&store) as Arc<dyn fluent_concept::ConceptStore>,
+            Arc::clone(vocab.strings()),
+        ));
+        Arc::new(
+            spacy_rs::NlpPipeline::new_with_resolver(
+                vocab,
+                tokenizer,
+                spacy_rs::AnnotationValidator::new(),
+                Some(resolver),
+            )
+            .expect("pipeline"),
+        )
+    }
+
+    // Per-text refiner answers: structurally valid alternative parses the
+    // adoption gate can take, keyed by first token. Uncertain bases are low
+    // quality, so an adopted alternative changes the parse (the recall
+    // signal); certain bases never consult the fetch at all.
+    fn annotation_for(tokens: &[String]) -> String {
+        let joined = tokens.join(" ");
+        if joined.starts_with("The cat chased") {
+            r#"[{"text":"The","pos":"det","dep":"det","head":1,"lemma":"the"},{"text":"cat","pos":"noun","dep":"nsubj","head":1,"lemma":"cat"},{"text":"chased","pos":"verb","dep":"root","head":0,"lemma":"chase"},{"text":"the","pos":"det","dep":"det","head":1,"lemma":"the"},{"text":"mouse","pos":"noun","dep":"dobj","head":-2,"lemma":"mouse"},{"text":".","pos":"punct","dep":"punct","head":-1,"lemma":"."}]"#.to_string()
+        } else if joined.starts_with("The teacher praised") {
+            r#"[{"text":"The","pos":"det","dep":"det","head":1,"lemma":"the"},{"text":"teacher","pos":"noun","dep":"nsubj","head":1,"lemma":"teacher"},{"text":"praised","pos":"verb","dep":"root","head":0,"lemma":"praise"},{"text":"the","pos":"det","dep":"det","head":1,"lemma":"the"},{"text":"student","pos":"noun","dep":"dobj","head":-2,"lemma":"student"},{"text":".","pos":"punct","dep":"punct","head":-1,"lemma":"."}]"#.to_string()
+        } else if joined.starts_with("Xylophone") {
+            r#"[{"text":"Xylophone","pos":"propn","dep":"nsubj","head":2,"lemma":"Xylophone"},{"text":"zzzqx","pos":"noun","dep":"dobj","head":1,"lemma":"zzzqx"},{"text":"blorpt","pos":"verb","dep":"root","head":0,"lemma":"blorpt"},{"text":".","pos":"punct","dep":"punct","head":-1,"lemma":"."}]"#.to_string()
+        } else if joined.starts_with("Run the tests") {
+            r#"[{"text":"Run","pos":"verb","dep":"root","head":0,"lemma":"run"},{"text":"the","pos":"det","dep":"det","head":1,"lemma":"the"},{"text":"tests","pos":"noun","dep":"dobj","head":-2,"lemma":"test"},{"text":".","pos":"punct","dep":"punct","head":-1,"lemma":"."}]"#.to_string()
+        } else {
+            "[]".to_string()
+        }
+    }
+
+    let on_uncertain_policy = || spacy_rs::RefinePolicy {
+        mode: spacy_rs::RefineMode::OnUncertain,
+        ..spacy_rs::RefinePolicy::default()
+    };
+    let mut mismatches = Vec::new();
+    let mut control_calls = 0;
+    let mut control_total = 0;
+    let mut fired_total = 0;
+    let mut fired_changed = 0;
+    let mut changed_total = 0;
+    let mut changed_fired = 0;
+    for case in &cases {
+        // Baseline (`OnUncertain`, no fetch): the trigger that WOULD fire is
+        // evaluated and recorded, but no model can be consulted — this labels
+        // the quadrant without spending a call. The seeded store rides along
+        // so collision cases label as the trigger sees them.
+        let base_stage = NlpStage::with_strings(
+            resolver_pipeline_with_collision(case.collide_lemma),
+            None,
+            None,
+            None,
+        )
+        .with_refine_policy(on_uncertain_policy());
+        let (_, base) = base_stage.decide(&ctx_for(case.text));
+        assert_eq!(base.verdict, StageVerdict::Passed, "baseline {}", case.text);
+        let base_meta = StageMetadata::from(base.metadata);
+        let base_conf = base_meta.nlp_confidence().expect("baseline confidence");
+        let base_residual = base_meta.nlp_residual().expect("baseline residual");
+        let certain = base_conf.refine_reason == Some(spacy_rs::RefineReason::NoTrigger);
+        let complete = base_residual.uncovered_roles.is_empty();
+        if certain != case.expect_certain {
+            mismatches.push(format!(
+                "{}: certain={certain} (reason {:?}), expected certain={}",
+                case.text, base_conf.refine_reason, case.expect_certain
+            ));
+        }
+        if complete != case.expect_complete {
+            mismatches.push(format!(
+                "{}: uncovered={:?}, expected complete={}",
+                case.text, base_residual.uncovered_roles, case.expect_complete
+            ));
+        }
+        let base_signals = base_meta.nlp_parse().expect("baseline signals");
+
+        // Two refine runs on fresh pipelines pin determinism.
+        let mut runs = Vec::new();
+        for _ in 0..2 {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let calls_c = Arc::clone(&calls);
+            let fetch: spacy_rs::pipeline::LlmFetchSync = Arc::new(move |tokens: Vec<String>| {
+                calls_c.fetch_add(1, Ordering::SeqCst);
+                Ok(annotation_for(&tokens))
+            });
+            let stage = NlpStage::with_strings(
+                resolver_pipeline_with_collision(case.collide_lemma),
+                Some(fetch),
+                None,
+                None,
+            )
+            .with_refine_policy(on_uncertain_policy());
+            let (_, decision) = stage.decide(&ctx_for(case.text));
+            assert_eq!(
+                decision.verdict,
+                StageVerdict::Passed,
+                "refine {}",
+                case.text
+            );
+            let meta = StageMetadata::from(decision.metadata);
+            let conf = meta.nlp_confidence().expect("confidence");
+            let signals = meta.nlp_parse().expect("signals");
+            runs.push((
+                calls.load(Ordering::SeqCst),
+                conf.source,
+                conf.refine_reason,
+                signals,
+            ));
+        }
+        if runs[0].3 != runs[1].3 || runs[0].1 != runs[1].1 || runs[0].0 != runs[1].0 {
+            mismatches.push(format!("{}: refine runs disagree", case.text));
+        }
+        let (calls, source, reason, signals) = &runs[0];
+        let fired = *calls > 0;
+        // Changed route: the refiner's product won (source flipped to the
+        // model rung) or the published signals differ from the baseline.
+        let changed = *source == spacy_rs::AnnotationSource::Llm || *signals != base_signals;
+        if case.expect_certain && case.expect_complete {
+            control_total += 1;
+            control_calls += *calls;
+        }
+        if certain && complete && fired {
+            mismatches.push(format!("{}: certain-complete must not fire", case.text));
+        }
+        if fired {
+            fired_total += 1;
+            if changed {
+                fired_changed += 1;
+            }
+        }
+        if changed {
+            changed_total += 1;
+            if fired {
+                changed_fired += 1;
+            }
+        }
+        let _ = reason;
+    }
+    assert!(
+        mismatches.is_empty(),
+        "calibration mismatches:\n{}",
+        mismatches.join("\n")
+    );
+    assert_eq!(
+        (control_total, control_calls),
+        (2, 0),
+        "control (certain-complete) must record zero refine calls"
+    );
+    assert_eq!(
+        (fired_changed, fired_total),
+        (4, 4),
+        "precision must be 1.0: every fire changes the parse"
+    );
+    assert_eq!(
+        (changed_fired, changed_total),
+        (4, 4),
+        "recall must be 1.0: every change was fired by the trigger"
+    );
+}
+
+/// With `nlp: false` the pipeline emits no NLP/overlay handoff keys: the
+/// typed residual never leaks into configs that never opted in.
+#[test]
+fn nlp_overlay_disabled_pipeline_carries_no_handoff_keys() {
+    let nlp_deps = NlpDeps {
+        concept_store: None,
+        strings_path: None,
+    };
+    let config: RouterConfig = serde_json::from_str(
+        r#"{
+            "pipelines": {
+                "default": {"deterministic_prefilter": false, "nlp": false, "classifier": false}
+            }
+        }"#,
+    )
+    .expect("config");
+    let map = config.build_all_pipelines_with_backend_onnx_and_nlp(None, None, &nlp_deps);
+    let pipeline = map.get("default").expect("pipeline built");
+    let output = pipeline
+        .execute(&ctx_for("show me the report"))
+        .expect("execute");
+    let result: PipelineResult = output.data_take().expect("pipeline result");
+    assert!(
+        result
+            .decisions
+            .iter()
+            .all(|d| !matches!(d.stage, PipelineStage::Nlp | PipelineStage::Overlay)),
+        "no NLP/overlay decisions when disabled"
+    );
+    for d in &result.decisions {
+        let meta = StageMetadata::from(d.metadata.clone());
+        assert!(meta.nlp_residual().is_none(), "no residual when disabled");
+        assert!(
+            meta.overlay_route_hints().is_none(),
+            "no hints when disabled"
+        );
+    }
+}
+
 #[test]
 fn nlp_stage_new_with_fetch_defaults_to_off() {
     let fetch: spacy_rs::pipeline::LlmFetchSync =

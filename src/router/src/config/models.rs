@@ -128,6 +128,10 @@ pub struct ModelEntry {
     /// nothing.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "roles")]
     pub role_params: Option<HashMap<String, ModelRoleOverride>>,
+    /// Snapshot save mode (`snapshot: {mode: manual|auto}`), beside
+    /// `weights`. `None` inherits from the serving roles, else `Auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<SnapshotConfig>,
 }
 
 impl Default for ModelEntry {
@@ -189,6 +193,40 @@ pub struct ModelRoleOverride {
     /// params chain (absent contributes nothing).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
+}
+
+/// Snapshot save mode for a model or role entry (`snapshot: {mode}`).
+/// `Auto` (the default) preserves today's behavior: a resume-marked session
+/// context is KV-snapshotted before eviction drops it. `Manual` destroys
+/// without saving (and audits the skip) — the operator asked for no silent
+/// saves.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotMode {
+    /// Save-before-destroy on evict (today's behavior).
+    #[default]
+    Auto,
+    /// Destroy without saving on evict (audited).
+    Manual,
+}
+
+impl SnapshotMode {
+    /// Whether an evict may save the context's KV before destroying it.
+    #[must_use]
+    pub fn saves_on_evict(self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}
+
+/// The `snapshot` block beside `weights` on model/role entries. Only `mode`
+/// today; the block shape leaves room for retention knobs without a schema
+/// break. `None` (absent) inherits — the model entry wins, else the first
+/// serving role (sorted) that sets one, else `Auto`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotConfig {
+    /// Save mode; default `Auto` (today's behavior).
+    #[serde(default)]
+    pub mode: SnapshotMode,
 }
 
 /// One config-declared instance profile. The map key on

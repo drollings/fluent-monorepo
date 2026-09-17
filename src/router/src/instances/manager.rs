@@ -66,6 +66,19 @@ impl Drop for InflightLease {
     }
 }
 
+/// Conservative KV-cache bytes per context token for a half-precision
+/// grouped-query model of mid size: one token's key+value across every
+/// layer. The fork reports per-window KV inside `vram_bytes` once resident;
+/// this estimate sizes the window BEFORE the spawn, so pre-admission never
+/// admits a load whose context alone already exceeds the budget.
+pub const KV_BYTES_PER_TOKEN: u64 = 131_072;
+
+/// Estimated KV bytes for a `num_ctx`-token window (see
+/// [`KV_BYTES_PER_TOKEN`]).
+pub fn estimated_kv_bytes(num_ctx: u64) -> u64 {
+    num_ctx.saturating_mul(KV_BYTES_PER_TOKEN)
+}
+
 /// The sidecar owner of instance lifecycle for ONE spawned `llama-server`.
 /// Holds the model key (public id), the management client talking directly to
 /// that server, the expanded configured profiles, and the residency policy.
@@ -101,9 +114,20 @@ pub struct InstanceManager {
     /// from the configured profiles, updated by [`Self::set_resume`]. The fork
     /// knows nothing of it; the aggregate overlays it on the envelope.
     resume: Mutex<HashMap<String, bool>>,
+    /// Round-robin cursors: group -> next start index (`usize`, always kept
+    /// below the sibling count so no cast or overflow handling is needed).
+    /// One cursor per sibling group (pattern of `last_used` /
+    /// `in_flight_count`: plain atomics where the key is fixed, a locked map
+    /// where it is per-group). Advanced only on multi-sibling picks, so
+    /// single-window groups never touch it.
+    rr_cursors: Mutex<HashMap<String, usize>>,
     /// The weights-file identity (`short_id`/`arch`/`quant`) of this model,
     /// surfaced on the aggregate envelope for `coral-router ps`.
     identity: WeightsIdentity,
+    /// Snapshot save mode for this model (`auto` = save-before-destroy on
+    /// evict, today's behavior; `manual` = destroy without saving, audited).
+    /// Resolved at build from the model entry, else its serving roles.
+    snapshot_mode: crate::config::SnapshotMode,
 }
 
 impl InstanceManager {
@@ -127,7 +151,9 @@ impl InstanceManager {
             last_used: AtomicI64::new(-1),
             in_flight_count: AtomicUsize::new(0),
             resume: Mutex::new(resume),
+            rr_cursors: Mutex::new(HashMap::<String, usize>::new()),
             identity: WeightsIdentity::default(),
+            snapshot_mode: crate::config::SnapshotMode::Auto,
         }
     }
 
@@ -151,6 +177,19 @@ impl InstanceManager {
     /// no weights path).
     pub fn weights_identity(&self) -> &WeightsIdentity {
         &self.identity
+    }
+
+    /// Builder-style: set the snapshot save mode resolved at build from the
+    /// model entry (else its serving roles, else `Auto`).
+    #[must_use]
+    pub fn with_snapshot_mode(mut self, mode: crate::config::SnapshotMode) -> Self {
+        self.snapshot_mode = mode;
+        self
+    }
+
+    /// The snapshot save mode for this model.
+    pub fn snapshot_mode(&self) -> crate::config::SnapshotMode {
+        self.snapshot_mode
     }
 
     /// Whether this manager's model declares an instance pool. Only instance
@@ -180,6 +219,29 @@ impl InstanceManager {
         self.weights_bytes
     }
 
+    /// VRAM a (re)load of this model needs: the resident weights plus the KV
+    /// window the incoming context allocates. A named target sizes its own
+    /// profile's window; a bare load sizes the largest configured window (the
+    /// conservative bound when the serving window is not yet known); an
+    /// unknown name or a window-less server loads weights alone. The
+    /// residency loop corrects any residual overshoot after the load lands.
+    pub fn load_bytes_for(&self, instance: Option<&str>) -> u64 {
+        let kv = match instance {
+            Some(name) => self
+                .profiles
+                .iter()
+                .find(|p| p.name.as_deref() == Some(name))
+                .map_or(0, |p| estimated_kv_bytes(p.num_ctx)),
+            None => self
+                .profiles
+                .iter()
+                .map(|p| p.num_ctx)
+                .max()
+                .map_or(0, estimated_kv_bytes),
+        };
+        self.weights_bytes.saturating_add(kv)
+    }
+
     /// Whether the named instance is marked to be preserved (KV snapshotted +
     /// ledger transcript) across eviction.
     pub fn resume_for(&self, name: &str) -> bool {
@@ -203,6 +265,50 @@ impl InstanceManager {
     /// Set (or clear) the preserve-on-evict flag for a named instance.
     pub fn set_resume(&self, name: &str, enabled: bool) {
         common_core::sync::lock(&self.resume).insert(name.to_string(), enabled);
+    }
+
+    /// Round-robin sibling for a group-addressed dispatch (`<base>:<group>`):
+    /// the next ready sibling in name order, or `None` when the group must
+    /// keep its group addressing (unknown group, grammar-less server with a
+    /// single fixed context, single window, or no sibling ready — the fork
+    /// then resolves first-available as today, byte-identical wire).
+    ///
+    /// Readiness is caller-supplied: per-sibling health is fork-owned (the
+    /// router holds no synchronous fork state), so dispatch passes an
+    /// allow-all predicate and `ensure_instance` heals missing siblings
+    /// best-effort; workflows and tests pass narrower gates. The cursor
+    /// advances past the served pick, so a skipped sibling is retried — it
+    /// never wedges the rotation.
+    pub fn sibling_for_group_where(
+        &self,
+        group: &str,
+        ready: &dyn Fn(&str) -> bool,
+    ) -> Option<String> {
+        if !self.has_instances_api() {
+            return None;
+        }
+        let mut names: Vec<&str> = self
+            .profiles
+            .iter()
+            .filter(|p| p.group.as_deref() == Some(group))
+            .filter_map(|p| p.name.as_deref())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        if names.len() < 2 {
+            return None;
+        }
+        let mut cursors = common_core::sync::lock(&self.rr_cursors);
+        let len = names.len();
+        let start = cursors.get(group).copied().unwrap_or(0) % len;
+        for step in 0..len {
+            let idx = (start + step) % len;
+            if ready(names[idx]) {
+                cursors.insert(group.to_string(), (start + step + 1) % len);
+                return Some(names[idx].to_string());
+            }
+        }
+        None
     }
 
     /// Whether the fork currently has this model's weights slept out of VRAM
@@ -795,7 +901,8 @@ pub fn build_instance_managers(
         let manager = Arc::new(
             InstanceManager::new(key, client, profiles, config.sidecar.clone())
                 .with_weights_bytes(weights_bytes)
-                .with_weights_identity(identity),
+                .with_weights_identity(identity)
+                .with_snapshot_mode(snapshot_mode_for(key, entry, &config.roles)),
         );
         // An adopted grammar-less orphan (no `--instance` flags, so no
         // `/instances` route) serves generation but cannot be reconciled:
@@ -807,6 +914,31 @@ pub fn build_instance_managers(
         managers.insert(key.clone(), manager);
     }
     Ok(InstancePool::from_managers(managers, supervisor))
+}
+
+/// Resolve a model's snapshot save mode: its own entry wins, else the first
+/// serving role (sorted for determinism) that sets one, else `Auto`
+/// (today's behavior). Unset everywhere behaves exactly as today.
+pub(super) fn snapshot_mode_for(
+    model_key: &str,
+    entry: &crate::config::ModelEntry,
+    roles: &std::collections::HashMap<String, crate::config::routing::RoleEntry>,
+) -> crate::config::SnapshotMode {
+    if let Some(mode) = entry.snapshot.map(|s| s.mode) {
+        return mode;
+    }
+    let mut names: Vec<&String> = roles
+        .iter()
+        .filter(|(_, role)| role.models.iter().any(|m| m == model_key))
+        .map(|(name, _)| name)
+        .collect();
+    names.sort();
+    for name in names {
+        if let Some(mode) = roles[name].snapshot.map(|s| s.mode) {
+            return mode;
+        }
+    }
+    crate::config::SnapshotMode::Auto
 }
 
 /// The instance NAME within a server-reported id: the segment after the last

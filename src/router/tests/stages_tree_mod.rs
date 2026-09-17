@@ -397,10 +397,10 @@ fn terminal_flat_route_ladder_matches_within_group() {
 }
 
 #[test]
-fn terminal_single_member_group_never_self_assesses() {
-    // A single-member group ("code") has nothing to climb — the ladder is
-    // skipped entirely and no self-assessment call is made, even with a
-    // matcher present (byte-identical to today's static pick).
+fn terminal_single_member_group_climbs() {
+    // A single-member group ("code") climbs with a matcher present: exactly
+    // one self-assessment call, terminating on last-always-wins with the
+    // member as primary (same target the static path would pick).
     let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": { "type": "terminal", "route": "code", "group": "code" }
     }))
@@ -425,8 +425,8 @@ fn terminal_single_member_group_never_self_assesses() {
     assert_eq!(routed_target(&evaluation).model, "code-model");
     assert_eq!(
         counting.calls(),
-        0,
-        "single-member group must not run the ladder",
+        1,
+        "single-member group climbs with exactly one assessment",
     );
 }
 
@@ -1123,6 +1123,148 @@ fn tree_engine_prefers_live_backend_over_frozen_default() {
         routed_target(&evaluation).target_name.as_deref(),
         Some("code"),
         "live backend wins",
+    );
+}
+
+fn last_viable_singleton_routing() -> RoutingConfig {
+    RoutingConfig {
+        routes: HashMap::from([(
+            "solo".into(),
+            RouteRef {
+                group: "solo".into(),
+                role: None,
+                pipelines: vec!["default".into()],
+                description: "solo".into(),
+                always_route: false,
+            },
+        )]),
+        models: HashMap::from([
+            ("solo".into(), model_entry("solo", 2, 1.0)),
+            ("m".into(), model_entry("m", 1, 1.0)),
+        ]),
+        model_groups: HashMap::from([(
+            "solo".into(),
+            ModelGroup::Array(vec!["solo".into()]),
+        )]),
+        system_prompt: String::new(),
+        safety_threshold: 0.3,
+        default_route: "solo".into(),
+        score_matrix: None,
+        onnx_keys: std::collections::BTreeSet::new(),
+        roles: Default::default(),
+    }
+}
+
+fn last_viable_tree(root_model: &str) -> ClassificationTree {
+    serde_json::from_value(serde_json::json!({
+        "root": {
+            "type": "classifier",
+            "description": "request router",
+            "model": root_model,
+            "children": [
+                {
+                    "key": "solo",
+                    "description": "only route",
+                    "node": { "type": "terminal", "route": "solo", "group": "solo" }
+                },
+            ],
+        },
+    }))
+    .expect("test tree parses")
+}
+
+#[test]
+fn last_viable_singleton_group_runs_ladder() {
+    // A one-member group with a matcher installed climbs instead of taking
+    // the static path: the terminal decision carries the self-assessment
+    // marker. The overconfident assessment (9 > intelligence 2) still
+    // terminates on last-always-wins with the singleton as primary.
+    let tree = last_viable_tree("m");
+    let default: Arc<dyn ChatBackend> =
+        Arc::new(StubChatBackend::new(vec![verdict("solo", 0.9, 0.9, 2)]));
+    let matcher = ladder_matcher_keyed([("solo", self_assessment(9, "too hard"))].into_iter().collect());
+    let engine = engine_with_routing(&tree, default, last_viable_singleton_routing(), Some(matcher));
+    let evaluation = engine.evaluate("hi", None, None).expect("evaluates");
+    let target = routed_target(&evaluation);
+    assert!(target.model.contains("solo"), "singleton serves, got {}", target.model);
+    // The ladder marker lives on the terminal step inside `tree_path`
+    // (`final_decision` rebuilds the top-level metadata).
+    let climbed = evaluation
+        .decision
+        .metadata
+        .get("tree_path")
+        .and_then(|p| p.as_array())
+        .is_some_and(|path| {
+            path.iter().any(|step| {
+                step.get("metadata")
+                    .and_then(|m| m.get("matched_via"))
+                    .and_then(|v| v.as_str())
+                    == Some("self_assess")
+            })
+        });
+    assert!(climbed, "singleton terminal climbed the ladder, not the static path");
+}
+
+#[test]
+fn last_viable_classifier_duty_resolves_recency_free_key() {
+    // Root `model: "last"` never reaches a backend literally: with no
+    // recency the duty resolves to the fleet-viable member (`aaa`, cheapest
+    // passing) and the resolver receives that concrete key.
+    let mut models = HashMap::new();
+    models.insert("aaa".into(), model_entry("aaa", 1, 2.0));
+    models.insert("mmm".into(), model_entry("mmm", 5, 10.0));
+    let routing = RoutingConfig {
+        routes: HashMap::from([(
+            "solo".into(),
+            RouteRef {
+                group: "solo".into(),
+                role: None,
+                pipelines: vec!["default".into()],
+                description: "solo".into(),
+                always_route: false,
+            },
+        )]),
+        models,
+        model_groups: HashMap::from([(
+            "solo".into(),
+            ModelGroup::Array(vec!["aaa".into()]),
+        )]),
+        system_prompt: String::new(),
+        safety_threshold: 0.3,
+        default_route: "solo".into(),
+        score_matrix: None,
+        onnx_keys: std::collections::BTreeSet::new(),
+        roles: Default::default(),
+    };
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_in = Arc::clone(&seen);
+    let resolver: ClassifierBackendResolver = Arc::new(move |key: &str| {
+        lock(&seen_in).push(key.to_string());
+        Some(Arc::new(StubChatBackend::always(verdict("solo", 0.9, 0.9, 2))) as Arc<dyn ChatBackend>)
+    });
+    let default: Arc<dyn ChatBackend> =
+        Arc::new(StubChatBackend::always(verdict("solo", 0.9, 0.9, 2)));
+    let engine = ClassificationEngine::new(
+        compiled(&last_viable_tree("last")),
+        routing,
+        default,
+        HashMap::new(),
+        Arc::new(Limiter::new(4)),
+        0.5,
+        None,
+        Some(resolver),
+    );
+    let evaluation = engine
+        .evaluate_with_expansion("hi", None, None, &crate::target_match::GroupExpansion::default())
+        .expect("evaluates");
+    assert_eq!(
+        lock(&seen).as_slice(),
+        &["aaa".to_string()],
+        "duty resolves to the viable member, never the literal sentinel"
+    );
+    assert!(
+        routed_target(&evaluation).model.contains("aaa"),
+        "terminal serves through the viable group member"
     );
 }
 

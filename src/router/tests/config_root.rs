@@ -762,6 +762,85 @@ fn inference_point_role_carries_no_qualifier() {
     );
 }
 
+// -- Resident-point duty (sync clients) -------------------------------
+// The entry default beside pinned profiles is unpinned: declared at spawn
+// but cold until first demand. Sync clients (no sidecar to pre-warm a cold
+// window on the blocking path) retarget through `default_resident_point`;
+// dispatch keeps the entry default and builds it on demand through the
+// sidecar.
+
+#[test]
+fn resident_point_prefers_cheapest_pinned_group() {
+    // Mirrors the fleet shape: an unpinned base default beside two pinned
+    // role windows. The sync duty belongs on the cheapest resident window,
+    // not the cold default.
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "ledger": {"pinned": true, "params": {"num_ctx": 262144}, "models": ["m"]},
+        "quick": {"pinned": true, "params": {"num_ctx": 8192}, "models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    assert_eq!(
+        default_resident_point(&entry).as_deref(),
+        Some("quick"),
+        "cheapest pinned group wins over the undeclared base default"
+    );
+}
+
+#[test]
+fn resident_point_breaks_pinned_ties_by_group_name() {
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "zeta": {"pinned": true, "params": {"num_ctx": 8192}, "models": ["m"]},
+        "alpha": {"pinned": true, "params": {"num_ctx": 8192}, "models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    assert_eq!(
+        default_resident_point(&entry).as_deref(),
+        Some("alpha"),
+        "equal windows break ties deterministically by group name"
+    );
+}
+
+#[test]
+fn resident_point_keeps_default_when_nothing_pinned() {
+    // All-lazy pools declare their full grammar at spawn, so the entry
+    // default already names a live instance — no retarget.
+    let mut entry = bare_entry();
+    let roles = role_table(serde_json::json!({
+        "work": {"params": {"num_ctx": 16384}, "models": ["m"]}
+    }));
+    materialize("m", &mut entry, &roles);
+    assert_eq!(
+        default_resident_point(&entry),
+        None,
+        "unpinned pools keep the entry default"
+    );
+}
+
+#[test]
+fn resident_point_keeps_pinned_default() {
+    // A pinned base is declared at spawn, so the default is live.
+    let mut entry = bare_entry();
+    entry.pinned = true;
+    materialize("m", &mut entry, &role_table(serde_json::json!({})));
+    assert_eq!(
+        default_resident_point(&entry),
+        None,
+        "a pinned default needs no fallback"
+    );
+}
+
+#[test]
+fn resident_point_none_pre_boot() {
+    let entry = bare_entry();
+    assert_eq!(
+        default_resident_point(&entry),
+        None,
+        "no materialized pool — keep the legacy bare resolution"
+    );
+}
+
 #[test]
 fn sidecar_absent_section_defaults_cleanly() {
     let cfg: RouterConfig =

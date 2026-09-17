@@ -301,6 +301,34 @@ async fn test_chat_complete_http_client_error_is_api() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_chat_complete_http_client_error_carries_body() {
+    // The fork explains its 400s (`ambiguous: multiple instances…`,
+    // `model or instance not found…`): that text must reach the caller,
+    // or a bare `HTTP 400` is undiagnosable downstream.
+    let server = httpmock::MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(400).body(
+            r#"{"error":{"code":400,"message":"ambiguous: multiple instances and no default for 'm'","type":"invalid_request_error"}}"#,
+        );
+    });
+    let client = LlmClient::new(&server.base_url(), "m");
+    let err = client.chat_complete(&one_message()).expect_err("400");
+    assert!(matches!(err, LlmError::Api(_)));
+    assert!(!err.is_retryable());
+    let msg = err.to_string();
+    assert!(
+        msg.starts_with("API error: HTTP 400"),
+        "status-first shape preserved for typed parsers, got: {msg}"
+    );
+    assert!(
+        msg.contains("ambiguous: multiple instances"),
+        "server explanation surfaces, got: {msg}"
+    );
+    mock.assert_hits(1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_chat_complete_empty_content_is_no_response() {
     let server = httpmock::MockServer::start();
     server.mock(|when, then| {

@@ -250,6 +250,62 @@ pub struct RouteHint {
     pub score: f64,
 }
 
+/// The typed residual handover: what the deterministic parse leaves for the
+/// overlay and the classifier. Built from the [`NlpConfidenceSummary`] plus
+/// the signals' uncovered roles — the ArcEager → overlay → classifier record
+/// in one place, so no consumer traverses raw string keys.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NlpResidual {
+    /// The parse-level confidence (matches the summary's `overall`).
+    pub overall: f64,
+    /// Fraction of `{nsubj, dobj}` roles filled.
+    pub role_coverage: f64,
+    /// Oracle tie count (margin-awareness).
+    pub oracle_tie_count: usize,
+    /// Interlingua collisions surfaced by the resolve step.
+    pub collision_count: usize,
+    /// Why the refine decision fired, if any. Flat-string wire format, like
+    /// the summary's field.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_flat_refine_reason"
+    )]
+    pub refine_reason: Option<spacy_rs::RefineReason>,
+    /// Roles in `{nsubj, dobj}` missing from every signal, sorted.
+    #[serde(default)]
+    pub uncovered_roles: Vec<String>,
+}
+
+impl NlpResidual {
+    /// Assemble the handover from the confidence summary and the published
+    /// signals. A role counts as uncovered when no signal fills it
+    /// structurally (`subject`/`direct_object`); the record otherwise mirrors
+    /// the summary field for field.
+    #[must_use]
+    pub fn from_summary_and_signals(
+        summary: &NlpConfidenceSummary,
+        signals: &[spacy_rs::routing::RoutingSignal],
+    ) -> Self {
+        let mut uncovered_roles = Vec::new();
+        if signals.iter().any(|s| s.subject.is_none()) {
+            uncovered_roles.push("nsubj".to_string());
+        }
+        if signals.iter().any(|s| s.direct_object.is_none()) {
+            uncovered_roles.push("dobj".to_string());
+        }
+        uncovered_roles.sort();
+        Self {
+            overall: summary.overall,
+            role_coverage: summary.role_coverage,
+            oracle_tie_count: summary.oracle_tie_count,
+            collision_count: summary.collision_count,
+            refine_reason: summary.refine_reason,
+            uncovered_roles,
+        }
+    }
+}
+
 /// Typed access to the documented `StageDecision.metadata` handoff keys.
 ///
 /// Producers build metadata through the typed setters and consumers read it
@@ -336,6 +392,12 @@ impl StageMetadata {
         Self::metadata_ref(&self.0).nlp_confidence()
     }
 
+    /// The typed residual handover (the deterministic parse's remainder for
+    /// the overlay and the classifier).
+    pub fn nlp_residual(&self) -> Option<NlpResidual> {
+        Self::metadata_ref(&self.0).nlp_residual()
+    }
+
     /// The NLP stage's per-token confidence vector (L3 — the review endpoint
     /// reads it back so a rebuild keeps per-token fidelity). `None` when the
     /// producing rung filled none (LLM/rule rungs).
@@ -396,6 +458,13 @@ impl StageMetadata {
     pub fn set_nlp_confidence(&mut self, summary: &NlpConfidenceSummary) {
         if let Ok(v) = serde_json::to_value(summary) {
             self.0["nlp_confidence"] = v;
+        }
+    }
+
+    /// Publish the `Nlp` stage's typed residual handover.
+    pub fn set_nlp_residual(&mut self, residual: &NlpResidual) {
+        if let Ok(v) = serde_json::to_value(residual) {
+            self.0["nlp_residual"] = v;
         }
     }
 
@@ -490,6 +559,12 @@ impl<'a> StageMetadataRef<'a> {
         self.0
             .get("nlp_confidence")
             .and_then(|v| NlpConfidenceSummary::deserialize(v).ok())
+    }
+
+    pub fn nlp_residual(self) -> Option<NlpResidual> {
+        self.0
+            .get("nlp_residual")
+            .and_then(|v| NlpResidual::deserialize(v).ok())
     }
 
     pub fn nlp_token_confidence(self) -> Option<Vec<f64>> {

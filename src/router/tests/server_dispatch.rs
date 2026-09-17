@@ -323,3 +323,56 @@ async fn role_limiter_releases_permit_on_task_panic() {
         "permit released on unwind"
     );
 }
+
+fn sibling_rr_request() -> crate::types::RouterRequest {
+    crate::types::RouterRequest {
+        model: "m".into(),
+        messages: vec![crate::types::RouterMessage {
+            role: "user".into(),
+            content: crate::types::RouterMessageContent::Text("hi".into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }],
+        temperature: None,
+        max_tokens: None,
+        stream: None,
+        tools: None,
+        tool_choice: None,
+        session_id: None,
+        agent_id: None,
+        adapter: None,
+        instance: None,
+        snapshot: None,
+        id_slot: None,
+        metadata: Default::default(),
+    }
+}
+
+#[test]
+fn sibling_rr_session_pinned_bypass() {
+    // Config-derived dispatches rotate; anything the client or a rewind
+    // pinned (instance/snapshot/id_slot, or pending KV fields) bypasses.
+    let plain = sibling_rr_request();
+    assert!(
+        !has_explicit_routing(&plain, None),
+        "plain request rotates over siblings"
+    );
+    let session = crate::dag_session::DependencySession::new("s");
+    let guard = std::sync::Mutex::new(session);
+    assert!(
+        !has_explicit_routing(&plain, Some(&guard)),
+        "session without pending rewind still rotates"
+    );
+    for field in ["instance", "snapshot", "id_slot"] {
+        let mut pinned = sibling_rr_request();
+        match field {
+            "instance" => pinned.instance = Some("quick-1".into()),
+            "snapshot" => pinned.snapshot = Some("snap".into()),
+            _ => pinned.id_slot = Some(3),
+        }
+        assert!(
+            has_explicit_routing(&pinned, None),
+            "{field} pins the window: no rotation"
+        );
+    }
+}

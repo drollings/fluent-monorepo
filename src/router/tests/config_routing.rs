@@ -457,11 +457,136 @@ fn terminal_role_validation_rejects_unknown_role() {
     );
 }
 
+/// Pinned-role fixture: same shape as [`role_routing_config`] with `quick`
+/// pinned, and pools deliberately NOT materialized — dispatch must resolve
+/// the qualifier identically pre/post boot for pinned roles.
+fn terminal_role_pinned_config() -> RoutingConfig {
+    serde_json::from_value(serde_json::json!({
+        "routes": {
+            "code": {"group": "dev", "role": "quick", "description": "code"},
+            "pinned": {"group": "pinned", "description": "pinned"},
+        },
+        "models": {
+            "tiny": {"endpoint": "http://a", "name": "tiny", "intelligence": 1,
+                     "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10,
+                     "params": {"mk": "mv"},
+                     "roles": {"quick": {"params": {"ok": "ov"}}}},
+            "big": {"endpoint": "http://b", "name": "big", "intelligence": 5,
+                    "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 0.0, "tok_s": 10,
+                    "params": {"mk": "mv"},
+                    "roles": {"quick": {"params": {"ok": "ov"}}}},
+        },
+        "model_groups": {"dev": ["tiny", "big"], "pinned": ["big:fast"]},
+        "roles": {
+            "default": {"params": {"duty": "duty-only"}},
+            "quick": {
+                "pinned": true,
+                "params": {"rk": "rv"},
+                "models": ["big", "tiny"],
+            },
+        },
+        "system_prompt": "sys",
+        "safety_threshold": 0.5,
+        "default_route": "code",
+    }))
+    .expect("pinned role config parses")
+}
+
+#[test]
+fn terminal_role_pinned_forces_qualifier_without_materialized_pool() {
+    let cfg = terminal_role_pinned_config();
+    // Complexity 5 rules out tiny: big wins, and the pinned role forces the
+    // qualifier even though no pool was materialized (pre-boot parity).
+    let rt = cfg.routing_target("code", Some(5)).expect("target");
+    assert_eq!(rt.role.as_deref(), Some("quick"));
+    assert_eq!(rt.model, "big:quick", "pinned role forces its window");
+}
+
+#[test]
+fn terminal_role_pinned_explicit_point_still_wins() {
+    let mut cfg = terminal_role_pinned_config();
+    cfg.routes.get_mut("pinned").expect("route").role = Some("quick".into());
+    let rt = cfg.routing_target("pinned", None).expect("target");
+    assert_eq!(rt.model, "big:fast", "explicit member qualifier kept");
+    assert_eq!(rt.role.as_deref(), Some("quick"), "role recorded for audit");
+}
+
+#[test]
+fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
+    let mut cfg = role_routing_config();
+    // lonely is bound to no role; the unpinned terminal role cannot qualify
+    // it, so dispatch serves the entry default point (graceful, by design).
+    cfg.models.insert(
+        "lonely".into(),
+        serde_json::from_value(serde_json::json!({
+            "endpoint": "http://d", "name": "lonely", "intelligence": 9,
+            "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10,
+        }))
+        .expect("member"),
+    );
+    cfg.model_groups.insert(
+        "solo".into(),
+        crate::config::ModelGroup::Array(vec!["lonely".into()]),
+    );
+    cfg.routes.insert(
+        "solo".into(),
+        serde_json::from_value(serde_json::json!({"group": "solo", "role": "quick", "description": "solo"}))
+            .expect("route"),
+    );
+    let rt = cfg.routing_target("solo", None).expect("target");
+    // `lonely` was inserted after pool materialization, so its entry default
+    // is the bare wire id (materialized entries resolve `<base>:base`).
+    assert_eq!(rt.model, "lonely", "unbound member serves entry default");
+    assert!(!rt.model.contains(":quick"), "no forced qualifier without binding");
+    assert_eq!(rt.role.as_deref(), Some("quick"), "role still recorded");
+}
+
 #[test]
 fn terminal_role_validation_rejects_unserved_member() {
     let mut cfg = role_routing_config();
+    // Pin quick: a pinned role must be fillable, and a bare-only group with
+    // no serving member and no runtime flexibility fails boot. (Unpinned
+    // roles fall back to the entry default — see the accepts test below.)
+    cfg.roles.get_mut("quick").expect("role").pinned = true;
     // lonely serves no role at all and is not the default-inherit case for
     // quick (it is bound nowhere, but quick is not default).
+    cfg.models.insert(
+        "lonely".into(),
+        serde_json::from_value(serde_json::json!({
+            "endpoint": "http://d", "name": "lonely", "intelligence": 9,
+            "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10,
+        }))
+        .expect("member"),
+    );
+    // Object form with `sentinels: false`: the Array form always appends the
+    // `last`/`any` suffix (`ModelGroup::effective_models`), so only the
+    // explicit opt-out names a window that can never exist at runtime.
+    cfg.model_groups.insert(
+        "mixed".into(),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"], "sentinels": false}))
+            .expect("bare-only group"),
+    );
+    let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
+        "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
+            {"key": "m", "description": "", "node": {
+                "type": "terminal", "route": "m",
+                "group": "mixed", "role": "quick", "description": "",
+            }},
+        ]}
+    }))
+    .expect("tree parses");
+    let err = cfg
+        .validate_terminal_roles(&tree)
+        .expect_err("unserved member must fail validation");
+    assert!(err.contains("lonely"), "error names the member, got: {err}");
+    assert!(err.contains("quick"), "error names the role, got: {err}");
+}
+
+#[test]
+fn terminal_role_validation_accepts_unpinned_unserved_member() {
+    // Same lonely setup, but quick is unpinned (the shared helper default):
+    // dispatch falls back to the entry default, so boot passes.
+    let mut cfg = role_routing_config();
     cfg.models.insert(
         "lonely".into(),
         serde_json::from_value(serde_json::json!({
@@ -483,11 +608,40 @@ fn terminal_role_validation_rejects_unserved_member() {
         ]}
     }))
     .expect("tree parses");
-    let err = cfg
-        .validate_terminal_roles(&tree)
-        .expect_err("unserved member must fail validation");
-    assert!(err.contains("lonely"), "error names the member, got: {err}");
-    assert!(err.contains("quick"), "error names the role, got: {err}");
+    cfg.validate_terminal_roles(&tree)
+        .expect("unpinned role with graceful fallback validates");
+}
+
+#[test]
+fn terminal_role_validation_accepts_pinned_with_sentinel_flexibility() {
+    // Pinned quick, but the group carries `last`: recency may fill the role
+    // at runtime, so boot passes (the winner still qualifies only if it
+    // binds the role — force never invents a window).
+    let mut cfg = role_routing_config();
+    cfg.roles.get_mut("quick").expect("role").pinned = true;
+    cfg.models.insert(
+        "lonely".into(),
+        serde_json::from_value(serde_json::json!({
+            "endpoint": "http://d", "name": "lonely", "intelligence": 9,
+            "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10,
+        }))
+        .expect("member"),
+    );
+    cfg.model_groups.insert(
+        "flex".into(),
+        crate::config::ModelGroup::Array(vec!["last".into(), "lonely".into()]),
+    );
+    let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
+        "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
+            {"key": "m", "description": "", "node": {
+                "type": "terminal", "route": "m",
+                "group": "flex", "role": "quick", "description": "",
+            }},
+        ]}
+    }))
+    .expect("tree parses");
+    cfg.validate_terminal_roles(&tree)
+        .expect("sentinel-bearing group may fill the pinned role at runtime");
 }
 
 #[test]
@@ -704,7 +858,13 @@ fn role_concurrency_zero_rejected() {
 
 #[test]
 fn capacity_mismatch_warns_with_counts() {
-    let cfg = concurrency_config();
+    // A role whose pool was never materialized counts zero slots under its
+    // cap: the pre-boot fail-open signal still warns with role + cap.
+    let mut cfg = concurrency_config();
+    cfg.models
+        .get_mut("m")
+        .expect("member")
+        .effective_profiles = None;
     let ((), logs) = crate::test_support::capture_logs(|| {
         cfg.warn_on_role_capacity_mismatch();
     });
@@ -713,6 +873,234 @@ fn capacity_mismatch_warns_with_counts() {
         joined.contains("quick") && joined.contains('8'),
         "warning names the role and the cap, logs:\n{joined}"
     );
+}
+
+#[test]
+fn capacity_materialized_role_stays_silent() {
+    // Sibling materialization (`count = max_parallel`) makes a materialized
+    // role coherent by construction: 8 windows under a cap of 8 admit
+    // exactly what the gate enforces, so no warning fires.
+    let cfg = concurrency_config();
+    let ((), logs) = crate::test_support::capture_logs(|| {
+        cfg.warn_on_role_capacity_mismatch();
+    });
+    assert!(
+        !logs.join("\n").contains("quick"),
+        "materialized cap stays silent, logs:\n{}",
+        logs.join("\n")
+    );
+}
+
+fn viability_models() -> std::collections::HashMap<String, crate::config::ModelEntry> {
+    serde_json::from_value(serde_json::json!({
+        "aaa_first": {"endpoint": "http://a", "name": "aaa_first", "intelligence": 1,
+                      "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10},
+        "mmm_mid": {"endpoint": "http://m", "name": "mmm_mid", "intelligence": 5,
+                    "cost_input": 5.0, "cost_output": 5.0, "cost_cached_read": 0.0, "tok_s": 10},
+        "zzz_big": {"endpoint": "http://z", "name": "zzz_big", "intelligence": 8,
+                    "cost_input": 9.0, "cost_output": 9.0, "cost_cached_read": 0.0, "tok_s": 10},
+    }))
+    .expect("viability models")
+}
+
+#[test]
+fn viability_all_resident_passing_matches_legacy() {
+    let models = viability_models();
+    let members = vec!["aaa_first".to_string(), "mmm_mid".to_string(), "zzz_big".to_string()];
+    let all_resident = |_: &str| true;
+    let viable = super::select_viable_member("g", &members, &models, Some(1), Some(&all_resident as &dyn Fn(&str) -> bool));
+    let legacy = super::select_group_member("g", &members, &models, Some(1));
+    assert_eq!(viable, legacy, "all-resident-passing must stay byte-identical");
+    assert_eq!(viable.as_deref(), Some("aaa_first"));
+}
+
+#[test]
+fn viability_resident_passing_beats_lexicographic_first() {
+    let models = viability_models();
+    // Lexicographic-first key fails complexity and is cold; viable pick skips it.
+    let members = vec!["aaa_first".to_string(), "mmm_mid".to_string(), "zzz_big".to_string()];
+    let resident = |key: &str| key != "aaa_first";
+    let picked = super::select_viable_member("g", &members, &models, Some(5), Some(&resident as &dyn Fn(&str) -> bool));
+    assert_eq!(picked.as_deref(), Some("mmm_mid"));
+}
+
+#[test]
+fn viability_none_passing_returns_cheapest() {
+    let models = viability_models();
+    let members = vec!["mmm_mid".to_string(), "zzz_big".to_string()];
+    let picked = super::select_viable_member("g", &members, &models, Some(9), None);
+    assert_eq!(picked.as_deref(), Some("mmm_mid"), "nothing passes: cheapest wins");
+}
+
+#[test]
+fn viability_never_returns_non_member() {
+    let models = viability_models();
+    let groups = [
+        vec!["aaa_first".to_string()],
+        vec!["mmm_mid".to_string(), "zzz_big".to_string()],
+        vec!["last".to_string()],
+        vec!["aaa_first".to_string(), "last".to_string(), "zzz_big".to_string()],
+    ];
+    for (i, members) in groups.iter().enumerate() {
+        for complexity in [None, Some(1), Some(5), Some(9)] {
+            let picked = super::select_viable_member("g", members, &models, complexity, None);
+            if let Some(key) = picked {
+                let (base, _) = crate::config::split_model_key(&key);
+                assert!(
+                    members.iter().any(|m| m == base || m == &key) || models.contains_key(base),
+                    "case {i} complexity {complexity:?}: {key} must be a member or known model"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn viability_sentinel_only_resolves_viable_not_lexicographic() {
+    let models = viability_models();
+    // Sentinel-only group: lexicographic-first (`aaa_first`, int 1) fails the
+    // bar, so viability must pick the cheapest passing model instead.
+    let picked = super::select_viable_member("g", &["last".to_string()], &models, Some(5), None);
+    assert_eq!(picked.as_deref(), Some("mmm_mid"));
+}
+
+/// Calibration for the viability threshold (measurement only).
+///
+/// Hand-computed matrix over resident × passing (non-resident stands in for
+/// unfittable here; true VRAM-fittability plumbing arrives with admission
+/// wiring). Control group (all-resident-passing) must NOT switch — it is the
+/// byte-parity anchor to pre-viability behavior. Every other row asserts the
+/// exact expected pick, so the cost-ascending tie-break is locked before any
+/// decision caching.
+#[test]
+fn viability_calibration_matrix_locks_threshold() {
+    let models = viability_models();
+    struct Case {
+        members: Vec<String>,
+        complexity: Option<u8>,
+        resident: Vec<String>,
+        probe: bool,
+        expected_viable: &'static str,
+        expected_legacy: &'static str,
+        control: bool,
+    }
+    let s = |v: &[&str]| v.iter().map(std::string::ToString::to_string).collect::<Vec<_>>();
+    let cases = vec![
+        Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(1), resident: s(&["aaa_first", "mmm_mid", "zzz_big"]), probe: true, expected_viable: "aaa_first", expected_legacy: "aaa_first", control: true },
+        Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["mmm_mid", "zzz_big"]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: true },
+        Case { members: s(&["zzz_big"]), complexity: Some(8), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "zzz_big", control: true },
+        Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "mmm_mid", control: false },
+        Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "mmm_mid", control: false },
+        Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&[]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
+        // Note: `select_group_member` now delegates to the viable rule, so its
+        // sentinel-only answer is viable too (the M1 behavior change). The
+        // pre-M1 lexicographic answer would have been `aaa_first`.
+        Case { members: s(&["last"]), complexity: Some(5), resident: s(&[]), probe: false, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
+        Case { members: s(&["last"]), complexity: Some(9), resident: s(&[]), probe: false, expected_viable: "aaa_first", expected_legacy: "aaa_first", control: false },
+        Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(9), resident: s(&["mmm_mid", "zzz_big"]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
+    ];
+    let mut control_total = 0;
+    let mut control_unchanged = 0;
+    let mut switches = 0;
+    let mut switch_hits = 0;
+    let mut mismatches = Vec::new();
+    for (i, case) in cases.iter().enumerate() {
+        let viable = if case.probe {
+            let resident = case.resident.clone();
+            let probe = move |key: &str| resident.iter().any(|r| r == key);
+            super::select_viable_member(
+                "g",
+                &case.members,
+                &models,
+                case.complexity,
+                Some(&probe as &dyn Fn(&str) -> bool),
+            )
+        } else {
+            super::select_viable_member("g", &case.members, &models, case.complexity, None)
+        };
+        let legacy = super::select_group_member("g", &case.members, &models, case.complexity);
+        if viable.as_deref() != Some(case.expected_viable) {
+            mismatches.push(format!(
+                "case {i}: viable {:?}, expected {}",
+                viable, case.expected_viable
+            ));
+        }
+        if legacy.as_deref() != Some(case.expected_legacy) {
+            mismatches.push(format!(
+                "case {i}: legacy {:?}, expected {}",
+                legacy, case.expected_legacy
+            ));
+        }
+        if case.control {
+            control_total += 1;
+            if viable == legacy {
+                control_unchanged += 1;
+            }
+        }
+        if viable != legacy {
+            switches += 1;
+            if viable.as_deref() == Some(case.expected_viable) {
+                switch_hits += 1;
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "calibration mismatches:\n{}",
+        mismatches.join("\n")
+    );
+    assert_eq!(
+        (control_unchanged, control_total),
+        (3, 3),
+        "control group (all-resident-passing) must never switch"
+    );
+    // Only the residency-probed rows switch against the no-signal wrapper:
+    // rows 4-5 (cold cheapest-passing yields to resident). Sentinel rows use
+    // the same `None` signal on both sides, so they agree by construction.
+    assert_eq!(switches, 2, "exactly the two residency rows switch");
+    assert_eq!(
+        switch_hits, switches,
+        "switch precision must be 1.0: every switch lands on the viable pick"
+    );
+}
+
+#[test]
+fn sibling_rr_count_materializes_from_max_parallel() {
+    let entry: crate::config::ModelEntry = serde_json::from_value(serde_json::json!({
+        "endpoint": "http://a", "name": "m", "intelligence": 2,
+        "cost_input": 1.0, "cost_output": 1.0, "cost_cached_read": 0.0, "tok_s": 10,
+    }))
+    .expect("entry parses");
+    let roles: std::collections::HashMap<String, crate::config::RoleEntry> =
+        serde_json::from_value(serde_json::json!({
+            "quick": {"max_parallel": 2, "pinned": true, "models": ["m"], "params": {}},
+            "scratch": {"models": ["m"], "params": {}},
+        }))
+        .expect("roles parse");
+    let pool = crate::config::materialize_effective_pool("m", &entry, &roles);
+    let mut quick: Vec<_> = pool
+        .iter()
+        .filter(|p| p.group.as_deref() == Some("quick"))
+        .collect();
+    quick.sort_by(|a, b| a.name.cmp(&b.name));
+    assert_eq!(quick.len(), 2, "max_parallel 2 materializes two windows");
+    assert_eq!(
+        quick
+            .iter()
+            .filter_map(|p| p.name.clone())
+            .collect::<Vec<_>>(),
+        vec!["quick-0".to_string(), "quick-1".to_string()]
+    );
+    assert!(
+        quick.iter().all(|p| p.pinned),
+        "role pinned composes onto every sibling"
+    );
+    let scratch: Vec<_> = pool
+        .iter()
+        .filter(|p| p.group.as_deref() == Some("scratch"))
+        .collect();
+    assert_eq!(scratch.len(), 1, "unset max_parallel stays a single window");
+    assert_eq!(scratch[0].name.as_deref(), Some("scratch"));
 }
 
 #[test]

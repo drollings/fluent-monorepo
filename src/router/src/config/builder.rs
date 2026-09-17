@@ -1050,11 +1050,19 @@ pub(crate) fn resolve_classifier_model_key(
         if let Some(model) = super::ClassificationTree::root_classifier_model(tree) {
             // The `last`/`any` availability sentinels: the classifier duty
             // works with whatever model is loaded rather than loading
-            // another. With no dispatch history yet, the fleet default
-            // member (the first declared model) serves.
+            // another. With no dispatch history yet, the viable fleet
+            // member (intelligence-passing, cheapest) serves — the same
+            // viability rule as every other sentinel fallback.
             if model == "last" || model == "any" {
-                return super::fleet_default_member(&config.models)
-                    .or_else(|| Some(model.to_string()));
+                let sentinel = model.to_string();
+                return super::select_viable_member(
+                    "classifier",
+                    std::slice::from_ref(&sentinel),
+                    &config.models,
+                    None,
+                    None,
+                )
+                .or_else(|| Some(model.to_string()));
             }
             return Some(model.to_string());
         }
@@ -1203,7 +1211,7 @@ pub(crate) fn llama_chat_backend_for_key(
     key: &str,
 ) -> Option<Arc<dyn ChatBackend>> {
     let resolved = crate::config::role_head_key(models, roles, key, true)?;
-    let (base, _) = crate::config::split_model_key(&resolved);
+    let (base, embedded) = crate::config::split_model_key(&resolved);
     let entry = models.get(base)?;
     let base_name = entry.name.as_deref().unwrap_or(base);
     // One qualifier resolver for every path: explicit qualifier, else the
@@ -1213,6 +1221,17 @@ pub(crate) fn llama_chat_backend_for_key(
     // point (roles carry no qualifier of their own). Entries are expected
     // boot-materialized; pre-boot entries resolve bare.
     let qualifier = crate::config::resolve_inference_point(models, roles, &resolved, None);
+    // Sync clients run on the blocking path with no sidecar to pre-warm a
+    // cold window: when the entry default is an unpinned `base` beside
+    // pinned profiles, prefer the cheapest resident group (declared pinned
+    // at spawn) over a default that would build on first demand. An
+    // explicit `base:point` names its instance on purpose and is never
+    // rewritten. The pre-pipeline classifier ensure composes the same rule,
+    // so both agree on the group.
+    let qualifier = match embedded {
+        Some(_) => qualifier,
+        None => super::default_resident_point(entry).or(qualifier),
+    };
     let model = match &qualifier {
         Some(qualifier) => format!("{base_name}:{qualifier}"),
         None => base_name.to_string(),

@@ -321,30 +321,114 @@ fn member_wire_id(routing: &RoutingConfig, member: &str) -> Option<String> {
     routing.target_for_key(member).map(|rt| rt.model)
 }
 
+/// Whether a pool-managed base key is fittable for a cheap duty without a
+/// cold load (task-value, not confidence): remote endpoints and onnx roles
+/// are always servable — no load to trigger; pool-managed models
+/// (`weights`/`hf_repo`) must already be running, because duties never
+/// cold-load (dispatch loads on demand through its own readiness path).
+/// Unknown keys are unfittable — nothing resolves them.
+fn duty_fittable(routing: &RoutingConfig, base: &str, loaded: bool) -> bool {
+    if loaded {
+        return true;
+    }
+    if routing.onnx_keys.contains(base) {
+        return true;
+    }
+    match routing.models.get(base) {
+        None => false,
+        Some(entry) => entry.weights.is_none() && entry.hf_repo.is_none(),
+    }
+}
+
+/// The models key behind a recorded wire id (`<base>` for `base` and
+/// `base:point` wires served from a `models` entry or onnx role). `None`
+/// when the wire resolves to nothing — a removed model, never a candidate.
+fn key_for_wire(routing: &RoutingConfig, wire: &str) -> Option<String> {
+    let (base, _) = crate::config::split_model_key(wire);
+    if routing.models.contains_key(base) || routing.onnx_keys.contains(base) {
+        return Some(base.to_string());
+    }
+    routing.target_for_key(wire).map(|_| wire.to_string())
+}
+
+/// Whether a recency rung may serve: the member resolves to a real target
+/// and passes the capability bar. Onnx/registry members carry no
+/// `intelligence` rating and pass fail-open here (candidate construction
+/// downstream still owns unknown-key filtering).
+fn rung_viable(routing: &RoutingConfig, member: &str, min_complexity: Option<u8>) -> bool {
+    if member_wire_id(routing, member).is_none() {
+        return false;
+    }
+    let (base, _) = crate::config::split_model_key(member);
+    match routing.models.get(base) {
+        Some(entry) => entry.intelligence >= min_complexity.unwrap_or(0),
+        None => true,
+    }
+}
+
+/// The classifier-duty `last`/`any` resolution, shared by the tree engine's
+/// per-request duty-key path: the globally last-answered model when it is
+/// fittable without a cold load, else the fleet-viable member
+/// (intelligence-passing, fittable-first, cheapest — the M1 rule with a
+/// managed-aware residency probe). Recency is injected per request, never
+/// stored: no boot-frozen duty key.
+///
+/// No complexity scope applies here by construction — the complexity estimate
+/// is produced BY the classifier, so vetting the duty on it would be
+/// circular. Capability for the duty is resolvability + fittability; the
+/// dispatch ladder owns capability fit. `None` only on an empty fleet.
+pub fn viable_last_key(
+    routing: &RoutingConfig,
+    recency: Option<&GroupRecency>,
+    is_running: &dyn Fn(&str) -> bool,
+) -> Option<String> {
+    if let Some(wire) = recency.and_then(GroupRecency::last_any) {
+        if let Some(key) = key_for_wire(routing, &wire) {
+            let (base, _) = crate::config::split_model_key(&key);
+            if duty_fittable(routing, base, is_running(base)) {
+                return Some(key);
+            }
+        }
+    }
+    crate::config::select_viable_member(
+        "classifier",
+        &["last".to_string()],
+        &routing.models,
+        None,
+        Some(&|base| duty_fittable(routing, base, is_running(base))),
+    )
+}
+
 /// Expand a group's raw members (literal keys plus the `last`/`any`
 /// availability sentinels) into ordered literal keys. Role members fan out to
 /// their candidate keys first; without roles or sentinels the expansion is
 /// identity, so role-free configs resolve byte-identically.
 ///
-/// - `Last` expands to the session's last-success key when it is still a
-///   member, else it is skipped and a `last-empty-fallback` audit note is
-///   emitted once (unknown session, or a recorded wire id that no longer
-///   names a member — the group head serves). No expiry heuristic: a failed
-///   target falls to the next rung via the combinator.
+/// `Last` resolves preference-ordered, each rung vetted (resolvability +
+/// intelligence-pass; loaded-ness is deliberately NOT a veto — unloaded
+/// members load on demand through the unchanged readiness path, while `Any`
+/// keeps the loaded-first preference):
+/// session-last → global-last → viable-first (the M1 rule over the group,
+/// or the fleet for sentinel-only groups). A rung that fails vetting falls
+/// to the next; when no recency rung serves, one `last-empty-fallback`
+/// audit note is emitted (recency coverage signal, not the outcome — the
+/// viable rung may still serve). No expiry heuristic: a failed target falls
+/// to the next rung via the combinator.
 /// - `Any` expands, in config order, to the currently-loaded members first
 ///   (supervisor `is_running`, plus onnx-registry members via the existing
 ///   readiness), then the remaining members in config order (which load on
 ///   demand through the unchanged readiness path).
 /// - `is_running` is the supervisor probe over *base* model keys
 ///   (`is_running == Some(true)` counts as loaded).
-/// - Sentinels only order candidates; the intelligence climb underneath is
-///   unchanged, so recency never outranks capability.
+/// - Sentinels only order candidates; the vetted climb underneath keeps
+///   capability fit, so recency never outranks capability.
 pub fn expand_group_keys(
     routing: &RoutingConfig,
     group: &str,
     recency: Option<&GroupRecency>,
     session: Option<&str>,
     is_running: &dyn Fn(&str) -> bool,
+    min_complexity: Option<u8>,
 ) -> Vec<String> {
     use crate::config::GroupMember;
     if !routing.model_groups.contains_key(group) {
@@ -355,78 +439,111 @@ pub fn expand_group_keys(
         .iter()
         .filter(|m| matches!(GroupMember::parse(m), GroupMember::Key(_)))
         .collect();
+    // Memoized liveness: the viable rung and the `Any` partition share one
+    // probe per base key per expansion (fewer supervisor locks; deterministic
+    // probe sequences for the calibration corpus). Single-expansion scope —
+    // no cross-request staleness.
+    let probe_cache = std::cell::RefCell::new(HashMap::new());
+    let memo_running = |base: &str| {
+        if let Some(hit) = probe_cache.borrow().get(base) {
+            return *hit;
+        }
+        let live = is_running(base);
+        probe_cache.borrow_mut().insert(base.to_string(), live);
+        live
+    };
     let is_loaded = |member: &str| {
         let (base, _) = crate::config::split_model_key(member);
         if routing.onnx_keys.contains(base) {
             return true;
         }
-        is_running(base)
+        memo_running(base)
     };
-    let last_member: Option<&str> = recency
-        .and_then(|r| session.and_then(|s| r.last_for(s, group)))
-        .and_then(|wire| {
-            literals
-                .iter()
-                .find(|m| member_wire_id(routing, m).as_deref() == Some(wire.as_str()))
-                .map(|m| m.as_str())
-        });
+    // Viable-`last` pick, resolved once per expansion: session-last →
+    // global-last → viable-first, each rung vetted (resolvable +
+    // intelligence-pass). The viable rung reuses the M1 rule over the raw
+    // members (sentinel-only groups resolve over the fleet); resident-first
+    // ordering comes from the same loaded probe as `Any`. `bool` tracks
+    // whether a recency rung served (drives the coverage audit below).
+    let find_literal = |wire: &str| {
+        literals
+            .iter()
+            .find(|m| member_wire_id(routing, m).as_deref() == Some(wire))
+            .map(|m| m.as_str())
+    };
+    // Inline at each `and_then` site below (a `let`-bound closure would not
+    // infer higher-ranked lifetimes for the combinator chain).
+    fn vetted<'a>(
+        routing: &RoutingConfig,
+        member: &'a str,
+        min_complexity: Option<u8>,
+    ) -> Option<&'a str> {
+        rung_viable(routing, member, min_complexity).then_some(member)
+    }
     let wants_last = raw
         .iter()
         .any(|m| matches!(GroupMember::parse(m), GroupMember::Last));
-    let mut fallback_audited = false;
-    let mut out: Vec<String> = Vec::with_capacity(raw.len());
+    let (last_pick, session_hit, global_hit): (Option<String>, bool, bool) = if !wants_last {
+        (None, true, true)
+    } else if let Some(member) = recency
+        .and_then(|r| session.and_then(|s| r.last_for(s, group)))
+        .and_then(|wire| find_literal(&wire))
+        .and_then(|m| vetted(routing, m, min_complexity))
+    {
+        (Some(member.to_string()), true, false)
+    } else if let Some(member) = recency
+        .and_then(GroupRecency::last_any)
+        .and_then(|wire| find_literal(&wire))
+        .and_then(|m| vetted(routing, m, min_complexity))
+    {
+        (Some(member.to_string()), false, true)
+    } else {
+        // Viable-first: "work with whatever is loaded rather than load
+        // another", ordered by capability-fit, then loaded-ness, then cost.
+        // For sentinel-only groups this resolves over the fleet.
+        let viable = crate::config::select_viable_member(
+            group,
+            &raw,
+            &routing.models,
+            min_complexity,
+            Some(&|base| is_loaded(base)),
+        );
+        (viable, false, false)
+    };
+    let mut out: Vec<String> =
+        Vec::with_capacity(raw.len() + usize::from(last_pick.is_some()));
     let mut seen: HashSet<String> = HashSet::new();
     let push = |key: &str, out: &mut Vec<String>, seen: &mut HashSet<String>| {
         if seen.insert(key.to_string()) {
             out.push(key.to_string());
         }
     };
+    // The coverage audit: the session rung missed (unknown session, stale
+    // wire id, or no session channel at all) — or, for sentinel-only
+    // groups with no session rung, the global rung missed. Emitted once
+    // per expansion even when a later rung serves: it measures recency
+    // coverage, not the outcome.
+    let recency_missed = if literals.is_empty() {
+        !global_hit
+    } else {
+        session.is_none_or(|_| !session_hit)
+    };
+    if wants_last && recency_missed {
+        crate::audit::emit(
+            "target_match",
+            serde_json::json!({
+                "stage": "expansion",
+                "group": group,
+                "reason": "last-empty-fallback",
+            }),
+        );
+    }
     for member in &raw {
         match GroupMember::parse(member) {
             GroupMember::Key(key) => push(&key, &mut out, &mut seen),
             GroupMember::Last => {
-                if let Some(last) = last_member {
-                    push(last, &mut out, &mut seen);
-                } else if literals.is_empty() {
-                    // Sentinel-only group: `last` means whichever LLM
-                    // actually last answered, with no member constraint —
-                    // session recency first, then the global last-answered
-                    // model, then any currently-loaded model.
-                    let global = recency.and_then(GroupRecency::last_any);
-                    let resolved = global
-                        .filter(|wire| routing.target_for_key(wire).is_some())
-                        .or_else(|| {
-                            routing.models.keys().find_map(|key| {
-                                let _ = crate::config::split_model_key(key);
-                                is_loaded(key).then(|| key.clone())
-                            })
-                        });
-                    if let Some(key) = resolved {
-                        push(&key, &mut out, &mut seen);
-                    } else if wants_last && !fallback_audited {
-                        fallback_audited = true;
-                        crate::audit::emit(
-                            "target_match",
-                            serde_json::json!({
-                                "stage": "expansion",
-                                "group": group,
-                                "reason": "last-empty-fallback",
-                            }),
-                        );
-                    }
-                } else if wants_last && !fallback_audited {
-                    // Unknown session (or a stale wire id): the head serves.
-                    // Audited once per expansion so the fallback stays
-                    // legible without one event per sentinel occurrence.
-                    fallback_audited = true;
-                    crate::audit::emit(
-                        "target_match",
-                        serde_json::json!({
-                            "stage": "expansion",
-                            "group": group,
-                            "reason": "last-empty-fallback",
-                        }),
-                    );
+                if let Some(pick) = &last_pick {
+                    push(pick, &mut out, &mut seen);
                 }
             }
             GroupMember::Any => {
@@ -454,8 +571,9 @@ pub fn expanded_candidates_for_group(
     recency: Option<&GroupRecency>,
     session: Option<&str>,
     is_running: &dyn Fn(&str) -> bool,
+    min_complexity: Option<u8>,
 ) -> Vec<TargetCandidate> {
-    let keys = expand_group_keys(routing, group, recency, session, is_running);
+    let keys = expand_group_keys(routing, group, recency, session, is_running, min_complexity);
     candidates_for_keys(routing, &keys)
 }
 
@@ -1020,6 +1138,7 @@ pub(crate) fn resolve_route_to_target(
                 expansion.recency(),
                 expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
+                complexity,
             );
             if candidates.len() >= 2 {
                 if let Some(tm) = matcher.match_target(
@@ -1065,6 +1184,7 @@ pub(crate) fn resolve_route_to_target(
                 expansion.recency(),
                 expansion.session(),
                 &|base| expansion.supervisor_loaded(base),
+                complexity,
             );
             if let Some(key) = keys.first() {
                 if let Some(mut rt) = routing_config.target_for_key(key) {

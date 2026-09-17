@@ -70,9 +70,12 @@ fn record_and_fetch_roundtrip() {
     let id = ledger.record_request("sess-1", "req-1", "hello").unwrap();
     ledger.record_result(id, true, Some(1.0), "reply").unwrap();
     let entries = ledger.get_session_entries("sess-1", 10).unwrap();
-    assert_eq!(entries.len(), 1);
+    // Append semantics: the user row survives beside the assistant row,
+    // most-recent-first.
+    assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].content, "reply");
     assert!(entries[0].accepted);
+    assert_eq!(entries[1].content, "hello");
 }
 
 #[test]
@@ -135,7 +138,7 @@ fn poisoned_db_mutex_recovers() {
         .record_result(id, false, Some(0.0), "recovered")
         .unwrap();
     let entries = ledger.get_session_entries("sess-p", 10).unwrap();
-    assert_eq!(entries.len(), 1);
+    assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].content, "recovered");
 }
 
@@ -436,10 +439,14 @@ fn record_result_scrubs_phone() {
         .record_result(id, true, Some(1.0), "Call 555-123-4567 to reach us.")
         .unwrap();
 
+    // The user node keeps the question; the appended assistant node carries
+    // the scrubbed answer.
     let node = ledger.get_node(id).unwrap();
-    assert_eq!(node.lod[0], "Call [REDACTED:phone] to reach us.");
+    assert_eq!(node.lod[0], "What number?");
     let entries = ledger.get_session_entries("sess-guard-r", 10).unwrap();
+    assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].content, "Call [REDACTED:phone] to reach us.");
+    assert_eq!(entries[1].content, "What number?");
 }
 
 #[test]

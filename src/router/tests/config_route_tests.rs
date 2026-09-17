@@ -313,6 +313,24 @@ fn route_probe_seeds_stay_synced_with_config() {
     }
 }
 
+/// Every declaring terminal passes the boot reference gate: unpinned roles
+/// fall back gracefully and pinned roles are fillable (bound member or
+/// sentinel-bearing group). This fails while any terminal keeps the router
+/// from starting — the config-synced home for the operator-file assertion
+/// hermetic tests must not carry.
+#[test]
+fn terminal_role_shipped_terminals_pass_boot_gate() {
+    let mut config = load_config();
+    config.apply_defaults();
+    let view = config.routing_config();
+    let tree = config
+        .classification
+        .clone()
+        .expect("shipped config declares a classification tree");
+    view.validate_terminal_roles(&tree)
+        .expect("shipped terminals pass the terminal-role boot gate");
+}
+
 /// Every route (intent) in the config dispatches through its configured
 /// `model_group`, across every probe (primary + variations): the router's own
 /// route + group validation records zero mismatches, and each probe is

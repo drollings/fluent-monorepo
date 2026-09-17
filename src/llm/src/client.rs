@@ -351,12 +351,28 @@ async fn chat_complete_http_inner_async(
             .await
             .map_err(|e| LlmError::Http(e.to_string()))?;
         if !response.status().is_success() {
-            let class = HttpClass::from_status(response.status().as_u16());
-            return Err(if class.is_retryable() {
-                LlmError::RateLimited
+            let status = response.status();
+            let class = HttpClass::from_status(status.as_u16());
+            if class.is_retryable() {
+                return Err(LlmError::RateLimited);
+            }
+            // Include the server's message body (truncated): a bare
+            // `HTTP 400` is undiagnosable — the fork explains itself
+            // (`ambiguous: multiple instances…`, `model or instance not
+            // found…`) and that text belongs in the error, not just the
+            // server log. Best-effort: an unreadable body degrades to the
+            // status-only form. Bounded via the shared char truncation so
+            // error paths never log unbounded bodies.
+            let snippet = response
+                .text()
+                .await
+                .map(|t| common_core::string::truncate_chars(t.trim(), 500))
+                .unwrap_or_default();
+            return Err(LlmError::Api(if snippet.is_empty() {
+                format!("HTTP {status}")
             } else {
-                LlmError::Api(format!("HTTP {}", response.status()))
-            });
+                format!("HTTP {status}: {snippet}")
+            }));
         }
         response
             .text()

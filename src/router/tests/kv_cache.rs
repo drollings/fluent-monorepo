@@ -339,6 +339,252 @@ async fn cold_evict_ttl_boundary_age_equals_ttl_is_evicted() {
     assert!(cold.load("test-model", None, "sess-boundary").is_err());
 }
 
+fn snapshot_with_identity(
+    session: &str,
+    adapter: Option<&str>,
+    quant: Option<&str>,
+    hash: Option<&str>,
+    version: Option<&str>,
+) -> KvSnapshot {
+    KvSnapshot {
+        model: "test-model".into(),
+        adapter: adapter.map(String::from),
+        session_id: session.into(),
+        snapshot_name: "default".into(),
+        instance: None,
+        file_path: PathBuf::new(),
+        token_count: None,
+        created_at: now_secs(),
+        last_used_at: now_secs(),
+        llama_cpp_version: version.map(String::from),
+        model_quant: quant.map(String::from),
+        base_model_hash: hash.map(String::from),
+        turn_seq: None,
+    }
+}
+
+fn current_identity(
+    quant: Option<&str>,
+    hash: Option<&str>,
+    version: Option<&str>,
+) -> SnapshotIdentity {
+    SnapshotIdentity {
+        base_model_hash: hash.map(String::from),
+        model_quant: quant.map(String::from),
+        llama_cpp_version: version.map(String::from),
+    }
+}
+
+/// Base vs base+LoRA snapshots share a model and session but never collide:
+/// the index key carries the adapter, so each serves its own record.
+#[test]
+fn snapshot_identity_base_vs_lora_do_not_collide() {
+    let dir = tempfile::tempdir().unwrap();
+    let cold = ColdSnapshotIndex::new(dir.path(), 1024, 86400);
+    let mut base = snapshot_with_identity("sess-1", None, Some("Q4_K_M"), Some("h1"), None);
+    base.snapshot_name = "base-snap".into();
+    let mut lora =
+        snapshot_with_identity("sess-1", Some("lora1"), Some("Q4_K_M"), Some("h1"), None);
+    lora.snapshot_name = "lora-snap".into();
+    cold.save(&base).unwrap();
+    cold.save(&lora).unwrap();
+    assert_eq!(
+        cold.load("test-model", None, "sess-1")
+            .unwrap()
+            .snapshot_name,
+        "base-snap"
+    );
+    assert_eq!(
+        cold.load("test-model", Some("lora1"), "sess-1")
+            .unwrap()
+            .snapshot_name,
+        "lora-snap"
+    );
+    // A request with no adapter never sees the LoRA record and vice versa.
+    assert!(
+        cold.load("test-model", Some("lora2"), "sess-1").is_err(),
+        "unknown adapter is a miss, never a base fallback"
+    );
+}
+
+/// A quant change rejects the restore: the stored KV was laid out for
+/// weights the server no longer runs.
+#[test]
+fn snapshot_identity_quant_change_rejects_restore() {
+    let stored = snapshot_with_identity("s", None, Some("Q4_K_M"), Some("h1"), Some("b1"));
+    let err = stored
+        .check_compatible(&current_identity(Some("Q8_0"), Some("h1"), Some("b1")))
+        .expect_err("quant drift must reject");
+    assert!(matches!(err, KvCacheError::QuantMismatch(_)), "got {err:?}");
+    stored
+        .check_compatible(&current_identity(Some("Q4_K_M"), Some("h1"), Some("b1")))
+        .expect("identical identity restores");
+}
+
+/// A weights-hash change rejects the restore even when quant matches.
+#[test]
+fn snapshot_identity_hash_change_rejects_restore() {
+    let stored = snapshot_with_identity("s", None, Some("Q4_K_M"), Some("h1"), Some("b1"));
+    let err = stored
+        .check_compatible(&current_identity(Some("Q4_K_M"), Some("h2"), Some("b1")))
+        .expect_err("hash drift must reject");
+    assert!(
+        matches!(err, KvCacheError::ModelHashMismatch(_)),
+        "got {err:?}"
+    );
+}
+
+/// A fork-version change rejects the restore: snapshot layout is versioned.
+#[test]
+fn snapshot_identity_version_change_rejects_restore() {
+    let stored = snapshot_with_identity("s", None, Some("Q4_K_M"), Some("h1"), Some("b1"));
+    let err = stored
+        .check_compatible(&current_identity(Some("Q4_K_M"), Some("h1"), Some("b2")))
+        .expect_err("version drift must reject");
+    assert!(
+        matches!(err, KvCacheError::VersionMismatch(_)),
+        "got {err:?}"
+    );
+}
+
+/// Unknowable fields never reject: legacy rows (all `None`) restore, and a
+/// current side with nothing known accepts a filled record. `None` means
+/// "unknown", never a fabricated default.
+#[test]
+fn snapshot_identity_unknown_fields_never_reject() {
+    let legacy = snapshot_with_identity("s", None, None, None, None);
+    legacy
+        .check_compatible(&current_identity(Some("Q4_K_M"), Some("h1"), Some("b1")))
+        .expect("legacy rows always restore");
+    let filled = snapshot_with_identity("s", None, Some("Q4_K_M"), Some("h1"), Some("b1"));
+    filled
+        .check_compatible(&current_identity(None, None, None))
+        .expect("unknown current side never rejects");
+}
+
+/// A LoRA-attached save without an adapter name is rejected: without the
+/// name the record would land on the base key and collide.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn snapshot_identity_adapter_required_when_lora_attached() {
+    use crate::instances::stub::StubServer;
+    use crate::instances::InstanceClient;
+
+    let handler: StubHandler = Arc::new(|method, path, _body| {
+        if method == "POST" && path == "/instances/inst/snapshot" {
+            (200, "{}".into())
+        } else {
+            (200, "[]".into())
+        }
+    });
+    let stub = StubServer::start(handler);
+    let fork = Arc::new(InstanceClient::new(
+        reqwest::Client::new(),
+        stub.base_url(),
+        None,
+    ));
+    let dir = tempfile::tempdir().unwrap();
+    let store = SnapshotStore::new(
+        Arc::new(HotSnapshotIndex::new(10, 1024)),
+        Arc::new(ColdSnapshotIndex::new(dir.path(), 1024, 86400)),
+    )
+    .with_fork_io(fork);
+    let entry = crate::config::ModelEntry::default();
+    let err = store
+        .save_snapshot_for_model(
+            "test-model",
+            &entry,
+            None,
+            true,
+            "sess-1",
+            "snap",
+            "inst",
+            None,
+            None,
+        )
+        .expect_err("nameless LoRA save must reject");
+    assert!(
+        matches!(err, KvCacheError::AdapterRequired(_)),
+        "got {err:?}"
+    );
+    // The same save with a name records under the adapter key.
+    store
+        .save_snapshot_for_model(
+            "test-model",
+            &entry,
+            Some("lora1"),
+            true,
+            "sess-1",
+            "snap",
+            "inst",
+            None,
+            None,
+        )
+        .expect("named LoRA save records");
+    let loaded = store
+        .retrieve("test-model", Some("lora1"), "sess-1")
+        .expect("load");
+    assert_eq!(loaded.adapter.as_deref(), Some("lora1"));
+    // No LoRA attached: adapter-less saves keep today's behavior.
+    store
+        .save_snapshot_for_model(
+            "test-model",
+            &entry,
+            None,
+            false,
+            "sess-2",
+            "snap",
+            "inst",
+            None,
+            None,
+        )
+        .expect("plain save records");
+    assert!(store.retrieve("test-model", None, "sess-2").is_ok());
+}
+
+/// Identity fills from the model entry: a weights file on disk yields a
+/// hash; the fork version rides through when the caller knows it; a missing
+/// file yields `None` (never fabricated).
+#[test]
+fn snapshot_identity_filled_from_model_entry() {
+    use std::io::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let weights = dir.path().join("model.gguf");
+    std::fs::File::create(&weights)
+        .unwrap()
+        .write_all(b"fake-gguf-bytes-for-hash")
+        .unwrap();
+    let entry = crate::config::ModelEntry {
+        weights: Some(weights.to_string_lossy().into_owned()),
+        ..crate::config::ModelEntry::default()
+    };
+    // Weights-file metadata reads through the capability-gated fs helper,
+    // so it runs under the `FsCapability` grant the serving path holds.
+    let (identity, unversioned, empty) = fluent_concurrency::scope::CURRENT_CAPS.sync_scope(
+        fluent_concurrency::capability::default_capability_set(),
+        || {
+            (
+                snapshot_identity_for_model(&entry, Some("b1234".into())),
+                snapshot_identity_for_model(&entry, None),
+                snapshot_identity_for_model(
+                    &crate::config::ModelEntry::default(),
+                    Some("b1234".into()),
+                ),
+            )
+        },
+    );
+    assert!(
+        identity.base_model_hash.is_some(),
+        "a weights file on disk yields a hash"
+    );
+    assert_eq!(identity.llama_cpp_version.as_deref(), Some("b1234"));
+    // Same path, no version known: version stays unknown, hash identical.
+    assert_eq!(unversioned.base_model_hash, identity.base_model_hash);
+    assert!(unversioned.llama_cpp_version.is_none());
+    // No weights path: nothing to fingerprint.
+    assert!(empty.base_model_hash.is_none());
+    assert!(empty.model_quant.is_none());
+}
+
 #[tokio::test]
 async fn cold_new_takes_no_eviction_policy() {
     // M10.2 lock: the former `_eviction: EvictionPolicy` parameter was

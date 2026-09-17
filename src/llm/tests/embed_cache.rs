@@ -138,6 +138,57 @@ fn cached_provider_hits_share_one_allocation() {
     assert!(std::sync::Arc::ptr_eq(&stored, &reread));
 }
 
+/// The cache is namespaced by `(model, adapter)`: a hit in one namespace
+/// never serves another, while key-equality reuse is preserved inside a
+/// namespace. The default (no adapter) namespace keeps today's behavior.
+#[test]
+fn embeddings_cache_namespace_isolates_adapters() {
+    let base = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16);
+    let lora = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16)
+        .with_adapter("lora1");
+    // Same text, same model, different adapter: a second inner call.
+    let base_vec = base.embed("hello").unwrap();
+    let lora_vec = lora.embed("hello").unwrap();
+    assert_eq!(base_vec, lora_vec, "same content, same vector");
+    assert_eq!(base.inner.calls(), vec!["hello".to_string()]);
+    assert_eq!(lora.inner.calls(), vec!["hello".to_string()]);
+    // Repeat in each namespace: hits, no new inner calls (reuse preserved
+    // inside the namespace).
+    let _ = base.embed("hello").unwrap();
+    let _ = lora.embed("hello").unwrap();
+    assert_eq!(base.inner.calls().len(), 1);
+    assert_eq!(lora.inner.calls().len(), 1);
+    // A second adapter is a third namespace.
+    let lora2 = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16)
+        .with_adapter("lora2");
+    let _ = lora2.embed("hello").unwrap();
+    assert_eq!(lora2.inner.calls(), vec!["hello".to_string()]);
+}
+
+/// The adapter namespace changes the key: namespaced and default keys for
+/// the same text differ, while two default providers agree (compat: unset
+/// adapter behaves exactly as today).
+#[test]
+fn embeddings_cache_default_namespace_key_unchanged() {
+    let a = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16);
+    let b = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16);
+    let namespaced = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16)
+        .with_adapter("lora1");
+    assert_eq!(a.cache_key("hello"), b.cache_key("hello"));
+    assert_ne!(
+        a.cache_key("hello"),
+        namespaced.cache_key("hello"),
+        "adapter namespaces the key"
+    );
+    // Same adapter, same text: same key (reuse inside the namespace).
+    let namespaced2 = CachedEmbeddingProvider::new_with_limit(RecordingProvider::new(4), 16)
+        .with_adapter("lora1");
+    assert_eq!(
+        namespaced.cache_key("hello"),
+        namespaced2.cache_key("hello")
+    );
+}
+
 #[test]
 fn cached_provider_evicts_when_full() {
     // Total capacity is shards × per-shard cap: inserting far more distinct

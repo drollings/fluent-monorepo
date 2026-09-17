@@ -832,12 +832,20 @@ pub(crate) fn materialize_effective_pool(
             );
         }
         let num_ctx = role.params.num_ctx;
+        // Sibling windows: `max_parallel` is the admission cap AND the
+        // window count (one window per parallel slot), so the cap the
+        // dispatch gate enforces always has the slots it counts. Unset
+        // stays a single window. `u32::try_from` saturates absurd values
+        // instead of truncating (parse already rejects 0).
+        let count = role.max_parallel.map_or(1, |m| {
+            u32::try_from(m).unwrap_or(u32::MAX).max(1)
+        });
         merged.insert(
             role_name.to_string(),
             InstanceProfile {
                 name: None,
                 group: None,
-                count: 1,
+                count,
                 num_ctx,
                 parallel: entry.max_parallel,
                 pinned: role.pinned || entry.pinned,
@@ -1071,6 +1079,50 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
     }
 }
 
+/// The resident-duty step for sync (sidecar-less) clients: the cheapest
+/// spawn-declared pinned group, else `None` (keep the entry default).
+///
+/// The entry default is an unpinned `base` phantom beside pinned profiles;
+/// the supervisor declares it at spawn (`supervisor::build_server_args`) so
+/// default wire ids route, but unpinned it registers without building and
+/// materializes on first demand. Sync clients (`LlmClient`
+/// classifier/escalation backends, the pre-pipeline classifier ensure) run
+/// on the blocking request path with no sidecar to pre-warm a cold window,
+/// so they prefer a group that is resident by construction: the pinned group
+/// with the smallest window (cheapest resident KV per the
+/// cheap-before-expensive principle), ties broken by group name for
+/// determinism.
+///
+/// Returns `None` when the entry default is already resident — no pinned
+/// profiles (an all-lazy pool declares its full grammar at spawn) or the
+/// `default: true` profile itself pinned — and when no pool was
+/// materialized. Callers compose it as `default_resident_point(entry).or(point)`.
+///
+/// This is classifier/dispatch-adjacent duty only: `RoutingTarget` dispatch
+/// ids keep the entry default (golden-locked) and build it on demand through
+/// the sidecar when cold.
+pub(crate) fn default_resident_point(entry: &ModelEntry) -> Option<String> {
+    let profiles = entry.effective_pool();
+    if profiles.is_empty() {
+        return None;
+    }
+    if !profiles.iter().any(|p| p.pinned) {
+        return None;
+    }
+    if profiles
+        .iter()
+        .find(|p| p.default)
+        .is_some_and(|d| d.pinned)
+    {
+        return None;
+    }
+    profiles
+        .iter()
+        .filter(|p| p.pinned)
+        .filter_map(|p| p.group.as_deref().map(|g| (g, p.num_ctx)))
+        .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)))
+        .map(|(group, _)| group.to_string())
+}
 /// Resolve the inference point a role or model key serves, as the qualifier
 /// of the dispatch `base:qualifier` id (`None` = bare `<base>`). The single
 /// qualifier resolver — every construction path and adapter composes it, so
@@ -2102,10 +2154,21 @@ impl SidecarConfig {
     /// The effective VRAM allocation budget: `device_total - minimum_remaining
     /// _vram`. `None` when no device total is available, or when neither a
     /// ceiling nor a minimum-remaining floor is configured (eviction off).
+    /// This is the pre-admission hard gate: a cold load frees room against
+    /// this before the spawn, sized with its incoming KV window.
     pub fn allocation_limit(&self) -> Option<u64> {
         let total = self.device_total_bytes()?;
         let min_remaining = self.minimum_remaining_vram.unwrap_or(0);
         Some(total.saturating_sub(min_remaining))
+    }
+
+    /// The reactive residency budget: `device_total - vram_low_watermark_bytes`.
+    /// `None` when no device total is available. This is the periodic loop's
+    /// floor only — it never gates pre-admission, so a load that fits the
+    /// allocation budget stays quiet even past the watermark-implied usage.
+    pub fn reactive_limit(&self) -> Option<u64> {
+        let total = self.device_total_bytes()?;
+        Some(total.saturating_sub(self.vram_low_watermark_bytes))
     }
 }
 

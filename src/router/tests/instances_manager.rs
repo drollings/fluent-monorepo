@@ -80,3 +80,109 @@ fn in_flight_lease_counts_active_dispatches() {
         "last lease returns the count to zero"
     );
 }
+
+fn sibling_rr_profile(name: &str, group: &str) -> crate::config::InstanceProfile {
+    crate::config::InstanceProfile {
+        embedding: None,
+        name: Some(name.into()),
+        group: Some(group.into()),
+        count: 1,
+        num_ctx: 8192,
+        parallel: None,
+        pinned: true,
+        no_sleep: false,
+        sleep_idle_seconds: None,
+        default: false,
+        resume: false,
+        params: None,
+        max_ctx: None,
+        session: false,
+    }
+}
+
+fn sibling_rr_manager() -> InstanceManager {
+    let client = crate::instances::client::InstanceClient::new(
+        reqwest::Client::new(),
+        "http://127.0.0.1:1",
+        None,
+    );
+    InstanceManager::new(
+        "lfm2.5-2.6b",
+        client,
+        vec![
+            sibling_rr_profile("quick-0", "quick"),
+            sibling_rr_profile("quick-1", "quick"),
+        ],
+        crate::config::SidecarConfig::default(),
+    )
+}
+
+#[test]
+fn sibling_rr_alternates_across_unsessioned_picks() {
+    let manager = sibling_rr_manager();
+    let all_ready = |_: &str| true;
+    let picks: Vec<String> = (0..4)
+        .map(|_| {
+            manager
+                .sibling_for_group_where("quick", &all_ready as &dyn Fn(&str) -> bool)
+                .expect("sibling window")
+        })
+        .collect();
+    assert_eq!(picks, vec!["quick-0", "quick-1", "quick-0", "quick-1"]);
+}
+
+#[test]
+fn sibling_rr_skips_unready_sibling() {
+    let manager = sibling_rr_manager();
+    let only_one = |name: &str| name != "quick-0";
+    for _ in 0..3 {
+        assert_eq!(
+            manager
+                .sibling_for_group_where("quick", &only_one as &dyn Fn(&str) -> bool)
+                .as_deref(),
+            Some("quick-1"),
+            "unready sibling never serves"
+        );
+    }
+    // The cursor advanced past the served picks instead of wedging: with both
+    // windows ready the rotation resumes at quick-0.
+    let all_ready = |_: &str| true;
+    assert_eq!(
+        manager
+            .sibling_for_group_where("quick", &all_ready as &dyn Fn(&str) -> bool)
+            .as_deref(),
+        Some("quick-0")
+    );
+}
+
+#[test]
+fn sibling_rr_single_sibling_is_noop() {
+    let client = crate::instances::client::InstanceClient::new(
+        reqwest::Client::new(),
+        "http://127.0.0.1:1",
+        None,
+    );
+    let manager = InstanceManager::new(
+        "m",
+        client,
+        vec![sibling_rr_profile("quick", "quick")],
+        crate::config::SidecarConfig::default(),
+    );
+    let all_ready = |_: &str| true;
+    assert_eq!(
+        manager.sibling_for_group_where("quick", &all_ready as &dyn Fn(&str) -> bool),
+        None,
+        "single window keeps group addressing (byte-identical wire)"
+    );
+}
+
+#[test]
+fn sibling_rr_unknown_group_is_noop() {
+    let manager = sibling_rr_manager();
+    let all_ready = |_: &str| true;
+    assert_eq!(
+        manager.sibling_for_group_where("nope", &all_ready as &dyn Fn(&str) -> bool),
+        None,
+        "unknown group keeps the original instance"
+    );
+}

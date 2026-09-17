@@ -44,6 +44,8 @@ pub enum KvCacheError {
     ModelHashMismatch(String),
     #[error("quant mismatch: {0}")]
     QuantMismatch(String),
+    #[error("adapter required: {0}")]
+    AdapterRequired(String),
     #[error("database error: {0}")]
     Db(String),
 }
@@ -108,6 +110,93 @@ pub struct KvSnapshot {
     pub base_model_hash: Option<String>,
     /// Monotonic per-session turn sequence (M3). `None` for legacy rows.
     pub turn_seq: Option<u64>,
+}
+
+impl KvSnapshot {
+    /// Whether this stored record may serve a server running `current`.
+    /// Each identity field compares only when BOTH sides know it — a `None`
+    /// on either side is "unknowable", never a mismatch — so legacy rows
+    /// (all `None`) always restore and an unknown current side never
+    /// rejects. A known-vs-known difference rejects with the matching
+    /// already-defined error.
+    pub fn check_compatible(&self, current: &SnapshotIdentity) -> Result<(), KvCacheError> {
+        if let (Some(stored), Some(live)) = (&self.base_model_hash, &current.base_model_hash) {
+            if stored != live {
+                return Err(KvCacheError::ModelHashMismatch(format!(
+                    "snapshot weights hash {stored} != live {live}"
+                )));
+            }
+        }
+        if let (Some(stored), Some(live)) = (&self.model_quant, &current.model_quant) {
+            if stored != live {
+                return Err(KvCacheError::QuantMismatch(format!(
+                    "snapshot quant {stored} != live {live}"
+                )));
+            }
+        }
+        if let (Some(stored), Some(live)) = (&self.llama_cpp_version, &current.llama_cpp_version) {
+            if stored != live {
+                return Err(KvCacheError::VersionMismatch(format!(
+                    "snapshot fork version {stored} != live {live}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The live side of a snapshot-identity check: what the server runs right
+/// now. Every field is `Option` — `None` means unknowable (no weights path,
+/// no fork version reported), never a fabricated default. Built from a
+/// [`crate::config::ModelEntry`] by [`snapshot_identity_for_model`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SnapshotIdentity {
+    /// Fingerprint of the weights file the server loaded.
+    pub base_model_hash: Option<String>,
+    /// Quant of the loaded weights (GGUF `quant` name).
+    pub model_quant: Option<String>,
+    /// Fork build version, when the caller knows it.
+    pub llama_cpp_version: Option<String>,
+}
+
+/// Derive the live snapshot identity for a model entry: the weights-file
+/// fingerprint (blake3 over path + byte length — cheap, never a GB read) and
+/// the GGUF quant name, plus the caller-supplied fork version. A missing or
+/// unreadable weights path yields `None` fields (unknowable, never
+/// fabricated); the compatibility check skips those.
+pub fn snapshot_identity_for_model(
+    entry: &crate::config::ModelEntry,
+    llama_cpp_version: Option<String>,
+) -> SnapshotIdentity {
+    let weights = entry.weights.as_deref().and_then(|path| {
+        fluent_wvr::capability::capability_aware_fs::metadata(path)
+            .ok()
+            .map(|m| (path, m.len()))
+    });
+    let (base_model_hash, model_quant) = match weights {
+        Some((path, len)) => {
+            // Fingerprint, not a content hash: path + byte length through
+            // the shared blake3 primitive (cheap, never a GB read). Any
+            // weights swap changes the path or the length, so the stored
+            // record stops matching.
+            let mut key = path.as_bytes().to_vec();
+            key.push(0);
+            key.extend_from_slice(&len.to_le_bytes());
+            let hash = common_core::hash::blake3_hex(&key);
+            let quant =
+                crate::instances::manager::weights_identity(std::path::Path::new(path)).quant;
+            (
+                Some(hash),
+                if quant.is_empty() { None } else { Some(quant) },
+            )
+        }
+        None => (None, None),
+    };
+    SnapshotIdentity {
+        base_model_hash,
+        model_quant,
+        llama_cpp_version,
+    }
 }
 
 /// Hot tier: in-process, RAM-resident LRU cache of recently-used snapshot
@@ -452,6 +541,72 @@ impl SnapshotStore {
         instance: &str,
     ) -> Result<(), KvCacheError> {
         self.save_snapshot_with_seq(model, adapter, session_id, name, instance, None)
+    }
+
+    /// Save a snapshot for a model entry, filling the identity from the
+    /// entry (weights hash/quant, caller-known fork version). When a LoRA is
+    /// attached (`lora_attached`), an adapter name is required — without it
+    /// the record would land on the base key and the two would collide.
+    /// Without a fork handle this is a metadata-only no-op returning `Ok`
+    /// (today's behavior); the adapter requirement is enforced first, so a
+    /// nameless LoRA save is loud even with nowhere to send bytes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_snapshot_for_model(
+        &self,
+        model: &str,
+        entry: &crate::config::ModelEntry,
+        adapter: Option<&str>,
+        lora_attached: bool,
+        session_id: &str,
+        name: &str,
+        instance: &str,
+        llama_cpp_version: Option<String>,
+        turn_seq: Option<u64>,
+    ) -> Result<(), KvCacheError> {
+        if lora_attached && adapter.is_none_or(str::is_empty) {
+            return Err(KvCacheError::AdapterRequired(format!(
+                "model '{model}': a LoRA is attached but no adapter name was given"
+            )));
+        }
+        let Some(fork) = &self.fork else {
+            return Ok(()); // no fork handle: metadata-only no-op (today's behavior)
+        };
+        let fork = Arc::clone(fork);
+        let instance = instance.to_string();
+        let name = name.to_string();
+        let fork_instance = instance.clone();
+        let fork_name = name.clone();
+        let result = common_core::runtime::block_on(async move {
+            fork.save_snapshot(&fork_instance, &fork_name).await
+        });
+        if let Err(e) = result {
+            tracing::warn!(
+                target: "router.kv_cache",
+                instance = %instance,
+                name = %name,
+                error = %e,
+                "kv snapshot save on fork failed - degrading to metadata-only",
+            );
+            return Err(KvCacheError::Db(format!("fork snapshot save failed: {e}")));
+        }
+        let identity = snapshot_identity_for_model(entry, llama_cpp_version);
+        let snapshot = KvSnapshot {
+            model: model.to_string(),
+            adapter: adapter.map(String::from),
+            session_id: session_id.to_string(),
+            snapshot_name: name.clone(),
+            instance: Some(instance),
+            // Derived to the fork layout by the cold tier's `store`.
+            file_path: PathBuf::new(),
+            token_count: None,
+            created_at: now_secs(),
+            last_used_at: now_secs(),
+            llama_cpp_version: identity.llama_cpp_version,
+            model_quant: identity.model_quant,
+            base_model_hash: identity.base_model_hash,
+            turn_seq,
+        };
+        self.store(snapshot)
     }
 
     pub fn save_snapshot_with_seq(

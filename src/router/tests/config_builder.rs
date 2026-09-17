@@ -318,6 +318,59 @@ fn local_backend_single_resolver_with_role_work_point() {
 }
 
 #[test]
+fn sync_backend_prefers_resident_group_over_cold_default() {
+    // The split contract: dispatch keeps the entry default (golden above —
+    // spawn-declared, built on demand through the sidecar when cold), while
+    // sync `LlmClient` construction (no sidecar on the blocking path)
+    // prefers the resident window through `default_resident_point`.
+    let mut config: RouterConfig = serde_json::from_value(serde_json::json!({
+        "roles": {
+            "work": {"pinned": true, "params": {"num_ctx": 16384}, "models": ["swarm"]},
+            "ledger": {"models": ["swarm"]},
+            "scratch": {"models": ["swarm"]}
+        },
+        "models": {
+            "swarm": {
+                "endpoint": "http://x/v1/chat/completions",
+                "name": "abiray/lfm2.5-2.6b-heretic-abliterated",
+                "intelligence": 2,
+                "cost_input": 1.0, "cost_output": 6.0, "cost_cached_read": 0.4,
+                "tok_s": 8
+            }
+        }
+    }))
+    .expect("valid config");
+    config.apply_defaults();
+
+    // Dispatch precedence is untouched: bare still resolves `:base`.
+    assert_eq!(
+        crate::config::resolve_inference_point(&config.models, &config.roles, "swarm", None)
+            .as_deref(),
+        Some("base"),
+        "dispatch default is unchanged"
+    );
+    // The sync duty retargets to the resident window.
+    let entry = config.models.get("swarm").expect("swarm");
+    assert_eq!(
+        crate::config::default_resident_point(entry).as_deref(),
+        Some("work"),
+        "the lone pinned group serves sync clients"
+    );
+    // Explicit points are never rewritten by either side.
+    assert_eq!(
+        crate::config::resolve_inference_point(
+            &config.models,
+            &config.roles,
+            "swarm",
+            Some("scratch")
+        )
+        .as_deref(),
+        Some("scratch"),
+        "explicit qualifier wins"
+    );
+}
+
+#[test]
 fn summarizer_for_ledger_builds_when_ledger_section_present() {
     // The ledger Summarizer's DIP construction site. With a `ledger`
     // section and a swarm entry declaring a `ledger` instance, the backend

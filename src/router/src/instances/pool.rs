@@ -120,6 +120,20 @@ impl InstancePool {
             .collect()
     }
 
+    /// Sibling rotation for a group-addressed dispatch: the next ready
+    /// sibling window, or `None` when the original instance must stand
+    /// (no instance, unmanaged endpoint, single window, unknown group —
+    /// the fork resolves first-available as today). Pure routing: no I/O,
+    /// no creation; `ensure_target_ready` below still heals the pick.
+    /// Session/explicit routing never reaches here — the dispatch layer
+    /// only calls this for config-derived targets (see
+    /// `has_explicit_routing` in `server::dispatch`).
+    pub fn resolve_sibling(&self, endpoint_url: &str, instance: Option<&str>) -> Option<String> {
+        let name = instance?;
+        let manager = self.manager_for_url(endpoint_url)?;
+        manager.sibling_for_group_where(name, &|_| true)
+    }
+
     /// Ensure the model behind a dispatch endpoint is loaded: spawn its
     /// `llama-server` on demand if it is lazy (no pinned instance at boot) and
     /// currently unloaded. Also ensures a specifically-targeted instance
@@ -128,10 +142,14 @@ impl InstancePool {
     ///
     /// Before the target's weights are (re)loaded, [`Self::make_room_for`]
     /// evicts LRU unpinned instances and unloads cold plain models so the load
-    /// never pushes the device over its VRAM allocation budget. Residency is
-    /// judged by the *actual* resident state, not the process flag: a plain
-    /// model whose fork has slept its weights out of VRAM (process alive,
+    /// never pushes the device over its VRAM allocation budget
+    /// (`total - minimum_remaining`, never the reactive watermark floor).
+    /// Residency is judged by the *actual* resident state, not the process flag:
+    /// a plain model whose fork has slept its weights out of VRAM (process alive,
     /// `is_sleeping = true`) needs the same room to wake as a cold load would.
+    /// The admitted footprint is weights plus the incoming KV window, so a
+    /// large-window load frees room for its context up front instead of
+    /// admitting on weights alone and evicting reactively right after.
     pub async fn ensure_target_ready(&self, endpoint_url: &str, instance: Option<&str>) {
         let Some(manager) = self.manager_for_url(endpoint_url) else {
             return;
@@ -146,7 +164,8 @@ impl InstancePool {
             // weights into VRAM. Treat it like a cold load for admission.
             let resident = running && manager.is_sleeping().await != Some(true);
             if !resident {
-                self.make_room_for(model_key, manager.weights_bytes()).await;
+                self.make_room_for(model_key, manager.load_bytes_for(instance))
+                    .await;
             }
             if !running {
                 if let Err(e) = sup.ensure_running(model_key).await {
@@ -232,11 +251,12 @@ impl InstancePool {
     }
 
     /// Load-time admission control: before a cold model spawns (requiring
-    /// `required_bytes` of VRAM for its weights), evict units until the
-    /// projected device usage fits the allocation budget. The target model is
-    /// never an eviction candidate and pinned instances are never evicted.
-    /// Best-effort: if eviction cannot fully make room, the load proceeds and
-    /// the residency loop corrects the overshoot.
+    /// `required_bytes` of VRAM for weights plus its incoming KV window),
+    /// evict units until the projected device usage fits the allocation budget
+    /// (`total - minimum_remaining`, never the reactive watermark floor). The
+    /// target model is never an eviction candidate and pinned instances are
+    /// never evicted. Best-effort: if eviction cannot fully make room, the
+    /// load proceeds and the residency loop corrects the overshoot.
     ///
     /// Transport only: the pool detects the cold load and names the target,
     /// then hands the pass to the shared engine's pre-dispatch hook over the

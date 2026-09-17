@@ -660,11 +660,12 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         || {
             fluent_llm::runtime::LlmResidencyEngine::new(
                 std::time::Duration::from_secs(config.sidecar.poll_interval_s.max(1)),
-                config.sidecar.allocation_limit(),
+                config.sidecar.reactive_limit(),
                 config.sidecar.onnx_working_set_budget_bytes,
                 fluent_router::ort::DEFAULT_SLEEP_IDLE_SECONDS,
                 config.sidecar.evict_batch,
             )
+            .with_admission_budget(config.sidecar.allocation_limit())
         },
     );
 
@@ -773,7 +774,23 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     let classifier = config
         .models
         .get(&classifier_model_name)
-        .map(|m| (classifier_model_name.clone(), m.clone()));
+        .map(|m| (classifier_model_name.clone(), m.clone()))
+        .or_else(|| {
+            // Availability sentinels (`last`/`any`) name no `models` entry:
+            // resolve the static viable member (the same rule boot uses for
+            // the classifier client) so pre-pipeline classifier readiness
+            // still has an endpoint to ensure. Without this the ensure is
+            // dead-`None` and a lazy classifier server is never pre-loaded.
+            let member = fluent_router::config::select_viable_member(
+                "classifier",
+                std::slice::from_ref(&classifier_model_name),
+                &config.models,
+                None,
+                None,
+            )?;
+            let (base, _) = fluent_router::config::split_model_key(&member);
+            config.models.get(base).map(|m| (member, m.clone()))
+        });
 
     tracing::info!(
         bind_addr = %config.server.bind_addr,

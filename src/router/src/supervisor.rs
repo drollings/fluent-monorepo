@@ -84,8 +84,10 @@ pub struct LlamaServerSpec {
     pub template: Option<String>,
     /// Localhost port the server binds.
     pub port: u16,
-    /// The declared instance pool (`--instance` grammar flags). Only pinned
-    /// profiles are declared at spawn; unpinned instances are created on
+    /// The declared instance pool (`--instance` grammar flags). Pinned
+    /// profiles are declared at spawn, plus the `default: true` profile
+    /// (unpinned, it registers without building and materializes on first
+    /// demand); other unpinned instances are created on
     /// demand by the sidecar.
     pub instances: Vec<InstanceProfile>,
     /// Whether the model is spawned at boot: true when it declares at least
@@ -173,9 +175,11 @@ pub fn prepend_library_path(
 /// `--chat-template-file` (explicit config wins over GGUF-baked metadata). Per-model run defaults (the fleet block
 /// overlaid with the model's own launch knobs) are always emitted so every
 /// managed server runs identically; a plain model (no instance pool) also
-/// gets its resolved context size and idle-sleep timeout. Only **pinned**
-/// instance profiles are declared as `--instance` flags at spawn — unpinned
-/// instances are created on demand by the sidecar. `--slot-save-path` and
+/// gets its resolved context size and idle-sleep timeout. Pinned
+/// instance profiles are declared as `--instance` flags at spawn, plus the
+/// `default: true` profile (unpinned, it registers without building and
+/// materializes on first demand) — other unpinned instances are created on
+/// demand by the sidecar. `--slot-save-path` and
 /// `--api-key` enable snapshots and auth.
 pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
     let mut args = vec![
@@ -229,9 +233,17 @@ pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
     // its full grammar so the server registers `/instances` and the model is
     // trackable the moment it is loaded on demand — there is no resident anchor
     // whose VRAM a declaration would waste.
+    //
+    // Further exception: the `default: true` profile is always declared
+    // (carrying the fork's `:default` marker). It is the target of bare and
+    // entry-default wire ids (classifier backends, dispatch defaults); when
+    // unpinned it registers without building and materializes on first
+    // demand like any lazy instance — declaration costs no VRAM, while
+    // skipping it leaves those ids unroutable (`400 model or instance not
+    // found`, or `ambiguous` when bare).
     let any_pinned = spec.instances.iter().any(|p| p.pinned);
     for profile in &spec.instances {
-        if any_pinned && !profile.pinned {
+        if any_pinned && !profile.pinned && !profile.default {
             continue;
         }
         args.push("--instance".into());

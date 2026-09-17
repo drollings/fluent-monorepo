@@ -920,3 +920,130 @@ fn summarizer_lock_is_free_during_the_model_call() {
     let node = worker.join().unwrap().expect("ensure_lod succeeds");
     assert_eq!(node.lod[1], "blocked summary");
 }
+
+// -- Assistant-node appends (overwrite → append) ---------------------------
+
+fn user_node(nodes: &[fluent_types::ContentNode]) -> &fluent_types::ContentNode {
+    nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::User))
+        .expect("user node")
+}
+
+fn assistant_node(nodes: &[fluent_types::ContentNode]) -> &fluent_types::ContentNode {
+    nodes
+        .iter()
+        .find(|n| n.role == Some(fluent_types::OriginRole::Assistant))
+        .expect("assistant node")
+}
+
+/// A full turn leaves the user's LOD0 byte-identical and appends the answer
+/// as its own node — never an overwrite of the request text.
+#[test]
+fn ledger_append_user_lod0_survives_full_turn() {
+    let store = temp_store();
+    let request = store.record_request("s", "r1", "What is 2+2?").unwrap();
+    store.record_result(request, true, Some(1.0), "4").unwrap();
+
+    let nodes = store.get_session_nodes("s", 10).unwrap();
+    assert_eq!(nodes.len(), 2, "turn appends, never overwrites");
+    assert_eq!(user_node(&nodes).lod[0], "What is 2+2?");
+    assert_eq!(assistant_node(&nodes).lod[0], "4");
+}
+
+/// The appended node carries the turn's context labels: assistant origin,
+/// the same session + request, a parent link to the request node, and the
+/// outcome flags.
+#[test]
+fn ledger_append_assistant_carries_origin_session_and_link() {
+    let store = temp_store();
+    let request = store.record_request("s", "r1", "hi").unwrap();
+    store
+        .record_result(request, false, Some(0.0), "no")
+        .unwrap();
+
+    let nodes = store.get_session_nodes("s", 10).unwrap();
+    let answer = assistant_node(&nodes);
+    assert_eq!(answer.role, Some(fluent_types::OriginRole::Assistant));
+    assert_eq!(answer.session_id.as_deref(), Some("s"));
+    assert_eq!(answer.request_id.as_deref(), Some("r1"));
+    assert_eq!(
+        answer.parent_id,
+        Some(request),
+        "linked to the request node"
+    );
+    assert_eq!(answer.accepted, Some(false));
+    assert_eq!(answer.acceptance_score, Some(0.0));
+    // The request node itself is pristine: no outcome flags leak onto it.
+    let asked = user_node(&nodes);
+    assert_eq!(asked.accepted, None);
+    assert_eq!(asked.parent_id, None);
+}
+
+/// Two turns read back newest-first with a monotonic turn index underneath
+/// — each answer still trails its own question, never a merged overwrite.
+#[test]
+fn ledger_append_multi_turn_orders_by_turn() {
+    let store = temp_store();
+    let r1 = store.record_request("s", "r1", "first?").unwrap();
+    store.record_result(r1, true, Some(1.0), "one").unwrap();
+    let r2 = store.record_request("s", "r2", "second?").unwrap();
+    store.record_result(r2, true, Some(1.0), "two").unwrap();
+
+    let nodes = store.get_session_nodes("s", 10).unwrap();
+    assert_eq!(nodes.len(), 4);
+    let roles: Vec<_> = nodes.iter().map(|n| n.role.clone()).collect();
+    use fluent_types::OriginRole::*;
+    assert_eq!(
+        roles,
+        vec![Some(Assistant), Some(User), Some(Assistant), Some(User)],
+        "answers trail their questions newest-first, never merged"
+    );
+    let texts: Vec<_> = nodes.iter().map(|n| n.lod[0].clone()).collect();
+    assert_eq!(texts, vec!["two", "second?", "one", "first?"]);
+    let indices: Vec<u64> = nodes.iter().filter_map(|n| n.turn_index).collect();
+    assert_eq!(indices.len(), 4);
+    assert!(
+        indices.windows(2).all(|w| w[0] > w[1]),
+        "turn_index is strictly decreasing in read order (monotonic writes)"
+    );
+}
+
+/// Legacy rows keep reading: a node shaped by the old overwrite (accepted +
+/// answer text stamped on the request node itself) is untouched by later
+/// appends, and mixed ledgers serve both shapes.
+#[test]
+fn ledger_append_legacy_rows_read_untouched() {
+    let store = temp_store();
+    let legacy = store.record_request("s", "r0", "old question").unwrap();
+    // The pre-append shape: outcome + answer stamped onto the request node.
+    store
+        .with_node_mut(legacy, |node| {
+            node.accepted = Some(true);
+            node.acceptance_score = Some(1.0);
+            node.lod[0] = "old answer".to_string();
+        })
+        .unwrap();
+    // A new turn appends beside it without disturbing it.
+    let request = store.record_request("s", "r1", "new question").unwrap();
+    store
+        .record_result(request, true, Some(1.0), "new answer")
+        .unwrap();
+
+    let nodes = store.get_session_nodes("s", 10).unwrap();
+    assert_eq!(nodes.len(), 3);
+    let legacy_node = store.get_node(legacy).unwrap();
+    let legacy_node = lock_read(&legacy_node);
+    assert_eq!(legacy_node.lod[0], "old answer");
+    assert_eq!(legacy_node.accepted, Some(true));
+    assert_eq!(assistant_node(&nodes).lod[0], "new answer");
+}
+
+/// Recording a result for an unknown request still fails loudly — the
+/// append path preserves today's `NotFound` behavior.
+#[test]
+fn ledger_append_missing_request_errors() {
+    let store = temp_store();
+    let ghost = fluent_types::NodeId::from_int(9999);
+    assert!(store.record_result(ghost, true, Some(1.0), "x").is_err());
+}

@@ -612,30 +612,50 @@ impl LlmContext for LlamaContext {
     }
 
     fn kv_cache(&self) -> Arc<dyn LlmKVCache> {
-        Arc::new(LlamaKVCache {
-            client: self.client.clone(),
-            instance: self.name.clone(),
-            model_key: self.manager.model_key().to_string(),
-            store: None,
-        })
+        Arc::new(LlamaKVCache::new(
+            self.client.clone(),
+            self.name.clone(),
+            self.manager.model_key().to_string(),
+        ))
     }
 
     async fn evict(&self) -> Result<(), LlmRuntimeError> {
         // Resume-marked multi-step contexts are KV-snapshotted BEFORE they
         // drop (the sidecar's `evict_context` order) so a later
-        // `snapshot=<name>-resume` restores them. A failed save logs and the
-        // eviction still proceeds. One-shot contexts are plain-destroyed:
-        // they hold no multi-step state, so the snapshot pass is skipped.
+        // `snapshot=<name>-resume` restores them — but only in `auto`
+        // snapshot mode. `manual` destroys without saving (and audits the
+        // skip): the operator asked for no silent saves. A failed save logs
+        // and the eviction still proceeds. One-shot contexts are
+        // plain-destroyed: they hold no multi-step state, so the snapshot
+        // pass is skipped.
         if self.manager.session_for(&self.name) && self.manager.resume_for(&self.name) {
-            let snapshot = resume_snapshot_name(&self.name);
-            if let Err(e) = self.client.save_snapshot(&self.name, &snapshot).await {
-                tracing::warn!(
+            if self.manager.snapshot_mode().saves_on_evict() {
+                let snapshot = resume_snapshot_name(&self.name);
+                if let Err(e) = self.client.save_snapshot(&self.name, &snapshot).await {
+                    tracing::warn!(
+                        target: "router.instances",
+                        model = %self.manager.model_key(),
+                        instance = %self.name,
+                        snapshot = %snapshot,
+                        error = %e,
+                        "resume snapshot save on evict failed - context drops unsnapshotted",
+                    );
+                }
+            } else {
+                tracing::info!(
                     target: "router.instances",
                     model = %self.manager.model_key(),
                     instance = %self.name,
-                    snapshot = %snapshot,
-                    error = %e,
-                    "resume snapshot save on evict failed - context drops unsnapshotted",
+                    "manual snapshot mode - context drops without saving",
+                );
+                crate::audit::emit(
+                    "instances",
+                    serde_json::json!({
+                        "action": "evict_skip_snapshot",
+                        "model": self.manager.model_key(),
+                        "instance": self.name,
+                        "reason": "snapshot_manual",
+                    }),
                 );
             }
         }
@@ -651,6 +671,47 @@ pub struct LlamaKVCache {
     instance: String,
     model_key: String,
     store: Option<Arc<SnapshotStore>>,
+    adapter: Option<String>,
+    expected_identity: Option<crate::kv_cache::SnapshotIdentity>,
+}
+
+impl LlamaKVCache {
+    /// Build the adapter for a fork instance. Crate-visible so tests can
+    /// drive the restore identity gate against a stub fork.
+    pub(crate) fn new(client: InstanceClient, instance: String, model_key: String) -> Self {
+        Self {
+            client,
+            instance,
+            model_key,
+            store: None,
+            adapter: None,
+            expected_identity: None,
+        }
+    }
+
+    /// Attach the router-side metadata index (recorded on save, consulted
+    /// on restore for the identity check).
+    #[must_use]
+    pub fn with_store(mut self, store: Arc<SnapshotStore>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// The LoRA adapter this context serves under, if any. Saved records
+    /// carry it so base and base+LoRA snapshots never share a key.
+    #[must_use]
+    pub fn with_adapter(mut self, adapter: impl Into<String>) -> Self {
+        self.adapter = Some(adapter.into());
+        self
+    }
+
+    /// The live identity restores must match. A stored record whose known
+    /// fields differ from these rejects instead of serving stale KV.
+    #[must_use]
+    pub fn with_expected_identity(mut self, identity: crate::kv_cache::SnapshotIdentity) -> Self {
+        self.expected_identity = Some(identity);
+        self
+    }
 }
 
 #[async_trait::async_trait]
@@ -663,7 +724,7 @@ impl LlmKVCache for LlamaKVCache {
         if let Some(store) = &self.store {
             let _ = store.store(KvSnapshot {
                 model: self.model_key.clone(),
-                adapter: None,
+                adapter: self.adapter.clone(),
                 session_id: self.instance.clone(),
                 snapshot_name: name.to_string(),
                 instance: Some(self.instance.clone()),
@@ -692,14 +753,29 @@ impl LlmKVCache for LlamaKVCache {
             .list_snapshots(&self.instance)
             .await
             .map_err(map_instance_err)?;
-        if snapshots.iter().any(|s| s.name == name) {
-            Ok(())
-        } else {
-            Err(LlmRuntimeError::NotLoaded(format!(
+        if !snapshots.iter().any(|s| s.name == name) {
+            return Err(LlmRuntimeError::NotLoaded(format!(
                 "snapshot {name} not found for instance {}",
                 self.instance
-            )))
+            )));
         }
+        // Identity gate: when the store holds a record for this
+        // (model, adapter, instance) key and a live identity is known, a
+        // known-vs-known difference rejects instead of serving stale KV.
+        // Either side unknown degrades to today's existence check.
+        if let (Some(store), Some(expected)) = (&self.store, &self.expected_identity) {
+            if let Ok(record) =
+                store.retrieve(&self.model_key, self.adapter.as_deref(), &self.instance)
+            {
+                if let Err(e) = record.check_compatible(expected) {
+                    return Err(LlmRuntimeError::NotLoaded(format!(
+                        "snapshot {name} identity rejected for instance {}: {e}",
+                        self.instance
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn list(&self) -> Vec<SnapshotMeta> {

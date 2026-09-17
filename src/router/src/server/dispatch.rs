@@ -119,6 +119,20 @@ impl RoleLimiters {
     }
 }
 
+/// Whether a dispatch bypasses sibling rotation: the client pinned a window
+/// (`instance`/`snapshot`/`id_slot`) or a rewind staged pending KV fields
+/// for one. The single predicate behind `handle_dispatch`'s overlay decision
+/// and the sibling rotation below — never two copies of the rule.
+pub(crate) fn has_explicit_routing(
+    router_request: &RouterRequest,
+    session: Option<&Mutex<DependencySession>>,
+) -> bool {
+    router_request.instance.is_some()
+        || router_request.snapshot.is_some()
+        || router_request.id_slot.is_some()
+        || session.is_some_and(|s| common_core::sync::lock(s).pending_kv_fields().is_some())
+}
+
 #[allow(clippy::implicit_hasher)]
 pub async fn handle_dispatch(
     rt: &RoutingTarget,
@@ -139,10 +153,7 @@ pub async fn handle_dispatch(
     // The client's explicit routing fields (`instance`/`snapshot`/`id_slot`)
     // override any the target derived from config; pending rewind fields take
     // precedence over the request's.
-    let needs_overlay = router_request.instance.is_some()
-        || router_request.snapshot.is_some()
-        || router_request.id_slot.is_some()
-        || pending.is_some();
+    let needs_overlay = has_explicit_routing(router_request, deps.session.as_deref());
     let owned_rt = if needs_overlay {
         let mut t = crate::server::instances_api::apply_request_routing_fields(rt, router_request);
         if let Some((snapshot, instance, id_slot)) = pending {
@@ -153,6 +164,20 @@ pub async fn handle_dispatch(
             t.id_slot = Some(id_slot);
         }
         Some(t)
+    } else if let Some(pool) = deps.instance_pool.as_ref() {
+        // Config-derived target: rotate group-addressed instances over the
+        // model's sibling windows (round-robin). Single-window, unknown, or
+        // unmanaged targets resolve to `None` and keep their group
+        // addressing — byte-identical wire. The chosen sibling flows into
+        // the normal readiness path below (`ensure_instance` heals it).
+        match pool.resolve_sibling(&rt.url, rt.instance.as_deref()) {
+            Some(sibling) => {
+                let mut t = rt.clone();
+                t.instance = Some(sibling);
+                Some(t)
+            }
+            None => None,
+        }
     } else {
         None
     };

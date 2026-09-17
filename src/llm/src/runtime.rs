@@ -344,8 +344,13 @@ fn now_unix_ms() -> i64 {
 pub struct LlmResidencyEngine {
     /// The poll cadence the `start()` loop sleeps between passes.
     poll_interval: Duration,
-    /// VRAM allocation budget (llama pool). `None` → no VRAM eviction.
+    /// VRAM reactive budget (llama pool): the periodic loop's floor only.
+    /// `None` → no VRAM eviction.
     vram_budget_bytes: Option<u64>,
+    /// VRAM pre-admission budget (llama pool): the hard gate a cold load frees
+    /// room against before the spawn. `None` → falls back to the reactive
+    /// budget, so single-budget callers keep today's behavior.
+    vram_admission_budget_bytes: Option<u64>,
     /// CPU-RAM working-set budget (onnx pool). `None` → idle-only eviction.
     ram_budget_bytes: Option<u64>,
     /// Default idle threshold (seconds) for `LruLargest` weights whose own
@@ -391,10 +396,27 @@ impl LlmResidencyEngine {
         Arc::new(Self {
             poll_interval,
             vram_budget_bytes,
+            vram_admission_budget_bytes: vram_budget_bytes,
             ram_budget_bytes,
             idle_seconds_default,
             evict_batch,
             clock,
+        })
+    }
+
+    /// Override the VRAM pre-admission budget, leaving the reactive budget for
+    /// the periodic loop untouched. The router wires the allocation hard gate
+    /// here while the reactive floor stays on the construction budget.
+    #[must_use]
+    pub fn with_admission_budget(self: &Arc<Self>, budget: Option<u64>) -> Arc<Self> {
+        Arc::new(Self {
+            poll_interval: self.poll_interval,
+            vram_budget_bytes: self.vram_budget_bytes,
+            vram_admission_budget_bytes: budget,
+            ram_budget_bytes: self.ram_budget_bytes,
+            idle_seconds_default: self.idle_seconds_default,
+            evict_batch: self.evict_batch,
+            clock: Arc::clone(&self.clock),
         })
     }
 
@@ -627,7 +649,7 @@ impl LlmResidencyEngine {
             return;
         }
         let budget = match pool {
-            MemoryPool::Vram => self.vram_budget_bytes,
+            MemoryPool::Vram => self.vram_admission_budget_bytes.or(self.vram_budget_bytes),
             MemoryPool::Ram => self.ram_budget_bytes,
         };
         let Some(budget) = budget else {
