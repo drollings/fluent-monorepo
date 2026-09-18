@@ -4,7 +4,8 @@
 
 pub mod canonical;
 pub mod entity;
-pub mod inference;pub mod mapper;
+pub mod inference;
+pub mod mapper;
 pub mod migration;
 pub mod normalize;
 pub mod plausibility;

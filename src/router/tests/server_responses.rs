@@ -8,18 +8,9 @@ fn cors_headers_unchanged() {
     assert_eq!(CORS_ALLOW_HEADERS, "Content-Type, Authorization");
     let mut headers = http::HeaderMap::new();
     add_cors_headers(&mut headers);
-    assert_eq!(
-        headers["access-control-allow-origin"],
-        CORS_ALLOW_ORIGIN
-    );
-    assert_eq!(
-        headers["access-control-allow-methods"],
-        CORS_ALLOW_METHODS
-    );
-    assert_eq!(
-        headers["access-control-allow-headers"],
-        CORS_ALLOW_HEADERS
-    );
+    assert_eq!(headers["access-control-allow-origin"], CORS_ALLOW_ORIGIN);
+    assert_eq!(headers["access-control-allow-methods"], CORS_ALLOW_METHODS);
+    assert_eq!(headers["access-control-allow-headers"], CORS_ALLOW_HEADERS);
 }
 
 #[test]

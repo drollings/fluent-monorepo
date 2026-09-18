@@ -7,7 +7,11 @@ fn entry<'a>(name: &'a str, description: &'a str) -> RouteEntry<'a> {
 #[test]
 fn render_sorts_and_bullets() {
     let out = render_available_routes(
-        &[entry("zebra", "last"), entry("apple", "first"), entry("mango", "")],
+        &[
+            entry("zebra", "last"),
+            entry("apple", "first"),
+            entry("mango", ""),
+        ],
         "  - ",
     );
     assert_eq!(
@@ -25,16 +29,15 @@ fn render_tree_bullet_and_trailing_blank() {
 
 #[test]
 fn render_empty_entries_is_header_only() {
-    assert_eq!(render_available_routes(&[], "  - "), "Available routes:\n\n");
+    assert_eq!(
+        render_available_routes(&[], "  - "),
+        "Available routes:\n\n"
+    );
 }
 
 #[test]
 fn substitute_thresholds_two_decimals() {
-    let out = substitute_thresholds(
-        "c={coherence_threshold} s={safety_threshold}",
-        0.7,
-        0.5,
-    );
+    let out = substitute_thresholds("c={coherence_threshold} s={safety_threshold}", 0.7, 0.5);
     assert_eq!(out, "c=0.70 s=0.50");
 }
 

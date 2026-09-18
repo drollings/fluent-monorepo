@@ -241,7 +241,9 @@ mod tests {
         let p = RouterMessageContent::Parts(vec![
             ContentPart::Text { text: "one".into() },
             ContentPart::ImageUrl {
-                image_url: ImageUrl { url: "http://i".into() },
+                image_url: ImageUrl {
+                    url: "http://i".into(),
+                },
             },
             ContentPart::Text { text: "two".into() },
         ]);

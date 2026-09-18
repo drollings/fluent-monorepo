@@ -150,7 +150,10 @@ fn golden_spot_checks_dispatch_contract() {
     let target = by_id
         .get("role.code.route.code.complexity.none")
         .expect("role case");
-    assert_eq!(target["model"], "code:code", "role code serves code through its window");
+    assert_eq!(
+        target["model"], "code:code",
+        "role code serves code through its window"
+    );
     assert_eq!(target["role"], "code");
     assert!(
         by_id["target_for_key.nope:default"].is_null(),

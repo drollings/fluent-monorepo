@@ -747,7 +747,11 @@ mod tests {
         // single-member terminal climbed (one self-assessment through the
         // same injected backend — singletons no longer skip the ladder).
         let captured = prompts.lock().unwrap().clone();
-        assert_eq!(captured.len(), 2, "classifier call plus one ladder assessment");
+        assert_eq!(
+            captured.len(),
+            2,
+            "classifier call plus one ladder assessment"
+        );
         assert!(
             captured[0].contains("- code: programming and implementation"),
             "auto-constructed prompt lists child routes, got: {}",

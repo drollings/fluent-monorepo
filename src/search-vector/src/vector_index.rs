@@ -1,4 +1,4 @@
-//! Test-support vector-index seam: the `VectorIndex` store trait and its two
+//! Test-support vector-store seam: the `VectorStore` trait and its two
 //! implementations.
 //!
 //! Moved verbatim from `fluent-router`'s `testing/vector_index.rs` (M7.3):
@@ -9,7 +9,8 @@
 //!
 //! This trait is the stateful **store seam** (`insert`/`search`/`len`,
 //! `NodeId`-keyed, similarity-mapped) — deliberately distinct from
-//! `fluent_db::vector::VectorIndex::knn`, the stateless **math seam**. Both
+//! `fluent_db::vector::VectorIndex::knn`, the stateless **math seam** (the
+//! shared name was a collision; the store side is `VectorStore`). Both
 //! implementations compose the shared primitives
 //! (`fluent_db::hnsw::HnswIndex` + `fluent_db::vector::knn_brute_force`)
 //! instead of re-implementing top-K or cosine math — no second HNSW.
@@ -19,7 +20,7 @@ use std::sync::Mutex;
 use fluent_db::hnsw::HnswIndex;
 use fluent_types::NodeId;
 
-pub trait VectorIndex: Send + Sync {
+pub trait VectorStore: Send + Sync {
     fn insert(&self, id: NodeId, emb: &[f32]) -> Result<(), fluent_db::error::DbError>;
     fn search(&self, query: &[f32], k: usize) -> Vec<(NodeId, f64)>;
     fn len(&self) -> usize;
@@ -27,6 +28,18 @@ pub trait VectorIndex: Send + Sync {
         self.len() == 0
     }
 }
+
+/// Back-compat shim for the pre-rename `VectorIndex` store-trait name: a
+/// deprecated supertrait with a blanket impl, so both `impl VectorIndex`
+/// and `dyn VectorIndex` positions keep compiling (with a warning).
+/// `fluent_db::vector::VectorIndex` (the math seam) keeps that name; new code
+/// uses `VectorStore`. Remove next minor.
+#[deprecated(
+    note = "use VectorStore: VectorIndex unambiguously means fluent_db::vector::VectorIndex"
+)]
+pub trait VectorIndex: VectorStore {}
+#[allow(deprecated)]
+impl<T: VectorStore> VectorIndex for T {}
 
 /// Byte-identical brute-force implementation — the ground-truth recall
 /// baseline for the HNSW harness.
@@ -48,7 +61,7 @@ impl Default for BruteForceIndex {
     }
 }
 
-impl VectorIndex for BruteForceIndex {
+impl VectorStore for BruteForceIndex {
     fn insert(&self, id: NodeId, emb: &[f32]) -> Result<(), fluent_db::error::DbError> {
         common_core::sync::lock(&self.entries).push((id, emb.to_vec()));
         Ok(())
@@ -93,7 +106,7 @@ impl Default for HnswVectorIndex {
     }
 }
 
-impl VectorIndex for HnswVectorIndex {
+impl VectorStore for HnswVectorIndex {
     fn insert(&self, id: NodeId, emb: &[f32]) -> Result<(), fluent_db::error::DbError> {
         self.inner.insert(id.as_int(), emb);
         Ok(())

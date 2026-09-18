@@ -858,9 +858,9 @@ pub(crate) fn materialize_effective_pool(
         // dispatch gate enforces always has the slots it counts. Unset
         // stays a single window. `u32::try_from` saturates absurd values
         // instead of truncating (parse already rejects 0).
-        let count = role.max_parallel.map_or(1, |m| {
-            u32::try_from(m).unwrap_or(u32::MAX).max(1)
-        });
+        let count = role
+            .max_parallel
+            .map_or(1, |m| u32::try_from(m).unwrap_or(u32::MAX).max(1));
         merged.insert(
             role_name.to_string(),
             InstanceProfile {

@@ -406,12 +406,12 @@ fn topology_guard_accept_reject_table() {
     children.push(ClassificationChild {
         key: "extra".into(),
         description: "new branch".into(),
-            node: ClassificationNode::Terminal {
-                route: "extra".into(),
-                role: None,
-                description: "extra things".into(),
-                always_route: false,
-            },
+        node: ClassificationNode::Terminal {
+            route: "extra".into(),
+            role: None,
+            description: "extra things".into(),
+            always_route: false,
+        },
     });
     assert!(holder
         .reload_topology(added, "addition", &no_aliases())

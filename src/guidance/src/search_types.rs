@@ -741,6 +741,7 @@ pub fn validate_fragment_groups(
 /// Canonical implementation lives in `search_vector::tokens` (M13); this
 /// wrapper keeps the P0 contract surface stable.
 #[must_use]
+#[deprecated(note = "use search_vector::tokens::symbol_names")]
 pub fn extract_symbol_names(query: &str) -> Vec<String> {
     search_vector::tokens::symbol_names(query)
 }
@@ -750,6 +751,7 @@ pub fn extract_symbol_names(query: &str) -> Vec<String> {
 /// Canonical implementation lives in `search_vector::tokens` (M13); this
 /// wrapper keeps the P0 contract surface stable.
 #[must_use]
+#[deprecated(note = "use search_vector::tokens::symbol_name_from_token")]
 pub fn symbol_name_from_token(token: &str) -> Option<String> {
     search_vector::tokens::symbol_name_from_token(token)
 }
@@ -793,6 +795,7 @@ pub fn derive_matched_by(paths: &[RecallPath]) -> SearchMatchedBy {
 /// search-vector FTS query side); this wrapper keeps the P0 contract
 /// surface stable.
 #[must_use]
+#[deprecated(note = "use common_core::string::is_cjk_char")]
 pub fn is_cjk_char(c: char) -> bool {
     common_core::string::is_cjk_char(c)
 }
@@ -802,36 +805,19 @@ pub fn is_cjk_char(c: char) -> bool {
 /// Canonical implementation lives in `common_core::string` (shared by the
 /// index side and the FTS query side in search-vector).
 #[must_use]
+#[deprecated(note = "use common_core::string::cjk_bigrams")]
 pub fn cjk_bigrams(text: &str) -> Vec<String> {
     common_core::string::cjk_bigrams(text)
 }
 
-// ---------------------------------------------------------------------------
-// Trait skeletons (signatures only; P1+ provides behavior)
-// ---------------------------------------------------------------------------
-
-/// Index storage contract: lexical + vector recall, entity lookup, file
-/// listing. P1 implements it over `GuidanceDb` (FTS5 + HNSW).
-pub trait WorkspaceIndexStorage: Send + Sync {
-    /// Ranked lexical recall (0-based ranks, best first).
-    fn search_fts(
-        &self,
-        query: &str,
-        filter: &StorageFilter,
-        limit: usize,
-    ) -> Result<Vec<StorageHit>, FragmentError>;
-    /// Ranked vector recall over a query embedding.
-    fn search_vector(
-        &self,
-        embedding: &[f32],
-        filter: &StorageFilter,
-        limit: usize,
-    ) -> Result<Vec<StorageHit>, FragmentError>;
-    /// Entity + file lookup by public entity id.
-    fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, FragmentError>;
-    /// All indexed files.
-    fn list_files(&self) -> Result<Vec<FileInfo>, FragmentError>;
-}
+/// Single storage contract for recall: lexical + vector + lemma recall,
+/// entity lookup, file listing. Canonical home is
+/// [`crate::query::recall::RecallStorage`] (live: the `GuidanceDb` adapter
+/// plus the hermetic test fake) — re-exported here for the stable
+/// `search_types` surface. The earlier zero-impl storage skeleton is retired
+/// (it had no implementors); narrower views take `&dyn RecallStorage` and
+/// ignore methods.
+pub use crate::query::recall::RecallStorage;
 
 /// Per-language extraction adapter. One impl per language (P2); the
 /// dispatcher resolves adapters by registry, never by match (roadmap P0.2).

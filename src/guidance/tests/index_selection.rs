@@ -59,6 +59,31 @@ fn detect_file_type_covers_kinds() {
     }
 }
 
+#[test]
+fn detect_file_type_extensionless_and_odd_names() {
+    // Extensionless files fall back to text with an empty format; dotfiles
+    // and trailing-dot names behave identically (no extension verdict).
+    let cases = [
+        ("README", Some((FileKind::Text, ""))),
+        ("LICENSE", Some((FileKind::Text, ""))),
+        (".gitignore", Some((FileKind::Text, ""))),
+        ("foo.", Some((FileKind::Text, ""))),
+        // Named files win regardless of any extension present.
+        ("Dockerfile", Some((FileKind::Code, "dockerfile"))),
+        ("Makefile", Some((FileKind::Code, "makefile"))),
+        // Case-insensitivity rides the extension lowercasing.
+        ("a.MD", Some((FileKind::Text, "markdown"))),
+        ("A.PNG", Some((FileKind::Image, "png"))),
+        // Unknown extensions fall back to text, keeping the lowered ext.
+        ("Dockerfile.bak", Some((FileKind::Text, "bak"))),
+        ("a.XYZ", Some((FileKind::Text, "xyz"))),
+    ];
+    for (name, expected) in cases {
+        let got = detect_file_type(std::path::Path::new(name));
+        assert_eq!(got, expected.map(|(k, f)| (k, f.to_string())), "{name}");
+    }
+}
+
 // M7.1 characterization: the extension matrix across all five tables,
 // pinned verbatim before the `fluent_types::file_kind` extraction. This
 // is the shared fixture M7.3 migrates against — including the three live

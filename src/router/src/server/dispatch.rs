@@ -21,8 +21,8 @@ use crate::server::responses::HyperResponse;
 use crate::server::responses::ServerStats;
 use crate::streaming::StreamAnswer;
 use crate::testing::mock::MockDispatchContext;
-use fluent_types::openai_wire::{RouterMessageContent, RouterRequest, RouterResponse};
 use fluent_llm::thinking::strip_thinking_blocks;
+use fluent_types::openai_wire::{RouterMessageContent, RouterRequest, RouterResponse};
 
 use crate::charts::extract::WorkflowExtractor;
 

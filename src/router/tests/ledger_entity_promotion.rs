@@ -7,8 +7,8 @@
 //! - Control group (low-score, already-stamped, non-YaGO) → stays Pending.
 //! - Content mutation → `verify` clears the stale id and its row.
 
-use crate::ledger::entity_promotion::EntityPromotion;
 use crate::ledger::entity_promotion::token_for_span;
+use crate::ledger::entity_promotion::EntityPromotion;
 use crate::ledger::overlay::{CandidateStatus, OverlayCandidate, OverlayCandidateStore};
 use crate::ledger::ContentNodeLedger;
 use fluent_types::{InterlinguaId, InterlinguaNamespace, NodeId};

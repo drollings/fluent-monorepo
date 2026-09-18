@@ -15,7 +15,8 @@ use search_vector::db::{
     FileRecord, FragmentFilter, FragmentLemma, FragmentRecord, FragmentRow, GuidanceDb,
 };
 
-use crate::query::recall::{symbol_type_name, RecallError, RecallStorage};
+use crate::query::plan::RecallError;
+use crate::query::recall::{symbol_type_name, RecallStorage};
 use crate::search_types::{
     CodeEntityModifier, CodeSymbolType, Entity, EntityFragment, EntityMetadata, FileInfo, FileKind,
     FragmentContent, FragmentSpan, ImageFormat, StorageFilter, StorageHit,

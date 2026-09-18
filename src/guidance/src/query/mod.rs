@@ -1,4 +1,6 @@
+pub mod concept_ground;
 pub mod db_storage;
+pub mod diagnose;
 pub mod formatter;
 pub mod fts_backend;
 pub mod fusion;
@@ -9,7 +11,9 @@ pub mod ingest;
 pub mod lemma_backend;
 pub mod llm_filter;
 pub mod llm_filter_batch;
+pub mod plan;
 pub mod recall;
+pub mod rerank;
 pub mod rg_backend;
 pub mod search_backend;
 pub mod snapshot;

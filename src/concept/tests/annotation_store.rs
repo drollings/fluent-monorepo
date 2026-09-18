@@ -346,7 +346,11 @@ fn unicode_payload_round_trips_byte_identical() {
     // write→read path byte-identical.
     let store = store();
     let hash = ContentHash::from(4242u64);
-    let mut c = claim("frame:unicode", ProvenanceTier::HumanReview, ClaimStatus::Confirmed);
+    let mut c = claim(
+        "frame:unicode",
+        ProvenanceTier::HumanReview,
+        ClaimStatus::Confirmed,
+    );
     c.payload = serde_json::json!({ "note": "北京 café 🎉", "key": "frame:unicode" });
     c.produced_by = "réviewer-日本語".to_string();
     store.write(hash, &c).unwrap();

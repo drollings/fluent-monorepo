@@ -148,36 +148,6 @@ pub fn apply_boosts(base: f64, boosts: impl IntoIterator<Item = f64>) -> f64 {
     boosts.into_iter().fold(base, |acc, boost| acc + boost)
 }
 
-/// Parse an LLM reranker response into an ordered list of candidate names.
-///
-/// Moved verbatim from the router's chart selector (M7.4): pure
-/// string-in/list-out with zero chart coupling — the caller validates names
-/// against its own candidate set (a hallucinated name is the caller's to
-/// drop, exactly like the ranking shortlist rule).
-///
-/// Tolerant by design: the shared `fluent_llm::parse_typed` codec strips
-/// fences, accepts a bare array or a `{"ranking": [...]}` object, and
-/// extracts the first balanced JSON value. Non-string entries are dropped.
-/// `None` means "not parseable" — the caller keeps its prior order.
-#[must_use]
-pub fn parse_rerank_output(raw: &str) -> Option<Vec<String>> {
-    let value =
-        fluent_llm::parse_typed::<serde_json::Value>(raw, &serde_json::Value::Null, |_| {}).ok()?;
-    let names: Option<Vec<&str>> = match &value {
-        serde_json::Value::Array(arr) => Some(arr.iter().filter_map(|v| v.as_str()).collect()),
-        serde_json::Value::Object(obj) => obj
-            .get("ranking")
-            .and_then(|r| r.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect()),
-        _ => None,
-    };
-    let names = names?;
-    if names.is_empty() {
-        return None;
-    }
-    Some(names.into_iter().map(str::to_string).collect())
-}
-
 #[cfg(test)]
 #[path = "../tests/fusion.rs"]
 mod tests;

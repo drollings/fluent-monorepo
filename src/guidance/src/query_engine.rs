@@ -168,6 +168,7 @@ impl QueryEngine {
             embedder: None,
             nlp: None,
             llm_filter,
+            concept_store: None,
         };
 
         let mut fsm = strategy::FsmEngine::new();

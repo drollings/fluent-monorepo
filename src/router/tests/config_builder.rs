@@ -118,10 +118,9 @@ fn default_nlp_ordering_is_llm_first() {
         NlpOrdering::LlmFirst
     );
     assert!(!PipelineParams::default().overlay_enabled());
-    let config: RouterConfig = serde_json::from_str(
-        r#"{"pipelines":{"default":{"nlp":true}},"models":{}}"#,
-    )
-    .expect("valid");
+    let config: RouterConfig =
+        serde_json::from_str(r#"{"pipelines":{"default":{"nlp":true}},"models":{}}"#)
+            .expect("valid");
     assert_eq!(
         config.pipelines["default"].nlp_ordering,
         NlpOrdering::LlmFirst,
@@ -875,10 +874,9 @@ fn chart_compile_rejects_unbound_chart_at_build_time() {
 #[test]
 fn encoder_model_field_defaults_to_none() {
     assert_eq!(PipelineParams::default().encoder_model, None);
-    let config: RouterConfig = serde_json::from_str(
-        r#"{"pipelines":{"default":{"nlp":true}},"models":{}}"#,
-    )
-    .expect("valid");
+    let config: RouterConfig =
+        serde_json::from_str(r#"{"pipelines":{"default":{"nlp":true}},"models":{}}"#)
+            .expect("valid");
     assert_eq!(config.pipelines["default"].encoder_model, None);
 }
 

@@ -116,7 +116,13 @@ fn empty_view_assembles_empty() {
     let s: Arc<InMemoryContentNodeStore> = Arc::new(InMemoryContentNodeStore::new());
     let view = ParallelLedger::for_session(s, "nope");
     let asm = LedgerPromptAssembler;
-    let out = asm.assemble(&view, &worker(), &PromptBudget::new(100), None, &LodSpec::full());
+    let out = asm.assemble(
+        &view,
+        &worker(),
+        &PromptBudget::new(100),
+        None,
+        &LodSpec::full(),
+    );
     assert!(out.node_plan.is_empty());
     assert!(out.body.is_empty());
 }

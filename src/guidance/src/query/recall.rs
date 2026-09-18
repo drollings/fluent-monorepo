@@ -15,81 +15,20 @@ use crate::query::fusion::{
     TimingCollector,
 };
 use crate::query::glob::{
-    matches_file_selection, normalize_path_pattern, path_pattern_matches,
-    resolve_file_type_patterns, FileTypePatterns,
+    matches_file_selection, path_pattern_matches, resolve_file_type_patterns, FileTypePatterns,
 };
 use crate::search_constants::{
     recall_target_candidate_count, DEFAULT_LIMIT, RECALL_GROWTH_FACTOR, RECALL_INITIAL_DEPTH,
     RECALL_MAX_DEPTH,
 };
 use crate::search_types::{
-    extract_symbol_names, public_entity_id, CodeSymbolType, Entity, EntityFragment, FileInfo,
-    FragmentError, RecallPath, ResolvedSearchPlan, ResolvedSearchPlanRoute, RrfScore, SearchHit,
-    SearchPlan, SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry,
+    public_entity_id, CodeSymbolType, Entity, EntityFragment, FileInfo, RecallPath,
+    ResolvedSearchPlan, ResolvedSearchPlanRoute, RrfScore, SearchHit, SearchPlan,
+    SearchPlanRouteMode, SearchRecallTrace, StorageFilter, StorageHit, TimingEntry,
 };
-use thiserror::Error;
 
-/// Recall failure: plan validation, storage, or embedding.
-#[derive(Debug, Error)]
-pub enum RecallError {
-    /// Plan carries no routes.
-    #[error("search plan requires at least one route")]
-    EmptyRoutes,
-    /// Route query is blank after trimming.
-    #[error("search plan route requires a non-empty query: {route_id}")]
-    EmptyRouteQuery {
-        /// Assigned route id.
-        route_id: String,
-    },
-    /// Negative modification timestamp.
-    #[error("search plan modified time must be non-negative: {name}")]
-    NegativeModifiedTime {
-        /// Filter name.
-        name: &'static str,
-    },
-    /// Modified-after later than modified-before.
-    #[error("search plan modified-after must not be later than modified-before")]
-    InvalidModifiedTimeRange,
-    /// Unknown file-type name.
-    #[error(transparent)]
-    UnknownFileType(#[from] crate::query::glob::GlobError),
-    /// Storage failure.
-    #[error(transparent)]
-    Storage(#[from] FragmentError),
-    /// Database failure.
-    #[error("database error: {0}")]
-    Db(String),
-    /// Query-embedding failure.
-    #[error("query embedding failed: {0}")]
-    Embed(String),
-    /// Diagnosis target is not indexed.
-    #[error("entity not found: {0}")]
-    EntityNotFound(String),
-}
-
-/// Engine error codes for trace diagnostics.
-pub mod codes {
-    /// `GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTES`.
-    pub const EMPTY_ROUTES: &str = "GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTES";
-    /// `GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTE_QUERY`.
-    pub const EMPTY_ROUTE_QUERY: &str = "GUIDANCE.ENGINE.SEARCH_PLAN.EMPTY_ROUTE_QUERY";
-    /// `GUIDANCE.ENGINE.SEARCH_PLAN.INVALID_MODIFIED_TIME_RANGE`.
-    pub const INVALID_MODIFIED_TIME_RANGE: &str =
-        "GUIDANCE.ENGINE.SEARCH_PLAN.INVALID_MODIFIED_TIME_RANGE";
-}
-
-impl RecallError {
-    /// Machine-readable plan code, if this is a plan validation failure.
-    #[must_use]
-    pub fn code(&self) -> Option<&'static str> {
-        match self {
-            Self::EmptyRoutes => Some(codes::EMPTY_ROUTES),
-            Self::EmptyRouteQuery { .. } => Some(codes::EMPTY_ROUTE_QUERY),
-            Self::InvalidModifiedTimeRange => Some(codes::INVALID_MODIFIED_TIME_RANGE),
-            _ => None,
-        }
-    }
-}
+pub use super::diagnose::{diagnose_entity, diagnose_file, EntityDiagnosis};
+pub use super::plan::{codes, validate_search_plan, RecallError};
 
 /// Index storage contract for the recall loop: lexical + vector + lemma
 /// recall, entity lookup, file listing. The P1 GuidanceDb adapter and the
@@ -122,96 +61,6 @@ pub trait RecallStorage: Send + Sync {
     fn get_entity(&self, entity_id: &str) -> Result<Option<(Entity, FileInfo)>, RecallError>;
     /// Entities + files for one file id (diagnosis fallback).
     fn list_entities_by_file(&self, file_id: &str) -> Result<Vec<(Entity, FileInfo)>, RecallError>;
-}
-
-/// Validate a search plan: trimmed queries, per-mode route ids
-/// (`fts`, `fts-2`, `vector`, `vector-2`), normalized filters, time range.
-/// Source: `validateSearchPlan` (unsupported modes are rejected by the
-/// `SearchPlanRouteMode` closed enum at parse time — the type system
-/// absorbed that check).
-pub fn validate_search_plan(plan: &SearchPlan) -> Result<ResolvedSearchPlan, RecallError> {
-    if plan.routes.is_empty() {
-        return Err(RecallError::EmptyRoutes);
-    }
-    let mut fts_count = 0_usize;
-    let mut vector_count = 0_usize;
-    let mut routes = Vec::with_capacity(plan.routes.len());
-    for route in &plan.routes {
-        let query = route.query.trim().to_string();
-        let id = match route.mode {
-            SearchPlanRouteMode::Fts => {
-                fts_count += 1;
-                if fts_count == 1 {
-                    "fts".to_string()
-                } else {
-                    format!("fts-{fts_count}")
-                }
-            }
-            SearchPlanRouteMode::Vector => {
-                vector_count += 1;
-                if vector_count == 1 {
-                    "vector".to_string()
-                } else {
-                    format!("vector-{vector_count}")
-                }
-            }
-        };
-        if query.is_empty() {
-            return Err(RecallError::EmptyRouteQuery { route_id: id });
-        }
-        routes.push(ResolvedSearchPlanRoute {
-            id,
-            mode: route.mode,
-            query,
-        });
-    }
-    let modified_after = check_modified_time(plan.modified_after, "modifiedAfter")?;
-    let modified_before = check_modified_time(plan.modified_before, "modifiedBefore")?;
-    if let (Some(after), Some(before)) = (modified_after, modified_before) {
-        if after > before {
-            return Err(RecallError::InvalidModifiedTimeRange);
-        }
-    }
-    Ok(ResolvedSearchPlan {
-        routes,
-        limit: plan.limit,
-        trace: plan.trace,
-        track_entity_id: plan.track_entity_id.clone(),
-        prefer_symbol: plan.prefer_symbol,
-        symbol_types: plan.symbol_types.clone(),
-        include_paths: normalize_path_filters(plan.include_paths.as_deref()),
-        exclude_paths: normalize_path_filters(plan.exclude_paths.as_deref()),
-        globs: normalize_string_filters(plan.globs.as_deref()),
-        insensitive_globs: normalize_string_filters(plan.insensitive_globs.as_deref()),
-        file_types: normalize_string_filters(plan.file_types.as_deref()),
-        excluded_file_types: normalize_string_filters(plan.excluded_file_types.as_deref()),
-        modified_after,
-        modified_before,
-    })
-}
-
-fn check_modified_time(value: Option<i64>, name: &'static str) -> Result<Option<i64>, RecallError> {
-    match value {
-        Some(time) if time < 0 => Err(RecallError::NegativeModifiedTime { name }),
-        other => Ok(other),
-    }
-}
-
-fn normalize_path_filters(patterns: Option<&[String]>) -> Option<Vec<String>> {
-    patterns.map(|list| {
-        list.iter()
-            .map(|pattern| normalize_path_pattern(pattern))
-            .collect()
-    })
-}
-
-fn normalize_string_filters(patterns: Option<&[String]>) -> Option<Vec<String>> {
-    patterns.map(|list| {
-        list.iter()
-            .map(|pattern| pattern.trim().to_string())
-            .filter(|pattern| !pattern.is_empty())
-            .collect()
-    })
 }
 
 /// Resolve the storage file allow-list: include matchers, exclude matchers,
@@ -506,7 +355,7 @@ fn build_recall_routes(
     }
     let mut seen = HashSet::new();
     for route in &plan.routes {
-        let symbol_names = extract_symbol_names(&route.query);
+        let symbol_names = search_vector::tokens::symbol_names(&route.query);
         if symbol_names.is_empty() {
             continue;
         }
@@ -814,106 +663,6 @@ fn push_found(
             reason: None,
         },
     );
-}
-
-/// Entity-search diagnosis: the stored entity + file plus a traced,
-/// force-tracked search. Source: `diagnoseEntitySearch`.
-#[derive(Debug)]
-pub struct EntityDiagnosis {
-    /// Diagnosed entity.
-    pub entity: Entity,
-    /// Owning file.
-    pub file: FileInfo,
-    /// Traced search with the entity force-tracked.
-    pub search: RecallOutput,
-}
-
-/// Diagnose why an entity does or does not surface for a query.
-pub fn diagnose_entity(
-    query: &str,
-    entity_id: &str,
-    storage: &dyn RecallStorage,
-    embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
-    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
-) -> Result<EntityDiagnosis, RecallError> {
-    let Some((entity, file)) = storage.get_entity(entity_id)? else {
-        return Err(RecallError::EntityNotFound(entity_id.to_string()));
-    };
-    let plan = SearchPlan {
-        routes: vec![
-            crate::search_types::SearchPlanRoute {
-                mode: SearchPlanRouteMode::Fts,
-                query: query.to_string(),
-            },
-            crate::search_types::SearchPlanRoute {
-                mode: SearchPlanRouteMode::Vector,
-                query: query.to_string(),
-            },
-        ],
-        trace: true,
-        track_entity_id: Some(entity_id.to_string()),
-        ..Default::default()
-    };
-    let search = run_recall(&plan, storage, embedder, nlp)?;
-    Ok(EntityDiagnosis {
-        entity,
-        file,
-        search,
-    })
-}
-
-/// File-search diagnosis: resolve the file by absolute path, run the query,
-/// and take the first hit's entity — falling back to the file's first
-/// indexed entity when recall is empty. Source: `diagnoseFileSearch`.
-pub fn diagnose_file(
-    query: &str,
-    absolute_path: &str,
-    storage: &dyn RecallStorage,
-    embedder: Option<&dyn fluent_llm::embeddings::EmbeddingProvider>,
-    nlp: Option<&spacy_rs::pipeline::NlpPipeline>,
-) -> Result<Option<EntityDiagnosis>, RecallError> {
-    let files = storage.list_files()?;
-    let Some(file) = files
-        .iter()
-        .find(|file| file.absolute_path == absolute_path)
-    else {
-        return Ok(None);
-    };
-    let search = run_recall(
-        &SearchPlan {
-            routes: vec![
-                crate::search_types::SearchPlanRoute {
-                    mode: SearchPlanRouteMode::Fts,
-                    query: query.to_string(),
-                },
-                crate::search_types::SearchPlanRoute {
-                    mode: SearchPlanRouteMode::Vector,
-                    query: query.to_string(),
-                },
-            ],
-            ..Default::default()
-        },
-        storage,
-        embedder,
-        nlp,
-    )?;
-    if let Some(hit) = search.hits.first() {
-        return Ok(Some(EntityDiagnosis {
-            entity: hit.entity.clone(),
-            file: hit.file.clone(),
-            search,
-        }));
-    }
-    let mut entities = storage.list_entities_by_file(&file.id)?;
-    if entities.is_empty() {
-        return Ok(None);
-    }
-    let (entity, file) = entities.remove(0);
-    Ok(Some(EntityDiagnosis {
-        entity,
-        file,
-        search,
-    }))
 }
 
 #[cfg(test)]

@@ -148,6 +148,15 @@ impl FileType {
             Self::Unknown => "unknown",
         }
     }
+
+    /// Thin view over the ingest authority: the same table as
+    /// [`file_kind::FileKind::coarse_type`] (the match lives there; this
+    /// delegates so the two taxonomies cannot drift). See that method for
+    /// the documented lossy buckets.
+    #[must_use]
+    pub fn from_kind(kind: file_kind::FileKind) -> Self {
+        kind.coarse_type()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -404,6 +413,93 @@ pub enum OverlayTransitionError {
 /// The `ContentNode.metadata` key under which the overlay bookkeeping lives.
 pub const OVERLAYS_META_KEY: &str = "overlays";
 
+/// Pure overlay bookkeeping ledger: the in-memory `Vec<OverlayState>` half of
+/// `ContentNode.metadata["overlays"]`, without the per-call JSON round-trip.
+/// Reads and lifecycle transitions run here; `ContentNode` only serializes
+/// the ledger in and out of its advisory metadata at the boundary.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OverlayLedger(Vec<OverlayState>);
+
+impl OverlayLedger {
+    /// Empty ledger (every kind reads as `Absent`).
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// All entries, in insertion order.
+    #[must_use]
+    pub fn states(&self) -> &[OverlayState] {
+        &self.0
+    }
+
+    /// All entries, by value.
+    #[must_use]
+    pub fn into_states(self) -> Vec<OverlayState> {
+        self.0
+    }
+
+    /// One overlay's bookkeeping, defaulting to `Absent` when never asked for.
+    #[must_use]
+    pub fn get(&self, kind: OverlayKind) -> OverlayState {
+        self.0
+            .iter()
+            .find(|s| s.kind == kind)
+            .cloned()
+            .unwrap_or_else(|| OverlayState::absent(kind))
+    }
+
+    /// Upsert one overlay's bookkeeping (indexed by kind).
+    pub fn upsert(&mut self, state: OverlayState) {
+        if let Some(existing) = self.0.iter_mut().find(|s| s.kind == state.kind) {
+            *existing = state;
+        } else {
+            self.0.push(state);
+        }
+    }
+
+    /// Transition one overlay's status through the lifecycle (same rules as
+    /// [`ContentNode::transition_overlay`]: `Ready` is never recomputed,
+    /// `Failed` is permanent, the only exit from either terminal status is
+    /// an explicit reset to `Absent`; equal-status no-ops are allowed).
+    pub fn transition(
+        &mut self,
+        kind: OverlayKind,
+        to: OverlayStatus,
+        source: impl Into<String>,
+        at: Option<u64>,
+    ) -> Result<OverlayState, OverlayTransitionError> {
+        let current = self.get(kind);
+        match current.status {
+            OverlayStatus::Ready if to != OverlayStatus::Ready && to != OverlayStatus::Absent => {
+                return Err(OverlayTransitionError::AlreadyReady(kind));
+            }
+            OverlayStatus::Failed if to != OverlayStatus::Failed && to != OverlayStatus::Absent => {
+                return Err(OverlayTransitionError::FailedPermanent(kind));
+            }
+            _ => {}
+        }
+        let next = OverlayState::new(kind, to, source, at);
+        self.upsert(next.clone());
+        Ok(next)
+    }
+
+    /// Decode the advisory metadata value (empty when absent or malformed —
+    /// the metadata is advisory, never load-bearing).
+    #[must_use]
+    pub fn from_value(value: &serde_json::Value) -> Self {
+        serde_json::from_value::<Vec<OverlayState>>(value.clone())
+            .map(Self)
+            .unwrap_or_default()
+    }
+
+    /// Encode back to a metadata value.
+    #[must_use]
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(&self.0).expect("OverlayState serializes")
+    }
+}
+
 /// A type-erased, `Arc`-shareable node overlay (the "ArcReady" overlay slot).
 ///
 /// `ContentNode` lives in this crate, which must stay dependency-free of any
@@ -446,6 +542,20 @@ pub enum OriginRole {
 }
 
 impl OriginRole {
+    /// Single parser behind `From<String>`/`From<&str>` and both serde entry
+    /// points: known names fold ASCII case, unknown strings keep their case
+    /// in `Other`.
+    fn parse(original: String) -> Self {
+        match original.to_ascii_lowercase().as_str() {
+            "user" => Self::User,
+            "system" => Self::System,
+            "assistant" => Self::Assistant,
+            "tool" => Self::Tool,
+            "subagent" => Self::Subagent,
+            "self" => Self::SelfOrigin,
+            _ => Self::Other(original),
+        }
+    }
     pub fn as_str(&self) -> &str {
         match self {
             Self::User => "user",
@@ -488,15 +598,7 @@ impl std::fmt::Display for OriginRole {
 
 impl From<String> for OriginRole {
     fn from(s: String) -> Self {
-        match s.to_ascii_lowercase().as_str() {
-            "user" => Self::User,
-            "system" => Self::System,
-            "assistant" => Self::Assistant,
-            "tool" => Self::Tool,
-            "subagent" => Self::Subagent,
-            "self" => Self::SelfOrigin,
-            _ => Self::Other(s),
-        }
+        Self::parse(s)
     }
 }
 impl From<&str> for OriginRole {
@@ -511,15 +613,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    Ok(match s.to_ascii_lowercase().as_str() {
-        "user" => OriginRole::User,
-        "system" => OriginRole::System,
-        "assistant" => OriginRole::Assistant,
-        "tool" => OriginRole::Tool,
-        "subagent" => OriginRole::Subagent,
-        "self" => OriginRole::SelfOrigin,
-        _ => OriginRole::Other(s),
-    })
+    Ok(OriginRole::parse(s))
 }
 
 fn deserialize_origin_role_opt<'de, D>(deserializer: D) -> Result<Option<OriginRole>, D::Error>
@@ -527,15 +621,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let opt = Option::<String>::deserialize(deserializer)?;
-    Ok(opt.map(|s| match s.to_ascii_lowercase().as_str() {
-        "user" => OriginRole::User,
-        "system" => OriginRole::System,
-        "assistant" => OriginRole::Assistant,
-        "tool" => OriginRole::Tool,
-        "subagent" => OriginRole::Subagent,
-        "self" => OriginRole::SelfOrigin,
-        _ => OriginRole::Other(s),
-    }))
+    Ok(opt.map(OriginRole::parse))
 }
 
 // Override Serialize to emit string form
@@ -683,36 +769,39 @@ impl ContentNode {
     /// absent or malformed — the metadata is advisory, never load-bearing).
     #[must_use]
     pub fn overlays(&self) -> Vec<OverlayState> {
-        self.metadata
-            .as_ref()
-            .and_then(|m| m.get(OVERLAYS_META_KEY))
-            .and_then(|v| serde_json::from_value::<Vec<OverlayState>>(v.clone()).ok())
-            .unwrap_or_default()
+        self.overlay_ledger().into_states()
     }
 
     /// One overlay's bookkeeping, defaulting to `Absent` when never asked for.
     #[must_use]
     pub fn overlay(&self, kind: OverlayKind) -> OverlayState {
-        self.overlays()
-            .into_iter()
-            .find(|s| s.kind == kind)
-            .unwrap_or_else(|| OverlayState::absent(kind))
+        self.overlay_ledger().get(kind)
     }
 
     /// Upsert one overlay's bookkeeping into `metadata["overlays"]` (indexed
     /// by kind; allocates the metadata object on first use).
     pub fn set_overlay(&mut self, state: OverlayState) {
+        let mut ledger = self.overlay_ledger();
+        ledger.upsert(state);
+        self.set_overlay_ledger(&ledger);
+    }
+
+    /// The node's overlay bookkeeping as a pure ledger (one metadata decode;
+    /// transitions on the ledger touch no JSON until written back).
+    #[must_use]
+    pub fn overlay_ledger(&self) -> OverlayLedger {
+        self.metadata
+            .as_ref()
+            .and_then(|m| m.get(OVERLAYS_META_KEY))
+            .map(OverlayLedger::from_value)
+            .unwrap_or_default()
+    }
+
+    /// Write a ledger back into `metadata["overlays"]` (allocates the
+    /// metadata object on first use).
+    pub fn set_overlay_ledger(&mut self, ledger: &OverlayLedger) {
         let meta = self.metadata.get_or_insert_with(|| serde_json::json!({}));
-        let mut states = meta
-            .get(OVERLAYS_META_KEY)
-            .and_then(|v| serde_json::from_value::<Vec<OverlayState>>(v.clone()).ok())
-            .unwrap_or_default();
-        if let Some(existing) = states.iter_mut().find(|s| s.kind == state.kind) {
-            *existing = state;
-        } else {
-            states.push(state);
-        }
-        meta[OVERLAYS_META_KEY] = serde_json::to_value(states).expect("OverlayState serializes");
+        meta[OVERLAYS_META_KEY] = ledger.to_value();
     }
 
     /// Transition one overlay's status through the lifecycle:
@@ -731,18 +820,9 @@ impl ContentNode {
         source: impl Into<String>,
         at: Option<u64>,
     ) -> Result<OverlayState, OverlayTransitionError> {
-        let current = self.overlay(kind);
-        match current.status {
-            OverlayStatus::Ready if to != OverlayStatus::Ready && to != OverlayStatus::Absent => {
-                return Err(OverlayTransitionError::AlreadyReady(kind));
-            }
-            OverlayStatus::Failed if to != OverlayStatus::Failed && to != OverlayStatus::Absent => {
-                return Err(OverlayTransitionError::FailedPermanent(kind));
-            }
-            _ => {}
-        }
-        let next = OverlayState::new(kind, to, source, at);
-        self.set_overlay(next.clone());
+        let mut ledger = self.overlay_ledger();
+        let next = ledger.transition(kind, to, source, at)?;
+        self.set_overlay_ledger(&ledger);
         Ok(next)
     }
 }
@@ -1144,6 +1224,88 @@ mod tests {
             node.overlay(OverlayKind::Spacy).status,
             OverlayStatus::Ready
         );
+    }
+
+    #[test]
+    fn overlay_ledger_transition_matrix() {
+        use OverlayStatus::{Absent, Failed, Pending, Ready};
+        // Every (from → to) pair, exercised purely on the ledger: terminal
+        // statuses exit only via reset; equal-status no-ops always pass.
+        for kind in [OverlayKind::Spacy, OverlayKind::Llm, OverlayKind::Embedding] {
+            for from in [Absent, Pending, Ready, Failed] {
+                for to in [Absent, Pending, Ready, Failed] {
+                    let mut ledger = OverlayLedger::default();
+                    if from != Absent {
+                        // Drive the ledger to `from` through a legal prefix.
+                        ledger.transition(kind, Pending, "t", None).ok();
+                        if from == Ready || from == Failed {
+                            ledger.transition(kind, from, "t", Some(1)).ok();
+                        }
+                        assert_eq!(ledger.get(kind).status, from, "{kind:?} setup");
+                    }
+                    let result = ledger.transition(kind, to, "t", Some(2));
+                    let terminal = from == Ready || from == Failed;
+                    if !terminal || to == from || to == Absent {
+                        assert!(result.is_ok(), "{kind:?} {from:?} → {to:?} must pass");
+                        assert_eq!(ledger.get(kind).status, to);
+                    } else {
+                        assert!(result.is_err(), "{kind:?} {from:?} → {to:?} must reject");
+                        assert_eq!(ledger.get(kind).status, from);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn overlay_ledger_roundtrips_through_node_metadata() {
+        // The ledger is the pure half: node reads/writes agree with it entry
+        // for entry, and unrelated kinds stay absent.
+        let mut ledger = OverlayLedger::default();
+        ledger
+            .transition(OverlayKind::Spacy, OverlayStatus::Pending, "arceager", None)
+            .expect("pending");
+        ledger
+            .transition(
+                OverlayKind::Spacy,
+                OverlayStatus::Ready,
+                "arceager",
+                Some(7),
+            )
+            .expect("ready");
+        let mut node = ContentNode::default();
+        node.set_overlay_ledger(&ledger);
+        assert_eq!(node.overlays().len(), 1);
+        let back = node.overlay_ledger();
+        assert_eq!(back.get(OverlayKind::Spacy).status, OverlayStatus::Ready);
+        assert_eq!(back.get(OverlayKind::Spacy).at, Some(7));
+        assert_eq!(back.get(OverlayKind::Llm).status, OverlayStatus::Absent);
+        // Delegated entry points agree with the ledger.
+        assert_eq!(
+            node.overlay(OverlayKind::Spacy),
+            back.get(OverlayKind::Spacy)
+        );
+    }
+
+    #[test]
+    fn origin_role_unknown_preserves_case_everywhere() {
+        // All three parse sites agree: known names fold case, unknown keeps it.
+        assert_eq!(
+            OriginRole::from("CuStOm".to_string()),
+            OriginRole::Other("CuStOm".to_string())
+        );
+        assert_eq!(OriginRole::from("USER"), OriginRole::User);
+        let de: OriginRole = serde_json::from_str("\"CuStOm\"").expect("deserialize");
+        assert_eq!(de, OriginRole::Other("CuStOm".to_string()));
+        let de_known: OriginRole = serde_json::from_str("\"SELF\"").expect("deserialize");
+        assert_eq!(de_known, OriginRole::SelfOrigin);
+        // The Option site (ContentNode.role) preserves case too.
+        let node: ContentNode = serde_json::from_str(r#"{"name":"n","source":"s","role":"MiXeD"}"#)
+            .expect("deserialize");
+        assert_eq!(node.role, Some(OriginRole::Other("MiXeD".to_string())));
+        // Serialize round-trips the preserved case.
+        let json = serde_json::to_string(&OriginRole::Other("MiXeD".to_string())).unwrap();
+        assert_eq!(json, "\"MiXeD\"");
     }
 
     #[test]

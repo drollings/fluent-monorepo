@@ -953,8 +953,49 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 /// ```
 #[must_use]
 pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
-    name.split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .collect()
+    AsciiAlnumTokens::new(name).map(str::to_string).collect()
+}
+
+/// Streaming ASCII-alphanumeric tokenizer: the zero-allocation walk behind
+/// [`ascii_alnum_tokens`], borrowing the input and yielding one case-
+/// preserved token per separator-delimited run (same contract, no `String`
+/// per token). Skips leading/trailing/repeated separators; empty input
+/// yields nothing.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::AsciiAlnumTokens;
+///
+/// let tokens: Vec<&str> = AsciiAlnumTokens::new("Foo.Bar-baz").collect();
+/// assert_eq!(tokens, vec!["Foo", "Bar", "baz"]);
+/// ```
+#[derive(Debug, Clone)]
+pub struct AsciiAlnumTokens<'a> {
+    rest: &'a str,
+}
+
+impl<'a> AsciiAlnumTokens<'a> {
+    /// Tokenizer over `text` (no work until iterated).
+    #[must_use]
+    pub fn new(text: &'a str) -> Self {
+        Self { rest: text }
+    }
+}
+
+impl<'a> Iterator for AsciiAlnumTokens<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        // `find` yields byte indices at char boundaries, so both splits
+        // below are boundary-safe for any UTF-8 input.
+        let start = self.rest.find(|c: char| c.is_ascii_alphanumeric())?;
+        let (_, from_token) = self.rest.split_at(start);
+        let len = from_token
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(from_token.len());
+        let (token, rest) = from_token.split_at(len);
+        self.rest = rest;
+        Some(token)
+    }
 }

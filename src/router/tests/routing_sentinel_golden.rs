@@ -33,8 +33,8 @@ use super::{
     expand_role_keys, expanded_candidates_for_role, RoleRecency, TargetBackends, TargetMatcher,
 };
 use crate::config::{
-    split_model_key, ConfidenceGate, FilterOutcome, FilterScope, RoleMember, InstanceProfile,
-    ModelEntry, PatternEntry, RoleEntry, RouteRef, RoutingConfig,
+    split_model_key, ConfidenceGate, FilterOutcome, FilterScope, InstanceProfile, ModelEntry,
+    PatternEntry, RoleEntry, RoleMember, RouteRef, RoutingConfig,
 };
 use crate::filters::{
     regex_filter::RegexFilter, DeterministicFilterEngine, FilterContext, FilterDecision,
@@ -335,14 +335,21 @@ fn run_expand_case(case: &serde_json::Value) -> CaseResult {
     let recency = fixture_recency(&routing, case);
     let loaded: Vec<String> = strings(case, "loaded");
     let probes = Arc::new(Mutex::new(Vec::<String>::new()));
-    let order = expand_role_keys(&routing, role, Some(&recency), Some("fixture"), &{
-        let probes = Arc::clone(&probes);
-        let loaded = loaded.clone();
-        move |base: &str| {
-            probes.lock().expect("log").push(base.to_string());
-            loaded.iter().any(|l| l == base)
-        }
-    }, None);
+    let order = expand_role_keys(
+        &routing,
+        role,
+        Some(&recency),
+        Some("fixture"),
+        &{
+            let probes = Arc::clone(&probes);
+            let loaded = loaded.clone();
+            move |base: &str| {
+                probes.lock().expect("log").push(base.to_string());
+                loaded.iter().any(|l| l == base)
+            }
+        },
+        None,
+    );
     let probes = probes.lock().expect("log").clone();
 
     // Cause + failure attribution from the observed order and the inputs.
@@ -427,13 +434,22 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
     let routing = fixture_routing(case, role);
     let recency = fixture_recency(&routing, case);
     let loaded: Vec<String> = strings(case, "loaded");
-    let expanded = expand_role_keys(&routing, role, Some(&recency), Some("fixture"), &|base| {
-        loaded.iter().any(|l| l == base)
-    }, None);
-    let candidates =
-        expanded_candidates_for_role(&routing, role, Some(&recency), Some("fixture"), &|base| {
-            loaded.iter().any(|l| l == base)
-        }, None);
+    let expanded = expand_role_keys(
+        &routing,
+        role,
+        Some(&recency),
+        Some("fixture"),
+        &|base| loaded.iter().any(|l| l == base),
+        None,
+    );
+    let candidates = expanded_candidates_for_role(
+        &routing,
+        role,
+        Some(&recency),
+        Some("fixture"),
+        &|base| loaded.iter().any(|l| l == base),
+        None,
+    );
     assert_eq!(
         candidates
             .iter()

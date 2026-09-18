@@ -109,7 +109,10 @@ pub use onnx_config::{
 };
 pub use onnx_error::OrtError;
 pub use onnx_session::{OrtSessionRegistry, ResidencyReportEntry, SessionHandle, SessionLoader};
-pub use parse::{parse_json_response, parse_typed, repair_json, strip_json_fence, JsonParseError};
+pub use parse::{
+    parse_json_response, parse_rerank_output, parse_typed, repair_json, strip_json_fence,
+    JsonParseError,
+};
 pub use runtime::{
     EvictionPolicy, LlmContext, LlmKVCache, LlmResidencyEngine, LlmResidencyRow, LlmRuntime,
     LlmRuntimeError, LlmWeights, MemoryPool, SnapshotMeta,

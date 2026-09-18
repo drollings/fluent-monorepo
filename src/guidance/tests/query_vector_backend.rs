@@ -87,6 +87,7 @@ fn vector_backend_ranks_by_embedding_similarity() {
         embedder: None,
         nlp: None,
         llm_filter: &filter,
+        concept_store: None,
     };
     let backend = VectorBackend {
         storage: &storage,
@@ -110,6 +111,7 @@ fn vector_backend_declines_without_an_embedder() {
         embedder: None,
         nlp: None,
         llm_filter: &filter,
+        concept_store: None,
     };
     let backend = VectorBackend {
         storage: &storage,

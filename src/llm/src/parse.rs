@@ -302,6 +302,31 @@ where
     serde_json::from_value(value).map_err(|e| JsonParseError::Serde(e.to_string()))
 }
 
+/// Parse an LLM reranker response into an ordered list of candidate names.
+///
+/// Pure string-in/list-out over the shared [`parse_typed`] codec (fences
+/// stripped, bare array or `{"ranking": [...]}` object, first balanced
+/// value). Non-string entries are dropped. `None` means "not parseable" —
+/// the caller keeps its prior order and validates names against its own
+/// candidate set (a hallucinated name is the caller's to drop).
+#[must_use]
+pub fn parse_rerank_output(raw: &str) -> Option<Vec<String>> {
+    let value = parse_typed::<Value>(raw, &Value::Null, |_| {}).ok()?;
+    let names: Option<Vec<&str>> = match &value {
+        Value::Array(arr) => Some(arr.iter().filter_map(|v| v.as_str()).collect()),
+        Value::Object(obj) => obj
+            .get("ranking")
+            .and_then(|r| r.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect()),
+        _ => None,
+    };
+    let names = names?;
+    if names.is_empty() {
+        return None;
+    }
+    Some(names.into_iter().map(str::to_string).collect())
+}
+
 #[cfg(test)]
 #[path = "../tests/parse.rs"]
 mod tests;

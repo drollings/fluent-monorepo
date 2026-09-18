@@ -57,62 +57,99 @@ impl<'de> Deserialize<'de> for BoundedRounds {
         Self::new(v).map_err(serde::de::Error::custom)
     }
 }
+/// Tag for one validated unit-interval threshold: the consumer name used in
+/// validation errors plus that consumer's historical range suffix (kept
+/// per-tag so every alias preserves its exact error text).
+pub trait ThresholdTag: Send + Sync + 'static {
+    /// Consumer name in validation errors (e.g. `"SeverityThreshold"`).
+    const NAME: &'static str;
+    /// Range suffix in validation errors (e.g. `"out of 0.0..=1.0"`).
+    const RANGE_SUFFIX: &'static str;
+}
+
+/// One validated 0.0–1.0 threshold, parameterized by consumer tag. Replaces
+/// four hand-rolled newtypes; the old names survive as aliases below with
+/// identical validation, wire shape, error text, and defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SeverityThreshold(f64);
-impl SeverityThreshold {
+pub struct UnitThreshold<Tag: ThresholdTag>(f64, std::marker::PhantomData<Tag>);
+
+impl<Tag: ThresholdTag> UnitThreshold<Tag> {
     pub fn new(v: f64) -> Result<Self, String> {
-        if !(0.0..=1.0).contains(&v) {
-            return Err(format!("SeverityThreshold {v} out of 0.0..=1.0"));
+        if (0.0..=1.0).contains(&v) {
+            Ok(Self(v, std::marker::PhantomData))
+        } else {
+            Err(format!("{} {v} {}", Tag::NAME, Tag::RANGE_SUFFIX))
         }
-        Ok(Self(v))
     }
     pub fn get(self) -> f64 {
         self.0
     }
 }
-impl Default for SeverityThreshold {
-    fn default() -> Self {
-        Self(0.7)
-    }
-}
-impl Serialize for SeverityThreshold {
+
+impl<Tag: ThresholdTag> Serialize for UnitThreshold<Tag> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_f64(self.0)
     }
 }
-impl<'de> Deserialize<'de> for SeverityThreshold {
+
+impl<'de, Tag: ThresholdTag> Deserialize<'de> for UnitThreshold<Tag> {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = f64::deserialize(d)?;
         Self::new(v).map_err(serde::de::Error::custom)
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EscalationConfidence(f64);
-impl EscalationConfidence {
-    pub fn new(v: f64) -> Result<Self, String> {
-        if !(0.0..=1.0).contains(&v) {
-            return Err(format!("EscalationConfidence {v} out of 0.0..=1.0"));
-        }
-        Ok(Self(v))
-    }
-    pub fn get(self) -> f64 {
-        self.0
-    }
+
+/// Tag for [`SeverityThreshold`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SeverityTag;
+impl ThresholdTag for SeverityTag {
+    const NAME: &'static str = "SeverityThreshold";
+    const RANGE_SUFFIX: &'static str = "out of 0.0..=1.0";
 }
-impl Default for EscalationConfidence {
+
+/// Tag for [`EscalationConfidence`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EscalationTag;
+impl ThresholdTag for EscalationTag {
+    const NAME: &'static str = "EscalationConfidence";
+    const RANGE_SUFFIX: &'static str = "out of 0.0..=1.0";
+}
+
+/// Tag for [`TaskRelevanceThreshold`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TaskRelevanceTag;
+impl ThresholdTag for TaskRelevanceTag {
+    const NAME: &'static str = "TaskRelevanceThreshold";
+    const RANGE_SUFFIX: &'static str = "out of range";
+}
+
+/// Tag for [`ProducerConfidenceThreshold`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProducerConfidenceTag;
+impl ThresholdTag for ProducerConfidenceTag {
+    const NAME: &'static str = "ProducerConfidenceThreshold";
+    const RANGE_SUFFIX: &'static str = "out of range";
+}
+
+/// Severity gate (0.0–1.0); default 0.7.
+pub type SeverityThreshold = UnitThreshold<SeverityTag>;
+/// Escalation gate (0.0–1.0); default 0.4.
+pub type EscalationConfidence = UnitThreshold<EscalationTag>;
+/// Task relevance threshold, axis B (0.0–1.0). Canonical home for the
+/// `fluent-db` policy of the same name, which re-exports this alias.
+pub type TaskRelevanceThreshold = UnitThreshold<TaskRelevanceTag>;
+/// Producer confidence threshold, axis A (0.0–1.0). Canonical home for the
+/// `fluent-db` policy of the same name, which re-exports this alias.
+pub type ProducerConfidenceThreshold = UnitThreshold<ProducerConfidenceTag>;
+
+impl Default for UnitThreshold<SeverityTag> {
     fn default() -> Self {
-        Self(0.4)
+        Self(0.7, std::marker::PhantomData)
     }
 }
-impl Serialize for EscalationConfidence {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_f64(self.0)
-    }
-}
-impl<'de> Deserialize<'de> for EscalationConfidence {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = f64::deserialize(d)?;
-        Self::new(v).map_err(serde::de::Error::custom)
+impl Default for UnitThreshold<EscalationTag> {
+    fn default() -> Self {
+        Self(0.4, std::marker::PhantomData)
     }
 }
 
@@ -155,5 +192,84 @@ mod tests {
         assert!((SeverityThreshold::default().get() - 0.7).abs() < f64::EPSILON);
         assert!((EscalationConfidence::default().get() - 0.4).abs() < f64::EPSILON);
         assert!(serde_json::from_str::<SeverityThreshold>("1.5").is_err());
+    }
+
+    #[test]
+    fn unit_threshold_aliases_share_range_validation() {
+        // Inclusive bounds accept, out-of-range (incl. NaN) rejects — all four.
+        for v in [0.0, 1.0] {
+            assert!(SeverityThreshold::new(v).is_ok());
+            assert!(EscalationConfidence::new(v).is_ok());
+            assert!(TaskRelevanceThreshold::new(v).is_ok());
+            assert!(ProducerConfidenceThreshold::new(v).is_ok());
+        }
+        for v in [-0.1, 1.1, f64::NAN] {
+            assert!(SeverityThreshold::new(v).is_err());
+            assert!(EscalationConfidence::new(v).is_err());
+            assert!(TaskRelevanceThreshold::new(v).is_err());
+            assert!(ProducerConfidenceThreshold::new(v).is_err());
+        }
+        assert!((TaskRelevanceThreshold::new(0.15).unwrap().get() - 0.15).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn unit_threshold_error_text_preserved_per_tag() {
+        assert_eq!(
+            SeverityThreshold::new(2.0).unwrap_err(),
+            "SeverityThreshold 2 out of 0.0..=1.0"
+        );
+        assert_eq!(
+            EscalationConfidence::new(2.0).unwrap_err(),
+            "EscalationConfidence 2 out of 0.0..=1.0"
+        );
+        assert_eq!(
+            TaskRelevanceThreshold::new(2.0).unwrap_err(),
+            "TaskRelevanceThreshold 2 out of range"
+        );
+        assert_eq!(
+            ProducerConfidenceThreshold::new(2.0).unwrap_err(),
+            "ProducerConfidenceThreshold 2 out of range"
+        );
+    }
+
+    #[test]
+    fn unit_threshold_serde_parity_all_aliases() {
+        for payload in ["0.5", "0", "1"] {
+            assert!(serde_json::from_str::<SeverityThreshold>(payload).is_ok());
+            assert!(serde_json::from_str::<EscalationConfidence>(payload).is_ok());
+            assert!(serde_json::from_str::<TaskRelevanceThreshold>(payload).is_ok());
+            assert!(serde_json::from_str::<ProducerConfidenceThreshold>(payload).is_ok());
+        }
+        for payload in ["1.5", "-0.1"] {
+            assert!(serde_json::from_str::<SeverityThreshold>(payload).is_err());
+            assert!(serde_json::from_str::<EscalationConfidence>(payload).is_err());
+            assert!(serde_json::from_str::<TaskRelevanceThreshold>(payload).is_err());
+            assert!(serde_json::from_str::<ProducerConfidenceThreshold>(payload).is_err());
+        }
+        // Wire shape stays a bare number.
+        assert_eq!(
+            serde_json::to_string(&SeverityThreshold::new(0.5).unwrap()).unwrap(),
+            "0.5"
+        );
+        // Defaults unchanged.
+        assert!((SeverityThreshold::default().get() - 0.7).abs() < f64::EPSILON);
+        assert!((EscalationConfidence::default().get() - 0.4).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn unit_threshold_tags_stay_distinct_types() {
+        use std::any::TypeId;
+        assert_ne!(
+            TypeId::of::<SeverityThreshold>(),
+            TypeId::of::<EscalationConfidence>()
+        );
+        assert_ne!(
+            TypeId::of::<TaskRelevanceThreshold>(),
+            TypeId::of::<ProducerConfidenceThreshold>()
+        );
+        assert_ne!(
+            TypeId::of::<SeverityThreshold>(),
+            TypeId::of::<TaskRelevanceThreshold>()
+        );
     }
 }

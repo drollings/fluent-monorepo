@@ -353,3 +353,18 @@ fn brute_force_index_resolves_names_first_wins() {
     assert_eq!(hits[0].node_id, fluent_types::NodeId(1));
     assert_eq!(hits[0].name.as_str(), "first");
 }
+
+#[test]
+fn policy_thresholds_reexport_canonical_aliases() {
+    // Back-compat pin: the fluent-db policy names resolve to the canonical
+    // fluent-types unit thresholds with identical validation behavior.
+    assert!(TaskRelevanceThreshold::new(0.15).is_ok());
+    assert!(TaskRelevanceThreshold::new(1.1).is_err());
+    assert!(ProducerConfidenceThreshold::new(0.9).is_ok());
+    assert!(ProducerConfidenceThreshold::new(-0.1).is_err());
+    assert!((TaskRelevanceThreshold::new(0.15).unwrap().get() - 0.15).abs() < f64::EPSILON);
+    assert_eq!(
+        TaskRelevanceThreshold::new(2.0).unwrap_err(),
+        "TaskRelevanceThreshold 2 out of range"
+    );
+}

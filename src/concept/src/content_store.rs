@@ -136,7 +136,11 @@ impl ContentNodeStore for InMemoryContentNodeStore {
         let nodes = self.nodes.read().expect("in-memory store lock");
         let node = nodes.get(&id)?;
         let text = node.lod.get(level as usize)?.clone();
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     }
 
     fn session_node_ids(&self, session_id: &str) -> Vec<NodeId> {

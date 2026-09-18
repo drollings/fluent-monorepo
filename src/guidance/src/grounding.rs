@@ -44,15 +44,18 @@ fn citation_to_string(c: &Citation) -> String {
 
 /// Verify that all citations in LLM output trace to provided stages.
 ///
-/// Builds a set of grounded `file:line` references from Code stages,
-/// then checks each citation in the output against this set.
+/// Builds a set of grounded `(basename, line)` pairs from Code stages, then
+/// checks each citation in the output against this set. The match is exact
+/// on both halves: a citation to the right file at a fabricated line does
+/// NOT verify (line enforcement — the one behavior change of this
+/// comparator; basename symmetry is preserved for exact pairs).
 pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
-    let grounded_refs: HashSet<String> = stages
+    let grounded_refs: HashSet<(String, u32)> = stages
         .iter()
         .filter(|s| s.kind == fluent_types::StageKind::Code && s.line.is_some())
         .map(|s| {
             let file = common_core::path::file_name_lexical(&s.source).unwrap_or(&s.source);
-            format!("{file}:{}", s.line.unwrap())
+            (file.to_string(), s.line.unwrap())
         })
         .collect();
 
@@ -65,10 +68,7 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
         let citation_str = citation_to_string(citation);
         let citation_file =
             common_core::path::file_name_lexical(&citation.file).unwrap_or(&citation.file);
-        let is_grounded = grounded_refs.iter().any(|ref_str| {
-            let ref_file = ref_str.split(':').next().unwrap_or("");
-            ref_file == citation_file
-        });
+        let is_grounded = grounded_refs.contains(&(citation_file.to_string(), citation.line));
 
         if is_grounded {
             verified.push(citation_str.clone());
@@ -240,5 +240,72 @@ mod tests {
             !result.is_grounded(),
             "backslash basename does not match: {result:?}"
         );
+    }
+
+    // Calibration gate for line enforcement: the control group below must
+    // NOT verify (100% rejection) and the positives must (100% recall)
+    // before verification results may be cached or persisted.
+    #[test]
+    fn citation_line_wrong_line_does_not_verify() {
+        // Right file, fabricated line — the core hole: the line was
+        // decorative before enforcement.
+        let stages = vec![make_code_stage("src/main.rs", 42)];
+        let result = verify_citations("see main.rs:99", &stages);
+        assert!(!result.is_grounded(), "wrong line must not verify");
+        assert!(result.verified_citations.is_empty());
+        assert_eq!(result.unverified_citations, vec!["main.rs:99".to_string()]);
+    }
+
+    #[test]
+    fn citation_line_wrong_file_right_line_does_not_verify() {
+        let stages = vec![make_code_stage("src/main.rs", 42)];
+        let result = verify_citations("see other.rs:42", &stages);
+        assert!(!result.is_grounded(), "wrong file must not verify");
+        assert!(result.verified_citations.is_empty());
+    }
+
+    #[test]
+    fn citation_line_extensionless_citation_never_verifies() {
+        // `Makefile:42` is never extracted (no extension), so there is
+        // nothing to verify — vacuous grounding with empty citation lists.
+        let stages = vec![make_code_stage("Makefile", 42)];
+        let result = verify_citations("See Makefile:42", &stages);
+        assert!(result.verified_citations.is_empty());
+        assert!(result.unverified_citations.is_empty());
+    }
+
+    #[test]
+    fn citation_line_backslash_source_does_not_verify() {
+        // Raw backslash source keeps the whole string as basename, so a
+        // forward-slash citation must not match it.
+        let stages = vec![make_code_stage("src\\main.rs", 7)];
+        let result = verify_citations("see main.rs:7", &stages);
+        assert!(!result.is_grounded());
+        assert!(result.verified_citations.is_empty());
+    }
+
+    #[test]
+    fn citation_line_exact_pairs_verify() {
+        // Positives: exact (basename, line) pairs verify, including nested
+        // sources via basename symmetry and repeated basenames at
+        // distinct lines.
+        let stages = vec![
+            make_code_stage("src/nested/main.rs", 7),
+            make_code_stage("src/main.rs", 42),
+        ];
+        let result = verify_citations("see main.rs:7 and main.rs:42", &stages);
+        assert!(result.is_grounded(), "exact pairs must verify");
+        assert_eq!(result.verified_citations.len(), 2);
+    }
+
+    #[test]
+    fn citation_line_mixed_exact_and_fabricated_splits() {
+        // One exact pair verifies while the same file at a fabricated line
+        // does not — per-citation precision, not whole-output guessing.
+        let stages = vec![make_code_stage("src/main.rs", 42)];
+        let result = verify_citations("see main.rs:42 and main.rs:43", &stages);
+        assert!(!result.is_grounded());
+        assert_eq!(result.verified_citations, vec!["main.rs:42".to_string()]);
+        assert_eq!(result.unverified_citations, vec!["main.rs:43".to_string()]);
     }
 }

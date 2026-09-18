@@ -1177,11 +1177,24 @@ fn last_viable_singleton_group_runs_ladder() {
     let tree = last_viable_tree("m");
     let default: Arc<dyn ChatBackend> =
         Arc::new(StubChatBackend::new(vec![verdict("solo", 0.9, 0.9, 2)]));
-    let matcher = ladder_matcher_keyed([("solo", self_assessment(9, "too hard"))].into_iter().collect());
-    let engine = engine_with_routing(&tree, default, last_viable_singleton_routing(), Some(matcher));
+    let matcher = ladder_matcher_keyed(
+        [("solo", self_assessment(9, "too hard"))]
+            .into_iter()
+            .collect(),
+    );
+    let engine = engine_with_routing(
+        &tree,
+        default,
+        last_viable_singleton_routing(),
+        Some(matcher),
+    );
     let evaluation = engine.evaluate("hi", None, None).expect("evaluates");
     let target = routed_target(&evaluation);
-    assert!(target.model.contains("solo"), "singleton serves, got {}", target.model);
+    assert!(
+        target.model.contains("solo"),
+        "singleton serves, got {}",
+        target.model
+    );
     // The ladder marker lives on the terminal step inside `tree_path`
     // (`final_decision` rebuilds the top-level metadata).
     let climbed = evaluation
@@ -1197,7 +1210,10 @@ fn last_viable_singleton_group_runs_ladder() {
                     == Some("self_assess")
             })
         });
-    assert!(climbed, "singleton terminal climbed the ladder, not the static path");
+    assert!(
+        climbed,
+        "singleton terminal climbed the ladder, not the static path"
+    );
 }
 
 #[test]
@@ -1230,7 +1246,9 @@ fn last_viable_classifier_duty_resolves_recency_free_key() {
     let seen_in = Arc::clone(&seen);
     let resolver: ClassifierBackendResolver = Arc::new(move |key: &str| {
         lock(&seen_in).push(key.to_string());
-        Some(Arc::new(StubChatBackend::always(verdict("solo", 0.9, 0.9, 2))) as Arc<dyn ChatBackend>)
+        Some(
+            Arc::new(StubChatBackend::always(verdict("solo", 0.9, 0.9, 2))) as Arc<dyn ChatBackend>,
+        )
     });
     let default: Arc<dyn ChatBackend> =
         Arc::new(StubChatBackend::always(verdict("solo", 0.9, 0.9, 2)));
@@ -1245,7 +1263,12 @@ fn last_viable_classifier_duty_resolves_recency_free_key() {
         Some(resolver),
     );
     let evaluation = engine
-        .evaluate_with_expansion("hi", None, None, &crate::target_match::RoleExpansion::default())
+        .evaluate_with_expansion(
+            "hi",
+            None,
+            None,
+            &crate::target_match::RoleExpansion::default(),
+        )
         .expect("evaluates");
     assert_eq!(
         lock(&seen).as_slice(),
@@ -1314,7 +1337,10 @@ fn classifier_empty_route_uses_default_route_without_fallback() {
     // The audit trail records the last-resort hop: the final reason is the
     // routing summary (`final_decision`), the per-node note lives in
     // `tree_path`.
-    let path = decision.metadata["tree_path"].as_array().cloned().unwrap_or_default();
+    let path = decision.metadata["tree_path"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     assert!(
         path.iter().any(|d| d["reason"]
             .as_str()

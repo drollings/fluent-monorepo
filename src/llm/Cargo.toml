@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 common-core = { path = "../common-core", features = ["http"] }
 fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-db = { path = "../db" }
 fluent-wvr = { path = "../fluent-wvr" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -28,9 +29,6 @@ getrandom = { workspace = true }
 [dev-dependencies]
 httpmock = { workspace = true }
 tempfile = { workspace = true }
-# Test-only: the `embeddings_cache` suite composes `fluent_db::sqlite`.
-# Normal builds keep `common-core` at `["http"]` only.
-fluent-db = { path = "../db" }
 [features]
 live-ai = []
 

@@ -121,37 +121,6 @@ fn rrf_score_serializes_as_a_bare_number() {
     assert_eq!(back.value().to_bits(), 0.03278688524590164f64.to_bits());
 }
 
-// Moved with `parse_rerank_output` from the router's chart selector (M7.4) —
-// the parse characterization lives with the parser.
-
-#[test]
-fn parse_rerank_output_accepts_array_and_ranking_object() {
-    assert_eq!(
-        parse_rerank_output(r#"["draft_doc", "bug_triage"]"#).unwrap(),
-        vec!["draft_doc".to_string(), "bug_triage".to_string()]
-    );
-    assert_eq!(
-        parse_rerank_output(r#"{"ranking": ["bug_triage"]}"#).unwrap(),
-        vec!["bug_triage".to_string()]
-    );
-    // Fences tolerated; the noise before the JSON array is dropped.
-    let fenced = "Sure!\n```json\n[\"draft_doc\", \"bug_triage\"]\n```";
-    assert_eq!(
-        parse_rerank_output(fenced).unwrap(),
-        vec!["draft_doc".to_string(), "bug_triage".to_string()]
-    );
-}
-
-#[test]
-fn parse_rerank_output_rejects_garbage() {
-    assert!(parse_rerank_output("not json at all").is_none());
-    assert!(parse_rerank_output(r#"{"chart": "bug_triage"}"#).is_none());
-    assert!(
-        parse_rerank_output("[]").is_none(),
-        "empty ranking is unusable"
-    );
-}
-
 // ── Cross-crate RRF calibration ──
 //
 // `rrf_fuse` composes the shared kernel (`score_postings` →

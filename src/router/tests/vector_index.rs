@@ -1,9 +1,9 @@
 use super::*;
 use fluent_types::NodeId;
-use search_vector::VectorIndex;
+use search_vector::VectorStore;
 use std::sync::Arc;
 
-// M7.3: the seam (`VectorIndex` + `BruteForceIndex` + `HnswVectorIndex`) and
+// M7.3: the seam (`VectorStore` + `BruteForceIndex` + `HnswVectorIndex`) and
 // its recall/calibration harness moved to `search-vector::vector_index`
 // (`src/search-vector/tests/vector_index.rs`) — single home. Only the
 // router-concern test stays here: it asserts on the router's salience
@@ -11,21 +11,21 @@ use std::sync::Arc;
 
 #[test]
 fn vector_index_seam_is_concern_separated() {
-    // Salience provider must never call VectorIndex::search — different concern.
-    // Use a mock VectorIndex that panics if searched.
+    // Salience provider must never call VectorStore::search — different concern.
+    // Use a mock VectorStore that panics if searched.
     struct PanicIndex;
-    impl VectorIndex for PanicIndex {
+    impl VectorStore for PanicIndex {
         fn insert(&self, _: NodeId, _: &[f32]) -> Result<(), fluent_db::error::DbError> {
             Ok(())
         }
         fn search(&self, _: &[f32], _: usize) -> Vec<(NodeId, f64)> {
-            panic!("salience must never call VectorIndex::search")
+            panic!("salience must never call VectorStore::search")
         }
         fn len(&self) -> usize {
             0
         }
     }
-    let _panic: Arc<dyn VectorIndex> = Arc::new(PanicIndex);
+    let _panic: Arc<dyn VectorStore> = Arc::new(PanicIndex);
     // LedgerSalienceProvider signals are deterministic graph signals, no vector search.
     use crate::node_store::ContentNodeStore;
     use crate::ranking::{LedgerSalienceProvider, SalienceSource};

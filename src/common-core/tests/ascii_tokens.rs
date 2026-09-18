@@ -3,7 +3,7 @@
 //! case-preserving segmentation contract: any refactor of the segmentation
 //! body must keep every vector byte-identical.
 
-use common_core::string::{AsciiAlnumTokens, ascii_alnum_tokens};
+use common_core::string::{ascii_alnum_tokens, AsciiAlnumTokens};
 
 const CORPUS: &[&str] = &[
     "",
@@ -41,8 +41,8 @@ fn ascii_alnum_tokens_goldens() {
         vec!["leading", "trailing"],
         vec!["MiXeD123", "Case456"],
         vec![
-            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o",
-            "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q",
+            "r", "s", "t", "u", "v", "w", "x", "y", "z",
         ],
         vec!["0123456789"],
         vec![

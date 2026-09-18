@@ -71,8 +71,7 @@ fn ps_empty_block_states_unloaded_outright() {
     // lists it, and the instances section states `unloaded` instead of
     // silently omitting the state.
     let dir = tempfile::tempdir().unwrap();
-    let block =
-        crate::cli::commands::server::render_weight_block(None, dir.path(), "swarm", &[]);
+    let block = crate::cli::commands::server::render_weight_block(None, dir.path(), "swarm", &[]);
     assert!(
         block.contains("unloaded"),
         "lazy block states its state, got:\n{block}"
@@ -204,7 +203,10 @@ fn ls_lists_fixture_config_sections() {
     );
     assert_eq!(
         listing.roles,
-        vec![("quick".to_string(), vec!["m1".to_string(), "m2".to_string()])]
+        vec![(
+            "quick".to_string(),
+            vec!["m1".to_string(), "m2".to_string()]
+        )]
     );
     assert_eq!(
         listing.models,

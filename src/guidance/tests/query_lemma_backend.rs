@@ -27,6 +27,7 @@ fn test_context(filter: &LlmFilter) -> SearchContext<'_> {
         embedder: None,
         nlp: None,
         llm_filter: filter,
+        concept_store: None,
     }
 }
 

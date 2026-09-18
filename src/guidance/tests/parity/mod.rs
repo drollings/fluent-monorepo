@@ -6,7 +6,9 @@ pub mod corpus_cjk;
 
 #[test]
 fn cjk_queries_resolve_within_the_corpus() {
-    use super::super::cjk_bigrams;
+    // Pinned through the canonical home (not the `search_types` shim):
+    // this test is about bigram semantics, not the contract surface.
+    use common_core::string::cjk_bigrams;
     for query in corpus_cjk::CJK_QUERIES {
         let doc = corpus_cjk::CJK_DOCS
             .iter()

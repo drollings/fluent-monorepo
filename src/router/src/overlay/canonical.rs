@@ -4,6 +4,4 @@
 //! `ENTITY_ROOT_IRI` reference) keep working. New code imports from
 //! `guidance-ontology` directly.
 
-pub use guidance_ontology::canonical::{
-    CanonicalFormError, CanonicalFormTable, ENTITY_ROOT_IRI,
-};
+pub use guidance_ontology::canonical::{CanonicalFormError, CanonicalFormTable, ENTITY_ROOT_IRI};

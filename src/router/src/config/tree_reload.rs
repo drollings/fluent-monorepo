@@ -368,9 +368,7 @@ pub fn topology_fingerprint(tree: &ClassificationTree) -> u64 {
     fn feed<H: Hasher>(node: &ClassificationNode, state: &mut H) {
         match node {
             ClassificationNode::Classifier {
-                model,
-                children,
-                ..
+                model, children, ..
             } => {
                 0u8.hash(state);
                 model.hash(state);

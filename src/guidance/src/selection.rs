@@ -84,28 +84,30 @@ pub enum SelectionError {
 
 /// Classify a path into `(kind, format)` (port of `detectFileType`).
 /// Binary extensions return `None`; unknown extensions fall back to text.
+/// Format tables are canonical in `fluent_types::file_kind` — called directly
+/// (no local wrappers) so the two maps cannot drift.
 #[must_use]
 pub fn detect_file_type(path: &Path) -> Option<(FileKind, String)> {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if let Some(tagged) = named_file_type(name) {
-        return Some(tagged);
+    if let Some((kind, format)) = fluent_types::file_kind::named_file_kind(name) {
+        return Some((kind, format.to_string()));
     }
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    if let Some(format) = code_format(&ext) {
-        return Some((FileKind::Code, format));
+    if let Some(format) = fluent_types::file_kind::code_kind_format(&ext) {
+        return Some((FileKind::Code, format.to_string()));
     }
-    if let Some(format) = data_format(&ext) {
-        return Some((FileKind::Data, format));
+    if let Some(format) = fluent_types::file_kind::data_kind_format(&ext) {
+        return Some((FileKind::Data, format.to_string()));
     }
-    if let Some(format) = text_format(&ext) {
-        return Some((FileKind::Text, format));
+    if let Some(format) = fluent_types::file_kind::text_kind_format(&ext) {
+        return Some((FileKind::Text, format.to_string()));
     }
-    if let Some(format) = image_format(&ext) {
-        return Some((FileKind::Image, format));
+    if let Some(format) = fluent_types::file_kind::image_kind_format(&ext) {
+        return Some((FileKind::Image, format.to_string()));
     }
     if fluent_types::file_kind::is_binary_extension(&ext) {
         return None;
@@ -426,26 +428,6 @@ const DEFAULT_IGNORED_FILE_PATTERNS: &[&str] = &[
     "*.png",
     "*.webp",
 ];
-
-pub(crate) fn named_file_type(name: &str) -> Option<(FileKind, String)> {
-    fluent_types::file_kind::named_file_kind(name).map(|(kind, format)| (kind, format.to_string()))
-}
-
-pub(crate) fn code_format(ext: &str) -> Option<String> {
-    fluent_types::file_kind::code_kind_format(ext).map(ToString::to_string)
-}
-
-pub(crate) fn data_format(ext: &str) -> Option<String> {
-    fluent_types::file_kind::data_kind_format(ext).map(ToString::to_string)
-}
-
-pub(crate) fn text_format(ext: &str) -> Option<String> {
-    fluent_types::file_kind::text_kind_format(ext).map(ToString::to_string)
-}
-
-pub(crate) fn image_format(ext: &str) -> Option<String> {
-    fluent_types::file_kind::image_kind_format(ext).map(ToString::to_string)
-}
 
 #[cfg(test)]
 #[path = "../tests/index_selection.rs"]

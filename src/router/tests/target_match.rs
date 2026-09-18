@@ -594,7 +594,14 @@ fn last_viable_stale_pick_falls_through_with_single_audit() {
     recency.record("s", "g", &wire_of(&routing, "a"));
     recency.record_any(&wire_of(&routing, "b"));
     let (expanded, logs) = crate::test_support::capture_logs(|| {
-        expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|_| false, Some(4))
+        expand_role_keys(
+            &routing,
+            "g",
+            Some(&recency),
+            Some("s"),
+            &|_| false,
+            Some(4),
+        )
     });
     assert_eq!(
         expanded,
@@ -602,7 +609,9 @@ fn last_viable_stale_pick_falls_through_with_single_audit() {
         "stale session pick vetoed, global pick wins"
     );
     assert_eq!(
-        logs.iter().filter(|l| l.contains("last-empty-fallback")).count(),
+        logs.iter()
+            .filter(|l| l.contains("last-empty-fallback"))
+            .count(),
         1,
         "stale session recency audits exactly once"
     );
@@ -622,7 +631,9 @@ fn last_viable_absent_recency_promotes_viable_first() {
         "viable-first orders ahead of config order on cold start"
     );
     assert_eq!(
-        logs.iter().filter(|l| l.contains("last-empty-fallback")).count(),
+        logs.iter()
+            .filter(|l| l.contains("last-empty-fallback"))
+            .count(),
         1,
         "missing recency still audits once (coverage signal, not outcome)"
     );
@@ -674,8 +685,7 @@ fn last_viable_classifier_key_vetoes_cold_managed_fleet() {
     // a duty. Duties never cold-load; dispatch owns loading.
     let mut routing = routing_with_members("g", &["m1", "m2"], &["last", "m1", "m2"]);
     for key in ["m1", "m2"] {
-        routing.models.get_mut(key).expect("member").weights =
-            Some(format!("/models/{key}.gguf"));
+        routing.models.get_mut(key).expect("member").weights = Some(format!("/models/{key}.gguf"));
     }
     let picked = viable_last_key(&routing, None, &|_| false);
     assert_eq!(
@@ -836,10 +846,21 @@ fn last_calibration_fallback_precision_recall() {
                 recency.record_any(wire);
             }
         }
-        let recency_opt = if case.use_recency { Some(&recency) } else { None };
+        let recency_opt = if case.use_recency {
+            Some(&recency)
+        } else {
+            None
+        };
         let run_once = |routing: &RoutingConfig, recency: Option<&RoleRecency>| {
             crate::test_support::capture_logs(|| {
-                expand_role_keys(routing, "g", recency, Some(case.session_key), &|_| false, Some(4))
+                expand_role_keys(
+                    routing,
+                    "g",
+                    recency,
+                    Some(case.session_key),
+                    &|_| false,
+                    Some(4),
+                )
             })
         };
         let (expanded, logs) = run_once(&routing, recency_opt);
@@ -854,7 +875,10 @@ fn last_calibration_fallback_precision_recall() {
                 case.name, case.expected_head
             ));
         }
-        let fallbacks = logs.iter().filter(|l| l.contains("last-empty-fallback")).count();
+        let fallbacks = logs
+            .iter()
+            .filter(|l| l.contains("last-empty-fallback"))
+            .count();
         let fired = fallbacks > 0;
         if fired != case.expect_fallback {
             mismatches.push(format!(
@@ -927,7 +951,8 @@ fn expanded_candidates_yield_literal_targets_only() {
     let routing = routing_with_members("g", &["a", "b"], &["last", "a", "any", "zzz-unknown"]);
     let recency = RoleRecency::new();
     recency.record("s", "g", &wire_of(&routing, "a"));
-    let cands = expanded_candidates_for_role(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
+    let cands =
+        expanded_candidates_for_role(&routing, "g", Some(&recency), Some("s"), &|_| false, None);
     let keys: Vec<&str> = cands.iter().map(|c| c.model_key.as_str()).collect();
     // Sentinels never become candidates; unknown literals are skipped exactly
     // as the literal path skips members with no `models` entry.
@@ -1168,10 +1193,9 @@ fn last_group_routing() -> RoutingConfig {
 
 fn last_group_with_sentinel() -> RoutingConfig {
     let mut routing = last_group_routing();
-    routing.roles.insert(
-        "g".into(),
-        role_entry(&["a", "last", "b"]),
-    );
+    routing
+        .roles
+        .insert("g".into(), role_entry(&["a", "last", "b"]));
     routing
 }
 
@@ -1324,7 +1348,14 @@ fn any_orders_loaded_first_around_last_fallback() {
     let routing = last_any_routing(&["last", "any", "a", "b"]);
     let recency = RoleRecency::new();
     // No recency anywhere: Last falls back (audited), Any partitions.
-    let expanded = expand_role_keys(&routing, "g", Some(&recency), Some("s"), &|m| m == "b", None);
+    let expanded = expand_role_keys(
+        &routing,
+        "g",
+        Some(&recency),
+        Some("s"),
+        &|m| m == "b",
+        None,
+    );
     assert_eq!(
         expanded,
         vec!["b".to_string(), "a".to_string()],

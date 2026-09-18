@@ -29,5 +29,7 @@ pub mod plausibility;
 pub use annotation_store::{AnnotationStore, ANNOTATIONS_TABLE};
 pub use concept_store::{ConceptStore, ConceptStoreError, ConceptStoreState, TaxonomyHierarchy};
 pub use concept_store_mem::InMemoryConceptStore;
-pub use content_store::{derive_label, ensure_lod_eager, ContentNodeStore, InMemoryContentNodeStore};
+pub use content_store::{
+    derive_label, ensure_lod_eager, ContentNodeStore, InMemoryContentNodeStore,
+};
 pub use plausibility::{PlausibilityTriple, ScoredLemma};

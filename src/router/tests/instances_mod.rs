@@ -2342,10 +2342,7 @@ async fn residency_admission_none_budget_disables() {
     ));
     let mut managers = HashMap::new();
     managers.insert("swarm".into(), victim);
-    let pool = InstancePool::from_managers(
-        managers,
-        Some(supervisor_with_servers(&["swarm"])),
-    );
+    let pool = InstancePool::from_managers(managers, Some(supervisor_with_servers(&["swarm"])));
     pool.set_admission_engine(engine_for_policy(&policy));
     pool.make_room_for("cold", 1_000_000_000_000).await;
     assert!(

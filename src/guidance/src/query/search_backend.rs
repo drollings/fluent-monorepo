@@ -25,6 +25,11 @@ pub struct SearchContext<'a> {
     pub nlp: Option<&'a spacy_rs::pipeline::NlpPipeline>,
     /// Relevance filter for the concept backend (R.2: retained rung).
     pub llm_filter: &'a LlmFilter,
+    /// Taxonomy store for concept groundedness (`None` = today's behavior:
+    /// gates and order exactly as without a store). Guidance never owns or
+    /// loads a store; the owner passes `&dyn` (router) or tests pass a
+    /// hermetic in-memory store.
+    pub concept_store: Option<&'a dyn fluent_concept::ConceptStore>,
 }
 
 /// Polymorphic search backend — the fluent-wvr control plane for query dispatch.
@@ -160,6 +165,15 @@ impl SearchBackend for ConceptBackend {
         if matched_names.is_empty() {
             return Err(QueryEngineError::NoResults);
         }
+
+        // Task-value axis (taxonomy groundedness) composes as a stable
+        // rerank among gate-passers only: membership is decided by the
+        // calibrated confidence gate above and never revisited here.
+        // `None` store ⇒ byte-identical order (early return, no verdicts).
+        let matched_names = match ctx.concept_store {
+            Some(store) => super::concept_ground::grounded_first(matched_names, store),
+            None => matched_names,
+        };
 
         Ok(Synthesizer::synthesize(query, doc, &matched_names))
     }
@@ -335,6 +349,7 @@ mod tests {
             embedder: None,
             nlp: None,
             llm_filter: filter,
+            concept_store: None,
         }
     }
 
@@ -475,6 +490,211 @@ mod tests {
             ConceptBackend.search("x", &make_test_doc(), &ctx_with_filter(&filter)),
             Err(QueryEngineError::LlmFilter(_))
         ));
+    }
+
+    #[test]
+    fn concept_store_none_context_matches_legacy_output() {
+        // Seam default: an explicit `None` store must behave exactly like
+        // the pre-seam context (same helper, same filter, same doc).
+        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![RelevanceScore {
+            member_name: "helloWorld".into(),
+            score: 0.9,
+            reasoning: String::new(),
+        }]))));
+        let doc = make_test_doc();
+        let legacy = ConceptBackend
+            .search("add things", &doc, &ctx_with_filter(&filter))
+            .expect("search");
+        let explicit = ConceptBackend
+            .search(
+                "add things",
+                &doc,
+                &SearchContext {
+                    storage: None,
+                    embedder: None,
+                    nlp: None,
+                    llm_filter: &filter,
+                    concept_store: None,
+                },
+            )
+            .expect("search");
+        assert_eq!(legacy.len(), explicit.len());
+        let legacy_kinds: Vec<String> = legacy.iter().map(|s| format!("{:?}", s.kind)).collect();
+        let explicit_kinds: Vec<String> =
+            explicit.iter().map(|s| format!("{:?}", s.kind)).collect();
+        assert_eq!(legacy_kinds, explicit_kinds);
+    }
+
+    fn seeded_concept_store() -> fluent_concept::InMemoryConceptStore {
+        // `addNumbers` grounds via `schema:Addnumbers`; `helloWorld` stays
+        // unknown — the minimal order-discriminating pair.
+        use fluent_concept::ConceptStore;
+        let store = fluent_concept::InMemoryConceptStore::new();
+        store
+            .insert(fluent_types::ConceptMetadata {
+                id: fluent_types::InterlinguaId::new(
+                    fluent_types::InterlinguaNamespace::YagoClass,
+                    7,
+                ),
+                canonical_name: "schema:Addnumbers".to_string(),
+                namespace: fluent_types::InterlinguaNamespace::YagoClass,
+                yago_iri: None,
+                yago_class_iri: None,
+                label: None,
+                node_id: None,
+                parent_class_id: None,
+            })
+            .expect("insert");
+        store
+    }
+
+    fn member_order(stages: &[crate::query::synthesize::Stage]) -> Vec<String> {
+        stages
+            .iter()
+            .filter_map(|s| s.member_name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn concept_backend_reranks_grounded_first_with_store() {
+        // Both members pass the 0.5 gate (LLM order: helloWorld first);
+        // the store grounds `addNumbers`, which must move first.
+        // Membership is untouched — only order changes.
+        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![
+            RelevanceScore {
+                member_name: "helloWorld".into(),
+                score: 0.9,
+                reasoning: String::new(),
+            },
+            RelevanceScore {
+                member_name: "addNumbers".into(),
+                score: 0.8,
+                reasoning: String::new(),
+            },
+        ]))));
+        let doc = make_test_doc();
+        let store = seeded_concept_store();
+        let ctx = SearchContext {
+            storage: None,
+            embedder: None,
+            nlp: None,
+            llm_filter: &filter,
+            concept_store: Some(&store),
+        };
+        let stages = ConceptBackend
+            .search("add things", &doc, &ctx)
+            .expect("search");
+        // Each member emits code + comment stages; order follows the rerank.
+        assert_eq!(
+            member_order(&stages),
+            vec!["addNumbers", "addNumbers", "helloWorld", "helloWorld"]
+        );
+    }
+
+    #[test]
+    fn concept_backend_none_store_preserves_llm_order() {
+        // No store ⇒ gate order passes through byte-identically.
+        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![
+            RelevanceScore {
+                member_name: "helloWorld".into(),
+                score: 0.9,
+                reasoning: String::new(),
+            },
+            RelevanceScore {
+                member_name: "addNumbers".into(),
+                score: 0.8,
+                reasoning: String::new(),
+            },
+        ]))));
+        let doc = make_test_doc();
+        let stages = ConceptBackend
+            .search("add things", &doc, &ctx_with_filter(&filter))
+            .expect("search");
+        assert_eq!(
+            member_order(&stages),
+            vec!["helloWorld", "helloWorld", "addNumbers", "addNumbers"]
+        );
+    }
+
+    #[test]
+    fn concept_backend_loading_store_matches_ready_output() {
+        // M6 control: store readiness must not leak into output through
+        // either signal — grounding reads identically in both states, so a
+        // `Loading` store reranks exactly like a `Ready` one.
+        use fluent_concept::ConceptStoreState;
+        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![
+            RelevanceScore {
+                member_name: "helloWorld".into(),
+                score: 0.9,
+                reasoning: String::new(),
+            },
+            RelevanceScore {
+                member_name: "addNumbers".into(),
+                score: 0.8,
+                reasoning: String::new(),
+            },
+        ]))));
+        let doc = make_test_doc();
+        let ready = seeded_concept_store();
+        let loading = seeded_concept_store();
+        loading.set_state(ConceptStoreState::Loading);
+        let search_with = |store: &fluent_concept::InMemoryConceptStore| {
+            let ctx = SearchContext {
+                storage: None,
+                embedder: None,
+                nlp: None,
+                llm_filter: &filter,
+                concept_store: Some(store),
+            };
+            ConceptBackend
+                .search("add things", &doc, &ctx)
+                .expect("search")
+        };
+        let ready_stages = search_with(&ready);
+        let loading_stages = search_with(&loading);
+        assert_eq!(member_order(&ready_stages), member_order(&loading_stages));
+        assert_eq!(
+            member_order(&ready_stages),
+            vec!["addNumbers", "addNumbers", "helloWorld", "helloWorld"]
+        );
+    }
+
+    #[test]
+    fn concept_backend_store_preserves_membership() {
+        // M6 no-degrade: the store may reorder gate-passers, never change
+        // the member set (recall preserved — the rerank is not a filter).
+        let filter = LlmFilter::new(Some(Box::new(StubFilter(vec![
+            RelevanceScore {
+                member_name: "helloWorld".into(),
+                score: 0.9,
+                reasoning: String::new(),
+            },
+            RelevanceScore {
+                member_name: "addNumbers".into(),
+                score: 0.8,
+                reasoning: String::new(),
+            },
+        ]))));
+        let doc = make_test_doc();
+        let plain = ConceptBackend
+            .search("add things", &doc, &ctx_with_filter(&filter))
+            .expect("search");
+        let store = seeded_concept_store();
+        let ctx = SearchContext {
+            storage: None,
+            embedder: None,
+            nlp: None,
+            llm_filter: &filter,
+            concept_store: Some(&store),
+        };
+        let ranked = ConceptBackend
+            .search("add things", &doc, &ctx)
+            .expect("search");
+        let mut plain_members = member_order(&plain);
+        let mut ranked_members = member_order(&ranked);
+        plain_members.sort();
+        ranked_members.sort();
+        assert_eq!(plain_members, ranked_members);
     }
 
     #[test]

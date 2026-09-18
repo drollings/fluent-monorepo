@@ -139,3 +139,78 @@ fn extension_lists_match_walker_scope() {
         );
     }
 }
+
+/// Bridge table (`FileKind::coarse_type` / `FileType::from_kind`): one shared,
+/// total, lossy mapping — both spellings agree on every input, pinned here so
+/// the two taxonomies cannot drift silently.
+#[test]
+fn kind_to_type_bridge_is_total_and_shared() {
+    use crate::FileType;
+    for kind in [
+        FileKind::Text,
+        FileKind::Code,
+        FileKind::Data,
+        FileKind::Image,
+    ] {
+        assert_eq!(
+            FileType::from_kind(kind),
+            kind.coarse_type(),
+            "{kind:?} must map identically through both spellings"
+        );
+    }
+    assert_eq!(FileKind::Code.coarse_type(), FileType::Source);
+    assert_eq!(FileKind::Text.coarse_type(), FileType::Markdown);
+    assert_eq!(FileKind::Data.coarse_type(), FileType::Data);
+    // No image variant exists on the structure-rendering side.
+    assert_eq!(FileKind::Image.coarse_type(), FileType::Unknown);
+}
+
+/// Explicit drift ledger: extensions where the ingest table (`kind_format`)
+/// and the structure table (`FileType::from_extension`) disagree through the
+/// bridge. Any new extension added to either map must update this ledger
+/// deliberately — silent divergence is the defect this pins against.
+#[test]
+fn extension_tables_diverge_only_where_ledgered() {
+    use crate::FileType;
+    fn dotted(ext: &str) -> String {
+        format!(".{ext}")
+    }
+    // Ingest says Code but the structure table does not say Source.
+    let mut code_divergent = Vec::new();
+    for ext in CODE_EXTENSIONS {
+        let (kind, _) = kind_format_for_extension(ext).expect("listed code classifies");
+        assert_eq!(kind, FileKind::Code);
+        if FileType::from_extension(&dotted(ext)) != FileType::Source {
+            code_divergent.push(*ext);
+        }
+    }
+    assert_eq!(
+        code_divergent,
+        [
+            "cc", "cxx", "mjs", "cjs", "php", "kts", "cs", "scala", "sh", "bash", "zsh", "sql",
+            "css", "scss", "less", "vue", "svelte",
+        ],
+        "code-but-not-Source set changed: update the ledger deliberately"
+    );
+    // Structure table classifies but ingest is silent (no kind entry).
+    let mut ingest_silent = Vec::new();
+    for ext in [
+        "zig", "zon", "lua", "markdown", "ini", "env", "cfg", "conf", "tsv", "sqlite", "db", "sql",
+        "parquet", "pdf", "mp3", "wav", "flac", "ogg", "m4a", "wma",
+    ] {
+        if kind_format_for_extension(ext).is_none() && !is_binary_extension(ext) {
+            ingest_silent.push(ext);
+        }
+    }
+    // Note: `db`/`sqlite` are binary-excluded (not silent); `mp3` is
+    // binary-excluded but `wav`/`flac`/`ogg`/`m4a`/`wma` are ingest-silent
+    // and fall back to `Text` at the selection layer.
+    assert_eq!(
+        ingest_silent,
+        [
+            "zig", "zon", "lua", "markdown", "ini", "env", "cfg", "conf", "tsv", "parquet", "wav",
+            "flac", "ogg", "m4a", "wma",
+        ],
+        "structure-but-ingest-silent set changed: update the ledger deliberately"
+    );
+}

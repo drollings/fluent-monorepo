@@ -23,8 +23,8 @@ use std::sync::Arc;
 
 use common_core::contains_ident_word;
 use fluent_llm::client::ChatBackend;
+use fluent_llm::parse::parse_rerank_output;
 use fluent_llm::ChatMessage;
-use search_vector::fusion::parse_rerank_output;
 
 use crate::charts::binding::{bind_chart, AmbiguousDep, Bindings, Entity};
 use crate::charts::store::ChartStore;

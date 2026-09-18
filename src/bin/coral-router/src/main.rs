@@ -376,12 +376,9 @@ fn resolve_classifier_model_name(config: &RouterConfig) -> String {
         }
     }
     if let Some(route) = config.routes_view().get(&config.default_route) {
-        if let Some(key) = fluent_router::config::role_head_key(
-            &config.models,
-            &config.roles,
-            &route.role,
-            false,
-        ) {
+        if let Some(key) =
+            fluent_router::config::role_head_key(&config.models, &config.roles, &route.role, false)
+        {
             return key;
         }
     }

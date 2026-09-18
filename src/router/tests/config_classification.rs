@@ -240,10 +240,7 @@ fn terminal_views_collect_routes_and_roles() {
         vec![
             ("code".into(), String::new()),
             ("local".into(), String::new()),
-            (
-                "translation".into(),
-                String::new()
-            ),
+            ("translation".into(), String::new()),
         ]
     );
 }
@@ -410,8 +407,7 @@ fn terminal_role_parses_and_defaults_none() {
 
 #[test]
 fn top_safety_absent_means_hard_default() {
-    let cfg: RouterConfig =
-        serde_json::from_str(r#"{"models": {}}"#).expect("parses");
+    let cfg: RouterConfig = serde_json::from_str(r#"{"models": {}}"#).expect("parses");
     assert_eq!(cfg.safety_threshold, None);
     assert_eq!(cfg.effective_safety_threshold(), 0.5);
 }
@@ -419,24 +415,21 @@ fn top_safety_absent_means_hard_default() {
 #[test]
 fn top_safety_present_is_the_default() {
     let cfg: RouterConfig =
-        serde_json::from_str(r#"{"models": {}, "safety_threshold": 0.4}"#)
-            .expect("parses");
+        serde_json::from_str(r#"{"models": {}, "safety_threshold": 0.4}"#).expect("parses");
     assert_eq!(cfg.safety_threshold, Some(0.4));
     assert_eq!(cfg.effective_safety_threshold(), 0.4);
 }
 
 #[test]
 fn top_safety_omitted_when_unset() {
-    let cfg: RouterConfig =
-        serde_json::from_str(r#"{"models": {}}"#).expect("parses");
+    let cfg: RouterConfig = serde_json::from_str(r#"{"models": {}}"#).expect("parses");
     let value = serde_json::to_value(&cfg).expect("serializes");
     assert!(
         value.get("safety_threshold").is_none(),
         "unset default stays out of the serialized form"
     );
     let set: RouterConfig =
-        serde_json::from_str(r#"{"models": {}, "safety_threshold": 0.4}"#)
-            .expect("parses");
+        serde_json::from_str(r#"{"models": {}, "safety_threshold": 0.4}"#).expect("parses");
     let back: RouterConfig =
         serde_json::from_str(&serde_json::to_string(&set).expect("serializes"))
             .expect("round trip");

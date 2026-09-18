@@ -53,6 +53,8 @@ pub mod cache;
 #[cfg(feature = "sqlite")]
 pub mod capability;
 #[cfg(feature = "sqlite")]
+pub mod embedding_cache;
+#[cfg(feature = "sqlite")]
 pub mod migrate;
 #[cfg(feature = "sqlite")]
 pub mod pool;

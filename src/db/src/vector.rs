@@ -266,36 +266,12 @@ pub fn knn_brute_force_q8<'a, Id: Clone>(
 /// this is generic over the candidate item type — `search-vector`'s
 /// `SearchResult` and coral's `KnnHit` both fuse through this single
 /// implementation.
-/// Task relevance threshold (axis B) — cosine distance.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TaskRelevanceThreshold(pub f32);
-impl TaskRelevanceThreshold {
-    pub fn new(v: f32) -> Result<Self, String> {
-        if (0.0..=1.0).contains(&v) {
-            Ok(Self(v))
-        } else {
-            Err(format!("TaskRelevanceThreshold {v} out of range"))
-        }
-    }
-    pub fn get(self) -> f32 {
-        self.0
-    }
-}
-/// Producer confidence threshold (axis A).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ProducerConfidenceThreshold(pub f32);
-impl ProducerConfidenceThreshold {
-    pub fn new(v: f32) -> Result<Self, String> {
-        if (0.0..=1.0).contains(&v) {
-            Ok(Self(v))
-        } else {
-            Err(format!("ProducerConfidenceThreshold {v} out of range"))
-        }
-    }
-    pub fn get(self) -> f32 {
-        self.0
-    }
-}
+/// Task relevance threshold (axis B) and producer confidence threshold
+/// (axis A): consumer policy, canonically owned by `fluent_types::rounds`
+/// and re-exported here for back-compat — `fluent-db` owns mechanics, not
+/// policy. Precision unified on `f64` with the other unit thresholds; the
+/// previous `f32` surface had no live callers.
+pub use fluent_types::rounds::{ProducerConfidenceThreshold, TaskRelevanceThreshold};
 
 pub fn rrf_merge<T>(
     keyword_results: Vec<(i64, T)>,

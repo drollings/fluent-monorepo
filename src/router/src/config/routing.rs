@@ -394,14 +394,9 @@ pub fn select_viable_member(
     // Sentinel-only group (no literal members): every servable model is a
     // candidate, key-sorted for a deterministic tie-break base; the viability
     // ordering below decides. Otherwise the literal members compete.
-    let sentinel_only = !members
-        .iter()
-        .any(|m| m != "last" && m != "any");
+    let sentinel_only = !members.iter().any(|m| m != "last" && m != "any");
     let pool: Vec<&String> = if sentinel_only {
-        let mut fleet: Vec<&String> = models
-            .keys()
-            .filter(|k| k.as_str() != "default")
-            .collect();
+        let mut fleet: Vec<&String> = models.keys().filter(|k| k.as_str() != "default").collect();
         fleet.sort();
         fleet
     } else {
@@ -442,19 +437,17 @@ pub fn select_viable_member(
     };
     // Inline comparator (not a `let` binding): `min_by` needs a higher-ranked
     // `FnMut(&Item, &Item)`, which only infers at the call site.
-    let entry_key = pool
-        .iter()
-        .min_by(|a, b| {
-            is_resident_key(a)
-                .cmp(&is_resident_key(b))
-                .reverse()
-                .then_with(|| {
-                    cost_of(a)
-                        .partial_cmp(&cost_of(b))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .then_with(|| a.cmp(b))
-        })?;
+    let entry_key = pool.iter().min_by(|a, b| {
+        is_resident_key(a)
+            .cmp(&is_resident_key(b))
+            .reverse()
+            .then_with(|| {
+                cost_of(a)
+                    .partial_cmp(&cost_of(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.cmp(b))
+    })?;
     if sentinel_only {
         tracing::info!(target: "router.config",
             scope = %scope,
@@ -662,9 +655,10 @@ impl RoutingConfig {
         // routes, e.g. `quick-0`/`quick-1` serve the `quick` qualifier).
         let role_profile = role_entry.serves(base)
             && (role_entry.pinned
-                || entry.effective_pool().iter().any(|p| {
-                    p.name.as_deref() == Some(role) || p.group.as_deref() == Some(role)
-                }));
+                || entry
+                    .effective_pool()
+                    .iter()
+                    .any(|p| p.name.as_deref() == Some(role) || p.group.as_deref() == Some(role)));
         let mut qualified = if role_profile {
             RoutingTarget::from_model_entry_instance(base, entry, role)
         } else {

@@ -1011,8 +1011,7 @@ impl OnnxDispatchBackend {
         let mut resp = crate::server::responses::make_text_completion(model, &text);
         if filter_thinking {
             for choice in &mut resp.choices {
-                if let RouterMessageContent::Text(ref mut t) = choice.message.content
-                {
+                if let RouterMessageContent::Text(ref mut t) = choice.message.content {
                     *t = strip_thinking_blocks(t);
                 }
             }

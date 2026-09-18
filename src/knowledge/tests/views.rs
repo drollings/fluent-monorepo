@@ -31,8 +31,14 @@ fn parallel_render_default_and_override() {
         .with_default_lod(Lod::LOD0)
         .with_override(ids[0], Lod::LOD5);
     let body = view.render();
-    assert!(body.contains("First sentence here."), "override renders label");
-    assert!(!body.contains("Second follows"), "label tier, not full text");
+    assert!(
+        body.contains("First sentence here."),
+        "override renders label"
+    );
+    assert!(
+        !body.contains("Second follows"),
+        "label tier, not full text"
+    );
 }
 
 #[test]
@@ -41,8 +47,7 @@ fn exclusion_is_free_and_missing_skipped() {
     let ids = ParallelLedger::for_session(s.clone(), "s").node_ids();
     let mut excluded = HashSet::new();
     excluded.insert(ids[0]);
-    let view =
-        FilteredLedger::new(ParallelLedger::for_session(s, "s"), excluded);
+    let view = FilteredLedger::new(ParallelLedger::for_session(s, "s"), excluded);
     let body = view.render();
     assert!(!body.contains("First sentence here."));
     assert!(body.contains("second"));

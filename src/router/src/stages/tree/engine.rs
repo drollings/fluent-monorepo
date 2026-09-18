@@ -173,17 +173,16 @@ impl ClassificationEngine {
                 // remains the hard guarantee. Empty fleets keep the literal
                 // (the default-client path serves as before).
                 let model_key: String = model.clone().unwrap_or_default();
-                let model_key: String =
-                    if model_key == "last" || model_key == "any" {
-                        crate::target_match::viable_last_key(
-                            &self.routing,
-                            expansion.recency(),
-                            &|base| expansion.supervisor_loaded(base),
-                        )
-                        .unwrap_or(model_key)
-                    } else {
-                        model_key
-                    };
+                let model_key: String = if model_key == "last" || model_key == "any" {
+                    crate::target_match::viable_last_key(
+                        &self.routing,
+                        expansion.recency(),
+                        &|base| expansion.supervisor_loaded(base),
+                    )
+                    .unwrap_or(model_key)
+                } else {
+                    model_key
+                };
                 self.evaluate_classifier(
                     description,
                     &model_key,

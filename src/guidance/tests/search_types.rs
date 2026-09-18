@@ -90,7 +90,11 @@ fn matched_by_provenance_matches_default() {
 
 // --- extractSymbolNames + symbolNameFromToken ---
 
+// P0 contract surface: these tests pin the stable `search_types` wrappers
+// (deprecated shims over the canonical homes) — the `allow` is the point:
+// the surface must keep working while new code takes canonical paths.
 #[test]
+#[allow(deprecated)]
 fn extract_symbol_names_skips_keyword_stoplist() {
     assert_eq!(
         extract_symbol_names("find Namespace::AlphaSymbol"),
@@ -101,6 +105,7 @@ fn extract_symbol_names_skips_keyword_stoplist() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn symbol_name_from_token_keeps_uppercase_owner_only() {
     assert_eq!(
         symbol_name_from_token("AlphaSymbol"),
@@ -255,6 +260,7 @@ fn symbol_vocabularies_are_closed() {
 // --- FTS/CJK goldens (new; P1 builds the table on this contract) ---
 
 #[test]
+#[allow(deprecated)]
 fn cjk_detection_covers_han_hiragana_katakana_hangul() {
     assert!(is_cjk_char('日'));
     assert!(is_cjk_char('あ'));
@@ -266,6 +272,7 @@ fn cjk_detection_covers_han_hiragana_katakana_hangul() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn cjk_bigrams_expand_runs_without_dictionary() {
     assert_eq!(cjk_bigrams("日本語"), vec!["日本", "本語"]);
     assert_eq!(
@@ -298,6 +305,7 @@ fn search_plan_value_types_carry_wire_shape() {
 // --- M13.1 characterization: symbol-token edges (verbatim current outputs) ---
 
 #[test]
+#[allow(deprecated)]
 fn m13_extract_symbol_names_edge_cases() {
     // Empty input yields nothing.
     assert!(extract_symbol_names("").is_empty());
@@ -320,6 +328,7 @@ fn m13_extract_symbol_names_edge_cases() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn m13_symbol_name_from_token_edges() {
     // Trailing / leading `::` empties collapse away.
     assert_eq!(symbol_name_from_token("foo::"), Some("foo".to_string()));

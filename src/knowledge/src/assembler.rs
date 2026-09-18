@@ -69,11 +69,8 @@ fn render_node(store: &dyn ContentNodeStore, id: NodeId, requested: Lod) -> Stri
     // triggers derivation). The double and the sqlite home both read
     // cached-or-absent, so this branch is seam-true on both.
     let cached_level = store.snapshot(id).and_then(|n| {
-        (requested_level..=LOD5_LABEL).find(|l| {
-            n.lod
-                .get(*l as usize)
-                .is_some_and(|t| !t.is_empty())
-        })
+        (requested_level..=LOD5_LABEL)
+            .find(|l| n.lod.get(*l as usize).is_some_and(|t| !t.is_empty()))
     });
     let level = cached_level.unwrap_or(LOD0_FULL_TEXT);
     store.lod_text(id, level).unwrap_or_default()
@@ -169,14 +166,13 @@ impl LedgerPromptAssembler {
             Some(selector) => selector,
             None => &uniform,
         };
-        let targets: Vec<(NodeId, Lod)> =
-            selector.select(store.as_ref(), &intermediates, lod_spec);
+        let targets: Vec<(NodeId, Lod)> = selector.select(store.as_ref(), &intermediates, lod_spec);
 
         // Budget-fit the intermediates: degrade each toward coarser tiers until
         // it fits; drop it if even the coarsest does not fit. Priority order for
         // fitting is relevance order (most relevant kept first).
-        let head_tail_cost = estimate(store.as_ref(), first, Lod::LOD0)
-            + estimate(store.as_ref(), last, Lod::LOD0);
+        let head_tail_cost =
+            estimate(store.as_ref(), first, Lod::LOD0) + estimate(store.as_ref(), last, Lod::LOD0);
         let inter_budget = budget.intermediate_budget(head_tail_cost);
         let mut used = head_tail_cost;
         let mut fitted: Vec<(NodeId, Lod)> = Vec::new();

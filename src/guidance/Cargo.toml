@@ -7,6 +7,8 @@ autobenches = false
 
 [dependencies]
 common-core = { path = "../common-core" }
+fluent-concept = { path = "../concept" }
+guidance-ontology = { path = "../ontology" }
 fluent-knowledge = { path = "../knowledge" }
 fluent-types = { path = "../types" }
 search-vector = { path = "../search-vector" }

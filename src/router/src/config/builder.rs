@@ -581,9 +581,7 @@ impl RouterConfig {
             // the stage cannot move into `Instrumented` directly).
             let producer_stage = Arc::new(prefilter);
             let stage_for_push = Arc::new(Instrumented::new(
-                ComponentAdapter::new(
-                    Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>
-                ),
+                ComponentAdapter::new(Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>),
                 "pipeline.stage1.deterministic",
             )) as Arc<dyn fluent_wvr::Component>;
             let producer: crate::pipeline::StageProducer =

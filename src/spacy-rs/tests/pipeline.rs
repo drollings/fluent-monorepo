@@ -4182,10 +4182,7 @@ fn cheap_resolver() -> Arc<InterlinguaResolver> {
         crate::lexeme::LexiconConfig::default(),
     ));
     let store: Arc<dyn ConceptStore> = Arc::new(InMemoryConceptStore::new());
-    Arc::new(InterlinguaResolver::new(
-        store,
-        Arc::clone(vocab.strings()),
-    ))
+    Arc::new(InterlinguaResolver::new(store, Arc::clone(vocab.strings())))
 }
 
 #[test]

@@ -505,7 +505,11 @@ fn terminal_role_pinned_explicit_point_still_wins() {
     let cfg = terminal_role_pinned_config();
     let rt = cfg.routing_target("pinned", None).expect("target");
     assert_eq!(rt.model, "big:fast", "explicit member qualifier kept");
-    assert_eq!(rt.role.as_deref(), Some("pinned"), "role recorded for audit");
+    assert_eq!(
+        rt.role.as_deref(),
+        Some("pinned"),
+        "role recorded for audit"
+    );
 }
 
 #[test]
@@ -523,8 +527,7 @@ fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
     );
     cfg.roles.insert(
         "solo".into(),
-        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
-            .expect("role"),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]})).expect("role"),
     );
     // Point the solo route at unpinned quick, which does not bind lonely:
     // the member resolves through quick's list below.
@@ -542,7 +545,10 @@ fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
     // `lonely` was inserted after pool materialization, so its entry default
     // is the bare wire id (unmaterialized entries resolve bare).
     assert_eq!(rt.model, "lonely", "unbound member serves entry default");
-    assert!(!rt.model.contains(":quick"), "no forced qualifier without binding");
+    assert!(
+        !rt.model.contains(":quick"),
+        "no forced qualifier without binding"
+    );
     assert_eq!(rt.role.as_deref(), Some("quick"), "role still recorded");
 }
 
@@ -568,8 +574,7 @@ fn terminal_role_validation_rejects_unserved_member() {
     // through fan-out names a window that can never exist at runtime.
     cfg.roles.insert(
         "mixed".into(),
-        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
-            .expect("bare-only role"),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]})).expect("bare-only role"),
     );
     cfg.roles.get_mut("quick").expect("role").models = vec!["mixed".into()];
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
@@ -603,8 +608,7 @@ fn terminal_role_validation_accepts_unpinned_unserved_member() {
     );
     cfg.roles.insert(
         "mixed".into(),
-        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
-            .expect("role"),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]})).expect("role"),
     );
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
         "root": {"type": "classifier", "description": "d", "model": "tiny", "children": [
@@ -637,8 +641,7 @@ fn terminal_role_validation_accepts_pinned_with_sentinel_flexibility() {
     );
     cfg.roles.insert(
         "flex".into(),
-        serde_json::from_value(serde_json::json!({"models": ["lonely"]}))
-            .expect("role"),
+        serde_json::from_value(serde_json::json!({"models": ["lonely"]})).expect("role"),
     );
     cfg.roles.get_mut("quick").expect("role").models = vec!["last".into(), "flex".into()];
     let tree: crate::config::ClassificationTree = serde_json::from_value(serde_json::json!({
@@ -869,10 +872,7 @@ fn capacity_mismatch_warns_with_counts() {
     // A role whose pool was never materialized counts zero slots under its
     // cap: the pre-boot fail-open signal still warns with role + cap.
     let mut cfg = concurrency_config();
-    cfg.models
-        .get_mut("m")
-        .expect("member")
-        .effective_profiles = None;
+    cfg.models.get_mut("m").expect("member").effective_profiles = None;
     let ((), logs) = crate::test_support::capture_logs(|| {
         cfg.warn_on_role_capacity_mismatch();
     });
@@ -914,11 +914,24 @@ fn viability_models() -> std::collections::HashMap<String, crate::config::ModelE
 #[test]
 fn viability_all_resident_passing_matches_legacy() {
     let models = viability_models();
-    let members = vec!["aaa_first".to_string(), "mmm_mid".to_string(), "zzz_big".to_string()];
+    let members = vec![
+        "aaa_first".to_string(),
+        "mmm_mid".to_string(),
+        "zzz_big".to_string(),
+    ];
     let all_resident = |_: &str| true;
-    let viable = super::select_viable_member("g", &members, &models, Some(1), Some(&all_resident as &dyn Fn(&str) -> bool));
+    let viable = super::select_viable_member(
+        "g",
+        &members,
+        &models,
+        Some(1),
+        Some(&all_resident as &dyn Fn(&str) -> bool),
+    );
     let legacy = super::select_role_member("g", &members, &models, Some(1));
-    assert_eq!(viable, legacy, "all-resident-passing must stay byte-identical");
+    assert_eq!(
+        viable, legacy,
+        "all-resident-passing must stay byte-identical"
+    );
     assert_eq!(viable.as_deref(), Some("aaa_first"));
 }
 
@@ -926,9 +939,19 @@ fn viability_all_resident_passing_matches_legacy() {
 fn viability_resident_passing_beats_lexicographic_first() {
     let models = viability_models();
     // Lexicographic-first key fails complexity and is cold; viable pick skips it.
-    let members = vec!["aaa_first".to_string(), "mmm_mid".to_string(), "zzz_big".to_string()];
+    let members = vec![
+        "aaa_first".to_string(),
+        "mmm_mid".to_string(),
+        "zzz_big".to_string(),
+    ];
     let resident = |key: &str| key != "aaa_first";
-    let picked = super::select_viable_member("g", &members, &models, Some(5), Some(&resident as &dyn Fn(&str) -> bool));
+    let picked = super::select_viable_member(
+        "g",
+        &members,
+        &models,
+        Some(5),
+        Some(&resident as &dyn Fn(&str) -> bool),
+    );
     assert_eq!(picked.as_deref(), Some("mmm_mid"));
 }
 
@@ -937,7 +960,11 @@ fn viability_none_passing_returns_cheapest() {
     let models = viability_models();
     let members = vec!["mmm_mid".to_string(), "zzz_big".to_string()];
     let picked = super::select_viable_member("g", &members, &models, Some(9), None);
-    assert_eq!(picked.as_deref(), Some("mmm_mid"), "nothing passes: cheapest wins");
+    assert_eq!(
+        picked.as_deref(),
+        Some("mmm_mid"),
+        "nothing passes: cheapest wins"
+    );
 }
 
 #[test]
@@ -947,7 +974,11 @@ fn viability_never_returns_non_member() {
         vec!["aaa_first".to_string()],
         vec!["mmm_mid".to_string(), "zzz_big".to_string()],
         vec!["last".to_string()],
-        vec!["aaa_first".to_string(), "last".to_string(), "zzz_big".to_string()],
+        vec![
+            "aaa_first".to_string(),
+            "last".to_string(),
+            "zzz_big".to_string(),
+        ],
     ];
     for (i, members) in groups.iter().enumerate() {
         for complexity in [None, Some(1), Some(5), Some(9)] {
@@ -992,20 +1023,96 @@ fn viability_calibration_matrix_locks_threshold() {
         expected_legacy: &'static str,
         control: bool,
     }
-    let s = |v: &[&str]| v.iter().map(std::string::ToString::to_string).collect::<Vec<_>>();
+    let s = |v: &[&str]| {
+        v.iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+    };
     let cases = vec![
-        Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(1), resident: s(&["aaa_first", "mmm_mid", "zzz_big"]), probe: true, expected_viable: "aaa_first", expected_legacy: "aaa_first", control: true },
-        Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["mmm_mid", "zzz_big"]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: true },
-        Case { members: s(&["zzz_big"]), complexity: Some(8), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "zzz_big", control: true },
-        Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "mmm_mid", control: false },
-        Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&["zzz_big"]), probe: true, expected_viable: "zzz_big", expected_legacy: "mmm_mid", control: false },
-        Case { members: s(&["aaa_first", "mmm_mid", "zzz_big"]), complexity: Some(5), resident: s(&[]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
+        Case {
+            members: s(&["aaa_first", "mmm_mid", "zzz_big"]),
+            complexity: Some(1),
+            resident: s(&["aaa_first", "mmm_mid", "zzz_big"]),
+            probe: true,
+            expected_viable: "aaa_first",
+            expected_legacy: "aaa_first",
+            control: true,
+        },
+        Case {
+            members: s(&["mmm_mid", "zzz_big"]),
+            complexity: Some(5),
+            resident: s(&["mmm_mid", "zzz_big"]),
+            probe: true,
+            expected_viable: "mmm_mid",
+            expected_legacy: "mmm_mid",
+            control: true,
+        },
+        Case {
+            members: s(&["zzz_big"]),
+            complexity: Some(8),
+            resident: s(&["zzz_big"]),
+            probe: true,
+            expected_viable: "zzz_big",
+            expected_legacy: "zzz_big",
+            control: true,
+        },
+        Case {
+            members: s(&["aaa_first", "mmm_mid", "zzz_big"]),
+            complexity: Some(5),
+            resident: s(&["zzz_big"]),
+            probe: true,
+            expected_viable: "zzz_big",
+            expected_legacy: "mmm_mid",
+            control: false,
+        },
+        Case {
+            members: s(&["mmm_mid", "zzz_big"]),
+            complexity: Some(5),
+            resident: s(&["zzz_big"]),
+            probe: true,
+            expected_viable: "zzz_big",
+            expected_legacy: "mmm_mid",
+            control: false,
+        },
+        Case {
+            members: s(&["aaa_first", "mmm_mid", "zzz_big"]),
+            complexity: Some(5),
+            resident: s(&[]),
+            probe: true,
+            expected_viable: "mmm_mid",
+            expected_legacy: "mmm_mid",
+            control: false,
+        },
         // Note: `select_role_member` now delegates to the viable rule, so its
         // sentinel-only answer is viable too (the M1 behavior change). The
         // pre-M1 lexicographic answer would have been `aaa_first`.
-        Case { members: s(&["last"]), complexity: Some(5), resident: s(&[]), probe: false, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
-        Case { members: s(&["last"]), complexity: Some(9), resident: s(&[]), probe: false, expected_viable: "aaa_first", expected_legacy: "aaa_first", control: false },
-        Case { members: s(&["mmm_mid", "zzz_big"]), complexity: Some(9), resident: s(&["mmm_mid", "zzz_big"]), probe: true, expected_viable: "mmm_mid", expected_legacy: "mmm_mid", control: false },
+        Case {
+            members: s(&["last"]),
+            complexity: Some(5),
+            resident: s(&[]),
+            probe: false,
+            expected_viable: "mmm_mid",
+            expected_legacy: "mmm_mid",
+            control: false,
+        },
+        Case {
+            members: s(&["last"]),
+            complexity: Some(9),
+            resident: s(&[]),
+            probe: false,
+            expected_viable: "aaa_first",
+            expected_legacy: "aaa_first",
+            control: false,
+        },
+        Case {
+            members: s(&["mmm_mid", "zzz_big"]),
+            complexity: Some(9),
+            resident: s(&["mmm_mid", "zzz_big"]),
+            probe: true,
+            expected_viable: "mmm_mid",
+            expected_legacy: "mmm_mid",
+            control: false,
+        },
     ];
     let mut control_total = 0;
     let mut control_unchanged = 0;

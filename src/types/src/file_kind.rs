@@ -66,6 +66,23 @@ impl FileKind {
             _ => None,
         }
     }
+
+    /// Coarse [`super::FileType`] bucket for this ingest kind — the single
+    /// shared bridge table between the two taxonomies (the only match; the
+    /// `FileType::from_kind` spelling delegates here). Deliberately lossy:
+    /// `Text` folds `rst`/`txt`/`html` in with `Markdown`, and `Image` maps
+    /// to `Unknown` because the structure-rendering side has no image
+    /// variant. Never used for ingest dispatch — that reads the kind maps
+    /// above directly.
+    #[must_use]
+    pub fn coarse_type(self) -> super::FileType {
+        match self {
+            Self::Code => super::FileType::Source,
+            Self::Text => super::FileType::Markdown,
+            Self::Data => super::FileType::Data,
+            Self::Image => super::FileType::Unknown,
+        }
+    }
 }
 
 /// Tree-sitter format for a lowercase extension (adapter authority —

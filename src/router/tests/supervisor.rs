@@ -673,5 +673,9 @@ fn free_port_parallel_reservations_do_not_collide() {
         .map(|h| h.join().expect("thread"))
         .collect();
     let uniq: std::collections::HashSet<u16> = ports.iter().copied().collect();
-    assert_eq!(uniq.len(), ports.len(), "parallel reservations collided: {ports:?}");
+    assert_eq!(
+        uniq.len(),
+        ports.len(),
+        "parallel reservations collided: {ports:?}"
+    );
 }

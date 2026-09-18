@@ -620,7 +620,11 @@ fn role_binding_synthesizes_role_profile() {
     }));
     materialize("m", &mut entry, &roles);
     let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 1, "the bound role window only — no base phantom");
+    assert_eq!(
+        profiles.len(),
+        1,
+        "the bound role window only — no base phantom"
+    );
     let work = profiles
         .iter()
         .find(|p| p.name.as_deref() == Some("work"))
@@ -2244,7 +2248,11 @@ fn from_json_str_reports_true_location_for_unknown_fields() {
         err.to_string().contains("model_groups"),
         "error names the retired section, got: {err}"
     );
-    assert_eq!((err.line(), err.column()), (3, 22), "true location, got: {err}");
+    assert_eq!(
+        (err.line(), err.column()),
+        (3, 22),
+        "true location, got: {err}"
+    );
 
     let stale_terminal = r#"{
         "models": {},
@@ -2258,8 +2266,7 @@ fn from_json_str_reports_true_location_for_unknown_fields() {
             ]
         }}
     }"#;
-    let err =
-        RouterConfig::from_json_str(stale_terminal).expect_err("stale terminal must fail");
+    let err = RouterConfig::from_json_str(stale_terminal).expect_err("stale terminal must fail");
     assert!(
         err.to_string().contains("`group`"),
         "error names the retired field, got: {err}"

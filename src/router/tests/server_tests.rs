@@ -105,8 +105,7 @@ mod server_tests {
     #[test]
     fn warmup_targets_cover_pinned_and_default_windows() {
         let (models, roles, routes) = warmup_tables();
-        let targets =
-            crate::server::warmup_targets(&models, &roles, &routes, "local");
+        let targets = crate::server::warmup_targets(&models, &roles, &routes, "local");
         // Pinned ledger plus both quick siblings through the default route's
         // terminal role — unpinned scratch/tiny/plain windows stay lazy.
         assert_eq!(

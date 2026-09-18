@@ -441,7 +441,7 @@ pub fn expand_role_keys(
     is_running: &dyn Fn(&str) -> bool,
     min_complexity: Option<u8>,
 ) -> Vec<String> {
-use crate::config::RoleMember;
+    use crate::config::RoleMember;
     if !routing.roles.contains_key(role) {
         return Vec::new();
     }
@@ -521,8 +521,7 @@ use crate::config::RoleMember;
         );
         (viable, false, false)
     };
-    let mut out: Vec<String> =
-        Vec::with_capacity(raw.len() + usize::from(last_pick.is_some()));
+    let mut out: Vec<String> = Vec::with_capacity(raw.len() + usize::from(last_pick.is_some()));
     let mut seen: HashSet<String> = HashSet::new();
     let push = |key: &str, out: &mut Vec<String>, seen: &mut HashSet<String>| {
         if seen.insert(key.to_string()) {

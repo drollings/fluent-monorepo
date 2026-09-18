@@ -9,9 +9,7 @@ pub use fluent_knowledge::assembler::{AssembledPrompt, LedgerPromptAssembler};
 pub use fluent_knowledge::lod_policy::{
     parse_tiers, LodSpec, PromptBudget, RelevanceSignal, WorkerContext,
 };
-pub use fluent_knowledge::selector::{
-    CosineRankSelector, FidelitySelector, UniformSelector,
-};
+pub use fluent_knowledge::selector::{CosineRankSelector, FidelitySelector, UniformSelector};
 
 #[cfg(test)]
 #[path = "../../tests/ledger_prompt.rs"]

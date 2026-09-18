@@ -336,9 +336,7 @@ impl ClassificationNode {
     fn collect_terminals(&self, out: &mut Vec<(String, String)>) {
         match self {
             ClassificationNode::Terminal {
-                route,
-                description,
-                ..
+                route, description, ..
             } => out.push((route.clone(), description.clone())),
             ClassificationNode::Classifier { children, .. } => {
                 for child in children {

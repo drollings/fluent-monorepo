@@ -399,7 +399,10 @@ fn derive_label_edges_empty_unicode_whitespace() {
     // truncate_utf8 cuts at 64 bytes then appends '…' (3 bytes); '。' is not
     // a first_sentence splitter, so the whole text is one sentence.
     assert!(label.len() <= 67, "capped at 64+ellipsis: {label}");
-    assert!(uni.starts_with(label.trim_end_matches('…')), "label prefixes content");
+    assert!(
+        uni.starts_with(label.trim_end_matches('…')),
+        "label prefixes content"
+    );
     // Whitespace-only: no sentence → falls back to truncated content or role.
     let ws = derive_label("assistant", "   ");
     assert!(ws == "assistant" || ws.trim().is_empty() || ws == "   ");

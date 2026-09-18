@@ -87,12 +87,12 @@ pub use runtime::block_on;
 pub use shell::{run_capture, run_command, run_shell_capture, shell_cmd, CommandOutput};
 pub use sort::{dedup_sorted, sorted_by_vec, sorted_vec};
 pub use string::{
-    ascii_alnum_tokens, collapse_whitespace, contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
-    detect_identifier_kind, extract_tag, filter_unsafe_chars, find_subseq, first_comment_line,
-    first_sentence, has_extension, is_noisy_comment, is_path_token, is_test_path,
-    looks_like_identifier, lower_into, skill_name_from_ref, slugify, strip_boilerplate,
-    strip_nl_prefix, trim_doc_prefix, trim_left, trim_right, truncate_at_sentence, AnsiStripper,
-    IdentifierKind, STOP_WORDS,
+    ascii_alnum_tokens, collapse_whitespace, contains_any, contains_any_word, contains_ident_word,
+    contains_ignore_case, contains_word, detect_identifier_kind, extract_tag, filter_unsafe_chars,
+    find_subseq, first_comment_line, first_sentence, has_extension, is_noisy_comment,
+    is_path_token, is_test_path, looks_like_identifier, lower_into, skill_name_from_ref, slugify,
+    strip_boilerplate, strip_nl_prefix, trim_doc_prefix, trim_left, trim_right,
+    truncate_at_sentence, AnsiStripper, IdentifierKind, STOP_WORDS,
 };
 pub use time::now_secs;
 pub use walk::{

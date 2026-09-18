@@ -8,7 +8,10 @@ fn role_from(json: serde_json::Value) -> RoleEntry {
 #[test]
 fn role_models_list_deserializes() {
     let role = role_from(serde_json::json!({"models": ["fast", "small"]}));
-    assert_eq!(role.effective_models(), vec!["fast".to_string(), "small".to_string()]);
+    assert_eq!(
+        role.effective_models(),
+        vec!["fast".to_string(), "small".to_string()]
+    );
     assert!(role.escalation.is_none());
 }
 

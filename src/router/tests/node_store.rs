@@ -1055,15 +1055,15 @@ fn lazy_tiers_derive_from_lod0_never_chained() {
     // M10.1: LOD1–4 derive directly from LOD0, never chained. Pre-fill lower
     // tiers with markers; the derived tier must equal LOD0 (not a marker),
     // markers intact, exactly one model call for two requests (at-most-once).
-    struct EchoCounting {        calls: std::sync::atomic::AtomicUsize,
+    struct EchoCounting {
+        calls: std::sync::atomic::AtomicUsize,
     }
     impl fluent_llm::client::ChatBackend for EchoCounting {
         fn chat_complete(
             &self,
             messages: &[fluent_llm::ChatMessage],
         ) -> Result<String, fluent_llm::LlmError> {
-            self.calls
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(messages
                 .iter()
                 .find(|m| m.role == "user")
