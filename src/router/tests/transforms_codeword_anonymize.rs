@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
 
 fn make_request_with_matches(text: &str, matches: &[MatchEntry]) -> RouterRequest {
     let mut req = RouterRequest {

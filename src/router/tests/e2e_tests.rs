@@ -12,8 +12,8 @@ use crate::pipeline::{PipelineOrchestrator, PipelineResult};
 use crate::pipeline_types::{PipelineStage, StageVerdict};
 use crate::testing::mock::TranscriptProvider;
 use crate::testing::test_request;
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
 use fluent_llm::client::ChatBackend;
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
 use fluent_wvr::prelude::*;
 
 fn make_request(text: &str) -> RouterRequest {

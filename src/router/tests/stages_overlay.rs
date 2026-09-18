@@ -1,7 +1,7 @@
 use super::*;
 use crate::pipeline_types::{PipelineStage, StageDecision};
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
 use fluent_llm::backend::{OverlayContribution, OverlayError};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
 
 fn interlingua_confidence(conf: Option<f64>) -> spacy_rs::routing::InterlinguaSignal {
     spacy_rs::routing::InterlinguaSignal {

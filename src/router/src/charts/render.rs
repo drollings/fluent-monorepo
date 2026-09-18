@@ -74,7 +74,7 @@ fn build_environment() -> minijinja::Environment<'static> {
 pub fn sanitize_entity_value(v: serde_json::Value) -> serde_json::Value {
     match v {
         serde_json::Value::String(s) => {
-            serde_json::Value::String(escape_template_markers(&sanitize_string(&s)))
+            serde_json::Value::String(escape_template_markers(&strip_controls_for_template(&s)))
         }
         serde_json::Value::Array(items) => {
             serde_json::Value::Array(items.into_iter().map(sanitize_entity_value).collect())
@@ -88,8 +88,10 @@ pub fn sanitize_entity_value(v: serde_json::Value) -> serde_json::Value {
     }
 }
 
-/// Truncate, strip HTML/control chars/NUL, and collapse whitespace runs.
-fn sanitize_string(s: &str) -> String {
+/// Truncate, strip HTML/control chars/NUL, and collapse whitespace runs —
+/// the control-strip half of template-bound value preparation (the other
+/// half is [`escape_template_markers`]).
+fn strip_controls_for_template(s: &str) -> String {
     // Strip HTML tags (incl. <script>/<style>) + collapse whitespace — the
     // canonical untrusted-text sanitizer for LLM-bound content.
     let stripped = common_core::string::strip_html(s);
@@ -159,7 +161,7 @@ pub fn render(template: &str, ctx: &RenderContext) -> Result<String, ChartError>
         })
         .collect();
     let render_ctx = RenderContext {
-        request: sanitize_string(&ctx.request),
+        request: strip_controls_for_template(&ctx.request),
         deps: sanitized_deps,
         upstream: ctx.upstream.clone(),
         chart: ctx.chart.clone(),

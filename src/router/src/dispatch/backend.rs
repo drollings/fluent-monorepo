@@ -393,6 +393,10 @@ pub struct OpenAiChatBackend {
     client: reqwest::Client,
     endpoint_url: String,
     api_key: Option<String>,
+    /// Injected async runtime for the stream fan-out tasks (no ambient
+    /// `tokio::spawn` — spawned work stays visible to the owner's shutdown
+    /// and capability accounting).
+    runtime: Arc<dyn fluent_wvr::Runtime>,
 }
 
 impl OpenAiChatBackend {
@@ -401,6 +405,7 @@ impl OpenAiChatBackend {
             client,
             endpoint_url: endpoint_url.into(),
             api_key: None,
+            runtime: fluent_concurrency::tokio_runtime(),
         }
     }
 
@@ -409,6 +414,14 @@ impl OpenAiChatBackend {
     #[must_use]
     pub fn with_api_key(mut self, api_key: Option<String>) -> Self {
         self.api_key = api_key;
+        self
+    }
+
+    /// Route stream fan-out tasks through `runtime` (tests substitute a
+    /// recording runtime to prove the routing).
+    #[must_use]
+    pub fn with_runtime(mut self, runtime: Arc<dyn fluent_wvr::Runtime>) -> Self {
+        self.runtime = runtime;
         self
     }
 }
@@ -530,6 +543,7 @@ impl DispatchBackend for OpenAiChatBackend {
         let url = dispatch_url(&self.endpoint_url);
         let client = self.client.clone();
         let api_key_env = self.api_key.clone();
+        let runtime = self.runtime.clone();
         let model_for_task = model.clone();
         let request_id = uuid_v4();
 
@@ -599,7 +613,7 @@ impl DispatchBackend for OpenAiChatBackend {
             let answer_for_task = answer.clone();
             let abort_for_task = abort.clone();
 
-            tokio::spawn(async move {
+            runtime.spawn(Box::pin(async move {
                 let mut handler = StreamingHandler::new(&request_id, &model_for_task)
                     .with_filter_thinking(filter_thinking);
                 let mut buf = Vec::new();
@@ -718,7 +732,7 @@ impl DispatchBackend for OpenAiChatBackend {
                 if sent_first_chunk {
                     let _ = tx.send_data(Bytes::from(handler.format_done())).await;
                 }
-            });
+            }));
 
             Ok(StreamHandle {
                 model,
@@ -977,11 +991,24 @@ impl DispatchBackend for BackendChain {
 /// target (`RoutingTarget::from_onnx_role` sets `stream: false`).
 pub struct OnnxDispatchBackend {
     backend: Arc<dyn fluent_llm::client::ChatBackend>,
+    /// Injected async runtime for the stream fan-out task (same rationale
+    /// as `OpenAiChatBackend::runtime`).
+    runtime: Arc<dyn fluent_wvr::Runtime>,
 }
 
 impl OnnxDispatchBackend {
     pub fn new(backend: Arc<dyn fluent_llm::client::ChatBackend>) -> Self {
-        Self { backend }
+        Self {
+            backend,
+            runtime: fluent_concurrency::tokio_runtime(),
+        }
+    }
+
+    /// Route the stream fan-out task through `runtime`.
+    #[must_use]
+    pub fn with_runtime(mut self, runtime: Arc<dyn fluent_wvr::Runtime>) -> Self {
+        self.runtime = runtime;
+        self
     }
 
     /// Run the buffered completion against the onnx backend and wrap its text
@@ -1047,6 +1074,7 @@ impl DispatchBackend for OnnxDispatchBackend {
         abort: Option<StreamAbort>,
     ) -> Pin<Box<dyn Future<Output = Result<StreamHandle, DispatchError>> + Send>> {
         let backend = self.backend.clone();
+        let runtime = self.runtime.clone();
         Box::pin(async move {
             let completion =
                 Self::complete_impl(&backend, &request, &model, params.as_ref(), filter_thinking)?;
@@ -1066,7 +1094,7 @@ impl DispatchBackend for OnnxDispatchBackend {
             let answer_for_task = answer.clone();
             let request_id = uuid_v4();
             let model_for_task = model.clone();
-            tokio::spawn(async move {
+            runtime.spawn(Box::pin(async move {
                 let mut handler = StreamingHandler::new(&request_id, &model_for_task)
                     .with_filter_thinking(filter_thinking);
                 let _ = tx
@@ -1074,7 +1102,7 @@ impl DispatchBackend for OnnxDispatchBackend {
                     .await;
                 let _ = tx.send_data(Bytes::from(handler.format_done())).await;
                 answer_for_task.finalize(content);
-            });
+            }));
             Ok(StreamHandle {
                 model,
                 body,

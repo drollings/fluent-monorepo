@@ -193,11 +193,13 @@ pub fn init_router_logging(config: &LoggingConfig) -> Result<(), Box<dyn std::er
 
 /// Ops-stream filter: `info` (or `RUST_LOG`) with the durable audit target
 /// excluded — the audit layer owns `router.audit` exclusively so the ops and
-/// audit streams stay disjoint.
+/// audit streams stay disjoint. The retired `router.charts.audit` target is
+/// excluded from both streams (no producer emits to it; see `audit_layer`).
 fn ops_filter() -> EnvFilter {
     EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"))
         .add_directive("router.audit=off".parse().unwrap())
+        .add_directive("router.charts.audit=off".parse().unwrap())
 }
 
 /// Build a console (stderr) log layer with optional JSON formatting.
@@ -222,10 +224,11 @@ where
 
 /// Build an audit log layer (always JSON-formatted).
 ///
-/// The filter subscribes to the canonical `router.audit` target.  It also
-/// keeps `router.charts.audit=info` so chart audits still land in the file;
-/// once every producer emits through `crate::audit::AUDIT_TARGET` the
-/// second directive can be reverted.
+/// The filter subscribes to the canonical `router.audit` target only. The
+/// retired `router.charts.audit` target is deliberately NOT subscribed: no
+/// producer emits to it anymore, so a legacy event stays out of the durable
+/// file (it still passes the ops filter and stays visible there, surfacing
+/// any forgotten producer instead of silently joining the audit stream).
 fn audit_layer<S>(
     writer: tracing_appender::non_blocking::NonBlocking,
 ) -> Box<dyn Layer<S> + Send + Sync>
@@ -235,7 +238,7 @@ where
     tracing_subscriber::fmt::layer()
         .json()
         .with_writer(writer)
-        .with_filter(EnvFilter::new("router.audit=info,router.charts.audit=info"))
+        .with_filter(EnvFilter::new("router.audit=info"))
         .boxed()
 }
 

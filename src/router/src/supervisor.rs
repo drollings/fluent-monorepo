@@ -10,270 +10,39 @@
 //! every generation and management call goes through Coral Router.
 
 use std::path::{Path, PathBuf};
+
 use std::process::Stdio;
+
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
 use std::sync::{Arc, Mutex};
+
 use std::time::Duration;
 
-use common_core::registry::ConcurrentRegistry;
 use common_core::retry::{PollResult, PollWithBackoff};
+
 use tokio::io::{AsyncBufReadExt, BufReader};
+
 use tokio::process::{Child, Command};
 
-use crate::config::{InstanceProfile, RouterConfig};
-use crate::instances::instance_grammar_string;
-
 pub mod adopt;
+
 pub mod health;
+
+mod fleet;
+
+mod spec;
+
 use health::HealthProbe;
 
-/// The `llama-server` binary name resolved from `$PATH`.
-pub const LLAMA_SERVER_BIN: &str = "llama-server";
+pub use self::fleet::LlamaServerSupervisor;
 
-/// Env var that overrides the resolved `llama-server` binary path.
-pub const LLAMA_SERVER_ENV: &str = "LLAMA_SERVER";
+pub use self::spec::{
+    build_server_args, fleet_lib_dir, free_port, prepend_library_path, resolve_llama_server,
+    LlamaServerSpec, LLAMA_SERVER_BIN, LLAMA_SERVER_ENV,
+};
 
-/// How long a freshly-spawned server has to answer `/health`.
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Poll interval while waiting for `/health`.
-const HEALTH_POLL: Duration = Duration::from_secs(1);
-
-/// Resolve the `llama-server` binary path: the `LLAMA_SERVER` env override
-/// first, then a `$PATH` search. `None` when not found.
-pub fn resolve_llama_server() -> Option<PathBuf> {
-    if let Some(explicit) = std::env::var_os(LLAMA_SERVER_ENV) {
-        return Some(PathBuf::from(explicit));
-    }
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(LLAMA_SERVER_BIN);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-/// Reserve a free localhost port (bind `:0`, read the port, drop the listener).
-/// The returned port is a hint - a race is possible but practically negligible
-/// at boot time.
-pub fn free_port() -> Option<u16> {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .ok()
-        .and_then(|l| l.local_addr().ok())
-        .map(|a| a.port())
-}
-
-/// Everything needed to spawn and supervise one model's `llama-server`.
-#[derive(Debug, Clone)]
-pub struct LlamaServerSpec {
-    /// Coral Router model id (public).
-    pub model_key: String,
-    /// llama.cpp model name (`--alias`; also the server's primary model id).
-    pub name: String,
-    /// Local GGUF path (`-m`). `None` uses `hf_repo`.
-    pub weights: Option<String>,
-    /// HuggingFace repo (`-hf`).
-    pub hf_repo: Option<String>,
-    /// HuggingFace file within `hf_repo` (`-hff`), optional.
-    pub hf_file: Option<String>,
-    /// Local chat-template file (`--chat-template-file`), from the model
-    /// entry's `template` (explicit config wins over GGUF-baked metadata).
-    /// `None` leaves the server default untouched.
-    pub template: Option<String>,
-    /// Localhost port the server binds.
-    pub port: u16,
-    /// The declared instance pool (`--instance` grammar flags). Only pinned
-    /// profiles are declared at spawn; unpinned instances are created on
-    /// demand by the sidecar.
-    pub instances: Vec<InstanceProfile>,
-    /// Whether the model is spawned at boot: true when it declares at least
-    /// one pinned instance. Models without a pinned instance are loaded on
-    /// demand by the router (see `LlamaServerSupervisor::ensure_running`).
-    pub boot: bool,
-    /// `--slot-save-path` for KV snapshots.
-    pub slot_save_path: Option<String>,
-    /// `--api-key` for the server's management + generation endpoints.
-    pub api_key: Option<String>,
-    /// `--instance-wait` (group wait seconds); `None` keeps the server default.
-    pub instance_wait_s: Option<i64>,
-    /// Per-model spawn defaults: the fleet run block overlaid with the
-    /// model's own launch knobs (`RouterConfig::spawn_defaults_for`) —
-    /// batch sizes, KV cache types, flash attention, GPU offload, and the
-    /// plain-model context size.
-    pub defaults: crate::config::RoleParams,
-    /// Additional raw args passed through verbatim.
-    pub extra_args: Vec<String>,
-}
-
-impl LlamaServerSpec {
-    /// Build the spec for a managed model entry on `port`.
-    pub fn from_entry(
-        model_key: &str,
-        entry: &crate::config::ModelEntry,
-        port: u16,
-        slot_save_path: Option<String>,
-        api_key: Option<String>,
-        defaults: crate::config::RoleParams,
-    ) -> Self {
-        let instances = entry.effective_pool().to_vec();
-        let boot = instances.iter().any(|p| p.pinned);
-        Self {
-            model_key: model_key.to_string(),
-            name: entry.llama_model_name(model_key),
-            weights: entry.weights.clone(),
-            hf_repo: entry.hf_repo.clone(),
-            hf_file: entry.hf_file.clone(),
-            template: entry.template.clone(),
-            port,
-            instances,
-            boot,
-            slot_save_path,
-            api_key,
-            instance_wait_s: None,
-            defaults,
-            extra_args: Vec::new(),
-        }
-    }
-}
-
-/// Library directory pinned onto a spawned server's `LD_LIBRARY_PATH`: the
-/// canonicalized parent of the `llama-server` binary. Canonicalization
-/// matters because the binary is usually reached through a symlink chain
-/// (`~/.local/bin` -> `/app/bin` -> the fork's `build-coral/bin`); the `.so`
-/// files live beside the real binary, not beside the symlink. `None` when the
-/// path cannot be canonicalized — the spawn then inherits the ambient
-/// environment unchanged.
-pub fn fleet_lib_dir(bin: &Path) -> Option<PathBuf> {
-    std::fs::canonicalize(bin)
-        .ok()?
-        .parent()
-        .map(Path::to_path_buf)
-}
-
-/// Prepend `dir` to an `LD_LIBRARY_PATH`-style value, preserving any
-/// inherited entries (ROCm, system) behind it. Pure and unit-tested.
-pub fn prepend_library_path(
-    dir: &Path,
-    existing: Option<std::ffi::OsString>,
-) -> std::ffi::OsString {
-    let mut out = dir.as_os_str().to_os_string();
-    if let Some(rest) = existing.filter(|s| !s.is_empty()) {
-        out.push(":");
-        out.push(rest);
-    }
-    out
-}
-
-/// Render the exact argv for a spawned server (unit-testable, no side effects).
-///
-/// A model with a `weights` path loads it via `-m`; an `hf_repo` loads
-/// on-demand via `-hf`/`-hff`. A `template` path loads it via
-/// `--chat-template-file` (explicit config wins over GGUF-baked metadata). Per-model run defaults (the fleet block
-/// overlaid with the model's own launch knobs) are always emitted so every
-/// managed server runs identically; a plain model (no instance pool) also
-/// gets its resolved context size and idle-sleep timeout. Only **pinned**
-/// instance profiles are declared as `--instance` flags at spawn — unpinned
-/// instances are created on demand by the sidecar. `--slot-save-path` and
-/// `--api-key` enable snapshots and auth.
-pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
-    let mut args = vec![
-        "--host".into(),
-        "127.0.0.1".into(),
-        "--port".into(),
-        spec.port.to_string(),
-    ];
-    if !spec.name.is_empty() {
-        args.push("--alias".into());
-        args.push(spec.name.clone());
-    }
-    if let Some(weights) = &spec.weights {
-        args.push("-m".into());
-        args.push(weights.clone());
-    }
-    if let Some(repo) = &spec.hf_repo {
-        args.push("-hf".into());
-        args.push(repo.clone());
-    }
-    if let Some(file) = &spec.hf_file {
-        args.push("-hff".into());
-        args.push(file.clone());
-    }
-    if let Some(template) = &spec.template {
-        args.push("--chat-template-file".into());
-        args.push(template.clone());
-    }
-    // Role run defaults (the "how a model is run" contract).
-    args.push("--batch-size".into());
-    args.push(spec.defaults.batch_size.to_string());
-    args.push("--ubatch-size".into());
-    args.push(spec.defaults.ubatch_size.to_string());
-    args.push("--cache-type-k".into());
-    args.push(spec.defaults.cache_type_k.clone());
-    args.push("--cache-type-v".into());
-    args.push(spec.defaults.cache_type_v.clone());
-    if let Some(mode) = &spec.defaults.flash_attn {
-        args.push("--flash-attn".into());
-        args.push(mode.clone());
-    }
-    args.push("--n-gpu-layers".into());
-    args.push(spec.defaults.n_gpu_layers.to_string());
-    if spec.defaults.n_cpu_moe > 0 {
-        args.push("--n-cpu-moe".into());
-        args.push(spec.defaults.n_cpu_moe.to_string());
-    }
-    // Only pinned instances are declared at spawn; unpinned instances are
-    // created on demand by the sidecar (see InstanceManager::ensure_instance).
-    // Exception: a pool with NO pinned instance (an all-lazy model) declares
-    // its full grammar so the server registers `/instances` and the model is
-    // trackable the moment it is loaded on demand — there is no resident anchor
-    // whose VRAM a declaration would waste.
-    let any_pinned = spec.instances.iter().any(|p| p.pinned);
-    for profile in &spec.instances {
-        if any_pinned && !profile.pinned {
-            continue;
-        }
-        args.push("--instance".into());
-        args.push(instance_grammar_string(std::slice::from_ref(profile)));
-    }
-    // A plain model (no instance pool) takes its resolved context size and
-    // idle-sleep timeout from the per-model spawn defaults.
-    if spec.instances.is_empty() {
-        args.push("--ctx-size".into());
-        args.push(spec.defaults.num_ctx.to_string());
-        args.push("--sleep-idle-seconds".into());
-        args.push(spec.defaults.sleep_idle_seconds.to_string());
-    }
-    if let Some(path) = &spec.slot_save_path {
-        args.push("--slot-save-path".into());
-        args.push(path.clone());
-    }
-    if let Some(key) = &spec.api_key {
-        args.push("--api-key".into());
-        args.push(key.clone());
-    }
-    if let Some(wait) = spec.instance_wait_s {
-        args.push("--instance-wait".into());
-        args.push(wait.to_string());
-    }
-    args.extend(spec.extra_args.iter().cloned());
-    args
-}
-
-/// Backoff between restart attempts: 1s, 2s, 4s, ... capped at 64s.
-///
-/// M3: delegates to the shared no-jitter capped-exponential schedule
-/// (`common_core::retry::capped_exp_backoff_ms` with base 1s, max shift 6).
-/// The schedule is deliberately jitter-free — jitter would change restart
-/// timing. Locked element-wise by the M3.1 golden test below.
-fn restart_backoff(consecutive_failures: u32) -> Duration {
-    Duration::from_millis(common_core::retry::capped_exp_backoff_ms(
-        1000,
-        consecutive_failures,
-        6,
-    ))
-}
+pub(crate) use self::spec::{build_shared_client, restart_backoff, HEALTH_POLL, HEALTH_TIMEOUT};
 
 /// One supervised server: the spawn spec, its localhost address, and the shared
 /// process state guarded for the supervision task.
@@ -281,6 +50,12 @@ pub struct ManagedServer {
     spec: LlamaServerSpec,
     base_url: String,
     inner: Arc<ServerInner>,
+    /// Injected async runtime for the supervision task and the child
+    /// stdio log pumps (no ambient `tokio::spawn` — spawned work stays
+    /// visible to the owner's shutdown and capability accounting).
+    /// Abort/stop/unload semantics are unchanged: the supervision handle's
+    /// `AbortHandle` accounting is identical, only the spawner differs.
+    runtime: Arc<dyn fluent_wvr::Runtime>,
 }
 
 struct ServerInner {
@@ -340,6 +115,7 @@ impl ManagedServer {
         Self {
             spec,
             base_url,
+            runtime: fluent_concurrency::tokio_runtime(),
             inner: Arc::new(ServerInner {
                 child: Mutex::new(None),
                 child_pid: Mutex::new(None),
@@ -355,6 +131,14 @@ impl ManagedServer {
                 liveness_failures_before_restart,
             }),
         }
+    }
+
+    /// Route supervision/log-pump tasks through `runtime` (tests substitute
+    /// a recording runtime to prove the routing).
+    #[must_use]
+    pub fn with_runtime(mut self, runtime: Arc<dyn fluent_wvr::Runtime>) -> Self {
+        self.runtime = runtime;
+        self
     }
 
     pub fn spec(&self) -> &LlamaServerSpec {
@@ -497,9 +281,9 @@ impl ManagedServer {
                 let me = Arc::clone(self);
                 let bin = bin.to_path_buf();
                 let client = Arc::new(client.clone());
-                let handle = tokio::spawn(async move {
+                let handle = self.runtime.spawn(Box::pin(async move {
                     me.supervise(bin, client).await;
-                });
+                }));
                 *guard = Some(handle.abort_handle());
             }
         }
@@ -690,7 +474,7 @@ impl ManagedServer {
                 // Log the server's output (best-effort, detached).
                 if let Some(out) = stdout {
                     let tag = self.spec.model_key.clone();
-                    tokio::spawn(async move {
+                    self.runtime.spawn(Box::pin(async move {
                         let mut reader = BufReader::new(out);
                         let mut line = String::new();
                         while reader.read_line(&mut line).await.is_ok() && !line.is_empty() {
@@ -702,11 +486,11 @@ impl ManagedServer {
                             );
                             line.clear();
                         }
-                    });
+                    }));
                 }
                 if let Some(err) = stderr {
                     let tag = self.spec.model_key.clone();
-                    tokio::spawn(async move {
+                    self.runtime.spawn(Box::pin(async move {
                         let mut reader = BufReader::new(err);
                         let mut line = String::new();
                         while reader.read_line(&mut line).await.is_ok() && !line.is_empty() {
@@ -718,7 +502,7 @@ impl ManagedServer {
                             );
                             line.clear();
                         }
-                    });
+                    }));
                 }
                 tracing::info!(
                     target: "router.supervisor",
@@ -995,317 +779,6 @@ impl ManagedServer {
     }
 }
 
-fn build_shared_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .pool_idle_timeout(Duration::from_secs(30))
-        .tcp_keepalive(Duration::from_secs(30))
-        .user_agent("coral-router")
-        .build()
-        .expect("reqwest client build")
-}
-
-/// The supervisor: one [`ManagedServer`] per managed model.
-pub struct LlamaServerSupervisor {
-    bin: PathBuf,
-    servers: ConcurrentRegistry<String, ManagedServer>,
-    /// Per-boot adoption records (see `adopt.rs`). Keyed by model key;
-    /// verified against the entry's live adopted pid on read (a dead orphan
-    /// replaced by a fresh child self-heals to `None`).
-    adoptions: std::sync::Mutex<std::collections::HashMap<String, adopt::AdoptionInfo>>,
-    http_client: Arc<reqwest::Client>,
-}
-
-impl LlamaServerSupervisor {
-    /// Look up a managed server by key. A key gathered from `servers.keys()`
-    /// can vanish under a concurrent eviction, so the miss is a typed boot
-    /// error the caller propagates — never a panic on the serving path.
-    fn live_server(&self, key: &str) -> Result<Arc<ManagedServer>, String> {
-        self.servers
-            .get(&key.to_string())
-            .ok_or_else(|| format!("model '{key}' evicted during boot"))
-    }
-
-    /// Resolve the binary and build one server per managed model (`weights` /
-    /// `hf_repo` / `instances` declared), each on its own free localhost port.
-    /// Fails fast when `llama-server` is not found on `$PATH`.
-    pub fn build(config: &RouterConfig) -> Result<Self, String> {
-        let bin = resolve_llama_server().ok_or_else(|| {
-            format!(
-                "llama-server binary not found in $PATH (set the {LLAMA_SERVER_ENV} env var or install it)"
-            )
-        })?;
-        let api_key = config
-            .sidecar
-            .api_key_env
-            .as_deref()
-            .map(std::env::var)
-            .and_then(Result::ok)
-            .filter(|k| !k.is_empty());
-        // `--slot-save-path` must name an existing directory: llama-server
-        // rejects a nonexistent path at argv-parse time and exits, which would
-        // crash-loop every managed server (and with it the whole boot). Resolve
-        // the directory once here; if it cannot be created (e.g. an unwritable
-        // mount), snapshots are disabled for every managed server — the flag is
-        // omitted entirely rather than handed to a process that will die on it.
-        let slot_save_path = match &config.sidecar.slot_save_path {
-            Some(dir) => match fluent_wvr::capability::capability_aware_fs::create_dir_all(dir) {
-                Ok(()) => Some(dir.clone()),
-                Err(e) => {
-                    tracing::warn!(
-                        target: "router.supervisor",
-                        slot_save_path = %dir,
-                        error = %e,
-                        "slot-save-path create failed (snapshots disabled)",
-                    );
-                    None
-                }
-            },
-            None => None,
-        };
-        let servers = ConcurrentRegistry::new();
-        let mut keys: Vec<&String> = config.models.keys().collect();
-        keys.sort();
-        let liveness_poll = Duration::from_secs(config.sidecar.liveness_poll_interval_s);
-        let liveness_failures = config.sidecar.liveness_failures_before_restart;
-        for key in keys {
-            let entry = &config.models[key];
-            // Onnx models are router-managed but NOT llama-managed: the ort
-            // registry serves them, so the
-            // supervisor must never spawn a llama-server for one.
-            if !entry.is_managed() {
-                continue;
-            }
-            let port = free_port().ok_or_else(|| "no free localhost port".to_string())?;
-            let spec = LlamaServerSpec::from_entry(
-                key,
-                entry,
-                port,
-                slot_save_path.clone(),
-                api_key.clone(),
-                config.spawn_defaults_for(key),
-            );
-            servers.insert(
-                key.clone(),
-                ManagedServer::with_liveness(
-                    spec,
-                    liveness_poll,
-                    liveness_failures,
-                    config.sidecar.max_restarts,
-                ),
-            );
-        }
-        tracing::info!(
-            target: "router.supervisor",
-            binary = %bin.display(),
-            server_count = servers.len(),
-            "llama-server supervisor built",
-        );
-        Ok(Self {
-            bin,
-            servers,
-            adoptions: std::sync::Mutex::new(std::collections::HashMap::new()),
-            http_client: Arc::new(build_shared_client()),
-        })
-    }
-
-    /// Register a non-running test server for `model_key` (no process is
-    /// spawned; management traffic goes wherever the caller's client points).
-    /// Test-only: lets hermetic tests drive adapter paths that need a
-    /// `ManagedServer` handle without a real `llama-server` binary.
-    #[cfg(test)]
-    pub fn register_test_server(&self, model_key: &str) {
-        let spec = LlamaServerSpec {
-            model_key: model_key.to_string(),
-            name: model_key.to_string(),
-            weights: None,
-            hf_repo: None,
-            hf_file: None,
-            template: None,
-            port: 1,
-            instances: Vec::new(),
-            boot: false,
-            slot_save_path: None,
-            api_key: None,
-            instance_wait_s: None,
-            defaults: crate::config::RoleParams::default(),
-            extra_args: Vec::new(),
-        };
-        self.servers.insert(
-            model_key.to_string(),
-            ManagedServer::with_liveness(spec, std::time::Duration::from_secs(30), 3, 5),
-        );
-    }
-
-    #[cfg(test)]
-    pub fn with_client_for_test(bin: PathBuf, client: reqwest::Client) -> Self {
-        Self {
-            bin,
-            servers: ConcurrentRegistry::new(),
-            adoptions: std::sync::Mutex::new(std::collections::HashMap::new()),
-            http_client: Arc::new(client),
-        }
-    }
-
-    /// The resolved binary path.
-    pub fn bin(&self) -> &Path {
-        &self.bin
-    }
-
-    /// The server for a model id.
-    pub fn server_for(&self, model_key: &str) -> Option<Arc<ManagedServer>> {
-        self.servers.get(&model_key.to_string())
-    }
-
-    /// The management base URL for a model id.
-    pub fn base_url_for(&self, model_key: &str) -> Option<String> {
-        self.server_for(model_key).map(|s| s.base_url().to_string())
-    }
-
-    /// Every managed model key.
-    pub fn model_keys(&self) -> Vec<String> {
-        self.servers.keys()
-    }
-
-    /// Spawn every **boot** managed server and wait for each to become healthy.
-    /// Only models declaring at least one pinned instance are booted; the rest
-    /// (lazy models) are loaded on demand via [`Self::ensure_running`]. Spawns
-    /// happen first (processes load weights concurrently), then health is
-    /// awaited in parallel, so boot time is bounded by the slowest boot model
-    /// rather than the sum. Returns the first health failure so boot aborts
-    /// loudly (a boot model that cannot load its weights must not be silently
-    /// skipped).
-    ///
-    /// Entries adopted by [`Self::adopt_orphans`] (run before this) skip the
-    /// spawn — the live process is already on the entry's port — but still get
-    /// a supervision task and a health gate, so a dead-on-arrival orphan fails
-    /// boot loudly instead of lingering.
-    pub async fn start_all(self: &Arc<Self>) -> Result<(), String> {
-        let bin = self.bin.clone();
-        let mut keys: Vec<String> = self.servers.keys();
-        keys.sort();
-        let mut boot_keys = Vec::new();
-        for key in &keys {
-            let server = self.live_server(key)?;
-            if !server.spec.boot {
-                tracing::info!(
-                    target: "router.supervisor",
-                    model = %key,
-                    "model deferred - no pinned instance, loaded on demand",
-                );
-                continue;
-            }
-            boot_keys.push(key.clone());
-            if server.is_adopted() {
-                // The orphan is already listening on the entry's port: no
-                // spawn, just supervision + the health gate below.
-                server.inner.running.store(true, Ordering::Relaxed);
-            } else {
-                server.spawn_child(&bin);
-                server.inner.running.store(true, Ordering::Relaxed);
-            }
-            let client = Arc::clone(&self.http_client);
-            let handle = {
-                let me = Arc::clone(&server);
-                let bin = bin.clone();
-                tokio::spawn(async move {
-                    me.supervise(bin, client).await;
-                })
-            };
-            let supervisor_guard = server.inner.supervisor.lock();
-            if let Ok(mut guard) = supervisor_guard {
-                *guard = Some(handle.abort_handle());
-            }
-        }
-        // Await every boot server's /health concurrently; the first failure
-        // aborts (lazy models are not health-checked at boot).
-        let client = Arc::clone(&self.http_client);
-        let mut health = Vec::new();
-        for key in &boot_keys {
-            let server = self.live_server(key)?;
-            let client = Arc::clone(&client);
-            health
-                .push(async move { (key.clone(), server.wait_healthy_with_client(&client).await) });
-        }
-        for fut in health {
-            let (key, result) = fut.await;
-            if let Err(e) = result {
-                return Err(format!("model '{key}': {e}"));
-            }
-        }
-        Ok(())
-    }
-
-    /// Load a model on demand: spawn its `llama-server` (if not already
-    /// running) and wait for `/health`. Returns `None` when the model is not
-    /// managed. Used by the dispatch path before targeting a lazy model.
-    pub async fn ensure_running(&self, model_key: &str) -> Result<(), String> {
-        let server = self
-            .servers
-            .get(&model_key.to_string())
-            .ok_or_else(|| format!("model '{model_key}' is not managed by the supervisor"))?;
-        server
-            .ensure_running_with_client(&self.bin, &self.http_client)
-            .await
-    }
-
-    /// Whether a managed model's server is currently running. `None` when the
-    /// model is not managed.
-    pub fn is_running(&self, model_key: &str) -> Option<bool> {
-        self.servers
-            .get(&model_key.to_string())
-            .map(|s| s.is_running())
-    }
-
-    /// Whether a managed model's entry currently drives an adopted (non-child)
-    /// process. `false` for spawned children and unknown models.
-    pub fn is_adopted(&self, model_key: &str) -> bool {
-        self.servers
-            .get(&model_key.to_string())
-            .is_some_and(|s| s.is_adopted())
-    }
-
-    /// Unload a model's server on demand (frees its VRAM). The spec stays
-    /// registered so [`Self::ensure_running`] can re-load it later.
-    pub async fn unload(&self, model_key: &str) {
-        if let Some(server) = self.servers.get(&model_key.to_string()) {
-            server.unload().await;
-        }
-    }
-
-    /// Stop every managed server (used on shutdown).
-    pub async fn shutdown(&self) {
-        let mut keys: Vec<String> = self.servers.keys();
-        keys.sort();
-        for key in &keys {
-            if let Some(server) = self.servers.get(key) {
-                server.stop().await;
-            }
-        }
-    }
-}
-
-impl Drop for LlamaServerSupervisor {
-    fn drop(&mut self) {
-        // Best-effort process cleanup when the supervisor is dropped outside an
-        // async context (each child has kill_on_drop(true), so dropping the
-        // supervision task's child handle kills the process).
-        for key in self.servers.keys() {
-            if let Some(server) = self.servers.get(&key) {
-                server.inner.stopping.store(true, Ordering::Relaxed);
-                if let Some(handle) = server
-                    .inner
-                    .supervisor
-                    .lock()
-                    .ok()
-                    .and_then(|mut g| g.take())
-                {
-                    handle.abort();
-                }
-            }
-        }
-    }
-}
 #[cfg(test)]
 #[path = "../tests/supervisor.rs"]
 mod tests;

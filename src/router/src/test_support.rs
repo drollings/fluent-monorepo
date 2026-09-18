@@ -128,3 +128,47 @@ pub(crate) fn capture_logs<T>(f: impl FnOnce() -> T) -> (T, Vec<String>) {
         .unwrap_or_default();
     (result, logs)
 }
+
+/// A `Runtime` that counts `spawn` calls and delegates everything to an
+/// inner runtime (production `tokio` by default). Proves spawn-site routing:
+/// behavior is identical to the inner runtime, so existing behavior tests
+/// stay green while the count pins which runtime a site used.
+pub(crate) struct CountingRuntime {
+    inner: Arc<dyn fluent_wvr::Runtime>,
+    spawns: std::sync::atomic::AtomicUsize,
+}
+
+impl CountingRuntime {
+    pub(crate) fn new(inner: Arc<dyn fluent_wvr::Runtime>) -> Self {
+        Self {
+            inner,
+            spawns: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    pub(crate) fn spawn_count(&self) -> usize {
+        self.spawns.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl fluent_wvr::Runtime for CountingRuntime {
+    fn spawn(
+        &self,
+        future: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>,
+    ) -> tokio::task::JoinHandle<()> {
+        self.spawns
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.spawn(future)
+    }
+
+    fn sleep(
+        &self,
+        duration: std::time::Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        self.inner.sleep(duration)
+    }
+
+    fn now(&self) -> std::time::Instant {
+        self.inner.now()
+    }
+}

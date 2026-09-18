@@ -33,13 +33,14 @@ use super::{
     expand_role_keys, expanded_candidates_for_role, RoleRecency, TargetBackends, TargetMatcher,
 };
 use crate::config::{
-    split_model_key, ConfidenceGate, FilterOutcome, FilterScope, InstanceProfile, ModelEntry,
-    PatternEntry, RoleEntry, RoleMember, RouteRef, RoutingConfig,
+    ConfidenceGate, FilterOutcome, FilterScope, InstanceProfile, ModelEntry, PatternEntry,
+    RoleEntry, RoleMember, RouteRef, RoutingConfig,
 };
 use crate::filters::{
     regex_filter::RegexFilter, DeterministicFilterEngine, FilterContext, FilterDecision,
 };
 use crate::test_stubs::{CountingBackend, StubChatBackend};
+use fluent_types::model_key::split_model_key;
 
 // ─── Case plumbing ───────────────────────────────────────────────────────────
 

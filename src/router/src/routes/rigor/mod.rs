@@ -43,10 +43,10 @@ use crate::config::RigorConfig;
 use crate::dag_session::{DependencySession, SessionStep, StepResult};
 use crate::dispatch::escalation::LocalBackend;
 use crate::ledger::prompt::{LedgerPromptAssembler, LodSpec, PromptBudget, WorkerContext};
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 use crate::server::handler::ServerDeps;
 use crate::server::responses::{empty_response, HyperResponse};
-use crate::views::{FilteredLedger, LedgerView, Lod, ParallelLedger};
+use fluent_knowledge::views::{FilteredLedger, LedgerView, Lod, ParallelLedger};
 
 use prompts::{
     blue_answer, blue_retry_prompt, chat, dead_end_node_ids, derive_interview, is_reject,
@@ -65,9 +65,9 @@ pub struct RigorContext {
     /// `None` degrades to a sessionless run (no checkpoint, no rewind, no
     /// red-team ledger view).
     pub session: Option<Arc<Mutex<DependencySession>>>,
-    /// The shared `ContentNodeLedger` whose store the red team reads at LOD0.
+    /// The shared `ContentNodeStore` whose nodes the red team reads at LOD0.
     /// `None` degrades the red pass to the blue answer only.
-    pub ledger: Option<Arc<ContentNodeLedger>>,
+    pub ledger: Option<Arc<ContentNodeStore>>,
     /// The named instance the blue pass served on. `Some` lets the
     /// blue-pass completion record a fork KV snapshot on it; `None` skips the
     /// save (degrade, never a crash).
@@ -468,7 +468,7 @@ impl RigorRoute {
         let Some(ledger) = &ctx.ledger else {
             return String::new();
         };
-        let store = ledger.node_store().clone();
+        let store = Arc::clone(ledger);
         let base = ParallelLedger::for_session(store, &ctx.session_id).with_default_lod(Lod::LOD0);
         let excluded = dead_end_node_ids(ctx);
         FilteredLedger::new(base, excluded).render()
@@ -508,7 +508,7 @@ impl RigorRoute {
         let Some(ledger) = &ctx.ledger else {
             return String::new();
         };
-        let store = ledger.node_store().clone();
+        let store = Arc::clone(ledger);
         let view = ParallelLedger::for_session(store, &ctx.session_id);
         let assembled = assembler.assemble(
             &view,

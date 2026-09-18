@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::filters::FilterOutcome;
 use fluent_llm::prompt::{render_available_routes, RouteEntry};
+use fluent_wvr::{Describable, FieldAccess};
 
 /// The interlingua match for a `Filter` node: a
 /// deterministic dispatch on the request's parsed predicate/subject/object
@@ -380,6 +381,91 @@ impl ClassificationNode {
         }
     }
 }
+/// The classifier's parsed LLM output. `FieldAccess` + the `#[field(...)]`
+/// coercions make the struct the single source of truth for the boundary
+/// decode path (`fluent_wvr::boundary::decode_boundary`): the `coerce`/`parse`
+/// modes shape the raw model value strings exactly as the repair walker does,
+/// so both decode paths share one vocabulary.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, FieldAccess, Describable)]
+pub struct ClassifierOutput {
+    #[field(desc = "classifier action", coerce = "strip_quotes,trim")]
+    pub action: String,
+    #[field(desc = "direct response text", coerce = "strip_quotes,trim")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<String>,
+    #[field(desc = "routing target", coerce = "strip_quotes,trim")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[field(
+        desc = "coherence score",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
+    pub coherence_score: f64,
+    #[field(
+        desc = "safety score",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
+    pub safety_score: f64,
+    #[field(
+        desc = "complexity",
+        min = 0.0,
+        max = 10.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complexity: Option<u8>,
+    #[field(desc = "intent", coerce = "strip_quotes,trim,normalize_literal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    #[field(desc = "routing reason", coerce = "strip_quotes,trim")]
+    pub reason: String,
+    #[field(
+        desc = "completeness",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completeness: Option<f64>,
+    #[field(
+        desc = "risk",
+        min = 0.0,
+        max = 1.0,
+        coerce = "strip_quotes,trim",
+        parse = "number"
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<f64>,
+}
+
+/// What the classifier stage does when its LLM call fails or its response
+/// cannot be parsed. The safe default is `Reject`: the router
+/// must never convert a classifier outage into a maximum-confidence dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassifierFailurePolicy {
+    /// Return `StageVerdict::Rejected` with a truthful reason (no fabricated
+    /// scores).
+    Reject,
+    /// Route to the configured default route, but with scores that reflect the
+    /// failure (coherence/safety = 0.0) and a `reason` stating the error.
+    RouteToDefaultTruthful,
+}
+
+/// Safe default for `RouterConfig.classifier_failure_policy`: reject on
+/// classifier failure rather than route on fabricated scores.
+pub(crate) fn default_classifier_failure_policy() -> ClassifierFailurePolicy {
+    ClassifierFailurePolicy::Reject
+}
+
 #[cfg(test)]
 #[path = "../../tests/config_classification.rs"]
 mod tests;

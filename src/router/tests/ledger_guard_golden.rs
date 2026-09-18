@@ -5,7 +5,7 @@ fn emit_write_audit_on_flagged() {
     let ((), logs) = capture_logs(|| {
         // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm`
         // sidecars of a deleted main file would otherwise be left behind).
-        let ledger = crate::ledger::ContentNodeLedger::open_in_memory().unwrap();
+        let ledger = crate::node_store::ContentNodeStore::open_in_memory().unwrap();
         ledger
             .record_request("sess", "req", "Contact user@example.com now")
             .unwrap();

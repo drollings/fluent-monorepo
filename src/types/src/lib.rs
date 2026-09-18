@@ -10,6 +10,7 @@ pub mod instance_id;
 pub mod interlingua;
 pub mod knowledge;
 pub mod label_enum;
+pub mod model_key;
 pub mod model_ref;
 pub mod openai_wire;
 pub mod provenance;

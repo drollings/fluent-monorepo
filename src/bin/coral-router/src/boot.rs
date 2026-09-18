@@ -18,7 +18,7 @@ use coral_context::db::Library;
 use fluent_concept::{ConceptStore, TaxonomyHierarchy};
 use fluent_router::concept_store_sqlite::SqliteConceptStore;
 use fluent_router::config::RouterConfig;
-use fluent_router::ledger::ContentNodeLedger;
+use fluent_router::node_store::ContentNodeStore;
 use fluent_types::{ContentNode, NodeId};
 use guidance_ontology::yago::WHITELIST_IRIS;
 use guidance_ontology::yago_loader::YaGoLoader;
@@ -28,17 +28,17 @@ use guidance_ontology::yago_loader::YaGoLoader;
 /// in-memory fallback) and attaches the summarizer; when no `ledger` section is
 /// configured the boot still opens an in-memory ledger so nlp/review/overlay
 /// (which require a shared SQLite connection) have a backing store.
-pub fn open_ledger(config: &RouterConfig) -> Result<Arc<ContentNodeLedger>, String> {
+pub fn open_ledger(config: &RouterConfig) -> Result<Arc<ContentNodeStore>, String> {
     let ledger = match &config.ledger {
         Some(ledger_cfg) => {
             let opened = match &ledger_cfg.path {
-                Some(path) => ContentNodeLedger::open(path),
+                Some(path) => ContentNodeStore::open(path),
                 None => {
                     tracing::warn!(
                         target: "coral-router",
                         "ledger section has no path - using an in-memory ledger (ephemeral)",
                     );
-                    ContentNodeLedger::open_in_memory()
+                    ContentNodeStore::open_in_memory()
                 }
             };
             let ledger = opened.map_err(|e| format!("fatal: ledger open failed: {e}"))?;
@@ -71,7 +71,7 @@ pub fn open_ledger(config: &RouterConfig) -> Result<Arc<ContentNodeLedger>, Stri
                 "nlp/review/overlay configured without a `ledger` section - using an in-memory ledger (ephemeral)",
             );
             Arc::new(
-                ContentNodeLedger::open_in_memory()
+                ContentNodeStore::open_in_memory()
                     .map_err(|e| format!("ledger open failed: {e}"))?,
             )
         }
@@ -96,9 +96,8 @@ pub struct ConceptStoreBoot {
 /// Build the shared concept store + correction index over `ledger`'s shared
 /// connection and reconcile YaGO across the two homes. `ledger` must be
 /// durable-backed (shared SQLite present).
-pub fn build_concept_store_boot(ledger: &ContentNodeLedger) -> Result<ConceptStoreBoot, String> {
+pub fn build_concept_store_boot(ledger: &ContentNodeStore) -> Result<ConceptStoreBoot, String> {
     let shared_sqlite = ledger
-        .node_store()
         .shared_sqlite()
         .expect("ledger must have shared sqlite for the concept store");
     let concept_store = Arc::new(SqliteConceptStore::new(Arc::clone(&shared_sqlite)));
@@ -272,11 +271,8 @@ pub fn load_yago_and_reconcile(
 /// Build a `SqliteConceptStore` over the shared ledger connection (the boot
 /// composition seam). Returns `None` when the ledger has no durable backing.
 #[allow(dead_code)]
-pub fn sqlite_store_from_ledger(ledger: &ContentNodeLedger) -> Option<SqliteConceptStore> {
-    ledger
-        .node_store()
-        .shared_sqlite()
-        .map(SqliteConceptStore::new)
+pub fn sqlite_store_from_ledger(ledger: &ContentNodeStore) -> Option<SqliteConceptStore> {
+    ledger.shared_sqlite().map(SqliteConceptStore::new)
 }
 
 #[cfg(test)]
@@ -288,7 +284,7 @@ mod tests {
     #[test]
     fn embedded_taxonomy_reconciles_across_two_homes() {
         let coral = Library::open_in_memory().expect("coral in-memory");
-        let ledger = ContentNodeLedger::open_in_memory().expect("ledger in-memory");
+        let ledger = ContentNodeStore::open_in_memory().expect("ledger in-memory");
         let store = sqlite_store_from_ledger(&ledger).expect("shared sqlite");
 
         let stats = load_yago_and_reconcile(&coral, &store).expect("reconcile");
@@ -315,7 +311,7 @@ mod tests {
         // A store that silently gained a row (or a loader that was never fed
         // to it) must fail the boot loudly instead of silently diverging.
         let coral = Library::open_in_memory().expect("coral in-memory");
-        let ledger = ContentNodeLedger::open_in_memory().expect("ledger in-memory");
+        let ledger = ContentNodeStore::open_in_memory().expect("ledger in-memory");
         let store = sqlite_store_from_ledger(&ledger).expect("shared sqlite");
         load_yago_and_reconcile(&coral, &store).expect("first reconcile");
 
@@ -346,7 +342,7 @@ mod tests {
     #[test]
     fn collision_tolerant_reconciliation_passes() {
         let coral = Library::open_in_memory().expect("coral in-memory");
-        let ledger = ContentNodeLedger::open_in_memory().expect("ledger in-memory");
+        let ledger = ContentNodeStore::open_in_memory().expect("ledger in-memory");
         let store = sqlite_store_from_ledger(&ledger).expect("shared sqlite");
         load_yago_and_reconcile(&coral, &store).expect("first reconcile");
 
@@ -391,7 +387,7 @@ mod tests {
 
     #[test]
     fn shared_sqlite_is_one_connection() {
-        let ledger = ContentNodeLedger::open_in_memory().expect("ledger in-memory");
+        let ledger = ContentNodeStore::open_in_memory().expect("ledger in-memory");
         let store = sqlite_store_from_ledger(&ledger).expect("shared sqlite");
         // The store shares the ledger's connection: a concept written through
         // the SqliteConceptStore is visible to the ledger's own connection.

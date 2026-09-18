@@ -69,6 +69,9 @@ pub struct DispatchDeps {
     /// into the embedding-keyed library through it (best-effort, default-off).
     /// `None` leaves the escalation ladder byte-identical.
     pub workflow_recorder: Option<Arc<crate::ledger::workflow_replay::WorkflowRecorder>>,
+    /// Injected async runtime for the detached abort-watcher task (no
+    /// ambient `tokio::spawn`).
+    pub runtime: Arc<dyn fluent_wvr::Runtime>,
 }
 
 /// Per-role admission gates for `roles.<role>.max_parallel`:
@@ -425,7 +428,8 @@ async fn dispatch_to_single_target(
             let model = target.model.clone();
             let url = target.url.clone();
             let id_slot = target.id_slot;
-            tokio::spawn(async move {
+            let runtime = deps.runtime.clone();
+            runtime.spawn(Box::pin(async move {
                 abort_watch.cancelled().await;
                 crate::audit::emit(
                     "stream",
@@ -445,7 +449,7 @@ async fn dispatch_to_single_target(
                         "management abort best-effort"
                     );
                 }
-            });
+            }));
         }
 
         let result = backend

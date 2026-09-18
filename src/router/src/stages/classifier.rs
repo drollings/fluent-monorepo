@@ -103,15 +103,19 @@ fn classifier_response_format() -> serde_json::Value {
     })
 }
 
-/// Sanitize a classifier JSON blob by filling in missing required fields
+/// Repair a classifier JSON blob by filling in missing required fields
 /// with defaults, and coercing string-valued numbers back to numeric.
 /// This lets partial or slightly malformed responses (common from smaller LLMs)
 /// survive parsing instead of falling back to the default route.
 ///
+/// This is the `sanitize` callback of the shared `fluent_llm::parse_typed`
+/// tolerant codec (see `parse_classifier_response`): fence-stripping and
+/// extraction live in the codec, field repair lives here.
+///
 /// The field-coercion lives in the shared `stages::common` helpers (the
 /// "surviving normalization" both this stage and the tree engine use).
 /// Route-name guessing is gone — the classification tree replaces it.
-fn sanitize_classifier_json(v: &mut serde_json::Value) {
+fn repair_classifier_json(v: &mut serde_json::Value) {
     if let Some(obj) = v.as_object_mut() {
         coerce_float(obj, "coherence_score", 1.0);
         coerce_float(obj, "safety_score", 1.0);
@@ -161,7 +165,7 @@ fn parse_classifier_response(
     match fluent_llm::parse_typed::<ClassifierOutput>(
         response,
         &serde_json::Value::Null,
-        sanitize_classifier_json,
+        repair_classifier_json,
     ) {
         Ok(o) => {
             // `true` iff the raw text directly deserialized (the codec's fast
@@ -262,7 +266,7 @@ fn try_boundary_decode(response: &str, default_route: &str) -> Option<Classifier
 /// - Returns `ok == true`: the prose is a complete answer, so it must NOT be
 ///   flagged as a retryable fallback (`fallback: false` in the decision
 ///   metadata) — a corrective re-prompt would discard the good answer.
-/// - Scores mirror `sanitize_classifier_json`'s defaults for a `respond` that
+/// - Scores mirror `repair_classifier_json`'s defaults for a `respond` that
 ///   omitted scores (coherence 1.0, safety 1.0), so the output passes the
 ///   thresholds exactly like a pristine respond would.
 fn prose_as_respond(response: &str) -> Option<ClassifierOutput> {

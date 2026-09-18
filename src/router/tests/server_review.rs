@@ -78,10 +78,10 @@ impl PiiSpanDetector for FailingPrefilter {
 }
 
 /// Poll the parse node until the atomic `review_status` write lands.
-async fn wait_for_reviewed(ledger: &Arc<ContentNodeLedger>, node_id: NodeId) {
+async fn wait_for_reviewed(ledger: &Arc<ContentNodeStore>, node_id: NodeId) {
     for _ in 0..100 {
         let reviewed = ledger
-            .get_node(node_id)
+            .snapshot(node_id)
             .and_then(|n| n.metadata)
             .is_some_and(|m| m.get("review_status").is_some());
         if reviewed {
@@ -94,11 +94,11 @@ async fn wait_for_reviewed(ledger: &Arc<ContentNodeLedger>, node_id: NodeId) {
 
 #[tokio::test]
 async fn miss_writes_correction_and_parse_review_node_atomically() {
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "show me the report")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
 
     // The real router CorrectionIndex over the shared connection — the
     // production shape (F4: spacy-rs defines the trait, the router
@@ -156,7 +156,7 @@ async fn miss_writes_correction_and_parse_review_node_atomically() {
     assert_eq!(review_count, 1, "parse_review node written on miss");
 
     // 3. The `review_status` overlay landed on the parse node.
-    let node = ledger.get_node(node_id).expect("parse node");
+    let node = ledger.snapshot(node_id).expect("parse node");
     let status = node
         .metadata
         .as_ref()
@@ -260,11 +260,11 @@ fn candidate_concepts_resolves_parse_lemmas_and_falls_back() {
 
 #[tokio::test]
 async fn reuse_skips_the_llm() {
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "show me the report")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared));
     let concepts = Arc::new(InMemoryConceptStore::new());
 
@@ -323,11 +323,11 @@ async fn reuse_skips_the_llm() {
 /// (never a drop), and the recorded `review_status` must carry the spans.
 #[tokio::test]
 async fn prefilter_adds_candidates_never_drops_a_manual_job() {
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "show me hunter2 the report")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared));
     let concepts = Arc::new(InMemoryConceptStore::new());
     let fetch: ReviewFetch = Arc::new(|_prompt| Ok(CORRECTIONS_REPLY.into()));
@@ -356,7 +356,7 @@ async fn prefilter_adds_candidates_never_drops_a_manual_job() {
     wait_for_reviewed(&ledger, node_id).await;
     worker.drain().await;
 
-    let node = ledger.get_node(node_id).expect("parse node");
+    let node = ledger.snapshot(node_id).expect("parse node");
     let status = node
         .metadata
         .as_ref()
@@ -375,11 +375,11 @@ async fn prefilter_adds_candidates_never_drops_a_manual_job() {
 
 #[tokio::test]
 async fn failing_prefilter_never_blocks_manual_enqueue() {
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "show me the report")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared));
     let concepts = Arc::new(InMemoryConceptStore::new());
     let fetch: ReviewFetch = Arc::new(|_prompt| Ok(CORRECTIONS_REPLY.into()));
@@ -401,7 +401,7 @@ async fn failing_prefilter_never_blocks_manual_enqueue() {
         .expect("fail-open: still enqueues");
     wait_for_reviewed(&ledger, node_id).await;
     worker.drain().await;
-    let node = ledger.get_node(node_id).expect("parse node");
+    let node = ledger.snapshot(node_id).expect("parse node");
     assert!(
         node.metadata
             .as_ref()
@@ -413,11 +413,11 @@ async fn failing_prefilter_never_blocks_manual_enqueue() {
 
 #[tokio::test]
 async fn auto_enqueue_flags_spans_and_enqueues_through_the_credit_gate() {
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "hunter2 is a secret")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared));
     let concepts = Arc::new(InMemoryConceptStore::new());
     let fetch: ReviewFetch = Arc::new(|_prompt| Ok(CORRECTIONS_REPLY.into()));
@@ -442,18 +442,18 @@ async fn auto_enqueue_flags_spans_and_enqueues_through_the_credit_gate() {
     assert!(enqueued, "flagged content auto-enqueues");
     wait_for_reviewed(&ledger, node_id).await;
     worker.drain().await;
-    let node = ledger.get_node(node_id).expect("parse node");
+    let node = ledger.snapshot(node_id).expect("parse node");
     let status = node.metadata.as_ref().and_then(|m| m.get("review_status"));
     assert!(status.is_some(), "the auto-enqueued job reviewed the parse");
 }
 
 #[tokio::test]
 async fn auto_enqueue_does_not_fire_without_spans_or_when_disabled() {
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "nothing sensitive")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared));
     let concepts = Arc::new(InMemoryConceptStore::new());
     let fetch: ReviewFetch = Arc::new(|_prompt| Ok(CORRECTIONS_REPLY.into()));
@@ -511,11 +511,11 @@ async fn auto_enqueue_does_not_fire_without_spans_or_when_disabled() {
 async fn review_promotes_matching_entity_link_candidates() {
     use crate::ledger::overlay::{CandidateStatus, OverlayCandidateStore};
 
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "who is Ada Lovelace?")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared.clone()));
     let concepts = Arc::new(InMemoryConceptStore::new());
 
@@ -585,11 +585,11 @@ async fn review_promotes_matching_entity_link_candidates() {
 async fn fenced_reply_recovers_corrections() {
     // M2.7: the intended widening — a fence-wrapped LLM reply is recovered
     // by the tolerant codec (previously fail-open with no corrections).
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "show me the report")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
 
     let index = Arc::new(SqliteCorrectionIndex::new(shared.clone()));
     let concepts = Arc::new(InMemoryConceptStore::new());
@@ -625,11 +625,11 @@ async fn garbage_reply_fails_open_with_no_corrections() {
     // no corrections, no parse_review node, but the parse is still marked
     // reviewed. Must pass unchanged after the tolerant-codec migration
     // (pure garbage has no JSON value for the codec to recover).
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let node_id = ledger
         .record_request("s1", "r1", "show me the report")
         .expect("parse node");
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
 
     let index = Arc::new(SqliteCorrectionIndex::new(shared.clone()));
     let concepts = Arc::new(InMemoryConceptStore::new());
@@ -667,7 +667,7 @@ async fn garbage_reply_fails_open_with_no_corrections() {
         .expect("row");
     assert_eq!(review_count, 0, "no parse_review node for empty review");
 
-    let node = ledger.get_node(node_id).expect("parse node");
+    let node = ledger.snapshot(node_id).expect("parse node");
     let status = node
         .metadata
         .as_ref()

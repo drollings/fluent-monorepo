@@ -5,8 +5,8 @@
 //! filter verdicts, route decisions, dispatch attempts, and
 //! escalation-ladder interactions — emits through [`emit`] into it. Audit
 //! *kinds* are distinguished by the `kind` structured field, never by a second
-//! dot-namespace (the `router.charts.audit` target predates this module and is
-//! being retired).
+//! dot-namespace (the `router.charts.audit` target predates this module, is
+//! retired, and is not subscribed by the audit layer).
 
 /// The single `tracing` target the durable audit layer subscribes to.
 pub const AUDIT_TARGET: &str = "router.audit";

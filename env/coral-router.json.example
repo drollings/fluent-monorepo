@@ -29,8 +29,8 @@
         "num_ctx": 8192,
         "batch_size": 2048,
         "ubatch_size": 512,
-        "cache_type_k": "q4_0",
-        "cache_type_v": "q4_0",
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0",
         "flash_attn": "on",
         "n_gpu_layers": 999,
         "n_cpu_moe": 0,
@@ -292,6 +292,21 @@
             "role": "scratch",
             "description": "Prose",
             "always_route": true
+          }
+        },
+        {
+          "key": "fallback",
+          "description": "Catch-all when no other branch fits; answered as general Q&A.",
+          "node": {
+            "type": "fallback",
+            "description": "Default-route fallback",
+            "node": {
+              "type": "terminal",
+              "route": "local",
+              "role": "quick",
+              "description": "General Q&A",
+              "always_route": true
+            }
           }
         }
       ]

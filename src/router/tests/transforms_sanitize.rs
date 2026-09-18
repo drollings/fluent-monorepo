@@ -1,6 +1,6 @@
 use super::*;
 use crate::testing::{test_request, text_of};
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 fn make_request(text: &str) -> RouterRequest {
     let mut req = test_request(text);

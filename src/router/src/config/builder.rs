@@ -40,11 +40,13 @@ use crate::pipeline::PipelineOrchestrator;
 use crate::pipeline_types::StageDecisionProducer;
 use crate::score_matrix::ScoreMatrix;
 
-/// M13 deprecation notice: the pipeline `score_matrix` /
-/// `score_matrix_authoritative` fields are deprecated control-plane surface —
-/// parsing is preserved (configs containing them still boot and run), but a
-/// config that sets either is warned at boot so deployments migrate off the
-/// surface before it is removed.
+/// Deprecation notice: the pipeline `score_matrix` /
+/// `score_matrix_authoritative` fields are a retained opt-in dispatch path —
+/// parsing is preserved (configs containing them still boot and run), and a
+/// config that sets either is warned at boot so deployments prefer the
+/// classifier's default path. The fields stay until an explicit
+/// feature-removal decision retires the matrix-authoritative routing mode
+/// they feed (the classifier stage's opt-in branch plus its goldens).
 fn warn_deprecated_score_matrix(pipeline: &str, params: &PipelineParams) {
     if params.score_matrix.is_some() {
         tracing::warn!(
@@ -139,9 +141,9 @@ pub struct PipelineParams {
     pub classifier_max_concurrency: Option<usize>,
     #[serde(default)]
     pub blacklist: Option<String>,
-    /// **Deprecated control-plane surface** (M13): parsing is preserved for
+    /// **Deprecated opt-in surface** (retained): parsing is preserved for
     /// config compatibility — a config that sets it still boots and runs —
-    /// but the field is scheduled for removal and emits a boot warning.
+    /// and boot emits a warning preferring the default classifier path.
     #[serde(default)]
     pub score_matrix: Option<ScoreMatrix>,
     /// When `true` and a `score_matrix` is configured, the matrix's
@@ -151,9 +153,9 @@ pub struct PipelineParams {
     /// as hard gates that run first. Default `false` so existing behavior
     /// and goldens are untouched until a deployment opts in.
     ///
-    /// **Deprecated control-plane surface** (M13): parsing is preserved for
-    /// config compatibility, but the field is scheduled for removal and
-    /// emits a boot warning.
+    /// **Deprecated opt-in surface** (retained): parsing is preserved for
+    /// config compatibility, and boot emits a warning preferring the default
+    /// classifier path.
     #[serde(default)]
     pub score_matrix_authoritative: bool,
     /// Maximum retry attempts for the classifier when its LLM response fails
@@ -1097,7 +1099,7 @@ fn resolve_duty_key(config: &RouterConfig, name: &str) -> String {
 fn classifier_intelligence(config: &RouterConfig, params: &PipelineParams) -> u8 {
     resolve_classifier_model_key(config, params)
         .and_then(|k| {
-            let (base, _) = crate::config::split_model_key(&k);
+            let (base, _) = fluent_types::model_key::split_model_key(&k);
             config.models.get(base)
         })
         .map_or(0, |m| m.intelligence)
@@ -1199,7 +1201,7 @@ pub(crate) fn llama_chat_backend_for_key(
     key: &str,
 ) -> Option<Arc<dyn ChatBackend>> {
     let resolved = crate::config::role_head_key(models, roles, key, true)?;
-    let (base, _) = crate::config::split_model_key(&resolved);
+    let (base, _) = fluent_types::model_key::split_model_key(&resolved);
     let entry = models.get(base)?;
     let base_name = entry.name.as_deref().unwrap_or(base);
     // One qualifier resolver for every path: explicit qualifier, else the
@@ -1242,7 +1244,7 @@ pub(crate) fn llama_chat_backend_for_instance(
     instance_or_group: &str,
 ) -> Option<Arc<dyn ChatBackend>> {
     let resolved = crate::config::role_head_key(models, roles, key, true)?;
-    let (base, _) = crate::config::split_model_key(&resolved);
+    let (base, _) = fluent_types::model_key::split_model_key(&resolved);
     let entry = models.get(base)?;
     // Resolve the named profile; an unknown instance name -> None.
     entry

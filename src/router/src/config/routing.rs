@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use super::ModelEntry;
 use super::RoleParams;
-use crate::config::split_model_key;
 use crate::config::EscalationLadderConfig;
 use crate::pipeline::RoutingTarget;
 use crate::score_matrix::ScoreMatrix;
+use fluent_types::model_key::split_model_key;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1029,6 +1029,162 @@ impl RoutingConfig {
             .collect()
     }
 }
+/// The entry-default step of the inference-point precedence: the `default:
+/// true` profile's group (unbound models keep their synthetic `base`
+/// dispatch point), else the cheapest pinned group (resident by
+/// construction — smallest window first, ties broken by group name, per the
+/// cheap-before-expensive principle), else the single shared group across
+/// all profiles, else `None` (bare `<base>`). `None` also when no pool was
+/// materialized. Runs over the boot-materialized effective pool, so unbound
+/// entries inherit the `default` role's pool through the same code path.
+/// Shared by the single precedence function below and `RoutingTarget`
+/// construction (whose entries arrive materialized) so backend model ids and
+/// dispatch wire ids agree; not a second path — the rule lives here once.
+pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
+    let profiles = entry.effective_pool();
+    if profiles.is_empty() {
+        return None;
+    }
+    if let Some(d) = profiles.iter().find(|p| p.default) {
+        return d.group.clone();
+    }
+    if let Some((group, _)) = profiles
+        .iter()
+        .filter(|p| p.pinned)
+        .filter_map(|p| p.group.as_deref().map(|g| (g, p.num_ctx)))
+        .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)))
+    {
+        return Some(group.to_string());
+    }
+    let first = profiles[0].group.clone()?;
+    if profiles
+        .iter()
+        .all(|p| p.group.as_deref() == Some(first.as_str()))
+    {
+        Some(first)
+    } else {
+        None
+    }
+}
+/// Resolve the inference point a role or model key serves, as the qualifier
+/// of the dispatch `base:qualifier` id (`None` = bare `<base>`). The single
+/// qualifier resolver — every construction path and adapter composes it, so
+/// the precedence is documented once, here:
+///
+/// 1. Explicit qualifier — embedded (`base:point`) or parametric — wins,
+///    except `latest`, which normalizes away and falls through.
+/// 2. The entry default over the boot-materialized effective pool (the
+///    `default: true` profile's group, else the cheapest pinned group, else
+///    the single shared group — `default_inference_point`).
+/// 3. Bare key (`None`): no pool materialized, or no rule matched.
+///
+/// A role carries no qualifier of its own: it resolves from the route, which
+/// selects a model from a group, and the selected model's entry default
+/// supplies the point (the caller resolves *what* serves via
+/// [`role_head_key`], then this function resolves *where* on it).
+/// Unknown roles and keys fail closed (`None`). Entries are expected
+/// boot-materialized (pools composed); pre-boot entries resolve through
+/// step 3.
+#[allow(clippy::implicit_hasher)]
+pub fn resolve_inference_point(
+    models: &HashMap<String, ModelEntry>,
+    roles: &HashMap<String, RoleEntry>,
+    role_or_key: &str,
+    qualifier: Option<&str>,
+) -> Option<String> {
+    let (base, embedded) = split_model_key(role_or_key);
+    if let Some(point) = embedded {
+        if point != "latest" {
+            return Some(point.to_string());
+        }
+    }
+    if let Some(point) = qualifier {
+        if point != "latest" {
+            return Some(point.to_string());
+        }
+    }
+    let _ = roles;
+    models.get(base).and_then(default_inference_point)
+}
+
+/// Model keys serving a role, in sorted model-key order: every model named
+/// in the role's `models` binding map that also declares a `models` entry.
+/// Membership lives on the role side — models never name roles. Empty when
+/// the role is unknown, binds nothing, or names only undeclared models (the
+/// last case warns loudly at boot via
+/// [`crate::config::root::warn_on_unknown_model_bindings`]).
+/// The single membership source for every "who serves this role" question
+/// (`role_head_key`,
+/// [`crate::config::root::RouterConfig::classifier_role_key`],
+/// `role_dispatch_members`).
+/// Pools (`materialize_effective_pool`) deliberately resolve bindings
+/// through the same map rather than this helper: params composition stays
+/// on declared pools only.
+#[allow(clippy::implicit_hasher)]
+pub fn models_serving_role(
+    roles: &HashMap<String, RoleEntry>,
+    models: &HashMap<String, ModelEntry>,
+    role: &str,
+) -> Vec<String> {
+    let mut out: Vec<String> = roles
+        .get(role)
+        .map(|entry| {
+            entry
+                .models
+                .iter()
+                .filter(|key| models.contains_key(key.as_str()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Resolve a role or model key to its serving model key: a bare role name
+/// fans out to its head candidate (sorted model-key order over the models
+/// binding to it — see [`models_serving_role`]), everything else passes
+/// through unchanged. `None` for unknown roles, roles with no bound models,
+/// and (when `require_entry` is set) keys with no `models` entry. A
+/// qualified key (`base:point`, other than `base:latest`) always passes
+/// through: it already names an instance of a concrete model, so a role
+/// sharing the base name must never swallow its qualifier. The companion
+/// to [`resolve_inference_point`]: the key identifies *what* serves, the
+/// point identifies *where* on it.
+#[allow(clippy::implicit_hasher)]
+pub fn role_head_key(
+    models: &HashMap<String, ModelEntry>,
+    roles: &HashMap<String, RoleEntry>,
+    role_or_key: &str,
+    require_entry: bool,
+) -> Option<String> {
+    let (base, qualifier) = split_model_key(role_or_key);
+    if let Some(point) = qualifier {
+        if point != "latest" {
+            if require_entry {
+                models.get(base)?;
+            }
+            return Some(role_or_key.to_string());
+        }
+    }
+    if roles.contains_key(base) {
+        let mut serving = models_serving_role(roles, models, base);
+        if serving.is_empty() {
+            return None;
+        }
+        let head = serving.remove(0);
+        if require_entry && !models.contains_key(&head) {
+            return None;
+        }
+        return Some(head);
+    }
+    if require_entry {
+        models.get(base)?;
+    }
+    Some(role_or_key.to_string())
+}
+
 #[cfg(test)]
 #[path = "../../tests/config_routing.rs"]
 mod tests;

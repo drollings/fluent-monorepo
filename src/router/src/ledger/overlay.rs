@@ -27,7 +27,8 @@ use fluent_types::{InterlinguaId, NodeId};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-use crate::ledger::{ContentNodeLedger, LedgerError};
+use crate::ledger::LedgerError;
+use crate::node_store::ContentNodeStore;
 
 /// A persisted `overlay_candidates` row projection (node, span, kind,
 /// entity, score, source, status) — kept as an ordered tuple for the store's
@@ -380,13 +381,10 @@ fn row_to_candidate(row: CandidateRow) -> OverlayCandidate {
     }
 }
 
-/// Open the candidate plane over a ledger's shared connection.
+/// Open the candidate plane over a store's shared connection.
 #[must_use]
-pub fn candidate_store(ledger: &ContentNodeLedger) -> Option<OverlayCandidateStore> {
-    ledger
-        .node_store()
-        .shared_sqlite()
-        .map(OverlayCandidateStore::new)
+pub fn candidate_store(store: &ContentNodeStore) -> Option<OverlayCandidateStore> {
+    store.shared_sqlite().map(OverlayCandidateStore::new)
 }
 #[cfg(test)]
 #[path = "../../tests/ledger_overlay.rs"]

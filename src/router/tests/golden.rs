@@ -10,7 +10,7 @@
 use crate::pipeline_types::PipelineStage;
 use crate::testing::mock::TranscriptProvider;
 use crate::testing::test_request;
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 use std::sync::Arc;
 
 use crate::config::RouterConfig;

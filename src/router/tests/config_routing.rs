@@ -984,7 +984,7 @@ fn viability_never_returns_non_member() {
         for complexity in [None, Some(1), Some(5), Some(9)] {
             let picked = super::select_viable_member("g", members, &models, complexity, None);
             if let Some(key) = picked {
-                let (base, _) = crate::config::split_model_key(&key);
+                let (base, _) = fluent_types::model_key::split_model_key(&key);
                 assert!(
                     members.iter().any(|m| m == base || m == &key) || models.contains_key(base),
                     "case {i} complexity {complexity:?}: {key} must be a member or known model"

@@ -1,10 +1,13 @@
-use super::*;
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use fluent_knowledge::views::{FilteredLedger, LedgerView, Lod, ParallelLedger};
+use fluent_types::NodeId;
+
+use crate::ledger_guard::pii_redacted_view;
 use crate::node_store::ContentNodeStore;
 use crate::summarization::Summarizer;
 use crate::test_stubs::CountingBackend;
-use crate::views::Lod;
 
 fn temp_store() -> Arc<ContentNodeStore> {
     // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
@@ -109,7 +112,7 @@ fn pii_redacted_view_scrubs_email_keeps_clean() {
         .unwrap();
 
     let base = ParallelLedger::for_session(Arc::clone(&store), "sess").with_default_lod(Lod::LOD0);
-    let view = pii_redacted(base, HashSet::new());
+    let view = pii_redacted_view(base, HashSet::new());
 
     let rendered = view.render();
     assert!(

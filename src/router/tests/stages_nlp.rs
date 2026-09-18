@@ -2,18 +2,18 @@ use super::*;
 use crate::config::builder::NlpDeps;
 use crate::config::RouterConfig;
 use crate::pipeline::PipelineResult;
-use crate::types::RouterRequest;
 use fluent_concept::ConceptStore;
 use fluent_concept::InMemoryConceptStore;
+use fluent_types::openai_wire::RouterRequest;
 
 /// A context carrying a user message (the `structured["request"]` handoff
 /// the stage reads).
 fn ctx_for(text: &str) -> WorkContext {
     let request = RouterRequest {
         model: "local".into(),
-        messages: vec![crate::types::RouterMessage {
+        messages: vec![fluent_types::openai_wire::RouterMessage {
             role: "user".into(),
-            content: crate::types::RouterMessageContent::Text(text.into()),
+            content: fluent_types::openai_wire::RouterMessageContent::Text(text.into()),
             tool_calls: None,
             tool_call_id: None,
         }],

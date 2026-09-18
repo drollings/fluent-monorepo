@@ -41,7 +41,7 @@ fn qualified_model_id_prop_roundtrip() {
     ] {
         let id = QualifiedModelId::qualified(b, q);
         let wire = id.as_wire();
-        let (pb, pq) = crate::config::split_model_key(&wire);
+        let (pb, pq) = fluent_types::model_key::split_model_key(&wire);
         assert_eq!(pb, b);
         assert_eq!(pq, Some(q));
         assert_eq!(QualifiedModelId::parse(&wire), id);

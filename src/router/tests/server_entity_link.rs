@@ -2,7 +2,7 @@ use super::*;
 use std::time::Duration;
 
 use crate::ledger::overlay::CandidateStatus;
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 use fluent_concept::InMemoryConceptStore;
 use fluent_concurrency::tokio_runtime;
 use fluent_types::{InterlinguaId, InterlinguaNamespace};
@@ -12,8 +12,8 @@ fn entity_root() -> InterlinguaId {
 }
 
 fn store() -> OverlayCandidateStore {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
-    OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"))
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
+    OverlayCandidateStore::new(ledger.shared_sqlite().expect("shared"))
 }
 
 /// A concept store whose taxonomy makes `entity_root` the parent of the

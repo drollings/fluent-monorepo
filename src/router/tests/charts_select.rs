@@ -523,3 +523,251 @@ fn parse_ambiguity_output_tolerates_fences_and_noise() {
     assert!(parse_ambiguity_output(r#"{"entity_id": ""}"#).is_none());
     assert!(parse_ambiguity_output("no json").is_none());
 }
+
+/// Chart whose name/provides tokens the query paraphrases (never names as an
+/// identifier) while a distractor out-scores it on hash similarity.
+fn spell_chart_json() -> String {
+    r#"{
+        "name": "spell_check",
+        "description": "Check spelling and grammar of a written document",
+        "schema_version": 1,
+        "author_model": "human",
+        "targets": [
+            {
+                "name": "check",
+                "provides": ["spell_report"],
+                "depends": [],
+                "template": "check {{ request }}",
+                "essential": true
+            }
+        ]
+    }"#
+    .to_string()
+}
+
+fn edge_decoy_json() -> String {
+    r#"{
+        "name": "decoy",
+        "description": "Render pages on the edge",
+        "schema_version": 1,
+        "author_model": "human",
+        "targets": [
+            {
+                "name": "render",
+                "provides": ["decoy_out"],
+                "depends": [],
+                "template": "render {{ request }}",
+                "essential": true
+            }
+        ]
+    }"#
+    .to_string()
+}
+
+fn overlap_fixture_store() -> (Arc<ChartStore>, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let store = store_with(
+        &[spell_chart_json(), edge_decoy_json()],
+        Some(&tmp.path().join("workflow_library.sqlite")),
+    );
+    (store, tmp)
+}
+
+#[test]
+fn lexical_sidecar_promotes_token_match_over_vector_winner() {
+    // Query shares two tokens with spell_check (document, spelling) vs one
+    // with the decoy (the), but hash similarity ranks the decoy first.
+    // The sidecar reorders by overlap; scores stay cosine similarities.
+    let (store, _tmp) = overlap_fixture_store();
+    let query = "review the document spelling";
+    let vector_top = store.search(query, 5).expect("vector search");
+    assert_eq!(
+        vector_top[0].0, "decoy",
+        "premise: vector-only ranks the decoy first"
+    );
+    let selector = selector(store, None, 0.0);
+    let m = selector.select(query, &[]).expect("selection");
+    assert_eq!(m.chart, "spell_check", "overlap promotes the token match");
+    assert!(
+        m.score < 1.0,
+        "retrieval path (deterministic hit would score 1.0), got {}",
+        m.score
+    );
+    let spell_sim = vector_top
+        .iter()
+        .find(|(n, _)| n == "spell_check")
+        .map(|(_, s)| f64::from(*s))
+        .expect("spell in vector hits");
+    assert!(
+        (m.score - spell_sim).abs() < 1e-6,
+        "score stays the cosine similarity ({spell_sim}), got {}",
+        m.score
+    );
+}
+
+#[test]
+fn lexical_abstention_is_vector_identical() {
+    // Zero token overlap anywhere → the pure vector path: same top chart,
+    // same similarity score as `search()`.
+    let (store, _tmp) = overlap_fixture_store();
+    let query = "zxqv wjbm plok";
+    assert!(
+        store.lexical_candidates(query).is_empty(),
+        "premise: the arm abstains"
+    );
+    let vector_top = store.search(query, 5).expect("vector search");
+    assert!(!vector_top.is_empty(), "premise: vector has candidates");
+    let selector = selector(store, None, 0.0);
+    let m = selector.select(query, &[]).expect("selection");
+    assert_eq!(m.chart, vector_top[0].0, "same top chart as vector-only");
+    assert!(
+        (m.score - f64::from(vector_top[0].1)).abs() < 1e-9,
+        "same similarity score, got {} vs {}",
+        m.score,
+        vector_top[0].1
+    );
+}
+
+/// Collision-group fixture: sibling names share the `deploy` stem, so a
+/// paraphrase query must resolve to the right sibling — never the wrong one.
+/// Descriptions are token-disjoint except where noted; provides assets carry
+/// the distinguishing vocabulary.
+fn collision_chart_json(name: &str, desc: &str, provides: &str) -> String {
+    format!(
+        r#"{{
+            "name": "{name}",
+            "description": "{desc}",
+            "schema_version": 1,
+            "author_model": "human",
+            "targets": [
+                {{
+                    "name": "t",
+                    "provides": ["{provides}"],
+                    "depends": [],
+                    "template": "do {{{{ request }}}}",
+                    "essential": true
+                }}
+            ]
+        }}"#
+    )
+}
+
+fn collision_fixture_store() -> (Arc<ChartStore>, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let store = store_with(
+        &[
+            collision_chart_json("deploy", "Deploy a service to production", "deploy_receipt"),
+            collision_chart_json(
+                "deploy_canary",
+                "Roll out a canary release gradually",
+                "canary_report",
+            ),
+            collision_chart_json(
+                "deploy_docs",
+                "Publish deployment documentation pages",
+                "docs_bundle",
+            ),
+        ],
+        Some(&tmp.path().join("workflow_library.sqlite")),
+    );
+    (store, tmp)
+}
+
+/// Calibration: precision@1 of the hybrid vs vector-only on the collision
+/// group. Measured (HashEmbedder, no LLM, min_score 0.0): vector 3/3,
+/// hybrid 3/3 — the gate is that the hybrid never regresses below the
+/// vector baseline here, and holds 1.0 absolutely.
+/// Gate: hybrid precision@1 == 1.0 — required before the lexical signal may
+/// ever feed `upsert_idempotent`. Until then subsumption stays vector-only.
+#[test]
+fn hybrid_precision_at_1_on_collision_group() {
+    let (store, _tmp) = collision_fixture_store();
+    let selector = selector(store.clone(), None, 0.0);
+    let cases = [
+        ("canary release for the new build", "deploy_canary"),
+        ("publish documentation for release", "deploy_docs"),
+        ("production service deployment", "deploy"),
+    ];
+    let mut hybrid_correct = 0;
+    let mut vector_correct = 0;
+    for (query, expected) in cases {
+        let vector_top = store.search(query, 5).expect("vector search");
+        assert!(
+            !vector_top.is_empty(),
+            "vector has candidates for {query:?}"
+        );
+        if vector_top[0].0 == expected {
+            vector_correct += 1;
+        }
+        // Step 1 must miss (no exact identifier) so retrieval decides; a
+        // deterministic hit would score exactly 1.0.
+        let m = selector.select(query, &[]).expect("selection");
+        assert!(
+            m.score < 1.0,
+            "retrieval path for {query:?}, got score {}",
+            m.score
+        );
+        if m.chart == expected {
+            hybrid_correct += 1;
+        } else {
+            panic!(
+                "hybrid mis-selected {query:?}: got {}, want {expected}",
+                m.chart
+            );
+        }
+    }
+    assert_eq!(hybrid_correct, cases.len(), "hybrid precision@1 == 1.0");
+    assert_eq!(
+        vector_correct,
+        cases.len(),
+        "measured vector baseline 3/3 — hybrid must never regress below it"
+    );
+}
+
+/// provides-vs-description: near-duplicate descriptions resolve through the
+/// provides vocabulary, not description similarity.
+#[test]
+fn provides_overlap_breaks_description_ties() {
+    let tmp = TempDir::new().unwrap();
+    let store = store_with(
+        &[
+            collision_chart_json("proof_read", "Review a document for errors", "proof_report"),
+            collision_chart_json(
+                "grammar_check",
+                "Review a document for errors",
+                "grammar_report",
+            ),
+        ],
+        Some(&tmp.path().join("workflow_library.sqlite")),
+    );
+    let selector = selector(store.clone(), None, 0.0);
+    let m = selector
+        .select("proof report for the document", &[])
+        .expect("selection");
+    assert_eq!(
+        m.chart, "proof_read",
+        "provides overlap decides description ties"
+    );
+}
+
+/// Mention-as-non-target: a query naming another chart as an identifier
+/// stays Step-1 territory — the sidecar must not silently re-route it.
+/// Pinned: exact-identifier precedence over paraphrase overlap.
+#[test]
+fn mentioned_name_keeps_step1_precedence() {
+    let (store, _tmp) = collision_fixture_store();
+    let selector = selector(store, None, 0.0);
+    let m = selector
+        .select("unlike deploy, run a canary release", &[])
+        .expect("selection");
+    assert_eq!(
+        m.chart, "deploy",
+        "exact identifier mention wins (Step 1), got {}",
+        m.chart
+    );
+    assert!(
+        (m.score - 1.0).abs() < f64::EPSILON,
+        "Step-1 hit scores 1.0, got {}",
+        m.score
+    );
+}

@@ -1,11 +1,10 @@
 //! ContentNodeStore — the shared, reference-counted, interned, durable ContentNode
 //! store.
 //!
-//! This is the surgical successor to `ContentNodeLedger`'s per-process
-//! `SqliteStore`+`Mutex<i64>` storage: nodes live once, behind
-//! `Arc<RwLock<ContentNode>>`, so every holder (parallel/filtered ledger
-//! views in later milestones) shares the same node object and a lazily-derived
-//! LOD tier is computed **at most once** and visible to all holders (VISION).
+//! Nodes live once, behind `Arc<RwLock<ContentNode>>`, so every holder
+//! (parallel/filtered ledger views) shares the same node object and a
+//! lazily-derived LOD tier is computed **at most once** and visible to all
+//! holders (VISION).
 //! Session and role indices are keyed by `ArcIntern<str>` so sharing a node
 //! across N views costs a refcount bump, not a string copy.
 //!
@@ -28,6 +27,7 @@ use fluent_db::hnsw::AdaptiveHnsw;
 use fluent_db::migrate::migrate;
 use fluent_db::store::SqliteStore;
 use fluent_db::vector::knn_brute_force;
+use fluent_knowledge::views::{LedgerView, Lod, ParallelLedger};
 use fluent_llm::client::ChatBackend;
 use fluent_llm::EmbeddingProvider;
 use fluent_types::{
@@ -74,7 +74,7 @@ pub struct ContentNodeStore {
     durable: Option<Arc<SqliteStore>>,
     /// Lazy LOD derivation. `Mutex` for interior mutability so the summarizer
     /// can be attached after the store is `Arc`-shared
-    /// (`ContentNodeLedger::with_summarizer`). The guard is never held across
+    /// (`ContentNodeStore::with_summarizer`). The guard is never held across
     /// a model call: `ensure_tier` snapshots a `Clone` under the lock and
     /// drops the guard before `summarize_text` (M15, R7), so a concurrent
     /// `set_summarizer` swaps the handle without affecting an in-flight call.
@@ -196,8 +196,8 @@ impl ContentNodeStore {
         self
     }
 
-    /// Set the summarizer on an already-shared store (the facade's
-    /// `with_summarizer` uses this through the `Arc`). Swap semantics are
+    /// Set the summarizer on an already-shared store (interior mutability
+    /// through the `Arc`). Swap semantics are
     /// snapshot-based (M15): an in-flight `ensure_tier` keeps its cloned
     /// handle and completes unaffected.
     pub fn set_summarizer(&self, summarizer: Summarizer) {
@@ -606,7 +606,7 @@ impl ContentNodeStore {
         out
     }
 
-    /// Access the durable backing (for the facade's flat view, the poison test
+    /// Access the durable backing (for the flat `LedgerEntry` view, the poison test
     /// helper, and the shared `SqliteConceptStore`/`SqliteCorrectionIndex` — all
     /// three share one connection). `None` for an ephemeral store.
     pub(crate) fn durable(&self) -> Option<&Arc<SqliteStore>> {
@@ -790,12 +790,22 @@ impl ContentNodeStore {
     /// Persist an arbitrary origin-typed `ContentNode`. LOD0/LOD5 are
     /// guaranteed present (derived from the node's text when missing). An id
     /// is allocated when `node.id` is `None`.
+    ///
+    /// A flagged LOD0 also clears LOD5 so the label re-derives from the
+    /// scrubbed text (`ensure_lod_eager` below) — a stale label must never
+    /// outlive the dirty text it was derived from.
     pub fn record_content_node(&self, node: &ContentNode) -> Result<NodeId, LedgerError> {
         let mut node = node.clone();
         // Scrub LOD0 before persistence — irreversible, always on.
         if !node.lod.is_empty() {
             let scrubbed = crate::ledger_guard::scrub_for_ledger(&node.lod[0]);
             crate::ledger_guard::emit_write_audit(&scrubbed);
+            if scrubbed.flagged {
+                while node.lod.len() < LOD5_LABEL as usize + 1 {
+                    node.lod.push(String::new());
+                }
+                node.lod[LOD5_LABEL as usize].clear();
+            }
             node.lod[0].clone_from(&scrubbed.text);
         }
         let id = if let Some(id) = node.id {
@@ -1328,6 +1338,16 @@ impl ContentNodeStore {
             .map_err(|e| LedgerError::Db(e.to_string()))
     }
 
+    /// Render a session through a `ParallelLedger` at `default_lod`. The
+    /// view's single `render()` exit. Compaction is a view-fidelity
+    /// (`active_lod`) operation: LOD0 stays authoritative and immutable, so
+    /// a LOD0 view always shows the original full text.
+    pub fn render_session(self: &Arc<Self>, session_id: &str, default_lod: Lod) -> String {
+        let view =
+            ParallelLedger::for_session(Arc::clone(self), session_id).with_default_lod(default_lod);
+        view.render()
+    }
+
     /// All node ids for a role (interned index), in insertion order.
     pub fn nodes_for_role(&self, role: &str) -> Vec<NodeId> {
         let key = ArcIntern::from(role);
@@ -1538,8 +1558,6 @@ fn update_node_row(conn: &Connection, node: &ContentNode) -> Result<(), DbError>
 }
 
 /// Build a fresh `ContentNode` with LOD0 (full text) and LOD5 (label) eager.
-/// Re-exported from `crate::ledger` so the facade's tests keep compiling
-/// unchanged.
 pub(crate) fn new_node(
     id: NodeId,
     session_id: &str,

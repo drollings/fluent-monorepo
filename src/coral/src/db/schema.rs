@@ -68,7 +68,17 @@ impl super::Library {
                     ON edges(source_node_id, target_node_id, edge_type);
                 CREATE INDEX IF NOT EXISTS idx_nodes_name ON context_nodes(name);
                 CREATE INDEX IF NOT EXISTS idx_entity_types_node ON entity_types(node_id);
-                CREATE INDEX IF NOT EXISTS idx_entity_types_iri ON entity_types(type_iri);",
+                CREATE INDEX IF NOT EXISTS idx_entity_types_iri ON entity_types(type_iri);
+
+                -- Ranked lexical recall arm (M5): plain FTS5 over the
+                -- node name/source. Plain (not content-synced): writes sync
+                -- it explicitly in the insert paths, so re-ingestion via
+                -- INSERT OR IGNORE never dupes. The backfill below is a
+                -- no-op once synced (anti-join on rowid).
+                CREATE VIRTUAL TABLE IF NOT EXISTS context_nodes_fts USING fts5(name, source);
+                INSERT INTO context_nodes_fts(rowid, name, source)
+                    SELECT id, name, source FROM context_nodes
+                    WHERE id NOT IN (SELECT rowid FROM context_nodes_fts);",
             )
             .map_err(DbError::from)?;
             Ok(())

@@ -9,7 +9,7 @@ mod tests {
     use crate::transforms::none::NoTransform;
     use crate::transforms::pii_anonymize::PiiAnonymize;
     use crate::transforms::TransformStrategy;
-    use crate::types::RouterRequest;
+    use fluent_types::openai_wire::RouterRequest;
 
     fn make_request(text: &str) -> RouterRequest {
         test_request(text)
@@ -236,7 +236,7 @@ mod tests {
     // ── Shared helper coverage (`crate::transforms` interface) ──
 
     use crate::transforms::{insert_string_map, rewrite_text_messages, TransformError};
-    use crate::types::{ContentPart, RouterMessage, RouterMessageContent};
+    use fluent_types::openai_wire::{ContentPart, RouterMessage, RouterMessageContent};
 
     fn request_with(text: &str) -> RouterRequest {
         use crate::testing::test_request;

@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{ContentPart, ImageUrl, RouterMessage, RouterMessageContent};
+use fluent_types::openai_wire::{ContentPart, ImageUrl, RouterMessage, RouterMessageContent};
 
 fn make_ctx_with_messages(messages: Vec<RouterMessage>) -> WorkContext {
     let request = RouterRequest {

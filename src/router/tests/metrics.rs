@@ -276,3 +276,24 @@ fn server_error_delegates_to_dispatch_and_http() {
         FailureClass::Network
     );
 }
+
+#[test]
+fn failure_class_labels_are_stable() {
+    // Dashboards and the audit detail read these strings: pin the full
+    // variant→label table (shared `common_core` definition — a rename here
+    // must be a deliberate cross-crate change, never a silent edit).
+    let labels: &[(FailureClass, &str)] = &[
+        (FailureClass::Network, "network"),
+        (FailureClass::Authentication, "authentication"),
+        (FailureClass::RateLimit, "rate_limit"),
+        (FailureClass::InputValidation, "input_validation"),
+        (FailureClass::Storage, "storage"),
+        (FailureClass::Timeout, "timeout"),
+        (FailureClass::Internal, "internal"),
+        (FailureClass::Unknown, "unknown"),
+    ];
+    assert_eq!(labels.len(), 8, "label table must cover every variant");
+    for (class, want) in labels {
+        assert_eq!(class.label(), *want, "label for {class:?}");
+    }
+}

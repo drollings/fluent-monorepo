@@ -4,8 +4,9 @@
 //!
 //! ## Modules
 //! - `pipeline_types` — `StageDecision`, `PipelineStage`, `StageVerdict`
-//! - `types` — `RouterRequest`, `RouterResponse`, `RouterMessage`, etc.
-//! - `session` — `StepStatus` re-exported from `fluent_types::ContentNode`
+//! - `ledger_guard` — write-path scrubber plus the PII frontier view
+//!   (`pii_redacted_view`); wire types live in `fluent_types::openai_wire`,
+//!   `StepStatus` in `fluent_types`, ledger views in `fluent_knowledge::views`
 //! - `config` — `RouterConfig` and all sub-config types
 //! - `pipeline` — `PipelineOrchestrator`, `PipelineResult`
 //! - `stages` — pipeline stage implementations (deterministic, classifier, router)
@@ -15,9 +16,10 @@
 //! - `summarization` — `ResultScorer`, `ScoredResult`, `Summarizer`
 //! - `dag_session` — `DependencySession`, `SessionStep`, `StepResult`, `DagError`,
 //!   `SessionRegistry`
-//! - `ledger` — `ContentNodeLedger` (canonical `ContentNode` store; LOD0/LOD5
-//!   eager, LOD1–4 lazy from LOD0 via `Summarizer`), `CompactionStrategy`,
-//!   `RecencyCompaction` (folded in from the deleted `compaction.rs`)
+//! - `ledger` — ledger schema/migrations, the `LedgerEntry` read projection,
+//!   `LedgerError`, `CompactionStrategy`/`RecencyCompaction`; the canonical
+//!   `ContentNode` store itself lives in `node_store` (LOD0/LOD5 eager,
+//!   LOD1–4 lazy from LOD0 via `Summarizer`)
 
 pub mod audit;
 pub mod charts;
@@ -48,7 +50,6 @@ pub mod routes;
 pub mod routing_context;
 pub mod score_matrix;
 pub mod server;
-pub mod session;
 pub mod stages;
 pub mod streaming;
 pub mod summarization;
@@ -56,8 +57,6 @@ pub mod supervisor;
 pub mod target_match;
 pub mod telemetry;
 pub mod transforms;
-pub mod types;
-pub mod views;
 
 /// Testing utilities — available in all build profiles for use by
 /// downstream crates' test code (e.g., E2E tests in coral-context).

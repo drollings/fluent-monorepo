@@ -13,8 +13,9 @@ use fluent_types::{ContentNode, InterlinguaId, NodeId};
 use rusqlite::params;
 use spacy_rs::routing::RoutingSignal;
 
-use crate::ledger::{ContentNodeLedger, LedgerError};
+use crate::ledger::LedgerError;
 use crate::node_store::new_node;
+use crate::node_store::ContentNodeStore;
 use crate::pipeline_types::NlpConfidenceSummary;
 
 /// The metadata `kind` discriminator for parse nodes.
@@ -90,7 +91,7 @@ pub fn parse_node_with_confidence(
 /// Persist the parse node through the ledger facade (LOD0/LOD5 eager,
 /// metadata passed through untouched). Best-effort at the call site.
 pub fn record_parse_node(
-    ledger: &ContentNodeLedger,
+    ledger: &ContentNodeStore,
     session_id: &str,
     request_id: &str,
     text: &str,
@@ -107,7 +108,7 @@ pub fn record_parse_node(
 /// test path (`record_parse_node`) does. `record_parse_node` is a thin wrapper
 /// over this.
 pub fn record_parse_node_with_confidence(
-    ledger: &ContentNodeLedger,
+    ledger: &ContentNodeStore,
     session_id: &str,
     request_id: &str,
     text: &str,
@@ -132,12 +133,12 @@ pub fn record_parse_node_with_confidence(
 /// one row per role id per sentence, mirroring the metadata.
 /// Written in the same transaction as the node itself.
 pub fn populate_interlingua_index(
-    ledger: &ContentNodeLedger,
+    ledger: &ContentNodeStore,
     node_id: NodeId,
     signals: &[RoutingSignal],
     confidence: Option<&NlpConfidenceSummary>,
 ) -> Result<(), LedgerError> {
-    let Some(store) = ledger.node_store().shared_sqlite() else {
+    let Some(store) = ledger.shared_sqlite() else {
         return Ok(()); // ephemeral store — no durable index
     };
     let overall = confidence.map_or(1.0, |c| c.overall);

@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use fluent_db::error::DbError;
-use fluent_db::hnsw::HnswIndex;
+use fluent_db::hnsw::{AdaptiveHnsw, HnswIndex};
 use fluent_db::store::SqliteStore;
 use fluent_db::vector;
 use rusqlite::params;
@@ -174,12 +174,21 @@ impl GuidanceDb {
 
     /// HNSW approximate nearest neighbor search.
     fn hnsw_search(&self, query_vec: &[f32], k: usize) -> Option<Vec<SearchResult>> {
-        // One generation-checked traverse-and-resolve episode: the returned
-        // keys always belong to the traversed generation (a concurrent
-        // rebuild degrades to `None`, i.e. the brute-force path below).
-        // The connection is touched only after both index guards release,
+        // Single adaptive-dispatch policy ([B] cost/recall only — never a
+        // confidence/verification gate): probe HNSW iff built and above
+        // threshold. `None` takes the call-site brute-force fallback in
+        // `vector_search`, whose fill-to-`k` top-up and tail are unchanged.
+        // The connection is touched only after the index guard releases,
         // preserving the `index → map → conn` ordering.
-        let resolved = self.hnsw.search_with_ids(query_vec, k)?;
+        let embedded = self.get_embedding_count().ok()? as usize;
+        if !AdaptiveHnsw::default().dispatch(self.hnsw.is_built(), embedded) {
+            return None;
+        }
+        // The shared lookup short-circuits malformed probes (empty query,
+        // `k == 0`) that would otherwise reach the distance kernel's dim
+        // assertion, and resolves hits against the traversed generation (a
+        // concurrent rebuild degrades to `None`, i.e. the brute-force path).
+        let resolved = fluent_db::hnsw::hnsw_lookup(&self.hnsw, query_vec, k)?;
 
         let mut results = Vec::with_capacity(resolved.len());
         for (node_id, distance) in resolved {
@@ -1159,6 +1168,13 @@ mod fragment_tests;
 mod graph_edges;
 
 #[cfg(test)]
+#[path = "../tests/hnsw_dispatch.rs"]
+mod hnsw_dispatch_tests;
+
+#[cfg(test)]
+#[path = "../tests/hnsw_calibration.rs"]
+mod hnsw_calibration_tests;
+#[cfg(test)]
 #[path = "../tests/node_sync.rs"]
 mod node_sync;
 
@@ -1298,5 +1314,58 @@ mod tests {
             .hybrid_search("hello", Some(&emb), 5)
             .expect("hybrid search");
         assert!(!results.is_empty());
+    }
+
+    fn recall_fixture_vec(i: usize, dim: usize) -> Vec<f32> {
+        (0..dim)
+            .map(|j| (((i * 31 + j * 17 + 7) % 97) as f32 + 1.0) / 98.0)
+            .collect()
+    }
+
+    #[test]
+    fn vector_search_recall_baseline_is_pinned() {
+        // Baseline pin: `vector_search` against brute-force ground truth.
+        // Small corpora exercise the fill-to-k top-up (k > N forces the
+        // brute-force tail, so results are identical); larger corpora record
+        // the current approximate recall. The embedding counter backs the
+        // probe-gate decision, so it is pinned here too.
+        for n in [8usize, 64] {
+            let db = make_db();
+            let dim = 8;
+            for i in 0..n {
+                let emb = recall_fixture_vec(i, dim);
+                db.insert_node(&format!("n{i}"), "s", None, None, "m", "l", Some(&emb))
+                    .expect("insert");
+            }
+            assert_eq!(
+                db.get_embedding_count().expect("count"),
+                n as i64,
+                "embedding counter tracks N={n}"
+            );
+            let query = recall_fixture_vec(0, dim);
+            // k > N: top-up cannot fill from HNSW alone → brute-force tail →
+            // byte-identical to ground truth.
+            let searched = db.vector_search(&query, n + 2).expect("search");
+            let ground = db
+                .bruteforce_vector_search(&query, n + 2)
+                .expect("ground truth");
+            assert_eq!(
+                searched.iter().map(|r| r.id).collect::<Vec<_>>(),
+                ground.iter().map(|r| r.id).collect::<Vec<_>>(),
+                "k > N is brute-force identical at N={n}"
+            );
+            // k <= N: measure approximate recall (characterization only —
+            // the calibration gate owns the strict bound).
+            let k = 5;
+            let approx = db.vector_search(&query, k).expect("approx");
+            let exact = db.bruteforce_vector_search(&query, k).expect("exact");
+            let exact_ids: std::collections::HashSet<i64> = exact.iter().map(|r| r.id).collect();
+            let hits = approx.iter().filter(|r| exact_ids.contains(&r.id)).count();
+            let recall = hits as f64 / k as f64;
+            assert!(
+                recall >= 0.5,
+                "baseline recall at N={n}: {recall:.2} (hits {hits}/{k})"
+            );
+        }
     }
 }

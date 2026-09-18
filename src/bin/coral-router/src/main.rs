@@ -33,8 +33,8 @@ use fluent_router::concept_store_sqlite::SqliteConceptStore;
 use fluent_router::config::builder::NlpDeps;
 use fluent_router::config::{validate_no_self_routing, RouterConfig};
 use fluent_router::ledger::correction_index::SqliteCorrectionIndex;
-use fluent_router::ledger::ContentNodeLedger;
 use fluent_router::logging::init_router_logging;
+use fluent_router::node_store::ContentNodeStore;
 use fluent_router::routes::plan::PlanRoute;
 use fluent_router::routes::rigor::RigorRoute;
 use fluent_router::server::entity_link::{EntityLinkScorer, EntityLinkWorker};
@@ -676,7 +676,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             .overlay
             .as_ref()
             .is_some_and(|o| o.arc_ready.as_ref().is_some_and(|a| a.enabled && a.nlp));
-    let mut ledger: Option<Arc<ContentNodeLedger>> = None;
+    let mut ledger: Option<Arc<ContentNodeStore>> = None;
     let mut concept_store: Option<Arc<SqliteConceptStore>> = None;
     let mut correction_index: Option<Arc<SqliteCorrectionIndex>> = None;
     let mut nlp_deps = NlpDeps::default();
@@ -776,7 +776,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 None,
                 None,
             )?;
-            let (base, _) = fluent_router::config::split_model_key(&member);
+            let (base, _) = fluent_types::model_key::split_model_key(&member);
             config.models.get(base).map(|m| (member, m.clone()))
         });
 
@@ -788,7 +788,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     );
 
     // When the operator opts in via the `ledger`/`session` sections, open a
-    // `ContentNodeLedger` (with a real `Summarizer` backend targeting
+    // `ContentNodeStore` (with a real `Summarizer` backend targeting
     // `<base>:ledger`) and/or a `SessionRegistry`, and attach both to the
     // server so rigor rewind and ledger LOD derivation exist at runtime.
     // Both are default-absent, so existing deployments are untouched.
@@ -823,7 +823,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
     // The shared ledger store (when a ledger is attached) is threaded
     // into the plan/rigor route builders so their selector/judge models render
     // the session ledger through the assembler's budget/relevance rules.
-    let ledger_store = ledger.as_ref().map(|l| l.node_store().clone());
+    let ledger_store = ledger.as_ref().map(Arc::clone);
 
     // Chart store boot: load `config.charts.dir` (fail fast on a corrupt
     // file — a half-loaded library must not serve), attach the shared store
@@ -909,7 +909,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                     let tier_cfg = config
                         .ledger_tier_config()
                         .expect("ledger section present -> tier config");
-                    let store = Arc::clone(ledger_arc.node_store());
+                    let store = Arc::clone(ledger_arc);
                     let worker = fluent_router::ledger::tiering::LedgerTierWorker::new(
                         Arc::clone(&store),
                         backend,
@@ -955,7 +955,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             if let (Some(tier_worker), Some(backend)) = (&tier_worker, backend) {
                 let kv = sessions_arc.kv_cache().clone();
                 if let Some(coord) = config.build_ledger_coordinator(
-                    Arc::clone(ledger_arc.node_store()),
+                    Arc::clone(ledger_arc),
                     Arc::clone(sessions_arc),
                     kv,
                     Arc::clone(tier_worker),
@@ -1172,7 +1172,6 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 Some(cs) => cs as Arc<dyn ConceptStore>,
                 None => Arc::new(SqliteConceptStore::new(
                     ledger_arc
-                        .node_store()
                         .shared_sqlite()
                         .expect("ledger must have shared sqlite for overlay"),
                 )),
@@ -1229,10 +1228,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                 }
             };
             let candidates = fluent_router::ledger::overlay::OverlayCandidateStore::new(
-                ledger_arc
-                    .node_store()
-                    .shared_sqlite()
-                    .expect("shared sqlite"),
+                ledger_arc.shared_sqlite().expect("shared sqlite"),
             );
             let worker = Arc::new(EntityLinkWorker::new(
                 &candidates,
@@ -1276,7 +1272,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
                     );
                     return Err("overlay.arc_ready.enabled requires a ledger".into());
                 };
-                let store = Arc::clone(ledger_arc.node_store());
+                let store = Arc::clone(ledger_arc);
 
                 // Spacy overlay seam: the standalone NLP pipeline (threads the
                 // same resolver as the request-time pipelines). `nlp: false` →
@@ -1355,7 +1351,7 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
         None;
     let frame_gate = fluent_router::ledger::frame_index::FrameResolutionGate::open();
     if let (Some(ledger_arc), Some(frame_cfg)) = (&ledger, &config.frame_resolution) {
-        let Some(sqlite) = ledger_arc.node_store().shared_sqlite() else {
+        let Some(sqlite) = ledger_arc.shared_sqlite() else {
             tracing::warn!(
                 target: "coral-router",
                 "frame_resolution configured but the ledger has no shared sqlite — skipping",
@@ -1835,7 +1831,7 @@ fn duty_entry_embedding_override(
     } else {
         duty.to_string()
     };
-    let (base, qualifier) = fluent_router::config::split_model_key(&head);
+    let (base, qualifier) = fluent_types::model_key::split_model_key(&head);
     let entry = config.models.get(base)?;
     let embed_ref = entry.embedding_for(qualifier)?;
     resolve_embedding_ref(config, &embed_ref)
@@ -1859,7 +1855,7 @@ fn openai_embedding_provider(
         role_base = role.params.sampling_value();
         key = fluent_router::config::role_head_key(&config.models, &config.roles, duty, false)?;
     }
-    let (base, _) = fluent_router::config::split_model_key(&key);
+    let (base, _) = fluent_types::model_key::split_model_key(&key);
     let entry = config.models.get(base)?;
     let base = embeddings_base_url(&entry.endpoint);
     let options =

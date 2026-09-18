@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use fluent_db::hnsw::AdaptiveHnsw;
 use fluent_db::vector::{knn_brute_force, try_bytes_to_vec, vec_to_bytes};
 use fluent_types::{ContentNode, KnnHit, NodeId, WasmTool};
 use rusqlite::params;
@@ -7,6 +8,48 @@ use rusqlite::params;
 use super::{blob_to_bitvec, LibraryError, MAX_KNN_CANDIDATES};
 
 impl super::Library {
+    /// HNSW-primary decision: the scan-cap guard AND the adaptive probe
+    /// policy, composed — the two thresholds are not merged.
+    ///
+    /// Two axes, both [B] cost/recall (never confidence/correctness):
+    ///   - `embedded_count > MAX_KNN_CANDIDATES`: the row scan below is
+    ///     hard-capped, so past the cap a full scan is unsafe and the
+    ///     approximate index is the primary path (fallback: the capped scan).
+    ///   - `AdaptiveHnsw::dispatch(built, count)`: the index is built and the
+    ///     corpus is above 512, where the approximation pays off. Past the cap
+    ///     the count axis is implied (100k > 512); the binding axis there is
+    ///     `built` — an unbuilt index past the cap falls through to the capped
+    ///     scan instead of answering empty.
+    ///
+    /// Capability-filtered searches never reach this (the index cannot apply
+    /// the filter) — the filter check stays at the call site.
+    fn hnsw_primary(built: bool, embedded_count: i64) -> bool {
+        embedded_count > MAX_KNN_CANDIDATES as i64
+            && AdaptiveHnsw::default().dispatch(built, embedded_count.max(0) as usize)
+    }
+
+    /// Mirror one node row into the FTS index: delete-then-insert per rowid
+    /// so re-ingestion (`INSERT OR IGNORE`) and re-syncs never duplicate.
+    /// Callers skip this entirely when the base-table write changed 0 rows.
+    fn sync_node_fts(
+        conn: &rusqlite::Connection,
+        node_id: i64,
+        name: &str,
+        source: &str,
+    ) -> Result<(), fluent_db::error::DbError> {
+        fluent_db::query::execute(
+            conn,
+            "DELETE FROM context_nodes_fts WHERE rowid = ?1",
+            rusqlite::params![node_id],
+        )?;
+        fluent_db::query::execute(
+            conn,
+            "INSERT INTO context_nodes_fts(rowid, name, source) VALUES (?1, ?2, ?3)",
+            rusqlite::params![node_id, name, source],
+        )?;
+        Ok(())
+    }
+
     pub fn insert_node(&self, node: &ContentNode) -> Result<NodeId, LibraryError> {
         let lod_json = serde_json::to_string(&node.lod).unwrap_or_default();
         let embedding_blob = node.embedding.as_ref().map(|v| vec_to_bytes(v));
@@ -18,7 +61,9 @@ impl super::Library {
         // IGNORE` makes re-ingestion of the same content idempotent.
         let node_id = self.store.with_conn(|conn| {
             if let Some(nid) = node.id {
-                fluent_db::query::execute(
+                // Content-addressed: `INSERT OR IGNORE` keeps re-ingestion
+                // idempotent — and an ignored write must not touch FTS.
+                let changed = fluent_db::query::execute(
                     conn,
                     "INSERT OR IGNORE INTO context_nodes \
                      (id, name, source, lod, embedding, capabilities) \
@@ -32,6 +77,9 @@ impl super::Library {
                         capabilities_blob
                     ],
                 )?;
+                if changed > 0 {
+                    Self::sync_node_fts(conn, nid.as_int(), node.name.as_str(), &node.source)?;
+                }
                 Ok(nid)
             } else {
                 // Legacy path (tests, non-content-addressed callers): autoincrement.
@@ -40,7 +88,9 @@ impl super::Library {
                     "INSERT INTO context_nodes (name, source, lod, embedding, capabilities) VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![node.name.as_str(), node.source, lod_json, embedding_blob, capabilities_blob],
                 )?;
-                Ok(NodeId::from_int(fluent_db::query::last_insert_rowid(conn)))
+                let nid = NodeId::from_int(fluent_db::query::last_insert_rowid(conn));
+                Self::sync_node_fts(conn, nid.as_int(), node.name.as_str(), &node.source)?;
+                Ok(nid)
             }
         })?;
 
@@ -168,25 +218,36 @@ impl super::Library {
                 let capabilities_blob = node.capabilities.as_deref();
                 if let Some(nid) = node.id {
                     // Content-addressed: hash_iri IS the primary key;
-                    // INSERT OR IGNORE keeps re-ingestion idempotent.
-                    tx.execute(
+                    // INSERT OR IGNORE keeps re-ingestion idempotent — and an
+                    // ignored write must not touch FTS.
+                    let changed = tx.execute(
                         "INSERT OR IGNORE INTO context_nodes \
                          (id, name, source, lod, embedding, capabilities) \
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         params![
                             nid.as_int(),
                             node.name.as_str(),
-                            node.source,
+                            &node.source,
                             lod_json,
                             embedding_blob,
                             capabilities_blob
                         ],
                     )?;
+                    if changed > 0 {
+                        Self::sync_node_fts(
+                            tx,
+                            nid.as_int(),
+                            node.name.as_str(),
+                            &node.source,
+                        )?;
+                    }
                 } else {
                     tx.execute(
                         "INSERT INTO context_nodes (name, source, lod, embedding, capabilities) VALUES (?1, ?2, ?3, ?4, ?5)",
                         params![node.name.as_str(), node.source, lod_json, embedding_blob, capabilities_blob],
                     )?;
+                    let nid = NodeId::from_int(tx.last_insert_rowid());
+                    Self::sync_node_fts(tx, nid.as_int(), node.name.as_str(), &node.source)?;
                 }
             }
             Ok(())
@@ -225,11 +286,32 @@ impl super::Library {
             })?)
     }
 
+    /// Ranked lexical recall over the FTS5 node index (`name`, `source`).
+    ///
+    /// Tokenizing/quoting compose the shared `common_core::string` helpers
+    /// (same token stream as the fragment arm — only the column bindings are
+    /// node-specific); ranking is `bm25`, ascending. An unindexable query
+    /// yields no rows (never match-all). `distance` stays `0.0`: keyword hits
+    /// carry no vector distance — rank order (which the RRF fusion consumes
+    /// positionally) is the relevance signal. This score is a lexical
+    /// relevance proxy (task-value), never a correctness/confidence signal.
     pub fn keyword_search(&self, query: &str) -> Result<Vec<KnnHit>, LibraryError> {
-        let pattern = format!("%{query}%");
+        use common_core::string::{cjk_bigrams, fts_match_tokens, fts_quote};
+        let mut ors: Vec<String> = fts_match_tokens(query)
+            .iter()
+            .map(|t| fts_quote(t))
+            .collect();
+        ors.extend(cjk_bigrams(query).iter().map(|b| fts_quote(b)));
+        if ors.is_empty() {
+            return Ok(Vec::new());
+        }
+        let match_expr = format!("{{name source}} : ({})", ors.join(" OR "));
         Ok(self.store.query_rows(
-            "SELECT id, name FROM context_nodes WHERE name LIKE ?1 OR source LIKE ?1 LIMIT 10",
-            params![pattern],
+            "SELECT n.id, n.name FROM context_nodes_fts \
+             JOIN context_nodes n ON n.id = context_nodes_fts.rowid \
+             WHERE context_nodes_fts MATCH ?1 \
+             ORDER BY bm25(context_nodes_fts) ASC LIMIT 10",
+            params![match_expr],
             |row| {
                 let id: i64 = row.get(0)?;
                 let name: String = row.get(1)?;
@@ -261,12 +343,14 @@ impl super::Library {
             return Ok(Vec::new());
         }
         // The row scan is hard-capped at MAX_KNN_CANDIDATES so a large
-        // table can never be fully scanned. When the embedded-node count
-        // exceeds the cap, the approximate HNSW index is the primary query
-        // path; only fall back to the capped brute-force scan when no HNSW
-        // index is available. Capability-filtered searches bypass the HNSW
+        // table can never be fully scanned. Past the cap the approximate
+        // HNSW index is the primary query path (see `hnsw_primary` for both
+        // axes); only fall back to the capped brute-force scan when the
+        // index is not usable. Capability-filtered searches bypass the HNSW
         // route because the index cannot apply the filter.
-        if capability_filter.is_none() && self.embedded_node_count()? > MAX_KNN_CANDIDATES as i64 {
+        if capability_filter.is_none()
+            && Self::hnsw_primary(self.has_hnsw(), self.embedded_node_count()?)
+        {
             if let Some(hits) = self.hnsw_search(query_vec, k) {
                 return Ok(hits);
             }
@@ -601,5 +685,297 @@ mod tests {
         assert_eq!(hits[0].name.as_str(), "right");
         // Empty query vec -> no results.
         assert!(lib.knn_search(&[], 5, None).expect("knn empty").is_empty());
+    }
+
+    #[test]
+    fn hybrid_search_fixed_fixture_is_pinned() {
+        // Baseline pin: keyword + vector arms fuse on a fixed 2-D fixture.
+        // The nearest embedding wins top-1 and repeated calls agree.
+        let lib = lib();
+        lib.insert_node(&ContentNode {
+            embedding: Some(vec![1.0, 0.0]),
+            ..make_node("right", "s")
+        })
+        .expect("insert");
+        lib.insert_node(&ContentNode {
+            embedding: Some(vec![0.0, 1.0]),
+            ..make_node("up", "s")
+        })
+        .expect("insert");
+        let first = lib
+            .hybrid_search("right", Some(&[0.9, 0.0]), 5)
+            .expect("hybrid");
+        assert!(!first.is_empty(), "hybrid returns hits on fixture");
+        assert_eq!(first[0].name.as_str(), "right");
+        assert!(first.len() <= 5, "respects k");
+        let second = lib
+            .hybrid_search("right", Some(&[0.9, 0.0]), 5)
+            .expect("hybrid again");
+        assert_eq!(
+            first.iter().map(|h| h.node_id).collect::<Vec<_>>(),
+            second.iter().map(|h| h.node_id).collect::<Vec<_>>(),
+            "repeated hybrid search is deterministic"
+        );
+        // Keyword-only arm (no vector): substring still resolves.
+        let kw_only = lib.hybrid_search("up", None, 5).expect("keyword-only");
+        assert_eq!(kw_only.len(), 1);
+        assert_eq!(kw_only[0].name.as_str(), "up");
+    }
+
+    #[test]
+    fn hnsw_primary_boundary_table() {
+        // Both thresholds, both axes: HNSW is primary iff the corpus exceeds
+        // the scan cap AND the adaptive policy dispatches (built + above 512).
+        // Inside the cap branch the count axis is implied (100k > 512); the
+        // binding axis there is `built`.
+        use crate::db::Library;
+        let cap = MAX_KNN_CANDIDATES as i64;
+        let cases = [
+            (false, 0, false),
+            (false, 512, false),
+            (true, 512, false),
+            (true, 513, false),
+            (false, cap, false),
+            (true, cap, false),
+            (false, cap + 1, false),
+            (true, cap + 1, true),
+        ];
+        for (built, count, expected) in cases {
+            assert_eq!(
+                Library::hnsw_primary(built, count),
+                expected,
+                "built={built} count={count}"
+            );
+        }
+    }
+
+    #[test]
+    fn mid_size_built_corpus_stays_brute_force_primary() {
+        // 513 rows: above the probe threshold but below the scan cap — the
+        // cap still owns the primary decision, so the exact nearest wins.
+        let lib = lib();
+        for i in 0..513usize {
+            let emb: Vec<f32> = (0..8usize)
+                .map(|j| {
+                    ((i.wrapping_mul(2654435761)
+                        .wrapping_add(j.wrapping_mul(40503))
+                        % 10007) as f32
+                        + 1.0)
+                        / 10008.0
+                })
+                .collect();
+            lib.insert_node(&ContentNode {
+                embedding: Some(emb),
+                ..make_node(&format!("m{i}"), "s")
+            })
+            .expect("insert");
+        }
+        assert_eq!(lib.embedded_node_count().expect("count"), 513);
+        assert!(lib.has_hnsw(), "incremental inserts build the index");
+        let query: Vec<f32> = (0..8usize)
+            .map(|j| {
+                ((42usize
+                    .wrapping_mul(2654435761)
+                    .wrapping_add(j.wrapping_mul(40503))
+                    % 10007) as f32
+                    + 1.0)
+                    / 10008.0
+            })
+            .collect();
+        let hits = lib.knn_search(&query, 3, None).expect("knn");
+        assert_eq!(hits.len(), 3);
+        assert_eq!(hits[0].name.as_str(), "m42", "exact member wins top-1");
+        assert!(
+            hits[0].distance < 1e-6,
+            "brute-force exact distance, got {}",
+            hits[0].distance
+        );
+    }
+
+    #[test]
+    fn capability_filtered_search_never_touches_hnsw() {
+        // The index cannot apply the filter (`capability_filter.is_none()`
+        // guards the HNSW branch structurally): the filtered search excludes
+        // the non-matching node and scores the match exactly, deterministically.
+        // (An unbuilt-index comparison is unstatable here — embedded inserts
+        // auto-build the index — so the contract is pinned behaviorally.)
+        let lib = lib();
+        for (name, caps, emb) in [
+            ("cap-a", vec![1u8, 0, 0, 0, 0, 0, 0, 0], vec![1.0, 0.0]),
+            ("cap-b", vec![0u8, 0, 0, 0, 0, 0, 0, 0], vec![0.9, 0.1]),
+        ] {
+            let mut node = make_node(name, "s");
+            node.capabilities = Some(caps);
+            node.embedding = Some(emb);
+            lib.insert_node(&node).expect("insert");
+        }
+        lib.rebuild_hnsw().expect("rebuild");
+        assert!(lib.has_hnsw());
+        let filter = blob_to_bitvec(&[1u8, 0, 0, 0, 0, 0, 0, 0]);
+        let first = lib
+            .knn_search(&[1.0, 0.0], 5, Some(&filter))
+            .expect("filtered knn");
+        assert_eq!(first.len(), 1, "only the matching node survives");
+        assert_eq!(first[0].name.as_str(), "cap-a");
+        assert!(
+            first[0].distance < 1e-6,
+            "exact match scores ~0, got {}",
+            first[0].distance
+        );
+        let second = lib
+            .knn_search(&[1.0, 0.0], 5, Some(&filter))
+            .expect("filtered knn again");
+        assert_eq!(
+            first[0].node_id, second[0].node_id,
+            "filtered search is deterministic"
+        );
+    }
+
+    #[test]
+    fn keyword_search_multiword_token_recall() {
+        // Token recall, not substring: "report sales" matches a node whose
+        // name orders the words differently (LIKE required contiguity).
+        let lib = lib();
+        lib.insert_node(&make_node("sales Q3 report", "archive"))
+            .expect("insert");
+        lib.insert_node(&make_node("unrelated", "nothing"))
+            .expect("insert");
+        let hits = lib.keyword_search("report sales").expect("search");
+        assert_eq!(hits.len(), 1, "exactly the token-matching node");
+        assert_eq!(hits[0].name.as_str(), "sales Q3 report");
+    }
+
+    #[test]
+    fn keyword_search_unindexable_returns_empty_never_match_all() {
+        // Fail-closed like the fragment arm: punctuation-only queries yield
+        // no rows (never the whole table), and never an error.
+        let lib = lib();
+        lib.insert_node(&make_node("something", "elsewhere"))
+            .expect("insert");
+        for query in ["!!!", "", "   ", "\"", "*"] {
+            let hits = lib.keyword_search(query).expect("search never errors");
+            assert!(hits.is_empty(), "query {query:?} must match nothing");
+        }
+    }
+
+    #[test]
+    fn fts_sync_survives_content_reingestion() {
+        // Content-addressed re-ingestion is idempotent: the second insert is
+        // IGNORED, so the FTS row must not duplicate (one hit, not two).
+        let lib = lib();
+        let id = NodeId::from_int(4242);
+        let mut node = make_node("sync probe", "ingest twice");
+        node.id = Some(id);
+        lib.insert_node(&node).expect("first ingest");
+        lib.insert_node(&node).expect("second ingest (ignored)");
+        let hits = lib.keyword_search("sync probe").expect("search");
+        assert_eq!(hits.len(), 1, "no FTS dupe after re-ingestion");
+        assert_eq!(hits[0].node_id, id);
+        // Same through the batch path.
+        lib.insert_nodes_batch(&[node]).expect("batch re-ingest");
+        let hits = lib.keyword_search("sync probe").expect("search");
+        assert_eq!(hits.len(), 1, "no FTS dupe after batch re-ingest");
+    }
+
+    /// Calibration corpus: (name, source) docs with known relevance per
+    /// query. Both-token docs are relevant; single-token docs are partial;
+    /// the rest is noise.
+    fn calib_lib() -> crate::db::Library {
+        let lib = lib();
+        for (name, source) in [
+            ("sales Q3 report", "quarterly numbers"),
+            ("report draft sales", "work in progress"),
+            ("sales targets", "planning doc"),
+            ("annual report", "yearly numbers"),
+            ("bug triage", "jira ticket"),
+            ("deploy pipeline", "release notes"),
+            ("unrelated", "nothing here"),
+        ] {
+            lib.insert_node(&make_node(name, source)).expect("insert");
+        }
+        lib
+    }
+
+    #[test]
+    fn fts_precision_recall_on_calibration_corpus() {
+        // Precision/recall of the FTS arm alone. Query "sales report":
+        // relevant = both-token docs {sales Q3 report, report draft sales}.
+        // Measured: recall 1.0, both-token docs outrank single-token docs.
+        let lib = calib_lib();
+        let hits = lib.keyword_search("sales report").expect("search");
+        let names: Vec<&str> = hits.iter().map(|h| h.name.as_str()).collect();
+        // OR-semantics pinned: union of per-token matches (2 both-token +
+        // 2 single-token), noise excluded — precision 1.0 at one-token
+        // relevance, 0.5 at both-token relevance, recall 1.0.
+        assert_eq!(hits.len(), 4, "exact union pinned: {names:?}");
+        for relevant in ["sales Q3 report", "report draft sales"] {
+            assert!(
+                names.contains(&relevant),
+                "relevant doc {relevant:?} retrieved, got {names:?}"
+            );
+        }
+        let retrieved = ["sales Q3 report", "report draft sales"]
+            .iter()
+            .filter(|r| names.contains(r))
+            .count();
+        assert_eq!(retrieved, 2, "recall 1.0: all relevant docs retrieved");
+        let rank = |n: &str| names.iter().position(|m| *m == n).expect("present");
+        assert!(
+            rank("sales Q3 report") < rank("sales targets")
+                && rank("report draft sales") < rank("annual report"),
+            "both-token docs outrank single-token docs: {names:?}"
+        );
+        // No noise doc matches.
+        assert!(
+            !names.contains(&"bug triage")
+                && !names.contains(&"deploy pipeline")
+                && !names.contains(&"unrelated"),
+            "noise excluded: {names:?}"
+        );
+    }
+
+    #[test]
+    fn fts_control_queries_must_not_fire() {
+        // Control group: token-less or token-absent queries return empty —
+        // pinned so future tokenizer changes cannot silently go match-all.
+        let lib = calib_lib();
+        for query in ["", "   ", "!!!", "***", "???", "q", "xyzzy", "the"] {
+            let hits = lib.keyword_search(query).expect("search never errors");
+            assert!(
+                hits.is_empty(),
+                "control query {query:?} must match nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn fts_syntax_in_input_is_literal_never_operator() {
+        // Adversarial: FTS5 syntax characters reach the index only inside
+        // double quotes via the shared builder — they select literals, never
+        // operators, and never error or match-all.
+        let lib = calib_lib();
+        let plain = lib.keyword_search("sales").expect("baseline");
+        assert!(!plain.is_empty(), "baseline has hits");
+        // `*` (prefix operator), `OR` (boolean), `:` (column filter),
+        // unbalanced `"` — all degrade to the literal token stream.
+        for query in [
+            "sales*",
+            "\"sales\"",
+            "sales OR sales",
+            "name:sales",
+            "sales:",
+        ] {
+            let hits = lib.keyword_search(query).expect("never errors");
+            assert_eq!(
+                hits.iter().map(|h| h.node_id).collect::<Vec<_>>(),
+                plain.iter().map(|h| h.node_id).collect::<Vec<_>>(),
+                "adversarial query {query:?} ≡ literal token query"
+            );
+        }
+        // `OR` alone is the literal word "or" — absent from the corpus.
+        assert!(
+            lib.keyword_search("OR").expect("bare OR").is_empty(),
+            "bare OR matches nothing (literal, absent)"
+        );
     }
 }

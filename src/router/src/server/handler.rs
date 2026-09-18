@@ -1,20 +1,21 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use common_core::hash::uuid_v4;
 use fluent_llm::cache::ResponseCache;
 use http_body_util::BodyExt;
 
 use crate::config::{ModelEntry, RoleEntry, RouteRef};
-use crate::dag_session::{DependencySession, SessionRegistry, SessionStep, StepResult};
+use crate::dag_session::SessionRegistry;
 use crate::dispatch::escalation::{EscalationContext, Ladder};
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 use crate::normalize;
 use crate::pipeline::{PipelineOrchestrator, RoutingTarget};
 use crate::routes::plan::PlanRoute;
 use crate::routes::rigor::RigorRoute;
 use crate::server::dispatch::handle_dispatch;
+use crate::server::instances_api::route_instance_resource;
 use crate::server::responses::completion_to_response;
 use crate::server::responses::empty_response;
 use crate::server::responses::error_response;
@@ -22,7 +23,12 @@ use crate::server::responses::make_error_completion;
 use crate::server::responses::make_text_completion;
 use crate::server::responses::HyperResponse;
 use crate::server::responses::ServerStats;
-use crate::server::review::{ReviewFetch, ReviewWorker};
+use crate::server::review::{
+    handle_review_parse_get, handle_review_parse_post, ReviewFetch, ReviewWorker,
+};
+use crate::server::session_step::{
+    begin_session_step, record_dispatch_outcome, record_ledger_result, SessionStepHandle,
+};
 use crate::testing::mock::MockDispatchContext;
 use fluent_types::openai_wire::RouterRequest;
 
@@ -39,7 +45,7 @@ pub struct ServerDeps {
     pub max_payload: usize,
     pub classifier: Option<(String, ModelEntry)>,
     pub mock_dispatch: Option<Arc<MockDispatchContext>>,
-    pub ledger: Option<Arc<ContentNodeLedger>>,
+    pub ledger: Option<Arc<ContentNodeStore>>,
     pub cache: Option<Arc<ResponseCache>>,
     pub plan_route: Option<Arc<PlanRoute>>,
     pub rigor_route: Option<Arc<RigorRoute>>,
@@ -104,6 +110,10 @@ pub struct ServerDeps {
     /// Open at boot; closing it drops new jobs before any index read or
     /// model call without a restart.
     pub frame_gate: crate::ledger::frame_index::FrameResolutionGate,
+    /// Injected async runtime for detached server tasks (abort watcher,
+    /// ledger finalizer): no ambient `tokio::spawn`, so spawned work stays
+    /// visible to the owner's shutdown and capability accounting.
+    pub runtime: Arc<dyn fluent_wvr::Runtime>,
 }
 
 impl ServerDeps {
@@ -128,7 +138,7 @@ impl ServerDeps {
 /// (`.ok()`) and a ledger error (`.flatten()`) degrade to "no ledger row",
 /// matching the documented best-effort logging contract.
 pub(crate) async fn record_ledger_request(
-    ledger: Option<&Arc<ContentNodeLedger>>,
+    ledger: Option<&Arc<ContentNodeStore>>,
     session_id: String,
     request_id: String,
     request_text: String,
@@ -140,25 +150,7 @@ pub(crate) async fn record_ledger_request(
         .and_then(Result::ok)
 }
 
-/// Best-effort ledger update, off the async handler (see
-/// `record_ledger_request` for the swallow semantics).
-pub(crate) async fn record_ledger_result(
-    ledger: Option<&Arc<ContentNodeLedger>>,
-    node_id: Option<fluent_types::NodeId>,
-    accepted: bool,
-    score: Option<f64>,
-    content: String,
-) {
-    let (Some(l), Some(node_id)) = (ledger, node_id) else {
-        return;
-    };
-    let l = Arc::clone(l);
-    tokio::task::spawn_blocking(move || {
-        let _ = l.record_result(node_id, accepted, score, &content);
-    })
-    .await
-    .ok();
-}
+// Session-step lifecycle + outcome recording live in `super::session_step`.
 
 /// Best-effort write of the NLP parse node when the pipeline ran an `Nlp`
 /// stage (the request's per-sentence routing signals → a `ContentNode`, with
@@ -167,7 +159,7 @@ pub(crate) async fn record_ledger_result(
 /// allocated node id when the write landed — the PII auto-enqueue path
 /// needs it to reference the parse it flags.
 pub(crate) async fn record_parse_ledger(
-    ledger: Option<&Arc<ContentNodeLedger>>,
+    ledger: Option<&Arc<ContentNodeStore>>,
     session_id: String,
     request_id: String,
     request_text: String,
@@ -289,111 +281,8 @@ async fn coordinator_dispatch(
     ))
 }
 
-/// Record a dispatch outcome into the session ledger + step.
-///
-/// Buffered dispatches carry the answer text synchronously and record it here.
-/// Streaming dispatches assemble the answer as the client consumes the body,
-/// so the record is deferred to a detached task that waits on the
-/// [`StreamAnswer`](crate::streaming::StreamAnswer) finalizer (bounded by the
-/// target's total timeout) and then records - never delaying the HTTP response.
-/// `label` is the fallback content when no answer is available (escalation,
-/// empty body).
-async fn record_dispatch_outcome(
-    answer_text: Option<String>,
-    label: String,
-    stream_answer: Option<crate::streaming::StreamAnswer>,
-    ledger: Option<&Arc<ContentNodeLedger>>,
-    ledger_node_id: Option<fluent_types::NodeId>,
-    session_step: Option<&SessionStepHandle>,
-    wait_timeout_ms: u64,
-) {
-    let Some(finalizer) = stream_answer else {
-        let answer = answer_text.unwrap_or_default();
-        let content = if answer.is_empty() { label } else { answer };
-        record_ledger_result(ledger, ledger_node_id, true, Some(1.0), content.clone()).await;
-        if let Some(step) = session_step {
-            step.complete(true, Some(1.0), content.clone(), None);
-        }
-        return;
-    };
-
-    let ledger = ledger.map(Arc::clone);
-    let node_id = ledger_node_id;
-    let step = session_step.cloned();
-    tokio::spawn(async move {
-        let content = finalizer
-            .wait(std::time::Duration::from_millis(wait_timeout_ms))
-            .await
-            .unwrap_or_else(|| label.clone());
-        record_ledger_result(ledger.as_ref(), node_id, true, Some(1.0), content.clone()).await;
-        if let Some(step) = step {
-            step.complete(true, Some(1.0), content.clone(), None);
-        }
-    });
-}
-
-/// Per-request handle into a `DependencySession` step. Holds the session
-/// `Arc` and the request's step id so the outcome can be recorded exactly once
-/// from whichever terminal branch the request takes. Locking is scoped to the
-/// `complete` call - never held across an await.
-#[derive(Clone)]
-struct SessionStepHandle {
-    session: Arc<Mutex<DependencySession>>,
-    step_id: String,
-}
-
-impl SessionStepHandle {
-    fn complete(&self, accepted: bool, score: Option<f64>, content: String, error: Option<String>) {
-        let mut session = match self.session.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        let _ = session.complete_step(
-            &self.step_id,
-            StepResult {
-                content,
-                accepted,
-                score,
-                latency_ms: 0,
-                error,
-            },
-        );
-    }
-}
-
-/// Register the request as a step in the session keyed by `session_id` (if a
-/// `SessionRegistry` is wired) and return a handle to complete it when the
-/// outcome is known.
-fn begin_session_step(
-    sessions: Option<&Arc<SessionRegistry>>,
-    session_id: &str,
-    model_name: &str,
-    adapter: Option<&str>,
-    request_id: &str,
-    request_text: &str,
-) -> Option<SessionStepHandle> {
-    let registry = sessions?;
-    let session = registry.get_or_create(session_id);
-    {
-        let mut s = match session.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        s.set_model(model_name);
-        if let Some(adapter) = adapter {
-            s.adapter = Some(adapter.to_string());
-        }
-        let step_id = format!("req-{request_id}");
-        if s.get_step(&step_id).is_none() {
-            let _ = s.add_step(SessionStep::new(step_id.clone(), request_text));
-        }
-    }
-    Some(SessionStepHandle {
-        session,
-        step_id: format!("req-{request_id}"),
-    })
-}
-
+// (Moved to `super::session_step`: `record_dispatch_outcome`,
+// `SessionStepHandle`, `begin_session_step`.)
 /// On-demand residency for the classifier, mirroring the dispatch path's
 /// `ensure_target_ready` + allocate-on-miss guarantee.
 ///
@@ -426,7 +315,7 @@ async fn ensure_classifier_ready(
     // entirely instead of spawning it. A down pick then fails closed through
     // the classifier's own error path below, instead of materializing 2 GB
     // of weights for a duty another running model could serve.
-    let (base, _) = crate::config::split_model_key(key);
+    let (base, _) = fluent_types::model_key::split_model_key(key);
     let running = pool.supervisor().and_then(|s| s.is_running(base));
     if running != Some(true) {
         return;
@@ -483,6 +372,7 @@ async fn handle_chat_completion(
         roles,
         workflow_recorder,
         frame_gate: _,
+        runtime,
     } = deps;
     // The dispatch post-processing hook (workflow extraction), if the
     // operator configured it. Passed through to successful dispatches only.
@@ -638,7 +528,7 @@ async fn handle_chat_completion(
     // Bypass: a session the turnover mode marked frontier-owned skips
     // the local pipeline and goes straight to the frontier.
     if let Some(step) = &session_step {
-        let frontier_owned = step.session.lock().is_ok_and(|s| s.is_frontier_owned());
+        let frontier_owned = step.session().lock().is_ok_and(|s| s.is_frontier_owned());
         if frontier_owned {
             let role = routes.get(&model_name).map(|r| r.role.as_str());
             if let Some(ladder) = role.and_then(|r| ladders.get(r)) {
@@ -647,12 +537,13 @@ async fn handle_chat_completion(
                     session_id = %session_id,
                     "session is frontier-owned - bypassing local pipeline"
                 );
+                let session = step.session();
                 let esc_ctx = EscalationContext {
                     request: &router_request,
                     user_text: &user_message,
                     model_name: &model_name,
                     context_cache: context_cache.as_ref(),
-                    session: Some(&step.session),
+                    session: Some(&session),
                     // Frontier-owned bypass answers directly: nothing to distill.
                     recorder: None,
                 };
@@ -852,11 +743,12 @@ async fn handle_chat_completion(
         extractor: workflow_extractor.clone(),
         ladders,
         context_cache,
-        session: session_step.as_ref().map(|s| s.session.clone()),
+        session: session_step.as_ref().map(SessionStepHandle::session),
         instance_pool: instance_pool.map(|p| p.as_ref().clone()),
         onnx_llm_backend: onnx_llm_backend.clone(),
         role_limiters: Arc::new(crate::server::dispatch::RoleLimiters::from_roles(&roles)),
         workflow_recorder: workflow_recorder.clone(),
+        runtime: Arc::clone(&runtime),
     };
 
     if let Some(ref rt) = pipeline_result.routing_target {
@@ -879,6 +771,7 @@ async fn handle_chat_completion(
             ledger_node_id,
             session_step.as_ref(),
             rt.total_timeout_ms,
+            &runtime,
         )
         .await;
         return Ok(outcome.response);
@@ -911,6 +804,7 @@ async fn handle_chat_completion(
             ledger_node_id,
             session_step.as_ref(),
             0,
+            &runtime,
         )
         .await;
         return Ok(outcome.response);
@@ -1180,219 +1074,10 @@ async fn handle_request_inner(
     }
 }
 
-/// Route an `/instances/<resource>` path to an operation:
-///
-/// - `DELETE /instances/:name` -> `("delete", name, None)`
-/// - `POST /instances/:name/pin|unpin|resize` -> the matching op
-/// - `POST /instances/:name/snapshot` -> `("save", name, None)`
-/// - `GET /instances/:name/snapshots` -> `("list", name, None)`
-/// - `DELETE /instances/:name/snapshot/:snapshot` -> `("delete_snapshot", name, Some(snapshot))`
-fn route_instance_resource(
-    method: &str,
-    path: &str,
-) -> Option<(&'static str, String, Option<String>)> {
-    let rest = path.strip_prefix("/instances/")?;
-    let parts: Vec<&str> = rest.split('/').collect();
-    match (method, parts.as_slice()) {
-        ("DELETE", [name]) => Some(("delete", name.to_string(), None)),
-        ("POST", [name, "pin"]) => Some(("pin", name.to_string(), None)),
-        ("POST", [name, "unpin"]) => Some(("unpin", name.to_string(), None)),
-        ("POST", [name, "resume"]) => Some(("resume", name.to_string(), None)),
-        ("POST", [name, "no-resume"]) => Some(("no_resume", name.to_string(), None)),
-        ("POST", [name, "resize"]) => Some(("resize", name.to_string(), None)),
-        ("POST", [name, "snapshot"]) => Some(("save", name.to_string(), None)),
-        ("GET", [name, "snapshots"]) => Some(("list", name.to_string(), None)),
-        ("DELETE", [name, "snapshot", snapshot]) => Some((
-            "delete_snapshot",
-            name.to_string(),
-            Some(snapshot.to_string()),
-        )),
-        _ => None,
-    }
-}
-
-/// Extract the session_id from a `/v1/sessions/{id}/review-parse` path.
-fn extract_session_id_from_review_path(path: &str) -> Option<String> {
-    let prefix = "/v1/sessions/";
-    let suffix = "/review-parse";
-    if path.starts_with(prefix) && path.ends_with(suffix) {
-        let id = &path[prefix.len()..path.len() - suffix.len()];
-        if !id.is_empty() {
-            return Some(id.to_string());
-        }
-    }
-    None
-}
-
-/// POST /v1/sessions/{id}/review-parse — enqueue a review job for the parse
-/// node associated with the session's latest request. Returns 202 with a job
-/// id on success; 404 if no review worker is configured or no parse node
-/// exists for the session.
-async fn handle_review_parse_post(
-    _req: hyper::Request<hyper::body::Incoming>,
-    deps: ServerDeps,
-    path: &str,
-) -> Result<HyperResponse, std::convert::Infallible> {
-    let Some(session_id) = extract_session_id_from_review_path(path) else {
-        return Ok(error_response(
-            hyper::StatusCode::BAD_REQUEST,
-            "invalid session id in path",
-        ));
-    };
-
-    let Some(ledger) = deps.ledger else {
-        return Ok(error_response(
-            hyper::StatusCode::NOT_FOUND,
-            "review not available: no ledger configured",
-        ));
-    };
-
-    let Some(worker) = deps.review_worker else {
-        return Ok(error_response(
-            hyper::StatusCode::NOT_IMPLEMENTED,
-            "review not enabled: no review worker configured",
-        ));
-    };
-
-    // Find the latest parse node for this session
-    let Some(node_id) = ledger.node_store().latest_parse_node_id(&session_id) else {
-        return Ok(error_response(
-            hyper::StatusCode::NOT_FOUND,
-            "no parse node found for session",
-        ));
-    };
-
-    // Get the parse data from the ledger
-    let Some(node) = ledger.get_node(node_id) else {
-        return Ok(error_response(
-            hyper::StatusCode::NOT_FOUND,
-            "parse node not found",
-        ));
-    };
-
-    // Extract the signals and confidence from the node metadata
-    let signals = extract_signals_from_node(&node);
-    let confidence = extract_confidence_from_node(&node);
-    let token_confidence = node
-        .metadata
-        .as_ref()
-        .and_then(|m| m.get("token_confidence"))
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(serde_json::Value::as_f64)
-                .collect::<Vec<f64>>()
-        });
-
-    // Build the ReviewJob via the shared helper: the correction-cache patterns
-    // are the aligned (lemma_id, entity_id) pairs from the sentinel-filtered
-    // token ids; `entity_id` is `None` until entity linking lands. The job
-    // carries the parse node's real origin (L4 — `parse_review` nodes are
-    // indexed under the session/request they belong to).
-    let job = crate::server::review::build_review_job(
-        worker.review_model(),
-        node_id,
-        node.session_id.as_deref().unwrap_or(&session_id),
-        node.request_id.as_deref().unwrap_or("review"),
-        &node.lod[0],
-        &signals,
-        confidence.as_ref(),
-        token_confidence.as_deref(),
-    );
-
-    // Enqueue the job
-    match worker.enqueue(job).await {
-        Ok(()) => Ok(crate::server::responses::json_response(
-            hyper::StatusCode::ACCEPTED,
-            &serde_json::json!({
-                "session_id": session_id,
-                "node_id": node_id.as_int(),
-                "status": "review_queued"
-            }),
-        )),
-        Err(e) => Ok(error_response(
-            hyper::StatusCode::SERVICE_UNAVAILABLE,
-            &format!("review queue error: {e}"),
-        )),
-    }
-}
-
-/// GET /v1/sessions/{id}/review-parse — return the review status for the
-/// session's latest parse node (if any). Returns the `review_status` metadata
-/// from the parse node. Synchronous (pure ledger reads; no await).
-fn handle_review_parse_get(
-    _req: hyper::Request<hyper::body::Incoming>,
-    deps: ServerDeps,
-    path: &str,
-) -> HyperResponse {
-    let Some(session_id) = extract_session_id_from_review_path(path) else {
-        return error_response(hyper::StatusCode::BAD_REQUEST, "invalid session id in path");
-    };
-
-    let Some(ledger) = deps.ledger else {
-        return error_response(
-            hyper::StatusCode::NOT_FOUND,
-            "review not available: no ledger configured",
-        );
-    };
-
-    let Some(node_id) = ledger.node_store().latest_parse_node_id(&session_id) else {
-        return error_response(
-            hyper::StatusCode::NOT_FOUND,
-            "no parse node found for session",
-        );
-    };
-
-    let Some(node) = ledger.get_node(node_id) else {
-        return error_response(hyper::StatusCode::NOT_FOUND, "parse node not found");
-    };
-
-    let review_status = node
-        .metadata
-        .as_ref()
-        .and_then(|m| m.get("review_status"))
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({"Unreviewed": {"auto_confidence": 1.0}}));
-
-    // M6.5: surface the overlay/candidate plane for this node (entity links,
-    // PII, parse candidates) alongside the review status. The candidate table
-    // is the durable overlay surface — candidates are listed, never a doc-id
-    // write.
-    let candidates = crate::ledger::overlay::candidate_store(&ledger)
-        .and_then(|store| store.for_node(node_id).ok())
-        .unwrap_or_default();
-
-    crate::server::responses::json_response(
-        hyper::StatusCode::OK,
-        &serde_json::json!({
-            "session_id": session_id,
-            "node_id": node_id.as_int(),
-            "review_status": review_status,
-            "candidates": candidates,
-        }),
-    )
-}
-/// Extract routing signals from a parse node's metadata.
-fn extract_signals_from_node(
-    node: &fluent_types::ContentNode,
-) -> Vec<spacy_rs::routing::RoutingSignal> {
-    node.metadata
-        .as_ref()
-        .and_then(|m| m.get("signals"))
-        .and_then(|s| serde_json::from_value(s.clone()).ok())
-        .unwrap_or_default()
-}
-
-/// Extract confidence summary from a parse node's metadata.
-fn extract_confidence_from_node(
-    node: &fluent_types::ContentNode,
-) -> Option<crate::pipeline_types::NlpConfidenceSummary> {
-    node.metadata
-        .as_ref()
-        .and_then(|m| m.get("confidence"))
-        .and_then(|c| serde_json::from_value(c.clone()).ok())
-}
-
+// `/instances/` path routing lives in `super::instances_api`
+// (`route_instance_resource`).
+// Review-parse endpoint surface lives in `super::review`
+// (`handle_review_parse_post`, `handle_review_parse_get`).
 pub(crate) fn is_local_request(req: &hyper::Request<hyper::body::Incoming>) -> bool {
     req.headers()
         .get(hyper::header::HOST)
@@ -1450,7 +1135,7 @@ fn resolve_pipeline(
     // through the normal order.
     let mut requested: &str = model_name;
     if let Some(rest) = crate::config::strip_model_prefix(model_name) {
-        let (base, qualifier) = crate::config::split_model_key(rest);
+        let (base, qualifier) = fluent_types::model_key::split_model_key(rest);
         if let Some(rt) = qualified_target(base, qualifier) {
             tracing::info!(
                 target: "router.server",
@@ -1472,7 +1157,7 @@ fn resolve_pipeline(
     // id resolves directly to the owning model's server, bypassing the route
     // table. `<id>:latest` means the pool's default instance.
     // Canonical model-id split — zero-alloc callers use split_model_key (see pipeline.rs).
-    let (base_model, qual_opt) = crate::config::split_model_key(requested);
+    let (base_model, qual_opt) = fluent_types::model_key::split_model_key(requested);
     if let Some(qualifier) = qual_opt {
         if let Some(rt) = qualified_target(base_model, Some(qualifier)) {
             tracing::info!(
@@ -1493,7 +1178,7 @@ fn resolve_pipeline(
         let expanded = crate::config::expanded_role_members(roles, models, requested);
         if let Some(member) = crate::config::select_role_member(requested, &expanded, models, None)
         {
-            let (base, qualifier) = crate::config::split_model_key(&member);
+            let (base, qualifier) = fluent_types::model_key::split_model_key(&member);
             if let Some(mut rt) = qualified_target(base, qualifier) {
                 rt.role = Some(requested.to_string());
                 rt.target_name = Some(requested.to_string());

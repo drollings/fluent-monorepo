@@ -9,6 +9,7 @@ pub mod handler;
 pub mod instances_api;
 pub mod responses;
 pub mod review;
+pub mod session_step;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ use tokio::sync::watch;
 use crate::config::{ModelEntry, RoleEntry, RouteRef, ServerConfig};
 use crate::dag_session::SessionRegistry;
 use crate::dispatch::escalation::Ladder;
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 use crate::pipeline::PipelineOrchestrator;
 use crate::routes::plan::PlanRoute;
 use crate::routes::rigor::RigorRoute;
@@ -48,7 +49,7 @@ pub struct RouterServer {
     max_payload: usize,
     classifier: Option<(String, ModelEntry)>,
     mock_dispatch: Option<Arc<MockDispatchContext>>,
-    ledger: Option<Arc<ContentNodeLedger>>,
+    ledger: Option<Arc<ContentNodeStore>>,
     cache: Option<Arc<ResponseCache>>,
     /// Chart store + selector host (boot-loaded; dispatch to it).
     plan_route: Option<Arc<PlanRoute>>,
@@ -196,7 +197,7 @@ impl RouterServer {
     }
 
     #[must_use]
-    pub fn with_ledger(mut self, ledger: Arc<ContentNodeLedger>) -> Self {
+    pub fn with_ledger(mut self, ledger: Arc<ContentNodeStore>) -> Self {
         self.ledger = Some(ledger);
         self
     }
@@ -520,6 +521,7 @@ impl RouterServer {
             roles: Arc::new(self.roles.clone()),
             workflow_recorder: self.workflow_recorder.clone(),
             frame_gate: self.frame_gate.clone(),
+            runtime: fluent_concurrency::tokio_runtime(),
         };
 
         // Reconcile configured pinned instances at boot (retrying until the
@@ -678,7 +680,7 @@ pub(crate) fn warmup_targets(
             roles: roles.clone(),
         };
         if let Some(rt) = routing.routing_target(default_route, None) {
-            let (base, qualifier) = crate::config::split_model_key(&rt.model);
+            let (base, qualifier) = fluent_types::model_key::split_model_key(&rt.model);
             if let Some(entry) = models.get(base) {
                 // Every sibling window serving the qualifier role: the
                 // default route must find each slot ready, not just one.
@@ -825,6 +827,7 @@ impl WorkUnit for RouterServer {
             roles: Arc::new(self.roles.clone()),
             workflow_recorder: self.workflow_recorder.clone(),
             frame_gate: self.frame_gate.clone(),
+            runtime: fluent_concurrency::tokio_runtime(),
         };
         let rt = ctx.rt.clone();
 

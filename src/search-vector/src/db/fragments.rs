@@ -285,33 +285,24 @@ pub(crate) fn append_fragment_filter(
 /// Build the FTS5 `MATCH` expression for a query: ASCII tokens hit the
 /// text/symbol columns, CJK runs hit the bigram column (P0 `cjk-bigram`
 /// contract). Returns `None` when nothing is indexable — callers return
-/// empty (never match-all).
+/// empty (never match-all). Tokenizing/quoting compose the shared
+/// `common_core::string` helpers; only the column bindings are
+/// fragment-specific.
 #[must_use]
 pub fn build_fts_match(query: &str) -> Option<String> {
-    fn quote(token: &str) -> String {
-        format!("\"{}\"", token.replace('"', "\"\""))
-    }
-    let mut ascii: Vec<String> = Vec::new();
-    for token in query.split(|c: char| !c.is_alphanumeric()) {
-        if token.is_empty() {
-            continue;
-        }
-        let lower = token.to_lowercase();
-        if !ascii.contains(&lower) {
-            ascii.push(lower);
-        }
-    }
-    let bigrams = common_core::string::cjk_bigrams(query);
+    use common_core::string::{cjk_bigrams, fts_match_tokens, fts_quote};
+    let ascii = fts_match_tokens(query);
+    let bigrams = cjk_bigrams(query);
     let mut parts = Vec::new();
     if !ascii.is_empty() {
-        let or: Vec<String> = ascii.iter().map(|t| quote(t)).collect();
+        let or: Vec<String> = ascii.iter().map(|t| fts_quote(t)).collect();
         parts.push(format!(
             "{{content_text symbol_name}} : ({})",
             or.join(" OR ")
         ));
     }
     if !bigrams.is_empty() {
-        let or: Vec<String> = bigrams.iter().map(|b| quote(b)).collect();
+        let or: Vec<String> = bigrams.iter().map(|b| fts_quote(b)).collect();
         parts.push(format!("cjk_text : ({})", or.join(" OR ")));
     }
     if parts.is_empty() {

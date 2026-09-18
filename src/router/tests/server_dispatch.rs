@@ -120,11 +120,11 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
     managers.insert("base".into(), manager);
     let pool = InstancePool::from_managers(managers, None);
 
-    let request = crate::types::RouterRequest {
+    let request = fluent_types::openai_wire::RouterRequest {
         model: "base".into(),
-        messages: vec![crate::types::RouterMessage {
+        messages: vec![fluent_types::openai_wire::RouterMessage {
             role: "user".into(),
-            content: crate::types::RouterMessageContent::Text("hello".into()),
+            content: fluent_types::openai_wire::RouterMessageContent::Text("hello".into()),
             tool_calls: None,
             tool_call_id: None,
         }],
@@ -153,6 +153,7 @@ async fn allocate_on_503_creates_instance_and_retries_once() {
         onnx_llm_backend: None,
         role_limiters: Arc::new(RoleLimiters::default()),
         workflow_recorder: None,
+        runtime: fluent_concurrency::tokio_runtime(),
     };
     let outcome = dispatch_real(&target, &request, "base", &deps, false, "hello")
         .await
@@ -323,12 +324,12 @@ async fn role_limiter_releases_permit_on_task_panic() {
     );
 }
 
-fn sibling_rr_request() -> crate::types::RouterRequest {
-    crate::types::RouterRequest {
+fn sibling_rr_request() -> fluent_types::openai_wire::RouterRequest {
+    fluent_types::openai_wire::RouterRequest {
         model: "m".into(),
-        messages: vec![crate::types::RouterMessage {
+        messages: vec![fluent_types::openai_wire::RouterMessage {
             role: "user".into(),
-            content: crate::types::RouterMessageContent::Text("hi".into()),
+            content: fluent_types::openai_wire::RouterMessageContent::Text("hi".into()),
             tool_calls: None,
             tool_call_id: None,
         }],

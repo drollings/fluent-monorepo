@@ -1,24 +1,21 @@
 //! Full-detail content ledger with LOD compaction.
 //!
-//! `ContentNodeLedger` is now a **thin facade** over the shared
-//! `ContentNodeStore`: the durable, per-session store of `ContentNode`s (the
-//! canonical `fluent_types::ContentNode`) lives in `crate::node_store`, where
-//! nodes are shared behind `Arc<RwLock<ContentNode>>` with interned
-//! session/role index keys and a durable `content_json` column. The facade
-//! keeps the server-facing surface (`record_request`, `record_result`,
-//! `record_content_node`, `get_session_nodes`, `get_session_entries`,
-//! `ensure_lod`, `compact_session`) signature-identical and
-//! delegates to the store.
+//! The durable, per-session store of `ContentNode`s (the canonical
+//! `fluent_types::ContentNode`) lives in `crate::node_store`, where nodes are
+//! shared behind `Arc<RwLock<ContentNode>>` with interned session/role index
+//! keys and a durable `content_json` column. Server code holds the store
+//! directly (`ServerDeps.ledger: Option<Arc<ContentNodeStore>>`).
 //!
-//!  The facade also owns the **write-path guard**: every write delegate
-//! scrubs its text through `crate::ledger_guard::scrub_for_ledger` before
-//! reaching `ContentNodeStore`, so the durable ledger can never cache text
-//! matching the builtin filter engine (on by default, no config flag).  The
-//! scrub is irreversible.  `ContentNodeStore` itself stays policy-free; the
-//! only documented bypass is the `KnowledgeCapability` impl directly on
-//! `ContentNodeStore` (`crate::knowledge`), which is a trait-object
-//! boundary that cannot route through the facade — production server writes
-//! all flow through here.
+//! The write-path guard (scrub through `crate::ledger_guard::scrub_for_ledger`
+//! before anything reaches `ContentNodeStore`, so the durable ledger can
+//! never cache text matching the builtin filter engine — on by default, no
+//! config flag; the scrub is irreversible) is enforced at the store's own
+//! write entry points (`ContentNodeStore::{record_request, record_result,
+//! record_content_node, insert_node}`): policy DECISIONS live in
+//! `crate::ledger_guard`, ENFORCEMENT lives at the narrowest waist, so even
+//! the `KnowledgeCapability` trait-object bypass (`crate::knowledge`), which
+//! cannot route through any wrapper, writes scrubbed text. Production server
+//! writes all flow through these entries.
 //!
 //! The LOD lifecycle is owned by the store:
 //!
@@ -56,26 +53,11 @@ pub mod workflow_store;
 #[cfg(test)]
 mod overlay_acceptance;
 
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use fluent_db::error::DbError;
 use fluent_db::migrate::{ensure_column, Migration};
-use fluent_types::{AnnotationClaim, ClaimStatus, ContentNode, NodeId};
+use fluent_types::{ContentNode, NodeId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-use crate::ledger_guard::scrub_for_ledger;
-use crate::node_store::ContentNodeStore;
-use crate::summarization::Summarizer;
-use crate::views::LedgerView;
-use crate::views::{Lod, ParallelLedger};
-
-/// Node-construction helper moved to `ContentNodeStore`. Re-exported here so the
-/// facade's tests keep compiling unchanged.
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use crate::node_store::new_node;
 
 /// LOD level constants — canonical home is `fluent-types` (pure data, next to
 /// `LOD_COUNT`); re-exported here so existing `crate::ledger::…` paths keep
@@ -100,7 +82,7 @@ pub enum LedgerError {
 ///
 /// Kept as the flat read projection for audit/boundary consumers; the
 /// canonical in-memory form is `fluent_types::ContentNode` (see
-/// `ContentNodeLedger::get_session_nodes`).
+/// `ContentNodeStore::snapshot`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LedgerEntry {
     pub node_id: NodeId,
@@ -116,216 +98,6 @@ pub struct LedgerEntry {
     pub step_id: Option<String>,
     pub metadata: serde_json::Map<String, serde_json::Value>,
     pub created_at: u64,
-}
-
-/// The durable, per-session store of `ContentNode`s — a thin facade over the
-/// shared `Arc<ContentNodeStore>`. Every method delegates; the exact public
-/// surface is preserved so the server (`ServerDeps.ledger`) is untouched.
-pub struct ContentNodeLedger {
-    store: Arc<ContentNodeStore>,
-}
-
-impl ContentNodeLedger {
-    pub fn open(path: impl Into<PathBuf>) -> Result<Self, LedgerError> {
-        Ok(Self {
-            store: Arc::new(ContentNodeStore::open(path)?),
-        })
-    }
-
-    /// Open an in-memory ledger (tests / ephemeral stores).
-    pub fn open_in_memory() -> Result<Self, LedgerError> {
-        Ok(Self {
-            store: Arc::new(ContentNodeStore::open_in_memory()?),
-        })
-    }
-
-    /// Attach a `Summarizer` so LOD1–LOD4 can be derived lazily from LOD0.
-    /// Without one, `ensure_lod` returns `LedgerError::NoSummarizer`.
-    #[must_use]
-    pub fn with_summarizer(self, summarizer: Summarizer) -> Self {
-        self.store.set_summarizer(summarizer);
-        self
-    }
-
-    /// The shared store — the new shared/refcounted/interned read path.
-    pub fn node_store(&self) -> &Arc<ContentNodeStore> {
-        &self.store
-    }
-
-    /// Record a user request as a new node. LOD0 (full text) and LOD5 (label)
-    /// are written eagerly; LOD1–LOD4 stay empty until derived lazily.
-    ///
-    /// The write-path guard scrubs `content` against the builtin filter
-    /// engine before persisting; flagged writes emit an audit record.
-    pub fn record_request(
-        &self,
-        session_id: &str,
-        request_id: &str,
-        content: &str,
-    ) -> Result<NodeId, LedgerError> {
-        let s = scrub_for_ledger(content);
-        if s.flagged {
-            emit_write_audit(s.pattern.as_deref());
-        }
-        self.store.record_request(session_id, request_id, &s.text)
-    }
-
-    /// Update the result of a previously recorded request node: acceptance,
-    /// score, and final content. Keeps the flat projection and the
-    /// `content_json` node in sync (LOD0/LOD5 are recomputed eagerly).
-    ///
-    /// The write-path guard scrubs `content` before persisting.
-    pub fn record_result(
-        &self,
-        node_id: NodeId,
-        accepted: bool,
-        score: Option<f64>,
-        content: &str,
-    ) -> Result<(), LedgerError> {
-        let s = scrub_for_ledger(content);
-        if s.flagged {
-            emit_write_audit(s.pattern.as_deref());
-        }
-        self.store.record_result(node_id, accepted, score, &s.text)
-    }
-
-    /// Persist an arbitrary origin-typed `ContentNode`. LOD0/LOD5 are
-    /// guaranteed present (derived from the node's text when missing).
-    ///
-    /// The write-path guard scrubs the node's LOD0 text and clears LOD5
-    /// so the store re-derives the label from the scrubbed text.
-    pub fn record_content_node(&self, node: &ContentNode) -> Result<NodeId, LedgerError> {
-        let mut node = node.clone();
-        let s = scrub_for_ledger(node.lod.first().map_or("", String::as_str));
-        if s.flagged {
-            while node.lod.len() < LOD5_LABEL as usize + 1 {
-                node.lod.push(String::new());
-            }
-            node.lod[LOD0_FULL_TEXT as usize] = s.text;
-            node.lod[LOD5_LABEL as usize].clear();
-            emit_write_audit(s.pattern.as_deref());
-        }
-        self.store.record_content_node(&node)
-    }
-
-    /// Derive (or return the cached) LOD level for a node, **from LOD0 only**
-    /// via the `Summarizer` — never chained from a lower tier.
-    ///
-    /// Only LOD1–LOD4 are lazy; LOD0/LOD5 are eager at creation. The derived
-    /// tier is cached on the shared node, so a second request from any holder
-    /// hits the cache, not the LLM.
-    pub fn ensure_lod(&self, node_id: NodeId, level: u8) -> Result<ContentNode, LedgerError> {
-        self.store.ensure_lod(node_id, level)
-    }
-
-    /// Compact a session: demote older nodes to higher LOD levels via the
-    /// `RecencyCompaction` policy. Demotion sets `active_lod`; the actual LOD
-    /// text is filled in lazily from LOD0 (never chained). Returns the IDs of
-    /// demoted nodes.
-    pub fn compact_session(
-        &self,
-        session_id: &str,
-        max_nodes: usize,
-    ) -> Result<Vec<NodeId>, LedgerError> {
-        self.store.compact_session(session_id, max_nodes)
-    }
-
-    /// Fetch a node by ID (canonical `ContentNode`, single source of truth in
-    /// the shared store).
-    ///
-    /// Returns `None` if the node is absent. The pre-LOD flat-column hydration
-    /// fallback was retired: the canonical read path is single-format.
-    pub fn get_node(&self, node_id: NodeId) -> Option<ContentNode> {
-        self.store.snapshot(node_id)
-    }
-
-    /// Update an existing node's `metadata` (the review worker's
-    /// `review_status` write, §12.6).
-    pub fn update_node_metadata(
-        &self,
-        node_id: NodeId,
-        metadata: serde_json::Value,
-    ) -> Result<(), LedgerError> {
-        self.store.update_node_metadata(node_id, metadata)
-    }
-
-    /// Atomic review write: the parse node's
-    /// `review_status` metadata update, the `parse_review` node (on a miss),
-    /// and the `interlingua_index` correction rows all commit in **one SQLite
-    /// transaction**, so a crash mid-review never half-applies. See
-    /// [`ContentNodeStore::apply_review`] for the parameter semantics.
-    pub(crate) fn apply_review(
-        &self,
-        parse_node_id: NodeId,
-        parse_metadata: serde_json::Value,
-        review_node: Option<&ContentNode>,
-        correction_rows: &[crate::ledger::correction_index::CorrectionRow],
-    ) -> Result<Option<NodeId>, LedgerError> {
-        self.store
-            .apply_review(parse_node_id, parse_metadata, review_node, correction_rows)
-    }
-
-    /// Write a tiered annotation claim against a node's **current content
-    /// hash**. The public writer surface for the frame / review /
-    /// enrichment producers: it resolves the node's hash and routes the claim
-    /// to the `AnnotationStore`, so a later content mutation (new hash) makes
-    /// the claim unreachable — invalidation is keying, never a scheduler.
-    /// `Ok(None)` when the store has no durable backing (fail-open).
-    pub fn write_annotation(
-        &self,
-        node_id: NodeId,
-        claim: &AnnotationClaim,
-    ) -> Result<Option<ClaimStatus>, LedgerError> {
-        self.store.write_annotation(node_id, claim)
-    }
-
-    /// All nodes for a session (canonical `ContentNode`s), most recent first.
-    pub fn get_session_nodes(
-        &self,
-        session_id: &str,
-        limit: usize,
-    ) -> Result<Vec<ContentNode>, LedgerError> {
-        self.store.get_session_nodes(session_id, limit)
-    }
-
-    pub fn get_session_entries(
-        &self,
-        session_id: &str,
-        limit: usize,
-    ) -> Result<Vec<LedgerEntry>, LedgerError> {
-        self.store.get_session_entries(session_id, limit)
-    }
-
-    /// Render a session through a `ParallelLedger` at `default_lod`. The
-    /// view's single `render()` exit. Compaction is a view-fidelity
-    /// (`active_lod`) operation: LOD0 stays authoritative and immutable, so
-    /// a LOD0 view always shows the original full text.
-    pub fn render_session(&self, session_id: &str, default_lod: Lod) -> String {
-        let view = ParallelLedger::for_session(Arc::clone(&self.store), session_id)
-            .with_default_lod(default_lod);
-        view.render()
-    }
-
-    /// Panic while holding the durable connection mutex (test-only): exercises
-    /// the poison-recovery path in `SqliteStore`'s `common_core::sync::lock`.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    fn poison_conn(&self) {
-        self.store.poison_conn();
-    }
-}
-
-/// Emit the write-path audit record: a builtin-filter match flagged on a
-/// durable ledger write.
-fn emit_write_audit(pattern: Option<&str>) {
-    crate::audit::emit(
-        "filter",
-        serde_json::json!({
-            "write_path": true,
-            "pattern": pattern,
-            "node_scrubbed": true,
-        }),
-    );
 }
 
 /// Versioned ledger schema lifecycle (fluent_db::migrate).

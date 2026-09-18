@@ -440,6 +440,37 @@ pub async fn handle_snapshot_op(
     }
 }
 
+/// Route an `/instances/<resource>` path to an operation:
+///
+/// - `DELETE /instances/:name` -> `("delete", name, None)`
+/// - `POST /instances/:name/pin|unpin|resize` -> the matching op
+/// - `POST /instances/:name/snapshot` -> `("save", name, None)`
+/// - `GET /instances/:name/snapshots` -> `("list", name, None)`
+/// - `DELETE /instances/:name/snapshot/:snapshot` -> `("delete_snapshot", name, Some(snapshot))`
+pub(crate) fn route_instance_resource(
+    method: &str,
+    path: &str,
+) -> Option<(&'static str, String, Option<String>)> {
+    let rest = path.strip_prefix("/instances/")?;
+    let parts: Vec<&str> = rest.split('/').collect();
+    match (method, parts.as_slice()) {
+        ("DELETE", [name]) => Some(("delete", name.to_string(), None)),
+        ("POST", [name, "pin"]) => Some(("pin", name.to_string(), None)),
+        ("POST", [name, "unpin"]) => Some(("unpin", name.to_string(), None)),
+        ("POST", [name, "resume"]) => Some(("resume", name.to_string(), None)),
+        ("POST", [name, "no-resume"]) => Some(("no_resume", name.to_string(), None)),
+        ("POST", [name, "resize"]) => Some(("resize", name.to_string(), None)),
+        ("POST", [name, "snapshot"]) => Some(("save", name.to_string(), None)),
+        ("GET", [name, "snapshots"]) => Some(("list", name.to_string(), None)),
+        ("DELETE", [name, "snapshot", snapshot]) => Some((
+            "delete_snapshot",
+            name.to_string(),
+            Some(snapshot.to_string()),
+        )),
+        _ => None,
+    }
+}
+
 /// Dispatch an `/instances/:name[/...]` operation (from `route_instance_resource`)
 /// to the instance or snapshot handler.
 pub async fn handle_snapshot_op_or_instance_op(

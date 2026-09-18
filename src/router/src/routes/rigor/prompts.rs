@@ -6,6 +6,7 @@
 //! the protocol drives.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use common_core::sync::lock;
 use fluent_llm::{parse_json_response, ChatMessage};
@@ -222,7 +223,7 @@ pub(super) fn dead_end_node_ids(ctx: &RigorContext) -> HashSet<NodeId> {
     let Some(ledger) = &ctx.ledger else {
         return HashSet::new();
     };
-    let store = ledger.node_store();
+    let store = Arc::clone(ledger);
     let mut rejected_steps: HashSet<String> = HashSet::new();
     if let Some(session) = &ctx.session {
         let s = lock(session);

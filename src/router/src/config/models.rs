@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use common_core::constants::default_true;
 
-use super::root::{overlay_params, strip_declaration_params};
+use super::{overlay_params, strip_declaration_params};
 use crate::config::routing::RoleEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

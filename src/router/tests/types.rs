@@ -1,4 +1,4 @@
-use super::*;
+use fluent_types::openai_wire::*;
 
 fn sample_request() -> RouterRequest {
     serde_json::from_value(serde_json::json!({

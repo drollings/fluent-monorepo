@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::kv_cache::{
     ColdSnapshotIndex, HotSnapshotIndex, KvCacheError, KvSnapshot, SnapshotStore,
 };
-use crate::session::StepStatus;
+use fluent_types::StepStatus;
 
 /// Errors produced by dependency-session operations.
 #[derive(Debug, thiserror::Error)]

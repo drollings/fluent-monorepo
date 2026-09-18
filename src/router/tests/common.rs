@@ -167,6 +167,7 @@ pub fn test_deps(
         roles: Arc::new(config.roles.clone()),
         workflow_recorder: None,
         frame_gate: crate::ledger::frame_index::FrameResolutionGate::open(),
+        runtime: fluent_concurrency::tokio_runtime(),
     }
 }
 
@@ -176,7 +177,7 @@ pub fn test_deps_with_ledger(
     config: &RouterConfig,
     mock: Option<Arc<MockDispatchContext>>,
     sessions: Option<Arc<crate::dag_session::SessionRegistry>>,
-    ledger: Option<Arc<crate::ledger::ContentNodeLedger>>,
+    ledger: Option<Arc<crate::node_store::ContentNodeStore>>,
 ) -> ServerDeps {
     let mut deps = test_deps(
         pipelines,
@@ -198,7 +199,7 @@ pub fn rigor_test_deps(
     config: &RouterConfig,
     rigor_route: Option<Arc<RigorRoute>>,
     sessions: Option<Arc<crate::dag_session::SessionRegistry>>,
-    ledger: Option<Arc<crate::ledger::ContentNodeLedger>>,
+    ledger: Option<Arc<crate::node_store::ContentNodeStore>>,
 ) -> ServerDeps {
     let mut deps = test_deps(
         pipelines,
@@ -241,7 +242,7 @@ pub async fn spawn_test_server_with_ledger(
     config: RouterConfig,
     mock: Option<MockDispatchContext>,
     sessions: Option<Arc<crate::dag_session::SessionRegistry>>,
-    ledger: Option<Arc<crate::ledger::ContentNodeLedger>>,
+    ledger: Option<Arc<crate::node_store::ContentNodeStore>>,
 ) -> TestServer {
     let provider = TranscriptProvider::new(HashMap::new());
     let backend: Arc<dyn ChatBackend> = Arc::new(provider);

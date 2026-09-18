@@ -1,8 +1,8 @@
 use super::*;
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 
-fn store(ledger: &ContentNodeLedger) -> OverlayCandidateStore {
-    OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared sqlite"))
+fn store(ledger: &ContentNodeStore) -> OverlayCandidateStore {
+    OverlayCandidateStore::new(ledger.shared_sqlite().expect("shared sqlite"))
 }
 
 fn cand(node: NodeId, start: usize, entity: Option<i64>) -> OverlayCandidate {
@@ -21,7 +21,7 @@ fn cand(node: NodeId, start: usize, entity: Option<i64>) -> OverlayCandidate {
 
 #[test]
 fn write_is_first_wins() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(1);
     let a = cand(node, 0, Some(0x0200_0000_0000_0001));
@@ -41,7 +41,7 @@ fn write_is_first_wins() {
 
 #[test]
 fn distinct_spans_or_entities_are_separate_candidates() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(2);
     s.write_candidate(&cand(node, 0, Some(0x0200_0000_0000_0001)))
@@ -55,7 +55,7 @@ fn distinct_spans_or_entities_are_separate_candidates() {
 
 #[test]
 fn status_transitions_pending_only_and_promotion_is_idempotent() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(3);
     let c = cand(node, 0, Some(0x0200_0000_0000_0001));
@@ -80,7 +80,7 @@ fn status_transitions_pending_only_and_promotion_is_idempotent() {
 
 #[test]
 fn promote_linked_for_node_promotes_matching_entity_candidates() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(4);
     let linked_id = InterlinguaId::from_u64(0x0200_0000_0000_0001);
@@ -105,7 +105,7 @@ fn promote_linked_for_node_promotes_matching_entity_candidates() {
 
 #[test]
 fn reconcile_ids_reports_unresolved_entity_ids() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(5);
     // A non-entity candidate (entity_id 0) never trips id-membership.
@@ -126,7 +126,7 @@ fn reconcile_ids_reports_unresolved_entity_ids() {
         .expect("write entity");
     assert_eq!(s.reconcile_ids().expect("reconcile"), 1);
     // Register the concept → resolved.
-    let shared = ledger.node_store().shared_sqlite().expect("shared");
+    let shared = ledger.shared_sqlite().expect("shared");
     shared
         .execute(
             "INSERT OR IGNORE INTO interlingua_concepts (id, namespace, canonical_name) \

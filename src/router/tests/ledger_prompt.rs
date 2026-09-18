@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::node_store::new_node;
 use crate::node_store::ContentNodeStore;
-use crate::views::{Lod, ParallelLedger};
+use fluent_knowledge::views::{Lod, ParallelLedger};
 use fluent_types::NodeId;
 
 /// A store whose nodes have all LOD tiers pre-filled (so assembling never

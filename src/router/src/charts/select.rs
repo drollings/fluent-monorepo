@@ -216,16 +216,64 @@ impl ChartSelector {
 
     /// Step 2: top-k charts by similarity to the embedded raw request,
     /// filtered by `cfg.min_score`.
+    ///
+    /// The lexical sidecar fuses in here (select-path only — `search()` stays
+    /// the upsert path untouched): token overlap over name/provides/
+    /// description proposes candidates the vector pass may have missed or
+    /// misranked. Overlap ORDERS, similarities SCORE — the output scale is
+    /// unchanged (downstream `ChartMatch.score` stays a cosine similarity),
+    /// only the ordering may differ from vector-only. Overlap is a
+    /// naming-similarity proxy (task-value): it never promotes, validates,
+    /// or subsumes — Step 1 and the rubric own those. No overlap anywhere
+    /// in the request → the pure vector path, byte-identical to `search()`.
     fn retrieve(&self, request: &str) -> Result<Vec<(String, f64)>, ChartError> {
         if !self.store.is_index_built() {
             return Ok(Vec::new());
         }
         let k = self.cfg.max_candidates;
-        let hits = self.store.search(request, k)?;
-        Ok(hits
+        let vector_hits = self.store.search(request, k)?;
+        let lexical = self.store.lexical_candidates(request);
+        if lexical.is_empty() {
+            // Abstention: no token overlap anywhere — pure vector path.
+            return Ok(vector_hits
+                .into_iter()
+                .filter(|(_, s)| f64::from(*s) >= self.cfg.min_score)
+                .map(|(n, s)| (n, f64::from(s)))
+                .collect());
+        }
+        // Union: vector similarities stand; lexical-only names are
+        // exact-scored on the same scale. Order by overlap first (the
+        // sidecar's signal), similarity second, name last for determinism.
+        let mut sims: std::collections::HashMap<String, f32> = vector_hits.into_iter().collect();
+        let mut overlaps: std::collections::HashMap<String, usize> = lexical.into_iter().collect();
+        for name in sims.keys() {
+            overlaps.entry(name.clone()).or_insert(0);
+        }
+        let missing: Vec<String> = overlaps
+            .keys()
+            .filter(|n| !sims.contains_key(*n))
+            .cloned()
+            .collect();
+        for (name, sim) in self.store.score_names(request, &missing)? {
+            sims.insert(name, sim);
+        }
+        let mut fused: Vec<(String, f32, usize)> = sims
             .into_iter()
-            .filter(|(_, s)| f64::from(*s) >= self.cfg.min_score)
-            .map(|(n, s)| (n, f64::from(s)))
+            .map(|(name, sim)| {
+                let overlap = overlaps.remove(&name).unwrap_or(0);
+                (name, sim, overlap)
+            })
+            .collect();
+        fused.sort_by(|a, b| {
+            b.2.cmp(&a.2)
+                .then_with(|| b.1.total_cmp(&a.1))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        Ok(fused
+            .into_iter()
+            .filter(|(_, s, _)| f64::from(*s) >= self.cfg.min_score)
+            .take(k)
+            .map(|(n, s, _)| (n, f64::from(s)))
             .collect())
     }
 
@@ -589,11 +637,14 @@ fn build_adjudicator_prompt(
 fn parse_adjudicator_output(raw: &str) -> Option<AdjudicatorOutput> {
     let value =
         fluent_llm::parse_typed::<serde_json::Value>(raw, &serde_json::Value::Null, |_| {}).ok()?;
-    sanitize_adjudicator_output(&value)
+    fill_adjudicator_defaults(&value)
 }
 
-/// Fill missing adjudicator fields with defaults (sanitize philosophy).
-fn sanitize_adjudicator_output(value: &serde_json::Value) -> Option<AdjudicatorOutput> {
+/// Fill missing adjudicator fields with defaults. Named for the job (not
+/// `parse_*`: the `fluent_llm::parse_typed` codec in
+/// `parse_adjudicator_output` above does the fence/extract work; this maps
+/// the extracted value to the chart-domain `AdjudicatorOutput`).
+fn fill_adjudicator_defaults(value: &serde_json::Value) -> Option<AdjudicatorOutput> {
     let obj = value.as_object()?;
     let chart: Option<String> = obj
         .get("chart")

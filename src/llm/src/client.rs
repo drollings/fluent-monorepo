@@ -446,6 +446,9 @@ async fn chat_complete_http_inner_async(
 
 /// Strips provider: prefix from model reference strings.
 /// e.g. "ollama:embeddinggemma" → "embeddinggemma"
+/// Same strip as `fluent_types::model_ref::model_name` — deliberately NOT
+/// composed: the LLM boundary (`no_domain_imports`, `lint-llm-boundary`)
+/// forbids `fluent-llm` importing domain crates.
 pub fn model_name(model_ref: &str) -> &str {
     model_ref
         .split_once(':')

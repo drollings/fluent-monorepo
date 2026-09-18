@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_stubs::{CountingBackend, StubChatBackend};
-use crate::views::ParallelLedger;
+use fluent_knowledge::views::ParallelLedger;
 use std::time::Duration;
 
 fn temp_store() -> Arc<ContentNodeStore> {

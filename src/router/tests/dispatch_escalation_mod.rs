@@ -12,7 +12,9 @@ use crate::dispatch::backend::DispatchBackend;
 use crate::dispatch::backend::StreamHandle;
 use crate::server::dispatch::render_prompt;
 use crate::testing::mock::TranscriptProvider;
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest, RouterResponse};
+use fluent_types::openai_wire::{
+    RouterMessage, RouterMessageContent, RouterRequest, RouterResponse,
+};
 use fluent_types::ContextHit;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -48,7 +50,7 @@ fn text_response(model: &str, content: &str) -> RouterResponse {
         object: "chat.completion".into(),
         created: 0,
         model: model.into(),
-        choices: vec![crate::types::RouterChoice {
+        choices: vec![fluent_types::openai_wire::RouterChoice {
             index: 0,
             message: RouterMessage {
                 role: "assistant".into(),
@@ -58,7 +60,7 @@ fn text_response(model: &str, content: &str) -> RouterResponse {
             },
             finish_reason: "stop".into(),
         }],
-        usage: crate::types::Usage::default(),
+        usage: fluent_types::openai_wire::Usage::default(),
     }
 }
 

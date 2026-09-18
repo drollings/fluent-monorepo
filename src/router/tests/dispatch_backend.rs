@@ -1,6 +1,6 @@
 use super::*;
 #[allow(unused_imports)]
-use crate::types::{RouterMessage, RouterMessageContent};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent};
 fn make_test_request(content: &str) -> RouterRequest {
     RouterRequest {
         model: "test-model".into(),
@@ -97,7 +97,7 @@ fn dummy_response() -> RouterResponse {
         created: 0,
         model: "test-model".into(),
         choices: vec![],
-        usage: crate::types::Usage::default(),
+        usage: fluent_types::openai_wire::Usage::default(),
     }
 }
 
@@ -823,4 +823,88 @@ fn routing_fields_filter_borrows_without_allocating() {
     assert!(std::ptr::eq(i.unwrap(), instance.as_str()));
     assert!(s.is_none());
     assert!(id.is_none());
+}
+
+/// The stream fan-out task runs on the injected runtime (not the ambient
+/// spawner): one spawn through `with_runtime`, and the assembled answer is
+/// unaffected by the routing.
+#[tokio::test]
+async fn stream_fanout_uses_injected_runtime() {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let _server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        {
+            let mut reader = BufReader::new(&mut stream);
+            let mut request_line = String::new();
+            if reader.read_line(&mut request_line).await.is_err() {
+                return;
+            }
+            let mut content_length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).await.is_err() {
+                    return;
+                }
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(v) = line.to_lowercase().strip_prefix("content-length:") {
+                    content_length = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0u8; content_length];
+            if content_length > 0 && reader.read_exact(&mut body).await.is_err() {
+                return;
+            }
+        }
+        let chunk = r#"data: {"id":"x","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}]}"#;
+        // Same single-chunk framing as the abort-path stub: chunk line, then
+        // close. The `stop` finish reason drives the deterministic
+        // finalize-and-return path (no abort involved).
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n",
+            chunk.len(),
+            chunk,
+        );
+        let _ = stream.write_all(resp.as_bytes()).await;
+        let _ = stream.flush().await;
+    });
+
+    let counting = Arc::new(crate::test_support::CountingRuntime::new(
+        fluent_concurrency::tokio_runtime(),
+    ));
+    let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"))
+        .with_runtime(counting.clone());
+    let handle = backend
+        .stream_complete_with_abort(
+            make_test_request("hi"),
+            "m".into(),
+            None,
+            5000,
+            30000,
+            false,
+            None,
+        )
+        .await
+        .expect("stream connects");
+    let answer = handle.answer.as_ref().expect("answer present");
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while answer.get().is_none() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("forwarding task finalizes the answer");
+    // Finalize ran (the task executed to a terminal path — content delivery
+    // through the hand-rolled stub is timing-dependent, so only presence is
+    // pinned, exactly like the abort-path test's prefix assertion).
+    assert!(answer.get().is_some(), "forwarding task ran to finalize");
+    assert_eq!(
+        counting.spawn_count(),
+        1,
+        "exactly the fan-out task routes through the injected runtime"
+    );
 }

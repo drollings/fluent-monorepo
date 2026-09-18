@@ -120,20 +120,21 @@ impl CodewordAnonymizer {
     }
 
     /// Perform consistent substitution using regex matches.
-    /// Matches are sorted rightmost-first to preserve indices during replacement.
+    /// Span splicing composes the shared
+    /// `common_core::string::apply_spans_rightmost` (rightmost-first,
+    /// total over degenerate spans); only the per-span codeword vocabulary
+    /// is local.
     fn apply_substitution(&self, text: &str, matches: &[MatchEntry]) -> String {
-        let mut result = text.to_string();
         let mut dedup: HashMap<String, String> = HashMap::new();
 
-        // Collect (start, end, codeword, matched_text) tuples and sort by position descending
-        let mut substitutions: Vec<(usize, usize, String, String)> = matches
+        // Collect (start, end, codeword, matched_text) tuples.
+        let substitutions: Vec<(usize, usize, String, String)> = matches
             .iter()
             .map(|m| {
                 let codeword = self.codeword_for(&m.pattern_name, &m.matched_text, &mut dedup);
                 (m.start, m.end, codeword, m.matched_text.clone())
             })
             .collect();
-        substitutions.sort_by_key(|k| std::cmp::Reverse(k.0));
 
         // Store codeword → original-value mappings
         {
@@ -144,12 +145,12 @@ impl CodewordAnonymizer {
             }
         }
 
-        // Apply substitutions rightmost-first
-        for (start, end, codeword, _) in &substitutions {
-            result.replace_range(*start..*end, codeword);
-        }
-
-        result
+        // Apply substitutions rightmost-first through the shared splicer.
+        let spans: Vec<(usize, usize, &str)> = substitutions
+            .iter()
+            .map(|(start, end, codeword, _)| (*start, *end, codeword.as_str()))
+            .collect();
+        common_core::string::apply_spans_rightmost(text, spans)
     }
 }
 

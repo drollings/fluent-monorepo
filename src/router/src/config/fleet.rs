@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::{overlay_params, InstanceProfile, ModelEntry, RoleEntry};
 use common_core::constants::default_true;
 
 /// A role's run parameters — the `params` block on a `roles` entry.
@@ -195,4 +196,190 @@ const fn default_n_gpu_layers() -> i32 {
 
 const fn default_sleep_idle_seconds() -> i32 {
     15
+}
+
+/// Expand a raw profile map into the flat sibling list: `count` expansion
+/// (naming siblings `<key>-0` .. `<key>-{count-1}`), name/group default
+/// resolution, the `max_ctx` clamp, and the one-shot `resume` rule. Shared by
+/// the boot materializer below — the expansion lives here once.
+fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<InstanceProfile> {
+    // Exactly one profile may carry `default: true`: a second flag is a
+    // declaration collision, warned loudly and resolved first-wins in
+    // deterministic map order (the same order the expansion below and
+    // every `find(|p| p.default)` consumer observe).
+    if merged.values().filter(|p| p.default).count() > 1 {
+        let mut keys: Vec<&str> = merged
+            .iter()
+            .filter(|(_, p)| p.default)
+            .map(|(k, _)| k.as_str())
+            .collect();
+        keys.sort_unstable();
+        tracing::warn!(
+            target: "router.config",
+            keys = ?keys,
+            "multiple `default: true` instance profiles merged; \
+             the first in map order wins",
+        );
+    }
+    let mut keys: Vec<&String> = merged.keys().collect();
+    keys.sort();
+    let mut out = Vec::new();
+    for key in keys {
+        let profile = &merged[key];
+        let base_name = profile.name.clone().unwrap_or_else(|| key.clone());
+        let count = profile.count.max(1);
+        // All siblings share the profile's group (default = base name).
+        let group = profile.group.clone().unwrap_or_else(|| base_name.clone());
+        for i in 0..count {
+            let name = if count > 1 {
+                format!("{base_name}-{i}")
+            } else {
+                base_name.clone()
+            };
+            let mut p = profile.clone();
+            // A profile whose `max_ctx` cap sits below its `num_ctx` is
+            // clamped at materialization; absent cap (the default) is a
+            // no-op — byte-identical to today's profiles.
+            if let Some(cap) = p.max_ctx {
+                if cap < p.num_ctx {
+                    p.num_ctx = cap;
+                }
+            }
+            // One-shot profiles (the default) never carry multi-step
+            // state: a `resume: true` on them is inapplicable, forced
+            // false fail-open with a loud warn. Session profiles keep
+            // their declared `resume` value unchanged.
+            if !p.session && p.resume {
+                tracing::warn!(
+                    target: "router.config",
+                    profile = %key,
+                    "resume:true on a one-shot instance profile is inapplicable \
+                     (multi-step state needs session:true); forcing resume:false",
+                );
+                p.resume = false;
+            }
+            p.name = Some(name);
+            p.group = Some(group.clone());
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Compose one model's effective instance pool at boot: the single
+/// role → per-model-instance params chain, synthesized here so every
+/// qualifier, sampling, backend, and supervision path reads composed values
+/// through `ModelEntry::effective_pool`.
+///
+/// The config declares no instance pools; profiles are synthesized from the
+/// model entry and the roles that bind it:
+///
+/// - one profile per role whose `models` list binds this model (sorted
+///   role order), composing role run-block sampling and the model-side
+///   `roles.<role>` override over the entry params, with `pinned`
+///   composing as role OR model and `max_ctx` as override-else-entry;
+/// - when no role binds the model, a single `base` profile (the entry's own
+///   params, `pinned`, `max_ctx`, `max_parallel`), marked `default: true` —
+///   the bare-model dispatch point. Role-bound models have no `base`
+///   phantom: every dispatch and backend qualifier names a real role
+///   window, never a synthetic default.
+///
+/// A pinned profile is what boots a model at startup
+/// (`supervisor::LlamaServerSpec::from_entry`); everything else loads on
+/// demand. `expand_instance_map` clamps each profile's `num_ctx` to its
+/// `max_ctx` cap and resolves names/groups.
+#[allow(clippy::implicit_hasher)]
+pub(crate) fn materialize_effective_pool(
+    model_key: &str,
+    entry: &ModelEntry,
+    roles: &HashMap<String, RoleEntry>,
+) -> Vec<InstanceProfile> {
+    let entry_num_ctx = || {
+        entry
+            .params
+            .as_ref()
+            .and_then(|p| p.get("num_ctx"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| RoleParams::default().num_ctx)
+    };
+    let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
+    let mut binding_roles: Vec<&str> = roles
+        .iter()
+        .filter(|(_, role)| role.serves(model_key))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    binding_roles.sort_unstable();
+    // No bindings: the entry stands alone, so it keeps its synthetic `base`
+    // dispatch point. Bound models serve only through their role windows —
+    // no `base` phantom beside them (every qualifier names a real window).
+    if binding_roles.is_empty() {
+        merged.insert(
+            "base".to_string(),
+            InstanceProfile {
+                name: None,
+                group: None,
+                count: 1,
+                num_ctx: entry_num_ctx(),
+                parallel: entry.max_parallel,
+                pinned: entry.pinned,
+                no_sleep: false,
+                sleep_idle_seconds: None,
+                default: true,
+                resume: false,
+                params: entry.params.clone(),
+                embedding: None,
+                max_ctx: entry.max_ctx,
+                session: false,
+            },
+        );
+    }
+    for role_name in binding_roles {
+        let role = &roles[role_name];
+        let over = entry.role_params.as_ref().and_then(|o| o.get(role_name));
+        // role run-block sampling, then the model-side override, over the
+        // entry params — the same chain `answer_params_for` composes at
+        // dispatch. The role run block owns the role profile's window: its
+        // `num_ctx` wins over the entry params, and the `max_ctx` cap
+        // (override, then entry) clamps it.
+        let mut params =
+            overlay_params(entry.params.as_ref(), role.params.sampling_value().as_ref());
+        if let Some(op) = over.and_then(|o| o.params.as_ref()) {
+            params = overlay_params(Some(&params), Some(op));
+        }
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert(
+                "num_ctx".to_string(),
+                serde_json::Value::from(role.params.num_ctx),
+            );
+        }
+        let num_ctx = role.params.num_ctx;
+        // Sibling windows: `max_parallel` is the admission cap AND the
+        // window count (one window per parallel slot), so the cap the
+        // dispatch gate enforces always has the slots it counts. Unset
+        // stays a single window. `u32::try_from` saturates absurd values
+        // instead of truncating (parse already rejects 0).
+        let count = role
+            .max_parallel
+            .map_or(1, |m| u32::try_from(m).unwrap_or(u32::MAX).max(1));
+        merged.insert(
+            role_name.to_string(),
+            InstanceProfile {
+                name: None,
+                group: None,
+                count,
+                num_ctx,
+                parallel: entry.max_parallel,
+                pinned: role.pinned || entry.pinned,
+                no_sleep: false,
+                sleep_idle_seconds: None,
+                default: false,
+                resume: false,
+                params: Some(params),
+                embedding: None,
+                max_ctx: over.and_then(|o| o.max_ctx).or(entry.max_ctx),
+                session: false,
+            },
+        );
+    }
+    expand_instance_map(&merged)
 }

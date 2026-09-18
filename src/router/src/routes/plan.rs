@@ -14,7 +14,7 @@ use crate::charts::store::ChartStore;
 use crate::config::ChartsConfig;
 use crate::ledger::prompt::{LedgerPromptAssembler, LodSpec, PromptBudget, WorkerContext};
 use crate::server::responses::{empty_response, HyperResponse, ServerStats};
-use crate::views::ParallelLedger;
+use fluent_knowledge::views::ParallelLedger;
 
 pub struct PlanRoute {
     /// The chart store — the single owner of the workflow_library index

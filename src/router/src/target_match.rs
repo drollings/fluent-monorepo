@@ -103,7 +103,7 @@ fn candidates_for_keys(routing: &RoutingConfig, keys: &[String]) -> Vec<TargetCa
                 model_name: entry
                     .name
                     .clone()
-                    .unwrap_or_else(|| crate::config::split_model_key(key).0.to_string()),
+                    .unwrap_or_else(|| fluent_types::model_key::split_model_key(key).0.to_string()),
                 intelligence: entry.intelligence,
                 cost: entry.cost_input + entry.cost_output,
             })
@@ -308,7 +308,7 @@ impl RoleExpansion {
 /// onnx roles (served by the onnx backend, with no `models` entry). `None`
 /// when the member resolves to nothing.
 fn member_wire_id(routing: &RoutingConfig, member: &str) -> Option<String> {
-    let (base, _) = crate::config::split_model_key(member);
+    let (base, _) = fluent_types::model_key::split_model_key(member);
     if routing.onnx_keys.contains(base) {
         return Some(member.to_string());
     }
@@ -338,7 +338,7 @@ fn duty_fittable(routing: &RoutingConfig, base: &str, loaded: bool) -> bool {
 /// `base:point` wires served from a `models` entry or onnx role). `None`
 /// when the wire resolves to nothing — a removed model, never a candidate.
 fn key_for_wire(routing: &RoutingConfig, wire: &str) -> Option<String> {
-    let (base, _) = crate::config::split_model_key(wire);
+    let (base, _) = fluent_types::model_key::split_model_key(wire);
     if routing.models.contains_key(base) || routing.onnx_keys.contains(base) {
         return Some(base.to_string());
     }
@@ -353,7 +353,7 @@ fn rung_viable(routing: &RoutingConfig, member: &str, min_complexity: Option<u8>
     if member_wire_id(routing, member).is_none() {
         return false;
     }
-    let (base, _) = crate::config::split_model_key(member);
+    let (base, _) = fluent_types::model_key::split_model_key(member);
     match routing.models.get(base) {
         Some(entry) => entry.intelligence >= min_complexity.unwrap_or(0),
         None => true,
@@ -378,7 +378,7 @@ pub fn viable_last_key(
 ) -> Option<String> {
     if let Some(wire) = recency.and_then(RoleRecency::last_any) {
         if let Some(key) = key_for_wire(routing, &wire) {
-            let (base, _) = crate::config::split_model_key(&key);
+            let (base, _) = fluent_types::model_key::split_model_key(&key);
             if duty_fittable(routing, base, is_running(base)) {
                 return Some(key);
             }
@@ -397,7 +397,7 @@ pub fn viable_last_key(
     // falls back to the literal sentinel (served by the boot default, whose
     // own call fails loudly when unreachable), and dispatch-time ensure
     // remains the only path that loads models.
-    let (base, _) = crate::config::split_model_key(&picked);
+    let (base, _) = fluent_types::model_key::split_model_key(&picked);
     if duty_fittable(routing, base, is_running(base)) {
         Some(picked)
     } else {
@@ -464,7 +464,7 @@ pub fn expand_role_keys(
         live
     };
     let is_loaded = |member: &str| {
-        let (base, _) = crate::config::split_model_key(member);
+        let (base, _) = fluent_types::model_key::split_model_key(member);
         if routing.onnx_keys.contains(base) {
             return true;
         }

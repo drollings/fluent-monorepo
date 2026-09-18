@@ -66,6 +66,15 @@ fn audit_events_reach_audit_writer_not_ops_writer() {
     tracing::subscriber::with_default(subscriber, || {
         crate::audit::emit("chart_target", serde_json::json!({ "chart": "c" }));
         tracing::info!(target: "router.pipeline", "ops event");
+        // The retired `router.charts.audit` target: no producer emits to it
+        // anymore, so the audit layer must not subscribe to it — a legacy
+        // event must NOT land in the audit file.
+        tracing::info!(
+            target: "router.charts.audit",
+            kind = "chart_target",
+            detail = %serde_json::json!({ "chart": "legacy_probe_xyz" }),
+            "legacy audit record",
+        );
     });
 
     // Dropping the guards flushes the non-blocking writers synchronously.
@@ -90,5 +99,9 @@ fn audit_events_reach_audit_writer_not_ops_writer() {
     assert!(
         !ops_content.contains("chart_target"),
         "audit record leaked into ops file:\n{ops_content}"
+    );
+    assert!(
+        !audit_content.contains("legacy_probe_xyz"),
+        "retired router.charts.audit target must not reach the audit file:\n{audit_content}"
     );
 }

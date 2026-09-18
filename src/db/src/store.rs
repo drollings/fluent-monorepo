@@ -3,7 +3,7 @@
 //! `SqliteStore` owns the connection lifecycle (open / WAL / schema init) and
 //! exposes typed statement helpers (`query_row`/`query_rows`/`execute`/
 //! `execute_batch`/`transaction`). It is the base shape that `GuidanceDb`,
-//! `Library`, `ContentNodeLedger`, `HolographicStore`, and the charts store all
+//! `Library`, `ContentNodeStore`, `HolographicStore`, and the charts store all
 //! collapse to — each of those hand-rolled `Mutex<Connection>` + `open_wal`
 //! before this component existed.
 //!

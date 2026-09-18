@@ -1100,3 +1100,52 @@ fn lazy_tiers_derive_from_lod0_never_chained() {
         "two requests → one compute"
     );
 }
+
+#[test]
+fn record_content_node_clears_stale_label_on_flagged_write() {
+    // A flagged LOD0 must not keep a label derived from the dirty text: the
+    // stale LOD5 is cleared so it re-derives from the scrubbed text.
+    let store = temp_store();
+    let mut node = new_node(
+        NodeId::from_int(707),
+        "sess-lod5",
+        "r1",
+        "assistant",
+        "Contact user@example.com now",
+        Some(true),
+    );
+    node.lod[LOD5_LABEL as usize] = "STALE label with user@example.com inside".to_string();
+    let id = store.record_content_node(&node).unwrap();
+    let fetched = store.snapshot(id).expect("stored");
+    assert_eq!(
+        fetched.lod[0], "Contact [REDACTED:email] now",
+        "LOD0 scrubbed"
+    );
+    assert_ne!(
+        fetched.lod[LOD5_LABEL as usize], "STALE label with user@example.com inside",
+        "stale label cleared"
+    );
+    assert!(
+        !fetched.lod[LOD5_LABEL as usize].contains("user@example.com"),
+        "re-derived label must not leak the address, got {:?}",
+        fetched.lod[LOD5_LABEL as usize]
+    );
+}
+
+#[test]
+fn render_session_renders_three_lines() {
+    use fluent_knowledge::views::Lod;
+    let store = Arc::new(temp_store());
+    for (i, text) in ["first node text", "second node text", "third node text"]
+        .iter()
+        .enumerate()
+    {
+        store
+            .record_request("sess-render", &format!("r{i}"), text)
+            .unwrap();
+    }
+    let rendered = store.render_session("sess-render", Lod::LOD0);
+    let lines: Vec<&str> = rendered.lines().collect();
+    assert_eq!(lines.len(), 3, "3 nodes -> 3 lines, got: {rendered}");
+    assert!(lines.contains(&"first node text"));
+}

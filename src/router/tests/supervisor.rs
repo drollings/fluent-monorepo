@@ -679,3 +679,33 @@ fn free_port_parallel_reservations_do_not_collide() {
         "parallel reservations collided: {ports:?}"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn child_log_pumps_use_injected_runtime() {
+    // `spawn_child`'s stdout/stderr pumps route through the injected runtime:
+    // two spawns counted, child still spawned (counter file written), and
+    // `stop()` still tears everything down without a restart.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let counter = tmp.path().join("spawns");
+    let bin = write_fake_llama(&counter);
+    let counting = Arc::new(crate::test_support::CountingRuntime::new(
+        fluent_concurrency::tokio_runtime(),
+    ));
+    let server = Arc::new(
+        ManagedServer::with_liveness(
+            LlamaServerSpec::from_entry("swarm", &managed_entry(), 1, None, None, defaults()),
+            Duration::from_millis(50),
+            3,
+            0,
+        )
+        .with_runtime(counting.clone()),
+    );
+    server.spawn_child(&bin);
+    assert_eq!(
+        counting.spawn_count(),
+        2,
+        "stdout + stderr pumps route through the injected runtime"
+    );
+    wait_for_spawn_count(&counter, 1, Duration::from_secs(8)).await;
+    server.stop().await;
+}

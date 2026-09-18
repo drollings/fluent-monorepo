@@ -999,3 +999,113 @@ impl<'a> Iterator for AsciiAlnumTokens<'a> {
         Some(token)
     }
 }
+
+/// Replace byte spans rightmost-first so earlier offsets stay valid.
+///
+/// The one shared span-splicing stanza (scrubbers, anonymizers): sorts by
+/// `(start, end)` descending, then applies each span's replacement with
+/// [`str::replace_range`]. Total and deterministic — input order is
+/// irrelevant; degenerate spans are skipped, never panics:
+///
+/// - empty/inverted (`start >= end`), past-the-end, and non-`char`-boundary
+///   spans are skipped; spans straddling the end of (the current) text are
+///   clamped to what exists;
+/// - a span starting inside already-handled text is skipped (an exact
+///   duplicate, or nested inside a wider applied span);
+/// - a span straddling the handled frontier is clamped to the unhandled
+///   prefix — the rightmost replacement wins, and matched text is never
+///   left in place by an overlap (fail-closed bias: over-scrubbing clean
+///   text is safe, under-scrubbing a match is a leak).
+///
+/// Adjacent spans all apply; each span's replacement is used verbatim (no
+/// escaping). Callers with one replacement for every span pass the same
+/// `&str` N times.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::apply_spans_rightmost;
+///
+/// assert_eq!(
+///     apply_spans_rightmost("aaaBBBccc", vec![(6, 9, "C"), (0, 3, "A")]),
+///     "ABBBC"
+/// );
+/// assert_eq!(
+///     apply_spans_rightmost("abcdef", vec![(0, 6, "O"), (2, 4, "I")]),
+///     "OIef"
+/// );
+/// ```
+#[must_use]
+pub fn apply_spans_rightmost(text: &str, spans: Vec<(usize, usize, &str)>) -> String {
+    let mut sorted = spans;
+    sorted.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+    let mut result = text.to_string();
+    let mut cutoff = usize::MAX;
+    for (start, end, replacement) in sorted {
+        if start >= end {
+            continue; // empty or inverted: would insert, never replace
+        }
+        if start >= cutoff {
+            continue; // inside already-handled text (duplicate or nested)
+        }
+        let mut end = end.min(cutoff);
+        end = end.min(result.len());
+        if start >= end {
+            continue;
+        }
+        if result.get(start..end).is_none() {
+            continue; // out of bounds or splits a `char` boundary
+        }
+        result.replace_range(start..end, replacement);
+        cutoff = start;
+    }
+    result
+}
+
+/// FTS5 match-expression tokenizer shared by every lexical recall arm:
+/// Unicode-alphanumeric runs, lowercased, deduped in first-seen order.
+/// Differs from [`ascii_alnum_tokens`] on purpose (Unicode-aware,
+/// case-folding, deduped): FTS5's `unicode61` tokenizer matches folded, and
+/// short match expressions keep the query planner cheap. Extracted from
+/// `search-vector`'s match builder so coral's node index composes the same
+/// token stream instead of growing a second one.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::fts_match_tokens;
+///
+/// assert_eq!(fts_match_tokens("find AlphaSymbol"), vec!["find", "alphasymbol"]);
+/// assert_eq!(fts_match_tokens("hello hello"), vec!["hello"]);
+/// assert_eq!(fts_match_tokens("!!!"), Vec::<String>::new());
+/// ```
+#[must_use]
+pub fn fts_match_tokens(query: &str) -> Vec<String> {
+    let mut tokens: Vec<String> = Vec::new();
+    for token in query.split(|c: char| !c.is_alphanumeric()) {
+        if token.is_empty() {
+            continue;
+        }
+        let lower = token.to_lowercase();
+        if !tokens.contains(&lower) {
+            tokens.push(lower);
+        }
+    }
+    tokens
+}
+
+/// Quote one FTS5 match token: wrap in double quotes, doubling embedded
+/// quotes so user input can never act as an operator or break the expression.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::fts_quote;
+///
+/// assert_eq!(fts_quote("hi"), "\"hi\"");
+/// assert_eq!(fts_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
+/// ```
+#[must_use]
+pub fn fts_quote(token: &str) -> String {
+    format!("\"{}\"", token.replace('"', "\"\""))
+}

@@ -12,6 +12,8 @@ pub mod golden;
 pub mod liveness_calibration;
 pub mod overlay_calibration;
 pub mod rubric_fixtures;
+#[path = "types.rs"]
+pub mod wire_serde;
 // NOTE: no `threshold_calibration` here. That file is the `threshold_calibration`
 // integration target and addresses the library under test as extern
 // `fluent_router::`, so it cannot compile as a lib submodule. Its test bodies

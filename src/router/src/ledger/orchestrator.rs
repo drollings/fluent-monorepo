@@ -8,7 +8,7 @@
 //!
 //! It is dependency-injected throughout (no concrete wiring): it composes the
 //! shared primitives — `DependencyGraph` (via `DependencySession`),
-//! `SnapshotStore::save_snapshot`/`retrieve`, `ContentNodeStore`/`ContentNodeLedger`,
+//! `SnapshotStore::save_snapshot`/`retrieve`, `ContentNodeStore`,
 //! `LedgerTierWorker::enqueue`, `ContentNodeStore::lod_text` (through the assembler),
 //! `Limiter`/`ArcIntern` — and introduces **no** new primitive.
 //!
@@ -31,7 +31,7 @@ use crate::kv_cache::SnapshotStore;
 use crate::ledger::prompt::{LedgerPromptAssembler, PromptBudget, WorkerContext};
 use crate::ledger::tiering::LedgerTierWorker;
 use crate::node_store::{new_node, ContentNodeStore};
-use crate::views::{Lod, ParallelLedger};
+use fluent_knowledge::views::{Lod, ParallelLedger};
 
 /// Re-export the prompt `LodSpec` under its canonical name for the config.
 pub use crate::ledger::prompt::LodSpec;

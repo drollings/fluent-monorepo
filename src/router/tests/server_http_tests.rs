@@ -197,7 +197,7 @@ async fn buffered_happy_path_returns_200_with_choices() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn session_step_recorded_and_completed_on_dispatch_path() {
     use crate::dag_session::SessionRegistry;
-    use crate::session::StepStatus;
+    use fluent_types::StepStatus;
 
     let config = make_config(
         "http://upstream.test:8080/v1/chat/completions",
@@ -264,20 +264,20 @@ async fn upstream_answering(content: &'static str) -> String {
 }
 
 /// Read the session's only node and return its LOD0 (full text) content.
-fn session_lod0(ledger: &crate::ledger::ContentNodeLedger, session_id: &str) -> Option<String> {
+fn session_lod0(ledger: &crate::node_store::ContentNodeStore, session_id: &str) -> Option<String> {
     let nodes = ledger.get_session_nodes(session_id, 10).ok()?;
     nodes.first().map(|n| n.lod[0].clone())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn routed_dispatch_answer_recorded_in_ledger_lod0() {
-    use crate::ledger::ContentNodeLedger;
+    use crate::node_store::ContentNodeStore;
 
     // Real upstream dispatch (buffered): the transcript classifier routes to
     // `fast` and the mock upstream answers with a fixed content.
     let upstream = upstream_answering("the ledger answer").await;
     let config = make_config(&upstream, false, false, 5000, 2000);
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let server = Box::pin(spawn_test_server_with_ledger(
         config,
         None,
@@ -327,7 +327,8 @@ async fn routed_dispatch_answer_recorded_in_ledger_lod0() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ledger_with_summarizer_attached_derives_lod() {
-    use crate::ledger::{ContentNodeLedger, LedgerError};
+    use crate::ledger::LedgerError;
+    use crate::node_store::ContentNodeStore;
     use crate::summarization::Summarizer;
 
     // A ledger wired with a `Summarizer` must derive lazy LOD levels at
@@ -341,7 +342,7 @@ async fn ledger_with_summarizer_attached_derives_lod() {
         Arc::new(crate::test_stubs::StubChatBackend::always("lazy summary"));
     let summarizer = Summarizer::new(backend, 20);
     let ledger = Arc::new(
-        ContentNodeLedger::open_in_memory()
+        ContentNodeStore::open_in_memory()
             .unwrap()
             .with_summarizer(summarizer),
     );
@@ -384,7 +385,7 @@ async fn ledger_with_summarizer_attached_derives_lod() {
 
     // Without a Summarizer the same call would return NoSummarizer - assert
     // the plain ledger still reports it, proving the wiring is load-bearing.
-    let bare = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let bare = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let id = bare
         .record_request("sess-m2-bare", "r1", "some text")
         .unwrap();
@@ -396,7 +397,7 @@ async fn ledger_with_summarizer_attached_derives_lod() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mock_dispatch_path_records_answer_in_ledger() {
-    use crate::ledger::ContentNodeLedger;
+    use crate::node_store::ContentNodeStore;
 
     // Mock dispatch path: the canned `dispatch_response` is the answer and
     // must land in the ledger LOD0 (previously only a "mock response" marker
@@ -408,7 +409,7 @@ async fn mock_dispatch_path_records_answer_in_ledger() {
         5000,
         2000,
     );
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let server = Box::pin(spawn_test_server_with_ledger(
         config,
         Some(mock_for("What is 2+2?", "mock answer")),
@@ -436,7 +437,7 @@ async fn mock_dispatch_path_records_answer_in_ledger() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn routed_stream_dispatch_answer_recorded_on_completion() {
-    use crate::ledger::ContentNodeLedger;
+    use crate::node_store::ContentNodeStore;
 
     // Real upstream SSE stream: the assembled content is finalized once the
     // stream ends and recorded to the ledger (best-effort content).
@@ -469,7 +470,7 @@ async fn routed_stream_dispatch_answer_recorded_on_completion() {
     .await;
 
     let config = make_config(&upstream, true, false, 5000, 2000);
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let server = Box::pin(spawn_test_server_with_ledger(
         config,
         None,
@@ -518,11 +519,11 @@ async fn routed_stream_dispatch_answer_recorded_on_completion() {
 /// with two user turns in one request, the recorded user node is the last.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn server_handler_persists_last_user_message() {
-    use crate::ledger::ContentNodeLedger;
+    use crate::node_store::ContentNodeStore;
 
     let upstream = upstream_answering("four").await;
     let config = make_config(&upstream, false, false, 5000, 2000);
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let server = Box::pin(spawn_test_server_with_ledger(
         config,
         Some(mock_for("What is 2+2?", "four")),
@@ -572,10 +573,11 @@ async fn server_handler_persists_last_user_message() {
 /// there; the branch body is identical either way.)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn server_handler_direct_response_appends_assistant_node() {
-    use crate::ledger::ContentNodeLedger;
-    use crate::server::handler::{record_ledger_request, record_ledger_result};
+    use crate::node_store::ContentNodeStore;
+    use crate::server::handler::record_ledger_request;
+    use crate::server::session_step::record_ledger_result;
 
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().unwrap());
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().unwrap());
     let node = record_ledger_request(
         Some(&ledger),
         "sess-handler-direct".to_string(),
@@ -1502,7 +1504,7 @@ async fn spawn_rigor_server(blue: Vec<&str>, red: Vec<&str>, judge: Vec<&str>) -
     let config = make_config("http://127.0.0.1:1", false, false, 5000, 2000);
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(None));
     let sessions = Arc::new(crate::dag_session::SessionRegistry::new(None));
-    let ledger = Arc::new(crate::ledger::ContentNodeLedger::open_in_memory().unwrap());
+    let ledger = Arc::new(crate::node_store::ContentNodeStore::open_in_memory().unwrap());
 
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -2106,24 +2108,24 @@ fn review_deps(
     session_id: &str,
 ) -> (
     ServerDeps,
-    Arc<crate::ledger::ContentNodeLedger>,
+    Arc<crate::node_store::ContentNodeStore>,
     fluent_types::NodeId,
     Arc<std::sync::atomic::AtomicUsize>,
 ) {
     use crate::ledger::correction_index::SqliteCorrectionIndex;
     use crate::ledger::nlp::record_parse_node;
-    use crate::ledger::ContentNodeLedger;
+    use crate::node_store::ContentNodeStore;
     use crate::server::review::{ReviewFetch, ReviewWorker};
     use fluent_concept::InMemoryConceptStore;
     use fluent_concurrency::tokio_runtime;
     use spacy_rs::CorrectionIndex;
 
-    let ledger = Arc::new(ContentNodeLedger::open_in_memory().expect("ledger"));
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("ledger"));
     let signals = vec![review_signal()];
     let parse_id = record_parse_node(&ledger, session_id, "req-1", "show me the report", &signals)
         .expect("parse node");
 
-    let shared = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let shared = ledger.shared_sqlite().expect("shared sqlite");
     let index = Arc::new(SqliteCorrectionIndex::new(shared));
     let concepts = Arc::new(InMemoryConceptStore::new());
     let fetched = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -2199,8 +2201,7 @@ async fn review_parse_endpoints_enqueue_and_read_back_status() {
     // The candidate plane lists durable overlay candidates for the node (M6.5).
     // Seed one entity-link candidate and confirm the GET surfaces it.
     use crate::ledger::overlay::OverlayCandidateStore;
-    let candidate_store =
-        OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"));
+    let candidate_store = OverlayCandidateStore::new(ledger.shared_sqlite().expect("shared"));
     candidate_store
         .write_candidate(&crate::ledger::overlay::OverlayCandidate::entity_link(
             parse_id,
@@ -2246,14 +2247,14 @@ async fn review_parse_endpoints_enqueue_and_read_back_status() {
 /// node for the session it is 404 — never a crash.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn review_parse_endpoint_degrades_gracefully() {
-    use crate::ledger::ContentNodeLedger;
+    use crate::node_store::ContentNodeStore;
 
     // No review worker configured.
     let config = make_config("http://127.0.0.1:1", false, false, 5000, 2000);
     let pipelines = Arc::new(config.build_all_pipelines_with_backend(None));
     let mut deps = test_deps(pipelines, &config, None, None, None, HashMap::new(), None);
     deps.ledger = Some(Arc::new(
-        ContentNodeLedger::open_in_memory().expect("ledger"),
+        ContentNodeStore::open_in_memory().expect("ledger"),
     ));
     let server = Box::pin(spawn_test_server_with_deps(deps)).await;
     let base = server.base_url();
@@ -2276,4 +2277,68 @@ async fn review_parse_endpoint_degrades_gracefully() {
         .await
         .expect("POST review-parse");
     assert_eq!(resp.status(), 404, "no parse node for session → 404");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ops_endpoint_key_sets_are_stable() {
+    // Dashboards read `/health` and `/stats` JSON keys: pin the exact key
+    // sets (no silent renames or additions).
+    let config = make_config("http://127.0.0.1:1", false, false, 2000, 1000);
+    let provider = TranscriptProvider::new(HashMap::new());
+    let backend: Arc<dyn ChatBackend> = Arc::new(provider);
+    let pipelines = Arc::new(config.build_all_pipelines_with_backend(Some(&backend)));
+    let deps = test_deps(pipelines, &config, None, None, None, HashMap::new(), None);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let serve = tokio::spawn(async move { serve_http(listener, deps, Some(shutdown_rx)).await });
+
+    let client = reqwest::Client::new();
+    let health: Value = client
+        .get(format!("http://{addr}/health"))
+        .send()
+        .await
+        .expect("health")
+        .json()
+        .await
+        .expect("health json");
+    let mut health_keys: Vec<&str> = health
+        .as_object()
+        .expect("health object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    health_keys.sort_unstable();
+    assert_eq!(health_keys, ["cache_hits", "cache_misses", "status"]);
+    assert_eq!(health["status"], "ok");
+
+    let stats: Value = client
+        .get(format!("http://{addr}/stats"))
+        .send()
+        .await
+        .expect("stats")
+        .json()
+        .await
+        .expect("stats json");
+    let mut stats_keys: Vec<&str> = stats
+        .as_object()
+        .expect("stats object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    stats_keys.sort_unstable();
+    assert_eq!(
+        stats_keys,
+        [
+            "cache_hits",
+            "cache_misses",
+            "errors",
+            "rejections",
+            "requests"
+        ]
+    );
+
+    let _ = shutdown_tx.send(true);
+    let _ = tokio::time::timeout(Duration::from_secs(3), serve).await;
 }

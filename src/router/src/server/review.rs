@@ -34,7 +34,9 @@ use thiserror::Error;
 
 use crate::ledger::correction_index::CorrectionRow;
 use crate::ledger::nlp::review_node;
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
+use crate::server::handler::ServerDeps;
+use crate::server::responses::{error_response, HyperResponse};
 
 /// One review job: a parse node plus the interlingua pattern keys to
 /// (re)check against the correction index.
@@ -116,7 +118,7 @@ impl ReviewWorker {
     /// public seam).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        ledger: &Arc<ContentNodeLedger>,
+        ledger: &Arc<ContentNodeStore>,
         index: &Arc<dyn CorrectionIndex>,
         concepts: &Arc<dyn ConceptStore>,
         fetch: &ReviewFetch,
@@ -289,12 +291,7 @@ fn human_review_claim(status: &str, model: &str) -> AnnotationClaim {
 /// Best-effort tiered annotation write after a review lands. Never fails the
 /// review itself; a failure is surfaced (not silently swallowed) and leaves
 /// the review node committed.
-fn record_review_annotation(
-    ledger: &ContentNodeLedger,
-    node_id: NodeId,
-    status: &str,
-    model: &str,
-) {
+fn record_review_annotation(ledger: &ContentNodeStore, node_id: NodeId, status: &str, model: &str) {
     if let Err(e) = ledger.write_annotation(node_id, &human_review_claim(status, model)) {
         tracing::warn!(
             target: "router.review",
@@ -310,7 +307,7 @@ fn process_job(
     index: &Arc<dyn CorrectionIndex>,
     concepts: &Arc<dyn ConceptStore>,
     fetch: &ReviewFetch,
-    ledger: &Arc<ContentNodeLedger>,
+    ledger: &Arc<ContentNodeStore>,
     review_model: &str,
     prefilter: Option<&dyn PiiSpanDetector>,
 ) {
@@ -514,11 +511,11 @@ fn candidate_concepts(
 
 /// Merge the `review_status` overlay onto the parse node's existing metadata
 /// (kind/signals/ids are preserved — the node is read first so the parse data
-/// is not clobbered). The value passed to [`ContentNodeLedger::apply_review`].
+/// is not clobbered). The value passed to [`ContentNodeStore::apply_review`].
 /// The pre-filter's PII spans ride along as additive candidates (never a
 /// write to any interlingua doc field).
 fn review_metadata(
-    ledger: &Arc<ContentNodeLedger>,
+    ledger: &Arc<ContentNodeStore>,
     node_id: NodeId,
     status: &str,
     corrected: &AnnotationResult,
@@ -526,7 +523,7 @@ fn review_metadata(
     pii_spans: &[PiiSpan],
 ) -> serde_json::Value {
     let mut merged = ledger
-        .get_node(node_id)
+        .snapshot(node_id)
         .and_then(|n| n.metadata)
         .unwrap_or_else(|| serde_json::json!({}));
     if let Some(obj) = merged.as_object_mut() {
@@ -639,6 +636,188 @@ pub(crate) fn build_review_job(
         pii_spans: Vec::new(),
     }
 }
+/// Extract the session_id from a `/v1/sessions/{id}/review-parse` path.
+fn extract_session_id_from_review_path(path: &str) -> Option<String> {
+    let prefix = "/v1/sessions/";
+    let suffix = "/review-parse";
+    if path.starts_with(prefix) && path.ends_with(suffix) {
+        let id = &path[prefix.len()..path.len() - suffix.len()];
+        if !id.is_empty() {
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
+/// POST /v1/sessions/{id}/review-parse — enqueue a review job for the parse
+/// node associated with the session's latest request. Returns 202 with a job
+/// id on success; 404 if no review worker is configured or no parse node
+/// exists for the session.
+pub(crate) async fn handle_review_parse_post(
+    _req: hyper::Request<hyper::body::Incoming>,
+    deps: ServerDeps,
+    path: &str,
+) -> Result<HyperResponse, std::convert::Infallible> {
+    let Some(session_id) = extract_session_id_from_review_path(path) else {
+        return Ok(error_response(
+            hyper::StatusCode::BAD_REQUEST,
+            "invalid session id in path",
+        ));
+    };
+
+    let Some(ledger) = deps.ledger else {
+        return Ok(error_response(
+            hyper::StatusCode::NOT_FOUND,
+            "review not available: no ledger configured",
+        ));
+    };
+
+    let Some(worker) = deps.review_worker else {
+        return Ok(error_response(
+            hyper::StatusCode::NOT_IMPLEMENTED,
+            "review not enabled: no review worker configured",
+        ));
+    };
+
+    // Find the latest parse node for this session
+    let Some(node_id) = ledger.latest_parse_node_id(&session_id) else {
+        return Ok(error_response(
+            hyper::StatusCode::NOT_FOUND,
+            "no parse node found for session",
+        ));
+    };
+
+    // Get the parse data from the ledger
+    let Some(node) = ledger.snapshot(node_id) else {
+        return Ok(error_response(
+            hyper::StatusCode::NOT_FOUND,
+            "parse node not found",
+        ));
+    };
+
+    // Extract the signals and confidence from the node metadata
+    let signals = extract_signals_from_node(&node);
+    let confidence = extract_confidence_from_node(&node);
+    let token_confidence = node
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("token_confidence"))
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(serde_json::Value::as_f64)
+                .collect::<Vec<f64>>()
+        });
+
+    // Build the ReviewJob via the shared helper: the correction-cache patterns
+    // are the aligned (lemma_id, entity_id) pairs from the sentinel-filtered
+    // token ids; `entity_id` is `None` until entity linking lands. The job
+    // carries the parse node's real origin (L4 — `parse_review` nodes are
+    // indexed under the session/request they belong to).
+    let job = crate::server::review::build_review_job(
+        worker.review_model(),
+        node_id,
+        node.session_id.as_deref().unwrap_or(&session_id),
+        node.request_id.as_deref().unwrap_or("review"),
+        &node.lod[0],
+        &signals,
+        confidence.as_ref(),
+        token_confidence.as_deref(),
+    );
+
+    // Enqueue the job
+    match worker.enqueue(job).await {
+        Ok(()) => Ok(crate::server::responses::json_response(
+            hyper::StatusCode::ACCEPTED,
+            &serde_json::json!({
+                "session_id": session_id,
+                "node_id": node_id.as_int(),
+                "status": "review_queued"
+            }),
+        )),
+        Err(e) => Ok(error_response(
+            hyper::StatusCode::SERVICE_UNAVAILABLE,
+            &format!("review queue error: {e}"),
+        )),
+    }
+}
+
+/// GET /v1/sessions/{id}/review-parse — return the review status for the
+/// session's latest parse node (if any). Returns the `review_status` metadata
+/// from the parse node. Synchronous (pure ledger reads; no await).
+pub(crate) fn handle_review_parse_get(
+    _req: hyper::Request<hyper::body::Incoming>,
+    deps: ServerDeps,
+    path: &str,
+) -> HyperResponse {
+    let Some(session_id) = extract_session_id_from_review_path(path) else {
+        return error_response(hyper::StatusCode::BAD_REQUEST, "invalid session id in path");
+    };
+
+    let Some(ledger) = deps.ledger else {
+        return error_response(
+            hyper::StatusCode::NOT_FOUND,
+            "review not available: no ledger configured",
+        );
+    };
+
+    let Some(node_id) = ledger.latest_parse_node_id(&session_id) else {
+        return error_response(
+            hyper::StatusCode::NOT_FOUND,
+            "no parse node found for session",
+        );
+    };
+
+    let Some(node) = ledger.snapshot(node_id) else {
+        return error_response(hyper::StatusCode::NOT_FOUND, "parse node not found");
+    };
+
+    let review_status = node
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("review_status"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"Unreviewed": {"auto_confidence": 1.0}}));
+
+    // M6.5: surface the overlay/candidate plane for this node (entity links,
+    // PII, parse candidates) alongside the review status. The candidate table
+    // is the durable overlay surface — candidates are listed, never a doc-id
+    // write.
+    let candidates = crate::ledger::overlay::candidate_store(&ledger)
+        .and_then(|store| store.for_node(node_id).ok())
+        .unwrap_or_default();
+
+    crate::server::responses::json_response(
+        hyper::StatusCode::OK,
+        &serde_json::json!({
+            "session_id": session_id,
+            "node_id": node_id.as_int(),
+            "review_status": review_status,
+            "candidates": candidates,
+        }),
+    )
+}
+/// Extract routing signals from a parse node's metadata.
+fn extract_signals_from_node(
+    node: &fluent_types::ContentNode,
+) -> Vec<spacy_rs::routing::RoutingSignal> {
+    node.metadata
+        .as_ref()
+        .and_then(|m| m.get("signals"))
+        .and_then(|s| serde_json::from_value(s.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// Extract confidence summary from a parse node's metadata.
+fn extract_confidence_from_node(
+    node: &fluent_types::ContentNode,
+) -> Option<crate::pipeline_types::NlpConfidenceSummary> {
+    node.metadata
+        .as_ref()
+        .and_then(|m| m.get("confidence"))
+        .and_then(|c| serde_json::from_value(c.clone()).ok())
+}
+
 #[cfg(test)]
 #[path = "../../tests/server_review.rs"]
 mod tests;

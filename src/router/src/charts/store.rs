@@ -534,6 +534,86 @@ impl ChartStore {
         hits.retain(|(name, _)| !self.is_excluded_from_selection(name));
         Ok(hits)
     }
+
+    /// Lexical recall sidecar: `(chart name, token-overlap)` for selectable
+    /// charts sharing at least one token with `request`, sorted by overlap
+    /// descending (name ascending for determinism). The token stream is the
+    /// shared `ascii_alnum_tokens` (case-folded); only the field join
+    /// (name + provides + description) is chart-specific. Empty means the
+    /// arm abstains — callers fall back to the pure vector path.
+    /// Demoted/draft charts are excluded via `charts_sorted`, the same bar
+    /// as `search`.
+    pub fn lexical_candidates(&self, request: &str) -> Vec<(String, usize)> {
+        use std::collections::HashSet;
+        let query_tokens: HashSet<String> = common_core::string::ascii_alnum_tokens(request)
+            .into_iter()
+            .map(|t| t.to_lowercase())
+            .collect();
+        if query_tokens.is_empty() {
+            return Vec::new();
+        }
+        let mut out: Vec<(String, usize)> = Vec::new();
+        for chart in self.charts_sorted() {
+            let overlap = chart_lexical_tokens(&chart)
+                .into_iter()
+                .filter(|t| query_tokens.contains(t))
+                .collect::<HashSet<_>>()
+                .len();
+            if overlap > 0 {
+                out.push((chart.name.clone(), overlap));
+            }
+        }
+        out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
+    /// Targeted exact rescoring: cosine similarities of the named charts to
+    /// `request`, on the same scale as `search` (same embedder, same
+    /// `knn_brute_force` + `distance_to_similarity_clamped` mapping the
+    /// fallback uses). Unknown or excluded names are skipped. Used to score
+    /// lexical-only candidates the vector pass missed — never to promote,
+    /// validate, or subsume (those stay deterministic/rubric-gated).
+    pub fn score_names(
+        &self,
+        request: &str,
+        names: &[String],
+    ) -> Result<Vec<(String, f32)>, ChartError> {
+        use std::collections::HashSet;
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        let guard = lock_read(&self.built);
+        let Some(index) = guard.as_ref() else {
+            return Ok(Vec::new());
+        };
+        let query = index
+            .embedder
+            .embed(request)
+            .map_err(|e| ChartError::Index {
+                reason: format!("embed request: {e}"),
+            })?;
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let wanted: HashSet<&str> = names.iter().map(String::as_str).collect();
+        Ok(scored_hits(
+            knn_brute_force(
+                &query,
+                index.flat.iter().filter_map(|(name, emb)| {
+                    if wanted.contains(name.as_str()) && !self.is_excluded_from_selection(name) {
+                        Some((name.as_str(), emb.as_slice()))
+                    } else {
+                        None
+                    }
+                }),
+                wanted.len(),
+            ),
+            distance_to_similarity_clamped,
+        )
+        .into_iter()
+        .map(|(name, similarity)| (name.to_string(), similarity))
+        .collect())
+    }
 }
 
 /// Load a cached embedding for `chart` whose document text still matches.
@@ -558,6 +638,27 @@ fn load_cached_embedding(
         return Ok(None);
     }
     Ok(try_bytes_to_vec(&blob).filter(|v| !v.is_empty()))
+}
+
+/// Lexical field tokens for one chart: name + every target's provides
+/// assets + description, through the shared `ascii_alnum_tokens`
+/// (case-folded). The recall-side half of `chart_doc_text`'s join — same
+/// fields, tokenized for overlap instead of embedded.
+fn chart_lexical_tokens(chart: &ChartDef) -> Vec<String> {
+    let mut joined = String::new();
+    joined.push_str(&chart.name);
+    joined.push(' ');
+    joined.push_str(&chart.description);
+    for target in &chart.targets {
+        for asset in &target.provides {
+            joined.push(' ');
+            joined.push_str(asset);
+        }
+    }
+    common_core::string::ascii_alnum_tokens(&joined)
+        .into_iter()
+        .map(|t| t.to_lowercase())
+        .collect()
 }
 
 /// Build the indexed document text for a chart: description + every target's

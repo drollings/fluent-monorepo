@@ -1,24 +1,27 @@
 use super::*;
+use crate::node_store::{new_node, ContentNodeStore};
+use crate::summarization::Summarizer;
 use crate::test_support::capture_logs;
-use fluent_types::ProvenanceTier;
+use fluent_knowledge::views::Lod;
+use fluent_types::{AnnotationClaim, ClaimStatus, ProvenanceTier};
 
-fn temp_ledger() -> ContentNodeLedger {
+fn temp_ledger() -> ContentNodeStore {
     // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of
     // a deleted main file would otherwise be left behind).
-    ContentNodeLedger::open_in_memory().unwrap()
+    ContentNodeStore::open_in_memory().unwrap()
 }
 
-/// The `ContentNodeLedger::write_annotation` writer surface — a
+/// The `ContentNodeStore::write_annotation` writer surface — a
 /// HumanReview-tier claim supersedes a LocalModel one on the same node
 /// version through the durable facade, and a later lower-tier write is
 /// recorded provisional.
 #[test]
-fn write_annotation_facade_supersedes_by_tier() {
+fn write_annotation_supersedes_by_tier() {
     let ledger = temp_ledger();
     let id = ledger
         .record_request("sess", "req", "show me the report")
         .unwrap();
-    let hash = ledger.get_node(id).unwrap().content_hash;
+    let hash = ledger.snapshot(id).unwrap().content_hash;
     assert!(!hash.is_unstamped(), "LOD0 present → stamped hash");
 
     let claim = |tier: ProvenanceTier| {
@@ -51,9 +54,7 @@ fn write_annotation_facade_supersedes_by_tier() {
     );
 
     // The authoritative claim is the HumanReview one, confirmed.
-    let ann = crate::ledger::annotations::AnnotationStore::new(
-        ledger.node_store().shared_sqlite().unwrap(),
-    );
+    let ann = crate::ledger::annotations::AnnotationStore::new(ledger.shared_sqlite().unwrap());
     let cur = ann
         .read(hash, "frame:report")
         .unwrap()
@@ -87,7 +88,7 @@ fn get_node_single_format_no_flat_hydration_fallback() {
     // fallback is retired; only `get_session_entries` (the flat
     // audit view) reads columns directly. The row is inserted after
     // hydration, so the in-memory maps never see it.
-    let store = ledger.node_store().durable().unwrap();
+    let store = ledger.durable().unwrap();
     store
         .execute(
             "INSERT INTO ledger (node_id, session_id, request_id, role, content,
@@ -114,7 +115,7 @@ fn get_node_single_format_no_flat_hydration_fallback() {
 
     let id = NodeId::from_int(99);
     assert!(
-        ledger.get_node(id).is_none(),
+        ledger.snapshot(id).is_none(),
         "unparseable content_json -> None"
     );
 
@@ -152,7 +153,7 @@ fn lod0_and_lod5_eager_at_creation() {
             "Hello world. This is a longer user message.",
         )
         .unwrap();
-    let node = ledger.get_node(id).unwrap();
+    let node = ledger.snapshot(id).unwrap();
 
     // LOD0 full text + LOD5 label eager.
     assert_eq!(node.lod[0], "Hello world. This is a longer user message.");
@@ -178,7 +179,7 @@ fn record_content_node_stores_canonical_type() {
     node.step_id = Some("step-1".into());
     let id = ledger.record_content_node(&node).unwrap();
 
-    let fetched = ledger.get_node(id).unwrap();
+    let fetched = ledger.snapshot(id).unwrap();
     assert_eq!(
         fetched.role.as_ref().map(fluent_types::OriginRole::as_str),
         Some("assistant")
@@ -240,7 +241,7 @@ fn ensure_lod_derives_from_lod0_and_caches() {
     let node2 = ledger.ensure_lod(id, 2).unwrap();
     assert_eq!(node2.lod[2], "lazy LOD summary");
     // LOD0 is untouched by derivation (never chained from a lower tier).
-    let node3 = ledger.get_node(id).unwrap();
+    let node3 = ledger.snapshot(id).unwrap();
     assert_eq!(
         node3.lod[0],
         "The full text that must be summarized from LOD0 only."
@@ -295,7 +296,6 @@ fn compact_session_leaves_lod0_immutable_and_derives_from_original() {
     let before: Vec<String> = (0..5)
         .map(|i| {
             ledger
-                .node_store()
                 .lod_text(
                     ledger
                         .get_session_nodes("sess-lod0-immutable", 10)
@@ -326,12 +326,12 @@ fn compact_session_leaves_lod0_immutable_and_derives_from_original() {
             .id
             .unwrap();
         assert_eq!(
-            ledger.node_store().lod_text(id, LOD0_FULL_TEXT).unwrap(),
+            ledger.lod_text(id, LOD0_FULL_TEXT).unwrap(),
             *expected,
             "LOD0 of r{i} must be byte-identical after compact_session"
         );
         assert_eq!(
-            ledger.get_node(id).unwrap().lod[0],
+            ledger.snapshot(id).unwrap().lod[0],
             *expected,
             "in-memory LOD0 of r{i} must be untouched"
         );
@@ -441,7 +441,7 @@ fn record_result_scrubs_phone() {
 
     // The user node keeps the question; the appended assistant node carries
     // the scrubbed answer.
-    let node = ledger.get_node(id).unwrap();
+    let node = ledger.snapshot(id).unwrap();
     assert_eq!(node.lod[0], "What number?");
     let entries = ledger.get_session_entries("sess-guard-r", 10).unwrap();
     assert_eq!(entries.len(), 2);
@@ -463,7 +463,7 @@ fn record_content_node_scrubs_api_key_to_reject_marker() {
     node.acceptance_score = Some(0.9);
     let id = ledger.record_content_node(&node).unwrap();
 
-    let fetched = ledger.get_node(id).unwrap();
+    let fetched = ledger.snapshot(id).unwrap();
     assert_eq!(fetched.lod[0], "[rejected: api_key]");
     assert_eq!(fetched.acceptance_score, Some(0.9));
 }
@@ -498,7 +498,7 @@ fn render_session_renders_three_nodes_as_three_lines() {
         .record_request("sess-render", "r3", "third node text")
         .unwrap();
 
-    let rendered = ledger.render_session("sess-render", Lod::LOD0);
+    let rendered = std::sync::Arc::new(ledger).render_session("sess-render", Lod::LOD0);
     let lines: Vec<&str> = rendered.lines().collect();
     assert_eq!(lines.len(), 3, "3 nodes -> 3 lines, got: {rendered}");
     assert!(lines.contains(&"first node text"));
@@ -523,7 +523,7 @@ fn render_session_after_compaction_still_shows_original_lod0() {
 
     // Compaction is view-fidelity (`active_lod`) only: LOD0 is authoritative
     // and immutable, so a LOD0 view shows the original full text.
-    let rendered = ledger.render_session("sess-compact-view", Lod::LOD0);
+    let rendered = std::sync::Arc::new(ledger).render_session("sess-compact-view", Lod::LOD0);
     for i in 0..5 {
         assert!(
             rendered.contains(&format!("original long content {i}")),
@@ -767,7 +767,6 @@ fn lod_derivation_is_from_lod0_only() {
         .unwrap();
     // Manually set LOD1 to fake on id2 via store (to simulate chained derivation attempt)
     ledger
-        .node_store()
         .with_node_mut(id2, |n| {
             while n.lod.len() < 5 {
                 n.lod.push(String::new());
@@ -780,7 +779,7 @@ fn lod_derivation_is_from_lod0_only() {
     assert_ne!(node2.lod[4], "FAKE LOD1 SHOULD NOT BE SOURCE");
     assert_eq!(node2.lod[4], "derived-from-lod0");
     // LOD0 remains authoritative
-    let orig = ledger.get_node(id2).unwrap();
+    let orig = ledger.snapshot(id2).unwrap();
     assert_eq!(orig.lod[0], "different LOD0 second node");
 }
 

@@ -10,13 +10,13 @@
 use crate::ledger::entity_promotion::token_for_span;
 use crate::ledger::entity_promotion::EntityPromotion;
 use crate::ledger::overlay::{CandidateStatus, OverlayCandidate, OverlayCandidateStore};
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 use fluent_types::{InterlinguaId, InterlinguaNamespace, NodeId};
 use spacy_rs::entity_gate::EntityStampGate;
 use std::sync::Arc;
 
-fn store(ledger: &ContentNodeLedger) -> OverlayCandidateStore {
-    OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared sqlite"))
+fn store(ledger: &ContentNodeStore) -> OverlayCandidateStore {
+    OverlayCandidateStore::new(ledger.shared_sqlite().expect("shared sqlite"))
 }
 
 fn paris_doc() -> spacy_rs::doc::Doc {
@@ -66,7 +66,7 @@ fn pending(store: &OverlayCandidateStore, node: NodeId) -> Vec<OverlayCandidate>
 
 #[test]
 fn flag_off_writes_nothing() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(1);
     s.write_candidate(&paris_candidate(node, yago(0x9a1), 0.95))
@@ -90,7 +90,7 @@ fn flag_off_writes_nothing() {
 
 #[test]
 fn flag_on_promotes_passing_candidate() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(2);
     s.write_candidate(&paris_candidate(node, yago(0x9a1), 0.95))
@@ -118,7 +118,7 @@ fn flag_on_promotes_passing_candidate() {
 
 #[test]
 fn control_group_stays_candidate() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(3);
     // Low-score ([A] fails), pre-stamped slot (first-wins), non-YaGO ([B]
@@ -163,7 +163,7 @@ fn control_group_stays_candidate() {
 
 #[test]
 fn content_mutation_clears_stamp() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
     let s = store(&ledger);
     let node = NodeId::from_int(4);
     s.write_candidate(&paris_candidate(node, yago(0x6), 0.9))

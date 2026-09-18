@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::ledger::nlp::record_parse_node;
-use crate::ledger::ContentNodeLedger;
+use crate::node_store::ContentNodeStore;
 use fluent_llm::LlmError;
 use spacy_rs::routing::RoutingSignal;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -134,7 +134,7 @@ fn scorer_orders_deterministically() {
 
 #[test]
 fn provider_signals_reflect_shared_predicates() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("in-memory ledger"));
     // A and B share predicate id 0x...0001; C is distinct.
     let a = record_parse_node(
         &ledger,
@@ -160,8 +160,7 @@ fn provider_signals_reflect_shared_predicates() {
         &[parse_signal(0x0300_0000_0000_0002)],
     )
     .expect("c");
-    let provider =
-        LedgerSalienceProvider::new(Arc::clone(ledger.node_store()), common_core::now_secs());
+    let provider = LedgerSalienceProvider::new(Arc::clone(&ledger), common_core::now_secs());
     let sigs = provider.signals_for(&[a, b, c]);
     assert_eq!(sigs.len(), 3);
     // Frequency normalized across the pool: A/B share predicate 1 (2 nodes),
@@ -519,7 +518,7 @@ fn ranking_scoped_does_not_scan_unrelated_session() {
 
 #[test]
 fn ledger_snapshot_scoped_to_single_session() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
+    let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("in-memory ledger"));
     let a = record_parse_node(
         &ledger,
         "sess-a",
@@ -537,9 +536,8 @@ fn ledger_snapshot_scoped_to_single_session() {
     )
     .expect("b");
     // Scoped provider for sess-a should not see sess-b's predicate
-    let provider_a =
-        LedgerSalienceProvider::new(Arc::clone(ledger.node_store()), common_core::now_secs())
-            .with_session("sess-a");
+    let provider_a = LedgerSalienceProvider::new(Arc::clone(&ledger), common_core::now_secs())
+        .with_session("sess-a");
     let sigs_a = provider_a.signals_for(&[a, b]);
     // b is not in sess-a's snapshot, so its frame_frequency should be 0 (isolated)
     // a's frequency should be 1.0 (only itself in its session)

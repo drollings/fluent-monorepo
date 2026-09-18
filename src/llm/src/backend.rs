@@ -279,8 +279,11 @@ impl InferenceRegistry {
 
 /// The base model key of a possibly-qualified inference key
 /// (`base:qualifier` → `base`; a bare or malformed key passes through).
-/// Mirrors the router's qualified-key split with identical semantics so the
-/// registry can pre-filter candidates without importing router config.
+/// Mirrors the router's qualified-key split with identical semantics (see
+/// `fluent_types::model_key::split_model_key`) so the registry can
+/// pre-filter candidates — deliberately NOT composed: the LLM boundary
+/// (`no_domain_imports`, `lint-llm-boundary`) forbids `fluent-llm`
+/// importing domain crates, so this 4-line copy is intentional.
 fn base_key(key: &str) -> &str {
     match key.split_once(':') {
         Some((base, qualifier)) if !base.is_empty() && !qualifier.is_empty() => base,

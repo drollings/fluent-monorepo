@@ -1,6 +1,10 @@
 // Tests assert float config values against literal defaults - deliberate.
 #![allow(clippy::float_cmp)]
 use super::*;
+use crate::config::{
+    detect_device_vram_total, resolve_inference_point, InstanceProfile, WorkflowExtractionMode,
+    DEFAULT_LEDGER_MAX_SUMMARY_TOKENS,
+};
 
 #[test]
 fn charts_config_defaults() {
@@ -911,12 +915,7 @@ fn sidecar_allocation_limit_without_ceiling_falls_back_to_detection() {
     .unwrap();
     let (detected, allocation_limit) = fluent_concurrency::scope::CURRENT_CAPS.sync_scope(
         fluent_concurrency::capability::default_capability_set(),
-        || {
-            (
-                super::detect_device_vram_total(),
-                cfg.sidecar.allocation_limit(),
-            )
-        },
+        || (detect_device_vram_total(), cfg.sidecar.allocation_limit()),
     );
     assert!(
         detected.is_some(),
@@ -2308,18 +2307,4 @@ fn hermetic_tests_never_open_the_operator_config() {
         offenders.is_empty(),
         "hermetic tests must use fixtures, not the operator file (see make router-mock): {offenders:?}"
     );
-}
-
-#[test]
-fn split_model_key_boundaries() {
-    // M2.1 characterization: the single `split_once(':')` split point.
-    assert_eq!(split_model_key("llama"), ("llama", None));
-    assert_eq!(split_model_key("llama:latest"), ("llama", Some("latest")));
-    assert_eq!(split_model_key("llama:inst-1"), ("llama", Some("inst-1")));
-    // Malformed splits pass through as bare keys (callers treat them as base).
-    assert_eq!(split_model_key("llama:"), ("llama:", None));
-    assert_eq!(split_model_key(":latest"), (":latest", None));
-    assert_eq!(split_model_key(""), ("", None));
-    // First colon wins; the qualifier keeps the remainder.
-    assert_eq!(split_model_key("a:b:c"), ("a", Some("b:c")));
 }

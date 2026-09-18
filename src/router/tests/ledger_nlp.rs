@@ -103,10 +103,10 @@ fn parse_node_metadata_carries_interlingua_frame() {
 
 #[test]
 fn record_round_trips_through_the_ledger() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("in-memory ledger");
     let id =
         record_parse_node(&ledger, "s1", "r1", "show me the report", &signals()).expect("record");
-    let node = ledger.get_node(id).expect("get node");
+    let node = ledger.snapshot(id).expect("get node");
     assert!(is_parse_node(&node));
     let meta = node.metadata.expect("metadata");
     assert_eq!(meta["signals"][0]["direct_object"], "report");
@@ -115,10 +115,10 @@ fn record_round_trips_through_the_ledger() {
 
 #[test]
 fn record_populates_interlingua_index() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("in-memory ledger");
     let id =
         record_parse_node(&ledger, "s1", "r1", "show me the report", &signals()).expect("record");
-    let store = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let store = ledger.shared_sqlite().expect("shared sqlite");
     let rows: Vec<(i64, String)> = store
         .query_rows(
             "SELECT interlingua_id, role FROM interlingua_index WHERE node_id = ?1",
@@ -142,7 +142,7 @@ fn record_populates_interlingua_index() {
 /// reachable only from tests).
 #[test]
 fn consolidated_write_populates_index_unreviewed() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("in-memory ledger");
     let id = record_parse_node_with_confidence(
         &ledger,
         "s1",
@@ -153,7 +153,7 @@ fn consolidated_write_populates_index_unreviewed() {
         Some(&[0.9, 0.8]),
     )
     .expect("record");
-    let store = ledger.node_store().shared_sqlite().expect("shared sqlite");
+    let store = ledger.shared_sqlite().expect("shared sqlite");
     let rows: Vec<(i64, String, f64, String)> = store
         .query_rows(
             "SELECT interlingua_id, role, confidence, review_status \
@@ -180,11 +180,11 @@ fn consolidated_write_populates_index_unreviewed() {
 
 #[test]
 fn non_parse_node_is_not_a_parse_node() {
-    let ledger = ContentNodeLedger::open_in_memory().expect("in-memory ledger");
+    let ledger = ContentNodeStore::open_in_memory().expect("in-memory ledger");
     let id = ledger
         .record_request("s1", "r1", "plain request")
         .expect("record");
-    let node = ledger.get_node(id).expect("get node");
+    let node = ledger.snapshot(id).expect("get node");
     assert!(!is_parse_node(&node));
 }
 #[test]

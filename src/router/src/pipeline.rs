@@ -11,17 +11,18 @@ use common_core::constants::default_true;
 
 use crate::config::{strip_declaration_params, ModelEntry};
 
-/// Router-local newtype for the `<base>` / `<base>:<qualifier>` model-id grammar
-/// (`pipeline.rs:87`, `config.rs:47` `split_model_key`). The wire form is still a
+/// Router-local newtype for the `<base>` / `<base>:<qualifier>` model-id grammar.
+/// The wire form is still a
 /// single `model` string (OpenAI compat), but in-memory code uses the typed form
 /// so bare vs qualified dispatch is checked at the call site rather than by
 /// stringly-typed `format!("{base}:{q}")` / `split_once(':')` (Pattern 7,
 /// `fluent-wvr/SKILL.md:1107`). Kept router-local per the import-boundary rule:
 /// only the router speaks this grammar.
 ///
-/// Ownership: `split_model_key` (`config/root.rs:33`) is the single `split_once(':')`
-/// site; `QualifiedModelId::parse` delegates to it. Zero-alloc callers use
-/// `split_model_key`; typed callers use `QualifiedModelId::parse`/`as_wire`.
+/// Ownership: `fluent_types::model_key::split_model_key` is the single
+/// `split_once(':')` site; `QualifiedModelId::parse` delegates to it.
+/// Zero-alloc callers use `split_model_key`; typed callers use
+/// `QualifiedModelId::parse`/`as_wire`.
 /// Never duplicate the `split_once` literal elsewhere. Model-id parsing is
 /// neither confidence nor task-value — no threshold.
 ///
@@ -52,9 +53,9 @@ impl QualifiedModelId {
         }
     }
     /// Parse the wire form (`base` or `base:qualifier`) into the typed form.
-    /// Mirrors `crate::config::split_model_key` but returns the owned newtype.
+    /// Delegates to the canonical `fluent_types::model_key::split_model_key`.
     pub fn parse(wire: &str) -> Self {
-        match crate::config::split_model_key(wire) {
+        match fluent_types::model_key::split_model_key(wire) {
             (base, Some(q)) => Self {
                 base: base.to_string(),
                 qualifier: Some(q.to_string()),
@@ -150,7 +151,7 @@ fn base_target(entry: &ModelEntry, model_key: &str) -> (String, Option<serde_jso
     // The entry-default inference point — the shared step of the single
     // qualifier precedence, so dispatch wire ids agree with backend ids.
     // Routing entries arrive boot-materialized.
-    let qualifier = crate::config::root::default_inference_point(entry);
+    let qualifier = crate::config::default_inference_point(entry);
     let model = QualifiedModelId::new(base.clone(), qualifier.clone()).as_wire();
     // The single answer-params chain with no role and no classifier duty
     // (the role and duty legs arrive with the M3 target wiring); absent

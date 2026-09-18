@@ -269,3 +269,72 @@ fn search_edge_cases_unbuilt_and_zero_k() {
     let (built, _tmp) = indexed_store();
     assert!(built.search("alpha", 0).unwrap().is_empty(), "k=0");
 }
+
+#[test]
+fn search_fixed_fixture_topk_order_is_pinned() {
+    // Baseline pin: single-chart fixture — the only selectable chart is
+    // top-1, similarity in [0,1], results sorted most-similar first, and
+    // repeated queries are deterministic.
+    let (store, _tmp) = indexed_store();
+    let first = store.search("alpha", 5).unwrap();
+    assert_eq!(first.len(), 1, "single-chart fixture yields one hit");
+    assert_eq!(first[0].0, "alpha");
+    assert!(
+        (0.0..=1.0).contains(&first[0].1),
+        "similarity in [0,1], got {}",
+        first[0].1
+    );
+    let second = store.search("alpha", 5).unwrap();
+    assert_eq!(first, second, "repeated search is deterministic");
+    // k larger than the corpus truncates to the corpus, still sorted.
+    let wide = store.search("alpha", 50).unwrap();
+    assert_eq!(wide.len(), 1);
+    let mut sorted = wide.clone();
+    sorted.sort_by(|a, b| b.1.total_cmp(&a.1));
+    assert_eq!(wide, sorted, "top-k sorted most-similar first");
+}
+
+#[test]
+fn lexical_candidates_order_by_overlap_then_name() {
+    // Overlap counts distinct shared tokens over name/provides/description:
+    // "review the document spelling" shares {document, spelling} with
+    // spell_check vs {the} with the decoy. Gibberish abstains (empty).
+    use std::sync::Arc;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = ChartStore::new(Some(fluent_db::hnsw::HnswIndexHandle {
+        name: "workflow_library".into(),
+        path: tmp.path().join("w.sqlite").display().to_string(),
+    }));
+    for (name, desc, prov) in [
+        (
+            "spell_check",
+            "Check spelling and grammar of a written document",
+            "spell_report",
+        ),
+        ("decoy", "Render pages on the edge", "decoy_out"),
+    ] {
+        let json = format!(
+            r#"{{"name": "{name}", "description": "{desc}", "schema_version": 1,
+                "author_model": "human",
+                "targets": [{{"name": "t", "provides": ["{prov}"],
+                "template": "do {{{{ request }}}}", "essential": true}}]}}"#,
+        );
+        store.upsert(chart_from_str(&json).unwrap()).unwrap();
+    }
+    store
+        .build_index(Arc::new(crate::test_stubs::HashEmbedder::new(256)))
+        .unwrap();
+    assert_eq!(
+        store.lexical_candidates("review the document spelling"),
+        vec![("spell_check".to_string(), 2), ("decoy".to_string(), 1),],
+        "overlap desc, name asc"
+    );
+    assert!(
+        store.lexical_candidates("zxqv wjbm plok").is_empty(),
+        "no shared tokens → abstain"
+    );
+    assert!(
+        store.lexical_candidates("").is_empty(),
+        "empty request → abstain"
+    );
+}

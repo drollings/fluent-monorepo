@@ -1,5 +1,10 @@
+use std::sync::Arc;
+
+#[cfg(feature = "onnx")]
+use fluent_llm::onnx_session::OrtSessionRegistry;
+
 use super::*;
-use crate::config::ModelEntry;
+use crate::config::{ModelEntry, RouterConfig};
 
 fn plain_entry() -> ModelEntry {
     ModelEntry {
@@ -369,10 +374,9 @@ async fn entity_link_full_loop_scorer_to_overlay_candidates() {
     let scorer: EntityLinkScorer =
         Arc::new(move |_text| score_span(&[vec![0.99, 0.14]], &index, concepts_h.as_ref()));
 
-    let ledger = crate::ledger::ContentNodeLedger::open_in_memory().expect("ledger");
-    let candidates = crate::ledger::overlay::OverlayCandidateStore::new(
-        ledger.node_store().shared_sqlite().expect("shared"),
-    );
+    let ledger = crate::node_store::ContentNodeStore::open_in_memory().expect("ledger");
+    let candidates =
+        crate::ledger::overlay::OverlayCandidateStore::new(ledger.shared_sqlite().expect("shared"));
     let node = NodeId::from_int(7);
     let worker = Arc::new(EntityLinkWorker::new(
         &candidates,

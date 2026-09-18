@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{
+use fluent_types::openai_wire::{
     ContentPart, FunctionCall, ImageUrl, RouterChoice, RouterMessage, RouterMessageContent,
     ToolCall, Usage,
 };

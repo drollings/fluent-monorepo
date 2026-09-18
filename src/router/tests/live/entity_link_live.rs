@@ -19,7 +19,7 @@ use std::sync::Arc;
 use fluent_concept::ConceptStore;
 use fluent_concept::InMemoryConceptStore;
 use fluent_router::ledger::overlay::{CandidateStatus, OverlayCandidateStore};
-use fluent_router::ledger::ContentNodeLedger;
+use fluent_router::node_store::ContentNodeStore;
 use fluent_router::server::entity_link::{EntityLinkJob, EntityLinkWorker};
 use fluent_types::{InterlinguaId, InterlinguaNamespace, NodeId};
 
@@ -91,8 +91,8 @@ fn scorer() -> fluent_router::server::entity_link::EntityLinkScorer {
 /// Record the accepted candidates for one node at a given threshold, using a
 /// fresh in-memory candidate plane per sweep (so a sweep is isolated).
 async fn sweep_once(concepts: &Arc<dyn ConceptStore>, threshold: f64) -> Vec<(InterlinguaId, f64)> {
-    let ledger = ContentNodeLedger::open_in_memory().expect("ledger");
-    let s = OverlayCandidateStore::new(ledger.node_store().shared_sqlite().expect("shared"));
+    let ledger = ContentNodeStore::open_in_memory().expect("ledger");
+    let s = OverlayCandidateStore::new(ledger.shared_sqlite().expect("shared"));
     let worker = EntityLinkWorker::new(
         &s,
         concepts,

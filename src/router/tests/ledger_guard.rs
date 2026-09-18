@@ -87,3 +87,28 @@ fn anonymize_collapses_to_redact_marker() {
     let s = apply_filter_decision("Contact user@example.com for help.", &decision);
     assert_eq!(s.text, "Contact [REDACTED:email] for help.");
 }
+
+#[test]
+fn nested_spans_clamp_fail_closed_through_decision() {
+    // The shared splicer composes here: (0,6) contains (2,4) — the outer
+    // remainder is still scrubbed (fail-closed), never left in place, and
+    // nothing panics.
+    let decision = output_decision(&FilterAction::Redact, "p1", vec![(0, 6), (2, 4)]);
+    let s = apply_filter_decision("abcdef", &decision);
+    assert_eq!(s.text, "[REDACTED:p1][REDACTED:p1]ef");
+    assert!(s.flagged);
+}
+
+#[test]
+fn degenerate_spans_never_panic_through_decision() {
+    // Empty, inverted, and past-the-end spans are skipped; the valid span
+    // still scrubs.
+    let decision = output_decision(
+        &FilterAction::Redact,
+        "p1",
+        vec![(2, 2), (4, 3), (10, 20), (4, 6)],
+    );
+    let s = apply_filter_decision("abcdef", &decision);
+    assert_eq!(s.text, "abcd[REDACTED:p1]");
+    assert!(s.flagged);
+}
