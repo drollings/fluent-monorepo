@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 use common_core::score::top_k_by_score;
 use fluent_types::{ContentNode, NodeId};
-use search_vector::math::cosine_similarity_f32;
+use fluent_db::vector::cosine_similarity_f32;
 use spacy_rs::doc::SentStart;
 use spacy_rs::pipeline::NlpPipeline;
 use spacy_rs::retrieval::{LemmaGrepHit, Span};

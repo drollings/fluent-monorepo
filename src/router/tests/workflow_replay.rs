@@ -380,7 +380,7 @@ async fn resolve_prefers_replay_then_walks_rungs_in_order() {
 
 #[test]
 fn similarity_bands_hold_for_fixture() {
-    use search_vector::math::cosine_similarity_f32;
+    use fluent_db::vector::cosine_similarity_f32;
     let para = cosine_similarity_f32(&emb_a(), &emb_a_para());
     let adv = cosine_similarity_f32(&emb_a(), &emb_adversarial());
     let far = cosine_similarity_f32(&emb_a(), &emb_far());

@@ -17,7 +17,7 @@ use std::sync::{Mutex, RwLock};
 
 use fluent_dag::target::Target;
 use fluent_db::hnsw::HnswIndex;
-use search_vector::math::cosine_similarity_f32;
+use fluent_db::vector::cosine_similarity_f32;
 
 /// A workflow entry — one prior `query → local_attempts → escalation → frontier → assembly` chain.
 #[derive(Debug, Clone)]

@@ -7,7 +7,6 @@ edition.workspace = true
 
 [dependencies]
 common-core = { path = "../common-core" }
-serde = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]

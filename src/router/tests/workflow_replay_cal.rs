@@ -185,7 +185,7 @@ fn precision_recall(
 
 #[test]
 fn calibration_curve_sets_threshold_with_margin() {
-    use search_vector::math::cosine_similarity_f32;
+    use fluent_db::vector::cosine_similarity_f32;
     let world = build_world();
     // The knee must exist in the data: every paraphrase nearer than every
     // adversarial control, with room for a margin on both sides.

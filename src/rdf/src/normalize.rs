@@ -1,5 +1,3 @@
-pub struct BlankNodeScope;
-
 pub fn hash_iri(iri: &str) -> i64 {
     let hash = common_core::hash::blake3_hash(iri.as_bytes());
     i64::from_le_bytes(hash[0..8].try_into().unwrap())

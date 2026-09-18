@@ -3,15 +3,14 @@
 //! search-vector: SQLite hybrid search engine — KNN vector search,
 //! keyword search, RRF merge, quantized embeddings, and semantic aliases.
 //!
-//! Scalar kernels re-export from the dependency-free `vector_math` leaf
-//! crate (`math::cosine_similarity_f32`); embedding math, quantization,
-//! and top-K selection compose `fluent_db::vector`. No vector kernel is
-//! implemented here twice.
+//! Scalar kernels live in the dependency-free `vector_math` leaf crate
+//! and the `fluent_db::vector` owner — import those directly. Embedding
+//! math, quantization, and top-K selection compose `fluent_db::vector`.
+//! No vector kernel is implemented here twice.
 
 pub mod aliases;
 pub mod db;
 pub mod fusion;
-pub mod math;
 pub mod salience;
 pub mod tokens;
 pub mod vector_index;
