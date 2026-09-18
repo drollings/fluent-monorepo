@@ -22,11 +22,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::doc::{dep_in, lemma_of, sentence_root, sentence_spans, Doc};
-use crate::labels::{
-    DIRECT_OBJECT_DEPS, INDIRECT_OBJECT_DEPS, MODIFIER_DEPS, POBJ_DEPS, PREP_DEPS, QUALIFIER_DEPS,
-    SUBJECT_DEPS,
-};
+use crate::doc::{dep_in, lemma_of, sentence_roles, Doc, SentenceRoles};
+use crate::labels::{MODIFIER_DEPS, POBJ_DEPS, PREP_DEPS, QUALIFIER_DEPS};
 use fluent_types::InterlinguaId;
 
 /// The interlingua frame of one sentence: the content-
@@ -111,16 +108,20 @@ pub fn extract_routing_signals(doc: &Doc) -> Vec<RoutingSignal> {
     if doc.is_empty() {
         return Vec::new();
     }
-    // Shared sentence walk (M8): partition + per-sentence signal.
-    sentence_spans(doc)
-        .into_iter()
-        .map(|(start, end)| signal_for_sentence(doc, start, end))
+    // Shared sentence walk: partition + root + first-match role slots come
+    // from the single `sentence_roles` traversal; this maps the slots to
+    // lemmas and collects the routing-only extras (modifiers, qualifiers,
+    // prep/pobj argument frames, residuals, concept ids, transcript).
+    sentence_roles(doc)
+        .iter()
+        .map(|roles| signal_for_sentence(doc, roles))
         .collect()
 }
 
-/// Build the signal for the token span `[start, end)`.
-fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
-    let root = sentence_root(doc, start, end);
+/// Build the signal for one sentence's precomputed [`SentenceRoles`].
+fn signal_for_sentence(doc: &Doc, roles: &SentenceRoles) -> RoutingSignal {
+    let (start, end) = roles.span;
+    let root = roles.root;
 
     let strings = doc.vocab().strings();
     let dep_of = |i: usize| -> String {
@@ -130,12 +131,15 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
             .unwrap_or_default()
     };
 
-    let mut subject = None;
-    let mut subject_idx = None;
-    let mut direct_object = None;
-    let mut direct_object_idx = None;
-    let mut indirect_object = None;
-    let mut indirect_object_idx = None;
+    // Role slots from the shared walk: the last candidate wins (the
+    // historical overwrite chain below assigned on every match, so the
+    // final match survived). Lemmas resolved here.
+    let subject = roles.subjects.last().map(|&i| lemma_of(doc, i));
+    let subject_idx = roles.subjects.last().copied();
+    let direct_object = roles.direct_objects.last().map(|&i| lemma_of(doc, i));
+    let direct_object_idx = roles.direct_objects.last().copied();
+    let indirect_object = roles.indirect_objects.last().map(|&i| lemma_of(doc, i));
+    let indirect_object_idx = roles.indirect_objects.last().copied();
     let mut modifiers = Vec::new();
     let mut qualifiers = Vec::new();
     let mut arguments = Vec::new();
@@ -147,31 +151,31 @@ fn signal_for_sentence(doc: &Doc, start: usize, end: usize) -> RoutingSignal {
             continue;
         }
         let token = doc.token(i);
-        if dep_in(token, SUBJECT_DEPS) {
-            subject = Some(lemma_of(doc, i));
-            subject_idx = Some(i);
-        } else if dep_in(token, DIRECT_OBJECT_DEPS) {
-            direct_object = Some(lemma_of(doc, i));
-            direct_object_idx = Some(i);
-        } else if dep_in(token, INDIRECT_OBJECT_DEPS) {
-            indirect_object = Some(lemma_of(doc, i));
-            indirect_object_idx = Some(i);
-        } else if dep_in(token, MODIFIER_DEPS) {
-            modifiers.push(lemma_of(doc, i));
-        } else if dep_in(token, QUALIFIER_DEPS) {
-            qualifiers.push(lemma_of(doc, i));
-        } else if dep_in(token, PREP_DEPS) {
-            let prep = lemma_of(doc, i);
-            for &c in &doc.children(i) {
-                if dep_in(doc.token(c), POBJ_DEPS) {
-                    arguments.push((prep.clone(), lemma_of(doc, c)));
+        // Slot tokens were recorded above; they never populate the
+        // modifier/qualifier/argument/residual collections (the same
+        // if/else precedence the inline chain had: a slot match never
+        // reached the collections below).
+        let is_slot = roles.subjects.contains(&i)
+            || roles.direct_objects.contains(&i)
+            || roles.indirect_objects.contains(&i);
+        if !is_slot {
+            if dep_in(token, MODIFIER_DEPS) {
+                modifiers.push(lemma_of(doc, i));
+            } else if dep_in(token, QUALIFIER_DEPS) {
+                qualifiers.push(lemma_of(doc, i));
+            } else if dep_in(token, PREP_DEPS) {
+                let prep = lemma_of(doc, i);
+                for &c in &doc.children(i) {
+                    if dep_in(doc.token(c), POBJ_DEPS) {
+                        arguments.push((prep.clone(), lemma_of(doc, c)));
+                    }
                 }
+            } else if dep_in(token, POBJ_DEPS) {
+                // A `pobj` is captured under its `prep`'s argument frame above;
+                // not a standalone role.
+            } else {
+                dependents.push(lemma_of(doc, i));
             }
-        } else if dep_in(token, POBJ_DEPS) {
-            // A `pobj` is captured under its `prep`'s argument frame above;
-            // not a standalone role.
-        } else {
-            dependents.push(lemma_of(doc, i));
         }
         if let Some(ent) = token.interlingua_entity_id {
             if ent.is_yago() {

@@ -19,9 +19,8 @@
 
 use std::sync::Arc;
 
-use crate::doc::{dep_in, sentence_root, sentence_spans, Doc};
+use crate::doc::{sentence_roles, Doc};
 use crate::interlingua::InterlinguaResolver;
-use crate::labels::{DIRECT_OBJECT_DEPS, SUBJECT_DEPS};
 use fluent_concept::{PlausibilityTriple, ScoredLemma};
 /// The knowledge-half scoring seam (M5): given the scorable triples the
 /// text half derived, return the taxonomy plausibility, or `None` when the
@@ -56,26 +55,24 @@ pub fn extract_triples(doc: &Doc) -> Vec<Triple> {
     if doc.is_empty() {
         return Vec::new();
     }
-    // Shared sentence walk (M8): partition + per-sentence root/roles.
+    // Shared sentence walk: span + root come from the single traversal.
+    // The candidate set stays root-children-restricted (narrower than the
+    // walk's all-span-tokens lists): the first span-ordered candidate that
+    // is a child of the root wins, preserving the historical
+    // children-iteration first-match exactly (children are lefts-then-rights,
+    // both ascending, so first-in-children-order is first-in-span-order
+    // restricted to children).
     let mut out = Vec::new();
-    for (s, e) in sentence_spans(doc) {
-        let root = sentence_root(doc, s, e);
-        let mut subject = None;
-        let mut object = None;
-        for &child in &doc.children(root) {
-            if child < s || child >= e {
-                continue;
-            }
-            if subject.is_none() && dep_in(doc.token(child), SUBJECT_DEPS) {
-                subject = Some(child);
-            }
-            if object.is_none() && dep_in(doc.token(child), DIRECT_OBJECT_DEPS) {
-                object = Some(child);
-            }
-            if subject.is_some() && object.is_some() {
-                break;
-            }
-        }
+    for roles in sentence_roles(doc) {
+        let (s, e) = roles.span;
+        let root = roles.root;
+        let kids = doc.children(root);
+        let subject = roles.subjects.iter().copied().find(|c| kids.contains(c));
+        let object = roles
+            .direct_objects
+            .iter()
+            .copied()
+            .find(|c| kids.contains(c));
         out.push(Triple {
             subject,
             predicate: root,

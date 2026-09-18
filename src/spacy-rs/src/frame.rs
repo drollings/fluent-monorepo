@@ -32,7 +32,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::doc::{dep_in, dep_is, lemma_of, sentence_root, sentence_spans, Doc};
+use crate::doc::{dep_in, dep_is, lemma_of, sentence_roles, Doc};
 use crate::interlingua::InterlinguaResolver;
 use crate::labels::{
     ARGUMENT_DEPS, AUX_DEP, DIRECT_OBJECT_DEPS, INDIRECT_OBJECT_DEPS, MODIFIER_DEPS, NEG_DEP,
@@ -281,15 +281,18 @@ pub fn extract_frames(
     if doc.is_empty() {
         return FrameAnalysis::default();
     }
-    // Shared sentence walk (M8): partition + per-sentence root/roles.
-    // `classify_role` stays frame-specific (role-slot semantics).
     let attachment_tie = margins.is_some_and(|m| m.iter().any(|&x| x.abs() <= TIE_MARGIN_EPSILON));
 
     let mut frames = Vec::new();
     let mut ambiguities = Vec::new();
 
-    for (s, e) in sentence_spans(doc) {
-        let root = sentence_root(doc, s, e);
+    // Shared sentence walk: partition + root come from the single
+    // traversal. Per-token role classification stays frame-specific
+    // (role-slot semantics: every classified token is collected, not just
+    // the first match — `classify_role` below).
+    for roles in sentence_roles(doc) {
+        let (s, e) = roles.span;
+        let root = roles.root;
         let predicate_canonical = lemma_of(doc, root);
         let predicate_lemma_id = resolver.lemma_id(&predicate_canonical);
 

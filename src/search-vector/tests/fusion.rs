@@ -151,3 +151,102 @@ fn parse_rerank_output_rejects_garbage() {
         "empty ranking is unusable"
     );
 }
+
+// ── Cross-crate RRF calibration ──
+//
+// `rrf_fuse` composes the shared kernel (`score_postings` →
+// `fluent_db::vector::rrf_merge_n` → `rrf_term`): there is no second RRF
+// formula. These pin the composition so a future re-fork fails loudly.
+// Documented difference (not a fork): storage recall ranks are 1-based
+// (`pos + 1`, matching `fuseCandidates`), while `fluent_db::rrf_merge_n`
+// treats ranks opaquely (its two-list `rrf_merge` enumerates 0-based
+// in-memory positions) — absolute scores differ by that convention, so the
+// cross-fn check compares ranked ORDER, and the kernel/delegation checks
+// compare scores exactly.
+
+#[test]
+fn rrf_score_postings_delegates_to_shared_merge_n() {
+    let postings = vec![
+        ("a".to_string(), 1usize),
+        ("b".to_string(), 2),
+        ("a".to_string(), 1),
+    ];
+    let via_seam = score_postings(postings.clone(), 60.0);
+    let via_shared: std::collections::HashMap<String, f64> = fluent_db::vector::rrf_merge_n(
+        postings
+            .into_iter()
+            .map(|(id, rank)| (id, rank, ()))
+            .collect(),
+        60.0,
+    )
+    .into_iter()
+    .map(|(score, id, ())| (id, score))
+    .collect();
+    assert_eq!(
+        via_seam, via_shared,
+        "score_postings must stay a delegation over rrf_merge_n"
+    );
+}
+
+#[test]
+fn rrf_fused_scores_are_shared_kernel_terms() {
+    // One recall per id: each fused score IS one `rrf_term` — bitwise.
+    let fused = rrf_fuse(
+        &[vec!["a".to_string(), "b".to_string(), "c".to_string()]],
+        60.0,
+    );
+    let by_id: std::collections::HashMap<&str, f64> =
+        fused.iter().map(|h| (h.id.as_str(), h.score)).collect();
+    for (id, rank) in [("a", 1usize), ("b", 2), ("c", 3)] {
+        assert_eq!(
+            by_id[id].to_bits(),
+            fluent_db::vector::rrf_term(60.0, rank).to_bits(),
+            "{id} must score exactly one shared kernel term"
+        );
+    }
+}
+
+#[test]
+fn rrf_fuse_order_agrees_with_shared_merge_on_corpus() {
+    // Same candidate sets through both rank conventions (1-based storage
+    // vs 0-based in-memory): ranked order must agree on this corpus, which
+    // spans single-list, overlap, k sweep, tied ranks, disjoint lists,
+    // n-route, and reversed lists. No intra-list dupes (fuse dedupes per
+    // list; merge_n sums — different contracts, not compared here).
+    let corpus: Vec<(Vec<Vec<&str>>, f64)> = vec![
+        (vec![vec!["a", "b", "c"]], 60.0),
+        (vec![vec!["a", "b"], vec!["b", "c"]], 60.0),
+        (vec![vec!["a", "b"], vec!["b", "c"]], 1.0),
+        (vec![vec!["b"], vec!["a"]], 60.0),
+        (vec![vec!["a"], vec!["b"]], 60.0),
+        (vec![vec!["x"], vec!["x", "y"], vec!["x"]], 60.0),
+        (vec![vec!["a", "b", "c"], vec!["c", "b", "a"]], 60.0),
+        (vec![vec!["m", "n"], vec!["n", "o"], vec!["o", "m"]], 60.0),
+    ];
+    for (lists, k) in corpus {
+        let owned: Vec<Vec<String>> = lists
+            .iter()
+            .map(|l| l.iter().map(std::string::ToString::to_string).collect())
+            .collect();
+        let fuse_order: Vec<String> = rrf_fuse(&owned, k).into_iter().map(|h| h.id).collect();
+        // Shared side at its own 0-based convention; dedupe per list to
+        // match fuse's contract (corpus has none, belt and braces).
+        let mut postings = Vec::new();
+        for list in &owned {
+            let mut seen = std::collections::HashSet::new();
+            for (pos, id) in list.iter().enumerate() {
+                if seen.insert(id.as_str()) {
+                    postings.push((id.clone(), pos, ()));
+                }
+            }
+        }
+        let merge_order: Vec<String> = fluent_db::vector::rrf_merge_n(postings, k)
+            .into_iter()
+            .map(|(_, id, ())| id)
+            .collect();
+        assert_eq!(
+            fuse_order, merge_order,
+            "order disagreement at k={k} on {owned:?}: investigate the rank convention before touching either side"
+        );
+    }
+}

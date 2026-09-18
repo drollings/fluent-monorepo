@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::attrs::Attribute;
 use crate::error::SpacyError;
-use crate::labels::{EntIoB, Upos};
+use crate::labels::{EntIoB, Upos, DIRECT_OBJECT_DEPS, INDIRECT_OBJECT_DEPS, SUBJECT_DEPS};
 use crate::lexeme::Lexeme;
 use crate::vocab::Vocab;
 use fluent_types::InterlinguaId;
@@ -897,6 +897,75 @@ fn set_lr_kids_and_edges(tokens: &mut [TokenRecord], loop_count: usize) -> bool 
     true
 }
 
+/// One sentence's argument skeleton: its span, its root, and the
+/// span-ordered candidate indices per core role.
+///
+/// The single traversal shared by the routing-signal, frame, and triple
+/// extractors: partition via [`sentence_spans`], root via
+/// [`sentence_root`], role candidates via the canonical [`crate::labels`]
+/// sets through [`dep_in`]. Selection policy stays per caller — routing
+/// takes the last candidate per slot (its historical overwrite chain),
+/// triple takes the first candidate that is a child of the root (its
+/// narrower candidate set) — and role *interpretation* stays per caller
+/// (routing's modifier/qualifier/argument collections, frame's per-token
+/// [`RoleType`](crate::frame::RoleType) classification). The
+/// partition+root+candidate walk itself lives here, so a label-set change
+/// touches one place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SentenceRoles {
+    /// Sentence window `[start, end)` from [`sentence_spans`].
+    pub span: (usize, usize),
+    /// The sentence root from [`sentence_root`] (span start on fallback).
+    pub root: usize,
+    /// Non-root span-order indices matching `SUBJECT_DEPS` (all matches).
+    pub subjects: Vec<usize>,
+    /// Non-root span-order indices matching `DIRECT_OBJECT_DEPS`.
+    pub direct_objects: Vec<usize>,
+    /// Non-root span-order indices matching `INDIRECT_OBJECT_DEPS`.
+    pub indirect_objects: Vec<usize>,
+}
+
+/// The argument skeleton of every sentence in `doc`, in order. Empty docs
+/// yield no entries (matching the extractors' early returns).
+#[must_use]
+pub fn sentence_roles(doc: &Doc) -> Vec<SentenceRoles> {
+    sentence_spans(doc)
+        .into_iter()
+        .map(|(s, e)| {
+            let root = sentence_root(doc, s, e);
+            let mut subjects = Vec::new();
+            let mut direct_objects = Vec::new();
+            let mut indirect_objects = Vec::new();
+            for i in s..e {
+                if i == root {
+                    continue;
+                }
+                let token = doc.token(i);
+                if dep_in(token, SUBJECT_DEPS) {
+                    subjects.push(i);
+                }
+                if dep_in(token, DIRECT_OBJECT_DEPS) {
+                    direct_objects.push(i);
+                }
+                if dep_in(token, INDIRECT_OBJECT_DEPS) {
+                    indirect_objects.push(i);
+                }
+            }
+            SentenceRoles {
+                span: (s, e),
+                root,
+                subjects,
+                direct_objects,
+                indirect_objects,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "../tests/doc.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/sentence_roles.rs"]
+mod sentence_roles_tests;

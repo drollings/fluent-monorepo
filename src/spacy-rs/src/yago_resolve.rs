@@ -8,9 +8,9 @@
 //! (`guidance-ontology` `plausibility::score_plausibility`) through the
 //! dependency-free [`PlausibilityFetch`](crate::triple::PlausibilityFetch)
 //! seam — same pattern as the router injecting `LlmFetch`. The stage is
-//! never constructed in-crate with knowledge; `new`/`with_enabled` build
-//! the default-off shell (fail-closed `None`), `with_fetch` wires the
-//! owner-provided fetch.
+//! never constructed in-crate with knowledge; `new` builds the default-off
+//! shell (fail-closed `None`), `with_config` wires the `enabled` flag and
+//! the owner-provided fetch (`with_fetch` is the legacy shim).
 
 #![forbid(unsafe_code)]
 
@@ -52,48 +52,56 @@ impl Clone for YagoResolveStage {
     }
 }
 
+/// Construction config for [`YagoResolveStage`]: the guarded-spike flag plus
+/// the owner-provided knowledge-half fetch. The canonical construction site
+/// (replacing the telescoping `new`/`with_enabled`/`with_fetch` chain);
+/// `enabled` without `fetch` stays fail-closed (`None`).
+#[derive(Clone, Default)]
+pub struct YagoResolveConfig {
+    /// Whether the guarded semantic-plausibility spike runs.
+    pub enabled: bool,
+    /// The owner-provided scoring fetch (`None` = knowledge unwired).
+    pub fetch: Option<PlausibilityFetch>,
+}
+
 impl YagoResolveStage {
     /// A stage over `store` with the triple spike **disabled** (default) and
     /// no knowledge fetch wired (fail-closed `None`).
     #[must_use]
     pub fn new(store: Arc<dyn ConceptStore>) -> Self {
-        Self {
-            store,
-            enabled: false,
-            cached_resolver: std::sync::Mutex::new(None),
-            fetch: None,
-        }
+        Self::with_config(store, YagoResolveConfig::default())
     }
 
-    /// A stage over `store` with the explicit `enabled` flag for the guarded
-    /// M3 spike (still no fetch — enabled without a fetch stays `None`).
+    /// A stage over `store` with an explicit [`YagoResolveConfig`]: the
+    /// canonical constructor. The owner adapts its kernel (e.g.
+    /// `guidance-ontology` `plausibility::score_plausibility`) into the
+    /// [`PlausibilityFetch`](crate::triple::PlausibilityFetch) closure at the
+    /// wiring site.
     #[must_use]
-    pub fn with_enabled(store: Arc<dyn ConceptStore>, enabled: bool) -> Self {
+    pub fn with_config(store: Arc<dyn ConceptStore>, cfg: YagoResolveConfig) -> Self {
         Self {
             store,
-            enabled,
+            enabled: cfg.enabled,
             cached_resolver: std::sync::Mutex::new(None),
-            fetch: None,
+            fetch: cfg.fetch,
         }
     }
 
     /// A stage over `store` with the knowledge-half fetch injected from the
-    /// knowledge owner (M5): the owner adapts its kernel (e.g.
-    /// `guidance-ontology` `plausibility::score_plausibility`) into the
-    /// [`PlausibilityFetch`](crate::triple::PlausibilityFetch) closure at the
-    /// wiring site.
+    /// knowledge owner: delegating shim over [`Self::with_config`].
     #[must_use]
     pub fn with_fetch(
         store: Arc<dyn ConceptStore>,
         enabled: bool,
         fetch: PlausibilityFetch,
     ) -> Self {
-        Self {
+        Self::with_config(
             store,
-            enabled,
-            cached_resolver: std::sync::Mutex::new(None),
-            fetch: Some(fetch),
-        }
+            YagoResolveConfig {
+                enabled,
+                fetch: Some(fetch),
+            },
+        )
     }
 
     /// Whether the guarded semantic-plausibility spike is enabled.

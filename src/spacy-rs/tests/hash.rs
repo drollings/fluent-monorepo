@@ -52,3 +52,56 @@ fn block_boundary_handling() {
     // 7 vs 8 tail transitions.
     assert_ne!(hash_utf8("1234567"), hash_utf8("12345678"));
 }
+
+// ── Murmur drift guard (intentional-fork agreement) ──
+//
+// `fluent-types` carries a private copy of this module's `murmur64a` /
+// `hash_utf8` (its header documents why: no `types → spacy-rs` edge). This
+// test routes the SAME inputs through both copies — the local `hash_utf8`
+// and the types copy inside `lemma_id_for_str` — and requires agreement
+// through the shared public truncation seam (`id_for_namespace`). A vector
+// mismatch fails the test; the expectation is never "updated" —
+// investigate which copy drifted (the C-reference `hash_parity` test above
+// independently pins this copy, so a failure here with that green means the
+// types copy moved).
+//
+// Control group: empty, ASCII, multibyte, every tail length 0..7 (lengths
+// 8..16), and multi-block inputs.
+
+#[test]
+fn murmur_copies_agree_across_crates() {
+    use fluent_types::{id_for_namespace, lemma_id_for_str, InterlinguaNamespace};
+
+    let vectors = [
+        "",
+        "hello",
+        "hello world",
+        "dog",
+        "report",
+        "café",
+        "日本語",
+        "🎉",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "12345678901",
+        "123456789012",
+        "1234567890123",
+        "12345678901234",
+        "123456789012345",
+        "1234567890123456",
+        "the quick brown fox jumps over the lazy dog",
+        "n't",
+        "don't",
+        "www.example.com",
+    ];
+    for s in vectors {
+        let via_spacy_copy =
+            id_for_namespace(hash_utf8(s) as i64, InterlinguaNamespace::SpacyLemma);
+        assert_eq!(
+            lemma_id_for_str(s),
+            via_spacy_copy,
+            "murmur fork drift on {s:?}: investigate before touching either copy"
+        );
+    }
+}

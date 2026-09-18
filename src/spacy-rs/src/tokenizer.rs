@@ -152,6 +152,24 @@ fn shard_of(key: u64) -> usize {
     (key as usize) % CACHE_SHARDS
 }
 
+/// Whether the span path consults the special-case tables: the single
+/// spelling replacing the `with_special_cases: bool` threaded through the
+/// five affix-path fns. Converted once at the `tokenize_affixes` head
+/// (`tokenize` passes `Enabled`, rule-phrase tokenization passes
+/// `Disabled`); every inner fn takes the mode, never a bool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpecialCaseMode {
+    Enabled,
+    Disabled,
+}
+
+impl SpecialCaseMode {
+    /// Whether special-case table consults apply on this path.
+    fn is_enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
 /// `(&key, &[(orth, norm)])` — the exception data shape the language modules
 /// provide (norm `None` means "no override").
 pub type SpecialCaseData<'a> = (&'a str, &'a [(&'a str, Option<&'a str>)]);
@@ -248,7 +266,7 @@ impl Tokenizer {
     /// Tokenize `text` into a `Doc` (`__call__` — `tokenizer.pyx:152-162`):
     /// the affix pass with special cases, then the matcher pass.
     pub fn tokenize(&self, text: &str) -> Result<Doc, SpacyError> {
-        let mut doc = self.tokenize_affixes(text, true)?;
+        let mut doc = self.tokenize_affixes(text, SpecialCaseMode::Enabled)?;
         self.apply_special_cases(&mut doc);
         Ok(doc)
     }
@@ -259,7 +277,7 @@ impl Tokenizer {
     /// from `text` (no `Vec<char>`, no per-span `String`), and `idx` stays
     /// char-based exactly as before — `Doc` derives it from lexeme lengths,
     /// untouched here.
-    fn tokenize_affixes(&self, text: &str, with_special_cases: bool) -> Result<Doc, SpacyError> {
+    fn tokenize_affixes(&self, text: &str, mode: SpecialCaseMode) -> Result<Doc, SpacyError> {
         if text.len() >= (1 << 30) {
             return Err(SpacyError::TextTooLong(text.len()));
         }
@@ -275,19 +293,8 @@ impl Tokenizer {
                 if run_start < i {
                     let span = &text[run_start..i];
                     let key = hash_utf8(span);
-                    if !self.try_specials_and_cache(
-                        key,
-                        &mut doc,
-                        &mut has_special,
-                        with_special_cases,
-                    ) {
-                        self.tokenize_span(
-                            &mut doc,
-                            span,
-                            key,
-                            &mut has_special,
-                            with_special_cases,
-                        )?;
+                    if !self.try_specials_and_cache(key, &mut doc, &mut has_special, mode) {
+                        self.tokenize_span(&mut doc, span, key, &mut has_special, mode)?;
                     }
                 }
                 if c == ' ' {
@@ -306,8 +313,8 @@ impl Tokenizer {
         if run_start < text.len() {
             let span = &text[run_start..];
             let key = hash_utf8(span);
-            if !self.try_specials_and_cache(key, &mut doc, &mut has_special, with_special_cases) {
-                self.tokenize_span(&mut doc, span, key, &mut has_special, with_special_cases)?;
+            if !self.try_specials_and_cache(key, &mut doc, &mut has_special, mode) {
+                self.tokenize_span(&mut doc, span, key, &mut has_special, mode)?;
             }
             let last = doc
                 .tokens_mut()
@@ -327,9 +334,9 @@ impl Tokenizer {
         key: u64,
         doc: &mut Doc,
         has_special: &mut bool,
-        with_special_cases: bool,
+        mode: SpecialCaseMode,
     ) -> bool {
-        if with_special_cases {
+        if mode.is_enabled() {
             if let Some(rule) = self.tables().specials.get(&key) {
                 for st in &rule.tokens {
                     let mut record = TokenRecord::new(st.orth.clone());
@@ -361,22 +368,15 @@ impl Tokenizer {
         span: &str,
         key: u64,
         has_special: &mut bool,
-        with_special_cases: bool,
+        mode: SpecialCaseMode,
     ) -> Result<(), SpacyError> {
         let orig_size = doc.len();
         let AffixSplit {
             remaining,
             prefixes,
             suffixes,
-        } = self.split_affixes(span, has_special, with_special_cases)?;
-        self.attach_tokens(
-            doc,
-            &remaining,
-            &prefixes,
-            &suffixes,
-            has_special,
-            with_special_cases,
-        )?;
+        } = self.split_affixes(span, has_special, mode)?;
+        self.attach_tokens(doc, &remaining, &prefixes, &suffixes, has_special, mode)?;
         let n = doc.len() - orig_size;
         // Add-only-once-full memo, matching spaCy — accounted per shard so
         // the total bound stays shards × per-shard cap.
@@ -406,7 +406,7 @@ impl Tokenizer {
         &self,
         span: &str,
         _has_special: &mut bool,
-        with_special_cases: bool,
+        mode: SpecialCaseMode,
     ) -> Result<AffixSplit, SpacyError> {
         let mut lo = 0usize;
         let mut hi = span.len();
@@ -423,14 +423,14 @@ impl Tokenizer {
                     break;
                 }
             }
-            if with_special_cases && self.has_special(string) {
+            if mode.is_enabled() && self.has_special(string) {
                 break;
             }
             last_size = string.len();
             let pre_len = self.find_prefix(string)?;
             if pre_len != 0 {
                 let minus_pre = &string[pre_len..];
-                if !minus_pre.is_empty() && with_special_cases && self.has_special(minus_pre) {
+                if !minus_pre.is_empty() && mode.is_enabled() && self.has_special(minus_pre) {
                     prefixes.push(self.lex(&string[..pre_len]));
                     lo += pre_len;
                     break;
@@ -439,7 +439,7 @@ impl Tokenizer {
             let suf_len = self.find_suffix(&string[pre_len..])?;
             if suf_len != 0 {
                 let minus_suf = &string[..string.len() - suf_len];
-                if !minus_suf.is_empty() && with_special_cases && self.has_special(minus_suf) {
+                if !minus_suf.is_empty() && mode.is_enabled() && self.has_special(minus_suf) {
                     suffixes.push(self.lex(&string[string.len() - suf_len..]));
                     hi -= suf_len;
                     break;
@@ -476,14 +476,14 @@ impl Tokenizer {
         prefixes: &[Arc<Lexeme>],
         suffixes: &[Arc<Lexeme>],
         has_special: &mut bool,
-        with_special_cases: bool,
+        mode: SpecialCaseMode,
     ) -> Result<(), SpacyError> {
         for p in prefixes {
             doc.push_lexeme(p.clone(), false);
         }
         if !string.is_empty() {
             let key = hash_utf8(string);
-            if !self.try_specials_and_cache(key, doc, has_special, with_special_cases) {
+            if !self.try_specials_and_cache(key, doc, has_special, mode) {
                 let token_match_hit = match &self.token_match {
                     Some(tm) => tm
                         .is_match(string)
@@ -694,7 +694,7 @@ impl Tokenizer {
             || self.find_suffix(key)? != 0;
         let in_matcher = !self.faster_heuristics || has_space || has_affix;
         let phrase = if in_matcher {
-            self.tokenize_affixes(key, false)?
+            self.tokenize_affixes(key, SpecialCaseMode::Disabled)?
                 .tokens()
                 .iter()
                 .map(|t| t.lexeme.orth)

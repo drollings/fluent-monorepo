@@ -74,8 +74,8 @@ pub use arc_eager::{
 pub use attrs::Attribute;
 pub use cache::{span_key, SpanCacheGet, SpanCacheInvalidate, SpanCachePut, SpanCacheSeam};
 pub use doc::{
-    dep_in, dep_is, get_token_attr, lemma_of, sentence_root, sentence_spans,
-    set_children_from_heads, set_token_attr, Doc, SentStart, TokenRecord,
+    dep_in, dep_is, get_token_attr, lemma_of, sentence_roles, sentence_root, sentence_spans,
+    set_children_from_heads, set_token_attr, Doc, SentStart, SentenceRoles, TokenRecord,
 };
 pub use error::SpacyError;
 pub use frame::{

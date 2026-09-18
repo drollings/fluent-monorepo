@@ -95,11 +95,6 @@ impl InterlinguaResolver {
         (id, note)
     }
 
-    /// The SpacyLemma id for a canonical string (pure, no registry consult).
-    pub fn resolve_string(&self, canonical: &str) -> InterlinguaId {
-        self.lemma_id(canonical)
-    }
-
     /// The canonical string for an id, when the concept is registered.
     pub fn canonical(&self, id: InterlinguaId) -> Option<String> {
         self.concepts.get(id).ok().map(|c| c.canonical_name)

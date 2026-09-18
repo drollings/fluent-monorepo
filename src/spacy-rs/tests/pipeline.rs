@@ -2425,20 +2425,30 @@ fn refine_slots_selects_focused_for_on_uncertain_and_full_for_always() {
     };
     // Always ⇒ the full re-annotation adapters (today's behavior).
     assert_eq!(
-        refine_slots(&seams, true, true, RefineMode::Always),
+        refine_slots(
+            Some(&dummy_slot_encoder()),
+            Some(&dummy_slot_fetch()),
+            &seams,
+            RefineMode::Always
+        ),
         (EncoderSlot::Full, LlmSlot::Full)
     );
     // OnUncertain ⇒ focused variants when wired.
     assert_eq!(
-        refine_slots(&seams, true, true, RefineMode::OnUncertain),
+        refine_slots(
+            Some(&dummy_slot_encoder()),
+            Some(&dummy_slot_fetch()),
+            &seams,
+            RefineMode::OnUncertain
+        ),
         (EncoderSlot::Residual, LlmSlot::Focused)
     );
     // No focused seam ⇒ fall back to the full adapter (never nothing).
     assert_eq!(
         refine_slots(
+            None::<&EncoderFetchSync>,
+            Some(&dummy_slot_fetch()),
             &RefineSeams::default(),
-            false,
-            true,
             RefineMode::OnUncertain
         ),
         (EncoderSlot::Off, LlmSlot::Full)
@@ -2446,9 +2456,9 @@ fn refine_slots_selects_focused_for_on_uncertain_and_full_for_always() {
     // Nothing wired ⇒ no refiners.
     assert_eq!(
         refine_slots(
+            None::<&EncoderFetchSync>,
+            None::<&LlmFetchSync>,
             &RefineSeams::default(),
-            false,
-            false,
             RefineMode::OnUncertain
         ),
         (EncoderSlot::Off, LlmSlot::Off)
@@ -3640,5 +3650,570 @@ fn poisoned_pipeline_state_returns_error_instead_of_panicking() {
     assert!(
         matches!(err, WorkError::Dependency(_)),
         "expected Dependency error, got {err:?}"
+    );
+}
+
+// ── Unresolved-fraction helper: threshold-boundary truth tables ──
+//
+// These pin the shared count + gate semantics before the two call sites
+// (`refine_reason_inner`, `refine_focus_inner`) compose one helper: strict
+// `>` via `is_above_threshold`, `n == 0` never fires, aggregation is
+// document-wide. High-confidence bases with resolved predicates isolate the
+// `UnresolvedPropn` trigger (no confidence / critical-role / collision
+// trigger can fire).
+
+fn ids(resolved: usize, unresolved: usize) -> InterlinguaSignal {
+    let mut token_ids = vec![InterlinguaId::from_u64(0); unresolved];
+    token_ids.extend(std::iter::repeat_n(InterlinguaId::from_u64(7), resolved));
+    InterlinguaSignal {
+        predicate_id: Some(InterlinguaId::from_u64(7)),
+        subject_id: None,
+        direct_object_id: None,
+        indirect_object_id: None,
+        concept_ids: vec![],
+        token_ids,
+        confidence: None,
+    }
+}
+
+fn uncertain_policy() -> RefinePolicy {
+    RefinePolicy {
+        mode: RefineMode::OnUncertain,
+        ..RefinePolicy::default()
+    }
+}
+
+fn quiet_routing() -> RoutingSignal {
+    routing_with(None, None)
+}
+
+#[test]
+fn unresolved_fraction_exactly_at_threshold_does_not_fire() {
+    // 1/2 = 0.5, threshold 0.5, strict `>` → NoTrigger.
+    let base = high_confidence_base();
+    let signal = ids(1, 1);
+    let policy = RefinePolicy {
+        unresolved_token_threshold: 0.5,
+        ..uncertain_policy()
+    };
+    assert_eq!(
+        refine_reason(&base, &signal, &quiet_routing(), policy),
+        RefineReason::NoTrigger
+    );
+    assert!(!should_refine(&base, &signal, &quiet_routing(), policy));
+    assert!(refine_focus(&base, &signal, policy).is_empty());
+}
+
+#[test]
+fn unresolved_fraction_one_token_above_fires() {
+    // 2/3 ≈ 0.667 > 0.5 → UnresolvedPropn; focus names the unresolved pair.
+    let base = high_confidence_base();
+    let signal = ids(1, 2);
+    let policy = RefinePolicy {
+        unresolved_token_threshold: 0.5,
+        ..uncertain_policy()
+    };
+    assert_eq!(
+        refine_reason(&base, &signal, &quiet_routing(), policy),
+        RefineReason::TaskValue(TaskValueReason::UnresolvedPropn)
+    );
+    assert!(should_refine(&base, &signal, &quiet_routing(), policy));
+    assert_eq!(refine_focus(&base, &signal, policy), vec![0, 1]);
+}
+
+#[test]
+fn unresolved_fraction_below_threshold_does_not_fire() {
+    // 1/4 = 0.25 < 0.5 → NoTrigger.
+    let base = high_confidence_base();
+    let signal = ids(3, 1);
+    let policy = RefinePolicy {
+        unresolved_token_threshold: 0.5,
+        ..uncertain_policy()
+    };
+    assert_eq!(
+        refine_reason(&base, &signal, &quiet_routing(), policy),
+        RefineReason::NoTrigger
+    );
+    assert!(refine_focus(&base, &signal, policy).is_empty());
+}
+
+#[test]
+fn unresolved_fraction_empty_token_ids_never_fire() {
+    let base = high_confidence_base();
+    let signal = ids(0, 0);
+    let policy = uncertain_policy();
+    assert_eq!(
+        refine_reason(&base, &signal, &quiet_routing(), policy),
+        RefineReason::NoTrigger
+    );
+    assert!(refine_focus(&base, &signal, policy).is_empty());
+}
+
+#[test]
+fn unresolved_fraction_all_resolved_never_fires() {
+    let base = high_confidence_base();
+    let signal = ids(3, 0);
+    let policy = uncertain_policy();
+    assert_eq!(
+        refine_reason(&base, &signal, &quiet_routing(), policy),
+        RefineReason::NoTrigger
+    );
+}
+
+#[test]
+fn unresolved_fraction_all_unresolved_fires() {
+    let base = high_confidence_base();
+    let signal = ids(0, 3);
+    let policy = uncertain_policy();
+    assert_eq!(
+        refine_reason(&base, &signal, &quiet_routing(), policy),
+        RefineReason::TaskValue(TaskValueReason::UnresolvedPropn)
+    );
+    assert_eq!(refine_focus(&base, &signal, policy), vec![0, 1, 2]);
+}
+
+#[test]
+fn unresolved_fraction_aggregated_across_sentences() {
+    // Per-sentence the second sentence is fully unresolved (1/1), but the
+    // document-wide fraction (1/10) dilutes below the threshold → NoTrigger.
+    // This pins aggregation (not per-sentence evaluation).
+    let base = high_confidence_base();
+    let settled = ids(9, 0);
+    let lone = ids(0, 1);
+    let signals = [(quiet_routing(), settled), (quiet_routing(), lone)];
+    let policy = uncertain_policy();
+    assert_eq!(
+        refine_reason_aggregated(&base, &signals, policy),
+        RefineReason::NoTrigger
+    );
+    assert!(!should_refine_aggregated(&base, &signals, policy));
+}
+
+#[test]
+fn unresolved_focus_indices_are_document_global() {
+    // Unresolved tokens in the second sentence surface at global offsets.
+    let base = no_confidence_base();
+    let first = ids(2, 0);
+    let second = ids(0, 2);
+    let signals = [(quiet_routing(), first), (quiet_routing(), second)];
+    let policy = uncertain_policy();
+    assert!(should_refine_aggregated(&base, &signals, policy));
+    assert_eq!(refine_focus_aggregated(&base, &signals, policy), vec![2, 3]);
+}
+
+#[test]
+fn unresolved_stats_counts_total_and_unresolved() {
+    let settled = ids(2, 0);
+    let mixed = ids(1, 2);
+    let signals = [(quiet_routing(), settled), (quiet_routing(), mixed)];
+    assert_eq!(unresolved_stats(&signals), (5, 2));
+    assert!(unresolved_above(&signals, 0.3));
+    assert!(!unresolved_above(&signals, 0.4));
+    assert!(!unresolved_above(&[], 0.0));
+}
+
+// ── Rung/refiner spine policy ──
+//
+// The LLM and encoder rungs and their full-reannotation refiner adapters
+// share one fetch→parse→validate→wrap spine; only the failure policy
+// differs: a rung propagates `Err` (ladder fallthrough), a refiner maps
+// `Err` → `Ok(None)` (base kept). These pin the policy split before the
+// four bodies compose one helper each.
+
+const TWO_TOKEN_VALID: &str = r#"[
+    {"text":"Run","pos":"verb","dep":"root","head":0,"lemma":"run"},
+    {"text":"!","pos":"punct","dep":"punct","head":-1,"lemma":"!"}
+]"#;
+
+const TWO_TOKEN_WRONG_COUNT: &str = r#"[
+    {"text":"Run","pos":"verb","dep":"root","head":0,"lemma":"run"}
+]"#;
+
+fn two_token_doc() -> crate::doc::Doc {
+    let vocab = Arc::new(crate::vocab::Vocab::new(
+        crate::lexeme::LexiconConfig::default(),
+    ));
+    let mut doc = crate::doc::Doc::new(vocab);
+    doc.push_back("Run", true).expect("push");
+    doc.push_back("!", false).expect("push");
+    doc
+}
+
+fn rung_base() -> AnnotationResult {
+    AnnotationResult::new(AnnotationSet::default(), AnnotationSource::RuleRung)
+}
+
+fn run_refiner_sync(
+    refiner: Box<dyn AnnotationRefiner>,
+    doc: &crate::doc::Doc,
+    base: &AnnotationResult,
+    focus: &[usize],
+) -> Result<Option<AnnotationResult>, AnnotateError> {
+    let rt = tokio::runtime::Runtime::new().expect("runtime");
+    rt.block_on(refiner.refine(doc, base, focus))
+}
+
+fn failing_fetch() -> LlmFetch {
+    Arc::new(|_tokens: Vec<String>| {
+        Box::pin(async move { Err(AnnotateError::Fetch("boom".into())) })
+            as std::pin::Pin<Box<dyn Future<Output = _> + Send>>
+    })
+}
+
+fn encoder_of(json: &str) -> EncoderFetchSync {
+    let json = json.to_string();
+    Arc::new(move |_doc: &crate::doc::Doc| {
+        AnnotationSet::parse_json(&json).map_err(AnnotateError::from)
+    })
+}
+
+fn failing_encoder() -> EncoderFetchSync {
+    Arc::new(|_doc: &crate::doc::Doc| Err(AnnotateError::Encoder("boom".into())))
+}
+
+fn validator() -> Arc<AnnotationValidator> {
+    Arc::new(AnnotationValidator::default())
+}
+
+#[test]
+fn llm_rung_propagates_fetch_error_while_refiner_keeps_base() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    let err = run_rung_sync(LlmRung::new(failing_fetch(), validator()), &doc)
+        .expect_err("rung propagates fetch errors for fallthrough");
+    assert!(matches!(err, AnnotateError::Fetch(_)));
+    assert!(
+        run_refiner_sync(
+            LlmRung::new(failing_fetch(), validator()).into_refiner(),
+            &doc,
+            &base,
+            &[],
+        )
+        .expect("refiner never errors")
+        .is_none(),
+        "refiner maps fetch errors to keep-base"
+    );
+}
+
+#[test]
+fn llm_rung_propagates_parse_error_while_refiner_keeps_base() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    let err = run_rung_sync(
+        LlmRung::new(stub_fetch("not json".into()), validator()),
+        &doc,
+    )
+    .expect_err("rung propagates parse errors");
+    assert!(matches!(err, AnnotateError::Rejected(_)));
+    assert!(run_refiner_sync(
+        LlmRung::new(stub_fetch("not json".into()), validator()).into_refiner(),
+        &doc,
+        &base,
+        &[],
+    )
+    .expect("refiner never errors")
+    .is_none());
+}
+
+#[test]
+fn llm_rung_propagates_gate_rejection_while_refiner_keeps_base() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    // One record for a two-token doc: structurally parsed, gate-rejected.
+    let err = run_rung_sync(
+        LlmRung::new(stub_fetch(TWO_TOKEN_WRONG_COUNT.into()), validator()),
+        &doc,
+    )
+    .expect_err("rung propagates gate rejections");
+    assert!(matches!(err, AnnotateError::Rejected(_)));
+    assert!(run_refiner_sync(
+        LlmRung::new(stub_fetch(TWO_TOKEN_WRONG_COUNT.into()), validator()).into_refiner(),
+        &doc,
+        &base,
+        &[],
+    )
+    .expect("refiner never errors")
+    .is_none());
+}
+
+#[test]
+fn llm_rung_and_refiner_accept_valid_reply() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    let accepted = run_rung_sync(
+        LlmRung::new(stub_fetch(TWO_TOKEN_VALID.into()), validator()),
+        &doc,
+    )
+    .expect("rung accepts")
+    .expect("rung produces a parse");
+    assert_eq!(accepted.source, AnnotationSource::Llm);
+    let refined = run_refiner_sync(
+        LlmRung::new(stub_fetch(TWO_TOKEN_VALID.into()), validator()).into_refiner(),
+        &doc,
+        &base,
+        &[],
+    )
+    .expect("refiner never errors")
+    .expect("refiner accepts the same reply");
+    assert_eq!(refined.source, AnnotationSource::Llm);
+}
+
+#[test]
+fn encoder_rung_propagates_closure_error_while_refiner_keeps_base() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    let err = run_rung_sync(EncoderRung::new(failing_encoder(), validator()), &doc)
+        .expect_err("rung propagates encoder errors");
+    assert!(matches!(err, AnnotateError::Encoder(_)));
+    assert!(run_refiner_sync(
+        EncoderRung::new(failing_encoder(), validator()).into_refiner(),
+        &doc,
+        &base,
+        &[],
+    )
+    .expect("refiner never errors")
+    .is_none());
+}
+
+#[test]
+fn encoder_rung_propagates_gate_rejection_while_refiner_keeps_base() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    let err = run_rung_sync(
+        EncoderRung::new(encoder_of(TWO_TOKEN_WRONG_COUNT), validator()),
+        &doc,
+    )
+    .expect_err("rung propagates gate rejections");
+    assert!(matches!(err, AnnotateError::Rejected(_)));
+    assert!(run_refiner_sync(
+        EncoderRung::new(encoder_of(TWO_TOKEN_WRONG_COUNT), validator()).into_refiner(),
+        &doc,
+        &base,
+        &[],
+    )
+    .expect("refiner never errors")
+    .is_none());
+}
+
+#[test]
+fn encoder_rung_and_refiner_accept_valid_set() {
+    let doc = two_token_doc();
+    let base = rung_base();
+    let accepted = run_rung_sync(
+        EncoderRung::new(encoder_of(TWO_TOKEN_VALID), validator()),
+        &doc,
+    )
+    .expect("rung accepts")
+    .expect("rung produces a parse");
+    assert_eq!(accepted.source, AnnotationSource::Encoder);
+    let refined = run_refiner_sync(
+        EncoderRung::new(encoder_of(TWO_TOKEN_VALID), validator()).into_refiner(),
+        &doc,
+        &base,
+        &[],
+    )
+    .expect("refiner never errors")
+    .expect("refiner accepts the same set");
+    assert_eq!(refined.source, AnnotationSource::Encoder);
+}
+
+// ── refine_slots: seam-presence signature ──
+//
+// The slot table pinned before the bool params become `Option`s derived
+// inside: `Always` → Full/Off by presence; otherwise the focused seams win
+// when wired, else Full, else Off. `Off` mode falls into the non-`Always`
+// branch (both callers early-return before consulting slots under `Off`,
+// so the table value is dead there — pinned as-is, not fixed).
+
+fn dummy_slot_encoder() -> EncoderFetchSync {
+    Arc::new(|_doc: &crate::doc::Doc| Err(AnnotateError::Encoder("dummy".into())))
+}
+
+fn dummy_slot_fetch() -> LlmFetchSync {
+    Arc::new(|_tokens: Vec<String>| Err(AnnotateError::Fetch("dummy".into())))
+}
+
+fn seams_with_focused_variants() -> RefineSeams {
+    RefineSeams {
+        llm_focused: Some(Arc::new(|_req: LlmRefineRequest| {
+            Ok("{\"corrections\":[]}".to_string())
+        })),
+        encoder_residual: Some(Arc::new(|_doc: &crate::doc::Doc, _focus: &[usize]| {
+            Ok(vec![])
+        })),
+        ..RefineSeams::default()
+    }
+}
+
+#[test]
+fn refine_slots_always_maps_presence_to_full() {
+    let encoder = dummy_slot_encoder();
+    let fetch = dummy_slot_fetch();
+    let seams = RefineSeams::default();
+    assert_eq!(
+        refine_slots(
+            None::<&EncoderFetchSync>,
+            None::<&LlmFetchSync>,
+            &seams,
+            RefineMode::Always
+        ),
+        (EncoderSlot::Off, LlmSlot::Off)
+    );
+    assert_eq!(
+        refine_slots(
+            Some(&encoder),
+            None::<&LlmFetchSync>,
+            &seams,
+            RefineMode::Always
+        ),
+        (EncoderSlot::Full, LlmSlot::Off)
+    );
+    assert_eq!(
+        refine_slots(None, Some(&fetch), &seams, RefineMode::Always),
+        (EncoderSlot::Off, LlmSlot::Full)
+    );
+    assert_eq!(
+        refine_slots(Some(&encoder), Some(&fetch), &seams, RefineMode::Always),
+        (EncoderSlot::Full, LlmSlot::Full)
+    );
+}
+
+#[test]
+fn refine_slots_on_uncertain_prefers_focused_when_wired() {
+    let encoder = dummy_slot_encoder();
+    let fetch = dummy_slot_fetch();
+    let plain = RefineSeams::default();
+    let wired = seams_with_focused_variants();
+    // Nothing wired: presence alone decides Full vs Off.
+    assert_eq!(
+        refine_slots(
+            None::<&EncoderFetchSync>,
+            None::<&LlmFetchSync>,
+            &plain,
+            RefineMode::OnUncertain
+        ),
+        (EncoderSlot::Off, LlmSlot::Off)
+    );
+    assert_eq!(
+        refine_slots(
+            Some(&encoder),
+            Some(&fetch),
+            &plain,
+            RefineMode::OnUncertain
+        ),
+        (EncoderSlot::Full, LlmSlot::Full)
+    );
+    // Focused seams win over the full adapters when wired — seam presence
+    // alone drives the `OnUncertain` slots, even without the full fetch.
+    assert_eq!(
+        refine_slots(
+            Some(&encoder),
+            Some(&fetch),
+            &wired,
+            RefineMode::OnUncertain
+        ),
+        (EncoderSlot::Residual, LlmSlot::Focused)
+    );
+    assert_eq!(
+        refine_slots(
+            Some(&encoder),
+            None::<&LlmFetchSync>,
+            &wired,
+            RefineMode::OnUncertain
+        ),
+        (EncoderSlot::Residual, LlmSlot::Focused)
+    );
+    assert_eq!(
+        refine_slots(
+            None::<&EncoderFetchSync>,
+            Some(&fetch),
+            &wired,
+            RefineMode::OnUncertain
+        ),
+        (EncoderSlot::Residual, LlmSlot::Focused)
+    );
+}
+
+#[test]
+fn refine_slots_off_mode_keeps_current_fallthrough_shape() {
+    // Both callers return before consulting slots under `Off`; the table
+    // itself falls into the non-`Always` branch — pinned, not fixed.
+    let encoder = dummy_slot_encoder();
+    let fetch = dummy_slot_fetch();
+    let wired = seams_with_focused_variants();
+    assert_eq!(
+        refine_slots(Some(&encoder), Some(&fetch), &wired, RefineMode::Off),
+        (EncoderSlot::Residual, LlmSlot::Focused)
+    );
+    assert_eq!(
+        refine_slots(
+            None::<&EncoderFetchSync>,
+            None::<&LlmFetchSync>,
+            &RefineSeams::default(),
+            RefineMode::Off
+        ),
+        (EncoderSlot::Off, LlmSlot::Off)
+    );
+}
+
+// ── Construction shape: stage-name order per combination ──
+//
+// Pins the resolver/no-resolver/plausibility stage graphs before any
+// construction-spec work: the resolver gates `yago_resolve → frame →
+// resolve`; the plausibility fetch never alters graph shape (it only wires
+// the yago shell's seam — the fetch is stamp-time, not registration-time).
+
+fn stage_names_for(
+    resolver: Option<Arc<InterlinguaResolver>>,
+    plausibility: Option<crate::triple::PlausibilityFetch>,
+) -> Vec<String> {
+    StagePipeline::new_with_resolver_and_plausibility(
+        AnnotationValidator::new(),
+        Sentencizer::new(),
+        resolver,
+        plausibility,
+    )
+    .expect("stage graph builds")
+    .stage_names()
+}
+
+fn cheap_resolver() -> Arc<InterlinguaResolver> {
+    let vocab = Arc::new(crate::vocab::Vocab::new(
+        crate::lexeme::LexiconConfig::default(),
+    ));
+    let store: Arc<dyn ConceptStore> = Arc::new(InMemoryConceptStore::new());
+    Arc::new(InterlinguaResolver::new(
+        store,
+        Arc::clone(vocab.strings()),
+    ))
+}
+
+#[test]
+fn stage_graph_shape_per_construction_combination() {
+    // No resolver: the deterministic base chain only.
+    assert_eq!(
+        stage_names_for(None, None),
+        vec!["annotate", "validate", "attach", "sentencize"],
+    );
+    // Resolver: yago_resolve → frame → resolve splice in after attach.
+    let with_resolver = stage_names_for(Some(cheap_resolver()), None);
+    assert_eq!(
+        with_resolver,
+        vec![
+            "annotate",
+            "validate",
+            "attach",
+            "yago_resolve",
+            "frame",
+            "resolve",
+            "sentencize",
+        ],
+    );
+    // Plausibility fetch: identical graph shape — the fetch wires the
+    // shell's seam, it never registers a stage.
+    let fetch: crate::triple::PlausibilityFetch = Arc::new(|_| None);
+    assert_eq!(
+        stage_names_for(Some(cheap_resolver()), Some(fetch)),
+        with_resolver,
     );
 }

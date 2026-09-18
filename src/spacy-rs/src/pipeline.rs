@@ -591,10 +591,12 @@ impl StagePipeline {
                 .register(&yago, &*YAGO_RESOLVE_DEPS, &*YAGO_RESOLVE_PROVIDES)
                 .map_err(|e| PipelineError::StageGraph(e.to_string()))?;
             let yago_stage = match plausibility {
-                Some(fetch) => crate::yago_resolve::YagoResolveStage::with_fetch(
+                Some(fetch) => crate::yago_resolve::YagoResolveStage::with_config(
                     Arc::clone(resolver.concepts()),
-                    false,
-                    fetch,
+                    crate::yago_resolve::YagoResolveConfig {
+                        enabled: false,
+                        fetch: Some(fetch),
+                    },
                 ),
                 None => crate::yago_resolve::YagoResolveStage::new(Arc::clone(resolver.concepts())),
             };
@@ -958,6 +960,29 @@ impl RefineReason {
 ///
 /// Confidence triggers are producer self-doubt (`overall/role_coverage/ties`);
 /// task-value triggers are outcome-wrong-for-task (`unresolved/collision`).
+/// The unresolved-lemma count shared by the refine decision and the focus
+/// computation: `(total token ids, ids carrying the `InterlinguaId(0)`
+/// none-sentinel)`, aggregated across every sentence's signal. The single
+/// spelling both `refine_reason_inner` and `refine_focus_inner` compose —
+/// a threshold change touches one place.
+fn unresolved_stats(signals: &[(RoutingSignal, InterlinguaSignal)]) -> (usize, usize) {
+    let total: usize = signals.iter().map(|(_, s)| s.token_ids.len()).sum();
+    let unresolved: usize = signals
+        .iter()
+        .flat_map(|(_, s)| s.token_ids.iter())
+        .filter(|id| id.as_u64() == 0)
+        .count();
+    (total, unresolved)
+}
+
+/// Whether the aggregated unresolved fraction strictly exceeds `threshold`
+/// (the shared `is_above_threshold` comparator — never a local `>`).
+/// Empty `token_ids` never fire (`total == 0` → false).
+fn unresolved_above(signals: &[(RoutingSignal, InterlinguaSignal)], threshold: f64) -> bool {
+    let (total, unresolved) = unresolved_stats(signals);
+    total > 0 && is_above_threshold(unresolved as f64 / total as f64, threshold)
+}
+
 fn refine_reason_inner(
     base: &AnnotationResult,
     signals: &[(RoutingSignal, InterlinguaSignal)],
@@ -991,21 +1016,10 @@ fn refine_reason_inner(
                     }
                 }
             }
-            if policy.refine_on_unresolved_propn {
-                let n: usize = signals.iter().map(|(_, s)| s.token_ids.len()).sum();
-                let unresolved: usize = signals
-                    .iter()
-                    .flat_map(|(_, s)| s.token_ids.iter())
-                    .filter(|id| id.as_u64() == 0)
-                    .count();
-                if n > 0
-                    && is_above_threshold(
-                        unresolved as f64 / n as f64,
-                        policy.unresolved_token_threshold,
-                    )
-                {
-                    return RefineReason::TaskValue(TaskValueReason::UnresolvedPropn);
-                }
+            if policy.refine_on_unresolved_propn
+                && unresolved_above(signals, policy.unresolved_token_threshold)
+            {
+                return RefineReason::TaskValue(TaskValueReason::UnresolvedPropn);
             }
             if policy.refine_on_collision_note && base.collision_count > 0 {
                 return RefineReason::TaskValue(TaskValueReason::Collision);
@@ -1100,17 +1114,7 @@ fn refine_focus_inner(
         }
     }
     if policy.refine_on_unresolved_critical_role || policy.refine_on_unresolved_propn {
-        let n: usize = signals.iter().map(|(_, s)| s.token_ids.len()).sum();
-        let unresolved: usize = signals
-            .iter()
-            .flat_map(|(_, s)| s.token_ids.iter())
-            .filter(|id| id.as_u64() == 0)
-            .count();
-        let above_threshold = n > 0
-            && is_above_threshold(
-                unresolved as f64 / n as f64,
-                policy.unresolved_token_threshold,
-            );
+        let above_threshold = unresolved_above(signals, policy.unresolved_token_threshold);
         if above_threshold {
             let mut offset = 0;
             for (_, signal) in signals {
@@ -1337,6 +1341,38 @@ struct LlmRefiner {
     validator: Arc<AnnotationValidator>,
 }
 
+/// The shared fetch→parse→validate→wrap spine for the LLM rung and its
+/// refiner adapter: collect token texts, run the async fetch, parse the
+/// §10.1 JSON, gate through the validator, wrap with `Llm` provenance.
+/// Reuses [`AnnotationSet::parse_json`] + [`AnnotationValidator::validate`]
+/// — no new parse/validate path. Failure policy stays at the call site:
+/// the rung propagates `Err` (ladder fallthrough), the refiner maps
+/// `Err` → `Ok(None)` (base kept).
+async fn fetch_validate(
+    doc: &Doc,
+    fetch: &LlmFetch,
+    validator: &AnnotationValidator,
+) -> Result<AnnotationResult, AnnotateError> {
+    let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
+    let json = fetch(tokens).await?;
+    let set = AnnotationSet::parse_json(&json)?;
+    validator.validate(doc, &set)?;
+    Ok(AnnotationResult::new(set, AnnotationSource::Llm))
+}
+
+/// The shared encode→validate→wrap spine for the encoder rung and its
+/// refiner adapter: run the whole-doc closure, gate, wrap with `Encoder`
+/// provenance. Same policy split as [`fetch_validate`].
+fn encode_validate(
+    doc: &Doc,
+    encoder: &EncoderFetchSync,
+    validator: &AnnotationValidator,
+) -> Result<AnnotationResult, AnnotateError> {
+    let set = encoder(doc)?;
+    validator.validate(doc, &set)?;
+    Ok(AnnotationResult::new(set, AnnotationSource::Encoder))
+}
+
 impl AnnotationRefiner for LlmRefiner {
     fn refine<'a>(
         self: Box<Self>,
@@ -1345,19 +1381,7 @@ impl AnnotationRefiner for LlmRefiner {
         _focus: &'a [usize],
     ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
     {
-        Box::pin(async move {
-            let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-            let Ok(json) = (self.fetch)(tokens).await else {
-                return Ok(None);
-            };
-            let Ok(set) = AnnotationSet::parse_json(&json) else {
-                return Ok(None);
-            };
-            if self.validator.validate(doc, &set).is_err() {
-                return Ok(None);
-            }
-            Ok(Some(AnnotationResult::new(set, AnnotationSource::Llm)))
-        })
+        Box::pin(async move { Ok(fetch_validate(doc, &self.fetch, &self.validator).await.ok()) })
     }
 }
 
@@ -1377,15 +1401,7 @@ impl AnnotationRefiner for EncoderRefiner {
         _focus: &'a [usize],
     ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
     {
-        Box::pin(async move {
-            let Ok(set) = (self.encoder)(doc) else {
-                return Ok(None);
-            };
-            if self.validator.validate(doc, &set).is_err() {
-                return Ok(None);
-            }
-            Ok(Some(AnnotationResult::new(set, AnnotationSource::Encoder)))
-        })
+        Box::pin(async move { Ok(encode_validate(doc, &self.encoder, &self.validator).ok()) })
     }
 }
 
@@ -1675,12 +1691,19 @@ enum LlmSlot {
     Focused,
 }
 
-fn refine_slots(
+/// The single slot-selection decision: presence is derived inside from the
+/// same `Option`s the ladders hold, so no caller can pass a bool that
+/// disagrees with its seam. The fetch side is generic because the two
+/// ladders hold different fetch seams for the same slot — async
+/// [`LlmFetch`], sync [`LlmFetchSync`] — and only presence is consulted.
+fn refine_slots<F>(
+    encoder: Option<&EncoderFetchSync>,
+    fetch: Option<&F>,
     seams: &RefineSeams,
-    has_encoder: bool,
-    has_fetch: bool,
     mode: RefineMode,
 ) -> (EncoderSlot, LlmSlot) {
+    let has_encoder = encoder.is_some();
+    let has_fetch = fetch.is_some();
     if mode == RefineMode::Always {
         return (
             if has_encoder {
@@ -1745,11 +1768,9 @@ impl AnnotationRung for LlmRung {
     ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
     {
         Box::pin(async move {
-            let tokens: Vec<String> = (0..doc.len()).map(|i| doc.token_text(i)).collect();
-            let json = (self.fetch)(tokens).await?;
-            let set = AnnotationSet::parse_json(&json)?;
-            self.validator.validate(doc, &set)?;
-            Ok(Some(AnnotationResult::new(set, AnnotationSource::Llm)))
+            Ok(Some(
+                fetch_validate(doc, &self.fetch, &self.validator).await?,
+            ))
         })
     }
 }
@@ -1797,11 +1818,7 @@ impl AnnotationRung for EncoderRung {
         doc: &'a Doc,
     ) -> Pin<Box<dyn Future<Output = Result<Option<AnnotationResult>, AnnotateError>> + Send + 'a>>
     {
-        Box::pin(async move {
-            let set = (self.encoder)(doc)?;
-            self.validator.validate(doc, &set)?;
-            Ok(Some(AnnotationResult::new(set, AnnotationSource::Encoder)))
-        })
+        Box::pin(async move { Ok(Some(encode_validate(doc, &self.encoder, &self.validator)?)) })
     }
 }
 
@@ -2651,7 +2668,7 @@ fn refiner_order(
     mode: RefineMode,
     validator: &Arc<AnnotationValidator>,
 ) -> Vec<Box<dyn AnnotationRefiner>> {
-    let (encoder_slot, llm_slot) = refine_slots(seams, encoder.is_some(), fetch.is_some(), mode);
+    let (encoder_slot, llm_slot) = refine_slots(encoder.as_ref(), fetch.as_ref(), seams, mode);
     let mut refiners: Vec<Box<dyn AnnotationRefiner>> = Vec::with_capacity(2);
     match encoder_slot {
         EncoderSlot::Residual => {
@@ -2989,8 +3006,7 @@ fn run_ladder_sync(
 
     // The same slot decision the async walk makes (refine_slots) — full vs
     // focused, encoder vs LLM, in one place.
-    let (encoder_slot, llm_slot) =
-        refine_slots(seams, encoder.is_some(), fetch.is_some(), policy.mode);
+    let (encoder_slot, llm_slot) = refine_slots(encoder, fetch, seams, policy.mode);
     let mut sync_refiners: Vec<SyncRung> = Vec::with_capacity(2);
     match encoder_slot {
         EncoderSlot::Residual => {

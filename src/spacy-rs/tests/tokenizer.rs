@@ -156,3 +156,88 @@ fn post_freeze_registration_is_refused_and_output_unchanged() {
         "refused registration changes nothing"
     );
 }
+
+// ── Special-case mode golden pins ──
+//
+// `tokenize_affixes(text, bool)` is driven directly (child-module access to
+// the private span path) to pin both legs before the bool becomes a mode:
+// on plain affix text the legs agree exactly; on special-case text only the
+// enabled leg expands; `faster_heuristics` off keeps public output identical.
+
+fn affixes_with(text: &str, mode: SpecialCaseMode) -> Vec<String> {
+    let t = en_tokenizer();
+    orths(
+        &t.tokenize_affixes(text, mode)
+            .expect("affix pass tokenizes"),
+    )
+}
+
+#[test]
+fn affix_text_agrees_with_specials_on_and_off() {
+    for text in ["dyn-o-mite", "hello!", "well-known fact", "(parenthetical)"] {
+        assert_eq!(
+            affixes_with(text, SpecialCaseMode::Enabled),
+            affixes_with(text, SpecialCaseMode::Disabled),
+            "no specials present, so the flag is a no-op on {text:?}"
+        );
+    }
+    assert_eq!(
+        affixes_with("dyn-o-mite", SpecialCaseMode::Enabled),
+        ["dyn", "-", "o", "-", "mite"]
+    );
+}
+
+#[test]
+fn special_text_expands_only_with_specials_on() {
+    assert_eq!(
+        affixes_with("can't", SpecialCaseMode::Enabled),
+        ["ca", "n't"]
+    );
+    let off = affixes_with("can't", SpecialCaseMode::Disabled);
+    assert_ne!(off, ["ca", "n't"], "disabled leg skips the specials table");
+    assert_eq!(off.join("").replace(' ', ""), "can't", "lossless split");
+}
+
+#[test]
+fn whitespace_paths_agree_with_specials_on_and_off() {
+    for text in ["a  b", " hello ", "tab\tseparated"] {
+        assert_eq!(
+            affixes_with(text, SpecialCaseMode::Enabled),
+            affixes_with(text, SpecialCaseMode::Disabled),
+            "whitespace handling never consults specials on {text:?}"
+        );
+    }
+}
+
+fn en_tokenizer_no_heuristics() -> Tokenizer {
+    let vocab = Arc::new(Vocab::new(en::lexicon_config()));
+    let config = TokenizerConfig {
+        prefix_pattern: Some(en::patterns::PREFIX_PATTERN.to_string()),
+        suffix_pattern: Some(en::patterns::SUFFIX_PATTERN.to_string()),
+        infix_pattern: Some(en::patterns::INFIX_PATTERN.to_string()),
+        token_match: None,
+        url_match: Some(crate::lang::url::URL_PATTERN.to_string()),
+        faster_heuristics: false,
+        max_cache_size: 10_000,
+    };
+    Tokenizer::new(vocab, &config, en::exceptions::RULES).expect("builds")
+}
+
+#[test]
+fn faster_heuristics_off_keeps_public_output() {
+    let fast = en_tokenizer();
+    let slow = en_tokenizer_no_heuristics();
+    for text in [
+        "I can't go",
+        "dyn-o-mite",
+        "y'all are great",
+        "at 5a.m. sharp",
+        "Hello world",
+    ] {
+        assert_eq!(
+            orths(&slow.tokenize(text).expect("tokenizes")),
+            orths(&fast.tokenize(text).expect("tokenizes")),
+            "heuristics flag must not change tokens on {text:?}"
+        );
+    }
+}
