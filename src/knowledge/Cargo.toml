@@ -8,6 +8,12 @@ edition.workspace = true
 [dependencies]
 common-core = { path = "../common-core" }
 fluent-db = { path = "../db" }
+# M10.2: LOD mechanics over shared data + the content seam (all leaves
+# w.r.t. this crate — none depends on knowledge).
+fluent-types = { path = "../types" }
+fluent-concept = { path = "../concept" }
+fluent-llm = { path = "../llm" }
+vector-math = { path = "../vector-math" }
 blake3 = { workspace = true }
 thiserror = { workspace = true }
 

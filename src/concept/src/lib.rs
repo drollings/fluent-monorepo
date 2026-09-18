@@ -13,16 +13,21 @@
 //!
 //! Boot reconciliation (one loader, two durable homes) locks the homes equal.
 //!
-//! This crate depends only on `fluent-types` + `fluent-dag`, so `spacy-rs`,
-//! the router, coral, and the ontology all depend on it without a cycle
-//! (neither `fluent-types` nor `common-core` depends on `dag`).
+//! This crate depends on `fluent-types` + `fluent-dag` (+ `common-core`
+//! string shaping, `fluent-db`/`rusqlite`/`serde_json` for the annotation
+//! linkage — all leaves w.r.t. this crate), so `spacy-rs`, the router,
+//! coral, and the ontology all depend on it without a cycle.
 
 #![forbid(unsafe_code)]
 
+pub mod annotation_store;
 pub mod concept_store;
 pub mod concept_store_mem;
+pub mod content_store;
 pub mod plausibility;
 
+pub use annotation_store::{AnnotationStore, ANNOTATIONS_TABLE};
 pub use concept_store::{ConceptStore, ConceptStoreError, ConceptStoreState, TaxonomyHierarchy};
 pub use concept_store_mem::InMemoryConceptStore;
+pub use content_store::{derive_label, ensure_lod_eager, ContentNodeStore, InMemoryContentNodeStore};
 pub use plausibility::{PlausibilityTriple, ScoredLemma};

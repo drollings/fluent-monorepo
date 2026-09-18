@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn cors_headers_unchanged() {
+    // M2.3: the router-owned CORS contract (moved from `common-core::http`).
+    assert_eq!(CORS_ALLOW_ORIGIN, "*");
+    assert_eq!(CORS_ALLOW_METHODS, "POST, GET, OPTIONS");
+    assert_eq!(CORS_ALLOW_HEADERS, "Content-Type, Authorization");
+    let mut headers = http::HeaderMap::new();
+    add_cors_headers(&mut headers);
+    assert_eq!(
+        headers["access-control-allow-origin"],
+        CORS_ALLOW_ORIGIN
+    );
+    assert_eq!(
+        headers["access-control-allow-methods"],
+        CORS_ALLOW_METHODS
+    );
+    assert_eq!(
+        headers["access-control-allow-headers"],
+        CORS_ALLOW_HEADERS
+    );
+}
+
+#[test]
 fn fallback_has_stop_reason() {
     let r = fallback_completion("test");
     assert_eq!(r.choices.len(), 1);

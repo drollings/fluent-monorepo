@@ -8,7 +8,9 @@ use fluent_llm::{ChatMessage, LlmError};
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline::RoutingTarget;
-use crate::types::{RouterMessage, RouterMessageContent, RouterResponse, Usage};
+use fluent_types::openai_wire::{
+    RouterChoice, RouterMessage, RouterMessageContent, RouterResponse, Usage,
+};
 
 pub struct TranscriptProvider {
     entries: HashMap<String, String>,
@@ -235,7 +237,7 @@ impl MockDispatchContext {
                 .unwrap_or_default()
                 .as_secs(),
             model: model_name.to_string(),
-            choices: vec![crate::types::RouterChoice {
+            choices: vec![RouterChoice {
                 index: 0,
                 message: RouterMessage {
                     role: "assistant".into(),

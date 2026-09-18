@@ -27,6 +27,7 @@ pub mod onnx_session;
 pub mod openai;
 pub mod parse;
 pub mod pii_patterns;
+pub mod prompt;
 pub mod protocol;
 pub mod qwen;
 pub mod resolution;

@@ -6,6 +6,12 @@
 //! actual data flow. Extraction is a best-effort *deterministic*
 //! reconstruction (no LLM): the chart is written as a **draft** that only
 //! becomes selectable after a rubric-validated run.
+//!
+//! NOTE (M9.4 disposition): no `to_triples` candidate here — the export shape
+//! is steps-with-`depends`/`provides` edges (a DAG, composed with `fluent-dag`
+//! at compile/execute), not subject-predicate-object triples. The `rdf` crate
+//! stays triple-exports-only; nothing in `ledger/workflow_*.rs` is
+//! triple-shaped either (same DAG shape). Closed as "DAGs, not triples".
 
 use std::sync::Arc;
 

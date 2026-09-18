@@ -1,7 +1,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::types::{
+use fluent_types::openai_wire::{
     RouterChoice, RouterMessage, RouterMessageContent, RouterRequest, RouterResponse, Usage,
 };
 

@@ -477,6 +477,9 @@ fn process_job(
 /// names from the parse resolved through the store (bounded), falling back to
 /// a bounded `iter_ids()` scan when nothing resolved. Grounded in the parse —
 /// never an arbitrary slice of the store (red-team M4).
+/// M9.3 disposition: review-pipeline specific (ConceptStore + parse records +
+/// taxonomy-grounded fallback) — stays in router unless ontology gains the
+/// shape (no second consumer today).
 fn candidate_concepts(
     concepts: &Arc<dyn ConceptStore>,
     parse: &AnnotationResult,

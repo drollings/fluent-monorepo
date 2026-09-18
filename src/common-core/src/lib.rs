@@ -16,6 +16,7 @@
 pub mod blob_spec;
 pub mod cache;
 pub mod calibration;
+pub mod checksum;
 pub mod cite;
 pub mod score;
 pub mod telemetry;
@@ -86,7 +87,7 @@ pub use runtime::block_on;
 pub use shell::{run_capture, run_command, run_shell_capture, shell_cmd, CommandOutput};
 pub use sort::{dedup_sorted, sorted_by_vec, sorted_vec};
 pub use string::{
-    contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
+    ascii_alnum_tokens, collapse_whitespace, contains_any, contains_any_word, contains_ident_word, contains_ignore_case, contains_word,
     detect_identifier_kind, extract_tag, filter_unsafe_chars, find_subseq, first_comment_line,
     first_sentence, has_extension, is_noisy_comment, is_path_token, is_test_path,
     looks_like_identifier, lower_into, skill_name_from_ref, slugify, strip_boilerplate,

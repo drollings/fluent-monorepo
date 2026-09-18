@@ -48,16 +48,10 @@ fn default_five() -> u8 {
 
 /// The fixed self-assessment prompt — NOT auto-constructed from children (the
 /// self-assessment is not a tree classifier node). §4.2 verbatim.
-pub fn build_self_assessment_prompt(user_text: &str) -> String {
-    format!(
-        "You are asked to rate the complexity of the user's request on a scale of\n\
-         0 (trivial) to 10 (requires the most capable model available).\n\n\
-         User request: {user_text}\n\n\
-         Output exactly one JSON object:\n\
-         \x20 {{\"complexity\": <integer 0-10>, \"reason\": \"<brief justification>\"}}\n\
-         Only output JSON, no other text."
-    )
-}
+///
+/// M6.3: canonical home is `fluent_llm::prompt::build_self_assessment_prompt`;
+/// re-exported here so existing `target_match::…` paths keep working.
+pub use fluent_llm::prompt::build_self_assessment_prompt;
 
 /// Tolerant parse of a target's self-assessment response. Mirrors
 /// `parse_tree_verdict` (`stages/tree.rs`) through the shared
@@ -724,8 +718,11 @@ impl TargetMatcher {
     /// Run the §4.1 ladder: start index → per-candidate self-assessment →
     /// match rule → tail fallbacks.
     ///
-    /// NOTE (M8 exemption): this loop deliberately does NOT compose
-    /// `fluent_concurrency::ladder::first_accept_in_order`. It differs in
+    /// NOTE (M8 exemption, M4.4 cited): this loop deliberately does NOT compose
+    /// `fluent_concurrency::ladder::first_accept_in_order`
+    /// (`fluent-concurrency/SKILL.md` §3.11 — start-index-skip +
+    /// last-always-wins + per-rung audit is a documented exception, not a
+    /// candidate for unification). It differs in
     /// three load-bearing ways: (1) start-index skip — iteration begins at
     /// `start_index(complexity)`, not rung 0; (2) last-always-wins — the
     /// final candidate matches unconditionally, so exhaustion yields a

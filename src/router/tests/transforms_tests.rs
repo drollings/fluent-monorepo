@@ -233,6 +233,76 @@ mod tests {
         assert!(result.is_err(), "empty user text should error");
     }
 
+    // ── Shared helper coverage (`crate::transforms` interface) ──
+
+    use crate::transforms::{insert_string_map, rewrite_text_messages, TransformError};
+    use crate::types::{ContentPart, RouterMessage, RouterMessageContent};
+
+    fn request_with(text: &str) -> RouterRequest {
+        use crate::testing::test_request;
+        let mut req = test_request(text);
+        // `test_request` builds the standard shape; pin the literal fields the
+        // helper tests assert on.
+        req.messages = vec![RouterMessage {
+            role: "user".into(),
+            content: RouterMessageContent::Text(text.into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+        req
+    }
+
+    #[test]
+    fn test_rewrite_leaves_parts_and_aborts_on_error() {
+        let mut req = request_with("hi");
+        req.messages.push(RouterMessage {
+            role: "user".into(),
+            content: RouterMessageContent::Parts(vec![ContentPart::Text {
+                text: "kept".into(),
+            }]),
+            tool_calls: None,
+            tool_call_id: None,
+        });
+        let out = rewrite_text_messages(&req, |t| Ok(t.to_uppercase())).expect("rewrite");
+        assert_eq!(out.messages[0].content.as_text(), "HI");
+        assert_eq!(out.messages[1].content.to_string_lossy(), "kept");
+        let err = rewrite_text_messages(&req, |_| Err(TransformError::Failed("x".into())))
+            .expect_err("aborts");
+        assert!(matches!(err, TransformError::Failed(_)));
+    }
+
+    #[test]
+    fn test_empty_map_inserts_nothing() {
+        let mut req = request_with("hi");
+        insert_string_map(&mut req, "k", std::collections::HashMap::new());
+        assert!(req.metadata.get("k").is_none());
+    }
+
+    #[test]
+    fn test_insert_map_object_shape_and_existing_keys() {
+        let mut req = request_with("hi");
+        req.metadata
+            .insert("pre".into(), serde_json::json!({"x": 1}));
+        let map: std::collections::HashMap<String, String> =
+            [("café", "北京"), ("email", "u@e.com")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+        insert_string_map(&mut req, "map", map);
+        let obj = req.metadata.get("map").unwrap().as_object().unwrap();
+        assert_eq!(obj.len(), 2);
+        assert_eq!(obj["café"], serde_json::Value::String("北京".into()));
+        assert!(req.metadata.contains_key("pre"));
+    }
+
+    #[test]
+    fn test_rewrite_empty_messages_passthrough() {
+        let mut req = request_with("hi");
+        req.messages.clear();
+        let out = rewrite_text_messages(&req, |t| Ok(t.to_uppercase())).expect("empty passthrough");
+        assert!(out.messages.is_empty());
+    }
+
     // ── No LLM calls in any test ──────────────────────────────────
     // All tests above use only fixture data — no live models or network.
 }

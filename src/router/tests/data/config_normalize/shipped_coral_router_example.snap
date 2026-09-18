@@ -353,11 +353,10 @@
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
-        "last",
-        "qwen3.5-9b"
+        "lfm2.5-2.6b"
       ],
       "params": {
-        "num_ctx": 65536,
+        "num_ctx": 262144,
         "repeat_penalty": 1.01,
         "sleep_idle_seconds": 28800,
         "temperature": 0.1
@@ -369,10 +368,6 @@
       "enable_thinking": false,
       "filter_thinking": true,
       "max_parallel": 2,
-      "models": [
-        "qwen3.5-9b",
-        "last"
-      ],
       "params": {
         "num_ctx": 8192,
         "repeat_penalty": 1.0,
@@ -404,9 +399,6 @@
       "enable_thinking": false,
       "filter_thinking": true,
       "max_parallel": 1,
-      "models": [
-        "qwen3.5-9b"
-      ],
       "params": {
         "num_ctx": 65536,
         "repeat_penalty": 1.01,

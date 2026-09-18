@@ -24,6 +24,7 @@ use std::sync::Arc;
 use common_core::contains_ident_word;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
+use search_vector::fusion::parse_rerank_output;
 
 use crate::charts::binding::{bind_chart, AmbiguousDep, Bindings, Entity};
 use crate::charts::store::ChartStore;
@@ -581,6 +582,10 @@ fn build_adjudicator_prompt(
 /// `fluent_llm::parse_typed` codec strips markdown code fences, fast-paths
 /// a direct parse, then extracts the first `{...}` object; missing fields are
 /// sanitized to defaults.
+///
+/// M7.4 disposition: stays — returns the chart-domain `AdjudicatorOutput`
+/// (`AdjudicatorFit` policy); moving it would drag chart selection policy
+/// into `fluent-llm`. The shared codec does the fence/extract work.
 fn parse_adjudicator_output(raw: &str) -> Option<AdjudicatorOutput> {
     let value =
         fluent_llm::parse_typed::<serde_json::Value>(raw, &serde_json::Value::Null, |_| {}).ok()?;
@@ -661,31 +666,6 @@ fn build_rerank_prompt(request: &str, candidates: &[(String, f64)], store: &Char
     let _ = writeln!(prompt, "- Rank every candidate exactly once.");
     let _ = writeln!(prompt, "- Only output the JSON array, no other text.");
     prompt
-}
-
-/// Parse a reranker response into an ordered list of candidate names.
-///
-/// Tolerant by design (mirrors `parse_adjudicator_output`): the shared
-/// `fluent_llm::parse_typed` codec strips fences, accepts a bare array or
-/// a `{"ranking": [...]}` object, and extracts the first balanced JSON value.
-/// Non-string entries are dropped. `None` means "not parseable" — the caller
-/// keeps the HNSW order.
-fn parse_rerank_output(raw: &str) -> Option<Vec<String>> {
-    let value =
-        fluent_llm::parse_typed::<serde_json::Value>(raw, &serde_json::Value::Null, |_| {}).ok()?;
-    let names: Option<Vec<&str>> = match &value {
-        serde_json::Value::Array(arr) => Some(arr.iter().filter_map(|v| v.as_str()).collect()),
-        serde_json::Value::Object(obj) => obj
-            .get("ranking")
-            .and_then(|r| r.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect()),
-        _ => None,
-    };
-    let names = names?;
-    if names.is_empty() {
-        return None;
-    }
-    Some(names.into_iter().map(str::to_string).collect())
 }
 
 // ── Ambiguity adjudicator: LLM pick + deterministic tie-break ───────

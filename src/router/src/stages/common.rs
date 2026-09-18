@@ -24,7 +24,7 @@ pub fn publish_routing_target(
 
 use fluent_wvr::prelude::*;
 
-use crate::types::{RouterMessageContent, RouterRequest};
+use fluent_types::openai_wire::{RouterMessageContent, RouterRequest};
 
 /// Ensure a floating-point field exists on a classifier/tree JSON object,
 /// coercing a string-valued number back to numeric. The shared "surviving

@@ -1,3 +1,10 @@
+//! Filter control-plane interface: the [`Filter`] trait, its data
+//! ([`FilterKind`], [`FilterContext`], [`FilterDecision`], [`RegexMatch`])
+//! and the first-wins [`DeterministicFilterEngine`]. The regex/injection/
+//! secret *implementations* live in the sibling modules — only the interface
+//! lives here, owned once so stages, the ledger guard, and the escalation
+//! ladder share it without duplication.
+
 pub mod injection_detect;
 pub mod luhn;
 pub mod regex_filter;
@@ -124,6 +131,7 @@ impl DeterministicFilterEngine {
         self.filters.is_empty()
     }
 }
+
 #[cfg(test)]
 #[path = "../../tests/filters_mod.rs"]
 mod tests;

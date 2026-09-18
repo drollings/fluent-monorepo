@@ -7,11 +7,12 @@
 //!
 //! - [`SalienceSignal`] / [`SalienceScorer`] — the pure scoring core (hermetic;
 //!   tests construct signals by hand).
-//! - [`pagerank`] — the minimal "graph analytics — PageRank" backlog item,
-//!   scoped to candidate centrality: a fixed-iteration power loop over the
-//!   interlingua co-reference graph, composed from `interlingua_index`
-//!   co-occurrence + `ledger.parent_id` (there is **no** separate coral edge
-//!   table — the graph is built from the ledger's own rows).
+//! - Centrality via [`pagerank`](search_vector::salience::pagerank) — the minimal
+//!   "graph analytics — PageRank" backlog item, scoped to candidate centrality:
+//!   a fixed-iteration power loop over the interlingua co-reference graph,
+//!   composed from `interlingua_index` co-occurrence + `ledger.parent_id`
+//!   (there is **no** separate coral edge table — the graph is built from the
+//!   ledger's own rows). M7.2: owned by `search-vector`, composed here.
 //! - [`SalienceSource`] / [`LedgerSalienceProvider`] — the signal seam; the
 //!   provider reads a read-only snapshot of the ledger.
 //! - [`rank_candidates`] — prefilter to top-K by salience, then **one**
@@ -29,6 +30,7 @@ use fluent_db::store::SqliteStore;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::ChatMessage;
 use fluent_types::NodeId;
+use search_vector::salience::{pagerank, NodeGraph, PAGERANK_ALPHA, PAGERANK_ITERATIONS};
 
 use crate::node_store::ContentNodeStore;
 
@@ -41,11 +43,10 @@ pub const WEIGHTS: [f64; 4] = [0.4, 0.3, 0.2, 0.1];
 /// The deterministic shortlist size the model is asked to rank.
 pub const SALIENCE_SHORTLIST_K: usize = 8;
 
-/// Fixed iteration bound for the minimal PageRank power loop.
-pub const PAGERANK_ITERATIONS: usize = 20;
-
-/// The PageRank teleport probability.
-pub const PAGERANK_ALPHA: f64 = 0.85;
+// M7.2: `NodeGraph`, `PAGERANK_ITERATIONS`, `PAGERANK_ALPHA`, and `pagerank`
+// live in `search_vector::salience` (imported above) — pure centrality math
+// with zero domain coupling. The salience policy below (signal weights,
+// multi-key sorts, provider snapshot, model call) stays router-local.
 
 /// The interlingua role naming a sentence's predicate (the `frame_frequency`
 /// key). This is the durable-frame fallback: while M3 frames are not yet wired
@@ -85,6 +86,11 @@ impl Default for SalienceSignal {
 }
 
 /// The weighted salience scorer — a pure function of a [`SalienceSignal`].
+///
+/// M7.2 disposition: stays router-local. The accumulation already delegates
+/// to `common_core::score::weighted_dot` (the shared kernel); what remains
+/// here is policy — the [`WEIGHTS`] vector and the ledger-named signal shape
+/// — not movable math.
 #[derive(Debug, Clone, Copy)]
 pub struct SalienceScorer {
     weights: [f64; 4],
@@ -124,54 +130,6 @@ impl Default for SalienceScorer {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// An adjacency map for the candidate-centrality graph (undirected).
-pub type NodeGraph = BTreeMap<i64, Vec<i64>>;
-
-/// Minimal PageRank via a fixed-iteration power loop over an undirected graph.
-///
-/// Deterministic in `f64` (no parallel reduction — the same graph always yields
-/// the same ranks) and normalized so the top node scores `1.0`. Dangling nodes
-/// (empty adjacency) redistribute their mass evenly through the teleport.
-///
-/// This is the minimal form of the "graph analytics — PageRank" backlog item,
-/// scoped to candidate centrality. It walks the ledger's own graph
-/// (`interlingua_index` co-occurrence + `parent_id`); it is not a general
-/// graph-analytics subsystem and there is no `fluent-dag` PageRank primitive
-/// to compose (the power loop is a small numeric routine, not a graph
-/// algorithm the DAG crate provides).
-#[must_use]
-pub fn pagerank(graph: &NodeGraph, iterations: usize, alpha: f64) -> BTreeMap<i64, f64> {
-    let n = graph.len().max(1);
-    let mut ranks: BTreeMap<i64, f64> = graph.keys().map(|&k| (k, 1.0 / n as f64)).collect();
-    for _ in 0..iterations {
-        let teleport = (1.0 - alpha) / n as f64;
-        let mut dangling = 0.0;
-        let mut out_deg: BTreeMap<i64, f64> = BTreeMap::new();
-        for (&u, adj) in graph {
-            if adj.is_empty() {
-                dangling += ranks[&u];
-            }
-            out_deg.insert(u, adj.len().max(1) as f64);
-        }
-        let mut next: BTreeMap<i64, f64> = BTreeMap::new();
-        for (&u, adj) in graph {
-            let mut acc = teleport + alpha * dangling / n as f64;
-            for &v in adj {
-                acc += alpha * ranks[&v] / out_deg[&v];
-            }
-            next.insert(u, acc);
-        }
-        ranks = next;
-    }
-    let max = ranks.values().copied().fold(0.0_f64, f64::max);
-    if max > 0.0 {
-        for rank in ranks.values_mut() {
-            *rank /= max;
-        }
-    }
-    ranks
 }
 
 /// The salience signal seam [`rank_candidates`] pre-filters over. The ledger
@@ -466,6 +424,13 @@ pub struct RankedCandidate {
 /// A failed / unparseable / hallucinating ranking call degrades to the
 /// salience order (never an error, never an empty result, never an unbounded
 /// prompt).
+///
+/// M7.4 disposition: stays router-local — the "deterministic shortlist (K=8)
+/// → single grammar-constrained call" shape is routing policy (shortlist
+/// size, prompt, extras schema, fail-open), not a generic primitive. The
+/// pure pieces are shared: centrality (`search_vector::salience::pagerank`),
+/// accumulation (`common_core::score::weighted_dot`), wire decode
+/// (`fluent_llm::parse_typed`).
 #[must_use]
 pub fn rank_candidates(
     query: &str,

@@ -1,5 +1,16 @@
 //! Pipeline decision types — structured decision records emitted by each
 //! stage during request processing.
+//!
+//! NOTE (M3.3 disposition): stays router-local as a whole. `StageDecision` is
+//! coupled to the orchestrator's typed handoff (`StageDecisionProducer` below
+//! must stay object-safe in router); the data subset (`StageVerdict`,
+//! `PiiVerdict`, `NlpConfidenceSummary`, `RouteHint`, `NlpResidual`,
+//! `StageMetadata`) is not separable without splitting the module — its
+//! accessors reach into domain types (`spacy_rs::routing`,
+//! `fluent_llm::backend::OverlayContribution`, router `FilterOutcome` policy).
+//! (`FilterAction`/`RegexMatch` live in `crate::config`/`crate::filters` —
+//! the remaining coupling is what keeps this module whole.) Revisit
+//! only if a second crate needs the bare verdict shapes.
 
 use fluent_wvr::{WorkContext, WorkError};
 use serde::{Deserialize, Serialize};

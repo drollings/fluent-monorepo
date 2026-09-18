@@ -1,18 +1,18 @@
-//! Test-only vector indices — the `VectorIndex` store seam and its two
-//! implementations (M5.7).
+//! Test-support vector-index seam: the `VectorIndex` store trait and its two
+//! implementations.
 //!
-//! Moved here from the production path: no production caller ever consumed
-//! this trait (`ranking`/`retrieval` use ledger-backed signals, not vectors),
-//! so leaving it as a public production module invited dead-seam reuse. When
-//! a production vector backend is actually needed, promote one implementation
-//! back behind a real call site — do not add a third test-only shape here.
+//! Moved verbatim from `fluent-router`'s `testing/vector_index.rs` (M7.3):
+//! no production caller consumes this trait (ranking/retrieval use
+//! ledger-backed signals, not vectors), so it lives here as a recall harness
+//! and test double — HNSW recall is measured against the byte-identical
+//! brute-force ground truth, never asserted on absolute values.
 //!
-//! M5.2: this trait is the stateful **store seam** (`insert`/`search`/`len`,
+//! This trait is the stateful **store seam** (`insert`/`search`/`len`,
 //! `NodeId`-keyed, similarity-mapped) — deliberately distinct from
 //! `fluent_db::vector::VectorIndex::knn`, the stateless **math seam**. Both
 //! implementations compose the shared primitives
 //! (`fluent_db::hnsw::HnswIndex` + `fluent_db::vector::knn_brute_force`)
-//! instead of re-implementing top-K or cosine math.
+//! instead of re-implementing top-K or cosine math — no second HNSW.
 
 use std::sync::Mutex;
 
@@ -28,7 +28,8 @@ pub trait VectorIndex: Send + Sync {
     }
 }
 
-/// Byte-identical brute-force implementation — the current `ranking.rs` behavior.
+/// Byte-identical brute-force implementation — the ground-truth recall
+/// baseline for the HNSW harness.
 pub struct BruteForceIndex {
     entries: Mutex<Vec<(NodeId, Vec<f32>)>>,
 }
@@ -98,7 +99,7 @@ impl VectorIndex for HnswVectorIndex {
         Ok(())
     }
     fn search(&self, query: &[f32], k: usize) -> Vec<(NodeId, f64)> {
-        // M5: the HNSW probe + id resolution is the shared
+        // The HNSW probe + id resolution is the shared
         // `fluent_db::hnsw::hnsw_lookup` (`None` = no fallback here — the
         // test seam returns whatever the graph yields, empty when unbuilt).
         fluent_db::hnsw::hnsw_lookup(&self.inner, query, k)
@@ -116,5 +117,5 @@ impl VectorIndex for HnswVectorIndex {
 }
 
 #[cfg(test)]
-#[path = "../../tests/vector_index.rs"]
+#[path = "../tests/vector_index.rs"]
 mod tests;

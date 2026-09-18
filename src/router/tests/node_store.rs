@@ -1047,3 +1047,56 @@ fn ledger_append_missing_request_errors() {
     let ghost = fluent_types::NodeId::from_int(9999);
     assert!(store.record_result(ghost, true, Some(1.0), "x").is_err());
 }
+
+/// Echo-counting backend: returns the user message verbatim (proving *which*
+/// tier was summarized) and counts calls (proving at-most-once).
+#[test]
+fn lazy_tiers_derive_from_lod0_never_chained() {
+    // M10.1: LOD1–4 derive directly from LOD0, never chained. Pre-fill lower
+    // tiers with markers; the derived tier must equal LOD0 (not a marker),
+    // markers intact, exactly one model call for two requests (at-most-once).
+    struct EchoCounting {        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl fluent_llm::client::ChatBackend for EchoCounting {
+        fn chat_complete(
+            &self,
+            messages: &[fluent_llm::ChatMessage],
+        ) -> Result<String, fluent_llm::LlmError> {
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(messages
+                .iter()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.clone())
+                .unwrap_or_default())
+        }
+    }
+    let echo = Arc::new(EchoCounting {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let store = temp_store().with_summarizer(Summarizer::new(echo.clone(), 20));
+    let lod0 = "The authoritative full text for chaining proof.";
+    let id = store.record_request("s", "r1", lod0).unwrap();
+    // Poison the lower tiers: a chaining implementation would summarize these.
+    {
+        let arc = store.get_node(id).unwrap();
+        let mut guard = common_core::sync::lock_write(&arc);
+        while guard.lod.len() <= 3 {
+            guard.lod.push(String::new());
+        }
+        guard.lod[1] = "MARKER-LOD1".to_string();
+        guard.lod[2] = "MARKER-LOD2".to_string();
+    }
+    let node = store.ensure_lod(id, 3).unwrap();
+    assert_eq!(node.lod[3], lod0, "LOD3 derives from LOD0, not LOD2");
+    assert_eq!(node.lod[1], "MARKER-LOD1");
+    assert_eq!(node.lod[2], "MARKER-LOD2");
+    // Second request hits the cache: still exactly one call (at-most-once).
+    let node2 = store.ensure_lod(id, 3).unwrap();
+    assert_eq!(node2.lod[3], lod0);
+    assert_eq!(
+        echo.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "two requests → one compute"
+    );
+}

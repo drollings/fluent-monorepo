@@ -185,6 +185,11 @@ fn managed_or_endpoint_origin(deps: &ServerDeps, model: &str) -> Option<String> 
     Some(format!("{origin}/metrics"))
 }
 
+/// Split `scheme://host[:port][/path]` into its `scheme://host[:port]` origin.
+///
+/// NOTE (M2.2 disposition): router-local (single call site above).
+/// `fluent_llm::url::extract_host` is host-only (drops the scheme this needs),
+/// so composing it here would change behavior, not refactor it.
 fn url_origin(url: &str) -> Option<String> {
     let (scheme, rest) = url.split_once("://")?;
     let host_port = rest.split('/').next().unwrap_or_default();

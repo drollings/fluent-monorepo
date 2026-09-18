@@ -12,7 +12,9 @@ pub mod aliases;
 pub mod db;
 pub mod fusion;
 pub mod math;
+pub mod salience;
 pub mod tokens;
+pub mod vector_index;
 
 pub use aliases::SemanticAliases;
 pub use db::GuidanceDb;
@@ -21,4 +23,6 @@ pub use fusion::{
     apply_boosts, rrf_fuse, score_postings, FusedHit, RrfScore, CALL_BOOST, DEPENDENT_BOOST,
     ROLE_EPSILON, SAME_FILE_BOOST, SCOPE_BOOST,
 };
+pub use salience::{pagerank, NodeGraph, PAGERANK_ALPHA, PAGERANK_ITERATIONS};
+pub use vector_index::{BruteForceIndex, HnswVectorIndex, VectorIndex};
 pub use tokens::{lower_dedup_push, split_tokens, symbol_name_from_token, symbol_names};

@@ -5,7 +5,7 @@
 //! `fluent_llm::openai`. The shared helpers operate on `serde_json::Value`;
 //! this module adapts them to the router's typed `RouterRequest`/`RouterResponse`.
 
-use crate::types::{RouterRequest, RouterResponse};
+use fluent_types::openai_wire::{RouterRequest, RouterResponse};
 
 pub use fluent_llm::openai::NormalizeError;
 

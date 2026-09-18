@@ -161,11 +161,7 @@
         "num_ctx": 8192,
         "temperature": 0.6,
         "repeat_penalty": 1.0
-      },
-      "models": [
-        "qwen3.5-9b",
-        "last"
-      ]
+      }
     },
     "ledger": {
       "max_parallel": 1,
@@ -175,13 +171,12 @@
       "pinned": true,
       "params": {
         "sleep_idle_seconds": 28800,
-        "num_ctx": 65536,
+        "num_ctx": 262144,
         "temperature": 0.1,
         "repeat_penalty": 1.01
       },
       "models": [
-        "last",
-        "qwen3.5-9b"
+        "lfm2.5-2.6b"
       ]
     },
     "scratch": {
@@ -195,10 +190,7 @@
         "num_ctx": 65536,
         "temperature": 0.6,
         "repeat_penalty": 1.01
-      },
-      "models": [
-        "qwen3.5-9b"
-      ]
+      }
     },
     "reasoning": {
       "max_parallel": 1,

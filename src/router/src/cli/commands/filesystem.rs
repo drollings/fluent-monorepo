@@ -40,6 +40,9 @@ pub struct ConfigListing {
 }
 
 /// Escape a Markdown table cell: pipes break columns, newlines break rows.
+///
+/// NOTE (M1.4 disposition): router-local presentation helper (single consumer) —
+/// extract to `common-core::format` on second consumer.
 fn escape_cell(cell: &str) -> String {
     cell.replace('|', "\\|").replace('\n', " ")
 }

@@ -46,3 +46,7 @@ pub fn parse_tree_verdict(response: &str) -> Result<TreeClassifierVerdict, WorkE
     })
     .map_err(|e| WorkError::Execution(format!("tree classifier verdict parse error: {e}")))
 }
+
+#[cfg(test)]
+#[path = "../../../tests/tree_verdict.rs"]
+mod tests;

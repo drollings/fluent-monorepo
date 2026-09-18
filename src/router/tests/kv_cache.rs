@@ -601,3 +601,37 @@ async fn cold_new_takes_no_eviction_policy() {
         "fresh entry survives the TTL sweep"
     );
 }
+
+#[test]
+fn snapshot_identity_length_change_invalidates() {
+    // M12.1: the fingerprint is path + byte length — appending a byte (a
+    // weights swap that changes size) invalidates the stored identity, and
+    // restoring the size restores it. Same-size content swaps are NOT
+    // detected (documented fingerprint-not-content-hash contract).
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("model.gguf");
+    std::fs::write(&path, vec![7u8; 64]).unwrap();
+    let entry = || crate::config::ModelEntry {
+        weights: Some(path.to_string_lossy().into_owned()),
+        ..crate::config::ModelEntry::default()
+    };
+    let ident = || {
+        fluent_concurrency::scope::CURRENT_CAPS.sync_scope(
+            fluent_concurrency::capability::default_capability_set(),
+            || snapshot_identity_for_model(&entry(), None),
+        )
+    };
+    let before = ident();
+    assert!(before.base_model_hash.is_some());
+    std::fs::write(&path, vec![7u8; 65]).unwrap();
+    let grown = ident();
+    assert_ne!(
+        grown.base_model_hash, before.base_model_hash,
+        "length change invalidates the fingerprint"
+    );
+    std::fs::write(&path, vec![7u8; 64]).unwrap();
+    assert_eq!(ident().base_model_hash, before.base_model_hash);
+    // Same size, different bytes: invisible by design.
+    std::fs::write(&path, vec![9u8; 64]).unwrap();
+    assert_eq!(ident().base_model_hash, before.base_model_hash);
+}

@@ -86,6 +86,21 @@
             "route": "prose",
             "type": "terminal"
           }
+        },
+        {
+          "description": "Catch-all when no other branch fits; answered as general Q&A.",
+          "key": "fallback",
+          "node": {
+            "description": "Default-route fallback",
+            "node": {
+              "always_route": true,
+              "description": "General Q&A",
+              "role": "quick",
+              "route": "local",
+              "type": "terminal"
+            },
+            "type": "fallback"
+          }
         }
       ],
       "coherence_threshold": 0.1,
@@ -353,7 +368,7 @@
       "filter_thinking": true,
       "max_parallel": 1,
       "models": [
-        "last"
+        "lfm2.5-2.6b"
       ],
       "params": {
         "num_ctx": 262144,

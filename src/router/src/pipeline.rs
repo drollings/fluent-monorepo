@@ -297,6 +297,9 @@ pub type StageProducer = Arc<
 >;
 
 /// Holds pipeline stages as `Arc<dyn Component>` and executes them sequentially.
+///
+/// NOTE (M3.4 non-move): the orchestrator sequences router stages over router
+/// state (`StageDecision`, `RoutingTarget`, typed store) — behavioral, stays.
 pub struct PipelineOrchestrator {
     name: ArcIntern<str>,
     stages: Vec<Arc<dyn Component>>,

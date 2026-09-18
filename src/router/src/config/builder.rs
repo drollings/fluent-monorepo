@@ -30,6 +30,7 @@ use std::sync::Arc;
 use common_core::config::load_json_or_default;
 use fluent_llm::client::ChatBackend;
 use fluent_llm::{LlmClient, LlmConfig};
+use fluent_wvr::wrapper::{ComponentAdapter, Instrumented};
 
 use super::{
     default_true, refine_policy::RouterRefinePolicy, strip_declaration_params, ModelEntry,
@@ -571,9 +572,20 @@ impl RouterConfig {
             };
             // Registered as a producer so a soft-redirect target reaches the
             // orchestrator through the typed channel (the `execute` fallback
-            // carries no target).
+            // carries no target). M4.4: wrapped in `Instrumented` at
+            // registration, before type erasure (the charts executor's
+            // canonical latency surface) — timing/logging only, the
+            // producer closure below still drives the typed handoff off the
+            // unwrapped stage. `ComponentAdapter` bridges the shared
+            // `Arc<DeterministicPreFilter>` (no `Clone` for the engine, so
+            // the stage cannot move into `Instrumented` directly).
             let producer_stage = Arc::new(prefilter);
-            let stage_for_push = Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>;
+            let stage_for_push = Arc::new(Instrumented::new(
+                ComponentAdapter::new(
+                    Arc::clone(&producer_stage) as Arc<dyn fluent_wvr::Component>
+                ),
+                "pipeline.stage1.deterministic",
+            )) as Arc<dyn fluent_wvr::Component>;
             let producer: crate::pipeline::StageProducer =
                 Arc::new(move |ctx, prior| producer_stage.evaluate_with_target(ctx, prior));
             orchestrator = orchestrator.push_with_producer(stage_for_push, producer);

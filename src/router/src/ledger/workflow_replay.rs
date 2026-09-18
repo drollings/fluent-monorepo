@@ -16,6 +16,12 @@
 //! never blended: **[task-value]** (embedding distance to the stored query,
 //! validated-reuse count) with **[self-doubt]** (current plan confidence) —
 //! a low-confidence plan never replays even a high-success workflow.
+//!
+//! NOTE (M10.4 disposition): the replay *policy* stays router-local for now —
+//! it runs over the router-owned `WorkflowStore` seam (`nearest_verified`,
+//! `WorkflowEntry`) and ledger step nodes. It already composes `fluent-dag`
+//! (`DependencyGraph`, `Target`) rather than duplicating it; any future move
+//! belongs to M11 (charts/DAG/workflow), not the LOD milestone.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::transforms::{
     insert_string_map, rewrite_text_messages, TransformError, TransformStrategy,
 };
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 /// Session-scoped, reversible codeword anonymizer (MOA_ROUTER_SPEC §4).
 ///

@@ -139,7 +139,13 @@ impl EntityPromotion {
 /// Map a candidate byte span to a token index by walking the doc's tokens in
 /// order over `source_text` (repeats resolve positionally). Exact span match
 /// only — anything unmappable stays a candidate (fail-open).
-fn token_for_span(
+///
+/// M7.2 disposition: stays — not the generic n-gram/token part: walks a
+/// spacy `Doc` and gates on `Upos::Propn` (linguistic). M9.2 owns any future
+/// `ontology::normalize` move (only if ontology gains the `Doc` shape).
+///
+/// `pub(crate)` for the M9.1 characterization tests (span-mapping boundaries).
+pub(crate) fn token_for_span(
     doc: &Doc,
     source_text: &str,
     span_start: usize,

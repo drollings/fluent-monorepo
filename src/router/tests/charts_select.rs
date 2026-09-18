@@ -344,34 +344,9 @@ fn parse_adjudicator_output_missing_fit_infers_from_chart() {
 }
 
 // ── Step 2.5: reranker ────────────────────────────────────────────
-
-#[test]
-fn parse_rerank_output_accepts_array_and_ranking_object() {
-    assert_eq!(
-        parse_rerank_output(r#"["draft_doc", "bug_triage"]"#).unwrap(),
-        vec!["draft_doc".to_string(), "bug_triage".to_string()]
-    );
-    assert_eq!(
-        parse_rerank_output(r#"{"ranking": ["bug_triage"]}"#).unwrap(),
-        vec!["bug_triage".to_string()]
-    );
-    // Fences tolerated; the noise before the JSON array is dropped.
-    let fenced = "Sure!\n```json\n[\"draft_doc\", \"bug_triage\"]\n```";
-    assert_eq!(
-        parse_rerank_output(fenced).unwrap(),
-        vec!["draft_doc".to_string(), "bug_triage".to_string()]
-    );
-}
-
-#[test]
-fn parse_rerank_output_rejects_garbage() {
-    assert!(parse_rerank_output("not json at all").is_none());
-    assert!(parse_rerank_output(r#"{"chart": "bug_triage"}"#).is_none());
-    assert!(
-        parse_rerank_output("[]").is_none(),
-        "empty ranking is unusable"
-    );
-}
+// M7.4: `parse_rerank_output` unit tests moved with the parser to
+// `search-vector` (`tests/fusion.rs`) — single home. The selector-level
+// rerank behavior stays pinned here.
 
 #[test]
 fn rerank_reorders_candidates_and_preserves_scores() {

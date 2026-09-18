@@ -41,8 +41,9 @@ use crate::target_match::TargetMatcher;
 
 pub mod action;
 pub use action::{ClassifierAction, UnknownAction};
-pub mod prompt;
-pub(crate) use prompt::{render_available_routes, substitute_thresholds, RouteEntry};
+// M6.3: the `prompt` submodule was removed — `render_available_routes` /
+// `substitute_thresholds` / `RouteEntry` live in `fluent_llm::prompt`.
+pub(crate) use fluent_llm::prompt::{render_available_routes, substitute_thresholds, RouteEntry};
 
 const DEFAULT_COMPLEXITY: u8 = 5;
 const COMPLEXITY_SCALE: f64 = 10.0;

@@ -226,6 +226,10 @@ pub fn compute_short_id(gguf_path: &Path) -> String {
 }
 
 /// Human-readable byte size using base-1000 SI units (`gguf_tool.py` format).
+///
+/// NOTE (M1.4 disposition): intentionally NOT `common_core::format::format_size`
+/// (base-1024, `"1.0 KB"` style). Unifying would change CLI golden output =
+/// behavior change. Router-local until a second base-1000 consumer appears.
 pub fn format_size(bytes: u64) -> String {
     let units = ["B", "KB", "MB", "GB", "TB"];
     let mut value = bytes as f64;

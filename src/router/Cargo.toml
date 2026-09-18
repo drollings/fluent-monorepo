@@ -22,6 +22,10 @@ async-trait = { workspace = true }
 spacy-rs = { path = "../spacy-rs" }
 # M3 (spacy-rs split): the neutral ConceptStore/TaxonomyHierarchy home.
 fluent-concept = { path = "../concept" }
+# M10: LOD mechanics home (selectors/assembler/views over the content seam).
+fluent-knowledge = { path = "../knowledge" }
+# M9.2: canonical-form table home (`guidance_ontology::canonical`).
+guidance-ontology = { path = "../ontology" }
 # Ort-free by default: `fluent-onnx` is optional and entirely absent from
 # default builds (its config / registry / trait surface now lives in
 # `fluent-llm`). The `ort`/`tokenizers` workers only build with the `onnx`

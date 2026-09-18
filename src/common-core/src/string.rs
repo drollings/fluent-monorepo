@@ -824,6 +824,35 @@ pub fn find_subseq(haystack: &[u8], start: usize, needle: &[u8]) -> Option<usize
         .map(|i| start + i)
 }
 
+/// Collapse runs of whitespace (including newlines) into a single space,
+/// trimming leading/trailing whitespace.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::collapse_whitespace;
+///
+/// assert_eq!(collapse_whitespace("a  b\tc\n d"), "a b c d");
+/// assert_eq!(collapse_whitespace("  padded  "), "padded");
+/// assert_eq!(collapse_whitespace(""), "");
+/// ```
+pub fn collapse_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_space = false;
+    for c in s.chars() {
+        if c.is_whitespace() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(c);
+            prev_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
 /// Truncate `s` to at most `max_chars` Unicode scalar values, never cutting
 /// a code point. Unlike `truncate_utf8` (which is byte-based and appends a
 /// `…` ellipsis when truncating), this is a hard char cap with no suffix —
@@ -905,4 +934,27 @@ pub fn extract_tag<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
     } else {
         Some(content)
     }
+}
+
+/// Split a name on non-ASCII-alphanumeric separators, dropping empties.
+///
+/// Case-preserving (unlike [`split_tokens`]-style lowercasing tokenizers in
+/// `search-vector::tokens`): `bug_triage` → `["bug", "triage"]`, so a query
+/// naming only a fragment still matches. Moved verbatim from the router's
+/// chart store (M7.2); the indexed-doc-text join stays with the chart type.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::string::ascii_alnum_tokens;
+///
+/// assert_eq!(ascii_alnum_tokens("bug_triage"), vec!["bug", "triage"]);
+/// assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
+/// ```
+#[must_use]
+pub fn ascii_alnum_tokens(name: &str) -> Vec<String> {
+    name.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .collect()
 }

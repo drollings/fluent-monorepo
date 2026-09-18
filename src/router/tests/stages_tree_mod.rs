@@ -1273,3 +1273,107 @@ fn tree_engine_miss_falls_back_to_frozen_default() {
         "frozen default serves on miss",
     );
 }
+
+fn no_fallback_tree_with_local() -> ClassificationTree {
+    serde_json::from_value(serde_json::json!({
+        "root": {
+            "type": "classifier",
+            "description": "router",
+            "model": "fast",
+            "children": [
+                {
+                    "key": "code",
+                    "description": "programming",
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
+                },
+                {
+                    "key": "local",
+                    "description": "everything else",
+                    "node": { "type": "terminal", "route": "local", "role": "question" }
+                }
+            ]
+        }
+    }))
+    .unwrap()
+}
+
+#[test]
+fn classifier_empty_route_uses_default_route_without_fallback() {
+    // No `fallback` child, but a `local` terminal serves the configured
+    // default route: an empty verdict routes there instead of rejecting.
+    let tree = no_fallback_tree_with_local();
+    let backend = Arc::new(StubChatBackend::always(verdict("", 0.9, 0.9, 3)));
+    let engine = engine(&tree, backend);
+    let evaluation = engine.evaluate("hello", None, None).unwrap();
+    let decision = &evaluation.decision;
+    assert_eq!(decision.verdict, StageVerdict::Passed);
+    assert_eq!(
+        routed_target(&evaluation).target_name.as_deref(),
+        Some("local")
+    );
+    // The audit trail records the last-resort hop: the final reason is the
+    // routing summary (`final_decision`), the per-node note lives in
+    // `tree_path`.
+    let path = decision.metadata["tree_path"].as_array().cloned().unwrap_or_default();
+    assert!(
+        path.iter().any(|d| d["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("default route"))),
+        "tree_path must note the default-route hop: {path:?}"
+    );
+}
+
+#[test]
+fn classifier_unknown_route_uses_default_route_without_fallback() {
+    let tree = no_fallback_tree_with_local();
+    let backend = Arc::new(StubChatBackend::always(verdict("nonexistent", 0.9, 0.9, 3)));
+    let engine = engine(&tree, backend);
+    let evaluation = engine.evaluate("hello", None, None).unwrap();
+    let decision = &evaluation.decision;
+    assert_eq!(decision.verdict, StageVerdict::Passed);
+    assert_eq!(
+        routed_target(&evaluation).target_name.as_deref(),
+        Some("local")
+    );
+}
+
+#[test]
+fn classifier_llm_failure_uses_default_route_without_fallback() {
+    let tree = no_fallback_tree_with_local();
+    let backend: Arc<dyn ChatBackend> = Arc::new(StubChatBackend::new(vec![]));
+    let engine = engine(&tree, backend);
+    let evaluation = engine.evaluate("hello", None, None).unwrap();
+    let decision = &evaluation.decision;
+    assert_eq!(decision.verdict, StageVerdict::Passed);
+    assert_eq!(
+        routed_target(&evaluation).target_name.as_deref(),
+        Some("local")
+    );
+}
+
+#[test]
+fn classifier_still_rejects_when_default_route_has_no_child() {
+    // Last-resort limit: no fallback child AND no child serving the default
+    // route — the rejection names both, so operators know what to configure.
+    let tree: ClassificationTree = serde_json::from_value(serde_json::json!({
+        "root": {
+            "type": "classifier",
+            "description": "router",
+            "model": "fast",
+            "children": [
+                {
+                    "key": "code",
+                    "description": "programming",
+                    "node": { "type": "terminal", "route": "code", "role": "code" }
+                }
+            ]
+        }
+    }))
+    .unwrap();
+    let backend = Arc::new(StubChatBackend::always(verdict("", 0.9, 0.9, 3)));
+    let engine = engine(&tree, backend);
+    let evaluation = engine.evaluate("hello", None, None).unwrap();
+    let decision = &evaluation.decision;
+    assert_eq!(decision.verdict, StageVerdict::Rejected);
+    assert!(decision.reason.contains("default route"));
+}

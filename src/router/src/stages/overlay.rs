@@ -247,6 +247,9 @@ impl OverlayStage {
 
         // Highest-scoring hint first — the classifier's context and the
         // redirect gate (when armed) both consume the top of the list.
+        // M7.4 disposition: stays — `f64` score-desc over the router-domain
+        // `RouteHint`; the shared `top_k_by_score` is single-key `f32` with
+        // no tiebreak hook (same narrowing hazard as the ranking sorts).
         hints.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)

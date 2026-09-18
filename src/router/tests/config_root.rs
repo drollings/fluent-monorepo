@@ -2302,3 +2302,17 @@ fn hermetic_tests_never_open_the_operator_config() {
         "hermetic tests must use fixtures, not the operator file (see make router-mock): {offenders:?}"
     );
 }
+
+#[test]
+fn split_model_key_boundaries() {
+    // M2.1 characterization: the single `split_once(':')` split point.
+    assert_eq!(split_model_key("llama"), ("llama", None));
+    assert_eq!(split_model_key("llama:latest"), ("llama", Some("latest")));
+    assert_eq!(split_model_key("llama:inst-1"), ("llama", Some("inst-1")));
+    // Malformed splits pass through as bare keys (callers treat them as base).
+    assert_eq!(split_model_key("llama:"), ("llama:", None));
+    assert_eq!(split_model_key(":latest"), (":latest", None));
+    assert_eq!(split_model_key(""), ("", None));
+    // First colon wins; the qualifier keeps the remainder.
+    assert_eq!(split_model_key("a:b:c"), ("a", Some("b:c")));
+}

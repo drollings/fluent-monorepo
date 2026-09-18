@@ -1591,50 +1591,28 @@ pub(crate) fn new_node(
     node
 }
 
-/// Deterministic, LLM-free LOD5 label (short descriptor), derived eagerly at
-/// node creation. Falls back to the role when no content survives truncation.
-/// `pub(crate)` so the background `LedgerTierWorker` can use it as the
-/// no-model fallback for LOD5.
-pub(crate) fn derive_label(role: &str, content: &str) -> String {
-    let sentence = common_core::string::first_sentence(content);
-    let snippet = if sentence.is_empty() {
-        common_core::string::truncate_utf8(content, 64)
-    } else {
-        common_core::string::truncate_utf8(&sentence, 64)
-    };
-    if snippet.is_empty() {
-        role.to_string()
-    } else {
-        snippet
-    }
-}
+/// Eager LOD policy (`derive_label`/`ensure_lod_eager`) — canonical home is
+/// `fluent_concept::content_store` (M10.4, with the seam + double).
+/// Re-exported here so existing `crate::node_store::…` paths keep working.
+pub use fluent_concept::content_store::{derive_label, ensure_lod_eager};
 
-/// Guarantee LOD0 (full text) and LOD5 (label) are present on a node.
-fn ensure_lod_eager(node: &mut ContentNode) {
-    while node.lod.len() < LOD5_LABEL as usize + 1 {
-        node.lod.push(String::new());
+/// M10.4 seam implementation: the durable store behind the concept read seam.
+/// Reads delegate verbatim; errors fail open to `None` (the seam's
+/// cached-or-absent contract — matches every consumer's `unwrap_or_default`).
+impl fluent_concept::content_store::ContentNodeStore for ContentNodeStore {
+    fn snapshot(&self, id: NodeId) -> Option<ContentNode> {
+        ContentNodeStore::snapshot(self, id)
     }
-    let content = node.lod[LOD0_FULL_TEXT as usize].clone();
-    // The content hash is the annotation keying domain: it tracks
-    // LOD0 exactly, recomputed in this single write funnel so a mutation that
-    // changes LOD0 changes the hash and thereby invalidates cached annotations
-    // — no staleness scheduler. Empty content maps to the unstamped sentinel.
-    node.content_hash = ContentHash::from_lod0(&content);
-    if content.is_empty() {
-        // Nothing to derive LOD0 from — nothing to do.
-        return;
+
+    fn lod_text(&self, id: NodeId, level: u8) -> Option<String> {
+        if level > LOD5_LABEL {
+            return None;
+        }
+        ContentNodeStore::lod_text(self, id, level).ok()
     }
-    if node.lod[LOD5_LABEL as usize].is_empty() {
-        let role = node
-            .role
-            .as_ref()
-            .map(OriginRole::as_str)
-            .unwrap_or_default()
-            .to_string();
-        node.lod[LOD5_LABEL as usize] = derive_label(&role, &content);
-    }
-    if node.active_lod.is_none() {
-        node.active_lod = Some(LOD0_FULL_TEXT);
+
+    fn session_node_ids(&self, session_id: &str) -> Vec<NodeId> {
+        ContentNodeStore::session_node_ids(self, session_id)
     }
 }
 

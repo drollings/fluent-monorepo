@@ -1,5 +1,5 @@
 use crate::transforms::{TransformError, TransformStrategy};
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 pub struct NoTransform;
 

@@ -160,3 +160,53 @@ fn router_response_serde_round_trip() {
 fn usage_defaults_to_zero() {
     assert_eq!(Usage::default().total_tokens, 0);
 }
+
+#[test]
+fn tool_calls_empty_array_vs_none() {
+    // M3.1: `tool_calls: []` deserializes to `Some(vec![])` (present-but-empty),
+    // distinct from absent/`null` → `None`. The dispatch path treats them
+    // differently when forwarding to providers — pin the distinction.
+    let empty: RouterMessage = serde_json::from_value(serde_json::json!({
+        "role": "assistant",
+        "content": "hi",
+        "tool_calls": [],
+    }))
+    .expect("deserialize");
+    assert!(empty.tool_calls.as_ref().is_some_and(Vec::is_empty));
+    let absent: RouterMessage = serde_json::from_value(serde_json::json!({
+        "role": "assistant",
+        "content": "hi",
+    }))
+    .expect("deserialize");
+    assert!(absent.tool_calls.is_none());
+    // `None` skips serialization; `Some([])` emits the empty array.
+    let absent_json = serde_json::to_value(&absent).expect("serialize");
+    assert!(absent_json.get("tool_calls").is_none());
+    let empty_json = serde_json::to_value(&empty).expect("serialize");
+    assert_eq!(empty_json["tool_calls"], serde_json::json!([]));
+}
+
+#[test]
+fn unknown_fields_tolerated_fail_open() {
+    // M3.1: the wire is fail-open on unknown fields (forward-compat with new
+    // provider keys) — unknown keys at request, message, and response level
+    // parse without error and are dropped, never echoed.
+    let req: RouterRequest = serde_json::from_value(serde_json::json!({
+        "model": "m",
+        "messages": [{"role": "user", "content": "hi", "future_key": 1}],
+        "future_top_level": {"nested": true},
+    }))
+    .expect("unknown fields tolerated");
+    assert_eq!(req.messages.len(), 1);
+    let resp: RouterResponse = serde_json::from_value(serde_json::json!({
+        "id": "c", "object": "chat.completion", "created": 0, "model": "m",
+        "choices": [{
+            "index": 0, "finish_reason": "stop", "logprobs": {"x": 1},
+            "message": {"role": "assistant", "content": "hi"}
+        }],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "system_fingerprint": "fp",
+    }))
+    .expect("unknown fields tolerated");
+    assert_eq!(resp.choices.len(), 1);
+}

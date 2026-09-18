@@ -256,6 +256,9 @@ fn parse_tiers_parses_summary_and_description() {
 
 #[test]
 fn truncate_chars_never_exceeds_char_cap() {
+    // M1.3: helper moved to `common_core::string::truncate_chars` (byte-identical);
+    // assertions unchanged — characterization of the shared primitive via this call site.
+    use common_core::string::truncate_chars;
     assert_eq!(truncate_chars("hello", 5), "hello");
     assert_eq!(truncate_chars("hello", 3), "hel");
     assert_eq!(truncate_chars("hello", 0), "");
@@ -383,4 +386,31 @@ async fn enqueue_with_credit_blocks_then_releases() {
     }
     blocked.await.unwrap().unwrap();
     handle.abort();
+}
+
+#[test]
+fn derive_label_edges_empty_unicode_whitespace() {
+    // M10.1: empty LOD0 → role fallback; unicode truncated on a char boundary;
+    // over-long labels capped at 64 bytes.
+    assert_eq!(derive_label("assistant", ""), "assistant");
+    assert_eq!(derive_label("", ""), "");
+    let uni = "日本語のテスト文章です。これは二文目です。三文目が続きます。さらに長い文章を足して六十四バイトを超えるようにします。";
+    let label = derive_label("user", uni);
+    // truncate_utf8 cuts at 64 bytes then appends '…' (3 bytes); '。' is not
+    // a first_sentence splitter, so the whole text is one sentence.
+    assert!(label.len() <= 67, "capped at 64+ellipsis: {label}");
+    assert!(uni.starts_with(label.trim_end_matches('…')), "label prefixes content");
+    // Whitespace-only: no sentence → falls back to truncated content or role.
+    let ws = derive_label("assistant", "   ");
+    assert!(ws == "assistant" || ws.trim().is_empty() || ws == "   ");
+}
+
+#[test]
+fn parse_tiers_malformed_fail_open() {
+    // M10.1: malformed tiers → fail-open defaults, never panic. (Empty input
+    // and last-wins are pinned canonically in `fluent-knowledge`; what stays
+    // here is the tiering path's DESCRIPTION-only fallback.)
+    let (s, d) = parse_tiers("DESCRIPTION: only-desc");
+    assert_eq!(s.as_deref(), Some("DESCRIPTION: only-desc"));
+    assert_eq!(d.as_deref(), Some("only-desc"));
 }

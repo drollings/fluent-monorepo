@@ -206,6 +206,12 @@ pub struct CrossCheckReport {
 /// Combine the lemma-grep and fuzzy axes for a query. Every hit from either
 /// axis is surfaced; regions covered by both are annotated with a
 /// [`RegionVerdict`] so a material disagreement is visible, never collapsed.
+/// M7.3 disposition: stays router-local. `cross_check` is span-verdict logic
+/// over router retrieval vocabulary (`LemmaGrepHit`/`FuzzyHit`/`Span`,
+/// agreement tolerance) with model adapters (`EmbeddingProvider`,
+/// `NlpPipeline`, `ConceptStore`) and discovery (`NodeRetrievalService`)
+/// attached — the "adapters/discovery stay" half of M7.3. No scalar
+/// scoring/dedup/order math here is separable from the hit types.
 pub fn cross_check(
     lemma_hits: &[LemmaGrepHit],
     fuzzy_hits: &[FuzzyHit],

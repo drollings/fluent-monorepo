@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use common_core::sync::lock;
 use fluent_llm::thinking::{strip_thinking_blocks, StreamingThinkFilter};
 
-use crate::types::RouterChoice;
+use fluent_types::openai_wire::{RouterChoice, RouterMessageContent};
 
 /// Best-effort stream finalization sink. The streaming backend's task
 /// writes the assembled answer here once the stream ends; the HTTP handler
@@ -148,8 +148,8 @@ impl StreamingHandler {
     /// Format a single choice as an SSE delta chunk.
     pub fn format_choice_chunk(&mut self, choice: &RouterChoice) -> String {
         let content = match &choice.message.content {
-            crate::types::RouterMessageContent::Text(s) => s.as_str(),
-            crate::types::RouterMessageContent::Parts(_) => "",
+            RouterMessageContent::Text(s) => s.as_str(),
+            RouterMessageContent::Parts(_) => "",
         };
 
         self.format_chunk(content, Some(&choice.finish_reason))

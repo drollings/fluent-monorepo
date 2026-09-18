@@ -118,6 +118,9 @@ impl Default for FrameResolutionGate {
 /// value type); it never imports this trait, so no router edge enters
 /// spacy-rs. Replay lives behind [`FrameResolutionWorker`].
 ///
+/// M9.3 disposition: router-local (single implementer + single worker
+/// consumer — extract on second consumer).
+///
 /// The router implements this over the existing `interlingua_index`
 /// correction-cache rows (the entity-scope column = the ambiguity kind).
 pub trait PreferredSenseIndex: Send + Sync {
@@ -151,29 +154,24 @@ impl SqlitePreferredSenseIndex {
 
 /// Upsert a sense-pattern row into `interlingua_index`. The single SQL for the
 /// sense cache — shared by `SqlitePreferredSenseIndex` and the worker's atomic
-/// promotion write so the row shape lives in one place.
+/// promotion write so the row shape lives in one place. M8.2: delegates to
+/// the shared [`upsert_pattern_cache_row`](crate::ledger::correction_index::upsert_pattern_cache_row)
+/// skeleton (same conflict target/update set as correction/span rows).
 pub(crate) fn upsert_sense_row(
     conn: &rusqlite::Connection,
     predicate_lemma_id: i64,
     ambiguity_kind: i64,
     resolution_json: &str,
 ) -> Result<(), DbError> {
-    fluent_db::query::execute(
+    crate::ledger::correction_index::upsert_pattern_cache_row(
         conn,
-        "INSERT INTO interlingua_index \
-         (node_id, interlingua_id, interlingua_source, role, entity_id, review_status, corrections, span_key) \
-         VALUES (?1, ?2, 'spacy_lemma', ?3, ?4, 'cached', ?5, '') \
-         ON CONFLICT(node_id, interlingua_id, span_key, role, entity_id) DO UPDATE SET \
-            review_status = excluded.review_status, corrections = excluded.corrections",
-        params![
-            PATTERN_NODE,
-            predicate_lemma_id,
-            SENSE_ROLE,
-            ambiguity_kind,
-            resolution_json,
-        ],
-    )?;
-    Ok(())
+        PATTERN_NODE,
+        predicate_lemma_id,
+        SENSE_ROLE,
+        ambiguity_kind,
+        resolution_json,
+        "",
+    )
 }
 
 impl PreferredSenseIndex for SqlitePreferredSenseIndex {

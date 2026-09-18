@@ -147,15 +147,18 @@ impl SpanCache for SqliteSpanCache {
             return;
         };
         let hk = hex_key(key);
+        // M8.2: shares the pattern-cache upsert skeleton with correction/sense
+        // rows (same conflict target/update set; `span_key` carries the hex
+        // key instead of `''`).
         let _ = self.store.with_conn(|conn| {
-            fluent_db::query::execute(
+            crate::ledger::correction_index::upsert_pattern_cache_row(
                 conn,
-                "INSERT INTO interlingua_index \
-                 (node_id, interlingua_id, interlingua_source, role, entity_id, review_status, corrections, span_key) \
-                 VALUES (?1, 0, 'spacy_lemma', ?2, 0, 'cached', ?3, ?4) \
-                 ON CONFLICT(node_id, interlingua_id, span_key, role, entity_id) DO UPDATE SET \
-                    review_status = excluded.review_status, corrections = excluded.corrections",
-                params![SPAN_CACHE_NODE, SPAN_CACHE_ROLE, json, hk],
+                SPAN_CACHE_NODE,
+                0,
+                SPAN_CACHE_ROLE,
+                0,
+                &json,
+                &hk,
             )
         });
     }

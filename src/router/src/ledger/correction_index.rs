@@ -31,6 +31,40 @@ pub(crate) struct CorrectionRow {
     pub corrections_json: String,
 }
 
+/// Upsert a pattern-cache row into `interlingua_index`. M8.2: the single
+/// shared skeleton for the three pattern-cache writers (correction rows,
+/// sense rows, span-cache rows) — identical SQL text, differing only in
+/// bound values (`role` discriminates the caches; `span_key` is `''` except
+/// for span-cache rows). One place keeps the conflict target and update set
+/// from drifting across writers.
+pub(crate) fn upsert_pattern_cache_row(
+    conn: &rusqlite::Connection,
+    node_id: i64,
+    interlingua_id: i64,
+    role: &str,
+    entity_id: i64,
+    payload_json: &str,
+    span_key: &str,
+) -> Result<(), DbError> {
+    fluent_db::query::execute(
+        conn,
+        "INSERT INTO interlingua_index \
+         (node_id, interlingua_id, interlingua_source, role, entity_id, review_status, corrections, span_key) \
+         VALUES (?1, ?2, 'spacy_lemma', ?3, ?4, 'cached', ?5, ?6) \
+         ON CONFLICT(node_id, interlingua_id, span_key, role, entity_id) DO UPDATE SET \
+            review_status = excluded.review_status, corrections = excluded.corrections",
+        params![
+            node_id,
+            interlingua_id,
+            role,
+            entity_id,
+            payload_json,
+            span_key,
+        ],
+    )?;
+    Ok(())
+}
+
 /// Upsert a correction-pattern row into `interlingua_index`. The single SQL
 /// for the pattern cache — shared by [`SqliteCorrectionIndex`] and the
 /// ledger's atomic review transaction so the row shape lives in one place.
@@ -40,22 +74,15 @@ pub(crate) fn upsert_correction_row(
     conn: &rusqlite::Connection,
     row: &CorrectionRow,
 ) -> Result<(), DbError> {
-    fluent_db::query::execute(
+    upsert_pattern_cache_row(
         conn,
-        "INSERT INTO interlingua_index \
-         (node_id, interlingua_id, interlingua_source, role, entity_id, review_status, corrections, span_key) \
-         VALUES (?1, ?2, 'spacy_lemma', ?3, ?4, 'cached', ?5, '') \
-         ON CONFLICT(node_id, interlingua_id, span_key, role, entity_id) DO UPDATE SET \
-            review_status = excluded.review_status, corrections = excluded.corrections",
-        params![
-            PATTERN_NODE,
-            row.lemma_id,
-            CORRECTION_ROLE,
-            row.entity_id,
-            row.corrections_json,
-        ],
-    )?;
-    Ok(())
+        PATTERN_NODE,
+        row.lemma_id,
+        CORRECTION_ROLE,
+        row.entity_id,
+        &row.corrections_json,
+        "",
+    )
 }
 
 /// `CorrectionIndex` over `interlingua_index` (the shared ledger connection).

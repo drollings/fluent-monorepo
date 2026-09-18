@@ -9,6 +9,13 @@ autobenches = false
 [dependencies]
 fluent-types = { path = "../types" }
 fluent-dag = { path = "../dag" }
+# M10.4: derive_label's string shaping (common-core) for the content seam.
+common-core = { path = "../common-core" }
+# M10.4: AnnotationStore operates on the shared SqliteStore handle (the
+# sqlite home stays router-side; only the linkage logic lives here).
+fluent-db = { path = "../db" }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]

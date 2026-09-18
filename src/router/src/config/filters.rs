@@ -19,22 +19,14 @@ pub enum FilterOutcome {
     OutputFilter,
 }
 
+// ── Control vocabulary ──────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterAction {
     Redact,
     Anonymize,
     Omit,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ConfidenceGate {
-    #[serde(rename = "luhn_valid")]
-    LuhnValid,
-    #[default]
-    #[serde(rename = "none")]
-    None,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -47,6 +39,16 @@ pub enum FilterScope {
     FrontierBound,
     #[serde(rename = "content_node_write")]
     ContentNodeWrite,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfidenceGate {
+    #[serde(rename = "luhn_valid")]
+    LuhnValid,
+    #[default]
+    #[serde(rename = "none")]
+    None,
 }
 
 // ── Pattern entries ─────────────────────────────────────────────────────

@@ -105,26 +105,8 @@ fn sanitize_string(s: &str) -> String {
         .collect();
     // Control chars replaced by spaces can create double-spaces; collapse
     // whitespace runs once more.
-    let collapsed = collapse_whitespace(&collapsed);
+    let collapsed = common_core::string::collapse_whitespace(&collapsed);
     common_core::string::truncate_chars(&collapsed, ENTITY_VALUE_MAX_CHARS)
-}
-
-/// Collapse runs of whitespace (including newlines) into a single space.
-fn collapse_whitespace(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut prev_space = false;
-    for c in s.chars() {
-        if c.is_whitespace() {
-            if !prev_space {
-                out.push(' ');
-                prev_space = true;
-            }
-        } else {
-            out.push(c);
-            prev_space = false;
-        }
-    }
-    out.trim().to_string()
 }
 
 /// Escape Jinja template-open markers so untrusted entity data cannot

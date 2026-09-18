@@ -77,12 +77,10 @@ use crate::views::{Lod, ParallelLedger};
 #[allow(unused_imports)]
 pub(crate) use crate::node_store::new_node;
 
-/// LOD level of the full text. Always eager at node creation.
-pub const LOD0_FULL_TEXT: u8 = 0;
-/// LOD level of the label (short descriptor). Always eager at node creation.
-pub const LOD5_LABEL: u8 = 5;
-/// LOD levels derived lazily from LOD0 via the `Summarizer`.
-pub const LAZY_LOD_RANGE: std::ops::RangeInclusive<u8> = 1..=4;
+/// LOD level constants — canonical home is `fluent-types` (pure data, next to
+/// `LOD_COUNT`); re-exported here so existing `crate::ledger::…` paths keep
+/// working. M10: LOD0 authoritative/eager, LOD5 label-eager, LOD1–4 lazy.
+pub use fluent_types::{LAZY_LOD_RANGE, LOD0_FULL_TEXT, LOD5_LABEL};
 
 #[derive(Error, Debug)]
 pub enum LedgerError {

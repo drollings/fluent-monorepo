@@ -1,14 +1,14 @@
 pub mod calibration;
 pub mod ledger_golden;
 pub mod mock;
-pub mod vector_index;
+// M7.3: `vector_index` removed — the seam lives in `search_vector::vector_index`.
 
 pub use mock::{
     default_transcript, load_transcript_file, transcript_provider_from_entries,
     MockDispatchContext, MockTranscriptEntry, TranscriptProvider,
 };
 
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
 
 /// Build a `RouterRequest` with default fields for testing.
 /// All fields except `model` and `messages` use sensible defaults

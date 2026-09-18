@@ -8,6 +8,7 @@
 //! - Content mutation → `verify` clears the stale id and its row.
 
 use crate::ledger::entity_promotion::EntityPromotion;
+use crate::ledger::entity_promotion::token_for_span;
 use crate::ledger::overlay::{CandidateStatus, OverlayCandidate, OverlayCandidateStore};
 use crate::ledger::ContentNodeLedger;
 use fluent_types::{InterlinguaId, InterlinguaNamespace, NodeId};
@@ -187,4 +188,55 @@ fn content_mutation_clears_stamp() {
         s.stamps_for_node(node).expect("query").is_empty(),
         "cleared stamp row deleted"
     );
+}
+
+#[test]
+fn token_for_span_exact_propn_match() {
+    // M9.1: "Paris" (idx 2, PROPN) at bytes 8..13 in "Show me Paris today".
+    let doc = paris_doc();
+    assert_eq!(token_for_span(&doc, "Show me Paris today", 8, 13), Some(2));
+}
+
+#[test]
+fn token_for_span_rejects_non_propn_and_mismatch() {
+    let doc = paris_doc();
+    // "Show" (0..4) is a verb, not PROPN.
+    assert_eq!(token_for_span(&doc, "Show me Paris today", 0, 4), None);
+    // Off-by-one end: exact span match only.
+    assert_eq!(token_for_span(&doc, "Show me Paris today", 8, 12), None);
+    assert_eq!(token_for_span(&doc, "Show me Paris today", 7, 13), None);
+}
+
+#[test]
+fn token_for_span_empty_and_out_of_range_is_none() {
+    let doc = paris_doc();
+    assert_eq!(token_for_span(&doc, "Show me Paris today", 8, 8), None);
+    assert_eq!(token_for_span(&doc, "Show me Paris today", 100, 105), None);
+    assert_eq!(token_for_span(&doc, "", 0, 0), None);
+}
+
+#[test]
+fn token_for_span_byte_offsets_with_multibyte_prefix() {
+    // M9.1: the cursor is byte-based. Doc "Venez à Lyon" — "à" is 2 bytes,
+    // so "Lyon" (PROPN, idx 2) is bytes 8..12; a char-counted offset (7..11)
+    // misses exactly.
+    let vocab = Arc::new(spacy_rs::vocab::Vocab::new(
+        spacy_rs::lexeme::LexiconConfig::default(),
+    ));
+    let json = r#"[
+        {"text":"Venez","pos":"verb","dep":"root","head":0,"lemma":"venir"},
+        {"text":"à","pos":"adp","dep":"case","head":-1,"lemma":"à"},
+        {"text":"Lyon","pos":"propn","dep":"obl","head":-2,"lemma":"lyon"}
+    ]"#;
+    let mut doc = spacy_rs::doc::Doc::new(vocab);
+    for t in ["Venez", "à", "Lyon"] {
+        doc.push_back(t, true).expect("push");
+    }
+    let set = spacy_rs::llm::AnnotationSet::parse_json(json).expect("parse json");
+    spacy_rs::llm::attach(&mut doc, &set).expect("attach");
+    spacy_rs::sentencizer::Sentencizer::new().process(&mut doc);
+    // Bytes: "Venez"=0..5, " "=5, "à"=6..8, " "=8, "Lyon"=9..13. A
+    // char-counted offset (8..12) misses exactly.
+    assert_eq!(token_for_span(&doc, "Venez à Lyon", 9, 13), Some(2));
+    assert_eq!(token_for_span(&doc, "Venez à Lyon", 8, 12), None);
 }

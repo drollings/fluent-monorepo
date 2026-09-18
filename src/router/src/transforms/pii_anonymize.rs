@@ -5,7 +5,7 @@ use fluent_llm::{anonymize, build_anonymize_map};
 use crate::transforms::{
     insert_string_map, rewrite_text_messages, TransformError, TransformStrategy,
 };
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 pub struct PiiAnonymize;
 

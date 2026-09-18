@@ -19,7 +19,7 @@ use fluent_types::InterlinguaId;
 use serde::{Deserialize, Serialize};
 
 use crate::config::filters::FilterOutcome;
-use crate::stages::classifier::prompt::{render_available_routes, RouteEntry};
+use fluent_llm::prompt::{render_available_routes, RouteEntry};
 
 /// The interlingua match for a `Filter` node: a
 /// deterministic dispatch on the request's parsed predicate/subject/object
@@ -229,7 +229,7 @@ impl ClassificationNode {
     /// threshold guidance. `None` when the node is not a classifier or has no
     /// routeable children.
     pub fn build_prompt(&self, coherence_threshold: f64, safety_threshold: f64) -> Option<String> {
-        Some(crate::stages::classifier::prompt::substitute_thresholds(
+        Some(fluent_llm::prompt::substitute_thresholds(
             &self.build_prompt_template()?,
             coherence_threshold,
             safety_threshold,

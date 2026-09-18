@@ -1,7 +1,10 @@
 use super::*;
+use std::sync::Arc;
+
 use crate::node_store::ContentNodeStore;
 use crate::summarization::Summarizer;
 use crate::test_stubs::CountingBackend;
+use crate::views::Lod;
 
 fn temp_store() -> Arc<ContentNodeStore> {
     // In-memory: no `/tmp` file is created (SQLite `-wal`/`-shm` sidecars of

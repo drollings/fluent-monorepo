@@ -562,6 +562,9 @@ fn load_cached_embedding(
 
 /// Build the indexed document text for a chart: description + every target's
 /// provides assets + name n-grams. One vector per chart.
+///
+/// M7.2 disposition: stays — joins `ChartDef` fields (chart-domain). Only the
+/// name-tokenizer moved (`common_core::string::ascii_alnum_tokens`).
 fn chart_doc_text(chart: &ChartDef) -> String {
     let mut parts: Vec<String> = Vec::new();
     parts.push(chart.description.clone());
@@ -569,20 +572,10 @@ fn chart_doc_text(chart: &ChartDef) -> String {
     for target in &chart.targets {
         parts.extend(target.provides.iter().cloned());
     }
-    for token in name_ngrams(&chart.name) {
+    for token in common_core::string::ascii_alnum_tokens(&chart.name) {
         parts.push(token);
     }
     parts.join(" ")
-}
-
-/// N-grams of a chart name split on non-alphanumerics, e.g. `bug_triage` →
-/// `["bug", "triage"]`. Lets a raw request that names only a fragment of the
-/// chart (e.g. "triage this bug") still retrieve it.
-fn name_ngrams(name: &str) -> Vec<String> {
-    name.split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .collect()
 }
 
 /// Deserialize a chart directly from JSON (used by tests and the

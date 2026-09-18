@@ -112,3 +112,12 @@ fn seam_adapter_shares_the_memory_backend() {
     backend.invalidate(key);
     assert!(seam.get(key).is_none());
 }
+
+#[test]
+fn hex_key_is_zero_padded_lowercase_hex() {
+    // M8.1: the span-cache key format pin — 16-char zero-padded lowercase hex.
+    assert_eq!(hex_key(0), "0000000000000000");
+    assert_eq!(hex_key(1), "0000000000000001");
+    assert_eq!(hex_key(0xabcdef), "0000000000abcdef");
+    assert_eq!(hex_key(u64::MAX), "ffffffffffffffff");
+}

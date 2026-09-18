@@ -235,6 +235,31 @@ impl ClassificationEngine {
         }
     }
 
+    /// The last-resort target for a classifier node whose verdict names no
+    /// child (or whose LLM call failed): the explicit `fallback` child when
+    /// present, else the child serving the configured default route. The
+    /// flag is true for the default-route path (audit wording differs).
+    /// `None` when neither exists — the caller rejects as before.
+    fn fallback_target<'a>(
+        &self,
+        children: &'a [CompiledChild],
+    ) -> Option<(&'a CompiledChild, bool)> {
+        if let Some(fb) = fallback_child(children) {
+            return Some((fb, false));
+        }
+        let default = self.routing.default_route.as_str();
+        if default.is_empty() {
+            return None;
+        }
+        children
+            .iter()
+            .find(|c| {
+                c.key == default
+                    || matches!(&c.node, CompiledNode::Terminal { route, .. } if route == default)
+            })
+            .map(|c| (c, true))
+    }
+
     /// Classifier node: run deterministic filter children first (short-circuit),
     /// then an LLM call over the auto-built prompt, thresholds, then pick a child.
     #[allow(clippy::too_many_arguments)]
@@ -299,12 +324,19 @@ impl ClassificationEngine {
                     error = %e,
                     "tree classifier LLM call failed — falling to fallback/reject",
                 );
-                if let Some(fb) = fallback_child(children) {
+                if let Some((fb, is_default)) = self.fallback_target(children) {
                     visited.push(node_decision(
                         "classifier",
                         description,
                         StageVerdict::Rerouted,
-                        format!("classifier LLM error, falling back: {e}"),
+                        if is_default {
+                            format!(
+                                "classifier LLM error, no fallback child — using default route '{}': {e}",
+                                fb.key
+                            )
+                        } else {
+                            format!("classifier LLM error, falling back: {e}")
+                        },
                         serde_json::json!({ "model": model, "route": fb.key }),
                     ));
                     return self.evaluate_node(
@@ -389,16 +421,24 @@ impl ClassificationEngine {
             }
         }
 
-        // No named child picked (or unknown name): fall back if configured.
-        if let Some(fb) = fallback_child(children) {
+        // No named child picked (or unknown name): fall back if configured,
+        // else serve the child behind the configured default route.
+        if let Some((fb, is_default)) = self.fallback_target(children) {
             visited.push(node_decision(
                 "classifier",
                 description,
                 StageVerdict::Rerouted,
-                format!(
-                    "no named child picked (route {:?}) — falling back",
-                    verdict.route
-                ),
+                if is_default {
+                    format!(
+                        "no named child picked (route {:?}) — no fallback child, using default route '{}'",
+                        verdict.route, fb.key
+                    )
+                } else {
+                    format!(
+                        "no named child picked (route {:?}) — falling back",
+                        verdict.route
+                    )
+                },
                 serde_json::json!({
                     "model": model,
                     "route": verdict.route,
@@ -420,7 +460,8 @@ impl ClassificationEngine {
             );
         }
 
-        let reason = "classifier picked no valid child and no fallback is configured".to_string();
+        let reason = "classifier picked no valid child and neither a fallback child nor the default route is configured"
+            .to_string();
         visited.push(node_decision(
             "classifier",
             description,

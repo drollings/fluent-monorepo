@@ -116,3 +116,30 @@ fn regex_match_serde_round_trip() {
         serde_json::from_str(&serde_json::to_string(&m).expect("serialize")).expect("round trip");
     assert_eq!(back, m);
 }
+
+#[test]
+fn overlapping_patterns_first_filter_wins() {
+    // M4.1: both filters match the same input (overlapping regexes) — the
+    // first in insertion order wins, even though the second also matches.
+    let mut engine = DeterministicFilterEngine::new();
+    engine.add_filter(hard_reject_filter("broad", "secret"));
+    engine.add_filter(hard_reject_filter("narrow", "top-secret"));
+    let d = engine
+        .evaluate(&FilterContext::pipeline("the top-secret file".into()))
+        .expect("decision");
+    match d {
+        FilterDecision::HardReject { pattern, .. } => assert_eq!(pattern, "broad"),
+        other => panic!("unexpected {other:?}"),
+    }
+    // Reversed insertion order flips the winner.
+    let mut engine = DeterministicFilterEngine::new();
+    engine.add_filter(hard_reject_filter("narrow", "top-secret"));
+    engine.add_filter(hard_reject_filter("broad", "secret"));
+    let d = engine
+        .evaluate(&FilterContext::pipeline("the top-secret file".into()))
+        .expect("decision");
+    match d {
+        FilterDecision::HardReject { pattern, .. } => assert_eq!(pattern, "narrow"),
+        other => panic!("unexpected {other:?}"),
+    }
+}

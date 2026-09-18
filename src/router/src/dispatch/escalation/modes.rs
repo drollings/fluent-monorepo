@@ -15,7 +15,7 @@ use crate::stages::deterministic::DeterministicPreFilter;
 use crate::summarization::{ResultScorer, ScoredResult};
 use crate::transforms::pii_anonymize::PiiAnonymize;
 use crate::transforms::TransformStrategy;
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest, RouterResponse};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest, RouterResponse};
 
 use super::assemble::{
     assemble_answers, judge_verdict, response_text, session_ledger_text, summarize_votes,

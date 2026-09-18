@@ -19,7 +19,7 @@ use crate::dag_session::DependencySession;
 use crate::dispatch::frontier::DispatchError;
 use crate::frontier::modes::EscalationMode;
 use crate::server::responses::{completion_to_response, make_text_completion, HyperResponse};
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 /// A sync local-model backend — the role engines (decomposer/assembler/
 /// classifier/draft/judge) run against `fluent_llm::ChatBackend`.
@@ -47,6 +47,9 @@ pub struct EscalationBackends {
 }
 
 /// Per-request escalation context (the `ctx_deps` bundle the ladder needs).
+///
+/// NOTE (M3.4 non-move): `EscalationContext`/`Ladder` below are behavioral
+/// (ladder runtime over `LocalBackend`s, sessions, workflow recorder) — stay.
 pub struct EscalationContext<'a> {
     /// The full normalized request.
     pub request: &'a RouterRequest,

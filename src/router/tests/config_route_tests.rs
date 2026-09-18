@@ -459,8 +459,9 @@ async fn every_declared_model_answers_directly() {
 /// every `always_route` route declared in `env/coral-router.json` answers
 /// with its dispatched response (it reads the live config at runtime, so it
 /// cannot drift and protects the config's flags from silent removal).
-/// A verdict that picks no child rejects instead of answering directly —
-/// tree mode always dispatches or rejects; there is no direct-answer path.
+/// A verdict that picks no child dispatches through the default route's
+/// fallback instead of answering directly — tree mode always dispatches
+/// or rejects; there is no direct-answer path.
 /// The *mechanism* and *prompt-rule* internals (respond→route override +
 /// "ALWAYS dispatch" in the system prompt) are owned by the unit tier in
 /// `stage_tests.rs::always_route_forces_dispatch_over_classifier_respond`
@@ -510,7 +511,8 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         .collect();
 
     // Control: a non-always_route route also dispatches when picked — and a
-    // no-pick verdict on it rejects rather than answering directly.
+    // no-pick verdict on it dispatches through the default route's fallback
+    // (never a direct answer, never the reported ERROR).
     let control = view
         .iter()
         .find(|(_, r)| !r.always_route)
@@ -521,6 +523,11 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
                 probe_for_route(route, rref),
             )
         });
+    // The role the no-pick fallback dispatches through: the default route's
+    // role, derived from the live config (no hardcoded coupling).
+    let default_role = view
+        .get(&config.default_route)
+        .map_or_else(|| config.default_route.clone(), |r| r.role.clone());
     let is_control = control.is_some();
     if let Some((route, role, probe)) = &control {
         entries.push(MockTranscriptEntry {
@@ -535,11 +542,13 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         entries.push(MockTranscriptEntry {
             user_message: format!("{probe} [no-pick]"),
             classifier_response: no_pick_response.clone(),
-            expected_route: Some(route.clone()),
-            expect_role: None,
-            dispatch_response: None,
-            rejected: true,
-            reject_reason_contains: Some("no valid child".into()),
+            // Served as the default route (the request's model is only the
+            // entry key; the no-pick verdict carries no route).
+            expected_route: Some(config.default_route.clone()),
+            expect_role: Some(default_role.clone()),
+            dispatch_response: Some("DISPATCHED-ANSWER".into()),
+            rejected: false,
+            reject_reason_contains: None,
         });
     }
 
@@ -562,8 +571,8 @@ async fn always_route_routes_force_dispatch_over_classifier_respond() {
         let is_no_pick = is_control && entry.user_message.ends_with(" [no-pick]");
         if is_no_pick {
             assert!(
-                text.contains("no valid child"),
-                "no-pick verdict on '{route}' must reject, got: {text}"
+                text.contains("DISPATCHED-ANSWER"),
+                "no-pick verdict on '{route}' must dispatch through the default route, got: {text}"
             );
         } else {
             assert!(

@@ -11,7 +11,9 @@ pub mod interlingua;
 pub mod knowledge;
 pub mod label_enum;
 pub mod model_ref;
+pub mod openai_wire;
 pub mod provenance;
+pub mod rounds;
 
 pub use file_kind::FileKind;
 pub use interlingua::{
@@ -20,9 +22,22 @@ pub use interlingua::{
     LOCAL_MASK, NAMESPACE_BITS,
 };
 pub use knowledge::{KnowledgeCapability, KnowledgeError};
+pub use openai_wire::{
+    ContentPart, FunctionCall, FunctionDef, ImageUrl, RouterChoice, RouterMessage,
+    RouterMessageContent, RouterRequest, RouterResponse, RouterTool, ToolCall, Usage,
+};
 pub use provenance::{AnnotationClaim, ClaimStatus, ProvenanceTier};
+pub use rounds::{BoundedRounds, EscalationConfidence, SeverityThreshold};
 
 pub const LOD_COUNT: usize = 6;
+
+/// LOD0: full text (eager at creation, authoritative — every lazy tier
+/// derives directly from it, never chained).
+pub const LOD0_FULL_TEXT: u8 = 0;
+/// LOD5: name/label (eager at creation via `derive_label`-class policy).
+pub const LOD5_LABEL: u8 = 5;
+/// Lazy LOD range: LOD1–LOD4 derive on demand, at most once.
+pub const LAZY_LOD_RANGE: std::ops::RangeInclusive<u8> = 1..=4;
 
 /// A deterministic context hit — a short-circuit fact/cached answer that
 /// lets the escalation ladder avoid a frontier call.  `content` is the

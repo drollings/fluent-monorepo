@@ -260,3 +260,25 @@ async fn compiled_stages_feed_chart_execution_plan() {
     assert!(summary.accepted);
     assert_eq!(summary.final_output, Some(serde_json::json!({"out": "b"})));
 }
+
+#[test]
+fn duplicate_target_name_is_compile_error() {
+    // M11.1: duplicate step names surface as a compile error (the
+    // DependencyGraph DuplicateStep path), never a silent overwrite.
+    use crate::test_stubs::SimplePassStage;
+    let mk = |name: &str| CompiledTarget {
+        stage: Arc::new(SimplePassStage::new(name, "ok")),
+        name: name.into(),
+        essential: true,
+        rubric: None,
+        upstream_ids: vec![],
+    };
+    let err = topo_order(&[mk("a"), mk("a")]).expect_err("duplicate step");
+    assert!(
+        matches!(err, ChartError::Compile { .. }),
+        "duplicate → Compile error, got {err:?}"
+    );
+    // Distinct names still order.
+    let order = topo_order(&[mk("a"), mk("b")]).expect("distinct");
+    assert_eq!(order.len(), 2);
+}

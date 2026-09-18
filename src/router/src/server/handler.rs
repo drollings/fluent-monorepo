@@ -24,7 +24,7 @@ use crate::server::responses::HyperResponse;
 use crate::server::responses::ServerStats;
 use crate::server::review::{ReviewFetch, ReviewWorker};
 use crate::testing::mock::MockDispatchContext;
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 /// The request-context dependency bundle handed to every HTTP handler.
 /// Collapses the former 12-`Option` parameter list so escalation

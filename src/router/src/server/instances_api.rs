@@ -19,9 +19,13 @@ use hyper::HeaderMap;
 use crate::instances::InstanceTotals;
 use crate::server::handler::ServerDeps;
 use crate::server::responses::{error_response, json_response, HyperResponse};
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 /// Decode a URL query component (`%XX` and `+`).
+///
+/// NOTE (M1.5 disposition): router-local — `common-core::http` has no
+/// query-parse shape (shared client + body helpers only). Extract on second
+/// consumer; do not add a speculative shared HTTP surface.
 pub fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());

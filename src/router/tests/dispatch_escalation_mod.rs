@@ -733,3 +733,18 @@ fn ladder_builds_from_config_with_transcript_local_roles() {
     let ladder = Ladder::new(full_modes_config(), backends);
     assert_eq!(ladder.config().modes.len(), 4);
 }
+
+#[test]
+fn votes_distribution_ties_are_deterministic() {
+    // M11.1: equal counts → both lines present in sorted (string) order —
+    // ties never flip between runs.
+    let votes = vec![
+        r#"{"approach": "beta"}"#.to_string(),
+        r#"{"approach": "alpha"}"#.to_string(),
+    ];
+    let first = summarize_votes(&votes);
+    assert!(first.contains("1/2 say: alpha"), "dist: {first}");
+    assert!(first.contains("1/2 say: beta"), "dist: {first}");
+    assert_eq!(first, summarize_votes(&votes), "deterministic across calls");
+    assert_eq!(summarize_votes(&[]), "", "no votes → empty distribution");
+}

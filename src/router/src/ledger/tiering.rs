@@ -17,6 +17,15 @@
 //! spawned through the injected `Runtime` (no ambient `tokio::spawn`). It
 //! emits a `kind = "tier"` audit record per derived node.
 //!
+//! NOTE (M5.2 disposition): stays on `CreditedFeedWorker`, NOT `CreditGatedPool`.
+//! The pool is job-submit shaped (`submit(job)` per job); this worker is
+//! feed-shaped (store-attached `mpsc` sender via `set_tier_events`, boot
+//! backfill, batch drain with poll interval, per-item `Limiter`). Migrating
+//! would drop feed semantics = behavior change, and orphan a tested shared
+//! primitive. The skill's no-third-copy rule is satisfied: no worker
+//! scaffolding is hand-rolled here — the feed, credit gate, concurrency
+//! bound, and drain loop are all owned by the primitive.
+//!
 //! Degradation rules: when the backend is unavailable, LOD5 falls back
 //! to the deterministic `derive_label` and LOD4 is left empty — never a crash.
 //! Transient backend errors are re-enqueued with bounded retry (no infinite
@@ -31,7 +40,9 @@ use fluent_llm::{ChatMessage, LlmError};
 use fluent_types::NodeId;
 use fluent_wvr::Runtime;
 
-use crate::node_store::{derive_label, ContentNodeStore};
+use crate::node_store::ContentNodeStore;
+use fluent_concept::content_store::derive_label;
+use fluent_knowledge::lod_policy::parse_tiers;
 
 use super::LOD5_LABEL;
 
@@ -333,12 +344,12 @@ impl LedgerTierWorker {
             .map_err(TierError::Backend)?;
         let (summary, desc) = parse_tiers(&text);
         let lod4 = if need_lod4 {
-            summary.map(|s| truncate_chars(&s, self.config.lod4_max_chars))
+            summary.map(|s| common_core::string::truncate_chars(&s, self.config.lod4_max_chars))
         } else {
             None
         };
         let lod5 = if need_lod5 {
-            desc.map(|s| truncate_chars(&s, self.config.lod5_max_chars))
+            desc.map(|s| common_core::string::truncate_chars(&s, self.config.lod5_max_chars))
         } else {
             None
         };
@@ -409,35 +420,8 @@ impl LedgerTierWorker {
     }
 }
 
-/// Truncate to at most `max_chars` **characters** at a UTF-8 char boundary
-/// (the LOD4/LOD5 caps are character counts, not bytes). Never exceeds the cap
-/// and never splits a multi-byte char. Builds on `truncate_utf8`'s char-boundary
-/// discipline.
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        return s.to_string();
-    }
-    let byte_end = s.char_indices().nth(max_chars).map_or(s.len(), |(i, _)| i);
-    s[..byte_end].to_string()
-}
-
-/// Parse the two-line `SUMMARY:`/`DESCRIPTION:` model output into a
-/// `(summary, description)` pair. Falls back to the raw text for the summary
-/// when the delimiters are absent (never loses the derivation).
-fn parse_tiers(text: &str) -> (Option<String>, Option<String>) {
-    let mut summary: Option<String> = None;
-    let mut desc: Option<String> = None;
-    for line in text.lines() {
-        let t = line.trim();
-        if let Some(rest) = t.strip_prefix("SUMMARY:") {
-            summary = Some(rest.trim().to_string());
-        } else if let Some(rest) = t.strip_prefix("DESCRIPTION:") {
-            desc = Some(rest.trim().to_string());
-        }
-    }
-    let summary = summary.or_else(|| Some(text.trim().to_string()));
-    (summary, desc)
-}
+/// Tier-text parse (`SUMMARY:`/`DESCRIPTION:`) — canonical home is
+/// `fluent_knowledge::lod_policy::parse_tiers` (imported above, M10.2).
 #[cfg(test)]
 #[path = "../../tests/ledger_tiering.rs"]
 mod tests;

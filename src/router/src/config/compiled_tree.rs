@@ -21,7 +21,7 @@ use regex::{Regex, RegexSet};
 
 use crate::config::classification::{ClassificationNode, ClassificationTree, InterlinguaMatch};
 use crate::config::filters::FilterOutcome;
-use crate::stages::classifier::prompt::substitute_thresholds;
+use fluent_llm::prompt::substitute_thresholds;
 
 /// Counts [`ClassificationTree::compile`] calls. Test builds only: the
 /// compile-once proof asserts this moves on `compile()` and never on match

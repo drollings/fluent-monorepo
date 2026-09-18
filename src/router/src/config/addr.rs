@@ -20,6 +20,12 @@ pub fn hosts_equivalent(a: &str, b: &str) -> bool {
 }
 
 /// Parse a `host:port` string into its components.
+///
+/// NOTE (M2.2 disposition): router-local. Single consumer
+/// (`validate_no_self_routing` below); returns the router `ServerError`; the
+/// IPv6-bracket-aware shape is deliberately distinct from
+/// `fluent_llm::url::extract_host` (P5 note below). Extract on second
+/// consumer; do not speculate a shared addr surface.
 pub fn parse_bind_addr(addr: &str) -> Result<(&str, u16), ServerError> {
     let addr = addr.trim();
     if addr.is_empty() {

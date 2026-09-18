@@ -1,7 +1,7 @@
 use common_core::string::{filter_unsafe_chars, AnsiStripper};
 
 use crate::transforms::{rewrite_text_messages, TransformError, TransformStrategy};
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
 
 pub struct Sanitize;
 

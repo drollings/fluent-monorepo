@@ -5,6 +5,10 @@ use crate::pipeline::QualifiedModelId;
 /// Single routing-fields value type, collapsing the four `Option` threadings
 /// through `normalize.rs`, `server/handler.rs`, `server/dispatch.rs`,
 /// and `dispatch/backend.rs`.
+///
+/// NOTE (M3.3 disposition): stays router-local — `qualified_model_id()`
+/// returns the router-local `QualifiedModelId` (M3.4 non-move), so the struct
+/// carries router logic, failing the move condition.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoutingContext {
     pub instance: Option<String>,

@@ -16,6 +16,10 @@
 //! `LedgerTierWorker` — the overlay worker deliberately does **not**
 //! reimplement that worker's shape.
 //!
+//! NOTE (M5.2 disposition): stays on `CreditedFeedWorker`, NOT `CreditGatedPool`
+//! (same feed-vs-job rationale as `LedgerTierWorker` — see
+//! `ledger/tiering.rs`). No hand-rolled worker scaffolding here.
+//!
 //! The three overlays have no dependencies on each other, so a slow LLM
 //! enrichment never delays the spacy parse or the embedding for the same node:
 //! the per-node handler spawns three independent derivation jobs on the

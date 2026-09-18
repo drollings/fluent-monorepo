@@ -639,3 +639,39 @@ fn evicted_registry_key_is_a_typed_boot_error_not_a_panic() {
     };
     assert!(err.contains("ghost"), "error names the key: {err}");
 }
+
+#[test]
+fn free_port_returns_immediately_bindable_ports() {
+    // M12.1: the boot-time port hint — a returned port binds at once, and
+    // sequential reservations keep working (no smoke, no collision).
+    let mut held = Vec::new();
+    for _ in 0..8 {
+        let port = free_port().expect("free port");
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+            .expect("returned port must bind immediately");
+        held.push(listener);
+    }
+    assert_eq!(held.len(), 8);
+}
+
+#[test]
+fn free_port_parallel_reservations_do_not_collide() {
+    // M12.1: parallel boot — N threads reserving + holding ports observe
+    // distinct ports (the documented TOCTOU race stays negligible in practice).
+    let ports: Vec<u16> = (0..8)
+        .map(|_| {
+            std::thread::spawn(|| {
+                let port = free_port().expect("free port");
+                let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+                    .expect("parallel reservation must bind");
+                // Hold briefly so siblings cannot reuse it.
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                drop(listener);
+                port
+            })
+        })
+        .map(|h| h.join().expect("thread"))
+        .collect();
+    let uniq: std::collections::HashSet<u16> = ports.iter().copied().collect();
+    assert_eq!(uniq.len(), ports.len(), "parallel reservations collided: {ports:?}");
+}

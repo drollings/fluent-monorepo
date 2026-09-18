@@ -695,3 +695,37 @@ fn extract_tag_first_trimmed_body_or_none() {
     assert_eq!(extract_tag("", "comment"), None);
     assert_eq!(extract_tag("<other>x</other>", "comment"), None);
 }
+
+#[test]
+fn collapse_whitespace_runs_tabs_newlines_unicode() {
+    assert_eq!(collapse_whitespace("a  b"), "a b");
+    assert_eq!(collapse_whitespace("a\tb\nc"), "a b c");
+    assert_eq!(collapse_whitespace("  padded  "), "padded");
+    assert_eq!(collapse_whitespace(""), "");
+    assert_eq!(collapse_whitespace("   "), "");
+    assert_eq!(collapse_whitespace("a\u{00A0}b"), "a b");
+    assert_eq!(collapse_whitespace("no-change"), "no-change");
+}
+
+#[test]
+fn truncate_chars_hard_cap_unicode() {
+    assert_eq!(truncate_chars("", 0), "");
+    assert_eq!(truncate_chars("abc", 0), "");
+    assert_eq!(truncate_chars("abc", 5), "abc");
+    assert_eq!(truncate_chars("abcdef", 3), "abc");
+    assert_eq!(truncate_chars("héllo", 3), "hél");
+    assert_eq!(truncate_chars("日本語テスト", 2), "日本");
+}
+
+#[test]
+fn ascii_alnum_tokens_splits_preserves_case() {
+    // M7.1/M7.2 characterization (moved with the chart store's name_ngrams).
+    assert_eq!(ascii_alnum_tokens("bug_triage"), vec!["bug", "triage"]);
+    assert_eq!(ascii_alnum_tokens("Foo.Bar-baz"), vec!["Foo", "Bar", "baz"]);
+    assert_eq!(ascii_alnum_tokens(""), Vec::<String>::new());
+    assert_eq!(ascii_alnum_tokens("___"), Vec::<String>::new());
+    assert_eq!(ascii_alnum_tokens("x"), vec!["x"]);
+    // Non-ASCII is a separator (ASCII-only split); case is preserved.
+    assert_eq!(ascii_alnum_tokens("naïve"), vec!["na", "ve"]);
+    assert_eq!(ascii_alnum_tokens("a  b"), vec!["a", "b"]);
+}

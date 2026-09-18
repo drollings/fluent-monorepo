@@ -3,7 +3,15 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::transforms::{rewrite_text_messages, TransformError, TransformStrategy};
-use crate::types::RouterRequest;
+use fluent_types::openai_wire::RouterRequest;
+
+// NOTE (M6.2 disposition): deliberately NOT unified with
+// `fluent_llm::pii_patterns` — see the vocabulary record on
+// `fluent_llm::anonymize` (secret `****` transport masking vs PII `[TYPE]`
+// placeholders vs codeword vs ledger `[REDACTED:]`). The arm set below
+// (bearer/basic/sk-/github tokens/named key=value) has no same-span
+// counterpart in the PII table (unifying would change spans = behavior
+// change). Locked by `tests/transforms_secret_mask.rs`.
 
 static SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(

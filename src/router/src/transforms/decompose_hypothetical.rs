@@ -1,7 +1,7 @@
 use fluent_llm::anonymize;
 
 use crate::transforms::{TransformError, TransformStrategy};
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
 
 pub struct DecomposeToAnonymizedHypothetical;
 

@@ -1,7 +1,7 @@
 use fluent_llm::Decomposer;
 
 use crate::transforms::{TransformError, TransformStrategy};
-use crate::types::{RouterMessage, RouterMessageContent, RouterRequest};
+use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
 
 /// NOTE: this transform intentionally does NOT use
 /// `insert_string_map` — its metadata payload is a structured `subtasks` JSON

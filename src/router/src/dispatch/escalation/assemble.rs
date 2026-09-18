@@ -10,7 +10,7 @@ use fluent_llm::{ChatMessage, Decomposer, LlmError};
 
 use crate::dag_session::DependencySession;
 use crate::stages::prompt_parse::chat_json;
-use crate::types::{RouterRequest, RouterResponse};
+use fluent_types::openai_wire::{RouterRequest, RouterResponse};
 
 use super::LocalBackend;
 

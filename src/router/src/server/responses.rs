@@ -6,13 +6,16 @@ use http_body_util::Full;
 
 use crate::normalize;
 use crate::streaming::StreamingHandler;
-use crate::types::RouterResponse;
+use fluent_types::openai_wire::RouterResponse;
 #[cfg(test)]
-use crate::types::{RouterMessageContent, Usage};
+use fluent_types::openai_wire::{RouterMessageContent, Usage};
 
 pub type ResponseBody = http_body_util::combinators::UnsyncBoxBody<Bytes, std::convert::Infallible>;
 pub type HyperResponse = hyper::Response<ResponseBody>;
 
+/// NOTE (M3.3 disposition): stays router-local — not pure counters. The
+/// `recency` map is live dispatch state (`target_match::RoleRecency`),
+/// written on every success and read at match time.
 pub struct ServerStats {
     pub requests: AtomicU64,
     pub errors: AtomicU64,

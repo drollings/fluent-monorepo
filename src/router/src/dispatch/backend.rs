@@ -18,7 +18,7 @@ use serde_json::Value;
 use crate::dispatch::frontier::{DispatchError, OpenAiBackend};
 use crate::normalize;
 use crate::streaming::StreamingHandler;
-use crate::types::{RouterRequest, RouterResponse};
+use fluent_types::openai_wire::{RouterMessageContent, RouterRequest, RouterResponse};
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -1011,7 +1011,7 @@ impl OnnxDispatchBackend {
         let mut resp = crate::server::responses::make_text_completion(model, &text);
         if filter_thinking {
             for choice in &mut resp.choices {
-                if let crate::types::RouterMessageContent::Text(ref mut t) = choice.message.content
+                if let RouterMessageContent::Text(ref mut t) = choice.message.content
                 {
                     *t = strip_thinking_blocks(t);
                 }
