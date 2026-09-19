@@ -139,3 +139,30 @@ fn format_size_roundtrip() {
         assert_eq!(format_size(bytes), expected, "format_size({bytes})");
     }
 }
+
+#[test]
+fn escape_markdown_cell_escapes_pipes_and_folds_newlines() {
+    assert_eq!(escape_markdown_cell("a|b"), "a\\|b");
+    assert_eq!(escape_markdown_cell("a\nb"), "a b");
+    assert_eq!(escape_markdown_cell("plain"), "plain");
+}
+
+#[test]
+fn render_markdown_table_matches_ls_shape() {
+    let text = render_markdown_table(
+        &["role", "models"],
+        &[vec!["code".to_string(), "qwen".to_string()]],
+    );
+    assert_eq!(text, "| role | models |\n| --- | --- |\n| code | qwen |\n");
+}
+
+#[test]
+fn render_markdown_table_empty_headers_is_none_marker() {
+    assert_eq!(render_markdown_table(&[], &[]), "(none)\n");
+}
+
+#[test]
+fn render_markdown_table_escapes_cells() {
+    let text = render_markdown_table(&["a|b"], &[vec!["x\ny".to_string()]]);
+    assert_eq!(text, "| a\\|b |\n| --- |\n| x y |\n");
+}

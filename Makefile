@@ -143,7 +143,7 @@ explain: $(GUIDANCE_DB) ## Explain a module, function, or concept  make explain 
 
 ##@ Rust Build & RALPH Loop
 
-RUST_SRC_FILES := $(shell find $(RUST_SRC_DIR) -name '*.rs' 2>/dev/null)
+RUST_SRC_FILES := $(shell find $(RUST_SRC_DIR) -type f -name '*.rs' -not -name '.#*' -not -name '#*#' -not -name '*~' 2>/dev/null)
 
 # ── Binary ───────────────────────────────────────────────────────────────────
 

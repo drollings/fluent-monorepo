@@ -10,7 +10,6 @@
 //! authority, not an ambient effect inside the serving request path.
 
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -20,186 +19,389 @@ use reqwest::Client;
 use serde_json::{json, Value};
 
 use super::ShowFlags;
-use super::{cli_err, sync_preset};
+use super::{cli_err, sync_preset, TableFormat};
 use crate::cli::gguf::{
-    format_size, read_gguf_metadata, resolve_model, scan_gguf_models, GgufEntry,
+    cached_entries, format_relative_time, format_size, quant_name, read_gguf_metadata,
+    resolve_model, scan_gguf_models, GgufEntry,
 };
 use crate::cli::preset::{render_aichat_config, render_litellm_yaml, write_models_preset};
+use crate::cli::tables::{content_widths, render_text_table, terminal_width};
 use crate::cli::{CliContext, CliResult};
 use crate::config::RouterConfig;
+use common_core::format::render_markdown_table;
 
-/// One config section listing: routes (route → role), roles (role
-/// → members), and models (key, intelligence, weights path) — each sorted
-/// by key for deterministic output (serde maps are sorted; file order is
-/// not preserved). Built from the resolved config file, never synthesized.
+/// One resolved route row: the route name, one fallback level of the
+/// serving role's `models` chain (route → role → member, in configured
+/// order), the effective serving window (`CTX`), and the effective
+/// reasoning level (`REASONING`). Availability-sentinel levels (`last` /
+/// `any`) carry no static target, so they render as `-` across
+/// `MODEL`/`CTX`/`REASONING`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteRow {
+    pub route: String,
+    pub model: String,
+    pub ctx: Option<u64>,
+    pub reasoning: String,
+}
+
+/// One config section listing: resolved routes (route → one row per
+/// fallback level + `CTX` + `REASONING`) and models (key, intelligence,
+/// weights path) — routes sorted by key for deterministic output (serde
+/// maps are sorted; file order is not preserved). Built from the resolved
+/// config file, never synthesized.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigListing {
-    pub routes: Vec<(String, String)>,
-    pub roles: Vec<(String, Vec<String>)>,
+    pub routes: Vec<RouteRow>,
     pub models: Vec<(String, u8, Option<String>)>,
 }
 
-/// Escape a Markdown table cell: pipes break columns, newlines break rows.
-///
-/// NOTE (M1.4 disposition): router-local presentation helper (single consumer) —
-/// extract to `common-core::format` on second consumer.
-fn escape_cell(cell: &str) -> String {
-    cell.replace('|', "\\|").replace('\n', " ")
-}
-
-/// Render one header plus a single row — the compact shape for the routes
-/// section (one column per key). Empty sections render `(none)`
-/// (a zero-column table is unparseable, so the marker keeps the shape
-/// mechanical instead).
-fn render_single_row_table(headers: &[String], cells: &[String]) -> String {
-    if headers.is_empty() {
-        return "(none)\n".to_string();
-    }
-    let mut out = String::new();
-    let _ = writeln!(out, "| {} |", headers.join(" | "));
-    let _ = writeln!(
-        out,
-        "| {} |",
-        headers
-            .iter()
-            .map(|_| "---")
-            .collect::<Vec<_>>()
-            .join(" | ")
-    );
-    let _ = writeln!(out, "| {} |", cells.join(" | "));
-    out
-}
-
-/// Render the full listing as Markdown: the routes row, one `role | models`
-/// row per role (members comma-separated), then one row per model as
-/// found in the configuration file.
-pub fn render_config_listing(listing: &ConfigListing) -> String {
-    let mut out = String::new();
-    out.push_str("## Routes\n");
-    let route_headers: Vec<String> = listing.routes.iter().map(|(r, _)| escape_cell(r)).collect();
-    let route_cells: Vec<String> = listing.routes.iter().map(|(_, g)| escape_cell(g)).collect();
-    out.push_str(&render_single_row_table(&route_headers, &route_cells));
-    out.push('\n');
-    out.push_str("## Roles\n");
-    if listing.roles.is_empty() {
-        out.push_str("(none)\n");
-    } else {
-        out.push_str("| role | models |\n");
-        out.push_str("| --- | --- |\n");
-        for (role, members) in &listing.roles {
-            let _ = writeln!(
-                out,
-                "| {} | {} |",
-                escape_cell(role),
-                members
-                    .iter()
-                    .map(|m| escape_cell(m))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-    }
-    out.push('\n');
-    out.push_str("## Models\n");
-    out.push_str("| model | intelligence | weights |\n");
-    out.push_str("| --- | --- | --- |\n");
-    for (key, intelligence, weights) in &listing.models {
-        let _ = writeln!(
-            out,
-            "| {} | {intelligence} | {} |",
-            escape_cell(key),
-            weights
-                .as_deref()
-                .map_or_else(|| "-".to_string(), escape_cell)
-        );
-    }
-    out
-}
-
-/// Render the listing losslessly for scripts: every section as data (null
-/// weights where the file declares none).
-pub fn render_config_json(listing: &ConfigListing) -> Value {
-    let routes: serde_json::Map<String, Value> = listing
+/// Render the full listing as Markdown — the same sections, order, columns,
+/// and rows as the plain-text screen (`MODELS`, `ROUTES`),
+/// differing only in format and separators (pipe tables, full values, never
+/// truncated; every section titled, unlike the title-less text MODELS grid).
+pub fn render_config_listing(listing: &ConfigListing, models: &[GgufEntry]) -> String {
+    let route_rows: Vec<Vec<String>> = listing
         .routes
         .iter()
-        .map(|(route, role)| (route.clone(), Value::String(role.clone())))
-        .collect();
-    let roles: serde_json::Map<String, Value> = listing
-        .roles
-        .iter()
-        .map(|(role, members)| {
-            (
-                role.clone(),
-                Value::Array(members.iter().map(|m| Value::String(m.clone())).collect()),
-            )
+        .map(|row| {
+            vec![
+                row.route.clone(),
+                row.model.clone(),
+                row.ctx.map_or_else(|| "-".to_string(), |c| c.to_string()),
+                row.reasoning.clone(),
+            ]
         })
         .collect();
-    let models: Vec<Value> = listing
-        .models
+    let mut out = String::from("## MODELS\n");
+    out.push_str(&render_markdown_table(
+        &["NAME", "SIZE", "QUANT", "ARCH", "MODIFIED"],
+        &sorted_model_rows(models, false),
+    ));
+    out.push_str("\n## ROUTES\n");
+    out.push_str(&render_markdown_table(
+        &["ROUTE", "MODEL", "CTX", "REASONING"],
+        &route_rows,
+    ));
+    out
+}
+
+/// One scanned-models row (`NAME SIZE QUANT ARCH MODIFIED`), matching
+/// `gguf_tool ls`: the file-stem tag lowercased, falling back to the GGUF
+/// `file_type` mapping when the tag is empty/`latest`, `-` with neither.
+/// `clip_arch` truncates `ARCH` to 10 chars for the fixed-width text screen
+/// (Markdown keeps full values).
+fn gguf_model_cells(entry: &GgufEntry, clip_arch: bool) -> Vec<String> {
+    let tag = entry.tag.to_lowercase();
+    let quant = if tag.is_empty() || tag == "latest" {
+        entry.file_type.map_or_else(|| "-".to_string(), quant_name)
+    } else {
+        tag
+    };
+    let arch = if clip_arch {
+        entry.arch.chars().take(10).collect()
+    } else {
+        entry.arch.clone()
+    };
+    vec![
+        entry.display.clone(),
+        format_size(entry.size),
+        quant,
+        arch,
+        format_relative_time(entry.mtime),
+    ]
+}
+
+/// Scanned-models rows sorted by display name (disk-walk order is not
+/// deterministic, so the screen sorts — the single ordering home).
+fn sorted_model_rows(models: &[GgufEntry], clip_arch: bool) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = models
         .iter()
-        .map(|(key, intelligence, weights)| {
+        .map(|e| gguf_model_cells(e, clip_arch))
+        .collect();
+    rows.sort();
+    rows
+}
+
+/// `gguf_tool ls` field widths (`NAME` capped at 90 there too).
+const MODELS_MIN_WIDTHS: [usize; 5] = [4, 8, 12, 10, 14];
+const MODELS_HEADERS: [&str; 5] = ["NAME", "SIZE", "QUANT", "ARCH", "MODIFIED"];
+
+/// Render one plain-text section (header, zero or more rows) in the shared
+/// borderless `ps`-style format.
+fn render_text_section(
+    headers: &[&str],
+    rows: &[Vec<String>],
+    right: &[bool],
+    width: u16,
+) -> String {
+    let widths = content_widths(headers, rows);
+    let mut out = String::new();
+    out.push_str(&render_text_table(headers, rows, right, 0, &widths, width));
+    out
+}
+
+/// Render the full listing as aligned plain-text tables (the default `ls`
+/// screen): MODELS (scanned GGUF entries, `gguf_tool ls` columns, no title —
+/// that screen's shape), then the titled ROUTES section (route → model +
+/// `CTX` + `REASONING`) — the same borderless, terminal-width-aware format
+/// as the `ps` screen. The first column absorbs slack; on narrow terminals
+/// the `ARCH` column is clipped to the `gguf_tool` 10-char width (full
+/// values are one `--markdown` away).
+pub fn render_config_text(listing: &ConfigListing, models: &[GgufEntry], width: u16) -> String {
+    let route_rows: Vec<Vec<String>> = listing
+        .routes
+        .iter()
+        .map(|row| {
+            vec![
+                row.route.clone(),
+                row.model.clone(),
+                row.ctx.map_or_else(|| "-".to_string(), |c| c.to_string()),
+                row.reasoning.clone(),
+            ]
+        })
+        .collect();
+    let mut out = render_text_table(
+        &MODELS_HEADERS,
+        &sorted_model_rows(models, true),
+        &[false, true, false, false, false],
+        0,
+        &MODELS_MIN_WIDTHS,
+        width,
+    );
+    out.push('\n');
+    out.push_str(&render_text_section(
+        &["ROUTE", "MODEL", "CTX", "REASONING"],
+        &route_rows,
+        &[false, false, true, false],
+        width,
+    ));
+    out
+}
+
+/// Render the listing losslessly for scripts: resolved routes from the
+/// config (one object per fallback level per route, grouped into an array
+/// carrying the serving `model`, the effective `ctx` window, and the
+/// `reasoning` level), and one entry per scanned GGUF model carrying the
+/// raw fields behind the `ls` table
+/// (`name`/`size_bytes`/`quant`/`arch`/`mtime` — no formatting).
+pub fn render_config_json(listing: &ConfigListing, models: &[GgufEntry]) -> Value {
+    let mut routes: serde_json::Map<String, Value> = serde_json::Map::new();
+    for row in &listing.routes {
+        let level = json!({
+            "model": row.model,
+            "ctx": row.ctx.map_or(Value::Null, Value::from),
+            "reasoning": row.reasoning,
+        });
+        routes
+            .entry(row.route.clone())
+            .or_insert_with(|| Value::Array(Vec::new()))
+            .as_array_mut()
+            .expect("route entry is an array")
+            .push(level);
+    }
+    let mut models_json: Vec<Value> = models
+        .iter()
+        .map(|e| {
             json!({
-                "key": key,
-                "intelligence": intelligence,
-                "weights": weights.as_deref().map_or(Value::Null, |s| Value::String(s.to_string())),
+                "name": e.display,
+                "size_bytes": e.size,
+                "quant": gguf_model_cells(e, false)[2],
+                "arch": e.arch,
+                "mtime": e.mtime,
             })
         })
         .collect();
-    json!({ "routes": routes, "roles": roles, "models": models })
+    models_json.sort_by(|a, b| {
+        a.get("name")
+            .and_then(Value::as_str)
+            .cmp(&b.get("name").and_then(Value::as_str))
+    });
+    json!({ "routes": routes, "models": models_json })
 }
 
-/// Build the listing from a parsed config: tree-derived routes (route →
-/// role), roles with their effective members, and models with intelligence
-/// and weights as declared. Sorted by key throughout.
+/// Read the `reasoning_effort` string from a params object, if declared.
+fn reasoning_effort_in(params: Option<&serde_json::Value>) -> Option<String> {
+    params
+        .and_then(|p| p.as_object())
+        .and_then(|obj| obj.get("reasoning_effort"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+/// Effective serving window for a dispatch through `role` on `entry`: the
+/// role run block's `num_ctx` clamped to the `max_ctx` cap (model-side
+/// override, then the entry, then the role block) — the same window the
+/// boot-materialized pool profile carries (`materialize_effective_pool`).
+fn effective_ctx(
+    entry: &crate::config::ModelEntry,
+    role_entry: &crate::config::routing::RoleEntry,
+    over: Option<&crate::config::ModelRoleOverride>,
+) -> u64 {
+    let window = role_entry.params.num_ctx;
+    let cap = over
+        .and_then(|o| o.max_ctx)
+        .or(entry.max_ctx)
+        .or(role_entry.params.max_ctx);
+    cap.map_or(window, |c| window.min(c))
+}
+
+/// Effective reasoning level for a dispatch through `role` on `entry`:
+/// `none` when thinking is off, else the composed `reasoning_effort`
+/// (model-side override, then the role run block, then the entry params),
+/// falling back to `on` when thinking is enabled with no effort string.
+/// Enablement composes override → role → entry (first declaration wins);
+/// the effort lookup mirrors `ModelEntry::resolve_thinking` without
+/// collapsing the effort string to `on`/`off`.
+fn effective_reasoning(
+    entry: &crate::config::ModelEntry,
+    role_entry: &crate::config::routing::RoleEntry,
+    over: Option<&crate::config::ModelRoleOverride>,
+) -> String {
+    let enabled = over
+        .and_then(|o| o.enable_thinking)
+        .or(role_entry.enable_thinking)
+        .or(entry.enable_thinking);
+    if enabled == Some(false) {
+        return "none".to_string();
+    }
+    let effort = over
+        .and_then(|o| reasoning_effort_in(o.params.as_ref()))
+        .or_else(|| reasoning_effort_in(role_entry.params.sampling_value().as_ref()))
+        .or_else(|| reasoning_effort_in(entry.params.as_ref()));
+    match (effort, enabled) {
+        (Some(level), _) => level,
+        (None, Some(true)) => "on".to_string(),
+        (None, _) => "none".to_string(),
+    }
+}
+
+/// Build the listing from a parsed config: tree-derived routes resolved
+/// through their role to the serving models — one row per fallback level
+/// of the role's `models` chain in configured order (the expanded dispatch
+/// members, so nested role refs fan out exactly as dispatch sees them),
+/// with the composed `CTX` window and `REASONING` level per level; plus
+/// models with intelligence and weights as declared. Sorted by route/key
+/// throughout (levels keep configured order). Availability-sentinel levels
+/// (`last` / `any`) and unresolvable routes render as `-` rather than
+/// failing the listing.
 pub fn listing_from_config(cfg: &RouterConfig) -> ConfigListing {
-    let mut routes: Vec<(String, String)> = cfg
+    let routing = cfg.routing_config();
+    let mut views: Vec<(String, String)> = cfg
         .routes_view()
         .into_iter()
         .map(|(route, rref)| (route, rref.role))
         .collect();
-    routes.sort();
-    let mut roles: Vec<(String, Vec<String>)> = cfg
-        .roles
-        .iter()
-        .map(|(role, entry)| (role.clone(), entry.effective_models()))
-        .collect();
-    roles.sort();
+    views.sort();
+    let mut routes: Vec<RouteRow> = Vec::new();
+    for (route, role) in views {
+        let members = routing.role_dispatch_members(&role);
+        if members.is_empty() {
+            routes.push(RouteRow {
+                route,
+                model: "[last]".to_string(),
+                ctx: None,
+                reasoning: "-".to_string(),
+            });
+            continue;
+        }
+        let Some(role_entry) = cfg.roles.get(&role) else {
+            routes.push(RouteRow {
+                route,
+                model: "-".to_string(),
+                ctx: None,
+                reasoning: "-".to_string(),
+            });
+            continue;
+        };
+        for member in members {
+            if member == "last" || member == "any" {
+                routes.push(RouteRow {
+                    route: route.clone(),
+                    model: "-".to_string(),
+                    ctx: None,
+                    reasoning: "-".to_string(),
+                });
+                continue;
+            }
+            let (base, _) = fluent_types::model_key::split_model_key(&member);
+            if routing.onnx_keys.contains(base) {
+                routes.push(RouteRow {
+                    route: route.clone(),
+                    model: member,
+                    ctx: None,
+                    reasoning: "none".to_string(),
+                });
+                continue;
+            }
+            let Some(entry) = cfg.models.get(base) else {
+                routes.push(RouteRow {
+                    route: route.clone(),
+                    model: base.to_string(),
+                    ctx: None,
+                    reasoning: "-".to_string(),
+                });
+                continue;
+            };
+            let over = entry.role_params.as_ref().and_then(|o| o.get(&role));
+            routes.push(RouteRow {
+                route: route.clone(),
+                model: base.to_string(),
+                ctx: Some(effective_ctx(entry, role_entry, over)),
+                reasoning: effective_reasoning(entry, role_entry, over),
+            });
+        }
+    }
     let mut models: Vec<(String, u8, Option<String>)> = cfg
         .models
         .iter()
         .map(|(key, entry)| (key.clone(), entry.intelligence, entry.weights.clone()))
         .collect();
     models.sort();
-    ConfigListing {
-        routes,
-        roles,
-        models,
-    }
+    ConfigListing { routes, models }
 }
 
 /// Load the listing from the resolved config file (parse errors surface the
 /// loader message, including migration pointers — same shapes boot accepts).
+/// Parses through the boot-equivalent `from_json_str` leg so sparse
+/// inheritance (`models.default`, `roles.default.params`) composes exactly
+/// as dispatch sees it.
 pub fn load_listing(config_path: &Path) -> Result<ConfigListing, super::CliError> {
     let text = std::fs::read_to_string(config_path)
         .map_err(|e| cli_err(format!("cannot read {}: {e}", config_path.display())))?;
-    let cfg: RouterConfig = serde_json::from_str(&text)
+    let cfg: RouterConfig = RouterConfig::from_json_str(&text)
         .map_err(|e| cli_err(format!("cannot parse {}: {e}", config_path.display())))?;
     Ok(listing_from_config(&cfg))
 }
 
-pub fn list(ctx: &CliContext, config_path: &Path, json: bool) -> CliResult {
-    // `ls` always reads the resolved config file; the GGUF-dir context only
-    // serves the filesystem commands.
-    let _ = ctx;
+pub fn list(ctx: &CliContext, config_path: &Path, json: bool, format: TableFormat) -> CliResult {
     let listing = load_listing(config_path)?;
+    // The MODELS table serves the GGUF layout under the config's `gguf_dir`
+    // (the `CliContext` path, resolved from `--gguf-dir` else the config
+    // value by the binary) from the `models.json` cache — a full header
+    // re-parse of every weights file costs seconds (see `list_gguf_entries`)
+    // and the layout is unchanged when the directory mtime is stable, so a
+    // fresh `scan` is only paid when something actually changed. A
+    // missing/unreadable dir degrades to an empty table — routes still
+    // render.
+    let models = cached_entries(&ctx.gguf_dir);
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&render_config_json(&listing))
+            serde_json::to_string_pretty(&render_config_json(&listing, &models))
                 .expect("listing serializes")
         );
     } else {
-        print!("{}", render_config_listing(&listing));
+        match format {
+            TableFormat::Text => {
+                print!(
+                    "{}",
+                    render_config_text(&listing, &models, terminal_width())
+                );
+            }
+            TableFormat::Markdown => {
+                print!("{}", render_config_listing(&listing, &models));
+            }
+        }
     }
     Ok(())
 }

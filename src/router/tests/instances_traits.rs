@@ -405,11 +405,13 @@ async fn fleet_resize_context_and_onnx_id_grammar() {
     assert!(matches!(err, LlmRuntimeError::NotLoaded(_)));
 }
 
-/// The `ps` render: the llama block is byte-identical (the pre-M4 layout,
-/// `ctx-mem` = VRAM), and an onnx key renders a `(onnx)` block with the
-/// RAM memory column (`ram-mem` from `total_bytes`).
+/// The `ps` table: one compact grouped table over the fleet — a llama model
+/// renders a weights row, an instance row (context window, weights quant,
+/// KV-cache quant, VRAM), and a `TOTAL` row, while an onnx key renders the
+/// same columns with the `(onnx)` marker and the CPU-RAM working set.
 #[test]
 fn ps_render_keeps_llama_block_and_adds_onnx_block() {
+    use crate::cli::ps_table::{collect_ps_rows, render_ps_table_sized};
     let dir = tempfile::tempdir().unwrap();
     let llama_row = serde_json::json!({
         "id": "base:ledger",
@@ -419,21 +421,32 @@ fn ps_render_keeps_llama_block_and_adds_onnx_block() {
         "resume": false,
         "state": "loaded",
         "vram_bytes": 1000,
+        "total_bytes": 1000,
         "model_bytes": 100_000_000,
+        "last_used": -1,
     });
-    let llama_block =
-        crate::cli::commands::server::render_weight_block(None, dir.path(), "base", &[llama_row]);
+    let listed = vec![serde_json::json!({ "id": "base:ledger" })];
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row]);
+    let text = render_ps_table_sized(&rows, &totals, 100);
+    for col in [
+        "MODEL", "INSTANCE", "VRAM", "SYS RAM", "CTX", "QUANT", "KV", "LIVE", "TOTAL",
+    ] {
+        assert!(text.contains(col), "missing {col} column:\n{text}");
+    }
+    assert!(text.contains("16384"), "context window shown:\n{text}");
     assert!(
-        llama_block.contains("ctx-mem"),
-        "llama uses the VRAM column"
+        text.contains("q8_0"),
+        "default KV-cache quant shown:\n{text}"
     );
-    assert!(llama_block.contains("weights"), "weights row");
-    assert!(llama_block.contains("100 MB"), "weights size rendered");
     assert!(
-        !llama_block.contains("onnx"),
-        "no onnx marker in the llama block"
+        text.contains("100.0 MB"),
+        "weights figure rendered:\n{text}"
     );
-    assert!(llama_block.contains("base"));
+    assert!(
+        !text.contains("(onnx)"),
+        "no onnx marker on the llama row:\n{text}"
+    );
+    assert!(text.contains("base"), "model named:\n{text}");
 
     let onnx_row = serde_json::json!({
         "id": "onnx/llm:default",
@@ -446,21 +459,17 @@ fn ps_render_keeps_llama_block_and_adds_onnx_block() {
         "total_bytes": 0,
         "vram_bytes": 0,
         "model_bytes": 4_000_000_000u64,
+        "last_used": -1,
     });
-    let onnx_block = crate::cli::commands::server::render_weight_block(
-        None,
-        dir.path(),
-        "onnx/llm",
-        &[onnx_row],
-    );
-    assert!(onnx_block.contains("(onnx)"), "runtime marker");
-    assert!(onnx_block.contains("ram-mem"), "RAM memory column");
-    assert!(!onnx_block.contains("ctx-mem"), "no VRAM column for onnx");
+    let listed = vec![serde_json::json!({ "id": "onnx/llm:default" })];
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[onnx_row]);
+    let text = render_ps_table_sized(&rows, &totals, 100);
+    assert!(text.contains("(onnx)"), "runtime marker:\n{text}");
     assert!(
-        onnx_block.contains("onnx/llm"),
-        "display line names the model"
+        text.contains("onnx/llm"),
+        "display line names the model:\n{text}"
     );
-    assert!(onnx_block.contains("default"), "the default context row");
+    assert!(text.contains("default"), "the default context row:\n{text}");
 }
 
 #[tokio::test]

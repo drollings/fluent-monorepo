@@ -14,7 +14,6 @@ pub mod constants;
 pub mod context_packer;
 pub mod decomposer;
 pub mod embeddings;
-pub mod embeddings_cache;
 pub mod error;
 pub mod factory;
 pub mod gguf;

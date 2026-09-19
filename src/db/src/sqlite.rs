@@ -3,7 +3,7 @@
 //!
 //! All items are gated on the `sqlite` Cargo feature. The `embedding_cache`
 //! table DDL is intentionally absent: it is LLM caching policy owned by
-//! `fluent_llm::embeddings_cache`, not generic connection mechanics.
+//! `fluent_db::embedding_cache`, not generic connection mechanics.
 
 use std::path::Path;
 use std::time::Duration;

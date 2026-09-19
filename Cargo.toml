@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "xtask",
+    "src/xtask",
     "src/fluent-wvr",
     "src/fluent-wvr-macros",
     "src/fluent-wvr-testutil",

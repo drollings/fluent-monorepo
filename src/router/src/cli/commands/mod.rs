@@ -51,6 +51,29 @@ pub struct SpeedtestArgs {
     pub temperature: f64,
 }
 
+/// Table output format for the tabular admin screens (`ps`, `ls`):
+/// aligned plain-text columns by default, Markdown pipe tables on
+/// `--markdown`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TableFormat {
+    /// Aligned plain-text columns sized to the terminal (the default).
+    #[default]
+    Text,
+    /// GitHub-flavored Markdown pipe tables (`--markdown`).
+    Markdown,
+}
+
+impl TableFormat {
+    /// Resolve `--markdown` into a format.
+    pub fn from_markdown_flag(markdown: bool) -> Self {
+        if markdown {
+            Self::Markdown
+        } else {
+            Self::Text
+        }
+    }
+}
+
 /// Resolve the router base URL from `--api-url`, else the config's
 /// `server.bind_addr`, else a sane default.
 pub(super) fn router_base_url(api_url: Option<&str>, config_path: Option<&Path>) -> String {

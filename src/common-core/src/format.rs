@@ -207,3 +207,72 @@ impl Table {
         out
     }
 }
+
+/// Escape a Markdown pipe-table cell: pipes would break columns, newlines
+/// would break rows.
+///
+/// Promoted here from the router CLI (`escape_cell` in
+/// `fluent-router::cli::commands::filesystem`) when `--markdown` gave the
+/// `ps` screen its second consumer, per the consolidation rule: one shared
+/// home, never two copies.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::format::escape_markdown_cell;
+///
+/// assert_eq!(escape_markdown_cell("a|b"), "a\\|b");
+/// assert_eq!(escape_markdown_cell("a\nb"), "a b");
+/// ```
+pub fn escape_markdown_cell(cell: &str) -> String {
+    cell.replace('|', "\\|").replace('\n', " ")
+}
+
+/// Render headers plus rows as a GitHub-flavored Markdown pipe table
+/// (header row, `---` separator row, one row per entry), each line
+/// newline-terminated. Cells are escaped with [`escape_markdown_cell`].
+/// Empty headers render `(none)` — a zero-column table is unparseable, so
+/// the marker keeps the shape mechanical.
+///
+/// # Examples
+///
+/// ```
+/// use common_core::format::render_markdown_table;
+///
+/// let text = render_markdown_table(
+///     &["role", "models"],
+///     &[vec!["code".to_string(), "qwen".to_string()]],
+/// );
+/// assert_eq!(
+///     text,
+///     "| role | models |\n| --- | --- |\n| code | qwen |\n"
+/// );
+/// ```
+pub fn render_markdown_table(headers: &[&str], rows: &[Vec<String>]) -> String {
+    if headers.is_empty() {
+        return "(none)\n".to_string();
+    }
+    let mut out = String::new();
+    out.push_str("| ");
+    out.push_str(
+        &headers
+            .iter()
+            .map(|h| escape_markdown_cell(h))
+            .collect::<Vec<_>>()
+            .join(" | "),
+    );
+    out.push_str(" |\n| ");
+    out.push_str(&vec!["---"; headers.len()].join(" | "));
+    out.push_str(" |\n");
+    for row in rows {
+        out.push_str("| ");
+        out.push_str(
+            &row.iter()
+                .map(|c| escape_markdown_cell(c))
+                .collect::<Vec<_>>()
+                .join(" | "),
+        );
+        out.push_str(" |\n");
+    }
+    out
+}

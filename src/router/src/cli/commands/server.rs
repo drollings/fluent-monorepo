@@ -2,34 +2,44 @@
 //! driving a running Coral Router through its HTTP API.
 
 use std::collections::HashMap;
-use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use reqwest::Client;
 use serde_json::{json, Value};
 
 use super::SpeedtestArgs;
-use super::{cli_err, load_config, router_base_url};
-use crate::cli::gguf::{
-    compute_short_id, format_keep_alive, format_size, ollama_display, read_gguf_metadata,
-    resolve_model,
-};
+use super::{cli_err, load_config, router_base_url, TableFormat};
+use crate::cli::gguf::resolve_model;
+use crate::cli::ps_table::{collect_ps_rows, render_ps_markdown, render_ps_table};
 use crate::cli::{CliContext, CliError, CliResult};
 use crate::config::RouterConfig;
 
-pub async fn ps(ctx: &CliContext, api_url: Option<&str>, config_path: Option<&Path>) -> CliResult {
+pub async fn ps(
+    ctx: &CliContext,
+    api_url: Option<&str>,
+    config_path: Option<&Path>,
+    format: TableFormat,
+) -> CliResult {
     let base = router_base_url(api_url, config_path);
     let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
     let config = load_config(config_path);
 
-    let models = get_json(&client, &format!("{base}/v1/models"))
-        .await
-        .map_err(|e| {
-            cli_err(format!(
-                "Error: llama-server not reachable. Is it running? {e}"
-            ))
-        })?;
+    // Both reads are independent, and each fans out server-side to a
+    // sequential per-manager poll of every managed `llama-server` — a busy
+    // server stalls its poll, so the two fetches run concurrently rather
+    // than stacking their stalls back to back.
+    let models_url = format!("{base}/v1/models");
+    let instances_url = format!("{base}/instances");
+    let (models, instances) = tokio::join!(
+        get_json(&client, &models_url),
+        get_json(&client, &instances_url),
+    );
+    let models = models.map_err(|e| {
+        cli_err(format!(
+            "Error: llama-server not reachable. Is it running? {e}"
+        ))
+    })?;
     // Every known model is listed — `loaded`/`sleeping` (resident) and
     // `unloaded` (registered, builds on first demand) alike — so a fresh
     // boot shows the fleet before any traffic flows. Each instance row
@@ -45,315 +55,27 @@ pub async fn ps(ctx: &CliContext, api_url: Option<&str>, config_path: Option<&Pa
         return Ok(());
     }
 
-    let instances = get_json(&client, &format!("{base}/instances"))
-        .await
-        .unwrap_or_else(|_| json!({ "instances": [] }));
+    let instances = instances.unwrap_or_else(|_| json!({ "instances": [] }));
     let instance_list = instances
         .get("instances")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
 
-    // Group instance entries by owning model key (instance id = `<key>:<name>`).
-    let mut by_model: std::collections::BTreeMap<String, Vec<Value>> =
-        std::collections::BTreeMap::new();
-    for inst in &instance_list {
-        let id = inst.get("id").and_then(Value::as_str).unwrap_or_default();
-        let key = id.split(':').next().unwrap_or(id).to_string();
-        by_model.entry(key).or_default().push(inst.clone());
-    }
-
-    let mut printed = 0usize;
-    for (key, insts) in &by_model {
-        print_weight_block(config.as_ref(), &ctx.gguf_dir, key, insts);
-        printed += 1;
-    }
-    for m in &listed {
-        let id = m.get("id").and_then(Value::as_str).unwrap_or_default();
-        let key = id.split(':').next().unwrap_or(id).to_string();
-        if !by_model.contains_key(&key) {
-            print_weight_block(config.as_ref(), &ctx.gguf_dir, &key, &[]);
-            printed += 1;
-        }
-    }
-    if printed == 0 {
+    // One compact table over the whole fleet (see `ps_table`): every
+    // instance is a row carrying its context window, weights and KV-cache
+    // quantization, sleep policy, state, and resident memory — aligned
+    // plain-text columns by default, Markdown pipe tables on `--markdown`.
+    let (rows, totals) = collect_ps_rows(config.as_ref(), &ctx.gguf_dir, &listed, &instance_list);
+    if rows.is_empty() {
         println!("(no loaded models)");
+        return Ok(());
+    }
+    match format {
+        TableFormat::Text => print!("{}", render_ps_table(&rows, &totals)),
+        TableFormat::Markdown => print!("{}", render_ps_markdown(&rows, &totals)),
     }
     Ok(())
-}
-
-pub(crate) fn print_weight_block(
-    config: Option<&RouterConfig>,
-    gguf_dir: &Path,
-    model_key: &str,
-    insts: &[Value],
-) {
-    print!(
-        "{}",
-        render_weight_block(config, gguf_dir, model_key, insts)
-    );
-}
-
-/// Render one model's `ps` block. The llama block is byte-identical to the
-/// pre-M4 layout (weights / instances / total resident, `ctx-mem` = VRAM); an
-/// onnx key (rows carry `runtime: onnx`) renders the same layout with a
-/// `(onnx)` marker and the RAM memory column (`ram-mem` from `total_bytes`).
-pub(crate) fn render_weight_block(
-    config: Option<&RouterConfig>,
-    gguf_dir: &Path,
-    model_key: &str,
-    insts: &[Value],
-) -> String {
-    let mut out = String::new();
-    // Weights footprint: the router's reported shared-weights bytes
-    // (`model_bytes`, carried on every instance) is authoritative for a
-    // managed model; fall back to the configured weights file size, then the
-    // GGUF layout, for standalone/remote models with no instance detail.
-    let weights_bytes = model_weights_bytes(insts, config, gguf_dir, model_key);
-    // An onnx model's rows carry `runtime: onnx` (the unified `/instances`
-    // envelope): its memory column is RAM (`total_bytes`) not VRAM.
-    let is_onnx = insts
-        .iter()
-        .any(|i| i.get("runtime").and_then(Value::as_str) == Some("onnx"));
-    let ctx_mem_sum: u64 = insts
-        .iter()
-        .map(|i| {
-            let mem = if is_onnx { "total_bytes" } else { "vram_bytes" };
-            i.get(mem).and_then(Value::as_u64).unwrap_or(0)
-        })
-        .sum();
-
-    if is_onnx {
-        // Onnx block: same layout/labels as llama except the runtime marker
-        // and the RAM memory column. Added only for onnx keys.
-        let _ = writeln!(out, "{}  (onnx)", ollama_display(model_key, ""));
-        let _ = writeln!(out, "  weights   {:>12}", format_size(weights_bytes));
-        if !insts.is_empty() {
-            out.push_str("  instances\n");
-            for inst in insts {
-                let raw_id = inst.get("id").and_then(Value::as_str).unwrap_or_default();
-                let name = raw_id
-                    .strip_prefix(&format!("{model_key}:"))
-                    .unwrap_or(raw_id)
-                    .to_string();
-                let n_ctx = inst
-                    .get("n_ctx")
-                    .and_then(Value::as_u64)
-                    .map_or_else(|| "?".to_string(), |v| v.to_string());
-                let par = inst
-                    .get("parallel")
-                    .and_then(Value::as_u64)
-                    .map_or_else(|| "?".to_string(), |v| v.to_string());
-                let state = inst.get("state").and_then(Value::as_str).unwrap_or("?");
-                let sleep = inst_sleep_label(inst);
-                let mem = format_size(inst.get("total_bytes").and_then(Value::as_u64).unwrap_or(0));
-                let resume = if inst.get("resume").and_then(Value::as_bool).unwrap_or(false) {
-                    "resume"
-                } else {
-                    "-"
-                };
-                let _ = writeln!(
-                    out,
-                    "    {name:<16}  ctx {n_ctx:>7}  par {par:>3}  resume {resume:<6}  sleep {sleep:<9}  state {state:<9}  ram-mem {mem:>10}"
-                );
-            }
-        }
-        let _ = writeln!(
-            out,
-            "  total     {:>12} resident (weights + contexts)",
-            format_size(weights_bytes.saturating_add(ctx_mem_sum))
-        );
-        out.push('\n');
-        return out;
-    }
-
-    let gguf_file =
-        config_weights_path(config, model_key).or_else(|| gguf_weights_path(gguf_dir, model_key));
-
-    // Weights identity. The router overlays `short_id`/`arch`/`quant` on the
-    // `/instances` rows from the file IT loaded — authoritative even when the
-    // weights file isn't on the CLI's host. Fall back to local resolution
-    // (config path or GGUF layout) only when the router didn't report it.
-    let identity_from_insts = insts.iter().find(|i| {
-        i.get("short_id")
-            .and_then(Value::as_str)
-            .is_some_and(|s| !s.is_empty())
-    });
-    let (short_id, arch, quant) = if let Some(inst) = identity_from_insts {
-        (
-            inst.get("short_id")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            inst.get("arch")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            inst.get("quant")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-        )
-    } else {
-        let (sid, arc) = match &gguf_file {
-            Some(path) => (
-                compute_short_id(path),
-                read_gguf_metadata(path)
-                    .get("general.architecture")
-                    .and_then(Value::as_str)
-                    .unwrap_or("?")
-                    .to_string(),
-            ),
-            None => ("?".repeat(12), "?".to_string()),
-        };
-        let tag = gguf_file
-            .as_ref()
-            .and_then(|p| p.file_stem())
-            .map_or_else(String::new, |s| s.to_string_lossy().to_lowercase());
-        let quant = if tag.is_empty() || tag == "latest" {
-            "-".to_string()
-        } else {
-            tag.clone()
-        };
-        (sid, arc, quant)
-    };
-    let display = ollama_display(model_key, &quant);
-
-    let _ = writeln!(
-        out,
-        "{display}  (id={short_id}, arch={arch}, quant={quant})"
-    );
-    let _ = writeln!(out, "  weights   {:>12}", format_size(weights_bytes));
-    if insts.is_empty() {
-        // No instance detail: the server is down (lazy, never loaded) — the
-        // block still lists the model (weights from config/disk) so `ps`
-        // shows the whole fleet, with the state stated outright.
-        out.push_str("  instances     (unloaded - builds on first demand)\n");
-    }
-    if !insts.is_empty() {
-        out.push_str("  instances\n");
-        for inst in insts {
-            let raw_id = inst.get("id").and_then(Value::as_str).unwrap_or_default();
-            let name = raw_id
-                .strip_prefix(&format!("{model_key}:"))
-                .unwrap_or(raw_id)
-                .to_string();
-            let n_ctx = inst
-                .get("n_ctx")
-                .and_then(Value::as_u64)
-                .map_or_else(|| "?".to_string(), |v| v.to_string());
-            let par = inst
-                .get("parallel")
-                .and_then(Value::as_u64)
-                .map_or_else(|| "?".to_string(), |v| v.to_string());
-            let state = inst.get("state").and_then(Value::as_str).unwrap_or("?");
-            let sleep = inst_sleep_label(inst);
-            let mem = format_size(inst.get("vram_bytes").and_then(Value::as_u64).unwrap_or(0));
-            let resume = if inst.get("resume").and_then(Value::as_bool).unwrap_or(false) {
-                "resume"
-            } else {
-                "-"
-            };
-            let _ = writeln!(
-                out,
-                "    {name:<16}  ctx {n_ctx:>7}  par {par:>3}  resume {resume:<6}  sleep {sleep:<9}  state {state:<9}  ctx-mem {mem:>10}"
-            );
-        }
-    }
-    let _ = writeln!(
-        out,
-        "  total     {:>12} resident (weights + contexts)",
-        format_size(weights_bytes.saturating_add(ctx_mem_sum))
-    );
-    out.push('\n');
-    out
-}
-
-/// The configured `weights` path for a model key, if the entry declares one.
-fn config_weights_path(config: Option<&RouterConfig>, model_key: &str) -> Option<PathBuf> {
-    config
-        .and_then(|cfg| cfg.models.get(model_key))
-        .and_then(|entry| entry.weights.as_ref())
-        .map(PathBuf::from)
-}
-
-/// The configured weights file size, if the file exists on this host.
-fn config_weights_size(config: Option<&RouterConfig>, model_key: &str) -> Option<u64> {
-    config_weights_path(config, model_key)
-        .and_then(|p| std::fs::metadata(&p).ok())
-        .map(|m| m.len())
-        .filter(|b| *b > 0)
-}
-
-/// Resolve a model key's GGUF file from the GGUF layout:
-/// `<gguf_dir>/<key>/latest.gguf` or the smallest GGUF under the directory.
-fn gguf_weights_path(gguf_dir: &Path, model_key: &str) -> Option<PathBuf> {
-    let dir = gguf_dir.join(model_key);
-    let read = std::fs::read_dir(&dir).ok()?;
-    let mut files: Vec<PathBuf> = Vec::new();
-    for entry in read.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "gguf") {
-            files.push(path);
-        }
-    }
-    files
-        .iter()
-        .find(|p| p.file_stem().is_some_and(|s| s == "latest"))
-        .or_else(|| {
-            files
-                .iter()
-                .min_by_key(|p| std::fs::metadata(p).map_or(u64::MAX, |m| m.len()))
-        })
-        .cloned()
-}
-
-/// The GGUF-layout weights file size, if a file resolves for the key.
-fn gguf_weights_size(gguf_dir: &Path, model_key: &str) -> Option<u64> {
-    gguf_weights_path(gguf_dir, model_key)
-        .and_then(|p| std::fs::metadata(&p).ok())
-        .map(|m| m.len())
-        .filter(|b| *b > 0)
-}
-
-/// Resolve a model key's resident weights bytes: the router's reported
-/// `model_bytes` when instance detail exists (a plain model's synthesized
-/// entry reports `0` while the fork has its weights slept out of VRAM, and
-/// the shared weights size once loaded), else the configured weights file,
-/// else the GGUF layout, else `0`.
-pub(super) fn model_weights_bytes(
-    insts: &[Value],
-    config: Option<&RouterConfig>,
-    gguf_dir: &Path,
-    model_key: &str,
-) -> u64 {
-    if !insts.is_empty() {
-        return insts
-            .iter()
-            .filter_map(|i| i.get("model_bytes").and_then(Value::as_u64))
-            .max()
-            .unwrap_or(0);
-    }
-    config_weights_size(config, model_key)
-        .or_else(|| gguf_weights_size(gguf_dir, model_key))
-        .unwrap_or(0)
-}
-
-fn inst_sleep_label(inst: &Value) -> String {
-    let pinned = inst.get("pinned").and_then(Value::as_bool).unwrap_or(false);
-    let no_sleep = inst
-        .get("no_sleep")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if pinned || no_sleep {
-        return "Forever".into();
-    }
-    match inst.get("sleep_idle_seconds").and_then(Value::as_i64) {
-        Some(v) if v < 0 => "inherit".into(),
-        Some(0) => "Forever".into(),
-        Some(v) => format_keep_alive(v),
-        None => "inherit".into(),
-    }
 }
 
 // ── stop ────────────────────────────────────────────────────────────────────

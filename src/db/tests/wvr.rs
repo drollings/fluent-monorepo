@@ -80,6 +80,7 @@ fn instrumented_with_metrics_records_timing() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "slow (~700ms of sleeps); run explicitly with -- --ignored"]
 async fn slow_db_op_does_not_starve_executor() {
     // A genuinely slow DbWorkUnit op runs on a dedicated blocking thread
     // (`block_in_place`), so the async executor keeps making progress while

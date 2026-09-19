@@ -1,7 +1,6 @@
-use super::server::{model_weights_bytes, parse_prometheus_metrics};
+use super::server::parse_prometheus_metrics;
 use super::*;
 use crate::cli::CliContext;
-use serde_json::json;
 
 #[test]
 fn prometheus_parse_handles_labels_and_help() {
@@ -19,154 +18,130 @@ async fn pull_rejects_name_without_namespace_and_tag() {
     assert!(err.to_string().contains("namespace/model:tag"));
 }
 
-#[test]
-fn ps_weights_prefer_router_model_bytes_over_config_and_gguf() {
-    let dir = tempfile::tempdir().unwrap();
-    // A config weights file that exists on disk (would be the old answer).
-    let model_dir = dir.path().join("swarm");
-    std::fs::create_dir_all(&model_dir).unwrap();
-    std::fs::write(model_dir.join("latest.gguf"), vec![0u8; 4096]).unwrap();
-    let config: RouterConfig = serde_json::from_value(json!({
-        "models": {
-            "swarm": {
-                "endpoint": "http://127.0.0.1:1/v1/chat/completions",
-                "name": "abiray/test",
-                "weights": model_dir.join("latest.gguf").to_string_lossy(),
-                "intelligence": 2,
-                "cost_input": 1e-6, "cost_output": 6e-6, "cost_cached_read": 4e-7,
-                "tok_s": 8
-            }
-        }
-    }))
-    .unwrap();
-
-    // No instance detail: falls back to the config weights file.
-    assert_eq!(
-        model_weights_bytes(&[], Some(&config), dir.path(), "swarm"),
-        4096
-    );
-    // Router-reported model_bytes wins over the config file size.
-    let insts = vec![json!({ "model_bytes": 1_000_000_000u64, "vram_bytes": 100 })];
-    assert_eq!(
-        model_weights_bytes(&insts, Some(&config), dir.path(), "swarm"),
-        1_000_000_000
-    );
-    // A sleeping plain model reports model_bytes = 0: its weights are NOT
-    // resident, so 0 is returned - never the on-disk weights file size.
-    let sleeping = vec![json!({ "model_bytes": 0u64, "vram_bytes": 0 })];
-    assert_eq!(
-        model_weights_bytes(&sleeping, Some(&config), dir.path(), "swarm"),
-        0,
-        "sleeping weights are not resident"
-    );
-    // No config, no instance → GGUF layout still resolves the file.
-    assert_eq!(model_weights_bytes(&[], None, dir.path(), "swarm"), 4096);
-    // Nothing at all → 0 (never crashes).
-    assert_eq!(model_weights_bytes(&[], None, dir.path(), "absent"), 0);
-}
-
-#[test]
-fn ps_empty_block_states_unloaded_outright() {
-    // A model with no instance detail (lazy server down): the block still
-    // lists it, and the instances section states `unloaded` instead of
-    // silently omitting the state.
-    let dir = tempfile::tempdir().unwrap();
-    let block = crate::cli::commands::server::render_weight_block(None, dir.path(), "swarm", &[]);
-    assert!(
-        block.contains("unloaded"),
-        "lazy block states its state, got:\n{block}"
-    );
-    assert!(
-        !block.contains("state "),
-        "no per-instance rows to carry a state column, got:\n{block}"
-    );
+fn gguf_entry(
+    name: &str,
+    tag: &str,
+    size: u64,
+    arch: &str,
+    file_type: Option<u32>,
+) -> crate::cli::gguf::GgufEntry {
+    crate::cli::gguf::GgufEntry {
+        name: name.into(),
+        tag: tag.into(),
+        display: format!("{name}:{tag}"),
+        path: std::path::PathBuf::from(format!("/models/{name}/{tag}.gguf")),
+        size,
+        mtime: 0.0,
+        arch: arch.into(),
+        file_type,
+        short_id: "0123456789ab".into(),
+    }
 }
 
 #[test]
 fn ls_markdown_shape_is_pinned() {
-    use crate::cli::commands::filesystem::{render_config_listing, ConfigListing};
+    use crate::cli::commands::filesystem::{render_config_listing, ConfigListing, RouteRow};
     let listing = ConfigListing {
         routes: vec![
-            ("code".into(), "code".into()),
-            ("local".into(), "default".into()),
+            RouteRow {
+                route: "code".into(),
+                model: "qwen".into(),
+                ctx: Some(65536),
+                reasoning: "medium".into(),
+            },
+            RouteRow {
+                route: "local".into(),
+                model: "lfm".into(),
+                ctx: Some(8192),
+                reasoning: "none".into(),
+            },
         ],
-        roles: vec![
-            ("code".into(), vec!["qwen".into()]),
-            ("default".into(), vec!["lfm".into(), "tiny".into()]),
-        ],
-        models: vec![
-            ("tiny".into(), 1, None),
-            ("big".into(), 5, Some("/w/big.gguf".into())),
-        ],
+        models: vec![],
     };
-    assert_eq!(
-        render_config_listing(&listing),
-        "## Routes\n\
-         | code | local |\n\
-         | --- | --- |\n\
-         | code | default |\n\
-         \n\
-         ## Roles\n\
-         | role | models |\n\
-         | --- | --- |\n\
-         | code | qwen |\n\
-         | default | lfm, tiny |\n\
-         \n\
-         ## Models\n\
-         | model | intelligence | weights |\n\
-         | --- | --- | --- |\n\
-         | tiny | 1 | - |\n\
-         | big | 5 | /w/big.gguf |\n"
+    let models = vec![
+        gguf_entry("big", "q8_0", 6_500_000_000, "qwen35", Some(7)),
+        gguf_entry("tiny", "latest", 219_000_000, "lfm2", Some(2)),
+    ];
+    let text = render_config_listing(&listing, &models);
+    // Same sections, order, columns, and rows as the plain-text screen:
+    // models table first (no heading), then ROUTES.
+    assert!(
+        text.starts_with(
+            "## MODELS\n| NAME | SIZE | QUANT | ARCH | MODIFIED |\n| --- | --- | --- | --- | --- |"
+        ),
+        "models table leads, got:\n{text}"
+    );
+    assert!(
+        text.contains(
+            "## ROUTES\n| ROUTE | MODEL | CTX | REASONING |\n| --- | --- | --- | --- |\n| code | qwen | 65536 | medium |\n| local | lfm | 8192 | none |\n"
+        ),
+        "routes section pinned, got:\n{text}"
+    );
+    // Models section: `gguf_tool ls` columns; the MODIFIED cell is
+    // relative-time (volatile), so the golden pins everything else.
+    assert!(
+        text.contains("| NAME | SIZE | QUANT | ARCH | MODIFIED |\n| --- | --- | --- | --- | --- |"),
+        "models table header:\n{text}"
+    );
+    assert!(
+        text.contains("| big:q8_0 | 6.5 GB | q8_0 | qwen35 |"),
+        "big row (sorted first):\n{text}"
+    );
+    assert!(
+        text.contains("| tiny:latest | 219 MB | q4_0 | lfm2 |"),
+        "tiny row: empty/latest tag falls back to file_type, got:\n{text}"
     );
 }
 
 #[test]
 fn ls_markdown_escapes_pipes() {
-    use crate::cli::commands::filesystem::{render_config_listing, ConfigListing};
+    use crate::cli::commands::filesystem::{render_config_listing, ConfigListing, RouteRow};
     let listing = ConfigListing {
-        routes: vec![("a|b".into(), "g".into())],
-        roles: vec![],
+        routes: vec![RouteRow {
+            route: "a|b".into(),
+            model: "g".into(),
+            ctx: Some(8),
+            reasoning: "none".into(),
+        }],
         models: vec![],
     };
-    let text = render_config_listing(&listing);
+    let text = render_config_listing(&listing, &[]);
     assert!(text.contains("a\\|b"), "pipes escaped, got:\n{text}");
     assert!(
-        text.contains("(none)"),
-        "empty roles section marked, got:\n{text}"
+        text.contains("## ROUTES\n| ROUTE | MODEL | CTX | REASONING |"),
+        "routes header present, got:\n{text}"
     );
-}
-
-#[test]
-fn ls_empty_config_has_headers_no_rows() {
-    use crate::cli::commands::filesystem::{render_config_listing, ConfigListing};
-    let listing = ConfigListing {
-        routes: vec![],
-        roles: vec![],
-        models: vec![],
-    };
-    let text = render_config_listing(&listing);
-    assert!(text.contains("## Routes"));
-    assert!(text.contains("## Roles"));
-    assert!(text.contains("| model | intelligence | weights |"));
-    assert!(!text.contains("| tiny |"), "no model rows");
 }
 
 #[test]
 fn ls_json_round_trips_losslessly() {
-    use crate::cli::commands::filesystem::{render_config_json, ConfigListing};
+    use crate::cli::commands::filesystem::{render_config_json, ConfigListing, RouteRow};
     let listing = ConfigListing {
-        routes: vec![("local".into(), "default".into())],
-        roles: vec![("default".into(), vec!["lfm".into(), "tiny".into()])],
-        models: vec![("tiny".into(), 1, None)],
+        routes: vec![RouteRow {
+            route: "local".into(),
+            model: "lfm".into(),
+            ctx: Some(8192),
+            reasoning: "none".into(),
+        }],
+        models: vec![],
     };
-    let value = render_config_json(&listing);
-    assert_eq!(value["routes"]["local"], serde_json::json!("default"));
+    let models = vec![gguf_entry("tiny", "q4_0", 219_000_000, "lfm2", Some(2))];
+    let value = render_config_json(&listing, &models);
     assert_eq!(
-        value["roles"]["default"],
-        serde_json::json!(["lfm", "tiny"])
+        value["routes"]["local"],
+        serde_json::json!([{"model": "lfm", "ctx": 8192, "reasoning": "none"}])
     );
-    assert_eq!(value["models"][0]["key"], serde_json::json!("tiny"));
-    assert!(value["models"][0]["weights"].is_null());
+    assert!(
+        value.get("roles").is_none(),
+        "roles section retired, got: {value}"
+    );
+    assert_eq!(value["models"][0]["name"], serde_json::json!("tiny:q4_0"));
+    assert_eq!(
+        value["models"][0]["size_bytes"],
+        serde_json::json!(219_000_000u64)
+    );
+    assert_eq!(value["models"][0]["quant"], serde_json::json!("q4_0"));
+    assert_eq!(value["models"][0]["arch"], serde_json::json!("lfm2"));
     // And it prints as valid JSON text.
     let text = serde_json::to_string_pretty(&value).expect("serializes");
     let back: serde_json::Value = serde_json::from_str(&text).expect("parses");
@@ -181,6 +156,7 @@ fn ls_missing_file_errors() {
         &ctx,
         std::path::Path::new("/nonexistent-dir-xyz/coral-router.json"),
         false,
+        TableFormat::Text,
     )
     .unwrap_err();
     assert!(
@@ -191,22 +167,27 @@ fn ls_missing_file_errors() {
 
 #[test]
 fn ls_lists_fixture_config_sections() {
-    use crate::cli::commands::filesystem::load_listing;
+    use crate::cli::commands::filesystem::{load_listing, RouteRow};
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ls_fixture.json");
     let listing = load_listing(&path).expect("fixture loads");
+    // Both routes ride the `quick` role, whose `models` chain lists `m1`
+    // then `m2`: one row per fallback level in configured order, the window
+    // is the role's default `num_ctx`, and nothing enables thinking.
+    let m1 = |route: &str| RouteRow {
+        route: route.to_string(),
+        model: "m1".to_string(),
+        ctx: Some(16384),
+        reasoning: "none".to_string(),
+    };
+    let m2 = |route: &str| RouteRow {
+        route: route.to_string(),
+        model: "m2".to_string(),
+        ctx: Some(16384),
+        reasoning: "none".to_string(),
+    };
     assert_eq!(
         listing.routes,
-        vec![
-            ("code".to_string(), "quick".to_string()),
-            ("local".to_string(), "quick".to_string()),
-        ]
-    );
-    assert_eq!(
-        listing.roles,
-        vec![(
-            "quick".to_string(),
-            vec!["m1".to_string(), "m2".to_string()]
-        )]
+        vec![m1("code"), m2("code"), m1("local"), m2("local"),]
     );
     assert_eq!(
         listing.models,
@@ -215,4 +196,67 @@ fn ls_lists_fixture_config_sections() {
             ("m2".to_string(), 5, Some("/w/m2.gguf".to_string())),
         ]
     );
+}
+
+#[test]
+fn ls_sentinel_fallback_levels_render_as_dashes() {
+    use crate::cli::commands::filesystem::{listing_from_config, RouteRow};
+    use crate::config::RouterConfig;
+    let cfg = RouterConfig::from_json_str(
+        r#"{
+            "models": {
+                "m1": {"endpoint": "http://a", "intelligence": 1}
+            },
+            "roles": {
+                "r": {
+                    "params": {"num_ctx": 4096},
+                    "models": ["last", "m1", "any"]
+                }
+            },
+            "classification": {
+                "root": {
+                    "type": "classifier",
+                    "description": "d",
+                    "model": "m1",
+                    "children": [
+                        {"key": "code", "description": "",
+                         "node": {"type": "terminal", "route": "code",
+                                  "description": "", "role": "r"}}
+                    ]
+                }
+            },
+            "default_route": "code"
+        }"#,
+    )
+    .expect("sentinel fixture parses");
+    assert_eq!(
+        listing_from_config(&cfg).routes,
+        vec![
+            RouteRow {
+                route: "code".to_string(),
+                model: "-".to_string(),
+                ctx: None,
+                reasoning: "-".to_string(),
+            },
+            RouteRow {
+                route: "code".to_string(),
+                model: "m1".to_string(),
+                ctx: Some(4096),
+                reasoning: "none".to_string(),
+            },
+            RouteRow {
+                route: "code".to_string(),
+                model: "-".to_string(),
+                ctx: None,
+                reasoning: "-".to_string(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn table_format_from_markdown_flag() {
+    assert_eq!(TableFormat::from_markdown_flag(false), TableFormat::Text);
+    assert_eq!(TableFormat::from_markdown_flag(true), TableFormat::Markdown);
+    assert_eq!(TableFormat::default(), TableFormat::Text);
 }

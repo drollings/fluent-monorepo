@@ -578,12 +578,25 @@ fn lexical_sidecar_promotes_token_match_over_vector_winner() {
     // Query shares two tokens with spell_check (document, spelling) vs one
     // with the decoy (the), but hash similarity ranks the decoy first.
     // The sidecar reorders by overlap; scores stay cosine similarities.
+    //
+    // The expected score is taken from `score_names` (the deterministic
+    // brute-force rescorer, the same mapping the selector applies to
+    // lexical-only candidates) — not from `search`: the HNSW probe is
+    // approximate and on a 2-point graph can drop the non-entry point
+    // entirely (~6% of lookups with OS-seeded level assignment), so
+    // `vector_top` membership is not a stable premise.
     let (store, _tmp) = overlap_fixture_store();
     let query = "review the document spelling";
     let vector_top = store.search(query, 5).expect("vector search");
     assert_eq!(
         vector_top[0].0, "decoy",
         "premise: vector-only ranks the decoy first"
+    );
+    let spell_sim = f64::from(
+        store
+            .score_names(query, &["spell_check".to_string()])
+            .expect("rescore")[0]
+            .1,
     );
     let selector = selector(store, None, 0.0);
     let m = selector.select(query, &[]).expect("selection");
@@ -593,11 +606,6 @@ fn lexical_sidecar_promotes_token_match_over_vector_winner() {
         "retrieval path (deterministic hit would score 1.0), got {}",
         m.score
     );
-    let spell_sim = vector_top
-        .iter()
-        .find(|(n, _)| n == "spell_check")
-        .map(|(_, s)| f64::from(*s))
-        .expect("spell in vector hits");
     assert!(
         (m.score - spell_sim).abs() < 1e-6,
         "score stays the cosine similarity ({spell_sim}), got {}",

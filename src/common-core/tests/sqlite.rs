@@ -84,7 +84,7 @@ fn run_batch_executes_ddl() {
 }
 
 // The `embedding_cache` DDL goldens live with their canonical owner
-// (`fluent_llm::embeddings_cache`). The generic suites below (`open_*`,
+// (`fluent_db::embedding_cache`). The generic suites below (`open_*`,
 // `run_batch`, `is_unique_violation`, `in_clause`) pin the shared helpers.
 
 #[cfg(feature = "sqlite")]

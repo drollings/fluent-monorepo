@@ -139,6 +139,38 @@ fn sync_cache_remains_fresh_across_rewrite_cycles() {
 }
 
 #[test]
+fn cached_entries_serves_warm_cache_without_rereading_files() {
+    // `ls` serves its MODELS table from `cached_entries`: once the cache is
+    // warm, corrupting a weights file's *contents* (which leaves the
+    // directory mtime — the staleness gate — untouched) must not change what
+    // is served. A fresh scan would see the corruption, proving the served
+    // entries came from the cache rather than a header re-parse.
+    let dir = tempfile::tempdir().unwrap();
+    let model_dir = dir.path().join("abiray/test");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let gguf = model_dir.join("latest.gguf");
+    write_gguf(&gguf, "llama", 15);
+
+    let first = cached_entries(dir.path());
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].arch, "llama");
+    assert!(!needs_rescan(dir.path()), "cache is warm after priming");
+
+    std::fs::write(&gguf, b"not a gguf file at all").unwrap();
+    assert!(
+        !needs_rescan(dir.path()),
+        "a content-only change keeps the cache warm"
+    );
+    let second = cached_entries(dir.path());
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].arch, "llama", "served from cache, not re-parsed");
+    assert!(
+        list_gguf_entries(dir.path())[0].arch.is_empty(),
+        "a fresh scan sees the corruption"
+    );
+}
+
+#[test]
 fn mtime_snapshot_round_trips_through_json() {
     // A fractional-second mtime at ~1.7e9 loses up to one ULP (~238 ns) in
     // serde_json's f64 parser (1786778176.386162519 round-trips as

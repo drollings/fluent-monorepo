@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
+crc32fast = "1"
+anyhow = "1"
+serde_json = { workspace = true }
+common-core = { path = "../common-core" }
+guidance-ontology = { path = "../ontology" }

@@ -135,6 +135,12 @@ fn scorer_orders_deterministically() {
 #[test]
 fn provider_signals_reflect_shared_predicates() {
     let ledger = Arc::new(ContentNodeStore::open_in_memory().expect("in-memory ledger"));
+    // Capture the clock once, before recording: the provider's `now` must
+    // not be a second wall-clock read (if the wall clock ticked between the
+    // records and the provider, the nodes would be 1s old and recency
+    // would be 1/(1 + 1/86400) ≉ 1.0). `recency` saturates below, so nodes
+    // stamped at `t0` or later score exactly 1.0.
+    let t0 = common_core::now_secs();
     // A and B share predicate id 0x...0001; C is distinct.
     let a = record_parse_node(
         &ledger,
@@ -160,7 +166,7 @@ fn provider_signals_reflect_shared_predicates() {
         &[parse_signal(0x0300_0000_0000_0002)],
     )
     .expect("c");
-    let provider = LedgerSalienceProvider::new(Arc::clone(&ledger), common_core::now_secs());
+    let provider = LedgerSalienceProvider::new(Arc::clone(&ledger), t0);
     let sigs = provider.signals_for(&[a, b, c]);
     assert_eq!(sigs.len(), 3);
     // Frequency normalized across the pool: A/B share predicate 1 (2 nodes),

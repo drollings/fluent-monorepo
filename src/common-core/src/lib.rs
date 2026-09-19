@@ -60,7 +60,10 @@ pub use drift::BitSetDrift;
 pub use error::SqliteError;
 pub use error::{IoError, ResolverError};
 pub use error_context::{ErrorContext, HeapErrorContext};
-pub use format::{format_csv, format_json, format_size, parse_size, Column, Table};
+pub use format::{
+    escape_markdown_cell, format_csv, format_json, format_size, parse_size, render_markdown_table,
+    Column, Table,
+};
 pub use hash::{
     blake3_hash, blake3_hex, content_hash_with_model, fnv1a64, hash_batch, hash_file, hex_encode,
     sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, BatchHashResult, HashAlgorithm,

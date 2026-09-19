@@ -56,6 +56,10 @@ minijinja = { workspace = true }
 search-vector = { path = "../search-vector" }
 bitvec = { workspace = true }
 internment = { workspace = true }
+bon = { workspace = true }
+# `ps` table rendering: ratatui `Table` drawn into a `TestBackend` buffer and
+# flattened to plain text (no ANSI, pipe-safe), sized to the terminal width.
+ratatui = "0.30"
 
 [dev-dependencies]
 tempfile = { workspace = true }

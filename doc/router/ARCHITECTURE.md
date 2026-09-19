@@ -875,16 +875,42 @@ pattern of `OpenAiChatBackend` with `HttpClass`-classified errors.
 
 **Admin CLI (`coral-router ps` / `list` / `show` / `pull` / `rm`).** The CLI
 reads the aggregate `/instances` + `/v1/models` envelopes and the config to
-report the live residency picture: per model, the resident weights bytes (the
-envelope's `model_bytes` — `0` while the fork has them slept out of VRAM,
-never the on-disk file size), per-instance context memory, `resume` flags, and
-the total `weights + contexts` resident. The router overlays the **weights
-identity** (`short_id`/`arch`/`quant`, derived from the GGUF file it loaded)
-on each `/instances` row, so `ps` shows `id=…, arch=…, quant=…` without needing
-the weights file on the CLI's host; `render_weight_block` falls back to local
-GGUF resolution only when the router didn't report it. The GGUF root for
-file-size fallbacks resolves from `--gguf-dir`, else the config's `gguf_dir`,
-else the built-in default, so paths are configurable and never recompiled in.
+report the live residency picture as one compact borderless grouped table
+(`cli::ps_table` over the shared `cli::tables` renderer, terminal-width
+aware, no ANSI): a weights row per model (its own VRAM footprint from
+`model_bytes`), one row per instance with its memory split (`VRAM` =
+`vram_bytes`; `SYS RAM` = the CPU-RAM remainder `total_bytes - vram_bytes`,
+the partial-offload portion), context window (`CTX`), weights quantization
+(`QUANT`), KV-cache quantization (`KV`, from the model's `cache_type_k/v`
+spawn defaults), and `LIVE` — the idle time remaining before sleep
+(`1h28m`, `Forever` for pinned/no-sleep, `loaded` when no finite window is
+known) — then a per-model `TOTAL` row folding the footprints together;
+models with no instance detail render a single `unloaded` row. A
+`total … resident · models · instances` footer closes the table. `list`
+renders the same borderless format over the resolved config file (`ROUTES`
+and `ROLES` sections) plus a `gguf_tool ls`-shaped MODELS table scanned from
+the config's `gguf_dir` (`NAME SIZE QUANT ARCH MODIFIED` — base-1000 sizes,
+the file-stem quant tag with a `general.file_type` fallback, relative
+`MODIFIED`). Both screens take `--markdown` (`TableFormat::Markdown`),
+which renders the same sections, order, columns, and rows as GitHub-flavored
+pipe tables through the shared
+`common_core::format::render_markdown_table` — same layout, full values,
+never truncated; only the format and separators differ.
+The default config name (`coral-router.json`) resolves by walking up from
+the PWD (`env/coral-router.json`, then `coral-router.json` at each level,
+then `<HOME>/.config/coral-router/coral-router.json`),
+so subdirectory invocations load the same file the repo root would; a
+relative `gguf_dir` resolves against the loaded config file's directory.
+Per model,
+the resident weights bytes are the envelope's `model_bytes` — `0` while the
+fork has them slept out of VRAM, never the on-disk file size. The router
+overlays the **weights identity** (`short_id`/`arch`/`quant`, derived from
+the GGUF file it loaded) on each `/instances` row, so `ps` shows the weights
+quant without needing the weights file on the CLI's host; `ps_table` falls
+back to local GGUF resolution only when the router didn't report it. The
+GGUF root for file-size fallbacks resolves from `--gguf-dir`, else the
+config's `gguf_dir`, else the built-in default, so paths are configurable
+and never recompiled in.
 
 **KV snapshot round-trip.** `SnapshotStore` may hold an optional
 `InstanceClient` handle (`with_fork_io`). `save_snapshot` then POSTs the

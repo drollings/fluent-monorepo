@@ -28,6 +28,7 @@ use fluent_llm::client::ChatBackend;
 use fluent_llm::protocol::ChatMessage;
 use fluent_llm::{create_embedding_provider, EmbeddingProvider};
 use fluent_router::charts::store::ChartStore;
+use fluent_router::cli::commands::TableFormat;
 use fluent_router::cli::{commands, CliContext};
 use fluent_router::concept_store_sqlite::SqliteConceptStore;
 use fluent_router::config::builder::NlpDeps;
@@ -86,7 +87,7 @@ enum Command {
     List(ListArgs),
     /// List models via the router's /v1/models and /instances API — resident
     /// and registered (unloaded) alike, so a fresh boot shows the fleet.
-    Ps(ServerArgs),
+    Ps(PsArgs),
     /// Pull a model from a registry (HuggingFace) or a local GGUF file.
     Pull(PullArgs),
     /// Scan the GGUF directory, generate configs and the llama.cpp preset.
@@ -152,12 +153,29 @@ struct ServerArgs {
     api_url: Option<String>,
 }
 
-/// Args for `ls`: the human Markdown view by default, machine JSON on `--json`.
+/// Args for `ls`: aligned plain-text tables by default, machine JSON on
+/// `--json`, Markdown pipe tables on `--markdown`.
 #[derive(Args)]
 struct ListArgs {
-    /// Emit the listing as JSON (routes/groups/models) instead of Markdown.
+    /// Emit the listing as JSON (routes/groups/models) instead of tables.
     #[arg(long)]
     json: bool,
+    /// Emit the listing as Markdown pipe tables instead of plain text.
+    #[arg(long)]
+    markdown: bool,
+}
+
+/// Args for `ps`: the fleet table over the router's /v1/models and
+/// /instances API — aligned plain-text columns by default, Markdown pipe
+/// tables on `--markdown`.
+#[derive(Args)]
+struct PsArgs {
+    /// Router base URL (default: derived from config server.bind_addr).
+    #[arg(short = 'u', long)]
+    api_url: Option<String>,
+    /// Emit the table as Markdown instead of plain text.
+    #[arg(long)]
+    markdown: bool,
 }
 
 #[derive(Args)]
@@ -270,12 +288,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("schema serializes")
             );
         }
-        Command::List(args) => commands::list(&ctx, std::path::Path::new(&config_path), args.json)?,
+        Command::List(args) => commands::list(
+            &ctx,
+            std::path::Path::new(&config_path),
+            args.json,
+            TableFormat::from_markdown_flag(args.markdown),
+        )?,
         Command::Ps(args) => {
             commands::ps(
                 &ctx,
                 args.api_url.as_deref(),
                 Some(std::path::Path::new(&config_path)),
+                TableFormat::from_markdown_flag(args.markdown),
             )
             .await?
         }
@@ -343,17 +367,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Resolve the config path: the explicit value, or the repository default
-/// (`env/coral-router.json`) when the default path does not exist.
+/// Resolve the config path: the explicit value, or — for the default name —
+/// a lookup from the current directory toward the filesystem root, then the
+/// user's config home (so running from a repo subdirectory finds the same
+/// `env/coral-router.json` the repo root would load, instead of failing on
+/// the PWD).
 fn resolve_config_path(explicit: &str) -> String {
-    if std::path::Path::new(explicit).exists() || explicit != "coral-router.json" {
+    let start = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    resolve_config_path_from(explicit, &start, home.as_deref())
+}
+
+/// Look up the default config name from `start` upward: `env/coral-router.json`
+/// then `coral-router.json` at each level, first hit wins; the final
+/// fallback is `<home>/.config/coral-router/coral-router.json`. An explicit
+/// non-default name passes through untouched; nothing found falls back to
+/// the explicit name (callers surface the read error).
+fn resolve_config_path_from(
+    explicit: &str,
+    start: &std::path::Path,
+    home: Option<&std::path::Path>,
+) -> String {
+    if explicit != "coral-router.json" {
         return explicit.to_string();
     }
-    if std::path::Path::new("env/coral-router.json").exists() {
-        "env/coral-router.json".to_string()
-    } else {
-        explicit.to_string()
+    let mut dir = Some(start.to_path_buf());
+    while let Some(d) = dir {
+        for candidate in ["env/coral-router.json", "coral-router.json"] {
+            let path = d.join(candidate);
+            if path.is_file() {
+                return path.to_string_lossy().into_owned();
+            }
+        }
+        dir = d.parent().map(std::path::Path::to_path_buf);
     }
+    if let Some(config) = home.map(|h| {
+        h.join(".config")
+            .join("coral-router")
+            .join("coral-router.json")
+    }) {
+        if config.is_file() {
+            return config.to_string_lossy().into_owned();
+        }
+    }
+    explicit.to_string()
 }
 
 /// Resolve the classifier model key for logging/attribution, entirely from
@@ -2071,6 +2128,60 @@ mod config_tests {
             "FATAL with line:col, got: {err}"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_config_path_looks_up_from_subdirectories() {
+        use super::resolve_config_path_from;
+        let root = std::env::temp_dir().join(format!("coral-cfg-probe-{}", std::process::id()));
+        let deep = root.join("sub").join("deep");
+        std::fs::create_dir_all(&deep).expect("fixture dirs");
+        std::fs::create_dir_all(root.join("env")).expect("env dir");
+        std::fs::write(root.join("env").join("coral-router.json"), "{}").expect("env config");
+        // A subdirectory finds the repo-style env config above it.
+        assert_eq!(
+            resolve_config_path_from("coral-router.json", &deep, None),
+            root.join("env").join("coral-router.json").to_string_lossy()
+        );
+        // env/ beats a bare coral-router.json at the same level.
+        std::fs::write(root.join("coral-router.json"), "{}").expect("root config");
+        assert_eq!(
+            resolve_config_path_from("coral-router.json", &deep, None),
+            root.join("env").join("coral-router.json").to_string_lossy()
+        );
+        // env/coral-router.json at the nearer level wins over env/ above.
+        std::fs::create_dir_all(deep.join("env")).expect("deep env dir");
+        std::fs::write(deep.join("env").join("coral-router.json"), "{}").expect("deep config");
+        assert_eq!(
+            resolve_config_path_from("coral-router.json", &deep, None),
+            deep.join("env").join("coral-router.json").to_string_lossy()
+        );
+        // An explicit non-default name passes through untouched.
+        assert_eq!(
+            resolve_config_path_from("/elsewhere/custom.json", &deep, None),
+            "/elsewhere/custom.json"
+        );
+        // Nothing found up the tree, but the home fallback carries the
+        // user-level config.
+        let home = root.join("home");
+        std::fs::create_dir_all(home.join(".config/coral-router")).expect("home config dir");
+        std::fs::write(home.join(".config/coral-router/coral-router.json"), "{}")
+            .expect("home config");
+        let bare = std::env::temp_dir().join(format!("coral-cfg-bare-{}", std::process::id()));
+        std::fs::create_dir_all(&bare).expect("bare dir");
+        assert_eq!(
+            resolve_config_path_from("coral-router.json", &bare, Some(&home)),
+            home.join(".config/coral-router/coral-router.json")
+                .to_string_lossy()
+        );
+        // And with no home config either, the explicit name falls through
+        // (callers surface the read error).
+        assert_eq!(
+            resolve_config_path_from("coral-router.json", &bare, None),
+            "coral-router.json"
+        );
+        std::fs::remove_dir_all(&bare).ok();
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

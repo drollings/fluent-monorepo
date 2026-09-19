@@ -89,10 +89,6 @@ name = "cache"
 path = "tests/cache.rs"
 
 [[test]]
-name = "embeddings_cache"
-path = "tests/embeddings_cache.rs"
-
-[[test]]
 name = "tokens"
 path = "tests/tokens.rs"
 

@@ -1,0 +1,45 @@
+{
+  "members": [
+    {
+      "is_pub": true,
+      "name": "Cli",
+      "signature": "struct Cli { ... }",
+      "type": "struct"
+    },
+    {
+      "is_pub": true,
+      "name": "Cmd",
+      "signature": "enum Cmd { ... }",
+      "type": "enum"
+    },
+    {
+      "name": "main",
+      "returns": "anyhow::Result<()>",
+      "signature": "fn main() -> anyhow::Result<()>",
+      "type": "fn_private"
+    },
+    {
+      "name": "yago_to_json",
+      "returns": "anyhow::Result<()>",
+      "signature": "fn yago_to_json() -> anyhow::Result<()>",
+      "type": "fn_private"
+    },
+    {
+      "name": "build_yago",
+      "returns": "anyhow::Result<()>",
+      "signature": "fn build_yago() -> anyhow::Result<()>",
+      "type": "fn_private"
+    },
+    {
+      "name": "prune_yago",
+      "returns": "anyhow::Result<()>",
+      "signature": "fn prune_yago() -> anyhow::Result<()>",
+      "type": "fn_private"
+    }
+  ],
+  "meta": {
+    "language": "rust",
+    "module": ".opt.src.rust.monorepo.xtask.src.main",
+    "source": "/opt/src/rust/monorepo/xtask/src/main.rs"
+  }
+}

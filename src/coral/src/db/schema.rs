@@ -43,7 +43,7 @@ impl super::Library {
             );",
         )?;
         self.store.with_conn(|conn| {
-            fluent_llm::embeddings_cache::init_embedding_cache(conn).map_err(DbError::from)?;
+            fluent_db::embedding_cache::init_embedding_cache(conn).map_err(DbError::from)?;
             fluent_db::sqlite::run_batch(
                 conn,
                 "CREATE INDEX IF NOT EXISTS idx_nodes_name_source

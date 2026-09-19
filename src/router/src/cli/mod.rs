@@ -29,6 +29,8 @@
 pub mod commands;
 pub mod gguf;
 pub mod preset;
+pub mod ps_table;
+pub mod tables;
 
 use std::path::PathBuf;
 
