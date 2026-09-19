@@ -636,8 +636,10 @@ mod tests {
 
     // ── Stage 2: ClassifierStage in classification-tree mode ─────────────
 
-    /// A backend that records every system prompt and always returns the
-    /// supplied classifier verdict.
+    /// A backend that records one role-tagged entry per call and always
+    /// returns the supplied classifier verdict. Per-call (not per-message):
+    /// the ladder's self-assessment rides a `user` turn while the classifier
+    /// prompt rides `system`, and both calls must be observable.
     struct TreeRecordingBackend {
         prompts: Arc<std::sync::Mutex<Vec<String>>>,
         response: String,
@@ -648,11 +650,12 @@ mod tests {
             &self,
             messages: &[fluent_llm::ChatMessage],
         ) -> Result<String, fluent_llm::LlmError> {
-            self.prompts.lock().unwrap().extend(
+            self.prompts.lock().unwrap().push(
                 messages
                     .iter()
-                    .filter(|m| m.role == "system")
-                    .map(|m| m.content.clone()),
+                    .map(|m| format!("{}:{}", m.role, m.content))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             );
             Ok(self.response.clone())
         }
@@ -761,6 +764,11 @@ mod tests {
             captured[0].contains("\"route\": \"<exactly one of: code>\""),
             "three-axis route enum, got: {}",
             captured[0]
+        );
+        assert!(
+            captured[1].starts_with("user:") && captured[1].contains("complexity"),
+            "ladder assessment rides a user turn (strict templates raise on system-only calls), got: {}",
+            captured[1]
         );
     }
 

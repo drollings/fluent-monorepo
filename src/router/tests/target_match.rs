@@ -185,6 +185,51 @@ fn parse_unparseable_is_error() {
 
 // ── Matcher climb ────────────────────────────────────────────────────
 
+/// A backend that records every message list it is called with and always
+/// answers with a canned assessment. Pins the assessment call shape: strict
+/// chat templates raise on conversations without a genuine user turn, so
+/// every assessment must include a `user` message.
+struct RecordingBackend {
+    seen: std::sync::Mutex<Vec<Vec<fluent_llm::ChatMessage>>>,
+    response: String,
+}
+
+impl fluent_llm::client::ChatBackend for RecordingBackend {
+    fn chat_complete(
+        &self,
+        messages: &[fluent_llm::ChatMessage],
+    ) -> Result<String, fluent_llm::LlmError> {
+        self.seen.lock().unwrap().push(messages.to_vec());
+        Ok(self.response.clone())
+    }
+}
+
+#[test]
+fn self_assessment_calls_include_a_user_turn() {
+    let backend = Arc::new(RecordingBackend {
+        seen: std::sync::Mutex::new(Vec::new()),
+        response: assessment(4, "mid"),
+    });
+    let matcher = TargetMatcher::new(
+        TargetBackends::new(HashMap::new(), backend.clone()),
+        Arc::new(fluent_concurrency::pool::Limiter::new(4)),
+        0,
+    );
+    let cands = candidates(&[("qwen3.5-9b", 4, 3.0)]);
+    let routing = routing_with("default", &["qwen3.5-9b"]);
+    matcher
+        .match_target("local", "default", &routing, &cands, Some(3), "hello")
+        .expect("match");
+    let seen = backend.seen.lock().unwrap();
+    assert!(!seen.is_empty(), "assessment ran");
+    for messages in seen.iter() {
+        assert!(
+            messages.iter().any(|m| m.role == "user"),
+            "assessment must carry a user turn (strict templates raise without one): {messages:?}"
+        );
+    }
+}
+
 fn matcher_with(default_response: Vec<String>) -> TargetMatcher {
     TargetMatcher::new(
         TargetBackends::new(

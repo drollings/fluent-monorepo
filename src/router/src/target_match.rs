@@ -969,8 +969,15 @@ impl TargetMatcher {
         candidate: &TargetCandidate,
         user_text: &str,
     ) -> Result<SelfAssessment, WorkError> {
+        // The assessment prompt rides a `user` turn, never a bare `system`
+        // message: strict chat templates (e.g. the Qwen3.5-brainwaves file
+        // served via `--chat-template-file`) raise when a conversation holds
+        // no genuine user query (`No user query found in messages`), which
+        // surfaces as an HTTP 500 and fails the assessment. The prompt text
+        // already carries both the instructions and the request, so it
+        // renders identically as a user turn on lenient templates.
         let messages = vec![ChatMessage {
-            role: "system".into(),
+            role: "user".into(),
             content: build_self_assessment_prompt(user_text),
         }];
         let client = self.backends.get(&candidate.model_key);
