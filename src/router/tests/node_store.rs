@@ -474,6 +474,7 @@ fn pipeline_store() -> ContentNodeStore {
     store
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; same asserts plus 8-way Arc sharing pinned by concurrent_annotation_for_installs_at_most_once; run via `make test-heavy`"]
 #[test]
 fn annotation_for_derives_once_and_caches_same_arc() {
     let store = pipeline_store();
@@ -673,6 +674,7 @@ fn overlay_events_enqueue_nodes_needing_overlays() {
     assert_eq!(store.node_ids_needing_overlays(), vec![id]);
 }
 
+#[ignore = "heavy (~1s): ~590 SQLite inserts plus bulk HNSW build at the threshold cross; run via `make test-heavy`"]
 #[test]
 fn hnsw_threshold_is_adaptive() {
     let store = ContentNodeStore::ephemeral();

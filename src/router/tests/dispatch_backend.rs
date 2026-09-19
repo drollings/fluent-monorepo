@@ -184,6 +184,7 @@ async fn retry_success_on_first_attempt() {
 }
 
 #[tokio::test]
+#[ignore = "heavy (~1s): real-timer 1s retry backoff; run via `make test-heavy`"]
 async fn retry_on_transient_then_succeed() {
     let inner = StubBackend::new(vec![Err(DispatchError::RateLimited), Ok(dummy_response())]);
     let backend = RetryBackend::new(inner, 2, 1);
@@ -222,6 +223,7 @@ async fn retry_short_circuit_on_non_retryable() {
 }
 
 #[tokio::test]
+#[ignore = "heavy (~1s): real-timer 1s retry backoff; run via `make test-heavy`"]
 async fn retry_exhaustion_returns_last_error() {
     let inner = StubBackend::new(vec![
         Err(DispatchError::RateLimited),
@@ -320,6 +322,7 @@ async fn fallback_all_backends_fail() {
 }
 
 #[tokio::test]
+#[ignore = "heavy (~1s): real-timer 1s retry backoff; run via `make test-heavy`"]
 async fn retry_stream_transient_then_succeed() {
     let inner = StubBackend::new(vec![Err(DispatchError::RateLimited), Ok(dummy_response())]);
     let backend = RetryBackend::new(inner, 2, 1);

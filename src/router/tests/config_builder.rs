@@ -141,6 +141,7 @@ fn nlp_ordering_serde_round_trips() {
 }
 
 #[test]
+#[ignore = "heavy (~1s): per-test NlpPipeline build for the ordering-fallback warning branch; run via `make test-heavy`"]
 fn deterministic_first_without_overlay_warns_and_falls_back() {
     // The two changes are inseparable: `deterministic_first` without
     // overlay models is a loud warning + a fallback to today's `llm_first`.
@@ -155,6 +156,7 @@ fn deterministic_first_without_overlay_warns_and_falls_back() {
 }
 
 #[test]
+#[ignore = "heavy (~1s): per-test NlpPipeline build for the no-registry fail-open branch; run via `make test-heavy`"]
 fn overlay_without_registry_skips_stage_fail_open() {
     // `overlay: true` with `overlay_models` but no onnx registry: the
     // stage is skipped with a warning (fail-open) and the pipeline still
@@ -170,6 +172,7 @@ fn overlay_without_registry_skips_stage_fail_open() {
 }
 
 #[test]
+#[ignore = "heavy (~1s): per-test NlpPipeline build for the silent-build branch; run via `make test-heavy`"]
 fn overlay_without_models_is_silent() {
     // No legacy bool remains: empty models build silently (fail-open) with
     // no overlay warning of any kind. The `overlay_config` helper still
@@ -185,6 +188,7 @@ fn overlay_without_models_is_silent() {
 }
 
 #[test]
+#[ignore = "heavy (~1s): per-test NlpPipeline build for the legacy overlay-key serde contract; run via `make test-heavy`"]
 fn overlay_bool_key_ignored_without_warning() {
     // `"overlay": true` with empty `overlay_models` is ignored: the bool is
     // not a field, serde skips the unknown key, the derived flag is off,
@@ -226,6 +230,7 @@ fn overlay_bool_key_ignored_without_warning() {
 }
 
 #[test]
+#[ignore = "heavy (~1s): per-test NlpPipeline build for the empty-models no-stage branch; run via `make test-heavy`"]
 fn overlay_models_empty_never_inserts_stage() {
     // Empty `overlay_models` never inserts the overlay stage (fail-open):
     // the pipeline builds and no "overlay stage inserted" line is logged.
@@ -968,6 +973,7 @@ fn onnx_llm_key_reports_role_key_when_configured() {
 }
 
 #[test]
+#[ignore = "heavy (~1s): per-test NlpPipeline build for the nlp_ordering to RefinePolicy derivation; run via `make test-heavy`"]
 fn builder_refine_policy_from_ordering() {
     // None DTO + LlmFirst → Always
     let config: RouterConfig = serde_json::from_str(

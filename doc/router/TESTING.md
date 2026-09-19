@@ -156,9 +156,10 @@ cargo test --workspace
    test that could accidentally dial the network must use unreachable/refused
    loopback (`127.0.0.1:1`) or an in-process stub — never `localhost:11434`
    or a real public host.
-5. `#[ignore]` is reserved for: live-AI tests (rule 1) and benchmarks. Every
-   `#[ignore]` test must carry a `reason = "..."` string explaining how to
-   run it.
+5. `#[ignore]` is reserved for: live-AI tests (rule 1), benchmarks, and
+   heavy hermetic tests (real-timer sleeps, per-test pipeline builds, bulk
+   calibration corpora — run via `make test-heavy`). Every `#[ignore]` test
+   must carry a `reason = "..."` string explaining how to run it.
 
 ---
 

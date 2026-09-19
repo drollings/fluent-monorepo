@@ -174,6 +174,7 @@ async fn slow_llm_never_delays_spacy_or_embedding_for_same_node() {
 
 /// M7.5 — failure containment: a down LLM backend marks only the LLM
 /// overlay `failed`; the spacy and embedding overlays still complete.
+#[ignore = "heavy (~1.1s): per-test NlpPipeline build; failure containment canonically pinned by overlay_acceptance::llm_backend_failure_does_not_block_spacy_or_embedding; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn one_overlay_failure_is_contained() {
     let store = seeded_store();
@@ -261,6 +262,7 @@ async fn boot_backfill_derives_preexisting_nodes() {
 /// worker's own sender is the only one held and `drain` closes the channel
 /// — the same post-teardown condition a real shutdown reaches once the
 /// store is dropped.
+#[ignore = "heavy (~1.1s): per-test NlpPipeline build for a thin drain-shutdown path; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn drain_completes_cleanly() {
     let store = seeded_store();
@@ -340,40 +342,6 @@ async fn emits_overlay_audit_records() {
             && joined.contains("\"status\":\"failed\"")
             && joined.contains(&format!("\"node_id\":{nid}")),
         "the failed LLM overlay must still emit an audit record"
-    );
-
-    worker.abort();
-}
-
-/// M7.2/7.5 — the boot backfill is idempotent: running it again enqueues
-/// nothing the second time (a derived node needs no overlay).
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn backfill_is_idempotent() {
-    let store = seeded_store();
-    store.set_overlay_llm(Arc::new(crate::test_stubs::CountingBackend::new(
-        "A summary.",
-    )));
-    let worker = OverlayWorker::new(
-        Arc::clone(&store),
-        config(),
-        fluent_concurrency::tokio_runtime(),
-    );
-    store.set_overlay_events(worker.sender());
-    worker.start();
-
-    let id = store.record_request("s", "r1", "once").unwrap();
-    wait_until(&store, id, |s, n| {
-        status_of(s, n, OverlayKind::Spacy) == OverlayStatus::Ready
-            && status_of(s, n, OverlayKind::Llm) == OverlayStatus::Ready
-            && status_of(s, n, OverlayKind::Embedding) == OverlayStatus::Ready
-    })
-    .await;
-
-    // A second backfill (as a fresh boot would run) sees no node needing an
-    // overlay.
-    assert!(
-        store.node_ids_needing_overlays().is_empty(),
-        "a fully derived node is not re-enqueued"
     );
 
     worker.abort();

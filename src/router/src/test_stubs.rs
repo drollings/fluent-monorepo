@@ -12,24 +12,32 @@ use crate::pipeline_types::{PipelineStage, StageDecision, StageVerdict};
 
 pub struct StubChatBackend {
     responses: Mutex<VecDeque<String>>,
+    repeat: Option<String>,
 }
 
 impl StubChatBackend {
     pub fn new(responses: Vec<String>) -> Self {
         Self {
             responses: Mutex::new(responses.into()),
+            repeat: None,
         }
     }
 
     pub fn always(response: impl Into<String>) -> Self {
-        Self::new(vec![response.into()])
+        Self {
+            responses: Mutex::new(VecDeque::new()),
+            repeat: Some(response.into()),
+        }
     }
 }
 
 impl ChatBackend for StubChatBackend {
     fn chat_complete(&self, _messages: &[ChatMessage]) -> Result<String, LlmError> {
         let mut queue = lock(&self.responses);
-        queue.pop_front().ok_or(LlmError::NoResponse)
+        if let Some(next) = queue.pop_front() {
+            return Ok(next);
+        }
+        self.repeat.clone().ok_or(LlmError::NoResponse)
     }
 }
 

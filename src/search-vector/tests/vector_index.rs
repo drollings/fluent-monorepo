@@ -64,6 +64,7 @@ fn vector_index_empty_search_returns_empty() {
     assert!(hnsw.search(&[1.0, 0.0], 5).is_empty());
 }
 
+#[ignore = "heavy (~1s): 1k-node corpus + 50-query control sweep; run via `make test-heavy`"]
 #[test]
 fn ann_calibration_control_50_unrelated_queries_must_not_fire_high_confidence() {
     // 50 unrelated queries over 1k-node ledger — top-1 score >0.9 must not fire
@@ -90,6 +91,7 @@ fn ann_calibration_control_50_unrelated_queries_must_not_fire_high_confidence() 
     assert_eq!(false_high, 0, "50 unrelated queries must not produce top-1 >0.9, got {false_high} false high-confidence hits");
 }
 
+#[ignore = "heavy (~1s): dual-index 500-node recall/latency baseline; run via `make test-heavy`"]
 #[test]
 fn ann_calibration_recall_and_latency_baseline() {
     // Measure recall@10 and latency baseline before caching any ranking

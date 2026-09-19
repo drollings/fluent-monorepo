@@ -6,6 +6,12 @@
 //! `tests/data/config_normalize/`. The snapshots were hand-reviewed against
 //! the leg semantics when recorded; any behavior change fails here first.
 //!
+//! The shipped `env/coral-router.json` corpus is deliberately NOT pinned
+//! here: it is volatile by design (operator-edited), so byte-parity would
+//! fail on every legitimate config change. It gets a validity check only
+//! (parses + deserializes); the config-synced suite (`config_route_tests`,
+//! `make router-mock`) exercises it as the single source of truth.
+//!
 //! To re-record snapshots after an intentional change, run with
 //! `UPDATE_SNAPSHOTS=1`, review the `git diff` of the snapshot directory
 //! by hand, then run again normally. Never commit unreviewed snapshots.
@@ -15,12 +21,6 @@ use std::path::PathBuf;
 
 fn snapshot_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/config_normalize")
-}
-
-fn env_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../env")
-        .join(name)
 }
 
 /// Run the pre-typing legs in constructor order over a cloned document.
@@ -50,30 +50,13 @@ fn expect_snapshot(name: &str, input: serde_json::Value) {
     );
 }
 
-fn env_case(name: &str, file: &str) {
-    let text = std::fs::read_to_string(env_path(file))
-        .unwrap_or_else(|_| panic!("env corpus file {file} readable"));
-    let value: serde_json::Value =
-        serde_json::from_str(&text).unwrap_or_else(|_| panic!("{file} parses as JSON"));
-    expect_snapshot(name, value);
-}
-
-// -- Shipped corpus -----------------------------------------------------------
-
-#[test]
-fn parity_shipped_coral_router_json() {
-    env_case("shipped_coral_router_json", "coral-router.json");
-}
-
-#[test]
-fn parity_shipped_coral_router_example() {
-    env_case("shipped_coral_router_example", "coral-router.json.example");
-}
-
-#[test]
-fn parity_shipped_coral_router_tree() {
-    env_case("shipped_coral_router_tree", "coral-router.tree.json");
-}
+// -- Shipped corpus: deliberately NOT tested here --------------------------------
+// `env/coral-router.json` is volatile by design; pinning its normalized form
+// would fail on every legitimate operator edit, and even opening it here
+// violates the hermeticity guard (`hermetic_tests_never_open_the_operator_config`
+// in config_root.rs). Validity (parses + deserializes) is enforced by the
+// config-synced suite (`config_route_tests::load_config`, `make router-mock`),
+// which owns that file as its single source of truth.
 
 // -- One case per normalizer branch -------------------------------------------
 

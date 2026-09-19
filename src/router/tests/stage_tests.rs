@@ -1831,6 +1831,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "heavy (~1.2s): per-test NlpPipeline build for thin nlp:true builder-wiring asserts; run via `make test-heavy`"]
     fn nlp_stage_is_wired_through_the_pipeline_builder() {
         // `nlp: true` with no classifier model resolved → the stage runs the
         // deterministic rule pipeline (no LLM fetch), publishes the signals.

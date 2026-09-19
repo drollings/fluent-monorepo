@@ -252,11 +252,12 @@ router-test-all: $(CORAL_ROUTER_BIN) ## router-test + coral-context HNSW benchma
 	$(Q)$(CORAL_ROUTER_BIN) --help > /dev/null && echo "All router tests passed." || echo "ERRROR: coral-router did NOT successfully run."
 
 .PHONY: test-heavy
-test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/contention + router supervisor/HNSW calibration
+test-heavy: ## Slow hermetic suites (#[ignore]d heavy tests): spacy-rs corpus/contention + router supervisor/HNSW calibration + search-vector scale-corpus calibration
 	$(Q)cargo test -p spacy-rs --lib -- --ignored
 	$(Q)cargo test -p spacy-rs --test arceager_golden -- --ignored
 	$(Q)cargo test -p fluent-router --lib -- --ignored
 	$(Q)cargo test -p fluent-router --test threshold_calibration -- --ignored
+	$(Q)cargo test -p search-vector --lib -- --ignored
 
 .PHONY: router-start
 router-start: $(CORAL_ROUTER_BIN) ## Build (if needed), (re)start coral-router in real mode on :8079, and wait for /health (ort-free unless ROUTER_FEATURES=onnx; stops the old tree first)

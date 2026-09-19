@@ -111,6 +111,7 @@ fn fuzzy_covers_the_paraphrase_gap_in_the_live_service() {
     );
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; both-axes surfacing also pinned by moved_combiner_consumes_spacy_lemma_hits; run via `make test-heavy`"]
 #[test]
 fn cross_check_surfaces_both_axes_on_disagreement() {
     // Low parse confidence on the deterministic hit + high fuzzy similarity
@@ -155,6 +156,7 @@ fn ranker_prefilters_reports_in_salience_order() {
     assert_eq!(reports[2].node_id, NodeId::from_int(1));
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build for a thin no-ranker complement branch; salience ordering pinned by ranker_prefilters_reports_in_salience_order; run via `make test-heavy`"]
 #[test]
 fn without_ranker_reports_keep_input_order() {
     let svc = service();
@@ -348,6 +350,7 @@ fn pred_report(id: i64, predicates: Vec<InterlinguaId>) -> NodeRetrievalReport {
     }
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; equal/subclass keeps subsumed by prefilter_mixed_adversarial_set_keep_recall; run via `make test-heavy`"]
 #[test]
 fn prefilter_keeps_equal_and_subclass_predicates() {
     let (store, show, display, list, _, _) = calibration_store();
@@ -366,6 +369,7 @@ fn prefilter_keeps_equal_and_subclass_predicates() {
     assert_eq!(kept.len(), 60, "equal + subclass predicates are all kept");
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; unrelated drops subsumed by prefilter_mixed_adversarial_set_keep_recall; run via `make test-heavy`"]
 #[test]
 fn prefilter_drops_unrelated_predicates() {
     let (store, show, _, _, _, unrelated) = calibration_store();
@@ -390,6 +394,7 @@ fn prefilter_drops_strict_superclass_predicates() {
     );
 }
 
+#[ignore = "heavy (~3.4s): builds three NlpPipelines for the 4-branch fail-open matrix; run via `make test-heavy`"]
 #[test]
 fn prefilter_fails_open_without_signal_or_store_or_query() {
     let (store, show, display, _, _, unrelated) = calibration_store();
@@ -452,6 +457,7 @@ fn prefilter_mixed_adversarial_set_keep_recall() {
     assert_eq!(wrongly_kept, 0, "removal precision must be 1.0");
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build for a single-assertion orthogonal pin; run via `make test-heavy`"]
 #[test]
 fn prefilter_ignores_parse_confidence() {
     // Low-confidence hits stay eligible: the filter reads only predicate ids.
@@ -471,6 +477,7 @@ fn prefilter_ignores_parse_confidence() {
     assert_eq!(kept.len(), 1, "low confidence does not exclude");
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build for a thin single-branch lemma-only pin; run via `make test-heavy`"]
 #[test]
 fn moved_cross_check_lemma_only_regions_have_no_conflict() {
     let svc = service();

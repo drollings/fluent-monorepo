@@ -382,6 +382,7 @@ fn node_annotation_materializes_from_sync_ladder_run() {
     assert_eq!(ann.tokens[1].idx, 5, "Show (4) + spacy (1)");
 }
 
+#[ignore = "heavy (~1.2s): second per-test NlpPipeline build; Llm-source materialization pinned by fast materializes_from_doc_result_and_signals; run via `make test-heavy`"]
 #[test]
 fn node_annotation_materializes_from_llm_rung_with_real_deps() {
     let pipeline = en_pipeline();

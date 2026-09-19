@@ -1710,25 +1710,6 @@ fn router_config_serde_round_trip_preserves_all_fields() {
     assert_eq!(cfg.charts.min_score, back.charts.min_score);
 }
 
-#[test]
-fn score_matrix_none_vs_authoritative_false_resolves_identically() {
-    use crate::score_matrix::ScoreMatrix;
-    let scores = HashMap::from([
-        ("coherence".into(), 0.9),
-        ("complexity".into(), 0.5),
-        ("completeness".into(), 0.8),
-        ("risk".into(), 0.6),
-    ]);
-    let m = ScoreMatrix::default();
-    let r1 = m.resolve(&scores);
-    // score_matrix_authoritative=false is the documented off-ramp: the matrix
-    // is still present but not enforced. The resolve path is identical.
-    let r2 = m.resolve(&scores);
-    assert_eq!(r1.len(), r2.len());
-    assert_eq!(r1[0].route_name, r2[0].route_name);
-    assert_eq!(r1[0].weighted_score, r2[0].weighted_score);
-}
-
 // -- Role split: typed context block + model-side sparse override (M1) ------
 
 fn roles_split_fixture_text() -> String {

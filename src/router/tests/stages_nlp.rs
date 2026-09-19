@@ -61,6 +61,7 @@ fn parses_and_publishes_signals() {
     assert_eq!(signals[0].direct_object.as_deref(), Some("report"));
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; interlingua stamping also pinned by builder_built_pipeline_publishes_interlingua_ids; run via `make test-heavy`"]
 #[test]
 fn publishes_interlingua_and_confidence_accessors() {
     // A pipeline wired to a resolver stamps interlingua ids (the boot
@@ -106,6 +107,7 @@ fn empty_text_is_skipped() {
     assert_eq!(decision.verdict, StageVerdict::Skipped);
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; LLM-wins ordering also pinned by encoder_plus_fetch_both_provided_ladder_tries_in_order; run via `make test-heavy`"]
 #[test]
 fn llm_rung_wins_when_fetch_returns_full_parse() {
     let full = r#"[
@@ -158,6 +160,7 @@ fn llm_fetch_failure_falls_back_to_star_parse() {
     assert_eq!(signals[0].direct_object.as_deref(), Some("report"));
 }
 
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build for a thin WorkUnit typed-wrapper over the decide path pinned by parses_and_publishes_signals; run via `make test-heavy`"]
 #[test]
 fn execute_produces_typed_decision() {
     let stage = en_stage();
@@ -167,6 +170,7 @@ fn execute_produces_typed_decision() {
     assert_eq!(decision.stage, PipelineStage::Nlp);
 }
 
+#[ignore = "heavy (~2.1s): builds two NlpPipelines for a trivial describe bool; run via `make test-heavy`"]
 #[test]
 fn encoder_field_reflected_in_describe() {
     let stage = en_stage();
@@ -503,6 +507,7 @@ fn refined_products_are_not_confidence_bearing_and_summary_is_well_formed() {
 /// M4.3: an `OnUncertain`-refined parse's `NlpConfidenceSummary` is
 /// well-formed (bounded, sourced correctly) — the stage publishes it even
 /// when the refiner wins.
+#[ignore = "heavy (~1.2s): per-test NlpPipeline build; summary well-formedness pinned more strongly by residual_certain/uncertain_refine_call tests; run via `make test-heavy`"]
 #[test]
 fn on_uncertain_refined_parse_summary_is_well_formed() {
     // A fetch that returns a valid annotation array (same shape the real
@@ -773,6 +778,7 @@ fn residual_uncertain_parse_makes_refine_call() {
 /// makes them stable, never fitted noise. Each case runs twice on a fresh
 /// pipeline to pin determinism. Thresholds are locked in-test so silent
 /// tuning breaks loudly.
+#[ignore = "heavy (~18s): calibration sweep building ~24 pipelines; fire/recall essence pinned by residual_certain/uncertain_refine_call tests; run via `make test-heavy`"]
 #[test]
 fn refine_calibration_fire_vs_changed_route() {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1077,6 +1083,7 @@ fn nlp_overlay_disabled_pipeline_carries_no_handoff_keys() {
     }
 }
 
+#[ignore = "heavy (~2s): builds two NlpPipelines for a trivial constructor-default getter; run via `make test-heavy`"]
 #[test]
 fn nlp_stage_new_with_fetch_defaults_to_off() {
     let fetch: spacy_rs::pipeline::LlmFetchSync =

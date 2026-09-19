@@ -287,6 +287,7 @@ async fn llm_backend_failure_does_not_block_spacy_or_embedding() {
 
 /// **Acceptance 4** — audit records present and correctly `kind = "overlay"`,
 /// one per derived overlay (success and permanent failure).
+#[ignore = "heavy (~1.1s): per-test NlpPipeline build; overlay audit shape more strongly pinned by ledger_overlay_worker::emits_overlay_audit_records; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn audit_records_are_kind_overlay() {
     let capture = crate::test_support::install_global_subscriber();

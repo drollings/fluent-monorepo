@@ -314,6 +314,7 @@ impl crate::retrieval::EmbeddingProvider for TestEmbedder {
     }
 }
 
+#[ignore = "heavy (~1.1s): per-test NlpPipeline build for thin retrieval-seam wiring asserts; run via `make test-heavy`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn retrieve_nodes_composes_the_live_retrieval_seam() {
     let store = temp_store();

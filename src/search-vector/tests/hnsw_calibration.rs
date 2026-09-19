@@ -49,6 +49,7 @@ fn recall_at(db: &GuidanceDb, query: &[f32], k: usize) -> (f64, Vec<i64>, Vec<i6
     (hits as f64 / k as f64, approx, exact)
 }
 
+#[ignore = "heavy (~2s): scale-corpus recall gate (N=2048 sqlite fills + brute-force ground truth); run via `make test-heavy`"]
 #[test]
 fn hnsw_recall_at_scale_meets_threshold() {
     // Calibration gate for the dispatch policy: at/above the scale where the
@@ -80,6 +81,7 @@ fn hnsw_recall_at_scale_meets_threshold() {
     }
 }
 
+#[ignore = "heavy (~1s): threshold-size corpus fill + exactness probes; run via `make test-heavy`"]
 #[test]
 fn dispatch_boundary_is_exact_and_filtered_queries_abstain() {
     // Control group that must NOT fire HNSW:
