@@ -75,7 +75,8 @@ impl InstancePool {
     /// `<model_id>:<name>`; snapshot entries are tagged with their owning
     /// `model`; `total` sums each server's envelope with 64-bit arithmetic.
     /// Plain (no-instance-grammar) models contribute a synthesized footprint
-    /// (their shared weights; 0 when the fork reports the model sleeping).
+    /// (liveness + context window from `/props`; every byte field 0 —
+    /// unknown, never the on-disk weights size).
     pub async fn aggregate(&self, model: Option<&str>) -> Result<Value, InstanceError> {
         let mut instances = Vec::new();
         let mut snapshots: Vec<Value> = Vec::new();

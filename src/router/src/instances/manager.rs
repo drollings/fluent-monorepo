@@ -372,15 +372,17 @@ impl InstanceManager {
     /// The resident footprint of a plain (no-instance-grammar) managed model.
     ///
     /// The fork exposes no `/instances` for these servers, so Coral Router
-    /// synthesizes one envelope entry: `model_bytes` is the configured weights
-    /// file size, or 0 when the server reports `is_sleeping` (the fork's idle
-    /// sleep has moved the weights out of VRAM). `state` mirrors that flag.
+    /// synthesizes one envelope entry — but the fork reports no byte counts,
+    /// so every byte field stays 0 (unknown). The on-disk weights size is
+    /// deliberately NOT substituted: disk footprint is not VRAM footprint,
+    /// and no estimate may flow into the VRAM displays. `state` mirrors the
+    /// fork's `is_sleeping` flag; `n_ctx` comes from `/props`.
     /// `None` when the server is unreachable (down or never loaded).
     ///
     /// Also serves an adopted grammar-less pool model: a server spawned
     /// without `--instance` flags 404s `/instances`, but its `/props` still
-    /// reports the resident weights, so the pool keeps residency visibility
-    /// instead of going blind until the next unload respawns it with grammar.
+    /// reports liveness, so the pool keeps residency visibility instead of
+    /// going blind until the next unload respawns it with grammar.
     pub(super) async fn plain_footprint(&self) -> Option<InstanceInfo> {
         let props = self.client.props().await?;
         let asleep = props
@@ -392,7 +394,6 @@ impl InstanceManager {
             .and_then(|g| g.get("n_ctx"))
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        let model_bytes = if asleep { 0 } else { self.weights_bytes };
         let state = if asleep { "sleeping" } else { "loaded" }.to_string();
         Some(InstanceInfo {
             id: format!("{}:default", self.model_key),
@@ -404,13 +405,11 @@ impl InstanceManager {
             is_default: true,
             resume: false,
             state,
-            model_bytes,
-            // No context windows are reported for a plain server; the resident
-            // footprint is the shared weights alone. `vram_bytes` follows the
-            // contract (context + compute, excluding weights) and stays 0.
+            // Unknown — never the on-disk weights size (see above).
+            model_bytes: 0,
             context_bytes: 0,
             compute_bytes: 0,
-            total_bytes: model_bytes,
+            total_bytes: 0,
             vram_bytes: 0,
             last_used: self.last_used.load(Ordering::Relaxed),
         })

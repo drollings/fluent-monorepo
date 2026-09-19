@@ -1663,7 +1663,7 @@ fn plain_manager(stub: &StubServer, weights: u64) -> Arc<InstanceManager> {
 }
 
 #[tokio::test]
-async fn plain_model_footprint_reports_weights_when_awake() {
+async fn plain_model_footprint_reports_unknown_weights_when_awake() {
     let props = serde_json::json!({
         "is_sleeping": false,
         "default_generation_settings": { "n_ctx": 16384 }
@@ -1676,10 +1676,13 @@ async fn plain_model_footprint_reports_weights_when_awake() {
     let inst = &envelope.instances[0];
     assert_eq!(inst.id, "qwen:default");
     assert_eq!(inst.state, "loaded");
-    assert_eq!(inst.model_bytes, 10_000_000_000);
+    // The fork reports no byte counts for grammar-less servers: every byte
+    // field is unknown (0). The on-disk weights size (10 GB here) must never
+    // substitute — disk footprint is not VRAM footprint.
+    assert_eq!(inst.model_bytes, 0);
     assert_eq!(inst.n_ctx, 16384);
-    assert_eq!(envelope.total.model, 10_000_000_000);
-    assert_eq!(envelope.total.total, 10_000_000_000);
+    assert_eq!(envelope.total.model, 0);
+    assert_eq!(envelope.total.total, 0);
 }
 
 #[tokio::test]
@@ -1726,7 +1729,10 @@ async fn aggregate_includes_plain_model_footprint() {
     assert_eq!(instances.len(), 1);
     let entry = &instances[0];
     assert_eq!(entry["id"], "qwen:default");
-    assert_eq!(entry["model_bytes"], 5_000_000_000u64);
+    assert_eq!(
+        entry["model_bytes"], 0u64,
+        "synthesized footprints carry no byte counts (never disk size)"
+    );
     let aliases: Vec<&str> = entry["aliases"]
         .as_array()
         .unwrap()
@@ -1734,8 +1740,8 @@ async fn aggregate_includes_plain_model_footprint() {
         .filter_map(|a| a.as_str())
         .collect();
     assert!(aliases.contains(&"qwen"), "aliases: {aliases:?}");
-    assert_eq!(agg["total"]["model"], 5_000_000_000u64);
-    assert_eq!(agg["total"]["total"], 5_000_000_000u64);
+    assert_eq!(agg["total"]["model"], 0u64);
+    assert_eq!(agg["total"]["total"], 0u64);
 
     let scoped = pool.aggregate(Some("qwen")).await.expect("scoped");
     assert_eq!(scoped["instances"].as_array().unwrap().len(), 1);

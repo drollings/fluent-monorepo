@@ -17,7 +17,10 @@
 //! - `VRAM` / `SYS RAM` — the memory split: `vram_bytes` vs the CPU-RAM
 //!   remainder (`total_bytes - vram_bytes - model_bytes` — the all-memory
 //!   total repeats the shared weights, so they are removed; what stays is
-//!   the partial-offload portion).
+//!   the partial-offload portion). Every byte cell is a fork-reported
+//!   measurement: servers that report no byte counts (grammar-less servers,
+//!   unloaded models) render `-`, never an on-disk size — disk footprint is
+//!   not VRAM footprint.
 //! - `CTX` — the instance's context window (`n_ctx` tokens).
 //! - `QUANT` — the weights quantization (`quant` overlaid on the
 //!   `/instances` envelope, GGUF fallback).
@@ -243,7 +246,8 @@ fn model_group(
 }
 
 /// A model with no instance detail (lazy server down): one bare `unloaded`
-/// row (display only — the fleet totals still count its on-disk weights).
+/// row, display only — it contributes nothing resident to the fleet totals
+/// (disk footprint is never counted as VRAM).
 fn unloaded_row(model_key: &str) -> PsRow {
     PsRow {
         model: ollama_display(model_key, ""),

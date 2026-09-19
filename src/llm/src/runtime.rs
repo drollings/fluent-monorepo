@@ -541,9 +541,11 @@ impl LlmResidencyEngine {
             // all-memory totals. With partial GPU offload most of
             // `total_bytes` lives in CPU RAM; counting it against the VRAM
             // budget spuriously evicts (28.4G counted vs 14.2G resident).
-            // Empty rows on a resident server fall back to the file size,
-            // same as `ps`. The RAM pool keeps the all-memory accounting
-            // (onnx `weights_bytes` is RAM-resident and carries no VRAM split).
+            // Empty rows on a resident server fall back to the file size as
+            // a pre-load budget estimate (internal admission math only —
+            // never displayed; `ps` renders unknown as `-`). The RAM pool
+            // keeps the all-memory accounting (onnx `weights_bytes` is
+            // RAM-resident and carries no VRAM split).
             let resident: u64 = match pool {
                 MemoryPool::Vram => rows.iter().map(|r| r.model_bytes).max().unwrap_or_else(|| {
                     if w.is_loaded() {

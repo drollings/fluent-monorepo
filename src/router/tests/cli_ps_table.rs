@@ -58,6 +58,22 @@ fn row_shows_ctx_window_weights_quant_and_sleep() {
 }
 
 #[test]
+fn unknown_weights_row_renders_dash_never_disk_size() {
+    // A grammar-less (plain) server reports no byte counts: its envelope
+    // carries zeros, and the weights row must render `-` — the on-disk
+    // weights size must never appear as VRAM.
+    let dir = tempfile::tempdir().unwrap();
+    let mut plain = llama_row();
+    plain["model_bytes"] = json!(0u64);
+    plain["vram_bytes"] = json!(0u64);
+    plain["total_bytes"] = json!(0u64);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[plain]);
+    assert_eq!(rows[0].vram, "-", "unknown weights render as dash: {rows:?}");
+    assert_eq!(rows[1].vram, "-", "unknown instance VRAM renders as dash");
+    assert_eq!(totals.resident_bytes, 0, "unknown contributes nothing resident");
+}
+
+#[test]
 fn kv_cache_quant_defaults_to_q8_0_without_config() {
     let dir = tempfile::tempdir().unwrap();
     let (rows, _) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()]);
