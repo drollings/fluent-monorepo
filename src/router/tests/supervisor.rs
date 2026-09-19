@@ -140,6 +140,7 @@ fn server_args_declare_host_port_alias_and_model() {
     let spec = LlamaServerSpec::from_entry(
         "swarm",
         &managed_entry(),
+        std::path::Path::new("."),
         18080,
         Some("/srv/slots".into()),
         Some("sekrit".into()),
@@ -158,7 +159,7 @@ fn server_args_declare_host_port_alias_and_model() {
 #[test]
 fn server_args_declare_default_params_run_defaults() {
     let spec =
-        LlamaServerSpec::from_entry("swarm", &managed_entry(), 18080, None, None, defaults());
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), 18080, None, None, defaults());
     let args = build_server_args(&spec);
     let joined = args.join(" ");
     assert!(joined.contains("--batch-size 4096"));
@@ -171,7 +172,7 @@ fn server_args_declare_default_params_run_defaults() {
 #[test]
 fn server_args_declare_only_pinned_instance_profiles() {
     let spec =
-        LlamaServerSpec::from_entry("swarm", &managed_entry(), 18080, None, None, defaults());
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), 18080, None, None, defaults());
     assert!(spec.boot, "pinned swarm profile -> boot model");
     let args = build_server_args(&spec);
     let instances: Vec<&String> = args
@@ -239,7 +240,7 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
             session: false,
         },
     ]);
-    let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
+    let spec = LlamaServerSpec::from_entry("swarm", &entry, std::path::Path::new("."), 18080, None, None, defaults());
     assert!(
         !spec.boot,
         "no pinned instance -> all-lazy, loaded on demand"
@@ -271,7 +272,7 @@ fn all_unpinned_pool_declares_full_grammar_at_spawn() {
 fn plain_model_gets_default_ctx_and_idle_sleep() {
     let mut entry = managed_entry();
     entry.effective_profiles = None;
-    let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
+    let spec = LlamaServerSpec::from_entry("swarm", &entry, std::path::Path::new("."), 18080, None, None, defaults());
     assert!(!spec.boot, "no pinned instance -> lazy model");
     let args = build_server_args(&spec);
     let joined = args.join(" ");
@@ -289,7 +290,7 @@ fn server_args_use_hf_repo_when_no_weights() {
     entry.weights = None;
     entry.hf_repo = Some("abiray/lfm2.5-2.6b-gguf".into());
     entry.hf_file = Some("Q4_K_M.gguf".into());
-    let spec = LlamaServerSpec::from_entry("swarm", &entry, 18080, None, None, defaults());
+    let spec = LlamaServerSpec::from_entry("swarm", &entry, std::path::Path::new("."), 18080, None, None, defaults());
     let args = build_server_args(&spec);
     let joined = args.join(" ");
     assert!(joined.contains("-hf abiray/lfm2.5-2.6b-gguf"));
@@ -423,7 +424,7 @@ async fn liveness_restarts_hung_server_but_leaves_healthy_one() {
     let bin = write_fake_llama(&counter);
 
     let server = Arc::new(ManagedServer::with_liveness(
-        LlamaServerSpec::from_entry("swarm", &managed_entry(), port, None, None, defaults()),
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), port, None, None, defaults()),
         Duration::from_millis(100),
         3,
         0,
@@ -469,7 +470,7 @@ async fn liveness_never_restarts_during_shutdown() {
     let bin = write_fake_llama(&counter);
 
     let server = Arc::new(ManagedServer::with_liveness(
-        LlamaServerSpec::from_entry("swarm", &managed_entry(), port, None, None, defaults()),
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), port, None, None, defaults()),
         Duration::from_millis(50),
         1,
         0,
@@ -507,7 +508,7 @@ async fn crash_loop_is_contained_after_max_restarts() {
     let bin = write_crashing_llama(&counter);
 
     let server = Arc::new(ManagedServer::with_liveness(
-        LlamaServerSpec::from_entry("swarm", &managed_entry(), 1, None, None, defaults()),
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), 1, None, None, defaults()),
         Duration::from_millis(50),
         3,
         3,
@@ -554,7 +555,7 @@ async fn probe_health_uses_injected_client() {
     let up = Arc::new(AtomicBool::new(false));
     let port = spawn_health_server(up.clone()).await;
     let server = Arc::new(ManagedServer::with_liveness(
-        LlamaServerSpec::from_entry("swarm", &managed_entry(), port, None, None, defaults()),
+        LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), port, None, None, defaults()),
         Duration::from_millis(50),
         3,
         0,
@@ -604,7 +605,7 @@ fn restart_backoff_schedule_is_exact_powers_of_two_capped_at_64s() {
 fn server_args_emit_chat_template_file_when_configured() {
     let mut entry = managed_entry();
     entry.template = Some("/models/qwen/template.txt".into());
-    let spec = LlamaServerSpec::from_entry("qwen", &entry, 18081, None, None, defaults());
+    let spec = LlamaServerSpec::from_entry("qwen", &entry, std::path::Path::new("."), 18081, None, None, defaults());
     let args = build_server_args(&spec);
     let joined = args.join(" ");
     assert!(
@@ -614,10 +615,40 @@ fn server_args_emit_chat_template_file_when_configured() {
 }
 
 #[test]
+fn spec_joins_relative_weights_and_template_under_gguf_dir() {
+    let mut entry = managed_entry();
+    entry.weights = Some("nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf".into());
+    entry.template = Some("nightmedia/qwen3.5-9b-brainwaves-gguf/template.txt".into());
+    let spec = LlamaServerSpec::from_entry(
+        "qwen",
+        &entry,
+        std::path::Path::new("/app/ai/models/gguf"),
+        18083,
+        None,
+        None,
+        defaults(),
+    );
+    assert_eq!(
+        spec.weights.as_deref(),
+        Some("/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf")
+    );
+    assert_eq!(
+        spec.template.as_deref(),
+        Some("/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/template.txt")
+    );
+    let args = build_server_args(&spec);
+    let joined = args.join(" ");
+    assert!(
+        joined.contains("-m /app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf"),
+        "spawned argv carries the resolved weights, got: {joined}"
+    );
+}
+
+#[test]
 fn server_args_omit_chat_template_file_when_absent() {
     let entry = managed_entry();
     assert!(entry.template.is_none());
-    let spec = LlamaServerSpec::from_entry("swarm", &entry, 18082, None, None, defaults());
+    let spec = LlamaServerSpec::from_entry("swarm", &entry, std::path::Path::new("."), 18082, None, None, defaults());
     let args = build_server_args(&spec);
     assert!(
         !args.iter().any(|a| a == "--chat-template-file"),
@@ -693,7 +724,7 @@ async fn child_log_pumps_use_injected_runtime() {
     ));
     let server = Arc::new(
         ManagedServer::with_liveness(
-            LlamaServerSpec::from_entry("swarm", &managed_entry(), 1, None, None, defaults()),
+            LlamaServerSpec::from_entry("swarm", &managed_entry(), std::path::Path::new("."), 1, None, None, defaults()),
             Duration::from_millis(50),
             3,
             0,

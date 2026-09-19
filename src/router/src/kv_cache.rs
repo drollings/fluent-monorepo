@@ -161,15 +161,20 @@ pub struct SnapshotIdentity {
 
 /// Derive the live snapshot identity for a model entry: the weights-file
 /// fingerprint (blake3 over path + byte length — cheap, never a GB read) and
-/// the GGUF quant name, plus the caller-supplied fork version. A missing or
-/// unreadable weights path yields `None` fields (unknowable, never
-/// fabricated); the compatibility check skips those.
+/// the GGUF quant name, plus the caller-supplied fork version. `gguf_dir`
+/// prefixes a relative `weights` declaration (absolute declarations pass
+/// through) so the fingerprint names the file the server actually loads. A
+/// missing or unreadable weights path yields `None` fields (unknowable,
+/// never fabricated); the compatibility check skips those.
 pub fn snapshot_identity_for_model(
     entry: &crate::config::ModelEntry,
+    gguf_dir: &std::path::Path,
     llama_cpp_version: Option<String>,
 ) -> SnapshotIdentity {
-    let weights = entry.weights.as_deref().and_then(|path| {
-        fluent_wvr::capability::capability_aware_fs::metadata(path)
+    let weights = entry.weights.as_deref().and_then(|declared| {
+        let path =
+            crate::config::RouterConfig::join_config_dir(gguf_dir, declared);
+        fluent_wvr::capability::capability_aware_fs::metadata(&path)
             .ok()
             .map(|m| (path, m.len()))
     });
@@ -179,12 +184,12 @@ pub fn snapshot_identity_for_model(
             // the shared blake3 primitive (cheap, never a GB read). Any
             // weights swap changes the path or the length, so the stored
             // record stops matching.
-            let mut key = path.as_bytes().to_vec();
+            let path_str = path.to_string_lossy();
+            let mut key = path_str.as_bytes().to_vec();
             key.push(0);
             key.extend_from_slice(&len.to_le_bytes());
             let hash = common_core::hash::blake3_hex(&key);
-            let quant =
-                crate::instances::manager::weights_identity(std::path::Path::new(path)).quant;
+            let quant = crate::instances::manager::weights_identity(&path).quant;
             (
                 Some(hash),
                 if quant.is_empty() { None } else { Some(quant) },
@@ -555,6 +560,7 @@ impl SnapshotStore {
         &self,
         model: &str,
         entry: &crate::config::ModelEntry,
+        gguf_dir: &std::path::Path,
         adapter: Option<&str>,
         lora_attached: bool,
         session_id: &str,
@@ -589,7 +595,7 @@ impl SnapshotStore {
             );
             return Err(KvCacheError::Db(format!("fork snapshot save failed: {e}")));
         }
-        let identity = snapshot_identity_for_model(entry, llama_cpp_version);
+        let identity = snapshot_identity_for_model(entry, gguf_dir, llama_cpp_version);
         let snapshot = KvSnapshot {
             model: model.to_string(),
             adapter: adapter.map(String::from),

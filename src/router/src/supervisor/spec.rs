@@ -87,10 +87,14 @@ pub struct LlamaServerSpec {
 }
 
 impl LlamaServerSpec {
-    /// Build the spec for a managed model entry on `port`.
+    /// Build the spec for a managed model entry on `port`. `gguf_dir`
+    /// prefixes relative `weights`/`template` declarations (absolute ones
+    /// pass through) so the spawned argv, adoption comparison, and state
+    /// file all carry the same resolved path.
     pub fn from_entry(
         model_key: &str,
         entry: &crate::config::ModelEntry,
+        gguf_dir: &std::path::Path,
         port: u16,
         slot_save_path: Option<String>,
         api_key: Option<String>,
@@ -98,13 +102,20 @@ impl LlamaServerSpec {
     ) -> Self {
         let instances = entry.effective_pool().to_vec();
         let boot = instances.iter().any(|p| p.pinned);
+        let resolve = |declared: Option<&String>| {
+            declared.map(|d| {
+                crate::config::RouterConfig::join_config_dir(gguf_dir, d)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        };
         Self {
             model_key: model_key.to_string(),
             name: entry.llama_model_name(model_key),
-            weights: entry.weights.clone(),
+            weights: resolve(entry.weights.as_ref()),
             hf_repo: entry.hf_repo.clone(),
             hf_file: entry.hf_file.clone(),
-            template: entry.template.clone(),
+            template: resolve(entry.template.as_ref()),
             port,
             instances,
             boot,

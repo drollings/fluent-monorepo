@@ -94,6 +94,7 @@ impl LlamaServerSupervisor {
             let spec = LlamaServerSpec::from_entry(
                 key,
                 entry,
+                &config.gguf_dir_path(),
                 port,
                 slot_save_path.clone(),
                 api_key.clone(),

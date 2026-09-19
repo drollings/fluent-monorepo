@@ -493,6 +493,7 @@ async fn snapshot_identity_adapter_required_when_lora_attached() {
         .save_snapshot_for_model(
             "test-model",
             &entry,
+            std::path::Path::new("."),
             None,
             true,
             "sess-1",
@@ -511,6 +512,7 @@ async fn snapshot_identity_adapter_required_when_lora_attached() {
         .save_snapshot_for_model(
             "test-model",
             &entry,
+            std::path::Path::new("."),
             Some("lora1"),
             true,
             "sess-1",
@@ -529,6 +531,7 @@ async fn snapshot_identity_adapter_required_when_lora_attached() {
         .save_snapshot_for_model(
             "test-model",
             &entry,
+            std::path::Path::new("."),
             None,
             false,
             "sess-2",
@@ -563,10 +566,11 @@ fn snapshot_identity_filled_from_model_entry() {
         fluent_concurrency::capability::default_capability_set(),
         || {
             (
-                snapshot_identity_for_model(&entry, Some("b1234".into())),
-                snapshot_identity_for_model(&entry, None),
+                snapshot_identity_for_model(&entry, std::path::Path::new("."), Some("b1234".into())),
+                snapshot_identity_for_model(&entry, std::path::Path::new("."), None),
                 snapshot_identity_for_model(
                     &crate::config::ModelEntry::default(),
+                    std::path::Path::new("."),
                     Some("b1234".into()),
                 ),
             )
@@ -583,6 +587,38 @@ fn snapshot_identity_filled_from_model_entry() {
     // No weights path: nothing to fingerprint.
     assert!(empty.base_model_hash.is_none());
     assert!(empty.model_quant.is_none());
+}
+
+#[test]
+fn snapshot_identity_joins_relative_weights_under_gguf_dir() {
+    use std::io::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let weights = dir.path().join("model.gguf");
+    std::fs::File::create(&weights)
+        .unwrap()
+        .write_all(b"fake-gguf-bytes-for-hash")
+        .unwrap();
+    let entry = crate::config::ModelEntry {
+        weights: Some("model.gguf".into()),
+        ..crate::config::ModelEntry::default()
+    };
+    let (joined, elsewhere) = fluent_concurrency::scope::CURRENT_CAPS.sync_scope(
+        fluent_concurrency::capability::default_capability_set(),
+        || {
+            (
+                snapshot_identity_for_model(&entry, dir.path(), None),
+                snapshot_identity_for_model(&entry, std::path::Path::new("/nonexistent"), None),
+            )
+        },
+    );
+    assert!(
+        joined.base_model_hash.is_some(),
+        "relative weights resolve under gguf_dir"
+    );
+    assert!(
+        elsewhere.base_model_hash.is_none(),
+        "an unrelated dir finds no file (never fabricated)"
+    );
 }
 
 #[tokio::test]
@@ -618,7 +654,7 @@ fn snapshot_identity_length_change_invalidates() {
     let ident = || {
         fluent_concurrency::scope::CURRENT_CAPS.sync_scope(
             fluent_concurrency::capability::default_capability_set(),
-            || snapshot_identity_for_model(&entry(), None),
+            || snapshot_identity_for_model(&entry(), std::path::Path::new("."), None),
         )
     };
     let before = ident();

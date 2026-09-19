@@ -886,17 +886,17 @@ pub fn build_instance_managers(
             .filter(|k| !k.is_empty());
         let client = InstanceClient::new(management_http_client(), base_url, api_key);
         // The resident weights size of a plain (no-instance) model: the file
-        // the fork loads. Instance models report `model_bytes` themselves; a
-        // plain model's footprint is synthesized from this.
-        let weights_bytes = entry
-            .weights
+        // the fork loads (relative declarations resolve under `gguf_dir`).
+        // Instance models report `model_bytes` themselves; a plain model's
+        // footprint is synthesized from this.
+        let weights_path = config.resolve_weights(entry);
+        let weights_bytes = weights_path
             .as_ref()
             .and_then(|p| fluent_wvr::capability::capability_aware_fs::metadata(p).ok())
             .map_or(0, |m| m.len());
-        let identity = entry
-            .weights
+        let identity = weights_path
             .as_deref()
-            .map(|p| weights_identity(Path::new(p)))
+            .map(weights_identity)
             .unwrap_or_default();
         let manager = Arc::new(
             InstanceManager::new(key, client, profiles, config.sidecar.clone())

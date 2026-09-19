@@ -184,9 +184,26 @@ pub struct RouterConfig {
     /// GGUF model directory for the admin CLI commands (`list`, `scan`, `rm`,
     /// `show`, `pull`, and `ps` weights resolution). Overridable per-invocation
     /// with `--gguf-dir`; `None` falls back to the built-in default.
+    ///
+    /// It is also the prefix for every relative `models.<model>.weights` and
+    /// `template` path: a relative declaration resolves under this directory
+    /// (absolute declarations pass through unchanged) wherever the setup
+    /// logic consumes the file — spawn argv, presence gate, weights identity,
+    /// snapshot identity, and CLI resolution all share
+    /// [`RouterConfig::join_config_dir`] (via [`RouterConfig::resolve_weights`]
+    /// and [`RouterConfig::resolve_template`]).
     #[field(skip)]
     #[serde(default)]
     pub gguf_dir: Option<String>,
+    /// ONNX model directory: the prefix for every relative ONNX file path
+    /// (`model_path`, `tokenizer_path`, `label_source`, `policy_labels` in
+    /// the `onnx` fleet and the top-level role sections merged into it).
+    /// Absolute declarations pass through unchanged. Applied once in the
+    /// ort registry build through [`RouterConfig::resolve_onnx_path`], so
+    /// every session loader sees a fully resolved path.
+    #[field(skip)]
+    #[serde(default)]
+    pub onnx_dir: Option<String>,
     /// The shared inference-backend registry (llama + onnx adapters),
     /// installed by the composition root behind a lock so backends whose
     /// inputs boot later (the llama pool) can register after the first
@@ -229,6 +246,7 @@ impl Default for RouterConfig {
             onnx_limiter_cap: common_core::constants::DEFAULT_ONNX_LIMITER_CAP,
             onnx_threads: common_core::constants::DEFAULT_ONNX_THREADS,
             gguf_dir: None,
+            onnx_dir: None,
             onnx: None,
             colbert: None,
             encoder: None,
@@ -360,6 +378,67 @@ impl RouterConfig {
             .unwrap_or_else(super::classification::default_safety_threshold)
     }
 
+    /// Join a config-declared file path under `dir` when relative; absolute
+    /// paths pass through unchanged. The single home for the dir-prefix rule
+    /// (`gguf_dir` for GGUF files, `onnx_dir` for ONNX files): every setup
+    /// seam resolves through this rather than reimplementing the join.
+    pub fn join_config_dir(dir: &std::path::Path, declared: &str) -> std::path::PathBuf {
+        let raw = std::path::Path::new(declared);
+        if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            dir.join(raw)
+        }
+    }
+
+    /// The configured GGUF directory (`"."` when unset — the boot default
+    /// the composition root passes to [`Self::validate_model_presence`]).
+    pub fn gguf_dir_path(&self) -> std::path::PathBuf {
+        self.gguf_dir
+            .as_deref()
+            .map_or_else(|| std::path::PathBuf::from("."), std::path::PathBuf::from)
+    }
+
+    /// The configured ONNX directory (`"."` when unset, mirroring
+    /// [`Self::gguf_dir_path`]).
+    pub fn onnx_dir_path(&self) -> std::path::PathBuf {
+        self.onnx_dir
+            .as_deref()
+            .map_or_else(|| std::path::PathBuf::from("."), std::path::PathBuf::from)
+    }
+
+    /// Resolve a `models.<model>.weights` declaration under `gguf_dir`
+    /// (`None` for `hf_repo`/endpoint-only entries). Absolute declarations
+    /// pass through unchanged.
+    pub fn resolve_weights(&self, entry: &ModelEntry) -> Option<std::path::PathBuf> {
+        entry
+            .weights
+            .as_deref()
+            .map(|w| Self::join_config_dir(&self.gguf_dir_path(), w))
+    }
+
+    /// Resolve a `models.<model>.template` declaration under `gguf_dir`
+    /// (`None` when undeclared). Absolute declarations pass through
+    /// unchanged.
+    pub fn resolve_template(&self, entry: &ModelEntry) -> Option<std::path::PathBuf> {
+        entry
+            .template
+            .as_deref()
+            .map(|t| Self::join_config_dir(&self.gguf_dir_path(), t))
+    }
+
+    /// Resolve an ONNX file declaration (`model_path`, `tokenizer_path`,
+    /// `label_source`, `policy_labels`) under `onnx_dir`. Absolute
+    /// declarations pass through unchanged.
+    pub fn resolve_onnx_path(&self, declared: &std::path::Path) -> std::path::PathBuf {
+        let dir = self.onnx_dir_path();
+        if declared.is_absolute() {
+            declared.to_path_buf()
+        } else {
+            dir.join(declared)
+        }
+    }
+
     /// Boot presence gate: every model serving traffic must be usable.
     /// Deterministic: models visit in sorted key order, so the first
     /// reported failure is stable. Fail-closed for referenced models, warn
@@ -403,12 +482,7 @@ impl RouterConfig {
             let entry = &self.models[key];
             let is_referenced = referenced.contains(key);
             if let Some(weights) = entry.weights.as_deref() {
-                let raw = std::path::Path::new(weights);
-                let full = if raw.is_absolute() {
-                    raw.to_path_buf()
-                } else {
-                    gguf_dir.join(raw)
-                };
+                let full = Self::join_config_dir(gguf_dir, weights);
                 if !full.exists() {
                     if is_referenced {
                         return Err(format!(
@@ -442,12 +516,7 @@ impl RouterConfig {
             // template degrades to the GGUF-baked template (the supervisor
             // omits `--chat-template-file`), never a boot fatal.
             if let Some(template) = entry.template.as_deref() {
-                let raw = std::path::Path::new(template);
-                let full = if raw.is_absolute() {
-                    raw.to_path_buf()
-                } else {
-                    gguf_dir.join(raw)
-                };
+                let full = Self::join_config_dir(gguf_dir, template);
                 if !full.exists() {
                     tracing::warn!(
                         target: "router.config",

@@ -12,7 +12,7 @@
       "cost_input": 1e-06,
       "cost_output": 6e-06,
       "cost_cached_read": 4e-07,
-      "embedding": "/app/ai/models/gguf/google/embeddinggemma-300m/latest.gguf",
+      "embedding": "google/embeddinggemma-300m/latest.gguf",
       "tok_s": 20,
       "total_timeout_ms": 30000,
       "idle_timeout_ms": 10000,
@@ -40,13 +40,13 @@
     },
     "lfm2.5-350m": {
       "name": "liquidai/lfm2.5-350m",
-      "weights": "/app/ai/models/gguf/liquidai/lfm2.5-350m-gguf/latest.gguf",
+      "weights": "liquidai/lfm2.5-350m-gguf/latest.gguf",
       "intelligence": 1,
       "tok_s": 250
     },
     "lfm2.5-2.6b": {
       "name": "liquidai/lfm2.6-2.6b",
-      "weights": "/app/ai/models/gguf/liquidai/lfm2.5-2.6b-gguf/latest.gguf",
+      "weights": "liquidai/lfm2.5-2.6b-gguf/latest.gguf",
       "intelligence": 2,
       "tok_s": 160,
       "enable_thinking": true,
@@ -72,8 +72,8 @@
     },
     "qwen3.5-9b": {
       "name": "qwen3.5-9b",
-      "weights": "/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf",
-      "template": "/app/ai/models/gguf/nightmedia/qwen3.5-9b-brainwaves-gguf/template.txt",
+      "weights": "nightmedia/qwen3.5-9b-brainwaves-gguf/latest.gguf",
+      "template": "nightmedia/qwen3.5-9b-brainwaves-gguf/template.txt",
       "intelligence": 4,
       "tok_s": 50,
       "retry_count": 1,
@@ -99,13 +99,25 @@
             "temperature": 0.6,
             "repeat_penalty": 1.02
           }
+        },
+        "reasoning": {
+          "enable_thinking": true,
+          "filter_thinking": true,
+          "preserve_thinking": false,
+          "max_ctx": 65536,
+          "params": {
+            "reasoning_effort": "medium",
+            "num_ctx": 32768,
+            "temperature": 0.6,
+            "repeat_penalty": 1.02
+          }
         }
       }
     },
     "qwen3.8-27b": {
       "name": "davidau/turbo-fable-cold-fusion",
-      "weights": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/latest.gguf",
-      "template": "/app/ai/models/gguf/davidau/qwen3.8-27b-turbo-fable-cold-fusion-735-882-heretic-uncensored-neo-coder-max-mtp-gguf/template.txt",
+      "weights": "ironkinoko/qwen3.8-27b-tturbo-fcf-709/latest.gguf",
+      "template": "ironkinoko/qwen3.8-27b-tturbo-fcf-709/template.txt",
       "intelligence": 6,
       "tok_s": 30,
       "retry_count": 3,
@@ -176,7 +188,8 @@
         "repeat_penalty": 1.01
       },
       "models": [
-        "lfm2.5-2.6b"
+        "last",
+        "qwen3.5-9b"
       ]
     },
     "scratch": {
@@ -205,6 +218,7 @@
         "repeat_penalty": 1.01
       },
       "models": [
+        "last",
         "qwen3.5-9b"
       ]
     }
@@ -344,7 +358,7 @@
     "minimum_remaining_vram": 1024000000,
     "slot_save_path": "/tmp/_coral-router/slots",
     "resume_ttl_s": 3600,
-    "snapshot_ttl_s": 604800,
+    "snapshot_ttl_s": 3600,
     "snapshot_budget_bytes": 20480000000,
     "server_state_path": "data/server_state.json",
     "api_key_env": null

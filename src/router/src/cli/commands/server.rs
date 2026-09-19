@@ -247,7 +247,9 @@ fn resolve_router_model_key(
         entry
             .weights
             .as_deref()
-            .is_some_and(|w| Path::new(w) == resolved.path)
+            .is_some_and(|w| {
+                crate::config::RouterConfig::join_config_dir(gguf_dir, w) == resolved.path
+            })
             .then(|| key.clone())
     })
 }

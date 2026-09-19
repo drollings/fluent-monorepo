@@ -118,7 +118,24 @@ pub fn build_onnx_registry(
                 );
             }
         }
-        let model = resolved_cfg.to_onnx_config(role);
+        let mut model = resolved_cfg.to_onnx_config(role);
+        // `onnx_dir` prefixes every relative ONNX file declaration
+        // (absolute paths pass through) so the session loaders below see
+        // fully resolved paths. Applied after the tokenizer inheritance
+        // above, so an inherited relative path resolves identically.
+        model.model_path = config.resolve_onnx_path(&model.model_path);
+        model.tokenizer_path = model
+            .tokenizer_path
+            .as_deref()
+            .map(|p| config.resolve_onnx_path(p));
+        model.label_source = model
+            .label_source
+            .as_deref()
+            .map(|p| config.resolve_onnx_path(p));
+        model.policy_labels = model
+            .policy_labels
+            .as_deref()
+            .map(|p| config.resolve_onnx_path(p));
         model.validate()?;
         info!(
             target: "router.ort",

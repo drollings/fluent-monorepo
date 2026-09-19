@@ -313,8 +313,8 @@ fn model_quant(
             .unwrap_or("-")
             .to_string();
     }
-    let gguf_file =
-        config_weights_path(config, model_key).or_else(|| gguf_weights_path(gguf_dir, model_key));
+    let gguf_file = config_weights_path(config, gguf_dir, model_key)
+        .or_else(|| gguf_weights_path(gguf_dir, model_key));
     quant_from_gguf_path(gguf_file.as_deref())
 }
 
@@ -511,12 +511,22 @@ fn totals_footer(totals: &PsTotals) -> String {
 
 // ── weights helpers (moved from `commands::server`; single home) ────────────
 
-/// The configured `weights` path for a model key, if the entry declares one.
-fn config_weights_path(config: Option<&RouterConfig>, model_key: &str) -> Option<PathBuf> {
-    config
-        .and_then(|cfg| cfg.models.get(model_key))
-        .and_then(|entry| entry.weights.as_ref())
-        .map(PathBuf::from)
+/// The configured `weights` path for a model key, if the entry declares
+/// one. Relative declarations resolve under `gguf_dir` (absolute ones pass
+/// through), matching the daemon's setup rule.
+fn config_weights_path(
+    config: Option<&RouterConfig>,
+    gguf_dir: &Path,
+    model_key: &str,
+) -> Option<PathBuf> {
+    config.and_then(|cfg| {
+        cfg.models.get(model_key).and_then(|entry| {
+            entry
+                .weights
+                .as_deref()
+                .map(|w| RouterConfig::join_config_dir(gguf_dir, w))
+        })
+    })
 }
 
 /// Resolve a model key's GGUF file from the GGUF layout:
