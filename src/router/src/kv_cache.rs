@@ -172,8 +172,7 @@ pub fn snapshot_identity_for_model(
     llama_cpp_version: Option<String>,
 ) -> SnapshotIdentity {
     let weights = entry.weights.as_deref().and_then(|declared| {
-        let path =
-            crate::config::RouterConfig::join_config_dir(gguf_dir, declared);
+        let path = crate::config::RouterConfig::join_config_dir(gguf_dir, declared);
         fluent_wvr::capability::capability_aware_fs::metadata(&path)
             .ok()
             .map(|m| (path, m.len()))

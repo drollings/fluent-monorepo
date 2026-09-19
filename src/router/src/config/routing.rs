@@ -139,8 +139,9 @@ pub struct RoleEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot: Option<crate::config::SnapshotConfig>,
     /// Escalation ladder attached to this role (`escalation: {...}`).
-    /// `None` (the default) leaves dispatch falling back to
-    /// `fallback_completion` as before.
+    /// `None` (the default) leaves dispatch ending in an honest HTTP error
+    /// (400 on context overflow, 502 otherwise) once the local chain
+    /// exhausts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escalation: Option<EscalationLadderConfig>,
 }
@@ -286,6 +287,16 @@ impl RoutingConfig {
                     .collect();
                 serving.append(&mut inherited);
             }
+            // Roles served only through on-demand windows (no bound model, or
+            // bound models with empty pools) draw from the whole fleet — no
+            // countable slots, so the check skips rather than warn spuriously.
+            let any_materialized = serving
+                .iter()
+                .filter_map(|key| self.models.get(key))
+                .any(|entry| !entry.effective_pool().is_empty());
+            if !any_materialized {
+                continue;
+            }
             let slots: usize = serving
                 .iter()
                 .filter_map(|key| self.models.get(key))
@@ -371,18 +382,24 @@ pub fn fleet_default_member(models: &HashMap<String, ModelEntry>) -> Option<Stri
 /// Viability-ordered member selection over expanded members — the shared core
 /// behind static role resolution and every availability-sentinel fallback.
 ///
-/// Ordering (task-value, never producer confidence): intelligence-passing
-/// members first (else the whole pool when nothing passes), then resident
-/// members first (via `is_resident` over the base key; `None` treats every
-/// candidate as resident, which reduces exactly to the legacy
-/// cheapest-passing rule), then cheapest `cost_input + cost_output` with a
+/// Ordering (task-value, never producer confidence): resident members first
+/// (via `is_resident` over the base key; `None` treats every candidate as
+/// resident), then intelligence-passing members (`intelligence >=
+/// min_complexity`), then cheapest `cost_input + cost_output` with a
 /// key-ascending tie-break for determinism. `scope` is the audit label only
-/// (role name or `classifier`). Availability sentinels
-/// (`last`/`any`) carry no static meaning: they are skipped when literal
-/// members exist, and a sentinel-only role resolves over every servable
-/// model (the `default` template excluded) — the runtime recency expansion
-/// supersedes that whenever the target-match ladder runs. Returns the full
-/// member key (possibly qualified).
+/// (role name or `classifier`). Availability sentinels (`last`/`any`) carry
+/// no static meaning: they are skipped when literal members exist, and a
+/// sentinel-only role resolves over every servable model (the `default`
+/// template excluded) — the runtime recency expansion supersedes that
+/// whenever the target-match ladder runs. Returns the full member key
+/// (possibly qualified).
+///
+/// Resident-first is the whole point of `last`: work with whatever model is
+/// loaded rather than load another. No pool filtering: a loaded member that
+/// fails the intelligence bar still outranks a cold passer — a cold load
+/// happens only when nothing resident serves at all (dispatch readiness
+/// then materializes the weights on demand, opening the role's window on
+/// the resident server instead of evicting it).
 #[allow(clippy::implicit_hasher)]
 pub fn select_viable_member(
     scope: &str,
@@ -409,22 +426,18 @@ pub fn select_viable_member(
         return None;
     }
 
-    // Passing subset (intelligence bar); when nothing passes the whole pool
-    // competes so dispatch still has a cheapest target. Refs borrow from
-    // `members` / `models` — no allocation.
-    let passing: Vec<&String> = pool
-        .iter()
-        .copied()
-        .filter(|key| {
-            let (base, _) = split_model_key(key);
-            models
-                .get(base)
-                .map(|m| m.intelligence)
-                .is_some_and(|i| i >= min_complexity.unwrap_or(0))
-        })
-        .collect();
-    let pool: Vec<&String> = if passing.is_empty() { pool } else { passing };
-
+    // Intelligence bar as an ordering tier, never a filter: resident members
+    // outrank cold ones even when they fail the bar, so `last` prefers the
+    // loaded model (opening the role's window on it) and a cold load happens
+    // only when nothing resident serves. Refs borrow from `members` /
+    // `models` — no allocation.
+    let passes = |key: &String| {
+        let (base, _) = split_model_key(key);
+        models
+            .get(base)
+            .map(|m| m.intelligence)
+            .is_some_and(|i| i >= min_complexity.unwrap_or(0))
+    };
     let is_resident_key = |key: &String| {
         let (base, _) = split_model_key(key);
         is_resident.is_none_or(|probe| probe(base))
@@ -441,6 +454,7 @@ pub fn select_viable_member(
         is_resident_key(a)
             .cmp(&is_resident_key(b))
             .reverse()
+            .then_with(|| passes(a).cmp(&passes(b)).reverse())
             .then_with(|| {
                 cost_of(a)
                     .partial_cmp(&cost_of(b))
@@ -597,9 +611,10 @@ impl RoutingConfig {
 
     /// Whether model `base` serves `role`: the role binds it in its
     /// `models` list, or the role is the fleet `default` and the model is
-    /// bound to no other role (the fleet-inherit rule). The single
-    /// serve-check behind dispatch (`apply_terminal_role`) and boot
-    /// validation (`validate_terminal_roles`).
+    /// bound to no other role (the fleet-inherit rule). The serve-check
+    /// behind boot validation (`validate_terminal_roles`); dispatch no
+    /// longer consults it — every dispatch opens the role's window on the
+    /// selected model, bound or not.
     fn model_serves_role(&self, base: &str, role: &str) -> Result<(), String> {
         let role_entry = self
             .roles
@@ -618,21 +633,22 @@ impl RoutingConfig {
     /// Apply a terminal role to a resolved target, in place. The role's
     /// `models` list has already picked the weights (`member` → `rt`); the
     /// role composes its params legs over the entry (the role run block,
-    /// then the model-side override) and picks the window: a role that binds
-    /// the model dispatches through the role's window (`<base>:<role>`); an
-    /// unbound member serves through the entry default. A **pinned** role forces its
-    /// qualifier wherever it binds — the profile is boot-materialized, so
-    /// the target resolves identically pre/post boot. An unpinned role
-    /// qualifies through a materialized window — matching by instance name
-    /// or by group (sibling-expanded roles like `quick-0`/`quick-1` share
-    /// the `quick` group the fork routes). Best effort: a role with no
-    /// window in the pool leaves the entry default in place. An explicit
-    /// member qualifier (`base:point`) wins for the where — the target
-    /// keeps its qualifier and the role is only recorded for the audit
-    /// trail. Unknown roles and unserved models keep the target as built
-    /// (graceful at dispatch — boot validation fails closed on the
-    /// unfillable pinned shapes instead).
-    fn apply_terminal_role(&self, rt: &mut RoutingTarget, member: &str, role: &str) {
+    /// then the model-side override) and picks the window: every dispatch
+    /// names the role's window (`<base>:<role>`) — bound roles hit their
+    /// materialized window, unbound roles open it on demand from the role's
+    /// params (see `InstanceManager::ensure_window`). There is no synthetic
+    /// entry-default fallback: no qualifier may name a window the config
+    /// never declared. A **pinned** role forces its qualifier wherever it
+    /// binds — the profile is boot-materialized, so the target resolves
+    /// identically pre/post boot. An explicit member qualifier
+    /// (`base:point`) wins for the where — the target keeps its qualifier
+    /// and the role is only recorded for the audit trail. Unknown roles and
+    /// unknown models keep the target as built (graceful at dispatch — boot
+    /// validation fails closed on the unfillable pinned shapes instead).
+    /// See the doc above: every dispatch names the role's window. `pub(crate)`
+    /// so the target-match ladder builds primaries through the same rule —
+    /// static and ladder paths resolve identically.
+    pub(crate) fn apply_terminal_role(&self, rt: &mut RoutingTarget, member: &str, role: &str) {
         rt.role = Some(role.to_string());
         let (base, qualifier) = split_model_key(member);
         if qualifier.is_some() {
@@ -641,32 +657,16 @@ impl RoutingConfig {
         let Some(entry) = self.models.get(base) else {
             return;
         };
-        if self.model_serves_role(base, role).is_err() {
-            return;
-        }
         let Some(role_entry) = self.roles.get(role) else {
             return;
         };
-        // A bound role dispatches through its window. Forcing a qualifier
-        // the pool never materialized would target a nonexistent fork
-        // instance, so the force applies only where the role binds the
-        // model and the pool carries the window — matched by instance name
-        // or by group (sibling-expanded roles share the group the fork
-        // routes, e.g. `quick-0`/`quick-1` serve the `quick` qualifier).
-        let role_profile = role_entry.serves(base)
-            && (role_entry.pinned
-                || entry
-                    .effective_pool()
-                    .iter()
-                    .any(|p| p.name.as_deref() == Some(role) || p.group.as_deref() == Some(role)));
-        let mut qualified = if role_profile {
-            RoutingTarget::from_model_entry_instance(base, entry, role)
-        } else {
-            RoutingTarget::from_model_entry(base, entry)
-        };
-        if let Some(params) =
-            entry.answer_params_for(role_profile.then_some(role), Some((role, role_entry)), None)
-        {
+        let mut qualified = RoutingTarget::from_model_entry_instance(base, entry, role);
+        // No pool-profile leg: the qualifier may name an on-demand window
+        // with no materialized profile, and the profile leg replays legs the
+        // role composition already carries (entry, role sampling, override —
+        // shallow overlays, idempotent). Role legs alone compose identically
+        // for bound roles and correctly for unbound ones.
+        if let Some(params) = entry.answer_params_for(None, Some((role, role_entry)), None) {
             qualified.params = Some(params);
         }
         let over = entry.role_params.as_ref().and_then(|o| o.get(role));
@@ -681,16 +681,15 @@ impl RoutingConfig {
 
     /// Boot reference check for terminal roles (wired into the startup gate;
     /// unit-tested here): every terminal declaring `role` names a `roles`
-    /// entry. An unserved bare member fails boot only when the pinned role
-    /// can never fill it — a role with no runtime flexibility (no `last` /
-    /// `any` sentinel, which recency may resolve to a serving model) names
-    /// a window that will never exist. Sentinel-bearing roles may fill a
-    /// pinned role at runtime, and unpinned roles fall back to the entry
-    /// default at dispatch, so both pass. Deterministic: routes visit in
-    /// sorted order, so the first reported failure is stable. Explicitly
-    /// qualified members, sentinels, onnx members, and unknown model keys
-    /// are skipped here — owned by the explicit-point rule, the stateful
-    /// climb, the onnx path, and the reference check respectively.
+    /// entry. A pinned role with no bound model fails boot: on-demand
+    /// windows are never pinned, so only a bound model boot-materializes
+    /// the pinned window — sentinel flexibility cannot fill it at runtime.
+    /// Unpinned roles always pass (any model may open their window on
+    /// demand). Deterministic: routes visit in sorted order, so the first
+    /// reported failure is stable. Explicitly qualified members, sentinels,
+    /// onnx members, and unknown model keys are skipped here — owned by the
+    /// explicit-point rule, the stateful climb, the onnx path, and the
+    /// reference check respectively.
     pub fn validate_terminal_roles(
         &self,
         tree: &crate::config::ClassificationTree,
@@ -706,9 +705,22 @@ impl RoutingConfig {
                     "terminal route '{route}' names unknown role '{role}' (no roles.{role} entry)"
                 ));
             }
+            // Pinned roles need a bound model: only binding boot-materializes
+            // the pinned window (on-demand windows are never pinned).
+            if self.roles.get(&role).is_some_and(|r| r.pinned) {
+                let bound = self.roles.get(&role).is_some_and(|r| {
+                    r.models
+                        .iter()
+                        .any(|m| self.models.contains_key(m.as_str()))
+                });
+                if !bound {
+                    return Err(format!(
+                        "terminal route '{route}' pinned role '{role}' binds no model: on-demand windows are never pinned, so the pinned window can never exist"
+                    ));
+                }
+            }
             let mut members = self.role_dispatch_members(&role);
             members.sort();
-            let runtime_flexible = members.iter().any(|m| m == "last" || m == "any");
             for member in &members {
                 if member == "last" || member == "any" {
                     continue;
@@ -720,15 +732,11 @@ impl RoutingConfig {
                 if !self.models.contains_key(base) {
                     continue;
                 }
-                if self.model_serves_role(base, &role).is_ok() {
-                    continue;
-                }
-                let pinned = self.roles.get(&role).is_some_and(|r| r.pinned);
-                if pinned && !runtime_flexible {
-                    let reason = self
-                        .model_serves_role(base, &role)
-                        .expect_err("serves check just failed");
-                    return Err(format!("terminal route '{route}' role '{role}': {reason}"));
+                if self.model_serves_role(base, &role).is_err() {
+                    // Unbound literal member of a role: serves through an
+                    // on-demand role window at dispatch — always fillable,
+                    // so it never fails the gate (pinned roles were checked
+                    // above).
                 }
             }
         }
@@ -1030,8 +1038,9 @@ impl RoutingConfig {
     }
 }
 /// The entry-default step of the inference-point precedence: the `default:
-/// true` profile's group (unbound models keep their synthetic `base`
-/// dispatch point), else the cheapest pinned group (resident by
+/// true` profile's group (unbound models materialize no pool, so there is
+/// no synthetic `base` dispatch point — dispatch opens the role's window),
+/// else the cheapest pinned group (resident by
 /// construction — smallest window first, ties broken by group name, per the
 /// cheap-before-expensive principle), else the single shared group across
 /// all profiles, else `None` (bare `<base>`). `None` also when no pool was
@@ -1080,11 +1089,13 @@ pub(crate) fn default_inference_point(entry: &ModelEntry) -> Option<String> {
 ///
 /// A role carries no qualifier of its own: it resolves from the route, which
 /// selects a model from a group, and the selected model's entry default
-/// supplies the point (the caller resolves *what* serves via
-/// [`role_head_key`], then this function resolves *where* on it).
-/// Unknown roles and keys fail closed (`None`). Entries are expected
-/// boot-materialized (pools composed); pre-boot entries resolve through
-/// step 3.
+/// supplies the backend inference point (the caller resolves *what* serves
+/// via [`role_head_key`], then this function resolves *where* on it).
+/// Dispatch targets qualify separately through `apply_terminal_role` — every
+/// dispatch names the role's window (`<base>:<role>`), never the entry
+/// default. Unknown roles and keys fail closed (`None`). Entries are
+/// expected boot-materialized (pools composed); pre-boot entries resolve
+/// through step 3.
 #[allow(clippy::implicit_hasher)]
 pub fn resolve_inference_point(
     models: &HashMap<String, ModelEntry>,

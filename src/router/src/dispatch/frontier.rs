@@ -15,6 +15,15 @@ impl DispatchError {
     pub fn is_retryable(&self) -> bool {
         matches!(self, DispatchError::Http(_) | DispatchError::RateLimited)
     }
+
+    /// A context overflow must never be retried against the same target —
+    /// identical bytes fail identically — but the dispatch chain continues:
+    /// a bigger fallback window/model or the escalation ladder may still
+    /// serve. The only variant with retryable-chain / non-retryable-target
+    /// semantics; every other error treats both levels alike.
+    pub fn continues_chain(&self) -> bool {
+        matches!(self, DispatchError::ContextOverflow { .. })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -33,6 +42,17 @@ pub enum DispatchError {
     RateLimited,
     #[error("no free instance in group: {group}")]
     InstanceGroupMiss { group: String },
+    /// The prompt does not fit the target's context window (parsed from the
+    /// error body — our fork's `request (N tokens) exceeds the available
+    /// context size (M tokens)` or an OpenAI-style `context_length_exceeded`
+    /// payload). Non-retryable at the target level (deterministic), but the
+    /// chain continues past it.
+    #[error("prompt exceeds the target context window: {detail}")]
+    ContextOverflow {
+        needed_tokens: Option<u64>,
+        available_tokens: Option<u64>,
+        detail: String,
+    },
     #[error("all backends failed")]
     AllBackendsFailed,
 }

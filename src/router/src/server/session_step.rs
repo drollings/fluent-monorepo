@@ -36,6 +36,11 @@ pub(crate) async fn record_ledger_result(
 /// target's total timeout) and then records - never delaying the HTTP response.
 /// `label` is the fallback content when no answer is available (escalation,
 /// empty body).
+///
+/// `accepted` is the dispatch's HTTP success: failed dispatches (terminal
+/// 400/502) record the diagnostic label as *rejected* history — never as an
+/// accepted answer — so error text can neither masquerade as a response nor
+/// inflate future prompts.
 pub(crate) async fn record_dispatch_outcome(
     answer_text: Option<String>,
     label: String,
@@ -45,13 +50,23 @@ pub(crate) async fn record_dispatch_outcome(
     session_step: Option<&SessionStepHandle>,
     wait_timeout_ms: u64,
     runtime: &Arc<dyn fluent_wvr::Runtime>,
+    accepted: bool,
 ) {
     let Some(finalizer) = stream_answer else {
         let answer = answer_text.unwrap_or_default();
-        let content = if answer.is_empty() { label } else { answer };
-        record_ledger_result(ledger, ledger_node_id, true, Some(1.0), content.clone()).await;
+        let content = if answer.is_empty() || !accepted {
+            label.clone()
+        } else {
+            answer
+        };
+        let (ok, score, error) = if accepted {
+            (true, Some(1.0), None)
+        } else {
+            (false, None, Some(label.clone()))
+        };
+        record_ledger_result(ledger, ledger_node_id, ok, score, content.clone()).await;
         if let Some(step) = session_step {
-            step.complete(true, Some(1.0), content.clone(), None);
+            step.complete(ok, score, content.clone(), error);
         }
         return;
     };
@@ -64,9 +79,14 @@ pub(crate) async fn record_dispatch_outcome(
             .wait(std::time::Duration::from_millis(wait_timeout_ms))
             .await
             .unwrap_or_else(|| label.clone());
-        record_ledger_result(ledger.as_ref(), node_id, true, Some(1.0), content.clone()).await;
+        record_ledger_result(ledger.as_ref(), node_id, accepted, accepted.then_some(1.0), content.clone()).await;
         if let Some(step) = step {
-            step.complete(true, Some(1.0), content.clone(), None);
+            step.complete(
+                accepted,
+                accepted.then_some(1.0),
+                content.clone(),
+                (!accepted).then(|| label.clone()),
+            );
         }
     }));
 }

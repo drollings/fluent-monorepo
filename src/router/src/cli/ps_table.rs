@@ -306,10 +306,7 @@ fn snapshot_rows(model_key: &str, snaps: &[&Value]) -> Vec<PsRow> {
         .iter()
         .enumerate()
         .map(|(i, snap)| {
-            let name = snap
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or("?");
+            let name = snap.get("name").and_then(Value::as_str).unwrap_or("?");
             PsRow {
                 model: if i == 0 {
                     base_model.clone()

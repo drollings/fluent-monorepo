@@ -308,7 +308,7 @@ fn climb_matches_first_candidate_within_intelligence() {
         .expect("match");
     // start_index(Some(3)) = 1 (qwen3.5-9b, the first member with
     // intelligence >= 3). It self-assesses 4 <= 4 → match.
-    assert_eq!(tm.primary.model, "qwen3.5-9b");
+    assert_eq!(tm.primary.model, "qwen3.5-9b:default");
     assert_eq!(tm.primary.target_name.as_deref(), Some("local"));
     assert_eq!(tm.primary.role.as_deref(), Some("default"));
     // Exactly 1 self-assessment: swarm skipped by the start index, qwen3.5-9b
@@ -337,7 +337,7 @@ fn climb_escalates_to_more_intelligent_member() {
         .expect("match");
     // start_index(Some(3)) = 1. qwen3.5-9b self-assesses 7 > 4 → escalate.
     // qwen3.6-27b self-assesses 6 <= 6 → match.
-    assert_eq!(tm.primary.model, "qwen3.6-27b");
+    assert_eq!(tm.primary.model, "qwen3.6-27b:default");
     assert_eq!(tm.assessments.len(), 2);
     assert_eq!(tm.assessments[0].assessed, Some(7));
     assert!(!tm.assessments[0].matched);
@@ -362,7 +362,7 @@ fn climb_starts_at_classifier_seed() {
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("match");
     // No classifier estimate → start at 0 (swarm). Swarm self-assesses 1 <= 2 → match.
-    assert_eq!(tm.primary.model, "swarm");
+    assert_eq!(tm.primary.model, "swarm:default");
     assert_eq!(tm.assessments.len(), 1);
 }
 
@@ -384,7 +384,7 @@ fn parse_failure_escalates_conservatively() {
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("match");
-    assert_eq!(tm.primary.model, "qwen3.5-9b");
+    assert_eq!(tm.primary.model, "qwen3.5-9b:default");
     assert_eq!(tm.assessments.len(), 2);
     assert_eq!(tm.assessments[0].assessed, None);
     assert!(tm.assessments[0].error.is_some());
@@ -403,7 +403,7 @@ fn llm_error_escalates_conservatively() {
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("match");
-    assert_eq!(tm.primary.model, "qwen3.6-27b");
+    assert_eq!(tm.primary.model, "qwen3.6-27b:default");
     assert_eq!(tm.assessments.len(), 2);
     assert_eq!(tm.assessments[0].assessed, None);
     assert!(tm.assessments[0].error.is_some());
@@ -423,7 +423,7 @@ fn last_member_always_matches() {
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("match");
-    assert_eq!(tm.primary.model, "qwen3.6-27b");
+    assert_eq!(tm.primary.model, "qwen3.6-27b:default");
     assert_eq!(tm.assessments.len(), 2);
     assert!(tm.assessments[1].matched, "last member always matches");
     assert_eq!(tm.assessments[1].assessed, Some(9));
@@ -448,7 +448,7 @@ fn exact_call_count_two_assessments() {
     // start index 1 → swarm never self-assesses; exactly 2 calls made.
     assert_eq!(tm.assessments.len(), 2);
     assert_eq!(tm.assessments[0].model_key, "qwen3.5-9b");
-    assert_eq!(tm.primary.model, "qwen3.6-27b");
+    assert_eq!(tm.primary.model, "qwen3.6-27b:default");
 }
 
 #[test]
@@ -464,7 +464,7 @@ fn fallbacks_are_group_tail_then_cross_group() {
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("match");
-    assert_eq!(tm.primary.model, "swarm");
+    assert_eq!(tm.primary.model, "swarm:default");
     // Fallback tail = the more-intelligent members of the group, in order.
     let fb_models: Vec<&str> = tm
         .primary
@@ -472,7 +472,11 @@ fn fallbacks_are_group_tail_then_cross_group() {
         .iter()
         .map(|f| f.model.as_str())
         .collect();
-    assert_eq!(fb_models, vec!["qwen3.5-9b", "qwen3.6-27b"]);
+    assert_eq!(
+        fb_models,
+        vec!["qwen3.5-9b:default", "qwen3.6-27b:default"],
+        "fallbacks serve the request role too"
+    );
 }
 
 #[test]
@@ -1094,8 +1098,10 @@ fn check_case(case: &serde_json::Value) -> bool {
         "case {} walk length is deterministic",
         case["name"]
     );
-    let winner_ok =
-        first.primary.model.as_str() == case["expected_winner"].as_str().expect("expected winner");
+    // Corpus pins who serves (base key); the role-window qualifier is
+    // asserted separately — every dispatch names `<base>:<role>`.
+    let (winner_base, _) = fluent_types::model_key::split_model_key(&first.primary.model);
+    let winner_ok = winner_base == case["expected_winner"].as_str().expect("expected winner");
     let count_ok = first.assessments.len()
         == case["expected_assessments"]
             .as_u64()
@@ -1143,8 +1149,11 @@ fn control_trivial_prompts_never_escalate() {
             "control case {} first rung matches",
             case["name"]
         );
+        // Corpus pins who serves (base key); the role-window qualifier is
+        // asserted separately — every dispatch names `<base>:<role>`.
+        let (winner_base, _) = fluent_types::model_key::split_model_key(&tm.primary.model);
         assert_eq!(
-            tm.primary.model.as_str(),
+            winner_base,
             case["expected_winner"].as_str().expect("expected winner"),
             "control case {} stays on the cheapest member",
             case["name"]
@@ -1209,8 +1218,11 @@ fn confidence_gap_terminates_with_truthful_record() {
     // the ladder stops, the winner is in-bounds, and the assessed value is
     // recorded as 2 (never inflated to justify the outcome).
     let tm = run_case(case);
+    // Corpus pins who serves (base key); the role-window qualifier is
+    // asserted separately — every dispatch names `<base>:<role>`.
+    let (winner_base, _) = fluent_types::model_key::split_model_key(&tm.primary.model);
     assert_eq!(
-        tm.primary.model.as_str(),
+        winner_base,
         case["expected_winner"].as_str().expect("expected winner")
     );
     let recorded = tm.assessments[0].assessed.expect("assessed recorded");
@@ -1434,7 +1446,7 @@ fn ordering_never_outranks_capability() {
             .match_target("local", "g", &routing, &cands, None, "probe")
             .expect("ladder terminates");
         assert_eq!(
-            tm.primary.model, "a",
+            tm.primary.model, "a:g",
             "recency-favored b does not win on order alone"
         );
         assert_eq!(tm.assessments.len(), 2);

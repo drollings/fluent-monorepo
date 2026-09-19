@@ -764,10 +764,7 @@ async fn ensure_instance_restores_from_resume_snapshot() {
 
     // No resume snapshot fork-side -> fresh window, no `snapshot` key.
     assert!(
-        manager
-            .resume_snapshot_for("missing")
-            .await
-            .is_none(),
+        manager.resume_snapshot_for("missing").await.is_none(),
         "absent snapshots resolve to no restore point"
     );
 }
@@ -1919,6 +1916,206 @@ async fn list_models_synthesizes_unloaded_rows_when_server_down() {
 }
 
 #[tokio::test]
+async fn list_models_bare_row_for_empty_pool() {
+    // No materialized pool (serves only through on-demand role windows):
+    // a down server synthesizes one bare row for the model key itself —
+    // visible and addressable, with no phantom window beside it.
+    let client = crate::instances::InstanceClient::new(
+        reqwest::Client::new(),
+        "http://127.0.0.1:1".to_string(),
+        None,
+    );
+    let manager = Arc::new(crate::instances::InstanceManager::new(
+        "qwen3.8-27b",
+        client,
+        Vec::new(),
+        sidecar_policy(),
+    ));
+    let mut managers = HashMap::new();
+    managers.insert("qwen3.8-27b".into(), manager);
+    let pool = InstancePool::from_managers(managers, None);
+
+    let models = pool.list_models().await;
+    assert_eq!(models.len(), 1, "one bare row, no phantom: {models:?}");
+    assert_eq!(models[0]["id"], "qwen3.8-27b");
+    assert_eq!(models[0]["state"], "unloaded");
+}
+
+fn scratch_template() -> (String, crate::config::InstanceProfile) {
+    (
+        "scratch".to_string(),
+        crate::config::InstanceProfile {
+            name: None,
+            group: Some("scratch".into()),
+            count: 1,
+            num_ctx: 65536,
+            parallel: None,
+            pinned: false,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: false,
+            resume: false,
+            params: None,
+            embedding: None,
+            max_ctx: None,
+            session: false,
+        },
+    )
+}
+
+#[tokio::test]
+async fn ensure_window_opens_role_window_from_template() {
+    // Empty configured pool + role template: dispatch through `scratch`
+    // opens `<model>:scratch` from the role's window (role group, role
+    // window, never pinned) — and destroys the spawn placeholder first so
+    // no transient window holds VRAM beside it.
+    let envelope = serde_json::json!({
+        "instances": [instance_info("x:_bootstrap", "_bootstrap", false, 0)],
+        "snapshots": [],
+        "total": {"model": 0, "context": 0, "compute": 0, "total": 0}
+    });
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (200, envelope.to_string())
+        } else if method == "GET" {
+            (200, r#"{"snapshots":[]}"#.into())
+        } else {
+            (200, "{}".into())
+        }
+    });
+    let stub = StubServer::start(handler);
+    let manager = Arc::new(
+        InstanceManager::new(
+            "swarm",
+            InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
+            Vec::new(),
+            sidecar_policy(),
+        )
+        .with_role_templates(HashMap::from([scratch_template()])),
+    );
+    let roomed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let roomed_clone = Arc::clone(&roomed);
+    manager
+        .ensure_window("scratch", 0, move |_| {
+            roomed_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+            async {}
+        })
+        .await
+        .expect("window opens");
+    assert!(
+        roomed.load(std::sync::atomic::Ordering::SeqCst),
+        "uncovered window KV runs admission first"
+    );
+
+    let recorded = stub.recorded();
+    let delete_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "DELETE" && p == "/instances/_bootstrap");
+    let create_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "POST" && p == "/instances");
+    assert!(delete_idx.is_some(), "placeholder destroyed: {recorded:?}");
+    assert!(create_idx.is_some(), "window created: {recorded:?}");
+    assert!(
+        delete_idx < create_idx,
+        "placeholder freed before the window lands: {recorded:?}"
+    );
+    let body: serde_json::Value = serde_json::from_str(&recorded[create_idx.unwrap()].2).unwrap();
+    assert_eq!(body["name"], "scratch");
+    assert_eq!(body["group"], "scratch");
+    assert_eq!(
+        body["ctx_size"], 65536,
+        "role window, not a default: {body}"
+    );
+    assert_eq!(body["pinned"], false, "on-demand windows never pin: {body}");
+}
+
+#[tokio::test]
+async fn ensure_window_skips_room_when_covered() {
+    // Admission the caller already made (cold-load pass sizes weights plus
+    // the window) covers the window KV: no second eviction pass.
+    let envelope = serde_json::json!({
+        "instances": [], "snapshots": [],
+        "total": {"model": 0, "context": 0, "compute": 0, "total": 0}
+    });
+    let stub = residency_stub(&envelope);
+    let manager = Arc::new(
+        InstanceManager::new(
+            "swarm",
+            InstanceClient::new(reqwest::Client::new(), stub.base_url(), None),
+            Vec::new(),
+            sidecar_policy(),
+        )
+        .with_role_templates(HashMap::from([scratch_template()])),
+    );
+    let roomed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let roomed_clone = Arc::clone(&roomed);
+    manager
+        .ensure_window("scratch", u64::MAX, move |_| {
+            roomed_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+            async {}
+        })
+        .await
+        .expect("window opens");
+    assert!(
+        !roomed.load(std::sync::atomic::Ordering::SeqCst),
+        "covered admission skips the second pass"
+    );
+    assert!(
+        stub.recorded()
+            .iter()
+            .any(|(m, p, _)| m == "POST" && p == "/instances"),
+        "window still created: {:?}",
+        stub.recorded()
+    );
+}
+
+#[tokio::test]
+async fn window_spec_prefers_profile_over_template() {
+    // A materialized profile wins over the role template of the same name
+    // (pinned ledger stays pinned when dispatch re-opens it).
+    let manager = InstanceManager::new(
+        "swarm",
+        InstanceClient::new(reqwest::Client::new(), "http://x", None),
+        vec![profile("ledger", "ledger")],
+        sidecar_policy(),
+    )
+    .with_role_templates(HashMap::from([(
+        "ledger".to_string(),
+        scratch_template().1,
+    )]));
+    let spec = manager.window_spec_for("ledger").expect("spec resolves");
+    assert_eq!(spec.name.as_deref(), Some("ledger"));
+    assert_eq!(spec.num_ctx, 16384, "profile window, not the template");
+    // Unknown names resolve to nothing (fail-open: no window to create).
+    assert!(manager.window_spec_for("nope").is_none());
+}
+
+#[tokio::test]
+async fn load_bytes_for_sizes_template_window() {
+    // Cold admission for a role-qualified load prices weights plus the
+    // template window KV — one pass sizes the whole load.
+    let manager = InstanceManager::new(
+        "swarm",
+        InstanceClient::new(reqwest::Client::new(), "http://x", None),
+        Vec::new(),
+        sidecar_policy(),
+    )
+    .with_role_templates(HashMap::from([scratch_template()]))
+    .with_weights_bytes(1_000_000);
+    assert_eq!(
+        manager.load_bytes_for(Some("scratch")),
+        1_000_000 + 65536 * 131_072,
+        "weights plus the role window KV"
+    );
+    assert_eq!(
+        manager.window_bytes_for("scratch"),
+        65536 * 131_072,
+        "resident admission prices the window alone"
+    );
+}
+
+#[tokio::test]
 async fn touch_advances_plain_model_last_used() {
     let props = serde_json::json!({
         "is_sleeping": false,
@@ -2460,12 +2657,15 @@ async fn residency_admission_none_budget_disables() {
 
 #[tokio::test]
 async fn is_sleeping_reflects_fork_state_and_skips_instance_models() {
+    // Grammar-less adopted servers (no /instances API) are the only models
+    // that poll /props: their single context sleeps fork-side.
     let props = serde_json::json!({
         "is_sleeping": true,
         "default_generation_settings": { "n_ctx": 8192 }
     });
     let stub = plain_stub(&props);
     let manager = plain_manager(&stub, 1000);
+    manager.set_instances_supported(false);
     assert_eq!(
         manager.is_sleeping().await,
         Some(true),
@@ -2477,10 +2677,14 @@ async fn is_sleeping_reflects_fork_state_and_skips_instance_models() {
         "default_generation_settings": { "n_ctx": 8192 }
     }));
     let manager2 = plain_manager(&stub2, 1000);
+    manager2.set_instances_supported(false);
     assert_eq!(manager2.is_sleeping().await, Some(false), "awake");
 
-    // Instance models never poll /props: their pinned contexts keep the
-    // weights resident, so the answer is always Some(false).
+    // Instance models never poll /props — keyed on API support, not pool
+    // fullness, so models serving only through on-demand role windows
+    // (empty configured pool) resolve identically. Windows sleep
+    // individually fork-side; the weights unload with the last window,
+    // which the envelope reports.
     let stub3 = plain_stub(&serde_json::json!({ "is_sleeping": true }));
     let instance_manager = InstanceManager::new(
         "swarm",

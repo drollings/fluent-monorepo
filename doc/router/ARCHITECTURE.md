@@ -738,11 +738,12 @@ entry under a role's name binds that role's profile (`select`) with a
 sparse `params` tweak; sampling composes role-base ← pool profile ←
 binding ← entry top-level (entry wins), materialized at boot into each
 model's effective pool. One qualifier precedence serves every path
-(`resolve_inference_point`): explicit qualifier, else the entry default
-(the `default: true` profile's group, else the single shared group), else a
-bare key — a role carries no qualifier of its own; it resolves from the
-route, which selects a model from a group, and the selected model's entry
-default supplies the point. Special-purpose roles ride the same
+(`resolve_inference_point`): explicit qualifier, else the role window
+(`<model>:<role>` — the materialized profile where the role binds the
+model, opened on demand from the role's params otherwise; there is no
+synthetic entry-default window), else a bare key — a role carries no
+qualifier of its own; it resolves from the route, which selects a model
+from a group, and every dispatch names the role's window on it. Special-purpose roles ride the same
 machinery: `classifier` (bound model serves classification;
 `RouterConfig::classifier_role_key` is the single classifier-key source —
 there is no top-level `classifier_model`) and `embedding` (serves the chart
@@ -1285,8 +1286,10 @@ the diff) — not its raw contents, which remain operator-owned. Its shape
   (`roles.<role>.instances`). Roles other than `default` declare only deltas:
   at parse, the fleet run block sparse-merges over every other role's
   `params` (per key, at every depth). A role carries no qualifier: it
-  resolves from the route, which selects a model from a group, and the
-  selected model's entry default supplies the point.
+  resolves from the route, which selects a model from a group (resident
+  models first — `last` prefers the loaded model, opening the role's window
+  on it — then intelligence-passing, then cheapest), and every dispatch
+  names the role's window on the pick.
 - **Params compose in one order through one merge** (`overlay_params`):
   fleet → role → pool profile → per-model binding → model entry top-level.
   A model's `roles` entry under a role's name binds that role's profile

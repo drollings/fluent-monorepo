@@ -147,7 +147,10 @@ fn resolve_route_missing_role_returns_none() {
 fn routing_target_attaches_role_target_and_fallbacks() {
     let c = sample_config();
     let rt = c.routing_target("smart", None).expect("routing target");
-    assert_eq!(rt.model, "big");
+    assert_eq!(
+        rt.model, "big:smart",
+        "every dispatch names the role window"
+    );
     assert_eq!(rt.role.as_deref(), Some("smart"));
     assert_eq!(rt.target_name.as_deref(), Some("smart"));
     // Primary (big) is skipped; fallbacks are the remaining dispatch
@@ -161,7 +164,10 @@ fn routing_target_attaches_role_target_and_fallbacks() {
 fn routing_target_unknown_route_uses_default() {
     let c = sample_config();
     let rt = c.routing_target("nope", None).expect("routing target");
-    assert_eq!(rt.model, "tiny");
+    assert_eq!(
+        rt.model, "tiny:fast",
+        "default route qualifies its role window"
+    );
     assert_eq!(rt.role.as_deref(), Some("fast"));
 }
 
@@ -285,7 +291,10 @@ fn static_route_resolution_reaches_through_roles() {
     let rt = c
         .routing_target("fast", Some(1))
         .expect("role resolves to a target");
-    assert_eq!(rt.model, "tiny", "cheapest candidate meeting complexity");
+    assert_eq!(
+        rt.model, "tiny:fast",
+        "cheapest candidate meeting complexity, role window qualified"
+    );
     assert_eq!(rt.role.as_deref(), Some("fast"));
 }
 
@@ -513,7 +522,7 @@ fn terminal_role_pinned_explicit_point_still_wins() {
 }
 
 #[test]
-fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
+fn terminal_role_unpinned_unserved_dispatch_opens_role_window() {
     let mut cfg = role_routing_config();
     // lonely is bound to no role; the unpinned terminal role cannot qualify
     // it, so dispatch serves the entry default point (graceful, by design).
@@ -542,22 +551,23 @@ fn terminal_role_unpinned_unserved_dispatch_falls_back_to_default() {
             .expect("route"),
     );
     let rt = cfg.routing_target("solo", None).expect("target");
-    // `lonely` was inserted after pool materialization, so its entry default
-    // is the bare wire id (unmaterialized entries resolve bare).
-    assert_eq!(rt.model, "lonely", "unbound member serves entry default");
-    assert!(
-        !rt.model.contains(":quick"),
-        "no forced qualifier without binding"
+    // `lonely` was inserted after pool materialization and binds nothing,
+    // yet dispatch still names the role window — opened on demand from the
+    // role's params, never a synthetic default.
+    assert_eq!(
+        rt.model, "lonely:quick",
+        "unbound member opens the role window"
     );
     assert_eq!(rt.role.as_deref(), Some("quick"), "role still recorded");
 }
 
 #[test]
-fn terminal_role_validation_rejects_unserved_member() {
+fn terminal_role_validation_rejects_pinned_without_bound_model() {
     let mut cfg = role_routing_config();
-    // Pin quick: a pinned role must be fillable, and a bare-only group with
-    // no serving member and no runtime flexibility fails boot. (Unpinned
-    // roles fall back to the entry default — see the accepts test below.)
+    // Pin quick: a pinned role must be fillable by a bound model.
+    // On-demand windows are never pinned, so sentinel flexibility cannot
+    // fill it at runtime — a pinned role binding no model fails boot even
+    // with `last` in its list.
     cfg.roles.get_mut("quick").expect("role").pinned = true;
     // lonely serves no role at all and is not the default-inherit case for
     // quick (it is bound nowhere, but quick is not default).
@@ -569,9 +579,9 @@ fn terminal_role_validation_rejects_unserved_member() {
         }))
         .expect("member"),
     );
-    // A bare-only role member that serves no role, with no runtime
-    // flexibility (no `last`/`any` sentinel): a pinned role naming it
-    // through fan-out names a window that can never exist at runtime.
+    // A pinned role whose members are only sentinels and role fan-out
+    // (no bound model): the pinned window can never materialize, since
+    // on-demand windows are never pinned.
     cfg.roles.insert(
         "mixed".into(),
         serde_json::from_value(serde_json::json!({"models": ["lonely"]})).expect("bare-only role"),
@@ -588,9 +598,12 @@ fn terminal_role_validation_rejects_unserved_member() {
     .expect("tree parses");
     let err = cfg
         .validate_terminal_roles(&tree)
-        .expect_err("unserved member must fail validation");
-    assert!(err.contains("lonely"), "error names the member, got: {err}");
+        .expect_err("pinned role without a bound model must fail validation");
     assert!(err.contains("quick"), "error names the role, got: {err}");
+    assert!(
+        err.contains("binds no model"),
+        "error states the cause, got: {err}"
+    );
 }
 
 #[test]
@@ -624,7 +637,7 @@ fn terminal_role_validation_accepts_unpinned_unserved_member() {
 }
 
 #[test]
-fn terminal_role_validation_accepts_pinned_with_sentinel_flexibility() {
+fn terminal_role_validation_rejects_pinned_with_only_sentinel_flexibility() {
     // Pinned quick, but the role carries `last` alongside a fanned-out
     // unbound member: recency may fill the role at runtime, so boot passes
     // (the winner still qualifies only if it binds the role — force never
@@ -653,8 +666,10 @@ fn terminal_role_validation_accepts_pinned_with_sentinel_flexibility() {
         ]}
     }))
     .expect("tree parses");
+    // Neither `last` nor role fan-out binds a model, so no pinned window
+    // can materialize: sentinel flexibility opens unpinned windows only.
     cfg.validate_terminal_roles(&tree)
-        .expect("sentinel-bearing role may fill the pinned role at runtime");
+        .expect_err("pinned role without a bound model must fail validation");
 }
 
 #[test]
@@ -869,17 +884,33 @@ fn role_concurrency_zero_rejected() {
 
 #[test]
 fn capacity_mismatch_warns_with_counts() {
-    // A role whose pool was never materialized counts zero slots under its
-    // cap: the pre-boot fail-open signal still warns with role + cap.
+    // Materialized slots under a raised cap warn with role + cap.
     let mut cfg = concurrency_config();
-    cfg.models.get_mut("m").expect("member").effective_profiles = None;
+    cfg.roles.get_mut("quick").expect("role").max_parallel = Some(9);
     let ((), logs) = crate::test_support::capture_logs(|| {
         cfg.warn_on_role_capacity_mismatch();
     });
     let joined = logs.join("\n");
     assert!(
-        joined.contains("quick") && joined.contains('8'),
+        joined.contains("quick") && joined.contains('9'),
         "warning names the role and the cap, logs:\n{joined}"
+    );
+}
+
+#[test]
+fn capacity_on_demand_roles_stay_silent() {
+    // An unmaterialized pool serves only through on-demand windows, which
+    // draw from the whole fleet: no countable slots, so the check skips
+    // instead of warning spuriously.
+    let mut cfg = concurrency_config();
+    cfg.models.get_mut("m").expect("member").effective_profiles = None;
+    let ((), logs) = crate::test_support::capture_logs(|| {
+        cfg.warn_on_role_capacity_mismatch();
+    });
+    assert!(
+        !logs.join("\n").contains("quick"),
+        "on-demand capacity stays silent, logs:\n{}",
+        logs.join("\n")
     );
 }
 
@@ -964,6 +995,32 @@ fn viability_none_passing_returns_cheapest() {
         picked.as_deref(),
         Some("mmm_mid"),
         "nothing passes: cheapest wins"
+    );
+}
+
+#[test]
+fn viability_resident_failing_beats_cold_passing() {
+    // Loaded wins outright: a resident member that fails the intelligence
+    // bar still outranks a cold passer. Cold loads happen only when nothing
+    // resident serves at all.
+    let models = viability_models();
+    let members = vec![
+        "aaa_first".to_string(),
+        "mmm_mid".to_string(),
+        "zzz_big".to_string(),
+    ];
+    let resident = |key: &str| key == "aaa_first";
+    let picked = super::select_viable_member(
+        "g",
+        &members,
+        &models,
+        Some(8),
+        Some(&resident as &dyn Fn(&str) -> bool),
+    );
+    assert_eq!(
+        picked.as_deref(),
+        Some("aaa_first"),
+        "resident int-1 beats cold int-8 for complexity 8"
     );
 }
 

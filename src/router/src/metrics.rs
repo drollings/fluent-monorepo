@@ -71,7 +71,8 @@ impl From<&DispatchError> for FailureClass {
             DispatchError::Http(msg) => classify_http_status(msg),
             DispatchError::RequestBuild(_)
             | DispatchError::ResponseParse(_)
-            | DispatchError::StreamParse(_) => FailureClass::InputValidation,
+            | DispatchError::StreamParse(_)
+            | DispatchError::ContextOverflow { .. } => FailureClass::InputValidation,
             DispatchError::AllBackendsFailed | DispatchError::UnsupportedProvider(_) => {
                 FailureClass::Unknown
             }

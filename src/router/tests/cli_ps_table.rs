@@ -23,7 +23,13 @@ fn listed(id: &str) -> Vec<Value> {
 #[test]
 fn header_carries_vram_sysram_ctx_quant_kv_live_columns() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
+    let (rows, totals) = collect_ps_rows(
+        None,
+        dir.path(),
+        &listed("base:ledger"),
+        &[llama_row()],
+        &[],
+    );
     let text = render_ps_table_sized(&rows, &totals, 100);
     for col in [
         "MODEL", "INSTANCE", "VRAM", "SYS RAM", "CTX", "QUANT", "KV", "LIVE",
@@ -35,7 +41,13 @@ fn header_carries_vram_sysram_ctx_quant_kv_live_columns() {
 #[test]
 fn row_shows_ctx_window_weights_quant_and_sleep() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
+    let (rows, totals) = collect_ps_rows(
+        None,
+        dir.path(),
+        &listed("base:ledger"),
+        &[llama_row()],
+        &[],
+    );
     // Weights row, instance row, TOTAL row.
     assert_eq!(rows.len(), 3);
     assert_eq!(rows[0].model, "base");
@@ -68,15 +80,27 @@ fn unknown_weights_row_renders_dash_never_disk_size() {
     plain["vram_bytes"] = json!(0u64);
     plain["total_bytes"] = json!(0u64);
     let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[plain], &[]);
-    assert_eq!(rows[0].vram, "-", "unknown weights render as dash: {rows:?}");
+    assert_eq!(
+        rows[0].vram, "-",
+        "unknown weights render as dash: {rows:?}"
+    );
     assert_eq!(rows[1].vram, "-", "unknown instance VRAM renders as dash");
-    assert_eq!(totals.resident_bytes, 0, "unknown contributes nothing resident");
+    assert_eq!(
+        totals.resident_bytes, 0,
+        "unknown contributes nothing resident"
+    );
 }
 
 #[test]
 fn kv_cache_quant_defaults_to_q8_0_without_config() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
+    let (rows, _) = collect_ps_rows(
+        None,
+        dir.path(),
+        &listed("base:ledger"),
+        &[llama_row()],
+        &[],
+    );
     assert_eq!(rows[1].kv, "q8_0");
     let text = render_ps_table_sized(
         &rows,
@@ -172,7 +196,8 @@ fn onnx_row_uses_ram_and_runtime_marker() {
         "vram_bytes": 0,
         "model_bytes": 0u64,
     });
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("onnx/llm:default"), &[row], &[]);
+    let (rows, totals) =
+        collect_ps_rows(None, dir.path(), &listed("onnx/llm:default"), &[row], &[]);
     assert_eq!(rows.len(), 3);
     assert!(rows[0].model.contains("(onnx)"), "got {}", rows[0].model);
     assert_eq!(rows[1].sys_ram, "4 GB", "onnx working set is CPU RAM");
@@ -212,7 +237,11 @@ fn unloaded_model_with_two_windows_renders_one_row() {
     assert_eq!(totals.models, 1, "model counted once");
     assert_eq!(totals.instances, 0);
     let text = render_ps_table_sized(&rows, &totals, 100);
-    assert_eq!(text.matches("qwen3.5-9b").count(), 1, "no duplicate:\n{text}");
+    assert_eq!(
+        text.matches("qwen3.5-9b").count(),
+        1,
+        "no duplicate:\n{text}"
+    );
 }
 
 #[test]
@@ -275,8 +304,13 @@ fn loaded_group_with_snapshot_appends_without_counting() {
         "instance": "ledger",
         "model": "base",
     })];
-    let (rows, totals) =
-        collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &snapshots);
+    let (rows, totals) = collect_ps_rows(
+        None,
+        dir.path(),
+        &listed("base:ledger"),
+        &[llama_row()],
+        &snapshots,
+    );
     assert_eq!(rows.len(), 4, "weights/instance/TOTAL + snapshot: {rows:?}");
     assert_eq!(rows[2].instance, "TOTAL");
     assert_eq!(rows[3].instance, "snapshot:ledger-resume");
@@ -317,13 +351,7 @@ fn every_line_fits_the_requested_width() {
     ];
     for width in [80u16, 100, 140] {
         let (rows, totals) =
-            collect_ps_rows(
-            None,
-            dir.path(),
-            &listed,
-            &[llama_row(), onnx.clone()],
-            &[],
-        );
+            collect_ps_rows(None, dir.path(), &listed, &[llama_row(), onnx.clone()], &[]);
         let text = render_ps_table_sized(&rows, &totals, width);
         for line in text.lines() {
             assert!(
@@ -351,7 +379,13 @@ fn totals_footer_counts_models_instances_and_bytes() {
 #[test]
 fn no_boundary_characters_in_text_output() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
+    let (rows, totals) = collect_ps_rows(
+        None,
+        dir.path(),
+        &listed("base:ledger"),
+        &[llama_row()],
+        &[],
+    );
     let text = render_ps_table_sized(&rows, &totals, 100);
     for boundary in ['┌', '┐', '└', '┘', '─', '│', '├', '┤', '┬', '┴', '┼'] {
         assert!(

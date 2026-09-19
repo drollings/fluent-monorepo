@@ -93,7 +93,7 @@ impl Ladder {
     ///
     /// Returns `Some(response)` when a rung accepted the request (or the
     /// context cache short-circuited); `None` when every configured mode was
-    /// rejected or skipped — the caller then returns `fallback_completion`.
+    /// rejected or skipped — the caller then returns an honest HTTP error.
     pub async fn try_escalate(&self, ctx: &EscalationContext<'_>) -> Option<HyperResponse> {
         // Deterministic-first: a context hit short-circuits before any
         // frontier call (VISION §"Post-processing": the same question never

@@ -566,7 +566,11 @@ fn snapshot_identity_filled_from_model_entry() {
         fluent_concurrency::capability::default_capability_set(),
         || {
             (
-                snapshot_identity_for_model(&entry, std::path::Path::new("."), Some("b1234".into())),
+                snapshot_identity_for_model(
+                    &entry,
+                    std::path::Path::new("."),
+                    Some("b1234".into()),
+                ),
                 snapshot_identity_for_model(&entry, std::path::Path::new("."), None),
                 snapshot_identity_for_model(
                     &crate::config::ModelEntry::default(),

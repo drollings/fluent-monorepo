@@ -697,7 +697,7 @@ async fn exhaustion_returns_none() {
     };
     assert!(
         ladder.try_escalate(&ctx).await.is_none(),
-        "exhaustion → None so the caller returns fallback_completion"
+        "exhaustion → None so the caller returns an honest HTTP error"
     );
 }
 

@@ -136,14 +136,17 @@ impl InstancePool {
 
     /// Ensure the model behind a dispatch endpoint is loaded: spawn its
     /// `llama-server` on demand if it is lazy (no pinned instance at boot) and
-    /// currently unloaded. Also ensures a specifically-targeted instance
-    /// (e.g. `<base>:scratch`) is created on demand. Best-effort: a failure to
-    /// load degrades to the caller's normal dispatch error path.
+    /// currently unloaded. Also ensures a specifically-targeted window
+    /// (e.g. `<model>:<role>`, from its profile or role template) is created
+    /// on demand. Best-effort: a failure to load degrades to the caller's
+    /// normal dispatch error path.
     ///
     /// Before the target's weights are (re)loaded, [`Self::make_room_for`]
     /// evicts LRU unpinned instances and unloads cold plain models so the load
     /// never pushes the device over its VRAM allocation budget
     /// (`total - minimum_remaining`, never the reactive watermark floor).
+    /// Opening a window on an already-resident server admits the window KV
+    /// alone — resident weights are never priced twice.
     /// Residency is judged by the *actual* resident state, not the process flag:
     /// a plain model whose fork has slept its weights out of VRAM (process alive,
     /// `is_sleeping = true`) needs the same room to wake as a cold load would.
@@ -163,9 +166,12 @@ impl InstancePool {
             // A sleeping plain model is NOT resident: waking it reloads its
             // weights into VRAM. Treat it like a cold load for admission.
             let resident = running && manager.is_sleeping().await != Some(true);
+            // Room already made for the incoming window on the cold path
+            // (weights plus the window KV, so one pass sizes the whole load).
+            let mut admitted = 0u64;
             if !resident {
-                self.make_room_for(model_key, manager.load_bytes_for(instance))
-                    .await;
+                admitted = manager.load_bytes_for(instance);
+                self.make_room_for(model_key, admitted).await;
             }
             if !running {
                 if let Err(e) = sup.ensure_running(model_key).await {
@@ -177,6 +183,25 @@ impl InstancePool {
                     );
                 }
             }
+            if let Some(name) = instance {
+                // Open the role's window on the resident server (`<model>:
+                // <role>`, created from its profile or role template when
+                // missing): admission inside covers the window KV alone —
+                // the weights are already resident and must not be priced.
+                if let Err(e) = manager
+                    .ensure_window(name, admitted, |bytes| self.make_room_for(model_key, bytes))
+                    .await
+                {
+                    tracing::warn!(
+                        target: "router.instances",
+                        model = %model_key,
+                        instance = %name,
+                        error = %e,
+                        "on-demand instance create failed",
+                    );
+                }
+            }
+            return;
         }
         if let Some(instance) = instance {
             if let Err(e) = manager.ensure_instance(instance).await {
@@ -218,15 +243,14 @@ impl InstancePool {
             // to resize through the (absent) management API.
             return Ok(());
         }
-        // The targeted context's profile: the allocated `n_ctx` and the cap.
-        let Some(profile) = manager
-            .profiles()
-            .iter()
-            .find(|p| p.name.as_deref() == Some(instance))
-        else {
-            // No configured profile for the instance — nothing to size.
+        // The targeted context's window spec (configured profile or
+        // on-demand role template): the allocated `n_ctx` and the cap.
+        let Some(spec) = manager.window_spec_for(instance) else {
+            // No configured profile or role template for the instance —
+            // nothing to size.
             return Ok(());
         };
+        let profile = &spec;
         if need <= profile.num_ctx {
             return Ok(());
         }

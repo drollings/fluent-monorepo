@@ -266,6 +266,58 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
     out
 }
 
+/// On-demand role-window templates for one model: every role maps to the
+/// window a dispatch through that role opens when the model has no
+/// materialized profile for it (`<model>:<role>` from the role's params).
+/// Same composition as a bound profile — the role run block's `num_ctx`
+/// clamped to the model-side cap (role override, then the entry), the
+/// entry's `max_parallel`, the entry's `max_ctx` — except `pinned: false`
+/// always: on-demand windows are demand-driven and idle-reaped, never
+/// resident anchors (a pinned role's window exists only where the role
+/// binds the model and boot materializes it). `name` is filled at creation;
+/// `session: false` (one-shot: never snapshotted, like every undeclared
+/// window).
+#[allow(clippy::implicit_hasher)]
+pub(crate) fn role_window_templates(
+    entry: &ModelEntry,
+    roles: &HashMap<String, RoleEntry>,
+) -> HashMap<String, InstanceProfile> {
+    let mut names: Vec<&String> = roles.keys().collect();
+    names.sort();
+    let mut out = HashMap::new();
+    for name in names {
+        let role = &roles[name];
+        let over = entry.role_params.as_ref().and_then(|o| o.get(name));
+        let cap = over.and_then(|o| o.max_ctx).or(entry.max_ctx);
+        let mut num_ctx = role.params.num_ctx;
+        if let Some(c) = cap {
+            if c < num_ctx {
+                num_ctx = c;
+            }
+        }
+        out.insert(
+            name.clone(),
+            InstanceProfile {
+                name: None,
+                group: Some(name.clone()),
+                count: 1,
+                num_ctx,
+                parallel: entry.max_parallel,
+                pinned: false,
+                no_sleep: false,
+                sleep_idle_seconds: None,
+                default: false,
+                resume: false,
+                params: None,
+                embedding: None,
+                max_ctx: entry.max_ctx,
+                session: false,
+            },
+        );
+    }
+    out
+}
+
 /// Compose one model's effective instance pool at boot: the single
 /// role → per-model-instance params chain, synthesized here so every
 /// qualifier, sampling, backend, and supervision path reads composed values
@@ -278,11 +330,11 @@ fn expand_instance_map(merged: &HashMap<String, InstanceProfile>) -> Vec<Instanc
 ///   role order), composing role run-block sampling and the model-side
 ///   `roles.<role>` override over the entry params, with `pinned`
 ///   composing as role OR model and `max_ctx` as override-else-entry;
-/// - when no role binds the model, a single `base` profile (the entry's own
-///   params, `pinned`, `max_ctx`, `max_parallel`), marked `default: true` —
-///   the bare-model dispatch point. Role-bound models have no `base`
-///   phantom: every dispatch and backend qualifier names a real role
-///   window, never a synthetic default.
+/// - when no role binds the model, no profile at all — there is no
+///   synthetic `base` dispatch point. Every dispatch names a real role
+///   window (`<model>:<role>`), opened on demand from the role's params
+///   when the model is selected; unlisted models stay fully lazy until
+///   then.
 ///
 /// A pinned profile is what boots a model at startup
 /// (`supervisor::LlamaServerSpec::from_entry`); everything else loads on
@@ -294,14 +346,6 @@ pub(crate) fn materialize_effective_pool(
     entry: &ModelEntry,
     roles: &HashMap<String, RoleEntry>,
 ) -> Vec<InstanceProfile> {
-    let entry_num_ctx = || {
-        entry
-            .params
-            .as_ref()
-            .and_then(|p| p.get("num_ctx"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_else(|| RoleParams::default().num_ctx)
-    };
     let mut merged: HashMap<String, InstanceProfile> = HashMap::new();
     let mut binding_roles: Vec<&str> = roles
         .iter()
@@ -309,30 +353,10 @@ pub(crate) fn materialize_effective_pool(
         .map(|(name, _)| name.as_str())
         .collect();
     binding_roles.sort_unstable();
-    // No bindings: the entry stands alone, so it keeps its synthetic `base`
-    // dispatch point. Bound models serve only through their role windows —
-    // no `base` phantom beside them (every qualifier names a real window).
-    if binding_roles.is_empty() {
-        merged.insert(
-            "base".to_string(),
-            InstanceProfile {
-                name: None,
-                group: None,
-                count: 1,
-                num_ctx: entry_num_ctx(),
-                parallel: entry.max_parallel,
-                pinned: entry.pinned,
-                no_sleep: false,
-                sleep_idle_seconds: None,
-                default: true,
-                resume: false,
-                params: entry.params.clone(),
-                embedding: None,
-                max_ctx: entry.max_ctx,
-                session: false,
-            },
-        );
-    }
+    // No bindings: no profile. The model serves only through role windows
+    // opened on demand (`<model>:<role>` from the role's params) — there is
+    // no synthetic `base` dispatch point beside them, so an unlisted model
+    // stays fully lazy (not even a pre-created window) until selected.
     for role_name in binding_roles {
         let role = &roles[role_name];
         let over = entry.role_params.as_ref().and_then(|o| o.get(role_name));

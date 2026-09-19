@@ -682,10 +682,13 @@ async fn handle_chat_completion(
             }
         }
 
+        // A rejection is never an accepted answer: `accepted` is false
+        // unconditionally (the previous `is_stream` in this slot recorded
+        // streaming rejections as successes, poisoning history).
         record_ledger_result(
             ledger.as_ref(),
             ledger_node_id,
-            is_stream,
+            false,
             Some(0.0),
             reason.to_string(),
         )
@@ -693,7 +696,7 @@ async fn handle_chat_completion(
 
         if let Some(ref step) = session_step {
             step.complete(
-                is_stream,
+                false,
                 Some(0.0),
                 reason.to_string(),
                 Some(reason.to_string()),
@@ -772,6 +775,7 @@ async fn handle_chat_completion(
             session_step.as_ref(),
             rt.total_timeout_ms,
             &runtime,
+            status.is_success(),
         )
         .await;
         return Ok(outcome.response);
@@ -805,6 +809,7 @@ async fn handle_chat_completion(
             session_step.as_ref(),
             0,
             &runtime,
+            status.is_success(),
         )
         .await;
         return Ok(outcome.response);
@@ -813,26 +818,14 @@ async fn handle_chat_completion(
     tracing::warn!(
         target: "router.server",
         model = %model_name,
-        "no routing target, no classifier response, no classifier url - returning fallback"
+        "no routing target, no classifier response, no classifier url - returning 502"
     );
-    record_ledger_result(
-        ledger.as_ref(),
-        ledger_node_id,
-        true,
-        Some(0.5),
-        "fallback response".to_string(),
-    )
-    .await;
+    let label = format!("no routing target for {model_name}");
+    record_ledger_result(ledger.as_ref(), ledger_node_id, false, None, label.clone()).await;
     if let Some(ref step) = session_step {
-        step.complete(true, Some(0.5), "fallback response".to_string(), None);
+        step.complete(false, None, label.clone(), Some(label.clone()));
     }
-    let completion = crate::server::responses::fallback_completion(&model_name);
-    Ok(completion_to_response(
-        &completion,
-        &model_name,
-        is_stream,
-        None,
-    ))
+    Ok(error_response(hyper::StatusCode::BAD_GATEWAY, &label))
 }
 #[allow(clippy::implicit_hasher)]
 pub async fn handle_request(

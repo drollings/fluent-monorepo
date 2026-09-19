@@ -129,9 +129,10 @@ pub fn forbidden_response() -> HyperResponse {
     )
 }
 
-pub fn fallback_completion(model_name: &str) -> RouterResponse {
-    RouterResponse::fallback(model_name)
-}
+// Terminal dispatch failure is an honest HTTP error status with a plain
+// message (`error_response`), never a 200 carrying an `ERROR:` completion
+// body — clients and history recorders must distinguish failure from an
+// answer. There is no fallback completion constructor by design.
 
 /// The assistant's answer text from a completion (first choice), or `None`
 /// when the response carries no choices.

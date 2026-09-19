@@ -167,7 +167,7 @@ fn slow_first_candidate_keeps_decision_record_and_audit_order() {
         .expect("ladder terminates");
     let lines = crate::test_support::global_capture_since(&capture, base);
 
-    assert_eq!(tm.primary.model, "m9-b");
+    assert_eq!(tm.primary.model, "m9-b:default");
     let keys: Vec<&str> = tm
         .assessments
         .iter()
@@ -226,7 +226,7 @@ fn all_failures_match_last() {
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("ladder terminates");
-    assert_eq!(tm.primary.model, "m9-z");
+    assert_eq!(tm.primary.model, "m9-z:default");
     assert_eq!(tm.assessments.len(), 3);
     for record in &tm.assessments[..2] {
         assert_eq!(record.assessed, None);
@@ -256,7 +256,7 @@ fn single_candidate_makes_exactly_one_call() {
     let tm = matcher
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("single candidate matches");
-    assert_eq!(tm.primary.model, "m9-only");
+    assert_eq!(tm.primary.model, "m9-only:default");
     assert_eq!(tm.assessments.len(), 1);
     assert!(tm.assessments[0].matched);
     assert_eq!(backend.calls(), 1);

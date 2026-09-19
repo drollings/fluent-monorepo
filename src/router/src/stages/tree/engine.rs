@@ -530,8 +530,10 @@ impl ClassificationEngine {
     /// Flat-route terminal resolution through the shared target-matching
     /// ladder when available, falling back to the static
     /// `RoutingConfig::routing_target` (defense-in-depth — never fails harder
-    /// than today). Singleton roles climb too (one assessment, terminating
-    /// on last-always-wins).
+    /// than today). The ladder only runs for 2+ member roles: a singleton
+    /// has nothing to climb (last-always-wins forces the static pick), so it
+    /// resolves statically with no extra LLM call — the same 2+ rule as the
+    /// shared `resolve_route_to_target`.
     fn resolve_route_with_matcher(
         &self,
         route: &str,
@@ -549,18 +551,17 @@ impl ClassificationEngine {
                     &|base| expansion.supervisor_loaded(base),
                     complexity,
                 );
-                // No minimum size: singleton roles climb too (the ladder
-                // terminates on last-always-wins, so one candidate needs
-                // exactly one assessment, never an extra LLM call spiral).
-                if let Some(tm) = matcher.match_target(
-                    route,
-                    role,
-                    &self.routing,
-                    &candidates,
-                    complexity,
-                    user_text,
-                ) {
-                    return Some((tm.primary, Some(tm.assessments)));
+                if candidates.len() >= 2 {
+                    if let Some(tm) = matcher.match_target(
+                        route,
+                        role,
+                        &self.routing,
+                        &candidates,
+                        complexity,
+                        user_text,
+                    ) {
+                        return Some((tm.primary, Some(tm.assessments)));
+                    }
                 }
             }
         }
@@ -570,10 +571,12 @@ impl ClassificationEngine {
     }
 
     /// Resolve a terminal's own role when no flat `routes` entry
-    /// exists. When the target-matching ladder is available, runs the
-    /// self-assessment climb for any non-empty role; otherwise picks the
+    /// exists. When the target-matching ladder is available and the role has
+    /// 2+ members, runs the self-assessment climb; otherwise picks the
     /// viable model in the role (intelligence-passing, loaded-first,
-    /// cheapest — the shared static rule).
+    /// cheapest — the shared static rule). Singletons skip the climb: the
+    /// ladder provably returns the static pick (last-always-wins), so the
+    /// assessment LLM call would be pure overhead.
     fn resolve_role_target(
         &self,
         route: &str,
@@ -591,17 +594,17 @@ impl ClassificationEngine {
                 &|base| expansion.supervisor_loaded(base),
                 min_complexity,
             );
-            // No minimum size: singleton roles climb too (last-always-wins
-            // terminates after one assessment).
-            if let Some(tm) = matcher.match_target(
-                route,
-                role,
-                &self.routing,
-                &candidates,
-                min_complexity,
-                user_text,
-            ) {
-                return Some((tm.primary, Some(tm.assessments)));
+            if candidates.len() >= 2 {
+                if let Some(tm) = matcher.match_target(
+                    route,
+                    role,
+                    &self.routing,
+                    &candidates,
+                    min_complexity,
+                    user_text,
+                ) {
+                    return Some((tm.primary, Some(tm.assessments)));
+                }
             }
         }
 
@@ -618,7 +621,9 @@ impl ClassificationEngine {
             None,
         )?;
         let mut rt = self.routing.target_for_key(&entry_key)?;
-        rt.role = Some(role.to_string());
+        // Same role-window rule as every other dispatch path: the target
+        // names `<base>:<role>` (opened on demand when unbound).
+        self.routing.apply_terminal_role(&mut rt, &entry_key, role);
         rt.target_name = Some(route.to_string());
         Some((rt, None))
     }

@@ -180,12 +180,9 @@ impl RouterResponse {
         Self::text(model, format!("ERROR: {}", err.as_ref()))
     }
 
-    pub fn fallback(model: impl Into<String>) -> Self {
-        Self::text(
-            model,
-            "ERROR: route ends in unsupported deterministic response.",
-        )
-    }
+    // NOTE: there is deliberately no `fallback` constructor. Terminal
+    // dispatch failure leaves the router as an honest HTTP error status,
+    // never a 200 carrying an `ERROR:` completion body.
 
     pub fn answer_text(&self) -> Option<String> {
         self.choices
@@ -283,8 +280,6 @@ mod tests {
         assert_eq!(r.answer_text().as_deref(), Some("hi"));
         let e = RouterResponse::error("m", "boom");
         assert!(e.answer_text().is_some_and(|t| t.starts_with("ERROR: ")));
-        let f = RouterResponse::fallback("m");
-        assert!(f.answer_text().is_some_and(|t| t.contains("ERROR")));
         assert_eq!(Usage::default().total_tokens, 0);
     }
 }

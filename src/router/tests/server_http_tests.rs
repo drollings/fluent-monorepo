@@ -789,11 +789,67 @@ async fn never_responding_upstream_times_out() {
         elapsed < Duration::from_millis(total_timeout_ms + 2000),
         "buffered dispatch took {elapsed:?}; total timeout not honored"
     );
-    assert_eq!(response.status(), 200, "fallback response expected");
-    let text = response.text().await.expect("read fallback body");
+    assert_eq!(
+        response.status(),
+        502,
+        "exhausted dispatch is an honest 502, never a 200 carrying an ERROR body"
+    );
+    let text = response.text().await.expect("read error body");
     assert!(
-        text.contains("ERROR: route ends in unsupported deterministic response."),
-        "expected fallback body, got: {text}"
+        text.contains("all dispatch targets failed"),
+        "expected honest failure body, got: {text}"
+    );
+    assert!(
+        !text.contains("unsupported deterministic response"),
+        "the dead-end fallback string is retired, got: {text}"
+    );
+}
+
+/// An upstream 400 carrying the fork's context-overflow refusal must surface
+/// as the router's actionable 400 (naming the window and the counts) — not a
+/// retried-then-dead-ended 200 carrying an ERROR body. Regression for the
+/// `quick`-8192 log forensics: 8483 prompt tokens, one attempt, honest 400.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn context_overflow_returns_actionable_400() {
+    let upstream = spawn_mock_upstream(Arc::new(|_req: &Value| {
+        let s = "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
+        hyper::Response::builder()
+            .status(400)
+            .header("content-type", "application/json")
+            .body(Full::new(Bytes::from(s)).boxed_unsync())
+            .expect("build 400 refusal")
+    }))
+    .await;
+    let config = make_config(&upstream, false, false, 5000, 5000);
+    let server = Box::pin(spawn_test_server(config, None)).await;
+
+    let body = json!({
+        "model": "fast",
+        "messages": [{"role": "user", "content": "hello"}]
+    });
+    let start = Instant::now();
+    let response = post_chat(&server.base_url(), body, 8000)
+        .await
+        .expect("request must not hang");
+    let elapsed = start.elapsed();
+
+    assert_eq!(
+        response.status(),
+        400,
+        "context overflow is an actionable 400"
+    );
+    let text = response.text().await.expect("read error body");
+    assert!(
+        text.contains("8483") && text.contains("8192"),
+        "overflow names the counts, got: {text}"
+    );
+    assert!(
+        text.contains("context window"),
+        "overflow names the remedy, got: {text}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(6),
+        "no doomed same-target retry burned seconds: {elapsed:?}"
     );
 }
 
@@ -835,11 +891,11 @@ async fn missing_pipeline_returns_error_not_canned_success() {
     assert_eq!(response.status(), 200);
     let text = response.text().await.expect("read body");
     assert!(
-        text.contains("ERROR"),
+        text.contains("none of the requested pipelines are built"),
         "expected a legible error for the unbuilt pipeline, got: {text}"
     );
     assert!(
-        !text.contains("ERROR: route ends in unsupported deterministic response."),
+        !text.contains("unsupported deterministic response"),
         "must not claim success when no pipeline is built, got: {text}"
     );
 }

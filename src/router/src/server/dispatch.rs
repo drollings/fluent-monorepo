@@ -16,7 +16,7 @@ use crate::dispatch::frontier::DispatchError;
 use crate::pipeline::RoutingTarget;
 use crate::server::responses::answer_text;
 use crate::server::responses::completion_to_response;
-use crate::server::responses::fallback_completion;
+use crate::server::responses::error_response;
 use crate::server::responses::HyperResponse;
 use crate::server::responses::ServerStats;
 use crate::streaming::StreamAnswer;
@@ -728,7 +728,10 @@ pub async fn dispatch_real(
                 }
             }
         },
-        |e: &DispatchError| !e.is_retryable(),
+        // A context overflow never retries its own target (deterministic)
+        // but never stops the chain either — a bigger fallback window, a
+        // larger model, or the escalation ladder may still serve.
+        |e: &DispatchError| !e.is_retryable() && !e.continues_chain(),
     )
     .await;
 
@@ -768,15 +771,53 @@ pub async fn dispatch_real(
         }
     }
 
-    tracing::warn!(
-        target: "router.server",
-        error = ?last_error,
-        "all dispatch targets failed, returning fallback response"
-    );
-    let completion = fallback_completion(model_name);
+    // Terminal failure is an honest HTTP error, never a 200 carrying an
+    // `ERROR:` body: clients (and history recorders) must be able to tell
+    // failure from an answer. A context overflow is a 400 the caller can
+    // act on (shorten history / pick a larger window); anything else is a
+    // 502 from the fleet.
+    let window = rt.model.as_str();
+    let response = if let Some(DispatchError::ContextOverflow {
+        needed_tokens,
+        available_tokens,
+        detail,
+    }) = &last_error
+    {
+        let hint = match (needed_tokens, available_tokens) {
+            (Some(n), Some(a)) => format!(
+                "prompt (~{n} tokens) exceeds the {window} context window ({a} tokens): \
+                 shorten the conversation history or retry on a larger window"
+            ),
+            _ => format!(
+                "prompt exceeds the {window} context window ({detail}): \
+                 shorten the conversation history or retry on a larger window"
+            ),
+        };
+        tracing::warn!(
+            target: "router.server",
+            model = %model_name,
+            window = %window,
+            error = ?last_error,
+            "dispatch failed: context overflow, returning 400"
+        );
+        error_response(hyper::StatusCode::BAD_REQUEST, &hint)
+    } else {
+        tracing::warn!(
+            target: "router.server",
+            model = %model_name,
+            window = %window,
+            error = ?last_error,
+            "all dispatch targets failed, returning 502"
+        );
+        let msg = match &last_error {
+            Some(e) => format!("all dispatch targets failed for {model_name}: {e}"),
+            None => format!("all dispatch targets failed for {model_name}"),
+        };
+        error_response(hyper::StatusCode::BAD_GATEWAY, &msg)
+    };
     Ok(DispatchOutcome {
-        response: completion_to_response(&completion, model_name, stream, None),
-        answer_text: answer_text(&completion),
+        response,
+        answer_text: None,
         stream_answer: None,
     })
 }

@@ -242,7 +242,10 @@ fn terminal_node_resolves_route() {
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let rt = routed_target(&evaluation);
     assert_eq!(rt.target_name.as_deref(), Some("code"));
-    assert_eq!(rt.model, "code-model");
+    assert_eq!(
+        rt.model, "code-model:code",
+        "dispatch names the role window"
+    );
     assert_eq!(rt.role.as_deref(), Some("code"));
 }
 
@@ -259,7 +262,11 @@ fn terminal_complexity_selects_model() {
     let evaluation = engine.evaluate("complex", None, None).unwrap();
     let decision = &evaluation.decision;
     assert_eq!(decision.verdict, StageVerdict::Passed);
-    assert_eq!(routed_target(&evaluation).model, "code-model");
+    assert_eq!(
+        routed_target(&evaluation).model,
+        "code-model:code",
+        "fallback pick unchanged, role window qualified"
+    );
 }
 
 #[test]
@@ -288,7 +295,7 @@ fn terminal_with_own_role_resolves_without_flat_route() {
     let rt = routed_target(&evaluation);
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
     // Cheapest in "fast" role meeting no-complexity: fast (cost 1e-6 vs small 2e-6).
-    assert_eq!(rt.model, "fast");
+    assert_eq!(rt.model, "fast:fast", "own-role terminals qualify too");
 }
 
 #[test]
@@ -314,7 +321,7 @@ fn terminal_role_ladder_self_assesses_and_matches() {
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let rt = routed_target(&evaluation);
     assert_eq!(
-        rt.model, "small",
+        rt.model, "small:fast",
         "ladder climbs past the too-weak cheap member",
     );
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
@@ -379,7 +386,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
     let decision = &evaluation.decision;
     assert_eq!(decision.verdict, StageVerdict::Passed);
     let rt = routed_target(&evaluation);
-    assert_eq!(rt.model, "small");
+    assert_eq!(rt.model, "small:fast");
     assert_eq!(rt.target_name.as_deref(), Some("fresh"));
     assert_eq!(rt.role.as_deref(), Some("fast"));
 
@@ -397,7 +404,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
 }
 
 #[test]
-fn terminal_single_member_role_climbs() {
+fn terminal_single_member_role_skips_climb() {
     // A single-member role ("code") climbs with a matcher present: exactly
     // one self-assessment call, terminating on last-always-wins with the
     // member as primary (same target the static path would pick).
@@ -422,11 +429,11 @@ fn terminal_single_member_role_climbs() {
     let evaluation = engine.evaluate("hello", None, None).unwrap();
     let decision = &evaluation.decision;
     assert_eq!(decision.verdict, StageVerdict::Passed);
-    assert_eq!(routed_target(&evaluation).model, "code-model");
+    assert_eq!(routed_target(&evaluation).model, "code-model:code");
     assert_eq!(
         counting.calls(),
-        1,
-        "single-member role climbs with exactly one assessment",
+        0,
+        "single-member role skips the climb — static pick, no assessment call",
     );
 }
 
@@ -450,7 +457,7 @@ fn terminal_ladder_assessment_failure_escalates_to_last_member() {
     let evaluation = engine.evaluate("some task", None, None).unwrap();
     let decision = &evaluation.decision;
     assert_eq!(decision.verdict, StageVerdict::Passed);
-    assert_eq!(routed_target(&evaluation).model, "small");
+    assert_eq!(routed_target(&evaluation).model, "small:fast");
 
     let path = decision.metadata["tree_path"]
         .as_array()
@@ -1169,7 +1176,7 @@ fn last_viable_tree(root_model: &str) -> ClassificationTree {
 }
 
 #[test]
-fn last_viable_singleton_group_runs_ladder() {
+fn last_viable_singleton_group_takes_static_path() {
     // A one-member group with a matcher installed climbs instead of taking
     // the static path: the terminal decision carries the self-assessment
     // marker. The overconfident assessment (9 > intelligence 2) still
@@ -1195,8 +1202,9 @@ fn last_viable_singleton_group_runs_ladder() {
         "singleton serves, got {}",
         target.model
     );
-    // The ladder marker lives on the terminal step inside `tree_path`
-    // (`final_decision` rebuilds the top-level metadata).
+    // No ladder marker on the terminal step inside `tree_path`
+    // (`final_decision` rebuilds the top-level metadata): the singleton
+    // resolved statically.
     let climbed = evaluation
         .decision
         .metadata
@@ -1211,8 +1219,8 @@ fn last_viable_singleton_group_runs_ladder() {
             })
         });
     assert!(
-        climbed,
-        "singleton terminal climbed the ladder, not the static path"
+        !climbed,
+        "singleton terminal must take the static path, not the ladder"
     );
 }
 

@@ -911,3 +911,140 @@ async fn stream_fanout_uses_injected_runtime() {
         "exactly the fan-out task routes through the injected runtime"
     );
 }
+
+// -----------------------------------------------------------------------
+// Context-overflow taxonomy (log forensics: the `quick` 8192-token window
+// died on an 8483-token prompt, retried the identical bytes, then
+// dead-ended in a 200 carrying an ERROR body)
+// -----------------------------------------------------------------------
+
+#[test]
+fn parse_context_overflow_fork_shape() {
+    // Our fork's refusal, bare.
+    let body = "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
+    assert_eq!(
+        parse_context_overflow(body),
+        Some((Some(8483), Some(8192)))
+    );
+}
+
+#[test]
+fn parse_context_overflow_json_wrapped() {
+    // Same refusal JSON-wrapped (`{"error":{"message":...}}`).
+    let body = r#"{"error":{"code":400,"message":"request (8483 tokens) exceeds the available context size (8192 tokens)","type":"invalid_request_error"}}"#;
+    assert_eq!(
+        parse_context_overflow(body),
+        Some((Some(8483), Some(8192)))
+    );
+}
+
+#[test]
+fn parse_context_overflow_openai_shape() {
+    // OpenAI-style refusals carry the marker without counts.
+    let body = r#"{"error":{"code":"context_length_exceeded","message":"This model's maximum context length is 8192 tokens"}}"#;
+    assert_eq!(parse_context_overflow(body), Some((None, None)));
+    let bare = "maximum context length exceeded";
+    assert_eq!(parse_context_overflow(bare), Some((None, None)));
+}
+
+#[test]
+fn parse_context_overflow_generic_400_returns_none() {
+    // A generic 400 without the overflow marker is not an overflow.
+    assert_eq!(parse_context_overflow(r#"{"error":{"message":"bad request"}}"#), None);
+    assert_eq!(parse_context_overflow("no free instance in group 'x'"), None);
+}
+
+#[test]
+fn context_overflow_error_semantics() {
+    // Deterministic at the target level (never retried), but the chain
+    // continues past it — the only variant with split retry/chain meaning.
+    let overflow = DispatchError::ContextOverflow {
+        needed_tokens: Some(8483),
+        available_tokens: Some(8192),
+        detail: "x".into(),
+    };
+    assert!(!overflow.is_retryable(), "same-target retry is always doomed");
+    assert!(overflow.continues_chain(), "fallbacks and ladders still run");
+    assert!(
+        !DispatchError::Http("HTTP 400 Bad Request".into()).continues_chain(),
+        "generic HTTP errors keep the old chain-stop meaning"
+    );
+}
+
+#[tokio::test]
+async fn retry_backend_does_not_retry_context_overflow() {
+    // One doomed attempt, never two: the retry decorator keys off
+    // `is_retryable`, which is false for overflows. A retry would consume
+    // the `Ok` second response — the surviving `Err` proves it did not.
+    let overflow = || DispatchError::ContextOverflow {
+        needed_tokens: Some(8483),
+        available_tokens: Some(8192),
+        detail: "request too large".into(),
+    };
+    let retrying =
+        RetryBackend::new(StubBackend::new(vec![Err(overflow()), Ok(dummy_response())]), 3, 0);
+    let result = retrying
+        .complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .await;
+    assert!(
+        matches!(result, Err(DispatchError::ContextOverflow { .. })),
+        "overflow surfaces without a same-target retry: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn complete_maps_400_overflow_body_to_context_overflow() {
+    // End to end over loopback: the fork's 400 refusal body becomes the
+    // typed overflow (with counts), not a generic HTTP error.
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let body = "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
+    let body_owned = body.to_string();
+    let _server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut reader = BufReader::new(&mut stream);
+        let mut request_line = String::new();
+        let _ = reader.read_line(&mut request_line).await;
+        let mut content_length = 0usize;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).await.is_err() {
+                return;
+            }
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(v) = line.to_lowercase().strip_prefix("content-length:") {
+                content_length = v.trim().parse().unwrap_or(0);
+            }
+        }
+        let mut buf = vec![0u8; content_length];
+        if content_length > 0 && reader.read_exact(&mut buf).await.is_err() {
+            return;
+        }
+        let resp = format!(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_owned}",
+            body_owned.len()
+        );
+        let _ = stream.write_all(resp.as_bytes()).await;
+        let _ = stream.flush().await;
+    });
+
+    let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"));
+    let result = backend
+        .complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .await;
+    match result {
+        Err(DispatchError::ContextOverflow {
+            needed_tokens,
+            available_tokens,
+            ..
+        }) => {
+            assert_eq!(needed_tokens, Some(8483));
+            assert_eq!(available_tokens, Some(8192));
+        }
+        other => panic!("expected ContextOverflow, got: {other:?}"),
+    }
+}

@@ -567,8 +567,9 @@ fn pipeline_params_target_match_round_trips() {
 
 // -- Effective-pool synthesis ---------------------------------------
 // The config declares no instance pools: profiles are synthesized from the
-// model entry plus the roles that bind it (a `base` profile marked
-// `default: true`, plus one profile per binding role).
+// model entry plus the roles that bind it (one profile per binding role;
+// unbound models materialize nothing — no synthetic `base` — and serve
+// through on-demand role windows from `role_window_templates`).
 
 /// Parse a `roles`-table fixture.
 fn role_table(
@@ -601,16 +602,46 @@ fn bare_entry() -> ModelEntry {
 }
 
 #[test]
-fn synthesized_pool_has_base_profile_marked_default() {
+fn unbound_model_materializes_empty_pool() {
+    // No bindings: no profile. There is no synthetic `base` dispatch
+    // point — the model stays fully lazy and serves through on-demand role
+    // windows opened at dispatch.
     let mut entry = bare_entry();
     materialize("m", &mut entry, &role_table(serde_json::json!({})));
-    let profiles = entry.effective_pool();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].name.as_deref(), Some("base"));
-    assert_eq!(profiles[0].group.as_deref(), Some("base"));
-    assert_eq!(profiles[0].num_ctx, 8192, "window from the entry params");
-    assert!(profiles[0].default, "base is the dispatch point");
-    assert!(!profiles[0].pinned);
+    assert!(
+        entry.effective_pool().is_empty(),
+        "unbound entries materialize nothing"
+    );
+}
+
+#[test]
+fn role_window_templates_cover_every_role_unpinned() {
+    // On-demand windows: one template per role, composed like a bound
+    // profile (role run-block window, model-side cap, entry parallel) but
+    // never pinned and never default.
+    let mut entry = bare_entry();
+    entry.max_parallel = Some(2);
+    let roles = role_table(serde_json::json!({
+        "work": {
+            "params": {"num_ctx": 16384, "temperature": 0.6},
+            "models": ["m"]
+        },
+        "other": {
+            "params": {"num_ctx": 4096},
+            "models": []
+        }
+    }));
+    let templates = crate::config::role_window_templates(&entry, &roles);
+    assert_eq!(templates.len(), 2, "every role, bound or not");
+    let work = &templates["work"];
+    assert_eq!(work.name, None, "name filled at creation");
+    assert_eq!(work.group.as_deref(), Some("work"));
+    assert_eq!(work.num_ctx, 16384, "role run-block window wins");
+    assert_eq!(work.parallel, Some(2), "entry admission cap");
+    assert!(!work.pinned, "on-demand windows are never pinned");
+    assert!(!work.default);
+    assert!(!work.session, "one-shot: never snapshotted");
+    assert_eq!(templates["other"].num_ctx, 4096);
 }
 
 #[test]
@@ -684,10 +715,19 @@ fn max_ctx_caps_num_ctx_at_materialization() {
         "params": {"num_ctx": 65536}
     }))
     .unwrap();
-    materialize("m", &mut entry, &role_table(serde_json::json!({})));
-    let base = &entry.effective_pool()[0];
-    assert_eq!(base.num_ctx, 8192, "clamped to max_ctx");
-    assert_eq!(base.max_ctx, Some(8192));
+    let roles = role_table(serde_json::json!({
+        "work": {
+            "params": {"num_ctx": 65536},
+            "models": ["m"]
+        }
+    }));
+    materialize("m", &mut entry, &roles);
+    let work = &entry.effective_pool()[0];
+    assert_eq!(work.num_ctx, 8192, "clamped to max_ctx");
+    assert_eq!(work.max_ctx, Some(8192));
+    // The on-demand template clamps identically.
+    let templates = crate::config::role_window_templates(&entry, &roles);
+    assert_eq!(templates["work"].num_ctx, 8192, "template clamped too");
 }
 
 #[test]
@@ -826,17 +866,18 @@ fn entry_default_falls_to_single_shared_group() {
 }
 
 #[test]
-fn entry_default_keeps_unbound_base() {
-    // No bindings: the entry keeps its synthetic `base` dispatch point
-    // (the all-lazy full grammar declares it at spawn).
+fn entry_default_bare_without_pool() {
+    // No bindings, no pool: no default inference point. The bare model id
+    // stays bare — dispatch qualifies it with the role window (`<model>:
+    // <role>`, opened on demand), never a synthetic `base`.
     let mut entry = bare_entry();
     let roles = role_table(serde_json::json!({}));
     materialize("m", &mut entry, &roles);
     let models = std::collections::HashMap::from([("m".to_string(), entry)]);
     assert_eq!(
         resolve_inference_point(&models, &roles, "m", None).as_deref(),
-        Some("base"),
-        "unbound entries keep the base default"
+        None,
+        "unbound entries resolve bare"
     );
 }
 

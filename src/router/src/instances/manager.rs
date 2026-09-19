@@ -5,6 +5,7 @@
 //! tokio runtime (owned by the server).
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -87,6 +88,12 @@ pub struct InstanceManager {
     model_key: String,
     client: InstanceClient,
     pub(super) profiles: Vec<InstanceProfile>,
+    /// On-demand role-window templates (role name -> window spec), one per
+    /// configured role. A dispatch through a role the model has no
+    /// materialized profile for opens `<model>:<role>` from the template
+    /// instead of falling back to a synthetic default — this is what lets
+    /// unlisted models serve without a `base` phantom.
+    role_templates: HashMap<String, InstanceProfile>,
     pub(super) policy: crate::config::SidecarConfig,
     /// Resident weights bytes of a plain (no-instance-grammar) model, from the
     /// configured `weights` file. Instance models report `model_bytes` through
@@ -145,6 +152,7 @@ impl InstanceManager {
             model_key: model_key.into(),
             client,
             profiles,
+            role_templates: HashMap::new(),
             policy,
             weights_bytes: 0,
             has_instances_api: AtomicBool::new(true),
@@ -187,6 +195,33 @@ impl InstanceManager {
         self
     }
 
+    /// Builder-style: set the on-demand role-window templates (see the
+    /// field docs), composed at boot from the model entry and the roles.
+    #[must_use]
+    pub fn with_role_templates(mut self, templates: HashMap<String, InstanceProfile>) -> Self {
+        self.role_templates = templates;
+        self
+    }
+
+    /// The window spec for a dispatch-targeted name: the configured profile
+    /// first, else the role's on-demand template with the name filled in.
+    /// `None` when the name is neither (nothing may be created for it).
+    pub fn window_spec_for(&self, name: &str) -> Option<InstanceProfile> {
+        if let Some(profile) = self
+            .profiles
+            .iter()
+            .find(|p| p.name.as_deref() == Some(name))
+        {
+            return Some(profile.clone());
+        }
+        self.role_templates.get(name).map(|template| {
+            let mut spec = template.clone();
+            spec.name = Some(name.to_string());
+            spec.group = Some(name.to_string());
+            spec
+        })
+    }
+
     /// The snapshot save mode for this model.
     pub fn snapshot_mode(&self) -> crate::config::SnapshotMode {
         self.snapshot_mode
@@ -227,11 +262,10 @@ impl InstanceManager {
     /// residency loop corrects any residual overshoot after the load lands.
     pub fn load_bytes_for(&self, instance: Option<&str>) -> u64 {
         let kv = match instance {
-            Some(name) => self
-                .profiles
-                .iter()
-                .find(|p| p.name.as_deref() == Some(name))
-                .map_or(0, |p| estimated_kv_bytes(p.num_ctx)),
+            // Configured profile or on-demand role template: the incoming
+            // window is sized exactly, so admission frees room for the
+            // context up front instead of evicting reactively right after.
+            Some(name) => self.window_bytes_for(name),
             None => self
                 .profiles
                 .iter()
@@ -240,6 +274,16 @@ impl InstanceManager {
                 .map_or(0, estimated_kv_bytes),
         };
         self.weights_bytes.saturating_add(kv)
+    }
+
+    /// KV bytes for one incoming window by name (configured profile or
+    /// on-demand role template; 0 when the name resolves to neither). The
+    /// resident-admission figure: opening a window on a running server needs
+    /// room for the window alone — the weights are already resident, so
+    /// admission must not price them.
+    pub fn window_bytes_for(&self, name: &str) -> u64 {
+        self.window_spec_for(name)
+            .map_or(0, |spec| estimated_kv_bytes(spec.num_ctx))
     }
 
     /// Whether the named instance is marked to be preserved (KV snapshotted +
@@ -276,10 +320,7 @@ impl InstanceManager {
     pub async fn resume_snapshot_for(&self, name: &str) -> Option<String> {
         let want = resume_snapshot_name(name);
         let snapshots = self.client.list_snapshots(name).await.ok()?;
-        snapshots
-            .iter()
-            .any(|s| s.name == want)
-            .then_some(want)
+        snapshots.iter().any(|s| s.name == want).then_some(want)
     }
 
     /// Round-robin sibling for a group-addressed dispatch (`<base>:<group>`):
@@ -333,7 +374,12 @@ impl InstanceManager {
     /// short-circuits without a call. A grammar-less adopted pool model has no
     /// `/instances` but its `/props` sleep flag is still meaningful.
     pub async fn is_sleeping(&self) -> Option<bool> {
-        if self.has_pool() && self.has_instances_api() {
+        // Instance models never sleep as a whole (windows sleep
+        // individually fork-side; weights unload when the last window goes,
+        // which the envelope reports) — keyed on API support, not pool
+        // fullness, so models serving only through on-demand role windows
+        // (empty configured pool) resolve identically.
+        if self.has_instances_api() {
             return Some(false);
         }
         self.client
@@ -486,9 +532,6 @@ impl InstanceManager {
     /// reconcile would only spin; generation still works and the next explicit
     /// unload respawns it with the correct grammar.
     pub async fn reconcile(&self) -> Result<(), InstanceError> {
-        if self.profiles.is_empty() {
-            return Ok(());
-        }
         if !self.has_instances_api() {
             tracing::warn!(
                 target: "router.instances",
@@ -520,6 +563,24 @@ impl InstanceManager {
             .iter()
             .map(|i| (instance_name_from_server_id(&i.id), i))
             .collect();
+
+        // Spawn-placeholder backstop (the dispatch path destroys it too): a
+        // leftover means a server was spawned but never served a window yet.
+        // Runs before the empty-pool return — placeholder-only pools need it
+        // most. Best-effort, never fails reconcile.
+        if by_name.contains_key(super::BOOTSTRAP_INSTANCE) {
+            if let Err(e) = self.client.destroy(super::BOOTSTRAP_INSTANCE, false).await {
+                tracing::debug!(
+                    target: "router.instances",
+                    model = %self.model_key,
+                    error = %e,
+                    "bootstrap placeholder destroy failed - retrying next reconcile",
+                );
+            }
+        }
+        if self.profiles.is_empty() {
+            return Ok(());
+        }
 
         let mut created = 0usize;
         let mut resized = 0usize;
@@ -624,15 +685,37 @@ impl InstanceManager {
         Ok(())
     }
 
-    /// Create a configured instance on demand if it is not already present.
-    /// Used by the dispatch path when a request targets a specific instance
-    /// (e.g. `<base>:scratch`) that is unpinned and therefore absent after
-    /// boot. No-op when the name has no configured profile (nothing to create)
-    /// or already exists. No-op on a grammar-less adopted server (its single
-    /// context serves every target; the fork has no management API to create
-    /// through).
+    /// Create a window on demand if it is not already present — from its
+    /// configured profile, or from the role's template when the model has no
+    /// materialized profile for the name. No admission on this path (the
+    /// dispatch readiness path sizes room first); see [`Self::ensure_window`].
+    /// No-op when the name resolves to neither, or already exists. No-op on
+    /// a grammar-less adopted server (its single context serves every
+    /// target; the fork has no management API to create through).
     pub async fn ensure_instance(&self, name: &str) -> Result<(), InstanceError> {
-        if name.is_empty() || self.profiles.is_empty() {
+        self.ensure_window(name, u64::MAX, |_| async {}).await
+    }
+
+    /// Ensure the named window exists on a running server, creating it from
+    /// its configured profile — or, when the model has no materialized
+    /// profile for the name, from the role's on-demand template
+    /// (`<model>:<role>` with the role's window, never a synthetic default).
+    /// `admitted_bytes` is room the caller already made for this window
+    /// (the cold-load pass sizes weights plus the window); when it covers
+    /// the window's KV, `make_room` is skipped, otherwise admission frees
+    /// room for the window alone first (weights stay out of the figure —
+    /// they are already resident on this path).
+    pub async fn ensure_window<F, Fut>(
+        &self,
+        name: &str,
+        admitted_bytes: u64,
+        make_room: F,
+    ) -> Result<(), InstanceError>
+    where
+        F: FnOnce(u64) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        if name.is_empty() {
             return Ok(());
         }
         if !self.has_instances_api() {
@@ -655,19 +738,37 @@ impl InstanceManager {
         if present {
             return Ok(());
         }
-        let Some(profile) = self
-            .profiles
+        // Spawn-registered API placeholder (see `BOOTSTRAP_INSTANCE`): destroy
+        // it before creating the first real window so no transient window
+        // holds VRAM beside demand-driven ones. Best-effort — a failed destroy
+        // never blocks the window the dispatch actually needs.
+        if existing
+            .instances
             .iter()
-            .find(|p| p.name.as_deref() == Some(name))
-        else {
+            .any(|i| instance_name_from_server_id(&i.id) == super::BOOTSTRAP_INSTANCE)
+        {
+            if let Err(e) = self.client.destroy(super::BOOTSTRAP_INSTANCE, false).await {
+                tracing::debug!(
+                    target: "router.instances",
+                    model = %self.model_key,
+                    error = %e,
+                    "bootstrap placeholder destroy failed - proceeding with window create",
+                );
+            }
+        }
+        let Some(spec) = self.window_spec_for(name) else {
             tracing::debug!(
                 target: "router.instances",
                 instance = %name,
-                "no configured profile for on-demand instance - nothing to create",
+                "no configured profile or role template for on-demand window - nothing to create",
             );
             return Ok(());
         };
-        let group = profile.group.as_deref().unwrap_or(name);
+        let need = estimated_kv_bytes(spec.num_ctx);
+        if admitted_bytes < need {
+            make_room(need).await;
+        }
+        let group = spec.group.as_deref().unwrap_or(name);
         let snapshot = self.resume_snapshot_for(name).await;
         if snapshot.is_some() {
             tracing::info!(
@@ -683,10 +784,10 @@ impl InstanceManager {
             .create(
                 name,
                 group,
-                profile.num_ctx,
-                profile.parallel,
-                profile.pinned,
-                profile.default,
+                spec.num_ctx,
+                spec.parallel,
+                spec.pinned,
+                spec.default,
                 snapshot.as_deref(),
             )
             .await
@@ -929,7 +1030,8 @@ pub fn build_instance_managers(
             InstanceManager::new(key, client, profiles, config.sidecar.clone())
                 .with_weights_bytes(weights_bytes)
                 .with_weights_identity(identity)
-                .with_snapshot_mode(snapshot_mode_for(key, entry, &config.roles)),
+                .with_snapshot_mode(snapshot_mode_for(key, entry, &config.roles))
+                .with_role_templates(crate::config::role_window_templates(entry, &config.roles)),
         );
         // An adopted grammar-less orphan (no `--instance` flags, so no
         // `/instances` route) serves generation but cannot be reconciled:

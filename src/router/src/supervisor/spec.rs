@@ -214,18 +214,41 @@ pub fn build_server_args(spec: &LlamaServerSpec) -> Vec<String> {
         args.push(spec.defaults.n_cpu_moe.to_string());
     }
     // Only pinned instances are declared at spawn; unpinned instances are
-    // created on demand by the sidecar (see InstanceManager::ensure_instance).
-    // Exception: a pool with NO pinned instance (an all-lazy model) declares
-    // its full grammar so the server registers `/instances` and the model is
-    // trackable the moment it is loaded on demand — there is no resident anchor
-    // whose VRAM a declaration would waste.
+    // created on demand by the sidecar (see InstanceManager::ensure_window).
+    // Exception: a pool with NO pinned instance declares a single transient
+    // placeholder (`_bootstrap:ctx=512`) so the server registers `/instances`
+    // (verified: the route 404s with zero `--instance` flags, and keeps
+    // serving 200 with zero instances after the last is destroyed). The
+    // sidecar destroys the placeholder once healthy — before any dispatch
+    // window — so it holds kilobytes only transiently and every real window
+    // is demand-driven from a configured profile or role template.
     let any_pinned = spec.instances.iter().any(|p| p.pinned);
     for profile in &spec.instances {
-        if any_pinned && !profile.pinned {
+        if !profile.pinned {
             continue;
         }
         args.push("--instance".into());
         args.push(instance_grammar_string(std::slice::from_ref(profile)));
+    }
+    if !any_pinned {
+        let placeholder = crate::config::InstanceProfile {
+            name: Some(crate::instances::BOOTSTRAP_INSTANCE.to_string()),
+            group: None,
+            count: 1,
+            num_ctx: crate::instances::BOOTSTRAP_CTX,
+            parallel: None,
+            pinned: false,
+            no_sleep: false,
+            sleep_idle_seconds: None,
+            default: false,
+            resume: false,
+            params: None,
+            embedding: None,
+            max_ctx: None,
+            session: false,
+        };
+        args.push("--instance".into());
+        args.push(instance_grammar_string(std::slice::from_ref(&placeholder)));
     }
     // A plain model (no instance pool) takes its resolved context size and
     // idle-sleep timeout from the per-model spawn defaults.

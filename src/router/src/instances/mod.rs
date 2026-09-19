@@ -35,6 +35,20 @@ pub use traits::{LlamaBackend, LlamaContext, LlamaKVCache, LlamaWeights, LlmFlee
 
 use crate::config::InstanceProfile;
 
+/// Spawn placeholder instance: a transient minimal window declared at spawn
+/// **only** when a pool has no pinned profile, purely so the fork registers
+/// its `/instances` management API (verified: the route 404s with zero
+/// `--instance` flags, and keeps serving 200 with zero instances after the
+/// last one is destroyed). The sidecar destroys it once the server is
+/// healthy — before any dispatch window is created — so it never serves
+/// traffic and never appears as configured state. The name is reserved:
+/// [`validate_instances`] rejects any configured profile claiming it.
+pub(crate) const BOOTSTRAP_INSTANCE: &str = "_bootstrap";
+/// Context window for the spawn placeholder: the smallest value exercised
+/// against the fork (512), holding only transient kilobytes until the
+/// sidecar destroys it post-healthy.
+pub(crate) const BOOTSTRAP_CTX: u64 = 512;
+
 /// Render a flat list of (expanded) `InstanceProfile`s as the fork's
 /// comma-joined `--instance` grammar, matching `common_instances_to_string`
 /// byte-for-byte for equivalent inputs.
@@ -86,6 +100,13 @@ fn render_one(profile: &InstanceProfile) -> String {
 /// names, and no instance's group colliding with another instance's name.
 /// The group==own-name default is permitted.
 pub fn validate_instances(profiles: &[InstanceProfile]) -> Result<(), String> {
+    for pi in profiles {
+        if pi.name.as_deref() == Some(BOOTSTRAP_INSTANCE) {
+            return Err(format!(
+                "instance name '{BOOTSTRAP_INSTANCE}' is reserved for the spawn placeholder"
+            ));
+        }
+    }
     for (i, pi) in profiles.iter().enumerate() {
         let ni = pi.name.as_deref().unwrap_or("");
         let gi = pi.group.as_deref().unwrap_or("");

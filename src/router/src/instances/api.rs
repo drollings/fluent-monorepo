@@ -23,8 +23,27 @@ use fluent_types::instance_id::InstanceId;
 /// The fork reports nothing while down; without this the model is invisible
 /// to `ps` and model listings until first use. Skips profiles with no
 /// materialized name (pre-boot entries resolve bare through the legacy path).
+/// A model with no materialized pool (serves only through on-demand role
+/// windows — no synthetic `base`) synthesizes a single bare row for the
+/// model key itself, so it stays visible and addressable without a phantom.
 fn unloaded_model_rows(model_key: &str, manager: &InstanceManager) -> Vec<Value> {
     let created = common_core::now_secs();
+    if manager.profiles().is_empty() {
+        return vec![serde_json::json!({
+            "id": model_key,
+            "object": "model",
+            "created": created,
+            "owned_by": "coral-router",
+            "n_ctx": 0,
+            "parallel": 1,
+            "pinned": false,
+            "resume": false,
+            "is_default": false,
+            "state": "unloaded",
+            "last_used": -1,
+            "aliases": [model_key],
+        })];
+    }
     manager
         .profiles()
         .iter()
@@ -150,8 +169,10 @@ impl InstancePool {
     /// (no-instance-grammar) models contribute one synthesized entry.
     /// Managers whose servers are down (lazy, never loaded) contribute one
     /// `unloaded` row per configured profile — zero bytes, same id/alias
-    /// vocabulary — so `ps` and OpenAI clients see the whole fleet before
-    /// first use instead of only resident windows.
+    /// vocabulary — or a single bare row for the model key when the pool is
+    /// empty (on-demand role windows only, no phantom), so `ps` and OpenAI
+    /// clients see the whole fleet before first use instead of only
+    /// resident windows.
     pub async fn list_models(&self) -> Vec<Value> {
         let mut out = Vec::new();
         for model_key in self.managers.keys() {

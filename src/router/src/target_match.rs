@@ -363,9 +363,9 @@ fn rung_viable(routing: &RoutingConfig, member: &str, min_complexity: Option<u8>
 /// The classifier-duty `last`/`any` resolution, shared by the tree engine's
 /// per-request duty-key path: the globally last-answered model when it is
 /// fittable without a cold load, else the fleet-viable member
-/// (intelligence-passing, fittable-first, cheapest — the M1 rule with a
-/// managed-aware residency probe). Recency is injected per request, never
-/// stored: no boot-frozen duty key.
+/// (resident-first, then intelligence-passing, then cheapest — the M1 rule
+/// with a managed-aware residency probe). Recency is injected per request,
+/// never stored: no boot-frozen duty key.
 ///
 /// No complexity scope applies here by construction — the complexity estimate
 /// is produced BY the classifier, so vetting the duty on it would be
@@ -510,8 +510,10 @@ pub fn expand_role_keys(
         (Some(member.to_string()), false, true)
     } else {
         // Viable-first: "work with whatever is loaded rather than load
-        // another", ordered by capability-fit, then loaded-ness, then cost.
-        // For sentinel-only roles this resolves over the fleet.
+        // another" — resident members first even when they fail the
+        // intelligence bar (opening the role's window on the loaded server
+        // beats cold-loading a passer), then intelligence-passing, then
+        // cheapest. For sentinel-only roles this resolves over the fleet.
         let viable = crate::config::select_viable_member(
             role,
             &raw,
@@ -1085,7 +1087,10 @@ impl TargetMatcher {
                 is_onnx: false,
             },
         };
-        rt.role = Some(role.to_string());
+        // Every dispatch names the role's window (`<base>:<role>`, opened on
+        // demand when unbound) — the same rule as the static path, so ladder
+        // and static resolution agree.
+        routing.apply_terminal_role(&mut rt, &candidate.model_key, role);
         rt.target_name = Some(route.to_string());
         rt
     }
@@ -1104,23 +1109,43 @@ impl TargetMatcher {
         matched_index: usize,
     ) -> Vec<RoutingTarget> {
         let mut result: Vec<RoutingTarget> = Vec::new();
+        // Dedup by base model key: the primary is role-qualified
+        // (`<base>:<role>`) while fallback targets stay bare, so a string
+        // compare would miss the primary's own base and list it twice.
+        let base_of = |model: &str| {
+            fluent_types::model_key::split_model_key(model)
+                .0
+                .to_string()
+        };
         let mut seen: HashSet<String> = HashSet::new();
-        seen.insert(primary.model.clone());
+        seen.insert(base_of(&primary.model));
 
+        // Fallbacks serve the same role as the primary: qualify each with
+        // the route's role window (opened on demand when unbound), so no
+        // fallback dispatches to a bare model id. Explicitly qualified
+        // members and onnx targets pass through untouched.
+        let role = routing.route_role(route).unwrap_or("").to_string();
+        let qualify = |rt: &mut RoutingTarget, member: &str| {
+            if !role.is_empty() {
+                routing.apply_terminal_role(rt, member, &role);
+            }
+        };
         for candidate in candidates.iter().skip(matched_index + 1) {
-            let Some(rt) = routing.target_for_key(&candidate.model_key) else {
+            let Some(mut rt) = routing.target_for_key(&candidate.model_key) else {
                 continue;
             };
-            if seen.insert(rt.model.clone()) {
+            qualify(&mut rt, &candidate.model_key);
+            if seen.insert(base_of(&rt.model)) {
                 result.push(rt);
             }
         }
 
         for (name, _) in routing.all_dispatch_targets(route, classifier_complexity) {
-            let Some(rt) = routing.target_for_key(&name) else {
+            let Some(mut rt) = routing.target_for_key(&name) else {
                 continue;
             };
-            if seen.insert(rt.model.clone()) {
+            qualify(&mut rt, &name);
+            if seen.insert(base_of(&rt.model)) {
                 result.push(rt);
             }
         }

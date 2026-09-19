@@ -50,9 +50,9 @@ pub use self::filters::{
     CommandConfig, ConfidenceGate, FilterAction, FilterOutcome, FilterScope, MockConfig,
     PatternEntry, RejectPatterns,
 };
-#[allow(unused_imports)]
-pub(crate) use self::fleet::materialize_effective_pool;
 pub use self::fleet::RoleParams;
+#[allow(unused_imports)]
+pub(crate) use self::fleet::{materialize_effective_pool, role_window_templates};
 pub use self::frame::FrameResolutionConfig;
 pub use self::ledger_group::{LedgerConfig, DEFAULT_LEDGER_MAX_SUMMARY_TOKENS};
 pub use self::models::{

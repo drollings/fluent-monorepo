@@ -14,10 +14,14 @@ fn cors_headers_unchanged() {
 }
 
 #[test]
-fn fallback_has_stop_reason() {
-    let r = fallback_completion("test");
-    assert_eq!(r.choices.len(), 1);
-    assert_eq!(r.choices[0].finish_reason, "stop");
+fn terminal_failures_are_error_statuses_not_completions() {
+    // Terminal dispatch failure leaves the router as an HTTP error status
+    // (`error_response`), never a 200 completion — there is no fallback
+    // completion constructor anymore.
+    let resp = error_response(hyper::StatusCode::BAD_GATEWAY, "all dispatch targets failed");
+    assert_eq!(resp.status(), hyper::StatusCode::BAD_GATEWAY);
+    let overflow = error_response(hyper::StatusCode::BAD_REQUEST, "prompt exceeds the window");
+    assert_eq!(overflow.status(), hyper::StatusCode::BAD_REQUEST);
 }
 
 #[test]

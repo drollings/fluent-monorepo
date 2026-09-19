@@ -746,14 +746,15 @@ mod tests {
         assert_eq!(rt.model, "code-model:code");
         assert_eq!(rt.role.as_deref(), Some("code"));
 
-        // The auto-generated prompt was sent to the backend, then the
-        // single-member terminal climbed (one self-assessment through the
-        // same injected backend — singletons no longer skip the ladder).
+        // The auto-generated prompt was sent to the backend; the
+        // single-member terminal resolves statically (singletons skip the
+        // ladder — last-always-wins provably returns the static pick, so the
+        // assessment call would be pure overhead).
         let captured = prompts.lock().unwrap().clone();
         assert_eq!(
             captured.len(),
-            2,
-            "classifier call plus one ladder assessment"
+            1,
+            "classifier call only — no singleton self-assessment"
         );
         assert!(
             captured[0].contains("- code: programming and implementation"),
@@ -765,10 +766,10 @@ mod tests {
             "three-axis route enum, got: {}",
             captured[0]
         );
-        assert!(
-            captured[1].starts_with("user:") && captured[1].contains("complexity"),
-            "ladder assessment rides a user turn (strict templates raise on system-only calls), got: {}",
-            captured[1]
+        assert_eq!(
+            captured.len(),
+            1,
+            "singleton terminal skips the ladder — no assessment prompt is rendered"
         );
     }
 
@@ -1013,7 +1014,7 @@ mod tests {
             Some("local"),
             "pipeline matrix still authoritative over the LLM target"
         );
-        assert_eq!(rt.model, "local-model");
+        assert_eq!(rt.model, "local-model:local");
     }
 
     #[test]
@@ -1043,7 +1044,7 @@ mod tests {
             Some("local"),
             "matrix top route decides over the LLM's target"
         );
-        assert_eq!(rt.model, "local-model");
+        assert_eq!(rt.model, "local-model:local");
     }
 
     #[test]
@@ -1072,7 +1073,7 @@ mod tests {
             Some("code"),
             "no matrix band match -> LLM path fallback"
         );
-        assert_eq!(rt.model, "code-model");
+        assert_eq!(rt.model, "code-model:code");
     }
 
     #[test]
@@ -1200,7 +1201,7 @@ mod tests {
             Some("code"),
             "default-off keeps the LLM path"
         );
-        assert_eq!(rt.model, "code-model");
+        assert_eq!(rt.model, "code-model:code");
     }
 
     // ── RetryClassifier wired into the production builder ──────────────
@@ -1301,7 +1302,7 @@ mod tests {
         // Final decision is non-fallback and dispatched through the LLM target.
         assert!(!result.rejected);
         let rt = result.routing_target.expect("routing target");
-        assert_eq!(rt.model, "code-model");
+        assert_eq!(rt.model, "code-model:code");
         let decision = result
             .decisions
             .iter()
@@ -1613,13 +1614,13 @@ mod tests {
         let rt = result.routing_target.expect("must dispatch");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
         assert_eq!(rt.role.as_deref(), Some("code"));
-        assert_eq!(rt.model, "qwen3.6-27b");
+        assert_eq!(rt.model, "qwen3.6-27b:code");
         // Mechanical-failure fallbacks = the role tail (empty after the last
         // member) plus any `all_dispatch_targets` entries not already included
         // — here the primary role's other member, preserving today's
         // cross-group resilience list.
         let fb: Vec<&str> = rt.fallbacks.iter().map(|f| f.model.as_str()).collect();
-        assert_eq!(fb, vec!["swarm"]);
+        assert_eq!(fb, vec!["swarm:code"]);
     }
 
     #[test]
@@ -1635,11 +1636,11 @@ mod tests {
         );
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
-        assert_eq!(rt.model, "swarm");
+        assert_eq!(rt.model, "swarm:code");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
         // The group tail becomes the mechanical-failure fallback list.
         let fb: Vec<&str> = rt.fallbacks.iter().map(|f| f.model.as_str()).collect();
-        assert_eq!(fb, vec!["qwen3.6-27b"]);
+        assert_eq!(fb, vec!["qwen3.6-27b:code"]);
     }
 
     #[test]
@@ -1651,7 +1652,7 @@ mod tests {
         let result = run_ladder_pipeline(&config, vec![classifier_verdict(1, "code")]);
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
-        assert_eq!(rt.model, "swarm");
+        assert_eq!(rt.model, "swarm:code");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
         assert_eq!(rt.role.as_deref(), Some("code"));
     }
@@ -1672,7 +1673,7 @@ mod tests {
         let result = run_ladder_pipeline(&config, vec![classifier_verdict(1, "code")]);
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
-        assert_eq!(rt.model, "qwen3.6-27b");
+        assert_eq!(rt.model, "qwen3.6-27b:code");
     }
 
     #[test]
@@ -1721,7 +1722,7 @@ mod tests {
         assert!(!result.rejected);
         let rt = result.routing_target.expect("must dispatch");
         assert_eq!(rt.target_name.as_deref(), Some("code"));
-        assert_eq!(rt.model, "qwen3.6-27b");
+        assert_eq!(rt.model, "qwen3.6-27b:code");
     }
 
     // ── Route-level `always_route`: never let the classifier answer directly ─
@@ -1806,7 +1807,7 @@ mod tests {
         );
         let rt = target.expect("must dispatch");
         assert_eq!(rt.target_name.as_deref(), Some("prose"));
-        assert_eq!(rt.model, "gemma");
+        assert_eq!(rt.model, "gemma:prose");
 
         // The system prompt advertises the dispatch rule so the LLM routes even
         // without the hard enforcement.
@@ -1938,7 +1939,7 @@ mod tests {
         assert_eq!(decision.verdict, StageVerdict::Passed);
         assert_eq!(decision.stage, PipelineStage::DeterministicPreFilter);
         let rt = target.expect("soft redirect must dispatch");
-        assert_eq!(rt.model, "gemma");
+        assert_eq!(rt.model, "gemma:prose");
         assert_eq!(rt.target_name.as_deref(), Some("prose"));
     }
 
@@ -1993,6 +1994,6 @@ mod tests {
         assert!(!result.rejected);
         assert_eq!(result.decisions.len(), 1, "classifier must not run");
         let rt = result.routing_target.expect("routing target published");
-        assert_eq!(rt.model, "gemma");
+        assert_eq!(rt.model, "gemma:prose");
     }
 }

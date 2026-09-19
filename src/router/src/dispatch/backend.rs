@@ -314,6 +314,81 @@ fn group_from_message(msg: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
+/// Detect a context-overflow refusal in an error body: our fork's `request
+/// (N tokens) exceeds the available context size (M tokens)`, or an
+/// OpenAI-style `maximum context length` / `context_length_exceeded`
+/// payload. Returns `(needed, available)` — counts are best-effort and may
+/// be `None` when the body carries the marker without numbers. `None` when
+/// the body is any other error (a generic 400, not an overflow).
+fn parse_context_overflow(body: &str) -> Option<(Option<u64>, Option<u64>)> {
+    // Fork shape may arrive JSON-wrapped (`{"error":{"message":...}}`) or
+    // bare; scan the raw text either way.
+    if body.contains("exceeds the available context size") {
+        return Some((
+            tokens_after(body, "request ("),
+            tokens_after(body, "context size ("),
+        ));
+    }
+    if body.contains("context_length_exceeded") || body.contains("maximum context length") {
+        return Some((None, None));
+    }
+    None
+}
+
+/// Parse the `u64` following a marker shaped `<marker><digits> tokens`.
+/// `None` when the marker is absent or no digits follow it.
+fn tokens_after(body: &str, marker: &str) -> Option<u64> {
+    let rest = body.find(marker).map(|i| &body[i + marker.len()..])?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// Map a non-2xx upstream response to the dispatch error. A 400 carrying a
+/// context-overflow refusal becomes `ContextOverflow` — deterministic, so
+/// the target is never retried, while the chain continues past it. The 503
+/// group-miss shape keeps its allocate-and-retry meaning; every other
+/// status follows its class.
+async fn classify_error_response(response: reqwest::Response) -> DispatchError {
+    let status = response.status();
+    let status_u16 = status.as_u16();
+    // A 503 with the fork's group-miss payload means the pool had no free
+    // member; surface it as a dedicated error so the sidecar can allocate
+    // fresh KV and retry once.
+    if status_u16 == 503 {
+        let body = response.text().await.unwrap_or_else(|_| String::new());
+        if let Some(group) = parse_group_miss(&body) {
+            return DispatchError::InstanceGroupMiss { group };
+        }
+        return DispatchError::RateLimited;
+    }
+    if status_u16 == 400 {
+        let body = response.text().await.unwrap_or_else(|_| String::new());
+        if let Some((needed, available)) = parse_context_overflow(&body) {
+            let detail = match (needed, available) {
+                (Some(n), Some(a)) => format!(
+                    "request (~{n} tokens) exceeds the available context size ({a} tokens)"
+                ),
+                _ => body.chars().take(240).collect::<String>(),
+            };
+            return DispatchError::ContextOverflow {
+                needed_tokens: needed,
+                available_tokens: available,
+                detail,
+            };
+        }
+        return DispatchError::Http(format!("HTTP {status}"));
+    }
+    let class = HttpClass::from_status(status_u16);
+    if class.is_retryable() {
+        DispatchError::RateLimited
+    } else {
+        DispatchError::Http(format!("HTTP {status}"))
+    }
+}
+
 /// Drop the snapshot-scoped routing fields when the targeted context is
 /// one-shot: a one-shot context holds no multi-step state, so `snapshot` /
 /// `id_slot` are inapplicable and ignored with a debug log (the same shape
@@ -458,23 +533,7 @@ impl DispatchBackend for OpenAiChatBackend {
 
                 let status = response.status();
                 if !status.is_success() {
-                    let status_u16 = status.as_u16();
-                    // A 503 with the fork's group-miss payload means the pool
-                    // had no free member; surface it as a dedicated error so
-                    // the sidecar can allocate fresh KV and retry once.
-                    if status_u16 == 503 {
-                        let body = response.text().await.unwrap_or_else(|_| String::new());
-                        if let Some(group) = parse_group_miss(&body) {
-                            return Err(DispatchError::InstanceGroupMiss { group });
-                        }
-                        return Err(DispatchError::RateLimited);
-                    }
-                    let class = HttpClass::from_status(status_u16);
-                    return if class.is_retryable() {
-                        Err(DispatchError::RateLimited)
-                    } else {
-                        Err(DispatchError::Http(format!("HTTP {status}")))
-                    };
+                    return Err(classify_error_response(response).await);
                 }
 
                 let json: Value = with_total_timeout(
@@ -565,20 +624,7 @@ impl DispatchBackend for OpenAiChatBackend {
 
             let status = response.status();
             if !status.is_success() {
-                let status_u16 = status.as_u16();
-                if status_u16 == 503 {
-                    let body = response.text().await.unwrap_or_else(|_| String::new());
-                    if let Some(group) = parse_group_miss(&body) {
-                        return Err(DispatchError::InstanceGroupMiss { group });
-                    }
-                    return Err(DispatchError::RateLimited);
-                }
-                let class = HttpClass::from_status(status_u16);
-                return if class.is_retryable() {
-                    Err(DispatchError::RateLimited)
-                } else {
-                    Err(DispatchError::Http(format!("HTTP {status}")))
-                };
+                return Err(classify_error_response(response).await);
             }
 
             tracing::info!(

@@ -1268,8 +1268,8 @@ pub(crate) fn llama_chat_backend_for_instance(
 impl RouterConfig {
     /// Build the escalation ladder for every role that configures one
     /// (`roles.<role>.escalation`). Roles without a ladder (or without a
-    /// frontier endpoint) are absent - dispatch falls back to
-    /// `fallback_completion` as before.
+    /// frontier endpoint) are absent — dispatch ends in an honest HTTP
+    /// error once the local chain exhausts.
     ///
     /// The ladders are keyed by role name; `RoutingTarget.role` resolves
     /// which one a failed local chain escalates through
