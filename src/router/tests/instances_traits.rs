@@ -426,7 +426,7 @@ fn ps_render_keeps_llama_block_and_adds_onnx_block() {
         "last_used": -1,
     });
     let listed = vec![serde_json::json!({ "id": "base:ledger" })];
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row], &[]);
     let text = render_ps_table_sized(&rows, &totals, 100);
     for col in [
         "MODEL", "INSTANCE", "VRAM", "SYS RAM", "CTX", "QUANT", "KV", "LIVE", "TOTAL",
@@ -462,7 +462,7 @@ fn ps_render_keeps_llama_block_and_adds_onnx_block() {
         "last_used": -1,
     });
     let listed = vec![serde_json::json!({ "id": "onnx/llm:default" })];
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[onnx_row]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[onnx_row], &[]);
     let text = render_ps_table_sized(&rows, &totals, 100);
     assert!(text.contains("(onnx)"), "runtime marker:\n{text}");
     assert!(

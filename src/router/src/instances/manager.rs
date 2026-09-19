@@ -267,6 +267,21 @@ impl InstanceManager {
         common_core::sync::lock(&self.resume).insert(name.to_string(), enabled);
     }
 
+    /// The fork-side `<name>-resume` snapshot when one exists (`None`
+    /// otherwise): the restore point a pressure-evicted (pinned or
+    /// resume-marked) context left behind. Rebuild paths (`reconcile`,
+    /// `ensure_instance`) pass it to `create` as `snapshot=...` so the new
+    /// instance resumes where the evicted one left off. Snapshots outlive
+    /// their instance fork-side, so this also fires after a full unload.
+    pub async fn resume_snapshot_for(&self, name: &str) -> Option<String> {
+        let want = resume_snapshot_name(name);
+        let snapshots = self.client.list_snapshots(name).await.ok()?;
+        snapshots
+            .iter()
+            .any(|s| s.name == want)
+            .then_some(want)
+    }
+
     /// Round-robin sibling for a group-addressed dispatch (`<base>:<group>`):
     /// the next ready sibling in name order, or `None` when the group must
     /// keep its group addressing (unknown group, grammar-less server with a
@@ -570,6 +585,7 @@ impl InstanceManager {
                         profile.parallel,
                         profile.pinned,
                         profile.default,
+                        self.resume_snapshot_for(name).await.as_deref(),
                     )
                     .await
                 {
@@ -652,6 +668,16 @@ impl InstanceManager {
             return Ok(());
         };
         let group = profile.group.as_deref().unwrap_or(name);
+        let snapshot = self.resume_snapshot_for(name).await;
+        if snapshot.is_some() {
+            tracing::info!(
+                target: "router.instances",
+                model = %self.model_key,
+                instance = %name,
+                snapshot = %resume_snapshot_name(name),
+                "restoring evicted instance from its resume snapshot",
+            );
+        }
         match self
             .client
             .create(
@@ -661,6 +687,7 @@ impl InstanceManager {
                 profile.parallel,
                 profile.pinned,
                 profile.default,
+                snapshot.as_deref(),
             )
             .await
         {
@@ -762,6 +789,7 @@ impl InstanceManager {
                 profile.parallel,
                 profile.pinned,
                 profile.default,
+                None,
             )
             .await
             .map(|_| ());

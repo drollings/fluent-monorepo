@@ -353,7 +353,7 @@ async fn client_mutating_calls_hit_expected_paths() {
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
     client
-        .create("work", "swarm", 32768, Some(2), true, true)
+        .create("work", "swarm", 32768, Some(2), true, true, None)
         .await
         .expect("create");
     client.destroy("work", false).await.expect("destroy");
@@ -466,7 +466,9 @@ async fn client_classifies_409_duplicate_and_5xx_transient() {
     let stub = StubServer::start(handler);
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
-    let dup = client.create("dup", "g", 16384, None, false, false).await;
+    let dup = client
+        .create("dup", "g", 16384, None, false, false, None)
+        .await;
     assert!(dup.unwrap_err().is_duplicate());
 
     let transient = client.destroy("boom", false).await.unwrap_err();
@@ -532,7 +534,7 @@ async fn client_talks_directly_to_its_server() {
     let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
 
     client
-        .create("swarm-0", "swarm", 16384, Some(1), false, false)
+        .create("swarm-0", "swarm", 16384, Some(1), false, false, None)
         .await
         .unwrap();
     client.destroy("swarm-0", false).await.unwrap();
@@ -698,6 +700,76 @@ async fn ensure_instance_creates_missing_unpinned_on_demand() {
     let body: serde_json::Value = serde_json::from_str(&creates[0].2).unwrap();
     assert_eq!(body["name"], "scratch");
     assert_eq!(body["group"], "scratch");
+}
+
+#[tokio::test]
+async fn ensure_instance_restores_from_resume_snapshot() {
+    // The ledger was pressure-evicted (pinned, snapshotted as
+    // `ledger-resume`, server reloaded): recreating it must pass
+    // `snapshot=ledger-resume` so the context resumes where it left off —
+    // no session/resume flags required, the fork-side snapshot is the signal.
+    // Without one, creation is a fresh window (no `snapshot` key at all).
+    let handler: StubHandler = Arc::new(move |method, path, _body| {
+        if method == "GET" && path == "/instances" {
+            (
+                200,
+                r#"{"instances":[],"snapshots":[],"total":{"total":0}}"#.into(),
+            )
+        } else if method == "GET" && path == "/instances/ledger/snapshots" {
+            (
+                200,
+                r#"{"snapshots":[{"name":"ledger-resume","instance":"ledger","size":100,"mtime":1}]}"#.into(),
+            )
+        } else if method == "GET" {
+            (200, r#"{"snapshots":[]}"#.into())
+        } else {
+            (201, "{}".into())
+        }
+    });
+    let stub = StubServer::start(handler);
+    let client = InstanceClient::new(reqwest::Client::new(), stub.base_url(), None);
+    let profiles = vec![InstanceProfile {
+        embedding: None,
+        name: Some("ledger".into()),
+        group: Some("ledger".into()),
+        count: 1,
+        num_ctx: 262144,
+        parallel: None,
+        pinned: true,
+        no_sleep: false,
+        sleep_idle_seconds: None,
+        default: false,
+        resume: false,
+        params: None,
+        max_ctx: None,
+        session: false,
+    }];
+    let manager = InstanceManager::new("base", client, profiles, sidecar_policy());
+    manager
+        .ensure_instance("ledger")
+        .await
+        .expect("ensure_instance");
+
+    let recorded = stub.recorded();
+    let creates: Vec<&(String, String, String)> = recorded
+        .iter()
+        .filter(|(m, p, _)| m == "POST" && p == "/instances")
+        .collect();
+    assert_eq!(creates.len(), 1, "ledger recreated");
+    let body: serde_json::Value = serde_json::from_str(&creates[0].2).unwrap();
+    assert_eq!(
+        body["snapshot"], "ledger-resume",
+        "recreation restores the resume snapshot: {body}"
+    );
+
+    // No resume snapshot fork-side -> fresh window, no `snapshot` key.
+    assert!(
+        manager
+            .resume_snapshot_for("missing")
+            .await
+            .is_none(),
+        "absent snapshots resolve to no restore point"
+    );
 }
 
 #[tokio::test]
@@ -2205,8 +2277,8 @@ async fn residency_admission_ledger_load_evicts_before_spawn() {
     );
     pool.set_admission_engine(engine_for_policy(&policy));
     pool.make_room_for("ledger-model", required).await;
-    let deletes: Vec<String> = victim_stub
-        .recorded()
+    let recorded = victim_stub.recorded();
+    let deletes: Vec<String> = recorded
         .iter()
         .filter(|(m, _, _)| m == "DELETE")
         .map(|(_, p, _)| p.clone())
@@ -2215,9 +2287,25 @@ async fn residency_admission_ledger_load_evicts_before_spawn() {
         deletes.iter().any(|p| p.ends_with("/instances/scratch")),
         "unpinned scratch evicted before the ledger spawn: {deletes:?}"
     );
+    // The 1G scratch window cannot cover the ~36G requirement, so the pinned
+    // ledger yields last-resort — snapshotted before it drops, and only
+    // after the unpinned room is already freed.
+    let scratch_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "DELETE" && p.ends_with("/instances/scratch"));
+    let snapshot_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "POST" && p == "/instances/ledger/snapshot");
+    let ledger_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "DELETE" && p == "/instances/ledger");
     assert!(
-        deletes.iter().all(|p| !p.contains("ledger")),
-        "pinned ledger window never evicted: {deletes:?}"
+        snapshot_idx.is_some() && ledger_idx.is_some(),
+        "pinned ledger snapshotted then evicted: {recorded:?}"
+    );
+    assert!(
+        scratch_idx < snapshot_idx && snapshot_idx < ledger_idx,
+        "unpinned first, then snapshot-before-destroy: {recorded:?}"
     );
 }
 
@@ -2277,9 +2365,11 @@ async fn residency_admission_small_load_within_allocation_ignores_watermark() {
 }
 
 #[tokio::test]
-async fn residency_admission_pinned_instances_never_evict() {
-    // Over budget with only pinned candidates: admission has nothing to free
-    // and the load proceeds best-effort (the loop corrects any overshoot).
+async fn residency_admission_pinned_evicts_last_resort_with_snapshot() {
+    // Over budget with only pinned candidates: admission evicts the pinned
+    // unit last-resort — snapshotted before it drops so it loads back and
+    // restores — and the load proceeds best-effort (the loop corrects any
+    // overshoot).
     let mut pinned = instance_info("ledger", "ledger", true, 1);
     pinned.model_bytes = 2_000_000_000;
     pinned.vram_bytes = 1_000_000_000;
@@ -2317,10 +2407,20 @@ async fn residency_admission_pinned_instances_never_evict() {
     );
     pool.set_admission_engine(engine_for_policy(&policy));
     pool.make_room_for("ledger-model", required).await;
+    let recorded = victim_stub.recorded();
+    let snapshot_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "POST" && p == "/instances/ledger/snapshot");
+    let delete_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "DELETE" && p == "/instances/ledger");
     assert!(
-        victim_stub.recorded().iter().all(|(m, _, _)| m != "DELETE"),
-        "pinned instances are never eviction candidates: {:?}",
-        victim_stub.recorded()
+        snapshot_idx.is_some() && delete_idx.is_some(),
+        "pinned-only pressure still evicts (snapshotted first): {recorded:?}"
+    );
+    assert!(
+        snapshot_idx < delete_idx,
+        "snapshot before destroy: {recorded:?}"
     );
 }
 
@@ -2560,6 +2660,46 @@ async fn eviction_snapshots_resume_context_before_destroy() {
     assert!(
         !deletes.iter().any(|p| p.contains("keep")),
         "pinned context never evicted"
+    );
+}
+
+#[tokio::test]
+async fn pressure_evicts_pinned_only_last_resort_with_snapshot_first() {
+    // The ledger scenario in miniature: the ONLY resident instance is
+    // pinned (no session/resume flags anywhere), over budget with no
+    // unpinned room to free. The pinned unit must still be evicted —
+    // snapshot (`POST .../ledger/snapshot`) BEFORE destroy (`DELETE ...`),
+    // then the weights unload — so it loads back and restores.
+    let mut ledger = instance_info("ledger", "ledger", true, 0);
+    ledger.model_bytes = 8000;
+    ledger.vram_bytes = 2000;
+    let envelope = serde_json::json!({
+        "instances": [ ledger ],
+        "snapshots": [],
+        "total": { "model": 8000, "context": 1000, "compute": 1000, "total": 10000 }
+    });
+    let stub = residency_stub(&envelope);
+    let policy = sidecar_policy(); // budget = 10000 - 2000 = 8000 < used 10000
+    let mut managers = HashMap::new();
+    managers.insert("swarm".into(), manager_for_stub(&stub));
+    let pool = InstancePool::from_managers(managers, None);
+    engine_cycle(&pool, &policy, &["swarm"]).await;
+
+    let recorded = stub.recorded();
+    let snapshot_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "POST" && p == "/instances/ledger/snapshot");
+    let delete_idx = recorded
+        .iter()
+        .position(|(m, p, _)| m == "DELETE" && p == "/instances/ledger");
+    assert!(
+        snapshot_idx.is_some(),
+        "pinned evict snapshots first: {recorded:?}"
+    );
+    assert!(delete_idx.is_some(), "pinned context evicted: {recorded:?}");
+    assert!(
+        snapshot_idx < delete_idx,
+        "snapshot before destroy: {recorded:?}"
     );
 }
 

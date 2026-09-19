@@ -61,12 +61,26 @@ pub async fn ps(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    // Retained snapshots ride the same envelope (`snapshots`, each tagged
+    // with its owning `model`): an offloaded model with snapshots renders
+    // distinctly even when it has no instance detail left.
+    let snapshots = instances
+        .get("snapshots")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
     // One compact table over the whole fleet (see `ps_table`): every
     // instance is a row carrying its context window, weights and KV-cache
     // quantization, sleep policy, state, and resident memory — aligned
     // plain-text columns by default, Markdown pipe tables on `--markdown`.
-    let (rows, totals) = collect_ps_rows(config.as_ref(), &ctx.gguf_dir, &listed, &instance_list);
+    let (rows, totals) = collect_ps_rows(
+        config.as_ref(),
+        &ctx.gguf_dir,
+        &listed,
+        &instance_list,
+        &snapshots,
+    );
     if rows.is_empty() {
         println!("(no loaded models)");
         return Ok(());

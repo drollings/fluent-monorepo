@@ -254,9 +254,10 @@ impl InstancePool {
     /// `required_bytes` of VRAM for weights plus its incoming KV window),
     /// evict units until the projected device usage fits the allocation budget
     /// (`total - minimum_remaining`, never the reactive watermark floor). The
-    /// target model is never an eviction candidate and pinned instances are
-    /// never evicted. Best-effort: if eviction cannot fully make room, the
-    /// load proceeds and the residency loop corrects the overshoot.
+    /// target model is never an eviction candidate; pinned units evict
+    /// last-resort with a mandatory snapshot-before-evict. Best-effort: if
+    /// eviction cannot fully make room, the load proceeds and the residency
+    /// loop corrects the overshoot.
     ///
     /// Transport only: the pool detects the cold load and names the target,
     /// then hands the pass to the shared engine's pre-dispatch hook over the

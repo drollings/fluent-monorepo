@@ -214,7 +214,7 @@ impl InstancePool {
                 })?;
         let info = manager
             .client()
-            .create(name, group, ctx_size, parallel, pinned, is_default)
+            .create(name, group, ctx_size, parallel, pinned, is_default, None)
             .await?;
         manager.set_resume(name, resume);
         let mut info = info;

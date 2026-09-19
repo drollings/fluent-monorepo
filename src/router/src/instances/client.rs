@@ -261,6 +261,7 @@ impl InstanceClient {
         parallel: Option<u32>,
         pinned: bool,
         is_default: bool,
+        snapshot: Option<&str>,
     ) -> Result<InstanceInfo, InstanceError> {
         let mut body = serde_json::json!({
             "name": name,
@@ -271,6 +272,9 @@ impl InstanceClient {
         });
         if let Some(parallel) = parallel {
             body["parallel"] = Value::Number(parallel.into());
+        }
+        if let Some(snapshot) = snapshot {
+            body["snapshot"] = Value::String(snapshot.to_string());
         }
         let value = self
             .request(reqwest::Method::POST, "/instances", Some(&body))

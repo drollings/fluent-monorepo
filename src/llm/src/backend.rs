@@ -83,7 +83,8 @@ pub struct ContextProfile {
     pub n_ctx: u64,
     /// The context-size cap (`None` = no cap).
     pub max_ctx: Option<u64>,
-    /// Whether the context is pinned (never evicted).
+    /// Whether the context is pinned (evictable last-resort, with a
+    /// mandatory snapshot-before-evict so it loads back and restores).
     pub pinned: bool,
     /// Whether the context is resume-marked (KV preserved across eviction).
     pub resume: bool,

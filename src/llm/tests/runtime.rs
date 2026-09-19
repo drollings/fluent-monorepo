@@ -397,6 +397,7 @@ async fn budget_eviction_footprint_coldness_matches_eviction_order() {
             },
             freed_bytes: 2000,
             last_used: 100,
+            pinned: false,
         },
         Candidate {
             kind: CandidateKind::Context {
@@ -405,6 +406,7 @@ async fn budget_eviction_footprint_coldness_matches_eviction_order() {
             },
             freed_bytes: 1000,
             last_used: 200,
+            pinned: false,
         },
     ];
     let ordered = common_core::cache::eviction_order(
@@ -424,7 +426,11 @@ async fn budget_eviction_footprint_coldness_matches_eviction_order() {
         0,
         "b untouched (batch reached)"
     );
-    assert_eq!(*destroyed_pinned.lock().unwrap(), 0, "pinned never evicted");
+    assert_eq!(
+        *destroyed_pinned.lock().unwrap(),
+        0,
+        "pinned preserved while unpinned room sufficed (batch reached first)"
+    );
 }
 
 #[tokio::test]
@@ -530,6 +536,97 @@ async fn admission_evicts_over_budget_and_excludes_target() {
         "non-target evicted to make room"
     );
     assert_eq!(*destroyed_b.lock().unwrap(), 0, "cold target excluded");
+}
+
+/// One loaded llama weights with a single PINNED context row of `vram`
+/// bytes, registered for engine eviction.
+fn loaded_llama_pinned(
+    key: &'static str,
+    vram: u64,
+    last_used: i64,
+) -> (Arc<StubWeights>, Arc<Mutex<usize>>) {
+    let mut ctx = row(key, "pinned", true, last_used);
+    ctx.vram_bytes = vram;
+    let w = Arc::new(StubWeights::llama(key, 5000, true, vec![ctx]));
+    let destroyed = Arc::new(Mutex::new(0usize));
+    *w.contexts.lock().unwrap() = vec![StubContext::new("pinned", Arc::clone(&destroyed))];
+    (w, destroyed)
+}
+
+#[tokio::test]
+async fn admission_prefers_unpinned_and_preserves_pinned() {
+    // Unpinned `a` (1000B) + pinned `b` (5000B, colder) over a 6000B
+    // budget with 500B incoming: evicting `a` alone fits, so the pinned
+    // unit must survive even though it is colder.
+    let (a, destroyed_a) = loaded_llama("a", 1000, 100);
+    let (b, destroyed_b) = loaded_llama_pinned("b", 5000, 50);
+    admission_engine(Some(6000))
+        .make_room_for(
+            &[
+                a.clone() as Arc<dyn LlmWeights>,
+                b.clone() as Arc<dyn LlmWeights>,
+            ],
+            "c",
+            500,
+            MemoryPool::Vram,
+        )
+        .await;
+    assert_eq!(*destroyed_a.lock().unwrap(), 1, "unpinned evicted first");
+    assert_eq!(
+        *destroyed_b.lock().unwrap(),
+        0,
+        "pinned preserved while unpinned room sufficed"
+    );
+}
+
+#[tokio::test]
+async fn admission_evicts_pinned_when_nothing_else_fits() {
+    // Same pair, but 6000B incoming: the unpinned 1000B cannot cover it, so
+    // the pinned unit is evicted too (last-resort, snapshot-before-evict by
+    // the adapter contract — the engine only orders).
+    let (a, destroyed_a) = loaded_llama("a", 1000, 100);
+    let (b, destroyed_b) = loaded_llama_pinned("b", 5000, 50);
+    admission_engine(Some(6000))
+        .make_room_for(
+            &[
+                a.clone() as Arc<dyn LlmWeights>,
+                b.clone() as Arc<dyn LlmWeights>,
+            ],
+            "c",
+            6000,
+            MemoryPool::Vram,
+        )
+        .await;
+    assert_eq!(*destroyed_a.lock().unwrap(), 1, "unpinned evicted first");
+    assert_eq!(
+        *destroyed_b.lock().unwrap(),
+        1,
+        "pinned evicted last-resort when nothing else fits"
+    );
+}
+
+#[tokio::test]
+async fn admission_evicts_pinned_weights_with_contexts() {
+    // One model whose only row is pinned with 4000B of shared weights: the
+    // whole-weights arm must still fire (snapshot-before-evict by the
+    // adapter), unloading the weights when pressure demands it.
+    let mut ctx = row("w", "pinned", true, 50);
+    ctx.model_bytes = 4000;
+    ctx.vram_bytes = 1000;
+    let w = Arc::new(StubWeights::llama("w", 5000, true, vec![ctx]));
+    admission_engine(Some(2000))
+        .make_room_for(
+            &[w.clone() as Arc<dyn LlmWeights>],
+            "c",
+            4000,
+            MemoryPool::Vram,
+        )
+        .await;
+    assert_eq!(
+        w.unload_count(),
+        1,
+        "pinned whole-weights evicted under pressure"
+    );
 }
 
 #[tokio::test]

@@ -136,7 +136,8 @@ pub struct LlmResidencyRow {
     pub n_ctx: u64,
     /// Slots per context.
     pub parallel: u32,
-    /// Whether the context is pinned (never evicted).
+    /// Whether the context is pinned (evictable last-resort, with a
+    /// mandatory snapshot-before-evict so it loads back and restores).
     pub pinned: bool,
     /// Whether the context is resume-marked (KV snapshotted before eviction).
     pub resume: bool,
@@ -183,7 +184,8 @@ pub trait LlmWeights: Send + Sync {
     fn model_key(&self) -> &str;
     /// Resident weights footprint in bytes (0 when unloaded).
     fn weights_bytes(&self) -> u64;
-    /// Whether this weights instance is pinned (never released/evicted).
+    /// Whether this weights instance is pinned (evictable last-resort, with a
+    /// mandatory snapshot-before-evict so it loads back and restores).
     fn pinned(&self) -> bool;
     /// Whether this weights instance refuses unload (`Always` residency on
     /// the onnx side; a llama model with pinned instances on the llama side).
@@ -258,7 +260,8 @@ pub trait LlmContext: Send + Sync {
     /// Resize the context window (destroy + re-create on the llama fork;
     /// in-place on onnx). Bounded by `max_ctx`.
     async fn resize(&self, n_ctx: u64) -> Result<(), LlmRuntimeError>;
-    /// Whether this context is pinned (never evicted).
+    /// Whether this context is pinned (evictable last-resort, with a
+    /// mandatory snapshot-before-evict so it loads back and restores).
     fn pinned(&self) -> bool;
     /// Whether this context is resume-marked (KV preserved across eviction).
     fn resume(&self) -> bool;
@@ -298,25 +301,31 @@ pub trait LlmKVCache: Send + Sync {
 
 /// One unit the residency engine can evict to free memory.
 ///
-/// A unit is either a single unpinned context (frees its KV + compute; the
-/// weights stay) or a whole weights instance with no pinned contexts (frees
-/// its weights *and* every context). Including whole-weights units is what
-/// makes the largest resident footprints real eviction targets.
+/// A unit is either a single context (frees its KV + compute; the weights
+/// stay) or a whole weights instance (frees its weights *and* every
+/// context). Pinned units are evictable last-resort candidates: `pinned`
+/// means "snapshot before evict so the unit loads back and restores", never
+/// "immune". Including whole-weights units is what makes the largest
+/// resident footprints real eviction targets.
 struct Candidate {
     kind: CandidateKind,
     /// Bytes freeing this candidate releases.
     freed_bytes: u64,
     /// Pool-native last use (ordering key).
     last_used: i64,
+    /// True when evicting this unit drops pinned state. The ordering arms
+    /// deprioritize pinned units behind every unpinned one; the
+    /// weights/context adapters snapshot pinned units before freeing them.
+    pinned: bool,
 }
 
 enum CandidateKind {
-    /// One unpinned context.
+    /// One context.
     Context {
         weights: Arc<dyn LlmWeights>,
         name: String,
     },
-    /// A whole weights instance (every unpinned context, then the weights).
+    /// A whole weights instance (every context, then the weights).
     Weights { weights: Arc<dyn LlmWeights> },
 }
 
@@ -563,19 +572,17 @@ impl LlmResidencyEngine {
                 }
             };
             used = used.saturating_add(resident);
-            let mut unpinned_vram: u64 = 0;
-            let mut unpinned_min_last_used: i64 = i64::MAX;
             let mut unpinned: Vec<&LlmResidencyRow> = Vec::new();
+            let mut pinned_rows: Vec<&LlmResidencyRow> = Vec::new();
             for row in &rows {
                 match pool {
                     MemoryPool::Vram => used = used.saturating_add(row.vram_bytes),
                     MemoryPool::Ram => used = used.saturating_add(row.total_bytes),
                 }
                 if row.pinned {
+                    pinned_rows.push(row);
                     continue;
                 }
-                unpinned_vram = unpinned_vram.saturating_add(row.vram_bytes);
-                unpinned_min_last_used = unpinned_min_last_used.min(row.last_used);
                 unpinned.push(row);
             }
             // A weights instance that refuses unload (`Always`/pinned onnx
@@ -593,29 +600,34 @@ impl LlmResidencyEngine {
             if w.in_flight() > 0 {
                 continue;
             }
-            // A weights instance with NO pinned context is fully evictable:
-            // dropping every context unloads its weights too. Pinned contexts
-            // keep a model's weights resident, so only weights with zero
-            // pinned instances surface as whole-weights candidates.
-            if !has_pinned && resident > 0 {
+            // Whole-weights candidacy, with or without pinned contexts: the
+            // weights arm destroys every context (pinned ones snapshotted
+            // first, via the context evict arm) and then unloads. `pinned`
+            // marks it last-resort — the ordering arm runs every unpinned
+            // candidate first. (Previously gated on zero pinned contexts,
+            // which stranded pressure eviction behind any pinned instance.)
+            if resident > 0 {
+                let rows_vram: u64 = rows.iter().map(|r| r.vram_bytes).sum();
+                let coldest = rows
+                    .iter()
+                    .map(|r| r.last_used)
+                    .min()
+                    .unwrap_or_else(|| w.last_used());
                 candidates.push(Candidate {
                     kind: CandidateKind::Weights {
                         weights: Arc::clone(w),
                     },
-                    freed_bytes: resident.saturating_add(unpinned_vram),
-                    // With no unpinned context rows the weights' own last use
-                    // is the recency (the onnx registry's `last_used_ms`; a
-                    // llama model with no rows reports its router-tracked
+                    freed_bytes: resident.saturating_add(rows_vram),
+                    // With no context rows the weights' own last use is the
+                    // recency (the onnx registry's `last_used_ms`; a llama
+                    // model with no rows reports its router-tracked
                     // `last_used`, seconds). With rows, the coldest context's
                     // last use stands in (the llama `evict_model` shape).
-                    last_used: if unpinned_min_last_used == i64::MAX {
-                        w.last_used()
-                    } else {
-                        unpinned_min_last_used
-                    },
+                    last_used: coldest,
+                    pinned: has_pinned,
                 });
             }
-            for row in unpinned {
+            let mut push_context = |row: &LlmResidencyRow, pinned: bool| {
                 let name = row
                     .context_key
                     .strip_prefix(&format!("{}:", w.model_key()))
@@ -628,7 +640,16 @@ impl LlmResidencyEngine {
                     },
                     freed_bytes: row.vram_bytes,
                     last_used: row.last_used,
+                    pinned,
                 });
+            };
+            for row in unpinned {
+                push_context(row, false);
+            }
+            // Pinned contexts are candidates too (last-resort): evicting one
+            // snapshots it first so it loads back and restores.
+            for row in pinned_rows {
+                push_context(row, true);
             }
         }
         (used, candidates)
@@ -706,8 +727,10 @@ impl LlmResidencyEngine {
 
     /// Order `candidates` best-eviction-first per the pool's injected
     /// `EvictionPolicy` and evict until `used` fits `target` (or the batch is
-    /// reached). The one eviction-ordering call site — periodic over-budget
-    /// passes and load-time admission share it.
+    /// reached). Pinned units always sort behind every unpinned one: they are
+    /// evictable last-resort (snapshot-before-evict), never first choice.
+    /// The one eviction-ordering call site — periodic over-budget passes and
+    /// load-time admission share it.
     async fn evict_to_target(
         &self,
         pool: MemoryPool,
@@ -716,12 +739,17 @@ impl LlmResidencyEngine {
         target: u64,
         now: i64,
     ) {
+        // Pinned-last partition first: each tier keeps its own policy order,
+        // and `evict_until_fit` stops at the target — pinned units only run
+        // when no unpinned combination fits.
+        let (pinned, unpinned): (Vec<Candidate>, Vec<Candidate>) =
+            candidates.into_iter().partition(|c| c.pinned);
         // Order best-eviction-first per the pool's injected policy.
-        let ordered = match pool {
+        let order = |cands: Vec<Candidate>| match pool {
             MemoryPool::Vram => {
                 // footprint × coldness desc, then last-used desc (newer kept).
                 common_core::cache::eviction_order(
-                    candidates,
+                    cands,
                     now.saturating_div(1000),
                     |c: &Candidate| c.freed_bytes,
                     |c: &Candidate| c.last_used,
@@ -729,7 +757,7 @@ impl LlmResidencyEngine {
             }
             MemoryPool::Ram => {
                 // LRU-largest: largest footprint first, oldest last_used first.
-                let mut ordered = candidates;
+                let mut ordered = cands;
                 ordered.sort_by(|a, b| {
                     b.freed_bytes
                         .cmp(&a.freed_bytes)
@@ -738,6 +766,8 @@ impl LlmResidencyEngine {
                 ordered
             }
         };
+        let mut ordered = order(unpinned);
+        ordered.extend(order(pinned));
 
         let (used_after, _) = common_core::cache::evict_until_fit(
             used,

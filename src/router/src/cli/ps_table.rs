@@ -30,7 +30,7 @@
 //!   (`1h28m`, `Forever` for pinned/no-sleep, `loaded` when no finite
 //!   window is known); for the weights row: `loaded`/`unloaded`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use bon::Builder;
@@ -91,19 +91,38 @@ pub struct PsTotals {
 
 /// Collect every `ps` row plus the fleet totals. Pure over the
 /// already-fetched `/v1/models` listing (`listed`) and the `/instances`
-/// envelope (`instance_list`); the config only enriches labels (quant/KV
-/// cache type/sleep fallback) and never filters.
+/// envelope (`instance_list` plus its `snapshots` array); the config only
+/// enriches labels (quant/KV cache type/sleep fallback) and never filters.
+///
+/// Snapshots are restorable state, not residency: an offloaded model whose
+/// server kept snapshots (alive-but-empty after eviction) renders its
+/// snapshot rows distinctly (`snapshot:<name>`, `LIVE = snapshot`, every
+/// measure `-`), including when the model has no instance detail at all
+/// (it would otherwise vanish from the table entirely).
 pub fn collect_ps_rows(
     config: Option<&RouterConfig>,
     gguf_dir: &Path,
     listed: &[Value],
     instance_list: &[Value],
+    snapshots: &[Value],
 ) -> (Vec<PsRow>, PsTotals) {
     let mut by_model: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for inst in instance_list {
         let id = inst.get("id").and_then(Value::as_str).unwrap_or_default();
         let key = id.split(':').next().unwrap_or(id).to_string();
         by_model.entry(key).or_default().push(inst.clone());
+    }
+    // The aggregate tags each snapshot with its owning `model` key.
+    let mut snaps_by_model: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
+    for snap in snapshots {
+        let key = snap
+            .get("model")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if !key.is_empty() {
+            snaps_by_model.entry(key).or_default().push(snap);
+        }
     }
 
     let mut rows = Vec::new();
@@ -113,22 +132,48 @@ pub fn collect_ps_rows(
         let ctx_mem: u64 = insts.iter().map(inst_mem_bytes).sum();
         resident = resident.saturating_add(weights_bytes.saturating_add(ctx_mem));
         rows.extend(model_group(config, gguf_dir, key, insts));
+        if let Some(snaps) = snaps_by_model.get(key) {
+            rows.extend(snapshot_rows(key, snaps));
+        }
     }
     let mut models = by_model.len();
+    // `/v1/models` lists one entry per *window* — a down server synthesizes
+    // one per configured profile (`qwen3.5-9b:ledger` plus
+    // `qwen3.5-9b:reasoning`) — while `ps` groups by model key. Dedupe so
+    // the same unloaded model renders (and counts) once, not once per
+    // window.
+    let mut seen_unloaded = HashSet::new();
     for m in listed {
         let id = m.get("id").and_then(Value::as_str).unwrap_or_default();
         let key = id.split(':').next().unwrap_or(id).to_string();
-        if !by_model.contains_key(&key) {
+        if !by_model.contains_key(&key) && seen_unloaded.insert(key.clone()) {
             // An unloaded model contributes nothing resident — its weights
             // sit on disk, not in VRAM or SYS RAM (the on-disk size is a
             // display-only fallback elsewhere, never a residency figure).
             rows.push(unloaded_row(&key));
+            if let Some(snaps) = snaps_by_model.get(&key) {
+                rows.extend(snapshot_rows(&key, snaps));
+            }
+            models += 1;
+        }
+    }
+    // Alive-but-empty servers (evicted to zero instances, snapshots kept
+    // fork-side) appear in neither listing: surface them from their
+    // snapshots alone, in model-key order.
+    for (key, snaps) in &snaps_by_model {
+        if !by_model.contains_key(key) && seen_unloaded.insert(key.clone()) {
+            rows.extend(snapshot_rows(key, snaps));
             models += 1;
         }
     }
     let instances = rows
         .iter()
-        .filter(|r| !r.instance.is_empty() && r.instance != "-" && r.instance != "TOTAL")
+        .filter(|r| {
+            !r.instance.is_empty()
+                && r.instance != "-"
+                && r.instance != "TOTAL"
+                && !r.instance.starts_with(SNAPSHOT_PREFIX)
+        })
         .count();
     (
         rows,
@@ -243,6 +288,44 @@ fn model_group(
         live: "-".to_string(),
     });
     rows
+}
+
+/// Instance-cell prefix marking a snapshot row. A `:` can never start a real
+/// instance name (ids carry at most one, as the model/name separator), so
+/// the prefix is unambiguous — and the instance counter skips it.
+const SNAPSHOT_PREFIX: &str = "snapshot:";
+
+/// One distinct row per retained snapshot under its model: the snapshot
+/// name is the restorable window (`<name>-resume` reloads that context),
+/// every measure `-` (a snapshot is restorable state, not residency), and
+/// `LIVE = snapshot`. The model display sits on the first row only, like
+/// every other group.
+fn snapshot_rows(model_key: &str, snaps: &[&Value]) -> Vec<PsRow> {
+    let base_model = ollama_display(model_key, "");
+    snaps
+        .iter()
+        .enumerate()
+        .map(|(i, snap)| {
+            let name = snap
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            PsRow {
+                model: if i == 0 {
+                    base_model.clone()
+                } else {
+                    String::new()
+                },
+                instance: format!("{SNAPSHOT_PREFIX}{name}"),
+                vram: "-".to_string(),
+                sys_ram: "-".to_string(),
+                ctx: "-".to_string(),
+                quant: "-".to_string(),
+                kv: "-".to_string(),
+                live: "snapshot".to_string(),
+            }
+        })
+        .collect()
 }
 
 /// A model with no instance detail (lazy server down): one bare `unloaded`
@@ -484,17 +567,26 @@ fn ps_cells(rows: &[PsRow]) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// Fixed column minima, except `KV` which sizes to its content (clamped):
-/// the `MODEL` column absorbs the remaining terminal width.
+/// Fixed column minima, except `INSTANCE` and `KV` which size to their
+/// content (clamped): a `snapshot:<name>` cell is wider than any live
+/// window name, and fixed minima would clip it even on wide terminals.
+/// The `MODEL` column absorbs the remaining terminal width.
 fn ps_min_widths(rows: &[PsRow]) -> Vec<usize> {
     const KV_MAX: usize = 11;
+    const INSTANCE_MAX: usize = 24;
     let kv_w = rows
         .iter()
         .map(|r| r.kv.len())
         .max()
         .unwrap_or(2)
         .clamp(2, KV_MAX);
-    vec![12, 10, 8, 8, 7, 6, kv_w, 9]
+    let inst_w = rows
+        .iter()
+        .map(|r| r.instance.len())
+        .max()
+        .unwrap_or(10)
+        .clamp(10, INSTANCE_MAX);
+    vec![12, inst_w, 8, 8, 7, 6, kv_w, 9]
 }
 
 fn totals_footer(totals: &PsTotals) -> String {

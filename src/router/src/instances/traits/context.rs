@@ -155,16 +155,22 @@ impl LlmContext for LlamaContext {
     }
 
     async fn evict(&self) -> Result<(), LlmRuntimeError> {
-        // Resume-marked multi-step contexts are KV-snapshotted BEFORE they
-        // drop (the sidecar's `evict_context` order) so a later
-        // `snapshot=<name>-resume` restores them — but only in `auto`
-        // snapshot mode. `manual` destroys without saving (and audits the
-        // skip): the operator asked for no silent saves. A failed save logs
-        // and the eviction still proceeds. One-shot contexts are
+        // Snapshot-before-evict (the sidecar's `evict_context` order) so a
+        // later `snapshot=<name>-resume` restores the context. Pinned
+        // contexts are ALWAYS snapshotted: pinned means evictable-last-resort
+        // with a mandatory restore point. Resume-marked multi-step contexts
+        // snapshot in `auto` snapshot mode; `manual` destroys those without
+        // saving (and audits the skip) — the operator asked for no silent
+        // saves. A pressure eviction of a pinned context is never silent
+        // (WARN + audit), so it snapshots even in `manual` mode. A failed
+        // save logs and the eviction still proceeds. One-shot contexts are
         // plain-destroyed: they hold no multi-step state, so the snapshot
         // pass is skipped.
-        if self.manager.session_for(&self.name) && self.manager.resume_for(&self.name) {
-            if self.manager.snapshot_mode().saves_on_evict() {
+        let pinned = self.pinned;
+        let preserve =
+            pinned || (self.manager.session_for(&self.name) && self.manager.resume_for(&self.name));
+        if preserve {
+            if pinned || self.manager.snapshot_mode().saves_on_evict() {
                 let snapshot = resume_snapshot_name(&self.name);
                 if let Err(e) = self.client.save_snapshot(&self.name, &snapshot).await {
                     tracing::warn!(
@@ -174,6 +180,16 @@ impl LlmContext for LlamaContext {
                         snapshot = %snapshot,
                         error = %e,
                         "resume snapshot save on evict failed - context drops unsnapshotted",
+                    );
+                } else if !self.manager.snapshot_mode().saves_on_evict() {
+                    crate::audit::emit(
+                        "instances",
+                        serde_json::json!({
+                            "action": "evict_snapshot_pinned",
+                            "model": self.manager.model_key(),
+                            "instance": self.name,
+                            "reason": "pinned_evict_manual_mode",
+                        }),
                     );
                 }
             } else {

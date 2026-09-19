@@ -268,11 +268,12 @@ pub struct InstanceProfile {
     /// Preserve this context across eviction: when the router must free VRAM,
     /// the context's KV cache is snapshotted (and its session transcript is
     /// already durable in the ledger) before it is dropped, so a later request
-    /// can resume it with `snapshot=<name>-resume`. `pinned` contexts are never
-    /// evicted, so `resume` is moot on them. Cleared at runtime (explicitly via
-    /// `POST /instances/:name/no-resume`, or automatically after
-    /// `sidecar.resume_ttl_s` of idle) when Coral Router concludes the work is
-    /// done - the snapshot is then deleted.
+    /// can resume it with `snapshot=<name>-resume`. `pinned` contexts are
+    /// evictable last-resort and are always snapshotted on evict (even
+    /// without this flag), so `resume` only adds TTL expiry for them.
+    /// Cleared at runtime (explicitly via `POST /instances/:name/no-resume`,
+    /// or automatically after `sidecar.resume_ttl_s` of idle) when Coral
+    /// Router concludes the work is done - the snapshot is then deleted.
     #[serde(default)]
     pub resume: bool,
     /// Sampling params merged into the request body for dispatches through this

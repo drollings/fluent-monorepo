@@ -23,7 +23,7 @@ fn listed(id: &str) -> Vec<Value> {
 #[test]
 fn header_carries_vram_sysram_ctx_quant_kv_live_columns() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
     let text = render_ps_table_sized(&rows, &totals, 100);
     for col in [
         "MODEL", "INSTANCE", "VRAM", "SYS RAM", "CTX", "QUANT", "KV", "LIVE",
@@ -35,7 +35,7 @@ fn header_carries_vram_sysram_ctx_quant_kv_live_columns() {
 #[test]
 fn row_shows_ctx_window_weights_quant_and_sleep() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
     // Weights row, instance row, TOTAL row.
     assert_eq!(rows.len(), 3);
     assert_eq!(rows[0].model, "base");
@@ -67,7 +67,7 @@ fn unknown_weights_row_renders_dash_never_disk_size() {
     plain["model_bytes"] = json!(0u64);
     plain["vram_bytes"] = json!(0u64);
     plain["total_bytes"] = json!(0u64);
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[plain]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[plain], &[]);
     assert_eq!(rows[0].vram, "-", "unknown weights render as dash: {rows:?}");
     assert_eq!(rows[1].vram, "-", "unknown instance VRAM renders as dash");
     assert_eq!(totals.resident_bytes, 0, "unknown contributes nothing resident");
@@ -76,7 +76,7 @@ fn unknown_weights_row_renders_dash_never_disk_size() {
 #[test]
 fn kv_cache_quant_defaults_to_q8_0_without_config() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()]);
+    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
     assert_eq!(rows[1].kv, "q8_0");
     let text = render_ps_table_sized(
         &rows,
@@ -107,6 +107,7 @@ fn kv_cache_quant_follows_model_spawn_defaults() {
         dir.path(),
         &listed("base:ledger"),
         &[llama_row()],
+        &[],
     );
     assert_eq!(rows[1].kv, "q4_0");
 }
@@ -128,6 +129,7 @@ fn kv_cache_quant_split_renders_k_slash_v() {
         dir.path(),
         &listed("base:ledger"),
         &[llama_row()],
+        &[],
     );
     assert_eq!(rows[1].kv, "q4_0/q8_0");
 }
@@ -147,7 +149,7 @@ fn idle_countdown_shows_time_left_before_sleep() {
         "model_bytes": 1000u64,
         "last_used": now - 170,  // 130s of the 300s window left
     });
-    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("base:scratch"), &[row]);
+    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("base:scratch"), &[row], &[]);
     // Weights row, instance row, TOTAL row. ~130s of the 300s window left;
     // the keep-alive format renders that as `2m` (seconds dropped for
     // minute-scale values), robust to the collect-time clock ticking.
@@ -170,7 +172,7 @@ fn onnx_row_uses_ram_and_runtime_marker() {
         "vram_bytes": 0,
         "model_bytes": 0u64,
     });
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("onnx/llm:default"), &[row]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("onnx/llm:default"), &[row], &[]);
     assert_eq!(rows.len(), 3);
     assert!(rows[0].model.contains("(onnx)"), "got {}", rows[0].model);
     assert_eq!(rows[1].sys_ram, "4 GB", "onnx working set is CPU RAM");
@@ -183,7 +185,7 @@ fn onnx_row_uses_ram_and_runtime_marker() {
 #[test]
 fn model_without_instances_gets_unloaded_row() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("swarm"), &[]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("swarm"), &[], &[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].live, "unloaded");
     assert_eq!(rows[0].instance, "-");
@@ -194,6 +196,96 @@ fn model_without_instances_gets_unloaded_row() {
 }
 
 #[test]
+fn unloaded_model_with_two_windows_renders_one_row() {
+    // The live shape: a down server synthesizes one `/v1/models` entry per
+    // configured profile (`qwen3.5-9b:ledger` + `qwen3.5-9b:reasoning`) with
+    // no instance detail. `ps` groups by model key, so the model renders
+    // (and counts) once — never once per window.
+    let dir = tempfile::tempdir().unwrap();
+    let listed = vec![
+        json!({ "id": "qwen3.5-9b:ledger" }),
+        json!({ "id": "qwen3.5-9b:reasoning" }),
+    ];
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[], &[]);
+    assert_eq!(rows.len(), 1, "one unloaded row per model: {rows:?}");
+    assert_eq!(rows[0].live, "unloaded");
+    assert_eq!(totals.models, 1, "model counted once");
+    assert_eq!(totals.instances, 0);
+    let text = render_ps_table_sized(&rows, &totals, 100);
+    assert_eq!(text.matches("qwen3.5-9b").count(), 1, "no duplicate:\n{text}");
+}
+
+#[test]
+fn offloaded_model_with_snapshot_renders_distinctly() {
+    // Alive-but-empty after eviction: no `/v1/models` entries, no instance
+    // detail — only the retained fork-side snapshot. The model must still
+    // appear (it would otherwise vanish), as a distinct snapshot row, never
+    // as residency: zero bytes, zero instance count.
+    let dir = tempfile::tempdir().unwrap();
+    let snapshots = vec![json!({
+        "name": "ledger-resume",
+        "instance": "ledger",
+        "model": "qwen3.5-9b",
+    })];
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &[], &[], &snapshots);
+    assert_eq!(rows.len(), 1, "one snapshot row: {rows:?}");
+    assert_eq!(rows[0].instance, "snapshot:ledger-resume");
+    assert_eq!(rows[0].live, "snapshot");
+    assert_eq!(rows[0].vram, "-");
+    assert_eq!(totals.models, 1, "snapshot-only model counted");
+    assert_eq!(totals.instances, 0, "snapshots are not instances");
+    assert_eq!(totals.resident_bytes, 0, "snapshots are not residency");
+    let text = render_ps_table_sized(&rows, &totals, 100);
+    assert!(text.contains("snapshot:ledger-resume"), "named:\n{text}");
+    assert!(text.contains("1 model"), "footer:\n{text}");
+}
+
+#[test]
+fn unloaded_listing_with_snapshot_shows_both_rows() {
+    // Down server (synthesized `unloaded` listing) whose snapshots outlived
+    // it: the bare state row plus the distinct snapshot row, model counted
+    // once.
+    let dir = tempfile::tempdir().unwrap();
+    let listed = vec![
+        json!({ "id": "qwen3.5-9b:ledger" }),
+        json!({ "id": "qwen3.5-9b:reasoning" }),
+    ];
+    let snapshots = vec![json!({
+        "name": "ledger-resume",
+        "instance": "ledger",
+        "model": "qwen3.5-9b",
+    })];
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[], &snapshots);
+    assert_eq!(rows.len(), 2, "unloaded + snapshot: {rows:?}");
+    assert_eq!(rows[0].live, "unloaded");
+    assert_eq!(rows[1].instance, "snapshot:ledger-resume");
+    assert_eq!(rows[1].live, "snapshot");
+    assert_eq!(totals.models, 1);
+    assert_eq!(totals.instances, 0);
+}
+
+#[test]
+fn loaded_group_with_snapshot_appends_without_counting() {
+    // A resident model that kept a snapshot: the group keeps its
+    // weights/instance/TOTAL shape with the snapshot row after it, and the
+    // instance count covers live windows only.
+    let dir = tempfile::tempdir().unwrap();
+    let snapshots = vec![json!({
+        "name": "ledger-resume",
+        "instance": "ledger",
+        "model": "base",
+    })];
+    let (rows, totals) =
+        collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &snapshots);
+    assert_eq!(rows.len(), 4, "weights/instance/TOTAL + snapshot: {rows:?}");
+    assert_eq!(rows[2].instance, "TOTAL");
+    assert_eq!(rows[3].instance, "snapshot:ledger-resume");
+    assert_eq!(rows[3].live, "snapshot");
+    assert_eq!(totals.models, 1);
+    assert_eq!(totals.instances, 1, "snapshot excluded from the count");
+}
+
+#[test]
 fn latest_symlink_name_carries_no_quant() {
     // A GGUF layout whose only file is `latest.gguf`: the stem is a
     // symlink convention, not a quantization tag, so the column shows `-`.
@@ -201,7 +293,7 @@ fn latest_symlink_name_carries_no_quant() {
     let model_dir = dir.path().join("swarm");
     std::fs::create_dir_all(&model_dir).unwrap();
     std::fs::write(model_dir.join("latest.gguf"), vec![0u8; 64]).unwrap();
-    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("swarm"), &[]);
+    let (rows, _) = collect_ps_rows(None, dir.path(), &listed("swarm"), &[], &[]);
     assert_eq!(rows[0].quant, "-");
 }
 
@@ -225,7 +317,13 @@ fn every_line_fits_the_requested_width() {
     ];
     for width in [80u16, 100, 140] {
         let (rows, totals) =
-            collect_ps_rows(None, dir.path(), &listed, &[llama_row(), onnx.clone()]);
+            collect_ps_rows(
+            None,
+            dir.path(),
+            &listed,
+            &[llama_row(), onnx.clone()],
+            &[],
+        );
         let text = render_ps_table_sized(&rows, &totals, width);
         for line in text.lines() {
             assert!(
@@ -240,7 +338,7 @@ fn every_line_fits_the_requested_width() {
 fn totals_footer_counts_models_instances_and_bytes() {
     let dir = tempfile::tempdir().unwrap();
     let listed = vec![json!({ "id": "base:ledger" }), json!({ "id": "swarm" })];
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row()]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row()], &[]);
     assert_eq!(totals.models, 2);
     assert_eq!(totals.instances, 1);
     assert_eq!(totals.resident_bytes, 1_800_000_000 + 1_700_000_000);
@@ -253,7 +351,7 @@ fn totals_footer_counts_models_instances_and_bytes() {
 #[test]
 fn no_boundary_characters_in_text_output() {
     let dir = tempfile::tempdir().unwrap();
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed("base:ledger"), &[llama_row()], &[]);
     let text = render_ps_table_sized(&rows, &totals, 100);
     for boundary in ['┌', '┐', '└', '┘', '─', '│', '├', '┤', '┬', '┴', '┼'] {
         assert!(
@@ -272,7 +370,7 @@ fn markdown_twin_renders_pipe_tables_with_full_values() {
     let dir = tempfile::tempdir().unwrap();
     let long_id = "a-very-long-model-name-that-no-terminal-column-could-hold:ledger";
     let listed = vec![json!({ "id": long_id })];
-    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row()]);
+    let (rows, totals) = collect_ps_rows(None, dir.path(), &listed, &[llama_row()], &[]);
     let text = render_ps_markdown(&rows, &totals);
     assert!(
         text.contains("| MODEL | INSTANCE | VRAM | SYS RAM | CTX | QUANT | KV | LIVE |"),
