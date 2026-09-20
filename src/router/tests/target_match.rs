@@ -206,17 +206,19 @@ impl fluent_llm::client::ChatBackend for RecordingBackend {
 
 #[test]
 fn self_assessment_calls_include_a_user_turn() {
+    // Two candidates so the climb actually assesses (singletons run
+    // assessment-free): the first vetoes itself, the last always matches.
     let backend = Arc::new(RecordingBackend {
         seen: std::sync::Mutex::new(Vec::new()),
-        response: assessment(4, "mid"),
+        response: assessment(9, "too hard"),
     });
     let matcher = TargetMatcher::new(
         TargetBackends::new(HashMap::new(), backend.clone()),
         Arc::new(fluent_concurrency::pool::Limiter::new(4)),
         0,
     );
-    let cands = candidates(&[("qwen3.5-9b", 4, 3.0)]);
-    let routing = routing_with("default", &["qwen3.5-9b"]);
+    let cands = candidates(&[("small", 1, 1.0), ("qwen3.5-9b", 4, 3.0)]);
+    let routing = routing_with("default", &["small", "qwen3.5-9b"]);
     matcher
         .match_target("local", "default", &routing, &cands, Some(3), "hello")
         .expect("match");

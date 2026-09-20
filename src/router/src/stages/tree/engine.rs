@@ -46,9 +46,10 @@ pub struct ClassificationEngine {
     default_coherence_threshold: f64,
     /// The target-matching ladder, shared with the flat classifier path
     /// (DRY — one climbing implementation). `Some` (pipeline `target_match:
-    /// "self_assess"`) resolves terminals with 2+ member groups through
-    /// per-candidate self-assessment; `None` keeps the static
-    /// cheapest-qualifying pick.
+    /// "self_assess"`) resolves terminals through per-candidate
+    /// self-assessment for 2+ member groups; singleton groups flow through
+    /// with zero assessment calls (expansion pick preserved); `None` keeps
+    /// the static cheapest-qualifying pick.
     target_matcher: Option<TargetMatcher>,
 }
 
@@ -478,10 +479,11 @@ impl ClassificationEngine {
     }
 
     /// Terminal node: resolve a dispatch target. When the pipeline opts into
-    /// target-matching (`target_match: "self_assess"`), a 2+ member role
-    /// resolves through the shared self-assessment ladder
-    /// (`crate::target_match::TargetMatcher`); otherwise the static
-    /// cheapest-qualifying pick runs (`RoutingConfig::routing_target` /
+    /// target-matching (`target_match: "self_assess"`), the role resolves
+    /// through the shared ladder (`crate::target_match::TargetMatcher`) —
+    /// with per-candidate self-assessment for 2+ member groups, assessment-
+    /// free for singletons; otherwise the static cheapest-qualifying pick
+    /// runs (`RoutingConfig::routing_target` /
     /// [`Self::resolve_role_target`]).
     fn evaluate_terminal(
         &self,
@@ -530,10 +532,9 @@ impl ClassificationEngine {
     /// Flat-route terminal resolution through the shared target-matching
     /// ladder when available, falling back to the static
     /// `RoutingConfig::routing_target` (defense-in-depth — never fails harder
-    /// than today). The ladder only runs for 2+ member roles: a singleton
-    /// has nothing to climb (last-always-wins forces the static pick), so it
-    /// resolves statically with no extra LLM call — the same 2+ rule as the
-    /// shared `resolve_route_to_target`.
+    /// than today). Singleton roles run the ladder too: with one candidate
+    /// no assessment call fires, but the expansion's residency-aware pick
+    /// still flows into the primary (the static rule is residency-blind).
     fn resolve_route_with_matcher(
         &self,
         route: &str,
@@ -551,17 +552,20 @@ impl ClassificationEngine {
                     &|base| expansion.supervisor_loaded(base),
                     complexity,
                 );
-                if candidates.len() >= 2 {
-                    if let Some(tm) = matcher.match_target(
-                        route,
-                        role,
-                        &self.routing,
-                        &candidates,
-                        complexity,
-                        user_text,
-                    ) {
-                        return Some((tm.primary, Some(tm.assessments)));
-                    }
+                if let Some(tm) = matcher.match_target(
+                    route,
+                    role,
+                    &self.routing,
+                    &candidates,
+                    complexity,
+                    user_text,
+                ) {
+                    // `matched_via: self_assess` marks terminals an assessment actually
+                    // ran for: singletons flow through the ladder with zero
+                    // assessments (expansion pick, no calls), so they report
+                    // no marker.
+                    let assessed = Some(tm.assessments).filter(|a| !a.is_empty());
+                    return Some((tm.primary, assessed));
                 }
             }
         }
@@ -571,12 +575,12 @@ impl ClassificationEngine {
     }
 
     /// Resolve a terminal's own role when no flat `routes` entry
-    /// exists. When the target-matching ladder is available and the role has
-    /// 2+ members, runs the self-assessment climb; otherwise picks the
+    /// exists. When the target-matching ladder is available, runs the
+    /// self-assessment climb for any non-empty role; otherwise picks the
     /// viable model in the role (intelligence-passing, loaded-first,
-    /// cheapest — the shared static rule). Singletons skip the climb: the
-    /// ladder provably returns the static pick (last-always-wins), so the
-    /// assessment LLM call would be pure overhead.
+    /// cheapest — the shared static rule). Singleton roles climb with zero
+    /// assessment calls (nothing to veto) — the ladder still runs so the
+    /// expansion's residency-aware pick flows into the primary.
     fn resolve_role_target(
         &self,
         route: &str,
@@ -594,17 +598,20 @@ impl ClassificationEngine {
                 &|base| expansion.supervisor_loaded(base),
                 min_complexity,
             );
-            if candidates.len() >= 2 {
-                if let Some(tm) = matcher.match_target(
-                    route,
-                    role,
-                    &self.routing,
-                    &candidates,
-                    min_complexity,
-                    user_text,
-                ) {
-                    return Some((tm.primary, Some(tm.assessments)));
-                }
+            if let Some(tm) = matcher.match_target(
+                route,
+                role,
+                &self.routing,
+                &candidates,
+                min_complexity,
+                user_text,
+            ) {
+                // `matched_via: self_assess` marks terminals an assessment actually
+                    // ran for: singletons flow through the ladder with zero
+                    // assessments (expansion pick, no calls), so they report
+                    // no marker.
+                    let assessed = Some(tm.assessments).filter(|a| !a.is_empty());
+                    return Some((tm.primary, assessed));
             }
         }
 

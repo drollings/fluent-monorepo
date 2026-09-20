@@ -875,3 +875,68 @@ async fn mock_transcript_entries_serve_their_expected_answers() {
         failures.join("\n  ")
     );
 }
+
+/// A+B lock-in against the shipped config: the 27B cold standby is bound to
+/// the reasoning role (local fallback exists on every reasoning-route
+/// failure walk), and quick/scratch carry filter→question escalation ladders
+/// (anonymized frontier engages only after the local chain exhausts).
+/// The frontier endpoint/model are operator-filled placeholders — the ladder
+/// structure (modes, decomposer/assembler backends) must build regardless.
+#[test]
+fn shipped_config_has_local_fallback_and_escalation_ladders() {
+    let config = load_config();
+    let view = config.routing_config();
+
+    let reasoning_members = view.role_dispatch_members("reasoning");
+    assert!(
+        reasoning_members.iter().any(|m| m == "qwen3.8-27b"),
+        "reasoning role must bind the 27B cold standby, got: {reasoning_members:?}"
+    );
+    // The standby stays out of the hot singleton path: quick/scratch keep
+    // exactly one effective candidate (no assessment call returns).
+    for role in ["quick", "scratch"] {
+        assert!(
+            !view
+                .role_dispatch_members(role)
+                .iter()
+                .any(|m| m.contains("27b")),
+            "{role} must not bind the 27B directly (cold standby via cross-role fallbacks only)"
+        );
+    }
+
+    let http = reqwest::Client::new();
+    let ladders = config.build_escalation_ladders(&http);
+    for role in ["quick", "scratch"] {
+        let ladder = ladders
+            .get(role)
+            .unwrap_or_else(|| panic!("{role} must build an escalation ladder"));
+        assert_eq!(
+            ladder.config().modes,
+            vec![
+                crate::frontier::modes::EscalationMode::Filter,
+                crate::frontier::modes::EscalationMode::Question,
+            ],
+            "{role} ladder runs filter→question"
+        );
+        assert!(
+            ladder.config().frontier.is_some(),
+            "{role} ladder needs a frontier endpoint (operator-filled placeholder ok)"
+        );
+        assert_eq!(
+            ladder.config().decomposer_model.as_deref(),
+            Some("qwen3.5-9b"),
+            "{role} decomposes on the resident 9B (no cold-load dependency)"
+        );
+        assert_eq!(
+            ladder.config().assembler_model.as_deref(),
+            Some("qwen3.5-9b"),
+            "{role} assembles on the resident 9B"
+        );
+    }
+    // The ladder's local roles resolve to real backends (same factory the
+    // boot build uses) — question mode works the day the frontier is set.
+    assert!(
+        config.local_backend("qwen3.5-9b").is_some(),
+        "ladder decomposer/assembler backend must resolve"
+    );
+}

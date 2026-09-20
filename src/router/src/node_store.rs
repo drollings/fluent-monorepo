@@ -16,7 +16,7 @@
 //! The LOD lifecycle (LOD0/LOD5 eager, LOD1–LOD4 lazy from LOD0 only via the
 //! `Summarizer`, recency compaction) is ported here unchanged from the ledger.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -111,7 +111,24 @@ pub struct ContentNodeStore {
     /// Adaptive HNSW-vs-brute-force dispatch policy (M6) — the single
     /// threshold source (`DEFAULT_HNSW_THRESHOLD`). [B] cost/recall only.
     hnsw_policy: AdaptiveHnsw,
+    /// Exact-match Q→A index for the deterministic context cache (C2):
+    /// request node id → normalized lookup key, filled by `record_request`.
+    qa_pending: Mutex<HashMap<NodeId, String>>,
+    /// Normalized lookup key → accepted answer text + answer node id, filled
+    /// by `record_result` on accepted results only. Rejected answers
+    /// (errors, ERROR bodies) never land here — a failed turn must not
+    /// become a cached "fact". Bounded by eviction (`MAX_QA_ENTRIES`).
+    /// Session-blind by design: consulted only on the post-failure
+    /// escalation path, never in front of live dispatch.
+    qa_answers: Mutex<HashMap<String, (String, NodeId)>>,
+    /// Insertion order for `qa_answers` eviction (oldest first).
+    qa_order: Mutex<VecDeque<String>>,
 }
+
+/// Cap for the Q→A index: recent accepted answers stay cached, ancient ones
+/// age out. Small strings only (labels + short answers); 2000 entries is
+/// far below a megabyte in practice.
+const MAX_QA_ENTRIES: usize = 2000;
 
 /// The `metadata` key under which the LLM enrichment overlay lives.
 pub const LLM_OVERLAY_META_KEY: &str = "llm_overlay";
@@ -157,6 +174,9 @@ impl ContentNodeStore {
             overlay_pending: RwLock::new(HashSet::new()),
             hnsw: RwLock::new(None),
             hnsw_policy: AdaptiveHnsw::default(),
+            qa_pending: Mutex::new(HashMap::new()),
+            qa_answers: Mutex::new(HashMap::new()),
+            qa_order: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -182,6 +202,9 @@ impl ContentNodeStore {
             overlay_pending: RwLock::new(HashSet::new()),
             hnsw: RwLock::new(None),
             hnsw_policy: AdaptiveHnsw::default(),
+            qa_pending: Mutex::new(HashMap::new()),
+            qa_answers: Mutex::new(HashMap::new()),
+            qa_order: Mutex::new(VecDeque::new()),
         };
         store_obj.hydrate()?;
         Ok(store_obj)
@@ -745,7 +768,61 @@ impl ContentNodeStore {
         let id = NodeId::from_int(self.next_id.fetch_add(1, Ordering::SeqCst));
         let node = new_node(id, session_id, request_id, "user", &scrubbed.text, None);
         self.insert_node(&node)?;
+        // Key the Q→A index from the pre-scrub text through the same
+        // deterministic anonymizer the lookup path uses, so identical
+        // questions key identically regardless of PII values.
+        let key = Self::normalize_question(content);
+        if !key.is_empty() {
+            lock(&self.qa_pending).insert(id, key);
+        }
         Ok(id)
+    }
+
+    /// Normalize a question into the Q→A index key: deterministic M6
+    /// anonymization (same PII shape → same placeholders), then
+    /// whitespace-fold + lowercase. Shared by the write funnel
+    /// (`record_request`) and the lookup (`accepted_answer_for`) so both
+    /// sides key identically.
+    pub(crate) fn normalize_question(text: &str) -> String {
+        fluent_llm::anonymize(text)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    }
+
+    /// The accepted answer previously recorded for this exact (normalized)
+    /// question, with its answer node id — or `None` when the question was
+    /// never asked or never accepted. Backs the deterministic context
+    /// cache; consulted only on the post-failure escalation path.
+    pub fn accepted_answer_for(&self, question: &str) -> Option<(String, NodeId)> {
+        let key = Self::normalize_question(question);
+        if key.is_empty() {
+            return None;
+        }
+        lock(&self.qa_answers)
+            .get(&key)
+            .map(|(answer, id)| (answer.clone(), *id))
+    }
+
+    /// Insert an accepted answer into the Q→A index, evicting oldest-first
+    /// past `MAX_QA_ENTRIES`.
+    fn qa_answer_insert(&self, key: String, answer: String, id: NodeId) {
+        let mut answers = lock(&self.qa_answers);
+        let mut order = lock(&self.qa_order);
+        if answers.contains_key(&key) {
+            answers.insert(key.clone(), (answer, id));
+            return;
+        }
+        answers.insert(key.clone(), (answer, id));
+        order.push_back(key);
+        while answers.len() > MAX_QA_ENTRIES {
+            if let Some(oldest) = order.pop_front() {
+                answers.remove(&oldest);
+            } else {
+                break;
+            }
+        }
     }
 
     /// Append the turn's answer as an `assistant` node linked to the request
@@ -784,6 +861,17 @@ impl ContentNodeStore {
         answer.acceptance_score = score;
         answer.parent_id = Some(node_id);
         self.insert_node(&answer)?;
+        // Feed the Q→A index on accepted results only: a rejected turn
+        // (error text, ERROR bodies) must never become a cached "fact".
+        // A rejection also drops the pending key so the question can be
+        // re-asked later without stale linkage.
+        if accepted {
+            if let Some(key) = lock(&self.qa_pending).remove(&node_id) {
+                self.qa_answer_insert(key, scrubbed.text.clone(), assistant_id);
+            }
+        } else {
+            lock(&self.qa_pending).remove(&node_id);
+        }
         Ok(())
     }
 

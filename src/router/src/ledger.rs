@@ -36,6 +36,7 @@
 //! for LOD/role metadata).
 
 pub mod annotations;
+pub mod context_cache;
 pub mod correction_index;
 pub mod entity_promotion;
 pub mod frame_index;

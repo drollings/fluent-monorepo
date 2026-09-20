@@ -358,6 +358,23 @@ interaction emits a `kind = "escalation"` audit record (`mode`/`accepted`/
 frontier-owned (`DependencySession::set_frontier_owned`); subsequent requests
 in that session bypass the pipeline via `dispatch_frontier`.
 
+Terminal dispatch failure is an honest HTTP error, never a 200 carrying an
+`ERROR:` body: context overflow (parsed from the fork's 400 refusal or an
+OpenAI-style `context_length_exceeded` payload into
+`DispatchError::ContextOverflow`) returns 400 naming the window and the
+token counts; anything else returns 502. The overflow never retries its own
+target (deterministic) but never stops the chain either
+(`continues_chain`) — a bigger fallback window, a larger model, or the
+ladder may still serve. Failed dispatches record the diagnostic label as
+*rejected* history, never as an accepted answer. Before dispatch, the
+handler's pre-dispatch guard (`server/compaction.rs`) estimates prompt
+tokens against the role window and, on projected overflow, rebuilds the
+request from the ledger's eager LOD5 per-turn labels (system + summary +
+newest turns verbatim, zero model calls), fail-open. The ladder's
+deterministic cache is ledger-backed (`ledger/context_cache.rs`): an exact
+normalized-question match over accepted answers only, consulted strictly
+post-failure.
+
 `dispatch/frontier.rs` owns the wire-format build/parse logic reserved for the
 ladder: `DispatchError` + `is_retryable`, `OpenAiBackend` (whose
 `parse_response` is reused by `OpenAiChatBackend`), the `Anthropic`
@@ -619,10 +636,14 @@ one of two modes controlled per pipeline by `pipelines.<name>.target_match`:
   of the roadmap): the cheapest candidate whose `intelligence` meets the
   estimate self-assesses first, so the climb never skips a candidate the
   classifier already ruled out as too weak. The ladder is DRY-shared between
-  the flat classifier path and the classification-tree engine, and runs only
-  for 2+ member groups (single-member groups and `"static"` resolve
-  byte-identically to today). Every self-assessment and the final match emit a
-  `kind = "target_match"` audit record.
+  the flat classifier path and the classification-tree engine. Singleton
+  groups flow through assessment-free (no candidate to veto, so no LLM
+  call) — but they still resolve through the ladder, not the static rule,
+  because the expansion pick is residency-aware (loaded server first) while
+  the static rule is residency-blind and would prefer a cold cheap model.
+  `"static"` keeps the static cheapest-qualifying pick. Every
+  self-assessment and the final match emit a `kind = "target_match"` audit
+  record; singleton matches carry no `matched_via: self_assess` marker.
 - **`target_match: "static"`** — today's behavior. `RoutingConfig::resolve_route`
   picks the cheapest model in the route's group whose `intelligence` meets the
   classifier's `complexity` score; if none qualifies, it picks the cheapest in

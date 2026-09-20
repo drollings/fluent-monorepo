@@ -677,9 +677,7 @@
           "intelligence": 2
         }
       },
-      "expected_assessments": [
-        "a"
-      ],
+      "expected_assessments": [],
       "expected_matched": "a",
       "id": "C7",
       "kind": "control",

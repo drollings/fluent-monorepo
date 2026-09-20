@@ -1494,6 +1494,12 @@ async fn run_start(config_path: &str, args: StartArgs) -> Result<(), Box<dyn std
             .with_ladders(ladders);
 
     if let Some(ledger) = ledger {
+        // C2: the deterministic context cache rides the same store — an
+        // exact normalized-question match over accepted answers, consulted
+        // by the escalation ladder before any frontier call.
+        server = server.with_context_cache(Arc::new(
+            fluent_router::ledger::context_cache::LedgerContextCache::new(Arc::clone(&ledger)),
+        ));
         server = server.with_ledger(ledger);
     }
     if let Some(sessions) = sessions {

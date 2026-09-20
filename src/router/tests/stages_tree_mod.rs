@@ -404,7 +404,7 @@ fn terminal_flat_route_ladder_matches_within_group() {
 }
 
 #[test]
-fn terminal_single_member_role_skips_climb() {
+fn terminal_single_member_role_runs_assessment_free() {
     // A single-member role ("code") climbs with a matcher present: exactly
     // one self-assessment call, terminating on last-always-wins with the
     // member as primary (same target the static path would pick).
@@ -1176,7 +1176,7 @@ fn last_viable_tree(root_model: &str) -> ClassificationTree {
 }
 
 #[test]
-fn last_viable_singleton_group_takes_static_path() {
+fn last_viable_singleton_group_runs_assessment_free() {
     // A one-member group with a matcher installed climbs instead of taking
     // the static path: the terminal decision carries the self-assessment
     // marker. The overconfident assessment (9 > intelligence 2) still

@@ -755,6 +755,24 @@ async fn handle_chat_completion(
     };
 
     if let Some(ref rt) = pipeline_result.routing_target {
+        // D: pre-dispatch context guard. When the prompt projects past the
+        // target window, rebuild it from the ledger's LOD5 labels (no model
+        // call) instead of discovering the overflow from the fork's 400.
+        // Fail-open: without a window size or ledger the request dispatches
+        // uncompacted and the usual chain (overflow → fallbacks → ladder →
+        // honest error) applies.
+        if let (Some(window_ctx), Some(ledger_store)) = (
+            crate::server::compaction::window_ctx_for_role(&roles, rt),
+            ledger.as_ref(),
+        ) {
+            if let Some(compacted) = crate::server::compaction::maybe_compact_request(
+                &router_request,
+                window_ctx,
+                ledger_store,
+            ) {
+                router_request = compacted;
+            }
+        }
         let outcome = handle_dispatch(
             rt,
             &router_request,

@@ -237,7 +237,10 @@ fn all_failures_match_last() {
 }
 
 #[test]
-fn single_candidate_makes_exactly_one_call() {
+fn single_candidate_makes_no_call_but_keeps_the_pick() {
+    // One candidate has nothing to climb: no assessment call fires, and the
+    // expansion's pick flows straight into the primary (the static rule is
+    // residency-blind — bypassing `match_target` would lose the pick).
     let backend = Arc::new(CountingBackend::new(assessment(2, "fits")));
     let matcher = TargetMatcher::new(
         TargetBackends::new(
@@ -257,9 +260,38 @@ fn single_candidate_makes_exactly_one_call() {
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("single candidate matches");
     assert_eq!(tm.primary.model, "m9-only:default");
-    assert_eq!(tm.assessments.len(), 1);
-    assert!(tm.assessments[0].matched);
-    assert_eq!(backend.calls(), 1);
+    assert!(
+        tm.assessments.is_empty(),
+        "singleton runs assessment-free"
+    );
+    assert_eq!(backend.calls(), 0, "no assessment LLM call for one candidate");
+}
+
+#[test]
+fn singleton_keeps_expansion_pick_over_static_first() {
+    // The live regression: the expansion picked the loaded server while the
+    // static rule prefers config order. With candidates=[second] the primary
+    // must be second — never the static first — with zero backend calls.
+    let backend = Arc::new(CountingBackend::new(assessment(9, "unused")));
+    let matcher = TargetMatcher::new(
+        TargetBackends::new(
+            HashMap::new(),
+            Arc::new(StubChatBackend::always(assessment(9, "default")))
+                as Arc<dyn fluent_llm::client::ChatBackend>,
+        ),
+        Arc::new(fluent_concurrency::pool::Limiter::new(4)),
+        0,
+    );
+    let cands = vec![candidate("second", 4)];
+    let routing = routing_with("default", &["first", "second"]);
+    let tm = matcher
+        .match_target("local", "default", &routing, &cands, None, "hello")
+        .expect("single candidate matches");
+    assert_eq!(
+        tm.primary.model, "second:default",
+        "the expansion pick (loaded server) wins over static config order"
+    );
+    assert_eq!(backend.calls(), 0);
 }
 
 #[test]

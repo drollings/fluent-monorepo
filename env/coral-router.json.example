@@ -2,6 +2,10 @@
   "pipelines": {
     "default": {
       "deterministic_prefilter": true,
+      "nlp": true,
+      "refine_policy": {
+        "mode": "off"
+      },
       "classifier": true,
       "coherence_threshold": 0.2
     }
@@ -100,6 +104,17 @@
             "repeat_penalty": 1.02
           }
         },
+        "ledger": {
+          "enable_thinking": false,
+          "filter_thinking": true,
+          "preserve_thinking": false,
+          "max_ctx": 262144,
+          "params": {
+            "num_ctx": 262144,
+            "temperature": 0.6,
+            "repeat_penalty": 1.01
+          }
+        },
         "reasoning": {
           "enable_thinking": true,
           "filter_thinking": true,
@@ -170,9 +185,25 @@
         "mode": "manual"
       },
       "params": {
-        "num_ctx": 8192,
+        "num_ctx": 32768,
         "temperature": 0.6,
         "repeat_penalty": 1.0
+      },
+      "models": [
+        "last"
+      ],
+      "escalation": {
+        "modes": [
+          "filter",
+          "question"
+        ],
+        "frontier": {
+          "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+          "model": "FRONTIER_MODEL",
+          "api_key_env": "FRONTIER_API_KEY"
+        },
+        "decomposer_model": "qwen3.5-9b",
+        "assembler_model": "qwen3.5-9b"
       }
     },
     "ledger": {
@@ -203,6 +234,22 @@
         "num_ctx": 65536,
         "temperature": 0.6,
         "repeat_penalty": 1.01
+      },
+      "models": [
+        "last"
+      ],
+      "escalation": {
+        "modes": [
+          "filter",
+          "question"
+        ],
+        "frontier": {
+          "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+          "model": "FRONTIER_MODEL",
+          "api_key_env": "FRONTIER_API_KEY"
+        },
+        "decomposer_model": "qwen3.5-9b",
+        "assembler_model": "qwen3.5-9b"
       }
     },
     "reasoning": {
@@ -219,7 +266,8 @@
       },
       "models": [
         "last",
-        "qwen3.5-9b"
+        "qwen3.5-9b",
+        "qwen3.8-27b"
       ]
     }
   },
@@ -346,6 +394,7 @@
     "root": "data/sessions"
   },
   "gguf_dir": "/app/ai/models/gguf",
+  "onnx_dir": "/app/ai/models/onnx",
   "server": {
     "bind_addr": "127.0.0.1:8079",
     "max_payload": 1048576

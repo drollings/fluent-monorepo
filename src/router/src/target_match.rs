@@ -775,18 +775,27 @@ impl TargetMatcher {
             return None;
         }
 
+        // Singleton fast path: one candidate has nothing to climb (no veto
+        // possible — last-always-wins), so no assessment LLM call runs. The
+        // expansion's pick still flows into `build_primary` below: the pick
+        // is residency-aware (loaded server first), while the static rule
+        // is residency-blind and would prefer a cold cheap model over the
+        // loaded one. Skipping the *call* here is what saves the per-request
+        // LLM round-trip; skipping `match_target` itself would lose the pick.
         let start = start_index(candidates, classifier_complexity);
-        let suffix = &candidates[start..];
-        // Positional: `results[i]` is the assessment of `suffix[i]`. The
-        // fan-out only reorders *completion*; this vector restores candidate
-        // order before anything observable happens.
-        let results = self.assess_suffix(suffix, user_text);
         let mut assessments: Vec<AssessmentRecord> = Vec::with_capacity(candidates.len());
         let mut matched_index = candidates.len() - 1;
 
-        for (offset, candidate) in suffix.iter().enumerate() {
-            let i = start + offset;
-            let assessed = &results[offset];
+        if candidates.len() >= 2 {
+            let suffix = &candidates[start..];
+            // Positional: `results[i]` is the assessment of `suffix[i]`. The
+            // fan-out only reorders *completion*; this vector restores candidate
+            // order before anything observable happens.
+            let results = self.assess_suffix(suffix, user_text);
+
+            for (offset, candidate) in suffix.iter().enumerate() {
+                let i = start + offset;
+                let assessed = &results[offset];
             let reason = assessed
                 .as_ref()
                 .ok()
@@ -824,11 +833,12 @@ impl TargetMatcher {
                     "matched": record.matched,
                 }),
             );
-            assessments.push(record);
+                assessments.push(record);
 
-            if matched {
-                matched_index = i;
-                break;
+                if matched {
+                    matched_index = i;
+                    break;
+                }
             }
         }
 
@@ -854,7 +864,9 @@ impl TargetMatcher {
                 "role": role,
                 "matched_model_key": matched_candidate.model_key,
                 "matched_model_name": matched_candidate.model_name,
-                "assessed": assessments[matched_index - start].assessed,
+                // Singleton fast path runs no assessments — the field is
+                // null rather than indexed out of bounds.
+                "assessed": assessments.get(matched_index.saturating_sub(start)).and_then(|r| r.assessed),
                 "fallback_count": match_target.fallbacks.len(),
             }),
         );

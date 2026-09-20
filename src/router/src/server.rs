@@ -2,6 +2,7 @@
 //! Uses hyper for HTTP with SSE streaming support via http-body-util::channel.
 
 pub mod admin;
+pub mod compaction;
 pub mod cors;
 pub mod dispatch;
 pub mod entity_link;

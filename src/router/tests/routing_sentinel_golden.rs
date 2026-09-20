@@ -502,6 +502,13 @@ fn run_climb_case(case: &serde_json::Value) -> CaseResult {
                     matched_key = record.model_key.clone();
                 }
             }
+            if matched_key.is_empty() {
+                // Singleton fast path: zero assessments, but the ladder
+                // still terminates on the expansion pick — read it off the
+                // primary's base key instead of the (absent) records.
+                let (base, _) = split_model_key(&tm.primary.model);
+                matched_key = base.to_string();
+            }
             (
                 consults,
                 Observed::Some(tm.primary.model.clone()),
