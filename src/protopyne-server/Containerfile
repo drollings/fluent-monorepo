@@ -1,0 +1,35 @@
+# Prototype server image: release binary plus CA certificates, no Python.
+#
+# Two stages. The builder compiles the `protopyne-server` binary from the
+# workspace; the runtime carries only the binary, its history file, and
+# CA certificates on debian-slim. There is no Python interpreter, package,
+# or runtime anywhere in either stage.
+
+FROM docker.io/library/rust:1-bookworm AS builder
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+# Workspace builds are cache-heavy; keep cargo caches across rebuilds.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release -p protopyne-server && \
+    cp target/release/protopyne-server /protopyne-server
+
+FROM docker.io/library/debian:bookworm-slim AS runtime
+
+RUN useradd -m -d /app app && \
+    mkdir -p /data && \
+    chown app:app /data
+COPY --from=builder /protopyne-server /app/protopyne-server
+COPY src/protopyne-server/tests/data/SPY_15M.csv /data/SPY_15M.csv
+RUN chown app:app /data/SPY_15M.csv && \
+    chmod 0555 /app/protopyne-server && \
+    # The prototype ships no Python: fail the build if one sneaks in.
+    ! command -v python3 && ! command -v python
+
+USER app
+EXPOSE 9060
+ENV PROTOPYNE_HISTORY=/data/SPY_15M.csv
+ENTRYPOINT ["/app/protopyne-server"]
+CMD ["--bind", "0.0.0.0:9060", "--history", "/data/SPY_15M.csv"]

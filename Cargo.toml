@@ -28,6 +28,11 @@ members = [
     "src/db",
     "src/spacy-rs",
     "src/fluent-onnx",
+    "src/protopyne-types",
+    "src/protopyne-kernels",
+    "src/protopyne-strategy",
+    "src/protopyne-venue",
+    "src/protopyne-server",
 ]
 
 [workspace.package]
@@ -87,6 +92,7 @@ async-trait = "0.1"
 
 # HTTP
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+axum = { version = "0.8", features = ["ws"] }
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio", "server", "http1"] }
 http-body = "1"
@@ -124,6 +130,11 @@ tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-
 syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
+
+# Domain: protopyne-rs money/time
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+csv = { version = "1" }
 
 # System
 libc = "0.2"

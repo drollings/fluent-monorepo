@@ -1,0 +1,18 @@
+[package]
+name = "protopyne-types"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+common-core = { path = "../common-core" }
+bon = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

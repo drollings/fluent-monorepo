@@ -1,0 +1,35 @@
+[package]
+name = "protopyne-server"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+protopyne-types = { path = "../protopyne-types" }
+protopyne-kernels = { path = "../protopyne-kernels" }
+protopyne-strategy = { path = "../protopyne-strategy" }
+protopyne-venue = { path = "../protopyne-venue" }
+common-core = { path = "../common-core" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-dag = { path = "../dag" }
+fluent-wvr = { path = "../fluent-wvr" }
+axum = { workspace = true }
+bon = { workspace = true }
+chrono = { workspace = true }
+csv = { workspace = true }
+futures-util = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+reqwest = { workspace = true }
+tokio-tungstenite = "0.26"
+syn = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

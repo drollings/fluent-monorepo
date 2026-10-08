@@ -1,0 +1,20 @@
+[package]
+name = "protopyne-strategy"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+protopyne-types = { path = "../protopyne-types" }
+common-core = { path = "../common-core" }
+fluent-wvr = { path = "../fluent-wvr" }
+bon = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

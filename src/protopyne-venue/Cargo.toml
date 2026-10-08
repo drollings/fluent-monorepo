@@ -1,0 +1,27 @@
+[package]
+name = "protopyne-venue"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+protopyne-types = { path = "../protopyne-types" }
+protopyne-strategy = { path = "../protopyne-strategy" }
+common-core = { path = "../common-core" }
+fluent-wvr = { path = "../fluent-wvr" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+bon = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = { workspace = true }
