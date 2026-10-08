@@ -39,14 +39,52 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
 
 #[tokio::main]
 async fn main() {
-    if let Err(reason) = run().await {
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.iter().any(|flag| flag == "--help" || flag == "-h") {
+        println!("{USAGE}");
+        return;
+    }
+    if raw.iter().any(|flag| flag == "--version" || flag == "-V") {
+        println!("protopyne-server {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if let Err(reason) = run(&raw).await {
         eprintln!("protopyne-server: {reason}");
         std::process::exit(2);
     }
 }
 
-async fn run() -> Result<(), String> {
-    let args = parse_args(&std::env::args().collect::<Vec<_>>())?;
+/// One-screen usage printed by `--help`.
+const USAGE: &str = "\
+protopyne-server: paper-trading HTTP surface over versioned bar history.
+
+Usage:
+  protopyne-server [--config PATH] [--bind ADDR] --history PATH
+
+Flags:
+  --config PATH    JSON server config (defaults for every field when absent)
+  --bind ADDR      override the bind address (default 127.0.0.1:9060)
+  --history PATH   bar-history CSV (also accepted as history_path in --config)
+  --help, -h       print this message
+  --version, -V    print the version
+
+Endpoints once serving:
+  GET  /health               liveness + version
+  POST /proposals/preview    run the decision stack over history ({\"seed\": 7})
+  GET  /proposals            proposal inbox from the latest preview
+  POST /grants/arm           arm a grant (tighten-only; loosening is 409)
+  GET  /grants/current       the armed grant, if any
+  GET  /portfolio            positions, fills, and fees from the latest preview
+  GET  /chart/bars           Lightweight-Charts candle rows
+  GET  /chart/overlays       indicator overlays (?kind=sma&period=14)
+  GET  /feed                 WebSocket rehearsal bar feed
+
+Example:
+  protopyne-server --history src/protopyne-server/tests/data/SPY_15M.csv
+  curl -s http://127.0.0.1:9060/health";
+
+async fn run(raw: &[String]) -> Result<(), String> {
+    let args = parse_args(raw)?;
     let mut config = match args.config {
         Some(path) => common_core::config::load_json_or_default(&path),
         None => ServerConfig::default(),

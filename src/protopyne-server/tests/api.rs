@@ -68,6 +68,18 @@ fn base(handle: &ServerHandle) -> String {
     format!("http://{}", handle.addr)
 }
 
+#[test]
+fn bar_frames_carry_feed_cycle() {
+    let bar = &history()[0];
+    for cycle in [0u64, 3] {
+        let text = bar_frame(cycle, 7, bar).expect("chartable bar frames");
+        let frame: serde_json::Value = serde_json::from_str(&text).expect("frame is JSON");
+        assert_eq!(frame["type"], "bar");
+        assert_eq!(frame["index"], 7);
+        assert_eq!(frame["cycle"], cycle);
+    }
+}
+
 #[tokio::test]
 async fn config_validation_is_fail_closed() {
     assert!(ServerConfig::default().validate().is_ok());
@@ -98,7 +110,7 @@ async fn health_reports_version() {
 async fn preview_populates_inbox_and_portfolio() {
     let handle = boot().await;
     let client = reqwest::Client::new();
-    let run: BacktestRun = client
+    let response: PreviewResponse = client
         .post(format!("{}/proposals/preview", base(&handle)))
         .json(&PreviewParams { seed: 3 })
         .send()
@@ -107,8 +119,15 @@ async fn preview_populates_inbox_and_portfolio() {
         .json()
         .await
         .expect("preview is a run");
+    let run = response.run;
     assert_eq!(run.decisions.len(), 60);
     assert!(run.report.fills > 0);
+    for entry in &response.deny_histogram {
+        assert!(!entry.reason.is_empty());
+        assert!(entry.bars > 0);
+    }
+    let tallied: u64 = response.deny_histogram.iter().map(|entry| entry.bars).sum();
+    assert!(tallied <= 3 * run.decisions.len() as u64);
 
     let inbox: Vec<ProposalView> = client
         .get(format!("{}/proposals", base(&handle)))
@@ -132,6 +151,126 @@ async fn preview_populates_inbox_and_portfolio() {
         .expect("portfolio is JSON");
     assert_eq!(portfolio.filled_orders, run.report.fills);
     assert!(!portfolio.positions.is_empty());
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn unfilled_inbox_rows_carry_bar_close_limits() {
+    use rust_decimal::prelude::ToPrimitive as _;
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    // A strict grant denies every proposal, so the whole inbox stays proposed.
+    let mut strict = test_grant("strict-inbox", 10);
+    strict.signal.min_conviction = 0.95;
+    assert!(client
+        .post(format!("{}/grants/arm", base(&handle)))
+        .json(&strict)
+        .send()
+        .await
+        .expect("arm reachable")
+        .status()
+        .is_success());
+    let preview = client
+        .post(format!("{}/proposals/preview", base(&handle)))
+        .json(&PreviewParams { seed: 3 })
+        .send()
+        .await
+        .expect("preview reachable");
+    assert!(preview.status().is_success());
+    let inbox: Vec<ProposalView> = client
+        .get(format!("{}/proposals", base(&handle)))
+        .send()
+        .await
+        .expect("inbox reachable")
+        .json()
+        .await
+        .expect("inbox is JSON");
+    assert!(!inbox.is_empty());
+    let bars = history();
+    let mut saw_proposed = false;
+    for row in &inbox {
+        if row.state == ProposalState::Proposed {
+            saw_proposed = true;
+            let index: usize = row
+                .id
+                .rsplit('-')
+                .next()
+                .expect("proposal id ends with bar index")
+                .parse()
+                .expect("bar index is numeric");
+            assert_ne!(row.limit_price, Money::from(0), "unfilled rows must not fabricate a zero limit");
+            assert_eq!(row.limit_price, Money::new(bars[index].c), "unfilled limit must be the bar close");
+            // Sanity: the close must be representable or the bar would have skipped.
+            assert!(bars[index].c.to_f64().is_some());
+        }
+    }
+    assert!(saw_proposed, "a fully denied preview must leave proposed rows");
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn portfolio_positions_are_stable_across_previews() {
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    let mut snapshots = Vec::new();
+    for _ in 0..2 {
+        let preview = client
+            .post(format!("{}/proposals/preview", base(&handle)))
+            .json(&PreviewParams { seed: 3 })
+            .send()
+            .await
+            .expect("preview reachable");
+        assert!(preview.status().is_success());
+        let portfolio: PortfolioView = client
+            .get(format!("{}/portfolio", base(&handle)))
+            .send()
+            .await
+            .expect("portfolio reachable")
+            .json()
+            .await
+            .expect("portfolio is JSON");
+        snapshots.push(serde_json::to_string(&portfolio.positions).expect("serializable"));
+    }
+    assert_eq!(snapshots[0], snapshots[1], "position order must be deterministic");
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn out_of_window_grant_preview_explains_empty_fills() {
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    // Live at wall-clock time but missing the January-2026 history window:
+    // every bar denies on the window and nothing fills.
+    let mut grant = test_grant("missed-window", 10);
+    grant.valid_from = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    grant.valid_until = Utc.with_ymd_and_hms(2027, 6, 1, 0, 0, 0).unwrap();
+    assert!(client
+        .post(format!("{}/grants/arm", base(&handle)))
+        .json(&grant)
+        .send()
+        .await
+        .expect("arm reachable")
+        .status()
+        .is_success());
+    let response: PreviewResponse = client
+        .post(format!("{}/proposals/preview", base(&handle)))
+        .json(&PreviewParams { seed: 3 })
+        .send()
+        .await
+        .expect("preview reachable")
+        .json()
+        .await
+        .expect("preview is a response");
+    assert_eq!(response.run.report.fills, 0);
+    let top = response
+        .deny_histogram
+        .first()
+        .expect("an empty preview must still explain itself");
+    assert_eq!(top.reason, "grant window not live");
+    assert!(top.bars > 0);
+    for entry in &response.deny_histogram {
+        assert!(entry.bars <= top.bars, "histogram must sort most frequent first");
+    }
     handle.shutdown().await;
 }
 
@@ -191,7 +330,7 @@ async fn arming_rejects_empty_window() {
 async fn chart_contract_matches_kernel_output() {
     let handle = boot().await;
     let client = reqwest::Client::new();
-    let bars: Vec<CandleRow> = client
+    let bars: ChartBars = client
         .get(format!("{}/chart/bars", base(&handle)))
         .send()
         .await
@@ -199,8 +338,9 @@ async fn chart_contract_matches_kernel_output() {
         .json()
         .await
         .expect("bars are JSON");
-    assert_eq!(bars.len(), 60);
-    assert_eq!(bars[0].time, history()[0].ts.timestamp());
+    assert_eq!(bars.rows.len(), 60);
+    assert_eq!(bars.dropped, 0, "vendored history must be fully chartable");
+    assert_eq!(bars.rows[0].time, history()[0].ts.timestamp());
 
     let overlay: OverlaySeries = client
         .get(format!("{}/chart/overlays?kind=sma&period=14", base(&handle)))
@@ -261,6 +401,7 @@ async fn feed_streams_bar_frames() {
                 let frame: serde_json::Value = serde_json::from_str(&text).expect("frame is JSON");
                 assert_eq!(frame["type"], "bar");
                 assert!(frame.get("close").is_some());
+                assert_eq!(frame["cycle"], 0, "first pass over history is cycle 0");
                 frames += 1;
             }
             () = &mut deadline => break,

@@ -153,7 +153,7 @@ pub struct BacktestReport {
     pub fill_rate: Option<f64>,
     /// Commission paid.
     pub total_fees: Money,
-    /// Committed filled notional.
+    /// Market value filled (fill price × filled quantity, summed).
     pub filled_notional: Money,
     /// Peak-to-trough drawdown of the marked equity curve.
     pub drawdown: Money,

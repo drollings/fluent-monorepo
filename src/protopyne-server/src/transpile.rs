@@ -188,11 +188,9 @@ fn lower_expr(
             return Ok(Hair::Rolling { kernel: kernel.to_owned(), length, series: Box::new(series) });
         }
     }
-    // One binary operator at depth zero, `*`/`/` before `+`/`-`.
-    if let Some(hair) = split_binary(text, inputs, bound, &['*', '/']) {
-        return hair;
-    }
-    if let Some(hair) = split_binary(text, inputs, bound, &['+', '-']) {
+    // One binary operator at depth zero, resolved in a single scan:
+    // `+`/`-` bind loosest, `*`/`/` tightest, left-associative.
+    if let Some(hair) = split_binary(text, inputs, bound) {
         return hair;
     }
     if bound.contains(text) || inputs.contains_key(text) {
@@ -201,47 +199,73 @@ fn lower_expr(
     Err(format!("expression outside subset: {text:?}"))
 }
 
-/// Split one binary operator at depth zero.
+/// Split one binary operator at depth zero in a single scan.
+///
+/// The pass tracks the rightmost lowest-precedence operator (`+`/`-` bind
+/// loosest, `*`/`/` tightest), so `2 * 3 + 4` groups as `(2 * 3) + 4` and
+/// `100 / 10 / 2` groups left-associatively. A leading `-` is a sign and
+/// `e-notation` (`1e-3`) is a literal, never subtraction. Unbalanced
+/// parentheses or an operator without operands refuses instead of guessing.
 fn split_binary(
     text: &str,
     inputs: &InputDefaults,
     bound: &BoundNames,
-    ops: &[char],
 ) -> Option<Result<Hair, String>> {
+    /// Binding looseness: lower splits first.
+    fn looseness(op: u8) -> Option<u8> {
+        match op {
+            b'+' | b'-' => Some(0),
+            b'*' | b'/' => Some(1),
+            _ => None,
+        }
+    }
     let bytes = text.as_bytes();
     let mut depth = 0i32;
-    // Scan right-to-left so `a - b - c` groups left (result order is
-    // irrelevant here: only one operator may appear at this level).
+    let mut best: Option<(u8, usize)> = None;
+    // Right-to-left so the first candidate at each level is the rightmost,
+    // which is what left-associativity splits on.
     for (index, byte) in bytes.iter().enumerate().rev() {
         match byte {
             b')' => depth += 1,
             b'(' => depth -= 1,
             _ => {}
         }
-        if depth == 0 && ops.contains(&(*byte as char)) && index > 0 {
-            let (left, right) = text.split_at(index);
-            let op = text[index..=index].chars().next()?;
-            // A leading `-` is a sign, not a binary operator.
-            if left.trim().is_empty() {
-                continue;
-            }
-            // `e-notation` (`1e-3`) is a literal, not subtraction.
-            if op == '-' {
-                if let Some(prev) = left.chars().last() {
-                    if prev == 'e' || prev == 'E' {
-                        continue;
-                    }
-                }
-            }
-            let result = (|| {
-                let left = lower_expr(left, inputs, bound)?;
-                let right = lower_expr(&right[1..], inputs, bound)?;
-                Ok(Hair::Binary { op, left: Box::new(left), right: Box::new(right) })
-            })();
-            return Some(result);
+        if depth < 0 {
+            return Some(Err(format!("unbalanced parentheses in {text:?}")));
+        }
+        if depth != 0 || index == 0 {
+            continue;
+        }
+        let Some(rank) = looseness(*byte) else {
+            continue;
+        };
+        // `e-notation` (`1e-3`) is a literal, not subtraction.
+        if *byte == b'-' && matches!(bytes[index - 1], b'e' | b'E') {
+            continue;
+        }
+        let tighter = match best {
+            None => true,
+            Some((best_rank, _)) => rank < best_rank,
+        };
+        if tighter {
+            best = Some((rank, index));
         }
     }
-    None
+    if depth != 0 {
+        return Some(Err(format!("unbalanced parentheses in {text:?}")));
+    }
+    let (_, at) = best?;
+    let (left, right) = text.split_at(at);
+    let op = text[at..=at].chars().next()?;
+    if left.trim().is_empty() || right[1..].trim().is_empty() {
+        return Some(Err(format!("operator without operands in {text:?}")));
+    }
+    let result = (|| {
+        let left = lower_expr(left, inputs, bound)?;
+        let right = lower_expr(&right[1..], inputs, bound)?;
+        Ok(Hair::Binary { op, left: Box::new(left), right: Box::new(right) })
+    })();
+    Some(result)
 }
 
 /// Lower an averaging length: integer literal or input-bound name.
@@ -269,9 +293,11 @@ fn parse_input_binding(line: &str) -> Option<(String, i64)> {
         if value.starts_with(prefix) && value.ends_with(')') {
             let body = &value[prefix.len()..value.len() - 1];
             let first = split_args(body).into_iter().next()?;
-            let default = first.parse::<f64>().ok()? as i64;
-            if default >= 1 {
-                return Some((name, default));
+            let default = first.parse::<f64>().ok()?;
+            // A fractional default is refused, never truncated: lengths are
+            // whole bars, and silent truncation would miscompile the intent.
+            if default.fract() == 0.0 && default >= 1.0 {
+                return Some((name, default as i64));
             }
             return None;
         }
@@ -291,8 +317,16 @@ fn parse_plot(line: &str) -> Option<String> {
 
 /// Compile `source`: accept-or-refuse, never miscompile.
 ///
-/// Acceptance bar **(correctness)**: scripts inside the `sma`/`ema` subset
-/// lower to HIR and emitted Rust; everything else is refused with reasons.
+/// Acceptance bar **(task-value: grammar coverage, not confidence)**: scripts
+/// inside the `sma`/`ema` subset lower to HIR and schematic Rust; everything
+/// else is refused with reasons. "Compiles" here means the emission
+/// syn-parses plus accepted scripts match kernel goldens numerically —
+/// `rustc` compilation is never attempted, because tests stay hermetic (no
+/// toolchain dependency) and the emission is schematic by design
+/// (non-rolling bindings are comments; input accessors name their kernel and
+/// input). Promoting the bar to `rustc`-verified emission would mean
+/// compiling the emitted code against the real kernels in a sandbox, which is
+/// explicitly out of scope for this spike.
 #[must_use]
 pub fn compile_spike(source: &str) -> SpikeOutcome {
     let mut reasons: Vec<String> = Vec::new();
@@ -306,9 +340,11 @@ pub fn compile_spike(source: &str) -> SpikeOutcome {
     for raw_line in source.lines() {
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with("//") {
-            if line.starts_with("//@version") {
+            if let Some(number) = line.strip_prefix("//@version") {
                 saw_version = true;
-                if !line.contains("=6") {
+                let number = number.trim().trim_start_matches('=').trim();
+                // Numeric parse, not substring: `=60` merely starts with 6.
+                if number.parse::<u32>().ok() != Some(6) {
                     reasons.push(format!("only version 6 accepted, got {line:?}"));
                 }
             }
@@ -400,7 +436,7 @@ fn emit_statement(name: &str, hair: &Hair) -> String {
             let len = match length {
                 Length::Literal(value) => value.to_string(),
                 Length::Input(binding, _) => {
-                    format!("params.int(\"_\", \"{binding}\").unwrap_or(14)")
+                    format!("params.int(\"{kernel}\", \"{binding}\").unwrap_or(14)")
                 }
             };
             let indicator = if kernel == "ema" { "EmaIndicator::new()" } else { "SmaIndicator::new()" };
@@ -464,7 +500,9 @@ pub fn evaluate_lowered(
 
 /// Calibration tally: accept rate on the must-transpile set and reject rate
 /// on the must-REJECT set. Both must be `1.0` before spike output is cached
-/// or persisted anywhere; nothing here caches or persists.
+/// or persisted anywhere; nothing here caches or persists. The rates measure
+/// grammar coverage against control sets (task-value), and acceptance itself
+/// is parse-plus-numeric, never `rustc` (see `compile_spike`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CalibrationTally {
     /// Must-transpile scripts presented.

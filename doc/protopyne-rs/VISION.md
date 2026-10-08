@@ -165,7 +165,7 @@ Execution code sits behind a venue trait so additional venues can be added later
 
 | Concern | Choice | Role and caveat |
 |---|---|---|
-| Event model and simulation | barter-rs (candidate) | Strong event-driven model; live exchange integrations are crypto-oriented, and multi-leg option handling must be verified. Likely used for ideas or backtest structure, with the order lifecycle owned here. |
+| Event model and simulation | barter-rs (reference, verified against a local checkout: `barter-execution 0.9`, `barter-data 0.13`) | `rust_decimal` throughout; `Active`/`Inactive` order states (the pattern behind our active-vs-terminal lifecycle); `ExecutionClient` trait plus a mock exchange; engine `RiskManager` with advisory `RiskApproved`/`RiskRefused` filters. Not adopted: integrations are crypto-venue-only (no equity-options broker); the mock fills market orders only with percentage fees (no limit flow, slippage, or liquidity filter) and mints IDs from `rand`; no journal, outbox, or reconciliation; the risk gate is advisory, not mandatory. Borrowed: order-state modeling. |
 | Research data frames | Polars | Feature engineering and chain analysis; not used for the stateful bar-by-bar loop. |
 | API server | axum | REST and WebSocket. |
 | Charts | TradingView Lightweight Charts | Candles, ribbons, markers; volume profile needs its custom primitives API. |
@@ -201,5 +201,5 @@ Execution code sits behind a venue trait so additional venues can be added later
 - Exact Pine feature coverage required by your indicator library.
 - Presence requirements, revocation channels, and alert channels for arming.
 - Hosting, secrets handling, backup, and monitoring approach.
-- Whether any component of barter-rs earns a place beyond inspiration, determined by a short spike.
+- Whether any component of barter-rs earns a place beyond inspiration, determined by a short spike. Pre-verified mismatches narrow the spike: a `Venue` over its mock would need limit-order fills, deterministic IDs, and journal integration to preserve backtest parity — the open question is whether that adaptation beats the owned paper venue, not whether the patterns fit.
 - The roles of the reflection, polymorphism, and tokio-guardrail libraries, pending their documentation.

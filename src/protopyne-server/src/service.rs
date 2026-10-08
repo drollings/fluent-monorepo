@@ -193,6 +193,30 @@ pub struct PreviewParams {
     pub seed: u64,
 }
 
+/// One deny reason and how many bars it kept out of the venue.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DenyCount {
+    /// The reason, as recorded on the decision.
+    pub reason: String,
+    /// Bars carrying this reason.
+    pub bars: u64,
+}
+
+/// Preview outcome: the run plus why bars did not trade.
+///
+/// The histogram reports outcome counts (a property of the run), never a
+/// confidence score: nothing here measures a component's self-doubt, and
+/// nothing fires on these counts. Authorization behavior is unchanged — the
+/// same grants produce the same verdicts, now with visible reasons.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreviewResponse {
+    /// The backtest run, unchanged in shape.
+    pub run: BacktestRun,
+    /// Deny reasons across the run, most frequent first.
+    #[serde(default)]
+    pub deny_histogram: Vec<DenyCount>,
+}
+
 /// One Lightweight-Charts candle row.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CandleRow {
@@ -208,6 +232,18 @@ pub struct CandleRow {
     pub close: f64,
     /// Traded volume.
     pub volume: u64,
+}
+
+/// Chart bars payload: rows plus how many bars never made it.
+///
+/// A wrapper (not a header) so JSON clients read one shape.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChartBars {
+    /// Chartable bars in history order.
+    pub rows: Vec<CandleRow>,
+    /// Bars skipped for non-finite or unrepresentable floats.
+    #[serde(default)]
+    pub dropped: u64,
 }
 
 /// One overlay series (indicator values aligned with chart bars).
@@ -355,7 +391,7 @@ async fn proposals(State(state): State<Shared>) -> Json<Vec<ProposalView>> {
 async fn preview(
     State(state): State<Shared>,
     Json(params): Json<PreviewParams>,
-) -> ApiResult<BacktestRun> {
+) -> ApiResult<PreviewResponse> {
     let run = state
         .limiter
         .run(|| async {
@@ -393,7 +429,40 @@ async fn preview(
         .await
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e.to_string()))?;
     publish_run(&state, &run);
-    Ok(Json(run))
+    let deny_histogram = deny_histogram_of(&run);
+    Ok(Json(PreviewResponse { run, deny_histogram }))
+}
+
+/// Maximum deny reasons surfaced on a preview; the long tail folds into one
+/// `other` bucket so the response stays small.
+const DENY_HISTOGRAM_TOP: usize = 8;
+
+/// Count why bars did not trade: skip reasons plus risk and grant refusal
+/// reasons, most frequent first. Pure reporting — nothing authorizes or
+/// denies on these counts.
+fn deny_histogram_of(run: &BacktestRun) -> Vec<DenyCount> {
+    let mut counts: std::collections::HashMap<&str, u64> = std::collections::HashMap::new();
+    for decision in &run.decisions {
+        if let Some(reason) = decision.skipped.as_deref() {
+            *counts.entry(reason).or_insert(0) += 1;
+        }
+        for reason in decision.risk_reasons.iter().chain(decision.grant_reasons.iter()) {
+            *counts.entry(reason.as_str()).or_insert(0) += 1;
+        }
+    }
+    let mut histogram: Vec<DenyCount> = counts
+        .into_iter()
+        .map(|(reason, bars)| DenyCount { reason: reason.to_owned(), bars })
+        .collect();
+    histogram.sort_by(|left, right| {
+        right.bars.cmp(&left.bars).then_with(|| left.reason.cmp(&right.reason))
+    });
+    if histogram.len() > DENY_HISTOGRAM_TOP {
+        let rest: u64 = histogram[DENY_HISTOGRAM_TOP..].iter().map(|entry| entry.bars).sum();
+        histogram.truncate(DENY_HISTOGRAM_TOP);
+        histogram.push(DenyCount { reason: "other".to_owned(), bars: rest });
+    }
+    histogram
 }
 
 /// Record a preview run's verdicts in the inbox and portfolio views.
@@ -408,7 +477,7 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
                 underlying: "SPY".to_owned(),
                 direction,
                 structure: StructureKind::Vertical,
-                limit_price: decision.fill_price.unwrap_or(Money::from(0)),
+                limit_price: decision.limit_price,
                 conviction: 0.8,
                 state: if decision.submitted {
                     ProposalState::Filled
@@ -439,7 +508,7 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
         }
     }
     let mut portfolio = common_core::sync::lock(&state.portfolio);
-    portfolio.positions = positions
+    let mut positions: Vec<Position> = positions
         .into_iter()
         .map(|(underlying, (quantity, price_sum, count))| {
             let avg = if count == 0 {
@@ -450,6 +519,8 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             Position::new().underlying(underlying).quantity(quantity).avg_price(avg).build()
         })
         .collect();
+    positions.sort_by(|left, right| left.underlying.cmp(&right.underlying));
+    portfolio.positions = positions;
     portfolio.filled_orders = filled_orders;
     portfolio.total_fees = Money::new(fees);
     portfolio.open_contracts = portfolio.positions.iter().map(|position| position.quantity).sum();
@@ -495,22 +566,28 @@ fn decimal_to_chart(value: rust_decimal::Decimal) -> Option<f64> {
     }
 }
 
-async fn chart_bars(State(state): State<Shared>) -> Json<Vec<CandleRow>> {
-    let rows = state
-        .history
-        .iter()
-        .filter_map(|bar| {
-            Some(CandleRow {
-                time: bar.ts.timestamp(),
-                open: decimal_to_chart(bar.o)?,
-                high: decimal_to_chart(bar.h)?,
-                low: decimal_to_chart(bar.l)?,
-                close: decimal_to_chart(bar.c)?,
-                volume: bar.volume,
-            })
-        })
-        .collect();
-    Json(rows)
+async fn chart_bars(State(state): State<Shared>) -> Json<ChartBars> {
+    let mut rows = Vec::with_capacity(state.history.len());
+    let mut dropped = 0u64;
+    for bar in &state.history {
+        match candle_row_of(bar) {
+            Some(row) => rows.push(row),
+            None => dropped += 1,
+        }
+    }
+    Json(ChartBars { rows, dropped })
+}
+
+/// One chartable bar, or `None` when a leg has no finite chart float.
+fn candle_row_of(bar: &Bar) -> Option<CandleRow> {
+    Some(CandleRow {
+        time: bar.ts.timestamp(),
+        open: decimal_to_chart(bar.o)?,
+        high: decimal_to_chart(bar.h)?,
+        low: decimal_to_chart(bar.l)?,
+        close: decimal_to_chart(bar.c)?,
+        volume: bar.volume,
+    })
 }
 
 /// Overlay query: `kind` is `sma` or `ema`, `period` is the averaging length.
@@ -569,10 +646,12 @@ async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl In
     })
 }
 
-/// Bar frame published to feed subscribers.
-fn bar_frame(index: usize, bar: &Bar) -> Option<String> {
+/// Bar frame published to feed subscribers. `cycle` counts completed passes
+/// over history so a resuming subscriber can tell a repeat from a stall.
+fn bar_frame(cycle: u64, index: usize, bar: &Bar) -> Option<String> {
     Some(serde_json::json!({
         "type": "bar",
+        "cycle": cycle,
         "index": index,
         "time": bar.ts.timestamp(),
         "open": decimal_to_chart(bar.o)?,
@@ -667,7 +746,7 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
             let mut index = 0usize;
             loop {
                 if let Some(bar) = pump_bars.get(index % pump_bars.len()) {
-                    if let Some(frame) = bar_frame(index, bar) {
+                    if let Some(frame) = bar_frame((index / pump_bars.len()) as u64, index, bar) {
                         let _ = feed_tx.send(frame);
                     }
                 }

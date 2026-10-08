@@ -101,6 +101,19 @@ pub struct BarDecision {
     pub grant_reasons: Vec<String>,
     /// Whether an order reached the venue.
     pub submitted: bool,
+    /// Proposal limit (bar close); zero when no proposal existed.
+    #[serde(default = "Money::zero")]
+    pub limit_price: Money,
+    /// Executable limit derived post-proposal (touch for the direction);
+    /// zero when no proposal existed.
+    #[serde(default = "Money::zero")]
+    pub checked_limit: Money,
+    /// Contracts submitted to the venue.
+    #[serde(default)]
+    pub submitted_quantity: u32,
+    /// Contracts the venue filled (the single booked-quantity source).
+    #[serde(default)]
+    pub filled_quantity: u32,
     /// Average fill price, when filled.
     pub fill_price: Option<Money>,
     /// Commission paid, when filled.
@@ -128,6 +141,10 @@ fn skipped_decision(
         grant_allow: false,
         grant_reasons: Vec::new(),
         submitted: false,
+        limit_price: Money::zero(),
+        checked_limit: Money::zero(),
+        submitted_quantity: 0,
+        filled_quantity: 0,
         fill_price: None,
         fee: None,
         skipped: Some(reason.to_owned()),
@@ -138,6 +155,31 @@ fn skipped_decision(
 struct SubmitVerdict {
     record: Option<OrderRecord>,
     refusal: Option<String>,
+}
+
+/// The executable order derived from a proposal: venue side plus the limit
+/// the venue will actually receive.
+///
+/// Proposals carry an indicative bar-close limit, but the touch side (buy at
+/// ask, sell at bid) depends on direction, which only proposing reveals — so
+/// the executable limit is derived post-proposal, after the gates. Any future
+/// price-sensitive risk rule must take this checked limit, never the proposal
+/// limit: the checked values are the submitted values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckedOrder {
+    /// Venue side for the direction.
+    pub side: OrderSide,
+    /// Touch limit the venue receives.
+    pub limit: Money,
+}
+
+/// Derive the executable order for `direction` from the current touch.
+#[must_use]
+pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
+    match direction {
+        Direction::Long => CheckedOrder { side: OrderSide::Buy, limit: quote.ask },
+        Direction::Short => CheckedOrder { side: OrderSide::Sell, limit: quote.bid },
+    }
 }
 
 /// Shared decision stack for one bar, used identically by backtest replay
@@ -189,6 +231,10 @@ pub async fn decide_and_submit<V: Venue>(
         }
     };
     let direction = Some(proposal.direction);
+    // Orders rest at the touch so backtest flow is marketable under the same
+    // liquidity filter paper enforces; the proposal limit marks the bar close
+    // and the checked limit is the submitted price.
+    let checked = checked_order_for(proposal.direction, &quote);
     let state = RiskState {
         quote_age_secs: 0,
         clock_skew_secs: 0,
@@ -223,6 +269,10 @@ pub async fn decide_and_submit<V: Venue>(
             grant_allow,
             grant_reasons,
             submitted: false,
+            limit_price: proposal.limit_price,
+            checked_limit: checked.limit,
+            submitted_quantity: 0,
+            filled_quantity: 0,
             fill_price: None,
             fee: None,
             skipped: None,
@@ -239,31 +289,29 @@ pub async fn decide_and_submit<V: Venue>(
             grant_allow,
             grant_reasons,
             submitted: false,
+            limit_price: proposal.limit_price,
+            checked_limit: checked.limit,
+            submitted_quantity: 0,
+            filled_quantity: 0,
             fill_price: None,
             fee: None,
             skipped: Some("unrepresentable quantity".to_owned()),
         };
-    };
-    let side = match proposal.direction {
-        Direction::Long => OrderSide::Buy,
-        Direction::Short => OrderSide::Sell,
-    };
-    // Orders rest at the touch (buy at ask, sell at bid) so backtest flow is
-    // marketable under the same liquidity filter paper enforces; the proposal
-    // limit marks the bar close and the touch price is the submitted price.
-    let touch = match proposal.direction {
-        Direction::Long => quote.ask,
-        Direction::Short => quote.bid,
     };
     let intent = OrderIntent::new()
         .client_id(protopyne_venue::client_id_for(&proposal.id, 0))
         .proposal_id(proposal.id.clone())
         .strategy(proposal.strategy.clone())
         .underlying(proposal.underlying.clone())
-        .side(side)
+        .side(checked.side)
         .quantity(contracts)
-        .limit_price(touch)
+        .limit_price(checked.limit)
         .build();
+    debug_assert_eq!(
+        intent.limit_price, checked.limit,
+        "the submitted limit must be the checked limit"
+    );
+    let submitted_quantity = intent.quantity;
     let verdict = match venue.submit(intent, &quote, bar.ts).await {
         Ok(record) => SubmitVerdict { record: Some(record), refusal: None },
         Err(e) => SubmitVerdict { record: None, refusal: Some(e.to_string()) },
@@ -271,6 +319,7 @@ pub async fn decide_and_submit<V: Venue>(
     match verdict.record {
         Some(record) => {
             let filled = record.filled_quantity;
+            let submitted = record.intent.quantity;
             usage.used_trades = usage.used_trades.saturating_add(1);
             usage.used_contracts = usage.used_contracts.saturating_add(filled);
             usage.used_loss = Money::new(usage.used_loss.as_decimal() + proposal.max_loss.as_decimal());
@@ -286,6 +335,10 @@ pub async fn decide_and_submit<V: Venue>(
                 grant_allow,
                 grant_reasons,
                 submitted: true,
+                limit_price: proposal.limit_price,
+                checked_limit: checked.limit,
+                submitted_quantity: submitted,
+                filled_quantity: filled,
                 fill_price: record.avg_price,
                 fee: Some(record.fees_paid),
                 skipped: None,
@@ -301,6 +354,10 @@ pub async fn decide_and_submit<V: Venue>(
             grant_allow,
             grant_reasons,
             submitted: false,
+            limit_price: proposal.limit_price,
+            checked_limit: checked.limit,
+            submitted_quantity,
+            filled_quantity: 0,
             fill_price: None,
             fee: None,
             skipped: verdict.refusal,
@@ -309,7 +366,7 @@ pub async fn decide_and_submit<V: Venue>(
 }
 
 /// One completed backtest run: pin, per-bar verdicts, and honest report.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BacktestRun {
     /// Reproducibility pin (data, code, config).
     pub manifest: RunManifest,
@@ -330,27 +387,24 @@ impl BacktestRun {
 
 /// Mark-to-close equity curve for filled decisions.
 ///
-/// Cash starts at zero; buys pay `price * qty + fee`, sells receive
-/// `price * qty - fee`; each bar marks `cash + net_qty * close`. Bars with
-/// no fills carry the previous mark forward. Pure and deterministic.
+/// Cash starts at zero; buys pay `price * filled + fee`, sells receive
+/// `price * filled - fee`; each bar marks `cash + net_filled * close`. Bars
+/// with no fills carry the previous mark forward. Quantities come from the
+/// decision's filled-quantity carrier — the same count the venue journaled —
+/// so sizing flows through every booked number. Pure and deterministic.
 #[must_use]
 pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
     let mut cash = Decimal::ZERO;
     let mut net: i64 = 0;
-    let mut fill_by_bar: std::collections::HashMap<usize, (i64, Decimal)> =
-        std::collections::HashMap::new();
     for decision in decisions {
         if decision.submitted {
             if let (Some(price), Some(fee)) = (decision.fill_price, decision.fee) {
-                let qty = contracts_of(decision);
+                let qty = decision.filled_quantity;
                 let signed: i64 = match decision.direction {
                     Some(Direction::Short) => -(i64::from(qty)),
                     _ => i64::from(qty),
                 };
                 let flow = price.as_decimal() * Decimal::from(qty);
-                let entry = fill_by_bar.entry(decision.bar_index).or_insert((0, Decimal::ZERO));
-                entry.0 += signed;
-                entry.1 += flow;
                 if signed >= 0 {
                     cash -= flow + fee.as_decimal();
                 } else {
@@ -363,15 +417,6 @@ pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
     bars.iter()
         .map(|bar| Money::new(cash + Decimal::from(net) * bar.c))
         .collect()
-}
-
-/// Contracts filled for one submitted decision.
-///
-/// The prototype fills whole orders or refuses them, so a submitted decision
-/// with a direction implies at least one contract; gate-denied decisions
-/// imply zero.
-fn contracts_of(decision: &BarDecision) -> u32 {
-    u32::from(decision.submitted)
 }
 
 /// Run the full decision stack over `bars` through a versioned venue.
@@ -438,7 +483,14 @@ pub async fn run_backtest(
         .iter()
         .filter_map(|decision| decision.fee)
         .fold(Decimal::ZERO, |sum, fee| sum + fee.as_decimal());
-    let filled_notional = runner_config.notional.as_decimal() * Decimal::from(fills);
+    let filled_notional = decisions
+        .iter()
+        .filter_map(|decision| {
+            decision
+                .fill_price
+                .map(|price| price.as_decimal() * Decimal::from(decision.filled_quantity))
+        })
+        .fold(Decimal::ZERO, |sum, leg| sum + leg);
     let reserved_notional = runner_config.notional.as_decimal() * Decimal::from(proposals);
     let unquotable = count_unquotable_bars(bars);
     let assumptions = vec![
@@ -487,38 +539,22 @@ pub async fn run_paper_decisions(
     let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
     for (index, bar) in bars.iter().enumerate() {
         let Some(close) = bar.c.to_f64() else {
-            decisions.push(BarDecision {
-                bar_index: index,
-                ts: bar.ts.to_rfc3339(),
-                proposal_id: format!("run-{seed}-{index}"),
-                direction: None,
-                risk_pass: false,
-                risk_reasons: Vec::new(),
-                grant_allow: false,
-                grant_reasons: Vec::new(),
-                submitted: false,
-                fill_price: None,
-                fee: None,
-                skipped: Some("close not representable".to_owned()),
-            });
+            decisions.push(skipped_decision(
+                index,
+                bar.ts.to_rfc3339(),
+                format!("run-{seed}-{index}"),
+                "close not representable",
+            ));
             continue;
         };
         closes.push(close);
         if closes.len() <= runner_config.warmup_bars {
-            decisions.push(BarDecision {
-                bar_index: index,
-                ts: bar.ts.to_rfc3339(),
-                proposal_id: format!("run-{seed}-{index}"),
-                direction: None,
-                risk_pass: false,
-                risk_reasons: Vec::new(),
-                grant_allow: false,
-                grant_reasons: Vec::new(),
-                submitted: false,
-                fill_price: None,
-                fee: None,
-                skipped: Some("warmup".to_owned()),
-            });
+            decisions.push(skipped_decision(
+                index,
+                bar.ts.to_rfc3339(),
+                format!("run-{seed}-{index}"),
+                "warmup",
+            ));
             continue;
         }
         let window = closes.clone();
@@ -703,13 +739,6 @@ pub fn walk_forward_split(bars: &[Bar], train_len: usize) -> Result<(&[Bar], &[B
         return Err(ServerError::Backtest("train split must be within (0, len)".to_owned()));
     }
     Ok((&bars[..train_len], &bars[train_len..]))
-}
-
-/// Quote-source ladder input for tests: newest quote wins, darkness fails
-/// closed. Thin wrapper keeping the canonical combinator on the decision
-/// path even in tests.
-pub fn newest_quote<'a>(quotes: &[Option<&'a Quote>]) -> Option<&'a Quote> {
-    quotes.iter().find_map(|entry| *entry)
 }
 
 /// Positions snapshot helper kept beside the runner for report attribution.

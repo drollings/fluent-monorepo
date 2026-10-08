@@ -30,6 +30,17 @@ CORAL_ROUTER_HEALTH_URL := http://$(CORAL_ROUTER_BIND_ADDR)/health
 ROUTER_START_TIMEOUT_S ?= 300
 ROUTER_WAIT_SCRIPT := bin/router-wait-health.sh
 ROUTER_LOG := /tmp/coral-router.out
+# ── protopyne-rs ─────────────────────────────────────────────────────────────
+# Paper-trading HTTP surface over versioned bar history (default port :9060).
+# PROTOPYNE_PORT and PROTOPYNE_HISTORY override the bind port and history
+# file: `make protopyne-start PROTOPYNE_PORT=9061`.
+PROTOPYNE_SERVER_BIN := target/debug/protopyne-server
+PROTOPYNE_HISTORY := src/protopyne-server/tests/data/SPY_15M.csv
+PROTOPYNE_PORT ?= 9060
+PROTOPYNE_BIND_ADDR := 127.0.0.1:$(PROTOPYNE_PORT)
+PROTOPYNE_HEALTH_URL := http://$(PROTOPYNE_BIND_ADDR)/health
+PROTOPYNE_START_TIMEOUT_S ?= 30
+PROTOPYNE_LOG := /tmp/protopyne-server.out
 CONFIG      := .guidance/guidance-config.json
 INSTALLDIR  := $(HOME)/.local/bin
 
@@ -157,12 +168,17 @@ $(CORAL_ROUTER_BIN): $(RUST_SRC_FILES)
 	$(Q)echo "Building coral-router $(if $(ROUTER_FEATURES),with features: $(ROUTER_FEATURES), (ort-free default))"
 	$(Q)cargo build --bin coral-router $(ROUTER_FEATURE_ARGS)
 
+$(PROTOPYNE_SERVER_BIN): $(RUST_SRC_FILES)
+	$(Q)echo "Building protopyne-server"
+	$(Q)cargo build -p protopyne-server
+
 .PHONY: install
-install: $(CARGO_BIN) $(CORAL_ROUTER_BIN)
+install: $(CARGO_BIN) $(CORAL_ROUTER_BIN) $(PROTOPYNE_SERVER_BIN)
 	$(Q)mkdir -p $(INSTALLDIR)
 	$(Q)cp $(CARGO_BIN) $(INSTALLDIR)/guidance
 	$(Q)cp $(CORAL_ROUTER_BIN) $(INSTALLDIR)/coral-router
-	$(Q)echo "Installed guidance and coral-router in $(INSTALLDIR)"
+	$(Q)cp $(PROTOPYNE_SERVER_BIN) $(INSTALLDIR)/protopyne-server
+	$(Q)echo "Installed guidance, coral-router, and protopyne-server in $(INSTALLDIR)"
 
 # ── Router Targets ────────────────────────────────────────────────────────────
 
@@ -288,6 +304,52 @@ router-tree: ## Run config-synced routing tests against the tree config (M7; hon
 	$(stop-router)
 	$(Q)echo "Running tree config routing tests (flat vs tree equivalence)"
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS) flat_tree -- --nocapture
+
+# ── protopyne-rs Targets ─────────────────────────────────────────────────────
+# Same shape as the router targets: build, (re)start + wait for /health,
+# crate suites + binary dry-run, and the container smoke.
+
+# Kill any running protopyne-server and wait for it to actually exit before
+# the caller starts a fresh one.
+#
+# Match by full command line (`pkill -f 'protopyne-server --b[i]nd'`): the
+# binary name alone is 16 characters, past the 15-character comm(2) limit, so
+# `pkill -x protopyne-server` can never match and would leave a stale server
+# on the port. The `[i]` character class keeps the pattern from matching the
+# invoking shell's own literal text, so it only ever kills server processes.
+# Every managed start (make, container CMD) passes --bind, so this covers
+# them all.
+define stop-protopyne
+	$(Q)echo "Stopping any running protopyne-server"
+	$(Q)pkill -f 'protopyne-server --b[i]nd' 2>/dev/null || true
+	$(Q)for i in $$(seq 1 25); do pgrep -f 'protopyne-server --b[i]nd' >/dev/null 2>&1 || break; sleep 0.2; done
+endef
+
+.PHONY: protopyne
+protopyne: $(PROTOPYNE_SERVER_BIN) ## Build protopyne-server (fast, no run)
+
+.PHONY: protopyne-stop
+protopyne-stop: ## Stop protopyne-server
+	$(stop-protopyne)
+
+.PHONY: protopyne-start
+protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopyne-server on :9060, and wait for /health (PROTOPYNE_PORT=<p> and PROTOPYNE_HISTORY=<csv> override; stops the old server first)
+	$(stop-protopyne)
+	$(Q)echo "Starting protopyne-server on $(PROTOPYNE_BIND_ADDR)"
+	$(Q)nohup $(PROTOPYNE_SERVER_BIN) --bind $(PROTOPYNE_BIND_ADDR) --history $(PROTOPYNE_HISTORY) > $(PROTOPYNE_LOG) 2>&1 &
+	$(Q)bash $(ROUTER_WAIT_SCRIPT) $(PROTOPYNE_HEALTH_URL) $(PROTOPYNE_START_TIMEOUT_S) $(PROTOPYNE_LOG) protopyne-server
+
+.PHONY: protopyne-test
+protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run all five protopyne-rs crate suites + a --help dry-run of the built binary (stops a running server first)
+	$(stop-protopyne)
+	$(Q)echo "Running protopyne-rs unit + integration suites"
+	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server
+	$(Q)echo "Validating protopyne-server --help"
+	$(Q)$(PROTOPYNE_SERVER_BIN) --help > /dev/null && echo "All protopyne tests passed." || (echo "ERROR: protopyne-server did NOT successfully run."; exit 1)
+
+.PHONY: protopyne-smoke
+protopyne-smoke: ## Build the Python-free container image and run the full smoke (no-Python proof, /health, paper preview, chart contract)
+	$(Q)bash src/protopyne-server/smoke-container.sh
 
 # ── YaGO Taxonomy + Async Parse-Review ───────────────────────────────────────
 # The interlingua spine (ROADMAP_20260826_INTERLINGUA_V2): the YaGO 4.5 class

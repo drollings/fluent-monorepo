@@ -9,7 +9,7 @@ use protopyne_strategy::{
     BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket, GrantPermission,
     GrantScope, PortfolioThresholds, ProposalSide, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
-    elements::ExplicitStructure,
+    elements::{ExplicitStructure, FixedContracts},
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{PaperConfig, PaperVenue};
@@ -101,6 +101,93 @@ fn signature(decision: &BarDecision) -> (Option<Direction>, bool, bool, bool) {
     (decision.direction, decision.risk_pass, decision.grant_allow, decision.submitted)
 }
 
+fn strategy_with_contracts(contracts: u32) -> Arc<Strategy> {
+    Arc::new(
+        Strategy::with_signal(Arc::new(
+            FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
+        ))
+        .with_structure(Arc::new(ExplicitStructure { structure: StructureKind::Vertical }))
+        .with_sizing(Arc::new(FixedContracts { contracts })),
+    )
+}
+
+fn directional_strategy(direction: Direction) -> Arc<Strategy> {
+    Arc::new(
+        Strategy::with_signal(Arc::new(
+            FixedSignal::new(direction, 0.8, 0.8).expect("valid signal"),
+        ))
+        .with_structure(Arc::new(ExplicitStructure { structure: StructureKind::Vertical })),
+    )
+}
+
+/// Every submitted decision must carry the touch limit for its direction:
+/// the limit the venue actually received, not the indicative bar close.
+fn assert_touch_limits(decisions: &[BarDecision], bars: &[Bar], direction: Direction) {
+    let mut checked = 0;
+    for decision in decisions {
+        if decision.submitted {
+            let quote =
+                quote_for_bar(&bars[decision.bar_index], &venue_config()).expect("quotable bar");
+            let touch = match direction {
+                Direction::Long => quote.ask,
+                Direction::Short => quote.bid,
+            };
+            assert_eq!(
+                decision.checked_limit, touch,
+                "submitted limit must be the touch for {direction:?}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "must verify at least one submitted limit");
+}
+
+#[tokio::test]
+async fn equity_and_notional_scale_with_sizer_quantity() {
+    let bars = history();
+    let risk = risk();
+    let grant = grant_with(0.5);
+    let one = run_backtest(
+        &strategy_with_contracts(1),
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("one-contract run");
+    let three = run_backtest(
+        &strategy_with_contracts(3),
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("three-contract run");
+    assert!(one.report.fills > 0, "liquid history must fill something");
+    assert_eq!(
+        one.report.fills, three.report.fills,
+        "sizer must not change which bars fill"
+    );
+    assert_eq!(one.report.equity_curve.len(), three.report.equity_curve.len());
+    for (single, triple) in one.report.equity_curve.iter().zip(three.report.equity_curve.iter()) {
+        assert_eq!(
+            triple.as_decimal(),
+            single.as_decimal() * Decimal::from(3),
+            "every booked flow must scale with filled quantity"
+        );
+    }
+    assert_eq!(
+        three.report.filled_notional.as_decimal(),
+        one.report.filled_notional.as_decimal() * Decimal::from(3),
+    );
+}
+
 #[tokio::test]
 async fn backtest_and_paper_reach_identical_decisions() {
     let bars = history();
@@ -119,9 +206,31 @@ async fn backtest_and_paper_reach_identical_decisions() {
     let paper_json = serde_json::to_string(&paper_decisions).expect("serializable");
     assert_eq!(backtest_json, paper_json, "same code path must decide identically");
     assert!(run.decisions.iter().any(|decision| decision.submitted), "liquid history must fill something");
+    assert_touch_limits(&run.decisions, &bars, Direction::Long);
+    assert_touch_limits(&paper_decisions, &bars, Direction::Long);
     assert!(run.report.fills > 0);
     assert!(run.report.fill_assumptions.iter().any(|line| line.contains("touch")));
     assert!(run.report.greeks_note.contains("unavailable"));
+}
+
+#[tokio::test]
+async fn submitted_limits_match_touch_by_direction() {
+    let bars = history();
+    for direction in [Direction::Long, Direction::Short] {
+        let strategy = directional_strategy(direction);
+        let run = run_backtest(
+            &strategy,
+            &risk(),
+            &grant_with(0.5),
+            &venue_config(),
+            &runner_config(),
+            &bars,
+            11,
+        )
+        .await
+        .expect("directional run");
+        assert_touch_limits(&run.decisions, &bars, direction);
+    }
 }
 
 #[tokio::test]
@@ -226,6 +335,6 @@ fn runner_helpers_stay_on_the_venue_trait() {
     let note = expire_position(&venue, "SPY", now).expect("expiry journals");
     assert!(note.contains("SPY"));
     let quote = quote_for_bar(&history()[0], &venue_config()).expect("quotable");
-    assert!(newest_quote(&[None, Some(&quote)]).is_some());
+    assert!([None, Some(&quote)].into_iter().find_map(|entry| entry).is_some());
     let _ = (ProposalSide::Entry, GrantMarket::new, StructureKind::Vertical);
 }

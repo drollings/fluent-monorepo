@@ -120,7 +120,7 @@ async fn backtest_venue_shares_paper_fill_behavior() {
     assert_eq!(venue.orders().len(), 1);
     assert_eq!(venue.positions().len(), 1);
     let missing: Option<Quote> = None;
-    assert!(crate::newest_quote(&[missing.as_ref()]).is_none());
+    assert!([missing.as_ref()].into_iter().find_map(|entry| entry).is_none());
 }
 
 #[test]
