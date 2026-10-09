@@ -965,3 +965,75 @@ async fn report_states_dividend_exclusion_next_to_pnl() {
         run.report.data_limits
     );
 }
+
+fn barrier_bars(spec: &[(f64, f64, f64)]) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let (mut closes, mut highs, mut lows) = (Vec::new(), Vec::new(), Vec::new());
+    for (c, h, l) in spec {
+        closes.push(*c);
+        highs.push(*h);
+        lows.push(*l);
+    }
+    (closes, highs, lows)
+}
+
+#[test]
+fn triple_barrier_touch_paths() {
+    use crate::runner::triple_barrier;
+    // The reference docstring example: NaN entry skips, take-profit hits,
+    // stop-loss hits, and the trailing bar has no window left.
+    let (closes, highs, lows) = barrier_bars(&[
+        (f64::NAN, f64::NAN, f64::NAN),
+        (1.0, 1.0, 1.0),
+        (1.0, 1.1, 1.0),
+        (1.0, 1.0, 0.95),
+    ]);
+    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05), vec![None, Some(1.0), Some(-1.0), None]);
+    // Timeout settles on the horizon bar's signed drift, not zero.
+    let (closes, highs, lows) = barrier_bars(&[(100.0, 101.0, 99.0), (102.0, 103.0, 101.0), (101.0, 102.0, 100.0)]);
+    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.5, 0.5), vec![Some(1.0), Some(-1.0), None]);
+    // Both barriers on one bar: the farther-from-close side wins.
+    let (closes, highs, lows) = barrier_bars(&[(100.0, 100.0, 100.0), (100.0, 112.0, 96.0)]);
+    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05), vec![Some(1.0), None]);
+    let (closes, highs, lows) = barrier_bars(&[(100.0, 100.0, 100.0), (100.0, 104.0, 90.0)]);
+    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05), vec![Some(-1.0), None]);
+    // Flat market never touches a barrier: every label expires at zero.
+    let (closes, highs, lows) = barrier_bars(&[(50.0, 50.0, 50.0); 6]);
+    assert_eq!(
+        triple_barrier(&closes, &highs, &lows, 5, 0.1, 0.05),
+        vec![Some(0.0), Some(0.0), None, None, None, None]
+    );
+    // Degenerate windows refuse instead of indexing out of bounds.
+    assert!(triple_barrier(&closes, &highs, &lows, 1, 0.1, 0.05).iter().all(Option::is_none));
+    assert!(triple_barrier(&closes, &highs, &lows, 0, 0.1, 0.05).iter().all(Option::is_none));
+}
+
+fn rsrs_history(n: usize) -> Vec<Bar> {
+    use chrono::TimeZone as _;
+    let price = |x: f64| rust_decimal::Decimal::from_f64_retain(x).expect("finite test price");
+    (0..n)
+        .map(|i| {
+            let k = f64::from(i as i32);
+            let close = 100.0 + k * 0.2 + (k * 0.7).sin() * 2.0;
+            let spread = 0.5 + (k * 0.3).cos().abs() * 2.0;
+            Bar::new()
+                .ts(chrono::Utc.with_ymd_and_hms(2026, 1, 2, 9, 0, 0).single().expect("ts") + chrono::Duration::minutes(k as i64))
+                .o(price(close))
+                .h(price(close + spread))
+                .l(price(close - spread))
+                .c(price(close))
+                .volume(1_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect()
+}
+
+#[test]
+fn report_rsrs_is_honest_about_history_length() {
+    use crate::runner::report_rsrs;
+    // Under the default 600-bar scoring window there is nothing to score.
+    assert_eq!(report_rsrs(&history()), None);
+    assert_eq!(report_rsrs(&rsrs_history(100)), None);
+    // A full window on varying data scores finite values.
+    assert!(report_rsrs(&rsrs_history(650)).is_some());
+}

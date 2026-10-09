@@ -1,11 +1,11 @@
 //! Scoped script-to-kernel spike: accept-or-refuse, never miscompile.
 //!
 //! The spike recognizes one narrow script shape — a version-6 indicator with
-//! `input.int`/`input.float` bindings, `ta.sma`/`ta.ema` assignments over
-//! OHLCV legs, and `plot` calls — and lowers it to a [`Hair`] HIR
-//! (`Const`/`Name`/`Ohlcv`/`Binary`/`Where`/`Shift`/`Rolling`/`Call`), then to
-//! Rust source calling the real kernels plus a numeric evaluation through
-//! those same kernels.
+//! `input.int`/`input.float` bindings, `ta.sma`/`ta.ema`/`ta.trima`/
+//! `ta.midpoint` assignments over OHLCV legs, and `plot` calls — and lowers
+//! it to a [`Hair`] HIR (`Const`/`Name`/`Ohlcv`/`Binary`/`Where`/`Shift`/
+//! `Rolling`/`Call`), then to Rust source calling the real kernels plus a
+//! numeric evaluation through those same kernels.
 //!
 //! Anything outside the shape is refused with a reason: `switch`, any
 //! ternary, `request.*`, `varip`, `export`/`method`, `strategy`/`library`
@@ -13,7 +13,9 @@
 //! can never silently miscompile them. A real grammar is the follow-up; this
 //! recognizer is deliberately narrower than the language.
 
-use protopyne_kernels::{EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator};
+use protopyne_kernels::{
+    EmaIndicator, Indicator as _, MidpointIndicator, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator,
+};
 
 use crate::error::ServerError;
 
@@ -111,8 +113,12 @@ const DENY_PATTERNS: [&str; 8] = [
 /// OHLCV legs the spike resolves.
 const LEGS: [&str; 5] = ["open", "high", "low", "close", "volume"];
 
-/// Kernels the spike emits.
-const KERNELS: [&str; 2] = ["sma", "ema"];
+/// Kernels the spike emits: the two rolling averages plus the verified
+/// single-output overlaps. Multi-leg kernels (`bbands`: upper/mid/lower) do
+/// not fit single-series binding evaluation, nullary price kernels sit
+/// outside the two-argument call grammar, and `midprice` needs high/low legs
+/// the close-only evaluator does not carry — all three stay refused.
+const KERNELS: [&str; 4] = ["sma", "ema", "trima", "midpoint"];
 
 fn refuse(reasons: Vec<String>) -> SpikeOutcome {
     SpikeOutcome::Refused { refusal: Refusal { reasons } }
@@ -318,8 +324,8 @@ fn parse_plot(line: &str) -> Option<String> {
 /// Compile `source`: accept-or-refuse, never miscompile.
 ///
 /// Acceptance bar **(task-value: grammar coverage, not confidence)**: scripts
-/// inside the `sma`/`ema` subset lower to HIR and schematic Rust; everything
-/// else is refused with reasons. "Compiles" here means the emission
+/// inside the `sma`/`ema`/`trima`/`midpoint` subset lower to HIR and schematic
+/// Rust; everything else is refused with reasons. "Compiles" here means the emission
 /// syn-parses plus accepted scripts match kernel goldens numerically —
 /// `rustc` compilation is never attempted, because tests stay hermetic (no
 /// toolchain dependency) and the emission is schematic by design
@@ -392,7 +398,7 @@ pub fn compile_spike(source: &str) -> SpikeOutcome {
         reasons.push("missing indicator(...) declaration".to_owned());
     }
     if bindings.is_empty() {
-        reasons.push("no sma/ema assignment found".to_owned());
+        reasons.push("no accepted-kernel assignment found".to_owned());
     }
     for name in &plots {
         if !bound.contains(name) {
@@ -409,7 +415,7 @@ pub fn compile_spike(source: &str) -> SpikeOutcome {
 /// Emit Rust source calling the real kernels for `lowered`.
 fn emit_rust(lowered: &Lowered) -> String {
     let mut out = String::from(
-        "use protopyne_kernels::{EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator};\n\n\
+        "use protopyne_kernels::{EmaIndicator, Indicator as _, MidpointIndicator, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator};\n\n\
          /// Generated from an accepted script: one kernel batch per binding.\n\
          pub fn generated(values: &Ohlcv<'_>, params: &ParamSet) -> Result<Vec<protopyne_kernels::IndicatorResult>, protopyne_kernels::KernelError> {\n",
     );
@@ -439,7 +445,12 @@ fn emit_statement(name: &str, hair: &Hair) -> String {
                     format!("params.int(\"{kernel}\", \"{binding}\").unwrap_or(14)")
                 }
             };
-            let indicator = if kernel == "ema" { "EmaIndicator::new()" } else { "SmaIndicator::new()" };
+            let indicator = match kernel.as_str() {
+                "ema" => "EmaIndicator::new()",
+                "trima" => "TrimaIndicator::new()",
+                "midpoint" => "MidpointIndicator::new()",
+                _ => "SmaIndicator::new()",
+            };
             format!(
                 "    let _{name} = {indicator}.batch(&Ohlcv::close_only({leg}), &ParamSet::new().with_int(\"length\", {len}))?;"
             )
@@ -500,6 +511,8 @@ pub fn evaluate_lowered(
         let values = match kernel.as_str() {
             "sma" => SmaIndicator::new().batch(&frame, &params),
             "ema" => EmaIndicator::new().batch(&frame, &params),
+            "trima" => TrimaIndicator::new().batch(&frame, &params),
+            "midpoint" => MidpointIndicator::new().batch(&frame, &params),
             _ => return Err(ServerError::Service(format!("unknown kernel {kernel}"))),
         }
         .map_err(|e| ServerError::Service(format!("kernel failed: {e}")))?;

@@ -629,6 +629,7 @@ pub async fn run_backtest(
         Money::new(filled_notional),
         Money::new(reserved_notional),
         equity,
+        report_rsrs(bars),
     );
     Ok(BacktestRun { manifest, decisions, report })
 }
@@ -848,6 +849,93 @@ pub fn complete_replay(graph: &mut CheckpointedStepGraph<String, ReplayStep>) {
             state.done = true;
         }
     }
+}
+
+/// Triple-barrier labeling over closed bars: for each entry bar `i`, scan
+/// the next `window - 1` bars for the first touch of the profit barrier
+/// (`entry * (1 + take_profit)` on highs) or the loss barrier
+/// (`entry * (1 - stop_loss)` on lows).
+///
+/// Labels are `Some(1.0)` (profit first), `Some(-1.0)` (loss first), or the
+/// horizon bar's signed drift when time expires (flat expiry reads
+/// `Some(0.0)`). A bar touched on both sides resolves to whichever extreme
+/// stands farther from its close. Entries with no window left, non-finite
+/// entries, and degenerate parameters (`window < 2`, non-positive or
+/// non-finite barriers) read `None`: labels are future data for `y`, so a
+/// missing label refuses rather than invents. Hand-rolled loop, no numba.
+#[must_use]
+pub fn triple_barrier(
+    closes: &[f64],
+    highs: &[f64],
+    lows: &[f64],
+    window: usize,
+    take_profit: f64,
+    stop_loss: f64,
+) -> Vec<Option<f64>> {
+    let len = closes.len().min(highs.len()).min(lows.len());
+    if window < 2 || !take_profit.is_finite() || !stop_loss.is_finite() || take_profit <= 0.0 || stop_loss <= 0.0 {
+        return vec![None; len];
+    }
+    (0..len)
+        .map(|i| {
+            if i + window > len {
+                return None;
+            }
+            let entry = closes[i];
+            if !entry.is_finite() {
+                return None;
+            }
+            let upper = entry * (1.0 + take_profit);
+            let lower = entry * (1.0 - stop_loss);
+            for j in i + 1..i + window {
+                let hit_upper = highs[j] >= upper;
+                let hit_lower = lows[j] <= lower;
+                if hit_upper && hit_lower {
+                    // Both touched on one bar: the farther-from-close
+                    // extreme wins (unobservable order inside the bar).
+                    if highs[j] - closes[j] > closes[j] - lows[j] {
+                        return Some(1.0);
+                    }
+                    return Some(-1.0);
+                }
+                if hit_upper {
+                    return Some(1.0);
+                }
+                if hit_lower {
+                    return Some(-1.0);
+                }
+            }
+            // Time expired: sign of the horizon bar's drift. Ordered
+            // comparisons (never `== 0.0`) keep the flat-expiry zero exact:
+            // NaN is excluded first, so the final arm is only ±0.0 — and
+            // Rust `signum` would misread +0.0 as +1.0.
+            let drift = closes[i + window - 1] / entry - 1.0;
+            if drift.is_nan() {
+                None
+            } else if drift > 0.0 {
+                Some(1.0)
+            } else if drift < 0.0 {
+                Some(-1.0)
+            } else {
+                Some(0.0)
+            }
+        })
+        .collect()
+}
+
+/// Latest RSRS timing score over replayed bars at the upstream lookbacks
+/// (`n = 18`, `m = 600`): the last finite score, or `None` when the history
+/// is shorter than the scoring window. Called once per backtest over the
+/// whole series — never per bar.
+#[must_use]
+pub fn report_rsrs(bars: &[Bar]) -> Option<f64> {
+    use rust_decimal::prelude::ToPrimitive as _;
+    let highs: Vec<f64> = bars.iter().map(|bar| bar.h.to_f64().unwrap_or(f64::NAN)).collect();
+    let lows: Vec<f64> = bars.iter().map(|bar| bar.l.to_f64().unwrap_or(f64::NAN)).collect();
+    protopyne_kernels::research::rsrs(&highs, &lows, 18, 600)
+        .into_iter()
+        .flatten()
+        .next_back()
 }
 
 /// Split history into a head (`train`) and tail (`test`) at `train_len`.

@@ -1,9 +1,12 @@
 use super::*;
 use std::collections::HashMap;
 
-use protopyne_kernels::{EmaIndicator, Ohlcv, ParamSet, SmaIndicator};
+use protopyne_kernels::{
+    EmaIndicator, MidpointIndicator, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator,
+};
 
-/// Five canonical scripts the spike must accept.
+/// Nine canonical scripts the spike must accept: the seven rolling-average
+/// shapes plus the two verified single-output overlaps (`trima`, `midpoint`).
 fn must_transpile() -> Vec<&'static str> {
     vec![
         "//@version=6\nindicator(\"Ribbon\", overlay=true)\ns = ta.sma(close, 14)\nplot(s, \"sma\")\n",
@@ -13,13 +16,16 @@ fn must_transpile() -> Vec<&'static str> {
         "//@version=6\nindicator(\"Band\", overlay=true)\nmult = input.float(2.0, \"mult\")\nbasis = ta.sma(close, 14)\nupper = basis + mult\nplot(upper, \"upper\")\n",
         "//@version=6\nindicator(\"Mixed\", overlay=true)\nx = 2 * 3 + 4\ns = ta.sma(close, 14)\nplot(s, \"s\")\n",
         "//@version=6\nindicator(\"LeftAssoc\", overlay=true)\ny = 100 / 10 / 2\nz = 10 - 2 * 3\ne = ta.ema(close, 14)\nplot(e, \"e\")\n",
+        "//@version=6\nindicator(\"Tri\", overlay=true)\nt = ta.trima(close, 14)\nplot(t, \"trima\")\n",
+        "//@version=6\nindicator(\"Mid\", overlay=true)\nlen = input.int(14, \"len\")\nm = ta.midpoint(close, len)\nplot(m, \"mid\")\n",
     ]
 }
 
-/// Ten scripts the spike must refuse, never miscompile: the six original
+/// Twelve scripts the spike must refuse, never miscompile: the six original
 /// shapes plus unbalanced parentheses, an empty operator side, a version
-/// number that merely starts with 6, and a ternary nested in an otherwise
-/// canonical script.
+/// number that merely starts with 6, a ternary nested in an otherwise
+/// canonical script, a multi-leg overlap outside the single-series accept
+/// set, and a momentum kernel (overlaps only).
 fn must_reject() -> Vec<&'static str> {
     vec![
         "//@version=6\nindicator(\"Switch\", overlay=true)\nimport posthum4n/x as x\ns = switch close\n    1 => ta.sma(close, 14)\n    => ta.ema(close, 14)\nplot(s)\n",
@@ -32,6 +38,8 @@ fn must_reject() -> Vec<&'static str> {
         "//@version=6\nindicator(\"EmptySide\", overlay=true)\nx = 2 +\ns = ta.sma(close, 14)\nplot(s)\n",
         "//@version=60\nindicator(\"Sixty\", overlay=true)\ns = ta.sma(close, 14)\nplot(s)\n",
         "//@version=6\nindicator(\"NestedTernary\", overlay=true)\ns = ta.sma(close, 14 > 10 ? 12 : 16)\nplot(s)\n",
+        "//@version=6\nindicator(\"Bands\", overlay=true)\nb = ta.bbands(close, 14)\nplot(b, \"bands\")\n",
+        "//@version=6\nindicator(\"Momentum\", overlay=true)\nr = ta.rsi(close, 14)\nplot(r, \"rsi\")\n",
     ]
 }
 
@@ -136,7 +144,9 @@ fn evaluated_scripts_match_kernel_goldens() {
             let params = ParamSet::new().with_int("length", resolved);
             let expected = match kernel.as_str() {
                 "sma" => SmaIndicator::new().batch(&frame, &params).expect("kernel runs").values,
-                _ => EmaIndicator::new().batch(&frame, &params).expect("kernel runs").values,
+                "ema" => EmaIndicator::new().batch(&frame, &params).expect("kernel runs").values,
+                "trima" => TrimaIndicator::new().batch(&frame, &params).expect("kernel runs").values,
+                _ => MidpointIndicator::new().batch(&frame, &params).expect("kernel runs").values,
             };
             assert_eq!(values.len(), expected.len());
             for (got, want) in values.iter().zip(expected.iter()) {
@@ -192,8 +202,8 @@ fn calibration_is_green_before_any_caching() {
         &must_transpile().iter().map(|s| s as &str).collect::<Vec<_>>(),
         &must_reject().iter().map(|s| s as &str).collect::<Vec<_>>(),
     );
-    assert_eq!(tally.must_transpile, 7);
-    assert_eq!(tally.must_reject, 10);
+    assert_eq!(tally.must_transpile, 9);
+    assert_eq!(tally.must_reject, 12);
     assert!((tally.accept_rate() - 1.0).abs() < f64::EPSILON);
     assert!((tally.reject_rate() - 1.0).abs() < f64::EPSILON);
     assert!(tally.is_green(), "spike ships only at precision=recall=1.0, got {tally:?}");
@@ -230,6 +240,42 @@ fn acceptance_is_parse_plus_numeric_not_rustc() {
     };
     assert!(rust.contains("params.int(\"ema\", \"len\")"), "emitted accessor must name its input, got:\n{rust}");
     assert!(!rust.contains("params.int(\"_\""));
+}
+
+#[test]
+fn overlap_scripts_lower_emit_and_evaluate() {
+    // The widened accept set names its kernel in HIR, emission, and
+    // evaluation; multi-leg and momentum kernels stay refused.
+    let outcome = compile_spike(must_transpile()[7]);
+    let SpikeOutcome::Accepted { lowered, rust } = outcome else {
+        panic!("trima script must be accepted");
+    };
+    assert!(matches!(
+        lowered.bindings[0].hair,
+        Hair::Rolling { ref kernel, ref length, .. }
+        if kernel == "trima" && matches!(length, Length::Literal(14))
+    ));
+    assert!(rust.contains("TrimaIndicator"), "emission names the kernel, got:\n{rust}");
+    syn::parse_str::<syn::File>(&rust).expect("trima emission parses");
+
+    let outcome = compile_spike(must_transpile()[8]);
+    let SpikeOutcome::Accepted { lowered, rust } = outcome else {
+        panic!("midpoint script must be accepted");
+    };
+    assert!(matches!(
+        lowered.bindings[0].hair,
+        Hair::Rolling { ref kernel, ref length, .. }
+        if kernel == "midpoint" && matches!(length, Length::Input(name, 14) if name == "len")
+    ));
+    assert!(rust.contains("MidpointIndicator"), "emission names the kernel, got:\n{rust}");
+    syn::parse_str::<syn::File>(&rust).expect("midpoint emission parses");
+
+    for source in [&must_reject()[10], &must_reject()[11]] {
+        assert!(
+            matches!(compile_spike(source), SpikeOutcome::Refused { .. }),
+            "non-accept-set kernel refused:\n{source}"
+        );
+    }
 }
 
 #[test]

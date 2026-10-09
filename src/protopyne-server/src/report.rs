@@ -120,6 +120,49 @@ pub fn worst_step_loss(equity: &[Decimal]) -> Decimal {
     worst
 }
 
+/// Total cumulative return of an equity curve: `last / base - 1` where the
+/// base is the first deployed (nonzero) capital, the summary analog of the
+/// reference skipping nulls to its first print.
+///
+/// Returns `None` when no capital was ever deployed (empty, single-point,
+/// or all-zero curves): there is no base to compound from, and a zero is
+/// not manufactured. Mid-curve zeros report `-1` (total loss), which is
+/// defined, not missing.
+#[must_use]
+pub fn cum_return(equity: &[Decimal]) -> Option<Decimal> {
+    if equity.len() < 2 {
+        return None;
+    }
+    let base = equity.iter().find(|value| !value.is_zero())?;
+    Some(equity[equity.len() - 1] / *base - Decimal::ONE)
+}
+
+/// Simple rate to log rate: `ln(1 + r)`.
+///
+/// Returns `None` when the log is undefined (`1 + r <= 0`) or the input is
+/// non-finite: the reference yields `-inf`/`NaN` there, and the report
+/// carries absence instead.
+#[must_use]
+pub fn simple_to_log_return(rate: Decimal) -> Option<Decimal> {
+    use rust_decimal::prelude::ToPrimitive as _;
+    let shifted = rate.to_f64()? + 1.0;
+    if shifted.is_nan() || shifted <= 0.0 {
+        return None;
+    }
+    Decimal::from_f64_retain(shifted.ln())
+}
+
+/// Log rate to simple rate: `exp(r) - 1`.
+///
+/// Returns `None` on non-finite input or overflow (the exponential leaves
+/// `f64` range): honest absence, never an infinite decimal.
+#[must_use]
+pub fn log_to_simple_return(rate: Decimal) -> Option<Decimal> {
+    use rust_decimal::prelude::ToPrimitive as _;
+    let simple = rate.to_f64()?.exp() - 1.0;
+    Decimal::from_f64_retain(simple)
+}
+
 /// Capital efficiency proxy: filled notional per unit of reserved notional.
 ///
 /// Returns `None` when nothing was reserved (no efficiency to report rather
@@ -168,6 +211,12 @@ pub struct BacktestReport {
     pub tail_loss: Money,
     /// Filled over reserved notional (`None` when nothing reserved).
     pub capital_efficiency: Option<f64>,
+    /// Total cumulative return of the marked equity curve (`None` when no
+    /// capital was ever deployed).
+    pub cum_return: Option<f64>,
+    /// Latest RSRS timing score over the replayed bars (`None` when the
+    /// history is shorter than the scoring window or a caller passes none).
+    pub rsrs: Option<f64>,
     /// Why greeks-over-time is unavailable in the prototype.
     pub greeks_note: String,
     /// Marked equity curve (per-bar, account currency).
@@ -196,9 +245,14 @@ pub fn build_report(
     filled_notional: Money,
     reserved_notional: Money,
     equity_curve: Vec<Money>,
+    rsrs: Option<f64>,
 ) -> BacktestReport {
     let equity_decimals: Vec<Decimal> =
         equity_curve.iter().map(|money| money.as_decimal()).collect();
+    let cum_return = cum_return(&equity_decimals).and_then(|value| {
+        use rust_decimal::prelude::ToPrimitive as _;
+        value.to_f64()
+    });
     let fill_rate = if proposals == 0 {
         None
     } else {
@@ -222,6 +276,8 @@ pub fn build_report(
         ),
         drawdown: Money::new(max_drawdown(&equity_decimals)),
         tail_loss: Money::new(worst_step_loss(&equity_decimals)),
+        cum_return,
+        rsrs,
         greeks_note: BacktestReport::unavailable_greeks_note(),
         equity_curve,
     }

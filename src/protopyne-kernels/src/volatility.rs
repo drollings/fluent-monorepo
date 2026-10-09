@@ -168,20 +168,11 @@ impl Indicator for AtrIndicator {
     }
 }
 
-/// Population standard deviation of a full window (dividing by `length`,
-/// matching `ta.stdev`'s biased default).
-fn pop_stdev(window: &[f64]) -> f64 {
-    let mean = window.iter().sum::<f64>() / window.len() as f64;
-    let variance = window
-        .iter()
-        .map(|v| (v - mean) * (v - mean))
-        .sum::<f64>()
-        / window.len() as f64;
-    variance.sqrt()
-}
-
 /// Bollinger Bands (`basis` primary; `upper`/`lower` secondaries),
-/// parameterized by `length` and `mult`.
+/// parameterized by `length` and `mult`. The envelope uses the shared
+/// population standard deviation ([`std_pop`](crate::math::std_pop),
+/// dividing by `length`); statistic kernels use the sample sibling instead —
+/// the two denominators never mix.
 pub struct BbIndicator {
     spec: IndicatorSpec,
 }
@@ -241,7 +232,7 @@ impl Indicator for BbIndicator {
             for i in (period - 1)..closes.len() {
                 let window = &closes[i + 1 - period..=i];
                 let mean = window.iter().sum::<f64>() / period as f64;
-                let dev = pop_stdev(window);
+                let dev = crate::math::std_pop(window);
                 basis[i] = fin_or_none(mean);
                 upper[i] = fin_or_none(mean + mult * dev);
                 lower[i] = fin_or_none(mean - mult * dev);
@@ -286,7 +277,7 @@ impl Indicator for BbIndicator {
         }
         let window: Vec<f64> = state.closes().collect();
         let mean = window.iter().sum::<f64>() / period as f64;
-        let dev = pop_stdev(&window);
+        let dev = crate::math::std_pop(&window);
         state.set_last(mean);
         Ok(FullTick {
             primary: fin_or_none(mean),
@@ -453,6 +444,88 @@ impl Indicator for KcIndicator {
                 },
             ],
         })
+    }
+}
+
+/// Normalized average true range (`atr / close`), parameterized by `length`.
+///
+/// The smoothing is the shared [`AtrIndicator`]; the ratio goes through the
+/// division guard, so degenerate zero prices refuse (`None`) instead of
+/// fabricating a ratio, while a genuinely still market reads a confident
+/// zero.
+pub struct NatrIndicator {
+    spec: IndicatorSpec,
+}
+
+impl NatrIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "natr";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Normalized Average True Range".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+}
+
+impl Default for NatrIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for NatrIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Self::period(params)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let atr = AtrIndicator::new().batch(
+            data,
+            &ParamSet::new().with_int("length", period as i64),
+        )?;
+        let values = atr
+            .values
+            .iter()
+            .zip(data.close.iter())
+            .map(|(a, &c)| a.and_then(|v| crate::math::div_or_none(v, c)))
+            .collect();
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        let atr = AtrIndicator::new().update(
+            state.child(0),
+            bar,
+            &ParamSet::new().with_int("length", period as i64),
+        )?;
+        let ratio = atr.and_then(|v| crate::math::div_or_none(v, bar.close));
+        if let Some(value) = ratio {
+            state.set_last(value);
+        }
+        Ok(ratio)
     }
 }
 

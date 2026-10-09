@@ -1,5 +1,9 @@
 use super::*;
-use crate::volatility::{AtrIndicator, BbIndicator, KcIndicator, TrIndicator};
+use crate::parity::{assert_expr_parity, expr_fixture};
+use crate::volatility::{AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, TrIndicator};
+use polars::prelude::{EWMOptions, Expr, col, lit, when};
+use protopyne_types::Bar;
+use std::path::PathBuf;
 
 fn approx(got: &[Option<f64>], want: &[Option<f64>], eps: f64) {
     assert_eq!(got.len(), want.len());
@@ -121,4 +125,158 @@ fn keltner_channels_pair_basis_with_smoothed_range_by_hand() {
     let lower = result.secondary("lower").expect("lower leg");
     approx(&upper[2..3], &[Some(4.0)], 1e-9);
     approx(&lower[2..3], &[Some(0.0)], 1e-9);
+}
+
+fn natr_bar(open: f64, high: f64, low: f64, close: f64, index: usize) -> Bar {
+    use chrono::TimeZone as _;
+    let dec = |x: f64| rust_decimal::Decimal::from_f64_retain(x).expect("finite test price");
+    Bar::new()
+        .ts(chrono::Utc
+            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .single()
+            .expect("valid timestamp"))
+        .o(dec(open))
+        .h(dec(high))
+        .l(dec(low))
+        .c(dec(close))
+        .volume(1_000_u64)
+        .maybe_adj(None)
+        .build()
+}
+
+fn natr_ticks_of(bars: &[Bar]) -> Vec<BarTick> {
+    use rust_decimal::prelude::ToPrimitive as _;
+    bars.iter()
+        .map(|b| BarTick {
+            open: b.o.to_f64().unwrap_or(f64::NAN),
+            high: b.h.to_f64().unwrap_or(f64::NAN),
+            low: b.l.to_f64().unwrap_or(f64::NAN),
+            close: b.c.to_f64().unwrap_or(f64::NAN),
+            volume: b.volume as f64,
+        })
+        .collect()
+}
+
+fn natr_spy_bars(count: usize) -> Vec<Bar> {
+    let path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("SPY_15M.csv");
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(path)
+        .expect("vendored CSV present");
+    let mut bars = Vec::new();
+    for record in reader.records().take(count) {
+        let row = record.expect("readable row");
+        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
+        let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
+        let dec = |x: f64| rust_decimal::Decimal::from_f64_retain(x).expect("finite");
+        bars.push(
+            Bar::new()
+                .ts(ts)
+                .o(dec(num(1)))
+                .h(dec(num(2)))
+                .l(dec(num(3)))
+                .c(dec(num(4)))
+                .volume(row.get(5).expect("vol").parse().expect("volume"))
+                .maybe_adj(None)
+                .build(),
+        );
+    }
+    bars
+}
+
+/// Independent reference for the volatility ratio: EWM-seeded smoothing over
+/// the bar range, divided by close — the reference formula. The horizontal
+/// maximum is a null-safe `when` ladder: shifted legs are null on the first
+/// bar, so they enter the ladder as negative infinity (a true range never
+/// reads below it) instead of poisoning the comparison.
+fn natr_expr(n: usize) -> Expr {
+    let prev_close = col("close").shift(lit(1));
+    let tr1 = col("high") - col("low");
+    let neg_inf = lit(f64::NEG_INFINITY);
+    let tr2 = (col("high") - prev_close.clone())
+        .abs()
+        .fill_null(neg_inf.clone());
+    let tr3 = (col("low") - prev_close)
+        .abs()
+        .fill_null(neg_inf);
+    let m12 = when(tr1.clone().gt_eq(tr2.clone()))
+        .then(tr1)
+        .otherwise(tr2);
+    let tr = when(m12.clone().gt_eq(tr3.clone()))
+        .then(m12)
+        .otherwise(tr3);
+    let atr = tr.ewm_mean(EWMOptions {
+        alpha: 1.0 / n as f64,
+        adjust: false,
+        bias: false,
+        min_periods: n,
+        ignore_nulls: true,
+    });
+    (atr / col("close")).alias("natr")
+}
+
+#[test]
+fn natr_flat_zero_is_none_not_zero() {
+    // Degenerate zero prices: 0/0 refuses via the division guard instead of
+    // fabricating a ratio.
+    let bars: Vec<Bar> = (0..30).map(|i| natr_bar(0.0, 0.0, 0.0, 0.0, i)).collect();
+    let data = crate::indicator::OwnedOhlcv::from_bars(&bars);
+    let ps = ParamSet::new().with_int("length", 14);
+    let natr = NatrIndicator::new();
+    let result = natr.batch(&data.views(), &ps).expect("valid");
+    assert!(result.values.iter().all(Option::is_none));
+    let mut state = IndicatorState::new();
+    for tick in natr_ticks_of(&bars) {
+        assert_eq!(natr.update(&mut state, tick, &ps).expect("valid"), None);
+    }
+}
+
+#[test]
+fn natr_flat_price_is_confident_zero_after_warmup() {
+    // A genuinely still market has a true zero ratio — confident and correct,
+    // distinct from the degenerate refusal above.
+    let bars: Vec<Bar> = (0..30).map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i)).collect();
+    let data = crate::indicator::OwnedOhlcv::from_bars(&bars);
+    let ps = ParamSet::new().with_int("length", 14);
+    let natr = NatrIndicator::new();
+    assert_eq!(natr.warmup(&ps).expect("valid"), 14);
+    let result = natr.batch(&data.views(), &ps).expect("valid");
+    assert!(result.values[..13].iter().all(Option::is_none));
+    assert!(result.values[13..].iter().all(|v| *v == Some(0.0)));
+}
+
+#[test]
+fn natr_matches_expr_once_seeded_and_agrees_on_spy() {
+    // The kernel smooths with Wilder seeding while the reference smooths
+    // with EWM seeding: the two coincide exactly once their seed states
+    // match, so the parity frame opens with a flat prefix (both seeds read
+    // zero) before trending. Seeding, not smoothing, is the documented
+    // difference between the two ratio definitions.
+    let mut bars: Vec<Bar> = (0..14).map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i)).collect();
+    for i in 0..30 {
+        let close = 100.0 + i as f64 * 0.9 + ((i * 7) % 4) as f64;
+        bars.push(natr_bar(close - 0.2, close + 0.9, close - 0.7, close, 14 + i));
+    }
+    let data = crate::indicator::OwnedOhlcv::from_bars(&bars);
+    let ps = ParamSet::new().with_int("length", 14);
+    let natr = NatrIndicator::new();
+    let result = natr.batch(&data.views(), &ps).expect("valid");
+    let want = expr_fixture(&bars, natr_expr(14)).expect("natr evaluates");
+    assert_expr_parity(&result.values, &want, 1e-9, "natr").expect("parity");
+    // Streaming agrees with batch on real dynamics, including secondaries
+    // (none here) and warmup shape.
+    let spy = natr_spy_bars(60);
+    let spy_data = crate::indicator::OwnedOhlcv::from_bars(&spy);
+    let spy_result = natr.batch(&spy_data.views(), &ps).expect("valid");
+    assert!(spy_result.values[..13].iter().all(Option::is_none));
+    let mut state = IndicatorState::new();
+    let folded: Vec<Option<f64>> = natr_ticks_of(&spy)
+        .into_iter()
+        .map(|t| natr.update(&mut state, t, &ps).expect("valid"))
+        .collect();
+    assert_eq!(spy_result.values, folded);
 }

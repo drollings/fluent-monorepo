@@ -14,6 +14,7 @@
 //! 1e-9 eps.
 
 use crate::averages::{HmaIndicator, RmaIndicator, WmaIndicator};
+use crate::calibration::canonical_params;
 use crate::compat::compat_for;
 use crate::ema::EmaIndicator;
 use crate::indicator::{Indicator, Ohlcv, OwnedOhlcv, ParamSet, builtin_registry};
@@ -39,10 +40,6 @@ fn max_abs_err(got: &[Option<f64>], want: &[Option<f64>]) -> f64 {
 
 fn closes(data: &[f64]) -> Ohlcv<'_> {
     Ohlcv::close_only(data)
-}
-
-fn len14() -> ParamSet {
-    ParamSet::new().with_int("length", 14)
 }
 
 /// Naive contrast: oldest-bar-heaviest weights. Must differ from `wma`.
@@ -237,21 +234,9 @@ fn must_not_fire_flat_constant_and_spike_controls() {
     };
     let views = legs.views();
     let registry = builtin_registry().expect("builtins");
-    let params = |id: &str| match id {
-        "alma" => ParamSet::new()
-            .with_int("length", 14)
-            .with_float("offset", 0.85)
-            .with_float("sigma", 6.0),
-        "macd" => ParamSet::new()
-            .with_int("fast_length", 12)
-            .with_int("slow_length", 26)
-            .with_int("signal_length", 9),
-        "bb" | "kc" => ParamSet::new()
-            .with_int("length", 14)
-            .with_float("mult", 2.0),
-        "tr" => ParamSet::new(),
-        _ => len14(),
-    };
+    // Calibration parameterizations live in the single shared home so the
+    // family suite and the global gate can never drift apart.
+    let params = canonical_params;
     for id in registry.ids() {
         let kernel = registry.get(&id).expect("registered");
         let result = kernel.batch(&views, &params(&id)).expect("valid");
@@ -259,7 +244,9 @@ fn must_not_fire_flat_constant_and_spike_controls() {
         let warmed: Vec<f64> = result.values.iter().filter_map(|x| *x).collect();
         let expect_value = |v: f64| warmed.iter().all(|x| (*x - v).abs() <= e);
         match &id[..] {
-            "rsi" | "stoch" => assert!(
+            // Directionless inputs stay honestly na: flat-range stochastics
+            // and constant-leg correlation carry no signal by construction.
+            "rsi" | "stoch" | "correl" => assert!(
                 result.values.iter().all(Option::is_none),
                 "{id} must stay na on flat input"
             ),
@@ -273,7 +260,37 @@ fn must_not_fire_flat_constant_and_spike_controls() {
                     );
                 }
             }
-            "tr" | "atr" => assert!(expect_value(0.0), "{id} must read zero"),
+            "tr" | "atr" | "natr" => assert!(expect_value(0.0), "{id} must read zero"),
+            // Flat flow accumulates nothing: ad/adosc pin at zero, obv pins
+            // at the opening print (every bar's volume on a constant).
+            "ad" | "adosc" => assert!(expect_value(0.0), "{id} must read zero on flat input"),
+            "obv" => assert!(expect_value(1_000.0), "{id} must pin at first volume on flat input"),
+            // Oscillator differences vanish on a constant; dispersion reads
+            // zero; ratios read their defined flat values.
+            "apo" | "ppo" | "mom" | "roc" | "rocp" | "rsv" | "willr" | "trix" | "stddev"
+            | "var" => {
+                assert!(expect_value(0.0), "{id} must read zero on flat input");
+            }
+            "rocr" => assert!(expect_value(1.0), "{id} must read one on flat input"),
+            "rocr100" => assert!(expect_value(100.0), "{id} must read hundred on flat input"),
+            "stochf" => {
+                assert!(expect_value(0.0), "{id} fastk must read zero on flat input");
+                let fastd = result.secondary("fastd").expect("fastd leg");
+                assert!(
+                    fastd.iter().filter_map(|x| *x).all(|x| x.abs() <= e),
+                    "{id}:fastd must read zero on flat input"
+                );
+            }
+            // Every window extreme is the most recent bar on flat input, so
+            // both Aroon legs pin at 1.0 (the reference's reverse-argmax).
+            "aroon" => {
+                assert!(expect_value(1.0), "{id} up must pin at one on flat input");
+                let down = result.secondary("down").expect("down leg");
+                assert!(
+                    down.iter().filter_map(|x| *x).all(|x| (x - 1.0).abs() <= e),
+                    "{id}:down must pin at one on flat input"
+                );
+            }
             _ => {
                 assert!(expect_value(42.0), "{id} must return the constant");
                 for leg in &result.secondary {
@@ -289,7 +306,10 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             }
         }
         assert!(
-            !result.values.iter().all(Option::is_none) || id == "rsi" || id == "stoch",
+            !result.values.iter().all(Option::is_none)
+                || id == "rsi"
+                || id == "stoch"
+                || id == "correl",
             "{id} must warm up on 40 flat bars"
         );
     }

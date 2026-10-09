@@ -76,6 +76,7 @@ fn report_states_limits_and_unavailable_greeks() {
         money("100"),
         money("200"),
         curve,
+        None,
     );
     assert_eq!(report.bars, 4);
     assert_eq!(report.fill_rate, Some(0.5));
@@ -88,7 +89,7 @@ fn report_states_limits_and_unavailable_greeks() {
 
 #[test]
 fn report_with_no_proposals_has_no_fill_rate() {
-    let report = build_report(manifest(0), Vec::new(), Vec::new(), 0, 0, money("0"), money("0"), money("0"), Vec::new());
+    let report = build_report(manifest(0), Vec::new(), Vec::new(), 0, 0, money("0"), money("0"), money("0"), Vec::new(), None);
     assert_eq!(report.fill_rate, None);
     assert_eq!(report.drawdown, money("0"));
 }
@@ -117,6 +118,7 @@ fn fill_rate_survives_counts_past_u32() {
         money("0"),
         money("0"),
         Vec::new(),
+        None,
     );
     assert_eq!(even.fill_rate, Some(1.0));
     let half = build_report(
@@ -129,6 +131,7 @@ fn fill_rate_survives_counts_past_u32() {
         money("0"),
         money("0"),
         Vec::new(),
+        None,
     );
     assert_eq!(half.fill_rate, Some(0.5));
 }
@@ -148,4 +151,64 @@ fn unquotable_bar_counter_matches_zero_closes() {
     let mut bad = good.clone();
     bad.c = Decimal::ZERO;
     assert_eq!(count_unquotable_bars(&[good, bad]), 1);
+}
+
+#[test]
+fn return_conversions_round_trip() {
+    use crate::report::{log_to_simple_return, simple_to_log_return};
+    for rate in ["0.0", "0.1", "-0.1", "1.5", "-0.5"] {
+        let simple = decimal(rate);
+        let log = simple_to_log_return(simple).expect("defined");
+        let back = log_to_simple_return(log).expect("defined");
+        let drift = (back - simple).abs();
+        assert!(drift < decimal("0.000000000001"), "round-trip drifts {drift} on {rate}");
+    }
+    // log(1 + rate) is undefined at and below -100%.
+    assert!(simple_to_log_return(decimal("-1")).is_none());
+    assert!(simple_to_log_return(decimal("-2")).is_none());
+    // exp overflows to infinity: honest None, never an infinite Decimal.
+    assert!(log_to_simple_return(decimal("1000")).is_none());
+}
+
+#[test]
+fn cum_return_on_known_curve() {
+    use crate::report::cum_return;
+    assert_eq!(cum_return(&[decimal("100"), decimal("120"), decimal("90")]), Some(decimal("-0.1")));
+    assert_eq!(cum_return(&[decimal("100"), decimal("100")]), Some(Decimal::ZERO));
+    // Leading idle zeros are skipped like the reference skips nulls: the
+    // base is the first deployed capital.
+    assert_eq!(
+        cum_return(&[Decimal::ZERO, Decimal::ZERO, decimal("120"), decimal("90")]),
+        Some(decimal("-0.25"))
+    );
+    assert!(cum_return(&[]).is_none());
+    assert!(cum_return(&[decimal("50")]).is_none());
+    // No deployed base at all: nothing to compound from.
+    assert!(cum_return(&[Decimal::ZERO, Decimal::ZERO]).is_none());
+}
+
+#[test]
+fn report_carries_cum_return_and_rsrs_as_json_keys() {
+    let curve = vec![money("100"), money("120"), money("90")];
+    let report = build_report(
+        manifest(3),
+        Vec::new(),
+        Vec::new(),
+        0,
+        0,
+        money("0"),
+        money("0"),
+        money("0"),
+        curve,
+        Some(2.5),
+    );
+    assert!((report.cum_return.expect("cum_return") - -0.1).abs() < 1e-12);
+    assert_eq!(report.rsrs, Some(2.5));
+    let json = serde_json::to_string(&report).expect("serializable");
+    assert!(json.contains("\"cum_return\""), "sole serialization change carries cum_return, got: {json}");
+    assert!(json.contains("\"rsrs\""), "sole serialization change carries rsrs, got: {json}");
+    // Honest None survives the round-trip as explicit null.
+    let empty = build_report(manifest(0), Vec::new(), Vec::new(), 0, 0, money("0"), money("0"), money("0"), Vec::new(), None);
+    assert_eq!(empty.cum_return, None);
+    assert_eq!(empty.rsrs, None);
 }

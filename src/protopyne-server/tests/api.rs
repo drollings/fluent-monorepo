@@ -529,6 +529,105 @@ fn overlay_scatter_holds_bar_alignment() {
 }
 
 #[tokio::test]
+async fn chart_overlay_serves_verified_overlaps_positionally() {
+    // Only chartable overlaps join `sma`/`ema`: `bb` (mid) and `trima`.
+    // Momentum, volume, and statistic kernels stay out of overlays.
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    let bars: ChartBars = client
+        .get(format!("{}/chart/bars", base(&handle)))
+        .send()
+        .await
+        .expect("bars reachable")
+        .json()
+        .await
+        .expect("bars are JSON");
+    let closes: Vec<f64> = history()
+        .iter()
+        .filter_map(|bar| {
+            use rust_decimal::prelude::ToPrimitive as _;
+            bar.c.to_f64()
+        })
+        .collect();
+    let frame = Ohlcv::close_only(&closes);
+
+    let bb: OverlaySeries = client
+        .get(format!("{}/chart/overlays?kind=bb&period=14", base(&handle)))
+        .send()
+        .await
+        .expect("bb overlay reachable")
+        .json()
+        .await
+        .expect("bb overlay is JSON");
+    let expected_bb = BbIndicator::new()
+        .batch(
+            &frame,
+            &ParamSet::new().with_int("length", 14).with_float("mult", 2.0),
+        )
+        .expect("bb kernel runs")
+        .values;
+    assert_eq!(bb.values, expected_bb, "bb overlay is the band mid");
+    assert_eq!(bb.values.len(), bars.rows.len(), "bb overlay agrees positionally");
+    assert_eq!(bb.dropped, 0);
+
+    let wide: OverlaySeries = client
+        .get(format!("{}/chart/overlays?kind=bb&period=14&mult=1.5", base(&handle)))
+        .send()
+        .await
+        .expect("bb mult reachable")
+        .json()
+        .await
+        .expect("bb mult is JSON");
+    let expected_wide = BbIndicator::new()
+        .batch(
+            &frame,
+            &ParamSet::new().with_int("length", 14).with_float("mult", 1.5),
+        )
+        .expect("bb kernel runs")
+        .values;
+    assert_eq!(wide.values, expected_wide, "explicit mult reaches the kernel");
+
+    let trima: OverlaySeries = client
+        .get(format!("{}/chart/overlays?kind=trima&period=14", base(&handle)))
+        .send()
+        .await
+        .expect("trima overlay reachable")
+        .json()
+        .await
+        .expect("trima overlay is JSON");
+    let expected_trima = TrimaIndicator::new()
+        .batch(&frame, &ParamSet::new().with_int("length", 14))
+        .expect("trima kernel runs")
+        .values;
+    assert_eq!(trima.values, expected_trima);
+    assert_eq!(trima.values.len(), bars.rows.len(), "trima overlay agrees positionally");
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn chart_overlay_still_refuses_non_chartable_kinds() {
+    // Momentum, volume, statistic, and non-overlap averages stay out of
+    // overlays; a non-finite band multiplier fails closed at the kernel.
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    for kind in ["rsi", "stoch", "obv", "stddev", "wma"] {
+        let refused = client
+            .get(format!("{}/chart/overlays?kind={kind}&period=14", base(&handle)))
+            .send()
+            .await
+            .expect("refusal reachable");
+        assert_eq!(refused.status(), reqwest::StatusCode::BAD_REQUEST, "kind={kind} stays out");
+    }
+    let bad_mult = client
+        .get(format!("{}/chart/overlays?kind=bb&period=14&mult=inf", base(&handle)))
+        .send()
+        .await
+        .expect("bad mult reachable");
+    assert_eq!(bad_mult.status(), reqwest::StatusCode::BAD_REQUEST);
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn feed_streams_bar_frames() {
     use futures_util::StreamExt as _;
     let handle = boot().await;

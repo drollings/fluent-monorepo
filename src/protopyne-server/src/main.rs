@@ -76,7 +76,7 @@ Endpoints once serving:
   GET  /grants/current       the armed grant, if any
   GET  /portfolio            positions, fills, and fees from the latest preview
   GET  /chart/bars           Lightweight-Charts candle rows
-  GET  /chart/overlays       indicator overlays (?kind=sma&period=14)
+  GET  /chart/overlays       indicator overlays (?kind=sma|ema|bb|trima&period=14)
   GET  /feed                 WebSocket rehearsal bar feed
 
 Example:

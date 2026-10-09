@@ -587,6 +587,33 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::volatility::AtrIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::BbIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::KcIndicator::new()))?;
+    registry.register(Arc::new(crate::volatility::NatrIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::BbandsIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::MidpointIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::MidpriceIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::TrimaIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_price::AvgPriceIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_price::MedPriceIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_price::TypPriceIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_price::WclPriceIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::ApoIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::MomIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::PpoIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::RocIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::RocpIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::RocrIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::Rocr100Indicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::RsvIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::StochfIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::TrixIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::WillrIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::AroonIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_stat::StddevIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_stat::VarIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_stat::CorrelIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_volume::AdIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_volume::AdoscIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_volume::ObvIndicator::new()))?;
     Ok(registry)
 }
 

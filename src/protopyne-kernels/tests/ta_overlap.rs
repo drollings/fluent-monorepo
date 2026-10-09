@@ -1,0 +1,295 @@
+use super::*;
+use crate::compat::compat_for;
+use crate::indicator::{builtin_registry, OwnedOhlcv};
+use crate::parity::{assert_expr_parity, expr_fixture};
+use crate::ta_overlap::{BbandsIndicator, MidpointIndicator, MidpriceIndicator, TrimaIndicator};
+use polars::prelude::{RollingFnParams, RollingOptionsFixedWindow, RollingVarParams, col, lit};
+use protopyne_types::Bar;
+use std::path::PathBuf;
+
+fn dec(x: f64) -> rust_decimal::Decimal {
+    rust_decimal::Decimal::from_f64_retain(x).expect("finite test price")
+}
+
+fn bar_at(open: f64, high: f64, low: f64, close: f64, volume: u64, index: usize) -> Bar {
+    use chrono::TimeZone as _;
+    Bar::new()
+        .ts(chrono::Utc
+            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .single()
+            .expect("valid timestamp"))
+        .o(dec(open))
+        .h(dec(high))
+        .l(dec(low))
+        .c(dec(close))
+        .volume(volume)
+        .maybe_adj(None)
+        .build()
+}
+
+/// Deterministic trend with periodic gap-ups: one source of truth feeding
+/// both the kernel legs and the expression frame.
+fn trend_bars(n: usize) -> Vec<Bar> {
+    let mut bars = Vec::with_capacity(n);
+    let mut prev_close = 100.0;
+    for i in 0..n {
+        let drift = i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9;
+        let close = 100.0 + drift;
+        let gap = if i > 0 && i % 10 == 0 { 2.5 } else { 0.0 };
+        let open = if i == 0 { close } else { prev_close + gap + 0.1 };
+        let high = open.max(close) + 0.8;
+        let low = open.min(close) - 0.8;
+        bars.push(bar_at(open, high, low, close, 1_000 + i as u64 * 37, i));
+        prev_close = close;
+    }
+    bars
+}
+
+fn spy_bars(count: usize) -> Vec<Bar> {
+    let path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("SPY_15M.csv");
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(path)
+        .expect("vendored CSV present");
+    let mut bars = Vec::new();
+    for record in reader.records().take(count) {
+        let row = record.expect("readable row");
+        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
+        let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
+        bars.push(
+            Bar::new()
+                .ts(ts)
+                .o(dec(num(1)))
+                .h(dec(num(2)))
+                .l(dec(num(3)))
+                .c(dec(num(4)))
+                .volume(row.get(5).expect("vol").parse().expect("volume"))
+                .maybe_adj(None)
+                .build(),
+        );
+    }
+    bars
+}
+
+fn ticks_of(bars: &[Bar]) -> Vec<BarTick> {
+    use rust_decimal::prelude::ToPrimitive as _;
+    bars.iter()
+        .map(|b| BarTick {
+            open: b.o.to_f64().unwrap_or(f64::NAN),
+            high: b.h.to_f64().unwrap_or(f64::NAN),
+            low: b.l.to_f64().unwrap_or(f64::NAN),
+            close: b.c.to_f64().unwrap_or(f64::NAN),
+            volume: b.volume as f64,
+        })
+        .collect()
+}
+
+fn strict(n: usize) -> RollingOptionsFixedWindow {
+    RollingOptionsFixedWindow {
+        window_size: n,
+        min_periods: n,
+        weights: None,
+        center: false,
+        fn_params: None,
+    }
+}
+
+fn std_pop_opts(n: usize) -> RollingOptionsFixedWindow {
+    RollingOptionsFixedWindow {
+        window_size: n,
+        min_periods: n,
+        weights: None,
+        center: false,
+        fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof: 0 })),
+    }
+}
+
+fn bbands_params() -> ParamSet {
+    ParamSet::new()
+        .with_int("length", 14)
+        .with_float("nbdevup", 2.0)
+        .with_float("nbdevdn", 2.0)
+}
+
+fn len_params() -> ParamSet {
+    ParamSet::new().with_int("length", 14)
+}
+
+#[test]
+fn bbands_matches_expr_on_spy_slice() {
+    let bars = spy_bars(60);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let bbands = BbandsIndicator::new();
+    let result = bbands.batch(&data.views(), &bbands_params()).expect("valid");
+    let sma = col("close").rolling_mean(strict(14));
+    let std = col("close").rolling_std(std_pop_opts(14));
+    let middle = expr_fixture(&bars, sma.clone().alias("middle")).expect("middle evaluates");
+    let upper =
+        expr_fixture(&bars, (sma.clone() + std.clone() * lit(2.0)).alias("upper")).expect("upper");
+    let lower = expr_fixture(&bars, (sma - std * lit(2.0)).alias("lower")).expect("lower");
+    assert_expr_parity(&result.values, &middle, 1e-9, "bbands middle").expect("middle parity");
+    assert_expr_parity(
+        result.secondary("upper").expect("upper leg"),
+        &upper,
+        1e-9,
+        "bbands upper",
+    )
+    .expect("upper parity");
+    assert_expr_parity(
+        result.secondary("lower").expect("lower leg"),
+        &lower,
+        1e-9,
+        "bbands lower",
+    )
+    .expect("lower parity");
+}
+
+#[test]
+fn bbands_matches_symmetric_bb_bit_for_bit() {
+    // Same denominator (population) and same loop: symmetric bands must equal
+    // the legacy kernel exactly, locking the shared arithmetic.
+    let bars = spy_bars(60);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let bbands = BbandsIndicator::new();
+    let got = bbands.batch(&data.views(), &bbands_params()).expect("valid");
+    let bb = crate::volatility::BbIndicator::new();
+    let want = bb
+        .batch(
+            &data.views(),
+            &ParamSet::new().with_int("length", 14).with_float("mult", 2.0),
+        )
+        .expect("valid");
+    assert_eq!(got.values, want.values);
+    assert_eq!(
+        got.secondary("upper").expect("upper"),
+        want.secondary("upper").expect("upper")
+    );
+    assert_eq!(
+        got.secondary("lower").expect("lower"),
+        want.secondary("lower").expect("lower")
+    );
+}
+
+#[test]
+fn bbands_update_agrees_with_batch_on_spy() {
+    let bars = spy_bars(60);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let ps = bbands_params();
+    let bbands = BbandsIndicator::new();
+    let result = bbands.batch(&data.views(), &ps).expect("valid");
+    let mut state = IndicatorState::new();
+    let mut primary = Vec::new();
+    let mut upper = Vec::new();
+    let mut lower = Vec::new();
+    for tick in ticks_of(&bars) {
+        let full = bbands.update_full(&mut state, tick, &ps).expect("valid");
+        primary.push(full.primary);
+        upper.push(full.secondary[0].value);
+        lower.push(full.secondary[1].value);
+    }
+    assert_eq!(result.values, primary);
+    assert_eq!(result.secondary("upper").expect("upper"), &upper);
+    assert_eq!(result.secondary("lower").expect("lower"), &lower);
+}
+
+#[test]
+fn bbands_warmup_is_length_and_refuses_non_sma_matype() {
+    let bbands = BbandsIndicator::new();
+    assert_eq!(bbands.warmup(&bbands_params()).expect("valid"), 14);
+    let bars = trend_bars(20);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let result = bbands.batch(&data.views(), &bbands_params()).expect("valid");
+    assert!(result.values[..13].iter().all(Option::is_none));
+    assert!(result.values[13].is_some());
+    // Only SMA smoothing exists; any other moving-average type refuses.
+    let bad = ParamSet::new()
+        .with_int("length", 14)
+        .with_float("nbdevup", 2.0)
+        .with_float("nbdevdn", 2.0)
+        .with_float("matype", 1.0);
+    assert!(bbands.batch(&data.views(), &bad).is_err());
+    // Absent matype defaults to SMA.
+    assert!(bbands.batch(&data.views(), &bbands_params()).is_ok());
+}
+
+#[test]
+fn midpoint_matches_expr_and_warms_up() {
+    let bars = spy_bars(60);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let midpoint = MidpointIndicator::new();
+    let ps = len_params();
+    let result = midpoint.batch(&data.views(), &ps).expect("valid");
+    let expr = ((col("close").rolling_max(strict(14)) + col("close").rolling_min(strict(14)))
+        / lit(2.0))
+    .alias("midpoint");
+    let want = expr_fixture(&bars, expr).expect("midpoint evaluates");
+    assert_expr_parity(&result.values, &want, 1e-9, "midpoint").expect("parity");
+    assert_eq!(midpoint.warmup(&ps).expect("valid"), 14);
+    assert!(result.values[..13].iter().all(Option::is_none));
+    let mut state = IndicatorState::new();
+    let folded: Vec<Option<f64>> = ticks_of(&bars)
+        .into_iter()
+        .map(|t| midpoint.update(&mut state, t, &ps).expect("valid"))
+        .collect();
+    assert_eq!(result.values, folded);
+}
+
+#[test]
+fn midprice_reads_high_low_legs_with_gap() {
+    let bars = trend_bars(30);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let midprice = MidpriceIndicator::new();
+    let ps = len_params();
+    let result = midprice.batch(&data.views(), &ps).expect("valid");
+    let expr = ((col("high").rolling_max(strict(14)) + col("low").rolling_min(strict(14)))
+        / lit(2.0))
+    .alias("midprice");
+    let want = expr_fixture(&bars, expr).expect("midprice evaluates");
+    assert_expr_parity(&result.values, &want, 1e-9, "midprice").expect("parity");
+    assert_eq!(midprice.warmup(&ps).expect("valid"), 14);
+    let mut state = IndicatorState::new();
+    let folded: Vec<Option<f64>> = ticks_of(&bars)
+        .into_iter()
+        .map(|t| midprice.update(&mut state, t, &ps).expect("valid"))
+        .collect();
+    assert_eq!(result.values, folded);
+}
+
+#[test]
+fn trima_matches_nested_sma_expr_with_length_warmup() {
+    // Sub-periods ceil(14/2) = 7 and floor(14/2) + 1 = 8: the first valid
+    // output lands at index 13, so warmup is the length itself.
+    let bars = spy_bars(60);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let trima = TrimaIndicator::new();
+    let ps = len_params();
+    let result = trima.batch(&data.views(), &ps).expect("valid");
+    let expr = col("close")
+        .rolling_mean(strict(7))
+        .rolling_mean(strict(8))
+        .alias("trima");
+    let want = expr_fixture(&bars, expr).expect("trima evaluates");
+    assert_expr_parity(&result.values, &want, 1e-9, "trima").expect("parity");
+    assert_eq!(trima.warmup(&ps).expect("valid"), 14);
+    assert!(result.values[..13].iter().all(Option::is_none));
+    assert!(result.values[13].is_some());
+    let mut state = IndicatorState::new();
+    let folded: Vec<Option<f64>> = ticks_of(&bars)
+        .into_iter()
+        .map(|t| trima.update(&mut state, t, &ps).expect("valid"))
+        .collect();
+    assert_eq!(result.values, folded);
+}
+
+#[test]
+fn kama_has_no_kernel_and_refuses_with_reason() {
+    // The reference raises unconditionally for KAMA: no smoothing is
+    // invented here. Lookup fails closed instead of miscomputing.
+    let registry = builtin_registry().expect("builtins register");
+    assert!(registry.get("kama").is_none());
+    assert!(compat_for("kama").is_none());
+}

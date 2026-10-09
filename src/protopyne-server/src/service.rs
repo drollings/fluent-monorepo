@@ -30,7 +30,9 @@ use fluent_concurrency::scope::Scope;
 use fluent_wvr::prelude::*;
 use tokio::sync::broadcast;
 
-use protopyne_kernels::{EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator};
+use protopyne_kernels::{
+    BbIndicator, EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator,
+};
 use protopyne_strategy::{
     BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission, GrantScope,
     PortfolioThresholds, ProposalState, RiskEngine, RiskLimits, SignalThresholds,
@@ -248,7 +250,7 @@ pub struct ChartBars {
 /// One overlay series (indicator values aligned with chart bars).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OverlaySeries {
-    /// Kernel id (`sma` or `ema`).
+    /// Kernel id (`sma`, `ema`, `bb`, or `trima`).
     pub kind: String,
     /// Averaging length.
     pub period: i64,
@@ -590,11 +592,14 @@ fn candle_row_of(bar: &Bar) -> Option<CandleRow> {
     })
 }
 
-/// Overlay query: `kind` is `sma` or `ema`, `period` is the averaging length.
+/// Overlay query: `kind` is `sma`, `ema`, `bb` (mid), or `trima`; `period`
+/// is the averaging length; `mult` is the band multiplier for `bb` only
+/// (default 2.0, matching the calibration parameterization).
 #[derive(Debug, serde::Deserialize)]
 struct OverlayQuery {
     kind: String,
     period: i64,
+    mult: Option<f64>,
 }
 
 /// Scatter compacted kernel values back to bar indices: every bar keeps its
@@ -638,15 +643,29 @@ async fn chart_overlay(
         return Err(api_error(StatusCode::SERVICE_UNAVAILABLE, "no chartable closes"));
     }
     let frame = Ohlcv::close_only(&closes);
-    let params = ParamSet::new().with_int("length", query.period);
+    let period = ParamSet::new().with_int("length", query.period);
     let computed = match query.kind.as_str() {
         "sma" => SmaIndicator::new()
-            .batch(&frame, &params)
+            .batch(&frame, &period)
             .map(|result| result.values),
         "ema" => EmaIndicator::new()
-            .batch(&frame, &params)
+            .batch(&frame, &period)
             .map(|result| result.values),
-        _ => return Err(api_error(StatusCode::BAD_REQUEST, "kind must be 'sma' or 'ema'")),
+        // Chartable overlaps only: `bb` serves its mid (the primary leg),
+        // `trima` its single output. Momentum, volume, and statistic kernels
+        // are not price-chartable and stay refused below.
+        "bb" => BbIndicator::new()
+            .batch(&frame, &period.clone().with_float("mult", query.mult.unwrap_or(2.0)))
+            .map(|result| result.values),
+        "trima" => TrimaIndicator::new()
+            .batch(&frame, &period)
+            .map(|result| result.values),
+        _ => {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "kind must be one of 'sma', 'ema', 'bb', 'trima'",
+            ));
+        }
     }
     .map_err(|e| api_error(StatusCode::BAD_REQUEST, e.to_string()))?;
     let values = align_overlay(state.history.len(), &positions, &computed);

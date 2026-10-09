@@ -15,7 +15,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true }
-polars = { version = "0.50", default-features = false }
+polars = { version = "0.50", default-features = false, features = ["lazy", "rolling_window", "ewma", "abs", "cum_agg", "log", "moment", "trigonometry", "sign", "round_series"] }
 
 [dev-dependencies]
 chrono = { workspace = true }
