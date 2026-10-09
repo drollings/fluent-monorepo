@@ -5,7 +5,7 @@ use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{OrderIntent, OrderSide, PaperConfig, PaperVenue, Quote, Venue};
+use protopyne_venue::{OrderIntent, OrderSide, PaperConfig, Quote, Venue};
 
 fn money(value: &str) -> Money {
     Money::new(value.parse::<Decimal>().expect("decimal"))
@@ -79,8 +79,25 @@ fn config_validation_is_fail_closed() {
 }
 
 #[test]
+fn spread_above_full_close_is_refused_at_the_boundary() {
+    let wide = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("v".to_owned())
+        .quote_spread_bps(10_001)
+        .build();
+    let err = wide.validate().expect_err("spread above 100% must refuse at validate");
+    assert!(err.to_string().contains("quote_spread_bps"), "refusal names the bound, got: {err}");
+    let edge = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("v".to_owned())
+        .quote_spread_bps(10_000)
+        .build();
+    assert!(edge.validate().is_ok(), "exactly 100% stays admissible at the boundary");
+}
+
+#[test]
 fn empty_history_is_rejected() {
-    let venue = BacktestVenue::new(config(), Vec::new(), PaperVenue::new(PaperConfig::new().build()));
+    let venue = BacktestVenue::new(config(), Vec::new(), PaperConfig::new().build());
     assert!(venue.is_err());
 }
 
@@ -91,7 +108,7 @@ async fn backtest_venue_shares_paper_fill_behavior() {
     let venue = BacktestVenue::new(
         config(),
         bars[..8].to_vec(),
-        PaperVenue::new(PaperConfig::new().build()),
+        PaperConfig::new().build(),
     )
     .expect("venue pins history");
     assert_eq!(venue.data_version(), "spy-15m-v1");
@@ -121,6 +138,35 @@ async fn backtest_venue_shares_paper_fill_behavior() {
     assert_eq!(venue.positions().len(), 1);
     let missing: Option<Quote> = None;
     assert!([missing.as_ref()].into_iter().find_map(|entry| entry).is_none());
+}
+
+#[tokio::test]
+async fn backtest_venue_honors_explicit_paper_tuning() {
+    use protopyne_venue::FeeSchedule;
+    let bars = crate::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bar = &bars[0];
+    let tuned = PaperConfig::new()
+        .fees(FeeSchedule::new().per_contract(money("1.30")).build())
+        .build();
+    let venue =
+        BacktestVenue::new(config(), bars[..8].to_vec(), tuned).expect("tuned venue pins history");
+    let quote = quote_for_bar(bar, venue.config()).expect("quotable");
+    let intent = OrderIntent::new()
+        .client_id("bt-tuned-0".to_owned())
+        .proposal_id("bt-tuned".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(2)
+        .limit_price(quote.ask)
+        .build();
+    let record = venue.submit(intent, &quote, bar.ts).await.expect("fills");
+    assert_eq!(record.filled_quantity, 2);
+    assert_eq!(
+        record.fees_paid,
+        money("2.60"),
+        "custom per-contract fees must flow into fills, not the default 0.65"
+    );
 }
 
 #[test]

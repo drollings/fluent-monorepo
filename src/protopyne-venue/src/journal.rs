@@ -71,6 +71,11 @@ fn now_ms(now: DateTime<Utc>) -> i64 {
     now.timestamp_millis()
 }
 
+/// Single INSERT shared by the direct and transactional event writers so the
+/// outbox row shape cannot drift between the two paths.
+const INSERT_EVENT_SQL: &str =
+    "INSERT INTO events(client_id, kind, detail, at_ms) VALUES (?1, ?2, ?3, ?4)";
+
 /// The durable side of the order state machine. Schemas are created on open;
 /// the journal runs in WAL mode so readers never block a writer.
 pub struct Journal {
@@ -119,6 +124,10 @@ impl Journal {
     /// Durably record an intent before any venue call. Recording the same
     /// client ID twice returns the stored copy: intent journaling is
     /// idempotent, which is what makes retries safe.
+    ///
+    /// The INSERT plus its event commit atomically through the shared
+    /// transaction primitive: a crash between the statements leaves neither
+    /// half behind, so status and events always agree.
     pub fn record_intent(
         &self,
         permit: &VenueStorage,
@@ -128,9 +137,9 @@ impl Journal {
         self.gate(permit)?;
         let payload = serde_json::to_string(intent)
             .map_err(|e| VenueError::Journal(e.to_string()))?;
-        let conn = common_core::sync::lock(&self.conn);
-        let inserted = conn
-            .execute(
+        let mut conn = common_core::sync::lock(&self.conn);
+        fluent_db::query::transaction(&mut conn, |tx| {
+            let inserted = tx.execute(
                 "INSERT OR IGNORE INTO intents(client_id, proposal_id, payload, status, created_ms)
                  VALUES (?1, ?2, ?3, 'pending', ?4)",
                 params![
@@ -139,12 +148,13 @@ impl Journal {
                     payload,
                     now_ms(now)
                 ],
-            )
-            .map_err(|e| VenueError::Journal(e.to_string()))?;
-        if inserted == 1 {
-            Self::append_locked(&conn, &intent.client_id, "intent", &payload, now)?;
-        }
-        Ok(inserted == 1)
+            )?;
+            if inserted == 1 {
+                Self::append_tx(tx, &intent.client_id, "intent", &payload, now)?;
+            }
+            Ok(inserted == 1)
+        })
+        .map_err(|e| VenueError::Journal(e.to_string()))
     }
 
     /// Record a lifecycle transition for `client_id`.
@@ -162,7 +172,9 @@ impl Journal {
     }
 
     /// Mark an intent's send state (`submitted`, `acknowledged`, `filled`,
-    /// `cancelled`, `rejected`).
+    /// `cancelled`, `rejected`). The UPDATE plus its event commit atomically
+    /// through the shared transaction primitive, so status and events always
+    /// agree.
     pub fn mark_status(
         &self,
         permit: &VenueStorage,
@@ -172,23 +184,31 @@ impl Journal {
     ) -> Result<(), VenueError> {
         self.gate(permit)?;
         let name = status_name(status);
-        let conn = common_core::sync::lock(&self.conn);
-        conn.execute(
-            "UPDATE intents SET status = ?1 WHERE client_id = ?2",
-            params![name, client_id],
-        )
-        .map_err(|e| VenueError::Journal(e.to_string()))?;
-        Self::append_locked(&conn, client_id, name, "{}", now)?;
-        Ok(())
+        let mut conn = common_core::sync::lock(&self.conn);
+        fluent_db::query::transaction(&mut conn, |tx| {
+            tx.execute(
+                "UPDATE intents SET status = ?1 WHERE client_id = ?2",
+                params![name, client_id],
+            )?;
+            Self::append_tx(tx, client_id, name, "{}", now)?;
+            Ok(())
+        })
+        .map_err(|e| VenueError::Journal(e.to_string()))
     }
 
     /// Intents not yet terminal: the transactional outbox. After a crash,
     /// each row resolves through query-by-ID against venue truth.
+    ///
+    /// The predicate is every non-terminal status (`pending`, `submitted`,
+    /// `acknowledged`): an acknowledgement is still mid-flight, so excluding
+    /// it would strand a crashed-after-ack order as an unknown position. Any
+    /// future mid-flight status must join this predicate, or crash recovery
+    /// will skip it.
     pub fn outbox_pending(&self, permit: &VenueStorage) -> Result<Vec<OrderIntent>, VenueError> {
         self.gate(permit)?;
         let conn = common_core::sync::lock(&self.conn);
         let mut stmt = conn
-            .prepare("SELECT payload FROM intents WHERE status IN ('pending','submitted') ORDER BY created_ms")
+            .prepare("SELECT payload FROM intents WHERE status IN ('pending','submitted','acknowledged') ORDER BY created_ms")
             .map_err(|e| VenueError::Journal(e.to_string()))?;
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))
@@ -297,10 +317,27 @@ impl Journal {
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
         conn.execute(
-            "INSERT INTO events(client_id, kind, detail, at_ms) VALUES (?1, ?2, ?3, ?4)",
+            INSERT_EVENT_SQL,
             params![client_id, kind, detail, now_ms(now)],
         )
         .map_err(|e| VenueError::Journal(e.to_string()))?;
+        Ok(())
+    }
+
+    /// The transactional half of [`Self::append_locked`] for closures running
+    /// inside the shared transaction primitive (whose `?` speaks `DbError`).
+    /// Single-write callers keep using `append_locked`.
+    fn append_tx(
+        tx: &rusqlite::Transaction<'_>,
+        client_id: &str,
+        kind: &str,
+        detail: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), fluent_db::error::DbError> {
+        tx.execute(
+            INSERT_EVENT_SQL,
+            params![client_id, kind, detail, now_ms(now)],
+        )?;
         Ok(())
     }
 }

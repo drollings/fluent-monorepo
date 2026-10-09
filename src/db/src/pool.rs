@@ -421,6 +421,55 @@ impl SqlitePool {
     {
         crate::query::query_rows_from_iter(conn, sql, params, map)
     }
+
+    /// Create the shared outbox table if missing (see `crate::outbox`).
+    pub async fn outbox_init(self: &Arc<Self>) -> Result<(), DbError> {
+        self.execute_batch(crate::outbox::OUTBOX_DDL).await
+    }
+
+    /// Append `payload` under `key` to the shared outbox (idempotent per key).
+    pub async fn outbox_append(self: &Arc<Self>, key: &str, payload: &[u8]) -> Result<i64, DbError> {
+        let key = key.to_string();
+        let payload = payload.to_vec();
+        self.with_conn(move |conn| crate::outbox::append(conn, &key, &payload))
+            .await
+    }
+
+    /// Claim up to `limit` outbox rows in FIFO order, leasing them for
+    /// `lease_ms` from `now_ms`. Contended (`Busy`) claims are retried with a
+    /// short sleep (bounded), mirroring `SqliteStore::outbox_claim`.
+    pub async fn outbox_claim(
+        self: &Arc<Self>,
+        limit: usize,
+        lease_ms: i64,
+        now_ms: i64,
+    ) -> Result<Vec<crate::outbox::OutboxEntry>, DbError> {
+        let mut attempts = 0u32;
+        loop {
+            match self
+                .transaction(move |tx| crate::outbox::claim_batch(tx, limit, lease_ms, now_ms))
+                .await
+            {
+                Err(DbError::Busy(_)) if attempts < 20 => {
+                    attempts += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+                done => return done,
+            }
+        }
+    }
+
+    /// Delete delivered outbox rows; returns rows removed.
+    pub async fn outbox_ack(self: &Arc<Self>, ids: &[i64]) -> Result<usize, DbError> {
+        let ids = ids.to_vec();
+        self.with_conn(move |conn| crate::outbox::ack(conn, &ids))
+            .await
+    }
+
+    /// Number of rows still in the shared outbox.
+    pub async fn outbox_pending(self: &Arc<Self>) -> Result<usize, DbError> {
+        self.with_conn(crate::outbox::pending_count).await
+    }
 }
 
 /// Allocate a process-unique shared-cache in-memory database name (`memdb{N}`).

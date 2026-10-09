@@ -14,6 +14,7 @@ pub mod resolver;
 pub mod target;
 pub mod target_work_unit;
 pub mod type_inference;
+pub mod version;
 pub mod work_unit;
 pub mod wvr;
 pub mod yamake_loader;

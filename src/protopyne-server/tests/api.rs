@@ -326,6 +326,129 @@ async fn arming_rejects_empty_window() {
     handle.shutdown().await;
 }
 
+fn mid_grant(id: &str) -> Grant {
+    // Interior values on every tier so each tier can move either way.
+    Grant::new()
+        .id(id.to_owned())
+        .scope(
+            GrantScope::new()
+                .strategies(vec!["ribbon".to_owned()])
+                .underlyings(vec!["SPY".to_owned()])
+                .structures(vec![StructureKind::Vertical])
+                .directions(vec![Direction::Long])
+                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .build(),
+        )
+        .budgets(
+            GrantBudgets::new()
+                .max_trades(10)
+                .max_contracts(100)
+                .max_loss(Money::from(1_000))
+                .max_notional(Money::from(10_000))
+                .build(),
+        )
+        .signal(
+            SignalThresholds::new()
+                .min_conviction(0.5)
+                .min_activity_score(0.5)
+                .build(),
+        )
+        .trade(
+            TradeThresholds::new()
+                .max_loss_per_trade(Money::from(500))
+                .max_spread_width(Money::from(25))
+                .min_dte_days(7)
+                .max_dte_days(60)
+                .build(),
+        )
+        .portfolio(
+            PortfolioThresholds::new()
+                .max_open_risk(Money::from(1_000_000))
+                .quote_max_age_secs(30)
+                .build(),
+        )
+        .breakers(BreakerLimits::new().max_consecutive_errors(2).build())
+        .valid_from(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap())
+        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
+        .build()
+}
+
+#[tokio::test]
+async fn arming_refuses_every_loosened_tier() {
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    let armed: ArmResponse = client
+        .post(format!("{}/grants/arm", base(&handle)))
+        .json(&mid_grant("mid"))
+        .send()
+        .await
+        .expect("arm reachable")
+        .json()
+        .await
+        .expect("arm responds");
+    assert!(armed.armed);
+
+    let mut loosened: Vec<(String, Grant)> = Vec::new();
+    let mut widen = |label: &str, f: fn(&mut Grant)| {
+        let mut grant = mid_grant("wider");
+        f(&mut grant);
+        loosened.push((label.to_owned(), grant));
+    };
+    widen("budgets", |g| g.budgets.max_trades = 11);
+    widen("signal-conviction", |g| g.signal.min_conviction = 0.4);
+    widen("signal-activity", |g| g.signal.min_activity_score = 0.4);
+    widen("trade-loss", |g| g.trade.max_loss_per_trade = Money::from(501));
+    widen("trade-spread", |g| g.trade.max_spread_width = Money::from(26));
+    widen("trade-min-dte", |g| g.trade.min_dte_days = 6);
+    widen("trade-max-dte", |g| g.trade.max_dte_days = 61);
+    widen("portfolio-risk", |g| g.portfolio.max_open_risk = Money::from(1_000_001));
+    widen("portfolio-age", |g| g.portfolio.quote_max_age_secs = 31);
+    widen("breakers", |g| g.breakers.max_consecutive_errors = 3);
+    widen("scope", |g| g.scope.directions.push(Direction::Short));
+    widen("window-end", |g| {
+        g.valid_until += chrono::Duration::days(1);
+    });
+    widen("window-start", |g| {
+        g.valid_from -= chrono::Duration::days(1);
+    });
+    assert_eq!(loosened.len(), 13);
+    for (label, grant) in &loosened {
+        let response = client
+            .post(format!("{}/grants/arm", base(&handle)))
+            .json(grant)
+            .send()
+            .await
+            .expect("re-arm reachable");
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::CONFLICT,
+            "loosened {label} tier must be refused"
+        );
+    }
+    let current: Option<Grant> = client
+        .get(format!("{}/grants/current", base(&handle)))
+        .send()
+        .await
+        .expect("current reachable")
+        .json()
+        .await
+        .expect("current is JSON");
+    assert_eq!(current.expect("refusals keep the armed grant").id, "mid");
+
+    let mut tighter = mid_grant("tighter");
+    tighter.budgets.max_trades = 9;
+    tighter.signal.min_conviction = 0.6;
+    tighter.valid_until -= chrono::Duration::days(1);
+    let accepted = client
+        .post(format!("{}/grants/arm", base(&handle)))
+        .json(&tighter)
+        .send()
+        .await
+        .expect("tighten reachable");
+    assert!(accepted.status().is_success(), "every-tier-tighter must arm");
+    handle.shutdown().await;
+}
+
 #[tokio::test]
 async fn chart_contract_matches_kernel_output() {
     let handle = boot().await;
@@ -367,6 +490,14 @@ async fn chart_contract_matches_kernel_output() {
         .values;
     assert_eq!(overlay.values, expected);
 
+    assert_eq!(overlay.dropped, 0, "clean history drops nothing from the overlay");
+    assert_eq!(bars.dropped, 0);
+    assert_eq!(
+        overlay.values.len(),
+        bars.rows.len(),
+        "rows and overlays agree positionally on clean history"
+    );
+
     let bad_kind = client
         .get(format!("{}/chart/overlays?kind=wma&period=14", base(&handle)))
         .send()
@@ -380,6 +511,21 @@ async fn chart_contract_matches_kernel_output() {
         .expect("bad period reachable");
     assert_eq!(bad_period.status(), reqwest::StatusCode::BAD_REQUEST);
     handle.shutdown().await;
+}
+
+#[test]
+fn overlay_scatter_holds_bar_alignment() {
+    // A bar whose close has no chart float keeps its index with `None`:
+    // values are never dropped, so later bars never shift.
+    let computed = vec![Some(1.0), Some(2.0), None, Some(4.0)];
+    let values = align_overlay(5, &[0, 1, 3, 4], &computed);
+    assert_eq!(values.len(), 5);
+    assert_eq!(values, vec![Some(1.0), Some(2.0), None, None, Some(4.0)]);
+    assert_eq!(values[2], None, "the unrepresentable bar holds its index");
+    assert_eq!(values[3], None, "kernel warmup Nones survive the scatter");
+    assert_eq!(values[0], Some(1.0));
+    assert_eq!(values[4], Some(4.0), "compacted slots map back to their bars");
+    assert_eq!(align_overlay(0, &[], &[]).len(), 0);
 }
 
 #[tokio::test]

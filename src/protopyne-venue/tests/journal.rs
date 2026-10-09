@@ -101,3 +101,90 @@ async fn writes_fail_closed_without_the_capability() {
         .expect_err("permit bound elsewhere");
     assert!(matches!(err, VenueError::Journal(_)));
 }
+
+#[tokio::test]
+async fn intent_write_leaves_no_half_written_state() {
+    // Intent plus its event commit atomically: replay must show both or the
+    // test would catch a crash-between-statements shape.
+    let (_dir, journal, permit) = setup();
+    let now = Utc::now();
+    scoped(permit.clone(), async {
+        journal.record_intent(&permit, &intent("a#0"), now).expect("intent");
+        let state = journal.replay(&permit).expect("replay");
+        assert_eq!(state.intents.len(), 1);
+        assert!(
+            state.events.iter().any(|e| e.client_id == "a#0" && e.kind == "intent"),
+            "the intent event must land with the intent row"
+        );
+        assert_eq!(
+            journal.intent_status(&permit, "a#0").expect("status"),
+            Some("pending".to_owned())
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn status_write_leaves_no_half_written_state() {
+    // Status UPDATE plus its event commit atomically: the stored status and
+    // the replayed events must agree after every transition.
+    let (_dir, journal, permit) = setup();
+    let now = Utc::now();
+    scoped(permit.clone(), async {
+        journal.record_intent(&permit, &intent("a#0"), now).expect("intent");
+        journal
+            .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
+            .expect("submitted");
+        assert_eq!(
+            journal.intent_status(&permit, "a#0").expect("status"),
+            Some("submitted".to_owned())
+        );
+        let state = journal.replay(&permit).expect("replay");
+        assert!(
+            state.events.iter().any(|e| e.client_id == "a#0" && e.kind == "submitted"),
+            "the transition event must land with the status row"
+        );
+        let record = journal
+            .record_from_replay(&permit, "a#0")
+            .expect("record")
+            .expect("known");
+        assert_eq!(record.status, OrderStatus::Submitted);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn outbox_covers_every_mid_flight_status() {
+    // Crash recovery resolves through query-by-ID every intent that never
+    // reached terminal: pending, submitted, AND acknowledged must all stay
+    // in the outbox, or a mid-flight ack would strand an unknown position.
+    let (_dir, journal, permit) = setup();
+    let now = Utc::now();
+    scoped(permit.clone(), async {
+        journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
+        journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
+        journal.record_intent(&permit, &intent("c#0"), now).expect("intent c");
+        journal
+            .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
+            .expect("submitted");
+        journal
+            .mark_status(&permit, "b#0", OrderStatus::Acknowledged, now)
+            .expect("acknowledged");
+        journal
+            .mark_status(&permit, "c#0", OrderStatus::Filled, now)
+            .expect("filled");
+        let pending: Vec<String> = journal
+            .outbox_pending(&permit)
+            .expect("outbox")
+            .into_iter()
+            .map(|intent| intent.client_id)
+            .collect();
+        assert!(pending.contains(&"a#0".to_owned()), "submitted stays pending: {pending:?}");
+        assert!(
+            pending.contains(&"b#0".to_owned()),
+            "acknowledged stays pending — it is still mid-flight: {pending:?}"
+        );
+        assert!(!pending.contains(&"c#0".to_owned()), "filled leaves the outbox");
+    })
+    .await;
+}

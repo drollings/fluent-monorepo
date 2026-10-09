@@ -60,10 +60,17 @@ impl RunManifest {
         }
     }
 
-    /// Deterministic JSON encoding of this manifest.
+    /// Deterministic JSON encoding of this manifest. Serialization of plain
+    /// pin data cannot fail in practice; a failure still reports loudly
+    /// inside the payload instead of emitting an empty object.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_owned())
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!(
+                "{{\"serialization_error\":{}}}",
+                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+            )
+        })
     }
 }
 
@@ -195,8 +202,9 @@ pub fn build_report(
     let fill_rate = if proposals == 0 {
         None
     } else {
-        let rate = f64::from(fills as u32) / f64::from(proposals as u32);
-        Some(rate)
+        // Direct `as f64` widening: the old `as u32` detour truncated counts
+        // past 2^32 into a wrong rate.
+        Some(fills as f64 / proposals as f64)
     };
     BacktestReport {
         manifest,

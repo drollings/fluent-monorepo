@@ -37,19 +37,12 @@ impl EmaIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 
     /// Smoothing factor for a period.
     pub fn factor(period: usize) -> f64 {
-        2.0 / (period as f64 + 1.0)
+        crate::math::ema_factor(period)
     }
 }
 
@@ -71,16 +64,16 @@ impl Indicator for EmaIndicator {
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         let closes = data.close;
         let period = Self::period(params)?;
-        let mut values = vec![None; closes.len()];
+        let mut values = crate::math::warmup_none(closes.len());
         if period <= closes.len() {
             let factor = Self::factor(period);
             let mut prev = f64::NAN;
             for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
                 let window = &closes[i + 1 - period..=i];
                 let next = if prev.is_nan() {
-                    window.iter().sum::<f64>() / period as f64
+                    crate::math::window_mean(window)
                 } else {
-                    closes[i] * factor + prev * (1.0 - factor)
+                    crate::math::ema_step(prev, closes[i], factor)
                 };
                 prev = next;
                 *value = fin_or_none(next);
@@ -100,11 +93,12 @@ impl Indicator for EmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
+        let window: Vec<f64> = state.closes().collect();
         let next = match state.last() {
             Some(prev) if !prev.is_nan() => {
-                bar.close * Self::factor(period) + prev * (1.0 - Self::factor(period))
+                crate::math::ema_step(prev, bar.close, Self::factor(period))
             }
-            _ => state.closes().sum::<f64>() / period as f64,
+            _ => crate::math::window_mean(&window),
         };
         state.set_last(next);
         Ok(fin_or_none(next))

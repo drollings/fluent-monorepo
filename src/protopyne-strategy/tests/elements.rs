@@ -85,3 +85,34 @@ fn limit_monitor_alerts_only_above_cap() {
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].portfolio, "tasty");
 }
+
+fn negative_money() -> Money {
+    Money::new(Decimal::from(-1))
+}
+
+#[test]
+fn propose_refuses_negative_economics() {
+    // Negative economics would sail through caps and poison budget
+    // accounting downward: each field refuses with a reason, never clamps.
+    let strategy = Strategy::with_signal(signal());
+    let closes = [100.0, 101.0];
+    let mut bad_limit = input(&closes);
+    bad_limit.limit_price = negative_money();
+    let err = strategy.propose("p", bad_limit).expect_err("negative limit");
+    assert!(matches!(err, StrategyError::InvalidElement(_)));
+    assert!(err.to_string().contains("limit"), "refusal names the field, got: {err}");
+
+    let mut bad_loss = input(&closes);
+    bad_loss.max_loss = negative_money();
+    let err = strategy.propose("p", bad_loss).expect_err("negative max loss");
+    assert!(matches!(err, StrategyError::InvalidElement(_)));
+    assert!(err.to_string().contains("max loss"), "refusal names the field, got: {err}");
+
+    let mut bad_notional = input(&closes);
+    bad_notional.notional = negative_money();
+    let err = strategy.propose("p", bad_notional).expect_err("negative notional");
+    assert!(matches!(err, StrategyError::InvalidElement(_)));
+    assert!(err.to_string().contains("notional"), "refusal names the field, got: {err}");
+
+    assert!(strategy.propose("p", input(&closes)).is_ok(), "non-negative economics still propose");
+}

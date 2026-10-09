@@ -1,4 +1,5 @@
 use super::*;
+use crate::load_bars_with_fallback;
 use std::path::PathBuf;
 
 fn test_data_path() -> PathBuf {
@@ -55,4 +56,82 @@ fn normalizes_lowercase_volume_header() {
 fn rejects_missing_column() {
     let content = ["time,open,high,low,close", "1767344400,1,2,3,4"].join("\n");
     assert!(parse_bars_csv(&content).is_err());
+}
+
+#[test]
+fn rejects_inverted_ohlc_row_with_line_and_rule() {
+    let content = [
+        "time,open,high,low,close,Volume",
+        "1767344400,686.03,686.62,683.82,686.56,19063",
+        "1767345300,686.56,686.24,686.57,686.57,4823",
+    ]
+    .join("\n");
+    let err = parse_bars_csv(&content).expect_err("high below low must refuse");
+    match err {
+        ServerError::BadRow { line, reason } => {
+            assert_eq!(line, 3);
+            assert!(reason.contains("high"), "refusal names the rule, got: {reason}");
+        }
+        other => panic!("must refuse in the BadRow shape, got: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_duplicate_timestamp_row_with_line_and_rule() {
+    let content = [
+        "time,open,high,low,close,Volume",
+        "1767344400,686.03,686.62,683.82,686.56,19063",
+        "1767344400,686.56,686.90,686.24,686.57,4823",
+    ]
+    .join("\n");
+    let err = parse_bars_csv(&content).expect_err("duplicate timestamp must refuse");
+    match err {
+        ServerError::BadRow { line, reason } => {
+            assert_eq!(line, 3);
+            assert!(
+                reason.contains("strictly increasing"),
+                "refusal names the ordering rule, got: {reason}"
+            );
+        }
+        other => panic!("must refuse in the BadRow shape, got: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_out_of_order_row_with_line_and_rule() {
+    let content = [
+        "time,open,high,low,close,Volume",
+        "1767345300,686.56,686.90,686.24,686.57,4823",
+        "1767344400,686.03,686.62,683.82,686.56,19063",
+    ]
+    .join("\n");
+    let err = parse_bars_csv(&content).expect_err("out-of-order timestamp must refuse");
+    match err {
+        ServerError::BadRow { line, reason } => {
+            assert_eq!(line, 3);
+            assert!(
+                reason.contains("strictly increasing"),
+                "refusal names the ordering rule, got: {reason}"
+            );
+        }
+        other => panic!("must refuse in the BadRow shape, got: {other:?}"),
+    }
+}
+
+#[test]
+fn fallback_advances_past_structurally_invalid_file() {
+    use std::io::Write as _;
+    let mut bad = tempfile::NamedTempFile::new().expect("temp file");
+    writeln!(
+        bad,
+        "time,open,high,low,close,Volume\n1767344400,686.03,683.82,686.62,686.56,19063"
+    )
+    .expect("write bad csv");
+    let bad_path = bad.path().to_path_buf();
+    assert!(matches!(
+        load_bars_csv(&bad_path),
+        Err(ServerError::BadRow { .. })
+    ));
+    let bars = load_bars_with_fallback(&[bad_path, test_data_path()]).expect("falls through to good file");
+    assert_eq!(bars.len(), 384);
 }

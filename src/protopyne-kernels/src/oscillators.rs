@@ -39,14 +39,7 @@ impl RsiIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 
     fn rsi_of(avg_gain: f64, avg_loss: f64) -> f64 {
@@ -154,16 +147,7 @@ impl MacdIndicator {
 
     /// Validate parameters shared by batch and update paths.
     pub fn lengths(params: &ParamSet) -> Result<(usize, usize, usize), KernelError> {
-        let each = |name: &str| {
-            let v = params.int(Self::ID, name)?;
-            if v < 1 {
-                return Err(KernelError::InvalidParam(format!(
-                    "{}: {name} must be at least 1, got {v}",
-                    Self::ID
-                )));
-            }
-            Ok(v as usize)
-        };
+        let each = |name: &str| crate::math::period_len(Self::ID, params, name);
         Ok((each("fast_length")?, each("slow_length")?, each("signal_length")?))
     }
 }
@@ -296,14 +280,7 @@ impl StochIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 
     fn k_of(close: f64, lowest: f64, highest: f64) -> f64 {

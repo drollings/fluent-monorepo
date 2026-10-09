@@ -245,3 +245,34 @@ fn hir_helpers_split_and_lower_edge_cases() {
     assert_eq!(parse_input_binding("n = input.float(3.0, \"n\")"), Some(("n".to_owned(), 3)));
     assert!(parse_plot("not-a-plot").is_none());
 }
+
+#[test]
+fn evaluation_refuses_unknown_input_names() {
+    // A length bound to an input name with no supplied value refuses naming
+    // the input — substituting the parse-time default would silently
+    // evaluate a script the caller never configured.
+    let lowered = Lowered {
+        bindings: vec![Binding {
+            name: "s".to_owned(),
+            hair: Hair::Rolling {
+                kernel: "sma".to_owned(),
+                length: Length::Input("mystery".to_owned(), 14),
+                series: Box::new(Hair::Ohlcv("close".to_owned())),
+            },
+        }],
+        plots: vec!["s".to_owned()],
+    };
+    let empty: HashMap<String, i64> = HashMap::new();
+    let err = evaluate_lowered(&lowered, &closes(30), &empty)
+        .expect_err("unknown input must refuse, never substitute the default");
+    assert!(
+        err.to_string().contains("mystery"),
+        "refusal names the input, got: {err}"
+    );
+    let supplied: HashMap<String, i64> =
+        [("mystery".to_owned(), 14)].into_iter().collect();
+    let evaluated = evaluate_lowered(&lowered, &closes(30), &supplied).expect("supplied input evaluates");
+    assert_eq!(evaluated.len(), 1);
+    assert_eq!(evaluated[0].0, "s");
+    assert_eq!(evaluated[0].1.len(), 30);
+}

@@ -34,14 +34,7 @@ impl SmaIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 }
 
@@ -63,11 +56,11 @@ impl Indicator for SmaIndicator {
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         let closes = data.close;
         let period = Self::period(params)?;
-        let mut values = vec![None; closes.len()];
+        let mut values = crate::math::warmup_none(closes.len());
         if period <= closes.len() {
             for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
                 let window = &closes[i + 1 - period..=i];
-                let mean = window.iter().sum::<f64>() / period as f64;
+                let mean = crate::math::window_mean(window);
                 *value = crate::indicator::fin_or_none(mean);
             }
         }
@@ -85,7 +78,8 @@ impl Indicator for SmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let mean = state.closes().sum::<f64>() / period as f64;
+        let window: Vec<f64> = state.closes().collect();
+        let mean = crate::math::window_mean(&window);
         state.set_last(mean);
         Ok(crate::indicator::fin_or_none(mean))
     }

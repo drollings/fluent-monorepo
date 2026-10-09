@@ -1,0 +1,14 @@
+[package]
+name = "protopyne-chart-scale"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

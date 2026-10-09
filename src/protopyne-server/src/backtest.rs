@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{CorporateEvent, DryRunOutcome, OrderIntent, OrderRecord, PaperVenue, Position, Quote, Venue, VenueError};
+use protopyne_venue::{CorporateEvent, DryRunOutcome, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError};
 
 use crate::csv::load_bars_csv;
 use crate::error::ServerError;
@@ -49,6 +49,11 @@ impl BacktestConfig {
         }
         if self.data_version.trim().is_empty() {
             return Err(ServerError::Backtest("data_version must be pinned".to_owned()));
+        }
+        if self.quote_spread_bps > 10_000 {
+            return Err(ServerError::Backtest(
+                "quote_spread_bps must not exceed 10_000 (100% of close)".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -126,17 +131,20 @@ pub struct BacktestVenue {
 }
 
 impl BacktestVenue {
-    /// Pin `bars` to `config` over `paper` fill behavior.
+    /// Pin `bars` to `config` over explicitly tuned paper fills. The tuning
+    /// (fees, slippage, liquidity filter) is a stated assumption, not a
+    /// hidden default: callers that want today's values pass
+    /// `PaperConfig::new().build()` and say so.
     pub fn new(
         config: BacktestConfig,
         bars: Vec<Bar>,
-        inner: PaperVenue,
+        paper: PaperConfig,
     ) -> Result<Self, ServerError> {
         config.validate()?;
         if bars.is_empty() {
             return Err(ServerError::Backtest("history must not be empty".to_owned()));
         }
-        Ok(Self { config, bars, inner })
+        Ok(Self { config, bars, inner: PaperVenue::new(paper) })
     }
 
     /// Borrow the venue configuration (pin + quote assumptions).

@@ -124,8 +124,7 @@ impl<'a> DependencyResolver<'a> {
         self
     }
 
-    pub fn resolve(&self, target_names: &[&str]) -> Result<ExecutionPlan, ResolverError> {
-        if target_names.is_empty() {
+    pub fn resolve(&self, target_names: &[&str]) -> Result<ExecutionPlan, ResolverError> {        if target_names.is_empty() {
             return Ok(ExecutionPlan {
                 order: Vec::new(),
                 target_names: Vec::new(),
@@ -156,13 +155,112 @@ impl<'a> DependencyResolver<'a> {
         }
     }
 
+    /// Resolve seeds that may carry version constraints (`libBars/11`,
+    /// `pkg/>=1.2`, `pkg/10..12`).
+    ///
+    /// Each constrained import pre-selects exactly one provider
+    /// (match-or-refuse via `crate::version::select_provider`); the rewritten
+    /// seed list then runs through the unchanged [`resolve`](Self::resolve)
+    /// paths. Bare seeds pass through untouched, so unconstrained resolution
+    /// behaves byte-identically to `resolve`. Provider versions come from the
+    /// caller's `versions` map (target name → version) — the registry itself
+    /// is untouched. A constrained import without a `CapabilityRegistry`
+    /// refuses with `MissingDependency` rather than guessing.
+    pub fn resolve_versioned(
+        &self,
+        seeds: &[&str],
+        versions: &std::collections::HashMap<String, crate::version::Version>,
+    ) -> Result<ExecutionPlan, ResolverError> {
+        use crate::version::{select_provider, split_import, VersionReq};
+        let mut rewritten: Vec<String> = Vec::with_capacity(seeds.len());
+        let mut excluded: HashSet<usize> = HashSet::new();
+        for seed in seeds {
+            let (name, req) = split_import(seed);
+            let Some(req_text) = req else {
+                rewritten.push((*seed).to_string());
+                continue;
+            };
+            let req = VersionReq::parse(req_text).map_err(ResolverError::MissingDependency)?;
+            let caps = self.caps.ok_or_else(|| {
+                ResolverError::MissingDependency(format!(
+                    "versioned import '{seed}' requires a CapabilityRegistry"
+                ))
+            })?;
+            let cap_idx = caps.get_index(name).ok_or_else(|| {
+                ResolverError::MissingDependency(format!(
+                    "no provider for '{name}' at version '{req}' (unknown capability)"
+                ))
+            })?;
+            let candidates = self.registry.get_providers(cap_idx);
+            if candidates.is_empty() {
+                return Err(crate::narrowing::missing_provider_error(
+                    Some(caps),
+                    cap_idx,
+                    name,
+                ));
+            }
+            let winner = select_provider(name, &req, candidates.clone(), versions)?;
+            for rival in candidates {
+                if rival.id != winner.id {
+                    excluded.insert(rival.id as usize);
+                }
+            }
+            rewritten.push(winner.name.to_string());
+        }
+        // A bare seed naming an excluded rival contradicts the pin — refuse
+        // rather than silently dropping the caller's explicit seed.
+        for seed in &rewritten {
+            if let Some(target) = self.registry.get(seed.as_str()) {
+                if excluded.contains(&(target.id as usize)) {
+                    return Err(ResolverError::MissingDependency(format!(
+                        "seed '{seed}' contradicts a version pin (its provider was excluded)"
+                    )));
+                }
+            }
+        }
+        let refs: Vec<&str> = rewritten.iter().map(String::as_str).collect();
+        let seed_bits: Result<Vec<usize>, ResolverError> = refs
+            .iter()
+            .map(|name| {
+                self.registry
+                    .get(name)
+                    .map(|t| t.id as usize)
+                    .ok_or_else(|| ResolverError::TargetNotFound((*name).to_string()))
+            })
+            .collect();
+        let seed_bits = seed_bits?;
+        match self.selection {
+            ProviderSelection::All => self.resolve_all_with(seed_bits, &excluded),
+            ProviderSelection::NarrowOne => {
+                let caps = self.caps.ok_or_else(|| {
+                    ResolverError::MissingDependency(
+                        "NarrowOne requires a CapabilityRegistry".into(),
+                    )
+                })?;
+                self.resolve_narrow_one_with(&seed_bits, &refs, caps, &excluded)
+            }
+        }
+    }
+
     fn resolve_all(&self, seed_bits: Vec<usize>) -> Result<ExecutionPlan, ResolverError> {
+        self.resolve_all_with(seed_bits, &HashSet::new())
+    }
+
+    /// `resolve_all` with an exclusion set: excluded targets never enter the
+    /// plan through expansion (explicit seeds still resolve — seeds bypass
+    /// the guard, matching `transitive_closure` seed semantics). An empty
+    /// set behaves exactly like [`resolve`](Self::resolve).
+    fn resolve_all_with(
+        &self,
+        seed_bits: Vec<usize>,
+        excluded: &HashSet<usize>,
+    ) -> Result<ExecutionPlan, ResolverError> {
         let ctx = ClosureCtx {
             registry: self.registry,
             caps: None,
             strict: self.strict,
         };
-        let needed = closure::transitive_closure(&ctx, seed_bits, None, None)?;
+        let needed = closure::transitive_closure(&ctx, seed_bits, None, Some(excluded))?;
         self.plan_from_set(&needed)
     }
 
@@ -181,6 +279,22 @@ impl<'a> DependencyResolver<'a> {
         target_names: &[&str],
         caps: &'a CapabilityRegistry,
     ) -> Result<ExecutionPlan, ResolverError> {
+        self.resolve_narrow_one_with(seed_bits, target_names, caps, &HashSet::new())
+    }
+
+    /// `resolve_narrow_one` with an exclusion set (version pins): excluded
+    /// providers never contest a capability — every provider list is filtered
+    /// before the fast-path check, the fixpoint expansion, and the abstract
+    /// self-provision branch, and the fixpoint `rejected` set starts
+    /// pre-seeded so losers stay out of the final expansion. An empty set
+    /// behaves exactly like [`resolve`](Self::resolve).
+    fn resolve_narrow_one_with(
+        &self,
+        seed_bits: &[usize],
+        target_names: &[&str],
+        caps: &'a CapabilityRegistry,
+        excluded: &HashSet<usize>,
+    ) -> Result<ExecutionPlan, ResolverError> {
         let ctx = ClosureCtx {
             registry: self.registry,
             caps: Some(caps),
@@ -198,9 +312,12 @@ impl<'a> DependencyResolver<'a> {
 
         let mut multi_provider_cap = false;
         for &bit in &closure_set {
+            if excluded.contains(&bit) {
+                continue;
+            }
             if let Some(target) = self.registry.get_by_bit_index(bit) {
                 for cap in target.depends.iter_ones() {
-                    if self.registry.get_providers(cap).len() > 1 {
+                    if live_providers(self.registry.get_providers(cap), excluded).len() > 1 {
                         multi_provider_cap = true;
                         break;
                     }
@@ -213,11 +330,11 @@ impl<'a> DependencyResolver<'a> {
 
         // Fast path: no ambiguity at all → delegate to All (zero narrowing overhead)
         if !has_abstract_seed && !multi_provider_cap {
-            return self.resolve_all(seed_bits.to_vec());
+            return self.resolve_all_with(seed_bits.to_vec(), excluded);
         }
 
         let mut resolved_set: HashSet<usize> = seed_bits.iter().copied().collect();
-        let mut rejected: HashSet<usize> = HashSet::new();
+        let mut rejected: HashSet<usize> = excluded.clone();
         let mut narrowed_caps: HashSet<usize> = HashSet::new();
         let mut changed = true;
 
@@ -246,7 +363,8 @@ impl<'a> DependencyResolver<'a> {
                         if narrowed_caps.contains(&cap_idx) || full_provides.contains(&cap_idx) {
                             continue;
                         }
-                        let providers = self.registry.get_providers(cap_idx);
+                        let providers =
+                            live_providers(self.registry.get_providers(cap_idx), excluded);
                         if providers.is_empty() {
                             if let Some(p_bit) =
                                 closure::implicit_provider_bit(self.registry, Some(caps), cap_idx)
@@ -294,7 +412,8 @@ impl<'a> DependencyResolver<'a> {
                         if narrowed_caps.contains(&ci) {
                             continue;
                         }
-                        let providers = self.registry.get_providers(ci);
+                        let providers =
+                            live_providers(self.registry.get_providers(ci), excluded);
                         if providers.len() > 1 {
                             narrowed_caps.insert(ci);
                             if apply_narrowed(
@@ -431,6 +550,18 @@ fn apply_narrowed(
         }
         _ => Err(narrowing::ambiguous_error(caps, cap_idx, &narrowed)),
     }
+}
+
+/// Providers surviving an exclusion set (version pins): drops every target
+/// whose bit index is excluded. Empty exclusions return the input unchanged.
+fn live_providers<'t>(
+    providers: Vec<&'t Target>,
+    excluded: &std::collections::HashSet<usize>,
+) -> Vec<&'t Target> {
+    providers
+        .into_iter()
+        .filter(|t| !excluded.contains(&(t.id as usize)))
+        .collect()
 }
 
 fn compute_full_provides(registry: &TargetRegistry, target_set: &HashSet<usize>) -> HashSet<usize> {

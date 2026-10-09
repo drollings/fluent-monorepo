@@ -19,6 +19,7 @@ use crate::indicator::{
     fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
     ParamSet,
 };
+use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 
 /// Wilder's smoothing (`rma`), parameterized by `length`.
@@ -44,14 +45,7 @@ impl RmaIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 }
 
@@ -73,15 +67,15 @@ impl Indicator for RmaIndicator {
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         let closes = data.close;
         let period = Self::period(params)?;
-        let mut values = vec![None; closes.len()];
+        let mut values = crate::math::warmup_none(closes.len());
         if period <= closes.len() {
             let mut prev = f64::NAN;
             for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
                 let window = &closes[i + 1 - period..=i];
                 let next = if prev.is_nan() {
-                    window.iter().sum::<f64>() / period as f64
+                    crate::math::window_mean(window)
                 } else {
-                    (closes[i] + prev * (period as f64 - 1.0)) / period as f64
+                    crate::math::wilder_step(prev, closes[i], period)
                 };
                 prev = next;
                 *value = fin_or_none(next);
@@ -101,11 +95,10 @@ impl Indicator for RmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
+        let window: Vec<f64> = state.closes().collect();
         let next = match state.last() {
-            Some(prev) if !prev.is_nan() => {
-                (bar.close + prev * (period as f64 - 1.0)) / period as f64
-            }
-            _ => state.closes().sum::<f64>() / period as f64,
+            Some(prev) if !prev.is_nan() => crate::math::wilder_step(prev, bar.close, period),
+            _ => crate::math::window_mean(&window),
         };
         state.set_last(next);
         Ok(fin_or_none(next))
@@ -135,14 +128,7 @@ impl WmaIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 
     /// Weighted mean of a full window, oldest first, current bar heaviest:
@@ -229,14 +215,8 @@ impl HmaIndicator {
     /// Validate `length` and derive the three composed `wma` periods
     /// (integer halving, rounded root, each at least 1).
     pub fn periods(params: &ParamSet) -> Result<(usize, usize, usize), KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        let full = length as usize;
+        let length = crate::math::period_len(Self::ID, params, "length")?;
+        let full = length;
         let half = (full / 2).max(1);
         let root = (full as f64).sqrt().round() as usize;
         Ok((half, full, root.max(1)))
@@ -335,14 +315,7 @@ impl VwmaIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 }
 
@@ -427,13 +400,7 @@ impl AlmaIndicator {
 
     /// Validate parameters shared by batch and update paths.
     pub fn shape(params: &ParamSet) -> Result<(usize, f64, f64), KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
+        let length = crate::math::period_len(Self::ID, params, "length")?;
         let offset = params.float(Self::ID, "offset")?;
         if !(0.0..=1.0).contains(&offset) {
             return Err(KernelError::InvalidParam(format!(
@@ -448,7 +415,7 @@ impl AlmaIndicator {
                 Self::ID
             )));
         }
-        Ok((length as usize, offset, sigma))
+        Ok((length, offset, sigma))
     }
 
     /// Gaussian weights indexed by bars back from the current bar.
@@ -520,6 +487,203 @@ impl Indicator for AlmaIndicator {
         let alma = Self::of_window(&window, &weights);
         state.set_last(alma);
         Ok(fin_or_none(alma))
+    }
+}
+
+/// Double exponential moving average (`dema`), parameterized by `length`.
+///
+/// `2 * ema(close) - ema(ema(close))`: the second smoothing estimates the
+/// first pass's lag and adds it back, so trends read with less delay than a
+/// single pass. Both passes are the shared [`EmaIndicator`] itself (same
+/// seeding and `na` shape), composed through child states exactly like the
+/// `macd` signal line, so batch and incremental paths cannot diverge.
+pub struct DemaIndicator {
+    spec: IndicatorSpec,
+}
+
+impl DemaIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "dema";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Double Exponential Moving Average".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    fn ema_params(period: usize) -> ParamSet {
+        ParamSet::new().with_int("length", period as i64)
+    }
+}
+
+impl Default for DemaIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for DemaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        let period = Self::period(params)?;
+        Ok(2 * period - 1)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let ema = EmaIndicator::new();
+        let first = ema.batch(data, &Self::ema_params(period))?;
+        let first_raw: Vec<f64> =
+            first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+        let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
+        let values = first
+            .values
+            .iter()
+            .zip(second.values.iter())
+            .map(|(one, two)| match (one, two) {
+                (Some(one), Some(two)) => fin_or_none(2.0 * one - two),
+                _ => None,
+            })
+            .collect();
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        let ema = EmaIndicator::new();
+        let first = ema.update(state.child(0), bar, &Self::ema_params(period))?;
+        let second = ema.update(
+            state.child(1),
+            BarTick::close_only(first.unwrap_or(f64::NAN)),
+            &Self::ema_params(period),
+        )?;
+        let raw = match (first, second) {
+            (Some(one), Some(two)) => 2.0 * one - two,
+            _ => f64::NAN,
+        };
+        state.set_last(raw);
+        Ok(fin_or_none(raw))
+    }
+}
+
+/// Triple exponential moving average (`tema`), parameterized by `length`.
+///
+/// `3 * ema1 - 3 * ema2 + ema3`: the third pass removes the residual lag of
+/// the second, so a steady ramp reads with no delay. All three passes are
+/// the shared [`EmaIndicator`], composed through child states.
+pub struct TemaIndicator {
+    spec: IndicatorSpec,
+}
+
+impl TemaIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "tema";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Triple Exponential Moving Average".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    fn ema_params(period: usize) -> ParamSet {
+        ParamSet::new().with_int("length", period as i64)
+    }
+}
+
+impl Default for TemaIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for TemaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        let period = Self::period(params)?;
+        Ok(3 * period - 2)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let ema = EmaIndicator::new();
+        let first = ema.batch(data, &Self::ema_params(period))?;
+        let first_raw: Vec<f64> =
+            first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+        let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
+        let second_raw: Vec<f64> =
+            second.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+        let third = ema.batch(&Ohlcv::close_only(&second_raw), &Self::ema_params(period))?;
+        let values = first
+            .values
+            .iter()
+            .zip(second.values.iter())
+            .zip(third.values.iter())
+            .map(|((one, two), three)| match (one, two, three) {
+                (Some(one), Some(two), Some(three)) => fin_or_none(3.0 * one - 3.0 * two + three),
+                _ => None,
+            })
+            .collect();
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        let ema = EmaIndicator::new();
+        let first = ema.update(state.child(0), bar, &Self::ema_params(period))?;
+        let second = ema.update(
+            state.child(1),
+            BarTick::close_only(first.unwrap_or(f64::NAN)),
+            &Self::ema_params(period),
+        )?;
+        let third = ema.update(
+            state.child(2),
+            BarTick::close_only(second.unwrap_or(f64::NAN)),
+            &Self::ema_params(period),
+        )?;
+        let raw = match (first, second, third) {
+            (Some(one), Some(two), Some(three)) => 3.0 * one - 3.0 * two + three,
+            _ => f64::NAN,
+        };
+        state.set_last(raw);
+        Ok(fin_or_none(raw))
     }
 }
 

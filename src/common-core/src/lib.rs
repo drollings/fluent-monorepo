@@ -30,6 +30,7 @@ pub mod error;
 pub mod error_context;
 pub mod format;
 pub mod git;
+pub mod golden;
 pub mod hash;
 #[cfg(feature = "http")]
 pub mod http;

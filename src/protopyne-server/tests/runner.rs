@@ -6,13 +6,13 @@ use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_strategy::{
-    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket, GrantPermission,
-    GrantScope, PortfolioThresholds, ProposalSide, RiskEngine, RiskLimits, SignalThresholds,
+    BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket, GrantPermission,
+    GrantScope, GrantUsage, PortfolioThresholds, ProposalSide, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
     elements::{ExplicitStructure, FixedContracts},
 };
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{PaperConfig, PaperVenue};
+use protopyne_venue::{Fault, PaperConfig, PaperVenue};
 
 fn money(value: i64) -> Money {
     Money::new(Decimal::from(value))
@@ -337,4 +337,631 @@ fn runner_helpers_stay_on_the_venue_trait() {
     let quote = quote_for_bar(&history()[0], &venue_config()).expect("quotable");
     assert!([None, Some(&quote)].into_iter().find_map(|entry| entry).is_some());
     let _ = (ProposalSide::Entry, GrantMarket::new, StructureKind::Vertical);
+}
+
+fn decimal_money(value: &str) -> Money {
+    Money::new(value.parse::<Decimal>().expect("decimal"))
+}
+
+fn synthetic_bar(close: &str, secs: i64) -> Bar {
+    let price = close.parse::<Decimal>().expect("decimal");
+    Bar::new()
+        .ts(Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap() + chrono::Duration::minutes(secs))
+        .o(price)
+        .h(price)
+        .l(price)
+        .c(price)
+        .volume(1_000)
+        .maybe_adj(None)
+        .build()
+}
+
+fn filled_decision(
+    bar_index: usize,
+    ts: String,
+    direction: Direction,
+    quantity: u32,
+    price: &str,
+    fee: &str,
+) -> BarDecision {
+    BarDecision {
+        bar_index,
+        ts,
+        proposal_id: format!("synthetic-{bar_index}"),
+        direction: Some(direction),
+        risk_pass: true,
+        risk_reasons: Vec::new(),
+        grant_allow: true,
+        grant_reasons: Vec::new(),
+        submitted: true,
+        limit_price: decimal_money(price),
+        checked_limit: decimal_money(price),
+        submitted_quantity: quantity,
+        filled_quantity: quantity,
+        fill_price: Some(decimal_money(price)),
+        fee: Some(decimal_money(fee)),
+        skipped: None,
+    }
+}
+
+fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
+    BarDecision {
+        bar_index,
+        ts,
+        proposal_id: format!("synthetic-{bar_index}"),
+        direction: None,
+        risk_pass: false,
+        risk_reasons: Vec::new(),
+        grant_allow: false,
+        grant_reasons: Vec::new(),
+        submitted: false,
+        limit_price: Money::new(Decimal::ZERO),
+        checked_limit: Money::new(Decimal::ZERO),
+        submitted_quantity: 0,
+        filled_quantity: 0,
+        fill_price: None,
+        fee: None,
+        skipped: Some("warmup".to_owned()),
+    }
+}
+
+#[test]
+fn equity_curve_leaves_pre_fill_bars_flat() {
+    let bars = vec![
+        synthetic_bar("110.00", 0),
+        synthetic_bar("111.00", 1),
+        synthetic_bar("112.00", 2),
+        synthetic_bar("113.00", 3),
+        synthetic_bar("114.00", 4),
+    ];
+    let decisions = vec![
+        flat_decision(0, bars[0].ts.to_rfc3339()),
+        flat_decision(1, bars[1].ts.to_rfc3339()),
+        flat_decision(2, bars[2].ts.to_rfc3339()),
+        flat_decision(3, bars[3].ts.to_rfc3339()),
+        filled_decision(4, bars[4].ts.to_rfc3339(), Direction::Long, 2, "100.00", "0.00"),
+    ];
+    let curve = equity_curve_for(&bars, &decisions);
+    assert_eq!(curve.len(), 5);
+    let zero = Decimal::ZERO;
+    assert_eq!(curve[0].as_decimal(), zero, "bars before any fill must read flat zero");
+    assert_eq!(curve[1].as_decimal(), zero);
+    assert_eq!(curve[2].as_decimal(), zero);
+    assert_eq!(curve[3].as_decimal(), zero);
+    assert_eq!(
+        curve[4].as_decimal(),
+        Decimal::from(-200) + Decimal::from(2) * Decimal::from(114),
+        "final bar marks cash plus open position at its close"
+    );
+}
+
+#[test]
+fn equity_curve_ramps_only_after_each_fill() {
+    let bars = vec![
+        synthetic_bar("100.00", 0),
+        synthetic_bar("100.00", 1),
+        synthetic_bar("100.00", 2),
+        synthetic_bar("100.00", 3),
+    ];
+    let decisions = vec![
+        flat_decision(0, bars[0].ts.to_rfc3339()),
+        filled_decision(1, bars[1].ts.to_rfc3339(), Direction::Long, 1, "10.00", "1.00"),
+        flat_decision(2, bars[2].ts.to_rfc3339()),
+        filled_decision(3, bars[3].ts.to_rfc3339(), Direction::Long, 1, "20.00", "1.00"),
+    ];
+    let curve = equity_curve_for(&bars, &decisions);
+    assert_eq!(curve.len(), 4);
+    assert_eq!(curve[0].as_decimal(), Decimal::ZERO, "pre-fill bar must stay flat");
+    assert_eq!(
+        curve[1].as_decimal(),
+        Decimal::from(-11) + Decimal::from(100),
+        "first fill marks its own bar"
+    );
+    assert_eq!(
+        curve[2].as_decimal(),
+        curve[1].as_decimal(),
+        "bars with no fill carry the previous mark forward"
+    );
+    assert_eq!(
+        curve[3].as_decimal(),
+        Decimal::from(-32) + Decimal::from(2) * Decimal::from(100),
+        "second fill accumulates on the running state"
+    );
+}
+
+#[test]
+fn equity_curve_marks_shorts_against_later_closes() {
+    let bars = vec![
+        synthetic_bar("100.00", 0),
+        synthetic_bar("110.00", 1),
+        synthetic_bar("120.00", 2),
+        synthetic_bar("130.00", 3),
+    ];
+    let decisions = vec![
+        flat_decision(0, bars[0].ts.to_rfc3339()),
+        flat_decision(1, bars[1].ts.to_rfc3339()),
+        filled_decision(2, bars[2].ts.to_rfc3339(), Direction::Short, 1, "120.00", "0.00"),
+        flat_decision(3, bars[3].ts.to_rfc3339()),
+    ];
+    let curve = equity_curve_for(&bars, &decisions);
+    assert_eq!(curve[0].as_decimal(), Decimal::ZERO);
+    assert_eq!(curve[1].as_decimal(), Decimal::ZERO, "pre-fill bars stay flat on shorts too");
+    assert_eq!(curve[2].as_decimal(), Decimal::ZERO, "short filled at its own close marks zero");
+    assert_eq!(
+        curve[3].as_decimal(),
+        Decimal::from(120) - Decimal::from(130),
+        "later bars mark the open short at their close"
+    );
+}
+
+#[test]
+fn equity_curve_with_no_decisions_stays_flat() {
+    let bars = vec![synthetic_bar("100.00", 0), synthetic_bar("101.00", 1)];
+    let curve = equity_curve_for(&bars, &[]);
+    assert_eq!(curve.len(), 2);
+    assert!(curve.iter().all(|mark| mark.as_decimal() == Decimal::ZERO));
+}
+
+#[tokio::test]
+async fn quote_config_flows_into_submitted_touch() {
+    let bars = history();
+    let wide_config = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("spy-15m-wide".to_owned())
+        .quote_spread_bps(200)
+        .quote_size(100)
+        .build();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &wide_config,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("wide-spread run");
+    let mut checked = 0;
+    for decision in &run.decisions {
+        if decision.submitted {
+            let expected =
+                quote_for_bar(&bars[decision.bar_index], &wide_config).expect("quotable bar");
+            let touch = match decision.direction {
+                Some(Direction::Short) => expected.bid,
+                _ => expected.ask,
+            };
+            assert_eq!(
+                decision.checked_limit, touch,
+                "submitted limit must use the configured 200 bps spread, not the default"
+            );
+            let default_touch = quote_for_bar(&bars[decision.bar_index], &venue_config())
+                .expect("quotable bar")
+                .ask;
+            assert_ne!(
+                decision.checked_limit, default_touch,
+                "200 bps touch must differ from the 5 bps default on real closes"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "liquid history must fill something under a wide spread");
+}
+
+#[tokio::test]
+async fn paper_path_prices_at_its_labeled_default_spread() {
+    let bars = history();
+    let paper = PaperVenue::new(PaperConfig::new().build());
+    let decisions =
+        run_paper_decisions(&strategy(), &risk(), &grant_with(0.5), &paper, &runner_config(), &bars, 11)
+            .await;
+    let labeled = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("paper-synthetic".to_owned())
+        .build();
+    let mut checked = 0;
+    for decision in &decisions {
+        if decision.submitted {
+            let touch = quote_for_bar(&bars[decision.bar_index], &labeled).expect("quotable bar").ask;
+            assert_eq!(
+                decision.checked_limit, touch,
+                "paper fills must price at the labeled paper-synthetic default spread"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "liquid history must fill something on the paper path");
+}
+
+fn transport_skipped(decision: &BarDecision) -> &str {
+    decision.skipped.as_deref().unwrap_or("<submitted>")
+}
+
+#[tokio::test]
+async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
+    let bars = history();
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    for _ in 0..5 {
+        venue.inject(Fault::DropConnection);
+    }
+    let decisions =
+        run_paper_decisions(&strategy(), &risk(), &grant_with(0.5), &venue, &runner_config(), &bars, 11)
+            .await;
+    // max_consecutive_errors is 3: the first three transport failures still
+    // arm (the venue is called), the fourth trips, the rest disarm.
+    for (index, decision) in decisions.iter().enumerate().take(4) {
+        assert!(!decision.submitted, "bar {index} must fail on its injected fault");
+        let skipped = transport_skipped(decision);
+        assert!(
+            skipped.contains("connection dropped"),
+            "bar {index} must bank the transport failure, got: {skipped:?}"
+        );
+        assert!(
+            !skipped.contains("breaker"),
+            "bar {index} (error {} of 3+1) must still be armed",
+            index + 1
+        );
+        assert!(decision.risk_pass && decision.grant_allow, "merit still allows on bar {index}");
+    }
+    for (index, decision) in decisions.iter().enumerate().skip(4) {
+        assert!(!decision.submitted, "bar {index} must stay disarmed after the trip");
+        assert!(
+            transport_skipped(decision).contains("breaker tripped"),
+            "bar {index} must name the disarm, got: {:?}",
+            decision.skipped
+        );
+        assert!(
+            decision.risk_pass && decision.grant_allow,
+            "bar {index}: disarm must not rewrite the merit verdict"
+        );
+    }
+    assert_eq!(
+        venue.pending_faults(),
+        1,
+        "disarmed bars must not touch the venue at all"
+    );
+}
+
+#[tokio::test]
+async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
+    let bars = history();
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    for _ in 0..3 {
+        venue.inject(Fault::DropConnection);
+    }
+    let decisions =
+        run_paper_decisions(&strategy(), &risk(), &grant_with(0.5), &venue, &runner_config(), &bars, 11)
+            .await;
+    for decision in decisions.iter().take(3) {
+        assert!(transport_skipped(decision).contains("connection dropped"));
+        assert!(!transport_skipped(decision).contains("breaker"), "exactly max errors must still arm");
+    }
+    assert!(
+        decisions.iter().any(|decision| decision.submitted),
+        "the first clean bar must submit once the streak resets"
+    );
+    assert!(
+        !decisions.iter().any(|decision| transport_skipped(decision).contains("breaker")),
+        "a run that never exceeds the max must never disarm"
+    );
+}
+
+#[tokio::test]
+async fn merit_denials_never_feed_the_breaker() {
+    let bars = history();
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    for _ in 0..2 {
+        venue.inject(Fault::DropConnection);
+    }
+    let decisions =
+        run_paper_decisions(&strategy(), &risk(), &grant_with(0.95), &venue, &runner_config(), &bars, 11)
+            .await;
+    assert!(decisions.iter().all(|decision| !decision.submitted));
+    assert_eq!(
+        venue.pending_faults(),
+        2,
+        "merit-denied proposals must never reach the venue, so faults stay queued"
+    );
+    assert!(
+        !decisions.iter().any(|decision| transport_skipped(decision).contains("breaker")),
+        "denials are task-value information, never producer doubt"
+    );
+}
+
+#[tokio::test]
+async fn stale_quote_refuses_on_risk_and_grant_paths() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let strategy = strategy();
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let health = BarHealth {
+        quote_age_secs: 3_600,
+        clock_skew_secs: 0,
+        reconciliation_healthy: true,
+    };
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let decision = decide_and_submit(
+        &strategy,
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &venue_config(),
+        &mut breakers,
+        health,
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(!decision.risk_pass, "stale data must fail the risk gate");
+    assert!(
+        decision.risk_reasons.iter().any(|reason| reason.contains("StaleQuote")),
+        "risk refusal names the gate, got: {:?}",
+        decision.risk_reasons
+    );
+    assert!(!decision.grant_allow, "stale data must fail the grant gate");
+    assert!(
+        decision.grant_reasons.iter().any(|reason| reason.contains("stale")),
+        "grant refusal names the gate, got: {:?}",
+        decision.grant_reasons
+    );
+    assert!(!decision.submitted);
+    assert!(venue.orders().is_empty(), "refused bars never reach the venue");
+}
+
+#[tokio::test]
+async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let strategy = strategy();
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new()
+        .tripped(true)
+        .trip_reason("test trip".to_owned())
+        .build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let decision = decide_and_submit(
+        &strategy,
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(decision.risk_pass, "merit verdict must stay Allow while tripped");
+    assert!(decision.grant_allow, "merit verdict must stay Allow while tripped");
+    assert!(decision.risk_reasons.is_empty() && decision.grant_reasons.is_empty());
+    assert!(!decision.submitted, "tripped entries disarm");
+    assert!(
+        transport_skipped(&decision).contains("breaker tripped"),
+        "disarm names its cause, got: {:?}",
+        decision.skipped
+    );
+    assert!(venue.orders().is_empty(), "disarmed bars never reach the venue");
+}
+
+struct TripCase {
+    label: &'static str,
+    faults: Vec<Fault>,
+    seed: u64,
+    should_trip: bool,
+}
+
+fn trip_observed(decisions: &[BarDecision]) -> bool {
+    decisions.iter().any(|decision| {
+        decision
+            .skipped
+            .as_deref()
+            .unwrap_or("")
+            .contains("breaker tripped")
+    })
+}
+
+#[tokio::test]
+async fn soak_breaker_trip_precision_recall_with_clean_control() {
+    // Soak gate: the breaker must trip exactly when consecutive producer
+    // failures exceed the bound — never on clean runs, never at-or-below
+    // the max — with merit verdicts intact on every disarmed bar. Scores
+    // and labels feed the shared calibration harness; the table lands under
+    // `target/calibration/` for the audit trail.
+    let cases = vec![
+        TripCase { label: "clean-11", faults: vec![], seed: 11, should_trip: false },
+        TripCase { label: "clean-12", faults: vec![], seed: 12, should_trip: false },
+        TripCase {
+            label: "at-max-3-drops",
+            faults: vec![Fault::DropConnection, Fault::DropConnection, Fault::DropConnection],
+            seed: 11,
+            should_trip: false,
+        },
+        TripCase {
+            label: "over-max-4-drops",
+            faults: vec![
+                Fault::DropConnection,
+                Fault::DropConnection,
+                Fault::DropConnection,
+                Fault::DropConnection,
+            ],
+            seed: 11,
+            should_trip: true,
+        },
+        TripCase {
+            label: "over-max-8-drops",
+            faults: vec![Fault::DropConnection; 8],
+            seed: 11,
+            should_trip: true,
+        },
+        TripCase {
+            label: "over-max-4-status500",
+            faults: vec![Fault::Status500; 4],
+            seed: 11,
+            should_trip: true,
+        },
+        TripCase {
+            label: "over-max-mixed",
+            faults: vec![
+                Fault::DropConnection,
+                Fault::Status500,
+                Fault::DropConnection,
+                Fault::Status500,
+            ],
+            seed: 11,
+            should_trip: true,
+        },
+        TripCase {
+            label: "over-max-lost-acks",
+            faults: vec![Fault::LoseAck; 4],
+            seed: 11,
+            should_trip: true,
+        },
+    ];
+    let bars = history();
+    let mut scores: Vec<(f64, bool)> = Vec::with_capacity(cases.len());
+    for case in &cases {
+        let venue = PaperVenue::new(PaperConfig::new().build());
+        for fault in &case.faults {
+            venue.inject(*fault);
+        }
+        let decisions = run_paper_decisions(
+            &strategy(),
+            &risk(),
+            &grant_with(0.5),
+            &venue,
+            &runner_config(),
+            &bars,
+            case.seed,
+        )
+        .await;
+        let tripped = trip_observed(&decisions);
+        assert_eq!(
+            tripped, case.should_trip,
+            "case {} must {}trip",
+            case.label,
+            if case.should_trip { "" } else { "not " }
+        );
+        if case.should_trip {
+            assert!(
+                decisions.iter().all(|d| d.risk_pass && d.grant_allow),
+                "case {}: disarm must never rewrite a merit verdict",
+                case.label
+            );
+            assert!(
+                decisions.iter().all(|d| !d.submitted),
+                "case {}: nothing submits once producer health fails",
+                case.label
+            );
+        } else {
+            assert!(
+                decisions.iter().any(|d| d.submitted),
+                "case {} (clean control) must keep trading",
+                case.label
+            );
+        }
+        scores.push((if tripped { 1.0 } else { 0.0 }, case.should_trip));
+    }
+    let reports = common_core::calibration::sweep_thresholds(
+        &scores,
+        |(score, _)| *score,
+        |(_, label)| *label,
+        &[0.0, 0.5, 1.0],
+    );
+    common_core::calibration::emit_markdown_artifact("protopyne-breaker-trip", &reports);
+    let operating = &reports[1].1;
+    assert_eq!(operating.support, cases.len());
+    assert!((operating.precision - 1.0).abs() < f64::EPSILON, "no false trips: {operating:?}");
+    assert!((operating.recall - 1.0).abs() < f64::EPSILON, "no missed trips: {operating:?}");
+    assert!((operating.fpr - 0.0).abs() < f64::EPSILON, "clean controls never fire: {operating:?}");
+    assert!(operating.passes_gate(), "trip detector passes the shared gate: {operating:?}");
+}
+
+#[tokio::test]
+async fn soak_real_run_marks_temporally_with_exact_fees() {
+    // Re-soak under the corrected equity and quote-config paths: a real run
+    // over history must mark pre-fill bars at zero, price the first fill at
+    // the configured touch, and book exact per-contract fees.
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("soak run");
+    let first_fill = run
+        .decisions
+        .iter()
+        .position(|decision| decision.submitted)
+        .expect("liquid history must fill something");
+    for (index, mark) in run.report.equity_curve.iter().enumerate().take(first_fill) {
+        assert_eq!(
+            mark.as_decimal(),
+            Decimal::ZERO,
+            "bar {index} precedes the first fill and must read zero"
+        );
+    }
+    let first = &run.decisions[first_fill];
+    let price = first.fill_price.expect("priced").as_decimal();
+    let fee = first.fee.expect("fee").as_decimal();
+    let qty = Decimal::from(first.filled_quantity);
+    // Cash after the first (long) fill plus the open position marked at
+    // that bar's close: -price*qty - fee + qty*close.
+    let expected = -(price * qty) - fee + qty * bars[first_fill].c;
+    assert_eq!(
+        run.report.equity_curve[first_fill].as_decimal(),
+        expected,
+        "first fill marks cash plus position at its own close"
+    );
+    let filled_contracts: u32 =
+        run.decisions.iter().map(|decision| decision.filled_quantity).sum();
+    let expected_fees =
+        Decimal::new(65, 2) * Decimal::from(filled_contracts);
+    assert_eq!(
+        run.report.total_fees.as_decimal(),
+        expected_fees,
+        "every filled contract books exactly 0.65 commission"
+    );
+    assert!(filled_contracts > 0);
+}
+
+#[tokio::test]
+async fn report_states_dividend_exclusion_next_to_pnl() {
+    // Cash dividends are not tracked in positions or portfolio: the report
+    // must say so beside the numbers, never silently omit them.
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("soak run");
+    assert!(
+        run.report
+            .data_limits
+            .iter()
+            .any(|line| line.contains("dividends excluded")),
+        "exclusion sits beside P&L, got: {:?}",
+        run.report.data_limits
+    );
 }

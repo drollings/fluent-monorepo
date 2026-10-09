@@ -296,7 +296,29 @@ impl Strategy {
 
     /// Run signal, structure, and sizing over closed bars and emit a
     /// [`Proposal`] in state [`Proposed`](ProposalState::Proposed).
+    ///
+    /// Caller-supplied economics fail closed: a negative limit, max loss, or
+    /// notional would sail through caps and poison budget accounting
+    /// downward, so each refuses with a reason instead of clamping to zero.
     pub fn propose(&self, id: &str, input: ProposeInput<'_>) -> Result<Proposal, StrategyError> {
+        if input.limit_price.as_decimal().is_sign_negative() {
+            return Err(StrategyError::InvalidElement(format!(
+                "limit price must not be negative: {}",
+                input.limit_price
+            )));
+        }
+        if input.max_loss.as_decimal().is_sign_negative() {
+            return Err(StrategyError::InvalidElement(format!(
+                "max loss must not be negative: {}",
+                input.max_loss
+            )));
+        }
+        if input.notional.as_decimal().is_sign_negative() {
+            return Err(StrategyError::InvalidElement(format!(
+                "notional must not be negative: {}",
+                input.notional
+            )));
+        }
         let output = self.signal.evaluate(input.closes)?;
         let structure = self.structure.select(&output);
         let quantity = self.sizing.size(&output);

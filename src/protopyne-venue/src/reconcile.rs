@@ -113,6 +113,13 @@ impl ReconcileGate {
         &self.alerts
     }
 
+    /// Take the banked alerts for out-of-band delivery, leaving the halt
+    /// state untouched. Delivery drains: alerts never accumulate without
+    /// bound across reporting cycles.
+    pub fn drain_alerts(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.alerts)
+    }
+
     /// Refuse entries while halted. Call from the submission path.
     pub fn check_entries(&self) -> Result<(), VenueError> {
         if self.halted {

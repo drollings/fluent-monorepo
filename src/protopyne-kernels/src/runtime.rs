@@ -23,8 +23,10 @@ pub struct PineRuntimeConfig {
     #[builder(default = 10_000)]
     pub max_bars: u64,
     /// Warmup bars required before the first trustworthy output.
+    /// ENFORCED by [`PineRuntime::run_over`]: the first `warmup_bars` bars
+    /// advance without evaluation, so no callback ever observes them.
     #[field(
-        desc = "Warmup bars required before the first trustworthy output",
+        desc = "Warmup bars skipped before the first evaluated bar (enforced by run_over)",
         min = 0,
         max = 1000000
     )]
@@ -106,6 +108,12 @@ impl PineRuntime {
     /// Evaluate `on_bar` against every closed bar in order, starting from a
     /// fresh [`RunCtx`]. Returns the number of bars evaluated. Refuses input
     /// beyond `max_bars` instead of silently truncating.
+    ///
+    /// `warmup_bars` is enforced, not advisory: the first `warmup_bars` bars
+    /// advance the context without evaluation, so callbacks never observe
+    /// untrustworthy early bars. The returned count covers evaluated bars
+    /// only, and [`RunCtx::cursor`](crate::context::RunCtx::cursor) inside
+    /// `on_bar` starts at `warmup_bars`.
     pub fn run_over(
         &self,
         bars: &[Bar],
@@ -121,6 +129,12 @@ impl PineRuntime {
             });
         }
         let mut ctx = RunCtx::new(bars, inputs);
+        for _ in 0..self.config.warmup_bars {
+            if ctx.current().is_none() {
+                break;
+            }
+            ctx.advance();
+        }
         let mut evaluated = 0_usize;
         while ctx.current().is_some() {
             on_bar(&mut ctx);

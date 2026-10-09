@@ -188,3 +188,35 @@ async fn cancel_and_corporate_events() {
         .expect("expiry");
     assert!(venue.positions().is_empty());
 }
+
+#[tokio::test]
+async fn cancel_on_terminal_orders_is_refused() {
+    // Cancelling a filled order is a caller error, never a silent no-op:
+    // quiet success would let a dead-order retry loop believe it acted.
+    let venue = venue();
+    let record = venue
+        .submit(intent("t#0", OrderSide::Buy, "600.50", 2), &quote(), now())
+        .await
+        .expect("buy fills");
+    assert_eq!(record.status, OrderStatus::Filled);
+    let err = venue.cancel("t#0", now()).await.expect_err("terminal cancel must refuse");
+    assert!(matches!(err, VenueError::Invalid(_)));
+    assert!(err.to_string().contains("terminal"), "refusal names the state, got: {err}");
+}
+
+#[tokio::test]
+async fn split_zero_is_refused() {
+    let venue = venue();
+    venue
+        .submit(intent("z#0", OrderSide::Buy, "600.50", 4), &quote(), now())
+        .await
+        .expect("buy");
+    let err = venue
+        .apply_corporate_event("SPY", CorporateEvent::Split(0), now())
+        .expect_err("zero split factor must refuse, never panic or mistreat as no-op");
+    assert!(matches!(err, VenueError::Invalid(_)));
+    let positions = venue.positions();
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, 4);
+    assert_eq!(positions[0].avg_price, money("600.50"));
+}

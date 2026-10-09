@@ -214,3 +214,25 @@ async fn quote_ladder_prefers_primary_and_fails_closed() {
     let dark = TradingSession::resolve_quote(vec![primary], "SPY").await;
     assert!(dark.is_none(), "every feed dark means no quote");
 }
+
+#[tokio::test]
+async fn duplicate_registration_fails_the_bar_summary() {
+    // A bar that registers the same unit name twice must report the failure
+    // in its summary: silently running short while looking clean is an audit
+    // hole, not containment.
+    let session = session();
+    let summary = session
+        .run_bar(vec![
+            stub("freshness", &[], &["quote.fresh"], false),
+            stub("freshness", &[], &["quote.fresh"], false),
+        ])
+        .await;
+    assert_eq!(summary.failed.len(), 1, "the duplicate name must fail the batch");
+    let message = format!("{:?}", summary.failed[0]);
+    assert!(
+        message.contains("freshness"),
+        "the failure names the duplicate unit, got: {message}"
+    );
+    assert!(summary.panicked.is_empty());
+    session.shutdown().await;
+}

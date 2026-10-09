@@ -347,3 +347,163 @@ fn tighten_accepts_restriction_and_refuses_loosening() {
         .expect("shorter window");
     assert_eq!(shortened.valid_until, earlier);
 }
+
+fn tightened_every_tier() -> Grant {
+    let mut next = grant();
+    next.budgets.max_trades -= 1;
+    next.budgets.max_contracts -= 1;
+    next.budgets.max_loss = money(4_000);
+    next.budgets.max_notional = money(90_000);
+    next.signal.min_conviction += 0.1;
+    next.signal.min_activity_score += 0.1;
+    next.trade.max_loss_per_trade = money(900);
+    next.trade.max_spread_width = money(40);
+    next.trade.min_dte_days += 1;
+    next.trade.max_dte_days -= 1;
+    next.portfolio.max_open_risk = money(9_000);
+    next.portfolio.quote_max_age_secs -= 1;
+    next.breakers.max_consecutive_errors -= 1;
+    next.scope.directions.retain(|d| *d == Direction::Long);
+    next.valid_from += chrono::Duration::days(1);
+    next.valid_until -= chrono::Duration::days(1);
+    next
+}
+
+#[test]
+fn tightening_predicate_accepts_self_and_stricter_grants() {
+    let current = grant();
+    assert!(current.tightens(&current), "a grant tightens itself");
+    let tighter = tightened_every_tier();
+    assert!(tighter.tightens(&current), "every tier stricter must count as tightening");
+    assert!(
+        !current.tightens(&tighter),
+        "the wider grant is not a tightening of the narrower one"
+    );
+}
+
+#[test]
+fn tightening_predicate_refuses_every_loosened_tier() {
+    let current = grant();
+    let mut widened = current.clone();
+    widened.budgets.max_trades += 1;
+    assert!(!widened.tightens(&current), "raised trade budget");
+    let mut widened = current.clone();
+    widened.budgets.max_contracts += 1;
+    assert!(!widened.tightens(&current), "raised contract budget");
+    let mut widened = current.clone();
+    widened.budgets.max_loss = money(6_000);
+    assert!(!widened.tightens(&current), "raised loss budget");
+    let mut widened = current.clone();
+    widened.budgets.max_notional = money(200_000);
+    assert!(!widened.tightens(&current), "raised notional budget");
+    let mut widened = current.clone();
+    widened.signal.min_conviction -= 0.1;
+    assert!(!widened.tightens(&current), "lowered conviction threshold");
+    let mut widened = current.clone();
+    widened.signal.min_activity_score -= 0.1;
+    assert!(!widened.tightens(&current), "lowered activity threshold");
+    let mut widened = current.clone();
+    widened.trade.max_loss_per_trade = money(1_100);
+    assert!(!widened.tightens(&current), "widened per-trade loss");
+    let mut widened = current.clone();
+    widened.trade.max_spread_width = money(60);
+    assert!(!widened.tightens(&current), "widened spread width");
+    let mut widened = current.clone();
+    widened.trade.min_dte_days -= 1;
+    assert!(!widened.tightens(&current), "lowered minimum DTE");
+    let mut widened = current.clone();
+    widened.trade.max_dte_days += 1;
+    assert!(!widened.tightens(&current), "raised maximum DTE");
+    let mut widened = current.clone();
+    widened.portfolio.max_open_risk = money(11_000);
+    assert!(!widened.tightens(&current), "raised open-risk cap");
+    let mut widened = current.clone();
+    widened.portfolio.quote_max_age_secs += 1;
+    assert!(!widened.tightens(&current), "raised quote-age cap");
+    let mut widened = current.clone();
+    widened.breakers.max_consecutive_errors += 1;
+    assert!(!widened.tightens(&current), "raised breaker limit");
+    let mut widened = current.clone();
+    widened.scope.permissions.rolls = true;
+    assert!(!widened.tightens(&current), "widened scope permissions");
+    let mut widened = current.clone();
+    widened.valid_until += chrono::Duration::days(1);
+    assert!(!widened.tightens(&current), "extended window end");
+    let mut widened = current.clone();
+    widened.valid_from -= chrono::Duration::days(1);
+    assert!(!widened.tightens(&current), "extended window start");
+}
+
+#[test]
+fn tightening_predicate_agrees_with_tighten_on_every_tier() {
+    // The predicate and the patch path must stay one rule: every tier the
+    // predicate accepts must also pass through `tighten`, and vice versa.
+    let current = grant();
+    let tighter = tightened_every_tier();
+    assert!(tighter.tightens(&current));
+    let via_patch = current
+        .tighten(
+            GrantPatch::new()
+                .budgets(tighter.budgets.clone())
+                .signal(tighter.signal)
+                .trade(tighter.trade.clone())
+                .portfolio(tighter.portfolio.clone())
+                .breakers(tighter.breakers)
+                .scope(tighter.scope.clone())
+                .valid_until(tighter.valid_until)
+                .build(),
+        )
+        .expect("predicate-accepted tiers must pass the patch path");
+    assert_eq!(via_patch.budgets, tighter.budgets);
+    assert!(via_patch.tightens(&current));
+}
+
+#[test]
+fn budget_arithmetic_overflow_denies_instead_of_wrapping() {
+    // Sums that overflow Decimal deny with an overflow reason: wrapping or
+    // saturating into an authorization would let exposure exceed every cap.
+    let (mut usage, market, breakers) = context();
+    usage.used_loss = Money::new(Decimal::MAX);
+    usage.used_notional = Money::new(Decimal::MAX);
+    let reasons = deny_reasons(evaluate_grant(
+        &proposal(),
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
+    assert!(
+        reasons.iter().any(|reason| reason.contains("overflow")),
+        "overflow must deny loudly, got: {reasons:?}"
+    );
+}
+
+#[test]
+fn scope_and_structure_denials_keep_distinct_meanings() {
+    // Review decision: both checks stay, documented. The whole-scope gate
+    // speaks for the envelope; the trade-tier checks name the structure —
+    // one for the defined-risk ban (scope-independent), one for threshold
+    // attribution.
+    let mut naked = proposal();
+    naked.structure = StructureKind::NakedShort;
+    let mut narrow = grant();
+    narrow
+        .scope
+        .structures
+        .retain(|structure| *structure != StructureKind::NakedShort);
+    let (usage, market, breakers) = context();
+    let reasons = deny_reasons(evaluate_grant(&naked, &narrow, &usage, &market, &breakers, now()));
+    assert!(
+        reasons.iter().any(|reason| reason == "proposal outside grant scope"),
+        "whole-scope gate fires, got: {reasons:?}"
+    );
+    assert!(
+        reasons.iter().any(|reason| reason == "naked short structures excluded"),
+        "defined-risk ban fires independently of scope, got: {reasons:?}"
+    );
+    assert!(
+        reasons.iter().any(|reason| reason == "structure outside grant scope"),
+        "structure attribution fires for audit, got: {reasons:?}"
+    );
+}

@@ -1,34 +1,34 @@
 # protopyne-rs — Vision
 
-**Status:** Draft v0.1 · October 2026
-**Scope:** Top-level vision. Not a specification; it fixes direction, principles, boundaries, and the questions the specification must answer.
-
----
-
 ## 1. What this is
 
-protopyne-rs is a lightweight, pure-Rust platform for **researching, backtesting, and semi-automatically trading stocks, options, and option spreads**, built around one idea:
+A personal, robust, semi-automated options-trading platform built with
+ruthless reliability over features — something closer to a flight controller
+than a quant fund. It runs one operator's strategies against a small,
+well-understood universe, with every automated action flowing through
+explicit human authorization and every state change recorded for audit.
 
-> **Your indicator ideas should move from TradingView/Pine to Python to production Rust without being rewritten, and nothing should trade your money unless you have explicitly authorized it.**
-
-It is a personal, low-volume, high-trust trading system, not an exchange-grade engine. It optimizes for **correctness, auditability, and fail-safe behavior** rather than raw speed. The minimum decision timeframe is 1 minute.
+The whole platform is implemented in a single systems language with no
+browser or JavaScript toolchain anywhere in the loop: charts, approval
+screens, and portfolio views are native views over the same core that
+decides and journals, not a web frontend over an API.
 
 ## 2. Guiding principles
 
-1. **Reliability over features.** Any failure must leave you with known positions, resting protective orders, and a halted system rather than a surprised one. "Absolute" reliability is not achievable by any software; fail-safe behavior is.
-2. **Human authority.** The system proposes; you authorize. Autonomy exists only inside a time-boxed, bounded **arming grant** that you created and confirmed.
-3. **The broker is the source of truth.** The platform's own state is a journaled, reconcilable view of it, never a substitute.
-4. **One code path.** Backtest, paper, and live share the same strategy, risk, and authorization logic and differ only at the venue boundary.
-5. **Compose, don't reinvent.** Prefer proven crates and your monorepo primitives over new infrastructure. Never re-implement graph algorithms, retry logic, or supervision.
-6. **Fail closed.** If data, clock, journal, or evaluator is uncertain, the answer is "do not trade; ask a human."
-7. **Honest backtests.** Results are only as trustworthy as their data and fill model; the platform must make those limits visible rather than flatter the strategy.
-8. **Pine-portable by design, not by accident.** Compatibility is measured, tested, and documented, with a clear line between portable and native code.
+- **Reliability over features.** Every capability earns its place by making the system safer or more auditable. Complexity that cannot be supervised is not added.
+- **Two distinct roles.** The human sets intent, bounds, and approvals; the machine executes within them and reports back. The machine never widens its own authority.
+- **Own the critical path.** Order state, risk checks, and the journal are first-party logic, not delegated to a framework or a venue SDK. Third-party code may render, analyze, or transport — never authorize or execute.
+- **One code path.** Backtest, paper, and live decisions run the same strategy, risk, and authorization logic over the same state machine. Divergence between rehearsal and reality is treated as a defect, not a modeling choice.
+- **Fail closed.** Stale data, clock skew, reconciliation mismatch, expired credentials, or an offline broker halt new entries and alert — they never degrade into silent best-effort trading.
+- **Honest backtests.** Every report states its data limits and assumptions next to its metrics. A backtest that cannot name what it ignores is not trusted.
+- **Compose, don't reinvent.** Shared platform capabilities (task supervision, retry, dependency ordering, durable storage, calibration) are reused from common infrastructure; trading-domain logic lives in the trading crates. Nothing is implemented twice.
+- **Measured Pine portability.** Pine compatibility is verified against actual reference output with a declared coverage matrix — never assumed from formula resemblance.
 
-## 3. Who it's for and what it does day to day
+## 3. Who this is for
 
-A single experienced discretionary-plus-systematic trader who:
+One operator who:
 
-- builds indicators (volume profiles, trend ribbons, options-activity signals) in Pine v6 and protopyne's Python API;
+- builds indicators (volume profiles, trend ribbons, options-activity signals) in Pine v6 and a matching native API;
 - wants spreads and options as the primary instrument, with stock trades as secondary;
 - trades at low volume, with trades placed on **tastytrade** (automated or semi-automated) and **Robinhood** (human-executed);
 - wants to preview, approve, or pre-authorize trades, and to arm automation for a bounded period (one hour to one week).
@@ -48,13 +48,13 @@ A typical day: review overnight proposals, tune thresholds with a backtest previ
 
 | Layer | Responsibility |
 |---|---|
-| **Data** | 1m candles, option chains (bid/ask, OI, greeks/IV), corporate actions, event calendar; TimescaleDB for operational data, Parquet/Polars for research |
-| **Analytics** | Indicator kernels with warmup metadata, volume profile, trend ribbons, IV surface and greeks, options-activity scoring, Pine-compatible runtime |
+| **Data** | 1-minute candles, option chains (bid/ask, open interest, greeks/IV), corporate actions, event calendar; a durable operational store for journal and time-series plus columnar frames for research |
+| **Analytics** | Indicator kernels with warmup metadata, volume profile, trend ribbons, IV surface and greeks, options-activity scoring, Pine-compatible execution |
 | **Strategy** | Composable strategy elements (§6) that turn closed bars into *proposals* |
 | **Risk & authorization** | Mandatory risk engine, arming grants, approval policies, kill switch |
 | **Execution** | Single-writer order/position state machine, tastytrade adapter, Robinhood ticket adapter, reconciliation |
 | **Simulation** | Backtester and paper venue running the same strategy, risk, and grant logic |
-| **Presentation** | axum REST/WebSocket API, web UI with TradingView Lightweight Charts, approval inbox, portfolio dashboards |
+| **Presentation** | Native desktop terminal in the same language as the core: charts, approval inbox, portfolio dashboards — no browser or JavaScript toolchain required |
 
 Data flows in one direction: **closed bar → indicators → strategy → proposal → risk engine → grant/approval → execution → journal → reconciliation**, with the broker's reported state flowing back as the authority.
 
@@ -113,43 +113,39 @@ Rules:
 6. Because the evaluator is pure, the backtester runs the **same grant logic** over history. You can preview what a grant would have done and tune thresholds before arming.
 7. Initial grants allow **defined-risk structures only**; naked short options are excluded.
 
-## 8. Pine compatibility and the transpile path
+## 8. Pine compatibility
 
-The goal is a Rust API that feels like Pine v6 and like protopyne's Python API, so a script ports across all three with minimal change.
+The goal is a native API that feels like Pine v6, so a script ports across Pine and this platform with minimal change. The requirements that shape the work:
 
-Findings from the protopyne overview that shape the plan:
+- Pine is **stateful bar-by-bar** (`var`/`varip`, series history), while bulk analysis is naturally vectorized. The platform defines Pine semantics as a **per-bar stateful executor with a vectorized fast path** for provably stateless indicators.
+- Execution state is an **explicit per-run context**, never process-global state. This is what makes isolated, parallel backtests possible.
+- Numeric parity of operators versus Pine is **verified, not assumed**: golden-file tests against actual reference output, within documented tolerances.
+- Multi-timeframe access semantics (lookahead behavior, gap handling) are specified exactly — they are a classic source of look-ahead bias and must not be left implicit.
+- Pine has no concept of options, so the native API **extends** Pine with chain access, greeks, multi-leg orders, and portfolio constructs, with a clear boundary between *Pine-portable* and *native* code.
+- Decisions run on **closed bars** at the chart timeframe and above; sub-bar tick synthesis is deferred, not ported.
 
-- The existing production path is **vectorized** (whole DataFrame in, DataFrame out), while real Pine is **stateful bar-by-bar** (`var`/`varip`, series history). protopyne-rs defines Pine semantics as a **per-bar stateful executor with a vectorized fast path** for provably stateless indicators.
-- protopyne relies on six **process-global singletons**; protopyne-rs replaces them with an explicit, per-run context. This enables isolated, parallel backtests.
-- The Python strategy engine is orphaned and `varip` currently behaves like `var`; both are treated as references, not contracts.
-- Numeric parity of the pandas_ta-backed operators versus Pine is **unverified**. protopyne-rs adopts **golden-file parity tests** against actual TradingView output.
-- The existing transpiler (HIR/LIR, type inference, source maps) is the intended front end for a Pine/Python → Rust path. The Rust backend needs to grow well beyond its current `Series → Vec` mapping.
-- `request.security` semantics (`lookahead`, `gaps`) are a classic source of look-ahead bias and must be specified exactly.
-- Pine has no concept of options, so the Rust API **extends** Pine with chain access, greeks, multi-leg orders, and portfolio constructs, with a clear boundary between *Pine-portable* and *native* code.
-- Decisions run on **closed 1m bars**, so the tick-synthesis subsystem in protopyne is deferred rather than ported.
-
-A **compatibility matrix** (supported, partial, unsupported) is a first-class deliverable, derived from which Pine features your actual indicator library uses.
+A **compatibility matrix** (supported, partial, unsupported) is a first-class deliverable, derived from which Pine features your actual indicator library uses. Anything outside the matrix refuses with a reason instead of miscomputing.
 
 ## 9. Venues
 
 | Venue | Role | Notes |
 |---|---|---|
-| **tastytrade** | Market data, account streaming, and automated or semi-automated order entry | Public REST API plus DXLink streaming; has a dry-run endpoint and a certification sandbox. No idempotency key: safe retry depends on deterministic external identifiers and status checks. Streaming keeps you in sync; REST is authoritative. Auth has changed during 2026 (legacy session login removed), so track the developer release notes. |
-| **Robinhood** | Human-executed only | The official API found is crypto-only; stock and option access is unofficial and fragile. The platform generates an exact trade ticket (legs, limit, quantity, good-until), you place it, and you confirm the fill. The platform tracks unconfirmed tickets and flags drift. Any read-only import from Robinhood is isolated behind an adapter that can fail without affecting the rest. |
+| **tastytrade** | Market data, account streaming, and automated or semi-automated order entry | Public REST API plus streaming; has a dry-run endpoint and a certification sandbox. No idempotency key: safe retry depends on deterministic external identifiers and status checks. Streaming keeps you in sync; the request API is authoritative. |
+| **Robinhood** | Human-executed only | Stock and option access is unofficial and fragile. The platform generates an exact trade ticket (legs, limit, quantity, good-until), you place it, and you confirm the fill. The platform tracks unconfirmed tickets and flags drift. Any read-only import from Robinhood is isolated behind an adapter that can fail without affecting the rest. |
 | **Paper / simulated** | Rehearsal and backtest | The same interface as live; the cert sandbox is used for soak tests. |
 
-Execution code sits behind a venue trait so additional venues can be added later without touching strategy, risk, or grant logic.
+Execution sits behind a venue interface so additional venues can be added later without touching strategy, risk, or grant logic.
 
 ## 10. Reliability architecture
 
-- **Single-writer order and position state machine,** owned by this project rather than delegated to a third-party engine.
-- **Event-sourced journal in PostgreSQL** with a transactional outbox: intent is durable before any broker call. State is rebuilt by replay, which also gives auditability and backtest/live parity.
-- **Safe submission protocol:** deterministic external identifier → journal intent → dry-run and margin check → submit → on any timeout or 5xx, *query by identifier, never blindly resubmit*.
+- **Single-writer order and position state,** owned by this project rather than delegated to a third-party engine.
+- **Durable event-sourced journal:** intent is recorded before any broker call. State is rebuilt by replay, which also gives auditability and backtest/live parity.
+- **Safe submission:** deterministic external identifiers → journal intent → dry-run and margin check → submit → on any timeout or ambiguous failure, *query by identifier, never blindly resubmit*.
 - **Reconciliation loop** against broker positions and live orders. Any mismatch halts new entries and alerts.
-- **Staleness and health gate:** quote age, stream state, token expiry, and clock skew feed a "may trade" decision that fails closed.
-- **Reconnect and resync:** after any stream drop, missing 1m candles are backfilled before signals resume, so indicators never evaluate on a gapped series.
-- **Rust discipline:** `Decimal` for all money, no `unwrap`/`panic` in trading paths, `deny(unsafe_code)`, dependency auditing in CI, supervised tasks with restart policies.
-- **Testing:** fault injection (dropped sockets, 5xx, delayed fills, duplicate submits), deterministic replay, and long sandbox soak runs before any live money.
+- **Staleness and health gate:** quote age, stream state, credential expiry, and clock skew feed a "may trade" decision that fails closed.
+- **Reconnect and resync:** after any stream drop, missing bars are backfilled before signals resume, so indicators never evaluate on a gapped series.
+- **Exact money arithmetic, no silent failures, memory safety:** all money math is exact decimal; trading paths never panic or unwrap on bad input; unsafe code is forbidden; dependencies are audited.
+- **Testing:** fault injection (dropped sockets, error responses, delayed fills, duplicate submits), deterministic replay, and long sandbox soak runs before any live money.
 - **Out-of-band alerting** independent of the platform's own UI.
 
 ## 11. Backtesting philosophy
@@ -161,32 +157,27 @@ Execution code sits behind a venue trait so additional venues can be added later
 - Every run is reproducible from **(data version, code version, configuration)**.
 - Backtests exercise the real risk engine, sizing, loss-management, and grant logic, so what you test is what you trade.
 
-## 12. Technology and monorepo composition
+## 12. Platform direction
 
-| Concern | Choice | Role and caveat |
-|---|---|---|
-| Event model and simulation | barter-rs (reference, verified against a local checkout: `barter-execution 0.9`, `barter-data 0.13`) | `rust_decimal` throughout; `Active`/`Inactive` order states (the pattern behind our active-vs-terminal lifecycle); `ExecutionClient` trait plus a mock exchange; engine `RiskManager` with advisory `RiskApproved`/`RiskRefused` filters. Not adopted: integrations are crypto-venue-only (no equity-options broker); the mock fills market orders only with percentage fees (no limit flow, slippage, or liquidity filter) and mints IDs from `rand`; no journal, outbox, or reconciliation; the risk gate is advisory, not mandatory. Borrowed: order-state modeling. |
-| Research data frames | Polars | Feature engineering and chain analysis; not used for the stateful bar-by-bar loop. |
-| API server | axum | REST and WebSocket. |
-| Charts | TradingView Lightweight Charts | Candles, ribbons, markers; volume profile needs its custom primitives API. |
-| Storage | PostgreSQL + TimescaleDB | Journal and operational time-series, with explicit retention and compression policy. |
-| Dependency ordering | `fluent-dag` (`DependencyGraph`, `CheckpointedStepGraph`) | Indicator and multi-timeframe dependency ordering; pipeline orchestration. Rewind is for research and replay, never for live order state. |
-| Supervision | `SupervisedBatch` / tokio guardrails | Feeds, executors, reconcilers. |
-| Reflection, polymorphism | Monorepo libraries | Roles to be confirmed once their documentation is shared. |
+- **One language, one toolchain.** The core, the Pine runtime, the charting, and the desktop terminal share a single systems-language stack. There is no browser, JavaScript, or Node.js anywhere in the build, test, or run loop.
+- **Native terminal.** Charts, the approval inbox, grant arming screens, replay, and portfolio dashboards are native views over the platform core — rendering journaled state, never holding order authority of their own.
+- **Borrow the toolkit, own the application.** The immediate-mode GUI toolkit is a dependency; the charting application built on it is studied as reference and re-expressed in this codebase's idioms, never taken as a dependency. Display code may be reused for pixels; nothing that reaches an order is inherited from display code.
+- **Borrow patterns, own the critical path.** External execution frameworks are studied for their state modeling and deliberately not adopted where their semantics (venue coverage, fill models, identifier discipline, journaling, risk posture) fall short of §§9–11. Whatever executes or authorizes is first-party.
 
 ## 13. Phased path
 
-1. **Foundation:** run context, series model, and a small set of indicator kernels with Pine golden tests; journal and state machine skeleton.
+1. **Foundation:** run context, series model, and a small set of indicator kernels with golden tests against reference output; journal and state machine skeleton.
 2. **Vertical slice:** one underlying, vertical spreads, the tastytrade cert sandbox, proposal → risk → approval → paper execution, with reconciliation and fault injection.
 3. **Backtest realism:** historical chains, fill model, grant preview and threshold sweeps.
 4. **Arming:** grants, budgets, breakers, exit-only first, then entries.
 5. **Optional strategy elements:** sizing, then loss management, then multi-portfolio monitoring.
-6. **Pine transpile path:** compatibility matrix, Rust backend, parity suite across Pine, Python, and Rust.
-7. **Live hardening:** long soak, small live size, Robinhood ticket workflow, operational runbooks.
+6. **Pine v6 runtime:** compatibility matrix, native execution with series-correct semantics, parity suite across Pine and native — libraries and imports included, arbitrary user scripts supported.
+7. **Native terminal:** charts, approval inbox, grant screens, replay, and portfolio views over the journaled core.
+8. **Live hardening:** long soak, small live size, Robinhood ticket workflow, operational runbooks.
 
 ## 14. Success criteria
 
-- A Pine indicator from your library produces **numerically matching output** in Pine, Python, and Rust, within a documented tolerance.
+- A Pine indicator from your library produces **numerically matching output** in Pine and in this platform, within a documented tolerance.
 - The same strategy produces **identical decisions** in backtest replay and live paper trading on the same data.
 - Killing the process, the network, or the database at any point leaves **no unknown position and no unauthorized order**.
 - An armed grant can **never** exceed its stated worst-case exposure.
@@ -201,5 +192,3 @@ Execution code sits behind a venue trait so additional venues can be added later
 - Exact Pine feature coverage required by your indicator library.
 - Presence requirements, revocation channels, and alert channels for arming.
 - Hosting, secrets handling, backup, and monitoring approach.
-- Whether any component of barter-rs earns a place beyond inspiration, determined by a short spike. Pre-verified mismatches narrow the spike: a `Venue` over its mock would need limit-order fills, deterministic IDs, and journal integration to preserve backtest parity — the open question is whether that adaptation beats the owned paper venue, not whether the patterns fit.
-- The roles of the reflection, polymorphism, and tokio-guardrail libraries, pending their documentation.

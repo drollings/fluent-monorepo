@@ -1,0 +1,17 @@
+[package]
+name = "protopyne-chart-model"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+protopyne-types = { path = "../protopyne-types" }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

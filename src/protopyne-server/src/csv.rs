@@ -11,7 +11,7 @@ use chrono::DateTime;
 use rust_decimal::Decimal;
 
 use crate::error::ServerError;
-use protopyne_types::Bar;
+use protopyne_types::{Bar, validate_new_bar};
 
 /// Required columns after lowercasing the header row.
 const REQUIRED_COLUMNS: [&str; 6] = ["time", "open", "high", "low", "close", "volume"];
@@ -90,17 +90,25 @@ pub fn parse_bars_csv(content: &str) -> Result<Vec<Bar>, ServerError> {
                 reason: format!("row has no column '{name}'"),
             })
         };
-        bars.push(
-            Bar::new()
-                .ts(parse_timestamp(field(time_c, "time")?, line)?)
-                .o(parse_decimal(field(open_c, "open")?, line, "open")?)
-                .h(parse_decimal(field(high_c, "high")?, line, "high")?)
-                .l(parse_decimal(field(low_c, "low")?, line, "low")?)
-                .c(parse_decimal(field(close_c, "close")?, line, "close")?)
-                .volume(parse_volume(field(vol_c, "volume")?, line)?)
-                .maybe_adj(None)
-                .build(),
-        );
+        let bar = Bar::new()
+            .ts(parse_timestamp(field(time_c, "time")?, line)?)
+            .o(parse_decimal(field(open_c, "open")?, line, "open")?)
+            .h(parse_decimal(field(high_c, "high")?, line, "high")?)
+            .l(parse_decimal(field(low_c, "low")?, line, "low")?)
+            .c(parse_decimal(field(close_c, "close")?, line, "close")?)
+            .volume(parse_volume(field(vol_c, "volume")?, line)?)
+            .maybe_adj(None)
+            .build();
+        // Structural validation shares the one rule with the streaming feed
+        // (`BarWindow::push` enforces the same `validate_new_bar`): an
+        // inverted OHLC row or a timestamp that does not advance past the
+        // previously accepted row refuses the file in the existing `BadRow`
+        // shape, so the fallback ladder and audits treat it exactly like any
+        // malformed row. Tampered or gapped history never flows into decisions.
+        if let Err(e) = validate_new_bar(bars.last(), &bar) {
+            return Err(ServerError::BadRow { line, reason: e.to_string() });
+        }
+        bars.push(bar);
     }
     Ok(bars)
 }

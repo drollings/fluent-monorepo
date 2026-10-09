@@ -41,6 +41,42 @@ impl Timeframe {
         }
     }
 
+    /// Bar span in milliseconds (the spacing windows and fetch planning
+    /// check gaps against).
+    #[must_use]
+    pub fn duration_ms(self) -> i64 {
+        i64::from(self.minutes()) * 60_000
+    }
+
+    /// Bar span as a time span.
+    #[must_use]
+    pub fn duration(self) -> chrono::Duration {
+        chrono::Duration::milliseconds(self.duration_ms())
+    }
+
+    /// Bar span in whole seconds.
+    #[must_use]
+    pub fn total_seconds(self) -> u64 {
+        u64::from(self.minutes()) * 60
+    }
+
+    /// Parse a charting resolution code (`1`, `5`, `15`, `30`, `60`/`1H`,
+    /// `240`/`4H`, `1D`/`D`). Anything else is an unknown timeframe, not a
+    /// guess.
+    #[must_use]
+    pub fn from_resolution(resolution: &str) -> Option<Self> {
+        match resolution {
+            "1" => Some(Self::M1),
+            "5" => Some(Self::M5),
+            "15" => Some(Self::M15),
+            "30" => Some(Self::M30),
+            "60" | "1H" => Some(Self::H1),
+            "240" | "4H" => Some(Self::H4),
+            "1D" | "D" => Some(Self::D1),
+            _ => None,
+        }
+    }
+
     /// Canonical short code (`M1`, `H1`, …).
     #[must_use]
     pub fn code(self) -> &'static str {

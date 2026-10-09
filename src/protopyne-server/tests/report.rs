@@ -94,6 +94,46 @@ fn report_with_no_proposals_has_no_fill_rate() {
 }
 
 #[test]
+fn manifest_canonical_json_reports_loudly() {
+    // The canonical pin must carry the pinned data, never an empty object:
+    // a serialization failure reports inside the payload instead.
+    let json = manifest(384).to_canonical_json();
+    assert!(json.contains("spy-15m-v1"), "pin data present, got: {json}");
+    assert!(!json.contains("serialization_error"), "clean pins serialize cleanly");
+}
+
+#[test]
+fn fill_rate_survives_counts_past_u32() {
+    // Counts widen directly to f64: the old `as u32` detour truncated
+    // anything past 2^32 into a wrong rate (2^32 fills over 2^32 proposals
+    // read NaN).
+    let even = build_report(
+        manifest(1),
+        Vec::new(),
+        Vec::new(),
+        1_u64 << 32,
+        1_u64 << 32,
+        money("0"),
+        money("0"),
+        money("0"),
+        Vec::new(),
+    );
+    assert_eq!(even.fill_rate, Some(1.0));
+    let half = build_report(
+        manifest(1),
+        Vec::new(),
+        Vec::new(),
+        1_u64 << 33,
+        1_u64 << 32,
+        money("0"),
+        money("0"),
+        money("0"),
+        Vec::new(),
+    );
+    assert_eq!(half.fill_rate, Some(0.5));
+}
+
+#[test]
 fn unquotable_bar_counter_matches_zero_closes() {
     use chrono::{TimeZone, Utc};
     let good = Bar::new()

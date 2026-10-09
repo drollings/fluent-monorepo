@@ -97,16 +97,23 @@ impl RiskLimits {
     }
 
     /// Loss cap as [`Decimal`], or `None` when the configured float has no
-    /// exact decimal representation (the check then fails closed).
+    /// decimal reading (the check then fails closed).
+    ///
+    /// Conversion goes through the decimal string round-trip, so a
+    /// configured cap means exactly what it says (`19.99` is `19.99`, not
+    /// the binary retain artifact). The `f64` field shapes (serde +
+    /// `FieldAccess`) are untouched: only the comparison reads exactly.
     #[must_use]
     pub fn loss_cap(&self) -> Option<Decimal> {
-        Decimal::from_f64_retain(self.max_loss_per_trade)
+        self.max_loss_per_trade.to_string().parse().ok()
     }
 
-    /// Notional cap as [`Decimal`], or `None` when unrepresentable.
+    /// Notional cap as [`Decimal`], or `None` when the configured float has
+    /// no decimal reading (the check then fails closed). Same round-trip
+    /// rule as [`RiskLimits::loss_cap`].
     #[must_use]
     pub fn notional_cap(&self) -> Option<Decimal> {
-        Decimal::from_f64_retain(self.max_notional)
+        self.max_notional.to_string().parse().ok()
     }
 }
 

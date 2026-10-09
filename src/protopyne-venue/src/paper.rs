@@ -240,17 +240,24 @@ impl Venue for PaperVenue {
         client_id: &str,
         now: DateTime<Utc>,
     ) -> impl Future<Output = Result<OrderRecord, VenueError>> + Send {
-        let outcome = common_core::sync::lock(&self.book)
-            .orders
-            .get_mut(client_id)
-            .map(|record| {
-                if record.status.is_active() {
-                    record.status = OrderStatus::Cancelled;
-                    record.updated_at = now;
-                }
-                record.clone()
-            })
-            .ok_or_else(|| VenueError::Invalid(format!("unknown order {client_id}")));
+        // Cancelling a terminal order is a caller error, never a silent
+        // no-op: quiet success would let a dead-order retry loop believe it
+        // acted.
+        let outcome = (|| {
+            let mut book = common_core::sync::lock(&self.book);
+            let record = book.orders.get_mut(client_id).ok_or_else(|| {
+                VenueError::Invalid(format!("unknown order {client_id}"))
+            })?;
+            if !record.status.is_active() {
+                let status = record.status;
+                return Err(VenueError::Invalid(format!(
+                    "cancel refused: order {client_id} already terminal ({status:?})"
+                )));
+            }
+            record.status = OrderStatus::Cancelled;
+            record.updated_at = now;
+            Ok(record.clone())
+        })();
         std::future::ready(outcome)
     }
 
@@ -286,10 +293,17 @@ impl Venue for PaperVenue {
                 "dividend {amount} on {underlying}: cash booked outside position"
             )),
             CorporateEvent::Split(factor) => {
+                if factor == 0 {
+                    return Err(VenueError::Invalid(
+                        "split factor must be new shares per old share (forward splits only); got 0".to_owned(),
+                    ));
+                }
                 let position = book.positions.get_mut(underlying).ok_or_else(|| {
                     VenueError::Invalid(format!("no position in {underlying}"))
                 })?;
-                position.quantity *= i64::from(factor);
+                position.quantity = position.quantity.checked_mul(i64::from(factor)).ok_or_else(|| {
+                    VenueError::Invalid(format!("split {factor}-for-1 overflows position in {underlying}"))
+                })?;
                 let price = position.avg_price.as_decimal() / Decimal::from(factor);
                 position.avg_price = Money::new(price);
                 Ok(format!("split {factor}-for-1 on {underlying}"))

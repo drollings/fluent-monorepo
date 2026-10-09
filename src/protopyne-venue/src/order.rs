@@ -163,6 +163,12 @@ pub struct Position {
 
 impl Position {
     /// Apply a signed fill (`+` buy, `-` sell) at `price`.
+    ///
+    /// Average-cost accounting: adds in the same direction average into the
+    /// existing basis, partial closes against the position keep the original
+    /// basis, and only a fill that flips the position through zero re-anchors
+    /// the basis at the fill price — the old side is closed and a new side
+    /// is opened at this print.
     pub fn apply(&mut self, signed_qty: i64, price: Money) {
         let next = self.quantity + signed_qty;
         if next == 0 {
@@ -175,6 +181,8 @@ impl Position {
                 + Decimal::from(signed_qty.abs()) * price.as_decimal();
             let denom = Decimal::from(next.abs());
             self.avg_price = Money::new(basis / denom);
+        } else if next.signum() != self.quantity.signum() {
+            self.avg_price = price;
         }
         self.quantity = next;
     }
@@ -191,7 +199,10 @@ pub enum CorporateEvent {
     Assignment,
     /// Cash dividend per contract/share.
     Dividend(Money),
-    /// Split factor (e.g. 2 for a 2-for-1 split).
+    /// Forward split factor as new shares per old share (e.g. 2 for a
+    /// 2-for-1 split). A zero factor is malformed and must be refused by the
+    /// venue, never reinterpreted as a no-op; reverse splits have no
+    /// representation here and are likewise a typed refusal, not arithmetic.
     Split(u32),
 }
 

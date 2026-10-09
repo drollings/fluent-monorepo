@@ -57,6 +57,8 @@ pub mod embedding_cache;
 #[cfg(feature = "sqlite")]
 pub mod migrate;
 #[cfg(feature = "sqlite")]
+pub mod outbox;
+#[cfg(feature = "sqlite")]
 pub mod pool;
 #[cfg(feature = "sqlite")]
 pub mod query;

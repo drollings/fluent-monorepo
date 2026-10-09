@@ -481,7 +481,17 @@ pub fn evaluate_lowered(
         };
         let resolved = match length {
             Length::Literal(value) => *value,
-            Length::Input(name, default) => inputs.get(name).copied().unwrap_or(*default),
+            // A name with no supplied value refuses: substituting the
+            // parse-time default would silently evaluate a script the caller
+            // never configured.
+            Length::Input(name, _) => match inputs.get(name) {
+                Some(value) => *value,
+                None => {
+                    return Err(ServerError::Service(format!(
+                        "unknown input {name:?}: no value supplied"
+                    )));
+                }
+            },
         };
         if resolved < 1 {
             return Err(ServerError::Service("length must be at least 1".to_owned()));

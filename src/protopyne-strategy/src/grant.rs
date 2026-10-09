@@ -8,6 +8,7 @@
 
 use bon::Builder;
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -230,6 +231,52 @@ impl Grant {
         !self.revoked && self.valid_from <= now && now < self.valid_until
     }
 
+    /// Whether `self` authorizes no more than `current` in every tier: the
+    /// whole-grant counterpart of [`Grant::tighten`], enforcing the same rule
+    /// set (budgets, signal, trade, portfolio, breaker tiers, scope subset,
+    /// and window) so arming paths delegate instead of reimplementing it.
+    /// Identity and revocation are not tiers and are not compared; a later
+    /// start is a shorter window, hence narrower.
+    #[must_use]
+    pub fn tightens(&self, current: &Self) -> bool {
+        if self.budgets.max_trades > current.budgets.max_trades
+            || self.budgets.max_contracts > current.budgets.max_contracts
+            || self.budgets.max_loss.as_decimal() > current.budgets.max_loss.as_decimal()
+            || self.budgets.max_notional.as_decimal() > current.budgets.max_notional.as_decimal()
+        {
+            return false;
+        }
+        if self.signal.min_conviction < current.signal.min_conviction
+            || self.signal.min_activity_score < current.signal.min_activity_score
+        {
+            return false;
+        }
+        if self.trade.max_loss_per_trade.as_decimal()
+            > current.trade.max_loss_per_trade.as_decimal()
+            || self.trade.max_spread_width.as_decimal()
+                > current.trade.max_spread_width.as_decimal()
+            || self.trade.min_dte_days < current.trade.min_dte_days
+            || self.trade.max_dte_days > current.trade.max_dte_days
+        {
+            return false;
+        }
+        if self.portfolio.max_open_risk.as_decimal() > current.portfolio.max_open_risk.as_decimal()
+            || self.portfolio.quote_max_age_secs > current.portfolio.quote_max_age_secs
+        {
+            return false;
+        }
+        if self.breakers.max_consecutive_errors > current.breakers.max_consecutive_errors {
+            return false;
+        }
+        if !self.scope.is_subset_of(&current.scope) {
+            return false;
+        }
+        if self.valid_until > current.valid_until || self.valid_from < current.valid_from {
+            return false;
+        }
+        true
+    }
+
     /// Revoke immediately. Returns the revoked copy; the original is
     /// unchanged and revocation is instant for every check after the swap.
     #[must_use]
@@ -358,6 +405,20 @@ impl GrantDecision {
     }
 }
 
+/// Compare one committed total against its cap, denying on arithmetic
+/// overflow: an unrepresentable sum must refuse, never wrap or saturate into
+/// an authorization.
+fn budget_exceeded(used: Decimal, commit: Decimal, cap: Decimal, reasons: &mut Vec<String>, exhausted: &str) {
+    match used.checked_add(commit) {
+        Some(total) => {
+            if total > cap {
+                reasons.push(exhausted.to_owned());
+            }
+        }
+        None => reasons.push(format!("{exhausted} (budget arithmetic overflow)")),
+    }
+}
+
 /// Decide whether `grant` covers `proposal`.
 ///
 /// Pure function: same inputs always produce the identical decision, with no
@@ -368,6 +429,14 @@ impl GrantDecision {
 /// Check order: liveness, scope, budgets, signal tier, trade tier (including
 /// the defined-risk rule), portfolio/market tier, breakers. All failures are
 /// collected so a denial explains itself fully.
+///
+/// Scope appears twice by design, with distinct meanings: the `scope.allows`
+/// check is the whole-scope gate (one reason covering strategy, underlying,
+/// structure, direction, and permission together), while the trade-tier
+/// structure checks name the structure specifically — the defined-risk
+/// exclusion bans naked shorts regardless of scope, and the
+/// structure-in-scope check attributes threshold denials to the structure
+/// for audit.
 #[must_use]
 pub fn evaluate_grant(
     proposal: &Proposal,
@@ -400,16 +469,20 @@ pub fn evaluate_grant(
         }
         None => reasons.push("unrepresentable contract quantity".to_owned()),
     }
-    if usage.used_loss.as_decimal() + proposal.max_loss.as_decimal()
-        > grant.budgets.max_loss.as_decimal()
-    {
-        reasons.push("max-loss budget exhausted".to_owned());
-    }
-    if usage.used_notional.as_decimal() + proposal.notional.as_decimal()
-        > grant.budgets.max_notional.as_decimal()
-    {
-        reasons.push("notional budget exhausted".to_owned());
-    }
+    budget_exceeded(
+        usage.used_loss.as_decimal(),
+        proposal.max_loss.as_decimal(),
+        grant.budgets.max_loss.as_decimal(),
+        &mut reasons,
+        "max-loss budget exhausted",
+    );
+    budget_exceeded(
+        usage.used_notional.as_decimal(),
+        proposal.notional.as_decimal(),
+        grant.budgets.max_notional.as_decimal(),
+        &mut reasons,
+        "notional budget exhausted",
+    );
 
     // NaN scores compare as unordered and deny: a missing score is never
     // treated as meeting a threshold (fail closed).
@@ -450,11 +523,13 @@ pub fn evaluate_grant(
         reasons.push("structure outside grant scope".to_owned());
     }
 
-    if usage.used_loss.as_decimal() + proposal.max_loss.as_decimal()
-        > grant.portfolio.max_open_risk.as_decimal()
-    {
-        reasons.push("portfolio open-risk cap exceeded".to_owned());
-    }
+    budget_exceeded(
+        usage.used_loss.as_decimal(),
+        proposal.max_loss.as_decimal(),
+        grant.portfolio.max_open_risk.as_decimal(),
+        &mut reasons,
+        "portfolio open-risk cap exceeded",
+    );
     if market.quote_age_secs > grant.portfolio.quote_max_age_secs {
         reasons.push("quote stale for grant evaluation".to_owned());
     }

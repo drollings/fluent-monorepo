@@ -10,6 +10,7 @@ protopyne-types = { path = "../protopyne-types" }
 protopyne-kernels = { path = "../protopyne-kernels" }
 protopyne-strategy = { path = "../protopyne-strategy" }
 protopyne-venue = { path = "../protopyne-venue" }
+protopyne-chart-model = { path = "../protopyne-chart-model" }
 common-core = { path = "../common-core" }
 fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-dag = { path = "../dag" }

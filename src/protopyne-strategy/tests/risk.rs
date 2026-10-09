@@ -169,3 +169,25 @@ fn engine_serves_as_a_component_with_test_doubles() {
         .expect("double executes");
     assert!(output.message.contains("double"));
 }
+
+#[test]
+fn caps_read_exact_decimals() {
+    // A configured cap means exactly what it says: 19.99 is 19.99, not the
+    // binary retain artifact (19.989999...), which would refuse a proposal
+    // booked at exactly the cap.
+    let limits = RiskLimits::new().max_loss_per_trade(19.99).max_notional(19.99).build();
+    let exact: Decimal = "19.99".parse().expect("decimal");
+    assert_eq!(limits.loss_cap(), Some(exact));
+    assert_eq!(limits.notional_cap(), Some(exact));
+
+    let engine = RiskEngine::new(limits);
+    let mut at_cap = proposal();
+    at_cap.max_loss = Money::new(exact);
+    at_cap.notional = Money::new(exact);
+    assert!(engine.check(&at_cap, &healthy()).is_ok(), "at-cap proposals pass");
+
+    let mut over_cap = proposal();
+    over_cap.max_loss = Money::new(exact + Decimal::from(1));
+    let refused = engine.check(&over_cap, &healthy()).expect_err("over-cap refuses");
+    assert!(refused.reasons.contains(&RiskReason::OverLossCap));
+}

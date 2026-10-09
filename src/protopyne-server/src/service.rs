@@ -28,7 +28,6 @@ use fluent_concurrency::batch::SupervisedBatch;
 use fluent_concurrency::pool::Limiter;
 use fluent_concurrency::scope::Scope;
 use fluent_wvr::prelude::*;
-use rust_decimal::prelude::ToPrimitive as _;
 use tokio::sync::broadcast;
 
 use protopyne_kernels::{EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator};
@@ -253,8 +252,14 @@ pub struct OverlaySeries {
     pub kind: String,
     /// Averaging length.
     pub period: i64,
-    /// Per-bar values (`None` inside warmup).
+    /// Per-bar values (`None` inside warmup, or where the bar's close has
+    /// no chart float). Indices always match bar indices — values are never
+    /// dropped, so rows and overlays agree positionally.
     pub values: Vec<Option<f64>>,
+    /// Bars without a value (unrepresentable close), mirroring
+    /// `ChartBars.dropped`: counted, never shifted.
+    #[serde(default)]
+    pub dropped: u64,
 }
 
 /// Machine-readable error body.
@@ -348,16 +353,12 @@ fn worst_case_of(grant: &Grant) -> WorstCase {
     }
 }
 
-/// Whether `next` only tightens `current`: budgets down, scope narrower,
-/// window shorter. Anything looser is refused; loosening needs a new grant
-/// after revocation.
+/// Whether `next` only tightens `current`. The domain owns the rule set
+/// (`Grant::tightens`, mirroring `Grant::tighten` tier for tier); this stays
+/// a thin wrapper so the route's refusal carries the route's error mapping
+/// and every tier the domain refuses, the route refuses.
 fn is_tightening(next: &Grant, current: &Grant) -> bool {
-    next.budgets.max_trades <= current.budgets.max_trades
-        && next.budgets.max_contracts <= current.budgets.max_contracts
-        && next.budgets.max_loss.as_decimal() <= current.budgets.max_loss.as_decimal()
-        && next.budgets.max_notional.as_decimal() <= current.budgets.max_notional.as_decimal()
-        && next.scope.is_subset_of(&current.scope)
-        && next.valid_until <= current.valid_until
+    next.tightens(current)
 }
 
 fn validate_grant(grant: &Grant) -> Result<(), String> {
@@ -558,12 +559,7 @@ async fn portfolio(State(state): State<Shared>) -> Json<PortfolioView> {
 }
 
 fn decimal_to_chart(value: rust_decimal::Decimal) -> Option<f64> {
-    let flat = value.to_f64()?;
-    if flat.is_finite() {
-        Some(flat)
-    } else {
-        None
-    }
+    protopyne_chart_model::to_display_float(value)
 }
 
 async fn chart_bars(State(state): State<Shared>) -> Json<ChartBars> {
@@ -579,14 +575,18 @@ async fn chart_bars(State(state): State<Shared>) -> Json<ChartBars> {
 }
 
 /// One chartable bar, or `None` when a leg has no finite chart float.
+/// Conversion runs through the shared headless helper so the HTTP edge and
+/// every future native view share one skip policy; the row shape stays the
+/// public chart-data contract.
 fn candle_row_of(bar: &Bar) -> Option<CandleRow> {
+    let row = protopyne_chart_model::row_of(bar)?;
     Some(CandleRow {
-        time: bar.ts.timestamp(),
-        open: decimal_to_chart(bar.o)?,
-        high: decimal_to_chart(bar.h)?,
-        low: decimal_to_chart(bar.l)?,
-        close: decimal_to_chart(bar.c)?,
-        volume: bar.volume,
+        time: row.time,
+        open: row.open,
+        high: row.high,
+        low: row.low,
+        close: row.close,
+        volume: row.volume,
     })
 }
 
@@ -597,6 +597,23 @@ struct OverlayQuery {
     period: i64,
 }
 
+/// Scatter compacted kernel values back to bar indices: every bar keeps its
+/// index with `None` where its close had no chart float, so overlay vectors
+/// always agree positionally with the bar rows. `positions[slot]` is the bar
+/// index of compacted slot `slot`; the dropped count is the caller's
+/// `history_len - positions.len()`.
+fn align_overlay(
+    history_len: usize,
+    positions: &[usize],
+    computed: &[Option<f64>],
+) -> Vec<Option<f64>> {
+    let mut values: Vec<Option<f64>> = vec![None; history_len];
+    for (slot, bar_index) in positions.iter().enumerate() {
+        values[*bar_index] = computed.get(slot).copied().flatten();
+    }
+    values
+}
+
 async fn chart_overlay(
     State(state): State<Shared>,
     Query(query): Query<OverlayQuery>,
@@ -604,17 +621,25 @@ async fn chart_overlay(
     if query.period < 1 || query.period > 500 {
         return Err(api_error(StatusCode::BAD_REQUEST, "period must be within [1, 500]"));
     }
-    let closes: Vec<f64> = state
-        .history
-        .iter()
-        .filter_map(|bar| bar.c.to_f64())
-        .collect();
+    // Per-bar closes through the shared display-float policy: a bar whose
+    // close has no chart float keeps its index with a `None` value instead
+    // of shifting every later bar (the same count-don't-shift policy as the
+    // bar rows). The kernel runs over the representable closes and values
+    // scatter back to their bar indices.
+    let mut closes: Vec<f64> = Vec::with_capacity(state.history.len());
+    let mut positions: Vec<usize> = Vec::with_capacity(state.history.len());
+    for (index, bar) in state.history.iter().enumerate() {
+        if let Some(close) = decimal_to_chart(bar.c) {
+            positions.push(index);
+            closes.push(close);
+        }
+    }
     if closes.is_empty() {
         return Err(api_error(StatusCode::SERVICE_UNAVAILABLE, "no chartable closes"));
     }
     let frame = Ohlcv::close_only(&closes);
     let params = ParamSet::new().with_int("length", query.period);
-    let values = match query.kind.as_str() {
+    let computed = match query.kind.as_str() {
         "sma" => SmaIndicator::new()
             .batch(&frame, &params)
             .map(|result| result.values),
@@ -624,7 +649,12 @@ async fn chart_overlay(
         _ => return Err(api_error(StatusCode::BAD_REQUEST, "kind must be 'sma' or 'ema'")),
     }
     .map_err(|e| api_error(StatusCode::BAD_REQUEST, e.to_string()))?;
-    Ok(Json(OverlaySeries { kind: query.kind, period: query.period, values }))
+    let values = align_overlay(state.history.len(), &positions, &computed);
+    let dropped = (state.history.len() - closes.len()) as u64;
+    // `values` is full-length by construction; the debug assert pins the
+    // contract the native terminal relies on (rows and overlays agree).
+    debug_assert_eq!(values.len(), state.history.len());
+    Ok(Json(OverlaySeries { kind: query.kind, period: query.period, values, dropped }))
 }
 
 async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl IntoResponse {

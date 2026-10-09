@@ -71,6 +71,16 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
         status: CompatStatus::FormulaVerified("tradingview export cross-check pending"),
     },
     KernelCompat {
+        id: "dema",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("tradingview export cross-check pending"),
+    },
+    KernelCompat {
+        id: "tema",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("tradingview export cross-check pending"),
+    },
+    KernelCompat {
         id: "rsi",
         eps: 1e-9,
         status: CompatStatus::FormulaVerified("tradingview export cross-check pending"),

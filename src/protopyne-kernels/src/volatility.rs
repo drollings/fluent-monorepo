@@ -111,14 +111,7 @@ impl AtrIndicator {
 
     /// Validate the `length` parameter shared by batch and update paths.
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
-        Ok(length as usize)
+        crate::math::period_len(Self::ID, params, "length")
     }
 }
 
@@ -211,13 +204,7 @@ impl BbIndicator {
 
     /// Validate parameters shared by batch and update paths.
     pub fn shape(params: &ParamSet) -> Result<(usize, f64), KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
+        let length = crate::math::period_len(Self::ID, params, "length")?;
         let mult = params.float(Self::ID, "mult")?;
         if !mult.is_finite() {
             return Err(KernelError::InvalidParam(format!(
@@ -225,7 +212,7 @@ impl BbIndicator {
                 Self::ID
             )));
         }
-        Ok((length as usize, mult))
+        Ok((length, mult))
     }
 }
 
@@ -341,13 +328,7 @@ impl KcIndicator {
 
     /// Validate parameters shared by batch and update paths.
     pub fn shape(params: &ParamSet) -> Result<(usize, f64, bool), KernelError> {
-        let length = params.int(Self::ID, "length")?;
-        if length < 1 {
-            return Err(KernelError::InvalidParam(format!(
-                "{}: length must be at least 1, got {length}",
-                Self::ID
-            )));
-        }
+        let length = crate::math::period_len(Self::ID, params, "length")?;
         let mult = params.float(Self::ID, "mult")?;
         if !mult.is_finite() {
             return Err(KernelError::InvalidParam(format!(
@@ -356,7 +337,7 @@ impl KcIndicator {
             )));
         }
         let use_true_range = params.bool_or(Self::ID, "use_true_range", true)?;
-        Ok((length as usize, mult, use_true_range))
+        Ok((length, mult, use_true_range))
     }
 }
 

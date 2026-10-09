@@ -193,9 +193,11 @@ impl TradingSession {
         &self,
         units: Vec<Arc<dyn Component>>,
     ) -> fluent_concurrency::batch::SupervisedBatchSummary {
+        use fluent_concurrency::batch::{SupervisedBatchError, SupervisedBatchEvent};
         let caps = fluent_wvr::CapabilitySet::new().with(self.storage.clone());
         let mut batch =
             fluent_concurrency::batch::SupervisedBatch::new(fluent_concurrency::tokio_runtime(), caps);
+        let mut registration_failure: Option<SupervisedBatchError> = None;
         for unit in units {
             let label = unit.name().to_owned();
             let wrapped = Instrumented::new(
@@ -203,11 +205,22 @@ impl TradingSession {
                 label,
             );
             let erased: Arc<dyn Component> = Arc::new(wrapped);
-            if batch.register(erased).is_err() {
+            if let Err(e) = batch.register(erased) {
+                registration_failure = Some(e);
                 break;
             }
         }
-        batch.await
+        let mut summary = batch.await;
+        // A bar that could not register every unit must say so in the
+        // summary: silently breaking out runs the bar short while reporting
+        // clean, which no audit can distinguish from a bar that ran whole.
+        if let Some(SupervisedBatchError::DuplicateName(name)) = registration_failure {
+            summary.failed.push(SupervisedBatchEvent::Failed {
+                name,
+                error: WorkError::Execution("bar registration rejected a duplicate unit name".to_owned()),
+            });
+        }
+        summary
     }
 
     /// Resolve the newest quote through the source ladder: first source

@@ -33,6 +33,8 @@ members = [
     "src/protopyne-strategy",
     "src/protopyne-venue",
     "src/protopyne-server",
+    "src/protopyne-chart-model",
+    "src/protopyne-chart-scale",
 ]
 
 [workspace.package]

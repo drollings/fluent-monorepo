@@ -26,7 +26,7 @@ use protopyne_strategy::{
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    CorporateEvent, OrderIntent, OrderRecord, OrderSide, PaperConfig, PaperVenue, Position, Quote,
+    CorporateEvent, OrderIntent, OrderSide, PaperConfig, PaperVenue, Position, Quote,
     Venue,
 };
 
@@ -151,12 +151,6 @@ fn skipped_decision(
     }
 }
 
-/// The outcome of one venue submission: a record or a refusal reason.
-struct SubmitVerdict {
-    record: Option<OrderRecord>,
-    refusal: Option<String>,
-}
-
 /// The executable order derived from a proposal: venue side plus the limit
 /// the venue will actually receive.
 ///
@@ -182,9 +176,55 @@ pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
     }
 }
 
+/// Observed producer-health facts for one bar, fed into the merit gates.
+///
+/// Axis: **(producer-confidence)** for staleness/skew/reconciliation doubt,
+/// **(correctness)** for what the gates do with it (refuse with reasons).
+/// These facts describe the producer (feed, clock, venue book) — never the
+/// trade's merit — so they disarm entries only and never alter a merit
+/// verdict, and merit outcomes never write back here.
+#[derive(Debug, Clone, Copy)]
+pub struct BarHealth {
+    /// Age of the quote traded on this bar, in seconds.
+    pub quote_age_secs: u64,
+    /// Observed clock skew in seconds.
+    pub clock_skew_secs: u64,
+    /// Whether the venue book agrees with journaled state.
+    pub reconciliation_healthy: bool,
+}
+
+impl BarHealth {
+    /// What the rehearsal loops observe: quotes are synthesized at the bar
+    /// close and evaluated at the same instant over one clock, with no
+    /// separate venue truth to disagree with. A live feed fills these three
+    /// fields from the feed, the clock, and the reconciliation loop instead —
+    /// the per-bar construction site in each loop is that plug point.
+    #[must_use]
+    pub fn rehearsed() -> Self {
+        Self { quote_age_secs: 0, clock_skew_secs: 0, reconciliation_healthy: true }
+    }
+}
+
 /// Shared decision stack for one bar, used identically by backtest replay
 /// and the paper feed. Pure gates plus one venue submission; the caller owns
 /// `usage` accounting so both paths accumulate budgets the same way.
+///
+/// Quote synthesis parameters arrive explicitly in `quote_config` so the fill
+/// prices state the caller's assumptions: backtest runs pass their pinned
+/// venue config, the paper feed passes its own labeled config. There is
+/// deliberately no default here — a hidden spread would price fills under an
+/// assumption no report names.
+///
+/// `breakers` is carried across bars by the caller (never rebuilt per bar):
+/// retryable venue failures increment its consecutive-error count and trip it
+/// past the grant's bound, which disarms further *entries* in that run while
+/// exits stay open and merit verdicts stay exactly as computed. Merit denials
+/// and skips leave it untouched — a refused trade is task-value information,
+/// not producer doubt.
+///
+/// The trip rule upholds the same contract as the breaker tier of
+/// [`evaluate_grant`]: with `max_consecutive_errors = N`, the Nth consecutive
+/// error still arms, and the N+1th trips (`consecutive_errors > max`).
 #[allow(clippy::too_many_arguments)]
 pub async fn decide_and_submit<V: Venue>(
     strategy: &Strategy,
@@ -192,6 +232,9 @@ pub async fn decide_and_submit<V: Venue>(
     grant: &Grant,
     usage: &mut GrantUsage,
     venue: &V,
+    quote_config: &BacktestConfig,
+    breakers: &mut BreakerState,
+    health: BarHealth,
     bar_index: usize,
     bar: &Bar,
     closes: &[f64],
@@ -200,13 +243,7 @@ pub async fn decide_and_submit<V: Venue>(
 ) -> BarDecision {
     let proposal_id = format!("run-{seed}-{bar_index}");
     let ts = bar.ts.to_rfc3339();
-    let Some(quote) = quote_for_bar(
-        bar,
-        &BacktestConfig::new()
-            .underlying(config.underlying.clone())
-            .data_version("decide".to_owned())
-            .build(),
-    ) else {
+    let Some(quote) = quote_for_bar(bar, quote_config) else {
         return skipped_decision(bar_index, ts, proposal_id, "unquotable bar: non-positive close");
     };
     let Some(spread_width) = quote.spread_width() else {
@@ -236,9 +273,9 @@ pub async fn decide_and_submit<V: Venue>(
     // and the checked limit is the submitted price.
     let checked = checked_order_for(proposal.direction, &quote);
     let state = RiskState {
-        quote_age_secs: 0,
-        clock_skew_secs: 0,
-        reconciliation_healthy: true,
+        quote_age_secs: health.quote_age_secs,
+        clock_skew_secs: health.clock_skew_secs,
+        reconciliation_healthy: health.reconciliation_healthy,
         is_limit_order: true,
         is_spread: true,
     };
@@ -250,11 +287,15 @@ pub async fn decide_and_submit<V: Venue>(
         ),
     };
     let market = GrantMarket::new()
-        .quote_age_secs(0)
+        .quote_age_secs(health.quote_age_secs)
         .spread_width(spread_width)
         .build();
-    let breakers = BreakerState::new().build();
-    let (grant_allow, grant_reasons) = match evaluate_grant(&proposal, grant, usage, &market, &breakers, bar.ts) {
+    // Merit verdicts are computed without breaker input: a tripped breaker
+    // must never turn an Allow into a Deny. The disarm below enforces the
+    // trip at submission instead, so the recorded verdict stays honest about
+    // the trade while the run stops opening exposure.
+    let clean_breakers = BreakerState::new().build();
+    let (grant_allow, grant_reasons) = match evaluate_grant(&proposal, grant, usage, &market, &clean_breakers, bar.ts) {
         GrantDecision::Allow => (true, Vec::new()),
         GrantDecision::Deny { reasons } => (false, reasons),
     };
@@ -276,6 +317,31 @@ pub async fn decide_and_submit<V: Venue>(
             fill_price: None,
             fee: None,
             skipped: None,
+        };
+    }
+    if (breakers.tripped || breakers.consecutive_errors > grant.breakers.max_consecutive_errors)
+        && proposal.side == ProposalSide::Entry
+    {
+        return BarDecision {
+            bar_index,
+            ts,
+            proposal_id,
+            direction,
+            risk_pass,
+            risk_reasons,
+            grant_allow,
+            grant_reasons,
+            submitted: false,
+            limit_price: proposal.limit_price,
+            checked_limit: checked.limit,
+            submitted_quantity: 0,
+            filled_quantity: 0,
+            fill_price: None,
+            fee: None,
+            skipped: Some(format!(
+                "breaker tripped: entries disarmed after {} consecutive venue errors (max {})",
+                breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
+            )),
         };
     }
     let Some(contracts) = proposal.contracts() else {
@@ -312,20 +378,31 @@ pub async fn decide_and_submit<V: Venue>(
         "the submitted limit must be the checked limit"
     );
     let submitted_quantity = intent.quantity;
-    let verdict = match venue.submit(intent, &quote, bar.ts).await {
-        Ok(record) => SubmitVerdict { record: Some(record), refusal: None },
-        Err(e) => SubmitVerdict { record: None, refusal: Some(e.to_string()) },
-    };
-    match verdict.record {
-        Some(record) => {
-            let filled = record.filled_quantity;
-            let submitted = record.intent.quantity;
-            usage.used_trades = usage.used_trades.saturating_add(1);
-            usage.used_contracts = usage.used_contracts.saturating_add(filled);
-            usage.used_loss = Money::new(usage.used_loss.as_decimal() + proposal.max_loss.as_decimal());
-            usage.used_notional =
-                Money::new(usage.used_notional.as_decimal() + proposal.notional.as_decimal());
-            BarDecision {
+    // Only producer-health failures feed the confidence-axis counter: a
+    // refused order speaks to the trade's merit, never to the venue's health,
+    // so refusals leave the breaker alone. Success clears a cooling streak;
+    // once tripped, the flag and its banked reason stay put for the run.
+    let record = match venue.submit(intent, &quote, bar.ts).await {
+        Ok(record) => {
+            if !breakers.tripped {
+                breakers.consecutive_errors = 0;
+            }
+            record
+        }
+        Err(e) => {
+            if e.is_retryable() {
+                breakers.consecutive_errors = breakers.consecutive_errors.saturating_add(1);
+                if !breakers.tripped
+                    && breakers.consecutive_errors > grant.breakers.max_consecutive_errors
+                {
+                    breakers.tripped = true;
+                    breakers.trip_reason = Some(format!(
+                        "{} consecutive venue errors exceed max {}",
+                        breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
+                    ));
+                }
+            }
+            return BarDecision {
                 bar_index,
                 ts,
                 proposal_id,
@@ -334,34 +411,41 @@ pub async fn decide_and_submit<V: Venue>(
                 risk_reasons,
                 grant_allow,
                 grant_reasons,
-                submitted: true,
+                submitted: false,
                 limit_price: proposal.limit_price,
                 checked_limit: checked.limit,
-                submitted_quantity: submitted,
-                filled_quantity: filled,
-                fill_price: record.avg_price,
-                fee: Some(record.fees_paid),
-                skipped: None,
-            }
+                submitted_quantity,
+                filled_quantity: 0,
+                fill_price: None,
+                fee: None,
+                skipped: Some(e.to_string()),
+            };
         }
-        None => BarDecision {
-            bar_index,
-            ts,
-            proposal_id,
-            direction,
-            risk_pass,
-            risk_reasons,
-            grant_allow,
-            grant_reasons,
-            submitted: false,
-            limit_price: proposal.limit_price,
-            checked_limit: checked.limit,
-            submitted_quantity,
-            filled_quantity: 0,
-            fill_price: None,
-            fee: None,
-            skipped: verdict.refusal,
-        },
+    };
+    let filled = record.filled_quantity;
+    let submitted = record.intent.quantity;
+    usage.used_trades = usage.used_trades.saturating_add(1);
+    usage.used_contracts = usage.used_contracts.saturating_add(filled);
+    usage.used_loss = Money::new(usage.used_loss.as_decimal() + proposal.max_loss.as_decimal());
+    usage.used_notional =
+        Money::new(usage.used_notional.as_decimal() + proposal.notional.as_decimal());
+    BarDecision {
+        bar_index,
+        ts,
+        proposal_id,
+        direction,
+        risk_pass,
+        risk_reasons,
+        grant_allow,
+        grant_reasons,
+        submitted: true,
+        limit_price: proposal.limit_price,
+        checked_limit: checked.limit,
+        submitted_quantity: submitted,
+        filled_quantity: filled,
+        fill_price: record.avg_price,
+        fee: Some(record.fees_paid),
+        skipped: None,
     }
 }
 
@@ -378,9 +462,16 @@ pub struct BacktestRun {
 
 impl BacktestRun {
     /// Deterministic JSON over manifest plus decisions for rerun comparison.
+    /// Decision serialization cannot fail in practice; a failure still
+    /// reports loudly instead of emitting an empty body.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
-        let decisions = serde_json::to_string(&self.decisions).unwrap_or_default();
+        let decisions = serde_json::to_string(&self.decisions).unwrap_or_else(|e| {
+            format!(
+                "{{\"serialization_error\":{}}}",
+                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+            )
+        });
         format!("{}\n{decisions}", self.manifest.to_canonical_json())
     }
 }
@@ -388,35 +479,52 @@ impl BacktestRun {
 /// Mark-to-close equity curve for filled decisions.
 ///
 /// Cash starts at zero; buys pay `price * filled + fee`, sells receive
-/// `price * filled - fee`; each bar marks `cash + net_filled * close`. Bars
-/// with no fills carry the previous mark forward. Quantities come from the
-/// decision's filled-quantity carrier — the same count the venue journaled —
-/// so sizing flows through every booked number. Pure and deterministic.
+/// `price * filled - fee`. The fold is keyed on `BarDecision.bar_index`:
+/// each bar marks the running state after applying only that bar's fills,
+/// so bars before any fill read flat zero and every later bar sees exactly
+/// the fills so far — never future fills. Bars with no fills carry the
+/// previous mark forward. Quantities come from the decision's
+/// filled-quantity carrier — the same count the venue journaled — so sizing
+/// flows through every booked number. Pure and deterministic.
 #[must_use]
 pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
+    use std::collections::HashMap;
+    fn book_fill(cash: &mut Decimal, net: &mut i64, decision: &BarDecision) {
+        if !decision.submitted {
+            return;
+        }
+        let (Some(price), Some(fee)) = (decision.fill_price, decision.fee) else {
+            return;
+        };
+        let qty = decision.filled_quantity;
+        let signed: i64 = match decision.direction {
+            Some(Direction::Short) => -(i64::from(qty)),
+            _ => i64::from(qty),
+        };
+        let flow = price.as_decimal() * Decimal::from(qty);
+        if signed >= 0 {
+            *cash -= flow + fee.as_decimal();
+        } else {
+            *cash += flow - fee.as_decimal();
+        }
+        *net += signed;
+    }
+    let mut by_bar: HashMap<usize, Vec<&BarDecision>> = HashMap::new();
+    for decision in decisions {
+        by_bar.entry(decision.bar_index).or_default().push(decision);
+    }
     let mut cash = Decimal::ZERO;
     let mut net: i64 = 0;
-    for decision in decisions {
-        if decision.submitted {
-            if let (Some(price), Some(fee)) = (decision.fill_price, decision.fee) {
-                let qty = decision.filled_quantity;
-                let signed: i64 = match decision.direction {
-                    Some(Direction::Short) => -(i64::from(qty)),
-                    _ => i64::from(qty),
-                };
-                let flow = price.as_decimal() * Decimal::from(qty);
-                if signed >= 0 {
-                    cash -= flow + fee.as_decimal();
-                } else {
-                    cash += flow - fee.as_decimal();
-                }
-                net += signed;
+    let mut curve = Vec::with_capacity(bars.len());
+    for (index, bar) in bars.iter().enumerate() {
+        if let Some(due) = by_bar.get(&index) {
+            for decision in due {
+                book_fill(&mut cash, &mut net, decision);
             }
         }
+        curve.push(Money::new(cash + Decimal::from(net) * bar.c));
     }
-    bars.iter()
-        .map(|bar| Money::new(cash + Decimal::from(net) * bar.c))
-        .collect()
+    curve
 }
 
 /// Run the full decision stack over `bars` through a versioned venue.
@@ -438,13 +546,17 @@ pub async fn run_backtest(
     if bars.is_empty() {
         return Err(ServerError::Backtest("history must not be empty".to_owned()));
     }
-    let paper = PaperVenue::new(PaperConfig::new().build());
+    let paper = PaperConfig::new().build();
     let venue = BacktestVenue::new(venue_config.clone(), bars.to_vec(), paper)
         .map_err(|e| ServerError::Backtest(e.to_string()))?;
     let config_json = serde_json::to_string(&(runner_config, venue_config, risk.limits(), grant))
         .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))?;
     let manifest = RunManifest::new(&venue_config.data_version, config_json, bars, seed);
     let mut usage = GrantUsage::new().build();
+    // One breaker for the whole run: rebuilding it per bar would leave the
+    // consecutive-error threshold decorative. Health is built per bar at the
+    // matching construction site so a live feed can plug real observations in.
+    let mut breakers = BreakerState::new().build();
     let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
     let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
     let mut skipped_warmup: u64 = 0;
@@ -472,7 +584,7 @@ pub async fn run_backtest(
         }
         let window = closes.clone();
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, &venue, index, bar, &window, runner_config, seed)
+            decide_and_submit(strategy, risk, grant, &mut usage, &venue, venue_config, &mut breakers, BarHealth::rehearsed(), index, bar, &window, runner_config, seed)
                 .await,
         );
     }
@@ -505,7 +617,7 @@ pub async fn run_backtest(
     let limits = vec![
         format!("single CSV history '{}', {} bars", venue_config.data_version, bars.len()),
         format!("{unquotable} unquotable bars skipped; {skipped_warmup} warmup bars skipped"),
-        "no corporate-action adjustments; no option-chain data (greeks unavailable)".to_owned(),
+        "no corporate-action adjustments (cash dividends excluded from P&L); no option-chain data (greeks unavailable)".to_owned(),
     ];
     let report = build_report(
         manifest.clone(),
@@ -535,8 +647,16 @@ pub async fn run_paper_decisions(
     seed: u64,
 ) -> Vec<BarDecision> {
     let mut usage = GrantUsage::new().build();
+    // The paper feed has no pinned history, so it states its own synthesis
+    // assumptions under an explicit paper label (default spread/size, same
+    // values the shared path always used — now named instead of hidden).
+    let quote_config = BacktestConfig::new()
+        .underlying(runner_config.underlying.clone())
+        .data_version("paper-synthetic".to_owned())
+        .build();
     let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
     let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
+    let mut breakers = BreakerState::new().build();
     for (index, bar) in bars.iter().enumerate() {
         let Some(close) = bar.c.to_f64() else {
             decisions.push(skipped_decision(
@@ -559,7 +679,7 @@ pub async fn run_paper_decisions(
         }
         let window = closes.clone();
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, venue, index, bar, &window, runner_config, seed)
+            decide_and_submit(strategy, risk, grant, &mut usage, venue, &quote_config, &mut breakers, BarHealth::rehearsed(), index, bar, &window, runner_config, seed)
                 .await,
         );
     }

@@ -49,18 +49,13 @@ impl BarWindow {
         self.timeframe
     }
 
-    /// Append a closed bar. Rejects non-increasing timestamps so gaps are
-    /// always detected explicitly via [`gaps`](Self::gaps), never hidden by
-    /// reordering.
+    /// Append a closed bar. Runs the full construction check — OHLC
+    /// structure plus strictly increasing timestamps — so gaps are always
+    /// detected explicitly via [`gaps`](Self::gaps), never hidden by
+    /// reordering, and structurally invalid bars never enter the decision
+    /// path.
     pub fn push(&mut self, bar: Bar) -> Result<(), TypesError> {
-        if let Some(last) = self.bars.last() {
-            if bar.ts <= last.ts {
-                return Err(TypesError::InvalidBar(format!(
-                    "bars must arrive in strictly increasing order: {} <= {}",
-                    bar.ts, last.ts
-                )));
-            }
-        }
+        crate::bar::validate_new_bar(self.bars.last(), &bar)?;
         self.bars.push(bar);
         Ok(())
     }
@@ -87,7 +82,7 @@ impl BarWindow {
     /// distance differs from the timeframe step yields one [`BarGap`].
     #[must_use]
     pub fn gaps(&self) -> Vec<BarGap> {
-        let step_secs = i64::from(self.timeframe.minutes()) * 60;
+        let step_secs = self.timeframe.total_seconds() as i64;
         let mut out = Vec::new();
         for (index, pair) in self.bars.windows(2).enumerate() {
             let prev = &pair[0];
@@ -118,7 +113,7 @@ impl BarWindow {
     /// Whether [`gaps`](Self::gaps) is non-empty.
     #[must_use]
     pub fn has_gaps(&self) -> bool {
-        let step_secs = i64::from(self.timeframe.minutes()) * 60;
+        let step_secs = self.timeframe.total_seconds() as i64;
         self.bars.windows(2).any(|pair| {
             (pair[1].ts - pair[0].ts).num_seconds() != step_secs
         })

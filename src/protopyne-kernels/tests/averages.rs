@@ -1,5 +1,8 @@
 use super::*;
-use crate::averages::{AlmaIndicator, HmaIndicator, RmaIndicator, VwmaIndicator, WmaIndicator};
+use crate::averages::{
+    AlmaIndicator, DemaIndicator, HmaIndicator, RmaIndicator, TemaIndicator, VwmaIndicator,
+    WmaIndicator,
+};
 
 fn len_params(length: i64) -> ParamSet {
     ParamSet::new().with_int("length", length)
@@ -169,4 +172,54 @@ fn invalid_periods_are_typed_errors() {
     assert!(WmaIndicator::new().batch(&data, &ps).is_err());
     assert!(HmaIndicator::new().batch(&data, &ps).is_err());
     assert!(VwmaIndicator::new().batch(&data, &ps).is_err());
+    assert!(DemaIndicator::new().batch(&data, &ps).is_err());
+    assert!(TemaIndicator::new().batch(&data, &ps).is_err());
+}
+
+#[test]
+fn dema_removes_single_pass_lag_on_ramps() {
+    let dema = DemaIndicator::new();
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let result = dema.batch(&closes(&data), &len_params(3)).expect("valid");
+    // ema1 = [na, na, 2, 3, 4, 5]; ema2 = [na ×4, 3, 4];
+    // dema = [na ×4, 2·4−3, 2·5−4] = [na ×4, 5, 6].
+    assert_approx(
+        &result.values,
+        &[None, None, None, None, Some(5.0), Some(6.0)],
+        1e-9,
+    );
+    assert_eq!(result.values, fold_closes(&dema, &data, &len_params(3)));
+    assert_eq!(dema.warmup(&len_params(3)).expect("valid"), 5);
+}
+
+#[test]
+fn tema_tracks_ramps_with_no_residual_lag() {
+    let tema = TemaIndicator::new();
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let result = tema.batch(&closes(&data), &len_params(3)).expect("valid");
+    // ema3 seeds at index 6 with mean(3, 4, 5) = 4; tema = 3·e1 − 3·e2 + e3
+    // reads [na ×6, 7, 8]: zero lag on a steady ramp.
+    assert_approx(
+        &result.values,
+        &[None, None, None, None, None, None, Some(7.0), Some(8.0)],
+        1e-9,
+    );
+    assert_eq!(result.values, fold_closes(&tema, &data, &len_params(3)));
+    assert_eq!(tema.warmup(&len_params(3)).expect("valid"), 7);
+}
+
+#[test]
+fn double_and_triple_passes_agree_incrementally() {
+    // A non-monotone window exercises the NaN-reseed shape in every pass.
+    let data = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0];
+    for length in [2, 3, 5] {
+        let dema = DemaIndicator::new();
+        let params = len_params(length);
+        let batch = dema.batch(&closes(&data), &params).expect("valid");
+        assert_eq!(batch.values, fold_closes(&dema, &data, &params));
+        let tema = TemaIndicator::new();
+        let batch = tema.batch(&closes(&data), &params).expect("valid");
+        assert_eq!(batch.values, fold_closes(&tema, &data, &params));
+        assert_eq!(batch.len(), data.len());
+    }
 }

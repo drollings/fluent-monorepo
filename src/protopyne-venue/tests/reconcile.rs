@@ -61,3 +61,21 @@ fn journal_net_accumulates_signed_fills() {
     assert_eq!(net.get("SPY"), Some(&1));
     assert_eq!(net.get("QQQ"), Some(&4));
 }
+
+#[test]
+fn alert_delivery_drains_without_disarming_the_gate() {
+    // Delivery drains: repeated observe/report cycles must not bank alerts
+    // without bound, and draining never clears the halt itself.
+    let mut gate = ReconcileGate::default();
+    let journal = HashMap::from([("SPY".to_owned(), 2_i64)]);
+    gate.observe(&reconcile(&journal, &[position("SPY", 5)]));
+    gate.observe(&reconcile(&journal, &[position("SPY", 6)]));
+    assert_eq!(gate.alerts().len(), 2);
+    let delivered = gate.drain_alerts();
+    assert_eq!(delivered.len(), 2);
+    assert!(gate.alerts().is_empty(), "delivery drains the bank");
+    assert!(gate.entries_halted(), "draining never clears the halt");
+    assert!(gate.drain_alerts().is_empty());
+    gate.observe(&reconcile(&journal, &[position("SPY", 2)]));
+    assert!(!gate.entries_halted());
+}

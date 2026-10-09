@@ -33,7 +33,9 @@ pub struct AdjustedBounds {
 ///
 /// A provided start moves earlier by `headroom * timeframe`; a provided
 /// limit grows by `headroom`. `warmup` of 0 or 1 adds no headroom. The start
-/// is clamped at zero rather than wrapping.
+/// is clamped at zero rather than wrapping, and extreme warmups saturate
+/// instead of overflowing: identical to plain arithmetic for every
+/// representable fetch, fail-closed instead of panicking past it.
 #[must_use]
 pub fn adjust_fetch_bounds(
     start_ms: Option<i64>,
@@ -41,11 +43,12 @@ pub fn adjust_fetch_bounds(
     timeframe: Timeframe,
     warmup: usize,
 ) -> AdjustedBounds {
-    let headroom = warmup_headroom(warmup) as i64;
-    let step_ms = i64::from(timeframe.minutes()) * 60_000;
+    let headroom_u = warmup_headroom(warmup);
+    let headroom = i64::try_from(headroom_u).unwrap_or(i64::MAX);
+    let step_ms = timeframe.duration_ms();
     AdjustedBounds {
-        fetch_start_ms: start_ms.map(|s| (s - headroom * step_ms).max(0)),
-        fetch_limit: limit.map(|l| l + warmup_headroom(warmup)),
+        fetch_start_ms: start_ms.map(|s| s.saturating_sub(headroom.saturating_mul(step_ms)).max(0)),
+        fetch_limit: limit.map(|l| l.saturating_add(headroom_u)),
         original_start_ms: start_ms,
         original_limit: limit,
     }

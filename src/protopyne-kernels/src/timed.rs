@@ -58,6 +58,14 @@ impl WorkUnit for KernelUnit {
             .run()
             .map_err(|e| WorkError::Execution(e.to_string()))?;
         let warmed = result.values.iter().flatten().count();
+        // A serialization failure fails the unit loudly: succeeding with a
+        // null payload would let a broken result read as an empty one.
+        let data = serde_json::to_value(&result).map_err(|e| {
+            WorkError::Execution(format!(
+                "{} result failed to serialize: {e}",
+                self.indicator.spec().id
+            ))
+        })?;
         Ok(WorkOutput::ok_with_data(
             format!(
                 "{} evaluated {} bars ({} warmed)",
@@ -65,7 +73,7 @@ impl WorkUnit for KernelUnit {
                 result.len(),
                 warmed
             ),
-            serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+            data,
         ))
     }
 }

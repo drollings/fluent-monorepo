@@ -9,13 +9,15 @@
 pub mod bar;
 pub mod error;
 pub mod money;
+pub mod series;
 pub mod timeframe;
 pub mod warmup;
 pub mod window;
 
-pub use bar::{Adjustment, Bar};
+pub use bar::{validate_new_bar, Adjustment, Bar};
 pub use error::TypesError;
 pub use money::{Money, Qty};
+pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
 pub use timeframe::Timeframe;
 pub use warmup::{adjust_fetch_bounds, trim_indicator_output, warmup_headroom, AdjustedBounds};
 pub use window::{BarGap, BarWindow};

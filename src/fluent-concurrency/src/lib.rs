@@ -22,6 +22,7 @@ pub mod ladder;
 pub mod batch;
 pub mod pool;
 pub mod queue;
+pub mod reconnect;
 pub mod retry;
 pub mod runtime;
 pub mod scope;

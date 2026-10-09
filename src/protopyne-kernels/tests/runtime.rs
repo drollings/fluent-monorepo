@@ -26,7 +26,12 @@ fn bar(price: &str) -> protopyne_types::Bar {
 
 #[test]
 fn run_over_walks_every_bar_in_order() {
-    let runtime = PineRuntime::new(config());
+    let runtime = PineRuntime::new(
+        PineRuntimeConfig::new()
+            .max_bars(100_u64)
+            .warmup_bars(0_u64)
+            .build(),
+    );
     let bars = [bar("1.0"), bar("2.0"), bar("3.0")];
     let mut seen = Vec::new();
     let evaluated = runtime
@@ -36,6 +41,33 @@ fn run_over_walks_every_bar_in_order() {
         .expect("within cap");
     assert_eq!(evaluated, 3);
     assert_eq!(seen, vec![0, 1, 2]);
+}
+
+#[test]
+fn run_over_enforces_warmup_skip_with_evaluated_counts() {
+    let runtime = PineRuntime::new(
+        PineRuntimeConfig::new()
+            .max_bars(100_u64)
+            .warmup_bars(1_u64)
+            .build(),
+    );
+    let bars = [bar("1.0"), bar("2.0"), bar("3.0")];
+    let mut seen = Vec::new();
+    let evaluated = runtime
+        .run_over(&bars, InputSet::new(), |ctx| {
+            seen.push(ctx.cursor());
+        })
+        .expect("within cap");
+    assert_eq!(evaluated, 2, "count covers evaluated bars only");
+    assert_eq!(seen, vec![1, 2], "warmup bars advance without evaluation");
+
+    let runtime = PineRuntime::new(config());
+    let evaluated = runtime
+        .run_over(&bars, InputSet::new(), |_| {
+            panic!("warmup covering all bars must evaluate nothing");
+        })
+        .expect("within cap");
+    assert_eq!(evaluated, 0);
 }
 
 #[test]

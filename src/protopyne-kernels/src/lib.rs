@@ -11,12 +11,14 @@
 
 pub mod averages;
 pub mod compat;
+pub mod component;
 pub mod context;
 pub mod drawing;
 pub mod ema;
 pub mod error;
 pub mod indicator;
 pub mod inputs;
+pub mod math;
 pub mod oscillators;
 pub mod research;
 pub mod runtime;
@@ -28,8 +30,9 @@ pub mod value;
 pub mod vars;
 pub mod volatility;
 
-pub use averages::{AlmaIndicator, HmaIndicator, RmaIndicator, VwmaIndicator, WmaIndicator};
+pub use averages::{AlmaIndicator, DemaIndicator, HmaIndicator, RmaIndicator, TemaIndicator, VwmaIndicator, WmaIndicator};
 pub use compat::{assert_matrix_covers, compat_for, CompatStatus, KernelCompat, COMPATIBILITY};
+pub use component::{dynamic_indicator, indicator_double, ComponentRegistry, IndicatorComponent};
 pub use context::RunCtx;
 pub use drawing::{Drawing, DrawingKind};
 pub use ema::EmaIndicator;
@@ -45,6 +48,7 @@ pub use timed::{instrumented_kernel, KernelUnit};
 pub use util::{change, cross_warmup, crossover, crossunder, highest, lowest, mom};
 pub use volatility::{true_range, AtrIndicator, BbIndicator, KcIndicator, TrIndicator};
 pub use inputs::{InputDef, InputSet};
+pub use math::{div_or_none, ema_factor, ema_step, period_len, warmup_none, wilder_step, window_mean, window_sum};
 pub use runtime::{PineRuntime, PineRuntimeConfig};
 pub use series::SliceSeries;
 pub use sma::SmaIndicator;

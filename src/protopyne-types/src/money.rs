@@ -59,7 +59,7 @@ impl FromStr for Money {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<Decimal>()
             .map(Self)
-            .map_err(|_| TypesError::InvalidBar(format!("invalid money value: {s}")))
+            .map_err(|_| TypesError::InvalidMoney(format!("invalid money value: {s}")))
     }
 }
 
@@ -111,6 +111,6 @@ impl FromStr for Qty {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<Decimal>()
             .map(Self)
-            .map_err(|_| TypesError::InvalidBar(format!("invalid quantity value: {s}")))
+            .map_err(|_| TypesError::InvalidQuantity(format!("invalid quantity value: {s}")))
     }
 }

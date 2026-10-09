@@ -119,6 +119,45 @@ impl SqliteStore {
     ) -> Result<T, DbError> {
         self.with_conn_mut(|conn| crate::query::transaction(conn, f))
     }
+
+    /// Create the shared outbox table if missing (see `crate::outbox`).
+    pub fn outbox_init(&self) -> Result<(), DbError> {
+        self.with_conn(crate::outbox::init_schema)
+    }
+
+    /// Number of rows still in the shared outbox.
+    pub fn outbox_pending(&self) -> Result<usize, DbError> {
+        self.with_conn(crate::outbox::pending_count)
+    }
+
+    /// Delete delivered outbox rows; returns rows removed.
+    pub fn outbox_ack(&self, ids: &[i64]) -> Result<usize, DbError> {
+        self.with_conn(|conn| crate::outbox::ack(conn, ids))
+    }
+
+    /// Claim up to `limit` outbox rows in FIFO order, leasing them for
+    /// `lease_ms` from `now_ms` (both milliseconds since the caller's epoch).
+    ///
+    /// Contended claims surface as `DbError::Busy` when two writers upgrade
+    /// past each other's shared locks; those are retried with a short sleep
+    /// (bounded) so concurrent claimants serialize instead of failing.
+    pub fn outbox_claim(
+        &self,
+        limit: usize,
+        lease_ms: i64,
+        now_ms: i64,
+    ) -> Result<Vec<crate::outbox::OutboxEntry>, DbError> {
+        let mut attempts = 0u32;
+        loop {
+            match self.transaction(|tx| crate::outbox::claim_batch(tx, limit, lease_ms, now_ms)) {
+                Err(DbError::Busy(_)) if attempts < 20 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                done => return done,
+            }
+        }
+    }
 }
 
 #[cfg(all(test, feature = "sqlite"))]

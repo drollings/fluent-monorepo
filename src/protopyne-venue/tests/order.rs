@@ -73,3 +73,60 @@ fn positions_flatten_to_zero() {
     position.apply(-2, money("601.00"));
     assert_eq!(position.quantity, 0);
 }
+
+fn position_at(quantity: i64, basis: &str) -> Position {
+    Position::new()
+        .underlying("SPY".to_owned())
+        .quantity(quantity)
+        .avg_price(money(basis))
+        .build()
+}
+
+#[test]
+fn positions_flip_long_to_short_reanchors_basis() {
+    let mut position = position_at(2, "600.00");
+    position.apply(-5, money("610.00"));
+    assert_eq!(position.quantity, -3);
+    assert_eq!(position.avg_price, money("610.00"));
+}
+
+#[test]
+fn positions_flip_short_to_long_reanchors_basis() {
+    let mut position = position_at(-2, "600.00");
+    position.apply(5, money("590.00"));
+    assert_eq!(position.quantity, 3);
+    assert_eq!(position.avg_price, money("590.00"));
+}
+
+#[test]
+fn positions_flip_back_restores_new_basis() {
+    let mut position = position_at(0, "600.00");
+    position.apply(2, money("600.00"));
+    assert_eq!(position.avg_price, money("600.00"));
+    position.apply(-4, money("610.00"));
+    assert_eq!(position.quantity, -2);
+    assert_eq!(position.avg_price, money("610.00"));
+    position.apply(3, money("620.00"));
+    assert_eq!(position.quantity, 1);
+    assert_eq!(position.avg_price, money("620.00"));
+}
+
+#[test]
+fn positions_partial_close_keeps_basis() {
+    let mut position = position_at(4, "600.00");
+    position.apply(-1, money("610.00"));
+    assert_eq!(position.quantity, 3);
+    assert_eq!(position.avg_price, money("600.00"));
+    let mut short = position_at(-4, "600.00");
+    short.apply(1, money("590.00"));
+    assert_eq!(short.quantity, -3);
+    assert_eq!(short.avg_price, money("600.00"));
+}
+
+#[test]
+fn positions_same_direction_add_averages() {
+    let mut position = position_at(2, "600.00");
+    position.apply(2, money("610.00"));
+    assert_eq!(position.quantity, 4);
+    assert_eq!(position.avg_price, money("605.00"));
+}

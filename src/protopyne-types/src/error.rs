@@ -12,6 +12,12 @@ pub enum TypesError {
     /// A bar failed structural validation.
     #[error("invalid bar: {0}")]
     InvalidBar(String),
+    /// A money amount failed to parse.
+    #[error("invalid money: {0}")]
+    InvalidMoney(String),
+    /// A quantity failed to parse.
+    #[error("invalid quantity: {0}")]
+    InvalidQuantity(String),
     /// Underlying I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] IoError),

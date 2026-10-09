@@ -578,6 +578,8 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::averages::HmaIndicator::new()))?;
     registry.register(Arc::new(crate::averages::VwmaIndicator::new()))?;
     registry.register(Arc::new(crate::averages::AlmaIndicator::new()))?;
+    registry.register(Arc::new(crate::averages::DemaIndicator::new()))?;
+    registry.register(Arc::new(crate::averages::TemaIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::RsiIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::MacdIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::StochIndicator::new()))?;
