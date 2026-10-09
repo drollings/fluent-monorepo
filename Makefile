@@ -340,7 +340,7 @@ protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopy
 	$(Q)bash $(ROUTER_WAIT_SCRIPT) $(PROTOPYNE_HEALTH_URL) $(PROTOPYNE_START_TIMEOUT_S) $(PROTOPYNE_LOG) protopyne-server
 
 .PHONY: protopyne-test
-protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run all five protopyne-rs crate suites + a --help dry-run of the built binary (stops a running server first)
+protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run the five trading-crate protopyne-rs suites + a --help dry-run of the built binary (stops a running server first; chart crates ride the workspace gate)
 	$(stop-protopyne)
 	$(Q)echo "Running protopyne-rs unit + integration suites"
 	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server
