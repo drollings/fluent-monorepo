@@ -18,6 +18,12 @@ use std::sync::Mutex;
 
 use crate::error::VenueError;
 use crate::order::{OrderIntent, OrderRecord, OrderStatus};
+use crate::venue::LegExecution;
+
+/// Event kind for one executed spread leg. The detail is the leg's
+/// [`LegExecution`] as JSON. Additive: rows written before legs existed
+/// carry no such events and replay exactly as before.
+pub const LEG_FILL_KIND: &str = "leg_fill";
 
 /// Capability token binding journal access to one supervised session.
 /// The session mints exactly one per journal file and installs it in the
@@ -49,8 +55,9 @@ pub struct JournalEvent {
     pub seq: i64,
     /// Client ID the event belongs to.
     pub client_id: String,
-    /// Event kind (`intent`, `submitted`, `acknowledged`, `filled`,
-    /// `cancelled`, `rejected`).
+    /// Event kind (`intent`, `submitted`, `acknowledged`, `partial`,
+    /// `filled`, `cancelled`, `rejected`, `expired`, `open_failed`, plus one
+    /// [`LEG_FILL_KIND`] row per executed spread leg).
     pub kind: String,
     /// Machine-readable detail (JSON).
     pub detail: String,
@@ -196,19 +203,37 @@ impl Journal {
         .map_err(|e| VenueError::Journal(e.to_string()))
     }
 
+    /// Record one executed spread leg under `client_id`. One row per leg, in
+    /// leg order; single-leg fills write no such rows. Append-only like
+    /// every other event, so replay sees the same atomic package the venue
+    /// executed.
+    pub fn record_leg_fill(
+        &self,
+        permit: &VenueStorage,
+        client_id: &str,
+        leg: &LegExecution,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.gate(permit)?;
+        let detail =
+            serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
+        let conn = common_core::sync::lock(&self.conn);
+        Self::append_locked(&conn, client_id, LEG_FILL_KIND, &detail, now)
+    }
+
     /// Intents not yet terminal: the transactional outbox. After a crash,
     /// each row resolves through query-by-ID against venue truth.
     ///
     /// The predicate is every non-terminal status (`pending`, `submitted`,
-    /// `acknowledged`): an acknowledgement is still mid-flight, so excluding
-    /// it would strand a crashed-after-ack order as an unknown position. Any
-    /// future mid-flight status must join this predicate, or crash recovery
-    /// will skip it.
+    /// `acknowledged`, `partial`): an acknowledgement — or a partial fill
+    /// still working — is still mid-flight, so excluding it would strand a
+    /// crashed-after-ack order as an unknown position. Any future mid-flight
+    /// status must join this predicate, or crash recovery will skip it.
     pub fn outbox_pending(&self, permit: &VenueStorage) -> Result<Vec<OrderIntent>, VenueError> {
         self.gate(permit)?;
         let conn = common_core::sync::lock(&self.conn);
         let mut stmt = conn
-            .prepare("SELECT payload FROM intents WHERE status IN ('pending','submitted','acknowledged') ORDER BY created_ms")
+            .prepare("SELECT payload FROM intents WHERE status IN ('pending','submitted','acknowledged','partial') ORDER BY created_ms")
             .map_err(|e| VenueError::Journal(e.to_string()))?;
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))
@@ -298,9 +323,12 @@ impl Journal {
                     record.status = match event.kind.as_str() {
                         "submitted" => OrderStatus::Submitted,
                         "acknowledged" => OrderStatus::Acknowledged,
+                        "partial" => OrderStatus::Partial,
                         "filled" => OrderStatus::Filled,
                         "cancelled" => OrderStatus::Cancelled,
                         "rejected" => OrderStatus::Rejected,
+                        "expired" => OrderStatus::Expired,
+                        "open_failed" => OrderStatus::OpenFailed,
                         _ => record.status,
                     };
                 }
@@ -347,9 +375,12 @@ fn status_name(status: OrderStatus) -> &'static str {
         OrderStatus::Pending => "pending",
         OrderStatus::Submitted => "submitted",
         OrderStatus::Acknowledged => "acknowledged",
+        OrderStatus::Partial => "partial",
         OrderStatus::Filled => "filled",
         OrderStatus::Cancelled => "cancelled",
         OrderStatus::Rejected => "rejected",
+        OrderStatus::Expired => "expired",
+        OrderStatus::OpenFailed => "open_failed",
     }
 }
 

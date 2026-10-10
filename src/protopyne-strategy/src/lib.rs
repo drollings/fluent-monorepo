@@ -12,6 +12,7 @@
 
 pub mod elements;
 pub mod error;
+pub mod generator;
 pub mod grant;
 pub mod proposal;
 pub mod risk;
@@ -22,6 +23,11 @@ pub use elements::{
     StructureSelector,
 };
 pub use error::StrategyError;
+pub use generator::{
+    Exposure, GenerateInput, Generator, GeneratorBuilder, RebalanceMode, RebalanceOutcome, Rung,
+    REPORT_SCORE_WINDOW, REPORT_SLOPE_LOOKBACK, ladder_rung, portfolio_for, rebalance, rsrs_score,
+    utility,
+};
 pub use grant::{
     BreakerLimits, BreakerState, Grant, GrantBudgets, GrantDecision, GrantMarket, GrantPatch,
     GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, SignalThresholds,

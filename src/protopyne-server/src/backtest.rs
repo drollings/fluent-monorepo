@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{CorporateEvent, DryRunOutcome, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError};
+use protopyne_venue::{AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError};
 
 use crate::csv::load_bars_csv;
 use crate::error::ServerError;
@@ -219,6 +219,30 @@ impl Venue for BacktestVenue {
         now: DateTime<Utc>,
     ) -> Result<String, VenueError> {
         self.inner.apply_corporate_event(underlying, event, now)
+    }
+
+    fn account_snapshot(&self) -> AccountSnapshot {
+        self.inner.account_snapshot()
+    }
+
+    fn account_stream(&self) -> Vec<AccountEvent> {
+        self.inner.account_stream()
+    }
+
+    fn fetch_balances(&self) -> Vec<BalanceEntry> {
+        self.inner.fetch_balances()
+    }
+
+    fn fetch_open_orders(&self) -> Vec<OrderRecord> {
+        self.inner.fetch_open_orders()
+    }
+
+    fn fetch_trades(&self) -> Vec<Fill> {
+        self.inner.fetch_trades()
+    }
+
+    fn executed_legs(&self, client_id: &str) -> Vec<LegExecution> {
+        self.inner.executed_legs(client_id)
     }
 }
 

@@ -8,7 +8,9 @@
 use std::collections::HashMap;
 
 use crate::error::VenueError;
-use crate::order::Position;
+use crate::journal::{JournalEvent, LEG_FILL_KIND};
+use crate::order::{OrderSide, Position};
+use crate::venue::LegExecution;
 
 /// One position-level disagreement.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,16 +47,66 @@ pub fn reconcile<S: std::hash::BuildHasher>(
     for position in venue {
         *venue_qty.entry(position.underlying.as_str()).or_default() += position.quantity;
     }
+    let journal_owned: HashMap<String, i64> = journal_signed_qty
+        .iter()
+        .map(|(key, qty)| (key.clone(), *qty))
+        .collect();
+    let venue_owned: HashMap<String, i64> = venue_qty
+        .iter()
+        .map(|(key, qty)| ((*key).to_owned(), *qty))
+        .collect();
+    compare_nets(&journal_owned, &venue_owned)
+}
+
+/// Compare leg-aware journal fills (signed quantities by contract OCC
+/// symbol) against leg-aware venue truth on the same keys. Same pure compare
+/// shape as [`reconcile`]: any disagreement halts entries through the same
+/// [`ReconcileGate`].
+#[must_use]
+pub fn reconcile_legs<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
+    journal_signed_qty: &HashMap<String, i64, S>,
+    venue_signed_qty: &HashMap<String, i64, T>,
+) -> ReconcileReport {
+    compare_nets(journal_signed_qty, venue_signed_qty)
+}
+
+/// Net signed quantity per spread-leg contract from journaled leg rows:
+/// buys add, sells subtract, keyed by OCC symbol. Non-leg rows are skipped;
+/// a leg row whose detail does not parse is a journal fault, never a silent
+/// skip.
+pub fn journal_leg_net(events: &[JournalEvent]) -> Result<HashMap<String, i64>, VenueError> {
+    let mut net: HashMap<String, i64> = HashMap::new();
+    for event in events {
+        if event.kind != LEG_FILL_KIND {
+            continue;
+        }
+        let leg: LegExecution = serde_json::from_str(&event.detail)
+            .map_err(|e| VenueError::Journal(format!("unreadable leg row: {e}")))?;
+        let signed = match leg.side {
+            OrderSide::Buy => i64::from(leg.quantity),
+            OrderSide::Sell => -i64::from(leg.quantity),
+        };
+        *net.entry(leg.contract.as_str().to_owned()).or_default() += signed;
+    }
+    Ok(net)
+}
+
+/// Shared comparison: every key either side mentions, sorted for stable
+/// reports; one mismatch entry per disagreement.
+fn compare_nets<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
+    journal_qty: &HashMap<String, i64, S>,
+    venue_qty: &HashMap<String, i64, T>,
+) -> ReconcileReport {
     let mut mismatches = Vec::new();
-    let mut underlyings: Vec<&str> = journal_signed_qty
+    let mut underlyings: Vec<&str> = journal_qty
         .keys()
         .map(String::as_str)
-        .chain(venue_qty.keys().copied())
+        .chain(venue_qty.keys().map(String::as_str))
         .collect();
     underlyings.sort_unstable();
     underlyings.dedup();
     for underlying in underlyings {
-        let journal = journal_signed_qty.get(underlying).copied().unwrap_or(0);
+        let journal = journal_qty.get(underlying).copied().unwrap_or(0);
         let venue = venue_qty.get(underlying).copied().unwrap_or(0);
         if journal != venue {
             mismatches.push(ReconcileMismatch {

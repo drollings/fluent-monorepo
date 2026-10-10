@@ -156,14 +156,16 @@ async fn status_write_leaves_no_half_written_state() {
 #[tokio::test]
 async fn outbox_covers_every_mid_flight_status() {
     // Crash recovery resolves through query-by-ID every intent that never
-    // reached terminal: pending, submitted, AND acknowledged must all stay
-    // in the outbox, or a mid-flight ack would strand an unknown position.
+    // reached terminal: pending, submitted, acknowledged, AND partial must
+    // all stay in the outbox, or a mid-flight ack would strand an unknown
+    // position.
     let (_dir, journal, permit) = setup();
     let now = Utc::now();
     scoped(permit.clone(), async {
         journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
         journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
         journal.record_intent(&permit, &intent("c#0"), now).expect("intent c");
+        journal.record_intent(&permit, &intent("d#0"), now).expect("intent d");
         journal
             .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
             .expect("submitted");
@@ -171,7 +173,10 @@ async fn outbox_covers_every_mid_flight_status() {
             .mark_status(&permit, "b#0", OrderStatus::Acknowledged, now)
             .expect("acknowledged");
         journal
-            .mark_status(&permit, "c#0", OrderStatus::Filled, now)
+            .mark_status(&permit, "c#0", OrderStatus::Partial, now)
+            .expect("partial");
+        journal
+            .mark_status(&permit, "d#0", OrderStatus::Filled, now)
             .expect("filled");
         let pending: Vec<String> = journal
             .outbox_pending(&permit)
@@ -184,7 +189,11 @@ async fn outbox_covers_every_mid_flight_status() {
             pending.contains(&"b#0".to_owned()),
             "acknowledged stays pending — it is still mid-flight: {pending:?}"
         );
-        assert!(!pending.contains(&"c#0".to_owned()), "filled leaves the outbox");
+        assert!(
+            pending.contains(&"c#0".to_owned()),
+            "partial stays pending — the venue may still change it: {pending:?}"
+        );
+        assert!(!pending.contains(&"d#0".to_owned()), "filled leaves the outbox");
     })
     .await;
 }

@@ -7,6 +7,7 @@
 //! strategy, venue, or server logic lives here.
 
 pub mod bar;
+pub mod chain;
 pub mod error;
 pub mod money;
 pub mod series;
@@ -15,6 +16,10 @@ pub mod warmup;
 pub mod window;
 
 pub use bar::{validate_new_bar, Adjustment, Bar};
+pub use chain::{
+    ChainQuote, ContractId, Greeks, LegSide, OptionContract, OptionKind, Portfolio, PortfolioId,
+    SpreadLeg, SpreadLegs, MAX_SPREAD_LEGS,
+};
 pub use error::TypesError;
 pub use money::{Money, Qty};
 pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};

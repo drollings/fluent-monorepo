@@ -22,6 +22,22 @@ pub const SUBMIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Retry budget for retryable venue failures (transport, 5xx, timeout).
 pub const SUBMIT_RETRIES: u32 = 3;
 
+/// Journal one row per executed spread leg. Empty for single-leg intents —
+/// venues that execute no legs report none — so the legacy journal shape is
+/// untouched when no spread filled.
+fn journal_legs<V: Venue>(
+    permit: &VenueStorage,
+    journal: &Journal,
+    venue: &V,
+    client_id: &str,
+    now: DateTime<Utc>,
+) -> Result<(), VenueError> {
+    for leg in venue.executed_legs(client_id) {
+        journal.record_leg_fill(permit, client_id, &leg, now)?;
+    }
+    Ok(())
+}
+
 /// Submit `intent` through the full safe protocol. Demands the
 /// [`RiskApproved`] token minted for this proposal: without it there is no
 /// submission path, so strategy code cannot bypass the risk engine.
@@ -80,6 +96,7 @@ pub async fn safe_submit<V: Venue>(
         Ok(record) => {
             let status = record.status;
             journal.mark_status(permit, &intent.client_id, status, now)?;
+            journal_legs(permit, journal, venue, &intent.client_id, now)?;
             journal.record_transition(
                 permit,
                 &intent.client_id,
@@ -94,6 +111,7 @@ pub async fn safe_submit<V: Venue>(
                 if let Some(record) = venue.query(&intent.client_id).await {
                     let status = record.status;
                     journal.mark_status(permit, &intent.client_id, status, now)?;
+                    journal_legs(permit, journal, venue, &intent.client_id, now)?;
                     return Ok(record);
                 }
             }

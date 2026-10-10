@@ -170,6 +170,23 @@ async fn backtest_venue_honors_explicit_paper_tuning() {
 }
 
 #[test]
+fn backtest_snapshot_delegates_to_inner_venue() {
+    use protopyne_venue::PaperVenue;
+    let bars = crate::load_bars_csv(&test_data()).expect("vendored history loads");
+    let paper_cfg = PaperConfig::new().build();
+    let paper = PaperVenue::new(paper_cfg.clone());
+    let venue = BacktestVenue::new(config(), bars[..8].to_vec(), paper_cfg)
+        .expect("venue pins history");
+    // Delegation equality on the same inputs: the backtest venue adds no
+    // account logic of its own, it mirrors its inner paper venue.
+    assert_eq!(venue.account_snapshot(), paper.account_snapshot());
+    assert_eq!(venue.account_stream(), paper.account_stream());
+    assert_eq!(venue.fetch_balances(), paper.fetch_balances());
+    assert_eq!(venue.fetch_open_orders(), paper.fetch_open_orders());
+    assert_eq!(venue.fetch_trades(), paper.fetch_trades());
+}
+
+#[test]
 fn fallback_loader_prefers_first_usable_source() {
     let missing = PathBuf::from("/nonexistent/history-a.csv");
     let bars = load_bars_with_fallback(&[missing.clone(), test_data()]).expect("falls through");

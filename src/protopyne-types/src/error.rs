@@ -18,6 +18,15 @@ pub enum TypesError {
     /// A quantity failed to parse.
     #[error("invalid quantity: {0}")]
     InvalidQuantity(String),
+    /// An option contract or chain quote failed structural validation.
+    #[error("invalid contract: {0}")]
+    InvalidContract(String),
+    /// A spread failed structural or defined-risk validation.
+    #[error("invalid spread: {0}")]
+    InvalidSpread(String),
+    /// A portfolio failed structural validation.
+    #[error("invalid portfolio: {0}")]
+    InvalidPortfolio(String),
     /// Underlying I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] IoError),

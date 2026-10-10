@@ -11,17 +11,18 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use protopyne_types::Money;
+use protopyne_types::{LegSide, Money, SpreadLegs};
 
 use crate::error::VenueError;
 use crate::order::{
     CorporateEvent, Fill, OrderIntent, OrderRecord, OrderSide, OrderStatus, Position,
 };
+use crate::position::{PositionFill, SpreadPosition, update_from_fill};
 use crate::quote::{FeeSchedule, LiquidityFilter, Quote, Slippage, DEFAULT_SLIPPAGE_BPS};
-use crate::venue::{DryRunOutcome, Venue};
+use crate::venue::{DryRunOutcome, LegExecution, LegQuoteSource, Venue};
 
 /// Injected failure, consumed FIFO. Tests script venue behavior without any
 /// network: every fault is explicit, ordered, and drained.
@@ -39,10 +40,15 @@ pub enum Fault {
 }
 
 /// Venue-side books: orders by client ID plus net positions by underlying.
+/// Spread legs additionally track per-contract positions by OCC symbol and
+/// the executed legs behind each spread fill, both keyed for query and
+/// reconciliation.
 #[derive(Debug, Default)]
 struct Book {
     orders: HashMap<String, OrderRecord>,
     positions: HashMap<String, Position>,
+    spread: HashMap<String, SpreadPosition>,
+    executions: HashMap<String, Vec<LegExecution>>,
 }
 
 /// Configuration for one paper venue.
@@ -72,6 +78,7 @@ pub struct PaperVenue {
     config: PaperConfig,
     book: Mutex<Book>,
     faults: Mutex<VecDeque<Fault>>,
+    leg_quotes: Mutex<Option<Arc<dyn LegQuoteSource>>>,
 }
 
 impl PaperVenue {
@@ -82,6 +89,7 @@ impl PaperVenue {
             config,
             book: Mutex::new(Book::default()),
             faults: Mutex::new(VecDeque::new()),
+            leg_quotes: Mutex::new(None),
         }
     }
 
@@ -94,6 +102,24 @@ impl PaperVenue {
     /// Queue one injected fault for the next submission.
     pub fn inject(&self, fault: Fault) {
         common_core::sync::lock(&self.faults).push_back(fault);
+    }
+
+    /// Install the per-leg market data source for spread evaluation. The
+    /// venue owns no feed: without a source, multi-leg intents refuse
+    /// fail-closed rather than pricing legs off the single-underlying quote.
+    pub fn set_leg_quotes(&mut self, source: Arc<dyn LegQuoteSource>) {
+        *common_core::sync::lock(&self.leg_quotes) = Some(source);
+    }
+
+    /// Per-contract spread positions by OCC symbol, for reconciliation and
+    /// tests. Single-underlying net positions stay on [`positions`](Self::positions).
+    #[must_use]
+    pub fn spread_positions(&self) -> HashMap<String, SpreadPosition> {
+        common_core::sync::lock(&self.book).spread.clone()
+    }
+
+    fn leg_source(&self) -> Option<Arc<dyn LegQuoteSource>> {
+        common_core::sync::lock(&self.leg_quotes).clone()
     }
 
     /// Pending injected faults (for test assertions).
@@ -174,6 +200,174 @@ impl PaperVenue {
         position.apply(signed_qty, price);
         book.orders.insert(record.intent.client_id.clone(), record);
     }
+
+    /// Decide a multi-leg spread as one atomic package: every leg folds
+    /// through the same [`LiquidityFilter::check`](crate::quote::LiquidityFilter::check)
+    /// then [`Slippage::apply`](crate::quote::Slippage::apply) as the
+    /// single-leg path — same helpers, same constants — and every leg must
+    /// pass or the whole spread refuses with per-leg reasons naming the
+    /// offending leg. Legs describe fills (long legs buy, short legs sell);
+    /// the intent side gates the net package (buy ⇒ net debit within the
+    /// limit, sell ⇒ net credit at least the limit). Spread legs carry no
+    /// individual limits, so no leg is capped: the net either fits the limit
+    /// or the package refuses.
+    fn decide_spread(
+        &self,
+        intent: &OrderIntent,
+        spread: &SpreadLegs,
+        now: DateTime<Utc>,
+    ) -> Result<(OrderRecord, Vec<LegExecution>), VenueError> {
+        spread
+            .validate()
+            .map_err(|e| VenueError::Invalid(e.to_string()))?;
+        if intent.quantity == 0 {
+            return Err(VenueError::Invalid("quantity must be positive".to_owned()));
+        }
+        let source = self
+            .leg_source()
+            .ok_or_else(|| VenueError::Invalid("spread intent has no leg market data".to_owned()))?;
+        let mut legs = Vec::with_capacity(spread.legs().len());
+        let mut net = Decimal::ZERO;
+        for (index, leg) in spread.legs().iter().enumerate() {
+            let occ = leg.contract.occ_symbol();
+            let quote = source.leg_quote(&leg.contract).ok_or_else(|| {
+                VenueError::Refused(format!("leg {index} ({occ}): no quote"))
+            })?;
+            let leg_qty = intent.quantity.checked_mul(leg.ratio).ok_or_else(|| {
+                VenueError::Refused(format!("leg {index} ({occ}): quantity overflow"))
+            })?;
+            let is_buy = leg.side == LegSide::Long;
+            self.config
+                .filter
+                .check(&quote, leg_qty, is_buy, now)
+                .map_err(|reason| VenueError::Refused(format!("leg {index} ({occ}): {reason}")))?;
+            let touch = if is_buy { quote.ask } else { quote.bid };
+            if touch.as_decimal() <= Decimal::ZERO {
+                return Err(VenueError::Refused(format!(
+                    "leg {index} ({occ}): touch not positive"
+                )));
+            }
+            let slipped = self.config.slippage.apply(touch, is_buy);
+            let fee = self.config.fees.fee_for(leg_qty).ok_or_else(|| {
+                VenueError::Refused(format!("leg {index} ({occ}): fee overflow"))
+            })?;
+            let sign = if is_buy {
+                Decimal::ONE
+            } else {
+                Decimal::NEGATIVE_ONE
+            };
+            net += sign * slipped.as_decimal() * Decimal::from(leg.ratio);
+            legs.push(LegExecution {
+                contract: protopyne_types::ContractId::new(occ),
+                side: if is_buy {
+                    OrderSide::Buy
+                } else {
+                    OrderSide::Sell
+                },
+                quantity: leg_qty,
+                price: slipped,
+                fee,
+            });
+        }
+        let limit = intent.limit_price.as_decimal();
+        let within_limit = match intent.side {
+            OrderSide::Buy => net <= limit,
+            OrderSide::Sell => net >= limit,
+        };
+        if !within_limit {
+            return Err(VenueError::Refused(format!(
+                "net {net} outside limit {limit} for {} spread",
+                intent.side
+            )));
+        }
+        let filled_quantity: u32 = legs
+            .iter()
+            .map(|leg| leg.quantity)
+            .try_fold(0_u32, |total, qty| {
+                total
+                    .checked_add(qty)
+                    .ok_or_else(|| VenueError::Refused("filled quantity overflow".to_owned()))
+            })?;
+        let fees_paid = Money::new(legs.iter().map(|leg| leg.fee.as_decimal()).sum());
+        let mut record = OrderRecord::pending(intent.clone(), now);
+        record.status = OrderStatus::Acknowledged;
+        record.apply_fill(
+            Fill::new()
+                .quantity(filled_quantity)
+                .price(Money::new(net))
+                .fee(fees_paid)
+                .build(),
+            now,
+        );
+        record.status = OrderStatus::Filled;
+        Ok((record, legs))
+    }
+
+    /// Commit an executed spread: one [`update_from_fill`](crate::position::update_from_fill)
+    /// fold per leg into the per-contract book, tagging each leg position
+    /// with the executed structure, plus the order record and the executed
+    /// legs for query and journaling. An engine refusal here means the
+    /// venue's own fills disagreed with its books — a server fault, never a
+    /// silent partial commit.
+    fn commit_spread(
+        &self,
+        record: OrderRecord,
+        legs: Vec<LegExecution>,
+        structure: &SpreadLegs,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        let client_id = record.intent.client_id.clone();
+        let underlying = record.intent.underlying.clone();
+        let mut book = common_core::sync::lock(&self.book);
+        book.orders.insert(client_id.clone(), record);
+        for (index, leg) in legs.iter().enumerate() {
+            let key = leg.contract.as_str().to_owned();
+            let fill = PositionFill::new()
+                .underlying(underlying.clone())
+                .side(leg.side)
+                .quantity(leg.quantity)
+                .price(leg.price)
+                .fee(leg.fee)
+                .trade_id(format!("{client_id}#leg{index}"))
+                .at(now)
+                .build();
+            let current = book.spread.remove(&key);
+            let (next, _exited) = update_from_fill(current, &fill).map_err(|e| {
+                VenueError::Server(format!("leg commit refused: {e}"))
+            })?;
+            if let Some(mut position) = next {
+                position.legs = Some(structure.clone());
+                book.spread.insert(key, position);
+            }
+        }
+        book.executions.insert(client_id, legs);
+        Ok(())
+    }
+
+    /// Execute one intent through the matching fill path: the legacy
+    /// single-leg decide/commit when no legs are attached, the atomic spread
+    /// fold when they are. Fault injection and idempotency stay in
+    /// [`submit`](Venue::submit); this only decides and commits.
+    fn execute(
+        &self,
+        intent: &OrderIntent,
+        quote: &Quote,
+        now: DateTime<Utc>,
+    ) -> Result<OrderRecord, VenueError> {
+        match &intent.legs {
+            None => {
+                let (record, signed) = self.decide(intent, quote, now)?;
+                let price = record.avg_price.unwrap_or(intent.limit_price);
+                self.commit(record.clone(), signed, price);
+                Ok(record)
+            }
+            Some(spread) => {
+                let (record, legs) = self.decide_spread(intent, spread, now)?;
+                self.commit_spread(record.clone(), legs, spread, now)?;
+                Ok(record)
+            }
+        }
+    }
 }
 
 impl Venue for PaperVenue {
@@ -214,17 +408,12 @@ impl Venue for PaperVenue {
                 tokio::time::sleep(delay).await;
             }
             Some(Fault::LoseAck) => {
-                let (record, signed) = self.decide(&intent, quote, now)?;
-                let price = record.avg_price.unwrap_or(intent.limit_price);
-                self.commit(record.clone(), signed, price);
+                self.execute(&intent, quote, now)?;
                 return Err(VenueError::Transport("acknowledgement lost".to_owned()));
             }
             None => {}
         }
-        let (record, signed) = self.decide(&intent, quote, now)?;
-        let price = record.avg_price.unwrap_or(intent.limit_price);
-        self.commit(record.clone(), signed, price);
-        Ok(record)
+        self.execute(&intent, quote, now)
     }
 
     fn query(&self, client_id: &str) -> impl Future<Output = Option<OrderRecord>> + Send {
@@ -277,6 +466,14 @@ impl Venue for PaperVenue {
             .collect()
     }
 
+    fn executed_legs(&self, client_id: &str) -> Vec<LegExecution> {
+        common_core::sync::lock(&self.book)
+            .executions
+            .get(client_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     fn apply_corporate_event(
         &self,
         underlying: &str,
@@ -315,3 +512,7 @@ impl Venue for PaperVenue {
 #[cfg(test)]
 #[path = "../tests/paper.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/paper_legs.rs"]
+mod leg_tests;

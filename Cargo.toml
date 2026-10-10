@@ -135,7 +135,7 @@ proc-macro2 = "1"
 
 # Domain: protopyne-rs money/time
 chrono = { version = "0.4", features = ["serde"] }
-rust_decimal = { version = "1", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde", "maths"] }
 csv = { version = "1" }
 
 # System

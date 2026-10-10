@@ -14,6 +14,8 @@ use rust_decimal::prelude::ToPrimitive as _;
 
 use protopyne_types::{Bar, Money};
 
+use crate::metrics::{self, TRADING_DAYS_PER_YEAR};
+
 /// What was run, pinned for replay. Deterministic serialization order makes
 /// reruns byte-identical: the same inputs always produce the same JSON.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -217,6 +219,34 @@ pub struct BacktestReport {
     /// Latest RSRS timing score over the replayed bars (`None` when the
     /// history is shorter than the scoring window or a caller passes none).
     pub rsrs: Option<f64>,
+    /// Annualized Sharpe ratio of per-step equity returns (`None` on flat,
+    /// empty, or zero-variance curves). Annualized with
+    /// `metrics::TRADING_DAYS_PER_YEAR` daily-equivalent steps against a zero
+    /// risk-free baseline; bar-native callers recompute via
+    /// `metrics::sharpe` with their own step size.
+    #[serde(default)]
+    pub sharpe: Option<f64>,
+    /// Annualized Sortino ratio of per-step equity returns (`None` when
+    /// nothing ever falls short of the zero baseline). Same annualization
+    /// and baseline assumptions as [`BacktestReport::sharpe`]; recompute via
+    /// `metrics::sortino` for other targets.
+    #[serde(default)]
+    pub sortino: Option<f64>,
+    /// Annualized Calmar-style ratio: mean step return times
+    /// `TRADING_DAYS_PER_YEAR` over the peak-to-trough fraction (`None` when
+    /// the curve never draws down). Same annualization assumption as
+    /// [`BacktestReport::sharpe`]; recompute via `metrics::calmar` otherwise.
+    #[serde(default)]
+    pub calmar: Option<f64>,
+    /// Winning equity steps over decisive (non-flat) steps (`None` when no
+    /// step moved). Flat pre-deployment bars are excluded, never counted as
+    /// losses.
+    #[serde(default)]
+    pub win_rate: Option<f64>,
+    /// Gross equity gains over gross equity losses (`None` for empty or
+    /// all-win books; all-loss books report `Some(0.0)`).
+    #[serde(default)]
+    pub profit_factor: Option<f64>,
     /// Why greeks-over-time is unavailable in the prototype.
     pub greeks_note: String,
     /// Marked equity curve (per-bar, account currency).
@@ -229,6 +259,21 @@ impl BacktestReport {
     #[must_use]
     pub fn unavailable_greeks_note() -> String {
         "greeks-over-time unavailable: prototype has no option-chain feed".to_owned()
+    }
+
+    /// Deterministic JSON encoding of this report. Same inputs always
+    /// produce the same bytes, so a rerun can prove it changed nothing.
+    /// Serialization of plain report data cannot fail in practice; a failure
+    /// still reports loudly inside the payload instead of emitting an empty
+    /// object.
+    #[must_use]
+    pub fn to_canonical_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!(
+                "{{\"serialization_error\":{}}}",
+                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+            )
+        })
     }
 }
 
@@ -253,6 +298,13 @@ pub fn build_report(
         use rust_decimal::prelude::ToPrimitive as _;
         value.to_f64()
     });
+    let annual = Decimal::from(TRADING_DAYS_PER_YEAR);
+    let step_rets = metrics::step_returns(&equity_decimals);
+    let step_moves: Vec<Decimal> = equity_decimals
+        .windows(2)
+        .filter_map(|window| window[1].checked_sub(window[0]))
+        .collect();
+    let as_f64 = |value: Decimal| value.to_f64();
     let fill_rate = if proposals == 0 {
         None
     } else {
@@ -278,6 +330,11 @@ pub fn build_report(
         tail_loss: Money::new(worst_step_loss(&equity_decimals)),
         cum_return,
         rsrs,
+        sharpe: metrics::sharpe(&step_rets, Decimal::ZERO, annual).and_then(as_f64),
+        sortino: metrics::sortino(&step_rets, Decimal::ZERO, annual).and_then(as_f64),
+        calmar: metrics::calmar(&equity_decimals, Decimal::ZERO, annual).and_then(as_f64),
+        win_rate: metrics::win_rate(&step_moves).and_then(as_f64),
+        profit_factor: metrics::profit_factor(&step_moves).and_then(as_f64),
         greeks_note: BacktestReport::unavailable_greeks_note(),
         equity_curve,
     }

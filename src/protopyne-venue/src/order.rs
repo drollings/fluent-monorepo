@@ -11,7 +11,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use protopyne_types::{Money, Qty};
+use protopyne_types::{Money, Qty, SpreadLegs};
 
 /// Deterministic client ID for an order attempt: the proposal id plus the
 /// attempt counter. Attempt 0 is the first try; any retry reuses its own ID
@@ -39,6 +39,28 @@ impl fmt::Display for OrderSide {
     }
 }
 
+/// How long a working order stays open.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TimeInForce {
+    /// Cancelled automatically at the session close.
+    #[default]
+    Day,
+    /// Works until filled or explicitly cancelled.
+    GoodTilCancelled,
+    /// Fill immediately, in whole or in part, then cancel the rest.
+    ImmediateOrCancel,
+}
+
+impl fmt::Display for TimeInForce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Day => f.write_str("day"),
+            Self::GoodTilCancelled => f.write_str("gtc"),
+            Self::ImmediateOrCancel => f.write_str("ioc"),
+        }
+    }
+}
+
 /// What the trader wants: one limit order described before any venue touch.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
@@ -57,6 +79,16 @@ pub struct OrderIntent {
     pub quantity: u32,
     /// Limit price per contract/share.
     pub limit_price: Money,
+    /// Multi-leg spread legs. `None` is the legacy single-underlying intent:
+    /// the flat fields above describe the whole order and existing builder
+    /// call sites compile unchanged. `Some` attaches an atomic spread whose
+    /// legs submit as one multi-leg order, never leg by leg.
+    pub legs: Option<SpreadLegs>,
+    /// How long a working order stays open. Defaults to [`TimeInForce::Day`];
+    /// `#[serde(default)]` keeps pre-extension journal rows readable.
+    #[builder(default)]
+    #[serde(default)]
+    pub time_in_force: TimeInForce,
 }
 
 /// Lifecycle of one order, from journaled intent to terminal state.
@@ -68,22 +100,82 @@ pub enum OrderStatus {
     Submitted,
     /// Venue acknowledged, working.
     Acknowledged,
+    /// Working, partially filled; the venue may still change it.
+    Partial,
     /// Terminal: fully filled.
     Filled,
     /// Terminal: venue cancelled or rejected the remainder.
     Cancelled,
     /// Terminal: venue refused the order.
     Rejected,
+    /// Terminal: the venue withdrew the unfilled remainder (e.g. a day
+    /// order past the close).
+    Expired,
+    /// Terminal: the venue accepted the order then failed to open or work
+    /// it — distinct from [`Self::Rejected`], which never got that far.
+    OpenFailed,
 }
 
 impl OrderStatus {
     /// Whether the venue may still change this order.
     #[must_use]
     pub fn is_active(self) -> bool {
-        matches!(
-            self,
-            Self::Pending | Self::Submitted | Self::Acknowledged
-        )
+        self.to_active().is_some()
+    }
+
+    /// Project this status onto the active typestate, or `None` when
+    /// terminal. This is the single home of the active/terminal predicate:
+    /// [`is_active`](Self::is_active) delegates here, so no second
+    /// active-set can drift apart from it.
+    #[must_use]
+    pub fn to_active(self) -> Option<ActiveOrderState> {
+        match self {
+            Self::Pending | Self::Submitted => Some(ActiveOrderState::OpenInFlight),
+            Self::Acknowledged | Self::Partial => Some(ActiveOrderState::Open),
+            Self::Filled
+            | Self::Cancelled
+            | Self::Rejected
+            | Self::Expired
+            | Self::OpenFailed => None,
+        }
+    }
+}
+
+/// The active side of the order typestate: what an order looks like while
+/// the venue may still change it. Terminal states have no representation
+/// here by construction — [`OrderStatus::to_active`] returns `None` for
+/// them, so matching on this type proves liveness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ActiveOrderState {
+    /// Sent, acknowledgement outstanding.
+    OpenInFlight,
+    /// Venue acknowledged and working (including partially filled).
+    Open,
+    /// Cancel requested, confirmation outstanding.
+    CancelInFlight,
+}
+
+impl ActiveOrderState {
+    /// Collapse back onto the status vocabulary. A cancel request has no
+    /// status of its own — the venue has confirmed nothing yet — so it
+    /// reports the last confirmed working state.
+    #[must_use]
+    pub fn to_inactive(self) -> OrderStatus {
+        match self {
+            Self::OpenInFlight => OrderStatus::Submitted,
+            Self::Open | Self::CancelInFlight => OrderStatus::Acknowledged,
+        }
+    }
+
+    /// Request cancellation. Only a sent or working order converts; an order
+    /// already cancelling returns `None` instead of panicking or stacking a
+    /// second request.
+    #[must_use]
+    pub fn to_request_cancel(self) -> Option<Self> {
+        match self {
+            Self::OpenInFlight | Self::Open => Some(Self::CancelInFlight),
+            Self::CancelInFlight => None,
+        }
     }
 }
 

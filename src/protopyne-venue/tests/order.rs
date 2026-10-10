@@ -1,6 +1,6 @@
 use super::*;
-use chrono::Utc;
-use protopyne_types::Money;
+use chrono::{NaiveDate, Utc};
+use protopyne_types::{LegSide, Money, OptionContract, OptionKind, SpreadLeg, SpreadLegs};
 use rust_decimal::Decimal;
 
 fn money(value: &str) -> Money {
@@ -129,4 +129,109 @@ fn positions_same_direction_add_averages() {
     position.apply(2, money("610.00"));
     assert_eq!(position.quantity, 4);
     assert_eq!(position.avg_price, money("605.00"));
+}
+
+#[test]
+fn status_to_active_covers_every_status() {
+    use ActiveOrderState as A;
+    use OrderStatus as S;
+    assert_eq!(S::Pending.to_active(), Some(A::OpenInFlight));
+    assert_eq!(S::Submitted.to_active(), Some(A::OpenInFlight));
+    assert_eq!(S::Acknowledged.to_active(), Some(A::Open));
+    assert_eq!(S::Partial.to_active(), Some(A::Open));
+    assert_eq!(S::Filled.to_active(), None);
+    assert_eq!(S::Cancelled.to_active(), None);
+    assert_eq!(S::Rejected.to_active(), None);
+    assert_eq!(S::Expired.to_active(), None);
+    assert_eq!(S::OpenFailed.to_active(), None);
+}
+
+#[test]
+fn active_states_round_trip_through_inactive() {
+    use ActiveOrderState as A;
+    assert_eq!(
+        A::OpenInFlight.to_inactive().to_active(),
+        Some(A::OpenInFlight)
+    );
+    assert_eq!(A::Open.to_inactive().to_active(), Some(A::Open));
+    // A cancel request collapses to the last confirmed working state on the
+    // status side: the venue has not confirmed anything yet.
+    assert_eq!(
+        A::CancelInFlight.to_inactive(),
+        OrderStatus::Acknowledged
+    );
+}
+
+#[test]
+fn cancel_requests_convert_only_from_workable_states() {
+    use ActiveOrderState as A;
+    assert_eq!(
+        A::OpenInFlight.to_request_cancel(),
+        Some(A::CancelInFlight)
+    );
+    assert_eq!(A::Open.to_request_cancel(), Some(A::CancelInFlight));
+    assert_eq!(A::CancelInFlight.to_request_cancel(), None);
+}
+
+#[test]
+fn partial_is_active_expired_and_open_failed_are_terminal() {
+    assert!(OrderStatus::Partial.is_active());
+    assert!(!OrderStatus::Expired.is_active());
+    assert!(!OrderStatus::OpenFailed.is_active());
+}
+
+fn vertical_legs() -> SpreadLegs {
+    let expiry = NaiveDate::from_ymd_opt(2026, 1, 16).expect("valid date");
+    let long = SpreadLeg::new()
+        .contract(
+            OptionContract::new()
+                .underlying("SPY".to_owned())
+                .expiry(expiry)
+                .strike(money("600"))
+                .kind(OptionKind::Call)
+                .build(),
+        )
+        .side(LegSide::Long)
+        .ratio(1)
+        .build();
+    let short = SpreadLeg::new()
+        .contract(
+            OptionContract::new()
+                .underlying("SPY".to_owned())
+                .expiry(expiry)
+                .strike(money("610"))
+                .kind(OptionKind::Call)
+                .build(),
+        )
+        .side(LegSide::Short)
+        .ratio(1)
+        .build();
+    SpreadLegs::try_new(vec![long, short]).expect("vertical must build")
+}
+
+#[test]
+fn defaulted_intent_keeps_single_leg_shape() {
+    let built = intent();
+    assert_eq!(built.legs, None);
+    assert_eq!(built.time_in_force, TimeInForce::Day);
+    assert_eq!(built.underlying, "SPY");
+    assert_eq!(built.quantity, 2);
+    assert_eq!(built.limit_price, money("600.50"));
+
+    let legged = OrderIntent::new()
+        .client_id(client_id_for("prop-1", 0))
+        .proposal_id("prop-1".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(2)
+        .limit_price(money("600.50"))
+        .maybe_legs(Some(vertical_legs()))
+        .time_in_force(TimeInForce::GoodTilCancelled)
+        .build();
+    assert_eq!(legged.legs, Some(vertical_legs()));
+    assert_eq!(legged.time_in_force, TimeInForce::GoodTilCancelled);
+    // The flat single-leg fields are untouched by opting into legs.
+    assert_eq!(legged.underlying, built.underlying);
+    assert_eq!(legged.quantity, built.quantity);
 }

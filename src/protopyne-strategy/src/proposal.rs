@@ -199,7 +199,7 @@ pub struct JournaledTransition {
 /// A proposal carries its own economics (`limit_price`, `max_loss`,
 /// `notional`) so risk and grant checks never re-derive numbers from a
 /// strategy handle: the checked values are the submitted values.
-#[derive(Debug, Clone, Builder, Serialize, Deserialize)]
+#[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
 pub struct Proposal {
     /// Stable external identifier, also used as the venue client key.

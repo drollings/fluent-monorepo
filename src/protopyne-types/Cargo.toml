@@ -7,6 +7,7 @@ autobenches = false
 
 [dependencies]
 common-core = { path = "../common-core" }
+fluent-wvr = { path = "../fluent-wvr" }
 bon = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }

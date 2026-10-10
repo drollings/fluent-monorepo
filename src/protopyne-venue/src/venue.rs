@@ -6,8 +6,10 @@
 //! order path.
 
 use crate::error::VenueError;
-use crate::order::{CorporateEvent, OrderIntent, OrderRecord, Position};
+use crate::order::{CorporateEvent, Fill, OrderIntent, OrderRecord, OrderSide, Position};
 use crate::quote::Quote;
+use protopyne_types::{ContractId, OptionContract};
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 
 /// Outcome of a pre-submission dry run: margin and sanity checks against
@@ -18,6 +20,87 @@ pub struct DryRunOutcome {
     pub allowed: bool,
     /// Committed notional the dry run reserved.
     pub reserved_notional: protopyne_types::Money,
+}
+
+/// One cash balance line: an asset and its venue-reported amount.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BalanceEntry {
+    /// Asset or currency code (e.g. `USD`).
+    pub asset: String,
+    /// Venue-reported amount.
+    pub amount: protopyne_types::Money,
+}
+
+/// The whole account view at one instant: balances, working orders, recent
+/// fills.
+///
+/// Update semantics are snapshot-replace: receiving a snapshot discards the
+/// previous view entirely. An empty snapshot reads as "no account state",
+/// never as "unknown" — a venue with nothing to report returns the default.
+/// Incremental changes arrive as [`AccountEvent`]s, never as partial
+/// snapshots.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountSnapshot {
+    /// Cash balances by asset.
+    #[serde(default)]
+    pub balances: Vec<BalanceEntry>,
+    /// Working orders.
+    #[serde(default)]
+    pub open_orders: Vec<OrderRecord>,
+    /// Recent fills.
+    #[serde(default)]
+    pub recent_trades: Vec<Fill>,
+}
+
+impl AccountSnapshot {
+    /// `true` when every leg is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.balances.is_empty() && self.open_orders.is_empty() && self.recent_trades.is_empty()
+    }
+}
+
+/// One incremental account update.
+///
+/// Update semantics are upsert: each event carries one entry keyed by its
+/// natural key — orders by client ID, balances by asset — replacing any
+/// prior entry under that key. Trades are append-only: each [`Fill`](crate::order::Fill)
+/// is a new execution, never an update to an earlier one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AccountEvent {
+    /// One balance line changed; replaces the line for the same asset.
+    BalanceUpdated(BalanceEntry),
+    /// One order changed; replaces the order with the same client ID.
+    OrderUpdated(OrderRecord),
+    /// One new execution; appended, never merged.
+    Trade(Fill),
+}
+
+/// One executed spread leg: which contract filled, in which direction,
+/// how many contracts, at what slipped price, for what commission.
+/// Journaled per leg (see `LEG_FILL_KIND`) so replay and reconciliation see
+/// the same atomic package the venue executed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LegExecution {
+    /// Contract this leg filled in, as its OCC symbol.
+    pub contract: ContractId,
+    /// Fill direction: buys open long legs, sells open short legs.
+    pub side: OrderSide,
+    /// Contracts filled on this leg.
+    pub quantity: u32,
+    /// Slipped execution price per contract.
+    pub price: protopyne_types::Money,
+    /// Commission on this leg.
+    pub fee: protopyne_types::Money,
+}
+
+/// Per-leg market data for spread evaluation. The paper venue owns no feed;
+/// callers inject the source (tests stub it, the transport will serve it).
+/// A spread leg without a quote refuses fail-closed — legs never fall back
+/// to the single-underlying quote, which would misprice them.
+pub trait LegQuoteSource: Send + Sync {
+    /// Newest quote for `contract`, or `None` when this source has none.
+    fn leg_quote(&self, contract: &OptionContract) -> Option<Quote>;
 }
 
 /// One code path for every venue. Implementations are `Send + Sync` so fan-out
@@ -63,6 +146,49 @@ pub trait Venue: Send + Sync {
         event: CorporateEvent,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<String, VenueError>;
+
+    /// Whole account view assembled from the fetch methods below. The
+    /// default composes the three fetches, so an implementor that overrides
+    /// one rung carries it through the snapshot without further code.
+    /// Venues with no account surface keep the empty default untouched.
+    fn account_snapshot(&self) -> AccountSnapshot {
+        AccountSnapshot {
+            balances: self.fetch_balances(),
+            open_orders: self.fetch_open_orders(),
+            recent_trades: self.fetch_trades(),
+        }
+    }
+
+    /// Pending incremental account events, drained by the caller. Empty by
+    /// default: venues without an account stream report nothing rather than
+    /// an error, and reconciliation-grade truth stays on [`positions`](Self::positions)
+    /// and [`orders`](Self::orders).
+    fn account_stream(&self) -> Vec<AccountEvent> {
+        Vec::new()
+    }
+
+    /// Cash balances. Empty by default.
+    fn fetch_balances(&self) -> Vec<BalanceEntry> {
+        Vec::new()
+    }
+
+    /// Working orders as the account reports them. Empty by default.
+    fn fetch_open_orders(&self) -> Vec<OrderRecord> {
+        Vec::new()
+    }
+
+    /// Recent fills as the account reports them. Empty by default.
+    fn fetch_trades(&self) -> Vec<Fill> {
+        Vec::new()
+    }
+
+    /// Legs executed for `client_id` by the most recent spread fill, in leg
+    /// order. Empty by default and always empty for single-leg intents: only
+    /// venues that execute multi-leg packages override this, so the safe
+    /// submission path journals leg rows exactly when legs executed.
+    fn executed_legs(&self, _client_id: &str) -> Vec<LegExecution> {
+        Vec::new()
+    }
 }
 
 /// Where quotes come from. The session resolves each decision through a
@@ -75,3 +201,7 @@ pub trait QuoteSource: Send + Sync {
     /// Source name for audit (which rung served the quote).
     fn name(&self) -> &str;
 }
+
+#[cfg(test)]
+#[path = "../tests/venue.rs"]
+mod tests;
