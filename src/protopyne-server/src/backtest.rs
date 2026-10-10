@@ -10,6 +10,7 @@
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -39,6 +40,13 @@ pub struct BacktestConfig {
     /// Quoted size on each side of the synthetic touch.
     #[builder(default = 100)]
     pub quote_size: u64,
+}
+
+impl protopyne_types::Validate for BacktestConfig {
+    type Err = ServerError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        BacktestConfig::validate(self)
+    }
 }
 
 impl BacktestConfig {
@@ -119,6 +127,37 @@ pub fn load_bars_single(path: &Path) -> Result<Vec<Bar>, ServerError> {
     load_bars_csv(path)
 }
 
+/// Where a run's bars come from: a CSV file set or a caller-supplied tape.
+///
+/// The CSV arm keeps the exact `load_bars_with_fallback` semantics
+/// (first-usable-wins, `BadHeader` stops, `BadRow`/`Io` skips); the dynamic
+/// arm carries an in-memory tape (synthetic fixtures, a live-captured
+/// session, a second symbol with no CSV) with the same fail-closed shape —
+/// an empty tape refuses just like an empty candidate set. The harness loads
+/// either arm interchangeably, so file and dynamic histories replay through
+/// the identical decide path.
+#[derive(Debug, Clone)]
+pub enum HistorySource {
+    /// CSV candidates in fallback order.
+    Csv(Vec<PathBuf>),
+    /// Caller-supplied bars, replayed as given.
+    Dynamic(Vec<Bar>),
+}
+
+/// Load bars from either source arm. Pure dispatch over the two established
+/// loaders — no third parsing path may hide here.
+pub fn load_history(source: &HistorySource) -> Result<Vec<Bar>, ServerError> {
+    match source {
+        HistorySource::Csv(candidates) => load_bars_with_fallback(candidates),
+        HistorySource::Dynamic(bars) => {
+            if bars.is_empty() {
+                return Err(ServerError::Backtest("history must not be empty".to_owned()));
+            }
+            Ok(bars.clone())
+        }
+    }
+}
+
 /// A venue over pinned history sharing paper's fill code.
 ///
 /// Construction pins `(bars, data_version)` together; every [`Venue`] call
@@ -183,24 +222,27 @@ impl Venue for BacktestVenue {
         self.inner.dry_run(intent, quote)
     }
 
-    fn submit(
-        &self,
+    fn submit<'a>(
+        &'a self,
         intent: OrderIntent,
-        quote: &Quote,
+        quote: &'a Quote,
         now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<OrderRecord, VenueError>> + Send {
+    ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>> {
         self.inner.submit(intent, quote, now)
     }
 
-    fn query(&self, client_id: &str) -> impl Future<Output = Option<OrderRecord>> + Send {
+    fn query<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Option<OrderRecord>> + Send + 'a>> {
         self.inner.query(client_id)
     }
 
-    fn cancel(
-        &self,
-        client_id: &str,
+    fn cancel<'a>(
+        &'a self,
+        client_id: &'a str,
         now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<OrderRecord, VenueError>> + Send {
+    ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>> {
         self.inner.cancel(client_id, now)
     }
 

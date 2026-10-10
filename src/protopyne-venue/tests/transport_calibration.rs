@@ -4,8 +4,8 @@
 //! Measured calibration (this run, loopback only):
 //!
 //! * Terminal control group (`unauthorized`, `forbidden`, `bad_request`,
-//!   `malformed_auth`): 0 false-retries — every terminal answers exactly
-//!   one attempt as first-class `Err`.
+//!   `malformed_auth`, `subscription_rejected`): 0 false-retries — every
+//!   terminal answers exactly one attempt as first-class `Err`.
 //! * Transient group (`unavailable`, `rate_limited`, `timeout`, `reset`,
 //!   unknown codes): full recall — every scripted transient resolves to a
 //!   quote with exactly the scripted attempt count.
@@ -228,7 +228,13 @@ fn stop_predicate_table() {
 
 #[tokio::test]
 async fn terminal_control_group_shows_zero_retries() {
-    for code in ["unauthorized", "forbidden", "bad_request", "malformed_auth"] {
+    for code in [
+        "unauthorized",
+        "forbidden",
+        "bad_request",
+        "malformed_auth",
+        "subscription_rejected",
+    ] {
         let (base, count) = serve_script(vec![error_body(code)]).await;
         let outcome = refresh(&transport_for(&base), "SPY").await;
         assert!(

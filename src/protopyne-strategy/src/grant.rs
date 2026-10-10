@@ -224,7 +224,40 @@ pub struct Grant {
     pub revoked: bool,
 }
 
+impl protopyne_types::Validate for Grant {
+    type Err = String;
+    fn validate(&self) -> Result<(), Self::Err> {
+        Grant::validate(self)
+    }
+}
+
 impl Grant {
+    /// Fail-closed structural check: live window, nonzero budgets, and a
+    /// fully named scope. Shared by arming paths; the HTTP route delegates
+    /// here so the rule lives in exactly one place.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.revoked {
+            return Err("grant is revoked".to_owned());
+        }
+        if self.valid_from >= self.valid_until {
+            return Err("grant window is empty".to_owned());
+        }
+        if self.budgets.max_trades < 1 || self.budgets.max_contracts < 1 {
+            return Err("grant budgets must authorize at least one trade".to_owned());
+        }
+        if self.scope.strategies.is_empty()
+            || self.scope.underlyings.is_empty()
+            || self.scope.structures.is_empty()
+            || self.scope.directions.is_empty()
+        {
+            return Err(
+                "grant scope must name strategies, underlyings, structures, and directions"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    }
+
     /// Whether the grant authorizes anything at `now`.
     #[must_use]
     pub fn is_live(&self, now: DateTime<Utc>) -> bool {

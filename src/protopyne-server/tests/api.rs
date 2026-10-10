@@ -106,6 +106,39 @@ async fn health_reports_version() {
     handle.shutdown().await;
 }
 
+/// The command-plane status rides the existing routes: health carries the
+/// trading state plus entry/exit authority, and the portfolio view carries
+/// the state it was published under. Fresh surfaces boot allowing
+/// everything, matching a fresh session.
+#[tokio::test]
+async fn health_and_portfolio_report_trading_status() {
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    let body: serde_json::Value = client
+        .get(format!("{}/health", base(&handle)))
+        .send()
+        .await
+        .expect("health reachable")
+        .json()
+        .await
+        .expect("health is JSON");
+    assert_eq!(body["trading_state"], "Enabled");
+    assert_eq!(body["allows_entries"], true);
+    assert_eq!(body["allows_exits"], true);
+    assert!(body["last_command"].is_null(), "no command observed yet");
+
+    let portfolio: PortfolioView = client
+        .get(format!("{}/portfolio", base(&handle)))
+        .send()
+        .await
+        .expect("portfolio reachable")
+        .json()
+        .await
+        .expect("portfolio is JSON");
+    assert_eq!(portfolio.trading_state, protopyne_venue::TradingState::Enabled);
+    handle.shutdown().await;
+}
+
 #[tokio::test]
 async fn preview_populates_inbox_and_portfolio() {
     let handle = boot().await;

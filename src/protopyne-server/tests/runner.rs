@@ -12,7 +12,7 @@ use protopyne_strategy::{
     elements::{ExplicitStructure, FixedContracts},
 };
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{Fault, PaperConfig, PaperVenue};
+use protopyne_venue::{Fault, PaperConfig, PaperVenue, StreamConfig, SupervisedStream, TransportError};
 
 fn money(value: i64) -> Money {
     Money::new(Decimal::from(value))
@@ -369,6 +369,7 @@ fn filled_decision(
         ts,
         proposal_id: format!("synthetic-{bar_index}"),
         direction: Some(direction),
+        structure: Some(StructureKind::Vertical),
         risk_pass: true,
         risk_reasons: Vec::new(),
         grant_allow: true,
@@ -390,6 +391,7 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         ts,
         proposal_id: format!("synthetic-{bar_index}"),
         direction: None,
+        structure: None,
         risk_pass: false,
         risk_reasons: Vec::new(),
         grant_allow: false,
@@ -1028,6 +1030,62 @@ fn rsrs_history(n: usize) -> Vec<Bar> {
         .collect()
 }
 
+/// The stream-breaker wire: consecutive transport errors trip the shared
+/// stream breaker, the trip merges into `BreakerState` through `apply_to`,
+/// and the existing tripped path disarms entries with merit verdicts
+/// intact. No runner logic changes — the merge is the wire.
+#[tokio::test]
+async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
+    let stream = SupervisedStream::new(StreamConfig::new().max_consecutive_errors(2).build());
+    for _ in 0..3 {
+        stream
+            .breaker()
+            .record_error(&TransportError::Transient("unavailable: storm".to_owned()));
+    }
+    assert!(stream.breaker().tripped(), "the storm trips the stream breaker");
+    let mut breakers = BreakerState::new().build();
+    assert!(!breakers.tripped);
+    stream.breaker().apply_to(&mut breakers);
+    assert!(breakers.tripped, "the trip merges into BreakerState");
+    assert!(
+        breakers.trip_reason.as_deref().unwrap_or("").contains("consecutive"),
+        "the merged reason names the budget, got: {:?}",
+        breakers.trip_reason
+    );
+
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let strategy = strategy();
+    let mut usage = GrantUsage::new().build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let decision = decide_and_submit(
+        &strategy,
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(decision.risk_pass, "merit verdict must stay Allow while tripped");
+    assert!(decision.grant_allow, "merit verdict must stay Allow while tripped");
+    assert!(!decision.submitted, "stream-tripped entries disarm");
+    assert!(
+        transport_skipped(&decision).contains("breaker tripped"),
+        "disarm names its cause, got: {:?}",
+        decision.skipped
+    );
+    assert!(venue.orders().is_empty(), "disarmed bars never reach the venue");
+}
+
 #[test]
 fn report_rsrs_is_honest_about_history_length() {
     use crate::runner::report_rsrs;
@@ -1036,4 +1094,245 @@ fn report_rsrs_is_honest_about_history_length() {
     assert_eq!(report_rsrs(&rsrs_history(100)), None);
     // A full window on varying data scores finite values.
     assert!(report_rsrs(&rsrs_history(650)).is_some());
+}
+
+/// Rising synthetic tape for the second symbol: no second CSV ships, so the
+/// harness proves the dynamic source beside the file path.
+fn rising_bars(start: &str, count: usize) -> Vec<Bar> {
+    let start = start.parse::<Decimal>().expect("decimal");
+    (0..count)
+        .map(|step| {
+            let close = start + Decimal::from(step as u64);
+            Bar::new()
+                .ts(Utc.timestamp_opt(1_767_344_400 + step as i64 * 900, 0).unwrap())
+                .o(close)
+                .h(close)
+                .l(close)
+                .c(close)
+                .volume(1_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect()
+}
+
+fn grant_covering(underlyings: &[&str]) -> Grant {
+    let mut grant = grant_with(0.5);
+    grant.scope.underlyings = underlyings.iter().map(|name| (*name).to_owned()).collect();
+    grant
+}
+
+fn multi_input(
+    underlying: &str,
+    data_version: &str,
+    history: crate::backtest::HistorySource,
+) -> crate::runner::MultiSymbolInput {
+    crate::runner::MultiSymbolInput::new()
+        .venue_config(
+            BacktestConfig::new()
+                .underlying(underlying.to_owned())
+                .data_version(data_version.to_owned())
+                .build(),
+        )
+        .runner_config(RunnerConfig::new(
+            underlying.to_owned(),
+            "ribbon".to_owned(),
+            money(400),
+            money(2_000),
+            30,
+            0,
+        ))
+        .history(history)
+        .build()
+}
+
+#[tokio::test]
+async fn multi_symbol_run_matches_single_symbol_runs() {
+    use crate::backtest::HistorySource;
+
+    // One symbol from the CSV path, one from the dynamic path: the harness
+    // must add no perturbation — per-symbol decisions equal standalone
+    // `run_backtest` runs on the same inputs, and the combined manifest pins
+    // each symbol's data version beside the shared code version.
+    let spy_bars = crate::load_bars_csv(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("data")
+            .join("SPY_15M.csv"),
+    )
+    .expect("vendored history loads")[..40]
+        .to_vec();
+    let qqq_bars = rising_bars("500", 40);
+    let grant = grant_covering(&["SPY", "QQQ"]);
+    let inputs = vec![
+        multi_input("SPY", "spy-15m-v1", HistorySource::Dynamic(spy_bars.clone())),
+        multi_input("QQQ", "qqq-synth-v1", HistorySource::Dynamic(qqq_bars.clone())),
+    ];
+    let paper = PaperConfig::new().build();
+    let multi = crate::runner::run_multi_backtest(
+        &strategy(),
+        &risk(),
+        &grant,
+        paper.clone(),
+        inputs,
+        11,
+    )
+    .await
+    .expect("multi-symbol harness runs");
+    assert_eq!(multi.runs.len(), 2);
+    assert_eq!(multi.manifest.symbols.len(), 2);
+    assert_eq!(multi.manifest.symbols[0].data_version, "spy-15m-v1");
+    assert_eq!(multi.manifest.symbols[1].data_version, "qqq-synth-v1");
+    assert_eq!(multi.manifest.code_version, env!("CARGO_PKG_VERSION"));
+
+    for (run, (underlying, bars)) in multi
+        .runs
+        .iter()
+        .zip([("SPY", &spy_bars), ("QQQ", &qqq_bars)])
+    {
+        let venue_config = BacktestConfig::new()
+            .underlying((*underlying).to_owned())
+            .data_version(format!("{underlying}-pin"))
+            .build();
+        let runner_config = RunnerConfig::new(
+            (*underlying).to_owned(),
+            "ribbon".to_owned(),
+            money(400),
+            money(2_000),
+            30,
+            0,
+        );
+        let single =
+            run_backtest(&strategy(), &risk(), &grant, &venue_config, &runner_config, bars, 11)
+                .await
+                .expect("standalone run");
+        // Config JSON pins input configs, so only decisions must match
+        // exactly — the same decide path over the same bars.
+        assert_eq!(run.decisions, single.decisions, "{underlying} decisions identical");
+        assert!(run.decisions.iter().any(|decision| decision.submitted), "{underlying} fills");
+    }
+
+    // Rerun equality over the combined pin.
+    let again = crate::runner::run_multi_backtest(
+        &strategy(),
+        &risk(),
+        &grant,
+        paper,
+        vec![
+            multi_input("SPY", "spy-15m-v1", HistorySource::Dynamic(spy_bars)),
+            multi_input("QQQ", "qqq-synth-v1", HistorySource::Dynamic(qqq_bars)),
+        ],
+        11,
+    )
+    .await
+    .expect("second harness run");
+    assert_eq!(multi.manifest.to_canonical_json(), again.manifest.to_canonical_json());
+}
+
+#[tokio::test]
+async fn sweep_drains_more_variants_than_workers() {
+    // Workers clamp at 8: twelve variants oversubscribe the pool and must
+    // still all complete, sorted by index — the exactly-sized queue never
+    // observes `Full`, no matter the oversubscription.
+    let bars = history();
+    let grants: Vec<Grant> = (0..12)
+        .map(|variant| grant_with(0.4 + f64::from(variant) * 0.01))
+        .collect();
+    let outcomes = run_sweep(
+        strategy(),
+        RiskLimits::new().build(),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        grants,
+        11,
+    )
+    .await
+    .expect("oversubscribed sweep drains");
+    assert_eq!(outcomes.len(), 12);
+    for (index, outcome) in outcomes.iter().enumerate() {
+        assert_eq!(outcome.index, index, "sweep outcomes return in index order");
+    }
+}
+
+#[tokio::test]
+async fn bench_workload_smoke() {
+    // Smoke for the criterion benches below: the tiny synthetic workload
+    // (decide path plus a two-variant sweep) must execute without the
+    // criterion harness, so a broken fixture fails here, not in `cargo bench`.
+    let bars = rising_bars("600", 32);
+    let config = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("bench-smoke".to_owned())
+        .build();
+    let runner = RunnerConfig::new("SPY".to_owned(), "ribbon".to_owned(), money(400), money(2_000), 0, 0);
+    let run = run_backtest(&strategy(), &risk(), &grant_covering(&["SPY"]), &config, &runner, &bars, 3)
+        .await
+        .expect("tiny decide-path run executes");
+    assert_eq!(run.decisions.len(), bars.len());
+    let outcomes = run_sweep(
+        strategy(),
+        RiskLimits::new().build(),
+        &config,
+        &runner,
+        &bars,
+        vec![grant_covering(&["SPY"]), grant_covering(&["SPY"])],
+        3,
+    )
+    .await
+    .expect("tiny sweep executes");
+    assert_eq!(outcomes.len(), 2);
+}
+
+#[tokio::test]
+async fn run_report_carries_decision_consistent_portfolio() {
+    use crate::portfolio::PAPER_PORTFOLIO;
+
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("run with fills");
+    let summary = run.report.portfolio.as_ref().expect("run attaches a portfolio");
+    assert_eq!(summary.portfolios.len(), 1, "one run books one portfolio");
+    let totals = &summary.portfolios[0];
+    assert_eq!(totals.portfolio, PAPER_PORTFOLIO);
+    // The fold books exactly the priced submitted fills: same count, same
+    // fees, and the same curve length as the bar tape it marked.
+    let priced: Vec<&crate::runner::BarDecision> = run
+        .decisions
+        .iter()
+        .filter(|decision| {
+            decision.submitted && decision.filled_quantity > 0 && decision.fill_price.is_some()
+        })
+        .collect();
+    assert!(!priced.is_empty(), "liquid history must fill something");
+    assert_eq!(totals.fills, priced.len() as u64);
+    let decision_fees = priced
+        .iter()
+        .filter_map(|decision| decision.fee)
+        .fold(Decimal::ZERO, |sum, fee| sum + fee.as_decimal());
+    assert_eq!(totals.fees, Money::new(decision_fees));
+    assert_eq!(summary.unrealized_curve.len(), bars.len());
+    // Single strategy, single grant, single structure: one bucket, and the
+    // totals are exactly its numbers (no second book to roll up).
+    assert_eq!(totals.buckets.len(), 1);
+    let bucket = &totals.buckets[0];
+    assert_eq!(bucket.key.underlying, "SPY");
+    assert_eq!(bucket.key.strategy, "ribbon");
+    assert_eq!(totals.pnl_realised, bucket.pnl_realised);
+    assert_eq!(totals.pnl_unrealised, bucket.pnl_unrealised);
+    // The tearsheet renders from these same structs: it must name the pin,
+    // the portfolio, and the unavailable greeks — never an empty page.
+    let sheet = crate::report::render_tearsheet(&run.report);
+    assert!(sheet.contains("spy-15m"), "pin present, got:\n{sheet}");
+    assert!(sheet.contains(PAPER_PORTFOLIO), "portfolio present, got:\n{sheet}");
+    assert!(sheet.contains("unavailable"), "greeks honesty present, got:\n{sheet}");
 }

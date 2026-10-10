@@ -343,13 +343,14 @@ pub fn transform_account_event(body: &str) -> Result<AccountEvent, String> {
     }
 }
 
-/// Envelope error codes the loopback speaks. The terminal set is closed:
-/// `unauthorized`/`forbidden` (401/403), `bad_request`, and
-/// `malformed_auth` stop the retry walk immediately with their reason.
-/// Everything else is transient — named (`unavailable`/5xx,
-/// `rate_limited`/429, `timeout`, `reset`) or unknown — and retries
-/// bounded by `max_attempts`, which still fails closed on exhaustion. The
-/// calibration freezes this table: terminal codes must show zero retries.
+/// Envelope error codes the loopback speaks. Terminal codes stop the retry
+/// walk immediately with their reason; everything else is transient — named
+/// (`unavailable`/5xx, `rate_limited`/429, `timeout`, `reset`) or unknown —
+/// and retries bounded by `max_attempts`, which still fails closed on
+/// exhaustion. The boundary table itself lives in
+/// [`crate::stream::terminal_reason`] (one closed set, one stated reason
+/// per code); this function only attaches the venue's message. The
+/// calibration freezes the table: terminal codes must show zero retries.
 fn envelope_error(body: &serde_json::Value) -> Option<TransportError> {
     let error = body.get("error")?;
     let code = error.get("code")?.as_str()?;
@@ -357,13 +358,23 @@ fn envelope_error(body: &serde_json::Value) -> Option<TransportError> {
         .get("message")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("venue refused without detail");
-    let failure = match code {
-        "unauthorized" | "forbidden" | "bad_request" | "malformed_auth" => {
-            TransportError::Terminal(format!("{code}: {message}"))
-        }
-        _ => TransportError::Transient(format!("{code}: {message}")),
+    let failure = match crate::stream::terminal_reason(code) {
+        Some(_) => TransportError::Terminal(format!("{code}: {message}")),
+        None => TransportError::Transient(format!("{code}: {message}")),
     };
     Some(failure)
+}
+
+/// How one message-pump generation ended. The pump reports; the caller
+/// (scope task or supervised driver) decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PumpEnd {
+    /// The feed republic ended (inbox closed): reconnect to resume.
+    InboxClosed,
+    /// The consumer is gone (outbox closed): stop rather than wedge.
+    OutboxClosed,
+    /// The consumer's abort fired: stop without counting an error.
+    Aborted,
 }
 
 const REJECTION_LOG_CAP: usize = 16;
@@ -413,6 +424,19 @@ impl TastytradeTransport {
     #[must_use]
     pub fn active_streams(&self) -> usize {
         self.live.load(Ordering::SeqCst)
+    }
+
+    /// Account one supervised run (or unsupervised loop) as live. Paired
+    /// with [`TastytradeTransport::note_stream_ended`]; the supervised
+    /// driver holds the count for its whole run across reconnects.
+    pub fn note_stream_started(&self) {
+        self.live.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Release one live count previously taken with
+    /// [`TastytradeTransport::note_stream_started`].
+    pub fn note_stream_ended(&self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
     }
 
     /// Wire messages dropped as malformed since boot.
@@ -485,36 +509,63 @@ impl TastytradeTransport {
     /// an account event or drops with a banked reason. Delivery to a slow
     /// subscriber skips lag (`try_send`, counted) instead of wedging the
     /// loop; a closed receiver or a dropped outbox ends it, and
-    /// `Scope::close` aborts it either way. The loop holds no order
-    /// authority — it forwards data.
+    /// `Scope::close` aborts it either way. Both channels stay
+    /// caller-bounded — this loop constructs none, so there is no hidden
+    /// buffer to audit; a full outbox skips by policy, never blocks. The
+    /// loop holds no order authority — it forwards data. Message handling is
+    /// byte-identical to the supervised driver's generations: both run
+    /// [`TastytradeTransport::pump_account_events`].
     pub fn run_stream(
         self: &Arc<Self>,
         scope: &mut Scope,
-        mut inbox: mpsc::Receiver<String>,
+        inbox: mpsc::Receiver<String>,
         out: mpsc::Sender<AccountEvent>,
     ) {
         let worker = Arc::clone(self);
         worker.live.fetch_add(1, Ordering::SeqCst);
         scope.spawn(async move {
             let _guard = StreamGuard { live: &worker.live };
-            while let Some(message) = inbox.recv().await {
-                let event = match transform_account_event(&message) {
-                    Ok(event) => event,
-                    Err(reason) => {
-                        worker.dropped.fetch_add(1, Ordering::SeqCst);
-                        worker.bank_rejection(reason);
-                        continue;
-                    }
-                };
-                match out.try_send(event) {
-                    Ok(()) => {}
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        worker.skipped.fetch_add(1, Ordering::SeqCst);
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => break,
-                }
-            }
+            let abort = fluent_concurrency::stream::StreamAbort::new();
+            let _ = worker.pump_account_events(inbox, out, &abort).await;
         });
+    }
+
+    /// Pump one message generation: transform each inbox message to an
+    /// account event or drop it with a banked reason, skipping lag on a
+    /// slow subscriber and stopping on a closed outbox or the consumer's
+    /// abort. Shared by the unsupervised stream loop and the supervised
+    /// driver, so parsing behavior is identical under both — only
+    /// supervision changes.
+    pub(crate) async fn pump_account_events(
+        &self,
+        mut inbox: mpsc::Receiver<String>,
+        out: mpsc::Sender<AccountEvent>,
+        abort: &fluent_concurrency::stream::StreamAbort,
+    ) -> PumpEnd {
+        loop {
+            let message = tokio::select! {
+                received = inbox.recv() => received,
+                () = abort.cancelled() => return PumpEnd::Aborted,
+            };
+            let Some(message) = message else {
+                return PumpEnd::InboxClosed;
+            };
+            let event = match transform_account_event(&message) {
+                Ok(event) => event,
+                Err(reason) => {
+                    self.dropped.fetch_add(1, Ordering::SeqCst);
+                    self.bank_rejection(reason);
+                    continue;
+                }
+            };
+            match out.try_send(event) {
+                Ok(()) => {}
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    self.skipped.fetch_add(1, Ordering::SeqCst);
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => return PumpEnd::OutboxClosed,
+            }
+        }
     }
 }
 

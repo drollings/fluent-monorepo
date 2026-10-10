@@ -11,6 +11,7 @@ use crate::quote::Quote;
 use protopyne_types::{ContractId, OptionContract};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
+use std::pin::Pin;
 
 /// Outcome of a pre-submission dry run: margin and sanity checks against
 /// current buying power, before anything is journaled as submitted.
@@ -105,6 +106,10 @@ pub trait LegQuoteSource: Send + Sync {
 
 /// One code path for every venue. Implementations are `Send + Sync` so fan-out
 /// pools can share them; interior mutability lives inside each venue.
+///
+/// The async methods return boxed futures (not `impl Future`) so the trait
+/// is object-safe: routing holds `Arc<dyn Venue>` handles without a
+/// per-venue `match`. Callers still `.await` them exactly as before.
 pub trait Venue: Send + Sync {
     /// Check buying power and order sanity without touching the market.
     /// Pure against the venue's current books; never mutates.
@@ -112,25 +117,25 @@ pub trait Venue: Send + Sync {
 
     /// Submit an intent. Idempotent per client ID: resubmitting a known ID
     /// returns the existing record, never a second order.
-    fn submit(
-        &self,
+    fn submit<'a>(
+        &'a self,
         intent: OrderIntent,
-        quote: &Quote,
+        quote: &'a Quote,
         now: chrono::DateTime<chrono::Utc>,
-    ) -> impl Future<Output = Result<OrderRecord, VenueError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>>;
 
     /// Look up an order by its deterministic client ID.
-    fn query(
-        &self,
-        client_id: &str,
-    ) -> impl Future<Output = Option<OrderRecord>> + Send;
+    fn query<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Option<OrderRecord>> + Send + 'a>>;
 
     /// Cancel a working order. Terminal orders are returned unchanged.
-    fn cancel(
-        &self,
-        client_id: &str,
+    fn cancel<'a>(
+        &'a self,
+        client_id: &'a str,
         now: chrono::DateTime<chrono::Utc>,
-    ) -> impl Future<Output = Result<OrderRecord, VenueError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>>;
 
     /// Current venue-truth positions.
     fn positions(&self) -> Vec<Position>;

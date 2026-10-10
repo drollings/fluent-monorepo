@@ -39,28 +39,154 @@ fn bar(minute: u32) -> Bar {
 }
 
 fn session() -> TradingSession {
-    let venue = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     TradingSession::boot(
         &SessionConfig::new().build(),
-        venue,
+        Arc::new(VenueRegistry::single(venue)),
         VenueStorage::new("test.db".into()),
     )
     .expect("boot")
 }
 
 fn job(id: &str) -> SubmitJob {
+    job_for(id, "SPY")
+}
+
+#[tokio::test]
+async fn bounded_intake_drains_without_growing() {
+    // The tightest bound the config allows (one worker, one queue slot, one
+    // credit): sequential submits must all complete — intake credit throttles
+    // the producer and the queue never needs to grow past its single slot.
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let session = TradingSession::boot(
+        &SessionConfig::new()
+            .workers(1)
+            .queue_capacity(1)
+            .credit_limit(1)
+            .build(),
+        Arc::new(VenueRegistry::single(venue)),
+        VenueStorage::new("test.db".into()),
+    )
+    .expect("tightest bound still boots");
+    for index in 0..3 {
+        let record = session
+            .submit_order(job(&format!("bound#{index}")))
+            .await
+            .expect("bounded intake drains");
+        assert_eq!(record.filled_quantity, 2);
+    }
+    session.shutdown().await;
+}
+
+fn job_for(id: &str, underlying: &str) -> SubmitJob {
     SubmitJob {
         intent: OrderIntent::new()
             .client_id(id.to_owned())
             .proposal_id("prop-1".to_owned())
             .strategy("ribbon".to_owned())
-            .underlying("SPY".to_owned())
+            .underlying(underlying.to_owned())
             .side(OrderSide::Buy)
             .quantity(2)
             .limit_price(money("600.50"))
             .build(),
         quote: quote(),
         at: now(),
+        is_exit: false,
+    }
+}
+
+/// Minimal second venue: serves deterministic fills behind `dyn Venue`, so
+/// the session test below proves the session is generic over handles rather
+/// than `PaperVenue`-shaped.
+struct StubVenue {
+    served: std::sync::Mutex<Vec<crate::order::OrderRecord>>,
+}
+
+impl StubVenue {
+    fn new() -> Self {
+        Self {
+            served: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl Venue for StubVenue {
+    fn dry_run(
+        &self,
+        _intent: &OrderIntent,
+        _quote: &Quote,
+    ) -> Result<crate::venue::DryRunOutcome, crate::error::VenueError> {
+        Ok(crate::venue::DryRunOutcome {
+            allowed: true,
+            reserved_notional: Money::zero(),
+        })
+    }
+
+    fn submit<'a>(
+        &'a self,
+        intent: OrderIntent,
+        _quote: &'a Quote,
+        now: chrono::DateTime<Utc>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::order::OrderRecord, crate::error::VenueError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let mut record = crate::order::OrderRecord::pending(intent, now);
+            record.status = crate::order::OrderStatus::Filled;
+            record.filled_quantity = 2;
+            self.served.lock().expect("served").push(record.clone());
+            Ok(record)
+        })
+    }
+
+    fn query<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<crate::order::OrderRecord>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.served
+                .lock()
+                .expect("served")
+                .iter()
+                .find(|record| record.intent.client_id == client_id)
+                .cloned()
+        })
+    }
+
+    fn cancel<'a>(
+        &'a self,
+        client_id: &'a str,
+        _now: chrono::DateTime<Utc>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::order::OrderRecord, crate::error::VenueError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            self.served
+                .lock()
+                .expect("served")
+                .iter()
+                .find(|record| record.intent.client_id == client_id)
+                .cloned()
+                .ok_or_else(|| crate::error::VenueError::Invalid("stub holds nothing".to_owned()))
+        })
+    }
+
+    fn positions(&self) -> Vec<crate::order::Position> {
+        Vec::new()
+    }
+
+    fn orders(&self) -> Vec<crate::order::OrderRecord> {
+        self.served.lock().expect("served").clone()
+    }
+
+    fn apply_corporate_event(
+        &self,
+        _underlying: &str,
+        _event: crate::order::CorporateEvent,
+        _now: chrono::DateTime<Utc>,
+    ) -> Result<String, crate::error::VenueError> {
+        Ok("stub".to_owned())
     }
 }
 
@@ -157,7 +283,46 @@ async fn pool_fanout_returns_each_verdict() {
     let session = session();
     let record = session.submit_order(job("p#0")).await.expect("fills");
     assert_eq!(record.filled_quantity, 2);
-    assert_eq!(session.venue().orders().len(), 1);
+    assert_eq!(session.registry().orders().len(), 1);
+    session.shutdown().await;
+}
+
+/// A session over a two-venue registry routes each job to its venue: the
+/// stub serves its symbol behind `dyn Venue` while the paper path stays
+/// byte-identical to the bare venue through the whole session stack.
+#[tokio::test]
+async fn session_routes_across_two_venues_with_paper_equality() {
+    let paper: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let stub: Arc<dyn Venue> = Arc::new(StubVenue::new());
+    let registry = Arc::new(VenueRegistry::single(Arc::clone(&paper)));
+    registry.add_route("AAPL", Arc::clone(&stub)).expect("route");
+    registry.add_route("SPY", Arc::clone(&paper)).expect("route");
+    let session = TradingSession::boot(
+        &SessionConfig::new().build(),
+        registry,
+        VenueStorage::new("test.db".into()),
+    )
+    .expect("boot");
+
+    let routed = session
+        .submit_order(job_for("x#aapl", "AAPL"))
+        .await
+        .expect("stub serves");
+    assert_eq!(routed.intent.underlying, "AAPL");
+    assert_eq!(routed.filled_quantity, 2);
+
+    let paper_job = job_for("x#spy", "SPY");
+    let through_session = session.submit_order(paper_job.clone()).await.expect("fills");
+    let bare_paper = PaperVenue::new(PaperConfig::new().build());
+    let direct = bare_paper
+        .submit(paper_job.intent, &paper_job.quote, paper_job.at)
+        .await
+        .expect("paper serves");
+    assert_eq!(
+        through_session, direct,
+        "paper path is byte-identical through session + registry"
+    );
+    assert_eq!(session.registry().orders().len(), 2);
     session.shutdown().await;
 }
 

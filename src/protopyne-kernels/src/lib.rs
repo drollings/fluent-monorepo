@@ -89,6 +89,10 @@ pub use ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};
 pub use ta_volume::{AdIndicator, AdoscIndicator, ObvIndicator};
 pub use value::PineValue;
 pub use vars::{Var, VarIp, VarStore};
+
+#[cfg(test)]
+#[path = "../tests/validate.rs"]
+mod validate_tests;
 pub use wq_half_life::{hl_weights, ts_mean_hl, ts_std_hl, ts_sum_hl, ts_var_hl};
 pub use wq_series::{
     ts_arg_max, ts_arg_min, ts_corr, ts_count, ts_count_eq, ts_count_ge, ts_count_nans,

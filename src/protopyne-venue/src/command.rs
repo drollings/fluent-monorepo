@@ -18,23 +18,29 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use common_core::registry::ConcurrentRegistry;
 use fluent_wvr::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use protopyne_types::{LegSide, Money, SpreadLeg, SpreadLegs};
+use protopyne_types::{LegSide, Money, SpreadLeg, SpreadLegs, SymKey, SymbolIndex};
 
 use crate::error::VenueError;
-use crate::journal::{JournalEvent, LEG_FILL_KIND};
+use crate::journal::{Journal, JournalEvent, VenueStorage, LEG_FILL_KIND};
 use crate::order::{OrderIntent, OrderRecord, OrderSide};
 use crate::paper::PaperVenue;
 use crate::position::{PositionSide, SpreadPosition};
 use crate::venue::{LegExecution, Venue};
 
 /// Named portfolios over the shared keyed registry: the single home that
-/// maps a portfolio name to its strategies and accounts.
+/// maps a portfolio name to its strategies and accounts. Names intern
+/// through a registry-owned [`SymbolIndex`] into [`SymKey`] keys — the one
+/// index in this system besides the venue books, and likewise never global.
+/// The public surface still speaks names, so keys never leak into
+/// serialization.
 pub struct PortfolioRegistry {
-    inner: ConcurrentRegistry<String, protopyne_types::Portfolio>,
+    inner: ConcurrentRegistry<SymKey, protopyne_types::Portfolio>,
+    symbols: Mutex<SymbolIndex>,
 }
 
 impl PortfolioRegistry {
@@ -43,28 +49,41 @@ impl PortfolioRegistry {
     pub fn new() -> Self {
         Self {
             inner: ConcurrentRegistry::new(),
+            symbols: Mutex::new(SymbolIndex::new()),
         }
     }
 
     /// Register a portfolio under its own name, replacing any prior entry.
+    /// A full symbol table refuses the insert and reports no prior entry;
+    /// the rehearsal universe never approaches capacity.
     pub fn register(
         &self,
         portfolio: protopyne_types::Portfolio,
     ) -> Option<Arc<protopyne_types::Portfolio>> {
-        self.inner.insert(portfolio.name.clone(), portfolio)
+        let Ok(key) = common_core::sync::lock(&self.symbols).intern(&portfolio.name) else {
+            return None;
+        };
+        self.inner.insert(key, portfolio)
     }
 
     /// Look up a portfolio by name. Unknown names are absence, never error:
-    /// commands refuse unknown portfolios fail-closed at execution.
+    /// commands refuse unknown portfolios fail-closed at execution. Reads
+    /// resolve without inserting, so lookups never grow the table.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<Arc<protopyne_types::Portfolio>> {
-        self.inner.get(&name.to_owned())
+        let key = common_core::sync::lock(&self.symbols).lookup(name)?;
+        self.inner.get(&key)
     }
 
-    /// Registered portfolio names.
+    /// Registered portfolio names, in no guaranteed order.
     #[must_use]
     pub fn names(&self) -> Vec<String> {
-        self.inner.keys()
+        let symbols = common_core::sync::lock(&self.symbols);
+        self.inner
+            .keys()
+            .iter()
+            .filter_map(|key| symbols.resolve(*key).map(str::to_owned))
+            .collect()
     }
 
     /// Count of registered portfolios.
@@ -107,6 +126,20 @@ impl TradingState {
     pub fn allows(&self, is_exit: bool) -> bool {
         is_exit || matches!(self, Self::Enabled)
     }
+
+    /// Fail-closed enforcement twin of `health :: check_trade`: refusals
+    /// carry the halting state as the reason. Operator intent is an
+    /// authority signal **(correctness)**-shaped — refuse with reason, never
+    /// degrade — and never a merit judgment on the trade.
+    pub fn check(&self, is_exit: bool) -> Result<(), VenueError> {
+        if self.allows(is_exit) {
+            Ok(())
+        } else {
+            Err(VenueError::Refused(format!(
+                "trading halted ({self:?}): entries refused, exits still route"
+            )))
+        }
+    }
 }
 
 /// Shared handle to the trading state: commands transition it, gates read
@@ -139,10 +172,48 @@ impl StateHandle {
     }
 }
 
+/// Client ID every journaled operator command carries: commands are
+/// authority rows, not orders, so they share one synthetic id while their
+/// kinds (`command.*`) keep them distinct from lifecycle rows.
+pub const OPERATOR_CLIENT_ID: &str = "operator";
+
+/// Journaled kind for a halt-entries command.
+pub const COMMAND_DISARM_KIND: &str = "command.disarm";
+/// Journaled kind for a resume-entries command.
+pub const COMMAND_RESUME_KIND: &str = "command.resume";
+/// Journaled kind for a close-all audit row.
+pub const COMMAND_CLOSE_ALL_KIND: &str = "command.close_all";
+/// Journaled kind for a cancel-all audit row.
+pub const COMMAND_CANCEL_ALL_KIND: &str = "command.cancel_all";
+
+/// Rebuild the trading state from journaled command rows: last command
+/// wins; disarm halts, resume restores; close/cancel rows are audit-only.
+/// No rows means no operator ever acted, so the fold starts
+/// [`TradingState::Enabled`] — wiring is a no-op until the first command is
+/// journaled, and a restart rebuilds exactly the state the operator left.
+#[must_use]
+pub fn replay_trading_state(events: &[JournalEvent]) -> TradingState {
+    let mut state = TradingState::Enabled;
+    for event in events {
+        match event.kind.as_str() {
+            COMMAND_DISARM_KIND => state = TradingState::Disabled,
+            COMMAND_RESUME_KIND => state = TradingState::Enabled,
+            _ => {}
+        }
+    }
+    state
+}
+
+/// Asset the trading-state sensor provides: bar units carrying entries
+/// declare it in `depends`; exit and monitor units stay independent so a
+/// halted book stays manageable.
+pub const TRADING_ENABLED_ASSET: &str = "trading.enabled";
+
 /// One command-plane directive. `CloseAll` flattens every open group in the
 /// venue book (one atomic intent per leg-group, never leg-by-leg);
 /// `CancelAll` lists active orders for cancellation; `Disarm` transitions
-/// the shared state to [`TradingState::Disabled`].
+/// the shared state to [`TradingState::Disabled`]; `Resume` transitions it
+/// back to [`TradingState::Enabled`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommandKind {
     /// Flatten every open group, scoped to a registered portfolio name.
@@ -157,6 +228,8 @@ pub enum CommandKind {
     },
     /// Halt entries now; exits keep routing.
     Disarm,
+    /// Route entries again after a halt.
+    Resume,
 }
 
 /// One closable unit: an exposure side, an absolute quantity, and the
@@ -287,6 +360,11 @@ pub struct CommandUnit {
     /// Strategy stamped on emitted close intents.
     #[builder(default = "command".to_owned())]
     pub strategy: String,
+    /// Journal the command's audit row through before applying anything.
+    /// `None` keeps the legacy direct apply (existing callers, unit probes);
+    /// `Some` makes journal-first structural — no row, no state change.
+    /// (Optional fields default to `None`; no attribute needed.)
+    pub journal: Option<Arc<Journal>>,
 }
 
 impl CommandUnit {
@@ -377,6 +455,27 @@ impl CommandUnit {
     }
 }
 
+impl CommandUnit {
+    /// Journal-first gate: when bound to a journal, record the command's
+    /// audit row through the [`VenueStorage`] permit from the batch
+    /// capability set before anything mutates. A missing permit or a failed
+    /// write refuses the command — state changes only behind a durable row.
+    fn journal_command(&self, ctx: &WorkContext, kind: &str, detail: &str) -> Result<(), WorkError> {
+        let Some(journal) = &self.journal else {
+            return Ok(());
+        };
+        let Some(permit) = ctx.caps.get::<VenueStorage>().cloned() else {
+            return Err(WorkError::Execution(
+                "command journal bound but venue-storage capability missing: refusing to mutate unjournaled"
+                    .to_owned(),
+            ));
+        };
+        journal
+            .record_transition(&permit, OPERATOR_CLIENT_ID, kind, detail, Utc::now())
+            .map_err(|e| WorkError::Execution(e.to_string()))
+    }
+}
+
 impl WorkUnit for CommandUnit {
     fn name(&self) -> &str {
         &self.name
@@ -390,14 +489,25 @@ impl WorkUnit for CommandUnit {
         &self.provides
     }
 
-    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         match &self.command {
             CommandKind::Disarm => {
+                self.journal_command(ctx, COMMAND_DISARM_KIND, "{}")?;
                 self.state.set(TradingState::Disabled);
                 Ok(WorkOutput::ok("disarmed: entries halted, exits still route"))
             }
+            CommandKind::Resume => {
+                self.journal_command(ctx, COMMAND_RESUME_KIND, "{}")?;
+                self.state.set(TradingState::Enabled);
+                Ok(WorkOutput::ok("resumed: entries route again"))
+            }
             CommandKind::CloseAll { portfolio } => {
                 self.require_portfolio(portfolio)?;
+                self.journal_command(
+                    ctx,
+                    COMMAND_CLOSE_ALL_KIND,
+                    &serde_json::json!({ "portfolio": portfolio }).to_string(),
+                )?;
                 let groups = self.open_groups();
                 let intents = close_all_intents(&groups, self.limit, &self.proposal_id, &self.strategy)
                     .map_err(|e| WorkError::Execution(e.to_string()))?;
@@ -405,6 +515,11 @@ impl WorkUnit for CommandUnit {
             }
             CommandKind::CancelAll { portfolio } => {
                 self.require_portfolio(portfolio)?;
+                self.journal_command(
+                    ctx,
+                    COMMAND_CANCEL_ALL_KIND,
+                    &serde_json::json!({ "portfolio": portfolio }).to_string(),
+                )?;
                 let ids = cancel_all_ids(&self.venue.orders());
                 WorkOutput::typed("cancel-all order IDs listed", &ids)
             }
@@ -426,6 +541,66 @@ impl Describable for CommandUnit {
 }
 
 impl_component!(CommandUnit);
+
+/// Supervision sensor for bar batches: reports the shared trading state
+/// into a [`SupervisedBatch`] as pass/fail. Failing cancels entry-carrying
+/// bar units through the graph (they declare [`TRADING_ENABLED_ASSET`] in
+/// `depends`); exit and monitor units stay independent and still complete.
+/// The unit is synchronous and side-effect free (one lock read), honoring
+/// the `execute` purity contract.
+///
+/// [`SupervisedBatch`]: fluent_concurrency::batch::SupervisedBatch
+pub struct TradingStateUnit {
+    state: StateHandle,
+    provides: Vec<ArcIntern<str>>,
+}
+
+impl TradingStateUnit {
+    /// Build the session's sensor over `state`. The unit name is fixed
+    /// (`trading.state.sensor`) so bars cannot register it twice by
+    /// accident; entry units key on the [`TRADING_ENABLED_ASSET`] asset.
+    #[must_use]
+    pub fn new(state: StateHandle) -> Self {
+        Self {
+            state,
+            provides: vec![ArcIntern::from(TRADING_ENABLED_ASSET)],
+        }
+    }
+}
+
+impl WorkUnit for TradingStateUnit {
+    fn name(&self) -> &str {
+        "trading.state.sensor"
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &self.provides
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        match self.state.get().check(false) {
+            Ok(()) => Ok(WorkOutput::ok("trading enabled")),
+            Err(reason) => Err(WorkError::Execution(reason.to_string())),
+        }
+    }
+}
+
+impl_fieldless!(TradingStateUnit);
+
+impl Describable for TradingStateUnit {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "description": "Trading-state supervision sensor: fails while entries are halted",
+        })
+    }
+}
+
+impl_component!(TradingStateUnit);
 
 /// One journaled order as the replica sees it: client ID plus latest
 /// lifecycle kind.
@@ -470,9 +645,14 @@ impl StateReplica {
     }
 
     /// Fold one event into a view. Single-event and whole-slice folds agree
-    /// by construction.
+    /// by construction. Operator command rows (`command.*`) carry authority
+    /// transitions, not orders: they advance the tip but never read as
+    /// phantom orders.
     pub fn apply_one(view: &mut PortfolioView, event: &JournalEvent) {
         view.last_seq = view.last_seq.max(event.seq);
+        if event.kind.starts_with("command.") {
+            return;
+        }
         if event.kind == LEG_FILL_KIND {
             match serde_json::from_str::<LegExecution>(&event.detail) {
                 Ok(leg) => view.leg_fills.push(leg),
@@ -498,3 +678,7 @@ impl StateReplica {
 #[cfg(test)]
 #[path = "../tests/command.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/command_plane.rs"]
+mod command_plane_tests;

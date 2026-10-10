@@ -34,6 +34,13 @@ pub struct PineRuntimeConfig {
     pub warmup_bars: u64,
 }
 
+impl protopyne_types::Validate for PineRuntimeConfig {
+    type Err = crate::error::KernelError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        PineRuntimeConfig::validate(self)
+    }
+}
+
 impl Default for PineRuntimeConfig {
     fn default() -> Self {
         Self::new().build()
@@ -74,8 +81,7 @@ impl WorkUnit for PineRuntimeConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        self.validate()
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+        protopyne_types::check_for_execute(self, "pine runtime invalid")?;
         Ok(WorkOutput::ok(format!(
             "pine runtime ready (max_bars={}, warmup_bars={})",
             self.max_bars, self.warmup_bars

@@ -39,7 +39,7 @@ use protopyne_strategy::{
     Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_types::{Bar, Money};
-use protopyne_venue::Position;
+use protopyne_venue::{Position, StateHandle, TradingState};
 
 use crate::error::ServerError;
 use crate::runner::{BacktestRun, RunnerConfig, run_backtest};
@@ -62,7 +62,9 @@ pub struct ServerConfig {
     #[field(desc = "Max concurrent previews", min = 1, max = 1024)]
     #[builder(default = 32)]
     pub max_concurrent_requests: u64,
-    /// Broadcast channel depth for the rehearsal feed.
+    /// Broadcast channel depth for the rehearsal feed. Slow subscribers
+    /// lag-skip by policy (see `feed`); the pump never blocks, so depth
+    /// bounds memory, not throughput.
     #[field(desc = "Feed channel depth", min = 16, max = 100_000)]
     #[builder(default = 256)]
     pub feed_capacity: u64,
@@ -70,6 +72,13 @@ pub struct ServerConfig {
     #[field(desc = "Feed frame interval in milliseconds", min = 1, max = 60_000)]
     #[builder(default = 50)]
     pub feed_interval_ms: u64,
+}
+
+impl protopyne_types::Validate for ServerConfig {
+    type Err = String;
+    fn validate(&self) -> Result<(), Self::Err> {
+        ServerConfig::validate(self)
+    }
 }
 
 impl Default for ServerConfig {
@@ -109,9 +118,8 @@ impl WorkUnit for ServerConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        self.validate()
-            .map_err(|e| WorkError::Execution(format!("server config invalid: {e}")))?;
-        Ok(WorkOutput::ok("server config valid"))
+        protopyne_types::check_for_execute(self, "server config invalid")?;
+        Ok(protopyne_types::valid_output("server config valid"))
     }
 }
 
@@ -149,6 +157,9 @@ pub struct PortfolioView {
     pub total_fees: Money,
     /// Net signed contracts across positions.
     pub open_contracts: i64,
+    /// Trading state when the view was published: halt/resume status rides
+    /// the existing portfolio route (additive — older readers ignore it).
+    pub trading_state: TradingState,
 }
 
 impl Default for PortfolioView {
@@ -158,8 +169,23 @@ impl Default for PortfolioView {
             filled_orders: 0,
             total_fees: Money::from(0),
             open_contracts: 0,
+            // Views boot allowing everything, matching a fresh session.
+            trading_state: TradingState::Enabled,
         }
     }
+}
+
+/// Last operator command the service observed: halt, resume, close-all, or
+/// cancel-all status for the existing routes to report. Commands themselves
+/// enter through the journaled command plane; this is the read-only echo.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CommandStatus {
+    /// Command kind (`halt`, `resume`, `close_all`, `cancel_all`).
+    pub kind: String,
+    /// Human-readable outcome.
+    pub detail: String,
+    /// Outcome time in epoch milliseconds.
+    pub at_ms: i64,
 }
 
 /// Worst-case exposure of an armed grant, shown before confirmation.
@@ -279,6 +305,12 @@ pub struct AppState {
     armed: Mutex<Option<Grant>>,
     portfolio: Mutex<PortfolioView>,
     feed: broadcast::Sender<String>,
+    /// Command-plane authority the bars gate on: shared ownership so an
+    /// operator plane driving the same handle halts and resumes this
+    /// surface. Serving-path reads only — no route mutates it.
+    trading_state: StateHandle,
+    /// Read-only echo of the last operator command, if any.
+    last_command: Mutex<Option<CommandStatus>>,
 }
 
 type Shared = Arc<AppState>;
@@ -364,27 +396,22 @@ fn is_tightening(next: &Grant, current: &Grant) -> bool {
 }
 
 fn validate_grant(grant: &Grant) -> Result<(), String> {
-    if grant.revoked {
-        return Err("grant is revoked".to_owned());
-    }
-    if grant.valid_from >= grant.valid_until {
-        return Err("grant window is empty".to_owned());
-    }
-    if grant.budgets.max_trades < 1 || grant.budgets.max_contracts < 1 {
-        return Err("grant budgets must authorize at least one trade".to_owned());
-    }
-    if grant.scope.strategies.is_empty()
-        || grant.scope.underlyings.is_empty()
-        || grant.scope.structures.is_empty()
-        || grant.scope.directions.is_empty()
-    {
-        return Err("grant scope must name strategies, underlyings, structures, and directions".to_owned());
-    }
-    Ok(())
+    protopyne_types::Validate::validate(grant)
 }
 
-async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
+/// Liveness plus command-plane status: the trading state (halt/resume) and
+/// the last operator command ride the existing health route — additive
+/// fields, no new route, no new auth.
+async fn health(State(state): State<Shared>) -> Json<serde_json::Value> {
+    let trading = state.trading_state.get();
+    Json(serde_json::json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "trading_state": trading,
+        "allows_entries": trading.allows(false),
+        "allows_exits": trading.allows(true),
+        "last_command": common_core::sync::lock(&state.last_command).clone(),
+    }))
 }
 
 async fn proposals(State(state): State<Shared>) -> Json<Vec<ProposalView>> {
@@ -490,8 +517,15 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             });
         }
     }
-    let mut positions: std::collections::HashMap<String, (i64, rust_decimal::Decimal, u64)> =
-        std::collections::HashMap::new();
+    // Preview-run attribution fold, grouped by indexed symbol key through a
+    // run-local table (never global): same grouping as before, `Copy`-key
+    // lookups on the fold path, strings restored at the `Position`
+    // boundary so the wire shape is unchanged.
+    let mut symbols = protopyne_types::SymbolIndex::new();
+    let mut positions: std::collections::HashMap<
+        protopyne_types::SymKey,
+        (i64, rust_decimal::Decimal, u64),
+    > = std::collections::HashMap::new();
     let mut fees = rust_decimal::Decimal::ZERO;
     let mut filled_orders: u64 = 0;
     for decision in &run.decisions {
@@ -504,21 +538,26 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
                 Some(Direction::Short) => -1,
                 _ => 1,
             };
-            let entry = positions.entry("SPY".to_owned()).or_insert((0, rust_decimal::Decimal::ZERO, 0));
+            let Ok(key) = symbols.intern("SPY") else {
+                continue;
+            };
+            let entry = positions.entry(key).or_insert((0, rust_decimal::Decimal::ZERO, 0));
             entry.0 += signed;
             entry.1 += price;
             entry.2 += 1;
         }
     }
+    let trading_state = state.trading_state.get();
     let mut portfolio = common_core::sync::lock(&state.portfolio);
     let mut positions: Vec<Position> = positions
         .into_iter()
-        .map(|(underlying, (quantity, price_sum, count))| {
+        .map(|(key, (quantity, price_sum, count))| {
             let avg = if count == 0 {
                 Money::from(0)
             } else {
                 Money::new(price_sum / rust_decimal::Decimal::from(count))
             };
+            let underlying = symbols.resolve(key).unwrap_or("SPY").to_owned();
             Position::new().underlying(underlying).quantity(quantity).avg_price(avg).build()
         })
         .collect();
@@ -527,6 +566,7 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     portfolio.filled_orders = filled_orders;
     portfolio.total_fees = Money::new(fees);
     portfolio.open_contracts = portfolio.positions.iter().map(|position| position.quantity).sum();
+    portfolio.trading_state = trading_state;
 }
 
 async fn arm(
@@ -778,14 +818,22 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
     if !(summary.failed.is_empty() && summary.panicked.is_empty() && summary.cancelled.is_empty()) {
         return Err(ServerError::Service("boot gates refused to bind".to_owned()));
     }
+    // Bounded fan-out: the broadcast ring holds at most `feed_capacity`
+    // frames (validated 16..=100_000); lagged receivers skip by policy and
+    // the pump's send never blocks, so a slow subscriber cannot grow memory.
     let (feed_tx, _) = broadcast::channel(config.feed_capacity as usize);
     let state = Arc::new(AppState {
+        // Endpoint concurrency cap: at most `max_concurrent_requests`
+        // previews execute at once; excess waits on the semaphore, never
+        // spawns.
         limiter: Limiter::new(config.max_concurrent_requests as usize),
         history,
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
         portfolio: Mutex::new(PortfolioView::default()),
         feed: feed_tx.clone(),
+        trading_state: StateHandle::new(TradingState::Enabled),
+        last_command: Mutex::new(None),
     });
     let mut scope = Scope::new();
     {
@@ -821,6 +869,9 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
     let addr = listener
         .local_addr()
         .map_err(|e| ServerError::Service(format!("bound address unknown: {e}")))?;
+    // The one sanctioned raw spawn: the listener root task, owned by the
+    // returned handle and aborted on `shutdown` (every other task in this
+    // crate is `Scope`- or pool-owned).
     let serve = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });

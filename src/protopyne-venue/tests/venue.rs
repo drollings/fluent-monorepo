@@ -52,25 +52,37 @@ impl Venue for OrdersOnly {
         })
     }
 
-    fn submit(
-        &self,
+    fn submit<'a>(
+        &'a self,
         _intent: OrderIntent,
-        _quote: &Quote,
+        _quote: &'a Quote,
         _now: chrono::DateTime<chrono::Utc>,
-    ) -> impl std::future::Future<Output = Result<OrderRecord, VenueError>> + Send {
-        std::future::ready(Err(VenueError::Refused("stub never fills".to_owned())))
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>,
+    > {
+        Box::pin(std::future::ready(Err(VenueError::Refused(
+            "stub never fills".to_owned(),
+        ))))
     }
 
-    fn query(&self, _client_id: &str) -> impl std::future::Future<Output = Option<OrderRecord>> + Send {
-        std::future::ready(None)
+    fn query<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<OrderRecord>> + Send + 'a>>
+    {
+        Box::pin(std::future::ready(None))
     }
 
-    fn cancel(
-        &self,
-        _client_id: &str,
+    fn cancel<'a>(
+        &'a self,
+        _client_id: &'a str,
         _now: chrono::DateTime<chrono::Utc>,
-    ) -> impl std::future::Future<Output = Result<OrderRecord, VenueError>> + Send {
-        std::future::ready(Err(VenueError::Invalid("stub holds nothing".to_owned())))
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>,
+    > {
+        Box::pin(std::future::ready(Err(VenueError::Invalid(
+            "stub holds nothing".to_owned(),
+        ))))
     }
 
     fn positions(&self) -> Vec<crate::order::Position> {

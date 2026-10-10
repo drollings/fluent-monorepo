@@ -196,3 +196,20 @@ fn fallback_loader_prefers_first_usable_source() {
     assert!(load_bars_with_fallback(&[]).is_err());
     assert!(load_bars_single(&test_data()).is_ok());
 }
+
+#[test]
+fn dynamic_history_loads_beside_csv() {
+    use crate::backtest::{HistorySource, load_history};
+
+    // Same tape, two sources: the dynamic variant must reproduce the CSV
+    // path bar for bar — the harness treats them interchangeably.
+    let from_csv = load_history(&HistorySource::Csv(vec![test_data()])).expect("csv loads");
+    assert!(!from_csv.is_empty());
+    let replayed = load_history(&HistorySource::Dynamic(from_csv.clone())).expect("dynamic loads");
+    assert_eq!(replayed, from_csv);
+    // Fail-closed mirrors the CSV path: no candidates and no bars both
+    // refuse instead of running on an empty tape.
+    assert!(load_history(&HistorySource::Csv(Vec::new())).is_err());
+    assert!(load_history(&HistorySource::Dynamic(Vec::new())).is_err());
+    assert!(load_history(&HistorySource::Csv(vec![PathBuf::from("/nonexistent/x.csv")])).is_err());
+}

@@ -11,10 +11,11 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use protopyne_types::{LegSide, Money, SpreadLegs};
+use protopyne_types::{LegSide, Money, SpreadLegs, SymKey, SymbolIndex};
 
 use crate::error::VenueError;
 use crate::order::{
@@ -39,14 +40,16 @@ pub enum Fault {
     LoseAck,
 }
 
-/// Venue-side books: orders by client ID plus net positions by underlying.
-/// Spread legs additionally track per-contract positions by OCC symbol and
-/// the executed legs behind each spread fill, both keyed for query and
-/// reconciliation.
+/// Venue-side books: orders by client ID plus net positions by indexed
+/// symbol key. Spread legs additionally track per-contract positions by OCC
+/// symbol and the executed legs behind each spread fill, both keyed for
+/// query and reconciliation. Only the single-underlying net book uses the
+/// session-scoped index: OCC symbols and client IDs stay strings (they are
+/// identifiers, not a hot lookup path).
 #[derive(Debug, Default)]
 struct Book {
     orders: HashMap<String, OrderRecord>,
-    positions: HashMap<String, Position>,
+    positions: HashMap<SymKey, Position>,
     spread: HashMap<String, SpreadPosition>,
     executions: HashMap<String, Vec<LegExecution>>,
 }
@@ -79,6 +82,10 @@ pub struct PaperVenue {
     book: Mutex<Book>,
     faults: Mutex<VecDeque<Fault>>,
     leg_quotes: Mutex<Option<Arc<dyn LegQuoteSource>>>,
+    /// Session-scoped symbol table backing the net-position book. Owned
+    /// here (never global) so parallel venues stay isolated; every public
+    /// surface still speaks strings, so keys never leak into serialization.
+    symbols: Mutex<SymbolIndex>,
 }
 
 impl PaperVenue {
@@ -90,6 +97,7 @@ impl PaperVenue {
             book: Mutex::new(Book::default()),
             faults: Mutex::new(VecDeque::new()),
             leg_quotes: Mutex::new(None),
+            symbols: Mutex::new(SymbolIndex::new()),
         }
     }
 
@@ -185,20 +193,23 @@ impl PaperVenue {
         Ok((record, signed))
     }
 
-    fn commit(&self, record: OrderRecord, signed_qty: i64, price: Money) {
+    fn commit(&self, record: OrderRecord, signed_qty: i64, price: Money) -> Result<(), VenueError> {
+        // Fail closed with a reason on an uninterable symbol — never panic:
+        // trading paths refuse, they do not unwrap.
+        let key = common_core::sync::lock(&self.symbols)
+            .intern(&record.intent.underlying)
+            .map_err(|e| VenueError::Invalid(e.to_string()))?;
         let mut book = common_core::sync::lock(&self.book);
-        let position = book
-            .positions
-            .entry(record.intent.underlying.clone())
-            .or_insert_with(|| {
-                Position::new()
-                    .underlying(record.intent.underlying.clone())
-                    .quantity(0)
-                    .avg_price(Money::zero())
-                    .build()
-            });
+        let position = book.positions.entry(key).or_insert_with(|| {
+            Position::new()
+                .underlying(record.intent.underlying.clone())
+                .quantity(0)
+                .avg_price(Money::zero())
+                .build()
+        });
         position.apply(signed_qty, price);
         book.orders.insert(record.intent.client_id.clone(), record);
+        Ok(())
     }
 
     /// Decide a multi-leg spread as one atomic package: every leg folds
@@ -358,7 +369,7 @@ impl PaperVenue {
             None => {
                 let (record, signed) = self.decide(intent, quote, now)?;
                 let price = record.avg_price.unwrap_or(intent.limit_price);
-                self.commit(record.clone(), signed, price);
+                self.commit(record.clone(), signed, price)?;
                 Ok(record)
             }
             Some(spread) => {
@@ -388,47 +399,52 @@ impl Venue for PaperVenue {
         })
     }
 
-    async fn submit(
-        &self,
+    fn submit<'a>(
+        &'a self,
         intent: OrderIntent,
-        quote: &Quote,
+        quote: &'a Quote,
         now: DateTime<Utc>,
-    ) -> Result<OrderRecord, VenueError> {
-        if let Some(record) = self.query(&intent.client_id).await {
-            return Ok(record);
-        }
-        match self.pop_fault() {
-            Some(Fault::DropConnection) => {
-                return Err(VenueError::Transport("connection dropped".to_owned()));
+    ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>> {
+        Box::pin(async move {
+            if let Some(record) = self.query(&intent.client_id).await {
+                return Ok(record);
             }
-            Some(Fault::Status500) => {
-                return Err(VenueError::Server("status 500".to_owned()));
+            match self.pop_fault() {
+                Some(Fault::DropConnection) => {
+                    return Err(VenueError::Transport("connection dropped".to_owned()));
+                }
+                Some(Fault::Status500) => {
+                    return Err(VenueError::Server("status 500".to_owned()));
+                }
+                Some(Fault::DelayFill(delay)) => {
+                    tokio::time::sleep(delay).await;
+                }
+                Some(Fault::LoseAck) => {
+                    self.execute(&intent, quote, now)?;
+                    return Err(VenueError::Transport("acknowledgement lost".to_owned()));
+                }
+                None => {}
             }
-            Some(Fault::DelayFill(delay)) => {
-                tokio::time::sleep(delay).await;
-            }
-            Some(Fault::LoseAck) => {
-                self.execute(&intent, quote, now)?;
-                return Err(VenueError::Transport("acknowledgement lost".to_owned()));
-            }
-            None => {}
-        }
-        self.execute(&intent, quote, now)
+            self.execute(&intent, quote, now)
+        })
     }
 
-    fn query(&self, client_id: &str) -> impl Future<Output = Option<OrderRecord>> + Send {
+    fn query<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Option<OrderRecord>> + Send + 'a>> {
         let record = common_core::sync::lock(&self.book)
             .orders
             .get(client_id)
             .cloned();
-        std::future::ready(record)
+        Box::pin(std::future::ready(record))
     }
 
-    fn cancel(
-        &self,
-        client_id: &str,
+    fn cancel<'a>(
+        &'a self,
+        client_id: &'a str,
         now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<OrderRecord, VenueError>> + Send {
+    ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>> {
         // Cancelling a terminal order is a caller error, never a silent
         // no-op: quiet success would let a dead-order retry loop believe it
         // acted.
@@ -447,7 +463,7 @@ impl Venue for PaperVenue {
             record.updated_at = now;
             Ok(record.clone())
         })();
-        std::future::ready(outcome)
+        Box::pin(std::future::ready(outcome))
     }
 
     fn positions(&self) -> Vec<Position> {
@@ -480,10 +496,15 @@ impl Venue for PaperVenue {
         event: CorporateEvent,
         _now: DateTime<Utc>,
     ) -> Result<String, VenueError> {
+        // Reads resolve without inserting: an unknown underlying is absence,
+        // and absence closes (expiry) or refuses (split) exactly as before.
+        let key = common_core::sync::lock(&self.symbols).lookup(underlying);
         let mut book = common_core::sync::lock(&self.book);
         match event {
             CorporateEvent::Expiry | CorporateEvent::Assignment => {
-                book.positions.remove(underlying);
+                if let Some(key) = key {
+                    book.positions.remove(&key);
+                }
                 Ok(format!("{event:?} on {underlying}: position closed for review"))
             }
             CorporateEvent::Dividend(amount) => Ok(format!(
@@ -495,7 +516,10 @@ impl Venue for PaperVenue {
                         "split factor must be new shares per old share (forward splits only); got 0".to_owned(),
                     ));
                 }
-                let position = book.positions.get_mut(underlying).ok_or_else(|| {
+                let Some(key) = key else {
+                    return Err(VenueError::Invalid(format!("no position in {underlying}")));
+                };
+                let position = book.positions.get_mut(&key).ok_or_else(|| {
                     VenueError::Invalid(format!("no position in {underlying}"))
                 })?;
                 position.quantity = position.quantity.checked_mul(i64::from(factor)).ok_or_else(|| {

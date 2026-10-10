@@ -42,6 +42,13 @@ pub struct Bar {
     pub adj: Option<Adjustment>,
 }
 
+impl crate::validate::Validate for Bar {
+    type Err = TypesError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        Bar::validate(self)
+    }
+}
+
 impl Bar {
     /// Check the OHLC structural invariants: `high` covers open, close, and
     /// low; `low` sits under open, close, and high. Volume needs no check —

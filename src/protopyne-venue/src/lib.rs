@@ -12,25 +12,33 @@
 //! [`first_accept_in_order`](fluent_concurrency::ladder::first_accept_in_order).
 
 pub mod command;
+pub mod depth;
 pub mod error;pub mod health;
 pub mod journal;
+pub mod market;
 pub mod order;
 pub mod paper;
 pub mod position;
 pub mod quote;
 pub mod reconcile;
+pub mod registry;
 pub mod session;
+pub mod stream;
 pub mod submit;
 pub mod tastytrade;
 pub mod venue;
 
 pub use command::{
-    cancel_all_ids, close_all_intents, CommandKind, CommandUnit, LegGroup, PortfolioRegistry,
-    PortfolioView, ReplicaOrder, StateHandle, StateReplica, TradingState,
+    cancel_all_ids, close_all_intents, replay_trading_state, CommandKind, CommandUnit, LegGroup,
+    PortfolioRegistry, PortfolioView, ReplicaOrder, StateHandle, StateReplica, TradingState,
+    TradingStateUnit, COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND, COMMAND_DISARM_KIND,
+    COMMAND_RESUME_KIND, OPERATOR_CLIENT_ID, TRADING_ENABLED_ASSET,
 };
+pub use depth::{DEFAULT_MAX_LEVELS, BookManager, DarkFinding, DepthBook, DepthDelta, PriceLevel};
 pub use error::VenueError;
 pub use health::{check_trade, may_trade, HealthLimits, HealthState, HealthVerdict};
 pub use journal::{Journal, JournalEvent, ReplayedState, VenueStorage, LEG_FILL_KIND};
+pub use market::{MarketEvent, MarketEventKind};
 pub use order::{
     client_id_for, qty_of, ActiveOrderState, CorporateEvent, Fill, OrderIntent, OrderRecord,
     OrderSide, OrderStatus, Position, TimeInForce,
@@ -42,7 +50,12 @@ pub use position::{
 };
 pub use quote::{FeeSchedule, LiquidityFilter, Quote, Slippage, DEFAULT_SLIPPAGE_BPS};
 pub use reconcile::{journal_leg_net, journal_net, reconcile, reconcile_legs, ReconcileGate, ReconcileMismatch, ReconcileReport};
+pub use registry::VenueRegistry;
 pub use session::{check_unit, SessionConfig, SubmitJob, TradingSession};
+pub use stream::{
+    STREAM_HEALTH_ASSET, StreamBreaker, StreamConfig, StreamHealthUnit, StreamOutcome, SupervisedStream,
+    terminal_reason,
+};
 pub use submit::{safe_submit, SUBMIT_RETRIES, SUBMIT_TIMEOUT};
 pub use tastytrade::{
     RETRY_BACKOFF_BASE_MS, RETRY_JITTER_PCT, RETRY_MAX_ATTEMPTS, TastytradeConfig,
@@ -58,3 +71,11 @@ mod calibration_tests;
 #[cfg(test)]
 #[path = "../tests/spread_calibration.rs"]
 mod spread_calibration_tests;
+
+#[cfg(test)]
+#[path = "../tests/validate.rs"]
+mod validate_tests;
+
+#[cfg(test)]
+#[path = "../tests/symbol_index.rs"]
+mod symbol_index_tests;

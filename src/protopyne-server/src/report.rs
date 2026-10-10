@@ -15,6 +15,7 @@ use rust_decimal::prelude::ToPrimitive as _;
 use protopyne_types::{Bar, Money};
 
 use crate::metrics::{self, TRADING_DAYS_PER_YEAR};
+use crate::portfolio::PortfolioReport;
 
 /// What was run, pinned for replay. Deterministic serialization order makes
 /// reruns byte-identical: the same inputs always produce the same JSON.
@@ -251,6 +252,11 @@ pub struct BacktestReport {
     pub greeks_note: String,
     /// Marked equity curve (per-bar, account currency).
     pub equity_curve: Vec<Money>,
+    /// Portfolio aggregation over the run's fills (`None` for reports built
+    /// before the aggregation existed — additive, rerun equality unaffected
+    /// since the pin covers manifest plus decisions, never this).
+    #[serde(default)]
+    pub portfolio: Option<PortfolioReport>,
 }
 
 impl BacktestReport {
@@ -337,7 +343,114 @@ pub fn build_report(
         profit_factor: metrics::profit_factor(&step_moves).and_then(as_f64),
         greeks_note: BacktestReport::unavailable_greeks_note(),
         equity_curve,
+        portfolio: None,
     }
+}
+
+/// Render one human-readable tearsheet from the same structs the JSON report
+/// serializes: every line reads a report field, so text and JSON cannot
+/// disagree. Absent stats print `n/a` (never zero); money prints in its
+/// exact decimal form. The portfolio section appears only when the report
+/// carries an aggregation.
+#[must_use]
+pub fn render_tearsheet(report: &BacktestReport) -> String {
+    fn stat(value: Option<f64>) -> String {
+        value.map_or_else(|| "n/a".to_owned(), |number| number.to_string())
+    }
+    let mut rows = vec![
+        "backtest tearsheet".to_owned(),
+        format!(
+            "manifest: data={} code={} bars={} seed={}",
+            report.manifest.data_version,
+            report.manifest.code_version,
+            report.manifest.bar_count,
+            report.manifest.seed,
+        ),
+        format!(
+            "proposals: {} fills: {} fill_rate: {}",
+            report.proposals,
+            report.fills,
+            stat(report.fill_rate),
+        ),
+        format!(
+            "fees: {} notional: {} efficiency: {}",
+            report.total_fees,
+            report.filled_notional,
+            stat(report.capital_efficiency),
+        ),
+        format!(
+            "drawdown: {} tail: {} cum_return: {} rsrs: {}",
+            report.drawdown,
+            report.tail_loss,
+            stat(report.cum_return),
+            stat(report.rsrs),
+        ),
+        format!(
+            "sharpe: {} sortino: {} calmar: {} win_rate: {} profit_factor: {}",
+            stat(report.sharpe),
+            stat(report.sortino),
+            stat(report.calmar),
+            stat(report.win_rate),
+            stat(report.profit_factor),
+        ),
+    ];
+    match &report.portfolio {
+        None => rows.push("portfolio: n/a".to_owned()),
+        Some(summary) => {
+            for totals in &summary.portfolios {
+                rows.push(format!(
+                    "portfolio {}: realized {} unrealized {} fees {} fills {} closed {} open {}",
+                    totals.portfolio,
+                    totals.pnl_realised,
+                    totals.pnl_unrealised,
+                    totals.fees,
+                    totals.fills,
+                    totals.closed_trades,
+                    totals.open_quantity,
+                ));
+                for bucket in &totals.buckets {
+                    let open = bucket.open_side.map_or_else(
+                        || "flat".to_owned(),
+                        |side| side.to_string(),
+                    );
+                    rows.push(format!(
+                        "bucket {}/{}/{}/{}/{}: realized {} unrealized {} fees {} fills {} closed {} open {} {open}",
+                        bucket.key.portfolio,
+                        bucket.key.underlying,
+                        bucket.key.structure,
+                        bucket.key.strategy,
+                        bucket.key.grant,
+                        bucket.pnl_realised,
+                        bucket.pnl_unrealised,
+                        bucket.fees,
+                        bucket.fills,
+                        bucket.closed_trades,
+                        bucket.open_quantity,
+                    ));
+                }
+                rows.push(format!(
+                    "portfolio stats: win_rate {} profit_factor {} sharpe {} sortino {} calmar {}",
+                    stat(totals.win_rate),
+                    stat(totals.profit_factor),
+                    stat(totals.sharpe),
+                    stat(totals.sortino),
+                    stat(totals.calmar),
+                ));
+            }
+        }
+    }
+    rows.push("assumptions:".to_owned());
+    for assumption in &report.fill_assumptions {
+        rows.push(format!("- {assumption}"));
+    }
+    rows.push("limits:".to_owned());
+    for limit in &report.data_limits {
+        rows.push(format!("- {limit}"));
+    }
+    rows.push(format!("greeks: {}", report.greeks_note));
+    let mut text = rows.join("\n");
+    text.push('\n');
+    text
 }
 
 /// Bar count for the report: the equity curve has one entry per replayed bar.

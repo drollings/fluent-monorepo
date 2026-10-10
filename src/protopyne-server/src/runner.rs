@@ -22,7 +22,7 @@ use rust_decimal::prelude::ToPrimitive as _;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use protopyne_strategy::{
     BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage, ProposalSide,
-    ProposeInput, RiskEngine, RiskState, Strategy, evaluate_grant,
+    ProposeInput, RiskEngine, RiskState, Strategy, StructureKind, evaluate_grant,
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
@@ -30,8 +30,9 @@ use protopyne_venue::{
     Venue,
 };
 
-use crate::backtest::{BacktestConfig, BacktestVenue, quote_for_bar};
+use crate::backtest::{BacktestConfig, BacktestVenue, HistorySource, quote_for_bar};
 use crate::error::ServerError;
+use crate::portfolio::{BookedFill, PAPER_PORTFOLIO, aggregate};
 use crate::report::{RunManifest, BacktestReport, build_report, count_unquotable_bars};
 
 /// Per-bar economics and identity for one backtest run.
@@ -49,6 +50,13 @@ pub struct RunnerConfig {
     pub dte_days: u32,
     /// Bars skipped before the first proposal (warmup honesty).
     pub warmup_bars: usize,
+}
+
+impl protopyne_types::Validate for RunnerConfig {
+    type Err = ServerError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        RunnerConfig::validate(self)
+    }
 }
 
 impl RunnerConfig {
@@ -91,6 +99,11 @@ pub struct BarDecision {
     pub proposal_id: String,
     /// Signal direction (`None` when no proposal was emitted).
     pub direction: Option<Direction>,
+    /// Proposal structure (`None` when no proposal was emitted, or for runs
+    /// recorded before structure was captured — the portfolio fold labels
+    /// those fills `unrecorded` rather than guessing).
+    #[serde(default)]
+    pub structure: Option<StructureKind>,
     /// Whether the risk engine approved.
     pub risk_pass: bool,
     /// Risk refusal reasons (empty on approval).
@@ -136,6 +149,7 @@ fn skipped_decision(
         ts,
         proposal_id,
         direction: None,
+        structure: None,
         risk_pass: false,
         risk_reasons: Vec::new(),
         grant_allow: false,
@@ -167,12 +181,24 @@ pub struct CheckedOrder {
     pub limit: Money,
 }
 
+/// Venue side for a signal direction: longs buy, shorts sell. The single
+/// home for the mapping — `checked_order_for` and the portfolio fill fold
+/// both read it, so submission and attribution can never disagree on which
+/// side a direction traded.
+#[must_use]
+pub fn side_for_direction(direction: Direction) -> OrderSide {
+    match direction {
+        Direction::Long => OrderSide::Buy,
+        Direction::Short => OrderSide::Sell,
+    }
+}
+
 /// Derive the executable order for `direction` from the current touch.
 #[must_use]
 pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
     match direction {
-        Direction::Long => CheckedOrder { side: OrderSide::Buy, limit: quote.ask },
-        Direction::Short => CheckedOrder { side: OrderSide::Sell, limit: quote.bid },
+        Direction::Long => CheckedOrder { side: side_for_direction(direction), limit: quote.ask },
+        Direction::Short => CheckedOrder { side: side_for_direction(direction), limit: quote.bid },
     }
 }
 
@@ -305,6 +331,7 @@ pub async fn decide_and_submit<V: Venue>(
             ts,
             proposal_id,
             direction,
+            structure: Some(proposal.structure),
             risk_pass,
             risk_reasons,
             grant_allow,
@@ -327,6 +354,7 @@ pub async fn decide_and_submit<V: Venue>(
             ts,
             proposal_id,
             direction,
+            structure: Some(proposal.structure),
             risk_pass,
             risk_reasons,
             grant_allow,
@@ -350,6 +378,7 @@ pub async fn decide_and_submit<V: Venue>(
             ts,
             proposal_id,
             direction,
+            structure: Some(proposal.structure),
             risk_pass,
             risk_reasons,
             grant_allow,
@@ -407,6 +436,7 @@ pub async fn decide_and_submit<V: Venue>(
                 ts,
                 proposal_id,
                 direction,
+                structure: Some(proposal.structure),
                 risk_pass,
                 risk_reasons,
                 grant_allow,
@@ -434,6 +464,7 @@ pub async fn decide_and_submit<V: Venue>(
         ts,
         proposal_id,
         direction,
+        structure: Some(proposal.structure),
         risk_pass,
         risk_reasons,
         grant_allow,
@@ -552,6 +583,38 @@ pub async fn run_backtest(
     let config_json = serde_json::to_string(&(runner_config, venue_config, risk.limits(), grant))
         .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))?;
     let manifest = RunManifest::new(&venue_config.data_version, config_json, bars, seed);
+    run_backtest_on_venue(
+        strategy,
+        risk,
+        grant,
+        &venue,
+        venue_config,
+        runner_config,
+        bars,
+        seed,
+        manifest,
+    )
+    .await
+}
+
+/// Run the shared decide path over `bars` through a caller-supplied venue.
+///
+/// The single-symbol `run_backtest` and the multi-symbol harness both enter
+/// here, so one code path stays one code path: a divergence between rehearsal
+/// shapes is a bug, never a modeling choice. Config and bar validation stay
+/// with the callers (they own the input shape); the manifest arrives pinned.
+#[allow(clippy::too_many_arguments)]
+async fn run_backtest_on_venue<V: Venue>(
+    strategy: &Strategy,
+    risk: &RiskEngine,
+    grant: &Grant,
+    venue: &V,
+    venue_config: &BacktestConfig,
+    runner_config: &RunnerConfig,
+    bars: &[Bar],
+    seed: u64,
+    manifest: RunManifest,
+) -> Result<BacktestRun, ServerError> {
     let mut usage = GrantUsage::new().build();
     // One breaker for the whole run: rebuilding it per bar would leave the
     // consecutive-error threshold decorative. Health is built per bar at the
@@ -584,7 +647,7 @@ pub async fn run_backtest(
         }
         let window = closes.clone();
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, &venue, venue_config, &mut breakers, BarHealth::rehearsed(), index, bar, &window, runner_config, seed)
+            decide_and_submit(strategy, risk, grant, &mut usage, venue, venue_config, &mut breakers, BarHealth::rehearsed(), index, bar, &window, runner_config, seed)
                 .await,
         );
     }
@@ -619,7 +682,7 @@ pub async fn run_backtest(
         format!("{unquotable} unquotable bars skipped; {skipped_warmup} warmup bars skipped"),
         "no corporate-action adjustments (cash dividends excluded from P&L); no option-chain data (greeks unavailable)".to_owned(),
     ];
-    let report = build_report(
+    let mut report = build_report(
         manifest.clone(),
         assumptions,
         limits,
@@ -631,7 +694,180 @@ pub async fn run_backtest(
         equity,
         report_rsrs(bars),
     );
+    // Portfolio aggregation over the run's fills: decisions are the runner's
+    // fill record, keyed back to bars by replay index (built in lockstep
+    // above, so the lookup cannot miss — a miss fails the run, never drops
+    // a fill). Only priced fills book: a fill without a price has no
+    // economics to attribute. Marks are bar closes, the same tape the equity
+    // curve marks.
+    let mut booked: Vec<BookedFill> = Vec::new();
+    for decision in &decisions {
+        let (Some(direction), Some(price)) = (decision.direction, decision.fill_price) else {
+            continue;
+        };
+        if !decision.submitted || decision.filled_quantity == 0 {
+            continue;
+        }
+        let Some(bar) = bars.get(decision.bar_index) else {
+            return Err(ServerError::Backtest(format!(
+                "decision {} indexes bar {} of {}",
+                decision.proposal_id,
+                decision.bar_index,
+                bars.len()
+            )));
+        };
+        booked.push(
+            BookedFill::new()
+                .portfolio(PAPER_PORTFOLIO.to_owned())
+                .underlying(runner_config.underlying.clone())
+                .structure(decision.structure.map_or_else(
+                    || "unrecorded".to_owned(),
+                    |structure| format!("{structure:?}"),
+                ))
+                .strategy(runner_config.strategy_name.clone())
+                .grant(grant.id.clone())
+                .side(side_for_direction(direction))
+                .quantity(decision.filled_quantity)
+                .price(price)
+                .fee(decision.fee.unwrap_or_else(Money::zero))
+                .trade_id(protopyne_venue::client_id_for(&decision.proposal_id, 0))
+                .at(bar.ts)
+                .build(),
+        );
+    }
+    let marks: Vec<(chrono::DateTime<chrono::Utc>, Money)> =
+        bars.iter().map(|bar| (bar.ts, Money::new(bar.c))).collect();
+    report.portfolio = Some(aggregate(&booked)?.summarize(&marks)?);
     Ok(BacktestRun { manifest, decisions, report })
+}
+
+/// One symbol's leg of a multi-symbol run: its configs plus its bar source.
+///
+/// Histories arrive from CSV or dynamically — the harness loads either arm
+/// through `load_history`, so a symbol with no file replays beside one with
+/// a pinned CSV through the identical decide path.
+#[derive(Debug, Clone, bon::Builder)]
+#[builder(start_fn = new)]
+pub struct MultiSymbolInput {
+    /// Quote synthesis plus data-version pin for this symbol.
+    pub venue_config: BacktestConfig,
+    /// Attribution plus economics for this symbol.
+    pub runner_config: RunnerConfig,
+    /// Bar source for this symbol.
+    pub history: HistorySource,
+}
+
+/// Combined reproducibility pin for a multi-symbol run: one per-symbol pin
+/// (data version, code version, config) in harness input order, under the
+/// shared suite seed. Serialization order is struct order, so reruns are
+/// byte-identical.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MultiRunManifest {
+    /// Crate version at run time, shared across symbols.
+    pub code_version: String,
+    /// Caller-supplied seed shared across symbols (0 = none).
+    pub seed: u64,
+    /// Per-symbol pins, in harness input order.
+    pub symbols: Vec<RunManifest>,
+}
+
+impl MultiRunManifest {
+    /// Deterministic JSON encoding of the combined pin. Same inputs always
+    /// produce the same bytes; a failure still reports loudly inside the
+    /// payload instead of emitting an empty object.
+    #[must_use]
+    pub fn to_canonical_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!(
+                "{{\"serialization_error\":{}}}",
+                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+            )
+        })
+    }
+}
+
+/// One completed multi-symbol run: the combined pin plus per-symbol runs in
+/// harness input order.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MultiBacktestRun {
+    /// Combined reproducibility pin.
+    pub manifest: MultiRunManifest,
+    /// Per-symbol runs, in harness input order.
+    pub runs: Vec<BacktestRun>,
+}
+
+/// Run the shared decide path once per symbol over one shared venue set.
+///
+/// Every venue tunes from the same `paper` config (the set is built together,
+/// never one hidden default per call), and every symbol enters the same
+/// `run_backtest_on_venue` the single-symbol path uses — per-symbol decisions
+/// equal standalone runs bit for bit. Symbols run sequentially in input
+/// order: determinism first (sweeps own the pool fan-out pattern), so the
+/// combined manifest needs no index bookkeeping to stay reproducible.
+/// Underlyings must be unique: two legs on one symbol would attribute fills
+/// ambiguously, so duplicates refuse fail-closed.
+pub async fn run_multi_backtest(
+    strategy: &Strategy,
+    risk: &RiskEngine,
+    grant: &Grant,
+    paper: PaperConfig,
+    inputs: Vec<MultiSymbolInput>,
+    seed: u64,
+) -> Result<MultiBacktestRun, ServerError> {
+    if inputs.is_empty() {
+        return Err(ServerError::Backtest(
+            "multi-symbol run needs at least one symbol".to_owned(),
+        ));
+    }
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for input in &inputs {
+        if !seen.insert(input.runner_config.underlying.as_str()) {
+            return Err(ServerError::Backtest(format!(
+                "duplicate symbol '{}': legs must be unique",
+                input.runner_config.underlying
+            )));
+        }
+    }
+    let mut symbols = Vec::with_capacity(inputs.len());
+    let mut runs = Vec::with_capacity(inputs.len());
+    for input in &inputs {
+        input.runner_config.validate()?;
+        input.venue_config.validate()?;
+        let bars = crate::backtest::load_history(&input.history)?;
+        let venue = BacktestVenue::new(input.venue_config.clone(), bars.clone(), paper.clone())
+            .map_err(|e| ServerError::Backtest(e.to_string()))?;
+        let config_json = serde_json::to_string(&(
+            &input.runner_config,
+            &input.venue_config,
+            risk.limits(),
+            grant,
+        ))
+        .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))?;
+        let manifest = RunManifest::new(&input.venue_config.data_version, config_json, &bars, seed);
+        symbols.push(manifest.clone());
+        runs.push(
+            run_backtest_on_venue(
+                strategy,
+                risk,
+                grant,
+                &venue,
+                &input.venue_config,
+                &input.runner_config,
+                &bars,
+                seed,
+                manifest,
+            )
+            .await?,
+        );
+    }
+    Ok(MultiBacktestRun {
+        manifest: MultiRunManifest {
+            code_version: env!("CARGO_PKG_VERSION").to_owned(),
+            seed,
+            symbols,
+        },
+        runs,
+    })
 }
 
 /// Replay the same decision stack against a live-shape paper venue.
@@ -746,6 +982,9 @@ pub async fn run_sweep(
         bars: bars.to_vec(),
         seed,
     });
+    // Bounded fan-out: workers clamp to 1..=8 and the queue fits exactly one
+    // slot per variant, so oversubscription waits its turn — the queue never
+    // observes `Full` and never grows past the variant count.
     let workers = grants.len().clamp(1, 8);
     let pool = fluent_concurrency::pool::ResultPool::new(
         fluent_concurrency::tokio_runtime(),

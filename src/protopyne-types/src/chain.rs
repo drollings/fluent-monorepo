@@ -107,6 +107,13 @@ pub struct OptionContract {
     pub kind: OptionKind,
 }
 
+impl crate::validate::Validate for OptionContract {
+    type Err = TypesError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        OptionContract::validate(self)
+    }
+}
+
 impl OptionContract {
     /// Fail-closed structural check: nonempty underlying of at most 6
     /// characters (the OCC root width) and a strictly positive strike.
@@ -198,6 +205,13 @@ pub struct ChainQuote {
     pub timestamp: DateTime<Utc>,
 }
 
+impl crate::validate::Validate for ChainQuote {
+    type Err = TypesError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        ChainQuote::validate(self)
+    }
+}
+
 impl ChainQuote {
     /// Fail-closed structural check: non-negative bid, strictly positive ask.
     /// A crossed quote (`bid > ask`) is *not* refused here — it is market
@@ -276,6 +290,13 @@ pub struct SpreadLeg {
     /// Contracts of this leg per spread unit (1 for a plain vertical).
     #[builder(default = 1)]
     pub ratio: u32,
+}
+
+impl crate::validate::Validate for SpreadLeg {
+    type Err = TypesError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        SpreadLeg::validate(self)
+    }
 }
 
 impl SpreadLeg {
@@ -391,6 +412,20 @@ pub struct Portfolio {
     #[field(skip)]
     #[builder(default)]
     pub accounts: Vec<String>,
+}
+
+impl crate::validate::Validate for SpreadLegs {
+    type Err = TypesError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        SpreadLegs::validate(self)
+    }
+}
+
+impl crate::validate::Validate for Portfolio {
+    type Err = TypesError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        Portfolio::validate(self)
+    }
 }
 
 impl Portfolio {

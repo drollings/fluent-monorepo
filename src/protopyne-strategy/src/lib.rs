@@ -42,3 +42,7 @@ pub use risk::{RiskApproved, RiskEngine, RiskLimits, RiskReason, RiskRefused, Ri
 #[cfg(test)]
 #[path = "../tests/calibration.rs"]
 mod calibration_tests;
+
+#[cfg(test)]
+#[path = "../tests/validate.rs"]
+mod validate_tests;

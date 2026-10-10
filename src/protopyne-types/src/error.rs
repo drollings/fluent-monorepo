@@ -27,6 +27,12 @@ pub enum TypesError {
     /// A portfolio failed structural validation.
     #[error("invalid portfolio: {0}")]
     InvalidPortfolio(String),
+    /// A symbol failed index validation (empty spelling).
+    #[error("invalid symbol: {0}")]
+    InvalidSymbol(String),
+    /// A scoped symbol table refused a new entry at capacity.
+    #[error("symbol table full: {0}")]
+    TooManySymbols(String),
     /// Underlying I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] IoError),

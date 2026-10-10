@@ -76,7 +76,10 @@ impl InputDef {
         }
     }
 
-    fn validate(&self) -> Result<(), KernelError> {
+    /// Fail-closed declaration check: finite bounds, ordered range, and a
+    /// default inside the range. Shared by declaration and the [`Validate`]
+    /// bridge so the rule lives in one place.
+    pub fn validate(&self) -> Result<(), KernelError> {
         match *self {
             Self::Float { default, min, max } => {
                 if !default.is_finite() || !min.is_finite() || !max.is_finite() {
@@ -111,6 +114,13 @@ impl InputDef {
             }
             Self::Bool { .. } => Ok(()),
         }
+    }
+}
+
+impl protopyne_types::Validate for InputDef {
+    type Err = KernelError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        InputDef::validate(self)
     }
 }
 
