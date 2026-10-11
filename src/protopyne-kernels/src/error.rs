@@ -32,4 +32,11 @@ pub enum KernelError {
     /// per-bar hot loop; this error only surfaces during analysis.
     #[error("research frame error: {0}")]
     Research(String),
+    /// A Pine source file could not be read from its path.
+    #[error("unreadable pine source: {0}")]
+    UnreadableSource(String),
+    /// A Pine program refused evaluation with a reason (unknown function,
+    /// type mismatch, loop bound, unsupported node) instead of miscomputing.
+    #[error("pine evaluation refused: {0}")]
+    Eval(String),
 }

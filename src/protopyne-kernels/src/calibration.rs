@@ -67,6 +67,15 @@ pub fn canonical_params(id: &str) -> ParamSet {
         "stddev" | "var" => ParamSet::new()
             .with_int("length", 14)
             .with_float("nbdev", 1.0),
+        "eit" => ParamSet::new().with_float("alpha", 0.5),
+        "kalman" => ParamSet::new()
+            .with_int("length", 14)
+            .with_float("alpha", 0.012)
+            .with_float("beta", 0.1),
+        "voss" => ParamSet::new()
+            .with_int("length", 20)
+            .with_int("predict", 3)
+            .with_float("band", 0.25),
         "tr" | "avgprice" | "medprice" | "typprice" | "wclprice" | "ad" | "obv" => ParamSet::new(),
         _ => len14(),
     }
@@ -369,7 +378,25 @@ impl ParityDashboard {
             let kernel = registry.get(&id).expect("registered");
             let params = canonical_params(&id);
             let row_id: &'static str = matrix_id(&id);
-            let eps = crate::compat::compat_for(row_id).expect("matrix row").eps;
+            let matrix_row = crate::compat::compat_for(row_id).expect("matrix row");
+            // Recurrence kernels (state feedback, not staged windows) admit
+            // no staged-expression reference: they ride as pending rows with
+            // their controls counted, never as silent accepts.
+            if matches!(
+                matrix_row.status,
+                crate::compat::CompatStatus::FormulaVerified(_)
+            ) {
+                let false_fires = controls.iter().filter(|v| v.id == id).count();
+                rows.push(ParityRow {
+                    id: row_id,
+                    eps: matrix_row.eps,
+                    accepted: false,
+                    note: Some("staged reference pending".to_owned()),
+                    false_fires,
+                });
+                continue;
+            }
+            let eps = matrix_row.eps;
             let result = kernel.batch(&legs.views(), &params)?;
             let refs = reference(row_id, &frame)?;
             let mut accepted = true;
@@ -1004,6 +1031,73 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             );
             vec![("values", single(frame, ((sign * col("volume")).cum_sum(false)).alias("values"))?)]
         }
+        "cci" => {
+            let mean = col("close").rolling_mean(strict(n));
+            // Window-explicit deviation: every lag subtracts the shared
+            // current mean (the `hma` shift-expansion device). A staged
+            // `abs().rolling_mean()` would instead subtract each bar's own
+            // rolling mean — a different quantity entirely.
+            let mut dev_sum: Option<Expr> = None;
+            for lag in 0..n {
+                let term =
+                    (col("close").shift(lit(lag as i64)) - mean.clone()).abs();
+                dev_sum = Some(match dev_sum {
+                    None => term,
+                    Some(acc) => acc + term,
+                });
+            }
+            let dev = dev_sum.expect("nonempty window") / lit(n as f64);
+            // Flat windows are 0/0 (`na`) on both sides, like `stoch`.
+            let cci = when(dev.clone().neq(lit(0.0)))
+                .then((col("close") - mean) / (lit(0.015) * dev))
+                .otherwise(lit(f64::NAN))
+                .alias("values");
+            vec![("values", single(frame, cci)?)]
+        }
+        "cmo" => {
+            let change = col("close") - col("close").shift(lit(1_i64));
+            let up = when(change.clone().gt(lit(0.0)))
+                .then(change.clone())
+                .otherwise(lit(0.0))
+                .rolling_sum(strict(n));
+            let dn = when(change.clone().lt(lit(0.0)))
+                .then(-change)
+                .otherwise(lit(0.0))
+                .rolling_sum(strict(n));
+            let cmo = when((up.clone() + dn.clone()).neq(lit(0.0)))
+                .then(lit(100.0) * (up.clone() - dn.clone()) / (up + dn))
+                .otherwise(lit(f64::NAN))
+                .alias("values");
+            vec![("values", single(frame, cmo)?)]
+        }
+        "mfi" => {
+            let prev = col("close").shift(lit(1_i64));
+            let flow = col("volume") * col("close");
+            // Leading-null conditions stay null (not otherwise-zero), so the
+            // first defined print lands on bar `n`, matching the kernel's
+            // `n + 1` source requirement.
+            let up = when(col("close").gt(prev.clone()))
+                .then(flow.clone())
+                .otherwise(lit(0.0))
+                .rolling_sum(strict(n));
+            let dn = when(col("close").lt(prev))
+                .then(flow)
+                .otherwise(lit(0.0))
+                .rolling_sum(strict(n));
+            let mfi = when((up.clone() + dn.clone()).neq(lit(0.0)))
+                .then(lit(100.0) * up.clone() / (up + dn))
+                .otherwise(lit(f64::NAN))
+                .alias("values");
+            vec![("values", single(frame, mfi)?)]
+        }
+        "vwap" => vec![(
+            "values",
+            single(
+                frame,
+                ((col("close") * col("volume")).cum_sum(false) / col("volume").cum_sum(false))
+                    .alias("values"),
+            )?,
+        )],
         other => return Err(KernelError::Research(format!("no calibration reference for {other:?}"))),
     };
     Ok(legs)
@@ -1034,3 +1128,4 @@ fn column_of(staged: &DataFrame, name: &str) -> Result<Vec<Option<f64>>, KernelE
         .map_err(|e| KernelError::Research(format!("calibration f64 view: {e}")))?;
     Ok((0..chunked.len()).map(|i| chunked.get(i).and_then(fin_or_none)).collect())
 }
+

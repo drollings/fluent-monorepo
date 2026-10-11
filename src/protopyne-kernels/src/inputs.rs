@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::error::KernelError;
-use crate::value::PineValue;
+use crate::value::{ColorHandle, EnumHandle, PineValue};
 
 /// An input declaration with its admissible range.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,21 +36,40 @@ pub enum InputDef {
         /// Value used until overwritten.
         default: bool,
     },
+    /// String input (no range; presentation options stay inert).
+    Text {
+        /// Value used until overwritten.
+        default: String,
+    },
+    /// Enum input: an opaque member of one enum. Overrides must name a
+    /// member of the same enum, never a different enum or a scalar.
+    Enum {
+        /// Value used until overwritten.
+        default: EnumHandle,
+    },
+    /// Color input (no range; display-only, never arithmetic).
+    Color {
+        /// Value used until overwritten.
+        default: ColorHandle,
+    },
 }
 
 impl InputDef {
     fn default_value(&self) -> PineValue {
-        match *self {
-            Self::Float { default, .. } => PineValue::Float(default),
-            Self::Int { default, .. } => PineValue::Int(default),
-            Self::Bool { default } => PineValue::Bool(default),
+        match self {
+            Self::Float { default, .. } => PineValue::Float(*default),
+            Self::Int { default, .. } => PineValue::Int(*default),
+            Self::Bool { default } => PineValue::Bool(*default),
+            Self::Text { default } => PineValue::Str(default.clone()),
+            Self::Enum { default } => PineValue::EnumHandle(default.clone()),
+            Self::Color { default } => PineValue::ColorHandle(*default),
         }
     }
 
-    fn check(&self, value: PineValue) -> Result<(), KernelError> {
+    fn check(&self, value: &PineValue) -> Result<(), KernelError> {
         match self {
             Self::Float { min, max, .. } => match value {
-                PineValue::Float(v) if v.is_finite() && v >= *min && v <= *max => Ok(()),
+                PineValue::Float(v) if v.is_finite() && v >= min && v <= max => Ok(()),
                 PineValue::Float(v) => Err(KernelError::InvalidInput(format!(
                     "float {v} outside [{min}, {max}]"
                 ))),
@@ -59,7 +78,7 @@ impl InputDef {
                 ))),
             },
             Self::Int { min, max, .. } => match value {
-                PineValue::Int(v) if v >= *min && v <= *max => Ok(()),
+                PineValue::Int(v) if v >= min && v <= max => Ok(()),
                 PineValue::Int(v) => Err(KernelError::InvalidInput(format!(
                     "int {v} outside [{min}, {max}]"
                 ))),
@@ -71,6 +90,28 @@ impl InputDef {
                 PineValue::Bool(_) => Ok(()),
                 got => Err(KernelError::InvalidInput(format!(
                     "kind mismatch: bool input got {got}"
+                ))),
+            },
+            Self::Text { .. } => match value {
+                PineValue::Str(_) => Ok(()),
+                got => Err(KernelError::InvalidInput(format!(
+                    "kind mismatch: string input got {got}"
+                ))),
+            },
+            Self::Enum { default } => match value {
+                PineValue::EnumHandle(member) if member.enum_name == default.enum_name => Ok(()),
+                PineValue::EnumHandle(member) => Err(KernelError::InvalidInput(format!(
+                    "enum mismatch: input takes {}.{}, got {member}",
+                    default.enum_name, default.member
+                ))),
+                got => Err(KernelError::InvalidInput(format!(
+                    "kind mismatch: enum input got {got}"
+                ))),
+            },
+            Self::Color { .. } => match value {
+                PineValue::ColorHandle(_) => Ok(()),
+                got => Err(KernelError::InvalidInput(format!(
+                    "kind mismatch: color input got {got}"
                 ))),
             },
         }
@@ -112,7 +153,7 @@ impl InputDef {
                 }
                 Ok(())
             }
-            Self::Bool { .. } => Ok(()),
+            Self::Bool { .. } | Self::Text { .. } | Self::Enum { .. } | Self::Color { .. } => Ok(()),
         }
     }
 }
@@ -156,25 +197,25 @@ impl InputSet {
     /// Read the current value; undeclared names are `None`.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<PineValue> {
-        self.values.get(name).copied()
+        self.values.get(name).cloned()
     }
 
     /// Read a float input; wrong kinds and undeclared names are `None`.
     #[must_use]
     pub fn get_float(&self, name: &str) -> Option<f64> {
-        self.get(name).and_then(PineValue::as_float)
+        self.get(name).and_then(|v| v.as_float())
     }
 
     /// Read an int input; wrong kinds and undeclared names are `None`.
     #[must_use]
     pub fn get_int(&self, name: &str) -> Option<i64> {
-        self.get(name).and_then(PineValue::as_int)
+        self.get(name).and_then(|v| v.as_int())
     }
 
     /// Read a bool input; wrong kinds and undeclared names are `None`.
     #[must_use]
     pub fn get_bool(&self, name: &str) -> Option<bool> {
-        self.get(name).and_then(PineValue::as_bool)
+        self.get(name).and_then(|v| v.as_bool())
     }
 
     /// Assign an input after bounds and kind checks.
@@ -182,7 +223,7 @@ impl InputSet {
         let def = self.defs.get(name).ok_or_else(|| {
             KernelError::InvalidInput(format!("undeclared input: {name:?}"))
         })?;
-        def.check(value)?;
+        def.check(&value)?;
         self.values.insert(name.to_owned(), value);
         Ok(())
     }

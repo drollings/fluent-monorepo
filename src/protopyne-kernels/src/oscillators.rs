@@ -374,6 +374,173 @@ impl Indicator for StochIndicator {
     }
 }
 
+/// Commodity Channel Index (`cci`): `(src - sma) / (0.015 * mean_deviation)`
+/// over `length` source bars. A flat window is `0/0` (`na`); the constant
+/// `0.015` is Pine's scaling, transcribed literally.
+pub struct CciIndicator {
+    spec: IndicatorSpec,
+}
+
+impl CciIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "cci";
+
+    /// Pine's deviation scaling.
+    pub const SCALE: f64 = 0.015;
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Commodity Channel Index".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    fn cci_of(window: &[f64]) -> f64 {
+        let mean = crate::math::window_mean(window);
+        let deviation =
+            window.iter().map(|v| (v - mean).abs()).sum::<f64>() / window.len() as f64;
+        crate::math::div_or_none(window[window.len() - 1] - mean, Self::SCALE * deviation)
+            .unwrap_or(f64::NAN)
+    }
+}
+
+impl Default for CciIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for CciIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Self::period(params)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let closes = data.close;
+        let period = Self::period(params)?;
+        let mut values = crate::math::warmup_none(closes.len());
+        if period <= closes.len() {
+            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
+                *value = fin_or_none(Self::cci_of(&closes[i + 1 - period..=i]));
+            }
+        }
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        state.push(bar, period);
+        if state.len() < period {
+            return Ok(None);
+        }
+        let window: Vec<f64> = state.closes().collect();
+        let out = Self::cci_of(&window);
+        state.set_last(out);
+        Ok(fin_or_none(out))
+    }
+}
+
+/// Chande Momentum Oscillator (`cmo`): `100 * (up - dn) / (up + dn)` where
+/// `up`/`dn` sum gains/losses over `length` changes (hence `length + 1`
+/// source bars). A flat window is `0/0` (`na`).
+pub struct CmoIndicator {
+    spec: IndicatorSpec,
+}
+
+impl CmoIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "cmo";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Chande Momentum Oscillator".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    fn cmo_of(window: &[f64]) -> f64 {
+        let (up, dn) = window.windows(2).fold((0.0, 0.0), |(up, dn), pair| {
+            let change = pair[1] - pair[0];
+            (up + change.max(0.0), dn + (-change).max(0.0))
+        });
+        crate::math::div_or_none(100.0 * (up - dn), up + dn).unwrap_or(f64::NAN)
+    }
+}
+
+impl Default for CmoIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for CmoIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Ok(Self::period(params)? + 1)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let closes = data.close;
+        let period = Self::period(params)?;
+        let mut values = crate::math::warmup_none(closes.len());
+        if period < closes.len() {
+            for (i, value) in values.iter_mut().enumerate().skip(period) {
+                *value = fin_or_none(Self::cmo_of(&closes[i - period..=i]));
+            }
+        }
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        state.push(bar, period + 1);
+        if state.len() < period + 1 {
+            return Ok(None);
+        }
+        let window: Vec<f64> = state.closes().collect();
+        let out = Self::cmo_of(&window);
+        state.set_last(out);
+        Ok(fin_or_none(out))
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/oscillators.rs"]
 mod tests;

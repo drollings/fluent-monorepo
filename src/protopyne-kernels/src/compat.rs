@@ -253,6 +253,41 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
         eps: 1e-9,
         status: CompatStatus::ParityVerified,
     },
+    KernelCompat {
+        id: "cci",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
+    KernelCompat {
+        id: "cmo",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
+    KernelCompat {
+        id: "mfi",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
+    KernelCompat {
+        id: "vwap",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
+    KernelCompat {
+        id: "eit",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("transcribed Pine recurrence, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "kalman",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("transcribed Pine recurrence, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "voss",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("transcribed Pine recurrence, hand-stepped sets green; staged-expression cross-check pending"),
+    },
 ];
 
 /// Look up a kernel's compatibility row.

@@ -299,10 +299,88 @@ fn obv_matches_expr_with_first_bar_long() {
     assert!(obv.batch(&legs.views(), &ps).is_err());
 }
 
+fn approx(got: &[Option<f64>], want: &[Option<f64>], eps: f64) {
+    assert_eq!(got.len(), want.len());
+    for (g, w) in got.iter().zip(want.iter()) {
+        match (g, w) {
+            (None, None) => {}
+            (Some(g), Some(w)) => assert!((g - w).abs() <= eps, "{g} vs {w}"),
+            _ => panic!("na mismatch: {g:?} vs {w:?}"),
+        }
+    }
+}
+
 #[test]
-fn volume_registry_and_matrix_cover_all_three() {
+fn mfi_single_sided_flow_pins_100_and_0() {
+    use crate::ta_volume::MfiIndicator;
+    let mfi = MfiIndicator::new();
+    let ps = ParamSet::new().with_int("length", 1);
+    // bar1 rises on 200 shares -> 100; bar2 falls on 300 -> 0.
+    let legs = OwnedOhlcv {
+        open: vec![10.0, 11.0, 10.5],
+        high: vec![10.0, 11.0, 10.5],
+        low: vec![10.0, 11.0, 10.5],
+        close: vec![10.0, 11.0, 10.5],
+        volume: vec![100.0, 200.0, 300.0],
+    };
+    let result = mfi.batch(&legs.views(), &ps).expect("valid");
+    approx(&result.values, &[None, Some(100.0), Some(0.0)], 1e-9);
+    let ticks: Vec<BarTick> = legs
+        .close
+        .iter()
+        .zip(legs.volume.iter())
+        .map(|(&c, &v)| BarTick {
+            volume: v,
+            ..BarTick::close_only(c)
+        })
+        .collect();
+    let mut state = IndicatorState::new();
+    let folded: Vec<Option<f64>> = ticks
+        .iter()
+        .map(|&t| mfi.update(&mut state, t, &ps).expect("valid update"))
+        .collect();
+    approx(&folded, &result.values, 1e-12);
+}
+
+#[test]
+fn vwap_accumulates_price_volume() {
+    use crate::ta_volume::VwapIndicator;
+    let vwap = VwapIndicator::new();
+    let ps = ParamSet::new();
+    // (10*100 + 20*300)/400 = 17.5.
+    let legs = OwnedOhlcv {
+        open: vec![10.0, 20.0],
+        high: vec![10.0, 20.0],
+        low: vec![10.0, 20.0],
+        close: vec![10.0, 20.0],
+        volume: vec![100.0, 300.0],
+    };
+    let result = vwap.batch(&legs.views(), &ps).expect("valid");
+    approx(&result.values, &[Some(10.0), Some(17.5)], 1e-9);
+    let mut state = IndicatorState::new();
+    let folded: Vec<Option<f64>> = legs
+        .close
+        .iter()
+        .zip(legs.volume.iter())
+        .map(|(&c, &v)| {
+            vwap.update(
+                &mut state,
+                BarTick {
+                    volume: v,
+                    ..BarTick::close_only(c)
+                },
+                &ps,
+            )
+            .expect("valid update")
+        })
+        .collect();
+    approx(&folded, &result.values, 1e-12);
+}
+
+#[test]
+fn volume_registry_and_matrix_cover_all_five() {
     let registry = builtin_registry().expect("builtins");
-    for id in ["ad", "adosc", "obv"] {
+    for id in ["ad", "adosc", "obv", "mfi", "vwap"] {
         assert!(registry.get(id).is_some(), "{id} registered");
         let row = compat_for(id).unwrap_or_else(|| panic!("{id} matrix row"));
         assert!((row.eps - 1e-9).abs() == 0.0, "{id} frozen eps");

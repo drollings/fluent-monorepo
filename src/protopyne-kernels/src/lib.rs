@@ -18,11 +18,13 @@ pub mod context;
 pub mod drawing;
 pub mod ema;
 pub mod error;
+pub mod filters;
 pub mod indicator;
 pub mod inputs;
 pub mod math;
 pub mod oscillators;
 pub mod parity;
+pub mod pine;
 pub mod research;
 pub mod runtime;
 pub mod timed;
@@ -54,13 +56,23 @@ pub use context::RunCtx;
 pub use drawing::{Drawing, DrawingKind};
 pub use ema::EmaIndicator;
 pub use error::KernelError;
+pub use filters::{EitIndicator, KalmanIndicator, VossIndicator};
 pub use indicator::{
     fin_or_none, BarTick, FullTick, NamedSeries, NamedValue, Ohlcv, OwnedOhlcv, builtin_registry,
     execution_order, Indicator, IndicatorId, IndicatorRegistry, IndicatorResult, IndicatorSpec,
     IndicatorState, ParamSet,
 };
-pub use oscillators::{MacdIndicator, RsiIndicator, StochIndicator};
+pub use oscillators::{CciIndicator, CmoIndicator, MacdIndicator, RsiIndicator, StochIndicator};
 pub use parity::{assert_expr_parity, expr_fixture};
+pub use pine::{
+    BarSnapshot, BinaryOp, BuiltinVar, CallArg, EnumMember, FieldDecl, ImportDecl, LibraryId,
+    LinkedModule, ModuleGraph, ModuleId, ModuleInput, Param, PineEngine, PineExpr, PineLexer,
+    PineParseError, PineParser, PineProgram, PineSource, PineStmt, PineToken, PineType,
+    ResolvedModule, RunOutcome, SourceKind, SwitchArm, SwitchStmt, TokenKind, UnaryOp,
+    VersionWarn, MAX_LOOP_ITERATIONS, SUPPORTED_PINE_VERSION, lex, load_pine_source,
+    parse_pine_source, parse_program, resolve_imports,
+};
+pub use pine::builtins_ta::TaBridge;
 pub use research::{fractal_dimension, frame_of_bars, frame_of_values, price_density, rsrs};
 pub use timed::{instrumented_kernel, KernelUnit};
 pub use util::{add_expr, argmax_window, argmin_window, change, cross_warmup, crossover, crossunder, div_expr, highest, lowest, max_window, min_window, mom, mul_expr, sub_expr, sum_window};
@@ -86,8 +98,8 @@ pub use ta_overlap::{BbandsIndicator, MidpointIndicator, MidpriceIndicator, Trim
 pub use ta_price::{AvgPriceIndicator, MedPriceIndicator, TypPriceIndicator, WclPriceIndicator};
 pub use ta_momentum::{ApoIndicator, AroonIndicator, MomIndicator, PpoIndicator, RocIndicator, RocpIndicator, Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator, WillrIndicator};
 pub use ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};
-pub use ta_volume::{AdIndicator, AdoscIndicator, ObvIndicator};
-pub use value::PineValue;
+pub use ta_volume::{AdIndicator, AdoscIndicator, MfiIndicator, ObvIndicator, VwapIndicator};
+pub use value::{ColorHandle, EnumHandle, PineValue, UserInstance, fixnan, nz};
 pub use vars::{Var, VarIp, VarStore};
 
 #[cfg(test)]

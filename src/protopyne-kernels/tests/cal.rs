@@ -246,7 +246,9 @@ fn must_not_fire_flat_constant_and_spike_controls() {
         match &id[..] {
             // Directionless inputs stay honestly na: flat-range stochastics
             // and constant-leg correlation carry no signal by construction.
-            "rsi" | "stoch" | "correl" => assert!(
+            // So do the 0/0 ratio oscillators (cci/cmo/mfi): a flat window
+            // has zero deviation and zero flow.
+            "rsi" | "stoch" | "correl" | "cci" | "cmo" | "mfi" => assert!(
                 result.values.iter().all(Option::is_none),
                 "{id} must stay na on flat input"
             ),
@@ -261,6 +263,16 @@ fn must_not_fire_flat_constant_and_spike_controls() {
                 }
             }
             "tr" | "atr" | "natr" => assert!(expect_value(0.0), "{id} must read zero"),
+            // A bandpass removes DC by design: the Voss filter and its
+            // secondary read exactly zero on a constant (primary and leg).
+            "voss" => {
+                assert!(expect_value(0.0), "voss must read zero on flat input");
+                let leg = result.secondary("filter").expect("filter leg");
+                assert!(
+                    leg.iter().filter_map(|x| *x).all(|x| x.abs() <= e),
+                    "voss:filter must read zero on flat input"
+                );
+            }
             // Flat flow accumulates nothing: ad/adosc pin at zero, obv pins
             // at the opening print (every bar's volume on a constant).
             "ad" | "adosc" => assert!(expect_value(0.0), "{id} must read zero on flat input"),
@@ -309,7 +321,10 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             !result.values.iter().all(Option::is_none)
                 || id == "rsi"
                 || id == "stoch"
-                || id == "correl",
+                || id == "correl"
+                || id == "cci"
+                || id == "cmo"
+                || id == "mfi",
             "{id} must warm up on 40 flat bars"
         );
     }

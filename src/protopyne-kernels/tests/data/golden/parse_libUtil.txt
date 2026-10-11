@@ -1,0 +1,55 @@
+statements: 54
+library libUtil
+export const int SIGNAL_NONE
+export const int SIGNAL_BULL_ENTRY
+export const int SIGNAL_BULL_EXIT
+export const int SIGNAL_BEAR_ENTRY
+export const int SIGNAL_BEAR_EXIT
+export const float OSC_UPPER_BOUND
+export const float OSC_UPPER_THRESHOLD
+export const float OSC_UPPER_RANGE
+export const float OSC_CENTER
+export const float OSC_LOWER_RANGE
+export const float OSC_LOWER_THRESHOLD
+export const float OSC_LOWER_BOUND
+export const float OSC_RANGE_WIDTH
+export const color COLOR_NONE
+export const color COLOR_NEUTRAL
+export enum Timeframes members=20
+export func getTimeframeAbbrev params=1 body=1
+export func getTimeframeMS params=1 body=1
+export func getTimeframeFromMS params=1 body=1
+export func getTimeframeFromMultiplier params=2 body=4
+export func getTimeframe params=1 body=1
+export func getBarsInTimeframes params=2 body=5
+export func isChartTimeframe params=1 body=1
+export enum MarketRegimes members=5
+export func getRegimeEmoji params=1 body=1
+export enum Smoothings members=11
+export enum Oscillators members=11
+export enum PatternTypes members=5
+export enum CandlePatterns members=49
+export func isPatternType params=2 body=1
+export func risingMeterChar params=1 body=1
+export func tanh params=1 body=2
+export func fast_tanh params=1 body=1
+export func safeDivide params=3 body=1
+export func sameSign params=2 body=1
+export func safeArrayAccess params=3 body=1
+export enum Sizes members=6
+export enum LineStyles members=3
+export enum Positions members=13
+export enum LineType members=4
+export enum ExtensionType members=4
+export func getSize params=1 body=1
+export func getLineStyle params=1 body=1
+export func getPosition params=1 body=1
+export func isPositionOverlay params=1 body=1
+export enum Pivots members=5
+export type Scheduler fields=2
+export method init params=1 body=3
+export method register params=2 body=3
+export method updateEarliestDue params=1 body=3
+export method every params=2 body=4
+export func validateOHLCV params=5 body=1
+export func estimateDeltaVolume params=5 body=1

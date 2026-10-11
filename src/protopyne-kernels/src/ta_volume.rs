@@ -346,6 +346,186 @@ impl Indicator for ObvIndicator {
     }
 }
 
+/// Money Flow Index (`mfi`): `100 * up / (up + dn)` where `up` sums
+/// `volume * src` over rising bars and `dn` over falling bars, both across
+/// `length` changes (hence `length + 1` source bars). The source series
+/// drives direction and weight (honoring the caller's `source` argument);
+/// `volume` comes from the bar legs. A flat window is `0/0` (`na`).
+pub struct MfiIndicator {
+    spec: IndicatorSpec,
+}
+
+impl MfiIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "mfi";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Money Flow Index".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    fn mfi_of(prices: &[f64], volumes: &[f64]) -> f64 {
+        let (up, dn) = prices
+            .windows(2)
+            .zip(volumes.iter().skip(1))
+            .fold((0.0, 0.0), |(up, dn), (pair, volume)| {
+                let flow = volume * pair[1];
+                if pair[1] > pair[0] {
+                    (up + flow, dn)
+                } else if pair[1] < pair[0] {
+                    (up, dn + flow)
+                } else {
+                    (up, dn)
+                }
+            });
+        crate::math::div_or_none(100.0 * up, up + dn).unwrap_or(f64::NAN)
+    }
+}
+
+impl Default for MfiIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for MfiIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Ok(Self::period(params)? + 1)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let volume = data.require("volume", data.volume)?;
+        let mut values = crate::math::warmup_none(data.len());
+        if period < data.len() {
+            for (i, value) in values.iter_mut().enumerate().skip(period) {
+                *value = fin_or_none(Self::mfi_of(
+                    &data.close[i - period..=i],
+                    &volume[i - period..=i],
+                ));
+            }
+        }
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        state.push(bar, period + 1);
+        if state.len() < period + 1 {
+            return Ok(None);
+        }
+        let prices: Vec<f64> = state.closes().collect();
+        let volumes: Vec<f64> = state.volumes().collect();
+        let out = Self::mfi_of(&prices, &volumes);
+        state.set_last(out);
+        Ok(fin_or_none(out))
+    }
+}
+
+/// Volume-weighted average price (`vwap`): cumulative `src * volume` over
+/// cumulative `volume` since the run opened. The source series drives the
+/// price leg (honoring the caller's `source` argument); `volume` comes from
+/// the bar legs. Bars with `na` source leave both accumulators alone, so the
+/// stream resumes where it paused; zero cumulative volume is `na`.
+pub struct VwapIndicator {
+    spec: IndicatorSpec,
+}
+
+impl VwapIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "vwap";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Volume Weighted Average Price".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+}
+
+impl Default for VwapIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for VwapIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
+        Ok(1)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let _ = params;
+        let volume = data.require("volume", data.volume)?;
+        let mut price_volume = 0.0;
+        let mut total_volume = 0.0;
+        let values = data
+            .close
+            .iter()
+            .zip(volume.iter())
+            .map(|(price, vol)| {
+                if price.is_nan() || vol.is_nan() {
+                    return fin_or_none(price_volume / total_volume);
+                }
+                price_volume += price * vol;
+                total_volume += vol;
+                fin_or_none(price_volume / total_volume)
+            })
+            .collect();
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        _params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        // Own `last` slot carries the running price-volume total and the
+        // first child slot the running volume total (both 0 at the open).
+        if bar.close.is_nan() || bar.volume.is_nan() {
+            let price_volume = state.last().unwrap_or(0.0);
+            let total_volume = state.child(0).last().unwrap_or(0.0);
+            return Ok(fin_or_none(price_volume / total_volume));
+        }
+        let price_volume = state.last().unwrap_or(0.0) + bar.close * bar.volume;
+        let total_volume = state.child(0).last().unwrap_or(0.0) + bar.volume;
+        state.set_last(price_volume);
+        state.child(0).set_last(total_volume);
+        Ok(fin_or_none(price_volume / total_volume))
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/ta_volume.rs"]
 mod tests;

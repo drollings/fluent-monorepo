@@ -27,6 +27,31 @@ fn spy_15m_ingest_golden() {
 }
 
 #[test]
+fn spy_5m_ingest_golden() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("SPY_5M.csv");
+    let bars = load_bars_csv(&path).expect("vendored SPY_5M loads");
+    // Header + 1149 data rows. The upstream export carries a trailing `,Plot`
+    // header with no data values in any row; the vendored copy drops that
+    // empty artifact header (data rows byte-identical) so strict ingest
+    // stays strict. See the roadmap findings note.
+    assert_eq!(bars.len(), 1149);
+    let first = &bars[0];
+    assert_eq!(first.ts.to_rfc3339(), "2026-01-02T09:00:00+00:00");
+    assert_eq!(first.o, "686.03".parse().expect("decimal"));
+    assert_eq!(first.h, "686.31".parse().expect("decimal"));
+    assert_eq!(first.l, "683.82".parse().expect("decimal"));
+    assert_eq!(first.c, "686.10".parse().expect("decimal"));
+    assert_eq!(first.volume, 11_956);
+    let last = &bars[bars.len() - 1];
+    assert_eq!(last.ts.to_rfc3339(), "2026-01-10T00:50:00+00:00");
+    assert_eq!(last.c, "694.40".parse().expect("decimal"));
+    assert_eq!(last.volume, 232);
+}
+
+#[test]
 fn rejects_bad_row_with_line_number() {
     let content = [
         "time,open,high,low,close,Volume",

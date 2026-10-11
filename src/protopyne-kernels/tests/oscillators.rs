@@ -127,3 +127,33 @@ fn stoch_k_and_smoothed_d_by_hand() {
     approx(&d[4..], &[Some(k), Some(k)], 1e-9);
     assert!(d[3].is_none());
 }
+
+#[test]
+fn cci_flat_window_is_na_hot_window_hits_100() {
+    use crate::oscillators::CciIndicator;
+    let cci = CciIndicator::new();
+    let ps = ParamSet::new().with_int("length", 3);
+    // [1,2,3]: mean 2, deviation 2/3 -> (3-2)/(0.015*2/3) = 100.
+    // [2,3,3]: mean 8/3, deviation 4/9 -> (1/3)/(0.015*4/9) = 50.
+    // [3,3,3]: flat 0/0 -> na.
+    let data = [1.0, 2.0, 3.0, 3.0, 3.0, 3.0];
+    let result = cci.batch(&closes(&data), &ps).expect("valid");
+    approx(
+        &result.values,
+        &[None, None, Some(100.0), Some(50.0), None, None],
+        1e-9,
+    );
+    approx(&fold_all(&cci, &close_ticks(&data), &ps).0, &result.values, 1e-12);
+}
+
+#[test]
+fn cmo_all_gain_is_100_mixed_is_zero() {
+    use crate::oscillators::CmoIndicator;
+    let cmo = CmoIndicator::new();
+    let ps = ParamSet::new().with_int("length", 2);
+    // bar2 over [1,2,3]: up 2, dn 0 -> 100. bar3 over [2,3,2]: 1/1 -> 0.
+    let data = [1.0, 2.0, 3.0, 2.0];
+    let result = cmo.batch(&closes(&data), &ps).expect("valid");
+    approx(&result.values, &[None, None, Some(100.0), Some(0.0)], 1e-9);
+    approx(&fold_all(&cmo, &close_ticks(&data), &ps).0, &result.values, 1e-12);
+}

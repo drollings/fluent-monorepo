@@ -148,6 +148,144 @@ fn assert_series_close(
     }
 }
 
+/// Baseline vectors for the indicator under test: the exact kernel/length
+/// pairs it evaluates over the 5-minute history (three `ta.sma` plots plus
+/// the six factory smoothings it needs at default inputs).
+/// Proof command: `UPDATE_FASTMAS_BASELINE=1 cargo test -p protopyne-kernels
+/// spy5m_fastmas_baseline` writes the goldens; the frozen run compares.
+fn fastmas_baseline_configs() -> Vec<(&'static str, ParamSet)> {
+    let len = |n: i64| ParamSet::new().with_int("length", n);
+    vec![
+        ("sma50", len(50)),
+        ("sma100", len(100)),
+        ("sma200", len(200)),
+        ("ema8", len(8)),
+        ("ema21", len(21)),
+        ("ema34", len(34)),
+        ("ema55", len(55)),
+        ("wma3", len(3)),
+        (
+            "alma8",
+            ParamSet::new()
+                .with_int("length", 8)
+                .with_float("offset", 0.85)
+                .with_float("sigma", 6.0),
+        ),
+    ]
+}
+
+fn fastmas_baseline_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("golden")
+        .join(format!("fastmas_baseline_{name}.csv"))
+}
+
+/// Test-local reader for the 5-minute history. Positional like
+/// [`spy_ohlcv`]. The vendored copy drops the upstream file's empty trailing
+/// `,Plot` header (data rows byte-identical) so the strict column reader
+/// stays strict; see the server `spy_5m_ingest_golden` comment.
+fn spy5m_ohlcv() -> OwnedOhlcv {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(data_path("SPY_5M.csv"))
+        .expect("vendored SPY_5M present");
+    let mut data = OwnedOhlcv::default();
+    for record in reader.records() {
+        let row = record.expect("readable row");
+        let num = |i: usize| {
+            row.get(i)
+                .expect("column present")
+                .parse::<f64>()
+                .expect("parseable number")
+        };
+        data.open.push(num(1));
+        data.high.push(num(2));
+        data.low.push(num(3));
+        data.close.push(num(4));
+        data.volume.push(num(5));
+    }
+    data
+}
+
+fn write_baseline_csv(values: &[Option<f64>]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::from("value\n");
+    for v in values {
+        match v {
+            Some(x) => {
+                let _ = writeln!(out, "{x:?}");
+            }
+            None => out.push('\n'),
+        }
+    }
+    out
+}
+
+fn read_baseline_csv(content: &str) -> Vec<Option<f64>> {
+    let mut lines = content.lines();
+    assert_eq!(lines.next(), Some("value"), "baseline header drift");
+    lines
+        .map(|line| {
+            let cell = line.trim();
+            if cell.is_empty() {
+                None
+            } else {
+                Some(cell.parse::<f64>().expect("parseable golden value"))
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn spy5m_fastmas_baseline() {
+    use protopyne_types::warmup_headroom;
+
+    let data = spy5m_ohlcv();
+    assert_eq!(data.len(), 1149, "SPY_5M row-count golden");
+    let views = data.views();
+    let registry = builtin_registry().expect("builtins register");
+    let regen = std::env::var("UPDATE_FASTMAS_BASELINE").is_ok();
+
+    for (name, params) in fastmas_baseline_configs() {
+        let kernel_id = name.trim_end_matches(|c: char| c.is_ascii_digit());
+        let kernel = registry.get(kernel_id).expect("kernel registered");
+        let result = kernel.batch(&views, &params).expect("valid params");
+        assert_eq!(result.values.len(), data.len(), "length drift in {name}");
+
+        // Warmup honesty: exactly the headroom prefix is `None`.
+        let warmup = kernel.warmup(&params).expect("valid warmup");
+        let headroom = warmup_headroom(warmup).min(data.len());
+        assert!(
+            result.values[..headroom].iter().all(Option::is_none),
+            "warmup None prefix drift in {name}"
+        );
+        // `fin_or_none` boundary: no `NaN` survives inside `Some`.
+        assert!(
+            result.values.iter().flatten().all(|v| v.is_finite()),
+            "non-finite value inside Some in {name}"
+        );
+        // Batch/update identity over the same input (close-only kernels).
+        let mut state = IndicatorState::new();
+        for (i, &c) in data.close.iter().enumerate() {
+            let stepped = kernel
+                .update(&mut state, BarTick::close_only(c), &params)
+                .expect("valid update");
+            assert_eq!(stepped, result.values[i], "batch/update drift in {name}[{i}]");
+        }
+
+        let path = fastmas_baseline_path(name);
+        if regen {
+            std::fs::write(&path, write_baseline_csv(&result.values)).expect("golden writable");
+        }
+        let frozen = read_baseline_csv(
+            &std::fs::read_to_string(&path).expect("golden frozen; rerun with UPDATE_FASTMAS_BASELINE=1 to write it"),
+        );
+        assert_series_close(&result.values, &frozen, 1e-12, name, "primary");
+    }
+}
+
 #[test]
 fn spy_close_column_shape() {
     let data = spy_ohlcv();

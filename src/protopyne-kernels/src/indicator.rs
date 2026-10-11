@@ -256,7 +256,7 @@ impl ParamSet {
 
     /// Read a required float parameter (ints auto-cast, as in Pine).
     pub fn float(&self, indicator: &str, name: &str) -> Result<f64, KernelError> {
-        match self.values.get(name).copied().and_then(PineValue::as_float) {
+        match self.values.get(name).and_then(PineValue::as_float) {
             Some(v) => Ok(v),
             None => Err(KernelError::InvalidParam(format!(
                 "{indicator}: missing or non-numeric parameter {name:?}"
@@ -581,6 +581,8 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::averages::DemaIndicator::new()))?;
     registry.register(Arc::new(crate::averages::TemaIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::RsiIndicator::new()))?;
+    registry.register(Arc::new(crate::oscillators::CciIndicator::new()))?;
+    registry.register(Arc::new(crate::oscillators::CmoIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::MacdIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::StochIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::TrIndicator::new()))?;
@@ -612,8 +614,13 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::ta_stat::VarIndicator::new()))?;
     registry.register(Arc::new(crate::ta_stat::CorrelIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::AdIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_volume::MfiIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_volume::VwapIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::AdoscIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::ObvIndicator::new()))?;
+    registry.register(Arc::new(crate::filters::EitIndicator::new()))?;
+    registry.register(Arc::new(crate::filters::KalmanIndicator::new()))?;
+    registry.register(Arc::new(crate::filters::VossIndicator::new()))?;
     Ok(registry)
 }
 
