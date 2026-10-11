@@ -183,15 +183,7 @@ impl TaBridge {
                 } else {
                     let length = pine_usize(method, length.as_ref())?;
                     let tail = self.push_history(site, pine_source(source.as_ref())?);
-                    let window = window_of(tail, length);
-                    let out = if window.len() < length || window.iter().any(|v| v.is_nan()) {
-                        None
-                    } else if method == "stdev" {
-                        Some(crate::math::std_sample(window))
-                    } else {
-                        Some(crate::math::variance_sample(window))
-                    };
-                    Ok(out.map(PineValue::Float))
+                    Ok(sample_spread(method, window_of(tail, length), length))
                 }
             }
             "highest" | "lowest" => {
@@ -318,15 +310,7 @@ impl TaBridge {
                 if window.len() < length || window.iter().any(|v| v.is_nan()) {
                     return Ok(None);
                 }
-                let mut sorted = window.to_vec();
-                sorted.sort_by(f64::total_cmp);
-                let middle = sorted.len() / 2;
-                let median = if sorted.len() % 2 == 1 {
-                    sorted[middle]
-                } else {
-                    f64::midpoint(sorted[middle - 1], sorted[middle])
-                };
-                Ok(Some(PineValue::Float(median)))
+                Ok(crate::math::median_of(window).map(PineValue::Float))
             }
             "eit" => {
                 let [source, alpha] = args else {
@@ -428,12 +412,115 @@ impl TaBridge {
     fn history(&self, site: &str) -> &[f64] {
         self.histories.get(site).map_or(&[], Vec::as_slice)
     }
+
+    /// Evaluate one kernel-backed `ta.*` call over an explicit OHLCV
+    /// window and return the confirmed last value: the headless
+    /// `request.security` path. `source` is the call's source column (a
+    /// bare leg); it overrides `close` exactly like the streaming bridge,
+    /// so the source argument is honored, never dropped. Only
+    /// single-source kernel arms ride here — window operators, multi-leg
+    /// kernels (`stoch`), chart-leg kernels (`tr`, `obv`, `vwap`), and
+    /// unknown names refuse naming the subset instead of silently
+    /// re-scoping chart state. Batches are causal, so the last value over
+    /// a confirmed prefix equals a streaming evaluation over the same
+    /// prefix.
+    pub fn batch_security(
+        &self,
+        method: &str,
+        source: &[f64],
+        args: &[Option<PineValue>],
+        ohlcv: &crate::indicator::OwnedOhlcv,
+    ) -> Result<Option<PineValue>, KernelError> {
+        let bad_arity = |want: &str| {
+            KernelError::Eval(format!(
+                "ta.{method} takes {want}, got {} argument(s)",
+                args.len()
+            ))
+        };
+        let over = |kernel: &str, params: &crate::indicator::ParamSet| {
+            let indicator = self.registry.get(kernel).ok_or_else(|| {
+                KernelError::Eval(format!("ta bridge has no '{kernel}' kernel"))
+            })?;
+            let mut data = ohlcv.clone();
+            data.close = source.to_vec();
+            let batch = indicator.batch(&data.views(), params)?;
+            Ok(batch.values.last().copied().flatten().and_then(crate::indicator::fin_or_none).map(PineValue::Float))
+        };
+        match method {
+            "sma" | "ema" | "wma" | "hma" | "rma" | "vwma" | "rsi" | "mom" | "roc" | "cci"
+            | "cmo" | "mfi" => {
+                let [_, length] = args else {
+                    return Err(bad_arity("source and length"));
+                };
+                let params = ParamSet::new()
+                    .with_int("length", pine_length(method, length.as_ref())?);
+                over(method, &params)
+            }
+            "alma" => {
+                let [_, length, offset, sigma] = args else {
+                    return Err(bad_arity("source, length, offset and sigma"));
+                };
+                let params = ParamSet::new()
+                    .with_int("length", pine_length(method, length.as_ref())?)
+                    .with_float("offset", pine_number(method, offset.as_ref(), "offset")?)
+                    .with_float("sigma", pine_number(method, sigma.as_ref(), "sigma")?);
+                over("alma", &params)
+            }
+            "atr" => {
+                let [length] = args else {
+                    return Err(bad_arity("length"));
+                };
+                let params = ParamSet::new()
+                    .with_int("length", pine_length(method, length.as_ref())?);
+                let indicator = self.registry.get("atr").ok_or_else(|| {
+                    KernelError::Eval("ta bridge has no 'atr' kernel".to_owned())
+                })?;
+                let batch = indicator.batch(&ohlcv.views(), &params)?;
+                Ok(batch.values.last().copied().flatten().and_then(crate::indicator::fin_or_none).map(PineValue::Float))
+            }
+            "stdev" | "variance" => {
+                let (length, biased) = match args {
+                    [_, length] => (length, true),
+                    [_, length, biased] => (length, pine_bool(method, biased.as_ref())?),
+                    _ => return Err(bad_arity("source, length and optional biased")),
+                };
+                if biased {
+                    let kernel = if method == "stdev" { "stddev" } else { "var" };
+                    let params = ParamSet::new()
+                        .with_int("length", pine_length(method, length.as_ref())?)
+                        .with_float("nbdev", 1.0);
+                    over(kernel, &params)
+                } else {
+                    let length = pine_usize(method, length.as_ref())?;
+                    let start = source.len().saturating_sub(length);
+                    Ok(sample_spread(method, &source[start..], length))
+                }
+            }
+            _ => Err(KernelError::Eval(format!(
+                "injected security serves kernel-backed single-source ta calls, not 'ta.{method}'"
+            ))),
+        }
+    }
 }
 
 /// The trailing `length` values of a history (the whole history while short).
 fn window_of(history: &[f64], length: usize) -> &[f64] {
     let start = history.len().saturating_sub(length);
     &history[start..]
+}
+
+/// Unbiased spread over an explicit window: short or absence-carrying
+/// windows read absence, otherwise the sample statistic. Shared by the
+/// streaming arm (history tail) and the security batch (series tail), so
+/// the short/absence rule lives in exactly one place.
+pub(crate) fn sample_spread(method: &str, window: &[f64], length: usize) -> Option<PineValue> {
+    if window.len() < length || window.iter().any(|v| v.is_nan()) {
+        None
+    } else if method == "stdev" {
+        Some(PineValue::Float(crate::math::std_sample(window)))
+    } else {
+        Some(PineValue::Float(crate::math::variance_sample(window)))
+    }
 }
 
 /// Override a tick's `close` with an evaluated source value.

@@ -432,14 +432,18 @@ fn stmt_kind(stmt: &PineStmt) -> &'static str {
         PineStmt::TypeDecl { .. } => "type",
         PineStmt::VarDeclaration { .. } => "var",
         PineStmt::Declaration { .. } => "declaration",
+        PineStmt::MultiDeclaration { .. } => "multi-declaration",
         PineStmt::Assignment { .. } => "assignment",
+        PineStmt::MultiAssign { .. } => "multi-assign",
         PineStmt::Reassign { .. } => "reassign",
         PineStmt::DestructureAssign { .. } => "destructure",
         PineStmt::Expression(_) => "expression",
         PineStmt::If { .. } => "if",
         PineStmt::For { .. } => "for",
+        PineStmt::ForIn { .. } => "for-in",
         PineStmt::While { .. } => "while",
         PineStmt::Switch(_) => "switch",
+        PineStmt::Break => "break",
     }
 }
 
@@ -514,6 +518,13 @@ fn count_switch_expr(expr: &PineExpr) -> usize {
         PineExpr::FunctionCall { args, .. } | PineExpr::MethodCall { args, .. } => {
             args.iter().map(|arg| count_switch_expr(&arg.value)).sum()
         }
+        PineExpr::InstanceCall {
+            receiver, args, ..
+        } => {
+            count_switch_expr(receiver)
+                + args.iter().map(|arg| count_switch_expr(&arg.value)).sum::<usize>()
+        }
+        PineExpr::FieldRead { receiver, .. } => count_switch_expr(receiver),
         PineExpr::ArrayAccess { array, index } => count_switch_expr(array) + count_switch_expr(index),
         PineExpr::SeriesOffset { series, .. } => count_switch_expr(series),
         PineExpr::ArrayLiteral(items) => items.iter().map(count_switch_expr).sum(),
@@ -521,6 +532,7 @@ fn count_switch_expr(expr: &PineExpr) -> usize {
         | PineExpr::StringLiteral(_)
         | PineExpr::Boolean(_)
         | PineExpr::Variable(_)
+        | PineExpr::ColorLiteral(_)
         | PineExpr::BuiltinVariable(_) => 0,
     }
 }
@@ -593,6 +605,15 @@ fn switch_bodies<'a>(expr: &'a PineExpr, out: &mut Vec<&'a PineStmt>) {
                 switch_bodies(&arg.value, out);
             }
         }
+        PineExpr::InstanceCall {
+            receiver, args, ..
+        } => {
+            switch_bodies(receiver, out);
+            for arg in args {
+                switch_bodies(&arg.value, out);
+            }
+        }
+        PineExpr::FieldRead { receiver, .. } => switch_bodies(receiver, out),
         PineExpr::ArrayAccess { array, index } => {
             switch_bodies(array, out);
             switch_bodies(index, out);
@@ -607,6 +628,7 @@ fn switch_bodies<'a>(expr: &'a PineExpr, out: &mut Vec<&'a PineStmt>) {
         | PineExpr::StringLiteral(_)
         | PineExpr::Boolean(_)
         | PineExpr::Variable(_)
+        | PineExpr::ColorLiteral(_)
         | PineExpr::BuiltinVariable(_) => {}
     }
 }
@@ -622,6 +644,20 @@ fn every_expr<'a>(stmts: &'a [PineStmt], out: &mut Vec<&'a PineExpr>) {
             | PineStmt::ConstDecl { value, .. } => {
                 out.push(value);
                 expr_children(value, out);
+            }
+            PineStmt::MultiDeclaration { decls } => {
+                for decl in decls {
+                    if let Some(value) = &decl.value {
+                        out.push(value);
+                        expr_children(value, out);
+                    }
+                }
+            }
+            PineStmt::MultiAssign { items } => {
+                for item in items {
+                    out.push(&item.value);
+                    expr_children(&item.value, out);
+                }
             }
             PineStmt::Expression(value) => {
                 out.push(value);
@@ -675,13 +711,21 @@ fn every_expr<'a>(stmts: &'a [PineStmt], out: &mut Vec<&'a PineExpr>) {
                 out.push(end);
                 every_expr(body, out);
             }
+            PineStmt::ForIn {
+                iterable, body, ..
+            } => {
+                out.push(iterable);
+                expr_children(iterable, out);
+                every_expr(body, out);
+            }
             PineStmt::While { condition, body } => {
                 out.push(condition);
                 every_expr(body, out);
             }
             PineStmt::Import(_)
             | PineStmt::LibraryDecl { .. }
-            | PineStmt::IndicatorDecl { .. } => {}
+            | PineStmt::IndicatorDecl { .. }
+            | PineStmt::Break => {}
         }
     }
 }
@@ -716,6 +760,20 @@ fn expr_children<'a>(expr: &'a PineExpr, out: &mut Vec<&'a PineExpr>) {
                 expr_children(&arg.value, out);
             }
         }
+        PineExpr::InstanceCall {
+            receiver, args, ..
+        } => {
+            out.push(receiver);
+            expr_children(receiver, out);
+            for arg in args {
+                out.push(&arg.value);
+                expr_children(&arg.value, out);
+            }
+        }
+        PineExpr::FieldRead { receiver, .. } => {
+            out.push(receiver);
+            expr_children(receiver, out);
+        }
         PineExpr::ArrayAccess { array, index } => {
             out.push(array);
             out.push(index);
@@ -744,6 +802,7 @@ fn expr_children<'a>(expr: &'a PineExpr, out: &mut Vec<&'a PineExpr>) {
         | PineExpr::StringLiteral(_)
         | PineExpr::Boolean(_)
         | PineExpr::Variable(_)
+        | PineExpr::ColorLiteral(_)
         | PineExpr::BuiltinVariable(_) => {}
     }
 }
@@ -901,4 +960,263 @@ fn golden_fast_mas_structure() {
         })
         .count();
     assert_eq!(plots, 9, "plot calls");
+}
+
+// ---- Real-file grammar: augmented assignment desugars to reassignment ----
+
+#[test]
+fn augmented_assignment_desugars_to_reassign() {
+    let program = parse("x := 1\nx += 2");
+    match &program.statements[1] {
+        PineStmt::Reassign { name, value } => {
+            assert_eq!(name, "x");
+            match value.as_ref() {
+                PineExpr::Binary { left, op, right } => {
+                    assert!(matches!(left.as_ref(), PineExpr::Variable(v) if v == "x"));
+                    assert_eq!(*op, BinaryOp::Add);
+                    assert!(matches!(right.as_ref(), PineExpr::Number(_)));
+                }
+                other => panic!("expected binary add, got {other:?}"),
+            }
+        }
+        other => panic!("expected reassign, got {other:?}"),
+    }
+    for (script, op) in [
+        ("x -= 1", BinaryOp::Subtract),
+        ("x *= 2", BinaryOp::Multiply),
+        ("x /= 2", BinaryOp::Divide),
+        ("x %= 2", BinaryOp::Modulo),
+    ] {
+        let program = parse(script);
+        match &program.statements[0] {
+            PineStmt::Reassign { value, .. } => {
+                assert!(
+                    matches!(value.as_ref(), PineExpr::Binary { op: got, .. } if *got == op),
+                    "{script} carries {op:?}"
+                );
+            }
+            other => panic!("expected reassign for {script}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn augmented_assignment_keeps_dotted_receivers() {
+    let program = parse("this.total_vol += v");
+    match &program.statements[0] {
+        PineStmt::Reassign { name, value } => {
+            assert_eq!(name, "this.total_vol");
+            match value.as_ref() {
+                PineExpr::Binary { left, op, .. } => {
+                    assert_eq!(*op, BinaryOp::Add);
+                    assert!(
+                        matches!(left.as_ref(), PineExpr::Variable(v) if v == "this.total_vol")
+                    );
+                }
+                other => panic!("expected binary add, got {other:?}"),
+            }
+        }
+        other => panic!("expected reassign, got {other:?}"),
+    }
+}
+
+// ---- Real-file grammar: `for ... in` targets ----
+
+#[test]
+fn for_in_parses_single_and_tuple_targets() {
+    let program = parse("for child_id in element.child_ids\n    child_id");
+    match &program.statements[0] {
+        PineStmt::ForIn { targets, iterable, .. } => {
+            assert_eq!(targets, &vec!["child_id".to_owned()]);
+            assert!(matches!(iterable.as_ref(), PineExpr::Variable(v) if v == "element.child_ids"));
+        }
+        other => panic!("expected for-in, got {other:?}"),
+    }
+    let program = parse("for [id, element] in this.elements\n    id");
+    match &program.statements[0] {
+        PineStmt::ForIn { targets, .. } => {
+            assert_eq!(targets, &vec!["id".to_owned(), "element".to_owned()]);
+        }
+        other => panic!("expected tuple for-in, got {other:?}"),
+    }
+    // The counted form is untouched.
+    let program = parse("for i = 0 to 3\n    i");
+    assert!(matches!(program.statements[0], PineStmt::For { .. }));
+}
+
+// ---- Real-file grammar: bare `switch` ----
+
+#[test]
+fn bare_switch_parses_without_scrutinee() {
+    let program = parse("switch\n    a => 1\n    => 2");
+    match &program.statements[0] {
+        PineStmt::Switch(block) => {
+            assert!(block.scrutinee.is_none());
+            assert_eq!(block.arms.len(), 2);
+        }
+        other => panic!("expected switch, got {other:?}"),
+    }
+    let program = parse("x = switch y\n    1 => 2");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => {
+            assert!(matches!(value.as_ref(), PineExpr::Switch(block) if block.scrutinee.is_some()));
+        }
+        other => panic!("expected assignment, got {other:?}"),
+    }
+}
+
+// ---- Real-file grammar: comma-separated declarations and assignments ----
+
+#[test]
+fn multi_declaration_accepts_repeated_and_shared_types() {
+    let program = parse("float o = na, float h = na");
+    match &program.statements[0] {
+        PineStmt::MultiDeclaration { decls } => {
+            assert_eq!(decls.len(), 2);
+            assert_eq!(decls[0].name, "o");
+            assert_eq!(decls[1].name, "h");
+            assert!(decls[0].type_name.is_some() && decls[1].type_name.is_some());
+        }
+        other => panic!("expected multi-declaration, got {other:?}"),
+    }
+    let program = parse("float o = na, h = na, g");
+    match &program.statements[0] {
+        PineStmt::MultiDeclaration { decls } => {
+            assert_eq!(decls.len(), 3);
+            assert!(decls[1].type_name.is_none(), "shared type is not restated");
+            assert!(decls[2].value.is_none(), "missing initializer reads as na");
+        }
+        other => panic!("expected multi-declaration, got {other:?}"),
+    }
+    // One item stays a plain declaration.
+    let program = parse("float o = na");
+    assert!(matches!(program.statements[0], PineStmt::Declaration { .. }));
+}
+
+#[test]
+fn multi_assign_keeps_per_item_operators() {
+    let program = parse("o := open, h = high");
+    match &program.statements[0] {
+        PineStmt::MultiAssign { items } => {
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].op, AssignOp::Reassign);
+            assert_eq!(items[1].op, AssignOp::Assign);
+        }
+        other => panic!("expected multi-assign, got {other:?}"),
+    }
+    let program = parse("o := open");
+    assert!(matches!(program.statements[0], PineStmt::Reassign { .. }));
+}
+
+// ---- Real-file grammar: color literals, field qualifiers, chained calls ----
+
+#[test]
+fn color_hex_literal_packs_channels() {
+    let program = parse("c = #00ff00");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => {
+            assert!(matches!(
+                value.as_ref(),
+                PineExpr::ColorLiteral(packed) if *packed == 0x00_FF_00_00
+            ));
+        }
+        other => panic!("expected assignment, got {other:?}"),
+    }
+    // Eight digits scale the alpha byte into the transparency lane.
+    let program = parse("c = #ff000080");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => {
+            assert!(matches!(
+                value.as_ref(),
+                PineExpr::ColorLiteral(packed) if *packed == 0xFF00_0032
+            ));
+        }
+        other => panic!("expected assignment, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_fields_accept_persistence_and_missing_types() {
+    let program = parse("export type Bars\n    varip float last_price = na\n    threshold = 300");
+    match &program.statements[0] {
+        PineStmt::ExportDecl(inner) => match inner.as_ref() {
+            PineStmt::TypeDecl { fields, .. } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].persistence, Some(FieldPersistence::Varip));
+                assert_eq!(fields[1].name, "threshold");
+                assert!(fields[1].type_name.name.is_empty(), "untyped field");
+            }
+            other => panic!("expected type decl, got {other:?}"),
+        },
+        other => panic!("expected export, got {other:?}"),
+    }
+}
+
+#[test]
+fn else_newline_if_nests_instead_of_chaining() {
+    let program = parse("if a\n    x = 1\nelse\n    if b\n        y = 2");
+    match &program.statements[0] {
+        PineStmt::If { else_branch, .. } => {
+            let branch = else_branch.as_ref().expect("else branch present");
+            assert!(
+                matches!(branch.as_slice(), [PineStmt::If { .. }]),
+                "nested if rides the else block, got {branch:?}"
+            );
+        }
+        other => panic!("expected if, got {other:?}"),
+    }
+    // Same-line `else if` still chains.
+    let program = parse("if a\n    x = 1\nelse if b\n    y = 2");
+    match &program.statements[0] {
+        PineStmt::If { else_branch, .. } => {
+            let branch = else_branch.as_ref().expect("else branch present");
+            assert!(
+                matches!(branch.as_slice(), [PineStmt::If { .. }]),
+                "chained else-if, got {branch:?}"
+            );
+        }
+        other => panic!("expected if, got {other:?}"),
+    }
+}
+
+#[test]
+fn time_call_parses_as_function_not_series() {
+    let program = parse("t = time(timeframe.period, sess)");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => {
+            assert!(matches!(
+                value.as_ref(),
+                PineExpr::FunctionCall { name, .. } if name == "time"
+            ));
+        }
+        other => panic!("expected assignment, got {other:?}"),
+    }
+    let program = parse("t = time");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => {
+            assert!(matches!(
+                value.as_ref(),
+                PineExpr::BuiltinVariable(BuiltinVar::Time)
+            ));
+        }
+        other => panic!("expected assignment, got {other:?}"),
+    }
+}
+
+#[test]
+fn chained_calls_parse_on_computed_receivers() {
+    let program = parse("element := VisualElement.new().init(this, 1, name)");
+    match &program.statements[0] {
+        PineStmt::Reassign { value, .. } => {
+            assert!(matches!(value.as_ref(), PineExpr::InstanceCall { method, .. } if method == "init"));
+        }
+        other => panic!("expected reassignment, got {other:?}"),
+    }
+    let program = parse("v = map.get(m, k).version");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => {
+            assert!(matches!(value.as_ref(), PineExpr::FieldRead { field, .. } if field == "version"));
+        }
+        other => panic!("expected assignment, got {other:?}"),
+    }
 }

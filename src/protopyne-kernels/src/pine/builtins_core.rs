@@ -1,6 +1,6 @@
 //! Scalar and structural script namespaces: `math.*`, `str.*`, `input.*`,
 //! `array.*`, `map.*`, `color.*`, and `timeframe.*`, plus the opaque display
-//! constants (`display.*`, `size.*`, `position.*`, `timeframe.period`).
+//! constants (`display.*`, `size.*`, `position.*`, `line.style_*`).
 //!
 //! [`call`] is a stateless dispatcher — unlike the kernel bridge these
 //! namespaces carry no per-bar stream state, so there is nothing to own:
@@ -22,12 +22,13 @@
 //! * `input.source` stores nothing: series defaults are per-bar expressions,
 //!   not stored scalars, so the default rides through untouched.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use super::syntax::PineType;
 use crate::error::KernelError;
 use crate::inputs::{InputDef, InputSet};
-use crate::value::{ColorHandle, EnumHandle, PineValue};
+use crate::value::{ColorHandle, EnumHandle, MatrixValue, PineValue};
 
 /// One evaluated call argument: the `name` from `name = value` when present,
 /// else positional.
@@ -73,6 +74,7 @@ pub fn call(
         "str" => str_call(method, args),
         "input" => input_call(site, method, args, inputs),
         "array" => array_call(method, args),
+        "matrix" => matrix_call(method, args),
         "map" => map_call(method, args, type_args),
         "color" => color_call(method, args),
         "timeframe" => timeframe_call(method, args),
@@ -81,9 +83,11 @@ pub fn call(
 }
 
 /// Resolve a dotted display constant (`display.none`, `size.tiny`,
-/// `position.top_right`, `color.white`, `timeframe.period`) to its opaque
-/// handle. Anything else is `None`, so the engine falls through to its
-/// undefined-variable refusal.
+/// `position.top_right`, `color.white`, `line.style_dotted`,
+/// `label.style_label_down`) to its opaque handle. Anything else
+/// is `None`, so the engine falls through to its undefined-variable refusal.
+/// Chart scope (`timeframe.period`) resolves dynamically from the runtime
+/// config instead of here.
 #[must_use]
 pub fn resolve_constant(name: &str) -> Option<PineValue> {
     if let Some(packed) = named_color(name) {
@@ -91,8 +95,30 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
     }
     let (namespace, member) = name.split_once('.')?;
     let handle = match namespace {
-        "display" => match member {
-            "none" | "all" => EnumHandle::new(namespace, member),
+        // Display flags lower as engine-local record tokens (integers), so
+        // the documented Pine combining (`display.all - display.status_line`)
+        // runs through ordinary arithmetic. Values are never compared or
+        // branched on inside the engine — captures only record them — so
+        // the numbering is a record convention, not Pine internals.
+        "display" => {
+            let flag = match member {
+                "none" => 0,
+                "data_window" => 1,
+                "price_scale" => 2,
+                "status_line" => 4,
+                "pane" => 8,
+                "all" => 15,
+                _ => return None,
+            };
+            return Some(PineValue::Int(flag));
+        }
+        // Bar-merge modes for headless `request.*` injection: the engine
+        // serves `gaps_off` + `lookahead_off` from registered datasets and
+        // refuses every other mode with a reason at the call site.
+        "barmerge" => match member {
+            "gaps_on" | "gaps_off" | "lookahead_on" | "lookahead_off" => {
+                EnumHandle::new(namespace, member)
+            }
             _ => return None,
         },
         "size" => match member {
@@ -108,8 +134,25 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
             }
             _ => return None,
         },
-        "timeframe" => match member {
-            "period" => EnumHandle::new(namespace, member),
+        "line" => match member {
+            "style_solid" | "style_dotted" | "style_dashed" => {
+                EnumHandle::new(namespace, member)
+            }
+            _ => return None,
+        },
+        // Label marker styles observed in the shipped libraries; anything
+        // else stays unknown and refuses at the variable read.
+        "label" => match member {
+            "style_label_up" | "style_label_down" | "style_label_left" => {
+                EnumHandle::new(namespace, member)
+            }
+            _ => return None,
+        },
+        // Text alignment observed in the shipped drawing calls.
+        "text" => match member {
+            "align_left" | "align_center" | "align_right" => {
+                EnumHandle::new(namespace, member)
+            }
             _ => return None,
         },
         _ => return None,
@@ -302,13 +345,48 @@ fn str_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelE
     let arity = |want: &str| bad_arity("str", method, want, args.len());
     match method {
         "tostring" => {
-            let [arg] = args else { return Err(arity("one value")) };
-            Ok(Some(PineValue::Str(match &arg.value {
+            let (arg, format) = match args {
+                [arg] => (arg, None),
+                [arg, format] => (arg, Some(format)),
+                _ => return Err(arity("one value and an optional format")),
+            };
+            let rendered = match &arg.value {
                 None => "NaN".to_owned(),
                 Some(PineValue::Str(v)) => v.clone(),
                 Some(PineValue::Float(v)) if v.is_nan() => "NaN".to_owned(),
                 Some(other) => other.to_string(),
-            })))
+            };
+            let Some(format) = format else {
+                return Ok(Some(PineValue::Str(rendered)));
+            };
+            let Some(PineValue::Str(pattern)) = &format.value else {
+                return Err(refused(format!("{name} takes a string format")));
+            };
+            // Callers pre-round through `math.round`; the pattern only
+            // caps the rendered decimals (`"#"` integer, `"#.##"` up to
+            // two, trailing zeros trimmed). Anything else refuses naming
+            // the subset instead of guessing a format.
+            let text = match pattern.as_str() {
+                "#" => match &arg.value {
+                    None => "NaN".to_owned(),
+                    Some(PineValue::Float(v)) => format!("{v:.0}"),
+                    _ => rendered,
+                },
+                "#.##" => match &arg.value {
+                    None => "NaN".to_owned(),
+                    Some(PineValue::Float(v)) => {
+                        let fixed = format!("{v:.2}");
+                        fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
+                    }
+                    _ => rendered,
+                },
+                _ => {
+                    return Err(refused(format!(
+                        "{name} takes a '#' or '#.##' format, got {pattern:?}"
+                    )));
+                }
+            };
+            Ok(Some(PineValue::Str(text)))
         }
         "contains" => {
             let [source, part] = args else { return Err(arity("source and substring")) };
@@ -443,12 +521,15 @@ fn declare_or_get(
 /// change at a reused site refuses rather than returning a foreign value.
 fn current_value_matches(def: &InputDef, current: &PineValue) -> Result<(), KernelError> {
     match (def, current) {
-        (InputDef::Float { .. }, PineValue::Float(_))
-        | (InputDef::Int { .. }, PineValue::Int(_))
-        | (InputDef::Bool { .. }, PineValue::Bool(_))
-        | (InputDef::Text { .. }, PineValue::Str(_))
-        | (InputDef::Enum { .. }, PineValue::EnumHandle(_))
-        | (InputDef::Color { .. }, PineValue::ColorHandle(_)) => Ok(()),
+        (InputDef::Float { .. }, PineValue::Float(_)) |
+        (InputDef::Int { .. }, PineValue::Int(_)) |
+        (InputDef::Bool { .. }, PineValue::Bool(_)) |
+        (InputDef::Text { .. } | InputDef::Session { .. }, PineValue::Str(_)) |
+        (InputDef::Enum { .. }, PineValue::EnumHandle(_)) |
+        (InputDef::Color { .. }, PineValue::ColorHandle(_)) => Ok(()),
+        (InputDef::Source, PineValue::Float(_) | PineValue::Int(_) | PineValue::Bool(_)) => {
+            Ok(())
+        }
         _ => Err(KernelError::Eval(format!(
             "input site holds {current}, which no longer matches its declaration"
         ))),
@@ -492,7 +573,29 @@ fn input_call(
             };
             declare_or_get(site, InputDef::Text { default }, inputs)
         }
-        "source" => Ok(defval),
+        "source" => {
+            match defval {
+                None | Some(PineValue::Float(_) | PineValue::Int(_) | PineValue::Bool(_)) => {}
+                Some(other) => {
+                    return Err(refused(format!(
+                        "{name} takes a series int, float, or bool default, got {other}"
+                    )));
+                }
+            }
+            if inputs.is_source(site) {
+                if let Some(current) = inputs.get(site) {
+                    return Ok(Some(current));
+                }
+                return Ok(defval);
+            }
+            if inputs.get(site).is_some() {
+                return Err(refused(format!(
+                    "{name} site holds a different input kind"
+                )));
+            }
+            inputs.declare(site, InputDef::Source)?;
+            Ok(defval)
+        }
         "enum" => {
             let Some(PineValue::EnumHandle(default)) = defval else {
                 return Err(refused(format!("{name} takes a default enum member")));
@@ -524,6 +627,15 @@ fn input_call(
             };
             declare_or_get(site, InputDef::Color { default }, inputs)
         }
+        "session" => {
+            let Some(PineValue::Str(default)) = defval else {
+                return Err(refused(format!("{name} takes a default session string")));
+            };
+            if default.trim().is_empty() {
+                return Err(refused(format!("{name} takes a non-empty session string")));
+            }
+            declare_or_get(site, InputDef::Session { default }, inputs)
+        }
         _ => Err(refused(format!("unknown call '{name}'"))),
     }
 }
@@ -541,16 +653,80 @@ fn arr(method: &str, value: Option<&PineValue>) -> Result<Option<Vec<Option<Pine
     }
 }
 
+/// Present number of one array slot (ints widen, `na` and non-numbers
+/// drop); shared by every reduction so absence handling never forks.
+fn present_number(slot: Option<&PineValue>) -> Option<f64> {
+    match slot {
+        Some(PineValue::Float(v)) if !v.is_nan() => Some(*v),
+        Some(PineValue::Int(v)) => Some(*v as f64),
+        _ => None,
+    }
+}
+
 /// Present numbers of an array (ints widen); used by every reduction.
 fn present_numbers(items: &[Option<PineValue>]) -> Vec<f64> {
-    items
-        .iter()
-        .filter_map(|slot| match slot {
-            Some(PineValue::Float(v)) if !v.is_nan() => Some(*v),
-            Some(PineValue::Int(v)) => Some(*v as f64),
-            _ => None,
-        })
-        .collect()
+    items.iter().filter_map(|slot| present_number(slot.as_ref())).collect()
+}
+
+/// Read the optional trailing `biased` flag (`true` when absent); absence
+/// propagates, non-bool refuses — the shared `stdev` / `variance` /
+/// `covariance` convention.
+fn biased_flag(name: &str, args: &[CoreArg], at: usize) -> Result<Option<bool>, KernelError> {
+    match args
+        .get(at)
+        .map_or(Some(PineValue::Bool(true)), |arg| arg.value.clone())
+    {
+        None => Ok(None),
+        Some(PineValue::Bool(flag)) => Ok(Some(flag)),
+        Some(other) => Err(refused(format!("{name} takes a bool biased flag, got {other}"))),
+    }
+}
+
+/// Split collection call: the persisted remainder beside the yielded head.
+type SplitResult<C> = Result<Option<(C, Option<PineValue>)>, KernelError>;
+
+/// Split the head off one array argument: the remaining elements beside
+/// the removed head (`None` on an empty array). `na` in reads `na` out;
+/// kind mismatches refuse. Shared by the `shift` arm and the statement
+/// write-back path, which must persist the shrunken array while the call
+/// itself yields the head.
+pub(crate) fn shift_parts(
+    method: &str,
+    value: Option<&PineValue>,
+) -> SplitResult<Vec<Option<PineValue>>> {
+    match arr(method, value)? {
+        Some(mut items) => {
+            let head = if items.is_empty() {
+                None
+            } else {
+                items.remove(0)
+            };
+            Ok(Some((items, head)))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Split one map entry off by key: the remaining entries beside the
+/// removed value (`None` on a missing key). `na` in reads `na` out; kind
+/// mismatches refuse. Shared by the `remove` arm and the statement
+/// write-back path, which must persist the shrunk map while the call
+/// itself yields the removed value.
+pub(crate) fn remove_parts(
+    method: &str,
+    map: Option<&PineValue>,
+    key: Option<&PineValue>,
+) -> SplitResult<HashMap<i64, i64>> {
+    match (
+        int_map(method, map)?,
+        whole(method, key, "key")?,
+    ) {
+        (Some(mut entries), Some(found)) => {
+            let old = entries.remove(&found).map(PineValue::Int);
+            Ok(Some((entries, old)))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
@@ -598,6 +774,17 @@ fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
             let [array, index] = args else { return Err(arity("array and index")) };
             match (arr(&name, array.value.as_ref())?, whole(&name, index.value.as_ref(), "index")?) {
                 (Some(items), Some(at)) => index_of(&name, &items, at),
+                _ => Ok(None),
+            }
+        }
+        "set" => {
+            let [array, index, value] = args else { return Err(arity("array, index and value")) };
+            match (arr(&name, array.value.as_ref())?, whole(&name, index.value.as_ref(), "index")?) {
+                (Some(mut items), Some(at)) => {
+                    let slot = array_index(&name, items.len(), at)?;
+                    items[slot].clone_from(&value.value);
+                    Ok(Some(PineValue::Array(items)))
+                }
                 _ => Ok(None),
             }
         }
@@ -674,24 +861,13 @@ fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
                 return Err(arity("array and optional biased flag"));
             }
             let items = arr(&name, args[0].value.as_ref())?;
-            let biased = if args.len() == 2 {
-                match &args[1].value {
-                    None => None,
-                    Some(PineValue::Bool(flag)) => Some(*flag),
-                    Some(other) => {
-                        return Err(refused(format!("{name} takes a bool biased flag, got {other}")));
-                    }
-                }
-            } else {
-                Some(true)
-            };
-            match (items, biased) {
-                (Some(items), Some(sample)) => {
+            match (items, biased_flag(&name, args, 1)?) {
+                (Some(items), Some(biased)) => {
                     let present = present_numbers(&items);
                     if present.is_empty() {
                         return Ok(None);
                     }
-                    let deviation = if sample {
+                    let deviation = if biased {
                         crate::math::std_pop(&present)
                     } else {
                         crate::math::std_sample(&present)
@@ -761,6 +937,241 @@ fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
                 _ => Ok(None),
             }
         }
+        "concat" => {
+            let [first, second] = args else { return Err(arity("two arrays")) };
+            match (
+                arr(&name, first.value.as_ref())?,
+                arr(&name, second.value.as_ref())?,
+            ) {
+                (Some(mut head), Some(tail)) => {
+                    head.extend(tail);
+                    Ok(Some(PineValue::Array(head)))
+                }
+                _ => Ok(None),
+            }
+        }
+        "shift" => {
+            let [array] = args else { return Err(arity("one array")) };
+            match shift_parts(&name, array.value.as_ref())? {
+                Some((_, head)) => Ok(head),
+                None => Ok(None),
+            }
+        }
+        "variance" => {
+            if args.is_empty() || args.len() > 2 {
+                return Err(arity("array and optional biased flag"));
+            }
+            let items = arr(&name, args[0].value.as_ref())?;
+            match (items, biased_flag(&name, args, 1)?) {
+                (Some(items), Some(biased)) => {
+                    let present = present_numbers(&items);
+                    if present.is_empty() {
+                        return Ok(None);
+                    }
+                    let spread = if biased {
+                        crate::math::variance_pop(&present)
+                    } else {
+                        crate::math::variance_sample(&present)
+                    };
+                    Ok(crate::indicator::fin_or_none(spread).map(PineValue::Float))
+                }
+                _ => Ok(None),
+            }
+        }
+        "median" => {
+            let [array] = args else { return Err(arity("one array")) };
+            match arr(&name, array.value.as_ref())? {
+                Some(items) => {
+                    Ok(crate::math::median_of(&present_numbers(&items)).map(PineValue::Float))
+                }
+                None => Ok(None),
+            }
+        }
+        "mode" => {
+            let [array] = args else { return Err(arity("one array")) };
+            match arr(&name, array.value.as_ref())? {
+                Some(items) => {
+                    Ok(crate::math::mode_of(&present_numbers(&items)).map(PineValue::Float))
+                }
+                None => Ok(None),
+            }
+        }
+        "standardize" => {
+            let [array] = args else { return Err(arity("one array")) };
+            match arr(&name, array.value.as_ref())? {
+                Some(items) => {
+                    let scores = crate::math::standardize_scores(&present_numbers(&items));
+                    Ok(Some(PineValue::Array(
+                        scores
+                            .into_iter()
+                            .map(|slot| slot.map(PineValue::Float))
+                            .collect(),
+                    )))
+                }
+                None => Ok(None),
+            }
+        }
+        "percentile_linear_interpolation" => {
+            let [array, percentage] = args else { return Err(arity("array and percentage")) };
+            match (
+                arr(&name, array.value.as_ref())?,
+                num(&name, percentage.value.as_ref())?,
+            ) {
+                (Some(items), Some(rank)) => {
+                    if !(0.0..=100.0).contains(&rank) {
+                        return Err(refused(format!(
+                            "{name} takes a percentage in 0..=100, got {rank}"
+                        )));
+                    }
+                    let present = present_numbers(&items);
+                    if present.is_empty() {
+                        return Ok(None);
+                    }
+                    Ok(crate::math::percentile_linear(&present, rank).map(PineValue::Float))
+                }
+                _ => Ok(None),
+            }
+        }
+        "covariance" => {
+            if args.len() < 2 || args.len() > 3 {
+                return Err(arity("two arrays and optional biased flag"));
+            }
+            match (
+                arr(&name, args[0].value.as_ref())?,
+                arr(&name, args[1].value.as_ref())?,
+                biased_flag(&name, args, 2)?,
+            ) {
+                (Some(first), Some(second), Some(biased)) => {
+                    if first.len() != second.len() {
+                        return Err(refused(format!(
+                            "{name} takes equal-length arrays, got {} and {}",
+                            first.len(),
+                            second.len()
+                        )));
+                    }
+                    // Pairwise-present legs: a hole on either side drops
+                    // the pair, matching the reductions' absence rule.
+                    let (mut xs, mut ys) = (Vec::new(), Vec::new());
+                    for (left, right) in first.iter().zip(second.iter()) {
+                        if let (Some(x), Some(y)) =
+                            (present_number(left.as_ref()), present_number(right.as_ref()))
+                        {
+                            xs.push(x);
+                            ys.push(y);
+                        }
+                    }
+                    let joint = if biased {
+                        crate::math::covariance_pop(&xs, &ys)
+                    } else {
+                        crate::math::covariance_sample(&xs, &ys)
+                    };
+                    Ok(joint.map(PineValue::Float))
+                }
+                _ => Ok(None),
+            }
+        }
+        _ => Err(refused(format!("unknown call '{name}'"))),
+    }
+}
+
+/// Borrow one matrix argument (`na` in, `na` out); kind mismatches refuse
+/// instead of coercing, mirroring [`arr`].
+fn grid(method: &str, value: Option<&PineValue>) -> Result<Option<MatrixValue>, KernelError> {
+    match value {
+        None => Ok(None),
+        Some(PineValue::Matrix(cells)) => Ok(Some(cells.clone())),
+        Some(other) => Err(refused(format!("{method} takes a matrix, got {other}"))),
+    }
+}
+
+/// Resolve one whole row/column index against a grid shape; negative and
+/// past-end indexes refuse (the script runtime errors), mirroring
+/// [`array_index`].
+fn grid_index(name: &str, len: usize, at: i64) -> Result<usize, KernelError> {
+    if at < 0 {
+        return Err(refused(format!("{name} takes an index in 0..size, got {at}")));
+    }
+    let at = usize::try_from(at)
+        .map_err(|_| refused(format!("{name} takes an index in 0..size, got {at}")))?;
+    if at >= len {
+        return Err(refused(format!("{name} index {at} is past size {len}")));
+    }
+    Ok(at)
+}
+
+fn matrix_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
+    let name = format!("matrix.{method}");
+    let arity = |want: &str| bad_arity("matrix", method, want, args.len());
+    match method {
+        "new" => {
+            let (rows, columns, initial) = match args {
+                [rows, columns] => (rows, columns, None),
+                [rows, columns, initial] => (rows, columns, Some(initial)),
+                _ => return Err(arity("rows, columns and optional initial value")),
+            };
+            match (
+                whole(&name, rows.value.as_ref(), "rows")?,
+                whole(&name, columns.value.as_ref(), "columns")?,
+            ) {
+                (Some(rows), Some(columns)) => {
+                    if rows < 0 || columns < 0 {
+                        return Err(refused(format!(
+                            "{name} takes a shape in 0.., got {rows}x{columns}"
+                        )));
+                    }
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let (rows, columns) = (rows as usize, columns as usize);
+                    let initial = initial.and_then(|arg| arg.value.clone());
+                    Ok(Some(PineValue::Matrix(MatrixValue::filled(
+                        rows, columns, initial,
+                    ))))
+                }
+                _ => Ok(None),
+            }
+        }
+        "rows" => {
+            let [matrix] = args else { return Err(arity("one matrix")) };
+            #[allow(clippy::cast_possible_wrap)]
+            Ok(grid(&name, matrix.value.as_ref())?.map(|cells| PineValue::Int(cells.rows as i64)))
+        }
+        "columns" => {
+            let [matrix] = args else { return Err(arity("one matrix")) };
+            #[allow(clippy::cast_possible_wrap)]
+            Ok(grid(&name, matrix.value.as_ref())?.map(|cells| PineValue::Int(cells.cols as i64)))
+        }
+        "get" => {
+            let [matrix, row, column] = args else { return Err(arity("matrix, row and column")) };
+            match (
+                grid(&name, matrix.value.as_ref())?,
+                whole(&name, row.value.as_ref(), "row")?,
+                whole(&name, column.value.as_ref(), "column")?,
+            ) {
+                (Some(cells), Some(row), Some(column)) => {
+                    let row = grid_index(&name, cells.rows, row)?;
+                    let column = grid_index(&name, cells.cols, column)?;
+                    Ok(cells.get(row, column).unwrap_or(None))
+                }
+                _ => Ok(None),
+            }
+        }
+        "set" => {
+            let [matrix, row, column, value] = args else {
+                return Err(arity("matrix, row, column and value"));
+            };
+            match (
+                grid(&name, matrix.value.as_ref())?,
+                whole(&name, row.value.as_ref(), "row")?,
+                whole(&name, column.value.as_ref(), "column")?,
+            ) {
+                (Some(mut cells), Some(row), Some(column)) => {
+                    let row = grid_index(&name, cells.rows, row)?;
+                    let column = grid_index(&name, cells.cols, column)?;
+                    cells.set(row, column, value.value.clone());
+                    Ok(Some(PineValue::Matrix(cells)))
+                }
+                _ => Ok(None),
+            }
+        }
         _ => Err(refused(format!("unknown call '{name}'"))),
     }
 }
@@ -772,15 +1183,22 @@ fn index_of(
     items: &[Option<PineValue>],
     at: i64,
 ) -> Result<Option<PineValue>, KernelError> {
+    let slot = array_index(name, items.len(), at)?;
+    Ok(items[slot].clone())
+}
+
+/// Resolve one whole index against a length; out-of-range refuses (the
+/// script runtime errors), negative refuses. Shared by `get` and `set`.
+fn array_index(name: &str, len: usize, at: i64) -> Result<usize, KernelError> {
     if at < 0 {
         return Err(refused(format!("{name} takes an index in 0..size, got {at}")));
     }
     let at = usize::try_from(at)
         .map_err(|_| refused(format!("{name} takes an index in 0..size, got {at}")))?;
-    items.get(at).cloned().map_or_else(
-        || Err(refused(format!("{name} index {at} is past size {}", items.len()))),
-        Ok,
-    )
+    if at >= len {
+        return Err(refused(format!("{name} index {at} is past size {len}")));
+    }
+    Ok(at)
 }
 
 /// Clamped `[from, to)` range over an array for `fill`/`slice`; negative
@@ -865,8 +1283,14 @@ fn int_map(method: &str, value: Option<&PineValue>) -> Result<Option<HashMap<i64
     }
 }
 
-fn map_call(method: &str, args: &[CoreArg], type_args: &[PineType]) -> Result<Option<PineValue>, KernelError> {
-    let name = format!("map.{method}");
+/// Declared key types a general map accepts: the scalar shapes plus dotted
+/// (enum or otherwise qualified) names. Collections and user objects are
+/// never keys; anything else refuses at construction.
+fn is_scalar_key(name: &str) -> bool {
+    matches!(name, "int" | "float" | "bool" | "string" | "color") || name.contains('.')
+}
+
+fn map_call(method: &str, args: &[CoreArg], type_args: &[PineType]) -> Result<Option<PineValue>, KernelError> {    let name = format!("map.{method}");
     let arity = |want: &str| bad_arity("map", method, want, args.len());
     match method {
         "new" => {
@@ -874,66 +1298,141 @@ fn map_call(method: &str, args: &[CoreArg], type_args: &[PineType]) -> Result<Op
                 return Err(arity("no arguments"));
             }
             let [key, value] = type_args else {
-                return Err(refused(format!("{name} takes explicit <int, int> types")));
+                return Err(refused(format!("{name} takes explicit key and value types")));
             };
             if key.name == "int" && value.name == "int" && key.args.is_empty() && value.args.is_empty() {
                 Ok(Some(PineValue::IntMap(HashMap::new())))
+            } else if is_scalar_key(&key.name) {
+                Ok(Some(PineValue::Map(BTreeMap::new())))
             } else {
-                Err(refused(format!("{name} takes explicit <int, int> types")))
+                Err(refused(format!(
+                    "map.new takes a scalar key type (int, float, bool, string, color, or an enum), got {}",
+                    key.name
+                )))
             }
         }
         "put" => {
             let [map, key, value] = args else { return Err(arity("map, key and value")) };
-            match (
-                int_map(&name, map.value.as_ref())?,
-                whole(&name, key.value.as_ref(), "key")?,
-                whole(&name, value.value.as_ref(), "value")?,
-            ) {
-                (Some(mut entries), Some(k), Some(v)) => {
-                    entries.insert(k, v);
-                    Ok(Some(PineValue::IntMap(entries)))
+            match map.value.as_ref() {
+                None => Ok(None),
+                Some(PineValue::IntMap(entries)) => {
+                    match (
+                        whole(&name, key.value.as_ref(), "key")?,
+                        whole(&name, value.value.as_ref(), "value")?,
+                    ) {
+                        (Some(k), Some(v)) => {
+                            let mut stored = entries.clone();
+                            stored.insert(k, v);
+                            Ok(Some(PineValue::IntMap(stored)))
+                        }
+                        _ => Ok(None),
+                    }
                 }
-                _ => Ok(None),
+                Some(PineValue::Map(entries)) => match key.value.as_ref() {
+                    Some(key) => {
+                        let Some(encoded) = crate::value::map_key_of(key) else {
+                            return Err(refused(format!("{name} takes a scalar key, got {key}")));
+                        };
+                        let mut stored = entries.clone();
+                        stored.insert(encoded, (key.clone(), value.value.clone()));
+                        Ok(Some(PineValue::Map(stored)))
+                    }
+                    None => Ok(None),
+                },
+                Some(other) => Err(refused(format!("{name} takes a map, got {other}"))),
             }
         }
         "get" => {
             let [map, key] = args else { return Err(arity("map and key")) };
-            match (int_map(&name, map.value.as_ref())?, whole(&name, key.value.as_ref(), "key")?) {
-                (Some(entries), Some(k)) => Ok(entries.get(&k).map(|v| PineValue::Int(*v))),
-                _ => Ok(None),
+            match map.value.as_ref() {
+                None => Ok(None),
+                Some(PineValue::IntMap(entries)) => {
+                    match whole(&name, key.value.as_ref(), "key")? {
+                        Some(k) => Ok(entries.get(&k).map(|v| PineValue::Int(*v))),
+                        None => Ok(None),
+                    }
+                }
+                Some(PineValue::Map(entries)) => match key.value.as_ref() {
+                    Some(key) => {
+                        let Some(encoded) = crate::value::map_key_of(key) else {
+                            return Err(refused(format!("{name} takes a scalar key, got {key}")));
+                        };
+                        Ok(entries.get(&encoded).and_then(|(_, value)| value.clone()))
+                    }
+                    None => Ok(None),
+                },
+                Some(other) => Err(refused(format!("{name} takes a map, got {other}"))),
             }
         }
         "contains" => {
             let [map, key] = args else { return Err(arity("map and key")) };
-            match (int_map(&name, map.value.as_ref())?, whole(&name, key.value.as_ref(), "key")?) {
-                (Some(entries), Some(k)) => Ok(Some(PineValue::Bool(entries.contains_key(&k)))),
-                _ => Ok(None),
+            match map.value.as_ref() {
+                None => Ok(None),
+                Some(PineValue::IntMap(entries)) => {
+                    match whole(&name, key.value.as_ref(), "key")? {
+                        Some(k) => Ok(Some(PineValue::Bool(entries.contains_key(&k)))),
+                        None => Ok(None),
+                    }
+                }
+                Some(PineValue::Map(entries)) => match key.value.as_ref() {
+                    Some(key) => {
+                        let Some(encoded) = crate::value::map_key_of(key) else {
+                            return Err(refused(format!("{name} takes a scalar key, got {key}")));
+                        };
+                        Ok(Some(PineValue::Bool(entries.contains_key(&encoded))))
+                    }
+                    None => Ok(None),
+                },
+                Some(other) => Err(refused(format!("{name} takes a map, got {other}"))),
             }
         }
         "remove" => {
             let [map, key] = args else { return Err(arity("map and key")) };
-            match (int_map(&name, map.value.as_ref())?, whole(&name, key.value.as_ref(), "key")?) {
-                (Some(entries), Some(k)) => Ok(entries.get(&k).map(|v| PineValue::Int(*v))),
-                _ => Ok(None),
+            if matches!(map.value, Some(PineValue::Map(_))) {
+                return Err(refused(format!(
+                    "{name} on general maps is not bridged; rebuild the map without the key"
+                )));
+            }
+            match remove_parts(&name, map.value.as_ref(), key.value.as_ref())? {
+                Some((_, old)) => Ok(old),
+                None => Ok(None),
             }
         }
         "size" => {
             let [map] = args else { return Err(arity("one map")) };
-            Ok(int_map(&name, map.value.as_ref())?.map(|entries| PineValue::Int(entries.len() as i64)))
+            match map.value.as_ref() {
+                None => Ok(None),
+                Some(PineValue::IntMap(entries)) => {
+                    Ok(Some(PineValue::Int(entries.len() as i64)))
+                }
+                Some(PineValue::Map(entries)) => Ok(Some(PineValue::Int(entries.len() as i64))),
+                Some(other) => Err(refused(format!("{name} takes a map, got {other}"))),
+            }
         }
         "keys" => {
             let [map] = args else { return Err(arity("one map")) };
-            Ok(int_map(&name, map.value.as_ref())?.map(|entries| {
-                let mut keys: Vec<i64> = entries.keys().copied().collect();
-                keys.sort_unstable();
-                PineValue::Array(keys.into_iter().map(|k| Some(PineValue::Int(k))).collect())
-            }))
+            match map.value.as_ref() {
+                None => Ok(None),
+                Some(PineValue::IntMap(entries)) => {
+                    let mut keys: Vec<i64> = entries.keys().copied().collect();
+                    keys.sort_unstable();
+                    Ok(Some(PineValue::Array(
+                        keys.into_iter().map(|k| Some(PineValue::Int(k))).collect(),
+                    )))
+                }
+                Some(PineValue::Map(entries)) => Ok(Some(PineValue::Array(
+                    entries.values().map(|(key, _)| Some(key.clone())).collect(),
+                ))),
+                Some(other) => Err(refused(format!("{name} takes a map, got {other}"))),
+            }
         }
         "clear" => {
             let [map] = args else { return Err(arity("one map")) };
-            match int_map(&name, map.value.as_ref())? {
-                Some(_) => Ok(Some(PineValue::IntMap(HashMap::new()))),
+            match map.value.as_ref() {
                 None => Ok(None),
+                Some(PineValue::IntMap(_)) => Ok(Some(PineValue::IntMap(HashMap::new()))),
+                Some(PineValue::Map(_)) => Ok(Some(PineValue::Map(BTreeMap::new()))),
+                Some(other) => Err(refused(format!("{name} takes a map, got {other}"))),
             }
         }
         _ => Err(refused(format!("unknown call '{name}'"))),
@@ -955,6 +1454,9 @@ fn named_color(name: &str) -> Option<u32> {
         "color.orange" => Some(0xFF_A0_00_00),
         "color.teal" => Some(0x00_80_80_00),
         "color.aqua" => Some(0x00_FF_FF_00),
+        "color.gray" => Some(0x78_78_78_00),
+        "color.lime" => Some(0x00_FF_00_00),
+        "color.yellow" => Some(0xFF_FF_00_00),
         _ => None,
     }
 }
@@ -975,6 +1477,34 @@ fn transparency(value: f64) -> u32 {
 
 fn pack(red: u32, green: u32, blue: u32, transp: u32) -> u32 {
     (red << 24) | (green << 16) | (blue << 8) | transp
+}
+
+/// Pack a `#rrggbb[aa]` literal into a color handle: six digits are opaque,
+/// eight digits scale the alpha byte (`00` opaque .. `ff` fully transparent)
+/// into the `0..=100` transparency lane. Anything else is not a literal.
+#[must_use]
+pub fn color_of_hex(digits: &str) -> Option<u32> {
+    let channel = |pair: &str| u32::from_str_radix(pair, 16).ok();
+    if digits.len() == 6 {
+        Some(pack(
+            channel(&digits[0..2])?,
+            channel(&digits[2..4])?,
+            channel(&digits[4..6])?,
+            0,
+        ))
+    } else if digits.len() == 8 {
+        let alpha = f64::from(channel(&digits[6..8])?);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let transp = (alpha * 100.0 / 255.0).round().clamp(0.0, 100.0) as u32;
+        Some(pack(
+            channel(&digits[0..2])?,
+            channel(&digits[2..4])?,
+            channel(&digits[4..6])?,
+            transp,
+        ))
+    } else {
+        None
+    }
 }
 
 fn unpack(handle: u32) -> (f64, f64, f64, f64) {
@@ -1085,10 +1615,17 @@ fn timeframe_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, K
     }
 }
 
+/// Check a chart period string with the same parser as
+/// `timeframe.in_seconds`, so runtime scope and the bridge never drift.
+pub(crate) fn check_period(raw: &str) -> Result<(), String> {
+    period_seconds("chart period", raw)
+        .map(|_| ())
+        .map_err(|reason| reason.to_string())
+}
+
 /// Parse a period string (`"15S"`, `"5"`, `"D"`, `"W"`, `"M"`) into seconds;
 /// anything else refuses with the offending text.
-fn period_seconds(name: &str, raw: &str) -> Result<i64, KernelError> {
-    let body = raw.trim();
+fn period_seconds(name: &str, raw: &str) -> Result<i64, KernelError> {    let body = raw.trim();
     let (digits, factor) = if let Some(seconds) = body.strip_suffix('S') {
         (seconds, 1)
     } else if let Some(days) = body.strip_suffix('D') {

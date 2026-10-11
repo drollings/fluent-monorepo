@@ -38,10 +38,69 @@ pub enum PineValue {
     /// Pine `map<int, int>`: the scheduler-state shape. Missing keys read
     /// as absence at the call site, never as a default.
     IntMap(std::collections::HashMap<i64, i64>),
+    /// Pine `map<K, V>` for every other key/value shape (enum keys, object
+    /// or color values, ...): entries keyed by the canonical scalar
+    /// encoding ([`map_key_of`]), values riding whole with absence per
+    /// slot. Iteration sorts by encoding, so dumps stay deterministic.
+    /// `<int, int>` keeps the dedicated `IntMap` shape above.
+    Map(std::collections::BTreeMap<String, (PineValue, Option<PineValue>)>),
     /// Owned user-type instance (`type` declarations with `method`
     /// dispatch). Fields address by name; instances never read as numbers,
     /// strings, or bools.
     Object(UserInstance),
+    /// Opaque drawing object (`label`/`table`/`box`/`line` handles minted
+    /// by `.new` and recorded by the engine's lifecycle log; never
+    /// arithmetic, never a number/string/bool).
+    Drawing(DrawingHandle),
+    /// Pine matrix: a fixed row-by-column grid with absence per cell.
+    /// Like arrays, operators return new grids (functional); `set` in
+    /// value position writes back through the statement helper.
+    Matrix(MatrixValue),
+}
+
+/// Owned two-dimensional grid: row-major cells under an explicit shape.
+/// The shape is fixed at construction; every cell starts as the initial
+/// value (absence when the constructor is called without one).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatrixValue {
+    /// Row count (`matrix.rows`).
+    pub rows: usize,
+    /// Column count (`matrix.columns`).
+    pub cols: usize,
+    /// Row-major cells, exactly `rows * cols` entries.
+    pub cells: Vec<Option<PineValue>>,
+}
+
+impl MatrixValue {
+    /// Build a grid of one repeated cell, validating the shape first.
+    #[must_use]
+    pub fn filled(rows: usize, cols: usize, cell: Option<PineValue>) -> Self {
+        Self {
+            rows,
+            cols,
+            cells: vec![cell; rows.checked_mul(cols).unwrap_or(0)],
+        }
+    }
+
+    /// Borrow one cell by row and column, or `None` off shape.
+    #[must_use]
+    pub fn get(&self, row: usize, col: usize) -> Option<Option<PineValue>> {
+        let index = row.checked_mul(self.cols)?.checked_add(col)?;
+        self.cells.get(index).cloned()
+    }
+
+    /// Replace one cell by row and column; off-shape writes are refused
+    /// by the caller, never clamped.
+    pub fn set(&mut self, row: usize, col: usize, cell: Option<PineValue>) -> bool {
+        let Some(index) = row.checked_mul(self.cols).and_then(|base| base.checked_add(col)) else {
+            return false;
+        };
+        let Some(slot) = self.cells.get_mut(index) else {
+            return false;
+        };
+        *slot = cell;
+        true
+    }
 }
 
 /// Opaque display-color token. The inner packing is decided by the lowering
@@ -63,7 +122,62 @@ impl ColorHandle {
     }
 }
 
-/// Opaque enum-member token: which enum and which member, as declared.
+/// Opaque drawing-object token: which namespace minted it and which recorded
+/// object it names. The engine's lifecycle log owns the properties; the
+/// handle only identifies. Comparison never inspects properties.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DrawingHandle {
+    /// Minting namespace (`label`, `table`, `box`, or `line`).
+    pub kind: DrawingKind,
+    /// Per-run object number, unique across all four namespaces.
+    pub id: u64,
+}
+
+impl DrawingHandle {
+    /// Name one recorded drawing object.
+    #[must_use]
+    pub fn new(kind: DrawingKind, id: u64) -> Self {
+        Self { kind, id }
+    }
+
+    /// Stable key for lifecycle rows (`label#3`).
+    #[must_use]
+    pub fn key(self) -> String {
+        format!("{}#{}", self.kind, self.id)
+    }
+}
+
+/// The four recorded drawing namespaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DrawingKind {
+    /// `label.*` markers.
+    Label,
+    /// `table.*` grids.
+    Table,
+    /// `box.*` zones.
+    Box,
+    /// `line.*` levels.
+    Line,
+}
+
+impl DrawingKind {
+    /// The namespace text that mints this kind.
+    #[must_use]
+    pub fn namespace(self) -> &'static str {
+        match self {
+            Self::Label => "label",
+            Self::Table => "table",
+            Self::Box => "box",
+            Self::Line => "line",
+        }
+    }
+}
+
+impl fmt::Display for DrawingKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.namespace())
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumHandle {
     /// Declaring enum (`Smoothings`).
@@ -128,7 +242,10 @@ impl PineValue {
             | Self::EnumHandle(_)
             | Self::Array(_)
             | Self::IntMap(_)
-            | Self::Object(_) => None,
+            | Self::Map(_)
+            | Self::Object(_)
+            | Self::Drawing(_)
+            | Self::Matrix(_) => None,
         }
     }
 
@@ -144,7 +261,10 @@ impl PineValue {
             | Self::EnumHandle(_)
             | Self::Array(_)
             | Self::IntMap(_)
-            | Self::Object(_) => None,
+            | Self::Map(_)
+            | Self::Object(_)
+            | Self::Drawing(_)
+            | Self::Matrix(_) => None,
         }
     }
 
@@ -160,8 +280,35 @@ impl PineValue {
             | Self::EnumHandle(_)
             | Self::Array(_)
             | Self::IntMap(_)
-            | Self::Object(_) => None,
+            | Self::Map(_)
+            | Self::Object(_)
+            | Self::Drawing(_)
+            | Self::Matrix(_) => None,
         }
+    }
+}
+
+/// Canonical encoding of one map key: scalar script values (ints by value,
+/// floats by bits, bools, strings, packed colors, enum members) each name
+/// a distinct entry. Collections, objects, drawings, and matrices are
+/// never keys and read as `None`.
+#[must_use]
+pub fn map_key_of(value: &PineValue) -> Option<String> {
+    match value {
+        PineValue::Int(v) => Some(format!("int:{v}")),
+        PineValue::Float(v) => Some(format!("float:{}", v.to_bits())),
+        PineValue::Bool(v) => Some(format!("bool:{v}")),
+        PineValue::Str(v) => Some(format!("str:{}:{v}", v.len())),
+        PineValue::ColorHandle(v) => Some(format!("color:{}", v.raw())),
+        PineValue::EnumHandle(handle) => {
+            Some(format!("enum:{}.{}", handle.enum_name, handle.member))
+        }
+        PineValue::Array(_)
+        | PineValue::IntMap(_)
+        | PineValue::Map(_)
+        | PineValue::Object(_)
+        | PineValue::Drawing(_)
+        | PineValue::Matrix(_) => None,
     }
 }
 
@@ -200,6 +347,8 @@ impl fmt::Display for PineValue {
             Self::ColorHandle(v) => write!(f, "color({})", v.raw()),
             Self::EnumHandle(v) => write!(f, "{v}"),
             Self::Object(instance) => write!(f, "{} instance", instance.type_name),
+            Self::Drawing(handle) => write!(f, "{}", handle.key()),
+            Self::Matrix(grid) => write!(f, "matrix[{}x{}]", grid.rows, grid.cols),
             Self::Array(items) => {
                 let mut first = true;
                 write!(f, "[")?;
@@ -226,6 +375,21 @@ impl fmt::Display for PineValue {
                     }
                     first = false;
                     write!(f, "{key}: {}", entries[&key])?;
+                }
+                write!(f, "}}")
+            }
+            Self::Map(entries) => {
+                let mut first = true;
+                write!(f, "{{")?;
+                for (key, (_, value)) in entries {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    match value {
+                        Some(stored) => write!(f, "{key}: {stored}")?,
+                        None => write!(f, "{key}: na")?,
+                    }
                 }
                 write!(f, "}}")
             }

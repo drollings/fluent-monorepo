@@ -52,17 +52,31 @@ pub enum InputDef {
         /// Value used until overwritten.
         default: ColorHandle,
     },
+    /// Session input: a validated opaque session string (for example
+    /// `"0930-1600"`). The engine treats the text as data; matching bars to
+    /// a session is the harness's data-selection contract.
+    Session {
+        /// Value used until overwritten.
+        default: String,
+    },
+    /// Source input: a live per-bar series default with an optional scalar
+    /// override. The declaration itself seeds no value, so the default
+    /// expression keeps riding the current bar until a caller overrides it.
+    Source,
 }
 
 impl InputDef {
-    fn default_value(&self) -> PineValue {
+    fn default_value(&self) -> Option<PineValue> {
         match self {
-            Self::Float { default, .. } => PineValue::Float(*default),
-            Self::Int { default, .. } => PineValue::Int(*default),
-            Self::Bool { default } => PineValue::Bool(*default),
-            Self::Text { default } => PineValue::Str(default.clone()),
-            Self::Enum { default } => PineValue::EnumHandle(default.clone()),
-            Self::Color { default } => PineValue::ColorHandle(*default),
+            Self::Float { default, .. } => Some(PineValue::Float(*default)),
+            Self::Int { default, .. } => Some(PineValue::Int(*default)),
+            Self::Bool { default } => Some(PineValue::Bool(*default)),
+            Self::Text { default } | Self::Session { default } => {
+                Some(PineValue::Str(default.clone()))
+            }
+            Self::Enum { default } => Some(PineValue::EnumHandle(default.clone())),
+            Self::Color { default } => Some(PineValue::ColorHandle(*default)),
+            Self::Source => None,
         }
     }
 
@@ -98,6 +112,15 @@ impl InputDef {
                     "kind mismatch: string input got {got}"
                 ))),
             },
+            Self::Session { .. } => match value {
+                PineValue::Str(session) if !session.trim().is_empty() => Ok(()),
+                PineValue::Str(session) => Err(KernelError::InvalidInput(format!(
+                    "session input must be non-empty, got {session:?}"
+                ))),
+                got => Err(KernelError::InvalidInput(format!(
+                    "kind mismatch: session input got {got}"
+                ))),
+            },
             Self::Enum { default } => match value {
                 PineValue::EnumHandle(member) if member.enum_name == default.enum_name => Ok(()),
                 PineValue::EnumHandle(member) => Err(KernelError::InvalidInput(format!(
@@ -114,6 +137,12 @@ impl InputDef {
                     "kind mismatch: color input got {got}"
                 ))),
             },
+            Self::Source => match value {
+                PineValue::Float(_) | PineValue::Int(_) | PineValue::Bool(_) => Ok(()),
+                got => Err(KernelError::InvalidInput(format!(
+                    "kind mismatch: source input got {got}"
+                ))),
+            },
         }
     }
 
@@ -121,7 +150,7 @@ impl InputDef {
     /// default inside the range. Shared by declaration and the [`Validate`]
     /// bridge so the rule lives in one place.
     pub fn validate(&self) -> Result<(), KernelError> {
-        match *self {
+        match self {
             Self::Float { default, min, max } => {
                 if !default.is_finite() || !min.is_finite() || !max.is_finite() {
                     return Err(KernelError::InvalidInput(
@@ -153,7 +182,19 @@ impl InputDef {
                 }
                 Ok(())
             }
-            Self::Bool { .. } | Self::Text { .. } | Self::Enum { .. } | Self::Color { .. } => Ok(()),
+            Self::Bool { .. }
+            | Self::Text { .. }
+            | Self::Enum { .. }
+            | Self::Color { .. }
+            | Self::Source => Ok(()),
+            Self::Session { default } => {
+                if default.trim().is_empty() {
+                    return Err(KernelError::InvalidInput(
+                        "session input default must be non-empty".to_owned(),
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -180,7 +221,8 @@ impl InputSet {
     }
 
     /// Declare an input and seed it with its default. Duplicate names and
-    /// invalid bounds are errors.
+    /// invalid bounds are errors. Source declarations seed no value: the
+    /// live series default keeps flowing until an override is assigned.
     pub fn declare(&mut self, name: impl Into<String>, def: InputDef) -> Result<(), KernelError> {
         def.validate()?;
         let name = name.into();
@@ -189,9 +231,18 @@ impl InputSet {
                 "duplicate input declaration: {name:?}"
             )));
         }
-        self.values.insert(name.clone(), def.default_value());
+        if let Some(seed) = def.default_value() {
+            self.values.insert(name.clone(), seed);
+        }
         self.defs.insert(name, def);
         Ok(())
+    }
+
+    /// Whether `name` declares a live source input whose default rides the
+    /// current bar until overridden.
+    #[must_use]
+    pub(crate) fn is_source(&self, name: &str) -> bool {
+        matches!(self.defs.get(name), Some(InputDef::Source))
     }
 
     /// Read the current value; undeclared names are `None`.

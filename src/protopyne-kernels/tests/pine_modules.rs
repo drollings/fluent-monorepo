@@ -1,12 +1,15 @@
-//! Import graph tests: the real `_FastMAs -> {libMAs, libUtil}` triple plus
-//! synthetic refusal cases.
+//! Import graph tests: the real `_FastMAs -> {libMAs, libUtil}` triple, the
+//! real seven-library indicator closure, plus synthetic refusal cases.
 //!
 //! Resolution is pure over supplied values (no I/O inside): each test loads
 //! or synthesizes its modules, then asserts order, alias binding, export
 //! visibility, and refusal reasons.
 
 use super::*;
-use crate::{load_pine_source, parse_pine_source, parse_program};
+use crate::{
+    closure_data_root, indicator_library_id, load_closure_sources, load_pine_source,
+    parse_pine_source, parse_program,
+};
 use std::path::PathBuf;
 
 fn data_path(name: &str) -> PathBuf {
@@ -185,5 +188,172 @@ fn non_exported_helper_is_invisible_to_importers() {
     assert!(
         alias_err.to_string().contains("NOPE"),
         "reason names the unknown alias"
+    );
+}
+
+/// The real indicator closure: seven libraries plus the indicator root.
+/// Identities come from the closure fixture; parsing runs over the same
+/// byte-identical text the loader returns.
+fn real_closure() -> Vec<ModuleInput> {
+    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
+    load_closure_sources(&root)
+        .expect("closure loads")
+        .into_iter()
+        .map(|(key, source)| {
+            let program = parse_program(&source.text)
+                .unwrap_or_else(|err| panic!("real file {key} parses: {err}"));
+            let id = if key == "local/IntegrationLite" {
+                indicator_library_id()
+            } else {
+                let (publisher, name) = key.split_once('/').expect("key shape");
+                library_id(publisher, name, 1)
+            };
+            ModuleInput::new(id, source, program)
+        })
+        .collect()
+}
+
+fn closure_position(order: &[ModuleId], publisher: &str, name: &str) -> usize {
+    order
+        .iter()
+        .position(|id| id == &module_key(publisher, name))
+        .unwrap_or_else(|| panic!("module {publisher}/{name} present"))
+}
+
+#[test]
+fn real_closure_resolves_dependencies_first() {
+    let graph = resolve_imports(real_closure()).expect("closure resolves");
+    let order = graph.order();
+    assert_eq!(order.len(), 8, "seven libraries plus the indicator root");
+    let before = |a: (&str, &str), b: (&str, &str)| {
+        assert!(
+            closure_position(order, a.0, a.1) < closure_position(order, b.0, b.1),
+            "{} precedes {}: {order:?}",
+            module_key(a.0, a.1),
+            module_key(b.0, b.1),
+        );
+    };
+    let util = ("showmethegrail", "libUtil");
+    let root = ("local", "IntegrationLite");
+    // Libraries precede the indicator; libUtil precedes its importers;
+    // libBars precedes libApex through the ring-buffer dependency.
+    for library in [
+        "libUtil",
+        "libBars",
+        "libBuffers",
+        "libDrawing",
+        "libCandles",
+        "libMAs",
+        "libApex",
+    ] {
+        before(("showmethegrail", library), root);
+    }
+    for importer in ["libMAs", "libBars", "libApex", "libDrawing", "libCandles"] {
+        before(util, ("showmethegrail", importer));
+    }
+    before(("showmethegrail", "libBars"), ("showmethegrail", "libApex"));
+    before(
+        ("showmethegrail", "libApex"),
+        ("showmethegrail", "libCandles"),
+    );
+    assert!(graph.warnings().is_empty(), "clean v6 closure warns nothing");
+}
+
+#[test]
+fn real_closure_alias_tables_are_pinned() {
+    let graph = resolve_imports(real_closure()).expect("closure resolves");
+    let root = module_key("local", "IntegrationLite");
+    let aliases = graph.alias_table(&root).expect("root aliases known");
+    for (alias, name) in [
+        ("UTIL", "libUtil"),
+        ("BARS", "libBars"),
+        ("libBuffers", "libBuffers"),
+        ("libDrawing", "libDrawing"),
+        ("libCandles", "libCandles"),
+        ("libMAs", "libMAs"),
+        ("libApex", "libApex"),
+    ] {
+        assert_eq!(
+            aliases.get(alias),
+            Some(&module_key("showmethegrail", name)),
+            "alias {alias} binds"
+        );
+    }
+    // Transitive importers keep their own alias spellings.
+    let apex = module_key("showmethegrail", "libApex");
+    let apex_aliases = graph.alias_table(&apex).expect("apex aliases known");
+    for (alias, name) in [
+        ("UTIL", "libUtil"),
+        ("libBuffers", "libBuffers"),
+        ("BARS", "libBars"),
+        ("libDrawing", "libDrawing"),
+    ] {
+        assert_eq!(
+            apex_aliases.get(alias),
+            Some(&module_key("showmethegrail", name)),
+            "apex alias {alias} binds"
+        );
+    }
+    // Export-reachable names bind through aliases across the closure.
+    graph
+        .resolve_reference(&root, "UTIL", "Smoothings")
+        .expect("UTIL.Smoothings binds");
+    graph
+        .resolve_reference(&root, "libMAs", "factorySmoothing")
+        .expect("libMAs.factorySmoothing binds");
+    graph
+        .resolve_reference(&apex, "BARS", "Bars")
+        .expect("BARS.Bars binds");
+}
+
+#[test]
+fn real_closure_version_skew_warns_and_preserves_order() {
+    let clean = resolve_imports(real_closure()).expect("clean closure resolves");
+    let clean_order: Vec<String> =
+        clean.order().iter().map(ToString::to_string).collect();
+    // Copy fixture: the real libUtil text under a skewed declared version.
+    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
+    let skewed_text = std::fs::read_to_string(root.join("libraries/_libUtil.pine"))
+        .expect("libUtil reads")
+        .replacen("//@version=6", "//@version=5", 1);
+    assert_ne!(
+        skewed_text.matches("//@version=5").count(),
+        0,
+        "skew applied to the copy"
+    );
+    let mut skewed = real_closure();
+    let slot = skewed
+        .iter()
+        .position(|input| input.module_id() == module_key("showmethegrail", "libUtil"))
+        .expect("libUtil present");
+    let skewed_source = parse_pine_source("copy/_libUtil.pine", &skewed_text);
+    assert_eq!(skewed_source.warnings.len(), 1, "skew warns exactly once");
+    let skewed_program = parse_program(&skewed_text).expect("skewed copy parses");
+    skewed[slot] = ModuleInput::new(
+        library_id("showmethegrail", "libUtil", 5),
+        skewed_source,
+        skewed_program,
+    );
+    let graph = resolve_imports(skewed).expect("skewed closure still resolves");
+    let skewed_order: Vec<String> =
+        graph.order().iter().map(ToString::to_string).collect();
+    assert_eq!(skewed_order, clean_order, "skew preserves order");
+    assert_eq!(graph.warnings().len(), 1, "skew warns once overall");
+}
+
+#[test]
+fn real_closure_private_helper_is_invisible() {
+    let graph = resolve_imports(real_closure()).expect("closure resolves");
+    let apex = module_key("showmethegrail", "libApex");
+    graph
+        .resolve_reference(&apex, "BARS", "get")
+        .expect("exported BARS.get binds");
+    let err = graph
+        .resolve_reference(&apex, "BARS", "_getPhysicalIndex")
+        .expect_err("private helper is not importable");
+    let reason = err.to_string();
+    assert!(
+        reason.contains("_getPhysicalIndex") && reason.contains("not exported"),
+        "reason names the hidden item: {reason}"
     );
 }

@@ -122,12 +122,25 @@ pub enum PineStmt {
         /// Initial value.
         value: Box<PineExpr>,
     },
+    /// Comma-separated locals (`float o = na, h = na`): each item carries
+    /// its own optional type and optional initializer.
+    MultiDeclaration {
+        /// Declared items in source order.
+        decls: Vec<MultiDecl>,
+    },
     /// Untyped assignment: `name = value`.
     Assignment {
         /// Variable name.
         name: String,
         /// Assigned value.
         value: Box<PineExpr>,
+    },
+    /// Comma-separated assignments (`o := open, h := high`): each item
+    /// carries its own operator and runs left to right through the matching
+    /// single-assignment rule.
+    MultiAssign {
+        /// Assigned items in source order.
+        items: Vec<AssignItem>,
     },
     /// Reassignment: `name := value`.
     Reassign {
@@ -165,6 +178,17 @@ pub enum PineStmt {
         /// Loop body.
         body: Vec<PineStmt>,
     },
+    /// `for x in arr` / `for [k, v] in pairs` iteration over collection
+    /// values. One target binds each value; a pair binds the integer
+    /// index beside the value.
+    ForIn {
+        /// Bound names: one variable, or a destructured pair.
+        targets: Vec<String>,
+        /// Iterated collection expression.
+        iterable: Box<PineExpr>,
+        /// Loop body.
+        body: Vec<PineStmt>,
+    },
     /// `while condition` block.
     While {
         /// Loop condition.
@@ -172,6 +196,9 @@ pub enum PineStmt {
         /// Loop body.
         body: Vec<PineStmt>,
     },
+    /// `break`: exits the innermost enclosing `for`/`while`. Recorded at
+    /// parse; the executor refuses it outside a loop body.
+    Break,
     /// Statement-position `switch` (shares [`SwitchStmt`] with expressions).
     Switch(SwitchStmt),
 }
@@ -179,8 +206,9 @@ pub enum PineStmt {
 /// One `switch` with all its arms; valid as a statement and an expression.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchStmt {
-    /// Matched value.
-    pub scrutinee: Box<PineExpr>,
+    /// Matched value, or `None` for the bare form whose arms are boolean
+    /// conditions (first truthy arm wins).
+    pub scrutinee: Option<Box<PineExpr>>,
     /// Arms in source order (defaults last by convention).
     pub arms: Vec<SwitchArm>,
 }
@@ -243,6 +271,27 @@ pub enum PineExpr {
         /// Explicit generic arguments; empty when absent.
         type_args: Vec<PineType>,
     },
+    /// Call on a computed receiver (`Type.new().init(...)`): the receiver
+    /// evaluates first, then the method runs against the resulting instance
+    /// with no home to write back to.
+    InstanceCall {
+        /// Receiver expression (evaluates to an instance).
+        receiver: Box<PineExpr>,
+        /// Method name.
+        method: String,
+        /// Arguments (names preserved).
+        args: Vec<CallArg>,
+        /// Explicit generic arguments; empty when absent.
+        type_args: Vec<PineType>,
+    },
+    /// Field read on a computed receiver (`lookup(...).field`). A plain
+    /// variable receiver resolves exactly like its glued dotted spelling.
+    FieldRead {
+        /// Receiver expression.
+        receiver: Box<PineExpr>,
+        /// Field name.
+        field: String,
+    },
     /// `condition ? then_expr : else_expr`.
     Ternary {
         /// Condition.
@@ -268,6 +317,8 @@ pub enum PineExpr {
     },
     /// Tuple literal: `[a, b]` values and multi-returns.
     ArrayLiteral(Vec<PineExpr>),
+    /// `#rrggbb[aa]` color literal, packed exactly like `color.rgb`.
+    ColorLiteral(u32),
     /// Expression-position `switch`.
     Switch(Box<SwitchStmt>),
 }
@@ -294,6 +345,37 @@ pub struct Param {
     pub default: Option<PineExpr>,
 }
 
+/// One item of a comma-separated local declaration: `[type] name [= value]`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiDecl {
+    /// Declared type, when written on the item.
+    pub type_name: Option<PineType>,
+    /// Variable name.
+    pub name: String,
+    /// Initializer, when present (absent reads as `na`).
+    pub value: Option<PineExpr>,
+}
+
+/// Operator of one comma-separated assignment item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssignOp {
+    /// `=` assignment.
+    Assign,
+    /// `:=` reassignment (targets must be declared, `this.*` allowed).
+    Reassign,
+}
+
+/// One item of a comma-separated assignment: `name op value`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssignItem {
+    /// Variable name (possibly a `this.*` path for `:=`).
+    pub name: String,
+    /// Assignment operator.
+    pub op: AssignOp,
+    /// Assigned value.
+    pub value: PineExpr,
+}
+
 /// A Pine type name with optional generic arguments
 /// (`float`, `UTIL.Smoothings`, `array<float>`, `map<int, int>`).
 #[derive(Debug, Clone, PartialEq)]
@@ -313,6 +395,18 @@ pub struct EnumMember {
     pub value: PineExpr,
 }
 
+/// Persistence qualifier on one `type`-block field line: Pine carries
+/// `var`/`varip` into user-type fields, so the declaration records which one
+/// (if any) qualified the field. Execution of the qualifier arrives with the
+/// headless library work; recording it here keeps parsing faithful.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldPersistence {
+    /// `var` field: persists across bars of the owning instance.
+    Var,
+    /// `varip` field: persists intrabar as well.
+    Varip,
+}
+
 /// One typed field line in a `type` block.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDecl {
@@ -322,6 +416,8 @@ pub struct FieldDecl {
     pub name: String,
     /// Default value, when present.
     pub default: Option<PineExpr>,
+    /// Persistence qualifier (`var`/`varip`), when present.
+    pub persistence: Option<FieldPersistence>,
 }
 
 /// Built-in series variables.
@@ -505,6 +601,10 @@ impl PineParser {
             TokenKind::If => self.parse_if_statement(None),
             TokenKind::For => self.parse_for_statement(),
             TokenKind::While => self.parse_while_statement(),
+            TokenKind::Break => {
+                self.advance();
+                Ok(PineStmt::Break)
+            }
             TokenKind::Switch => Ok(PineStmt::Switch(self.parse_switch()?)),
             TokenKind::Import => self.parse_import(),
             TokenKind::Export => {
@@ -578,17 +678,23 @@ impl PineParser {
 
     /// Parse `if`. `line_column` carries the statement line's first column
     /// for chained `else if`: the nested `if` starts mid-line (after `else`),
-    /// but its body aligns with the `else`, not the inner keyword.
+    /// but its body aligns with the `else`, not the inner keyword. Only a
+    /// same-line `else if` chains; an `if` on a later line opens a nested
+    /// statement inside the `else` block. An `else` binds only at its own
+    /// `if`'s column: a dedented `else` after a nested `if` closes the
+    /// outer block instead of feeding the inner one an empty branch.
     fn parse_if_statement(&mut self, line_column: Option<usize>) -> Result<PineStmt, PineParseError> {
         let column = line_column.unwrap_or_else(|| self.current().column);
         self.advance();
         let condition = Box::new(self.parse_expression()?);
         let then_branch = self.parse_block(column)?;
         self.skip_trivia();
-        let else_branch = if self.current_kind() == &TokenKind::Else {
+        let else_branch = if self.current_kind() == &TokenKind::Else
+            && self.current().column == column
+        {
             let else_column = self.current().column;
             self.advance();
-            self.skip_trivia();
+            self.skip_comments();
             if self.current_kind() == &TokenKind::If {
                 Some(vec![self.parse_if_statement(Some(else_column))?])
             } else {
@@ -608,8 +714,54 @@ impl PineParser {
         let column = self.current().column;
         self.advance();
         self.skip_trivia();
+        // Tuple form first: `for [k, v] in pairs`.
+        if self.current_kind() == &TokenKind::LeftBracket {
+            self.advance();
+            self.skip_trivia();
+            let mut targets = Vec::new();
+            loop {
+                self.skip_trivia();
+                targets.push(self.expect_identifier()?);
+                self.skip_trivia();
+                if self.current_kind() == &TokenKind::Comma {
+                    self.advance();
+                    continue;
+                }
+                break;
+            }
+            self.expect(&TokenKind::RightBracket)?;
+            self.skip_trivia();
+            match self.current_kind() {
+                TokenKind::Identifier(id) if id == "in" => self.advance(),
+                _ => {
+                    return Err(PineParseError::InvalidSyntax(
+                        "expected 'in' in for loop".to_owned(),
+                    ));
+                }
+            }
+            let iterable = Box::new(self.parse_expression()?);
+            let body = self.parse_block(column)?;
+            return Ok(PineStmt::ForIn {
+                targets,
+                iterable,
+                body,
+            });
+        }
         let variable = self.expect_identifier()?;
         self.skip_trivia();
+        // Collection form: `for x in arr`.
+        if let TokenKind::Identifier(id) = self.current_kind() {
+            if id == "in" {
+                self.advance();
+                let iterable = Box::new(self.parse_expression()?);
+                let body = self.parse_block(column)?;
+                return Ok(PineStmt::ForIn {
+                    targets: vec![variable],
+                    iterable,
+                    body,
+                });
+            }
+        }
         self.expect(&TokenKind::Equal)?;
         let start = Box::new(self.parse_expression()?);
         self.skip_trivia();
@@ -767,9 +919,40 @@ impl PineParser {
             if self.is_at_end() {
                 break;
             }
+            // Optional persistence qualifier (`var`/`varip`) before the
+            // field type, as in `varip float last_price = na`.
+            let persistence = match self.current_kind() {
+                TokenKind::Var => {
+                    self.advance();
+                    self.skip_trivia();
+                    Some(FieldPersistence::Var)
+                }
+                TokenKind::Varip => {
+                    self.advance();
+                    self.skip_trivia();
+                    Some(FieldPersistence::Varip)
+                }
+                _ => None,
+            };
             let type_name = self.parse_type();
             self.skip_trivia();
-            let field = self.expect_identifier()?;
+            // A bare `name = default` line declares an untyped field; the
+            // parsed type is really the field name. Anything else carries an
+            // explicit type before the field name.
+            let (type_name, field) = if self.current_kind() == &TokenKind::Equal
+                && !type_name.name.is_empty()
+                && type_name.args.is_empty()
+            {
+                (
+                    PineType {
+                        name: String::new(),
+                        args: Vec::new(),
+                    },
+                    type_name.name,
+                )
+            } else {
+                (type_name, self.expect_identifier()?)
+            };
             self.skip_trivia();
             let default = if self.current_kind() == &TokenKind::Equal {
                 self.advance();
@@ -781,6 +964,7 @@ impl PineParser {
                 type_name,
                 name: field,
                 default,
+                persistence,
             });
         }
         Ok(PineStmt::TypeDecl { name, fields })
@@ -920,18 +1104,84 @@ impl PineParser {
         // Only comments may intervene before `=`, `:=`, `(`, or a type name.
         self.skip_comments();
         match self.current_kind() {
-            TokenKind::Equal => {
-                self.advance();
-                Ok(PineStmt::Assignment {
-                    name,
-                    value: Box::new(self.parse_expression()?),
-                })
+            TokenKind::Equal | TokenKind::ColonEqual => {
+                // Comma-separated assignments share the statement
+                // (`o := open, h := high`); a lone pair stays a single node.
+                let mut items = Vec::new();
+                let (first_name, first_op) = if self.current_kind() == &TokenKind::Equal {
+                    self.advance();
+                    (name, AssignOp::Assign)
+                } else {
+                    self.advance();
+                    (name, AssignOp::Reassign)
+                };
+                items.push(AssignItem {
+                    name: first_name,
+                    op: first_op,
+                    value: self.parse_expression()?,
+                });
+                while self.current_kind() == &TokenKind::Comma {
+                    self.advance();
+                    self.skip_trivia();
+                    let item = self.expect_identifier()?;
+                    self.skip_comments();
+                    let op = match self.current_kind() {
+                        TokenKind::Equal => AssignOp::Assign,
+                        TokenKind::ColonEqual => AssignOp::Reassign,
+                        _ => {
+                            return Err(PineParseError::InvalidSyntax(
+                                "expected '=' or ':=' in assignment list".to_owned(),
+                            ));
+                        }
+                    };
+                    self.advance();
+                    items.push(AssignItem {
+                        name: item,
+                        op,
+                        value: self.parse_expression()?,
+                    });
+                }
+                if items.len() == 1 {
+                    let only = items.pop().expect("one assignment parsed");
+                    Ok(match only.op {
+                        AssignOp::Assign => PineStmt::Assignment {
+                            name: only.name,
+                            value: Box::new(only.value),
+                        },
+                        AssignOp::Reassign => PineStmt::Reassign {
+                            name: only.name,
+                            value: Box::new(only.value),
+                        },
+                    })
+                } else {
+                    Ok(PineStmt::MultiAssign { items })
+                }
             }
-            TokenKind::ColonEqual => {
+            TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::StarEqual
+            | TokenKind::SlashEqual
+            | TokenKind::PercentEqual => {
+                // Augmented assignment desugars to reassignment over the
+                // current binding (`x += v` reads exactly as `x := x + v`),
+                // so `:=` target rules and `this.field` paths are reused
+                // with no second assignment implementation.
+                let op = match self.current_kind() {
+                    TokenKind::PlusEqual => BinaryOp::Add,
+                    TokenKind::MinusEqual => BinaryOp::Subtract,
+                    TokenKind::StarEqual => BinaryOp::Multiply,
+                    TokenKind::SlashEqual => BinaryOp::Divide,
+                    _ => BinaryOp::Modulo,
+                };
                 self.advance();
+                let rhs = self.parse_expression()?;
                 Ok(PineStmt::Reassign {
-                    name,
-                    value: Box::new(self.parse_expression()?),
+                    name: name.clone(),
+                    value: Box::new(PineExpr::Binary {
+                        left: Box::new(PineExpr::Variable(name)),
+                        op,
+                        right: Box::new(rhs),
+                    }),
                 })
             }
             TokenKind::Identifier(_) | TokenKind::Less => {
@@ -957,8 +1207,12 @@ impl PineParser {
         }
     }
 
-    /// Attempt `type name = value`; returns `None` (without consuming)
-    /// unless the full shape is present.
+    /// Attempt `type name = value` with `, name = value` followers; returns
+    /// `None` (without consuming) unless the full shape is present. One item
+    /// yields [`PineStmt::Declaration`]; two or more yield
+    /// [`PineStmt::MultiDeclaration`]. Followers may restate their type
+    /// (`float o = na, float h = na`) or share the first (`float o = na,
+    /// h = na`), and may omit the initializer (absent reads as `na`).
     fn try_parse_declaration(&mut self) -> Option<PineStmt> {
         let checkpoint = self.position;
         let type_name = self.parse_type();
@@ -980,11 +1234,51 @@ impl PineParser {
         }
         self.advance();
         let value = self.parse_expression().ok()?;
-        Some(PineStmt::Declaration {
-            type_name,
+        let mut decls = vec![MultiDecl {
+            type_name: Some(type_name),
             name,
-            value: Box::new(value),
-        })
+            value: Some(value),
+        }];
+        while self.current_kind() == &TokenKind::Comma {
+            self.advance();
+            self.skip_trivia();
+            // Optional restated type: an identifier (or generic opener)
+            // followed by another identifier names a type, not the variable.
+            let item_type = match (self.current_kind(), self.peek_kind()) {
+                (TokenKind::Identifier(_), Some(TokenKind::Identifier(_) | TokenKind::Less)) => {
+                    Some(self.parse_type())
+                }
+                _ => None,
+            };
+            self.skip_trivia();
+            let TokenKind::Identifier(item) = self.current_kind() else {
+                self.position = checkpoint;
+                return None;
+            };
+            let item = item.clone();
+            self.advance();
+            self.skip_trivia();
+            let init = if self.current_kind() == &TokenKind::Equal {
+                self.advance();
+                Some(self.parse_expression().ok()?)
+            } else {
+                None
+            };
+            decls.push(MultiDecl {
+                type_name: item_type,
+                name: item,
+                value: init,
+            });
+        }
+        if decls.len() == 1 {
+            let only = decls.pop().expect("one declaration parsed");
+            return Some(PineStmt::Declaration {
+                type_name: only.type_name.expect("first item always typed"),
+                name: only.name,
+                value: Box::new(only.value.expect("first item always initialized")),
+            });
+        }
+        Some(PineStmt::MultiDeclaration { decls })
     }
 
     /// Parse `name(...)` (call) or `name(...) =>` (function declaration),
@@ -1095,8 +1389,17 @@ impl PineParser {
 
     fn parse_switch(&mut self) -> Result<SwitchStmt, PineParseError> {
         self.advance();
-        self.skip_trivia();
-        let scrutinee = Box::new(self.parse_expression()?);
+        // A scrutinee rides the `switch` line; a newline opens the bare
+        // boolean-arm form instead.
+        self.skip_comments();
+        let scrutinee = if matches!(
+            self.current_kind(),
+            TokenKind::Newline | TokenKind::Eof
+        ) {
+            None
+        } else {
+            Some(Box::new(self.parse_expression()?))
+        };
         // Arms align at the first arm's column; a dedent ends the switch.
         // No constraint against the `switch` keyword column: expression
         // switches (`x = switch y`) indent past the statement, not the key.
@@ -1359,22 +1662,29 @@ impl PineParser {
                         self.advance();
                         let args = self.parse_call_args()?;
                         self.expect(&TokenKind::RightParen)?;
-                        if let PineExpr::Variable(namespace) = expr {
-                            expr = PineExpr::MethodCall {
+                        expr = match expr {
+                            PineExpr::Variable(namespace) => PineExpr::MethodCall {
                                 namespace,
                                 method: field,
                                 args,
                                 type_args: Vec::new(),
-                            };
-                        } else {
-                            return Err(PineParseError::InvalidSyntax(
-                                "method calls require a namespace".to_owned(),
-                            ));
-                        }
+                            },
+                            receiver => PineExpr::InstanceCall {
+                                receiver: Box::new(receiver),
+                                method: field,
+                                args,
+                                type_args: Vec::new(),
+                            },
+                        };
+                    } else if let PineExpr::Variable(name) = expr {
+                        // Spaced dotted read resolves like its glued
+                        // spelling (`a . b` reads as `a.b`).
+                        expr = PineExpr::Variable(format!("{name}.{field}"));
                     } else {
-                        return Err(PineParseError::InvalidSyntax(
-                            "property access requires the dotted form".to_owned(),
-                        ));
+                        expr = PineExpr::FieldRead {
+                            receiver: Box::new(expr),
+                            field,
+                        };
                     }
                 }
                 _ => break,
@@ -1393,6 +1703,20 @@ impl PineParser {
             TokenKind::String(value) => {
                 self.advance();
                 Ok(PineExpr::StringLiteral(value))
+            }
+            TokenKind::ColorHex(digits) => {
+                self.advance();
+                super::builtins_core::color_of_hex(&digits).map(PineExpr::ColorLiteral).ok_or_else(
+                    || {
+                        let token = self.current().clone();
+                        PineParseError::UnexpectedToken {
+                            expected: "color literal".to_owned(),
+                            found: token.kind.clone(),
+                            line: token.line,
+                            column: token.column,
+                        }
+                    },
+                )
             }
             TokenKind::True => {
                 self.advance();
@@ -1424,7 +1748,21 @@ impl PineParser {
             }
             TokenKind::Time => {
                 self.advance();
-                Ok(PineExpr::BuiltinVariable(BuiltinVar::Time))
+                // `time` is both the series and Pine's `time(timeframe,
+                // session[, timezone])` function: call parens bind same-line.
+                self.skip_comments();
+                if self.current_kind() == &TokenKind::LeftParen {
+                    self.advance();
+                    let args = self.parse_call_args()?;
+                    self.expect(&TokenKind::RightParen)?;
+                    Ok(PineExpr::FunctionCall {
+                        name: "time".to_owned(),
+                        args,
+                        type_args: Vec::new(),
+                    })
+                } else {
+                    Ok(PineExpr::BuiltinVariable(BuiltinVar::Time))
+                }
             }
             TokenKind::Switch => Ok(PineExpr::Switch(Box::new(self.parse_switch()?))),
             TokenKind::Type => {
@@ -1702,3 +2040,7 @@ impl PineParser {
 #[cfg(test)]
 #[path = "../../tests/pine_syntax.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/pine_closure_parse.rs"]
+mod closure_parse_tests;

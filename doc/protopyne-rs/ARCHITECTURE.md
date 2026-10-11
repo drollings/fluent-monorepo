@@ -5,14 +5,13 @@
 This document is the entry point. It maps all seven `protopyne-*` crates by
 capability, with exact `path :: Symbol` references so you can jump straight
 to the relevant file without re-exploring. Read it first, then drill into
-the cited symbols. Recounted 2026-10-10 against the post-hardening tree:
-the venue crate has grown a routing registry, a command plane, a depth
-book, streaming supervision, and a live transport (§3 venue row, §4
-C32–C45); the types crate has grown option-chain vocabulary, a scoped
-symbol index, and the shared `Validate` trait; strategy has grown an RSRS
-generator; server has grown a metrics module, portfolio aggregation, and a
-multi-symbol harness. Anything below that still cites the pre-hardening
-shape is marked explicitly.
+the cited symbols. Recounted 2026-10-11: since the 2026-10-10
+post-hardening recount the kernels crate has grown the full Pine
+language engine (`pine/`: lexer, syntax, evaluator, built-ins, parity
+matrix, closure fixtures — §3 kernels row, §4 C46–C49); registry and
+compat matrix now cover 50 kernels at 50 rows; the source tree is 102
+files and the test tree 115 files. Anything below that still cites the
+older shape is marked explicitly.
 Companion documents in `doc/protopyne-rs/`:
 
 - `README.md` — what the project does, how to build/run/test it, CLI and
@@ -20,6 +19,10 @@ Companion documents in `doc/protopyne-rs/`:
 - `VISION.md` — the design vision: economics, safety invariants, platform
   direction (aspirational goals and capabilities, no implementation
   details).
+- `INJECTION_CONTRACT.md` — the headless MTF/tick injection contract for
+  the Pine harness: per-`request.*`-arm live-vs-injected behavior,
+  tick-leg and confirm accounting, fixture map with recorded baselines,
+  and harness bounds.
 
 Direction of record: Rust-only, no browser/JavaScript/Node.js anywhere.
 `egui`/`eframe` are approved future dependencies confined to paint-edge
@@ -49,13 +52,20 @@ on loopback. Skill docs that govern implementation live in
   paint-edge crates only (see direction note in §0).
 - **Layout:** `src/protopyne-{types,kernels,strategy,venue,server,chart-model,chart-scale}/` —
   each with `src/*.rs`, `tests/*.rs`, `Cargo.toml`
-  (`autotests = false`, explicit test targets via `#[path]` forwarders).
-   90 files under `src/protopyne-*/src/` (types 11, kernels 32, strategy 7,
-   venue 18, server 11, chart-model 7, chart-scale 4) plus 92 test files
-   (~182 total), recounted 2026-10-10.
-  `src/protopyne-{kernels,server}/tests/data/SPY_15M.csv` ships in kernels
-  and server (385 lines = header + 384 data rows); kernels additionally
-  ships `sma14.json`, `ema14.json`, `parity_sma10.csv`, and `tests/data/golden/`.
+   (`autotests = false`, explicit test targets via `#[path]` forwarders).
+    102 files under `src/protopyne-*/src/` (types 11, kernels 44 — 33
+    top-level plus 11 under `pine/` — strategy 7, venue 18, server 11,
+    chart-model 7, chart-scale 4) plus 115 test files (~217 total),
+    recounted 2026-10-11.
+   `src/protopyne-{kernels,server}/tests/data/SPY_15M.csv` ships in kernels
+   and server (385 lines = header + 384 data rows); kernels additionally
+   ships `SPY_5M.csv`, `sma14.json`, `ema14.json`, `parity_sma10.csv`,
+   `tests/data/golden/`, the tick-harness windows (`tests/data/ticks/`,
+   3 verbatim tape slices) with `tick_harness_baselines.json`, and server
+   ships the `pine_integration_lite_{1m,5m,15m}.json` proof goldens plus
+   `SPY_5M.csv`. The Pine closure fixtures read the real indicator
+   sources from `data/protopyne-rs/` (`historical/` tick/minute CSVs,
+   `indicators/`, `libraries/`).
   `make protopyne-test` gates the five trading crates
   (`types,kernels,strategy,venue,server`); the two chart crates are covered
   by the workspace build/test, not that target. Server criterion benches
@@ -92,26 +102,26 @@ on loopback. Skill docs that govern implementation live in
 ## 2. Dependency Map
 
 Counts are files under `src/protopyne-*/src/` with a textual reference
-(`use` or fully-qualified path), recounted 2026-10-10. "Workspace analogue" names the
+(`use` or fully-qualified path), recounted 2026-10-11. "Workspace analogue" names the
 in-repo counterpart where one exists.
 
 | Dependency | Role | Usage breadth (files, approx.) | Workspace analogue / note |
 |---|---|---|---|
-| `protopyne-types` | Money/time/bar/chain/symbol vocabulary | 34 (highest fan-in) | n/a (foundation itself) |
-| `serde` / `serde_json` | Persistence, manifests, HTTP bodies | 35 / 12 (service, csv, reports, market events, journal rows) | n/a |
+| `protopyne-types` | Money/time/bar/chain/symbol vocabulary | 36 (highest fan-in) | n/a (foundation itself) |
+| `serde` / `serde_json` | Persistence, manifests, HTTP bodies | 36 / 13 (service, csv, reports, market events, journal rows) | n/a |
 | `chrono` | Timestamps, windows, DTE | 30 | n/a |
-| `rust_decimal` | All money math | 26 | n/a |
+| `rust_decimal` | All money math | 27 | n/a |
 | `bon` | Builder DSL for configs/intents | 22 | n/a |
-| `common-core` | `retry_async`, `sync::lock`, `config::load_json_or_default`, `IoError`, `impl_from_io_error!`, `registry::ConcurrentRegistry` | 15 | n/a (shared lib) |
-| `fluent-wvr` | Components, `FieldAccess`/`Describable`, capabilities, `ComponentAdapter`, `check_for_execute` bridge | 12 | n/a (shared lib) |
+| `common-core` | `retry_async`, `sync::lock`, `config::load_json_or_default`, `IoError`, `impl_from_io_error!`, `registry::ConcurrentRegistry` | 16 | n/a (shared lib) |
+| `fluent-wvr` | Components, `FieldAccess`/`Describable`, capabilities, `ComponentAdapter`, `check_for_execute` bridge | 13 | n/a (shared lib) |
 | `tokio` | Runtime, listener, sleep, signal, broadcast | 8 | n/a |
 | `fluent-concurrency` | `Limiter`, `Scope`, `SupervisedBatch`, `ResultPool`, `flow` credit, fallback combinator, `StreamAbort` | 11 | n/a (shared lib) |
 | `thiserror` | Typed errors per crate | 8 (one `error.rs` per crate + re-export) | n/a |
 | `csv` | History ingest | 4 (all in server) | n/a |
 | `protopyne-strategy` | Proposals, risk, grants, generator | 5 (venue + server) | n/a |
 | `protopyne-venue` | Venue trait, paper, journal, registry, commands | 4 (server + self) | n/a |
-| `protopyne-kernels` | Indicators for overlays/spike eval | 4 (server) | n/a |
-| `fluent-dag` | `DependencyGraph`, `CheckpointedStepGraph` | 3 (kernels ×2, server) | n/a (shared lib) |
+| `protopyne-kernels` | Indicators for overlays/spike eval; Pine language engine (driven by kernels/server test targets, C46–C49) | 4 (server) | n/a |
+| `fluent-dag` | `DependencyGraph`, `CheckpointedStepGraph` | 4 (kernels ×3, server) | n/a (shared lib) |
 | `axum` | REST + WebSocket server | 2 (service, main via lib) | n/a |
 | `rusqlite` | Journal durability (WAL) | 1 (`venue/journal.rs`) | n/a |
 | `fluent-db` | Journal transactions (`query::transaction`) | 1 (`venue/journal.rs`) | n/a (shared lib, path `src/db`) |
@@ -128,14 +138,14 @@ in-repo counterpart where one exists.
 | Directory/Package | Responsibility | Key exports (Symbol list) |
 |---|---|---|
 | `src/protopyne-types/src/` | Money, time, bars, option chain, symbols, validation | `Money`, `Qty`, `Bar`, `validate_new_bar`, `Adjustment`, `Timeframe`, `BarWindow`, `BarGap`, `AdjustedBounds`, `adjust_fetch_bounds`, `trim_indicator_output`, `warmup_headroom`, `PriceSource`, `SeriesContext`, `GapPolicy`, `LtfView`, `ContractId`, `PortfolioId`, `OptionContract`, `OptionKind`, `Greeks`, `ChainQuote`, `SpreadLeg`, `SpreadLegs`, `LegSide`, `Portfolio`, `MAX_SPREAD_LEGS` (all in `chain.rs`), `SymKey`, `SymbolIndex`, `DEFAULT_MAX_SYMBOLS` (in `symbol.rs`), `Validate`, `check_for_execute`, `valid_output` (in `validate.rs`), `TypesError` |
-| `src/protopyne-kernels/src/` | Indicator kernels, registry, runtimes, research frames | `Indicator` (trait), `SmaIndicator`, `EmaIndicator`, `RsiIndicator`, `MacdIndicator`, `StochIndicator`, `AtrIndicator`, `BbIndicator`, `KcIndicator`, `TrIndicator`, `NatrIndicator`, averages (`Alma/Dema/Hma/Rma/Tema/Vwma/WmaIndicator`, all in `averages.rs` except `Sma`/`Ema`), overlap/price/momentum/stat/volume (`Bbands/Midpoint/Midprice/TrimaIndicator` in `ta_overlap.rs`, `AvgPrice/MedPrice/TypPrice/WclPriceIndicator` in `ta_price.rs`, `Apo/Mom/Ppo/Roc/Rocp/Rocr/Rocr100/Rsv/Stochf/Trix/Willr/AroonIndicator` in `ta_momentum.rs`, `Stddev/Var/CorrelIndicator` in `ta_stat.rs`, `Ad/Adosc/ObvIndicator` in `ta_volume.rs`), candle predicates (`doji`, `gap_up`, … in `candles.rs`, free functions), WQ combinators (`ts_*` in `wq_series.rs`, `hl_*` in `wq_half_life.rs`, scalar maps in `wq_comb.rs`, all free functions), `expr_fixture`/`assert_expr_parity` in `parity.rs`, `ParityDashboard`/`run_control`/`canonical_params` in `calibration.rs`, `RunCtx`, `PineRuntime`, `PineRuntimeConfig`, `SliceSeries`, `Var`/`VarIp`/`VarStore`, `Ohlcv`, `OwnedOhlcv`, `BarTick`, `FullTick`, `NamedSeries`, `ParamSet`, `IndicatorResult`, `IndicatorRegistry`, `ComponentRegistry`, `IndicatorComponent`, `dynamic_indicator`, `indicator_double`, `InputDef`, `InputSet`, `PineValue` (in `value.rs`), `Drawing`, `execution_order`, `builtin_registry` (43 kernels), `compat_for`, `COMPATIBILITY` (44 rows), `assert_matrix_covers`, `KernelCompat`, `frame_of_bars`, `frame_of_values`, `instrumented_kernel`, `KernelUnit`, `KernelError`, `Control`, `ControlViolation`, `ParityRow`, `null_alignment_diffs` (in `calibration.rs`), math fns (`period_len`, `window_sum/mean`, `ema_factor/step`, `wilder_step`, `div_or_none`, `warmup_none`, `std_pop/std_sample`, `corr_pearson`, `linreg_slope_intercept`, `ewm_span_step`), util fns (`crossover`, `crossunder`, `highest`, `lowest`, `mom`, `change`, `cross_warmup`) |
+| `src/protopyne-kernels/src/` | Indicator kernels, registry, runtimes, research frames | `Indicator` (trait), `SmaIndicator`, `EmaIndicator`, `RsiIndicator`, `MacdIndicator`, `StochIndicator`, `AtrIndicator`, `BbIndicator`, `KcIndicator`, `TrIndicator`, `NatrIndicator`, `Eit/Kalman/VossIndicator` (in `filters.rs`), averages (`Alma/Dema/Hma/Rma/Tema/Vwma/WmaIndicator`, all in `averages.rs` except `Sma`/`Ema`), overlap/price/momentum/stat/volume (`Bbands/Midpoint/Midprice/TrimaIndicator` in `ta_overlap.rs`, `AvgPrice/MedPrice/TypPrice/WclPriceIndicator` in `ta_price.rs`, `Apo/Mom/Ppo/Roc/Rocp/Rocr/Rocr100/Rsv/Stochf/Trix/Willr/AroonIndicator` in `ta_momentum.rs`, `Stddev/Var/CorrelIndicator` in `ta_stat.rs`, `Ad/Adosc/Obv/Mfi/VwapIndicator` in `ta_volume.rs`), candle predicates (`doji`, `gap_up`, … in `candles.rs`, free functions), WQ combinators (`ts_*` in `wq_series.rs`, `hl_*` in `wq_half_life.rs`, scalar maps in `wq_comb.rs`, all free functions), `expr_fixture`/`assert_expr_parity` in `parity.rs`, `ParityDashboard`/`run_control`/`canonical_params` in `calibration.rs`, `RunCtx`, `PineRuntime`, `PineRuntimeConfig` (chart symbol/period), `SliceSeries`, `Var`/`VarIp`/`VarStore`, `Ohlcv`, `OwnedOhlcv`, `BarTick`, `FullTick`, `NamedSeries`, `ParamSet`, `IndicatorResult`, `IndicatorRegistry`, `ComponentRegistry`, `IndicatorComponent`, `dynamic_indicator`, `indicator_double`, `InputDef` (now with `Session`/`Source`), `InputSet`, `PineValue` (12 variants incl. `Map`/`Drawing`/`Matrix` in `value.rs`), `map_key_of`, `DrawingHandle`, `DrawingKind`, `MatrixValue`, `Drawing` (drawing.rs annotations), `execution_order`, `builtin_registry` (50 kernels), `compat_for`, `COMPATIBILITY` (50 rows), `assert_matrix_covers`, `KernelCompat`, `frame_of_bars`, `frame_of_values`, `instrumented_kernel`, `KernelUnit`, `KernelError`, `Control`, `ControlViolation`, `ParityRow`, `null_alignment_diffs` (in `calibration.rs`), math fns (`period_len`, `window_sum/mean`, `ema_factor/step`, `wilder_step`, `div_or_none`, `warmup_none`, `std_pop/std_sample`, `corr_pearson`, `linreg_slope_intercept`, `ewm_span_step`, `median_of`, `mode_of`, `percentile_linear`, `standardize_scores`, `covariance_pop/sample`, `midpoint_of`, `rolling_min/max`), util fns (`crossover`, `crossunder`, `highest`, `lowest`, `mom`, `change`, `cross_warmup`, expr arithmetic `add/mul/sub/div_expr`, `max/min/sum_window`, `argmax/argmin_window`), Pine language engine (`pine/`): `parse_program` (`syntax.rs`), `display_program` (`display.rs`), `PineSource`/`load_pine_source`/`SUPPORTED_PINE_VERSION` (`source.rs`), `resolve_imports`/`ModuleGraph` (`modules.rs`), `PineEngine` (`run_linked`, `run_linked_ticks`, `inject_security`, `inject_lower_tf`, `LtfDataset`), `TaBridge`/`batch_security` (`builtins_ta.rs`), core built-ins incl. `matrix.*` (`builtins_core.rs`), `EGUI_PARITY` (177 rows)/`parity_for`/`ParityVerdict` (`egui_parity.rs`), `REAL_LIBRARIES`/`load_closure_sources` (`closure.rs`) |
 | `src/protopyne-strategy/src/` | Proposals, signals, risk, grants, generator | `Proposal`, `ProposalState`, `ProposalEvent`, `Direction`, `ProposalSide`, `StructureKind`, `JournaledTransition`, `transition`, `Strategy`, `Signal` (trait), `FixedSignal`, `ExplicitStructure`, `FixedContracts`, `HoldLoss`, `LimitMonitor`, `NullMonitor`, `RiskEngine`, `RiskLimits`, `RiskApproved`, `RiskRefused`, `RiskReason`, `RiskState`, `Grant`, `GrantScope`, `GrantPatch`, `GrantPermission`, `GrantBudgets`, `SignalThresholds`, `TradeThresholds`, `PortfolioThresholds`, `BreakerLimits`, `evaluate_grant`, `GrantDecision`, `GrantUsage`, `GrantMarket`, `BreakerState`, `Generator`, `GeneratorBuilder`, `GenerateInput`, `Exposure`, `RebalanceMode`, `RebalanceOutcome`, `Rung`, `ladder_rung`, `portfolio_for`, `rebalance`, `rsrs_score`, `utility` (all in `generator.rs`), `StrategyError` |
-| `src/protopyne-venue/src/` | Venue abstraction, routing, paper fills, journal, commands, depth, supervision | `Venue` (trait, object-safe boxed futures), `QuoteSource` + `LegQuoteSource` (traits, in `venue.rs`), `DryRunOutcome`, `BalanceEntry`, `AccountSnapshot`, `AccountEvent`, `LegExecution`, `VenueRegistry` (in `registry.rs`; `single`/`add_route`, ordered fallback, query-first cross-venue idempotency), `PaperVenue`, `PaperConfig`, `Fault`, per-leg `decide_spread` (atomic refuse-or-fill), per-OCC `spread_positions`, `set_leg_quotes`, `Quote`, `LiquidityFilter`, `Slippage`, `FeeSchedule`, `DEFAULT_SLIPPAGE_BPS`, `OrderIntent` (multi-leg attachment), `OrderRecord`, `OrderStatus`, `ActiveOrderState` (projection), `OrderSide`, `TimeInForce`, `Fill`, `CorporateEvent`, `Position` (single signed-`i64` struct), `PositionSide`, `PositionFill`, `SpreadPosition`, `PositionExited`, `update_from_fill`, `calculate_pnl_realised/unrealised`, `calculate_price_entry_average` (in `position.rs`), `client_id_for`, `qty_of`, `Journal`, `JournalEvent`, `ReplayedState`, `VenueStorage`, `LEG_FILL_KIND`, `safe_submit`, `SUBMIT_TIMEOUT` (5s), `SUBMIT_RETRIES` (3), `reconcile`, `reconcile_legs`, `journal_net`, `journal_leg_net`, `ReconcileGate`, `ReconcileMismatch`, `ReconcileReport`, `may_trade`, `check_trade`, `HealthLimits`, `HealthState`, `HealthVerdict`, `MarketEvent`, `MarketEventKind` (in `market.rs`), `DepthBook`, `DepthDelta`, `PriceLevel`, `BookManager`, `DarkFinding`, `DEFAULT_MAX_LEVELS` (in `depth.rs`), `SupervisedStream`, `StreamConfig`, `StreamBreaker`, `StreamHealthUnit`, `StreamOutcome`, `STREAM_HEALTH_ASSET`, `terminal_reason` (in `stream.rs`), `TastytradeTransport`, `TastytradeConfig`, `TransportError`, `RETRY_MAX_ATTEMPTS/BACKOFF_BASE_MS/JITTER_PCT`, `transform_quote/chain_quote/account_event`, `validate_subscription` (in `tastytrade.rs`), `CommandKind`, `CommandUnit`, `TradingState`, `TradingStateUnit`, `StateHandle`, `StateReplica`, `PortfolioRegistry`, `PortfolioView`, `ReplicaOrder`, `LegGroup`, `close_all_intents`, `cancel_all_ids`, `replay_trading_state`, `OPERATOR_CLIENT_ID`, `TRADING_ENABLED_ASSET`, `COMMAND_*_KIND` (in `command.rs`), `TradingSession` (registry-bound), `SessionConfig`, `SubmitJob`, `check_unit`, `VenueError` |
+| `src/protopyne-venue/src/` | Venue abstraction, routing, paper fills, journal, commands, depth, supervision | `Venue` (trait, object-safe boxed futures), `QuoteSource` + `LegQuoteSource` (traits, in `venue.rs`), `DryRunOutcome`, `BalanceEntry`, `AccountSnapshot`, `AccountEvent`, `LegExecution`, `VenueRegistry` (in `registry.rs`; `single`/`add_route`, ordered fallback, query-first cross-venue idempotency), `PaperVenue`, `PaperConfig`, `Fault`, private per-leg `decide_spread` (atomic refuse-or-fill; public surface is `spread_positions`/`set_leg_quotes`), per-OCC `spread_positions`, `set_leg_quotes`, `Quote`, `LiquidityFilter`, `Slippage`, `FeeSchedule`, `DEFAULT_SLIPPAGE_BPS`, `OrderIntent` (multi-leg attachment), `OrderRecord`, `OrderStatus`, `ActiveOrderState` (projection), `OrderSide`, `TimeInForce`, `Fill`, `CorporateEvent`, `Position` (single signed-`i64` struct), `PositionSide`, `PositionFill`, `SpreadPosition`, `PositionExited`, `update_from_fill`, `calculate_pnl_realised/unrealised`, `calculate_price_entry_average` (in `position.rs`), `client_id_for`, `qty_of`, `Journal`, `JournalEvent`, `ReplayedState`, `VenueStorage`, `LEG_FILL_KIND`, `safe_submit`, `SUBMIT_TIMEOUT` (5s), `SUBMIT_RETRIES` (3), `reconcile`, `reconcile_legs`, `journal_net`, `journal_leg_net`, `ReconcileGate`, `ReconcileMismatch`, `ReconcileReport`, `may_trade`, `check_trade`, `HealthLimits`, `HealthState`, `HealthVerdict`, `MarketEvent`, `MarketEventKind` (in `market.rs`), `DepthBook`, `DepthDelta`, `PriceLevel`, `BookManager`, `DarkFinding`, `DEFAULT_MAX_LEVELS` (in `depth.rs`), `SupervisedStream`, `StreamConfig`, `StreamBreaker`, `StreamHealthUnit`, `StreamOutcome`, `STREAM_HEALTH_ASSET`, `terminal_reason` (in `stream.rs`), `TastytradeTransport`, `TastytradeConfig`, `TransportError`, `RETRY_MAX_ATTEMPTS/BACKOFF_BASE_MS/JITTER_PCT`, `transform_quote`, `transform_chain_quote`, `transform_account_event`, `validate_subscription` (in `tastytrade.rs`), `CommandKind`, `CommandUnit`, `TradingState`, `TradingStateUnit`, `StateHandle`, `StateReplica`, `PortfolioRegistry`, `PortfolioView`, `ReplicaOrder`, `LegGroup`, `close_all_intents`, `cancel_all_ids`, `replay_trading_state`, `OPERATOR_CLIENT_ID`, `TRADING_ENABLED_ASSET`, `COMMAND_*_KIND` (in `command.rs`), `TradingSession` (registry-bound), `SessionConfig`, `SubmitJob`, `check_unit`, `VenueError` |
 | `src/protopyne-server/src/` | Ingest, backtest, metrics, portfolio, HTTP, spike, binary | `load_bars_csv`, `parse_bars_csv`, `BacktestVenue`, `BacktestConfig`, `HistorySource` (`Csv`/`Dynamic`), `load_history`, `load_bars_single`, `load_bars_with_fallback`, `quote_for_bar`, `run_backtest`, `run_multi_backtest`, `MultiSymbolInput`, `MultiBacktestRun`, `MultiRunManifest`, `run_paper_decisions`, `decide_and_submit`, `checked_order_for`, `side_for_direction`, `BacktestRun`, `BarDecision`, `BarHealth`, `CheckedOrder`, `RunnerConfig`, `SweepOutcome`, `equity_curve_for`, `walk_forward_split`, `snapshot_positions`, `expire_position`, `report_rsrs`, `triple_barrier`, `RunManifest`, `BacktestReport`, `build_report`, `max_drawdown`, `worst_step_loss`, `capital_efficiency`, `count_unquotable_bars`, `cum_return`, `simple_to_log_return`, `log_to_simple_return`, `render_tearsheet`, `mean`, `population_std`, `sharpe`, `sortino`, `calmar`, `win_rate`, `profit_factor`, `step_returns`, `drawdown_fraction`, `TRADING_DAYS_PER_YEAR` (in `metrics.rs`), `Aggregation`, `aggregate`, `BookedFill`, `BucketKey`, `BucketSummary`, `PortfolioTotals`, `PortfolioReport`, `PAPER_PORTFOLIO` (in `portfolio.rs`), `run_sweep`, `build_replay`, `complete_replay`, `ReplayStep`, `serve`, `ServerConfig`, `ServerHandle`, `AppState`, `CandleRow`, `ChartBars`, `OverlaySeries`, `ProposalView`, `PortfolioView`, `PreviewParams`, `PreviewResponse`, `ArmResponse`, `WorstCase`, `CommandStatus`, `DenyCount`, `ErrorBody`, `compile_spike`, `evaluate_lowered`, `calibrate`, `CalibrationTally`, `Binding`, `Lowered`, `Refusal`, `SpikeOutcome` (in `transpile.rs`), `ServerError` |
 | `src/protopyne-chart-model/src/` | Headless chart data: display conversion, chart taxonomy, sessions, ranges, bar transforms (`egui`-free) | `ChartRow`, `ChartRows`, `row_of`, `rows_of`, `to_display_float`, `ChartType`, `ChartTypeCategory`, `DateRange`, `SessionProvider` (+ `Daily/Weekly/Monthly/CompositeSessionProvider`), `SessionBreak`, `find_session_breaks`, `heikin_ashi`, `renko_bricks`, `ChartModelError` |
 | `src/protopyne-chart-scale/src/` | Headless scale engine: price modes, ranges, bar/price mapping, ticks (`egui`-free, depends on nothing protopyne) | `ChartMapping`, `PriceScale`, `PriceScaleMode`, `PriceRange`, `Tick`, `nice_ticks`, `ScaleError` |
 | `src/protopyne-server/` (ops) | Container + smoke | `Containerfile`, `smoke-container.sh` (no Rust symbols) |
-| `src/protopyne-*/tests/` | Per-module suites + CSV/JSON goldens (kernels + server) | Mirror source module names; `csv.rs` pins the 384-row ingest golden; kernels ships `sma14.json`, `ema14.json`, `parity_sma10.csv`, `tests/data/golden/` |
+| `src/protopyne-*/tests/` | Per-module suites + CSV/JSON goldens (kernels + server) | Mirror source module names; `csv.rs` pins the 384-row ingest golden; kernels ships `sma14.json`, `ema14.json`, `parity_sma10.csv`, `tests/data/golden/`, plus Pine suites (`pine_parity_freeze`, `pine_lib{util,bars,buffers,mas,apex}`, draw captures, closure parse, egui parity, runtime shims, syntax, modules, eval, builtins_core, calibration); server ships the `pine_integration_lite` headless proof with its three timeframe goldens |
 
 ## 4. Capability Index
 
@@ -145,18 +155,18 @@ Fan-in: H (used across crates/files broadly), M (several callers), L (one or two
 |---|---|---|---|---|---|---|---|
 | C1 | Decimal money/qty vocabulary | infra | `src/protopyne-types/src/money.rs` | `money.rs :: Money`, `money.rs :: Qty` | — | H | `Copy`, `Decimal`-backed; `Money` and `Qty` never mix by construction |
 | C2 | Bar windows, gaps, warmup math | infra | `src/protopyne-types/src/window.rs`, `src/protopyne-types/src/warmup.rs`, `src/protopyne-types/src/timeframe.rs` | `window.rs :: BarWindow`, `warmup.rs :: adjust_fetch_bounds`, `warmup.rs :: trim_indicator_output`, `timeframe.rs :: Timeframe` | C1 | M | Warmup/trim ported from the C ancestor's fetch-bounds logic |
-| C3 | Indicator kernels + registry | feature | `src/protopyne-kernels/src/{sma,ema,averages,oscillators,volatility}.rs`, `src/protopyne-kernels/src/indicator.rs` | `indicator.rs :: Indicator`, `indicator.rs :: builtin_registry` (43 kernels), `indicator.rs :: execution_order`, `sma.rs :: SmaIndicator` (et al.; `Dema`/`Tema` also live in `averages.rs`) | C1, C2 | H | `batch` + `update`/`update_full` + `warmup` per kernel; ordering via `fluent-dag` |
-| C4 | Run context + Pine runtimes | infra | `src/protopyne-kernels/src/context.rs`, `src/protopyne-kernels/src/runtime.rs`, `src/protopyne-kernels/src/series.rs`, `src/protopyne-kernels/src/vars.rs` | `context.rs :: RunCtx`, `runtime.rs :: PineRuntime`, `series.rs :: SliceSeries`, `vars.rs :: VarStore` | C3 | M | One `RunCtx` per run replaces process-global singletons |
+| C3 | Indicator kernels + registry | feature | `src/protopyne-kernels/src/{sma,ema,averages,oscillators,volatility,filters}.rs`, `src/protopyne-kernels/src/indicator.rs`, `src/protopyne-kernels/src/timed.rs` | `indicator.rs :: Indicator`, `indicator.rs :: builtin_registry` (50 kernels), `indicator.rs :: execution_order`, `sma.rs :: SmaIndicator` (et al.; `Dema`/`Tema` also live in `averages.rs`), `filters.rs :: Eit/Kalman/VossIndicator`, `timed.rs :: KernelUnit`, `timed.rs :: instrumented_kernel` | C1, C2 | H | `batch` + `update`/`update_full` + `warmup` per kernel; ordering via `fluent-dag`; `timed.rs` is the supervised-batch path, the hot loop stays free functions |
+| C4 | Run context + Pine runtimes | infra | `src/protopyne-kernels/src/context.rs`, `src/protopyne-kernels/src/runtime.rs`, `src/protopyne-kernels/src/series.rs`, `src/protopyne-kernels/src/vars.rs`, `src/protopyne-kernels/src/inputs.rs` | `context.rs :: RunCtx`, `runtime.rs :: PineRuntime`, `runtime.rs :: PineRuntimeConfig` (chart symbol/period), `series.rs :: SliceSeries`, `vars.rs :: VarStore`, `inputs.rs :: InputDef` (now with `Session`/`Source`), `inputs.rs :: InputSet` | C3 | M | One `RunCtx` per run replaces process-global singletons |
 | C5 | Polars research frames | infra | `src/protopyne-kernels/src/research.rs`, `parity.rs`, `calibration.rs` (`compat.rs` documents the bridge) | `research.rs :: frame_of_bars`, `research.rs :: frame_of_values`, `research.rs :: rsrs` | C1 | L | Offline analysis only; never the hot loop |
-| C6 | Pine compatibility matrix | cross-cutting | `src/protopyne-kernels/src/compat.rs` | `compat.rs :: COMPATIBILITY` (44 rows), `compat.rs :: compat_for`, `compat.rs :: assert_matrix_covers` | C3 | L | Declared kernel-vs-Pine coverage, all `eps = 1e-9`; spike follows it |
+| C6 | Pine compatibility matrix | cross-cutting | `src/protopyne-kernels/src/compat.rs` | `compat.rs :: COMPATIBILITY` (50 rows), `compat.rs :: compat_for`, `compat.rs :: assert_matrix_covers` | C3 | L | Declared kernel-vs-Pine coverage, all `eps = 1e-9`; spike follows it |
 | C7 | Proposal lifecycle | feature | `src/protopyne-strategy/src/proposal.rs` | `proposal.rs :: Proposal`, `proposal.rs :: transition`, `proposal.rs :: ProposalState`, `proposal.rs :: ProposalEvent` | C1 | H | Pure `transition` fn; `apply` returns a caller-persisted journal entry |
 | C8 | Signal/structure composition | feature | `src/protopyne-strategy/src/elements.rs` | `elements.rs :: Strategy`, `elements.rs :: Signal`, `elements.rs :: FixedSignal`, `elements.rs :: ExplicitStructure` | C7 | M | `Arc`-composed signal/structure/sizing/loss-monitor roles |
 | C9 | Mandatory risk gate | feature | `src/protopyne-strategy/src/risk.rs` | `risk.rs :: RiskEngine`, `risk.rs :: RiskLimits`, `risk.rs :: RiskApproved` | C7 | H | Token minted only by `check`; `safe_submit` demands it (C15) |
 | C10 | Arming grants | feature | `src/protopyne-strategy/src/grant.rs` | `grant.rs :: Grant`, `grant.rs :: evaluate_grant`, `grant.rs :: GrantDecision`, `grant.rs :: GrantUsage` | C7 | H | Pure evaluator shared by backtest/paper/preview; tighten-only |
 | C11 | Order vocabulary + deterministic IDs | infra | `src/protopyne-venue/src/order.rs` | `order.rs :: OrderIntent` (multi-leg attachment), `order.rs :: OrderRecord`, `order.rs :: client_id_for`, `order.rs :: ActiveOrderState`, `order.rs :: TimeInForce`, `order.rs :: qty_of`, `order.rs :: Position` | C1 | H | Active-vs-terminal states follow the barter-rs pattern; `ActiveOrderState` is the single active/terminal predicate |
 | C12 | Quotes, liquidity, slippage, fees | feature | `src/protopyne-venue/src/quote.rs` | `quote.rs :: Quote`, `quote.rs :: LiquidityFilter`, `quote.rs :: Slippage`, `quote.rs :: FeeSchedule` | C1 | H | Refusals carry reasons; 10 bps default frozen by calibration |
-| C13 | Paper venue + fault injection + spread fills | feature | `src/protopyne-venue/src/paper.rs` | `paper.rs :: PaperVenue`, `paper.rs :: Fault`, `paper.rs :: decide_spread`, `paper.rs :: spread_positions`, `paper.rs :: set_leg_quotes` | C11, C12, C41 | H | Market-orders-only mock; atomic refuse-or-fill spread packages with per-leg reasons and net debit/credit gating; idempotent resubmit; kill-mid-submit tests |
-| C14 | Journal + capability gate + leg fills | infra | `src/protopyne-venue/src/journal.rs` | `journal.rs :: Journal`, `journal.rs :: VenueStorage`, `journal.rs :: replay`, `journal.rs :: JournalEvent`, `journal.rs :: ReplayedState`, `journal.rs :: LEG_FILL_KIND` | C11 | M | SQLite WAL; intent-before-venue; transactions via `fluent-db`; permit bound to file + task capabilities; additive `leg_fill` rows readable by old readers |
+| C13 | Paper venue + fault injection + spread fills | feature | `src/protopyne-venue/src/paper.rs` | `paper.rs :: PaperVenue`, `paper.rs :: Fault`, `paper.rs :: spread_positions`, `paper.rs :: set_leg_quotes` | C11, C12, C41 | H | Market-orders-only mock; atomic refuse-or-fill spread packages (private `decide_spread`) with per-leg reasons and net debit/credit gating; idempotent resubmit; kill-mid-submit tests |
+| C14 | Journal + capability gate + leg fills | infra | `src/protopyne-venue/src/journal.rs` | `journal.rs :: Journal`, `journal.rs :: VenueStorage`, `journal.rs :: Journal :: replay`, `journal.rs :: JournalEvent`, `journal.rs :: ReplayedState`, `journal.rs :: LEG_FILL_KIND` | C11 | M | SQLite WAL; intent-before-venue; transactions via `fluent-db`; permit bound to file + task capabilities; additive `leg_fill` rows readable by old readers |
 | C15 | Safe submission protocol | feature | `src/protopyne-venue/src/submit.rs` | `submit.rs :: safe_submit`, `submit.rs :: SUBMIT_TIMEOUT` | C9, C13, C14 | M | Journal → dry-run → submit → query-by-ID; retries never blind-resubmit; closes/cancels from C40 flow through this same path |
 | C16 | Reconciliation gate (net + OCC legs) | feature | `src/protopyne-venue/src/reconcile.rs` | `reconcile.rs :: reconcile`, `reconcile.rs :: reconcile_legs`, `reconcile.rs :: journal_leg_net`, `reconcile.rs :: ReconcileGate` | C11, C41 | M | Pure journal-vs-venue compare (net + per-OCC leg nets sharing one mismatch core); mismatch halts entries, exits stay open |
 | C17 | Health gate | cross-cutting | `src/protopyne-venue/src/health.rs` | `health.rs :: may_trade`, `health.rs :: HealthVerdict` | — | M | Quote age / clock skew / stream state; refusals, never warnings |
@@ -184,10 +194,14 @@ Fan-in: H (used across crates/files broadly), M (several callers), L (one or two
 | C39 | Venue routing registry | infra | `src/protopyne-venue/src/registry.rs` | `registry.rs :: VenueRegistry`, `registry.rs :: single`, `registry.rs :: add_route` | C11 | M | `Arc<dyn Venue>` handles, no `enum Venue` + per-site `match`; exact-match routes over a scoped index, ordered `first_accept_in_order` failover on retryable errors, terminal refusals stop the chain, unrouted symbols refuse fail-closed, query-first cross-venue idempotency, unioned venue truth |
 | C40 | Journal-first command plane | feature | `src/protopyne-venue/src/command.rs` | `command.rs :: CommandKind`, `command.rs :: CommandUnit`, `command.rs :: TradingState`, `command.rs :: TradingStateUnit`, `command.rs :: StateHandle`, `command.rs :: StateReplica`, `command.rs :: PortfolioRegistry`, `command.rs :: PortfolioView`, `command.rs :: close_all_intents`, `command.rs :: cancel_all_ids`, `command.rs :: replay_trading_state`, `command.rs :: OPERATOR_CLIENT_ID` | C14, C15 | M | halt/resume/close-all/cancel-all enter as journaled rows via capability-permitted writes before mutating; replay rebuilds last-wins; halted bars gate entries while exits route; closes/cancels flow through `safe_submit`; health/portfolio routes report trading status |
 | C41 | Leg-aware position engine | infra | `src/protopyne-venue/src/position.rs` | `position.rs :: SpreadPosition`, `position.rs :: PositionFill`, `position.rs :: PositionSide`, `position.rs :: PositionExited`, `position.rs :: update_from_fill`, `position.rs :: calculate_pnl_realised/unrealised`, `position.rs :: calculate_price_entry_average` | C1, C32 | M | Pure functions: volume-weighted entry averaging, fee-inclusive realized PnL, exit-fee-adjusted unrealized PnL, open/increase/reduce/close/flip with proportional fee splits; per-OCC spread book feeds C16 |
-| C42 | Tastytrade transport | infra | `src/protopyne-venue/src/tastytrade.rs` | `tastytrade.rs :: TastytradeTransport`, `tastytrade.rs :: TastytradeConfig`, `tastytrade.rs :: TransportError`, `tastytrade.rs :: transform_quote/chain_quote/account_event`, `tastytrade.rs :: validate_subscription` | C32 | L | Config-file transport with `retry_async` backoff (`RETRY_MAX_ATTEMPTS` 3, base 100ms, 50% jitter); pure transform fns map venue payloads onto `Quote`/`ChainQuote`/account events; subscription validation fail-closed |
+| C42 | Tastytrade transport | infra | `src/protopyne-venue/src/tastytrade.rs` | `tastytrade.rs :: TastytradeTransport`, `tastytrade.rs :: TastytradeConfig`, `tastytrade.rs :: TransportError`, `tastytrade.rs :: transform_quote`, `tastytrade.rs :: transform_chain_quote`, `tastytrade.rs :: transform_account_event`, `tastytrade.rs :: validate_subscription` | C32 | L | Config-file transport with `retry_async` backoff (`RETRY_MAX_ATTEMPTS` 3, base 100ms, 50% jitter); pure transform fns map venue payloads onto `Quote`/`ChainQuote`/account events; subscription validation fail-closed |
 | C43 | Risk-adjusted metrics module | cross-cutting | `src/protopyne-server/src/metrics.rs` | `metrics.rs :: sharpe`, `metrics.rs :: sortino`, `metrics.rs :: calmar`, `metrics.rs :: win_rate`, `metrics.rs :: profit_factor`, `metrics.rs :: mean`, `metrics.rs :: step_returns`, `metrics.rs :: TRADING_DAYS_PER_YEAR` (252) | C1 | M | Pure `Decimal`-slice math (wires into `BacktestReport`, C22); zero denominators yield `None`, never invented values; annualization assumptions documented |
 | C44 | Portfolio aggregation + tearsheet | feature | `src/protopyne-server/src/portfolio.rs` | `portfolio.rs :: Aggregation`, `portfolio.rs :: aggregate`, `portfolio.rs :: BookedFill`, `portfolio.rs :: BucketKey`, `portfolio.rs :: PortfolioReport`, `portfolio.rs :: PAPER_PORTFOLIO` | C41, C43 | M | Decimal aggregation by portfolio/underlying/structure/strategy/grant with per-mark unrealized curves; closed-trade and curve-based stats reuse C43; additive report fields; text tearsheet renders from the same structs as the JSON report |
 | C45 | Multi-symbol harness + history sources + benches | feature | `src/protopyne-server/src/runner.rs`, `src/protopyne-server/src/backtest.rs`, `src/protopyne-server/benches/backtest_path.rs` | `runner.rs :: run_multi_backtest`, `runner.rs :: MultiSymbolInput`, `runner.rs :: MultiBacktestRun`, `backtest.rs :: HistorySource`, `backtest.rs :: load_history` | C20, C21 | M | One decide path and one tuned venue set across symbols with per-symbol reproducibility pins; CSV-or-dynamic history; criterion benches with recorded baselines; documented bounds on every fan-out (broadcast depths, pool queues, credit intake, lag-skip) |
+| C46 | Pine language front-end + canonical renderer | infra | `src/protopyne-kernels/src/pine/{lexer,syntax,display}.rs` | `syntax.rs :: parse_program`, `syntax.rs :: PineStmt` (multi-decl/assign, for-in, break, bare switch), `syntax.rs :: PineExpr` (instance calls, field reads, color literals), `display.rs :: display_program` | — | L | Renderer re-emits source that re-parses structurally equal (re-indented, comments dropped); only documented lossy case is `#rrggbbaa` alpha scaling |
+| C47 | Pine evaluator + headless injection/tick harness | feature | `src/protopyne-kernels/src/pine/{eval,modules,source}.rs` | `eval.rs :: PineEngine`, `eval.rs :: run_linked`, `eval.rs :: run_linked_ticks`, `eval.rs :: inject_security`, `eval.rs :: inject_lower_tf`, `eval.rs :: LtfDataset`, `eval.rs :: LinkedModule`, `modules.rs :: resolve_imports`, `modules.rs :: ModuleGraph`, `source.rs :: PineSource`, `source.rs :: load_pine_source`, `source.rs :: SUPPORTED_PINE_VERSION` (6) | C1, C3, C4 | L | Multi-module linked execution over bar history; tick emulation with realtime cursor flags; `request.*` served only from injected datasets (confirmed-bar, `gaps_off`+`lookahead_off`), everything else refuses; plot/barcolor/fill captures plus label/table/box/line drawing events on `RunOutcome`; single-threaded, in-repo drivers are kernels/server test targets (C49) |
+| C48 | Pine built-ins + indicator bridge | feature | `src/protopyne-kernels/src/pine/{builtins_core,builtins_ta}.rs` | `builtins_core.rs :: matrix.*`/`array.*`/`map.*` (general keys)/`input.session`/`input.source`, `builtins_core.rs :: color_of_hex`, `builtins_ta.rs :: TaBridge`, `builtins_ta.rs :: batch_security` | C1, C3 | L | Bridge serves kernel-backed single-source `ta.*` over injected security data; window/multi-leg and chart-leg calls refuse; zero denominators read `na`, never abort |
+| C49 | Pine parity matrix + freeze + closure fixtures | cross-cutting | `src/protopyne-kernels/src/pine/{egui_parity,closure}.rs`, `doc/protopyne-rs/INJECTION_CONTRACT.md` | `egui_parity.rs :: EGUI_PARITY` (177 rows), `egui_parity.rs :: parity_for`, `egui_parity.rs :: ParityVerdict` (Match/Correct/Refuse), `closure.rs :: REAL_LIBRARIES` (7 pinned), `closure.rs :: load_closure_sources`, `closure.rs :: INDICATOR_PATH` | C47, C48 | L | Every reference-layer construct maps to identical behavior, a pinned divergence, or a fail-closed refusal with an executable probe; trimmed real-tape tick windows plus recorded baselines (`tests/data/ticks/`, `tick_harness_baselines.json`); headless end-to-end proof with timeframe goldens in server tests; live-vs-injected contract documented in `INJECTION_CONTRACT.md` |
 
 ## 5. Concurrency & Orchestration Index
 
@@ -211,17 +225,17 @@ Fan-in: H (used across crates/files broadly), M (several callers), L (one or two
 ## 6. Reuse Hotspots and DRY Findings
 
 Most-imported internal modules (by files with a textual reference,
-recounted 2026-10-10):
+recounted 2026-10-11):
 
-1. `protopyne-types` (34) — `Money`, `Bar`, `Qty`, plus the newer
+1. `protopyne-types` (36) — `Money`, `Bar`, `Qty`, plus the newer
    `chain`/`symbol`/`validate` vocabulary are the true core; any
    extraction starts here (already a crate, correctly so).
-2. `serde` (35), `chrono` (30), `rust_decimal` (26), `bon` (22) — foundation sprawl is
+2. `serde` (36), `chrono` (30), `rust_decimal` (27), `bon` (22) — foundation sprawl is
    healthy; no action.
-3. `common-core` (15 files) — the `sync::lock` mutex idiom is
+3. `common-core` (16 files) — the `sync::lock` mutex idiom is
    uniform; a good sign. Also funnels `retry_async`, `load_json_or_default`,
    `impl_from_io_error!`, and `registry::ConcurrentRegistry`.
-4. `fluent-wvr` (12) / `fluent-concurrency` (11) — every supervision
+4. `fluent-wvr` (13) / `fluent-concurrency` (11) — every supervision
    `execute` body now bridges through `check_for_execute` (C34); `Scope`,
    `SupervisedBatch`, `ResultPool`, credit, and the ladder combinator cover
    all venue/server concurrency (O1–O14).
@@ -233,6 +247,10 @@ recounted 2026-10-10):
    tree; the production display path now lives in `chart-model`
    (`to_display_float`/`row_of`), so these stay offline-only by design;
    see §7.
+7. Pine engine (`pine/`) in-repo drivers are test targets only (kernels
+   suites, server headless proof): no production `src/` path outside
+   kernels drives `PineEngine`; the live trading path uses C3 kernels
+   and the C24 spike, never the language runtime.
 
 Near-duplicate logic (unification signals, not yet violations):
 
@@ -263,7 +281,7 @@ Near-duplicate logic (unification signals, not yet violations):
 | E1. Fail-closed `Validate` trait | C34 | ~~Nine ad-hoc `validate()`s with five error types~~ DONE 2026-10-10: `types/validate.rs :: Validate` (shape unified, per-type `Err` preserved) + `check_for_execute`/`valid_output` bridges on every supervision `execute` body | `trait Validate { type Err: Display; fn validate(&self) -> Result<(), Self::Err>; }` (exists) | Done |
 | E2. Deterministic manifest pattern | C22 | Any reproducible run needs data/code/config pin + canonical JSON + rerun-equality test; multi-symbol runs add per-symbol pins (C45) | `struct RunManifest<V, C> { data_version: String, code_version: &'static str, config: C, span: V }` with `to_canonical_json` | M |
 | E3. Backtest analytics (drawdown/tail/efficiency/equity) | C21, C22, C43 | ~~Pure `Decimal`-slice math reused by every future report~~ PARTLY DONE: extracted as `server/metrics.rs` (C43) and reused by report + portfolio (C44); remaining step is moving it to a shared home if a second consumer (second server, terminal) appears | `fn max_drawdown(equity: &[Decimal]) -> Decimal` et al. as a `metrics` module (exists in server); inputs `Copy`, no I/O | M |
-| E4. Accept-or-refuse subset recognizer | C24 | The compile-or-refuse scaffold (deny patterns → HIR → emit → calibrate) generalizes to any future script coverage | `trait Subset { type Hir; fn recognize(src: &str) -> Result<Self::Hir, Refusal>; }` + `CalibrationTally` as-is | M |
+| E4. Accept-or-refuse subset recognizer | C24, C46–C49 | ~~The compile-or-refuse scaffold generalizes to any future script coverage~~ REALIZED at language scale: the Pine engine (C47) plus the 177-row checked parity matrix (C49) is the generalized form — every construct outside the matrix refuses with a reason instead of miscomputing. The transpile spike stays as the small-subset fast path (`sma`/`ema`/`trima`/`midpoint`) | `CalibrationTally` as-is; `parity_for` + `ParityVerdict` (C49) | M |
 | E5. Execution-policy types | C12 | `LiquidityFilter`/`Slippage`/`FeeSchedule` are venue-independent; the registry (C39) reuses them unchanged across handles, and the second live venue (C42) will too | Existing structs already `Copy + Serialize`; only need a shared home if venue splits | H (on venue split) |
 | E6. Chart-data contract rows | C23, C26, C27 | `ChartRow`/`ChartRows`/`row_of`/`rows_of`/`to_display_float` (chart-model) and `ChartMapping`/`nice_ticks` (chart-scale) are the native terminal's data contract — any future chart view or second server reuses them, never a browser-chart binding. `service.rs :: CandleRow`/`OverlaySeries` is the wire mirror; keep the two in step or unify behind the chart-model types | `struct ChartRow { time: i64, open/high/low/close: f64, volume: u64 }` (exists); `Send + Sync` | L |
 | E7. Research-frame helpers | C5 | Thin but the only columnar bridge; worth keeping iff chain-analysis features land, else cut `polars` | `fn frame_of_bars(&[Bar]) -> Result<DataFrame, E>` as-is | L |
@@ -305,6 +323,12 @@ Near-duplicate logic (unification signals, not yet violations):
 - **C44 (portfolio aggregation + tearsheet):** one `aggregate` over booked
   fills feeding both JSON report fields and a text tearsheet from the same
   structs — no second summarizer to drift.
+- **C46–C49 (Pine engine + checked parity matrix):** a full language
+  runtime (parse → link → run over bars/ticks) whose overlap contract
+  with the reference layer is machine-checked — 177 rows of
+  identical/pinned/refused, each refusal carrying an executable probe —
+  so partial coverage can never silently miscompute; trimmed real-tape
+  fixtures with recorded baselines pin the tick harness the same way.
 
 ## 9. Gaps & Drill-Down Queue
 
@@ -353,6 +377,25 @@ Closed during the 2026-10-09 re-verification, re-confirmed 2026-10-10
 - Metrics + portfolio (C43/C44) — `server/metrics.rs` pure-`Decimal`
   helpers reused by report and aggregation; `render_tearsheet` reads the
   same structs as the JSON report.
+- Pine engine shape (C46–C49, direct reads 2026-10-11) — `PineEngine`
+  entry points are `run_linked` / `run_linked_ticks` / `inject_security`
+  / `inject_lower_tf` (`eval.rs`); import linking is `resolve_imports`
+  → `ModuleGraph` (`modules.rs`); source loading is `load_pine_source`
+  with `SUPPORTED_PINE_VERSION = 6` (`source.rs`); the indicator bridge
+  is `TaBridge :: batch_security` (kernel-backed single-source calls
+  only); the parity matrix is 177 rows (`EGUI_PARITY`) with
+  `Match`/`Correct`/`Refuse` verdicts and executable probes on every
+  refusal; the closure pins 7 real libraries plus the integration
+  indicator (`REAL_LIBRARIES`, `INDICATOR_PATH`); baselines live in
+  `tests/data/tick_harness_baselines.json` (times observed, never
+  asserted) with literals in the tests.
+- `decide_spread` visibility — private `PaperVenue` method, not a
+  public export; the public spread surface is `spread_positions` /
+  `set_leg_quotes` (C13 corrected).
+- Tastytrade transform names — `transform_quote`,
+  `transform_chain_quote`, `transform_account_event` (C42 corrected);
+  retry constants confirmed in `tastytrade.rs` (`RETRY_MAX_ATTEMPTS` 3,
+  base 100ms, 50% jitter).
 
 Remaining low-confidence or unmeasured areas:
 
@@ -393,3 +436,9 @@ Suggested drill-downs, ordered by value, each with a starter command
    `grep -n "COMMAND_.*_KIND\|replay_trading_state\|apply_one" src/protopyne-venue/src/command.rs`
 10. Depth-book invariants (sequence gaps, dark detectors):
     `grep -n "sequence\|DarkFinding\|is_crossed\|is_stale" src/protopyne-venue/src/depth.rs`
+11. Pine engine entry points (link → inject → run):
+    `grep -n "pub fn resolve_imports\|pub fn run_linked\|pub fn inject_\|pub fn batch_security" src/protopyne-kernels/src/pine/eval.rs src/protopyne-kernels/src/pine/modules.rs src/protopyne-kernels/src/pine/builtins_ta.rs`
+12. Parity-matrix verdict split:
+    `grep -o "ParityVerdict::[A-Za-z]*" src/protopyne-kernels/src/pine/egui_parity.rs | sort | uniq -c`
+13. Tick-harness baselines (recorded, never asserted):
+    `ls src/protopyne-kernels/tests/data/ticks/ && grep -n "observed_secs\|\"ticks\"\|pull_count" src/protopyne-kernels/tests/data/tick_harness_baselines.json`

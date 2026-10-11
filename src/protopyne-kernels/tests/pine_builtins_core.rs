@@ -1,6 +1,6 @@
 //! Scalar and structural namespace tests: `math.*`, `str.*`, `input.*`,
 //! `array.*`, `map.*`, `color.*`, `timeframe.*`, plus the opaque display
-//! constants (`display.*`, `size.*`, `position.*`, `timeframe.period`).
+//! constants (`display.*`, `size.*`, `position.*`).
 //!
 //! Scalar math expectations on the reference overlap are transcribed from
 //! the reference runtime's own unit corpus as literals; absence propagates
@@ -455,11 +455,31 @@ fn color_rgb_named_new_gradient_stay_opaque() {
 
 #[test]
 fn display_constants_resolve_opaque() {
-    for name in ["display.none", "display.all", "size.tiny", "size.auto", "position.top_right", "timeframe.period"] {
+    // Display flags lower as engine-local record integers (none 0 through
+    // all 15) so the documented Pine combining (`display.all -
+    // display.status_line`) runs through ordinary arithmetic; captures
+    // only record them. Every other display namespace stays opaque.
+    for (name, flag) in [
+        ("display.none", 0),
+        ("display.data_window", 1),
+        ("display.price_scale", 2),
+        ("display.status_line", 4),
+        ("display.pane", 8),
+        ("display.all", 15),
+    ] {
+        let got = resolve_constant(name).expect("constant resolves");
+        assert_eq!(got, PineValue::Int(flag), "{name} records flag {flag}");
+    }
+    for name in ["size.tiny", "size.auto", "position.top_right"] {
         let got = resolve_constant(name).expect("constant resolves");
         assert!(matches!(got, PineValue::EnumHandle(_)), "{name} is opaque");
         assert_eq!(num_of(Some(got).as_ref()), None, "{name} never reads numeric");
     }
+    assert_eq!(
+        resolve_constant("timeframe.period"),
+        None,
+        "chart scope resolves dynamically, never statically"
+    );
     assert_eq!(resolve_constant("display.something"), None);
     assert_eq!(resolve_constant("close"), None);
 }
@@ -517,10 +537,11 @@ fn engine_dispatches_scalar_namespaces() {
 fn engine_declares_inputs_and_resolves_display_constants() {
     let outcome = run_script("len = input.int(3, minval=3)\nd = display.none\nc = color.rgb(1, 2, 3)\n");
     assert_eq!(num_of(outcome.value_at(0, "len").expect("len bound").as_ref()), Some(3.0));
-    assert!(matches!(
+    assert_eq!(
         outcome.value_at(0, "d").expect("d bound"),
-        Some(PineValue::EnumHandle(_))
-    ));
+        Some(PineValue::Int(0)),
+        "display.none records flag 0"
+    );
     assert!(matches!(
         outcome.value_at(0, "c").expect("c bound"),
         Some(PineValue::ColorHandle(_))

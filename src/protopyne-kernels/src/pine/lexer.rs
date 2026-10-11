@@ -76,6 +76,8 @@ pub enum TokenKind {
     Simple,
     /// `switch`.
     Switch,
+    /// `break` (loop exit; a statement, never a value).
+    Break,
     /// `+`.
     Plus,
     /// `-`.
@@ -90,6 +92,16 @@ pub enum TokenKind {
     Equal,
     /// `:=` (v6 reassignment).
     ColonEqual,
+    /// `+=` (augmented assignment, desugared at parse).
+    PlusEqual,
+    /// `-=` (augmented assignment, desugared at parse).
+    MinusEqual,
+    /// `*=` (augmented assignment, desugared at parse).
+    StarEqual,
+    /// `/=` (augmented assignment, desugared at parse).
+    SlashEqual,
+    /// `%=` (augmented assignment, desugared at parse).
+    PercentEqual,
     /// `==`.
     EqualEqual,
     /// `!=`.
@@ -132,6 +144,8 @@ pub enum TokenKind {
     Eof,
     /// `//` comment to end of line, trimmed.
     Comment(String),
+    /// `#rrggbb` / `#rrggbbaa` color literal (digits only, `#` excluded).
+    ColorHex(String),
 }
 
 impl fmt::Display for TokenKind {
@@ -142,6 +156,7 @@ impl fmt::Display for TokenKind {
             Self::Boolean(b) => write!(f, "Boolean({b})"),
             Self::Identifier(id) => write!(f, "Identifier({id})"),
             Self::Comment(c) => write!(f, "Comment({c})"),
+            Self::ColorHex(digits) => write!(f, "#{digits}"),
             Self::If => write!(f, "if"),
             Self::Else => write!(f, "else"),
             Self::For => write!(f, "for"),
@@ -164,6 +179,7 @@ impl fmt::Display for TokenKind {
             Self::Const => write!(f, "const"),
             Self::Simple => write!(f, "simple"),
             Self::Switch => write!(f, "switch"),
+            Self::Break => write!(f, "break"),
             Self::Plus => write!(f, "+"),
             Self::Minus => write!(f, "-"),
             Self::Star => write!(f, "*"),
@@ -171,6 +187,11 @@ impl fmt::Display for TokenKind {
             Self::Percent => write!(f, "%"),
             Self::Equal => write!(f, "="),
             Self::ColonEqual => write!(f, ":="),
+            Self::PlusEqual => write!(f, "+="),
+            Self::MinusEqual => write!(f, "-="),
+            Self::StarEqual => write!(f, "*="),
+            Self::SlashEqual => write!(f, "/="),
+            Self::PercentEqual => write!(f, "%="),
             Self::EqualEqual => write!(f, "=="),
             Self::NotEqual => write!(f, "!="),
             Self::Less => write!(f, "<"),
@@ -274,6 +295,16 @@ impl PineLexer {
             return self.read_comment();
         }
 
+        // `#rrggbb[aa]` color literals; a `#` without six hex digits keeps
+        // the legacy skip-silently behavior.
+        if ch == '#' {
+            if let Some(color) = self.read_color_hex() {
+                return color;
+            }
+            self.advance();
+            return self.next_token();
+        }
+
         if ch == '\n' {
             self.advance();
             self.line += 1;
@@ -294,11 +325,46 @@ impl PineLexer {
         }
 
         let kind = match ch {
-            '+' => TokenKind::Plus,
-            '-' => TokenKind::Minus,
-            '*' => TokenKind::Star,
-            '/' => TokenKind::Slash,
-            '%' => TokenKind::Percent,
+            '+' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    TokenKind::PlusEqual
+                } else {
+                    TokenKind::Plus
+                }
+            }
+            '-' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    TokenKind::MinusEqual
+                } else {
+                    TokenKind::Minus
+                }
+            }
+            '*' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    TokenKind::StarEqual
+                } else {
+                    TokenKind::Star
+                }
+            }
+            '/' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    TokenKind::SlashEqual
+                } else {
+                    TokenKind::Slash
+                }
+            }
+            '%' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    TokenKind::PercentEqual
+                } else {
+                    TokenKind::Percent
+                }
+            }
             '(' => TokenKind::LeftParen,
             ')' => TokenKind::RightParen,
             '[' => TokenKind::LeftBracket,
@@ -374,6 +440,36 @@ impl PineLexer {
         }
 
         PineToken::new(TokenKind::Comment(comment.trim().to_owned()), line, column)
+    }
+
+    /// Scan a `#rrggbb[aa]` color literal. Returns `None` (consuming
+    /// nothing) unless six hex digits follow the `#`; eight digits win over
+    /// six when present.
+    fn read_color_hex(&mut self) -> Option<PineToken> {
+        let (line, column) = (self.line, self.column);
+        let mut digits = String::new();
+        let mut index = self.position + 1;
+        while index < self.input.len()
+            && digits.len() < 8
+            && self.input[index].is_ascii_hexdigit()
+        {
+            digits.push(self.input[index]);
+            index += 1;
+        }
+        // One advance for the `#` plus one per kept digit; digits never
+        // contain newlines, so only the column moves.
+        let take = if digits.len() >= 8 {
+            8
+        } else if digits.len() >= 6 {
+            6
+        } else {
+            return None;
+        };
+        digits.truncate(take);
+        for _ in 0..=take {
+            self.advance();
+        }
+        Some(PineToken::new(TokenKind::ColorHex(digits), line, column))
     }
 
     fn read_string(&mut self, quote: char) -> PineToken {
@@ -476,6 +572,7 @@ impl PineLexer {
             "const" => TokenKind::Const,
             "simple" => TokenKind::Simple,
             "switch" => TokenKind::Switch,
+            "break" => TokenKind::Break,
             _ => TokenKind::Identifier(ident),
         };
 

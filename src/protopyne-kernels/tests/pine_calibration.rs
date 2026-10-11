@@ -306,10 +306,10 @@ fn pine_must_accept() -> Vec<&'static str> {
     ]
 }
 
-/// Twelve scripts the pine surface must refuse, never miscompile: two
+/// Eleven scripts the pine surface must refuse, never miscompile: two
 /// syntax failures, unknown function/method/alias, arity, type, length,
-/// division by zero, truthy-number branch, out-of-bounds index, and an
-/// explicit `runtime.error`.
+/// truthy-number branch, out-of-bounds index, and an explicit
+/// `runtime.error`. (Division by zero reads `na`, it does not refuse.)
 fn pine_must_reject() -> Vec<&'static str> {
     vec![
         "x = (2 + 3",
@@ -318,7 +318,6 @@ fn pine_must_reject() -> Vec<&'static str> {
         "s = ta.sma(close)",
         "s = ta.sma(close, \"x\")",
         "s = ta.sma(close, 0)",
-        "x = 1 / 0",
         "if 1\n    x = 1",
         "x = close.foo()",
         "x = XX.fn(1.0)",
@@ -447,7 +446,7 @@ fn pine_calibration_is_green() {
     );
     tally.refused += 1;
     assert_eq!(tally.must_accept, 9 + 3 + 36, "accept set shape drift");
-    assert_eq!(tally.must_reject, 12 + 2, "reject set shape drift");
+    assert_eq!(tally.must_reject, 11 + 2, "reject set shape drift");
     assert!(
         (tally.accept_rate() - 1.0).abs() < f64::EPSILON,
         "accept < 1.0: {tally:?}"

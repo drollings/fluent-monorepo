@@ -14,10 +14,32 @@ use crate::context::RunCtx;
 use crate::error::KernelError;
 use crate::inputs::InputSet;
 
-/// Configuration for one Pine runtime: caps and warmup as `Component` state.
+/// Default chart symbol for runs without an explicit harness scope.
+pub(crate) fn default_chart_symbol() -> String {
+    "LOCAL".to_owned()
+}
+
+/// Default chart period for runs without an explicit harness scope.
+pub(crate) fn default_chart_period() -> String {
+    "1".to_owned()
+}
+
+/// Configuration for one Pine runtime: chart scope plus caps and warmup as
+/// `Component` state.
 #[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable)]
 #[builder(start_fn = new)]
 pub struct PineRuntimeConfig {
+    /// Chart symbol backing `syminfo.tickerid` for the run.
+    #[field(desc = "Chart symbol backing syminfo.tickerid", max_len = 32)]
+    #[builder(default = default_chart_symbol())]
+    #[serde(default = "default_chart_symbol")]
+    pub chart_symbol: String,
+    /// Chart timeframe period string backing `timeframe.period` (for
+    /// example `"1"`, `"5"`, `"D"`).
+    #[field(desc = "Chart timeframe period backing timeframe.period", max_len = 8)]
+    #[builder(default = default_chart_period())]
+    #[serde(default = "default_chart_period")]
+    pub chart_period: String,
     /// Maximum bars evaluated in one run.
     #[field(desc = "Maximum bars evaluated in one run", min = 1, max = 1000000)]
     #[builder(default = 10_000)]
@@ -51,6 +73,14 @@ impl PineRuntimeConfig {
     /// Fail-closed self-consistency check shared by scheduling (`execute`)
     /// and driving (`PineRuntime::run_over`).
     pub fn validate(&self) -> Result<(), KernelError> {
+        if self.chart_symbol.trim().is_empty() {
+            return Err(KernelError::ConfigConflict(
+                "chart_symbol must be non-empty".to_owned(),
+            ));
+        }
+        if let Err(reason) = crate::pine::builtins_core::check_period(&self.chart_period) {
+            return Err(KernelError::ConfigConflict(reason));
+        }
         if self.max_bars < 1 {
             return Err(KernelError::ConfigConflict(format!(
                 "max_bars must be at least 1, got {}",

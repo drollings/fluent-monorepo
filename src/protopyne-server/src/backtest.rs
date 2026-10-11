@@ -291,3 +291,7 @@ impl Venue for BacktestVenue {
 #[cfg(test)]
 #[path = "../tests/backtest.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/pine_integration_lite.rs"]
+mod pine_integration_lite_tests;

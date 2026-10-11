@@ -314,10 +314,15 @@ fn for_bounds_require_ints() {
 }
 
 #[test]
-fn division_by_zero_refuses() {
+fn division_by_zero_reads_absent() {
+    // A zero denominator reads `na`, never a refusal: shipped code divides
+    // zero-initialized fields before their first fetch, and Pine answers
+    // `na`/`inf` there, never an abort. Infinities never enter the engine.
     let bars = closes();
-    let reason = run_err("x = 1 / 0", &bars);
-    assert!(reason.contains("zero"), "fail-closed divide: {reason}");
+    let outcome = run_default("x = 1 / 0\ny = 1 % 0\nz = 0 / 0", &bars);
+    assert!(is_absent(&outcome, 0, "x"), "float divide by zero is na");
+    assert!(is_absent(&outcome, 0, "y"), "float modulo by zero is na");
+    assert!(is_absent(&outcome, 0, "z"), "zero over zero is na");
 }
 
 #[test]
@@ -442,4 +447,92 @@ fn concurrent_runs_stay_isolated() {
         .expect("re-runs");
     assert_eq!(num(&repeat, 3, "c"), Some(4.0));
     assert_eq!(num(&repeat, 3, "x"), Some(13.0));
+}
+
+// ---- Real-file grammar execution: augmented assignment ----
+
+#[test]
+fn augmented_assignment_accumulates() {
+    // Series locals reset per bar, so every bar computes (1 + 2) * 3.
+    let outcome = run_default("int x = 1\nx += 2\nx *= 3", &closes());
+    assert_eq!(num(&outcome, 0, "x"), Some(9.0));
+    assert_eq!(num(&outcome, 3, "x"), Some(9.0));
+}
+
+#[test]
+fn multi_assign_runs_left_to_right() {
+    let outcome = run_default("int a = 0\nint b = 0\na := 1, b := a + 1", &closes());
+    assert_eq!(num(&outcome, 3, "a"), Some(1.0));
+    assert_eq!(num(&outcome, 3, "b"), Some(2.0));
+}
+
+#[test]
+fn multi_declaration_binds_every_item() {
+    let outcome = run_default("float o = 1.5, h = 2.5, g", &closes());
+    assert_eq!(num(&outcome, 3, "o"), Some(1.5));
+    assert_eq!(num(&outcome, 3, "h"), Some(2.5));
+    assert!(
+        matches!(outcome.value_at(3, "g"), Some(None)),
+        "missing initializer reads as na"
+    );
+}
+
+// ---- Real-file grammar execution: bare `switch` ----
+
+#[test]
+fn bare_switch_takes_first_truthy_arm() {
+    let script = "x = switch\n    close > 11.0 => \"high\"\n    close > 10.0 => \"mid\"\n    => \"low\"";
+    let outcome = run_default(script, &closes());
+    let text = |bar: usize| match outcome.value_at(bar, "x") {
+        Some(Some(PineValue::Str(text))) => Some(text.clone()),
+        other => panic!("expected string at bar {bar}, got {other:?}"),
+    };
+    assert_eq!(text(0).as_deref(), Some("low"));
+    assert_eq!(text(1).as_deref(), Some("mid"));
+    assert_eq!(text(2).as_deref(), Some("high"));
+}
+
+#[test]
+fn bare_switch_without_match_yields_na() {
+    let outcome = run_default("x = switch\n    close > 100.0 => 1", &closes());
+    assert!(
+        matches!(outcome.value_at(0, "x"), Some(None)),
+        "no arm, no default: na"
+    );
+}
+
+// ---- Real-file grammar execution: chained construction ----
+
+#[test]
+fn instance_call_chains_construction() {
+    let script = "export type Counter\n    int n = 0\nexport method init(Counter this, int start) =>\n    this.n := start\n    this.n\ngot = Counter.new().init(7)";
+    let outcome = run_default(script, &closes());
+    assert_eq!(num(&outcome, 3, "got"), Some(7.0));
+}
+
+#[test]
+fn instance_call_on_plain_value_refuses() {
+    let reason = run_err("y = (1).init()", &closes());
+    assert!(
+        reason.contains("needs an object receiver"),
+        "refusal names the rule: {reason}"
+    );
+}
+
+#[test]
+fn for_in_executes_over_arrays() {
+    let outcome = run_default(
+        "vals = array.from(5, 7)\ntotal = 0\nfor [i, v] in vals\n    total := total + i * 10 + v",
+        &closes(),
+    );
+    assert_eq!(num(&outcome, 3, "total"), Some(22.0));
+}
+
+#[test]
+fn for_in_over_scalar_refuses_with_reason() {
+    let reason = run_err("for child_id in 5\n    child_id", &closes());
+    assert!(
+        reason.contains("'for ... in' iterates arrays"),
+        "refusal names the rule: {reason}"
+    );
 }

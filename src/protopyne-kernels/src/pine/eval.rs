@@ -23,8 +23,10 @@
 //! passing `or` annihilates, `na` ternary conditions yield `na`, `na`
 //! `if`/`while` conditions skip); `for` bounds must be `int` (the reference
 //! truncates floats); `var` initializes on the first *evaluated* bar
-//! (warmup-aware); `var x = na` holds absence until assigned; division by
-//! zero refuses instead of erroring late. Unbridged namespaces and unknown
+//! (warmup-aware); `var x = na` holds absence until assigned; a zero
+//! denominator reads absence (`na`), never an abort, so shipped code that
+//! divides zero-initialized fields before their first fetch propagates
+//! through the existing `na`/`nz` guards. Unbridged namespaces and unknown
 //! functions/methods still refuse with a reason.
 //! The per-bar hot path stays on concrete `&[f64]` legs; no `dyn` per bar.
 
@@ -33,14 +35,14 @@ use std::collections::{HashMap, HashSet};
 use protopyne_types::Bar;
 
 use super::syntax::{
-    BinaryOp, BuiltinVar, CallArg, FieldDecl, Param, PineExpr, PineProgram, PineStmt, SwitchStmt,
-    UnaryOp,
+    AssignOp, BinaryOp, BuiltinVar, CallArg, FieldDecl, Param, PineExpr, PineProgram, PineStmt,
+    SwitchStmt, UnaryOp,
 };
 use crate::context::RunCtx;
 use crate::error::KernelError;
 use crate::inputs::InputSet;
 use crate::runtime::{PineRuntime, PineRuntimeConfig};
-use crate::value::{EnumHandle, PineValue, UserInstance, nz};
+use crate::value::{ColorHandle, DrawingHandle, DrawingKind, EnumHandle, PineValue, UserInstance, nz};
 
 /// Fail-closed bound for `for` total iterations and `while` iterations.
 /// Breaching loops refuse instead of hanging the run.
@@ -72,6 +74,15 @@ pub struct RunOutcome {
     pub snapshots: Vec<BarSnapshot>,
     /// Every `plot()` call site in first-seen order, with per-bar values.
     pub plots: Vec<PlotCapture>,
+    /// Every `plotcandle()` call site in first-seen order, with per-bar legs.
+    pub plotcandles: Vec<PlotCandleCapture>,
+    /// Every `barcolor()` call site in first-seen order, with per-bar values.
+    pub barcolors: Vec<BarColorCapture>,
+    /// Every `fill()` call site in first-seen order, with per-bar regions.
+    pub fills: Vec<FillCapture>,
+    /// Every drawing lifecycle event in execution order (created, updated,
+    /// deleted with the object key and call arguments), rendering nothing.
+    pub draw_events: Vec<DrawingEvent>,
 }
 
 /// One captured `plot()` series: title and display flag plus one value per
@@ -98,6 +109,113 @@ impl RunOutcome {
             .and_then(|snapshot| snapshot.values.get(name))
             .cloned()
     }
+}
+
+/// One captured `plotcandle()` series: four legs plus the last-seen display
+/// handles, one entry per evaluated bar (`None` entries are Pine `na`).
+#[derive(Debug, Clone)]
+pub struct PlotCandleCapture {
+    /// Call-site key (textual arguments), distinguishing same-titled candles.
+    site: String,
+    /// The `title` argument, or a positional fallback.
+    pub title: String,
+    /// The last-seen `display` argument handle, when given.
+    pub display: Option<PineValue>,
+    /// The last-seen `color` argument, when given.
+    pub color: Option<PineValue>,
+    /// The last-seen `wickcolor` argument, when given.
+    pub wickcolor: Option<PineValue>,
+    /// The last-seen `bordercolor` argument, when given.
+    pub bordercolor: Option<PineValue>,
+    /// One open per evaluated bar, in order.
+    pub opens: Vec<Option<PineValue>>,
+    /// One high per evaluated bar, in order.
+    pub highs: Vec<Option<PineValue>>,
+    /// One low per evaluated bar, in order.
+    pub lows: Vec<Option<PineValue>>,
+    /// One close per evaluated bar, in order.
+    pub closes: Vec<Option<PineValue>>,
+}
+
+/// One captured `barcolor()` series: the conditional color per evaluated bar
+/// (`None` entries are Pine `na`, never a default color).
+#[derive(Debug, Clone)]
+pub struct BarColorCapture {
+    /// Call-site key (textual arguments), distinguishing same-titled paints.
+    site: String,
+    /// The `title` argument, or a positional fallback.
+    pub title: String,
+    /// One value per evaluated bar, in order.
+    pub values: Vec<Option<PineValue>>,
+}
+
+/// One captured `fill()` pairing: the two plot sites it shades plus the
+/// per-bar region between their values (an array pair, or `na` when both
+/// legs are absent).
+#[derive(Debug, Clone)]
+pub struct FillCapture {
+    /// Call-site key (textual arguments), distinguishing same-titled fills.
+    site: String,
+    /// The `title` argument, or a positional fallback.
+    pub title: String,
+    /// First plot's site key.
+    pub first: String,
+    /// Second plot's site key.
+    pub second: String,
+    /// First plot's title, resolved from its capture.
+    pub first_title: String,
+    /// Second plot's title, resolved from its capture.
+    pub second_title: String,
+    /// The last-seen `color` argument, when given.
+    pub color: Option<PineValue>,
+    /// One region per evaluated bar, in order.
+    pub values: Vec<Option<PineValue>>,
+}
+
+/// Which lifecycle transition a drawing event records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrawingEventKind {
+    /// `.new` minted an object.
+    Created,
+    /// A setter or `table.cell` mutated an object.
+    Updated,
+    /// `.delete` removed an object.
+    Deleted,
+}
+
+/// One recorded drawing lifecycle row: which bar, which transition, which
+/// object, with the call arguments as data. Rendering never happens.
+#[derive(Debug, Clone)]
+pub struct DrawingEvent {
+    /// Evaluated-bar index at record time.
+    pub bar: usize,
+    /// Which transition this row records.
+    pub kind: DrawingEventKind,
+    /// Minting namespace (`label`, `table`, `box`, `line`).
+    pub object: String,
+    /// Stable object key (`label#3`).
+    pub key: String,
+    /// Call arguments in order (positional first, then named).
+    pub args: Vec<DrawingArg>,
+}
+
+/// One recorded drawing argument: optional name plus the evaluated value
+/// (`None` inside is Pine `na`).
+#[derive(Debug, Clone)]
+pub struct DrawingArg {
+    /// Argument name (`None` for positional arguments).
+    pub name: Option<String>,
+    /// Evaluated value.
+    pub value: Option<PineValue>,
+}
+
+/// One live drawing object: its namespace plus current properties. Setters
+/// mutate properties in place; getters read them back; `.delete` drops the
+/// entry (later reads refuse instead of resurrecting it).
+#[derive(Debug, Clone)]
+struct DrawingObject {
+    kind: DrawingKind,
+    props: HashMap<String, Option<PineValue>>,
 }
 
 /// Concrete `f64` legs for one run, converted once up front (same
@@ -175,12 +293,26 @@ impl Legs {
 
 /// Per-run mutable state: series variables, histories, `var` records,
 /// per-call-site `fixnan` memory, the `ta.*` bridge (fresh per run, so
-/// kernel states never cross runs), the input registry seeded from the run's
+/// kernel states never cross runs), the chart scope copied from the runtime
+/// config (symbol/timeframe backing the `syminfo`/`timeframe` reads), the
+/// input registry seeded from the run's
 /// inputs (so `input.*` declarations and caller overrides share one store),
 /// the v6 declaration tables (enums, consts, types, functions, methods,
 /// exports), the owning module of the statements under execution plus every
 /// module's alias table (so `ALIAS.fn` binds to the exporting module while
 /// bare calls stay module-local), the method-receiver stack, the nested-call
+/// One registered method: the owning module plus params and body. The
+/// owner travels with the body so bare helper calls resolve lexically where
+/// the method was declared, not where the receiver happens to be held.
+/// Bodies ride `Arc` so per-call dispatch clones a pointer, never the AST.
+type MethodDef = (String, Vec<Param>, std::sync::Arc<Vec<PineStmt>>);
+
+/// One standalone-function overload: params and body. Same-named functions
+/// stack in source order; dispatch picks the first arity-compatible
+/// overload whose declared parameter types match the call values. Bodies
+/// ride `Arc` so per-call dispatch clones a pointer, never the AST.
+type FuncDef = (Vec<Param>, std::sync::Arc<Vec<PineStmt>>);
+
 /// site stack (which qualifies stateful bridge sites per call path), per-bar
 /// function-local values for history reads, snapshots, plot captures, and
 /// the first error.
@@ -190,20 +322,78 @@ struct EngineState {
     var_kind: HashMap<String, bool>,
     fixnan_memory: HashMap<String, Option<PineValue>>,
     ta_bridge: Option<super::builtins_ta::TaBridge>,
+    chart_symbol: String,
+    chart_period: String,
     core_inputs: InputSet,
     enums: HashMap<String, HashMap<String, Option<PineValue>>>,
     consts: HashSet<String>,
     types: HashMap<String, Vec<FieldDecl>>,
-    functions: HashMap<(String, String), (Vec<Param>, Vec<PineStmt>)>,
-    methods: HashMap<(String, String), (Vec<Param>, Vec<PineStmt>)>,
+    /// Standalone functions by `(owning module, name)`: each name holds
+    /// its overloads in source order for signature dispatch.
+    functions: HashMap<(String, String), Vec<FuncDef>>,
+    /// Methods by `(receiver type, method)`: the owning module travels with
+    /// the body (see [`MethodDef`]).
+    methods: HashMap<(String, String), MethodDef>,
     exported: HashSet<String>,
     current_module: String,
     module_aliases: HashMap<(String, String), String>,
-    receiver: Vec<UserInstance>,
+    receiver: Vec<ReceiverSlot>,
     call_stack: Vec<String>,
+    /// Per-bar function-local values for history reads, keyed by call site
+    /// (`site#name`) inside a call and by bare name at the top level, so a
+    /// helper's locals never read the caller's past for a same-named
+    /// binding (and vice versa).
     frame_history: HashMap<String, Option<PineValue>>,
+    /// Loop nesting depth for `break`: incremented by `for`/`while`, reset
+    /// across function/method call boundaries so a `break` binds lexically.
+    loop_depth: usize,
+    /// Set by `break`, consumed by the innermost enclosing loop; statement
+    /// lists stop through [`stopped`](Self::stopped) while it is set.
+    break_flag: bool,
+    /// Per-update tick timestamps (epoch milliseconds), parallel to the
+    /// run's bars. Non-empty selects tick/realtime emulation: `timenow`
+    /// reads these instead of the `time` leg, and the cursor flags follow
+    /// bar-time changes rather than positions.
+    tick_times: Vec<i64>,
+    /// Harness-registered lower-timeframe datasets served to
+    /// `request.security_lower_tf` (copied from the engine at run start).
+    ltf_injections: Vec<InjectedDataset>,
+    /// Harness-registered per-timeframe datasets served to
+    /// `request.security` under confirmed-bar semantics (copied from the
+    /// engine at run start, same shape as the pull registry).
+    security_injections: Vec<InjectedDataset>,
+    /// Unconditional top-level declaration sites pre-registered before the
+    /// first bar, as `(module index, statement index)`: the bar loop skips
+    /// them, since re-execution would only re-collapse identical shapes.
+    decl_skip: HashSet<(usize, usize)>,
+    /// Plain frame writes journaled per call as `(name, entry value)`
+    /// with absence for unbound names: the teardown reverts exactly what
+    /// the body touched, without cloning the whole frame up front.
+    /// The outer `None` means unbound, distinct from bound-to-`na` —
+    /// hence the nested option.
+    #[allow(clippy::option_option)]
+    journal: Vec<(String, Option<Option<PineValue>>)>,
+    /// Journal suffix owned by the innermost call (`None` outside calls):
+    /// only writes at or after the base journal, so nested calls revert
+    /// their own suffix and leave the caller's entries alone.
+    journal_base: Option<usize>,
+    /// Suppress journaling while parameter binding and write-backs run
+    /// (those restore through the shadow list and caller homes instead).
+    journal_hold: bool,
+    /// Variable-to-map-entry provenance for `map.get` handles: `var ->
+    /// (map variable, key encoding, key value)`. A method call through a
+    /// tagged variable writes the mutated instance back to the map entry
+    /// as well as the variable, giving Pine reference behavior. Rebinding
+    /// the variable from anything but `map.get` clears its tag.
+    map_prov: HashMap<String, (String, String, PineValue)>,
     plots: Vec<PlotCapture>,
     snapshots: Vec<BarSnapshot>,
+    plotcandles: Vec<PlotCandleCapture>,
+    barcolors: Vec<BarColorCapture>,
+    fills: Vec<FillCapture>,
+    draw_events: Vec<DrawingEvent>,
+    drawings: HashMap<u64, DrawingObject>,
+    next_drawing_id: u64,
     error: Option<KernelError>,
 }
 
@@ -215,6 +405,8 @@ impl EngineState {
             var_kind: HashMap::new(),
             fixnan_memory: HashMap::new(),
             ta_bridge: None,
+            chart_symbol: crate::runtime::default_chart_symbol(),
+            chart_period: crate::runtime::default_chart_period(),
             core_inputs: InputSet::new(),
             enums: HashMap::new(),
             consts: HashSet::new(),
@@ -227,8 +419,24 @@ impl EngineState {
             receiver: Vec::new(),
             call_stack: Vec::new(),
             frame_history: HashMap::new(),
+            loop_depth: 0,
+            break_flag: false,
+            tick_times: Vec::new(),
+            ltf_injections: Vec::new(),
+            security_injections: Vec::new(),
+            decl_skip: HashSet::new(),
+            journal: Vec::new(),
+            journal_base: None,
+            journal_hold: false,
+            map_prov: HashMap::new(),
             plots: Vec::new(),
             snapshots: Vec::new(),
+            plotcandles: Vec::new(),
+            barcolors: Vec::new(),
+            fills: Vec::new(),
+            draw_events: Vec::new(),
+            drawings: HashMap::new(),
+            next_drawing_id: 0,
             error: None,
         }
     }
@@ -264,11 +472,60 @@ impl LinkedModule {
     }
 }
 
+/// One injected lower-timeframe dataset served to
+/// `request.security_lower_tf` headlessly: six parallel columns over the
+/// same rows (timestamps in epoch milliseconds, prices and volumes as
+/// floats). The harness registers exactly the window a pull may observe;
+/// `calc_bars_count` tail-takes from it.
+#[derive(Debug, Clone)]
+pub struct LtfDataset {
+    /// Row timestamps, epoch milliseconds.
+    pub times: Vec<i64>,
+    /// Row opens.
+    pub opens: Vec<f64>,
+    /// Row highs.
+    pub highs: Vec<f64>,
+    /// Row lows.
+    pub lows: Vec<f64>,
+    /// Row closes.
+    pub closes: Vec<f64>,
+    /// Row volumes.
+    pub volumes: Vec<f64>,
+}
+
+impl LtfDataset {
+    /// Row count; all six columns always agree (enforced at injection).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.times.len()
+    }
+
+    /// True when no rows are registered.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.times.is_empty()
+    }
+}
+
+/// One registered dataset: the exact `(symbol, timeframe)` pair it answers.
+/// Shared by the lower-timeframe pull registry and the `request.security`
+/// registry; both are harness configuration, never run state.
+#[derive(Debug, Clone)]
+pub struct InjectedDataset {
+    symbol: String,
+    timeframe: String,
+    dataset: LtfDataset,
+}
+
 /// The executor. Owns its runtime config; all per-run state resets on
 /// [`run`](Self::run), so one engine serves sequential runs safely.
+/// Registered datasets (lower-timeframe and security) survive across runs
+/// (they are harness configuration, not run state).
 pub struct PineEngine {
     runtime: PineRuntime,
     state: EngineState,
+    ltf_injections: Vec<InjectedDataset>,
+    security_injections: Vec<InjectedDataset>,
 }
 
 impl PineEngine {
@@ -278,7 +535,90 @@ impl PineEngine {
         Self {
             runtime: PineRuntime::new(config),
             state: EngineState::fresh(),
+            ltf_injections: Vec::new(),
+            security_injections: Vec::new(),
         }
+    }
+
+    /// Check one injected dataset's columns agree in length (empty serves
+    /// empty); ragged datasets refuse fail-closed here, never mid-run.
+    fn check_dataset(
+        what: &str,
+        symbol: &str,
+        timeframe: &str,
+        dataset: &LtfDataset,
+    ) -> Result<(), KernelError> {
+        let len = dataset.len();
+        for (column, column_len) in [
+            ("opens", dataset.opens.len()),
+            ("highs", dataset.highs.len()),
+            ("lows", dataset.lows.len()),
+            ("closes", dataset.closes.len()),
+            ("volumes", dataset.volumes.len()),
+        ] {
+            if column_len != len {
+                return Err(refused(format!(
+                    "injected {what} dataset for {symbol}/{timeframe} is ragged: {column} has {column_len} rows for {len} timestamps"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Register one lower-timeframe dataset for `(symbol, timeframe)`:
+    /// later `request.security_lower_tf` calls with that pair are served
+    /// from it instead of refusing. Columns must agree in length (empty
+    /// serves empty arrays); anything else refuses fail-closed here,
+    /// never mid-run.
+    pub fn inject_lower_tf(
+        &mut self,
+        symbol: &str,
+        timeframe: &str,
+        dataset: LtfDataset,
+    ) -> Result<(), KernelError> {
+        Self::check_dataset("lower-tf", symbol, timeframe, &dataset)?;
+        if let Some(slot) = self
+            .ltf_injections
+            .iter_mut()
+            .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
+        {
+            slot.dataset = dataset;
+        } else {
+            self.ltf_injections.push(InjectedDataset {
+                symbol: symbol.to_owned(),
+                timeframe: timeframe.to_owned(),
+                dataset,
+            });
+        }
+        Ok(())
+    }
+
+    /// Register one per-timeframe dataset for `(symbol, timeframe)`:
+    /// later `request.security` calls with that pair are served from the
+    /// confirmed prefix (timestamps at or before the current chart bar)
+    /// instead of refusing. Unregistered pairs keep the live-fetch
+    /// refusal. Same column contract as [`inject_lower_tf`](Self::inject_lower_tf).
+    pub fn inject_security(
+        &mut self,
+        symbol: &str,
+        timeframe: &str,
+        dataset: LtfDataset,
+    ) -> Result<(), KernelError> {
+        Self::check_dataset("security", symbol, timeframe, &dataset)?;
+        if let Some(slot) = self
+            .security_injections
+            .iter_mut()
+            .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
+        {
+            slot.dataset = dataset;
+        } else {
+            self.security_injections.push(InjectedDataset {
+                symbol: symbol.to_owned(),
+                timeframe: timeframe.to_owned(),
+                dataset,
+            });
+        }
+        Ok(())
     }
 
     /// Evaluate `program` over `bars` with `inputs`, returning per-bar
@@ -311,7 +651,50 @@ impl PineEngine {
         bars: &[Bar],
         inputs: InputSet,
     ) -> Result<RunOutcome, KernelError> {
+        self.run_linked_inner(modules, bars, Vec::new(), inputs)
+    }
+
+    /// Evaluate linked `modules` over per-tick updates: `bars` carries one
+    /// entry per tick (legs track the bar-so-far OHLC, cumulative volume,
+    /// and the constant bar-open time), while `tick_millis` carries the
+    /// tick timestamps `timenow` reads. Ticks sharing a bar-open time form
+    /// one realtime bar: `barstate.isnew` fires on the first tick only,
+    /// `isconfirmed` on the last, and the run reports `ishistory=false` /
+    /// `isrealtime=true`, mirroring a live feed. The `time` leg runs in
+    /// Pine-native milliseconds here (closed-bar runs keep seconds).
+    /// Length mismatch refuses fail-closed.
+    pub fn run_linked_ticks(
+        &mut self,
+        modules: &[LinkedModule],
+        bars: &[Bar],
+        tick_millis: &[i64],
+        inputs: InputSet,
+    ) -> Result<RunOutcome, KernelError> {
+        if tick_millis.len() != bars.len() {
+            return Err(refused(format!(
+                "tick run needs one timestamp per bar, got {} stamps for {} bars",
+                tick_millis.len(),
+                bars.len()
+            )));
+        }
+        self.run_linked_inner(modules, bars, tick_millis.to_vec(), inputs)
+    }
+
+    fn run_linked_inner(
+        &mut self,
+        modules: &[LinkedModule],
+        bars: &[Bar],
+        tick_times: Vec<i64>,
+        inputs: InputSet,
+    ) -> Result<RunOutcome, KernelError> {
         self.state = EngineState::fresh();
+        self.state.chart_symbol.clone_from(&self.runtime.config().chart_symbol);
+        self.state.chart_period.clone_from(&self.runtime.config().chart_period);
+        self.state.tick_times = tick_times;
+        self.state.ltf_injections.clone_from(&self.ltf_injections);
+        self.state
+            .security_injections
+            .clone_from(&self.security_injections);
         // The input registry seeds from the run's inputs so caller overrides
         // are visible to `input.*` declarations from the first bar.
         self.state.core_inputs = inputs.clone();
@@ -323,8 +706,21 @@ impl PineEngine {
                 );
             }
         }
-        let legs = Legs::of(bars);
-        let PineEngine { runtime, state } = &mut *self;
+        // Unconditional top-level declarations register once, before the
+        // first bar, so per-bar runs skip them; a malformed declaration
+        // aborts the run here with the same reason bar zero would carry.
+        self.state.decl_skip = self.state.predeclare(modules)?;
+        let mut legs = Legs::of(bars);
+        if self.state.tick_mode() {
+            // Tick emulation runs the `time` leg in Pine-native
+            // milliseconds (exact below 2^53); closed-bar runs keep the
+            // seconds domain pinned by the runtime-shim suite.
+            legs.time = bars
+                .iter()
+                .map(|bar| bar.ts.timestamp_millis() as f64)
+                .collect();
+        }
+        let PineEngine { runtime, state, .. } = &mut *self;
         let evaluated = runtime.run_over(bars, inputs, |ctx| {
             state.exec_bar(modules, ctx, &legs);
         })?;
@@ -335,6 +731,10 @@ impl PineEngine {
             evaluated,
             snapshots: std::mem::take(&mut state.snapshots),
             plots: std::mem::take(&mut state.plots),
+            plotcandles: std::mem::take(&mut state.plotcandles),
+            barcolors: std::mem::take(&mut state.barcolors),
+            fills: std::mem::take(&mut state.fills),
+            draw_events: std::mem::take(&mut state.draw_events),
         })
     }
 
@@ -346,6 +746,120 @@ impl PineEngine {
 }
 
 impl EngineState {
+    /// Tick/realtime emulation is on when the run carries per-update tick
+    /// timestamps: cursor flags follow bar-time changes and `timenow`
+    /// reads tick times instead of the `time` leg.
+    fn tick_mode(&self) -> bool {
+        !self.tick_times.is_empty()
+    }
+
+    /// Register one standalone function under the current module:
+    /// identical re-declarations collapse, so only a genuinely new
+    /// signature extends the overload list.
+    fn declare_func(
+        &mut self,
+        name: &str,
+        params: &[super::syntax::Param],
+        body: &[super::syntax::PineStmt],
+    ) {
+        let slot = self
+            .functions
+            .entry((self.current_module.clone(), name.to_owned()))
+            .or_default();
+        if !slot
+            .iter()
+            .any(|(known_params, known_body)| {
+                known_params == params && known_body.as_slice() == body
+            })
+        {
+            slot.push((params.to_vec(), std::sync::Arc::new(body.to_vec())));
+        }
+    }
+
+    /// Register one method under its receiver type (module qualifiers
+    /// compare by trailing segment). Untyped receivers refuse.
+    fn declare_method(
+        &mut self,
+        name: &str,
+        params: &[super::syntax::Param],
+        body: &[super::syntax::PineStmt],
+    ) -> Result<(), KernelError> {
+        let receiver_type = params.first().and_then(|param| {
+            param
+                .type_name
+                .as_ref()
+                .map(|decl| trailing_type(&decl.name).to_owned())
+        });
+        match receiver_type {
+            Some(type_name) => {
+                self.methods.insert(
+                    (type_name, name.to_owned()),
+                    (
+                        self.current_module.clone(),
+                        params.to_vec(),
+                        std::sync::Arc::new(body.to_vec()),
+                    ),
+                );
+                Ok(())
+            }
+            None => Err(refused(format!(
+                "method '{name}' needs a typed receiver ('Type this')"
+            ))),
+        }
+    }
+
+    /// Register one user-type shape under the current module.
+    fn declare_type(&mut self, name: &str, fields: &[super::syntax::FieldDecl]) {
+        self.types.insert(name.to_owned(), fields.to_vec());
+    }
+
+    /// Register every unconditional top-level declaration once, before the
+    /// first bar: pure shapes (`FuncDecl`, `MethodDecl`, `TypeDecl`,
+    /// including through `export`) land in exactly the state their per-bar
+    /// execution would leave, so per-bar runs skip them. Anything
+    /// effectful or conditional (`ConstDecl` evaluates, `EnumDecl` binds
+    /// member values, nested declarations) stays per-bar. Returns the
+    /// `(module index, statement index)` sites the bar loop skips.
+    fn predeclare(
+        &mut self,
+        modules: &[LinkedModule],
+    ) -> Result<HashSet<(usize, usize)>, KernelError> {
+        let mut skip = HashSet::new();
+        for (position, module) in modules.iter().enumerate() {
+            self.current_module.clone_from(&module.key);
+            for (index, stmt) in module.program.statements.iter().enumerate() {
+                let (decl, was_export) = match stmt {
+                    PineStmt::ExportDecl(inner) => (inner.as_ref(), true),
+                    other => (other, false),
+                };
+                let done = match decl {
+                    PineStmt::FuncDecl { name, params, body } => {
+                        self.declare_func(name, params, body);
+                        true
+                    }
+                    PineStmt::MethodDecl { name, params, body } => {
+                        self.declare_method(name, params, body)?;
+                        true
+                    }
+                    PineStmt::TypeDecl { name, fields } => {
+                        self.declare_type(name, fields);
+                        true
+                    }
+                    _ => false,
+                };
+                if done {
+                    if was_export {
+                        if let Some(name) = export_label(decl) {
+                            self.exported.insert(name);
+                        }
+                    }
+                    skip.insert((position, index));
+                }
+            }
+        }
+        Ok(skip)
+    }
+
     /// Execute one bar across every linked module in order, then record its
     /// snapshot and extend histories. Declaration statements re-run
     /// idempotently (declare-once tables), so dependency modules need no
@@ -355,9 +869,12 @@ impl EngineState {
         // history must not leak into this bar's extension.
         self.frame_history.clear();
         if self.error.is_none() {
-            for module in modules {
+            for (position, module) in modules.iter().enumerate() {
                 self.current_module.clone_from(&module.key);
-                for stmt in &module.program.statements {
+                for (index, stmt) in module.program.statements.iter().enumerate() {
+                    if self.decl_skip.contains(&(position, index)) {
+                        continue;
+                    }
                     self.exec_stmt(stmt, ctx, legs);
                     if self.error.is_some() {
                         break;
@@ -408,6 +925,34 @@ impl EngineState {
         }
     }
 
+    /// Statement lists stop when a refusal is latched or a `break` is
+    /// pending: the innermost enclosing loop consumes the flag.
+    fn stopped(&self) -> bool {
+        self.error.is_some() || self.break_flag
+    }
+
+    /// Run one numeric-`for` iteration: bind the counter, run the body,
+    /// and report whether the loop must stop (`break` or a latched
+    /// refusal). Shared by the ascending and descending directions so the
+    /// two never fork.
+    fn for_step(
+        &mut self,
+        variable: &str,
+        at: i64,
+        body: &[PineStmt],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> bool {
+        self.assign(ctx, variable, Some(PineValue::Int(at)));
+        for stmt in body {
+            self.exec_stmt(stmt, ctx, legs);
+            if self.stopped() {
+                break;
+            }
+        }
+        self.stopped()
+    }
+
     #[allow(clippy::too_many_lines)]
     fn exec_stmt_inner(
         &mut self,
@@ -439,7 +984,44 @@ impl EngineState {
             }
             PineStmt::Declaration { name, value, .. } | PineStmt::Assignment { name, value } => {
                 let assigned = self.eval_expr(value, ctx, legs)?;
-                self.assign(ctx, name, assigned);
+                self.assign(ctx, name, assigned.clone());
+                self.refresh_prov(ctx, legs, name, value, assigned.as_ref())?;
+                Ok(())
+            }
+            PineStmt::MultiDeclaration { decls } => {
+                for decl in decls {
+                    let assigned = match &decl.value {
+                        Some(value) => self.eval_expr(value, ctx, legs)?,
+                        None => None,
+                    };
+                    self.assign(ctx, &decl.name, assigned.clone());
+                    if let Some(value) = &decl.value {
+                        self.refresh_prov(ctx, legs, &decl.name, value, assigned.as_ref())?;
+                    } else {
+                        self.map_prov.remove(&decl.name);
+                    }
+                }
+                Ok(())
+            }
+            PineStmt::MultiAssign { items } => {
+                // Each item runs through its single-assignment rule, so
+                // `:=` target checks and `this.*` paths behave identically.
+                for item in items {
+                    let single = match item.op {
+                        AssignOp::Assign => PineStmt::Assignment {
+                            name: item.name.clone(),
+                            value: Box::new(item.value.clone()),
+                        },
+                        AssignOp::Reassign => PineStmt::Reassign {
+                            name: item.name.clone(),
+                            value: Box::new(item.value.clone()),
+                        },
+                    };
+                    self.exec_stmt(&single, ctx, legs);
+                    if self.error.is_some() {
+                        break;
+                    }
+                }
                 Ok(())
             }
             PineStmt::Reassign { name, value } => {
@@ -447,9 +1029,41 @@ impl EngineState {
                     let assigned = self.eval_expr(value, ctx, legs)?;
                     return self.assign_path(ctx, name, assigned);
                 }
+                // Receiver-alias field writes (`level.aged := 0`, and the
+                // `+=` family desugared onto them) hit the live slot; the
+                // right-hand side already reads through the same alias.
+                if let Some((head, field)) = name.split_once('.') {
+                    if !field.contains('.') && self.receiver_slot(head).is_some() {
+                        let assigned = self.eval_expr(value, ctx, legs)?;
+                        if self.write_alias_field(head, field, assigned) {
+                            return Ok(());
+                        }
+                        return Err(refused(format!("unknown field '{head}.{field}'")));
+                    }
+                    // Variable-held instance field writes (`context.regime
+                    // := ...`): the instance takes out of its home, gains
+                    // the field, and writes back — the same take/put
+                    // discipline as method receivers. Unknown fields
+                    // refuse after restoring the instance.
+                    if !field.contains('.') && !head.is_empty() {
+                        let assigned = self.eval_expr(value, ctx, legs)?;
+                        if let Some((mut instance, home)) = self.take_object(ctx, head)? {
+                            if !instance.fields.contains_key(field) {
+                                self.put_object(ctx, home, instance)?;
+                                return Err(refused(format!(
+                                    "unknown field '{head}.{field}'"
+                                )));
+                            }
+                            instance.fields.insert(field.to_owned(), assigned);
+                            self.put_object(ctx, home, instance)?;
+                            return Ok(());
+                        }
+                    }
+                }
                 if self.var_kind.contains_key(name) || self.variables.contains_key(name) {
                     let assigned = self.eval_expr(value, ctx, legs)?;
-                    self.assign(ctx, name, assigned);
+                    self.assign(ctx, name, assigned.clone());
+                    self.refresh_prov(ctx, legs, name, value, assigned.as_ref())?;
                     Ok(())
                 } else {
                     Err(refused(format!(
@@ -480,24 +1094,7 @@ impl EngineState {
                 }
             }
             PineStmt::Expression(expr) => {
-                // Collection calls in statement position write their result
-                // back to a variable target, giving statement calls
-                // reference-type behavior (`map.put(m, ...)` mutates the
-                // binding); nested calls stay functional.
-                if let PineExpr::MethodCall {
-                    namespace, args, ..
-                } = expr
-                {
-                    if matches!(namespace.as_str(), "map" | "array") {
-                        if let Some(PineExpr::Variable(target)) =
-                            args.first().map(|arg| &arg.value)
-                        {
-                            let written = self.eval_expr(expr, ctx, legs)?;
-                            return self.assign_path(ctx, target, written);
-                        }
-                    }
-                }
-                self.eval_expr(expr, ctx, legs)?;
+                self.exec_expr_stmt(expr, ctx, legs)?;
                 Ok(())
             }
             PineStmt::If {
@@ -505,21 +1102,23 @@ impl EngineState {
                 then_branch,
                 else_branch,
             } => {
-                // An `na` condition takes no branch (Pine never executes on
-                // `na`); numbers still refuse — only `bool` branches.
-                let taken = branch_of("if condition", self.eval_expr(condition, ctx, legs)?.as_ref())?
-                    .unwrap_or(false);
-                let block = if taken {
-                    then_branch
-                } else {
-                    else_branch.as_ref().map_or(&[][..], Vec::as_slice)
-                };
+                let block =
+                    self.taken_block(condition, then_branch, else_branch.as_deref(), ctx, legs)?;
                 for stmt in block {
                     self.exec_stmt(stmt, ctx, legs);
-                    if self.error.is_some() {
+                    if self.stopped() {
                         break;
                     }
                 }
+                Ok(())
+            }
+            PineStmt::Break => {
+                if self.loop_depth == 0 {
+                    return Err(refused(
+                        "'break' outside a 'for'/'while' body refuses instead of unwinding",
+                    ));
+                }
+                self.break_flag = true;
                 Ok(())
             }
             PineStmt::For {
@@ -530,28 +1129,95 @@ impl EngineState {
             } => {
                 let first = whole_number("for start", self.eval_expr(start, ctx, legs)?.as_ref())?;
                 let last = whole_number("for end", self.eval_expr(end, ctx, legs)?.as_ref())?;
-                let count = i128::from(last) - i128::from(first) + 1;
+                let count = (i128::from(last) - i128::from(first)).abs() + 1;
                 if count > MAX_LOOP_ITERATIONS as i128 {
                     return Err(refused(format!(
                         "'for' range {first}..={last} exceeds {MAX_LOOP_ITERATIONS} iterations"
                     )));
                 }
-                for i in first..=last {
-                    self.assign(ctx, variable, Some(PineValue::Int(i)));
-                    for stmt in body {
-                        self.exec_stmt(stmt, ctx, legs);
-                        if self.error.is_some() {
+                self.loop_depth += 1;
+                // The step adapts to the direction: a start past the end
+                // counts down, so reverse scans (`size - 1 to 0`) iterate
+                // instead of silently running zero times.
+                if first <= last {
+                    for i in first..=last {
+                        if self.for_step(variable, i, body, ctx, legs) {
                             break;
                         }
                     }
-                    if self.error.is_some() {
+                } else {
+                    for i in (last..=first).rev() {
+                        if self.for_step(variable, i, body, ctx, legs) {
+                            break;
+                        }
+                    }
+                }
+                self.loop_depth -= 1;
+                // A pending `break` belongs to this loop however it
+                // stopped: consume it so an outer loop never observes it.
+                self.break_flag = false;
+                Ok(())
+            }
+            PineStmt::ForIn {
+                targets,
+                iterable,
+                body,
+            } => {
+                let collection = self.eval_expr(iterable, ctx, legs)?;
+                let items = match collection {
+                    Some(PineValue::Array(items)) => items,
+                    Some(other) => {
+                        return Err(refused(format!(
+                            "'for ... in' iterates arrays, got {other}"
+                        )));
+                    }
+                    None => {
+                        return Err(refused("'for ... in' iterates arrays, got na"));
+                    }
+                };
+                if items.len() > MAX_LOOP_ITERATIONS {
+                    return Err(refused(format!(
+                        "'for ... in' over {} elements exceeds {MAX_LOOP_ITERATIONS} iterations",
+                        items.len()
+                    )));
+                }
+                // One target binds each value; a pair binds the integer
+                // index beside the value. Anything else is not iteration.
+                let (index_name, value_name) = match targets.as_slice() {
+                    [value] => (None, value.clone()),
+                    [index, value] => (Some(index.clone()), value.clone()),
+                    _ => {
+                        return Err(refused(
+                            "'for ... in' binds one value or an index/value pair",
+                        ));
+                    }
+                };
+                self.loop_depth += 1;
+                for (index, slot) in items.iter().enumerate() {
+                    if let Some(name) = index_name.as_ref() {
+                        #[allow(clippy::cast_possible_wrap)]
+                        self.assign(ctx, name, Some(PineValue::Int(index as i64)));
+                    }
+                    self.assign(ctx, &value_name, slot.clone());
+                    for stmt in body {
+                        self.exec_stmt(stmt, ctx, legs);
+                        if self.stopped() {
+                            break;
+                        }
+                    }
+                    if self.stopped() {
                         break;
                     }
                 }
+                self.loop_depth -= 1;
+                // A pending `break` belongs to this loop however it
+                // stopped: consume it so an outer loop never observes it.
+                self.break_flag = false;
                 Ok(())
             }
             PineStmt::While { condition, body } => {
                 let mut iterations: usize = 0;
+                self.loop_depth += 1;
                 loop {
                     // An `na` condition ends the loop, mirroring the `if`
                     // rule above; numbers still refuse.
@@ -562,6 +1228,8 @@ impl EngineState {
                         break;
                     }
                     if iterations >= MAX_LOOP_ITERATIONS {
+                        self.loop_depth -= 1;
+                        self.break_flag = false;
                         return Err(refused(format!(
                             "'while' exceeded {MAX_LOOP_ITERATIONS} iterations"
                         )));
@@ -569,14 +1237,16 @@ impl EngineState {
                     iterations += 1;
                     for stmt in body {
                         self.exec_stmt(stmt, ctx, legs);
-                        if self.error.is_some() {
+                        if self.stopped() {
                             break;
                         }
                     }
-                    if self.error.is_some() {
+                    if self.stopped() {
                         break;
                     }
                 }
+                self.loop_depth -= 1;
+                self.break_flag = false;
                 Ok(())
             }
             PineStmt::Import(_)
@@ -597,28 +1267,11 @@ impl EngineState {
                 Ok(())
             }
             PineStmt::FuncDecl { name, params, body } => {
-                self.functions.insert(
-                    (self.current_module.clone(), name.clone()),
-                    (params.clone(), body.clone()),
-                );
+                self.declare_func(name, params, body);
                 Ok(())
             }
             PineStmt::MethodDecl { name, params, body } => {
-                let receiver_type = params.first().and_then(|param| {
-                    param.type_name.as_ref().map(|decl| decl.name.clone())
-                });
-                match receiver_type {
-                    Some(type_name) => {
-                        self.methods.insert(
-                            (type_name, name.clone()),
-                            (params.clone(), body.clone()),
-                        );
-                        Ok(())
-                    }
-                    None => Err(refused(format!(
-                        "method '{name}' needs a typed receiver ('Type this')"
-                    ))),
-                }
+                self.declare_method(name, params, body)
             }
             PineStmt::ConstDecl { name, value, .. } => {
                 // Compile-time bindings evaluate once, on the first
@@ -644,7 +1297,7 @@ impl EngineState {
                 Ok(())
             }
             PineStmt::TypeDecl { name, fields } => {
-                self.types.insert(name.clone(), fields.clone());
+                self.declare_type(name, fields);
                 Ok(())
             }
             PineStmt::Switch(switch) => {
@@ -656,27 +1309,46 @@ impl EngineState {
 
     /// Route an assignment: persistent stores for `var`/`varip`, series
     /// variables otherwise. Assigning `na` to a persistent binding clears
-    /// it (the initialization mark stays, so it is not re-seeded).
+    /// it (the initialization mark stays, so it is not re-seeded). Plain
+    /// frame writes inside a call journal their entry value, so the call
+    /// teardown reverts exactly what the body touched instead of cloning
+    /// the whole frame up front.
     fn assign(&mut self, ctx: &mut RunCtx<'_>, name: &str, value: Option<PineValue>) {
-        match self.var_kind.get(name) {
-            Some(&is_varip) => match value {
-                Some(present) => {
-                    if is_varip {
-                        ctx.vars_mut().set_varip(name, present);
-                    } else {
-                        ctx.vars_mut().set_var(name, present);
-                    }
+        if let Some(&is_varip) = self.var_kind.get(name) {
+            if let Some(present) = value {
+                if is_varip {
+                    ctx.vars_mut().set_varip(name, present);
+                } else {
+                    ctx.vars_mut().set_var(name, present);
                 }
-                None => {
-                    if is_varip {
-                        ctx.vars_mut().clear_varip(name);
-                    } else {
-                        ctx.vars_mut().clear_var(name);
-                    }
-                }
-            },
-            None => {
-                self.variables.insert(name.to_owned(), value);
+            } else if is_varip {
+                ctx.vars_mut().clear_varip(name);
+            } else {
+                ctx.vars_mut().clear_var(name);
+            }
+        } else {
+            self.journal_frame(name);
+            self.variables.insert(name.to_owned(), value);
+        }
+    }
+
+    /// Journal one plain frame write for the call teardown: the first
+    /// write to a name inside a call records its entry value, so teardown
+    /// reverts exactly the touched names. The entry double-wraps: `None`
+    /// means the name was absent and teardown removes it; `Some(slot)`
+    /// restores the slot (which itself may be absence). Persistent
+    /// (`var`/`varip`) writes never journal — they persist exactly like
+    /// the old frame-restore discipline, which never snapshotted them
+    /// either. Suppressed while parameter binding and write-backs run
+    /// (those have their own restore paths).
+    fn journal_frame(&mut self, name: &str) {
+        if self.journal_hold {
+            return;
+        }
+        if let Some(base) = self.journal_base {
+            if !self.journal[base..].iter().any(|(known, _)| known == name) {
+                let old = self.variables.get(name).cloned();
+                self.journal.push((name.to_owned(), old));
             }
         }
     }
@@ -692,21 +1364,71 @@ impl EngineState {
         value: Option<PineValue>,
     ) -> Result<(), KernelError> {
         if let Some(field) = name.strip_prefix("this.") {
-            let receiver = self
+            let slot = self
                 .receiver
                 .last_mut()
                 .ok_or_else(|| refused("'this' is only bound inside a method"))?;
-            if !receiver.fields.contains_key(field) {
+            if !slot.instance.fields.contains_key(field) {
                 return Err(refused(format!("unknown field 'this.{field}'")));
             }
-            receiver.fields.insert(field.to_owned(), value);
+            slot.instance.fields.insert(field.to_owned(), value);
             return Ok(());
         }
         if name == "this" {
             return Err(refused("cannot rebind 'this'"));
         }
+        // Receiver-alias field writes (`level.aged := 0`) hit the live
+        // slot, exactly like `this.` writes; anything else dotted keeps
+        // the undeclared-target refusal below.
+        if let Some((head, field)) = name.split_once('.') {
+            if !field.contains('.') && self.write_alias_field(head, field, value.clone()) {
+                return Ok(());
+            }
+        }
         self.assign(ctx, name, value);
         Ok(())
+    }
+
+    /// Innermost receiver slot bound under `alias`, if any. Parameters
+    /// shadow outer bindings, so the search runs top-down: a nested call
+    /// reusing its caller's alias still reaches the nested receiver.
+    fn receiver_slot(&self, alias: &str) -> Option<usize> {
+        self.receiver
+            .iter()
+            .rposition(|slot| slot.alias == alias)
+    }
+
+    /// Write one field through a receiver alias into the live slot.
+    /// `true` when `alias` names a live receiver holding the field;
+    /// unknown aliases and unknown fields answer `false` so the caller
+    /// keeps its own refusal.
+    fn write_alias_field(&mut self, alias: &str, field: &str, value: Option<PineValue>) -> bool {
+        let Some(depth) = self.receiver_slot(alias) else {
+            return false;
+        };
+        let Some(slot) = self.receiver.get_mut(depth) else {
+            return false;
+        };
+        if !slot.instance.fields.contains_key(field) {
+            return false;
+        }
+        slot.instance.fields.insert(field.to_owned(), value);
+        true
+    }
+
+    /// Attach map-entry provenance to a taken home: a variable tagged by
+    /// a `map.get` assignment writes its mutated instance back to the map
+    /// entry as well as the variable (see [`ObjectHome::MapEntry`]).
+    fn prov_home(&self, name: &str, inner: ObjectHome) -> ObjectHome {
+        match self.map_prov.get(name) {
+            Some((map_var, key, key_value)) => ObjectHome::MapEntry {
+                inner: Box::new(inner),
+                map_var: map_var.clone(),
+                key: key.clone(),
+                key_value: key_value.clone(),
+            },
+            None => inner,
+        }
     }
 
     /// Take an instance out of its home for a method call, remembering where
@@ -718,11 +1440,12 @@ impl EngineState {
         name: &str,
     ) -> Result<Option<(UserInstance, ObjectHome)>, KernelError> {
         if let Some(field) = name.strip_prefix("this.") {
-            let receiver = self
+            let slot = self
                 .receiver
                 .last_mut()
                 .ok_or_else(|| refused("'this' is only bound inside a method"))?;
-            let slot = receiver
+            let slot = slot
+                .instance
                 .fields
                 .get_mut(field)
                 .ok_or_else(|| refused(format!("unknown field 'this.{field}'")))?;
@@ -739,7 +1462,8 @@ impl EngineState {
         if let Some(slot) = self.variables.remove(name) {
             return match slot {
                 Some(PineValue::Object(instance)) => {
-                    Ok(Some((instance, ObjectHome::Variables(name.to_owned()))))
+                    let home = self.prov_home(name, ObjectHome::Variables(name.to_owned()));
+                    Ok(Some((instance, home)))
                 }
                 other => {
                     self.variables.insert(name.to_owned(), other);
@@ -749,11 +1473,13 @@ impl EngineState {
         }
         if let Some(PineValue::Object(instance)) = ctx.vars().get_var(name) {
             ctx.vars_mut().clear_var(name);
-            return Ok(Some((instance, ObjectHome::VarStore(name.to_owned(), false))));
+            let home = self.prov_home(name, ObjectHome::VarStore(name.to_owned(), false));
+            return Ok(Some((instance, home)));
         }
         if let Some(PineValue::Object(instance)) = ctx.vars().get_varip(name) {
             ctx.vars_mut().clear_varip(name);
-            return Ok(Some((instance, ObjectHome::VarStore(name.to_owned(), true))));
+            let home = self.prov_home(name, ObjectHome::VarStore(name.to_owned(), true));
+            return Ok(Some((instance, home)));
         }
         Ok(None)
     }
@@ -778,11 +1504,93 @@ impl EngineState {
                 }
             }
             ObjectHome::ThisField(field) => {
-                let receiver = self
+                let slot = self
                     .receiver
                     .last_mut()
                     .ok_or_else(|| refused("'this' is only bound inside a method"))?;
-                receiver.fields.insert(field, Some(value));
+                slot.instance.fields.insert(field, Some(value));
+            }
+            ObjectHome::MapEntry {
+                inner,
+                map_var,
+                key,
+                key_value,
+            } => {
+                let PineValue::Object(inst) = value else {
+                    return Err(refused("map entry holds an object"));
+                };
+                self.put_object(ctx, *inner, inst.clone())?;
+                self.write_map_entry(ctx, &map_var, &key, &key_value, PineValue::Object(inst));
+            }
+        }
+        Ok(())
+    }
+
+    /// Store one mutated object back into a general-map entry: reads the
+    /// map variable from either home, replaces the entry, and assigns it
+    /// back through the same routing. Missing or non-map holders skip
+    /// silently — the variable home already carries the mutation. Runs
+    /// unjournaled: the entry update must persist, never revert.
+    fn write_map_entry(
+        &mut self,
+        ctx: &mut RunCtx<'_>,
+        map_var: &str,
+        key: &str,
+        key_value: &PineValue,
+        value: PineValue,
+    ) {
+        let current = self
+            .variables
+            .get(map_var)
+            .cloned()
+            .flatten()
+            .or_else(|| ctx.vars().get_var(map_var))
+            .or_else(|| ctx.vars().get_varip(map_var));
+        if let Some(PineValue::Map(entries)) = current {
+            let mut stored = entries;
+            stored.insert(key.to_owned(), (key_value.clone(), Some(value)));
+            self.journal_hold = true;
+            self.assign(ctx, map_var, Some(PineValue::Map(stored)));
+            self.journal_hold = false;
+        }
+    }
+
+    /// Refresh map-entry provenance after an assignment: a bare name bound
+    /// from `map.get(map_var, key)` evaluating to an object tags the
+    /// variable so method calls write through to the entry; anything else
+    /// clears a stale tag.
+    fn refresh_prov(
+        &mut self,
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+        name: &str,
+        rhs: &PineExpr,
+        assigned: Option<&PineValue>,
+    ) -> Result<(), KernelError> {
+        self.map_prov.remove(name);
+        if !matches!(assigned, Some(PineValue::Object(_))) {
+            return Ok(());
+        }
+        if let PineExpr::MethodCall {
+            namespace,
+            method,
+            args,
+            ..
+        } = rhs
+        {
+            if namespace == "map" && method == "get" {
+                if let [map_arg, key_arg] = args.as_slice() {
+                    if let PineExpr::Variable(map_var) = &map_arg.value {
+                        if let Some(key_value) = self.eval_expr(&key_arg.value, ctx, legs)? {
+                            if let Some(key) = crate::value::map_key_of(&key_value) {
+                                self.map_prov.insert(
+                                    name.to_owned(),
+                                    (map_var.clone(), key, key_value),
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -817,6 +1625,42 @@ impl EngineState {
                 args,
                 type_args,
             } => self.call_method(namespace, method, args, type_args, ctx, legs),
+            PineExpr::InstanceCall {
+                receiver,
+                method,
+                args,
+                ..
+            } => {
+                // Chained construction runs against the evaluated instance;
+                // an rvalue has no home, so the mutated copy is dropped and
+                // only the returned value flows on.
+                match self.eval_expr(receiver, ctx, legs)? {
+                    Some(PineValue::Object(instance)) => {
+                        let (_, value) = self.run_method(instance, method, args, ctx, legs)?;
+                        value
+                    }
+                    Some(other) => Err(refused(format!(
+                        "method '{method}' needs an object receiver, got {other}"
+                    ))),
+                    None => Err(refused(format!("method '{method}' called on na"))),
+                }
+            }
+            PineExpr::FieldRead { receiver, field } => {
+                let value = self.eval_expr(receiver, ctx, legs)?;
+                match value {
+                    Some(PineValue::Object(instance)) => match instance.fields.get(field) {
+                        Some(bound) => Ok(bound.clone()),
+                        None => Err(refused(format!(
+                            "unknown field '{field}' on '{}'",
+                            instance.type_name
+                        ))),
+                    },
+                    Some(other) => Err(refused(format!(
+                        "field '{field}' needs an object receiver, got {other}"
+                    ))),
+                    None => Err(refused(format!("field '{field}' read on na"))),
+                }
+            }
             PineExpr::Ternary {
                 condition,
                 then_expr,
@@ -867,6 +1711,9 @@ impl EngineState {
                 }
                 Ok(Some(PineValue::Array(bound)))
             }
+            PineExpr::ColorLiteral(packed) => {
+                Ok(Some(PineValue::ColorHandle(ColorHandle::new(*packed))))
+            }
             PineExpr::SeriesOffset { series, offset } => {
                 let name: &str = match series.as_ref() {
                     PineExpr::Variable(name) => name,
@@ -894,6 +1741,21 @@ impl EngineState {
         ctx: &RunCtx<'_>,
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
+        // Receiver aliases shadow every outer binding: a body spells its
+        // receiver by the declared parameter name, and nested calls may
+        // reuse the same spelling for their own receiver.
+        if let Some((head, rest)) = name.split_once('.') {
+            if !rest.contains('.') {
+                if let Some(depth) = self.receiver_slot(head) {
+                    return match self.receiver[depth].instance.fields.get(rest) {
+                        Some(bound) => Ok(bound.clone()),
+                        None => Err(refused(format!("unknown field '{head}.{rest}'"))),
+                    };
+                }
+            }
+        } else if let Some(depth) = self.receiver_slot(name) {
+            return Ok(Some(PineValue::Object(self.receiver[depth].instance.clone())));
+        }
         if let Some(bound) = self.variables.get(name) {
             return Ok(bound.clone());
         }
@@ -907,17 +1769,17 @@ impl EngineState {
             return self
                 .receiver
                 .last()
-                .map(|instance| {
-                    Some(PineValue::Object(instance.clone()))
+                .map(|slot| {
+                    Some(PineValue::Object(slot.instance.clone()))
                 })
                 .ok_or_else(|| refused("'this' is only bound inside a method"));
         }
         if let Some(field) = name.strip_prefix("this.") {
-            let receiver = self
+            let slot = self
                 .receiver
                 .last()
                 .ok_or_else(|| refused("'this' is only bound inside a method"))?;
-            return match receiver.fields.get(field) {
+            return match slot.instance.fields.get(field) {
                 Some(bound) => Ok(bound.clone()),
                 None => Err(refused(format!("unknown field 'this.{field}'"))),
             };
@@ -926,6 +1788,31 @@ impl EngineState {
             let index = i64::try_from(ctx.cursor())
                 .map_err(|_| refused("bar index does not fit this run"))?;
             return Ok(Some(PineValue::Int(index)));
+        }
+        if let Some(member) = name.strip_prefix("barstate.") {
+            return barstate_flag(member, ctx, legs, self.tick_mode())
+                .map(PineValue::Bool)
+                .map(Some)
+                .ok_or_else(|| {
+                    refused(format!(
+                        "unknown barstate member '{member}'; closed-bar replay supports isfirst, isnew, isconfirmed, islast, ishistory, and isrealtime"
+                    ))
+                });
+        }
+        if name == "timenow" {
+            if self.tick_mode() {
+                return Ok(ctx
+                    .current()
+                    .and(self.tick_times.get(ctx.cursor()).copied())
+                    .map(PineValue::Int));
+            }
+            return Ok(read_leg(legs, "time", ctx.cursor()));
+        }
+        if name == "syminfo.tickerid" {
+            return Ok(Some(PineValue::Str(self.chart_symbol.clone())));
+        }
+        if name == "timeframe.period" {
+            return Ok(Some(PineValue::Str(self.chart_period.clone())));
         }
         if let Some(leg) = legs.named(name) {
             return Ok(read_leg_slice(leg, ctx.cursor()));
@@ -936,7 +1823,46 @@ impl EngineState {
         if let Some(constant) = super::builtins_core::resolve_constant(name) {
             return Ok(Some(constant));
         }
+        // Field reads on variable-held instances (`mid.price_low`): the
+        // head must already bind an object; unknown fields refuse. This
+        // is the value-position twin of the `this.` read above; anything
+        // that is not an object falls through to the alias rule below.
+        // Alias-qualified declaration reads (`UTIL.OSC_UPPER_RANGE`): the
+        // head must be an import alias of the current module; the remainder
+        // then reads exactly like a bare name. This spells the shared
+        // declaration bindings the way the source does — functions and
+        // methods keep their own dispatch gate, so nothing unexported
+        // becomes reachable through here.
+        if let Some((head, rest)) = name.split_once('.') {
+            if !rest.contains('.') {
+                let home = match self.variables.get(head) {
+                    Some(slot) => slot.clone(),
+                    None => ctx
+                        .vars()
+                        .get_var(head)
+                        .or_else(|| ctx.vars().get_varip(head)),
+                };
+                if let Some(PineValue::Object(instance)) = home {
+                    return match instance.fields.get(rest) {
+                        Some(bound) => Ok(bound.clone()),
+                        None => Err(refused(format!("unknown field '{head}.{rest}'"))),
+                    };
+                }
+                if self
+                    .module_aliases
+                    .contains_key(&(self.current_module.clone(), head.to_owned()))
+                {
+                    return self.read_variable(rest, ctx, legs);
+                }
+            }
+        }
         if name == "na" {
+            return Ok(None);
+        }
+        // A declared persistent (`var`/`varip`) reads as absence until its
+        // first assignment: `var float eit = na` binds `na`, it does not
+        // leave the name undeclared. Only truly undeclared names refuse.
+        if self.var_kind.contains_key(name) {
             return Ok(None);
         }
         Err(refused(format!("undefined variable '{name}'")))
@@ -984,13 +1910,35 @@ impl EngineState {
             };
         }
         let bound = self.current_binding(name, ctx);
-        if bound.is_none() && !self.history.contains_key(name) {
+        let recorded = self.history.contains_key(name)
+            || self.var_kind.contains_key(name)
+            || self
+                .call_stack
+                .last()
+                .is_some_and(|top| self.history.contains_key(&format!("{top}#{name}")));
+        if bound.is_none() && !recorded {
             return Err(refused(format!("undefined variable '{name}'")));
         }
         if back == 0 {
             return Ok(bound.flatten());
         }
         let position = self.snapshots.len().checked_sub(back);
+        // The innermost scope's past wins; the bare name stays as the
+        // fallback for top-level series and persistent vars shared across
+        // scopes. A scope that never recorded the name contributes no
+        // value rather than another scope's past.
+        if let Some(top) = self.call_stack.last() {
+            let qualified = format!("{top}#{name}");
+            if self.history.contains_key(&qualified) {
+                return Ok(position
+                    .and_then(|index| {
+                        self.history
+                            .get(&qualified)
+                            .and_then(|slot| slot.get(index).cloned())
+                    })
+                    .flatten());
+            }
+        }
         Ok(position
             .and_then(|index| self.history.get(name).and_then(|slot| slot.get(index).cloned()))
             .flatten())
@@ -1058,12 +2006,30 @@ impl EngineState {
                     Ok(self.fixnan_memory.get(&site).cloned().unwrap_or(None))
                 }
             }
+            // Whole-number cast: truncation toward zero, absence stays
+            // absence; anything out of range or non-numeric refuses.
+            "int" => match values.len() {
+                1 => Ok(int_cast(values[0].as_ref())?),
+                _ => Err(refused("'int' takes exactly one argument")),
+            },
             "plot" => {
                 if values.is_empty() {
                     return Err(refused("'plot' takes a series to draw"));
                 }
                 let site = format!("plot@{args:?}");
                 let series = values[0].clone();
+                // Pine's title rides second positionally
+                // (`plot(series, "Name", ...)`); a named `title` wins when
+                // both spell it.
+                let positional_title = args
+                    .iter()
+                    .zip(values.iter())
+                    .filter(|(arg, _)| arg.name.is_none())
+                    .nth(1)
+                    .and_then(|(_, value)| match value {
+                        Some(PineValue::Str(text)) => Some(text.clone()),
+                        _ => None,
+                    });
                 let title = args
                     .iter()
                     .zip(values.iter())
@@ -1072,6 +2038,7 @@ impl EngineState {
                         Some(PineValue::Str(text)) => Some(text.clone()),
                         _ => None,
                     })
+                    .or(positional_title)
                     .unwrap_or_else(|| format!("plot:{}", self.plots.len()));
                 let display = args
                     .iter()
@@ -1092,6 +2059,9 @@ impl EngineState {
                 }
                 Ok(None)
             }
+            "plotcandle" => self.call_plotcandle(args, &values),
+            "barcolor" => self.call_barcolor(args, &values),
+            "fill" => self.call_fill(args, &values),
             "input" => {
                 // The bare overload infers its kind: a series-shaped first
                 // argument (leg, variable, or offset) is the source input
@@ -1109,21 +2079,900 @@ impl EngineState {
                 let site = format!("input@{args:?}");
                 super::builtins_core::call("input", method, &site, &core_args, &[], &mut self.core_inputs)
             }
+            "time" => self.call_session_time(&values, ctx, legs),
             _ if self
                 .functions
                 .contains_key(&(self.current_module.clone(), name.to_owned())) =>
             {
                 let key = (self.current_module.clone(), name.to_owned());
-                let (params, body) = self
+                let overloads = self
                     .functions
                     .get(&key)
                     .cloned()
                     .expect("function checked above");
+                let (params, body) = select_function(name, &overloads, args, &values)?;
                 let site = format!("{}::{name}@{args:?}", self.current_module);
                 let module = self.current_module.clone();
                 self.exec_call(site, &module, &params, args, &values, &body, ctx, legs)
             }
             _ => Err(refused(format!("unknown function '{name}'"))),
+        }
+    }
+
+    /// Capture one `plotcandle(open, high, low, close, ...)` bar: four
+    /// positional legs plus the last-seen display handles, appended to the
+    /// call site's capture. Fewer than four positional legs refuse; the
+    /// call itself evaluates to absence like `plot`.
+    fn call_plotcandle(
+        &mut self,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        let legs: Vec<Option<PineValue>> = args
+            .iter()
+            .zip(values.iter())
+            .filter(|(arg, _)| arg.name.is_none())
+            .map(|(_, value)| value.clone())
+            .collect();
+        if legs.len() != 4 {
+            return Err(refused(format!(
+                "'plotcandle' takes open, high, low, close positionally, got {} positional series",
+                legs.len()
+            )));
+        }
+        let [open, high, low, close] = legs
+            .try_into()
+            .expect("four legs checked above");
+        let site = format!("plotcandle@{args:?}");
+        let title = named_title(args, values, &format!("plotcandle:{}", self.plotcandles.len()));
+        let display = named_value(args, values, "display");
+        let color = named_value(args, values, "color");
+        let wickcolor = named_value(args, values, "wickcolor");
+        let bordercolor = named_value(args, values, "bordercolor");
+        match self
+            .plotcandles
+            .iter_mut()
+            .find(|candle| candle.site == site)
+        {
+            Some(candle) => {
+                candle.opens.push(open);
+                candle.highs.push(high);
+                candle.lows.push(low);
+                candle.closes.push(close);
+                candle.display = display;
+                candle.color = color;
+                candle.wickcolor = wickcolor;
+                candle.bordercolor = bordercolor;
+            }
+            None => self.plotcandles.push(PlotCandleCapture {
+                site,
+                title,
+                display,
+                color,
+                wickcolor,
+                bordercolor,
+                opens: vec![open],
+                highs: vec![high],
+                lows: vec![low],
+                closes: vec![close],
+            }),
+        }
+        Ok(None)
+    }
+
+    /// Capture one `barcolor(series, ...)` bar: the conditional color series
+    /// (absence stays absence, never a default). The call itself evaluates
+    /// to absence like `plot`.
+    fn call_barcolor(
+        &mut self,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        let Some(series) = args
+            .iter()
+            .zip(values.iter())
+            .find(|(arg, _)| arg.name.is_none())
+            .map(|(_, value)| value.clone())
+        else {
+            return Err(refused("'barcolor' takes a color series"));
+        };
+        let site = format!("barcolor@{args:?}");
+        let title = named_title(args, values, &format!("barcolor:{}", self.barcolors.len()));
+        match self.barcolors.iter_mut().find(|paint| paint.site == site) {
+            Some(paint) => paint.values.push(series),
+            None => self.barcolors.push(BarColorCapture {
+                site,
+                title,
+                values: vec![series],
+            }),
+        }
+        Ok(None)
+    }
+
+    /// Capture one `fill(plot(a), plot(b), ...)` bar: the two inline `plot`
+    /// calls already executed (and captured) while evaluating the
+    /// arguments, so the pairing re-derives each plot's site key from its
+    /// argument list — the same key the `plot` arm recorded this bar — and
+    /// stores the per-bar region between their latest values. Anything but
+    /// two inline `plot` calls refuses instead of guessing a pairing.
+    fn call_fill(
+        &mut self,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        let positional: Vec<&CallArg> = args
+            .iter()
+            .filter(|arg| arg.name.is_none())
+            .collect();
+        if positional.len() != 2 {
+            return Err(refused(format!(
+                "'fill' takes two plot calls, got {} positional arguments",
+                positional.len()
+            )));
+        }
+        let mut keys = Vec::with_capacity(2);
+        for arg in positional {
+            match &arg.value {
+                PineExpr::FunctionCall { name, args: inner, .. } if name == "plot" => {
+                    keys.push(format!("plot@{inner:?}"));
+                }
+                _ => {
+                    return Err(refused(
+                        "'fill' pairs two plot calls like fill(plot(a), plot(b)); raw series have no plot site to pair",
+                    ));
+                }
+            }
+        }
+        let mut legs = Vec::with_capacity(2);
+        let mut titles = Vec::with_capacity(2);
+        for key in &keys {
+            let Some(plot) = self.plots.iter().find(|plot| &plot.site == key) else {
+                return Err(refused(format!(
+                    "fill names a plot site with no capture this bar: {key}"
+                )));
+            };
+            titles.push(plot.title.clone());
+            legs.push(plot.values.last().cloned().unwrap_or(None));
+        }
+        let region = match (&legs[0], &legs[1]) {
+            (None, None) => None,
+            _ => Some(PineValue::Array(legs)),
+        };
+        let site = format!("fill@{args:?}");
+        let title = named_title(args, values, &format!("fill:{}", self.fills.len()));
+        let color = named_value(args, values, "color");
+        match self.fills.iter_mut().find(|fill| fill.site == site) {
+            Some(fill) => {
+                fill.values.push(region);
+                fill.color = color;
+            }
+            None => self.fills.push(FillCapture {
+                site,
+                title,
+                first: keys[0].clone(),
+                second: keys[1].clone(),
+                first_title: titles[0].clone(),
+                second_title: titles[1].clone(),
+                color,
+                values: vec![region],
+            }),
+        }
+        Ok(None)
+    }
+
+    /// Session-aware `time` reads. The harness injects only in-session bars,
+    /// so a chart-period call returns the current bar timestamp after
+    /// validating its arguments. Any other timeframe or timezone refuses
+    /// instead of guessing a mapping.
+    fn call_session_time(
+        &self,
+        values: &[Option<PineValue>],
+        ctx: &RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        let period = match values.first() {
+            Some(Some(PineValue::Str(period))) => period,
+            Some(None) => return Ok(None),
+            Some(Some(other)) => {
+                return Err(refused(format!("time takes a timeframe string, got {other}")));
+            }
+            _ => return Err(refused("time takes a timeframe and an optional session")),
+        };
+        if period != &self.chart_period {
+            return Err(refused(format!(
+                "time supports only the chart period '{}' headlessly, got {period:?}; inject that timeframe's bars as the chart run instead",
+                self.chart_period
+            )));
+        }
+        if values.len() > 2 {
+            return Err(refused(
+                "time timezone mapping is not supported headlessly; pass chart-period bars already selected for the session",
+            ));
+        }
+        match values.get(1) {
+            Some(Some(PineValue::Str(session))) => {
+                if session.trim().is_empty() {
+                    return Err(refused("time takes a non-empty session string"));
+                }
+                Ok(read_leg(legs, "time", ctx.cursor()))
+            }
+            Some(None) => Ok(None),
+            Some(Some(other)) => Err(refused(format!(
+                "time takes a session string, got {other}"
+            ))),
+            None => Ok(read_leg(legs, "time", ctx.cursor())),
+        }
+    }
+
+    /// Serve an injected lower-timeframe dataset to
+    /// `request.security_lower_tf(symbol, timeframe, [legs...],
+    /// calc_bars_count = N)`: the expression list must name bare chart legs
+    /// (the pull path asks for `[time, open, high, low, close, volume]`),
+    /// answered column-wise from the registered `(symbol, timeframe)`
+    /// dataset in request order, tail-taken to the last `calc_bars_count`
+    /// rows. Unregistered pairs, non-leg expressions, and unknown named
+    /// arguments refuse with a reason — chart bars are never substituted
+    /// silently, which would erase the gaps/lookahead contract.
+    fn call_security_lower_tf(
+        &mut self,
+        args: &[CallArg],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        let usage = "request.security_lower_tf takes a symbol, a timeframe and a leg-expression list";
+        let mut positional = args.iter().filter(|arg| arg.name.is_none());
+        let symbol_arg = positional.next().ok_or_else(|| refused(usage))?;
+        let timeframe_arg = positional.next().ok_or_else(|| refused(usage))?;
+        let exprs_arg = positional.next().ok_or_else(|| refused(usage))?;
+        if positional.next().is_some() {
+            return Err(refused(format!(
+                "{usage}, got {} positional arguments",
+                args.iter().filter(|arg| arg.name.is_none()).count()
+            )));
+        }
+        let mut bar_count: Option<i64> = None;
+        for arg in args.iter().filter(|arg| arg.name.is_some()) {
+            match arg.name.as_deref() {
+                Some("calc_bars_count") => {
+                    let given = self.eval_expr(&arg.value, ctx, legs)?;
+                    match whole_number("calc_bars_count", given.as_ref()) {
+                        Ok(count) => {
+                            if count <= 0 {
+                                return Err(refused(format!(
+                                    "request.security_lower_tf takes a positive calc_bars_count, got {count}"
+                                )));
+                            }
+                            bar_count = Some(count);
+                        }
+                        Err(_) => {
+                            return Err(refused(format!(
+                                "request.security_lower_tf takes an int calc_bars_count, got {given:?}"
+                            )));
+                        }
+                    }
+                }
+                Some(given) => {
+                    return Err(refused(format!(
+                        "request.security_lower_tf takes no argument '{given}'"
+                    )));
+                }
+                None => {}
+            }
+        }
+        let symbol = match self.eval_expr(&symbol_arg.value, ctx, legs)? {
+            Some(PineValue::Str(symbol)) => symbol,
+            other => {
+                return Err(refused(format!(
+                    "request.security_lower_tf takes a string symbol, got {other:?}"
+                )));
+            }
+        };
+        let timeframe = match self.eval_expr(&timeframe_arg.value, ctx, legs)? {
+            Some(PineValue::Str(timeframe)) => timeframe,
+            other => {
+                return Err(refused(format!(
+                    "request.security_lower_tf takes a string timeframe, got {other:?}"
+                )));
+            }
+        };
+        let PineExpr::ArrayLiteral(items) = &exprs_arg.value else {
+            return Err(refused(
+                "request.security_lower_tf takes a leg-expression list like [time, open, high, low, close, volume]",
+            ));
+        };
+        let mut legs_wanted = Vec::with_capacity(items.len());
+        for item in items {
+            let leg = match item {
+                PineExpr::Variable(name) => name.clone(),
+                PineExpr::BuiltinVariable(var) => builtin_name(*var).to_owned(),
+                _ => {
+                    return Err(refused(
+                        "injected lower-tf serves bare chart legs only, never computed expressions",
+                    ));
+                }
+            };
+            if !matches!(
+                leg.as_str(),
+                "time" | "open" | "high" | "low" | "close" | "volume"
+            ) {
+                return Err(refused(format!(
+                    "injected lower-tf has no column for leg '{leg}'"
+                )));
+            }
+            legs_wanted.push(leg);
+        }
+        let dataset = self
+            .ltf_injections
+            .iter()
+            .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
+            .map(|slot| slot.dataset.clone())
+            .ok_or_else(|| {
+                refused(format!(
+                    "live request.security_lower_tf {LIVE_REQUEST_TAIL}"
+                ))
+            })?;
+        // Tick emulation replays a tape position inside a larger history,
+        // so only rows confirmed at the current bar-open stay visible
+        // (the confirmed-bar rule — serving the whole tail would leak
+        // future bars). Closed-bar runs keep the curated tail: their
+        // fixtures pin the window exactly, and the seconds-domain chart
+        // clock carries no millisecond comparison there.
+        let mut visible = dataset.len();
+        if self.tick_mode() {
+            visible = dataset
+                .times
+                .partition_point(|t| *t <= chart_ms(legs, ctx.cursor(), true));
+        }
+        let mut rows = visible;
+        if let Some(count) = bar_count {
+            let count = usize::try_from(count).unwrap_or(usize::MAX);
+            rows = rows.min(count);
+        }
+        let skip = visible.saturating_sub(rows);
+        let take = rows;
+        let mut columns = Vec::with_capacity(legs_wanted.len());
+        for leg in &legs_wanted {
+            let column: Vec<Option<PineValue>> = match leg.as_str() {
+                "time" => dataset.times.iter().skip(skip).take(take).map(|t| Some(PineValue::Int(*t))).collect(),
+                "open" => dataset.opens.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
+                "high" => dataset.highs.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
+                "low" => dataset.lows.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
+                "close" => dataset.closes.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
+                _ => dataset.volumes.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
+            };
+            columns.push(Some(PineValue::Array(column)));
+        }
+        Ok(Some(PineValue::Array(columns)))
+    }
+
+    /// Serve one `request.security(symbol, timeframe, exprs, gaps?,
+    /// lookahead?, calc_bars_count?)` call from a registered per-timeframe
+    /// dataset: only confirmed bars count (timestamps at or before the
+    /// current chart bar), and the last confirmed value carries forward —
+    /// the headless reading of `barmerge.gaps_off` with
+    /// `barmerge.lookahead_off`. Omitted merge modes default to that
+    /// servable pair; any other mode refuses with a reason. A single
+    /// expression returns its series; a list returns one value per
+    /// expression for destructuring. An unregistered pair refuses naming
+    /// the live fetch (unmatched calls keep the live-fetch refusal). Each
+    /// expression evaluates against the confirmed tail: bare legs read
+    /// last, kernel-backed single-source `ta.*` calls batch over the
+    /// tail, and scalar operators compose pointwise — anything else
+    /// refuses naming the subset instead of silently re-scoping chart
+    /// state.
+    fn call_security(
+        &mut self,
+        args: &[CallArg],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        let usage = "request.security takes a symbol, a timeframe and an expression or expression list";
+        let mut positional = args.iter().filter(|arg| arg.name.is_none());
+        let symbol_arg = positional.next().ok_or_else(|| refused(usage))?;
+        let timeframe_arg = positional.next().ok_or_else(|| refused(usage))?;
+        let exprs_arg = positional.next().ok_or_else(|| refused(usage))?;
+        let gaps_arg = positional.next();
+        let lookahead_arg = positional.next();
+        if positional.next().is_some() {
+            return Err(refused(format!(
+                "{usage}, got {} positional arguments",
+                args.iter().filter(|arg| arg.name.is_none()).count()
+            )));
+        }
+        let mut bar_count: Option<i64> = None;
+        for arg in args.iter().filter(|arg| arg.name.is_some()) {
+            match arg.name.as_deref() {
+                Some("calc_bars_count") => {
+                    let given = self.eval_expr(&arg.value, ctx, legs)?;
+                    match whole_number("calc_bars_count", given.as_ref()) {
+                        Ok(count) => {
+                            if count <= 0 {
+                                return Err(refused(format!(
+                                    "request.security takes a positive calc_bars_count, got {count}"
+                                )));
+                            }
+                            bar_count = Some(count);
+                        }
+                        Err(_) => {
+                            return Err(refused(format!(
+                                "request.security takes an int calc_bars_count, got {given:?}"
+                            )));
+                        }
+                    }
+                }
+                Some(given) => {
+                    return Err(refused(format!(
+                        "request.security takes no argument '{given}'"
+                    )));
+                }
+                None => {}
+            }
+        }
+        let symbol = match self.eval_expr(&symbol_arg.value, ctx, legs)? {
+            Some(PineValue::Str(symbol)) => symbol,
+            other => {
+                return Err(refused(format!(
+                    "request.security takes a string symbol, got {other:?}"
+                )));
+            }
+        };
+        let timeframe = match self.eval_expr(&timeframe_arg.value, ctx, legs)? {
+            Some(PineValue::Str(timeframe)) => timeframe,
+            other => {
+                return Err(refused(format!(
+                    "request.security takes a string timeframe, got {other:?}"
+                )));
+            }
+        };
+        let gaps = match gaps_arg {
+            None => "gaps_off".to_owned(),
+            Some(arg) => match self.eval_expr(&arg.value, ctx, legs)? {
+                Some(PineValue::EnumHandle(handle)) if handle.enum_name == "barmerge" => {
+                    handle.member
+                }
+                other => {
+                    return Err(refused(format!(
+                        "request.security takes a barmerge gaps mode, got {other:?}"
+                    )));
+                }
+            },
+        };
+        if gaps != "gaps_off" {
+            return Err(refused(format!(
+                "injected security serves barmerge.gaps_off only, got barmerge.{gaps}"
+            )));
+        }
+        let lookahead = match lookahead_arg {
+            None => "lookahead_off".to_owned(),
+            Some(arg) => match self.eval_expr(&arg.value, ctx, legs)? {
+                Some(PineValue::EnumHandle(handle)) if handle.enum_name == "barmerge" => {
+                    handle.member
+                }
+                other => {
+                    return Err(refused(format!(
+                        "request.security takes a barmerge lookahead mode, got {other:?}"
+                    )));
+                }
+            },
+        };
+        if lookahead != "lookahead_off" {
+            return Err(refused(format!(
+                "injected security serves barmerge.lookahead_off only, got barmerge.{lookahead}"
+            )));
+        }
+        let single = !matches!(&exprs_arg.value, PineExpr::ArrayLiteral(_));
+        let items: &[PineExpr] = match &exprs_arg.value {
+            PineExpr::ArrayLiteral(items) => items,
+            single => std::slice::from_ref(single),
+        };
+        let dataset = self
+            .security_injections
+            .iter()
+            .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
+            .map(|slot| slot.dataset.clone())
+            .ok_or_else(|| refused(format!("live request.security {LIVE_REQUEST_TAIL}")))?;
+        // Confirmed prefix: rows at or before the current chart bar
+        // (`lookahead_off` never observes the forming bar).
+        let chart_ms = chart_ms(legs, ctx.cursor(), self.tick_mode());
+        let confirmed = dataset.times.partition_point(|t| *t <= chart_ms);
+        let mut rows = confirmed;
+        if let Some(count) = bar_count {
+            let count = usize::try_from(count).unwrap_or(usize::MAX);
+            rows = rows.min(count);
+        }
+        let skip = confirmed.saturating_sub(rows);
+        if rows == 0 {
+            if single {
+                return Ok(None);
+            }
+            return Ok(Some(PineValue::Array(vec![None; items.len()])));
+        }
+        let tail = SecurityTail {
+            times: &dataset.times[skip..confirmed],
+            opens: &dataset.opens[skip..confirmed],
+            highs: &dataset.highs[skip..confirmed],
+            lows: &dataset.lows[skip..confirmed],
+            closes: &dataset.closes[skip..confirmed],
+            volumes: &dataset.volumes[skip..confirmed],
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(self.security_expr(item, &tail, ctx, legs)?);
+        }
+        if single {
+            return Ok(out.into_iter().next().flatten());
+        }
+        Ok(Some(PineValue::Array(out)))
+    }
+
+    /// Evaluate one `request.security` expression against the confirmed
+    /// tail: bare legs read the last confirmed value, `ta.*` sources must
+    /// be bare legs (their column batches, never chart state), scalar
+    /// operators compose pointwise. Anything else refuses naming the
+    /// subset.
+    fn security_expr(
+        &mut self,
+        expr: &PineExpr,
+        tail: &SecurityTail,
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        match expr {
+            PineExpr::BuiltinVariable(var) => Ok(security_leg(tail, builtin_name(*var))),
+            PineExpr::Variable(name) => match tail.column(name) {
+                Some(_) => Ok(security_leg(tail, name)),
+                None => Err(refused(
+                    "injected security serves bare legs, kernel-backed single-source ta calls and scalar operators only",
+                )),
+            },
+            PineExpr::Number(value) => Ok(Some(PineValue::Float(*value))),
+            PineExpr::StringLiteral(text) => Ok(Some(PineValue::Str(text.clone()))),
+            PineExpr::Boolean(flag) => Ok(Some(PineValue::Bool(*flag))),
+            PineExpr::MethodCall {
+                namespace,
+                method,
+                args,
+                ..
+            } if namespace == "ta" => {
+                // Sourceless kernels (`ta.atr`) batch over the window
+                // directly; every other arm takes a bare-leg source first
+                // whose column batches, never chart state.
+                if method == "atr" {
+                    let mut values = Vec::with_capacity(args.len());
+                    for arg in args {
+                        values.push(self.eval_expr(&arg.value, ctx, legs)?);
+                    }
+                    self.ensure_ta_bridge()?;
+                    let bridge = self.ta_bridge.as_ref().expect("bridge ensured above");
+                    return bridge.batch_security(method, tail.closes, &values, &tail.ohlcv());
+                }
+                let Some(source_arg) = args.first() else {
+                    return Err(refused(format!("ta.{method} takes a source leg here")));
+                };
+                let source_name = match &source_arg.value {
+                    PineExpr::BuiltinVariable(var) => builtin_name(*var).to_owned(),
+                    PineExpr::Variable(name) if tail.column(name).is_some() => name.clone(),
+                    _ => {
+                        return Err(refused(format!(
+                            "injected security serves bare-leg ta sources, not '{:?}'",
+                            source_arg.value
+                        )));
+                    }
+                };
+                let column = tail.column(&source_name).expect("leg checked above");
+                let mut values = Vec::with_capacity(args.len());
+                values.push(security_leg(tail, &source_name));
+                for arg in &args[1..] {
+                    values.push(self.eval_expr(&arg.value, ctx, legs)?);
+                }
+                self.ensure_ta_bridge()?;
+                let bridge = self.ta_bridge.as_ref().expect("bridge ensured above");
+                bridge.batch_security(method, column, &values, &tail.ohlcv())
+            }
+            PineExpr::Binary { left, op, right } => {
+                let first = self.security_expr(left, tail, ctx, legs)?;
+                let second = self.security_expr(right, tail, ctx, legs)?;
+                binary(*op, first.as_ref(), second.as_ref())
+            }
+            _ => Err(refused(
+                "injected security serves bare legs, kernel-backed single-source ta calls and scalar operators only",
+            )),
+        }
+    }
+
+    /// Lazily bind the `ta.*` bridge; fails only if builtins collide.
+    fn ensure_ta_bridge(&mut self) -> Result<(), KernelError> {
+        if self.ta_bridge.is_none() {
+            match super::builtins_ta::TaBridge::new() {
+                Ok(bridge) => self.ta_bridge = Some(bridge),
+                Err(error) => {
+                    return Err(refused(format!("ta bridge unavailable: {error}")));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Record one drawing call as data. `.new` mints a recorded object and
+    /// returns its handle; setters and `table.cell` mutate properties and
+    /// record an update; getters read recorded properties back; `.delete`
+    /// retires the object and records the deletion. Creation properties bind
+    /// positionally (`label.new(x, y, text)`, `table.new(position, columns,
+    /// rows)`, `box`/`line.new(x1, y1, x2, y2)`) with the rest named; every
+    /// event carries the evaluated-bar index and the call arguments.
+    fn call_drawing(
+        &mut self,
+        namespace: &str,
+        method: &str,
+        args: &[CallArg],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.eval_expr(&arg.value, ctx, legs)?);
+        }
+        let kind = match namespace {
+            "label" => DrawingKind::Label,
+            "table" => DrawingKind::Table,
+            "box" => DrawingKind::Box,
+            "line" => DrawingKind::Line,
+            _ => {
+                return Err(refused(format!("unknown method '{namespace}.{method}'")));
+            }
+        };
+        match method {
+            "new" => self.drawing_new(kind, args, &values),
+            "delete" => self.drawing_delete(kind, args, &values),
+            "cell" => self.drawing_cell(kind, args, &values),
+            _ => self.drawing_access(kind, method, args, &values),
+        }
+    }
+
+    /// Mint one recorded drawing object: positional creation properties bind
+    /// by namespace, named arguments ride along as properties, a `Created`
+    /// row records the call, and the handle returns to the script.
+    fn drawing_new(
+        &mut self,
+        kind: DrawingKind,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        let positional: Vec<Option<PineValue>> = args
+            .iter()
+            .zip(values.iter())
+            .filter(|(arg, _)| arg.name.is_none())
+            .map(|(_, value)| value.clone())
+            .collect();
+        let names: &[&str] = match kind {
+            DrawingKind::Label => &["x", "y", "text"],
+            DrawingKind::Table => &["position", "columns", "rows"],
+            DrawingKind::Box | DrawingKind::Line => &["x1", "y1", "x2", "y2"],
+        };
+        if positional.len() < names.len() {
+            return Err(refused(format!(
+                "'{}.new' takes {} ({} given)",
+                kind.namespace(),
+                names.join(", "),
+                positional.len()
+            )));
+        }
+        let id = self.next_drawing_id;
+        self.next_drawing_id += 1;
+        let mut props = HashMap::with_capacity(args.len());
+        for (name, value) in names.iter().zip(positional.iter()) {
+            props.insert((*name).to_owned(), value.clone());
+        }
+        for (arg, value) in args.iter().zip(values.iter()) {
+            if let Some(name) = &arg.name {
+                props.insert(name.clone(), value.clone());
+            }
+        }
+        self.drawings.insert(id, DrawingObject { kind, props });
+        let handle = DrawingHandle::new(kind, id);
+        self.draw_events.push(DrawingEvent {
+            bar: self.snapshots.len(),
+            kind: DrawingEventKind::Created,
+            object: kind.namespace().to_owned(),
+            key: handle.key(),
+            args: draw_args(args, values),
+        });
+        Ok(Some(PineValue::Drawing(handle)))
+    }
+
+    /// Retire one recorded drawing object: the single positional argument
+    /// must be a live handle of the same namespace. A `Deleted` row records
+    /// the call; later reads of the handle refuse.
+    fn drawing_delete(
+        &mut self,
+        kind: DrawingKind,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        let handle = self.drawing_handle(kind, "delete", args, values)?;
+        self.drawings.remove(&handle.id);
+        self.draw_events.push(DrawingEvent {
+            bar: self.snapshots.len(),
+            kind: DrawingEventKind::Deleted,
+            object: kind.namespace().to_owned(),
+            key: handle.key(),
+            args: draw_args(args, values),
+        });
+        Ok(None)
+    }
+
+    /// Record one `table.cell` write as an update row. The table must be a
+    /// live handle; cell contents travel in the recorded arguments.
+    fn drawing_cell(
+        &mut self,
+        kind: DrawingKind,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        if kind != DrawingKind::Table {
+            return Err(refused(format!("unknown method '{}.cell'", kind.namespace())));
+        }
+        let handle = self.drawing_handle(kind, "cell", args, values)?;
+        self.draw_events.push(DrawingEvent {
+            bar: self.snapshots.len(),
+            kind: DrawingEventKind::Updated,
+            object: kind.namespace().to_owned(),
+            key: handle.key(),
+            args: draw_args(args, values),
+        });
+        Ok(None)
+    }
+
+    /// Run one setter or getter on a live drawing object. Setters mutate the
+    /// recorded properties and log an update row; getters read a recorded
+    /// property back. Anything else refuses with the unknown-method reason,
+    /// so the recorder never becomes a silent sink.
+    fn drawing_access(
+        &mut self,
+        kind: DrawingKind,
+        method: &str,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<Option<PineValue>, KernelError> {
+        let positional: Vec<Option<PineValue>> = args
+            .iter()
+            .zip(values.iter())
+            .filter(|(arg, _)| arg.name.is_none())
+            .map(|(_, value)| value.clone())
+            .collect();
+        if args.len() != positional.len() {
+            return Err(refused(format!(
+                "'{}.{method}' takes positional arguments",
+                kind.namespace()
+            )));
+        }
+        // Setters map to (property, value index) pairs; getters map to one
+        // property read. `set_xy` shapes write two properties at once.
+        let updates: Vec<(&str, usize)> = match (kind, method) {
+            (DrawingKind::Label, "set_x") => vec![("x", 1)],
+            (DrawingKind::Label, "set_y") => vec![("y", 1)],
+            (DrawingKind::Label, "set_textcolor") => vec![("textcolor", 1)],
+            (DrawingKind::Label, "set_style") => vec![("style", 1)],
+            (DrawingKind::Label, "set_tooltip") => vec![("tooltip", 1)],
+            (DrawingKind::Label | DrawingKind::Box, "set_text") => vec![("text", 1)],
+            (DrawingKind::Label | DrawingKind::Line, "set_color") => vec![("color", 1)],
+            (DrawingKind::Box, "set_left") => vec![("left", 1)],
+            (DrawingKind::Box, "set_top") => vec![("top", 1)],
+            (DrawingKind::Box, "set_right") => vec![("right", 1)],
+            (DrawingKind::Box, "set_bottom") => vec![("bottom", 1)],
+            (DrawingKind::Box, "set_bgcolor") => vec![("bgcolor", 1)],
+            (DrawingKind::Box, "set_border_color") => vec![("border_color", 1)],
+            (DrawingKind::Line, "set_xy1") => vec![("x1", 1), ("y1", 2)],
+            (DrawingKind::Line, "set_xy2") => vec![("x2", 1), ("y2", 2)],
+            (DrawingKind::Line, "set_width") => vec![("width", 1)],
+            (DrawingKind::Line, "set_x2") => vec![("x2", 1)],
+            _ => vec![],
+        };
+        if !updates.is_empty() {
+            let handle = self.drawing_handle(kind, method, args, values)?;
+            let want = updates.iter().map(|(_, index)| *index).max().unwrap_or(0) + 1;
+            if positional.len() != want {
+                return Err(refused(format!(
+                    "'{}.{method}' takes {} values ({} given)",
+                    kind.namespace(),
+                    want - 1,
+                    positional.len() - 1
+                )));
+            }
+            let object = self.drawings.get_mut(&handle.id).ok_or_else(|| {
+                refused(format!(
+                    "unknown {} object '{}'",
+                    kind.namespace(),
+                    handle.key()
+                ))
+            })?;
+            for (prop, index) in &updates {
+                object.props.insert((*prop).to_owned(), positional[*index].clone());
+            }
+            self.draw_events.push(DrawingEvent {
+                bar: self.snapshots.len(),
+                kind: DrawingEventKind::Updated,
+                object: kind.namespace().to_owned(),
+                key: handle.key(),
+                args: draw_args(args, values),
+            });
+            return Ok(None);
+        }
+        let prop = match (kind, method) {
+            (DrawingKind::Label, "get_x") => "x",
+            (DrawingKind::Box, "get_right") => "right",
+            (DrawingKind::Line, "get_x2") => "x2",
+            _ => {
+                return Err(refused(format!(
+                    "unknown method '{}.{method}'",
+                    kind.namespace()
+                )));
+            }
+        };
+        let handle = self.drawing_handle(kind, method, args, values)?;
+        if positional.len() != 1 {
+            return Err(refused(format!(
+                "'{}.{method}' takes the object, got {} arguments",
+                kind.namespace(),
+                positional.len()
+            )));
+        }
+        let object = self.drawings.get(&handle.id).ok_or_else(|| {
+            refused(format!(
+                "unknown {} object '{}'",
+                kind.namespace(),
+                handle.key()
+            ))
+        })?;
+        Ok(object.props.get(prop).cloned().unwrap_or(None))
+    }
+
+    /// Read the leading handle argument of a drawing call: it must be
+    /// present, a drawing handle, of the calling namespace, and live.
+    fn drawing_handle(
+        &self,
+        kind: DrawingKind,
+        method: &str,
+        args: &[CallArg],
+        values: &[Option<PineValue>],
+    ) -> Result<DrawingHandle, KernelError> {
+        let first = args
+            .iter()
+            .zip(values.iter())
+            .find(|(arg, _)| arg.name.is_none())
+            .and_then(|(_, value)| value.clone());
+        match first {
+            Some(PineValue::Drawing(handle)) if handle.kind == kind => {
+                let live = self
+                    .drawings
+                    .get(&handle.id)
+                    .is_some_and(|object| object.kind == kind);
+                if live {
+                    Ok(handle)
+                } else {
+                    Err(refused(format!(
+                        "unknown {} object '{}'",
+                        kind.namespace(),
+                        handle.key()
+                    )))
+                }
+            }
+            Some(PineValue::Drawing(handle)) => Err(refused(format!(
+                "'{}.{method}' takes a {} object, got {}",
+                kind.namespace(),
+                kind.namespace(),
+                handle.key()
+            ))),
+            Some(other) => Err(refused(format!(
+                "'{}.{method}' takes a {} object, got {other}",
+                kind.namespace(),
+                kind.namespace()
+            ))),
+            None => Err(refused(format!(
+                "'{}.{method}' takes a {} object, got na",
+                kind.namespace(),
+                kind.namespace()
+            ))),
         }
     }
 
@@ -1158,13 +3007,46 @@ impl EngineState {
             };
             return Err(refused(message));
         }
+        if namespace == "request" {
+            if method == "security_lower_tf" {
+                return self.call_security_lower_tf(args, ctx, legs);
+            }
+            if method == "security" {
+                return self.call_security(args, ctx, legs);
+            }
+            return Err(refused(format!(
+                "live request.{method} {LIVE_REQUEST_TAIL}"
+            )));
+        }
+        // Drawing namespaces record lifecycle data instead of rendering:
+        // `.new` mints a recorded object, setters/`table.cell` mutate it,
+        // getters read it back, `.delete` retires it. Anything outside the
+        // recorded surface refuses with the unknown-method reason.
+        if matches!(namespace, "label" | "table" | "box" | "line") {
+            return self.call_drawing(namespace, method, args, ctx, legs);
+        }
         if namespace != "ta"
-            && !matches!(namespace, "math" | "str" | "input" | "array" | "map" | "color" | "timeframe")
+            && !matches!(namespace, "math" | "str" | "input" | "array" | "matrix" | "map" | "color" | "timeframe")
         {
             if namespace == "this"
                 || (method == "new" && self.types.contains_key(namespace))
             {
                 return self.call_instance_method(namespace, method, args, ctx, legs);
+            }
+            // Imported-type construction (`ALIAS.Type.new()`) resolves the
+            // alias through the caller's table, then constructs the
+            // registered type exactly like a bare `Type.new()`.
+            if method == "new" {
+                if let Some((alias, type_name)) = namespace.split_once('.') {
+                    let owner = self.current_module.clone();
+                    if self
+                        .module_aliases
+                        .contains_key(&(owner, alias.to_owned()))
+                        && self.types.contains_key(type_name)
+                    {
+                        return self.call_instance_method(type_name, method, args, ctx, legs);
+                    }
+                }
             }
             // Instance-held receivers (`sched.register(...)`) dispatch to
             // their type's methods; anything else falls through to the
@@ -1185,17 +3067,102 @@ impl EngineState {
                 .cloned()
             {
                 let key = (target.clone(), method.to_owned());
-                if let Some((params, body)) = self.functions.get(&key).cloned() {
+                if let Some(overloads) = self.functions.get(&key).cloned() {
                     let mut values = Vec::with_capacity(args.len());
                     for arg in args {
                         values.push(self.eval_expr(&arg.value, ctx, legs)?);
                     }
+                    let (params, body) =
+                        select_function(&format!("{namespace}.{method}"), &overloads, args, &values)?;
                     let site = format!("{target}::{method}@{args:?}");
                     return self.exec_call(site, &target, &params, args, &values, &body, ctx, legs);
+                }
+                // Method-shaped call through the alias with an explicit
+                // receiver first argument (`libCandles.createMTFTable(table,
+                // ...)`): the target module's method runs against the
+                // receiver value under its module, exactly like an
+                // instance-held call. The mutated receiver writes back to
+                // a variable home when the argument names one.
+                if let Some((receiver_type, (method_owner, params, body))) = self
+                    .methods
+                    .iter()
+                    .find(|((_, name), (owner, _, _))| {
+                        *name == *method && *owner == target
+                    })
+                    .map(|((receiver_type, _), found)| {
+                        (receiver_type.clone(), found.clone())
+                    })
+                {
+                    let mut values = Vec::with_capacity(args.len());
+                    for arg in args {
+                        values.push(self.eval_expr(&arg.value, ctx, legs)?);
+                    }
+                    // The receiver rides first and positionally; the body
+                    // binds the remaining parameters exactly like an
+                    // instance-held call (whose argument list never carried
+                    // the receiver).
+                    let (head_arg, head_value) = match (args.first(), values.first()) {
+                        (Some(arg), Some(value)) if arg.name.is_none() => (arg, value),
+                        _ => {
+                            return Err(refused(format!(
+                                "method '{namespace}.{method}' takes its '{receiver_type}' receiver first"
+                            )));
+                        }
+                    };
+                    let home = home_of(&head_arg.value);
+                    let receiver = match head_value {
+                        Some(PineValue::Object(instance))
+                            if instance.type_name == receiver_type =>
+                        {
+                            instance.clone()
+                        }
+                        other => {
+                            return Err(refused(format!(
+                                "method '{namespace}.{method}' needs a '{receiver_type}' receiver first, got {other:?}"
+                            )));
+                        }
+                    };
+                    let Some(head) = params.first() else {
+                        return Err(refused(format!("method '{method}' needs a receiver")));
+                    };
+                    let site = format!("{}.{method}@{args:?}", receiver.type_name);
+                    self.receiver.push(ReceiverSlot {
+                        instance: receiver,
+                        alias: head.name.clone(),
+                    });
+                    let value = self.exec_call(
+                        site,
+                        &method_owner,
+                        &params[1..],
+                        &args[1..],
+                        &values[1..],
+                        &body,
+                        ctx,
+                        legs,
+                    );
+                    let back = self
+                        .receiver
+                        .pop()
+                        .expect("receiver pushed above");
+                    if let Some(home) = home {
+                        self.assign_path(
+                            ctx,
+                            &home,
+                            Some(PineValue::Object(back.instance)),
+                        )?;
+                    }
+                    return value;
                 }
                 return Err(refused(format!(
                     "unknown function '{namespace}.{method}'"
                 )));
+            }
+            // Collection method-call syntax (`items.push(x)`): a
+            // variable-held array/matrix/map shares its namespace bridge.
+            if let Some(value) =
+                self.try_collection_call(namespace, method, args, type_args, ctx, legs)?
+            {
+                return Ok(value);
             }
             return Err(refused(format!("unknown method '{namespace}.{method}'")));
         }
@@ -1204,14 +3171,7 @@ impl EngineState {
             values.push(self.eval_expr(&arg.value, ctx, legs)?);
         }
         if namespace == "ta" {
-            if self.ta_bridge.is_none() {
-                match super::builtins_ta::TaBridge::new() {
-                    Ok(bridge) => self.ta_bridge = Some(bridge),
-                    Err(error) => {
-                        return Err(refused(format!("ta bridge unavailable: {error}")));
-                    }
-                }
-            }
+            self.ensure_ta_bridge()?;
             let own = format!("ta.{method}@{args:?}");
             let site = if self.call_stack.is_empty() {
                 own
@@ -1243,14 +3203,66 @@ impl EngineState {
         super::builtins_core::call(namespace, method, &site, &core_args, type_args, &mut self.core_inputs)
     }
 
+    /// Collection method-call syntax (`items.push(x)`): a variable-held
+    /// array/matrix/map dispatches to its namespace bridge with the
+    /// receiver prepended as the first positional argument, so
+    /// instance-held and namespace forms share one implementation.
+    /// Returns `None` when the namespace names no variable-held
+    /// collection, leaving existing refusals untouched.
+    /// Collection calls shared by statement and value position: `None`
+    /// means no collection receiver matched, `Some(None)` a muted answer.
+    #[allow(clippy::option_option)]
+    fn try_collection_call(
+        &mut self,
+        namespace: &str,
+        method: &str,
+        args: &[CallArg],
+        type_args: &[super::syntax::PineType],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<Option<PineValue>>, KernelError> {
+        let Some(bridge) = self.peek_collection(ctx, namespace) else {
+            return Ok(None);
+        };
+        let receiver = self.eval_expr(&PineExpr::Variable(namespace.to_owned()), ctx, legs)?;
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.eval_expr(&arg.value, ctx, legs)?);
+        }
+        let mut core_args = Vec::with_capacity(args.len() + 1);
+        core_args.push(super::builtins_core::CoreArg {
+            name: None,
+            value: receiver,
+        });
+        core_args.extend(args.iter().zip(values).map(|(arg, value)| {
+            super::builtins_core::CoreArg {
+                name: arg.name.clone(),
+                value,
+            }
+        }));
+        let site = format!("{bridge}.{method}@{args:?}");
+        super::builtins_core::call(
+            bridge,
+            method,
+            &site,
+            &core_args,
+            type_args,
+            &mut self.core_inputs,
+        )
+        .map(Some)
+    }
+
     /// Whether `name` currently holds a user-type instance (series variable,
     /// persistent binding, or receiver field), without moving it.
     fn peek_object(&self, ctx: &RunCtx<'_>, name: &str) -> bool {
+        if self.receiver_slot(name).is_some() {
+            return true;
+        }
         if let Some(field) = name.strip_prefix("this.") {
             return self
                 .receiver
                 .last()
-                .and_then(|receiver| receiver.fields.get(field))
+                .and_then(|slot| slot.instance.fields.get(field))
                 .is_some_and(|slot| matches!(slot, Some(PineValue::Object(_))));
         }
         if let Some(slot) = self.variables.get(name) {
@@ -1269,6 +3281,40 @@ impl EngineState {
         false
     }
 
+    /// Bridge namespace for a variable-held collection (`array`/`matrix`/
+    /// `map`), without moving or evaluating it: instance-held collection
+    /// calls (`items.push(x)`) dispatch through this to the shared bridge.
+    /// Anything else (including undeclared names) reads `None`, so unknown
+    /// namespaces keep their existing refusal instead of an eval error.
+    fn peek_collection(&self, ctx: &RunCtx<'_>, name: &str) -> Option<&'static str> {
+        let bridge = |value: Option<&PineValue>| match value {
+            Some(PineValue::Array(_)) => Some("array"),
+            Some(PineValue::Matrix(_)) => Some("matrix"),
+            Some(PineValue::IntMap(_) | PineValue::Map(_)) => Some("map"),
+            _ => None,
+        };
+        if let Some(field) = name.strip_prefix("this.") {
+            if let Some(slot) = self
+                .receiver
+                .last()
+                .and_then(|slot| slot.instance.fields.get(field))
+            {
+                return bridge(slot.as_ref());
+            }
+            return None;
+        }
+        if let Some(found) = bridge(self.variables.get(name).and_then(|slot| slot.as_ref())) {
+            return Some(found);
+        }
+        if let Some(found) = bridge(ctx.vars().get_var(name).as_ref()) {
+            return Some(found);
+        }
+        if let Some(found) = bridge(ctx.vars().get_varip(name).as_ref()) {
+            return Some(found);
+        }
+        None
+    }
+
     /// Dispatch one method call on a taken receiver: `this.*` reuses the
     /// innermost receiver, `Type.new()` constructs, and every other
     /// namespace takes the instance out of its home first. The mutated
@@ -1282,13 +3328,30 @@ impl EngineState {
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
         if namespace == "this" {
+            // Lexical receiver: `this.*` reads and writes (including inside
+            // argument expressions like `this._writeCandle(this.h, ...)`)
+            // bind to the innermost enclosing method body, so the call runs
+            // against a clone and writes the mutated copy back to its slot.
+            // Popping first would unbind the receiver during argument
+            // evaluation; indexing back keeps nested calls balanced.
+            let depth = self.receiver.len();
             let receiver = self
                 .receiver
-                .pop()
+                .last()
+                .map(|slot| slot.instance.clone())
                 .ok_or_else(|| refused("'this' is only bound inside a method"))?;
             let (back, value) = self.run_method(receiver, method, args, ctx, legs)?;
-            self.receiver.push(back);
-            return value;
+            match self.receiver.get_mut(depth - 1) {
+                Some(slot) => {
+                    slot.instance = back;
+                    return value;
+                }
+                None => {
+                    return Err(refused(
+                        "'this' receiver slot vanished during a method call",
+                    ));
+                }
+            }
         }
         if method == "new" {
             if let Some(fields) = self.types.get(namespace).cloned() {
@@ -1298,6 +3361,26 @@ impl EngineState {
                     )));
                 }
                 return Ok(Some(PineValue::Object(self.construct(namespace, &fields, ctx, legs)?)));
+            }
+        }
+        // Receiver-alias dispatch (`level.updateLevelSuccess(...)`): the
+        // call runs against a clone of the live slot and writes the
+        // mutated copy back to its slot — the same index-back discipline
+        // as the `this.` path above, so nested calls never unbind the
+        // receiver their arguments still spell.
+        if let Some(depth) = self.receiver_slot(namespace) {
+            let receiver = self.receiver[depth].instance.clone();
+            let (back, value) = self.run_method(receiver, method, args, ctx, legs)?;
+            match self.receiver.get_mut(depth) {
+                Some(slot) => {
+                    slot.instance = back;
+                    return value;
+                }
+                None => {
+                    return Err(refused(
+                        "receiver alias slot vanished during a method call",
+                    ));
+                }
             }
         }
         match self.take_object(ctx, namespace)? {
@@ -1344,7 +3427,7 @@ impl EngineState {
         legs: &Legs,
     ) -> Result<(UserInstance, Result<Option<PineValue>, KernelError>), KernelError> {
         let key = (receiver.type_name.clone(), method.to_owned());
-        let Some((params, body)) = self.methods.get(&key).cloned() else {
+        let Some((owner, params, body)) = self.methods.get(&key).cloned() else {
             return Err(refused(format!(
                 "unknown method '{}.{method}'",
                 receiver.type_name
@@ -1354,7 +3437,7 @@ impl EngineState {
             return Err(refused(format!("method '{method}' needs a receiver")));
         };
         if let Some(decl) = head.type_name.as_ref() {
-            if decl.name != receiver.type_name {
+            if trailing_type(&decl.name) != receiver.type_name.as_str() {
                 return Err(refused(format!(
                     "method '{method}' needs a '{}' receiver, got '{}'",
                     decl.name, receiver.type_name
@@ -1366,14 +3449,20 @@ impl EngineState {
             values.push(self.eval_expr(&arg.value, ctx, legs)?);
         }
         let site = format!("{}.{method}@{args:?}", receiver.type_name);
-        self.receiver.push(receiver);
-        let module = self.current_module.clone();
-        let value = self.exec_call(site, &module, &params[1..], args, &values, &body, ctx, legs);
+        // The receiver's declared alias (`level` in `updateLevelTouch(
+        // MarketLevel level, ...)`) rides the slot: reads, nested calls,
+        // and field writes through the alias hit the one live copy, never
+        // a stale clone. The slot pops on return like every frame.
+        self.receiver.push(ReceiverSlot {
+            instance: receiver,
+            alias: head.name.clone(),
+        });
+        let value = self.exec_call(site, &owner, &params[1..], args, &values, &body, ctx, legs);
         let back = self
             .receiver
             .pop()
             .expect("receiver pushed above");
-        Ok((back, value))
+        Ok((back.instance, value))
     }
 
     /// Run one user body with bound parameters: parameters bind into a fresh
@@ -1382,8 +3471,9 @@ impl EngineState {
     /// `module`, so its bare calls resolve to the owning module's helpers;
     /// the caller's module restores on return. Locals never leak — the frame
     /// restores on return — but per-bar local values feed history reads
-    /// through the frame table, so series offsets inside helpers observe
-    /// prior bars exactly like top-level series do.
+    /// through the frame table keyed by call site, so series offsets inside
+    /// helpers observe their own prior bars exactly like top-level series
+    /// do, never a same-named binding from another scope.
     fn exec_call(
         &mut self,
         site: String,
@@ -1400,23 +3490,35 @@ impl EngineState {
                 "call depth exceeds {MAX_CALL_DEPTH}"
             )));
         }
-        let mut bindings: Vec<(String, Option<PineValue>)> = Vec::with_capacity(params.len());
+        let mut bindings: Vec<(String, Option<PineValue>, Option<String>)> =
+            Vec::with_capacity(params.len());
         let mut positional = call_args
             .iter()
             .zip(values.iter())
-            .filter(|(arg, _)| arg.name.is_none())
-            .map(|(_, value)| value.clone());
+            .filter(|(arg, _)| arg.name.is_none());
         for param in params {
-            if let Some(hit) = call_args
+            if let Some((hit_arg, hit_value)) = call_args
                 .iter()
                 .zip(values.iter())
                 .find(|(arg, _)| arg.name.as_deref() == Some(param.name.as_str()))
             {
-                bindings.push((param.name.clone(), hit.1.clone()));
-            } else if let Some(next) = positional.next() {
-                bindings.push((param.name.clone(), next));
+                bindings.push((
+                    param.name.clone(),
+                    hit_value.clone(),
+                    home_of(&hit_arg.value),
+                ));
+            } else if let Some((next_arg, next_value)) = positional.next() {
+                bindings.push((
+                    param.name.clone(),
+                    next_value.clone(),
+                    home_of(&next_arg.value),
+                ));
             } else if let Some(default) = param.default.as_ref() {
-                bindings.push((param.name.clone(), self.eval_expr(default, ctx, legs)?));
+                bindings.push((
+                    param.name.clone(),
+                    self.eval_expr(default, ctx, legs)?,
+                    None,
+                ));
             } else {
                 return Err(refused(format!("missing argument '{}'", param.name)));
             }
@@ -1431,22 +3533,131 @@ impl EngineState {
                 }
             }
         }
-        let snapshot = self.variables.clone();
-        for (name, value) in bindings {
-            self.assign(ctx, &name, value);
+        // The caller frame stays live under the call, so globals and
+        // constants resolve exactly as before; only parameter names
+        // shadow, with their entry values saved for the teardown below.
+        // This replaces the old clone-the-frame discipline at key-set
+        // cost instead of a deep value clone per call.
+        // The caller frame stays live under the call, so globals and
+        // constants resolve exactly as before. Parameter names shadow
+        // with their entry values saved; body writes journal through
+        // `assign`, and the teardown below reverts both. Journaling stays
+        // held while binding (params restore through the shadow list).
+        let mut shadowed: Vec<(String, Option<Option<PineValue>>)> =
+            Vec::with_capacity(bindings.len());
+        self.journal_hold = true;
+        for (name, value, _) in &bindings {
+            shadowed.push((name.clone(), self.variables.remove(name)));
+            self.assign(ctx, name, value.clone());
         }
+        self.journal_hold = false;
+        let outer_base = self.journal_base.replace(self.journal.len());
+        let base = self.journal.len();
         let caller = std::mem::replace(&mut self.current_module, module.to_owned());
         self.call_stack.push(site);
+        // A `break` binds lexically: a body called from inside a loop still
+        // refuses a loop-less `break` instead of unwinding the caller.
+        let saved_depth = std::mem::replace(&mut self.loop_depth, 0);
+        let saved_break = std::mem::replace(&mut self.break_flag, false);
         let value = self.exec_body_value(body, ctx, legs);
-        self.call_stack.pop();
-        self.current_module = caller;
-        for (name, current) in &self.variables {
-            if snapshot.get(name) != Some(current) {
-                self.frame_history.insert(name.clone(), current.clone());
+        // Collections ride by reference: parameters bound from variable
+        // homes write their final collection value back, so standalone
+        // calls mutate caller arrays exactly like method receivers do.
+        // Scalars stay by value — rebinding a name inside never travels.
+        // Captured before the frame teardown and applied after it: the
+        // teardown reverts caller homes to entry state, which would wipe
+        // a nested call's write-back to its caller's parameter.
+        let mut write_backs: Vec<(String, Option<PineValue>)> = Vec::new();
+        for (name, _, home) in &bindings {
+            if let Some(target) = home {
+                let current = self.variables.get(name).cloned().flatten();
+                if matches!(
+                    current,
+                    Some(PineValue::Array(_) | PineValue::IntMap(_) | PineValue::Map(_) | PineValue::Matrix(_))
+                ) {
+                    write_backs.push((target.clone(), current));
+                }
             }
         }
-        self.variables = snapshot;
+        // Frame diffs record before the pop so the keys carry this call's
+        // site: each scope's past stays its own. Parameters record
+        // unconditionally (a parameter shadowing an outer same-valued
+        // binding still advances its own history); body-touched names
+        // record from the journal. Untouched caller bindings skip the
+        // record — the bar extension falls back to their identical live
+        // values, so their series advance exactly as before.
+        for (name, _, _) in &bindings {
+            let key = self.frame_key(name);
+            if let Some(current) = self.variables.get(name).cloned() {
+                self.frame_history.insert(key, current);
+            }
+        }
+        let touched: Vec<String> = self.journal[base..]
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+        for name in &touched {
+            let key = self.frame_key(name);
+            if let Some(current) = self.variables.get(name).cloned() {
+                self.frame_history.insert(key, current);
+            }
+        }
+        self.call_stack.pop();
+        self.current_module = caller;
+        self.loop_depth = saved_depth;
+        self.break_flag = saved_break;
+        // Frame teardown: journaled body writes revert first (restoring
+        // rebound parameters to their bound values), then shadowed
+        // parameters unbind (restoring shadowed caller values). Plain
+        // locals vanish; caller bindings the body never touched were
+        // never journaled and stand untouched — exactly the old
+        // clone-and-restore outcome at write-proportional cost.
+        while self.journal.len() > base {
+            let (name, old) = self.journal.pop().expect("length checked");
+            match old {
+                Some(stored) => {
+                    self.variables.insert(name, stored);
+                }
+                None => {
+                    self.variables.remove(&name);
+                }
+            }
+        }
+        for (name, old) in shadowed {
+            match old {
+                Some(stored) => {
+                    self.variables.insert(name, stored);
+                }
+                None => {
+                    self.variables.remove(&name);
+                }
+            }
+        }
+        self.journal_base = outer_base;
+        // Write-backs run unjournaled (held): they assign caller homes
+        // and must persist, never revert.
+        self.journal_hold = true;
+        let mut write_error = None;
+        for (target, written) in write_backs {
+            if let Err(error) = self.assign_path(ctx, &target, written) {
+                write_error = Some(error);
+                break;
+            }
+        }
+        self.journal_hold = false;
+        if let Some(error) = write_error {
+            return Err(error);
+        }
         value
+    }
+
+    /// History key for one frame binding: the innermost call site prefixes
+    /// the name inside a call, while top-level series keep their bare name.
+    fn frame_key(&self, name: &str) -> String {
+        match self.call_stack.last() {
+            Some(top) => format!("{top}#{name}"),
+            None => name.to_owned(),
+        }
     }
 
     /// Execute a body, returning its trailing value: the last bare
@@ -1462,7 +3673,7 @@ impl EngineState {
         let mut value = None;
         for stmt in stmts {
             value = self.exec_stmt_value(stmt, ctx, legs)?;
-            if self.error.is_some() {
+            if self.stopped() {
                 break;
             }
         }
@@ -1470,9 +3681,131 @@ impl EngineState {
         Ok(value)
     }
 
-    /// Execute one body statement for its value: bare expressions (and
-    /// nested switches) yield; everything else runs for effect and yields
-    /// nothing — an `if` body never becomes a value, matching the language.
+    /// Evaluate one expression statement, sharing the write-back rule
+    /// across positions: mutating collection calls persist their result to
+    /// a variable target, giving statement calls reference-type behavior
+    /// (`map.put(m, ...)` mutates the binding); nested calls stay
+    /// functional. Value position yields the written value, so a trailing
+    /// collection call inside a body both mutates and returns exactly like
+    /// statement position mutates. Read-only calls (`size`, `get`, ...)
+    /// never write back: persisting their return would clobber the
+    /// collection with one element.
+    fn exec_expr_stmt(
+        &mut self,
+        expr: &PineExpr,
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        if let PineExpr::MethodCall {
+            namespace,
+            method,
+            args,
+            type_args: _,
+        } = expr
+        {
+            if let Some(PineExpr::Variable(target)) =
+                args.first().map(|arg| &arg.value)
+            {
+                if namespace == "array" && method == "shift" {
+                    return self.exec_shift_stmt(target, args, ctx, legs);
+                }
+                if namespace == "map" && method == "remove" {
+                    return self.exec_map_remove_stmt(target, args, ctx, legs);
+                }
+                if writes_back_collection(namespace, method) {
+                    let written = self.eval_expr(expr, ctx, legs)?;
+                    self.assign_path(ctx, target, written.clone())?;
+                    return Ok(written);
+                }
+            }
+            // Instance-held collection calls (`items.push(x)`) persist to
+            // the receiver variable exactly like the namespace form.
+            if let Some(bridge) = self.peek_collection(ctx, namespace) {
+                if writes_back_collection(bridge, method) {
+                    let written = self.eval_expr(expr, ctx, legs)?;
+                    self.assign_path(ctx, namespace, written.clone())?;
+                    return Ok(written);
+                }
+            }
+        }
+        self.eval_expr(expr, ctx, legs)
+    }
+
+    /// Run one `array.shift(target, ...)` statement: the removal persists
+    /// to the variable home while the call yields the removed head. The
+    /// generic path cannot serve `shift` because it stores the return
+    /// value, which here is the element — not the shrunken array.
+    fn exec_shift_stmt(
+        &mut self,
+        target: &str,
+        args: &[CallArg],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        if args.len() != 1 {
+            return Err(refused("'array.shift' takes one array"));
+        }
+        let current = self.eval_expr(&args[0].value, ctx, legs)?;
+        match super::builtins_core::shift_parts("array.shift", current.as_ref())? {
+            Some((rest, head)) => {
+                self.assign_path(ctx, target, Some(PineValue::Array(rest)))?;
+                Ok(head)
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Run one `map.remove(target, key)` statement: the removal persists
+    /// to the variable home while the call yields the removed value. Same
+    /// split-return shape as `array.shift`, so it rides its own path for
+    /// the same reason.
+    fn exec_map_remove_stmt(
+        &mut self,
+        target: &str,
+        args: &[CallArg],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        if args.len() != 2 {
+            return Err(refused("'map.remove' takes a map and key"));
+        }
+        let current = self.eval_expr(&args[0].value, ctx, legs)?;
+        let key = self.eval_expr(&args[1].value, ctx, legs)?;
+        match super::builtins_core::remove_parts("map.remove", current.as_ref(), key.as_ref())? {
+            Some((rest, old)) => {
+                self.assign_path(ctx, target, Some(PineValue::IntMap(rest)))?;
+                Ok(old)
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Pick the taken `if` branch for both positions: an `na` condition
+    /// takes no branch (the language never executes on `na`); numbers still
+    /// refuse — only `bool` branches.
+    fn taken_block<'a>(
+        &mut self,
+        condition: &PineExpr,
+        then_branch: &'a [PineStmt],
+        else_branch: Option<&'a [PineStmt]>,
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<&'a [PineStmt], KernelError> {
+        let taken =
+            branch_of("if condition", self.eval_expr(condition, ctx, legs)?.as_ref())?
+                .unwrap_or(false);
+        Ok(if taken {
+            then_branch
+        } else {
+            else_branch.unwrap_or(&[])
+        })
+    }
+
+    /// Execute one body statement for its value: bare expressions, nested
+    /// switches, and a trailing `if` yield; everything else runs for effect
+    /// and yields nothing. An `if` yields its taken branch's trailing value
+    /// (absence when no branch is taken), so a conditional as the last body
+    /// statement returns its branch exactly like the language does.
     fn exec_stmt_value(
         &mut self,
         stmt: &PineStmt,
@@ -1480,8 +3813,17 @@ impl EngineState {
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
         let value = match stmt {
-            PineStmt::Expression(expr) => self.eval_expr(expr, ctx, legs)?,
+            PineStmt::Expression(expr) => self.exec_expr_stmt(expr, ctx, legs)?,
             PineStmt::Switch(switch) => self.eval_switch(switch, ctx, legs, true)?,
+            PineStmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let block =
+                    self.taken_block(condition, then_branch, else_branch.as_deref(), ctx, legs)?;
+                self.exec_body_value(block, ctx, legs)?
+            }
             _ => {
                 self.exec_stmt(stmt, ctx, legs);
                 None
@@ -1512,13 +3854,21 @@ impl EngineState {
         legs: &Legs,
         want_value: bool,
     ) -> Result<Option<PineValue>, KernelError> {
-        let scrutinee = self.eval_expr(&switch.scrutinee, ctx, legs)?;
+        let scrutinee = match &switch.scrutinee {
+            Some(target) => Some(self.eval_expr(target, ctx, legs)?),
+            None => None,
+        };
         for arm in &switch.arms {
             let matched = match &arm.pattern {
                 None => true,
                 Some(pattern) => {
                     let probe = self.eval_expr(pattern, ctx, legs)?;
-                    switch_eq(scrutinee.as_ref(), probe.as_ref())
+                    match &scrutinee {
+                        // Bare form: first truthy arm wins, with the same
+                        // bool/na rules as `if` conditions.
+                        None => branch_of("switch pattern", probe.as_ref())?.unwrap_or(false),
+                        Some(target) => switch_eq(target.as_ref(), probe.as_ref()),
+                    }
                 }
             };
             if matched {
@@ -1527,7 +3877,7 @@ impl EngineState {
                 }
                 for stmt in &arm.body {
                     self.exec_stmt(stmt, ctx, legs);
-                    if self.error.is_some() {
+                    if self.stopped() {
                         break;
                     }
                 }
@@ -1542,6 +3892,200 @@ impl EngineState {
 fn refused(message: impl Into<String>) -> KernelError {
     KernelError::Eval(message.into())
 }
+
+/// Collection calls whose return is the mutated collection: statement (and
+/// trailing-value) position persists the return to a variable target,
+/// giving Pine reference-type behavior. Read-only calls are excluded on
+/// purpose — persisting e.g. a `size` answer would overwrite the
+/// collection with one number.
+fn writes_back_collection(namespace: &str, method: &str) -> bool {
+    match namespace {
+        "array" => matches!(
+            method,
+            "set" | "push" | "fill" | "clear" | "sort" | "reverse"
+        ),
+        "matrix" => matches!(method, "set"),
+        "map" => matches!(method, "put" | "clear"),
+        _ => false,
+    }
+}
+
+/// Variable home of one call argument, when the argument names an
+/// assignable home (bare or dotted): collections bound from such homes
+/// write back on return, giving Pine reference-type behavior.
+fn home_of(expr: &PineExpr) -> Option<String> {
+    match expr {
+        PineExpr::Variable(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
+/// Pick one standalone-function overload for a call: a lone overload runs
+/// exactly like before (today's arity refusals and leniency preserved);
+/// several overloads dispatch to the first whose arity binds and whose
+/// declared parameter types match the call values, else refuse naming the
+/// overload count instead of running the wrong body.
+fn select_function(
+    display: &str,
+    overloads: &[FuncDef],
+    args: &[CallArg],
+    values: &[Option<PineValue>],
+) -> Result<FuncDef, KernelError> {
+    if overloads.len() == 1 {
+        return Ok(overloads[0].clone());
+    }
+    overloads
+        .iter()
+        .find(|(params, _)| overload_matches(params, args, values))
+        .cloned()
+        .ok_or_else(|| {
+            refused(format!(
+                "no overload of '{display}' matches the given arguments ({} overloads)",
+                overloads.len()
+            ))
+        })
+}
+
+/// Arity plus declared-type fit, mirroring [`exec_call`]'s binding walk:
+/// named arguments match by name, positionals fill the rest in order,
+/// defaults cover the remainder, and every provided value clears its
+/// parameter's declared type.
+fn overload_matches(
+    params: &[Param],
+    args: &[CallArg],
+    values: &[Option<PineValue>],
+) -> bool {
+    let mut positional = args
+        .iter()
+        .zip(values.iter())
+        .filter(|(arg, _)| arg.name.is_none());
+    let mut taken_positional = 0usize;
+    for param in params {
+        if let Some((_, value)) = args
+            .iter()
+            .zip(values.iter())
+            .find(|(arg, _)| arg.name.as_deref() == Some(param.name.as_str()))
+        {
+            if !param_matches(param, value.as_ref()) {
+                return false;
+            }
+        } else if let Some((_, value)) = positional.next() {
+            taken_positional += 1;
+            if !param_matches(param, value.as_ref()) {
+                return false;
+            }
+        } else if param.default.is_none() {
+            return false;
+        }
+    }
+    let given_positional = args.iter().filter(|arg| arg.name.is_none()).count();
+    if given_positional != taken_positional {
+        return false;
+    }
+    args.iter()
+        .filter_map(|arg| arg.name.as_ref())
+        .all(|given| params.iter().any(|param| &param.name == given))
+}
+
+/// One argument against its declared parameter type: untyped parameters
+/// and absent values match anything; `int` widens into `float` exactly
+/// like the language promotes, while every other kind must name itself
+/// (dotted enum/type names match their trailing segment).
+fn param_matches(param: &Param, value: Option<&PineValue>) -> bool {
+    let Some(decl) = param.type_name.as_ref() else {
+        return true;
+    };
+    let Some(present) = value else {
+        return true;
+    };
+    match decl.name.as_str() {
+        // Engine number literals lower as floats (`Number(3.0)`), so an
+        // `int` parameter accepts integral floats — matching on value,
+        // not representation. Fractional floats still refuse.
+        "int" => match present {
+            PineValue::Int(_) => true,
+            PineValue::Float(v) => v.is_finite() && v.fract() == 0.0,
+            _ => false,
+        },
+        "float" => matches!(present, PineValue::Float(_) | PineValue::Int(_)),
+        "bool" => matches!(present, PineValue::Bool(_)),
+        "string" => matches!(present, PineValue::Str(_)),
+        "array" => matches!(present, PineValue::Array(_)),
+        "matrix" => matches!(present, PineValue::Matrix(_)),
+        "map" => matches!(present, PineValue::IntMap(_) | PineValue::Map(_)),
+        "color" => matches!(present, PineValue::ColorHandle(_)),
+        other => match present {
+            PineValue::Object(instance) => {
+                instance.type_name == *other
+                    || trailing_type(other) == instance.type_name.as_str()
+            },
+            PineValue::EnumHandle(handle) => {
+                handle.enum_name == *other
+                    || trailing_type(other) == handle.enum_name.as_str()
+            }
+            _ => false,
+        },
+    }
+}
+
+/// Trailing segment of a (possibly module-qualified) type name:
+/// method registration and receiver checks compare `ManagedTable`, never
+/// the `libApex.ManagedTable` spelling the declaration used.
+fn trailing_type(name: &str) -> &str {
+    name.rsplit('.').next().unwrap_or(name)
+}
+
+/// One confirmed `request.security` window: parallel tail slices of the
+/// registered dataset, ending at the last confirmed bar.
+struct SecurityTail<'a> {
+    times: &'a [i64],
+    opens: &'a [f64],
+    highs: &'a [f64],
+    lows: &'a [f64],
+    closes: &'a [f64],
+    volumes: &'a [f64],
+}
+
+impl<'a> SecurityTail<'a> {
+    /// Borrow one leg column by chart-leg name.
+    fn column(&self, name: &str) -> Option<&'a [f64]> {
+        match name {
+            "open" => Some(self.opens),
+            "high" => Some(self.highs),
+            "low" => Some(self.lows),
+            "close" => Some(self.closes),
+            "volume" => Some(self.volumes),
+            _ => None,
+        }
+    }
+
+    /// Own the window as whole-series input for kernel batches.
+    fn ohlcv(&self) -> crate::indicator::OwnedOhlcv {
+        crate::indicator::OwnedOhlcv {
+            open: self.opens.to_vec(),
+            high: self.highs.to_vec(),
+            low: self.lows.to_vec(),
+            close: self.closes.to_vec(),
+            volume: self.volumes.to_vec(),
+        }
+    }
+}
+
+/// Last confirmed value of one leg: floats map non-finite to absence,
+/// `time` reads integer milliseconds like the pull registry's column.
+fn security_leg(tail: &SecurityTail, name: &str) -> Option<PineValue> {
+    if name == "time" {
+        return tail.times.last().copied().map(PineValue::Int);
+    }
+    tail.column(name)
+        .and_then(|column| column.last().copied())
+        .and_then(crate::indicator::fin_or_none)
+        .map(PineValue::Float)
+}
+
+/// Shared tail of every live-`request.*` refusal: the fetch alternative is
+/// harness injection, never a network call. The head names the method.
+const LIVE_REQUEST_TAIL: &str = "is refused headlessly; inject multi-timeframe bars and tick data through the run instead of a network fetch";
 
 /// Infer the bare `input(...)` overload from its first argument.
 /// Series-shaped arguments (legs, variables, offsets) are the source input,
@@ -1597,6 +4141,63 @@ enum ObjectHome {
     VarStore(String, bool),
     /// Field of the innermost receiver on the stack.
     ThisField(String),
+    /// Variable aliasing one map entry: the mutated instance writes back
+    /// to its variable home Link and to the map entry, so method calls
+    /// through `map.get` handles mutate the stored object exactly like
+    /// Pine references (instead of a dead copy).
+    MapEntry {
+        /// The variable home the instance was taken from.
+        inner: Box<ObjectHome>,
+        /// Variable holding the map.
+        map_var: String,
+        /// Canonical key encoding.
+        key: String,
+        /// Original key value.
+        key_value: PineValue,
+    },
+}
+
+/// One live method receiver: the instance plus the alias the body bound
+/// it under (`level` in `updateLevelTouch(MarketLevel level, ...)`).
+/// Reads, nested calls, and field writes through the alias hit this slot,
+/// so the body always observes one live copy, never a stale clone.
+#[derive(Debug)]
+struct ReceiverSlot {
+    instance: UserInstance,
+    alias: String,
+}
+
+/// Pack one drawing call's evaluated arguments as a lifecycle row: names
+/// preserved, values cloned, absence kept as absence.
+fn draw_args(args: &[CallArg], values: &[Option<PineValue>]) -> Vec<DrawingArg> {
+    args.iter()
+        .zip(values.iter())
+        .map(|(arg, value)| DrawingArg {
+            name: arg.name.clone(),
+            value: value.clone(),
+        })
+        .collect()
+}
+
+/// Read one named drawing argument (`title`, `color`, `display`, ...):
+/// the evaluated value, whatever it is (absence included).
+fn named_value(
+    args: &[CallArg],
+    values: &[Option<PineValue>],
+    name: &str,
+) -> Option<PineValue> {
+    args.iter()
+        .zip(values.iter())
+        .find(|(arg, _)| arg.name.as_deref() == Some(name))
+        .and_then(|(_, value)| value.clone())
+}
+
+/// Read a `title` argument as text, falling back when absent or non-string.
+fn named_title(args: &[CallArg], values: &[Option<PineValue>], fallback: &str) -> String {
+    match named_value(args, values, "title") {
+        Some(PineValue::Str(text)) => text,
+        _ => fallback.to_owned(),
+    }
 }
 
 /// The name an `export` wrapper publishes, for the import graph to consume.
@@ -1700,6 +4301,29 @@ fn whole_number(what: &str, value: Option<&PineValue>) -> Result<i64, KernelErro
     }
 }
 
+/// Whole-number cast: truncation toward zero, absence stays absence;
+/// non-finite and out-of-range floats refuse, anything non-numeric refuses.
+fn int_cast(value: Option<&PineValue>) -> Result<Option<PineValue>, KernelError> {
+    match value {
+        None => Ok(None),
+        Some(PineValue::Int(v)) => Ok(Some(PineValue::Int(*v))),
+        Some(PineValue::Float(v)) if v.is_nan() => Ok(None),
+        Some(PineValue::Float(v)) if v.is_finite() => {
+            // `2^63` is exactly representable; anything at or past it (or
+            // at/below `-2^63`) cannot land in an `i64`.
+            const LIMIT: f64 = 9_223_372_036_854_776_576.0;
+            let truncated = v.trunc();
+            if (-LIMIT..LIMIT).contains(&truncated) {
+                #[allow(clippy::cast_possible_truncation)]
+                Ok(Some(PineValue::Int(truncated as i64)))
+            } else {
+                Err(refused(format!("'int' overflows on {v}")))
+            }
+        }
+        Some(other) => Err(refused(format!("'int' takes a number, got {other}"))),
+    }
+}
+
 /// Absence on legs and in memory: `None`, or a `NaN` float.
 fn is_absent(value: Option<&PineValue>) -> bool {
     match value {
@@ -1720,6 +4344,47 @@ fn read_leg_slice(leg: &[f64], index: usize) -> Option<PineValue> {
         .and_then(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
 }
 
+/// Closed-bar cursor flags. Every evaluated bar is a new confirmed history
+/// bar; warmup bars never reach this table, so `isfirst` stays false when
+/// the driver skips bar zero. Tick/realtime emulation instead follows the
+/// `time` leg: `isnew` fires where the bar-open time changes (the first
+/// tick of each bar), `isconfirmed` where the next update opens a new bar
+/// (the last tick), and the run reports history-false/realtime-true,
+/// mirroring a live feed over historical ticks.
+fn barstate_flag(member: &str, ctx: &RunCtx<'_>, legs: &Legs, tick_mode: bool) -> Option<bool> {
+    let cursor = ctx.cursor();
+    let last = ctx.bar_count().checked_sub(1)?;
+    let time_at = |at: usize| legs.time.get(at).copied();
+    // Millisecond timestamps are exact integers in `f64`, so bitwise
+    // equality is the correct bar-identity test here — no epsilon.
+    let changed_since_prev = || {
+        cursor
+            .checked_sub(1)
+            .and_then(|prev| match (time_at(prev), time_at(cursor)) {
+                (Some(before), Some(now)) => Some(before.to_bits() != now.to_bits()),
+                _ => None,
+            })
+            .unwrap_or(true)
+    };
+    let changes_before_next = || match (time_at(cursor), legs.time.get(cursor + 1).copied()) {
+        (Some(now), Some(next)) => now.to_bits() != next.to_bits(),
+        _ => true,
+    };
+    match member {
+        "isfirst" => Some(cursor == 0),
+        "isnew" => Some(if tick_mode { changed_since_prev() } else { true }),
+        "isconfirmed" => Some(if tick_mode {
+            changes_before_next()
+        } else {
+            true
+        }),
+        "ishistory" => Some(!tick_mode),
+        "islast" => Some(cursor == last),
+        "isrealtime" => Some(tick_mode),
+        _ => None,
+    }
+}
+
 /// One named-leg read at the cursor.
 fn read_leg(legs: &Legs, name: &str, cursor: usize) -> Option<PineValue> {
     legs.named(name)
@@ -1731,6 +4396,20 @@ fn leg_or_nan(legs: &Legs, name: &str, cursor: usize) -> f64 {
     legs.named(name)
         .and_then(|leg| leg.get(cursor).copied())
         .unwrap_or(f64::NAN)
+}
+
+/// Current chart-bar time in milliseconds for injection lookups: tick
+/// emulation legs already run in Pine-native milliseconds, while
+/// closed-bar legs run in whole seconds (pinned runtime-shim behavior)
+/// and scale here. Datasets stamp milliseconds, exact below 2^53.
+#[allow(clippy::cast_possible_truncation)]
+fn chart_ms(legs: &Legs, cursor: usize, tick_mode: bool) -> i64 {
+    let stamp = leg_or_nan(legs, "time", cursor);
+    if tick_mode {
+        stamp as i64
+    } else {
+        (stamp * 1000.0) as i64
+    }
 }
 
 /// Static name of one built-in series variable.
@@ -1823,6 +4502,15 @@ fn binary(
                 "operator '{op}' needs bools on both sides, got {first} and {second}"
             )))
         }
+        (PineValue::Drawing(a), PineValue::Drawing(b)) => Ok(Some(PineValue::Bool(match op {
+            BinaryOp::Equal => a == b,
+            BinaryOp::NotEqual => a != b,
+            _ => {
+                return Err(refused(format!(
+                    "operator '{op}' does not apply to drawing objects"
+                )));
+            }
+        }))),
         (PineValue::EnumHandle(a), PineValue::EnumHandle(b)) => Ok(Some(PineValue::Bool(match op {
             BinaryOp::Equal => a.enum_name == b.enum_name && a.member == b.member,
             BinaryOp::NotEqual => a.enum_name != b.enum_name || a.member != b.member,
@@ -1860,15 +4548,21 @@ fn float_binary(op: BinaryOp, a: f64, b: f64) -> Result<Option<PineValue>, Kerne
         BinaryOp::Add => PineValue::Float(a + b),
         BinaryOp::Subtract => PineValue::Float(a - b),
         BinaryOp::Multiply => PineValue::Float(a * b),
+        // A zero denominator reads absence, not a refusal: shipped code
+        // divides zero-initialized fields before their first fetch (the
+        // market-context `atr` on bar 0), and Pine answers `na`/`inf`
+        // there, never an abort. Absence propagates through the existing
+        // `na`/`nz` guards; infinities never enter the engine, so no
+        // `inf` contagion audit is owed downstream.
         BinaryOp::Divide => {
             if b == 0.0 {
-                return Err(refused("division by zero"));
+                return Ok(None);
             }
             PineValue::Float(a / b)
         }
         BinaryOp::Modulo => {
             if b == 0.0 {
-                return Err(refused("division by zero"));
+                return Ok(None);
             }
             PineValue::Float(a % b)
         }
@@ -1900,13 +4594,13 @@ fn int_binary(op: BinaryOp, a: i64, b: i64) -> Result<Option<PineValue>, KernelE
         })?),
         BinaryOp::Divide => {
             if b == 0 {
-                return Err(refused("division by zero"));
+                return Ok(None);
             }
             PineValue::Float(a as f64 / b as f64)
         }
         BinaryOp::Modulo => {
             if b == 0 {
-                return Err(refused("division by zero"));
+                return Ok(None);
             }
             PineValue::Int(a.checked_rem(b).ok_or_else(|| {
                 refused("integer remainder overflowed")
@@ -1965,3 +4659,45 @@ mod fastmas_tests;
 #[cfg(test)]
 #[path = "../../tests/pine_calibration.rs"]
 mod calibration_tests;
+
+/// Headless runtime suite: cursor flags, injected time, chart scope, session
+/// and source inputs, and live-fetch refusal.
+#[cfg(test)]
+#[path = "../../tests/pine_runtime_shims.rs"]
+mod runtime_shim_tests;
+
+/// Real-library suite: the shipped utility library linked with drivers.
+#[cfg(test)]
+#[path = "../../tests/pine_libutil.rs"]
+mod libutil_tests;
+
+/// Real-library suite: the shipped moving-average library linked with
+/// drivers, pinned against kernel twins and hand steps.
+#[cfg(test)]
+#[path = "../../tests/pine_libmas.rs"]
+mod libmas_tests;
+
+// Real-library suite: the shipped tick-engine library linked with
+// drivers, pinned against hand-computed expectations.
+#[cfg(test)]
+#[path = "../../tests/pine_libbars.rs"]
+mod libbars_tests;
+
+// Drawing-capture suite: plotcandle/barcolor/fill captures plus the
+// label/table/box/line lifecycle recorders, pinned as data.
+#[cfg(test)]
+#[path = "../../tests/pine_draw_captures.rs"]
+mod draw_tests;
+
+// Market-core suite: the shipped apex library linked with drivers,
+// pinned against kernel twins, hand-computed branches, and a labeled
+// regime fixture set.
+#[cfg(test)]
+#[path = "../../tests/pine_libapex.rs"]
+mod libapex_tests;
+
+// Buffer-library suite: the shipped buffers library linked with drivers,
+// pinned against hand-computed ring/array/statistics expectations.
+#[cfg(test)]
+#[path = "../../tests/pine_libbuffers.rs"]
+mod libbuffers_tests;

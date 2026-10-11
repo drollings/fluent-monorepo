@@ -166,6 +166,118 @@ pub fn linreg_slope_intercept(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
     fin_or_none(mean_y - slope * mean_x).map(|intercept| (slope, intercept))
 }
 
+/// Median of present values over a sorted copy: the middle element on odd
+/// counts, the midpoint of the two middles on even counts. Same rule as the
+/// `ta.median` bridge arm, which delegates here so the two never fork.
+#[must_use]
+pub fn median_of(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let middle = sorted.len() / 2;
+    if sorted.len() % 2 == 1 {
+        Some(sorted[middle])
+    } else {
+        Some(f64::midpoint(sorted[middle - 1], sorted[middle]))
+    }
+}
+
+/// First most-frequent value: counts run in first-appearance order and only
+/// a strictly greater count displaces the leader, so frequency ties keep
+/// the earliest value. Equality is exact (`==`, not an epsilon band): a
+/// mode counts identical values, and any tolerance would merge distinct
+/// prices into one bucket.
+#[must_use]
+#[allow(clippy::float_cmp)]
+pub fn mode_of(values: &[f64]) -> Option<f64> {
+    let mut best: Option<(f64, usize)> = None;
+    for (at, value) in values.iter().enumerate() {
+        if values[..at].iter().any(|seen| seen == value) {
+            continue;
+        }
+        let count = values.iter().filter(|candidate| *candidate == value).count();
+        if best.is_none_or(|(_, held)| count > held) {
+            best = Some((*value, count));
+        }
+    }
+    best.map(|(value, _)| value)
+}
+
+/// Linear-interpolation percentile: `rank = percentage / 100 * (n - 1)`
+/// over the sorted values, lerping between the bracketing ranks. The
+/// caller validates `percentage` into `0..=100`, which keeps the rank
+/// inside the sorted range.
+#[must_use]
+pub fn percentile_linear(values: &[f64], percentage: f64) -> Option<f64> {
+    if values.is_empty() || !percentage.is_finite() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let rank = percentage / 100.0 * (sorted.len() - 1) as f64;
+    let below = rank.floor() as usize;
+    let above = rank.ceil() as usize;
+    let frac = rank - rank.floor();
+    let (lo, hi) = (sorted[below], sorted[above]);
+    fin_or_none(lo * (1.0 - frac) + hi * frac)
+}
+
+/// Z-scores under the population spread: `(x - mean) / std_pop`. A
+/// zero or non-finite spread carries no direction, so every slot reads
+/// absent instead of refusing — the language yields `na` for `0 / 0`.
+#[must_use]
+pub fn standardize_scores(values: &[f64]) -> Vec<Option<f64>> {
+    if values.is_empty() {
+        return Vec::new();
+    }
+    let mean = window_mean(values);
+    let spread = std_pop(values);
+    if !spread.is_finite() || spread == 0.0 {
+        return vec![None; values.len()];
+    }
+    values
+        .iter()
+        .map(|value| fin_or_none((value - mean) / spread))
+        .collect()
+}
+
+/// Population covariance over equal-length legs (dividing by `n`); `None`
+/// on length mismatch or fewer than two points, where no dispersion
+/// exists yet.
+#[must_use]
+pub fn covariance_pop(a: &[f64], b: &[f64]) -> Option<f64> {
+    if a.len() != b.len() || a.len() < 2 {
+        return None;
+    }
+    let (mean_a, mean_b) = (window_mean(a), window_mean(b));
+    let joint = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - mean_a) * (y - mean_b))
+        .sum::<f64>()
+        / a.len() as f64;
+    fin_or_none(joint)
+}
+
+/// Sample covariance over equal-length legs (dividing by `n - 1`);
+/// same shape contract as [`covariance_pop`].
+#[must_use]
+pub fn covariance_sample(a: &[f64], b: &[f64]) -> Option<f64> {
+    if a.len() != b.len() || a.len() < 2 {
+        return None;
+    }
+    let (mean_a, mean_b) = (window_mean(a), window_mean(b));
+    let joint = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - mean_a) * (y - mean_b))
+        .sum::<f64>()
+        / (a.len() as f64 - 1.0);
+    fin_or_none(joint)
+}
+
 /// One span-parameterized EWM step (`alpha = 2 / (span + 1)`), delegating to
 /// the shared [`ema_step`] recurrence so span and factor forms never fork.
 /// `span` must be at least 1 (validated by [`period_len`] at call sites);
