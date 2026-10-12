@@ -1,4 +1,13 @@
 use super::*;
+use common_core::http::test_http_client;
+
+/// Timeout-free HTTP client for loopback-mock tests: the providers default
+/// to the bounded shared client (correct for production), but its 30s
+/// total bound trips under full-workspace parallel load even on loopback,
+/// so every mock test below injects this client instead.
+fn mock_client() -> reqwest::Client {
+    test_http_client().clone()
+}
 #[test]
 fn create_noop_provider() {
     let p = create_embedding_provider("none", None, None, None, 768, None, None).unwrap();
@@ -176,7 +185,9 @@ fn ollama_embed_with_mock_http() {
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
     });
-    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
+    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3)
+        .unwrap()
+        .with_client(mock_client());
     let vec = p.embed("hello").unwrap();
     assert_eq!(vec.len(), 3);
     assert!((vec[0] - 0.1).abs() < 1e-6);
@@ -190,7 +201,9 @@ fn ollama_embed_http_error() {
         when.method(httpmock::Method::POST).path("/api/embed");
         then.status(500).body("Internal Server Error");
     });
-    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
+    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3)
+        .unwrap()
+        .with_client(mock_client());
     let result = p.embed("hello");
     assert!(result.is_err());
     mock.assert();
@@ -205,7 +218,9 @@ fn ollama_embed_batch_with_mock_http() {
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
     });
-    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2).unwrap();
+    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2)
+        .unwrap()
+        .with_client(mock_client());
     let batch = p.embed_batch(&["a", "b"]).unwrap();
     assert_eq!(batch.count, 2);
     assert_eq!(batch.dims, 2);
@@ -224,7 +239,7 @@ fn do_http_post_outside_runtime_uses_fallback() {
             .body(r#"{"embeddings": [[0.1, 0.2]]}"#);
     });
     let body = serde_json::json!({"model": "test", "input": ["x"]});
-    let bytes = do_http_post(&server.url("/api/embed"), &body, None).unwrap();
+    let bytes = do_http_post(&mock_client(), &server.url("/api/embed"), &body, None).unwrap();
     assert!(serde_json::from_slice::<serde_json::Value>(&bytes).is_ok());
     mock.assert();
 }
@@ -241,7 +256,7 @@ async fn do_http_post_inside_runtime_uses_block_in_place() {
             .body(r#"{"embeddings": [[0.1, 0.2]]}"#);
     });
     let body = serde_json::json!({"model": "test", "input": ["x"]});
-    let bytes = do_http_post(&server.url("/api/embed"), &body, None).unwrap();
+    let bytes = do_http_post(&mock_client(), &server.url("/api/embed"), &body, None).unwrap();
     assert!(serde_json::from_slice::<serde_json::Value>(&bytes).is_ok());
     mock.assert();
 }
@@ -263,7 +278,8 @@ fn openai_embed_with_mock_http() {
         Some("sk-test"),
         3,
     )
-    .unwrap();
+    .unwrap()
+    .with_client(mock_client());
     let vec = p.embed("hello").unwrap();
     assert_eq!(vec.len(), 3);
     mock.assert();
@@ -276,7 +292,9 @@ fn openai_embed_http_error() {
         when.method(httpmock::Method::POST).path("/v1/embeddings");
         then.status(401).body("Unauthorized");
     });
-    let p = OpenAiEmbedding::new(None, Some(&server.url("")), Some("sk-bad"), 3).unwrap();
+    let p = OpenAiEmbedding::new(None, Some(&server.url("")), Some("sk-bad"), 3)
+        .unwrap()
+        .with_client(mock_client());
     let result = p.embed("hello");
     assert!(result.is_err());
     mock.assert();
@@ -292,7 +310,9 @@ fn openai_embed_batch_with_mock_http() {
             .header("Content-Type", "application/json")
             .body(r#"{"data": [{"embedding": [0.1, 0.2], "index": 0}, {"embedding": [0.3, 0.4], "index": 1}]}"#);
     });
-    let p = OpenAiEmbedding::new(None, Some(&server.url("")), Some("sk-test"), 2).unwrap();
+    let p = OpenAiEmbedding::new(None, Some(&server.url("")), Some("sk-test"), 2)
+        .unwrap()
+        .with_client(mock_client());
     let batch = p.embed_batch(&["a", "b"]).unwrap();
     assert_eq!(batch.count, 2);
     assert_eq!(batch.dims, 2);
@@ -326,7 +346,9 @@ async fn test_ollama_embed_async_with_mock() {
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
     });
-    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3).unwrap();
+    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3)
+        .unwrap()
+        .with_client(mock_client());
     let vec = p.embed_async("hello").await.unwrap();
     assert_eq!(vec.len(), 3);
     mock.assert();
@@ -349,7 +371,8 @@ async fn test_openai_embed_async_with_mock() {
         Some("sk-test"),
         3,
     )
-    .unwrap();
+    .unwrap()
+    .with_client(mock_client());
     let vec = p.embed_async("hello").await.unwrap();
     assert_eq!(vec.len(), 3);
     mock.assert();
@@ -403,7 +426,9 @@ async fn ollama_embed_batch_async_with_mock() {
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
     });
-    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2).unwrap();
+    let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2)
+        .unwrap()
+        .with_client(mock_client());
     let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
     assert_eq!(batch.count, 2);
     assert_eq!(batch.dims, 2);
@@ -426,7 +451,8 @@ async fn openai_embed_batch_async_with_mock() {
         Some("sk-test"),
         2,
     )
-    .unwrap();
+    .unwrap()
+    .with_client(mock_client());
     let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
     assert_eq!(batch.count, 2);
     assert_eq!(batch.dims, 2);
@@ -470,7 +496,8 @@ fn openai_embed_forwards_slot_params_in_request_body() {
         3,
         Some(serde_json::json!({"num_ctx": 98304, "parallel": 3})),
     )
-    .unwrap();
+    .unwrap()
+    .with_client(mock_client());
     let vec = p.embed("hello").unwrap();
     assert_eq!(vec.len(), 3);
     mock.assert();
@@ -497,7 +524,8 @@ fn openai_embed_params_cannot_override_model_or_input() {
         3,
         Some(serde_json::json!({"model": "evil", "input": "evil", "num_ctx": 98304})),
     )
-    .unwrap();
+    .unwrap()
+    .with_client(mock_client());
     let vec = p.embed("hello").unwrap();
     assert_eq!(vec.len(), 3);
     mock.assert();

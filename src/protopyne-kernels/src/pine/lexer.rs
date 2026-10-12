@@ -20,7 +20,7 @@ use std::fmt;
 
 /// One lexical kind. The egui-overlap subset carries egui's names and
 /// shapes; the v6 subset (`ColonEqual`, `Import`, `Export`, `Enum`, `Type`,
-/// `Method`, `Const`, `Simple`, `Switch`) is additive.
+/// `Method`, `Const`, `Simple`, `Series`, `Switch`) is additive.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     /// Numeric literal (scientific notation included).
@@ -74,6 +74,8 @@ pub enum TokenKind {
     Const,
     /// `simple`.
     Simple,
+    /// `series` (parameter qualifier; execution treats it as metadata).
+    Series,
     /// `switch`.
     Switch,
     /// `break` (loop exit; a statement, never a value).
@@ -178,6 +180,7 @@ impl fmt::Display for TokenKind {
             Self::Method => write!(f, "method"),
             Self::Const => write!(f, "const"),
             Self::Simple => write!(f, "simple"),
+            Self::Series => write!(f, "series"),
             Self::Switch => write!(f, "switch"),
             Self::Break => write!(f, "break"),
             Self::Plus => write!(f, "+"),
@@ -571,6 +574,7 @@ impl PineLexer {
             "method" => TokenKind::Method,
             "const" => TokenKind::Const,
             "simple" => TokenKind::Simple,
+            "series" => TokenKind::Series,
             "switch" => TokenKind::Switch,
             "break" => TokenKind::Break,
             _ => TokenKind::Identifier(ident),

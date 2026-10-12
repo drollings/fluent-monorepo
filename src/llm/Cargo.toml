@@ -6,7 +6,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-common-core = { path = "../common-core", features = ["http"] }
+common-core = { path = "../common-core", features = ["http", "test-util"] }
 fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-db = { path = "../db" }
 fluent-wvr = { path = "../fluent-wvr" }

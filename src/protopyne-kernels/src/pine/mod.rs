@@ -10,6 +10,11 @@ pub mod syntax;
 pub mod display;
 pub mod modules;
 pub mod closure;
+/// Shared link-fixture constructors for the Pine suites (test-only single
+/// home; suites `use` it instead of including it, so the module exists once).
+#[cfg(test)]
+#[path = "../../tests/common/fixture.rs"]
+pub(crate) mod test_fixture;
 pub mod egui_parity;
 pub mod eval;
 pub mod builtins_ta;
@@ -23,8 +28,8 @@ pub use display::display_program;
 pub use lexer::{PineLexer, PineToken, TokenKind, lex};
 pub use modules::{ModuleGraph, ModuleId, ModuleInput, ResolvedModule, resolve_imports};
 pub use closure::{
-    ClosureEntry, INDICATOR_PATH, REAL_LIBRARIES, closure_data_root, indicator_library_id,
-    load_closure_sources,
+    ClosureEntry, INDICATOR_PATH, REAL_LIBRARIES, TASK_INDICATORS, closure_data_root,
+    indicator_library_id, load_closure_sources, load_listed_closure,
 };
 pub use egui_parity::{EguiParityRow, EGUI_PARITY, ParityVerdict, parity_for};
 pub use eval::{BarSnapshot, LinkedModule, LtfDataset, PineEngine, RunOutcome, MAX_LOOP_ITERATIONS};

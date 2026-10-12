@@ -288,7 +288,80 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
         eps: 1e-9,
         status: CompatStatus::FormulaVerified("transcribed Pine recurrence, hand-stepped sets green; staged-expression cross-check pending"),
     },
+    KernelCompat {
+        id: "native-libBars",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
+    KernelCompat {
+        id: "native-market-context",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
+    KernelCompat {
+        id: "native-libBuffers",
+        eps: 1e-9,
+        status: CompatStatus::ParityVerified,
+    },
 ];
+
+/// Native-library parity rows: `(matrix id, publisher, name)` naming the
+/// native-table library whose parity each `native-*` row claims. Row ids are
+/// frozen literals (the milestone's `native-libBars` for the ring/tick/
+/// resample surface, `native-market-context` for the `MarketContext` view
+/// over `libApex`, `native-libBuffers` for the `BufferFloat` hot methods);
+/// the publisher/name pair is what the native table keys on, so coverage
+/// checks join through this one mapping, never string surgery on the ids.
+pub const NATIVE_MATRIX_ROWS: &[(&str, &str, &str)] = &[
+    ("native-libBars", "showmethegrail", "libBars"),
+    ("native-market-context", "showmethegrail", "libApex"),
+    ("native-libBuffers", "showmethegrail", "libBuffers"),
+];
+
+/// Matrix id of the parity row claiming `publisher/name`, if any.
+#[must_use]
+pub fn native_row_id(publisher: &str, name: &str) -> Option<&'static str> {
+    NATIVE_MATRIX_ROWS
+        .iter()
+        .find(|(_, pub_, name_)| *pub_ == publisher && *name_ == name)
+        .map(|(id, _, _)| *id)
+}
+
+/// Whether a matrix id is a native-library row (served-view parity, not a
+/// kernel in the builtin registry).
+#[must_use]
+pub fn is_native_row(id: &str) -> bool {
+    NATIVE_MATRIX_ROWS.iter().any(|(row, _, _)| *row == id)
+}
+
+/// Coverage for the native domain: every `native-*` row names a library in
+/// the native table, and every native-table library has its row — no
+/// orphans either way. Provider existence is orthogonal (the overlay owns
+/// serving): rows also cover served views like the `MarketContext`, which
+/// has parity without a link-time provider. Eps rules match the kernel
+/// side: finite and positive, never widened.
+pub fn assert_native_matrix_covers() -> Result<(), String> {
+    for (id, publisher, name) in NATIVE_MATRIX_ROWS {
+        if !crate::native_libs::NATIVE_LIBRARIES
+            .iter()
+            .any(|entry| entry.publisher == *publisher && entry.name == *name)
+        {
+            return Err(format!("native row {id:?} names no native-table library"));
+        }
+        let row = compat_for(id).ok_or_else(|| format!("no compatibility row for {id:?}"))?;
+        if !(row.eps.is_finite() && row.eps > 0.0) {
+            return Err(format!("non-positive eps for {id:?}"));
+        }
+    }
+    for entry in crate::native_libs::NATIVE_LIBRARIES {
+        let id = native_row_id(entry.publisher, entry.name)
+            .ok_or_else(|| format!("no parity row for {}/{}", entry.publisher, entry.name))?;
+        if compat_for(id).is_none() {
+            return Err(format!("no compatibility row for {id:?}"));
+        }
+    }
+    Ok(())
+}
 
 /// Look up a kernel's compatibility row.
 #[must_use]
@@ -296,7 +369,9 @@ pub fn compat_for(id: &str) -> Option<&'static KernelCompat> {
     COMPATIBILITY.iter().find(|row| row.id == id)
 }
 
-/// Ids the matrix must cover: every builtin kernel, no more, no less.
+/// Ids the matrix must cover: every builtin kernel, no more, no less —
+/// plus the native-library rows, which are checked against the native
+/// table (not the kernel registry) by [`assert_native_matrix_covers`].
 pub fn assert_matrix_covers(registry: &IndicatorRegistry) -> Result<(), String> {
     for id in registry.ids() {
         let row = compat_for(&id).ok_or_else(|| format!("no compatibility row for {id:?}"))?;
@@ -305,11 +380,14 @@ pub fn assert_matrix_covers(registry: &IndicatorRegistry) -> Result<(), String> 
         }
     }
     for row in COMPATIBILITY {
+        if is_native_row(row.id) {
+            continue;
+        }
         if registry.get(row.id).is_none() {
             return Err(format!("stale compatibility row {:?}", row.id));
         }
     }
-    Ok(())
+    assert_native_matrix_covers()
 }
 
 #[cfg(test)]

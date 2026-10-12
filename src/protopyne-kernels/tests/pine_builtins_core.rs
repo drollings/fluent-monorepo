@@ -147,6 +147,54 @@ fn str_tostring_renders_scalars() {
 }
 
 #[test]
+fn str_tostring_capped_decimal_family() {
+    // `"#"` integers, `"#."` plus N hashes caps at N decimals with
+    // trailing zeros trimmed; anything else refuses naming the subset.
+    let mut inputs = InputSet::new();
+    let mut render = |value: Option<PineValue>, pattern: &str| {
+        call(
+            "str",
+            "tostring",
+            "s",
+            &[pos(value), pos(Some(PineValue::Str(pattern.to_owned())))],
+            &[],
+            &mut inputs,
+        )
+        .map_err(|err| err.to_string())
+    };
+    assert_eq!(
+        render(Some(PineValue::Float(3.26)), "#.#"),
+        Ok(Some(PineValue::Str("3.3".to_owned()))),
+        "one hash caps at one decimal"
+    );
+    assert_eq!(
+        render(Some(PineValue::Float(3.20)), "#.#"),
+        Ok(Some(PineValue::Str("3.2".to_owned()))),
+        "trailing zeros trim"
+    );
+    assert_eq!(
+        render(Some(PineValue::Float(3.257)), "#.##"),
+        Ok(Some(PineValue::Str("3.26".to_owned()))),
+        "two hashes keep prior behavior"
+    );
+    assert_eq!(
+        render(Some(PineValue::Float(1.23456)), "#.###"),
+        Ok(Some(PineValue::Str("1.235".to_owned()))),
+        "three hashes cap at three"
+    );
+    assert_eq!(
+        render(None, "#.#"),
+        Ok(Some(PineValue::Str("NaN".to_owned()))),
+        "absence stays absence"
+    );
+    assert_eq!(
+        render(Some(PineValue::Float(1.0)), "#,##"),
+        Err("pine evaluation refused: str.tostring takes a '#' or '#.#...' decimal format, got \"#,##\"".to_owned()),
+        "non-hash pattern refuses"
+    );
+}
+
+#[test]
 fn str_predicates_and_case_match_reference() {
     let mut inputs = InputSet::new();
     let mut one = |method: &str, args: &[CoreArg]| {
@@ -451,6 +499,35 @@ fn color_rgb_named_new_gradient_stay_opaque() {
     assert_eq!(grad(100.0), end, "top endpoint is the end color");
 }
 
+#[test]
+fn color_new_absent_transparency_propagates() {
+    // `color.new(color, na)` reads `na` (the transparency is a value
+    // parameter, so absence propagates); only a non-color first argument
+    // refuses. RSIMD ramps transparency off a warming series.
+    let mut inputs = InputSet::new();
+    let white = resolve_constant("color.white").expect("white resolves");
+    let absent = call(
+        "color",
+        "new",
+        "s",
+        &[pos(Some(white.clone())), pos(None)],
+        &[],
+        &mut inputs,
+    )
+    .expect("absent transparency evaluates");
+    assert_eq!(absent, None, "na transparency propagates");
+    let present = call(
+        "color",
+        "new",
+        "s",
+        &[pos(Some(white.clone())), pos(Some(PineValue::Int(50)))],
+        &[],
+        &mut inputs,
+    )
+    .expect("present transparency evaluates");
+    assert!(matches!(present, Some(PineValue::ColorHandle(_))));
+}
+
 // ---- display/size/position/timeframe constants + in_seconds ----
 
 #[test]
@@ -495,6 +572,100 @@ fn timeframe_in_seconds_maps_period_strings() {
     assert_eq!(one("15S"), Some(PineValue::Int(15)));
     let bad = call("timeframe", "in_seconds", "s", &[str_arg("nope")], &[], &mut inputs);
     assert!(bad.is_err(), "unparseable timeframe refuses");
+}
+
+#[test]
+fn input_timeframe_answers_its_period_string() {
+    // The default validates against the chart-period parser and reads
+    // back as text; overrides replace it wholesale.
+    let mut inputs = InputSet::new();
+    let out = call("input", "timeframe", "site-tf", &[str_arg("D")], &[], &mut inputs)
+        .expect("timeframe declares");
+    assert_eq!(out, Some(PineValue::Str("D".to_owned())));
+    let out = call("input", "timeframe", "site-tf", &[str_arg("D")], &[], &mut inputs)
+        .expect("re-declare reads back");
+    assert_eq!(out, Some(PineValue::Str("D".to_owned())));
+    inputs
+        .set("site-tf", PineValue::Str("60".to_owned()))
+        .expect("override applies");
+    let out = call("input", "timeframe", "site-tf", &[str_arg("D")], &[], &mut inputs)
+        .expect("override wins");
+    assert_eq!(out, Some(PineValue::Str("60".to_owned())));
+    // Non-string defaults and unparseable periods refuse with reasons.
+    let mut inputs = InputSet::new();
+    let bad = call("input", "timeframe", "site-bad", &[int_arg(5)], &[], &mut inputs);
+    assert!(bad.is_err(), "non-string default refuses");
+    let bad = call(
+        "input",
+        "timeframe",
+        "site-bad2",
+        &[str_arg("nope")],
+        &[],
+        &mut inputs,
+    );
+    assert!(bad.is_err(), "unparseable period refuses");
+}
+
+#[test]
+fn timeframe_bucket_counts_sub_daily_and_calendar_units() {
+    use super::timeframe_bucket;
+    use chrono::TimeZone as _;
+    let epoch = |y: i32, mo: u32, d: u32, h: u32, mi: u32| {
+        chrono::Utc
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .expect("valid test timestamp")
+            .timestamp()
+    };
+    // Friday 2026-01-02T09:00:00Z; Saturday midnight; Monday Jan 5;
+    // February 1 (January 2026 opens on a Thursday).
+    let fri_09 = epoch(2026, 1, 2, 9, 0);
+    let sat_00 = epoch(2026, 1, 3, 0, 0);
+    let mon_05 = epoch(2026, 1, 5, 0, 0);
+    let feb_01 = epoch(2026, 2, 1, 0, 0);
+    // Minute buckets floor-divide: the same bar twice agrees, the next
+    // minute disagrees.
+    assert_eq!(
+        timeframe_bucket("1", fri_09).expect("minute buckets"),
+        timeframe_bucket("1", fri_09 + 59).expect("same minute")
+    );
+    assert_ne!(
+        timeframe_bucket("1", fri_09).expect("minute buckets"),
+        timeframe_bucket("1", fri_09 + 60).expect("next minute")
+    );
+    // Day buckets split at UTC midnight exactly.
+    assert_eq!(
+        timeframe_bucket("D", fri_09).expect("day buckets"),
+        timeframe_bucket("D", sat_00 - 1).expect("same UTC day")
+    );
+    assert_ne!(
+        timeframe_bucket("D", fri_09).expect("day buckets"),
+        timeframe_bucket("D", sat_00).expect("next UTC day")
+    );
+    // Monday-start weeks: Friday Jan 2 and Saturday Jan 3 share a week;
+    // Monday Jan 5 opens the next one.
+    assert_eq!(
+        timeframe_bucket("W", fri_09).expect("week buckets"),
+        timeframe_bucket("W", sat_00).expect("same week")
+    );
+    assert_ne!(
+        timeframe_bucket("W", sat_00).expect("week buckets"),
+        timeframe_bucket("W", mon_05).expect("next week")
+    );
+    // Calendar months: January and February disagree; quarters agree
+    // within Q1 and split at April.
+    assert_ne!(
+        timeframe_bucket("M", fri_09).expect("month buckets"),
+        timeframe_bucket("M", feb_01).expect("next month")
+    );
+    assert_eq!(
+        timeframe_bucket("3M", fri_09).expect("quarter buckets"),
+        timeframe_bucket("3M", feb_01).expect("same quarter")
+    );
+    // Shapes outside the served set refuse with reasons, never silently.
+    assert!(timeframe_bucket("2W", fri_09).is_err(), "2W refuses");
+    assert!(timeframe_bucket("1H", fri_09).is_err(), "H suffix refuses");
+    assert!(timeframe_bucket("nope", fri_09).is_err(), "junk refuses");
 }
 
 // ---- engine wiring: namespaces dispatch, constants resolve ----

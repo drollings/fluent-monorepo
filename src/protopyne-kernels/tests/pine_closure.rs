@@ -142,15 +142,15 @@ fn header_of(relative: &str) -> (Vec<String>, usize) {
 fn bar_histories_pin_header_and_counts() {
     let (header, rows) = header_of("historical/SPY_1M.csv");
     assert_eq!(header, vec!["time", "open", "high", "low", "close", "Volume"]);
-    assert_eq!(rows, 5_311, "1M data rows after the header");
+    assert_eq!(rows, 436, "1M data rows after the header");
 
     let (header, rows) = header_of("historical/SPY_5M.csv");
     assert_eq!(header, vec!["time", "open", "high", "low", "close", "Volume"]);
-    assert_eq!(rows, 1_149, "5M data rows after the header");
+    assert_eq!(rows, 346, "5M data rows after the header");
 
     let (header, rows) = header_of("historical/SPY_15M.csv");
     assert_eq!(header, vec!["time", "open", "high", "low", "close", "Volume"]);
-    assert_eq!(rows, 384, "15M data rows after the header");
+    assert_eq!(rows, 116, "15M data rows after the header");
 }
 
 #[test]
@@ -166,5 +166,5 @@ fn tick_harness_pins_columns_and_count() {
             "original_timestamp_ms"
         ]
     );
-    assert_eq!(rows, 115_839, "tick data rows after the header");
+    assert_eq!(rows, 10_503, "tick data rows after the header");
 }

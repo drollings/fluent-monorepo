@@ -16,74 +16,35 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{
-    InputSet, LibraryId, ModuleInput, PineRuntimeConfig, load_pine_source, parse_pine_source,
-    parse_program,
-};
+use crate::{InputSet, LinkedModule, ModuleInput, PineRuntimeConfig};
 use crate::indicator::{OwnedOhlcv, ParamSet};
 use crate::parity::assert_expr_parity;
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
-use std::collections::HashMap;
-use std::path::PathBuf;
+
+use crate::pine::test_fixture as fixture;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
 const EPS: f64 = 1e-9;
 
-fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
-}
-
-fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
-    LibraryId {
-        publisher: publisher.to_owned(),
-        name: name.to_owned(),
-        version,
-    }
-}
-
-/// One shipped library as a graph input: identity from the header scan,
-/// structure from the parser, over the same byte-identical text.
+/// One shipped library as a graph input (shared fixture constructor).
 fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
-    let path = data_root().join(file);
-    let source = load_pine_source(&path).expect("shipped library loads");
-    let program = parse_program(&source.text).expect("shipped library parses");
-    ModuleInput::new(library_id(publisher, name, version), source, program)
+    fixture::shipped_module(file, publisher, name, version)
 }
 
+/// One synthetic driver script as a graph input (shared fixture constructor).
 fn driver_module(text: &str) -> ModuleInput {
-    let source = parse_pine_source("local/Driver", text);
-    let program = parse_program(text).expect("driver parses");
-    ModuleInput::new(library_id("local", "Driver", 1), source, program)
+    fixture::driver_module(text)
 }
 
 /// Link both shipped libraries under graph order with one driver root
 /// calling through the `UTIL` and `MAS` aliases.
 fn linked(driver: &str) -> Vec<LinkedModule> {
-    let graph = crate::resolve_imports(vec![
+    fixture::linked_modules(vec![
         shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
         shipped_module("libraries/_libMAs.pine", "showmethegrail", "libMAs", 95),
         driver_module(driver),
     ])
-    .expect("libraries plus driver resolve");
-    graph
-        .order()
-        .iter()
-        .map(|id| {
-            let entry = graph.get(id).expect("ordered module resolves");
-            let aliases = graph
-                .alias_table(id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(alias, target)| (alias, target.to_string()))
-                .collect::<HashMap<String, String>>();
-            LinkedModule {
-                key: id.to_string(),
-                program: entry.program.clone(),
-                aliases,
-            }
-        })
-        .collect()
 }
 
 fn bar_full(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
@@ -539,8 +500,12 @@ fn get_supertrend_pins_direction_recurrence() {
         volume: vec![1_000.0; 30],
     };
     let atr = kernel_batch("atr", &ParamSet::new().with_int("length", 10), &ohlcv);
-    // Independent transcription of the library recurrence over options, so
-    // absent ATR warmup propagates exactly like the engine's `na` rules.
+    // Independent transcription of the library recurrence over options.
+    // Comparisons with an absent side read false (two-valued, like the
+    // reference: `na == na` is false), but a true condition still takes a
+    // `na` band value — so through warmup the bands hold the nz-seeded
+    // previous value until a real close comparison fires, exactly like
+    // `band < prev or close[1] > prev ? band : prev` evaluates.
     let factor = 3.0_f64;
     let mut lower_prev = 0.0_f64;
     let mut upper_prev = 0.0_f64;
@@ -551,17 +516,15 @@ fn get_supertrend_pins_direction_recurrence() {
         let upper = src + factor * atr[i].unwrap_or(f64::NAN);
         let lower = src - factor * atr[i].unwrap_or(f64::NAN);
         let close_prev = if i == 0 { None } else { Some(closes[i - 1]) };
-        let lower = match (lower.is_finite(), close_prev) {
-            (true, Some(prev)) if lower > lower_prev || prev < lower_prev => lower,
-            (true, None) if lower > lower_prev => lower,
-            _ if lower.is_finite() && i > 0 => lower_prev,
-            _ => f64::NAN,
+        let lower = match close_prev {
+            Some(prev) if (lower.is_finite() && lower > lower_prev) || prev < lower_prev => lower,
+            None if lower.is_finite() && lower > lower_prev => lower,
+            _ => lower_prev,
         };
-        let upper = match (upper.is_finite(), close_prev) {
-            (true, Some(prev)) if upper < upper_prev || prev > upper_prev => upper,
-            (true, None) if upper < upper_prev => upper,
-            _ if upper.is_finite() && i > 0 => upper_prev,
-            _ => f64::NAN,
+        let upper = match close_prev {
+            Some(prev) if (upper.is_finite() && upper < upper_prev) || prev > upper_prev => upper,
+            None if upper.is_finite() && upper < upper_prev => upper,
+            _ => upper_prev,
         };
         let atr_prev = if i == 0 { None } else { atr[i - 1] };
         let direction = if atr_prev.is_none() {

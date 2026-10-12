@@ -339,7 +339,7 @@ fn fastmas_expectations() -> Vec<(&'static str, &'static str, crate::ParamSet)> 
 
 fn fastmas_outcome() -> (RunOutcome, Vec<Bar>) {
     let bars = spy5m_bars();
-    assert_eq!(bars.len(), 1149, "SPY_5M row-count golden");
+    assert_eq!(bars.len(), 346, "SPY_5M row-count golden");
     let outcome = run_linked(&real_triple_linked(), &bars);
     (outcome, bars)
 }
@@ -347,7 +347,7 @@ fn fastmas_outcome() -> (RunOutcome, Vec<Bar>) {
 #[test]
 fn fastmas_headless_proof_captures_nine_plots() {
     let (outcome, _) = fastmas_outcome();
-    assert_eq!(outcome.evaluated, 1149, "every bar evaluates");
+    assert_eq!(outcome.evaluated, 346, "every bar evaluates");
     let titles: Vec<&str> = outcome
         .plots
         .iter()
@@ -371,7 +371,7 @@ fn fastmas_headless_proof_captures_nine_plots() {
     for plot in &outcome.plots {
         assert_eq!(
             plot.values.len(),
-            1149,
+            346,
             "plot '{}' covers every bar",
             plot.title
         );
@@ -418,7 +418,7 @@ fn fastmas_series_match_direct_kernels() {
     for (title, kernel_id, params) in fastmas_expectations() {
         let kernel = registry.get(kernel_id).expect("kernel registered");
         let direct = kernel.batch(&views, &params).expect("valid params");
-        assert_eq!(direct.values.len(), 1149, "length drift in {title}");
+        assert_eq!(direct.values.len(), 346, "length drift in {title}");
         for (at_bar, want) in direct.values.iter().enumerate() {
             let got = plot_num(&outcome, title, at_bar);
             match (got, want) {
@@ -494,7 +494,7 @@ fn fastmas_spy5m_golden_frozen() {
         &std::fs::read_to_string(&path)
             .expect("golden frozen; rerun with UPDATE_FASTMAS_SPY5M=1 to write it"),
     );
-    assert_eq!(frozen.len(), 1149, "golden row-count drift");
+    assert_eq!(frozen.len(), 346, "golden row-count drift");
     let titles = [
         "First MA",
         "Second MA",

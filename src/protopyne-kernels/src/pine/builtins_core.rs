@@ -150,7 +150,25 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
         },
         // Text alignment observed in the shipped drawing calls.
         "text" => match member {
-            "align_left" | "align_center" | "align_right" => {
+            "align_left" | "align_center" | "align_right" | "align_top" | "align_bottom" => {
+                EnumHandle::new(namespace, member)
+            }
+            _ => return None,
+        },
+        // Plot-shape markers observed in the shipped drawing calls.
+        "shape" => match member {
+            "labelup" | "labeldown" => EnumHandle::new(namespace, member),
+            _ => return None,
+        },
+        // Plot-shape location observed in the shipped drawing calls.
+        "location" => match member {
+            "absolute" => EnumHandle::new(namespace, member),
+            _ => return None,
+        },
+        // Horizontal-line styles (the shipped `hline()` calls spell dashed
+        // and dotted; solid completes the linestyle set like `line.*`).
+        "hline" => match member {
+            "style_solid" | "style_dotted" | "style_dashed" => {
                 EnumHandle::new(namespace, member)
             }
             _ => return None,
@@ -340,6 +358,17 @@ fn math_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kernel
 // str.* — pure string functions over owned values
 // ---------------------------------------------------------------------------
 
+/// A `#`-decimal format tail: `"#."` plus one or more hashes, returning
+/// the rendered-decimal cap. (`"#"` rides separately; anything else is
+/// outside the served subset.)
+fn capped_decimals(pattern: &str) -> Option<usize> {
+    let tail = pattern.strip_prefix("#.")?;
+    if tail.is_empty() || !tail.bytes().all(|byte| byte == b'#') {
+        return None;
+    }
+    Some(tail.len())
+}
+
 fn str_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
     let name = format!("str.{method}");
     let arity = |want: &str| bad_arity("str", method, want, args.len());
@@ -363,28 +392,28 @@ fn str_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelE
                 return Err(refused(format!("{name} takes a string format")));
             };
             // Callers pre-round through `math.round`; the pattern only
-            // caps the rendered decimals (`"#"` integer, `"#.##"` up to
-            // two, trailing zeros trimmed). Anything else refuses naming
-            // the subset instead of guessing a format.
+            // caps the rendered decimals (`"#"` integer, `"#."` plus N
+            // hashes up to N, trailing zeros trimmed). Anything else
+            // refuses naming the subset instead of guessing a format.
             let text = match pattern.as_str() {
                 "#" => match &arg.value {
                     None => "NaN".to_owned(),
                     Some(PineValue::Float(v)) => format!("{v:.0}"),
                     _ => rendered,
                 },
-                "#.##" => match &arg.value {
-                    None => "NaN".to_owned(),
-                    Some(PineValue::Float(v)) => {
-                        let fixed = format!("{v:.2}");
+                other => match (capped_decimals(other), &arg.value) {
+                    (Some(places), Some(PineValue::Float(v))) => {
+                        let fixed = format!("{v:.places$}");
                         fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
                     }
-                    _ => rendered,
+                    (Some(_), None) => "NaN".to_owned(),
+                    (Some(_), _) => rendered,
+                    (None, _) => {
+                        return Err(refused(format!(
+                            "{name} takes a '#' or '#.#...' decimal format, got {pattern:?}"
+                        )));
+                    }
                 },
-                _ => {
-                    return Err(refused(format!(
-                        "{name} takes a '#' or '#.##' format, got {pattern:?}"
-                    )));
-                }
             };
             Ok(Some(PineValue::Str(text)))
         }
@@ -635,6 +664,19 @@ fn input_call(
                 return Err(refused(format!("{name} takes a non-empty session string")));
             }
             declare_or_get(site, InputDef::Session { default }, inputs)
+        }
+        "timeframe" => {
+            // Answers the period string so Pine-level switches
+            // (`UTIL.getTimeframe`) resolve it; the default is validated
+            // against the chart-period parser, never passed through
+            // unchecked. Presentation decorators ride along inert.
+            let Some(PineValue::Str(default)) = defval else {
+                return Err(refused(format!("{name} takes a default period string")));
+            };
+            if let Err(reason) = check_period(&default) {
+                return Err(refused(format!("{name} takes a period string: {reason}")));
+            }
+            declare_or_get(site, InputDef::Text { default }, inputs)
         }
         _ => Err(refused(format!("unknown call '{name}'"))),
     }
@@ -1552,6 +1594,9 @@ fn color_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
                     let (r, g, b) = (r as u32, g as u32, b as u32);
                     Ok(Some(PineValue::ColorHandle(ColorHandle::new(pack(r, g, b, transparency(t))))))
                 }
+                // Absent transparency propagates (RSIMD ramps transparency
+                // off a warming series); the color itself is fine.
+                (Some(PineValue::ColorHandle(_)), None) => Ok(None),
                 (Some(other), _) => Err(refused(format!("{name} takes a color, got {other}"))),
                 _ => Ok(None),
             }
@@ -1645,6 +1690,87 @@ fn period_seconds(name: &str, raw: &str) -> Result<i64, KernelError> {    let bo
         Err(_) if digits.is_empty() => Ok(factor),
         _ => Err(refused(format!("{name} takes a period like \"5\" or \"D\", got {raw:?}"))),
     }
+}
+
+/// Bucket index of one bar timestamp for `timeframe.change`: minute and
+/// second shapes floor-divide epoch seconds (day shapes land on UTC
+/// midnight exactly, so no calendar branch is needed for them); weekly
+/// buckets count Monday-start UTC weeks and monthly buckets count UTC
+/// calendar months (a documented divergence: the reference uses the
+/// exchange timezone). Accepted shapes never drift from
+/// [`period_seconds`]: weekly counts above one refuse (Pine has no `2W`),
+/// and `"H"`-suffixed or malformed shapes refuse with the same reason
+/// `timeframe.in_seconds` reports.
+pub(crate) fn timeframe_bucket(period: &str, epoch_secs: i64) -> Result<i64, KernelError> {
+    const NAME: &str = "timeframe.change";
+    let body = period.trim();
+    if let Some(rest) = body.strip_suffix('W') {
+        let count = week_count(NAME, period, rest)?;
+        if count != 1 {
+            return Err(refused(format!(
+                "{NAME} serves single-week buckets, got {period:?}"
+            )));
+        }
+        // Epoch Thursday plus three lands Monday-start weeks on integers.
+        return Ok((epoch_secs.div_euclid(86_400) + 3).div_euclid(7));
+    }
+    if let Some(rest) = body.strip_suffix('M') {
+        let count = month_count(NAME, period, rest)?;
+        let days = epoch_secs.div_euclid(86_400);
+        let (year, month, _) = civil_from_days(days);
+        return Ok((year * 12 + i64::from(month - 1)).div_euclid(count));
+    }
+    let secs = period_seconds(NAME, period)?;
+    Ok(epoch_secs.div_euclid(secs))
+}
+
+/// Whole positive count for a suffixed calendar shape (`"W"`/`"1W"`,
+/// `"M"`/`"12M"`); anything else refuses naming the shape.
+fn calendar_count(name: &str, raw: &str, digits: &str, unit: char) -> Result<i64, KernelError> {
+    if digits.is_empty() {
+        return Ok(1);
+    }
+    match digits.parse::<i64>() {
+        Ok(count) if count >= 1 => Ok(count),
+        _ => Err(refused(format!(
+            "{name} takes a period like \"5\" or \"D\", got {raw:?} (bad {unit} count)"
+        ))),
+    }
+}
+
+/// Weekly count for [`timeframe_bucket`].
+fn week_count(name: &str, raw: &str, digits: &str) -> Result<i64, KernelError> {
+    calendar_count(name, raw, digits, 'W')
+}
+
+/// Monthly count for [`timeframe_bucket`].
+fn month_count(name: &str, raw: &str, digits: &str) -> Result<i64, KernelError> {
+    calendar_count(name, raw, digits, 'M')
+}
+
+/// Proleptic Gregorian date of a day count (days since the Unix epoch)
+/// as `(year, month, day)`: Howard Hinnant's days-to-civil algorithm in
+/// pure integers, so month bucketing needs no timezone database.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = if month_prime < 10 {
+        month_prime + 3
+    } else {
+        month_prime - 9
+    };
+    (
+        if month <= 2 { year + 1 } else { year },
+        month as u32,
+        day as u32,
+    )
 }
 
 #[cfg(test)]

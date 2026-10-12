@@ -482,6 +482,10 @@ lint-llm-boundary: ## LLM-boundary guard (ROADMAP_20260903_LLM M0.1): no new com
 lint-live-ai: ## Hermeticity guard: every #[ignore] has a reason; no hermetic test dials a non-loopback host
 	$(Q)bin/live-ai-guard.sh
 
+.PHONY: test-budget
+test-budget: ## Per-test 60s budget audit: every non-ignored protopyne test runs once under timeout 60 (bin/test-budget-guard.sh --workspace for the full tree)
+	$(Q)bin/test-budget-guard.sh
+
 .PHONY: lint-no-dup
 lint-no-dup: ## Guardrail: no bespoke ladder/retry/eviction duplicates outside canonical primitives (advisory)
 	@echo "Checking for bespoke ladder duplicates..."

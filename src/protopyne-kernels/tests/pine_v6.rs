@@ -465,8 +465,10 @@ fn supertrend_tuple_matches_hand_computation() {
         &format!("{SUPER_TREND}[st, dir] = getSupertrend(close, 2.0, 3.0)"),
         &bars,
     );
-    // Bar 0: bands 16/4 collapse against `na` history; `atr[1]` is `na`.
-    assert!(is_absent(&outcome, 0, "st"));
+    // Bar 0: bands collapse against `na` history, but comparisons with an
+    // absent side read false (two-valued: `na < 0` is false), so the
+    // recurrence holds the nz-seeded previous band (0.0); `atr[1]` is `na`.
+    assert_eq!(num(&outcome, 0, "st"), Some(0.0), "bar 0 holds the seed band");
     assert_eq!(num(&outcome, 0, "dir"), Some(1.0));
     for at_bar in 1..4 {
         let dir = num(&outcome, at_bar, "dir").expect("direction defined");

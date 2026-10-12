@@ -244,6 +244,22 @@ pub struct Strategy {
     monitor: Arc<dyn Monitor>,
 }
 
+impl Clone for Strategy {
+    /// Share the composed elements: every role is already reference-counted,
+    /// so cloning bumps five `Arc`s and duplicates nothing. Pool workers
+    /// each take a clone rather than sharing one handle across `await`
+    /// points they do not co-own.
+    fn clone(&self) -> Self {
+        Self {
+            signal: Arc::clone(&self.signal),
+            structure: Arc::clone(&self.structure),
+            sizing: Arc::clone(&self.sizing),
+            loss: Arc::clone(&self.loss),
+            monitor: Arc::clone(&self.monitor),
+        }
+    }
+}
+
 impl Strategy {
     /// Compose a strategy around a signal; optionals take their defaults
     /// (explicit vertical, one fixed contract, hold, silence).

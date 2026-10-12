@@ -520,6 +520,40 @@ fn instance_call_on_plain_value_refuses() {
 }
 
 #[test]
+fn nested_field_method_mutates_through_the_chain() {
+    // `w.box.bump(5)` takes the field instance out of its root, runs the
+    // body, and writes the mutated copy back through the chain: the second
+    // call observes the first call's mutation.
+    let script = "export type Box2\n    int n = 0\nexport method bump(Box2 this, int d) =>\n    this.n += d\n    this.n\nexport type Wrap\n    Box2 box = na\nw = Wrap.new()\nw.box := Box2.new()\na = w.box.bump(5)\nb = w.box.bump(4)";
+    let outcome = run_default(script, &closes());
+    assert_eq!(num(&outcome, 3, "a"), Some(5.0), "first call returns");
+    assert_eq!(num(&outcome, 3, "b"), Some(9.0), "mutation persists");
+}
+
+#[test]
+fn nested_field_method_refusals_keep_their_shape() {
+    let script = "export type Box2\n    int n = 0\nexport method bump(Box2 this, int d) =>\n    this.n += d\n    this.n\nexport type Wrap\n    Box2 box = na\n    float plain = 0.0\nw = Wrap.new()\nw.box := Box2.new()";
+    let reason = run_err(&format!("{script}\ny = w.nope.bump(1)"), &closes());
+    assert_eq!(
+        reason,
+        "pine evaluation refused: unknown method 'w.nope.bump'",
+        "unknown field refuses"
+    );
+    let reason = run_err(&format!("{script}\ny = w.plain.bump(1)"), &closes());
+    assert_eq!(
+        reason,
+        "pine evaluation refused: unknown method 'w.plain.bump'",
+        "non-object field refuses"
+    );
+    let reason = run_err(&format!("{script}\ny = w.box.spin(1)"), &closes());
+    assert_eq!(
+        reason,
+        "pine evaluation refused: unknown method 'Box2.spin'",
+        "unknown method refuses"
+    );
+}
+
+#[test]
 fn for_in_executes_over_arrays() {
     let outcome = run_default(
         "vals = array.from(5, 7)\ntotal = 0\nfor [i, v] in vals\n    total := total + i * 10 + v",
@@ -535,4 +569,211 @@ fn for_in_over_scalar_refuses_with_reason() {
         reason.contains("'for ... in' iterates arrays"),
         "refusal names the rule: {reason}"
     );
+}
+
+fn timed_bar(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> Bar {
+    Bar::new()
+        .ts(
+            chrono::Utc
+                .with_ymd_and_hms(year, month, day, hour, minute, 0)
+                .single()
+                .expect("valid test timestamp"),
+        )
+        .o("100.00".parse().expect("decimal"))
+        .h("101.00".parse().expect("decimal"))
+        .l("99.00".parse().expect("decimal"))
+        .c("100.00".parse().expect("decimal"))
+        .volume(1_000_u64)
+        .maybe_adj(None)
+        .build()
+}
+
+fn bucket_bars() -> Vec<Bar> {
+    // Friday 09:00, Friday 09:01, Friday 10:00, Saturday 00:00 (UTC).
+    vec![
+        timed_bar(2026, 1, 2, 9, 0),
+        timed_bar(2026, 1, 2, 9, 1),
+        timed_bar(2026, 1, 2, 10, 0),
+        timed_bar(2026, 1, 3, 0, 0),
+    ]
+}
+
+fn change_series(script: &str) -> Vec<Option<bool>> {
+    let outcome = run_default(script, &bucket_bars());
+    (0..4)
+        .map(|at| match outcome.value_at(at, "c").flatten() {
+            Some(PineValue::Bool(flag)) => Some(flag),
+            other => panic!("timeframe.change reads bool, got {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn timeframe_change_fires_on_new_period_buckets() {
+    // Minute buckets flip on every bar after the first (which reads
+    // false: no previous bucket exists).
+    assert_eq!(
+        change_series("c = timeframe.change(\"1\")"),
+        vec![Some(false), Some(true), Some(true), Some(true)]
+    );
+    // Hour buckets flip at 10:00 and at midnight.
+    assert_eq!(
+        change_series("c = timeframe.change(\"60\")"),
+        vec![Some(false), Some(false), Some(true), Some(true)]
+    );
+    // Day buckets (UTC calendar) flip only at midnight.
+    assert_eq!(
+        change_series("c = timeframe.change(\"D\")"),
+        vec![Some(false), Some(false), Some(false), Some(true)]
+    );
+    // An `na` period reads `na` on every bar.
+    let outcome = run_default("c = timeframe.change(na)", &bucket_bars());
+    for at in 0..4 {
+        assert!(is_absent(&outcome, at, "c"), "na period reads na on bar {at}");
+    }
+}
+
+#[test]
+fn timeframe_change_refuses_bad_shapes() {
+    let reason = run_err("c = timeframe.change(\"nope\")", &bucket_bars());
+    assert!(
+        reason.contains("timeframe.change"),
+        "refusal names the call: {reason}"
+    );
+    let reason = run_err("c = timeframe.change()", &bucket_bars());
+    assert!(
+        reason.contains("one period string"),
+        "arity refusal: {reason}"
+    );
+}
+
+// ---- Scalar casts ----
+
+#[test]
+fn float_cast_converts_numbers_and_keeps_absence() {
+    let bars = closes();
+    let outcome = run_default("a = float(3)\nb = float(2.5)\nc = float(na)", &bars);
+    assert_eq!(num(&outcome, 3, "a"), Some(3.0), "int converts exactly");
+    assert_eq!(num(&outcome, 3, "b"), Some(2.5), "float passes through");
+    assert!(is_absent(&outcome, 3, "c"), "absence stays absence");
+}
+
+#[test]
+fn float_cast_refuses_non_numbers_and_bad_arity() {
+    let bars = closes();
+    let reason = run_err("a = float(true)", &bars);
+    assert_eq!(
+        reason,
+        "pine evaluation refused: 'float' takes a number, got true",
+        "bools refuse"
+    );
+    let reason = run_err("a = float(\"3\")", &bars);
+    assert_eq!(
+        reason,
+        "pine evaluation refused: 'float' takes a number, got 3",
+        "strings refuse"
+    );
+    let reason = run_err("a = float(1.0, 2.0)", &bars);
+    assert_eq!(
+        reason,
+        "pine evaluation refused: 'float' takes exactly one argument",
+        "arity refuses"
+    );
+}
+
+#[test]
+fn bar_index_history_subscript_reads_prior_cursors() {
+    // `bar_index` is a computed series, never a recorded one: the bare
+    // name reads the cursor, `[n]` reads `n` bars back (`na` when the run
+    // has no such bar). PPAS evaluates `bar_index[1]` on swing updates.
+    let bars = closes();
+    let outcome = run_default("bi = bar_index\nprev = bar_index[1]", &bars);
+    assert_eq!(
+        outcome.value_at(0, "prev"),
+        Some(None),
+        "bar 0 binds prev to na (not missing)"
+    );
+    for (at, want, want_prev) in [(0, 0.0, None), (1, 1.0, Some(0.0)), (2, 2.0, Some(1.0)), (3, 3.0, Some(2.0))] {
+        assert_eq!(num(&outcome, at, "bi"), Some(want), "cursor on bar {at}");
+        assert_eq!(num(&outcome, at, "prev"), want_prev, "prior cursor on bar {at}");
+    }
+}
+
+#[test]
+fn bare_color_cast_passes_color_through() {
+    // Bare `color(x)` is the identity cast: a color passes through,
+    // absence stays absence (PPAS spells `color(na)` for the transparent
+    // pen); anything else refuses with the reason.
+    let bars = closes();
+    let outcome = run_default(
+        "kept = color(color.red)\ngone = color(na)",
+        &bars,
+    );
+    assert!(
+        matches!(outcome.value_at(3, "kept"), Some(Some(PineValue::ColorHandle(_)))),
+        "kept is a color handle"
+    );
+    assert_eq!(
+        outcome.value_at(3, "gone"),
+        Some(None),
+        "color(na) stays absent"
+    );
+    let reason = run_err("bad = color(1.0)", &bars);
+    assert_eq!(
+        reason,
+        "pine evaluation refused: 'color' takes a color, got 1",
+        "non-colors refuse"
+    );
+}
+
+#[test]
+fn comparisons_with_na_are_two_valued() {
+    // Comparisons never return `na`: an absent side reads false, except
+    // `!=` which reads true — so `x == na` is false and `na()` stays the
+    // only absence test. Arithmetic still propagates absence.
+    let bars = closes();
+    let outcome = run_default(
+        "eq = na == 1\nne = na != 1\nself_eq = na == na\nlt = na < 1\nsum = na + 1",
+        &bars,
+    );
+    for name in ["eq", "self_eq", "lt"] {
+        assert_eq!(
+            outcome.value_at(3, name),
+            Some(Some(PineValue::Bool(false))),
+            "{name} reads false with an absent side"
+        );
+    }
+    assert_eq!(
+        outcome.value_at(3, "ne"),
+        Some(Some(PineValue::Bool(true))),
+        "!= reads true with an absent side"
+    );
+    assert_eq!(
+        outcome.value_at(3, "sum"),
+        Some(None),
+        "arithmetic still propagates na"
+    );
+}
+
+#[test]
+fn primitive_first_method_binds_without_receiver() {
+    // A method whose head parameter is a primitive is a plain namespaced
+    // function: the head argument binds as a parameter with no receiver
+    // slot (`libCandles.detectCandlePatterns` takes `bool` first).
+    use crate::pine::test_fixture as fixture;
+    let library = fixture::synthetic_library(
+        "test",
+        "Prim",
+        "export method pick(bool flag, float x) =>\n    flag ? x : 0.0\n",
+    );
+    let driver = fixture::driver_module(
+        "import test/Prim/1 as P\nt = P.pick(true, 5.0)\nf = P.pick(false, 5.0)\n",
+    );
+    let modules = fixture::linked_modules(vec![library, driver]);
+    let bars = closes();
+    let outcome = PineEngine::new(PineRuntimeConfig::new().build())
+        .run_linked(&modules, &bars, InputSet::new())
+        .expect("primitive-head method evaluates");
+    assert_eq!(num(&outcome, 3, "t"), Some(5.0), "true head takes the value");
+    assert_eq!(num(&outcome, 3, "f"), Some(0.0), "false head takes the default");
 }

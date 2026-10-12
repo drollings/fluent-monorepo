@@ -796,16 +796,45 @@ pub struct MultiBacktestRun {
     pub runs: Vec<BacktestRun>,
 }
 
+/// One multi-symbol job: a full leg run under its own history and venue.
+/// Fully owned so pool workers stay `Send` with no borrowed state.
+struct MultiJob {
+    /// Index into the harness input list (output order is by index).
+    index: usize,
+    /// Shared decision stack, cloned per leg (element `Arc`s bump, nothing
+    /// duplicates).
+    strategy: Strategy,
+    /// Fresh risk limits per leg (each leg tunes its own engine).
+    risk_limits: protopyne_strategy::RiskLimits,
+    /// Grant under evaluation, shared read-only across legs.
+    grant: Grant,
+    /// Shared paper tuning every leg's venue builds from.
+    paper: PaperConfig,
+    /// Quote synthesis plus data-version pin for this leg.
+    venue_config: BacktestConfig,
+    /// Attribution plus economics for this leg.
+    runner_config: RunnerConfig,
+    /// Loaded bars for this leg.
+    bars: Vec<Bar>,
+    /// Pinned manifest for this leg, built up front in input order.
+    manifest: RunManifest,
+    /// Suite seed shared across legs.
+    seed: u64,
+}
+
 /// Run the shared decide path once per symbol over one shared venue set.
 ///
 /// Every venue tunes from the same `paper` config (the set is built together,
 /// never one hidden default per call), and every symbol enters the same
 /// `run_backtest_on_venue` the single-symbol path uses — per-symbol decisions
-/// equal standalone runs bit for bit. Symbols run sequentially in input
-/// order: determinism first (sweeps own the pool fan-out pattern), so the
-/// combined manifest needs no index bookkeeping to stay reproducible.
+/// equal standalone runs bit for bit. Legs fan out over the shared
+/// [`ResultPool`](fluent_concurrency::pool::ResultPool) with outcomes
+/// re-sorted by input index, so parallelism never perturbs determinism:
+/// reruns are byte-identical with or without the pool. Workers clamp to
+/// 1..=8 and the queue fits exactly one slot per leg, so oversubscription
+/// waits its turn — no per-bar spawn, the pool lives for the run.
 /// Underlyings must be unique: two legs on one symbol would attribute fills
-/// ambiguously, so duplicates refuse fail-closed.
+/// ambiguously, so duplicates refuse fail-closed before anything spawns.
 pub async fn run_multi_backtest(
     strategy: &Strategy,
     risk: &RiskEngine,
@@ -828,14 +857,14 @@ pub async fn run_multi_backtest(
             )));
         }
     }
-    let mut symbols = Vec::with_capacity(inputs.len());
-    let mut runs = Vec::with_capacity(inputs.len());
-    for input in &inputs {
+    // Histories and manifests load sequentially up front: a bad source or
+    // config refuses before the pool spawns, and manifest order stays input
+    // order regardless of completion order.
+    let mut legs: Vec<MultiJob> = Vec::with_capacity(inputs.len());
+    for (index, input) in inputs.into_iter().enumerate() {
         input.runner_config.validate()?;
         input.venue_config.validate()?;
         let bars = crate::backtest::load_history(&input.history)?;
-        let venue = BacktestVenue::new(input.venue_config.clone(), bars.clone(), paper.clone())
-            .map_err(|e| ServerError::Backtest(e.to_string()))?;
         let config_json = serde_json::to_string(&(
             &input.runner_config,
             &input.venue_config,
@@ -844,21 +873,59 @@ pub async fn run_multi_backtest(
         ))
         .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))?;
         let manifest = RunManifest::new(&input.venue_config.data_version, config_json, &bars, seed);
-        symbols.push(manifest.clone());
-        runs.push(
-            run_backtest_on_venue(
-                strategy,
-                risk,
-                grant,
+        legs.push(MultiJob {
+            index,
+            strategy: strategy.clone(),
+            risk_limits: risk.limits().clone(),
+            grant: grant.clone(),
+            paper: paper.clone(),
+            venue_config: input.venue_config,
+            runner_config: input.runner_config,
+            bars,
+            manifest,
+            seed,
+        });
+    }
+    let workers = legs.len().clamp(1, 8);
+    let pool = fluent_concurrency::pool::ResultPool::new(
+        fluent_concurrency::tokio_runtime(),
+        workers,
+        legs.len().max(1),
+        move |job: MultiJob| async move {
+            let venue = BacktestVenue::new(job.venue_config.clone(), job.bars.clone(), job.paper.clone())
+                .map_err(|e| e.to_string())?;
+            let risk = RiskEngine::new(job.risk_limits);
+            let run = run_backtest_on_venue(
+                &job.strategy,
+                &risk,
+                &job.grant,
                 &venue,
-                &input.venue_config,
-                &input.runner_config,
-                &bars,
-                seed,
-                manifest,
+                &job.venue_config,
+                &job.runner_config,
+                &job.bars,
+                job.seed,
+                job.manifest,
             )
-            .await?,
-        );
+            .await
+            .map_err(|e| e.to_string())?;
+            Ok::<(usize, BacktestRun), String>((job.index, run))
+        },
+    );
+    let mut indexed = Vec::with_capacity(legs.len());
+    for job in legs {
+        let (index, run) = pool
+            .submit(job)
+            .await
+            .map_err(|e| ServerError::Backtest(format!("multi submit failed: {e:?}")))?;
+        indexed.push((index, run));
+    }
+    pool.shutdown().await;
+    indexed.sort_by_key(|(index, _)| *index);
+    let mut symbols = Vec::with_capacity(indexed.len());
+    let mut runs = Vec::with_capacity(indexed.len());
+    for (_, run) in indexed {
+        symbols.push(run.manifest.clone());
+        runs.push(run);
     }
     Ok(MultiBacktestRun {
         manifest: MultiRunManifest {

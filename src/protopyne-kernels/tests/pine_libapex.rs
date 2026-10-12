@@ -15,13 +15,10 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{
-    InputSet, LibraryId, LinkedModule, ModuleInput, OwnedOhlcv, ParamSet, PineRuntimeConfig,
-    UserInstance, load_pine_source, parse_pine_source, parse_program,
-};
+use crate::{InputSet, LinkedModule, ModuleInput, OwnedOhlcv, ParamSet, PineRuntimeConfig, UserInstance};
 use protopyne_types::Bar;
-use std::collections::HashMap;
-use std::path::PathBuf;
+
+use crate::pine::test_fixture as fixture;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
 const EPS: f64 = 1e-9;
@@ -32,37 +29,20 @@ const IMPORTS: &str = "import showmethegrail/libUtil/12 as UTIL\n\
      import showmethegrail/libDrawing/61 as libDrawing\n\
      import showmethegrail/libApex/88 as libApex\n";
 
-fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
-}
-
-fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
-    LibraryId {
-        publisher: publisher.to_owned(),
-        name: name.to_owned(),
-        version,
-    }
-}
-
-/// One shipped library as a graph input: identity from the header scan,
-/// structure from the parser, over the same byte-identical text.
+/// One shipped library as a graph input (shared fixture constructor).
 fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
-    let path = data_root().join(file);
-    let source = load_pine_source(&path).expect("shipped library loads");
-    let program = parse_program(&source.text).expect("shipped library parses");
-    ModuleInput::new(library_id(publisher, name, version), source, program)
+    fixture::shipped_module(file, publisher, name, version)
 }
 
+/// One synthetic driver script as a graph input (shared fixture constructor).
 fn driver_module(text: &str) -> ModuleInput {
-    let source = parse_pine_source("local/Driver", text);
-    let program = parse_program(text).expect("driver parses");
-    ModuleInput::new(library_id("local", "Driver", 1), source, program)
+    fixture::driver_module(text)
 }
 
 /// Link all five shipped libraries under graph order with one driver root
 /// calling through the `UTIL`/`BARS`/`libApex` aliases.
 fn linked(driver: &str) -> Vec<LinkedModule> {
-    let graph = crate::resolve_imports(vec![
+    fixture::linked_modules(vec![
         shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
         shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
         shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
@@ -70,25 +50,6 @@ fn linked(driver: &str) -> Vec<LinkedModule> {
         shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         driver_module(driver),
     ])
-    .expect("libraries plus driver resolve");
-    graph
-        .order()
-        .iter()
-        .map(|id| {
-            let entry = graph.get(id).expect("ordered module resolves");
-            let aliases = graph
-                .alias_table(id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(alias, target)| (alias, target.to_string()))
-                .collect::<HashMap<String, String>>();
-            LinkedModule {
-                key: id.to_string(),
-                program: entry.program.clone(),
-                aliases,
-            }
-        })
-        .collect()
 }
 
 fn test_engine() -> PineEngine {

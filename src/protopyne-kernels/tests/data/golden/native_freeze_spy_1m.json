@@ -1,0 +1,26 @@
+{
+  "timeframe": "1M",
+  "tf_ms": 60000,
+  "bars": 436,
+  "input_sha": "3ec1edd8a6b4a6a8",
+  "regime": "TRENDING_BEAR",
+  "fields": {
+    "atr": 0.046558529487780324,
+    "atr_distance": 1.6964405986564641,
+    "atr_long": 0.04993030097534324,
+    "cci": 346.36678200660765,
+    "ma_health": -62.82300163627378,
+    "ma_mean": 694.3210162203632,
+    "ma_primary": 694.2797400462362,
+    "ma_signal": 694.2825252525254,
+    "rsi": 15.601364077914482,
+    "stdev": 0.06460634327862742,
+    "trend_direction": -1.0,
+    "trend_strength": 0.6282300163627378,
+    "vol": 231.0,
+    "vol_ratio": 3.352685050798258,
+    "vol_sma": 68.9,
+    "volatility_ratio": 1.3876371094491697
+  },
+  "max_abs_diff_vs_pine": 0.0
+}

@@ -48,11 +48,10 @@ use crate::filters::{KalmanIndicator, VossIndicator};
 use crate::indicator::{OwnedOhlcv, ParamSet, builtin_registry};
 use crate::{
     InputSet, LibraryId, LinkedModule, LtfDataset, ModuleInput, PineEngine, PineRuntimeConfig,
-    parse_pine_source, parse_program, resolve_imports,
+    parse_pine_source, parse_program,
 };
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
-use std::collections::HashMap;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
 const EPS: f64 = 1e-9;
@@ -263,6 +262,11 @@ const TA_PROBES: &[(&str, &str)] = &[
     ("ta.eit", "x = ta.eit(close, 0.5)"),
     ("ta.kalman", "x = ta.kalman(close, 14)"),
     ("ta.voss", "x = ta.voss(close, 20)"),
+    ("ta.barssince", "x = ta.barssince(bar_index == 55)"),
+    (
+        "ta.valuewhen",
+        "x = ta.valuewhen(bar_index == 55, close, 0)",
+    ),
 ];
 
 /// Oracle for one bridged call: kernel batch agreement, or a hand-derived
@@ -366,6 +370,10 @@ fn ta_oracle(construct: &str) -> Oracle {
         "ta.eit" => Oracle::Kernel("eit", eit_half),
         "ta.kalman" => Oracle::Kernel("kalman", kalman14),
         "ta.voss" => Oracle::Kernel("voss", voss20),
+        // Fires only on bar 55 of the 60-bar ramp, so the last bar reads 4.
+        "ta.barssince" => Oracle::Int(4),
+        // `close[55]` on the `100+i` ramp prints 155.
+        "ta.valuewhen" => Oracle::Num(155.0),
         other => panic!("no oracle for bridged {other}"),
     }
 }
@@ -378,11 +386,15 @@ fn freeze_matrix_covers_registry() {
 
 /// Rows that run only through linked closures, so they carry no
 /// single-module probe: the three library-table rows ride the
-/// `pine_libmas` golden suite, and imported-type construction rides the
-/// linked test below — all in this same gate.
+/// `pine_libmas` golden suite, imported-type construction and the
+/// primitive-head call ride the linked tests below, and both injected
+/// `request.*` rows ride the injection tests below — all in this same
+/// gate.
 const LINKED_ROWS: &[&str] = &[
     "request.security_lower_tf (injected)",
+    "request.security (injected)",
     "imported type construction",
+    "primitive-head method call",
     "factorySmoothing dispatch",
     "normalizeOsc table",
     "getOscillatorColor table",
@@ -422,7 +434,7 @@ fn freeze_correct_rows_carry_probes() {
 
 #[test]
 fn freeze_match_ta_bridge_agrees_with_kernels() {
-    assert_eq!(TA_PROBES.len(), 36, "one probe per bridged method");
+    assert_eq!(TA_PROBES.len(), 38, "one probe per bridged method");
     for (construct, probe) in TA_PROBES {
         let row = parity_for(construct).expect("bridged row known");
         assert_eq!(row.verdict, ParityVerdict::Match, "{construct} stands");
@@ -518,7 +530,9 @@ const SCALAR_PINS: &[(&str, &str, Pin)] = &[
     ("input.string", "x", Pin::Text("hi")),
     ("input.source", "x", Pin::Num(123.0)),
     ("input.session", "x", Pin::Text("0930-1600")),
+    ("input.timeframe", "x", Pin::Text("D")),
     ("bar_index", "x", Pin::Int(23)),
+    ("bar_index[n] history read", "x", Pin::Int(22)),
     ("barstate.*", "x", Pin::Bool(false)),
     ("time (series)", "x", Pin::Num(1_700_001_380.0)),
     ("timenow", "x", Pin::Num(1_700_001_380.0)),
@@ -548,6 +562,10 @@ const SCALAR_PINS: &[(&str, &str, Pin)] = &[
     ("array.covariance", "x", Pin::Num(0.5)),
     ("int() cast", "x", Pin::Int(5)),
     ("line.style_* constants", "x", Pin::Present),
+    ("shape.* constants", "x", Pin::Present),
+    ("location.* constants", "x", Pin::Present),
+    ("hline.style_* constants", "x", Pin::Present),
+    ("text.align_* constants", "x", Pin::Present),
     ("trailing if yields branch value", "x", Pin::Num(1.0)),
     ("trailing collection call writes back", "hit", Pin::Num(8.0)),
     ("switch expression value", "x", Pin::Num(10.0)),
@@ -580,6 +598,8 @@ fn freeze_match_captures_recorded() {
         "plotcandle",
         "barcolor",
         "fill",
+        "plotshape()",
+        "hline()",
         "label.new",
         "table.new",
         "box.new",
@@ -606,6 +626,30 @@ fn freeze_match_captures_recorded() {
                 );
             }
             "fill" => assert_eq!(outcome.fills.len(), 1, "one fill captured"),
+            "plotshape()" => {
+                assert_eq!(
+                    outcome.plotshapes.len(),
+                    1,
+                    "one shape capture per call site"
+                );
+                assert_eq!(
+                    outcome.plotshapes[0].values.len(),
+                    bars,
+                    "shape covers every bar"
+                );
+            }
+            "hline()" => {
+                assert_eq!(
+                    outcome.hlines.len(),
+                    1,
+                    "one level capture per call site"
+                );
+                assert_eq!(
+                    outcome.hlines[0].values.len(),
+                    bars,
+                    "level covers every bar"
+                );
+            }
             _ => assert!(
                 !outcome.draw_events.is_empty(),
                 "{construct} records lifecycle events"
@@ -702,10 +746,19 @@ const CORRECT_PINS: &[(&str, &str, Pin)] = &[
     ("for loop", "x", Pin::Num(3.0)),
     ("boolean and/or with na", "a", Pin::Bool(false)),
     ("boolean and/or with na", "b", Pin::Bool(true)),
+    ("na comparison (two-valued)", "eq", Pin::Bool(false)),
+    ("na comparison (two-valued)", "ne", Pin::Bool(true)),
+    ("na comparison (two-valued)", "self_eq", Pin::Bool(false)),
+    ("na comparison (two-valued)", "lt", Pin::Bool(false)),
+    ("timeframe.change (UTC buckets)", "c", Pin::Bool(false)),
     ("function call", "x", Pin::Num(3.0)),
     ("method body scope (calls owner, reads caller)", "x", Pin::Num(1001.0)),
     ("ta.* source argument", "a", Pin::Num(100.0)),
     ("ta.* source argument", "x", Pin::Num(152.5)),
+    // Source-honoring pivots: the spike at bar 21 of the 24-bar fixture
+    // confirms on the last bar (window `19..=23`).
+    ("ta.pivothigh", "x", Pin::Num(1000.0)),
+    ("ta.pivotlow", "x", Pin::Num(0.0)),
 ];
 
 #[test]
@@ -771,6 +824,28 @@ fn freeze_correct_divergences_pinned() {
     let outcome = run_probe(row.probe.expect("bool carries a probe")).expect("runs");
     assert_absent(&outcome, "c", "boolean and/or with na");
     assert_absent(&outcome, "d", "boolean and/or with na");
+    // UTC buckets flip on UTC boundaries: on the 60-bar ramp the hour
+    // bucket cuts at bar 47 (23:00 UTC) and holds on either side.
+    let row = parity_for("timeframe.change (UTC buckets)").expect("change row known");
+    assert_eq!(row.verdict, ParityVerdict::Correct, "change stands");
+    let outcome =
+        run_probe60("c = timeframe.change(\"60\")").expect("hour buckets run");
+    let at = |bar: usize| outcome.value_at(bar, "c").flatten();
+    assert_eq!(
+        at(46),
+        Some(crate::PineValue::Bool(false)),
+        "bar 46 stays in its hour bucket"
+    );
+    assert_eq!(
+        at(47),
+        Some(crate::PineValue::Bool(true)),
+        "bar 47 opens the 23:00 UTC bucket"
+    );
+    assert_eq!(
+        at(59),
+        Some(crate::PineValue::Bool(false)),
+        "bar 59 stays in the 23:00 UTC bucket"
+    );
 }
 
 /// `Correct` rows whose pinned behavior is a refusal: `(construct, probe,
@@ -972,6 +1047,8 @@ fn freeze_tally_full_accept_full_refuse() {
     println!("freeze tally: {accept}/{accept_total} accept, {refuse}/{refuse_total} refuse");
 }
 
+use crate::pine::test_fixture as fixture;
+
 fn synthetic_module(publisher: &str, name: &str, text: &str) -> ModuleInput {
     let source = parse_pine_source(&format!("{publisher}/{name}"), text);
     let program = parse_program(text).expect("synthetic parses");
@@ -987,25 +1064,7 @@ fn synthetic_module(publisher: &str, name: &str, text: &str) -> ModuleInput {
 }
 
 fn linked(modules: Vec<ModuleInput>) -> Vec<LinkedModule> {
-    let graph = resolve_imports(modules).expect("synthetic closure resolves");
-    graph
-        .order()
-        .iter()
-        .map(|id| {
-            let entry = graph.get(id).expect("ordered module resolves");
-            let aliases = graph
-                .alias_table(id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(alias, target)| (alias, target.to_string()))
-                .collect::<HashMap<String, String>>();
-            LinkedModule {
-                key: id.to_string(),
-                program: entry.program.clone(),
-                aliases,
-            }
-        })
-        .collect()
+    fixture::linked_modules(modules)
 }
 
 #[test]
@@ -1086,3 +1145,130 @@ fn freeze_lower_tf_serves_injected_columns() {
         other => panic!("lower-tf serves an array of columns, got {other:?}"),
     }
 }
+
+#[test]
+fn freeze_security_serves_injected_bars() {
+    // The injected `request.security` row serves confirmed bars from the
+    // registered pair: a two-row daily dataset preceding the whole chart
+    // reads its last confirmed close on every bar.
+    let row = parity_for("request.security (injected)").expect("security row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "security stands");
+    let program = parse_program(
+        "x = request.security(\"SYM\", \"D\", close, barmerge.gaps_off, barmerge.lookahead_off)",
+    )
+    .expect("security probe parses");
+    let mut engine = PineEngine::new(PineRuntimeConfig::new().build());
+    engine
+        .inject_security(
+            "SYM",
+            "D",
+            LtfDataset {
+                times: vec![1_699_848_000_000, 1_699_934_400_000],
+                opens: vec![89.0, 90.0],
+                highs: vec![92.0, 93.0],
+                lows: vec![88.0, 89.0],
+                closes: vec![90.0, 91.0],
+                volumes: vec![100.0, 200.0],
+            },
+        )
+        .expect("dataset injects");
+    let outcome = engine
+        .run(&program, &bars24(), InputSet::new())
+        .expect("injected security serves");
+    assert_pin(&outcome, "x", Pin::Num(91.0), "request.security (injected)");
+}
+
+#[test]
+fn freeze_primitive_head_runs_linked() {
+    // A method whose head parameter is a primitive binds as a plain
+    // namespaced function: no receiver slot, no object needed.
+    let row = parity_for("primitive-head method call").expect("primitive row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "primitive-head stands");
+    let library = synthetic_module(
+        "test",
+        "Prim",
+        "export method pick(bool flag, float x) =>\n    flag ? x : 0.0\n",
+    );
+    let driver = synthetic_module(
+        "test",
+        "Driver",
+        "import test/Prim/1 as P\nt = P.pick(true, 5.0)\nf = P.pick(false, 5.0)\n",
+    );
+    let modules = linked(vec![library, driver]);
+    let mut engine = PineEngine::new(PineRuntimeConfig::new().build());
+    let outcome = engine
+        .run_linked(&modules, &bars24(), InputSet::new())
+        .expect("primitive-head method evaluates");
+    assert_pin(&outcome, "t", Pin::Num(5.0), "primitive-head true arm");
+    assert_pin(&outcome, "f", Pin::Num(0.0), "primitive-head false arm");
+}
+
+#[test]
+fn freeze_match_color_cast() {
+    // Bare `color()` is the identity cast: colors pass through opaque,
+    // absence stays absence; `color.new` with an absent transparency
+    // propagates absence instead of refusing.
+    let row = parity_for("color() identity cast").expect("color row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "color stands");
+    let outcome =
+        run_probe(row.probe.expect("color carries a probe")).expect("color runs");
+    let at = outcome.snapshots.len() - 1;
+    assert!(
+        matches!(
+            outcome.value_at(at, "kept"),
+            Some(Some(crate::PineValue::ColorHandle(_)))
+        ),
+        "kept stays a color handle"
+    );
+    assert_absent(&outcome, "gone", "color() identity cast");
+    let row = parity_for("color.new with na transparency").expect("new row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "color.new stands");
+    let outcome = run_probe(row.probe.expect("new carries a probe")).expect("runs");
+    assert_absent(&outcome, "x", "color.new with na transparency");
+}
+
+#[test]
+fn freeze_match_plot_variable_pairing() {
+    // Variables bound from `plot()` calls pair through their recorded
+    // site tags: the same captures as the inline form, titles included.
+    let row = parity_for("plot variable site tag").expect("plot-var row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "plot-var stands");
+    let outcome =
+        run_probe(row.probe.expect("plot-var carries a probe")).expect("runs");
+    assert_eq!(outcome.plots.len(), 2, "both plots capture");
+    assert_eq!(outcome.fills.len(), 1, "one fill per call site");
+    let fill = &outcome.fills[0];
+    assert_eq!(fill.first_title, "Fast", "first leg tagged");
+    assert_eq!(fill.second_title, "Slow", "second leg tagged");
+}
+
+#[test]
+fn freeze_match_gradient_fill() {
+    // The six-positional gradient overload spans the same two plots while
+    // the capture keeps the call title and both leg titles.
+    let row = parity_for("gradient fill (six-positional)").expect("gradient row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "gradient stands");
+    let outcome =
+        run_probe(row.probe.expect("gradient carries a probe")).expect("runs");
+    assert_eq!(outcome.fills.len(), 1, "one fill per call site");
+    let fill = &outcome.fills[0];
+    assert_eq!(fill.title, "Band", "call title kept");
+    assert_eq!(fill.first_title, "Fast", "first leg tagged");
+    assert_eq!(fill.second_title, "Slow", "second leg tagged");
+}
+
+#[test]
+fn freeze_match_alertcondition_records_nothing() {
+    // `alertcondition()` evaluates its condition and records nothing:
+    // alerts cannot fire headlessly, and no capture vector grows.
+    let row = parity_for("alertcondition()").expect("alert row known");
+    assert_eq!(row.verdict, ParityVerdict::Match, "alertcondition stands");
+    let outcome = run_probe(row.probe.expect("alert carries a probe")).expect("runs");
+    assert!(outcome.plots.is_empty(), "no plots recorded");
+    assert!(outcome.plotshapes.is_empty(), "no shapes recorded");
+    assert!(outcome.hlines.is_empty(), "no levels recorded");
+    assert!(outcome.fills.is_empty(), "no fills recorded");
+    assert!(outcome.barcolors.is_empty(), "no barcolors recorded");
+    assert!(outcome.draw_events.is_empty(), "no draw events recorded");
+}
+

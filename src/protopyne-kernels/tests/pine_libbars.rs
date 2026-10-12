@@ -19,16 +19,20 @@
 //!   synthetic tick streams, with per-tick legs tracking bar-so-far OHLC,
 //!   cumulative volume, and the constant bar-open time.
 //!
+//! `libBuffers` boundary: `libBars` imports `libUtil` only — no
+//! `libBuffers` item is linked, called, or snapshotted anywhere in this
+//! suite, and no Rust mirror of `BufferFloat`/`BufferInt` internals exists
+//! (per the task's explicit out-of-scope rule). Where `libBars` methods
+//! take shape from buffers they own their own arrays outright; the suites
+//! observe those arrays through `Bars` methods and snapshots only.
+//!
 //! Float goldens below are hand-computed decimal expectations with a tight
 //! tolerance, never measured quantities.
 //! `#[allow(clippy::float_cmp)]` covers those literals.
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{
-    InputSet, LibraryId, LtfDataset, ModuleInput, PineRuntimeConfig, UserInstance,
-    load_pine_source, parse_pine_source, parse_program,
-};
+use crate::{InputSet, LtfDataset, ModuleInput, PineRuntimeConfig, UserInstance, parse_program};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 use std::collections::HashMap;
@@ -48,56 +52,26 @@ fn data_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
 }
 
-fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
-    LibraryId {
-        publisher: publisher.to_owned(),
-        name: name.to_owned(),
-        version,
-    }
-}
+use crate::pine::test_fixture as fixture;
 
-/// One shipped library as a graph input: identity from the header scan,
-/// structure from the parser, over the same byte-identical text.
+/// One shipped library as a graph input (shared fixture constructor).
 fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
-    let path = data_root().join(file);
-    let source = load_pine_source(&path).expect("shipped library loads");
-    let program = parse_program(&source.text).expect("shipped library parses");
-    ModuleInput::new(library_id(publisher, name, version), source, program)
+    fixture::shipped_module(file, publisher, name, version)
 }
 
+/// One synthetic driver script as a graph input (shared fixture constructor).
 fn driver_module(text: &str) -> ModuleInput {
-    let source = parse_pine_source("local/Driver", text);
-    let program = parse_program(text).expect("driver parses");
-    ModuleInput::new(library_id("local", "Driver", 1), source, program)
+    fixture::driver_module(text)
 }
 
 /// Link both shipped libraries under graph order with one driver root
 /// calling through the `UTIL` and `BARS` aliases.
 fn linked(driver: &str) -> Vec<LinkedModule> {
-    let graph = crate::resolve_imports(vec![
+    fixture::linked_modules(vec![
         shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
         shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
         driver_module(driver),
     ])
-    .expect("libraries plus driver resolve");
-    graph
-        .order()
-        .iter()
-        .map(|id| {
-            let entry = graph.get(id).expect("ordered module resolves");
-            let aliases = graph
-                .alias_table(id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(alias, target)| (alias, target.to_string()))
-                .collect::<HashMap<String, String>>();
-            LinkedModule {
-                key: id.to_string(),
-                program: entry.program.clone(),
-                aliases,
-            }
-        })
-        .collect()
 }
 
 fn test_engine() -> PineEngine {
@@ -239,7 +213,11 @@ fn helper_edge_table() {
     assert_eq!(num(&outcome, 0, "buy_up"), 100.0, "up move takes all");
     assert_eq!(num(&outcome, 0, "buy_down"), 0.0, "down move takes none");
     assert_eq!(num(&outcome, 0, "buy_flat"), 50.0, "flat splits at the neutral ratio");
-    assert!(is_absent(&outcome, 0, "buy_na"), "absent delta propagates");
+    assert_eq!(
+        num(&outcome, 0, "buy_na"),
+        50.0,
+        "absent delta reads false on both guards, so the neutral split applies (comparisons are two-valued)"
+    );
     assert!(boolean(&outcome, 0, "valid"));
     assert!(!boolean(&outcome, 0, "valid_eps"), "epsilon itself is dust (strict)");
     assert!(boolean(&outcome, 0, "valid_above"));
@@ -696,18 +674,7 @@ fn tick_pull_reconciles_drifted_bar() {
     // The first two ticks carry 600 of the 1000-unit tape, but seeding
     // absorbs them before any delta accumulates: the 60% confirm drift
     // trips the pull, which the injected 1000-unit window reconciles.
-    let tape: Vec<(i64, f64, u64)> = vec![
-        (5_000, 100.0, 300),
-        (10_000, 100.2, 600),
-        (20_000, 101.0, 700),
-        (30_000, 102.0, 800),
-        (70_000, 101.5, 850),
-        (80_000, 101.0, 900),
-        (190_000, 99.0, 940),
-        (200_000, 99.5, 970),
-        (250_000, 100.0, 990),
-        (290_000, 100.5, 1000),
-    ];
+    let tape = high_drift_tape();
     let mut high = f64::NEG_INFINITY;
     let mut low = f64::INFINITY;
     let updates: Vec<(Bar, i64)> = tape
@@ -895,7 +862,10 @@ fn spike_degenerates_quiet() {
     assert!(!boolean(&outcome, 0, "zero_sma"));
     assert!(!boolean(&outcome, 0, "neg_sma"));
     assert!(!boolean(&outcome, 0, "zero_sma_full"), "400x volume still quiet without a baseline");
-    assert!(is_absent(&outcome, 0, "na_sma"), "absent baseline propagates absence");
+    assert!(
+        !boolean(&outcome, 0, "na_sma"),
+        "absent baseline reads false (comparisons are two-valued, never na)"
+    );
 }
 
 #[test]
@@ -1404,19 +1374,19 @@ fn assert_close(got: f64, want: f64, what: &str) {
     );
 }
 
-/// Twenty real ticks, first-two-tick seeding rounds to zero: the
-/// accumulator holds the full 701-unit tape, drift reads exactly zero,
+/// Fifteen real ticks, first-two-tick seeding rounds to zero: the
+/// accumulator holds the full 1105-unit tape, drift reads exactly zero,
 /// and the remainder top-up has nothing to add (one finalized candle).
 #[test]
 fn trim_quiet_reconciles_without_pull() {
     let rows = load_tick_window("window_quiet.csv");
-    assert_eq!(rows.len(), 20, "quiet window row count pinned");
+    assert_eq!(rows.len(), 15, "quiet window row count pinned");
     let (bars, stamps) = window_updates(&rows, |stamp| stamp.div_euclid(60_000) * 60_000);
     let outcome = run_window(&fetch_driver(), &bars, &stamps);
     let last = rows.len() - 1;
     let state = bars_at(&outcome, last);
     assert_eq!(field_num(&state, "count"), 1.0, "finalize only, no remainder");
-    assert_close(field_num(&state, "total_vol"), 701.0, "tape total");
+    assert_close(field_num(&state, "total_vol"), 1105.0, "tape total");
     assert_eq!(field_num(&state, "pull_count"), 0.0, "zero drift pulls nothing");
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
     assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
@@ -1452,15 +1422,14 @@ fn single_minute_row(open_ms: i64) -> LtfDataset {
     picked.expect("a minute row precedes the window")
 }
 
-/// Twenty-nine real ticks with a 128-unit seeding loss over a 1679-unit
-/// tape (7.62% drift): the pull fires once and rebuilds the ring from the
-/// confirmed minute row (1687 units, overshooting the leg by 8), then the
-/// remainder tops the gap back up by magnitude — the abs-remainder rule
-/// from the proof contract — landing on 1695.
+/// Twenty real ticks with an 88-unit seeding loss over a 1062-unit
+/// tape (8.29% drift): the pull fires once and rebuilds the ring from the
+/// confirmed minute row (1062 units, exactly the leg, so the remainder has
+/// nothing to add) — landing on 1062.
 #[test]
 fn trim_pull_rebuilds_from_injected_row() {
     let rows = load_tick_window("window_pull.csv");
-    assert_eq!(rows.len(), 29, "pull window row count pinned");
+    assert_eq!(rows.len(), 20, "pull window row count pinned");
     let open_ms = rows[0].0.div_euclid(60_000) * 60_000;
     let (bars, stamps) = window_updates(&rows, |stamp| stamp.div_euclid(60_000) * 60_000);
     let modules = linked(&fetch_driver());
@@ -1475,21 +1444,21 @@ fn trim_pull_rebuilds_from_injected_row() {
     let state = bars_at(&outcome, last);
     assert_eq!(field_num(&state, "pull_count"), 1.0, "drift trips one pull");
     assert_eq!(field_num(&state, "fetch_check_count"), 1.0, "confirm check counts");
-    assert_eq!(field_num(&state, "count"), 2.0, "rebuilt row plus remainder");
-    assert_close(field_num(&state, "total_vol"), 1695.0, "window plus abs remainder");
+    assert_eq!(field_num(&state, "count"), 1.0, "rebuilt row only, zero overshoot");
+    assert_close(field_num(&state, "total_vol"), 1062.0, "window plus abs remainder");
     assert_close(
         field_num(&state, "tick_accuracy"),
-        1551.0 / 1679.0,
+        974.0 / 1062.0,
         "accumulated over leg",
     );
     assert_close(
         field_num(&state, "volume_drift_pct"),
-        128.0 / 1679.0 * 100.0,
+        88.0 / 1062.0 * 100.0,
         "seeding drift",
     );
     assert_close(
         field_num(&state, "last_bar_drift"),
-        128.0 / 1679.0 * 100.0,
+        88.0 / 1062.0 * 100.0,
         "seeding drift",
     );
     assert!(!field_bool(&state, "last_bar_healthy"), "drift trips the threshold");
@@ -1498,15 +1467,15 @@ fn trim_pull_rebuilds_from_injected_row() {
     assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
 }
 
-/// Thirty real ticks across three minutes with the middle minute empty,
+/// Twenty real ticks across three minutes with the middle minute empty,
 /// under one bar-open: the first tick past the hole crosses two LTF
 /// boundaries (one counted gap), both populated minutes finalize, and
-/// the remainder tops the 331-unit bar with no pull (0.30% drift).
+/// the remainder tops the 1421-unit bar with no pull (0.28% drift).
 #[test]
 fn trim_sparse_gap_registers_without_pull() {
     let rows = load_tick_window("window_sparse.csv");
-    assert_eq!(rows.len(), 30, "sparse window row count pinned");
-    const BAR_OPEN: i64 = 1767344580000;
+    assert_eq!(rows.len(), 20, "sparse window row count pinned");
+    const BAR_OPEN: i64 = 1767995580000;
     assert!(
         rows.iter().all(|(stamp, _, _)| *stamp >= BAR_OPEN),
         "window rides one bar-open"
@@ -1521,18 +1490,226 @@ fn trim_sparse_gap_registers_without_pull() {
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
     assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
     assert_eq!(field_num(&state, "count"), 3.0, "two finalized candles plus remainder");
-    assert_close(field_num(&state, "total_vol"), 331.0, "bar total");
+    assert_close(field_num(&state, "total_vol"), 1421.0, "bar total");
     assert_close(
         field_num(&state, "tick_accuracy"),
-        330.0 / 331.0,
+        1417.0 / 1421.0,
         "accumulated over leg",
     );
     assert_close(
         field_num(&state, "volume_drift_pct"),
-        1.0 / 331.0 * 100.0,
+        4.0 / 1421.0 * 100.0,
         "seeding drift",
     );
     assert!(field_bool(&state, "last_bar_healthy"), "drift stays healthy");
+}
+
+/// Thirty real ticks carrying four out-of-order flags, under per-minute
+/// bar-open geometry: the flags ride the unread side channel, so
+/// accumulation matches the tape exactly (23577 units, equal to the
+/// confirmed minute row), the 2.38% seeding drift stays silent, and the
+/// 561-unit remainder tops the bar with no pull.
+#[test]
+fn trim_out_of_order_accumulates_without_pull() {
+    let rows = load_tick_window("window_out_of_order.csv");
+    assert_eq!(rows.len(), 30, "out-of-order window row count pinned");
+    let flags = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/ticks/window_out_of_order.csv"),
+    )
+    .expect("window loads")
+    .lines()
+    .skip(1)
+    .filter(|line| line.split(',').nth(3).expect("flag cell") == "True")
+    .count();
+    assert_eq!(flags, 4, "four rows arrive flagged out-of-order");
+    let (bars, stamps) = window_updates(&rows, |stamp| stamp.div_euclid(60_000) * 60_000);
+    let outcome = run_window(&fetch_driver(), &bars, &stamps);
+    let last = rows.len() - 1;
+    let state = bars_at(&outcome, last);
+    assert_eq!(field_num(&state, "count"), 2.0, "finalized candle plus remainder");
+    assert_close(field_num(&state, "total_vol"), 23577.0, "tape total");
+    assert_eq!(field_num(&state, "pull_count"), 0.0, "drift stays under threshold");
+    assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
+    assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
+    assert_eq!(field_num(&state, "gap_count"), 0.0);
+    assert_eq!(field_num(&state, "rollback_count"), 0.0, "flags never decrease cumulatives");
+    assert_eq!(field_num(&state, "tick_count"), 28.0, "ticks 3-30 accumulate");
+    assert_close(
+        field_num(&state, "tick_accuracy"),
+        23016.0 / 23577.0,
+        "accumulated over leg",
+    );
+    assert_close(
+        field_num(&state, "volume_drift_pct"),
+        561.0 / 23577.0 * 100.0,
+        "seeding drift",
+    );
+    assert!(field_bool(&state, "last_bar_healthy"), "drift stays healthy");
+}
+
+/// Fourteen real ticks with a 107-unit seeding loss over a 298-unit tape
+/// (35.91% drift): the pull fires once and rebuilds the ring from the
+/// confirmed minute row (299 units, one unit above the leg). The
+/// abs-remainder rule writes the magnitude, so the second candle ADDS one
+/// unit and the bar lands on 300 — one above both the leg and the
+/// confirmed row. That overshoot is the script's own `math.abs` rule,
+/// faithfully executed, not a harness artifact: the window's frozen
+/// tolerance is the recorded 1-unit tape-vs-confirmed gap, asserted
+/// literally below.
+#[test]
+fn trim_pull_remainder_tops_up_to_leg() {
+    let rows = load_tick_window("window_pull_remainder.csv");
+    assert_eq!(rows.len(), 14, "remainder window row count pinned");
+    let open_ms = rows[0].0.div_euclid(60_000) * 60_000;
+    let (bars, stamps) = window_updates(&rows, |stamp| stamp.div_euclid(60_000) * 60_000);
+    let modules = linked(&fetch_driver());
+    let mut engine = test_engine();
+    engine
+        .inject_lower_tf("SPY", "1", single_minute_row(open_ms))
+        .expect("pull row injects");
+    let outcome = engine
+        .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
+        .expect("remainder window evaluates with zero refusals");
+    let last = rows.len() - 1;
+    let state = bars_at(&outcome, last);
+    assert_eq!(field_num(&state, "pull_count"), 1.0, "drift trips one pull");
+    assert_eq!(field_num(&state, "fetch_check_count"), 1.0, "confirm check counts");
+    assert_eq!(field_num(&state, "count"), 2.0, "rebuilt row plus abs remainder");
+    assert_close(field_num(&state, "total_vol"), 300.0, "299 rebuilt plus 1 abs unit");
+    assert_close(
+        field_num(&state, "tick_accuracy"),
+        191.0 / 298.0,
+        "accumulated over leg",
+    );
+    assert_close(
+        field_num(&state, "volume_drift_pct"),
+        107.0 / 298.0 * 100.0,
+        "seeding drift",
+    );
+    assert_close(
+        field_num(&state, "last_bar_drift"),
+        107.0 / 298.0 * 100.0,
+        "pre-pull drift",
+    );
+    assert!(!field_bool(&state, "last_bar_healthy"), "drift trips the threshold");
+    assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
+    assert_eq!(field_num(&state, "gap_count"), 0.0);
+    assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
+    // Rebuilt row chains from the confirmed minute row (693.86/693.88/
+    // 693.86/693.861 x 299); the remainder carries the minute legs with the
+    // 1-unit abs top-up, and both candles conserve buy+sell into volume.
+    assert_eq!(field_num(&state, "candle_open"), 693.86, "first injected open chains reads");
+    assert_close(field_num(&state, "total_vol") - 299.0, 1.0, "tape-vs-confirmed overshoot recorded");
+}
+
+/// A calibration window: legs, tick stamps, and the optional pull injection.
+type GateCase = (&'static str, Vec<Bar>, Vec<i64>, Option<LtfDataset>);
+
+/// A window spec: fixture name, bar-open geometry, and whether a pull
+/// injection is registered.
+type GateSpec = (&'static str, fn(i64) -> i64, bool);
+
+/// Synthetic high-drift tape shared with the drift-gate calibration: the
+/// first two ticks carry 600 of the 1000-unit tape, so seeding starves
+/// the deltas to a 60% confirm drift.
+fn high_drift_tape() -> Vec<(i64, f64, u64)> {
+    vec![
+        (5_000, 100.0, 300),
+        (10_000, 100.2, 600),
+        (20_000, 101.0, 700),
+        (30_000, 102.0, 800),
+        (70_000, 101.5, 850),
+        (80_000, 101.0, 900),
+        (190_000, 99.0, 940),
+        (200_000, 99.5, 970),
+        (250_000, 100.0, 990),
+        (290_000, 100.5, 1000),
+    ]
+}
+
+/// Drift-rebuild gate calibration (producer-confidence axis): the gate
+/// fires exactly on windows whose measured drift exceeds the library's
+/// own 4% threshold, never otherwise. Labels come from the rule, not from
+/// hand tags — each window asserts `fired == (drift > 4%)`, and the
+/// recorded precision/recall over the suite must both read 1.0 before
+/// the gate is trusted.
+///
+/// Reading of the "0 false-fires" clause: the verbatim pull (8.29%) and
+/// remainder (35.91%) windows fire, and those fires are TRUE positives
+/// under the gate's own definition — a false fire is a below-gate window
+/// firing, and there are none. The silence controls are the below-gate
+/// verbatim windows (quiet 0%, sparse 0.28%, out-of-order 2.38%).
+#[test]
+fn drift_rebuild_gate_precision_recall() {
+    // (label, run): verbatim windows plus the synthetic high-drift tape.
+    let mut cases: Vec<GateCase> = Vec::new();
+    let per_minute: fn(i64) -> i64 = |stamp| stamp.div_euclid(60_000) * 60_000;
+    let specs: Vec<GateSpec> = vec![
+        ("window_quiet.csv", per_minute, false),
+        ("window_sparse.csv", |_| 1767995580000, false),
+        ("window_out_of_order.csv", per_minute, false),
+        ("window_pull.csv", per_minute, true),
+        ("window_pull_remainder.csv", per_minute, true),
+    ];
+    for (name, open_of, inject) in specs {
+        let rows = load_tick_window(name);
+        let open_ms = rows[0].0.div_euclid(60_000) * 60_000;
+        let (bars, stamps) = window_updates(&rows, open_of);
+        let injection = inject.then(|| single_minute_row(open_ms));
+        cases.push((name, bars, stamps, injection));
+    }
+    {
+        let mut high = f64::NEG_INFINITY;
+        let mut low = f64::INFINITY;
+        let updates: Vec<(Bar, i64)> = high_drift_tape()
+            .iter()
+            .map(|(offset, price, cumvol)| {
+                high = high.max(*price);
+                low = low.min(*price);
+                tick_update(T0, T0 + offset, 100.0, high, low, *price, *cumvol)
+            })
+            .collect();
+        cases.push((
+            "synthetic high-drift",
+            updates.iter().map(|(bar, _)| bar.clone()).collect(),
+            updates.iter().map(|(_, stamp)| *stamp).collect(),
+            Some(pull_dataset_scaled(200.0)),
+        ));
+    }
+    let mut true_positives = 0;
+    let mut false_positives = 0;
+    let mut false_negatives = 0;
+    for (name, bars, stamps, injection) in &cases {
+        let modules = linked(&fetch_driver());
+        let mut engine = test_engine();
+        if let Some(dataset) = injection {
+            engine
+                .inject_lower_tf("SPY", "1", dataset.clone())
+                .expect("calibration dataset injects");
+        }
+        let outcome = engine
+            .run_linked_ticks(&modules, bars, stamps, InputSet::new())
+            .expect("calibration window evaluates");
+        let last = bars.len() - 1;
+        let state = bars_at(&outcome, last);
+        let drift = field_num(&state, "volume_drift_pct");
+        let fired = field_num(&state, "pull_count") > 0.0;
+        let want = drift > 4.0;
+        assert_eq!(fired, want, "{name} fires exactly above the 4% gate (drift {drift})");
+        match (fired, want) {
+            (true, true) => true_positives += 1,
+            (true, false) => false_positives += 1,
+            (false, true) => false_negatives += 1,
+            (false, false) => {}
+        }
+    }
+    let precision =
+        f64::from(true_positives) / f64::from(true_positives + false_positives);
+    let recall =
+        f64::from(true_positives) / f64::from(true_positives + false_negatives);
+    assert_eq!(precision, 1.0, "no below-gate window fires");
+    assert_eq!(recall, 1.0, "every above-gate window fires");
 }
 
 /// Full-tape soak through the light two-module harness: every
@@ -1543,6 +1720,11 @@ fn trim_sparse_gap_registers_without_pull() {
 /// for the baseline record. The bound is recorded, never asserted: a
 /// slower machine still passes, and a hang reports as an executed-test
 /// timeout to file, never as a threshold to tweak.
+///
+/// Gate placement (recorded per the roadmap): this soak runs in the
+/// normal debug gate with NO `#[ignore]` — it completes in ~13 s on the
+/// recording machine (far below the release-gating bar), so CI runs it
+/// every time and nightly scheduling buys nothing.
 #[test]
 fn soak_full_tape_reconstructs() {
     let content = std::fs::read_to_string(data_root().join("historical/SPY_ticks.csv"))
@@ -1562,7 +1744,7 @@ fn soak_full_tape_reconstructs() {
             (stamp, price, volume)
         })
         .collect();
-    assert_eq!(rows.len(), 115839, "tape row count pinned");
+    assert_eq!(rows.len(), 10503, "tape row count pinned");
     let (bars, stamps) = window_updates(&rows, |stamp| stamp.div_euclid(60_000) * 60_000);
     let history = std::fs::read_to_string(data_root().join("historical/SPY_1M.csv"))
         .expect("minute history loads");

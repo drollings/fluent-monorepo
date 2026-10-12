@@ -10,7 +10,7 @@
 //! `CalibrationTally` shape (accept 1.0 plus reject 1.0) one crate over.
 
 use crate::calibration::{Control, ParityDashboard, run_control};
-use crate::compat::{COMPATIBILITY, CompatStatus, assert_matrix_covers, compat_for};
+use crate::compat::{COMPATIBILITY, CompatStatus, NATIVE_MATRIX_ROWS, assert_matrix_covers, compat_for};
 use crate::indicator::builtin_registry;
 
 #[test]
@@ -44,7 +44,14 @@ fn frozen_eps_table_never_widens() {
     // the calibration milestone must empty, never as silent accepts.
     let registry = builtin_registry().expect("builtins");
     assert_matrix_covers(&registry).expect("bijective");
-    assert_eq!(COMPATIBILITY.len(), registry.ids().len(), "no orphans either way");
+    // Kernels plus native-library rows, no orphans either way: the two
+    // `native-*` rows joined the matrix at the cutover (parity freeze
+    // green), so the length lock counts both domains explicitly.
+    assert_eq!(
+        COMPATIBILITY.len(),
+        registry.ids().len() + NATIVE_MATRIX_ROWS.len(),
+        "no orphans either way"
+    );
     let mut pending = Vec::new();
     for row in COMPATIBILITY {
         assert!(

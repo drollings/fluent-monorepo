@@ -54,6 +54,8 @@ fn golden_path(name: &str) -> PathBuf {
 /// implementation, hand-verified against independent recomputation
 /// (leading-`None` counts, range invariants, seed/slide recurrences), then
 /// frozen: any numeric change fails here first.
+/// Proof command: `UPDATE_KERNEL_GOLDENS=1 cargo test -p protopyne-kernels
+/// indicator::golden` rewrites the JSON goldens; the frozen run compares.
 fn golden_params(id: &str) -> ParamSet {
     let len14 = || ParamSet::new().with_int("length", 14);
     match id {
@@ -101,6 +103,10 @@ fn m5_kernels_match_frozen_goldens() {
         let result = kernel
             .batch(&views, &golden_params(id))
             .expect("valid params");
+        if std::env::var("UPDATE_KERNEL_GOLDENS").is_ok() {
+            std::fs::write(golden_path(file), serde_json::to_string(&result).expect("golden serializes"))
+                .expect("golden writable");
+        }
         let frozen: IndicatorResult =
             serde_json::from_str(&std::fs::read_to_string(golden_path(file)).expect("golden"))
                 .expect("golden parses");
@@ -243,7 +249,7 @@ fn spy5m_fastmas_baseline() {
     use protopyne_types::warmup_headroom;
 
     let data = spy5m_ohlcv();
-    assert_eq!(data.len(), 1149, "SPY_5M row-count golden");
+    assert_eq!(data.len(), 346, "SPY_5M row-count golden");
     let views = data.views();
     let registry = builtin_registry().expect("builtins register");
     let regen = std::env::var("UPDATE_FASTMAS_BASELINE").is_ok();
@@ -289,8 +295,8 @@ fn spy5m_fastmas_baseline() {
 #[test]
 fn spy_close_column_shape() {
     let data = spy_ohlcv();
-    assert_eq!(data.len(), 384);
-    assert!((data.close[0] - 686.56).abs() < 1e-9);
+    assert_eq!(data.len(), 116);
+    assert!((data.close[0] - 688.209).abs() < 1e-9);
 }
 
 #[test]
@@ -303,6 +309,13 @@ fn sma14_matches_frozen_golden() {
             &ParamSet::new().with_int("length", 14),
         )
         .expect("valid params");
+    if std::env::var("UPDATE_KERNEL_GOLDENS").is_ok() {
+        std::fs::write(
+            data_path("sma14.json"),
+            serde_json::to_string(&result.values).expect("golden serializes"),
+        )
+        .expect("golden writable");
+    }
     assert_eq!(result.values, load_golden("sma14.json"));
 }
 
@@ -316,5 +329,12 @@ fn ema14_matches_frozen_golden() {
             &ParamSet::new().with_int("length", 14),
         )
         .expect("valid params");
+    if std::env::var("UPDATE_KERNEL_GOLDENS").is_ok() {
+        std::fs::write(
+            data_path("ema14.json"),
+            serde_json::to_string(&result.values).expect("golden serializes"),
+        )
+        .expect("golden writable");
+    }
     assert_eq!(result.values, load_golden("ema14.json"));
 }

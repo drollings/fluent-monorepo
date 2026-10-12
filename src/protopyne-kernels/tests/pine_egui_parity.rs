@@ -92,8 +92,7 @@ fn ta_surface_covered_both_directions() {
         .filter_map(|row| row.construct.strip_prefix("ta."))
         .collect();
     for missing in [
-        "dmi", "adx", "sar", "kc", "dc", "mode", "percentrank", "linreg", "pivothigh",
-        "pivotlow",
+        "dmi", "adx", "sar", "kc", "dc", "mode", "percentrank", "linreg",
     ] {
         assert!(
             refused.contains(&missing),

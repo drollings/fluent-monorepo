@@ -197,6 +197,11 @@ pub struct OllamaEmbedding {
     base_url: String,
     model: String,
     dims: u32,
+    /// HTTP client for embedding POSTs. Constructors default to the
+    /// workspace shared client (10s connect / 30s total); tests inject
+    /// the timeout-free client via [`OllamaEmbedding::with_client`] so
+    /// loopback mocks never trip production bounds under load.
+    client: reqwest::Client,
 }
 
 impl OllamaEmbedding {
@@ -211,7 +216,15 @@ impl OllamaEmbedding {
             base_url,
             model: model.unwrap_or("nomic-embed-text").to_string(),
             dims,
+            client: shared_http_client().clone(),
         })
+    }
+
+    /// Use `client` for embedding POSTs instead of the shared default
+    /// (test seam; production constructors keep the bounded client).
+    pub fn with_client(mut self, client: reqwest::Client) -> Self {
+        self.client = client;
+        self
     }
 
     pub fn embed_raw(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
@@ -223,7 +236,7 @@ impl OllamaEmbedding {
             "input": text,
         });
         let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
-        let resp_bytes = do_http_post(&url, &body, None)?;
+        let resp_bytes = do_http_post(&self.client, &url, &body, None)?;
         parse_ollama_response(&resp_bytes)
     }
 }
@@ -252,7 +265,7 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": inputs,
         });
         let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
-        let resp_bytes = do_http_post(&url, &body, None)?;
+        let resp_bytes = do_http_post(&self.client, &url, &body, None)?;
         parse_ollama_batch_response(&resp_bytes)
     }
 
@@ -265,7 +278,7 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": text,
         });
         let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
-        let resp_bytes = do_http_post_async(&url, &body, None).await?;
+        let resp_bytes = do_http_post_async(&self.client, &url, &body, None).await?;
         parse_ollama_response(&resp_bytes)
     }
 
@@ -279,7 +292,7 @@ impl EmbeddingProvider for OllamaEmbedding {
             "input": inputs,
         });
         let url = format!("{}/api/embed", self.base_url.trim_end_matches('/'));
-        let resp_bytes = do_http_post_async(&url, &body, None).await?;
+        let resp_bytes = do_http_post_async(&self.client, &url, &body, None).await?;
         parse_ollama_batch_response(&resp_bytes)
     }
 }
@@ -511,6 +524,11 @@ pub struct OpenAiEmbedding {
     /// chart HNSW embedder reuses the same slot configuration as the chat
     /// classifier instead of opening a second default-context instance.
     params: Option<serde_json::Value>,
+    /// HTTP client for embedding POSTs. Constructors default to the
+    /// workspace shared client (10s connect / 30s total); tests inject
+    /// the timeout-free client via [`OpenAiEmbedding::with_client`] so
+    /// loopback mocks never trip production bounds under load.
+    client: reqwest::Client,
 }
 
 impl OpenAiEmbedding {
@@ -539,7 +557,15 @@ impl OpenAiEmbedding {
             model: model.unwrap_or("text-embedding-3-small").to_string(),
             dims,
             params,
+            client: shared_http_client().clone(),
         })
+    }
+
+    /// Use `client` for embedding POSTs instead of the shared default
+    /// (test seam; production constructors keep the bounded client).
+    pub fn with_client(mut self, client: reqwest::Client) -> Self {
+        self.client = client;
+        self
     }
 
     /// Build the request body merging model-level `params` into the standard
@@ -584,7 +610,7 @@ impl EmbeddingProvider for OpenAiEmbedding {
             return Ok(Vec::new());
         }
         let body = self.request_body(&serde_json::json!(text));
-        let resp_bytes = do_http_post(&self.embeddings_url(), &body, Some(&self.api_key))?;
+        let resp_bytes = do_http_post(&self.client, &self.embeddings_url(), &body, Some(&self.api_key))?;
         parse_openai_response(&resp_bytes)
     }
 
@@ -594,7 +620,7 @@ impl EmbeddingProvider for OpenAiEmbedding {
             .map(|t| serde_json::Value::String(t.to_string()))
             .collect();
         let body = self.request_body(&serde_json::Value::Array(inputs));
-        let resp_bytes = do_http_post(&self.embeddings_url(), &body, Some(&self.api_key))?;
+        let resp_bytes = do_http_post(&self.client, &self.embeddings_url(), &body, Some(&self.api_key))?;
         parse_openai_batch_response(&resp_bytes)
     }
 
@@ -604,7 +630,7 @@ impl EmbeddingProvider for OpenAiEmbedding {
         }
         let body = self.request_body(&serde_json::json!(text));
         let resp_bytes =
-            do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
+            do_http_post_async(&self.client, &self.embeddings_url(), &body, Some(&self.api_key)).await?;
         parse_openai_response(&resp_bytes)
     }
 
@@ -615,25 +641,25 @@ impl EmbeddingProvider for OpenAiEmbedding {
             .collect();
         let body = self.request_body(&serde_json::Value::Array(inputs));
         let resp_bytes =
-            do_http_post_async(&self.embeddings_url(), &body, Some(&self.api_key)).await?;
+            do_http_post_async(&self.client, &self.embeddings_url(), &body, Some(&self.api_key)).await?;
         parse_openai_batch_response(&resp_bytes)
     }
 }
 
-/// Embedding POST over the workspace's shared HTTP client (connection
-/// pooling, 10s connect / 30s total timeouts — the same envelope as every
-/// other workspace HTTP call).
-///
-/// Timeout note: the previous private client was unbounded, so a stalled
-/// embedding server hung forever; the shared client bounds that at 30s.
+/// Embedding POST over a caller-supplied HTTP client. Production callers
+/// pass the workspace shared client (connection pooling, 10s connect /
+/// 30s total timeouts — the same envelope as every other workspace HTTP
+/// call, bounding a stalled embedding server that the previous unbounded
+/// private client would hang on forever); tests pass the timeout-free
+/// client so loopback mocks never trip production bounds under load.
 /// Status→error and body-byte mapping are unchanged (pinned by the HTTP
 /// parity tests in `tests/embeddings.rs`).
 async fn do_http_post_async(
+    client: &reqwest::Client,
     url: &str,
     body: &serde_json::Value,
     auth_header: Option<&str>,
 ) -> Result<Vec<u8>, EmbeddingError> {
-    let client = shared_http_client();
     let mut req = client.post(url);
     req = req.header("Content-Type", "application/json");
     if let Some(token) = auth_header {
@@ -661,11 +687,12 @@ async fn do_http_post_async(
 /// (`client::block_on` — `block_in_place` inside a multi-thread runtime,
 /// the process-wide fallback runtime outside one).
 fn do_http_post(
+    client: &reqwest::Client,
     url: &str,
     body: &serde_json::Value,
     auth_header: Option<&str>,
 ) -> Result<Vec<u8>, EmbeddingError> {
-    crate::client::block_on(do_http_post_async(url, body, auth_header))
+    crate::client::block_on(do_http_post_async(client, url, body, auth_header))
 }
 
 fn parse_float_array(arr: &[serde_json::Value]) -> Result<Vec<f32>, EmbeddingError> {

@@ -168,6 +168,113 @@ fn fill_pairs_two_plot_sites() {
 }
 
 #[test]
+fn plotshape_and_hline_capture_per_bar() {
+    // Marker and level captures mirror `plot`: one entry per call site,
+    // titles from the named or second-positional slot, one value per bar.
+    let outcome = run(
+        "plotshape(close > open ? high : na, title=\"Up\", style=shape.labelup, location=location.absolute)\n\
+         hline(0, \"Neutral\", color=close, linestyle=hline.style_dashed)",
+    );
+    assert_eq!(outcome.plotshapes.len(), 1, "one shape capture per call site");
+    let shape = &outcome.plotshapes[0];
+    assert_eq!(shape.title, "Up");
+    assert_eq!(shape.values.len(), 5);
+    assert!(shape.values[0].is_none(), "bar 0 ties and stays absent");
+    for bar in 1..5 {
+        assert_eq!(num(shape.values[bar].as_ref()), 101.0, "marked bars carry high");
+    }
+    assert_eq!(outcome.hlines.len(), 1, "one hline capture per call site");
+    let level = &outcome.hlines[0];
+    assert_eq!(level.title, "Neutral");
+    assert_eq!(level.values.len(), 5);
+    for bar in 0..5 {
+        assert_eq!(num(level.values[bar].as_ref()), 0.0, "constant level repeats");
+    }
+}
+
+#[test]
+fn fill_pairs_variable_held_plots() {
+    // The shipped-indicator shape (`p1 = plot(...); fill(p1, p2, ...)`):
+    // variables bound from `plot()` calls pair through their recorded
+    // site tags, resolving to the same captures as the inline form.
+    let outcome = run(
+        "p1 = plot(high, title=\"Fast\")\n\
+         p2 = plot(low, title=\"Slow\")\n\
+         fill(p1, p2, title=\"Ribbon\")",
+    );
+    assert_eq!(outcome.plots.len(), 2, "both plots capture");
+    assert_eq!(outcome.fills.len(), 1, "one fill per call site");
+    let fill = &outcome.fills[0];
+    assert_eq!(fill.first_title, "Fast");
+    assert_eq!(fill.second_title, "Slow");
+    assert_eq!(fill.values.len(), 5);
+    match &fill.values[0] {
+        Some(PineValue::Array(pair)) => {
+            assert_eq!(num(pair[0].as_ref()), 101.0);
+            assert_eq!(num(pair[1].as_ref()), 99.0);
+        }
+        other => panic!("expected fill pair, got {other:?}"),
+    }
+}
+
+#[test]
+fn fill_gradient_bounds_pair_with_top_color_ink() {
+    // The gradient overload (`plot, plot, top, bottom, top color, bottom
+    // color`): the region still spans the two plots while the capture ink
+    // reads the top color first, the bottom only as a fallback.
+    let outcome = run(
+        "p1 = plot(high, title=\"Fast\")\n\
+         p2 = plot(low, title=\"Slow\")\n\
+         fill(p1, p2, 50, -50, close, na, title=\"Band\")",
+    );
+    assert_eq!(outcome.fills.len(), 1);
+    let fill = &outcome.fills[0];
+    assert_eq!(fill.title, "Band");
+    assert_eq!(fill.first_title, "Fast");
+    assert_eq!(fill.second_title, "Slow");
+    assert_eq!(
+        num(fill.color.as_ref()),
+        104.0,
+        "top color inks the capture (last bar's close)"
+    );
+    match &fill.values[0] {
+        Some(PineValue::Array(pair)) => {
+            assert_eq!(num(pair[0].as_ref()), 101.0, "region spans the plots");
+            assert_eq!(num(pair[1].as_ref()), 99.0);
+        }
+        other => panic!("expected fill pair, got {other:?}"),
+    }
+    // Bottom color is the fallback when the top is absent.
+    let fallback = run(
+        "p1 = plot(high, title=\"Fast\")\n\
+         p2 = plot(low, title=\"Slow\")\n\
+         fill(p1, p2, 50, -50, na, open, title=\"Band\")",
+    );
+    assert_eq!(
+        num(fallback.fills[0].color.as_ref()),
+        100.0,
+        "bottom color inks when the top is absent"
+    );
+}
+
+#[test]
+fn fill_untagged_variable_refuses() {
+    // A variable never bound from `plot()` has no site tag: the fill
+    // refuses instead of pairing by value coincidence.
+    let err = run_err("x = close\np2 = plot(low)\nfill(x, p2)");
+    assert!(
+        err.contains("no plot tag"),
+        "untagged variable refuses, got: {err}"
+    );
+    // Rebinding a plot variable away from `plot()` clears its tag.
+    let stale = run_err("p1 = plot(high)\np1 := close\np2 = plot(low)\nfill(p1, p2)");
+    assert!(
+        stale.contains("no plot tag"),
+        "rebound variable refuses, got: {stale}"
+    );
+}
+
+#[test]
 fn label_pivot_markers_gate_on_type_and_show() {
     // Pivot markers record only when the pivot fired (`pivot_type != 0`)
     // and display is enabled (`i_pivots_show`): both gates scripted across
@@ -220,6 +327,28 @@ fn table_create_delete_lifecycle_on_first_last() {
     );
     assert_eq!(outcome.draw_events[0].bar, 0);
     assert_eq!(outcome.draw_events[2].bar, 4);
+}
+
+#[test]
+fn table_merge_cells_records_an_update_row() {
+    // Merging is display-only: the range records as an update against the
+    // live table handle, and nothing readable changes.
+    let outcome = run(
+        "var t = na\n\
+         if barstate.isfirst\n\
+         \x20   t := table.new(position.top_right, 2, 1)\n\
+         \x20   table.merge_cells(t, 0, 0, 1, 0)",
+    );
+    let tables: Vec<&crate::pine::eval::DrawingEvent> = outcome
+        .draw_events
+        .iter()
+        .filter(|event| event.object == "table")
+        .collect();
+    assert_eq!(tables.len(), 2, "create plus merge, got: {:?}", outcome.draw_events);
+    assert_eq!(tables[0].kind, crate::pine::eval::DrawingEventKind::Created);
+    assert_eq!(tables[1].kind, crate::pine::eval::DrawingEventKind::Updated);
+    assert_eq!(tables[1].bar, 0);
+    assert_eq!(tables[0].key, tables[1].key, "merge targets the live table");
 }
 
 #[test]
@@ -345,4 +474,513 @@ fn unknown_drawing_methods_still_refuse() {
         gone.contains("unknown label object"),
         "getters on deleted objects refuse, got: {gone}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// M5 — per-indicator capture contracts over linked task closures.
+// ---------------------------------------------------------------------------
+//
+// Each task indicator links its closure (shared `fixture::linked_closure`)
+// and runs headlessly over a small slice of the minute history with the
+// datasets its `request.*` sites need. Captures record data only —
+// rendering never happens and no `egui` dependency appears.
+//
+// Slice sizes are cost-driven: PPAS/RSIMD run short slices of the minute
+// tape (5 and 30 bars). DVP runs no capture contract by human verdict
+// (2026-10-12: prune every PineScript DVP run, keep native Rust only).
+
+use crate::pine::test_fixture as fixture;
+
+/// Engine for one chart timeframe: SPY scope with zero warmup bars, the
+/// same evaluated-bar semantics the server headless proof runs under.
+fn capture_engine(period: &str) -> PineEngine {
+    PineEngine::new(
+        PineRuntimeConfig::new()
+            .chart_symbol("SPY".to_owned())
+            .chart_period(period.to_owned())
+            .warmup_bars(0)
+            .build(),
+    )
+}
+
+/// Run one task closure over chart bars with the given injected security
+/// datasets (plus the minute lower-timeframe dataset when `ltf` is set).
+/// A refusal fails the run: captures prove drawing, never silence.
+fn run_capture(
+    name: &str,
+    bars: &[Bar],
+    securities: &[(&str, &str, LtfDataset)],
+    ltf: Option<LtfDataset>,
+) -> RunOutcome {
+    let modules = fixture::linked_closure(name);
+    let mut engine = capture_engine("1");
+    for (symbol, timeframe, dataset) in securities {
+        engine
+            .inject_security(symbol, timeframe, (*dataset).clone())
+            .expect("security dataset injects");
+    }
+    if let Some(dataset) = ltf {
+        engine
+            .inject_lower_tf("SPY", "1", dataset)
+            .expect("lower-timeframe dataset injects");
+    }
+    engine
+        .run_linked(&modules, bars, InputSet::new())
+        .expect("indicator evaluates with zero refusals")
+}
+
+/// Daily dataset for the `"D"` pair, resampled from the fifteen-minute
+/// tape (shared helper, same buckets the injection proof serves).
+fn daily_dataset() -> LtfDataset {
+    LtfDataset::of_bars(&fixture::daily_of(&fixture::history_bars(
+        "historical/SPY_15M.csv",
+    )))
+}
+
+/// Assert the lifecycle well-formedness property over one outcome: every
+/// update/delete references a previously created key, and per-namespace
+/// creations stay within the indicator header's maxima.
+fn assert_lifecycle_wellformed(outcome: &RunOutcome, maxima: &[(&str, usize)], label: &str) {
+    use std::collections::HashSet;
+    let mut created: HashSet<&str> = HashSet::new();
+    for event in &outcome.draw_events {
+        match event.kind {
+            crate::pine::eval::DrawingEventKind::Created => {
+                created.insert(event.key.as_str());
+            }
+            crate::pine::eval::DrawingEventKind::Updated
+            | crate::pine::eval::DrawingEventKind::Deleted => {
+                assert!(
+                    created.contains(event.key.as_str()),
+                    "{label}: {} on '{}' precedes its creation",
+                    if event.kind == crate::pine::eval::DrawingEventKind::Deleted {
+                        "delete"
+                    } else {
+                        "update"
+                    },
+                    event.key
+                );
+            }
+        }
+    }
+    for (namespace, max) in maxima {
+        let count = created
+            .iter()
+            .filter(|key| key.starts_with(&format!("{namespace}#")))
+            .count();
+        assert!(
+            count <= *max,
+            "{label}: {count} {namespace} objects exceed the header maximum {max}"
+        );
+    }
+}
+
+#[test]
+fn ppas_capture_contract_swing_label_bounded() {
+    // PPAS over 5 minute bars with default inputs and no injections: swing
+    // detection needs no history beyond two back-references, so one
+    // short-term swing-high label mints; the pattern branch (which names
+    // the version-skewed `libCandles.isPatternType`, pinned refusing
+    // below) stays dead behind its ATR guard.
+    let chart = fixture::history_bars("historical/SPY_1M.csv");
+    let outcome = run_capture("ApexPPAS", &chart[..5], &[], None);
+    assert_eq!(outcome.evaluated, 5, "every sliced bar evaluates");
+    assert!(outcome.plots.is_empty(), "PPAS calls no plot");
+    assert_eq!(outcome.draw_events.len(), 1, "one drawing event");
+    let event = &outcome.draw_events[0];
+    assert_eq!(event.object, "label", "the event mints a label");
+    assert_eq!(event.kind, crate::pine::eval::DrawingEventKind::Created);
+    assert_eq!(event.bar, 3, "swing confirms on bar 3");
+    // Positional creation args run x, y, text: the lone string is the pin.
+    let texts: Vec<String> = event
+        .args
+        .iter()
+        .filter(|arg| arg.name.is_none())
+        .filter_map(|arg| match &arg.value {
+            Some(PineValue::Str(text)) => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, vec!["ST-HH"], "short-term swing-high text pinned");
+    assert_lifecycle_wellformed(
+        &outcome,
+        &[("label", 500), ("box", 500), ("line", 500)],
+        "PPAS",
+    );
+}
+
+#[test]
+fn ppas_version_skewed_pattern_reference_refuses() {
+    // Fail-closed pin for the frozen PPAS bytes: the pattern branch calls
+    // `libCandles.isPatternType`, but the on-disk v21 `libCandles` (PPAS
+    // imports v11) exports no such function — `isPatternType` lives in
+    // `libUtil`. The engine refuses instead of resolving it across the
+    // alias. Thirty bars reach the branch (a reversal prints); the M5
+    // contract regime above stays clear of it.
+    let chart = fixture::history_bars("historical/SPY_1M.csv");
+    let minute = LtfDataset::of_bars(&chart[..60]);
+    let modules = fixture::linked_closure("ApexPPAS");
+    let mut engine = capture_engine("1");
+    engine
+        .inject_security("SPY", "D", daily_dataset())
+        .expect("daily dataset injects");
+    engine
+        .inject_lower_tf("SPY", "1", minute)
+        .expect("lower-timeframe dataset injects");
+    let reason = engine
+        .run_linked(&modules, &chart[..30], InputSet::new())
+        .expect_err("skewed reference refuses")
+        .to_string();
+    assert_eq!(
+        reason,
+        "pine evaluation refused: unknown function 'libCandles.isPatternType'",
+        "exact refusal pins the missing export"
+    );
+}
+
+#[test]
+fn rsimd_capture_contract_plots_fills_shapes_levels() {
+    // RSIMD over 30 minute bars with default inputs and no injections:
+    // divergence detection runs on chart legs, so the full drawing
+    // surface emits — nine plots, two gradient fills, four markers, three
+    // levels — with zero label/box/line/table events (RSIMD mints none).
+    let chart = fixture::history_bars("historical/SPY_1M.csv");
+    let outcome = run_capture("ApexRSIMD", &chart[..30], &[], None);
+    assert_eq!(outcome.evaluated, 30, "every sliced bar evaluates");
+    let titles: Vec<&str> = outcome.plots.iter().map(|plot| plot.title.as_str()).collect();
+    assert_eq!(
+        titles,
+        vec![
+            "RSI",
+            "plot:1",
+            "Bullish RSI HL",
+            "Bearish RSI LH",
+            "Bullish Price LL",
+            "Bullish Price LL BG",
+            "Bearish Price HH",
+            "Bearish Price HH BG",
+            "Trend Health",
+        ],
+        "RSIMD captures all nine plot sites (the untitled zero line falls back)"
+    );
+    for plot in &outcome.plots {
+        assert_eq!(plot.values.len(), 30, "plot values cover every bar");
+    }
+    assert_eq!(outcome.fills.len(), 2, "both gradient fills capture");
+    for fill in &outcome.fills {
+        assert_eq!(fill.first_title, "RSI", "fills pair the RSI plot");
+        assert_eq!(fill.second_title, "plot:1", "fills pair the zero line");
+        assert_eq!(fill.values.len(), 30);
+    }
+    let shapes: Vec<&str> = outcome
+        .plotshapes
+        .iter()
+        .map(|shape| shape.title.as_str())
+        .collect();
+    assert_eq!(
+        shapes,
+        vec![
+            "Bullish Label",
+            "Bearish Label",
+            "Bullish Price LL Label",
+            "Bearish Price HH Label",
+        ],
+        "all four markers capture"
+    );
+    let levels: Vec<&str> = outcome.hlines.iter().map(|line| line.title.as_str()).collect();
+    assert_eq!(
+        levels,
+        vec!["Trend Neutral", "Trending Threshold", "Trending Threshold"],
+        "all three levels capture with positional titles"
+    );
+    assert!(
+        outcome.draw_events.is_empty(),
+        "RSIMD mints no label/box/line/table objects"
+    );
+    assert_lifecycle_wellformed(&outcome, &[], "RSIMD");
+}
+
+#[test]
+fn same_titled_plots_pair_by_site_key() {
+    // Site-keying distinguishes same-titled plots: two `plot()` calls
+    // with one title capture as two series under two site keys, and a
+    // fill over their variables pairs the tagged sites, not the title.
+    let outcome = run(
+        "a = plot(high, title=\"Same\")\n\
+         b = plot(low, title=\"Same\")\n\
+         fill(a, b, title=\"Pair\")",
+    );
+    assert_eq!(outcome.plots.len(), 2, "two captures, one title");
+    assert_eq!(outcome.plots[0].title, "Same");
+    assert_eq!(outcome.plots[1].title, "Same");
+    assert_eq!(outcome.fills.len(), 1);
+    let fill = &outcome.fills[0];
+    assert_eq!(fill.first_title, "Same");
+    assert_eq!(fill.second_title, "Same");
+    match &fill.values[0] {
+        Some(PineValue::Array(pair)) => {
+            assert_eq!(num(pair[0].as_ref()), 101.0, "first site rides high");
+            assert_eq!(num(pair[1].as_ref()), 99.0, "second site rides low");
+        }
+        other => panic!("expected fill pair, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// M5.3 — drawing surface probe: every drawing-namespace token across the
+// four closures either resolves/captures through the served surface or
+// names a checked-in deferred item with its reason. A new spelling fails
+// here before it can run anywhere.
+// ---------------------------------------------------------------------------
+
+/// Pure-constant drawing namespaces: these heads can never be variables,
+/// so every non-call token must resolve through `resolve_constant`.
+const CONSTANT_NAMESPACES: &[&str] = &[
+    "display", "size", "position", "shape", "location", "hline",
+];
+
+/// Drawing-namespace methods the recorder serves (mirrors the
+/// `call_drawing` dispatch table: new/delete/cell/merge_cells plus the
+/// setter/getter arms).
+const SERVED_DRAWING_METHODS: &[&str] = &[
+    "new", "delete", "cell", "merge_cells", "set_x", "set_y", "set_textcolor", "set_style",
+    "set_tooltip", "set_text", "set_color", "set_left", "set_top", "set_right", "set_bottom",
+    "set_bgcolor", "set_border_color", "set_xy1", "set_xy2", "set_width", "set_x2", "get_x",
+    "get_right", "get_x2",
+];
+
+/// Drawing-namespace methods observed in the frozen task files but dead on
+/// every headless regime (DVP's profile/curve paths need filled bins, which
+/// stay empty from 8-bar slices through full-history defaults): refused if
+/// evaluated, never silently sunk.
+const DEFERRED_DRAWING_METHODS: &[(&str, &str)] = &[
+    ("box", "set_lefttop"),
+    ("box", "set_rightbottom"),
+    ("box", "set_border_width"),
+    ("polyline", "new"),
+    ("polyline", "delete"),
+];
+
+/// Bare drawing calls the engine captures.
+const SERVED_BARE_CALLS: &[&str] = &[
+    "plot", "plotshape", "plotcandle", "barcolor", "fill", "hline",
+];
+
+/// Closure files under proof: the three task closures plus IntegrationLite
+/// (libraries shared; Regressions stays quarantined per M0 and contributes
+/// no file here).
+fn m5_closure_files() -> Vec<(String, String)> {
+    use crate::{REAL_LIBRARIES, TASK_INDICATORS, closure_data_root, load_closure_sources, load_listed_closure};
+    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for indicator in TASK_INDICATORS {
+        for (key, source) in load_listed_closure(&root, REAL_LIBRARIES, indicator)
+            .expect("task closure loads")
+        {
+            files.push((format!("task:{key}"), source.text));
+        }
+    }
+    for (key, source) in
+        load_closure_sources(&root).expect("IntegrationLite closure loads")
+    {
+        files.push((format!("lite:{key}"), source.text));
+    }
+    files
+}
+
+/// Scan one source for `head.member` tokens with word boundaries (decimal
+/// points like `692.73` never qualify: the head must start alphabetic).
+/// Line comments strip first (`//` inside string literals stays).
+/// Returns `(head, member, is_call)` per occurrence in file order.
+fn dotted_tokens(text: &str) -> Vec<(String, String, bool)> {
+    let mut code = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let mut quote = None;
+        let mut cut = line.len();
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            if let Some(q) = quote {
+                if c == q {
+                    quote = None;
+                }
+            } else if c == '\'' || c == '"' {
+                quote = Some(c);
+            } else if c == '/' && chars.get(i + 1) == Some(&'/') {
+                cut = line.char_indices().nth(i).map_or(line.len(), |(b, _)| b);
+                break;
+            }
+            i += 1;
+        }
+        code.push_str(&line[..cut]);
+    }
+    let text = code;
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'.' {
+            let mut start = i;
+            while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+                start -= 1;
+            }
+            let mut end = i + 1;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            let head = &text[start..i];
+            let member = &text[i + 1..end];
+            let head_ok = head
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+            let member_ok = member
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+            let boundary_before = start == 0
+                || !(bytes[start - 1].is_ascii_alphanumeric()
+                    || bytes[start - 1] == b'_'
+                    || bytes[start - 1] == b'.');
+            if head_ok && member_ok && boundary_before && !head.is_empty() && !member.is_empty() {
+                let mut rest = end;
+                while rest < bytes.len() && bytes[rest].is_ascii_whitespace() {
+                    rest += 1;
+                }
+                out.push((head.to_owned(), member.to_owned(), rest < bytes.len() && bytes[rest] == b'('));
+            }
+            i = end.max(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+#[test]
+fn drawing_constants_resolve_or_name_deferred() {
+    // Every drawing-namespace token across the four closures lands in
+    // exactly one bucket: a resolving constant, a served call, or a
+    // checked-in deferred item. Anything else fails the probe.
+    use crate::pine::builtins_core::resolve_constant;
+    let mut failures = Vec::new();
+    for (file, text) in m5_closure_files() {
+        for (head, member, is_call) in dotted_tokens(&text) {
+            let dotted = format!("{head}.{member}");
+            if CONSTANT_NAMESPACES.contains(&head.as_str()) {
+                if is_call {
+                    failures.push(format!("{file}: unexpected call {dotted}()"));
+                } else if resolve_constant(&dotted).is_none() {
+                    failures.push(format!("{file}: constant {dotted} refuses"));
+                }
+            } else if head == "color" {
+                if is_call {
+                    if !["new", "rgb", "from_gradient"].contains(&member.as_str()) {
+                        failures.push(format!("{file}: unserved color call {dotted}()"));
+                    }
+                } else if resolve_constant(&dotted).is_none() {
+                    failures.push(format!("{file}: named color {dotted} refuses"));
+                }
+            } else if ["label", "line", "text"].contains(&head.as_str()) {
+                if !is_call && resolve_constant(&dotted).is_none() {
+                    failures.push(format!("{file}: constant {dotted} refuses"));
+                }
+            } else if ["box", "table", "polyline"].contains(&head.as_str()) {
+                if !is_call {
+                    failures.push(format!("{file}: unexpected constant {dotted}"));
+                } else if !SERVED_DRAWING_METHODS.contains(&member.as_str())
+                    && !DEFERRED_DRAWING_METHODS.contains(&(head.as_str(), member.as_str()))
+                {
+                    failures.push(format!("{file}: unserved drawing call {dotted}()"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "drawing surface probe:\n{}", failures.join("\n"));
+}
+
+#[test]
+fn bare_drawing_calls_stay_captured() {
+    // No `plotchar`/`plotbar`/`bgcolor` (or any other bare drawing call)
+    // appears in the four closures: every bare call site captures.
+    let mut found = Vec::new();
+    for (file, text) in m5_closure_files() {
+        let bytes = text.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'(' {
+                let mut start = i;
+                while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+                    start -= 1;
+                }
+                let name = &text[start..i];
+                let boundary_before = start == 0
+                    || !(bytes[start - 1].is_ascii_alphanumeric()
+                        || bytes[start - 1] == b'_'
+                        || bytes[start - 1] == b'.');
+                if boundary_before
+                    && [
+                        "plot", "plotshape", "plotchar", "plotbar", "plotcandle", "barcolor",
+                        "bgcolor", "fill", "hline",
+                    ]
+                    .contains(&name)
+                    && !SERVED_BARE_CALLS.contains(&name)
+                {
+                    found.push(format!("{file}: uncaptured bare call {name}()"));
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    assert!(found.is_empty(), "bare drawing calls:\n{}", found.join("\n"));
+}
+
+#[test]
+fn display_round_trip_preserves_drawing_sites() {
+    // `display_program` re-parse equality already holds per M1; here the
+    // drawing surface is pinned explicitly: every drawing call site in
+    // every file of the four closures survives the round trip.
+    let site_counts = |text: &str| {
+        let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+        for (head, member, is_call) in dotted_tokens(text) {
+            if ["label", "box", "line", "table", "polyline"].contains(&head.as_str()) && is_call {
+                *counts.entry(format!("{head}.{member}")).or_default() += 1;
+            }
+        }
+        let bytes = text.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'(' {
+                let mut start = i;
+                while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+                    start -= 1;
+                }
+                let name = &text[start..i];
+                let boundary_before = start == 0
+                    || !(bytes[start - 1].is_ascii_alphanumeric()
+                        || bytes[start - 1] == b'_'
+                        || bytes[start - 1] == b'.');
+                if boundary_before && SERVED_BARE_CALLS.contains(&name) {
+                    *counts.entry(name.to_owned()).or_default() += 1;
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+        counts
+    };
+    for (file, text) in m5_closure_files() {
+        let program =
+            parse_program(&text).unwrap_or_else(|err| panic!("closure file {file} parses: {err}"));
+        let displayed = crate::display_program(&program);
+        assert_eq!(
+            site_counts(&displayed),
+            site_counts(&text),
+            "{file} keeps every drawing call site through display"
+        );
+    }
 }

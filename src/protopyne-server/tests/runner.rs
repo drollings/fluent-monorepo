@@ -23,8 +23,7 @@ fn history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    let bars = crate::load_bars_csv(&path).expect("vendored history loads");
-    bars[..40].to_vec()
+    crate::load_bars_csv(&path).expect("vendored history loads")
 }
 
 fn strategy() -> Arc<Strategy> {
@@ -261,9 +260,9 @@ async fn walk_forward_test_segment_matches_full_run() {
         run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), &bars, 11)
             .await
             .expect("full run");
-    let (train, test) = walk_forward_split(&bars, 20).expect("split");
-    assert_eq!(train.len(), 20);
-    assert_eq!(test.len(), 20);
+    let (train, test) = walk_forward_split(&bars, bars.len() / 2).expect("split");
+    assert_eq!(train.len(), bars.len() / 2);
+    assert_eq!(test.len(), bars.len() - bars.len() / 2);
     assert!(walk_forward_split(&bars, 0).is_err());
     assert!(walk_forward_split(&bars, bars.len()).is_err());
     let segment =
@@ -273,7 +272,11 @@ async fn walk_forward_test_segment_matches_full_run() {
     // Warmup is zero and budgets never bind, so each bar's verdict depends
     // only on its own quote: the test segment must decide like the full run's
     // tail up to proposal identity (ids embed run-local indices).
-    for (segment_decision, full_decision) in segment.decisions.iter().zip(full.decisions[20..].iter()) {
+    for (segment_decision, full_decision) in segment
+        .decisions
+        .iter()
+        .zip(full.decisions[bars.len() / 2..].iter())
+    {
         assert_eq!(signature(segment_decision), signature(full_decision));
     }
 }
@@ -1160,9 +1163,8 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
             .join("data")
             .join("SPY_15M.csv"),
     )
-    .expect("vendored history loads")[..40]
-        .to_vec();
-    let qqq_bars = rising_bars("500", 40);
+    .expect("vendored history loads");
+    let qqq_bars = rising_bars("500", spy_bars.len());
     let grant = grant_covering(&["SPY", "QQQ"]);
     let inputs = vec![
         multi_input("SPY", "spy-15m-v1", HistorySource::Dynamic(spy_bars.clone())),
@@ -1227,6 +1229,61 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
     .await
     .expect("second harness run");
     assert_eq!(multi.manifest.to_canonical_json(), again.manifest.to_canonical_json());
+}
+
+#[tokio::test]
+async fn multi_symbol_reruns_are_identical_under_parallelism() {
+    // The per-symbol legs fan out over a bounded pool: reruns must still be
+    // identical wholesale (outcomes re-sorted by input index before return,
+    // so completion order never leaks into results), and per-symbol
+    // decisions must still equal standalone runs bit for bit.
+    use crate::backtest::HistorySource;
+
+    let spy_bars = history();
+    let qqq_bars = rising_bars("500", spy_bars.len());
+    let grant = grant_covering(&["SPY", "QQQ"]);
+    let paper = PaperConfig::new().build();
+    let inputs = || {
+        vec![
+            multi_input("SPY", "spy-15m-v1", HistorySource::Dynamic(spy_bars.clone())),
+            multi_input("QQQ", "qqq-synth-v1", HistorySource::Dynamic(qqq_bars.clone())),
+        ]
+    };
+    let first = crate::runner::run_multi_backtest(&strategy(), &risk(), &grant, paper.clone(), inputs(), 11)
+        .await
+        .expect("first harness run");
+    let second = crate::runner::run_multi_backtest(&strategy(), &risk(), &grant, paper, inputs(), 11)
+        .await
+        .expect("second harness run");
+    assert_eq!(first, second, "parallel reruns identical wholesale");
+    assert_eq!(
+        first.manifest.to_canonical_json(),
+        second.manifest.to_canonical_json(),
+        "combined pin byte-identical"
+    );
+    for (run, (underlying, bars)) in first
+        .runs
+        .iter()
+        .zip([("SPY", &spy_bars), ("QQQ", &qqq_bars)])
+    {
+        let venue_config = BacktestConfig::new()
+            .underlying((*underlying).to_owned())
+            .data_version(format!("{underlying}-pin"))
+            .build();
+        let runner_config = RunnerConfig::new(
+            (*underlying).to_owned(),
+            "ribbon".to_owned(),
+            money(400),
+            money(2_000),
+            30,
+            0,
+        );
+        let single =
+            run_backtest(&strategy(), &risk(), &grant, &venue_config, &runner_config, bars, 11)
+                .await
+                .expect("standalone run");
+        assert_eq!(run.decisions, single.decisions, "{underlying} decisions identical");
+    }
 }
 
 #[tokio::test]

@@ -413,3 +413,236 @@ fn arg_validation_refuses_with_reasons() {
         );
     }
 }
+
+/// Pack a script bool argument: call slots are optional, so the helper
+/// returns the slot directly instead of forcing `Some(...)` at every site.
+#[allow(clippy::unnecessary_wraps)]
+fn flag(value: bool) -> Option<PineValue> {
+    Some(PineValue::Bool(value))
+}
+
+fn ago_of(value: Option<&PineValue>) -> Option<i64> {
+    match value {
+        Some(PineValue::Int(n)) => Some(*n),
+        None => None,
+        other => panic!("barssince reads int or na, got {other:?}"),
+    }
+}
+
+#[test]
+fn barssince_counts_back_to_the_last_true_condition() {
+    // Conditions fire on bars 2 and 4: ago reads na until the first
+    // firing, then 0 on a firing bar and the distance after it.
+    let ticks = closes(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+    let cond = [false, false, true, false, true];
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let ago: Vec<Option<i64>> = ticks
+        .iter()
+        .zip(cond)
+        .map(|(&tick, hit)| {
+            ago_of(
+                bridge
+                    .call("bs", "barssince", &[flag(hit)], tick)
+                    .expect("valid")
+                    .as_ref(),
+            )
+        })
+        .collect();
+    assert_eq!(ago, vec![None, None, Some(0), Some(1), Some(0)]);
+}
+
+#[test]
+fn barssince_treats_na_condition_as_unsatisfied() {
+    // Absence never fires: an `na` condition behaves like `false`, and a
+    // run with no firing at all reads `na` throughout.
+    let ticks = closes(&[1.0, 2.0, 3.0]);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let ago: Vec<Option<i64>> = ticks
+        .iter()
+        .map(|&tick| {
+            ago_of(
+                bridge
+                    .call("na", "barssince", &[None], tick)
+                    .expect("valid")
+                    .as_ref(),
+            )
+        })
+        .collect();
+    assert_eq!(ago, vec![None, None, None]);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let out = bridge
+        .call("one", "barssince", &[flag(true)], ticks[0])
+        .expect("valid");
+    assert_eq!(out, Some(PineValue::Int(0)), "fires on its own bar");
+}
+
+#[test]
+fn valuewhen_reads_the_nth_firing_source_value() {
+    // Sources `[10..50]`, firings on bars 0 and 2: occurrence 0 tracks
+    // the latest firing, occurrence 1 the one before, occurrence 2
+    // never exists.
+    let ticks = closes(&[10.0, 20.0, 30.0, 40.0, 50.0]);
+    let cond = [true, false, true, false, false];
+    for (occurrence, want) in [
+        (0_i64, vec![Some(10.0), Some(10.0), Some(30.0), Some(30.0), Some(30.0)]),
+        (1_i64, vec![None, None, Some(10.0), Some(10.0), Some(10.0)]),
+        (2_i64, vec![None, None, None, None, None]),
+    ] {
+        let mut bridge = TaBridge::new().expect("bridge builds");
+        let got: Vec<Option<f64>> = ticks
+            .iter()
+            .zip(cond)
+            .map(|(&tick, hit)| {
+                num(bridge
+                    .call(
+                        "vw",
+                        "valuewhen",
+                        &[flag(hit), float(tick.close), Some(PineValue::Int(occurrence))],
+                        tick,
+                    )
+                    .expect("valid")
+                    .as_ref())
+            })
+            .collect();
+        assert_eq!(got, want, "occurrence {occurrence} tracks firings");
+    }
+}
+
+#[test]
+fn valuewhen_propagates_na_and_refuses_bad_occurrence() {
+    // An `na` source on the firing bar reads `na` (absence in, absence
+    // out); an `na` condition never fires.
+    let ticks = closes(&[1.0, 2.0]);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let out = bridge
+        .call("na", "valuewhen", &[flag(true), None, Some(PineValue::Int(0))], ticks[0])
+        .expect("valid");
+    assert_eq!(out, None, "na source on a firing bar reads na");
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let out = bridge
+        .call(
+            "nc",
+            "valuewhen",
+            &[None, float(9.0), Some(PineValue::Int(0))],
+            ticks[0],
+        )
+        .expect("valid");
+    assert_eq!(out, None, "na condition never fires");
+    // Negative occurrences and non-bool conditions refuse with reasons.
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let err = bridge
+        .call(
+            "neg",
+            "valuewhen",
+            &[flag(true), float(1.0), Some(PineValue::Int(-1))],
+            ticks[0],
+        )
+        .expect_err("negative occurrence refuses")
+        .to_string();
+    assert!(err.contains("non-negative"), "occurrence refusal: {err}");
+    let err = bridge
+        .call("cond", "valuewhen", &[float(1.0), float(1.0), Some(PineValue::Int(0))], ticks[0])
+        .expect_err("numeric condition refuses")
+        .to_string();
+    assert!(err.contains("bool condition"), "condition refusal: {err}");
+}
+
+#[test]
+fn pivots_confirm_on_source_history_not_chart_legs() {
+    // Spike at index 2 with (2, 2) windows confirms on bar 4 only; the
+    // first four bars read `na` (short windows confirm nothing).
+    let spike = [50.0, 50.0, 1000.0, 50.0, 50.0];
+    let ticks = closes(&spike);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let high: Vec<Option<f64>> = ticks
+        .iter()
+        .map(|&tick| {
+            num(bridge
+                .call(
+                    "ph",
+                    "pivothigh",
+                    &[float(tick.close), float(2.0), float(2.0)],
+                    tick,
+                )
+                .expect("valid")
+                .as_ref())
+        })
+        .collect();
+    assert_eq!(high, vec![None, None, None, None, Some(1000.0)]);
+    // Chart legs stay flat while the source spikes: the pivot still
+    // confirms (source honored), and a flat source with spiking legs
+    // never confirms (legs ignored).
+    let flat_legs = BarTick {
+        open: 50.0,
+        high: 101.0,
+        low: 99.0,
+        close: 50.0,
+        volume: 1_000.0,
+    };
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let mut last = None;
+    for &value in &spike {
+        last = bridge
+            .call("legs", "pivothigh", &[float(value), float(2.0), float(2.0)], flat_legs)
+            .expect("valid");
+    }
+    assert_eq!(last, Some(PineValue::Float(1000.0)), "legs ignored");
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let mut last = None;
+    for &value in &[50.0; 5] {
+        let spiking = BarTick { high: 1000.0, ..flat_legs };
+        last = bridge
+            .call("flat", "pivothigh", &[float(value), float(2.0), float(2.0)], spiking)
+            .expect("valid");
+    }
+    assert_eq!(last, None, "flat source never pivots");
+    // Low mirror: the trough confirms symmetrically.
+    let trough = [50.0, 50.0, 0.0, 50.0, 50.0];
+    let ticks = closes(&trough);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let low: Vec<Option<f64>> = ticks
+        .iter()
+        .map(|&tick| {
+            num(bridge
+                .call(
+                    "pl",
+                    "pivotlow",
+                    &[float(tick.close), float(2.0), float(2.0)],
+                    tick,
+                )
+                .expect("valid")
+                .as_ref())
+        })
+        .collect();
+    assert_eq!(low, vec![None, None, None, None, Some(0.0)]);
+}
+
+#[test]
+fn pivots_reject_equal_extremes_and_na_windows() {
+    // Equal highs break the pivot (strictly extreme or nothing), and any
+    // absence in the window reads absence.
+    let ticks = closes(&[50.0, 1000.0, 1000.0, 50.0, 50.0]);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let mut last = None;
+    for &tick in &ticks {
+        last = bridge
+            .call("eq", "pivothigh", &[float(tick.close), float(2.0), float(2.0)], tick)
+            .expect("valid");
+    }
+    assert_eq!(last, None, "equal extremes never pivot");
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let out = bridge
+        .call("short", "pivothigh", &[float(1.0), float(0.0), float(2.0)], ticks[0])
+        .expect_err("zero leftbars refuses")
+        .to_string();
+    assert!(out.contains("positive"), "length refusal: {out}");
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let mut last = None;
+    for (index, &tick) in ticks.iter().enumerate() {
+        let source = if index == 2 { None } else { float(tick.close) };
+        last = bridge
+            .call("nav", "pivothigh", &[source, float(2.0), float(2.0)], tick)
+            .expect("valid");
+    }
+    assert_eq!(last, None, "na in the window reads na");
+}

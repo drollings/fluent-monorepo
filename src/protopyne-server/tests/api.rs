@@ -9,8 +9,7 @@ fn history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    let bars = crate::load_bars_csv(&path).expect("vendored history loads");
-    bars[..60].to_vec()
+    crate::load_bars_csv(&path).expect("vendored history loads")
 }
 
 fn test_grant(id: &str, max_trades: u32) -> Grant {
@@ -153,7 +152,7 @@ async fn preview_populates_inbox_and_portfolio() {
         .await
         .expect("preview is a run");
     let run = response.run;
-    assert_eq!(run.decisions.len(), 60);
+    assert_eq!(run.decisions.len(), history().len());
     assert!(run.report.fills > 0);
     for entry in &response.deny_histogram {
         assert!(!entry.reason.is_empty());
@@ -494,7 +493,7 @@ async fn chart_contract_matches_kernel_output() {
         .json()
         .await
         .expect("bars are JSON");
-    assert_eq!(bars.rows.len(), 60);
+    assert_eq!(bars.rows.len(), history().len());
     assert_eq!(bars.dropped, 0, "vendored history must be fully chartable");
     assert_eq!(bars.rows[0].time, history()[0].ts.timestamp());
 
@@ -506,7 +505,7 @@ async fn chart_contract_matches_kernel_output() {
         .json()
         .await
         .expect("overlay is JSON");
-    assert_eq!(overlay.values.len(), 60);
+    assert_eq!(overlay.values.len(), history().len());
     let closes: Vec<f64> = history()
         .iter()
         .filter_map(|bar| {

@@ -14,69 +14,26 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{
-    InputSet, LibraryId, ModuleInput, PineRuntimeConfig, load_pine_source, parse_pine_source,
-    parse_program,
-};
+use crate::{InputSet, LinkedModule, ModuleInput, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
-use std::collections::HashMap;
-use std::path::PathBuf;
 
-fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
-}
+use crate::pine::test_fixture as fixture;
 
-fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
-    LibraryId {
-        publisher: publisher.to_owned(),
-        name: name.to_owned(),
-        version,
-    }
-}
-
-/// The shipped utility library as a graph input: identity from the header
-/// scan, structure from the parser, over the same byte-identical text.
+/// The shipped utility library as a graph input (shared fixture constructor).
 fn util_module() -> ModuleInput {
-    let path = data_root().join("libraries/_libUtil.pine");
-    let source = load_pine_source(&path).expect("utility library loads");
-    let program = parse_program(&source.text).expect("utility library parses");
-    ModuleInput::new(
-        library_id("showmethegrail", "libUtil", 12),
-        source,
-        program,
-    )
+    fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12)
 }
 
+/// One synthetic driver script as a graph input (shared fixture constructor).
 fn driver_module(text: &str) -> ModuleInput {
-    let source = parse_pine_source("local/Driver", text);
-    let program = parse_program(text).expect("driver parses");
-    ModuleInput::new(library_id("local", "Driver", 1), source, program)
+    fixture::driver_module(text)
 }
 
 /// Link the real library under its graph order with one driver root calling
 /// through the `UTIL` alias.
 fn linked(driver: &str) -> Vec<LinkedModule> {
-    let graph = crate::resolve_imports(vec![util_module(), driver_module(driver)])
-        .expect("library plus driver resolves");
-    graph
-        .order()
-        .iter()
-        .map(|id| {
-            let entry = graph.get(id).expect("ordered module resolves");
-            let aliases = graph
-                .alias_table(id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(alias, target)| (alias, target.to_string()))
-                .collect::<HashMap<String, String>>();
-            LinkedModule {
-                key: id.to_string(),
-                program: entry.program.clone(),
-                aliases,
-            }
-        })
-        .collect()
+    fixture::linked_modules(vec![util_module(), driver_module(driver)])
 }
 
 fn bar_ms(close: &str, ts_millis: i64) -> Bar {

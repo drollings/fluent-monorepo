@@ -335,7 +335,8 @@ pub struct CallArg {
 /// One declared parameter: `[qualifier] [type] name [= default]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
-    /// `simple` (or `const`) qualifier, when present.
+    /// `simple`/`series` (or `const`) qualifier, when present. Execution
+    /// treats qualifiers as metadata; they never change evaluation.
     pub qualifier: Option<String>,
     /// Declared type, when present.
     pub type_name: Option<PineType>,
@@ -951,7 +952,7 @@ impl PineParser {
                     type_name.name,
                 )
             } else {
-                (type_name, self.expect_identifier()?)
+                (type_name, self.expect_name()?)
             };
             self.skip_trivia();
             let default = if self.current_kind() == &TokenKind::Equal {
@@ -1011,6 +1012,11 @@ impl PineParser {
                     self.advance();
                     self.skip_trivia();
                     Some("simple".to_owned())
+                }
+                TokenKind::Series => {
+                    self.advance();
+                    self.skip_trivia();
+                    Some("series".to_owned())
                 }
                 _ => None,
             };
@@ -1656,7 +1662,7 @@ impl PineParser {
                 TokenKind::Dot => {
                     self.advance();
                     self.skip_trivia();
-                    let field = self.expect_identifier()?;
+                    let field = self.expect_name()?;
                     self.skip_trivia();
                     if self.current_kind() == &TokenKind::LeftParen {
                         self.advance();
@@ -1991,8 +1997,9 @@ impl PineParser {
     }
 
     /// Expect a name where Pine allows the contextual keyword `type`
-    /// (`PatternTypes type` parameters and their uses). Every other v6
-    /// keyword stays reserved in name position.
+    /// (`PatternTypes type` parameters and their uses, `type`-block fields
+    /// such as `int type = 0`, and dotted reads such as `this.type`).
+    /// Every other v6 keyword stays reserved in name position.
     fn expect_name(&mut self) -> Result<String, PineParseError> {
         let current = self.current().clone();
         match &current.kind {

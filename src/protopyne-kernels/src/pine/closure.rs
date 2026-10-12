@@ -124,6 +124,53 @@ pub const REAL_LIBRARIES: &[ClosureEntry] = &[
 /// Data-root-relative path of the indicator that imports the seven libraries.
 pub const INDICATOR_PATH: &str = "indicators/_IntegrationLite.pine";
 
+/// Task indicators under headless proof: the same [`ClosureEntry`] shape as
+/// [`REAL_LIBRARIES`], one entry per indicator with the `(library name,
+/// alias)` pairs from the file's own import lines in file order. The pinned
+/// versions are metadata only (loading warns on skew, never refuses); each
+/// closure links the single on-disk source per publisher/name, and the
+/// indicator root travels under `local/<Stem>`.
+pub const TASK_INDICATORS: &[ClosureEntry] = &[
+    ClosureEntry {
+        publisher: "local",
+        name: "DeltaVolumeProfileProtopyne",
+        version: 6,
+        alias: "DeltaVolumeProfileProtopyne",
+        relpath: "indicators/_DeltaVolumeProfileProtopyne.pine",
+        imports: &[
+            ("libUtil", "UTIL"),
+            ("libBuffers", "libBuffers"),
+            ("libApex", "libApex"),
+            ("libDrawing", "libDrawing"),
+        ],
+    },
+    ClosureEntry {
+        publisher: "local",
+        name: "ApexPPAS",
+        version: 6,
+        alias: "ApexPPAS",
+        relpath: "indicators/_ApexPPAS.pine",
+        imports: &[
+            ("libUtil", "UTIL"),
+            ("libCandles", "libCandles"),
+            ("libApex", "libApex"),
+        ],
+    },
+    ClosureEntry {
+        publisher: "local",
+        name: "ApexRSIMD",
+        version: 6,
+        alias: "ApexRSIMD",
+        relpath: "indicators/_ApexRSIMD.pine",
+        imports: &[
+            ("libUtil", "UTIL"),
+            ("libApex", "libApex"),
+            ("libMAs", "libMAs"),
+            ("libDrawing", "libDrawing"),
+        ],
+    },
+];
+
 /// Publisher/name the indicator root travels under in the import graph (the
 /// indicator declares no library identity of its own, so it uses its stem).
 #[must_use]
@@ -158,6 +205,38 @@ pub fn load_closure_sources(
     Ok(sources)
 }
 
+/// Load any listed closure from disk: the given libraries plus one indicator
+/// entry, each keyed `publisher/name` exactly like [`load_closure_sources`].
+/// Version skew still warns via [`PineSource::warnings`] and still resolves.
+pub fn load_listed_closure(
+    data_root: &Path,
+    libraries: &[ClosureEntry],
+    indicator: &ClosureEntry,
+) -> Result<Vec<(String, PineSource)>, KernelError> {
+    let mut sources = Vec::with_capacity(libraries.len() + 1);
+    for entry in libraries {
+        let source = load_pine_source(&data_root.join(entry.relpath))?;
+        sources.push((format!("{}/{}", entry.publisher, entry.name), source));
+    }
+    let root = load_pine_source(&data_root.join(indicator.relpath))?;
+    sources.push((
+        format!("{}/{}", indicator.publisher, indicator.name),
+        root,
+    ));
+    Ok(sources)
+}
+
 #[cfg(test)]
 #[path = "../../tests/pine_closure.rs"]
 mod tests;
+
+/// Task-indicator triage pins (file homes, absent-file disposal, substitute
+/// quarantine, skew table, zero-reference scan, control, loader property).
+#[cfg(test)]
+#[path = "../../tests/pine_triage.rs"]
+mod triage_tests;
+
+/// Task-indicator closures (parse + link + render + shape pins, no execution).
+#[cfg(test)]
+#[path = "../../tests/pine_task_closure.rs"]
+mod task_closure_tests;

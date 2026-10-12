@@ -10,6 +10,8 @@
 //! runtime contracts they build on live here.
 
 pub mod averages;
+pub mod bars;
+pub mod buffers;
 pub mod calibration;
 pub mod candles;
 pub mod compat;
@@ -22,6 +24,16 @@ pub mod filters;
 pub mod indicator;
 pub mod inputs;
 pub mod math;
+pub mod market_context;
+pub mod mtf;
+pub use market_context::{
+    MarketContext, MarketContextKey, MarketRegime, detect_regime, fetch_all, health_mas, update,
+    CCI_SCALE, DIRECTION_BAND, HEALTH_AMPLITUDE, HEALTH_DEADBAND, HEALTH_K, HEALTH_LOWER_BASE,
+    HEALTH_MID_WEIGHT, HEALTH_MIXED_BASE, HEALTH_MIXED_SPAN, HEALTH_UPPER_BASE, RSI_CENTER,
+    RSI_SCALE, TREND_NORM, TREND_SCORE_FLOOR, VOLATILITY_SCALE, VOLATILITY_SCORE_FLOOR,
+    VOLUME_SCALE, VOLUME_SCORE_FLOOR,
+};
+pub mod native_libs;
 pub mod oscillators;
 pub mod parity;
 pub mod pine;
@@ -44,13 +56,23 @@ pub mod wq_half_life;
 pub mod wq_series;
 
 pub use averages::{AlmaIndicator, DemaIndicator, HmaIndicator, RmaIndicator, TemaIndicator, VwmaIndicator, WmaIndicator};
+pub use bars::{
+    BUFFER_PADDING, DRIFT_TOLERANCE_PCT, MAX_EXACT_VOLUME, NEUTRAL_BUY_RATIO, VOLUME_EPSILON,
+    BarParts, BarRing, BarStateFlags, BarsConfig, BarsHistory, ClosedBar, ConfirmOutcome,
+    ConfirmedBar, DriftDecision, DriftReport, FetchCheck, FetchNativeOut, FetchSignal, LtfOutcome,
+    LtfRow, NativeFetchTick, RawTick, ReconcileOutcome, ResampleSource, RingCursor, TickIngest,
+    TradingSession, choose_source, drift_pct,
+    estimate_buy_volume, estimate_delta_volume, et_offset_ms, fast_tanh, is_confirmed_bar,
+    is_dst_et, is_valid_volume, project_bars, tick_bar_state, tick_resample, validate_ohlcv,
+    volume_deltas,
+};
 pub use calibration::{Control, ControlViolation, ParityDashboard, ParityRow, canonical_params, null_alignment_diffs, run_control};
 pub use candles::{
     candle_color, doji, dragonfly, efficiency_ratio, four_price_doji, gap_down, gap_up,
     gravestone, high_low_range, lower_body, lower_shadow, real_body, real_body_gap_down,
     real_body_gap_up, shadows, upper_body, upper_shadow, TA_EPSILON,
 };
-pub use compat::{assert_matrix_covers, compat_for, CompatStatus, KernelCompat, COMPATIBILITY};
+pub use compat::{assert_matrix_covers, assert_native_matrix_covers, compat_for, is_native_row, native_row_id, CompatStatus, KernelCompat, COMPATIBILITY, NATIVE_MATRIX_ROWS};
 pub use component::{dynamic_indicator, indicator_double, ComponentRegistry, IndicatorComponent};
 pub use context::RunCtx;
 pub use drawing::{Drawing, DrawingKind};
@@ -71,7 +93,8 @@ pub use pine::{
     PineParseError, PineParser, PineProgram, PineSource, PineStmt, PineToken, PineType,
     ResolvedModule, RunOutcome, SourceKind, SwitchArm, SwitchStmt, TokenKind, UnaryOp, VersionWarn,
     EGUI_PARITY, INDICATOR_PATH, MAX_LOOP_ITERATIONS, REAL_LIBRARIES, SUPPORTED_PINE_VERSION,
-    closure_data_root, display_program, indicator_library_id, lex, load_closure_sources,
+    TASK_INDICATORS, closure_data_root, display_program, indicator_library_id, lex,
+    load_closure_sources, load_listed_closure,
     load_pine_source, parity_for, parse_pine_source, parse_program, resolve_imports,
 };pub use pine::builtins_ta::TaBridge;
 pub use research::{fractal_dimension, frame_of_bars, frame_of_values, price_density, rsrs};
@@ -92,6 +115,17 @@ pub use wq_comb::{
 };
 pub use inputs::{InputDef, InputSet};
 pub use math::{corr_pearson, div_or_none, ema_factor, ema_step, ewm_span_step, linreg_slope_intercept, midpoint_of, period_len, rolling_max, rolling_min, rolling_min_periods_mask, std_pop, std_sample, variance_pop, variance_sample, warmup_none, wilder_step, window_mean, window_sum};
+pub use mtf::{
+    BucketSpec, Lookahead, MtfStore, SeriesCache, SeriesKey, aligned_geq, bucket_has_gap,
+    bucket_ids, build_graph, floor_to_grid, floor_to_grid_checked, fully_formed, grid_roundtrip,
+    interleave_sorted, interleave_sorted_by, merge_sorted, merge_sorted_by, order_for,
+    pairs_from_sorted, validate_split, FRAME_KERNEL,
+};
+pub use native_libs::{
+    FieldTable, LibBarsProvider, LibBuffersProvider, MethodCtx, NativeAudit, NativeLibraryEntry,
+    NativeLibraryId, NativeOptions, NativeOverlay, NativeProvider, NativeResolution, NativeServed,
+    TickLegs, NATIVE_LIBRARIES, apply_overrides, find_native, pine_sha_of, version_is_ignored,
+};
 pub use runtime::{PineRuntime, PineRuntimeConfig};
 pub use series::SliceSeries;
 pub use sma::SmaIndicator;

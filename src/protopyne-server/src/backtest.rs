@@ -293,5 +293,21 @@ impl Venue for BacktestVenue {
 mod tests;
 
 #[cfg(test)]
+#[path = "../tests/common/mtf.rs"]
+mod common_mtf;
+
+#[cfg(test)]
+#[path = "../tests/mtf_fanout.rs"]
+mod mtf_fanout_tests;
+
+#[cfg(test)]
+#[path = "../tests/common/golden.rs"]
+mod common_golden;
+
+#[cfg(test)]
 #[path = "../tests/pine_integration_lite.rs"]
 mod pine_integration_lite_tests;
+
+#[cfg(test)]
+#[path = "../tests/pine_task_indicators.rs"]
+mod pine_task_indicators_tests;

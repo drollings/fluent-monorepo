@@ -170,6 +170,14 @@ fn ta_canonical() -> Vec<(&'static str, Option<&'static str>, &'static str)> {
         ("eit", Some("eit"), "v = ta.eit(close, 0.5)"),
         ("kalman", Some("kalman"), "v = ta.kalman(close, 14)"),
         ("voss", Some("voss"), "v = ta.voss(close, 20)"),
+        ("barssince", None, "v = ta.barssince(close > open)"),
+        (
+            "valuewhen",
+            None,
+            "v = ta.valuewhen(close > open, close, 0)",
+        ),
+        ("pivothigh", None, "v = ta.pivothigh(high, 2, 2)"),
+        ("pivotlow", None, "v = ta.pivotlow(low, 2, 2)"),
     ]
 }
 
@@ -209,8 +217,6 @@ fn bridge_gaps_refuse_naming_the_method() {
         "mode",
         "percentrank",
         "linreg",
-        "pivothigh",
-        "pivotlow",
         "dmi",
         "adx",
         "sar",
@@ -445,7 +451,7 @@ fn pine_calibration_is_green() {
         "unknown import links"
     );
     tally.refused += 1;
-    assert_eq!(tally.must_accept, 9 + 3 + 36, "accept set shape drift");
+    assert_eq!(tally.must_accept, 9 + 3 + 40, "accept set shape drift");
     assert_eq!(tally.must_reject, 11 + 2, "reject set shape drift");
     assert!(
         (tally.accept_rate() - 1.0).abs() < f64::EPSILON,

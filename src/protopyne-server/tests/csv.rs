@@ -12,18 +12,19 @@ fn test_data_path() -> PathBuf {
 #[test]
 fn spy_15m_ingest_golden() {
     let bars = load_bars_csv(&test_data_path()).expect("vendored CSV loads");
-    // The source file holds 384 data rows under one header line; the golden
-    // pins the true row count, not the line count.
-    assert_eq!(bars.len(), 384);
+    // The trimmed fixture holds 11 data rows (trailing window cut at 15m
+    // candle opens, the highest timeframe here) under one header line;
+    // the golden pins the true row count, not the line count.
+    assert_eq!(bars.len(), 11);
     let first = &bars[0];
-    assert_eq!(first.ts.to_rfc3339(), "2026-01-02T09:00:00+00:00");
-    assert_eq!(first.o, "686.03".parse().expect("decimal"));
-    assert_eq!(first.h, "686.62".parse().expect("decimal"));
-    assert_eq!(first.l, "683.82".parse().expect("decimal"));
-    assert_eq!(first.c, "686.56".parse().expect("decimal"));
-    assert_eq!(first.volume, 19_063);
+    assert_eq!(first.ts.to_rfc3339(), "2026-01-09T22:00:00+00:00");
+    assert_eq!(first.o, "693.98".parse().expect("decimal"));
+    assert_eq!(first.h, "694.04".parse().expect("decimal"));
+    assert_eq!(first.l, "693.82".parse().expect("decimal"));
+    assert_eq!(first.c, "693.97".parse().expect("decimal"));
+    assert_eq!(first.volume, 1_062);
     let last = &bars[bars.len() - 1];
-    assert_eq!(last.ts.to_rfc3339(), "2026-01-10T00:45:00+00:00");
+    assert_eq!(last.ts.to_rfc3339(), "2026-01-10T00:30:00+00:00");
 }
 
 #[test]
@@ -33,22 +34,24 @@ fn spy_5m_ingest_golden() {
         .join("data")
         .join("SPY_5M.csv");
     let bars = load_bars_csv(&path).expect("vendored SPY_5M loads");
-    // Header + 1149 data rows. The upstream export carries a trailing `,Plot`
+    // Header + 32 trailing-window rows starting exactly on a 15m candle
+    // open (three 5m children per kept 15m candle, one genuine tape gap
+    // inside). The upstream export carries a trailing `,Plot`
     // header with no data values in any row; the vendored copy drops that
     // empty artifact header (data rows byte-identical) so strict ingest
     // stays strict. See the roadmap findings note.
-    assert_eq!(bars.len(), 1149);
+    assert_eq!(bars.len(), 32);
     let first = &bars[0];
-    assert_eq!(first.ts.to_rfc3339(), "2026-01-02T09:00:00+00:00");
-    assert_eq!(first.o, "686.03".parse().expect("decimal"));
-    assert_eq!(first.h, "686.31".parse().expect("decimal"));
-    assert_eq!(first.l, "683.82".parse().expect("decimal"));
-    assert_eq!(first.c, "686.10".parse().expect("decimal"));
-    assert_eq!(first.volume, 11_956);
+    assert_eq!(first.ts.to_rfc3339(), "2026-01-09T22:00:00+00:00");
+    assert_eq!(first.o, "693.98".parse().expect("decimal"));
+    assert_eq!(first.h, "694.04".parse().expect("decimal"));
+    assert_eq!(first.l, "693.82".parse().expect("decimal"));
+    assert_eq!(first.c, "693.99".parse().expect("decimal"));
+    assert_eq!(first.volume, 375);
     let last = &bars[bars.len() - 1];
-    assert_eq!(last.ts.to_rfc3339(), "2026-01-10T00:50:00+00:00");
-    assert_eq!(last.c, "694.40".parse().expect("decimal"));
-    assert_eq!(last.volume, 232);
+    assert_eq!(last.ts.to_rfc3339(), "2026-01-10T00:40:00+00:00");
+    assert_eq!(last.c, "694.38".parse().expect("decimal"));
+    assert_eq!(last.volume, 30);
 }
 
 #[test]
@@ -158,5 +161,6 @@ fn fallback_advances_past_structurally_invalid_file() {
         Err(ServerError::BadRow { .. })
     ));
     let bars = load_bars_with_fallback(&[bad_path, test_data_path()]).expect("falls through to good file");
-    assert_eq!(bars.len(), 384);
+    // Same trimmed fixture as `spy_15m_ingest_golden` above: 11 data rows.
+    assert_eq!(bars.len(), 11);
 }

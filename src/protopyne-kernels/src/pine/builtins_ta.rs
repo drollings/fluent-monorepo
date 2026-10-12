@@ -13,11 +13,14 @@
 //! shared [`util`](crate::util) whole-series functions over the same
 //! histories, so there is exactly one implementation of each. Pure
 //! statistics without kernels (`correlation`, `median`) compute from the
-//! shared [`math`](crate::math) primitives. Multi-output kernels (`macd`,
+//! shared [`math`](crate::math) primitives. Condition lookups
+//! (`barssince`, `valuewhen`) and pivots (`pivothigh`, `pivotlow`) run over
+//! per-site histories with no kernel; pivots honor the evaluated source
+//! series, never the chart legs. Multi-output kernels (`macd`,
 //! `bb`, `stoch`) yield their primary series until tuple unpacking arrives;
 //! destructuring a call result refuses fail-closed rather than binding a
 //! partial tuple. Anything without a kernel or a certain formula
-//! (`dmi`, `adx`, `sar`, `dc`, `mode`, `percentrank`, `linreg`, pivots,
+//! (`dmi`, `adx`, `sar`, `dc`, `mode`, `percentrank`, `linreg`,
 //! unknown names) refuses with its name.
 
 use std::collections::HashMap;
@@ -35,6 +38,7 @@ pub struct TaBridge {
     registry: IndicatorRegistry,
     kernel_states: HashMap<String, IndicatorState>,
     histories: HashMap<String, Vec<f64>>,
+    cond_histories: HashMap<String, Vec<bool>>,
     cum_sums: HashMap<String, f64>,
 }
 
@@ -49,6 +53,7 @@ impl TaBridge {
             "mfi", "alma", "macd", "bb", "atr", "tr", "obv", "stoch", "vwap", "wpr",
             "stdev", "variance", "highest", "lowest", "highestbars", "lowestbars", "change",
             "crossover", "crossunder", "cum", "correlation", "median", "eit", "kalman", "voss",
+            "barssince", "valuewhen", "pivothigh", "pivotlow",
         ]
     }
 
@@ -58,6 +63,7 @@ impl TaBridge {
             registry: builtin_registry()?,
             kernel_states: HashMap::new(),
             histories: HashMap::new(),
+            cond_histories: HashMap::new(),
             cum_sums: HashMap::new(),
         })
     }
@@ -364,6 +370,63 @@ impl TaBridge {
                     .with_float("band", band);
                 self.update_kernel(site, "voss", source.as_ref(), &params, tick)
             }
+            "barssince" => {
+                let [condition] = args else {
+                    return Err(bad_arity("condition"));
+                };
+                let flag = pine_condition(method, condition.as_ref())?;
+                let history = self.push_cond(&format!("{site}#cond"), flag);
+                let back = history
+                    .iter()
+                    .rposition(|&hit| hit)
+                    .map(|at| history.len() - 1 - at);
+                back
+                    .map(|ago| {
+                        i64::try_from(ago).map(PineValue::Int).map_err(|_| {
+                            KernelError::Eval(format!(
+                                "ta.{method} window does not fit this run"
+                            ))
+                        })
+                    })
+                    .transpose()
+            }
+            "valuewhen" => {
+                let [condition, source, occurrence] = args else {
+                    return Err(bad_arity("condition, source and occurrence"));
+                };
+                let flag = pine_condition(method, condition.as_ref())?;
+                let value = pine_source(source.as_ref())?;
+                let want = pine_occurrence(method, occurrence.as_ref())?;
+                let cond_key = format!("{site}#cond");
+                let src_key = format!("{site}#src");
+                self.push_cond(&cond_key, flag);
+                self.push_history(&src_key, value);
+                let conds = self.cond_history(&cond_key);
+                let sources = self.history(&src_key);
+                let mut seen = 0_usize;
+                let mut found = None;
+                for (index, &hit) in conds.iter().enumerate().rev() {
+                    if hit {
+                        if seen == want {
+                            found = Some(index);
+                            break;
+                        }
+                        seen += 1;
+                    }
+                }
+                Ok(found.and_then(|index| {
+                    sources.get(index).copied().filter(|v| !v.is_nan())
+                }).map(PineValue::Float))
+            }
+            "pivothigh" | "pivotlow" => {
+                let [source, left, right] = args else {
+                    return Err(bad_arity("source, leftbars and rightbars"));
+                };
+                let left = pine_usize(method, left.as_ref())?;
+                let right = pine_usize(method, right.as_ref())?;
+                let tail = self.push_history(site, pine_source(source.as_ref())?);
+                Ok(pivot_at(tail, left, right, method == "pivothigh"))
+            }
             _ => Err(KernelError::Eval(format!("unknown ta function 'ta.{method}'"))),
         }
     }
@@ -406,6 +469,20 @@ impl TaBridge {
         let history = self.histories.entry(site.to_owned()).or_default();
         history.push(value);
         history
+    }
+
+    /// Append one condition value to a site condition history, returning
+    /// the full history. Conditions ride a `bool` history beside the
+    /// `f64` source histories so `na` never encodes as a quiet `0.0`.
+    fn push_cond(&mut self, site: &str, flag: bool) -> &[bool] {
+        let history = self.cond_histories.entry(site.to_owned()).or_default();
+        history.push(flag);
+        history
+    }
+
+    /// Borrow one site condition history (empty when the site never pushed).
+    fn cond_history(&self, site: &str) -> &[bool] {
+        self.cond_histories.get(site).map_or(&[], Vec::as_slice)
     }
 
     /// Borrow one site history (empty when the site never pushed).
@@ -503,6 +580,33 @@ impl TaBridge {
     }
 }
 
+/// A confirmed pivot over an explicit source history: the bar `right`
+/// back must be finite and strictly extreme over its `left` left and
+/// `right` right neighbors (equal extremes break the pivot, matching the
+/// reference's `>=`/`<=` guard). Short or absence-carrying windows read
+/// absence — the pivot is confirmed only on the bar that completes the
+/// right window, `na` everywhere else. The source history is the
+/// evaluated series, so a pivot in an oscillator reads the oscillator,
+/// never the chart legs.
+fn pivot_at(history: &[f64], left: usize, right: usize, is_high: bool) -> Option<PineValue> {
+    let need = left.checked_add(right)?.checked_add(1)?;
+    if history.len() < need {
+        return None;
+    }
+    let pivot = history.len() - 1 - right;
+    let value = history[pivot];
+    if value.is_nan() {
+        return None;
+    }
+    let extreme = |&v: &f64| !v.is_nan() && (if is_high { v < value } else { v > value });
+    if history[pivot - left..pivot].iter().all(extreme)
+        && history[pivot + 1..].iter().all(extreme)
+    {
+        Some(PineValue::Float(value))
+    } else {
+        None
+    }
+}
 /// The trailing `length` values of a history (the whole history while short).
 fn window_of(history: &[f64], length: usize) -> &[f64] {
     let start = history.len().saturating_sub(length);
@@ -594,6 +698,34 @@ fn pine_bool(method: &str, value: Option<&PineValue>) -> Result<bool, KernelErro
     }
 }
 
+/// A script condition argument: `true`/`false`; `na` (absence) counts as
+/// unsatisfied (Pine never treats absence as a firing condition);
+/// anything else refuses instead of coercing.
+fn pine_condition(method: &str, value: Option<&PineValue>) -> Result<bool, KernelError> {
+    match value {
+        Some(PineValue::Bool(flag)) => Ok(*flag),
+        None => Ok(false),
+        Some(other) => Err(KernelError::Eval(format!(
+            "ta.{method} needs a bool condition, got {other}"
+        ))),
+    }
+}
+
+/// A script occurrence argument (`valuewhen`): a whole number at or above
+/// zero (`0` is the most recent firing).
+fn pine_occurrence(method: &str, value: Option<&PineValue>) -> Result<usize, KernelError> {
+    let at = pine_int(method, value)?;
+    usize::try_from(at).map_err(|_| {
+        KernelError::Eval(format!("ta.{method} needs a non-negative whole occurrence"))
+    })
+}
+
 #[cfg(test)]
 #[path = "../../tests/pine_builtins_ta.rs"]
 mod tests;
+
+/// Task-closure `ta.*` closed-coverage probe, tuple-destructuring
+/// verdict, and `input.*` decorator audit.
+#[cfg(test)]
+#[path = "../../tests/pine_ta_coverage.rs"]
+mod coverage_tests;

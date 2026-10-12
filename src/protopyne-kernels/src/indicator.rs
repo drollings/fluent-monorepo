@@ -287,6 +287,23 @@ impl ParamSet {
             ))),
         }
     }
+
+    /// Canonical process-local fingerprint of the parameter map: entries
+    /// sorted by name, each `name=Debug(value)` frame hashed in order
+    /// through the shared FNV-1a helper. Two sets fingerprint equal iff
+    /// they carry the same names with equal values (insertion order never
+    /// matters). Identity for in-memory caches only — never persisted, so
+    /// no stability promise beyond the process.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        let mut entries: Vec<String> = self
+            .values
+            .iter()
+            .map(|(name, value)| format!("{name}={value:?};"))
+            .collect();
+        entries.sort();
+        common_core::hash::fnv1a64(entries.concat().as_bytes())
+    }
 }
 
 /// One named secondary output series (e.g. `upper` for Bollinger Bands).
