@@ -8,13 +8,17 @@
 //! paint edge consumes. Display `f64` appears only at the conversion
 //! boundary in [`convert`], never flows back into decisions.
 
+pub mod annotations;
 pub mod chart_type;
 pub mod convert;
+pub mod display_only;
 pub mod error;
 pub mod range;
 pub mod session;
 pub mod transform;
 
+pub use annotations::{Annotation, AnnotationKey, AnnotationStyle};
+pub use display_only::{DisplayOnly, DisplayOnlyError};
 pub use chart_type::{ChartType, ChartTypeCategory};
 pub use convert::{rows_of, row_of, to_display_float, ChartRow, ChartRows};
 pub use error::ChartModelError;

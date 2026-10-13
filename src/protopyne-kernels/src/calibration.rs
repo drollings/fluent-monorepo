@@ -1,6 +1,6 @@
 //! Global calibration gate: universal controls plus the Expr-parity dashboard.
 //!
-//! Two axes, matching the roadmap's confidence/correctness split:
+//! Two axes, matching the confidence/correctness split:
 //!
 //! * Producer-confidence (controls): flat, null-injected, short, and
 //!   single-tick inputs must never leak `NaN`/`inf` into a `Some`, never

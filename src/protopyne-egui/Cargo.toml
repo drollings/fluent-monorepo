@@ -8,6 +8,7 @@ autobenches = false
 [features]
 default = []
 demo = ["dep:eframe", "eframe/glow", "eframe/wayland", "eframe/x11"]
+server-gateway = ["dep:protopyne-server"]
 
 [dependencies]
 common-core = { path = "../common-core" }
@@ -18,7 +19,9 @@ fluent-wvr = { path = "../fluent-wvr" }
 protopyne-chart-model = { path = "../protopyne-chart-model" }
 protopyne-chart-scale = { path = "../protopyne-chart-scale" }
 protopyne-kernels = { path = "../protopyne-kernels", features = ["pine"] }
+protopyne-server = { path = "../protopyne-server", optional = true }
 protopyne-types = { path = "../protopyne-types" }
+protopyne-view = { path = "../protopyne-view" }
 bon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -30,7 +33,10 @@ eframe = { version = "0.36", optional = true, default-features = false }
 chrono = { workspace = true }
 criterion = { workspace = true }
 rust_decimal = { workspace = true }
+reqwest = { workspace = true }
 protopyne-server = { path = "../protopyne-server" }
+protopyne-strategy = { path = "../protopyne-strategy" }
+protopyne-view = { path = "../protopyne-view" }
 
 [[bench]]
 name = "chart_budget"
@@ -39,6 +45,10 @@ harness = false
 [[example]]
 name = "demo"
 required-features = ["demo"]
+
+[[example]]
+name = "terminal"
+required-features = ["server-gateway", "demo"]
 
 [lints]
 workspace = true

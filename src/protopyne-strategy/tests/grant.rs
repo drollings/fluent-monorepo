@@ -1,8 +1,10 @@
 use super::*;
 use crate::proposal::{Direction, Proposal, ProposalSide, StructureKind};
 use chrono::{TimeZone, Utc};
+use fluent_wvr::{Describable, FieldAccess};
 use protopyne_types::{Money, Qty};
 use rust_decimal::Decimal;
+use std::str::FromStr;
 
 fn money(value: i64) -> Money {
     Money::new(Decimal::from(value))
@@ -444,10 +446,10 @@ fn tightening_predicate_agrees_with_tighten_on_every_tier() {
     let via_patch = current
         .tighten(
             GrantPatch::new()
-                .budgets(tighter.budgets.clone())
+                .budgets(tighter.budgets)
                 .signal(tighter.signal)
-                .trade(tighter.trade.clone())
-                .portfolio(tighter.portfolio.clone())
+                .trade(tighter.trade)
+                .portfolio(tighter.portfolio)
                 .breakers(tighter.breakers)
                 .scope(tighter.scope.clone())
                 .valid_until(tighter.valid_until)
@@ -506,4 +508,143 @@ fn scope_and_structure_denials_keep_distinct_meanings() {
         reasons.iter().any(|reason| reason == "structure outside grant scope"),
         "structure attribution fires for audit, got: {reasons:?}"
     );
+}
+
+/// Descriptor surface behind the schema-driven arming form. The
+/// form renders from `field_names` plus `describe` with no hand-written
+/// field list, so these pins are the contract the form tests build on:
+/// tier names, leaf names, the JSON boundary encoding, and the refusals.
+fn budgets() -> GrantBudgets {
+    GrantBudgets::new()
+        .max_trades(10)
+        .max_contracts(100)
+        .max_loss(money(5_000))
+        .max_notional(money(100_000))
+        .build()
+}
+
+fn permissions() -> GrantPermission {
+    GrantPermission { entries: true, exits: true, rolls: false }
+}
+
+fn assert_copy<T: Copy>() {}
+
+#[test]
+fn descriptor_tiers_are_copy_so_get_field_compiles() {
+    // The generated `get_field` moves an `Option` tier out of the borrow;
+    // that codegen only compiles when every settable tier is `Copy`. This
+    // test pins the property so a future non-`Copy` leaf fails here with
+    // its reason, not deep in macro output. `GrantScope` is deliberately
+    // absent: its lists can never be `Copy`, so the patch skips it.
+    assert_copy::<GrantPermission>();
+    assert_copy::<SignalThresholds>();
+    assert_copy::<TradeThresholds>();
+    assert_copy::<PortfolioThresholds>();
+    assert_copy::<GrantBudgets>();
+    assert_copy::<BreakerLimits>();
+}
+
+#[test]
+fn patch_descriptor_names_the_settable_tiers() {
+    assert_eq!(
+        GrantPatch::default().field_names(),
+        &["budgets", "signal", "trade", "portfolio", "breakers", "valid_until"],
+        "scope stays out of the descriptor (see GrantPatch docs)"
+    );
+    let schema = GrantPatch::default().describe();
+    let required = schema["required"].as_array().expect("schema carries required");
+    assert!(required.is_empty(), "every patch tier is optional, got: {required:?}");
+    let properties =
+        schema["properties"].as_object().expect("schema carries properties");
+    for tier in GrantPatch::default().field_names() {
+        let hint = &properties[*tier];
+        assert!(
+            hint["description"].as_str().is_some_and(|d| !d.is_empty()),
+            "tier {tier} carries a form hint"
+        );
+    }
+}
+
+#[test]
+fn leaf_descriptors_name_their_fields() {
+    let live = grant();
+    assert_eq!(
+        live.budgets.field_names(),
+        &["max_trades", "max_contracts", "max_loss", "max_notional"]
+    );
+    assert_eq!(live.signal.field_names(), &["min_conviction", "min_activity_score"]);
+    assert_eq!(
+        live.trade.field_names(),
+        &["max_loss_per_trade", "max_spread_width", "min_dte_days", "max_dte_days"]
+    );
+    assert_eq!(live.portfolio.field_names(), &["max_open_risk", "quote_max_age_secs"]);
+    assert_eq!(live.breakers.field_names(), &["max_consecutive_errors"]);
+    assert_eq!(permissions().field_names(), &["entries", "exits", "rolls"]);
+    assert_eq!(
+        live.scope.field_names(),
+        &["permissions"],
+        "scope lists stay out (no Vec boundary encoding)"
+    );
+}
+
+#[test]
+fn tier_json_boundary_round_trips() {
+    // Display renders the same JSON document FromStr accepts: the single
+    // encoding behind every composite patch leaf.
+    for (name, rendered) in [
+        ("budgets", budgets().to_string()),
+        ("signal", grant().signal.to_string()),
+        ("trade", grant().trade.to_string()),
+        ("portfolio", grant().portfolio.to_string()),
+        ("breakers", grant().breakers.to_string()),
+        ("permissions", permissions().to_string()),
+    ] {
+        let value: serde_json::Value =
+            serde_json::from_str(&rendered).expect("tier displays as JSON");
+        assert!(value.is_object(), "tier {name} displays as a JSON object");
+    }
+    assert_eq!(GrantBudgets::from_str(&budgets().to_string()).expect("budgets parse"), budgets());
+    assert_eq!(
+        GrantPermission::from_str(&permissions().to_string()).expect("permissions parse"),
+        permissions()
+    );
+    assert!(
+        GrantBudgets::from_str("{not json").is_err(),
+        "malformed tier documents refuse"
+    );
+}
+
+#[test]
+fn patch_set_field_round_trips_tier_json() {
+    let mut patch = GrantPatch::default();
+    patch
+        .set_field("budgets", &budgets().to_string())
+        .expect("tier JSON sets");
+    assert_eq!(patch.budgets, Some(budgets()));
+    let rendered = patch.get_field("budgets").expect("tier reads back");
+    assert_eq!(
+        GrantBudgets::from_str(&rendered).expect("rendered tier re-parses"),
+        budgets()
+    );
+    let bad = patch.set_field("budgets", "{not json");
+    assert!(
+        format!("{bad:?}").contains("budgets"),
+        "tier parse failures name the tier, got: {bad:?}"
+    );
+    assert!(
+        patch.set_field("scope", "{}").is_err(),
+        "the skipped scope tier refuses by name"
+    );
+    assert!(patch.set_field("nope", "1").is_err(), "unknown fields refuse");
+}
+
+#[test]
+fn patch_valid_until_parses_rfc3339() {
+    let mut patch = GrantPatch::default();
+    patch.set_field("valid_until", "2027-01-01T00:00:00Z").expect("RFC 3339 sets");
+    assert_eq!(
+        patch.valid_until,
+        Some(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
+    );
+    assert!(patch.set_field("valid_until", "tomorrow").is_err(), "vague dates refuse");
 }

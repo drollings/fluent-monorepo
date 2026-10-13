@@ -22,7 +22,7 @@ fn linear_chart() -> ChartDef {
                     "depends": [
                         { "kind": "capability", "name": "repro_plan" }
                     ],
-                    "template": "cause {{ upstream.reproduce.output }}",
+                    "template": "cause {{ upstream.reproduce.output | tojson }}",
                     "essential": true
                 },
                 {
@@ -39,7 +39,7 @@ fn linear_chart() -> ChartDef {
                           },
                           "required": true }
                     ],
-                    "template": "fix {{ upstream.root_cause.output }}",
+                    "template": "fix {{ upstream.root_cause.output | tojson }}",
                     "essential": true
                 }
             ]
@@ -226,7 +226,7 @@ async fn compiled_stages_feed_chart_execution_plan() {
               "template": "a {{ request }}", "essential": true },
             { "name": "b", "provides": ["b_out"], "depends": [
                 { "kind": "capability", "name": "a_out" }
-              ], "template": "b {{ upstream.a.output }}", "essential": true }
+              ], "template": "b {{ upstream.a.output | tojson }}", "essential": true }
         ]
     }"#;
     let chart = chart_from_str(chart_json).expect("chart parses");

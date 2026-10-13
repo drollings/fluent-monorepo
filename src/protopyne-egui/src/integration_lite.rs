@@ -14,13 +14,15 @@
 //! measured evidence lives in the checked-in calibration report beside the
 //! fixtures — this module carries only the frozen wiring.
 
-use protopyne_chart_model::ChartRow;
+use protopyne_chart_model::{ChartRow, DisplayOnly};
 use protopyne_kernels::bars::fast_tanh;
 use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet, builtin_registry};
 use protopyne_kernels::market_context::health_mas;
 
 use fluent_egui::EguiError;
-use fluent_egui::{PivotMark, RibbonView, ThemeConfig, pivot_marks, ribbon_view, theme_color};
+use fluent_egui::{
+    PivotMark, RibbonView, ThemeConfig, pivot_marks, resolve_color, ribbon_view,
+};
 
 use crate::oscillators::{OscillatorKind, normalize_series};
 
@@ -29,8 +31,10 @@ use crate::oscillators::{OscillatorKind, normalize_series};
 pub const RAW_OSCILLATOR_LENGTH: i64 = 14;
 /// EIT smoothing for the ribbon signal leg (script signal preset).
 pub const SIGNAL_EIT_ALPHA: f64 = 0.12;
-/// Frozen pivot threshold on the normalized band (see the calibration
-/// report beside the fixtures for the measured evidence).
+/// Frozen pivot threshold on the normalized band (task value: alert
+/// fitness — flat/chop windows must not fire, known pivots must score
+/// fully; see the calibration report beside the fixtures for the measured
+/// evidence).
 pub const CALIBRATED_PIVOT_THRESHOLD: f64 = 100.0;
 
 /// Native kernel series behind one pane: raw oscillators plus the
@@ -67,13 +71,23 @@ fn kernel_series(
 }
 
 /// Frame of display legs for kernel batch evaluation.
+///
+/// Display provenance is fenced: every leg enters as [`DisplayOnly`] and is
+/// revealed only to feed the kernel preview — the `reveal` call is the
+/// auditable escape, and nothing here converts toward a decision type.
 fn frame_of_rows(rows: &[ChartRow]) -> OwnedOhlcv {
+    let open: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.open)).collect();
+    let high: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.high)).collect();
+    let low: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.low)).collect();
+    let close: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.close)).collect();
+    let volume: Vec<DisplayOnly<f64>> =
+        rows.iter().map(|row| DisplayOnly::new(row.volume as f64)).collect();
     OwnedOhlcv {
-        open: rows.iter().map(|row| row.open).collect(),
-        high: rows.iter().map(|row| row.high).collect(),
-        low: rows.iter().map(|row| row.low).collect(),
-        close: rows.iter().map(|row| row.close).collect(),
-        volume: rows.iter().map(|row| row.volume as f64).collect(),
+        open: open.into_iter().map(DisplayOnly::reveal).collect(),
+        high: high.into_iter().map(DisplayOnly::reveal).collect(),
+        low: low.into_iter().map(DisplayOnly::reveal).collect(),
+        close: close.into_iter().map(DisplayOnly::reveal).collect(),
+        volume: volume.into_iter().map(DisplayOnly::reveal).collect(),
     }
 }
 
@@ -91,13 +105,16 @@ pub fn native_lite_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNativ
     let slow_raw = kernel_series("cci", &length, &frame)?;
     let adaptive =
         kernel_series("eit", &ParamSet::new().with_float("alpha", eit_alpha), &frame)?;
-    let relayed: Vec<f64> =
-        adaptive.iter().map(|slot| slot.unwrap_or(f64::NAN)).collect();
+    // Relayed adaptive legs descend from the fenced frame above, so they
+    // stay fenced until the same reveal; the synthetic zero volume is a
+    // literal, not display-descended, and needs no fence.
+    let relayed: Vec<DisplayOnly<f64>> =
+        adaptive.iter().map(|slot| DisplayOnly::new(slot.unwrap_or(f64::NAN))).collect();
     let synth = OwnedOhlcv {
-        open: relayed.clone(),
-        high: relayed.clone(),
-        low: relayed.clone(),
-        close: relayed,
+        open: relayed.iter().map(|leg| leg.reveal()).collect(),
+        high: relayed.iter().map(|leg| leg.reveal()).collect(),
+        low: relayed.iter().map(|leg| leg.reveal()).collect(),
+        close: relayed.iter().map(|leg| leg.reveal()).collect(),
         volume: vec![0.0; rows.len()],
     };
     let signal =
@@ -227,19 +244,19 @@ pub struct MomentumPalette {
 }
 
 impl MomentumPalette {
-    /// Resolve the four corners from the theme's Pine input hues.
-    #[must_use]
-    pub fn from_theme(theme: &ThemeConfig) -> Self {
+    /// Resolve the four corners from the theme's Pine input hues. A broken
+    /// theme refuses here — the caller surfaces it through the error chip
+    /// instead of tinting from silent gray.
+    pub fn from_theme(theme: &ThemeConfig) -> Result<Self, EguiError> {
         let channel = |key: &str| {
-            let color = theme_color(theme, key);
-            [color.r(), color.g(), color.b()]
+            resolve_color(theme, key).map(|color| [color.r(), color.g(), color.b()])
         };
-        Self {
-            bull_up: channel("bull"),
-            bear_down: channel("bear"),
-            bull_down: channel("bull_down"),
-            bear_up: channel("bear_up"),
-        }
+        Ok(Self {
+            bull_up: channel("bull")?,
+            bear_down: channel("bear")?,
+            bull_down: channel("bull_down")?,
+            bear_up: channel("bear_up")?,
+        })
     }
 }
 

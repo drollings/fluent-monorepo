@@ -17,6 +17,7 @@ pub mod closure;
 pub(crate) mod test_fixture;
 pub mod egui_parity;
 pub mod eval;
+pub mod projection;
 pub mod builtins_ta;
 pub mod builtins_core;
 
@@ -33,6 +34,7 @@ pub use closure::{
 };
 pub use egui_parity::{EguiParityRow, EGUI_PARITY, ParityVerdict, parity_for};
 pub use eval::{BarSnapshot, LinkedModule, LtfDataset, PineEngine, RunOutcome, MAX_LOOP_ITERATIONS};
+pub use projection::{OverlayProjection, PlotPrimitive, ProjectionRefusal, project};
 pub use builtins_ta::TaBridge;
 pub use syntax::{
     AssignItem, AssignOp, BinaryOp, BuiltinVar, CallArg, EnumMember, FieldDecl, FieldPersistence,

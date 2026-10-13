@@ -22,18 +22,25 @@
 pub mod chart;
 pub mod export;
 pub mod feed;
+pub mod grant_form;
 pub mod integration_lite;
 pub mod oscillators;
+pub mod pine_overlay;
 pub mod regime_labels;
 pub mod session;
 pub mod topology;
+pub mod views;
 pub mod widgets;
 
-pub use chart::{ChartConfig, TimeframeKey, timed_plan_build, window_for_range};
+pub use chart::{
+    ChartConfig, TimeframeKey, area_view, chart_price_bars, line_values, picture_rows,
+    timed_plan_build, window_for_range,
+};
 pub use export::{
     EXPORT_CSV_HEADER, OverlayExport, export_overlay_json, export_rows_csv, export_rows_json,
 };
 pub use feed::{RecomputeJob, RecomputePool};
+pub use grant_form::{GrantFormError, GrantFormField, GrantFormState, paint_grant_form};
 pub use integration_lite::{
     ATR_LENGTH, CALIBRATED_PIVOT_THRESHOLD, CandleMomentum, FreezePair, FreezeReport,
     IntegrationLiteView, LiteFrozen, LiteNative, MomentumPalette, MomentumTint,
@@ -46,6 +53,9 @@ pub use integration_lite::{
 pub use oscillators::{
     OscParams, OscillatorKind, normalize_oscillator, normalize_series, osc_params,
     oscillator_kind_name, parse_oscillator_kind,
+};
+pub use pine_overlay::{
+    OverlayGeoms, PlacedLabel, SeriesGeom, overlay_geoms, paint_overlay, paint_unsupported_chip,
 };
 pub use regime_labels::{
     STABILITY_BAND, QuietLabel, display_label, label_series, parity_label, regime_style_key,
@@ -77,3 +87,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/budget.rs"]
 mod budget_tests;
+
+#[cfg(test)]
+#[path = "../tests/gateway.rs"]
+mod gateway_tests;

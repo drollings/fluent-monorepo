@@ -777,6 +777,7 @@ fn trip_observed(decisions: &[BarDecision]) -> bool {
 }
 
 #[tokio::test]
+#[ignore = "soak: 9-case breaker trip/no-trip matrix with calibration artifact; the disarm path is pinned by smoke tests every run; run via `make test-heavy`"]
 async fn soak_breaker_trip_precision_recall_with_clean_control() {
     // Soak gate: the breaker must trip exactly when consecutive producer
     // failures exceed the bound — never on clean runs, never at-or-below
@@ -893,6 +894,7 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
 }
 
 #[tokio::test]
+#[ignore = "soak: full-run temporal-marking and exact-fee audit; pre-fill flatness is pinned by smoke tests every run; run via `make test-heavy`"]
 async fn soak_real_run_marks_temporally_with_exact_fees() {
     // Re-soak under the corrected equity and quote-config paths: a real run
     // over history must mark pre-fill bars at zero, price the first fill at

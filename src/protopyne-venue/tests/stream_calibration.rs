@@ -206,6 +206,7 @@ impl StreamCalibrationTally {
 /// the consumer aborts the reconnected generation. Drops bank with reasons;
 /// the breaker banks nothing but one clean restart.
 #[tokio::test]
+#[ignore = "soak: full-generation jitter untripped audit; blip/drop branches are pinned by smoke tests every run; run via `make test-heavy`"]
 async fn jitter_soak_stays_untripped() {
     let stream = SupervisedStream::new(production_config());
     let mut messages = Vec::new();
@@ -312,6 +313,7 @@ async fn single_blips_stay_untripped() {
 /// pump's skip policy across a full generation; skips bank, the breaker
 /// stays untripped, and one post-soak blip still arms without tripping.
 #[tokio::test]
+#[ignore = "soak: full-generation lag-skip untripped audit; run via `make test-heavy`"]
 async fn lag_skip_soak_stays_untripped() {
     let stream = SupervisedStream::new(production_config());
     let messages: Vec<String> = (0..8)

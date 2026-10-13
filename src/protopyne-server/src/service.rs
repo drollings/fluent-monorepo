@@ -38,8 +38,13 @@ use protopyne_strategy::{
     PortfolioThresholds, ProposalState, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
 };
+use protopyne_chart_model::{ChartRow, row_of};
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{Position, StateHandle, TradingState};
+use protopyne_view::{
+    ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
+    PortfolioView, PositionView, ProposalView, WorstCase,
+};
 
 use crate::error::ServerError;
 use crate::runner::{BacktestRun, RunnerConfig, run_backtest};
@@ -125,91 +130,76 @@ impl WorkUnit for ServerConfig {
 
 impl_component!(ServerConfig);
 
-/// One inbox row: what the strategy proposed and where it stands.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ProposalView {
-    /// Stable proposal identifier.
-    pub id: String,
-    /// Strategy attribution.
-    pub strategy: String,
-    /// Underlying symbol.
-    pub underlying: String,
-    /// Direction of exposure.
-    pub direction: Direction,
-    /// Option structure.
-    pub structure: StructureKind,
-    /// Limit price submitted.
-    pub limit_price: Money,
-    /// Signal conviction of the bundled preview signal.
-    pub conviction: f64,
-    /// Lifecycle state after the preview run.
-    pub state: ProposalState,
-}
-
-/// Aggregate portfolio over the latest preview run.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PortfolioView {
-    /// Net positions by underlying.
-    pub positions: Vec<Position>,
-    /// Orders filled in the latest run.
-    pub filled_orders: u64,
-    /// Commission paid in the latest run.
-    pub total_fees: Money,
-    /// Net signed contracts across positions.
-    pub open_contracts: i64,
-    /// Trading state when the view was published: halt/resume status rides
-    /// the existing portfolio route (additive — older readers ignore it).
-    pub trading_state: TradingState,
-}
-
-impl Default for PortfolioView {
-    fn default() -> Self {
-        Self {
-            positions: Vec::new(),
-            filled_orders: 0,
-            total_fees: Money::from(0),
-            open_contracts: 0,
-            // Views boot allowing everything, matching a fresh session.
-            trading_state: TradingState::Enabled,
-        }
+/// Display-enum bridges: the one home mapping domain enums to their stable
+/// wire tags. Exhaustive matches, so a new variant breaks the build until
+/// its tag is decided — tags can never silently drift. The cast is one-way:
+/// nothing parses tags back into domain enums.
+fn direction_tag(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Long => "Long",
+        Direction::Short => "Short",
     }
 }
 
-/// Last operator command the service observed: halt, resume, close-all, or
-/// cancel-all status for the existing routes to report. Commands themselves
-/// enter through the journaled command plane; this is the read-only echo.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct CommandStatus {
-    /// Command kind (`halt`, `resume`, `close_all`, `cancel_all`).
-    pub kind: String,
-    /// Human-readable outcome.
-    pub detail: String,
-    /// Outcome time in epoch milliseconds.
-    pub at_ms: i64,
+/// See [`direction_tag`]: option-structure tags.
+fn structure_tag(structure: StructureKind) -> &'static str {
+    match structure {
+        StructureKind::Single => "Single",
+        StructureKind::Vertical => "Vertical",
+        StructureKind::Calendar => "Calendar",
+        StructureKind::Condor => "Condor",
+        StructureKind::NakedShort => "NakedShort",
+    }
 }
 
-/// Worst-case exposure of an armed grant, shown before confirmation.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct WorstCase {
-    /// Maximum trades authorized.
-    pub max_trades: u32,
-    /// Maximum contracts authorized.
-    pub max_contracts: u32,
-    /// Maximum committed loss authorized.
-    pub max_loss: Money,
-    /// Maximum committed notional authorized.
-    pub max_notional: Money,
+/// See [`direction_tag`]: proposal-lifecycle tags.
+fn proposal_state_tag(state: ProposalState) -> &'static str {
+    match state {
+        ProposalState::Proposed => "Proposed",
+        ProposalState::RiskChecked => "RiskChecked",
+        ProposalState::AutoApproved => "AutoApproved",
+        ProposalState::PendingHuman => "PendingHuman",
+        ProposalState::Approved => "Approved",
+        ProposalState::Rejected => "Rejected",
+        ProposalState::Expired => "Expired",
+        ProposalState::Submitted => "Submitted",
+        ProposalState::Working => "Working",
+        ProposalState::Filled => "Filled",
+        ProposalState::Partial => "Partial",
+        ProposalState::Cancelled => "Cancelled",
+    }
 }
 
-/// Response to a successful arming.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ArmResponse {
-    /// Grant identifier armed.
-    pub grant_id: String,
-    /// Worst case if every budget is consumed at its limit.
-    pub worst_case: WorstCase,
-    /// Always true on success.
-    pub armed: bool,
+/// See [`direction_tag`]: trading-state tags.
+fn trading_state_tag(state: TradingState) -> &'static str {
+    match state {
+        TradingState::Enabled => "Enabled",
+        TradingState::Disabled => "Disabled",
+        TradingState::ExitOnly => "ExitOnly",
+    }
+}
+
+/// Map one position to its view: strings restored at the boundary so the
+/// wire shape is unchanged.
+fn position_view(position: &Position) -> PositionView {
+    PositionView {
+        underlying: position.underlying.clone(),
+        quantity: position.quantity,
+        avg_price: position.avg_price,
+    }
+}
+
+/// Map one chart row to its view bar: field-identical, position for
+/// position.
+fn chart_bar_of(row: &ChartRow) -> ChartBar {
+    ChartBar {
+        time: row.time,
+        open: row.open,
+        high: row.high,
+        low: row.low,
+        close: row.close,
+        volume: row.volume,
+    }
 }
 
 /// Preview request parameters.
@@ -220,21 +210,18 @@ pub struct PreviewParams {
     pub seed: u64,
 }
 
-/// One deny reason and how many bars it kept out of the venue.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct DenyCount {
-    /// The reason, as recorded on the decision.
-    pub reason: String,
-    /// Bars carrying this reason.
-    pub bars: u64,
-}
-
 /// Preview outcome: the run plus why bars did not trade.
 ///
 /// The histogram reports outcome counts (a property of the run), never a
 /// confidence score: nothing here measures a component's self-doubt, and
 /// nothing fires on these counts. Authorization behavior is unchanged — the
 /// same grants produce the same verdicts, now with visible reasons.
+///
+/// The response type stays server-local on purpose: the typed run tree
+/// (manifest, per-bar verdicts, report) is core-owned, and a neutral copy
+/// would be a second implementation. The histogram legs ride the neutral
+/// [`DenyCount`] DTO; the run serializes exactly as before, which the
+/// golden proves byte-for-byte.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PreviewResponse {
     /// The backtest run, unchanged in shape.
@@ -242,52 +229,6 @@ pub struct PreviewResponse {
     /// Deny reasons across the run, most frequent first.
     #[serde(default)]
     pub deny_histogram: Vec<DenyCount>,
-}
-
-/// One Lightweight-Charts candle row.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct CandleRow {
-    /// Bar close time as epoch seconds.
-    pub time: i64,
-    /// Open as chart-native float.
-    pub open: f64,
-    /// High as chart-native float.
-    pub high: f64,
-    /// Low as chart-native float.
-    pub low: f64,
-    /// Close as chart-native float.
-    pub close: f64,
-    /// Traded volume.
-    pub volume: u64,
-}
-
-/// Chart bars payload: rows plus how many bars never made it.
-///
-/// A wrapper (not a header) so JSON clients read one shape.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ChartBars {
-    /// Chartable bars in history order.
-    pub rows: Vec<CandleRow>,
-    /// Bars skipped for non-finite or unrepresentable floats.
-    #[serde(default)]
-    pub dropped: u64,
-}
-
-/// One overlay series (indicator values aligned with chart bars).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct OverlaySeries {
-    /// Kernel id (`sma`, `ema`, `bb`, or `trima`).
-    pub kind: String,
-    /// Averaging length.
-    pub period: i64,
-    /// Per-bar values (`None` inside warmup, or where the bar's close has
-    /// no chart float). Indices always match bar indices — values are never
-    /// dropped, so rows and overlays agree positionally.
-    pub values: Vec<Option<f64>>,
-    /// Bars without a value (unrepresentable close), mirroring
-    /// `ChartBars.dropped`: counted, never shifted.
-    #[serde(default)]
-    pub dropped: u64,
 }
 
 /// Machine-readable error body.
@@ -300,10 +241,10 @@ pub struct ErrorBody {
 /// Shared server state behind one `Arc`.
 pub struct AppState {
     limiter: Limiter,
-    history: Vec<Bar>,
-    inbox: Mutex<Vec<ProposalView>>,
+    pub(crate) history: Vec<Bar>,
+    pub(crate) inbox: Mutex<Vec<ProposalView>>,
     armed: Mutex<Option<Grant>>,
-    portfolio: Mutex<PortfolioView>,
+    pub(crate) portfolio: Mutex<PortfolioView>,
     feed: broadcast::Sender<String>,
     /// Command-plane authority the bars gate on: shared ownership so an
     /// operator plane driving the same handle halts and resumes this
@@ -313,7 +254,7 @@ pub struct AppState {
     last_command: Mutex<Option<CommandStatus>>,
 }
 
-type Shared = Arc<AppState>;
+pub(crate) type Shared = Arc<AppState>;
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorBody>)>;
 
 fn api_error(status: StatusCode, message: impl Into<String>) -> (StatusCode, Json<ErrorBody>) {
@@ -401,17 +342,22 @@ fn validate_grant(grant: &Grant) -> Result<(), String> {
 
 /// Liveness plus command-plane status: the trading state (halt/resume) and
 /// the last operator command ride the existing health route — additive
-/// fields, no new route, no new auth.
-async fn health(State(state): State<Shared>) -> Json<serde_json::Value> {
+/// fields, no new route, no new auth. The DTO's alphabetical field order
+/// reproduces the historical sorted-key bytes exactly (golden-pinned).
+pub(crate) fn health_view(state: &Shared) -> HealthView {
     let trading = state.trading_state.get();
-    Json(serde_json::json!({
-        "status": "ok",
-        "version": env!("CARGO_PKG_VERSION"),
-        "trading_state": trading,
-        "allows_entries": trading.allows(false),
-        "allows_exits": trading.allows(true),
-        "last_command": common_core::sync::lock(&state.last_command).clone(),
-    }))
+    HealthView {
+        allows_entries: trading.allows(false),
+        allows_exits: trading.allows(true),
+        last_command: common_core::sync::lock(&state.last_command).clone(),
+        status: "ok".to_owned(),
+        trading_state: trading_state_tag(trading).to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+    }
+}
+
+async fn health(State(state): State<Shared>) -> Json<HealthView> {
+    Json(health_view(&state))
 }
 
 async fn proposals(State(state): State<Shared>) -> Json<Vec<ProposalView>> {
@@ -505,15 +451,16 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
                 id: decision.proposal_id.clone(),
                 strategy: "ribbon".to_owned(),
                 underlying: "SPY".to_owned(),
-                direction,
-                structure: StructureKind::Vertical,
+                direction: direction_tag(direction).to_owned(),
+                structure: structure_tag(StructureKind::Vertical).to_owned(),
                 limit_price: decision.limit_price,
                 conviction: 0.8,
-                state: if decision.submitted {
+                state: proposal_state_tag(if decision.submitted {
                     ProposalState::Filled
                 } else {
                     ProposalState::Proposed
-                },
+                })
+                .to_owned(),
             });
         }
     }
@@ -547,9 +494,9 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             entry.2 += 1;
         }
     }
-    let trading_state = state.trading_state.get();
+    let trading_state = trading_state_tag(state.trading_state.get()).to_owned();
     let mut portfolio = common_core::sync::lock(&state.portfolio);
-    let mut positions: Vec<Position> = positions
+    let mut positions: Vec<PositionView> = positions
         .into_iter()
         .map(|(key, (quantity, price_sum, count))| {
             let avg = if count == 0 {
@@ -558,7 +505,9 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
                 Money::new(price_sum / rust_decimal::Decimal::from(count))
             };
             let underlying = symbols.resolve(key).unwrap_or("SPY").to_owned();
-            Position::new().underlying(underlying).quantity(quantity).avg_price(avg).build()
+            position_view(
+                &Position::new().underlying(underlying).quantity(quantity).avg_price(avg).build(),
+            )
         })
         .collect();
     positions.sort_by(|left, right| left.underlying.cmp(&right.underlying));
@@ -569,17 +518,27 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     portfolio.trading_state = trading_state;
 }
 
-async fn arm(
-    State(state): State<Shared>,
-    Json(grant): Json<Grant>,
-) -> Result<Json<ArmResponse>, (StatusCode, Json<ErrorBody>)> {
-    validate_grant(&grant).map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+/// The live armed grant, if any. The gateway's patch path reads through
+/// this (never the field) so the lock discipline stays in this module.
+pub(crate) fn live_grant(state: &Shared) -> Option<Grant> {
+    common_core::sync::lock(&state.armed).clone()
+}
+
+/// Shared arm logic for the route and the gateway: validate, enforce
+/// tighten-only against the live grant, then store. The `Err` status rides
+/// along so both callers map the same refusal the same way.
+pub(crate) fn apply_arm(
+    state: &Shared,
+    grant: Grant,
+) -> Result<ArmResponse, (StatusCode, String)> {
+    validate_grant(&grant).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let mut armed = common_core::sync::lock(&state.armed);
     if let Some(current) = armed.clone() {
         if !is_tightening(&grant, &current) {
-            return Err(api_error(
+            return Err((
                 StatusCode::CONFLICT,
-                "arming must tighten or revoke: loosening needs a new grant after revocation",
+                "arming must tighten or revoke: loosening needs a new grant after revocation"
+                    .to_owned(),
             ));
         }
     }
@@ -589,7 +548,16 @@ async fn arm(
         armed: true,
     };
     *armed = Some(grant);
-    Ok(Json(response))
+    Ok(response)
+}
+
+async fn arm(
+    State(state): State<Shared>,
+    Json(grant): Json<Grant>,
+) -> Result<Json<ArmResponse>, (StatusCode, Json<ErrorBody>)> {
+    apply_arm(&state, grant)
+        .map(Json)
+        .map_err(|(status, reason)| api_error(status, reason))
 }
 
 async fn current_grant(State(state): State<Shared>) -> ApiResult<Option<Grant>> {
@@ -604,32 +572,22 @@ fn decimal_to_chart(value: rust_decimal::Decimal) -> Option<f64> {
     protopyne_chart_model::to_display_float(value)
 }
 
-async fn chart_bars(State(state): State<Shared>) -> Json<ChartBars> {
-    let mut rows = Vec::with_capacity(state.history.len());
+/// Chart bars over history: converted rows mapped to view bars, with the
+/// shared skip policy counting drops. Shared by the route and the gateway.
+pub(crate) fn chart_bars_of(history: &[Bar]) -> ChartBars {
+    let mut rows = Vec::with_capacity(history.len());
     let mut dropped = 0u64;
-    for bar in &state.history {
-        match candle_row_of(bar) {
-            Some(row) => rows.push(row),
+    for bar in history {
+        match row_of(bar) {
+            Some(row) => rows.push(chart_bar_of(&row)),
             None => dropped += 1,
         }
     }
-    Json(ChartBars { rows, dropped })
+    ChartBars { rows, dropped }
 }
 
-/// One chartable bar, or `None` when a leg has no finite chart float.
-/// Conversion runs through the shared headless helper so the HTTP edge and
-/// every future native view share one skip policy; the row shape stays the
-/// public chart-data contract.
-fn candle_row_of(bar: &Bar) -> Option<CandleRow> {
-    let row = protopyne_chart_model::row_of(bar)?;
-    Some(CandleRow {
-        time: row.time,
-        open: row.open,
-        high: row.high,
-        low: row.low,
-        close: row.close,
-        volume: row.volume,
-    })
+async fn chart_bars(State(state): State<Shared>) -> Json<ChartBars> {
+    Json(chart_bars_of(&state.history))
 }
 
 /// Overlay query: `kind` is `sma`, `ema`, `bb` (mid), or `trima`; `period`
@@ -659,61 +617,67 @@ fn align_overlay(
     values
 }
 
-async fn chart_overlay(
-    State(state): State<Shared>,
-    Query(query): Query<OverlayQuery>,
-) -> Result<Json<OverlaySeries>, (StatusCode, Json<ErrorBody>)> {
-    if query.period < 1 || query.period > 500 {
-        return Err(api_error(StatusCode::BAD_REQUEST, "period must be within [1, 500]"));
+/// Overlay series over history, shared by the route and the gateway.
+/// Refuses unknown kinds, out-of-range periods, and unchartable closes.
+/// Per-bar closes run through the shared display-float policy: a bar whose
+/// close has no chart float keeps its index with a `None` value instead of
+/// shifting every later bar. The `Err` status rides along so both callers
+/// map the same refusal the same way.
+pub(crate) fn overlay_series_of(
+    history: &[Bar],
+    kind: &str,
+    period: i64,
+    mult: f64,
+) -> Result<OverlaySeries, (StatusCode, String)> {
+    if !(1..=500).contains(&period) {
+        return Err((StatusCode::BAD_REQUEST, "period must be within [1, 500]".to_owned()));
     }
-    // Per-bar closes through the shared display-float policy: a bar whose
-    // close has no chart float keeps its index with a `None` value instead
-    // of shifting every later bar (the same count-don't-shift policy as the
-    // bar rows). The kernel runs over the representable closes and values
-    // scatter back to their bar indices.
-    let mut closes: Vec<f64> = Vec::with_capacity(state.history.len());
-    let mut positions: Vec<usize> = Vec::with_capacity(state.history.len());
-    for (index, bar) in state.history.iter().enumerate() {
+    let mut closes: Vec<f64> = Vec::with_capacity(history.len());
+    let mut positions: Vec<usize> = Vec::with_capacity(history.len());
+    for (index, bar) in history.iter().enumerate() {
         if let Some(close) = decimal_to_chart(bar.c) {
             positions.push(index);
             closes.push(close);
         }
     }
     if closes.is_empty() {
-        return Err(api_error(StatusCode::SERVICE_UNAVAILABLE, "no chartable closes"));
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "no chartable closes".to_owned()));
     }
     let frame = Ohlcv::close_only(&closes);
-    let period = ParamSet::new().with_int("length", query.period);
-    let computed = match query.kind.as_str() {
-        "sma" => SmaIndicator::new()
-            .batch(&frame, &period)
-            .map(|result| result.values),
-        "ema" => EmaIndicator::new()
-            .batch(&frame, &period)
-            .map(|result| result.values),
+    let params = ParamSet::new().with_int("length", period);
+    let computed = match kind {
+        "sma" => SmaIndicator::new().batch(&frame, &params).map(|result| result.values),
+        "ema" => EmaIndicator::new().batch(&frame, &params).map(|result| result.values),
         // Chartable overlaps only: `bb` serves its mid (the primary leg),
         // `trima` its single output. Momentum, volume, and statistic kernels
         // are not price-chartable and stay refused below.
         "bb" => BbIndicator::new()
-            .batch(&frame, &period.clone().with_float("mult", query.mult.unwrap_or(2.0)))
+            .batch(&frame, &params.clone().with_float("mult", mult))
             .map(|result| result.values),
-        "trima" => TrimaIndicator::new()
-            .batch(&frame, &period)
-            .map(|result| result.values),
+        "trima" => TrimaIndicator::new().batch(&frame, &params).map(|result| result.values),
         _ => {
-            return Err(api_error(
+            return Err((
                 StatusCode::BAD_REQUEST,
-                "kind must be one of 'sma', 'ema', 'bb', 'trima'",
+                "kind must be one of 'sma', 'ema', 'bb', 'trima'".to_owned(),
             ));
         }
     }
-    .map_err(|e| api_error(StatusCode::BAD_REQUEST, e.to_string()))?;
-    let values = align_overlay(state.history.len(), &positions, &computed);
-    let dropped = (state.history.len() - closes.len()) as u64;
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let values = align_overlay(history.len(), &positions, &computed);
+    let dropped = (history.len() - closes.len()) as u64;
     // `values` is full-length by construction; the debug assert pins the
     // contract the native terminal relies on (rows and overlays agree).
-    debug_assert_eq!(values.len(), state.history.len());
-    Ok(Json(OverlaySeries { kind: query.kind, period: query.period, values, dropped }))
+    debug_assert_eq!(values.len(), history.len());
+    Ok(OverlaySeries { kind: kind.to_owned(), period, values, dropped })
+}
+
+async fn chart_overlay(
+    State(state): State<Shared>,
+    Query(query): Query<OverlayQuery>,
+) -> Result<Json<OverlaySeries>, (StatusCode, Json<ErrorBody>)> {
+    overlay_series_of(&state.history, &query.kind, query.period, query.mult.unwrap_or(2.0))
+        .map(Json)
+        .map_err(|(status, reason)| api_error(status, reason))
 }
 
 async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl IntoResponse {
@@ -770,9 +734,17 @@ pub struct ServerHandle {
     pub addr: SocketAddr,
     serve: tokio::task::JoinHandle<()>,
     scope: Scope,
+    state: Shared,
 }
 
 impl ServerHandle {
+    /// Read gateway over the live state: the same views the routes serve,
+    /// without the HTTP hop (the gateway-route parity surface).
+    #[must_use]
+    pub fn gateway(&self) -> crate::gateway::ServerGateway {
+        crate::gateway::ServerGateway::new(Arc::clone(&self.state))
+    }
+
     /// Stop serving: close the feed scope, then stop the listener task.
     pub async fn shutdown(self) {
         let mut scope = self.scope;
@@ -875,9 +847,13 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
     let serve = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
-    Ok(ServerHandle { addr, serve, scope })
+    Ok(ServerHandle { addr, serve, scope, state })
 }
 
 #[cfg(test)]
 #[path = "../tests/api.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/views_golden.rs"]
+mod views_golden_tests;

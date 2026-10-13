@@ -21,7 +21,7 @@ fn valid_chart() -> ChartDef {
                     "depends": [
                         { "kind": "capability", "name": "repro_plan" }
                     ],
-                    "template": "root cause {{ upstream.reproduce.output }}",
+                    "template": "root cause {{ upstream.reproduce.output | tojson }}",
                     "essential": true
                 },
                 {
@@ -38,7 +38,7 @@ fn valid_chart() -> ChartDef {
                           },
                           "required": true }
                     ],
-                    "template": "fix {{ upstream.root_cause.output }}",
+                    "template": "fix {{ upstream.root_cause.output | tojson }}",
                     "essential": true
                 }
             ]

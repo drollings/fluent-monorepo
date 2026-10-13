@@ -86,6 +86,151 @@ fn identical_nan_payloads_stay_cached() {
 }
 
 #[test]
+fn none_and_all_bits_nan_hash_distinctly() {
+    let all_bits_nan = f64::from_bits(u64::MAX);
+    assert!(all_bits_nan.is_nan(), "all-bits-set is a NaN payload");
+    assert_ne!(
+        series_hash(&[None]),
+        series_hash(&[Some(all_bits_nan)]),
+        "a hole hashes distinctly from every resolved NaN payload"
+    );
+}
+
+#[test]
+fn none_vs_resolved_nan_is_a_content_change() {
+    let all_bits_nan = f64::from_bits(u64::MAX);
+    let mut cache = PaneCache::new();
+    let key = cache_key("sentinel", 3);
+    let first = cache.publish(key, vec![None]);
+    let second = cache.publish(key, vec![Some(all_bits_nan)]);
+    assert!(second > first, "hole vs resolved NaN republishes instead of backdating");
+}
+
+#[test]
+fn distinct_nan_payloads_hash_distinctly_and_backdate() {
+    const PAYLOADS: [u64; 4] =
+        [0x7FF0_0000_0000_0001, 0x7FF8_0000_0000_0000, 0x7FFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF];
+    let hashes: Vec<u64> =
+        PAYLOADS.iter().map(|bits| series_hash(&[Some(f64::from_bits(*bits))])).collect();
+    for (index, first) in hashes.iter().enumerate() {
+        for second in hashes.iter().skip(index + 1) {
+            assert_ne!(first, second, "distinct NaN payloads hash distinctly");
+        }
+    }
+    for bits in PAYLOADS {
+        let nan = f64::from_bits(bits);
+        assert!(nan.is_nan(), "{bits:#018x} is a NaN payload");
+        let mut cache = PaneCache::new();
+        let key = cache_key("nan", bits);
+        let first = cache.publish(key, vec![Some(nan), None, Some(1.0)]);
+        let second = cache.publish(key, vec![Some(nan), None, Some(1.0)]);
+        assert_eq!(first, second, "bit-identical NaN payload {bits:#018x} backdates");
+    }
+}
+
+const _: () = assert!(DEFAULT_PANE_CACHE_CAPACITY > 0, "the default holds a frame's working set");
+
+#[test]
+fn zero_capacity_refuses_with_reason() {
+    let err = PaneCache::with_capacity(0).expect_err("zero capacity refuses");
+    assert!(err.to_string().contains("capacity"), "refusal names capacity: {err}");
+    assert_eq!(PaneCache::new().capacity(), DEFAULT_PANE_CACHE_CAPACITY);
+}
+
+#[test]
+fn pinned_working_set_never_misses_across_a_publish_burst() {
+    let mut cache = PaneCache::with_capacity(3).expect("non-zero capacity");
+    let working = [cache_key("price", 1), cache_key("ribbon", 1)];
+    assert!(working.len() < cache.capacity(), "working set fits with headroom");
+    let price_rev = cache.publish(working[0], vec![Some(1.0), None]);
+    let ribbon_rev = cache.publish(working[1], vec![Some(2.0), Some(3.0)]);
+    for round in 0..10_u64 {
+        cache.pin(&working);
+        assert_eq!(cache.publish(working[0], vec![Some(1.0), None]), price_rev, "price backdates");
+        assert_eq!(
+            cache.publish(working[1], vec![Some(2.0), Some(3.0)]),
+            ribbon_rev,
+            "ribbon backdates"
+        );
+        cache.publish(cache_key("scratch", round), vec![Some(round as f64)]);
+    }
+    let price = cache.get(working[0]).expect("pinned price stays resident");
+    assert_eq!(price.revision, price_rev);
+    let ribbon = cache.get(working[1]).expect("pinned ribbon stays resident");
+    assert_eq!(ribbon.revision, ribbon_rev);
+}
+
+#[test]
+fn evicted_key_reads_as_miss_never_stale() {
+    let mut cache = PaneCache::with_capacity(2).expect("non-zero capacity");
+    let (first, second, third) = (cache_key("price", 1), cache_key("ribbon", 1), cache_key("delta", 1));
+    let first_rev = cache.publish(first, vec![Some(1.0)]);
+    cache.publish(second, vec![Some(2.0)]);
+    cache.publish(third, vec![Some(3.0)]);
+    assert!(cache.get(first).is_none(), "evicted key is a miss, never a stale revision");
+    assert_eq!(cache.get(second).expect("resident").values, vec![Some(2.0)]);
+    assert_eq!(cache.get(third).expect("resident").values, vec![Some(3.0)]);
+    let revived = cache.publish(first, vec![Some(1.0)]);
+    assert!(revived > first_rev, "republished key starts a fresh revision");
+}
+
+#[test]
+fn eviction_is_deterministic_for_a_fixed_access_sequence() {
+    fn run() -> (Option<u64>, Option<u64>, Option<u64>, usize) {
+        let mut cache = PaneCache::with_capacity(2).expect("non-zero capacity");
+        let (a, b, c) = (cache_key("a", 0), cache_key("b", 0), cache_key("c", 0));
+        cache.publish(a, vec![Some(1.0)]);
+        cache.publish(b, vec![Some(2.0)]);
+        cache.pin(&[a]);
+        cache.publish(c, vec![Some(3.0)]);
+        let revision = |key| cache.get(key).map(|entry| entry.revision);
+        (revision(a), revision(b), revision(c), cache.len())
+    }
+    let (a_rev, b_rev, c_rev, len) = run();
+    assert_eq!((a_rev, b_rev, c_rev, len), run(), "same sequence evicts the same key");
+    assert!(a_rev.is_some() && c_rev.is_some(), "pinned and fresh keys stay resident");
+    assert!(b_rev.is_none(), "the untouched key is the one evicted");
+    assert_eq!(len, 2, "bounded at capacity");
+}
+
+/// Calibration control (task value: residency): under churn past capacity,
+/// every read is a miss or the last-published revision — never stale.
+/// Survivors keep their exact revisions; the evicted key misses; the control
+/// pair is unpinned churn (below) against the pinned working set.
+#[test]
+fn churn_past_capacity_never_serves_stale() {
+    let mut cache = PaneCache::with_capacity(2).expect("non-zero capacity");
+    let keys = [cache_key("a", 0), cache_key("b", 0), cache_key("c", 0)];
+    let mut last_values: [Vec<Option<f64>>; 3] = [vec![], vec![], vec![]];
+    let mut last_revisions = [0_u64; 3];
+    for round in 0..12_u64 {
+        let slot = round as usize % keys.len();
+        let values = vec![Some(round as f64)];
+        last_revisions[slot] = cache.publish(keys[slot], values.clone());
+        last_values[slot] = values;
+        for (index, key) in keys.iter().enumerate() {
+            match cache.get(*key) {
+                None => {}
+                Some(entry) => {
+                    assert_eq!(entry.values, last_values[index], "no stale values");
+                    assert_eq!(entry.revision, last_revisions[index], "no stale revision");
+                }
+            }
+        }
+    }
+    assert_eq!(cache.len(), 2, "bounded at capacity");
+    // The first eviction drops the least-recently-used key only: `a`
+    // published first is LRU once `b` lands, so `c` evicts `a` while `b`
+    // keeps the revision its publish returned.
+    let mut probe = PaneCache::with_capacity(2).expect("non-zero capacity");
+    probe.publish(keys[0], vec![Some(1.0)]);
+    let rev_b = probe.publish(keys[1], vec![Some(2.0)]);
+    probe.publish(keys[2], vec![Some(3.0)]);
+    assert!(probe.get(keys[0]).is_none(), "only the untouched key evicts");
+    assert_eq!(probe.get(keys[1]).expect("resident").revision, rev_b);
+}
+
+#[test]
 fn cache_keys_are_deterministic_and_sensitive() {
     let first = cache_key("ribbon", 0xA5A5);
     assert_eq!(first, cache_key("ribbon", 0xA5A5), "same inputs key identically");

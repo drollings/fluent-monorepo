@@ -192,7 +192,7 @@ fn graph_satisfied_capability_does_not_fail_closed() {
         Arc::new(Limiter::new(4)),
         "root_cause",
         "bug_triage",
-        "Using the plan {{ upstream.reproduce.output }}, find the cause.",
+        "Using the plan {{ upstream.reproduce.output | tojson }}, find the cause.",
         vec![DepSpec::Capability {
             name: "repro_plan".into(),
         }],

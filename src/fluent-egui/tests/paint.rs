@@ -141,13 +141,19 @@ fn threshold_rules_mirror_about_zero() {
 }
 
 #[test]
-fn theme_colors_resolve_and_fall_back_softly() {
+fn theme_colors_resolve_to_their_slots() {
+    // The silent gray fallback is gone (declared behavior change): known keys
+    // resolve to their parsed slots, and the refusal pins live in
+    // `resolve_color_errors_visibly` below.
     let theme = ThemeConfig::default();
-    assert_eq!(theme_color(&theme, "bull"), egui::Color32::from_rgb(0x20, 0xB4, 0x6C));
-    assert_eq!(theme_color(&theme, "bear"), egui::Color32::from_rgb(0xB4, 0x20, 0x20));
-    assert_eq!(theme_color(&theme, "no_such_key"), egui::Color32::GRAY);
-    let broken = ThemeConfig::new().bull("red".to_owned()).build();
-    assert_eq!(theme_color(&broken, "bull"), egui::Color32::GRAY, "paint never panics");
+    assert_eq!(
+        resolve_color(&theme, "bull").expect("known key resolves"),
+        egui::Color32::from_rgb(0x20, 0xB4, 0x6C)
+    );
+    assert_eq!(
+        resolve_color(&theme, "bear").expect("known key resolves"),
+        egui::Color32::from_rgb(0xB4, 0x20, 0x20)
+    );
 }
 
 #[test]
@@ -193,6 +199,39 @@ fn pivot_price_dots_sit_on_bar_extremes() {
 }
 
 #[test]
+fn off_window_zero_line_is_refused() {
+    // A pane that does not span zero has no zero line to hang delta bars
+    // from: the oscillator/delta zero path refuses rather than extrapolating.
+    let positive = Viewport::new(PriceScaleMode::Normal, 10.0, 20.0, 200.0, 8.0, 10.0, false)
+        .expect("valid viewport");
+    let delta = DeltaView { buy_top: vec![Some(5.0)], sell_bottom: vec![Some(5.0)] };
+    assert!(delta_bar_geoms(&delta, &positive).is_err(), "zero off-window refuses");
+    // The inverse direction agrees: an off-pane pixel has no price.
+    assert_eq!(positive.y_to_price(-1.0), None, "off-pane pixel refuses");
+    assert_eq!(positive.y_to_price(201.0), None, "off-pane pixel refuses");
+}
+
+#[test]
+fn threshold_rules_refuse_off_window_values() {
+    let pane = price_pane(); // window 90..110
+    assert!(threshold_line(100.0, &pane).is_some(), "in-window rule maps");
+    assert_eq!(threshold_line(500.0, &pane), None, "above-window rule draws nothing");
+    assert_eq!(threshold_line(1.0, &pane), None, "below-window rule draws nothing");
+}
+
+#[test]
+fn pivot_price_dots_skip_off_window_extremes() {
+    let pane = price_pane(); // window 90..110
+    let marks =
+        vec![PivotMark { index: 0, side: PivotSide::High }, PivotMark { index: 1, side: PivotSide::High }];
+    // Bar 0's high (120) runs off the window; bar 1's high (101) is in-window.
+    let rows = vec![ChartRow { high: 120.0, ..row(100.0, 10) }, ChartRow { high: 101.0, ..row(100.0, 10) }];
+    let dots = pivot_price_dots(&marks, &rows, &pane);
+    assert_eq!(dots.len(), 1, "only the in-window extreme decorates");
+    assert_eq!(dots[0].index, 1);
+}
+
+#[test]
 fn transparency_maps_percent_to_byte_opacity() {
     assert_eq!(opacity_from_transparency(0.0), 255, "zero transparency is opaque");
     assert_eq!(opacity_from_transparency(100.0), 0, "full transparency is invisible");
@@ -207,5 +246,45 @@ fn transparency_maps_percent_to_byte_opacity() {
         opacity_from_transparency(f64::NAN),
         255,
         "non-finite transparency stays visible, never silently vanishes"
+    );
+}
+
+#[test]
+fn crosshair_spans_snap_to_the_readout_pixel() {
+    use crate::hittest::Crosshair;
+    let pane = price_pane();
+    let readout = Crosshair { index: 3, price: 100.0 };
+    let lines = crosshair_lines(&readout, &pane, 320.0, 400.0).expect("readout maps");
+    let pixel = crate::hittest::crosshair_pixel(&readout, &pane).expect("readout maps");
+    assert_eq!(lines.x.to_bits(), pixel.0.to_bits(), "span x is the snapped bar pixel");
+    assert_eq!(lines.y.to_bits(), pixel.1.to_bits(), "span y is the snapped price pixel");
+    assert_eq!((lines.left, lines.right, lines.top, lines.bottom), (0.0, 320.0, 0.0, 400.0));
+    assert!(
+        crosshair_lines(&Crosshair { index: 0, price: f64::NAN }, &pane, 320.0, 400.0).is_none(),
+        "unmappable price yields no spans"
+    );
+    assert!(
+        crosshair_lines(&readout, &pane, 0.0, 400.0).is_none(),
+        "degenerate extents yield no spans"
+    );
+}
+
+#[test]
+fn resolve_color_errors_visibly() {
+    // Known keys resolve to their parsed `#RRGGBB` slot; nothing here falls
+    // back to a silent default.
+    let theme = ThemeConfig::new().bull("#112233".to_owned()).build();
+    let color = resolve_color(&theme, "bull").expect("known key resolves");
+    assert_eq!((color.r(), color.g(), color.b(), color.a()), (0x11, 0x22, 0x33, 255));
+    let missing = resolve_color(&theme, "nope").expect_err("missing key refuses");
+    assert!(
+        missing.to_string().contains("nope"),
+        "missing-key reason names the key: {missing}"
+    );
+    let bad = ThemeConfig::new().bull("red".to_owned()).build();
+    let malformed = resolve_color(&bad, "bull").expect_err("malformed slot refuses");
+    assert!(
+        malformed.to_string().contains("bull"),
+        "malformed-slot reason names the key: {malformed}"
     );
 }

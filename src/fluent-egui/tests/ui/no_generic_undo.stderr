@@ -1,0 +1,5 @@
+error[E0433]: cannot find `AnnotationHistory` in `fluent_egui`
+  --> tests/ui/no_generic_undo.rs:13:33
+   |
+13 |     let _history = fluent_egui::AnnotationHistory::<JournalRow>::default();
+   |                                 ^^^^^^^^^^^^^^^^^ could not find `AnnotationHistory` in `fluent_egui`

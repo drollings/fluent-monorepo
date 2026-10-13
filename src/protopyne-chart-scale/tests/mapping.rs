@@ -82,6 +82,59 @@ fn non_finite_prices_do_not_map() {
 }
 
 #[test]
+fn in_pane_round_trips_and_off_pane_refuses() {
+    for (mode, min, max) in [
+        (PriceScaleMode::Normal, 90.0, 110.0),
+        (PriceScaleMode::Logarithmic, 90.0, 110.0),
+        (PriceScaleMode::Percentage, 90.0, 110.0),
+        (PriceScaleMode::IndexedTo100, 90.0, 110.0),
+    ] {
+        let mapping = scale(mode, min, max);
+        for step in 0..=20 {
+            let price = min + (max - min) * f64::from(step) / 20.0;
+            let y = mapping.price_to_y(price).expect("in-pane price maps");
+            let back = mapping.y_to_price(y).expect("in-pane pixel inverts");
+            let tolerance = price.abs() * 1e-3 + 1e-6;
+            assert!((back - price).abs() <= tolerance, "{mode:?}: {price} -> {y} -> {back}");
+        }
+        // The pane is exactly `0..=height`; both edges invert, either side refuses.
+        assert!(mapping.y_to_price(0.0).is_some(), "{mode:?} top edge inverts");
+        assert!(mapping.y_to_price(400.0).is_some(), "{mode:?} bottom edge inverts");
+        assert_eq!(mapping.y_to_price(-0.5), None, "{mode:?} above the pane refuses");
+        assert_eq!(mapping.y_to_price(400.5), None, "{mode:?} below the pane refuses");
+    }
+}
+
+#[test]
+fn inverted_scale_off_pane_refuses() {
+    let range = PriceRange::new(90.0, 110.0).expect("valid range");
+    let flipped =
+        PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, true).expect("valid scale");
+    assert!(flipped.y_to_price(200.0).is_some());
+    assert_eq!(flipped.y_to_price(-1.0), None);
+    assert_eq!(flipped.y_to_price(401.0), None);
+}
+
+/// Audit of each direction's doc/behavior contract, pinned so a future change
+/// that silently drops extrapolation is caught here:
+/// - `price_to_y` extrapolates prices outside the window on purpose — the
+///   paint edge clips lines and candles that run off the pane — and its doc
+///   only promises `None` for non-finite/unmappable input, so it matches.
+/// - `y_to_price` promises "None off-pane"; it now refuses `y` outside
+///   `0..=height` (the pane), so it matches.
+/// - `index_to_x` is documented total (no refusal) and stays total.
+/// - `x_to_index` promises `None` only on non-finite input and matches.
+#[test]
+fn mapping_promises_match_behavior() {
+    let mapping = scale(PriceScaleMode::Normal, 90.0, 110.0);
+    let extrapolated = mapping.price_to_y(200.0).expect("price_to_y extrapolates by design");
+    assert!(extrapolated < 0.0, "an above-window price maps above the pane");
+    assert_eq!(mapping.y_to_price(-1.0), None, "y_to_price refuses off-pane");
+    assert_eq!(mapping.index_to_x(0).to_bits(), 0.0_f32.to_bits());
+    assert_eq!(mapping.x_to_index(f32::INFINITY), None);
+}
+
+#[test]
 fn index_moves_by_bar_spacing() {
     let mapping = scale(PriceScaleMode::Normal, 90.0, 110.0);
     assert_eq!(mapping.index_to_x(0).to_bits(), 0.0_f32.to_bits());

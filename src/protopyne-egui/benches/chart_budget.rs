@@ -5,7 +5,7 @@
 //! no network, no display): oscillator normalization, quiet-label folding,
 //! CSV export, and one full IntegrationLite pane build. What fails here as
 //! a timing regression never reaches a gate — gates assert API shape (see
-//! `tests/budget.rs`), wall-time is recorded in the roadmap note only.
+//! `tests/budget.rs`), wall-time is recorded in the bench note only.
 //! Mirrors the `backtest_path` bench harness idiom (`harness = false`).
 
 use criterion::{Criterion, criterion_group, criterion_main};

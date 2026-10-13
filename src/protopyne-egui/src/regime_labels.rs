@@ -23,8 +23,9 @@ use protopyne_kernels::market_context::{
 
 use fluent_egui::EguiError;
 
-/// Re-exported stability band so panes can name the hold margin without a
-/// second constant living here.
+/// Re-exported stability band (producer confidence: label stability, never
+/// task fitness) so panes can name the hold margin without a second
+/// constant living here.
 pub use protopyne_kernels::market_context::REGIME_HYSTERESIS as STABILITY_BAND;
 
 /// Frozen detector read: exact-`==` parity probe over the three normalized
@@ -69,9 +70,11 @@ pub fn regime_style_key(label: MarketRegime) -> &'static str {
     }
 }
 
-/// Held display label across bars: constructed with the label on screen,
-/// advanced bar-by-bar through [`display_label`]. Pure state, no caching —
-/// persistence stays in the plan cache.
+/// Held display label across bars (producer confidence: label stability —
+/// it steadies what is on screen, never whether a label is fit to alert
+/// on): constructed with the label on screen, advanced bar-by-bar through
+/// [`display_label`]. Pure state, no caching — persistence stays in the
+/// plan cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuietLabel {
     /// Label currently on screen.
@@ -138,6 +141,7 @@ pub fn label_series(
 
 /// Confirm the module routes through the shared band constant rather than a
 /// local copy (keeps the one-truth rule compiler-checked at the use site).
+/// Producer confidence, not task value: the band steadies labels only.
 #[must_use]
 pub fn stability_band() -> f64 {
     REGIME_HYSTERESIS

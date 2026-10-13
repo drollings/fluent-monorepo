@@ -100,13 +100,14 @@ pub use parity::{assert_expr_parity, expr_fixture};
 pub use pine::{
     AssignItem, AssignOp, BarSnapshot, BinaryOp, BuiltinVar, CallArg, ClosureEntry, EguiParityRow,
     EnumMember, FieldDecl, FieldPersistence, ImportDecl, LibraryId, LinkedModule, LtfDataset,
-    ModuleGraph, ModuleId, ModuleInput, MultiDecl, Param, ParityVerdict, PineEngine, PineExpr, PineLexer,
-    PineParseError, PineParser, PineProgram, PineSource, PineStmt, PineToken, PineType,
-    ResolvedModule, RunOutcome, SourceKind, SwitchArm, SwitchStmt, TokenKind, UnaryOp, VersionWarn,
+    ModuleGraph, ModuleId, ModuleInput, MultiDecl, OverlayProjection, Param, ParityVerdict, PineEngine,
+    PineExpr, PineLexer, PineParseError, PineParser, PineProgram, PineSource, PineStmt, PineToken,
+    PineType, PlotPrimitive, ProjectionRefusal, ResolvedModule, RunOutcome, SourceKind, SwitchArm,
+    SwitchStmt, TokenKind, UnaryOp, VersionWarn,
     EGUI_PARITY, INDICATOR_PATH, MAX_LOOP_ITERATIONS, REAL_LIBRARIES, SUPPORTED_PINE_VERSION,
     TASK_INDICATORS, closure_data_root, display_program, indicator_library_id, lex,
     load_closure_sources, load_listed_closure,
-    load_pine_source, parity_for, parse_pine_source, parse_program, resolve_imports,
+    load_pine_source, parity_for, parse_pine_source, parse_program, project, resolve_imports,
 };
 #[cfg(feature = "pine")]
 pub use pine::builtins_ta::TaBridge;

@@ -99,6 +99,68 @@ fn long_entity_truncated() {
 }
 
 #[test]
+fn upstream_output_tojson_pastes_canonical_json() {
+    // Prior-target outputs are structured values; whole-value interpolation
+    // must paste canonical JSON (`true`/`null`), not the engine's
+    // Python-repr scalar rendering (`True`/`None`).
+    let mut c = ctx("x");
+    c.upstream.insert(
+        "reproduce".into(),
+        serde_json::json!({"output": {
+            "ok": true,
+            "retry": false,
+            "cause": null,
+            "tags": ["a", 1],
+            "nested": {"depth": 2},
+        }}),
+    );
+    let out = render("{{ upstream.reproduce.output | tojson }}", &c).unwrap();
+    // Keys sort: the engine holds maps sorted, matching the workspace
+    // canonical-JSON convention (`serde_json::Map` without `preserve_order`).
+    assert_eq!(
+        out,
+        r#"{"cause":null,"nested":{"depth":2},"ok":true,"retry":false,"tags":["a",1]}"#
+    );
+}
+
+#[test]
+fn upstream_output_drill_stays_structured() {
+    // Attribute drills into an output keep working: structured access is
+    // the narrow view, `tojson` is the paste-whole view.
+    let mut c = ctx("x");
+    c.upstream.insert(
+        "reproduce".into(),
+        serde_json::json!({"output": {"plan": "minimal repro"}}),
+    );
+    let out = render("{{ upstream.reproduce.output.plan }}", &c).unwrap();
+    assert_eq!(out, "minimal repro");
+}
+
+#[test]
+fn upstream_output_scalar_tojson_is_json_scalar() {
+    // Scalars through `tojson` render as JSON scalars (strings quoted).
+    let mut c = ctx("x");
+    c.upstream.insert(
+        "reproduce".into(),
+        serde_json::json!({"output": {"plan": "minimal repro", "steps": 3}}),
+    );
+    let out = render(
+        "{{ upstream.reproduce.output.plan | tojson }}|{{ upstream.reproduce.output.steps | tojson }}",
+        &c,
+    )
+    .unwrap();
+    assert_eq!(out, "\"minimal repro\"|3");
+}
+
+#[test]
+fn unknown_filter_is_render_error() {
+    // A misspelled filter must fail closed, not paste raw.
+    let c = ctx("x");
+    let err = render("{{ request | nosuchfilter }}", &c).unwrap_err();
+    assert!(matches!(err, ChartError::Render { .. }));
+}
+
+#[test]
 fn golden_renders_appendix_a_target() {
     // Appendix A bug_triage "reproduce" target template with a fixed
     // request + one bound entity.

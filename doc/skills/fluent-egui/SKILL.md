@@ -84,8 +84,9 @@ let key = cache_key("ribbon", fingerprint); // length-framed name + ParamSet fin
 let revision = cache.publish(key, values);  // bit-identical republish keeps the revision
 ```
 
-`PaneCache :: publish` backdates on content hash (`None` slots hash as
-`u64::MAX`, so identical `NaN` payloads keep the revision). Revisions are
+`PaneCache :: publish` backdates on content hash (holes carry a `None` tag
+distinct from every resolved leg, so identical `NaN` payloads keep the
+revision). Revisions are
 confidence bookkeeping for blitting — never evidence a signal is
 tradeable. Caller owns topology: register domain pane names and edges,
 never fork `PanePlan`/`PaneCache`.

@@ -9,7 +9,7 @@
 //! [`Scope`](fluent_concurrency::scope::Scope)-owned pump per session, one
 //! `broadcast` fan-out, per-receiver filtering by symbol and kind.
 //!
-//! Note on placement: the roadmap sketches this enum in `protopyne-types`,
+//! Note on placement: the design sketches this enum in `protopyne-types`,
 //! but [`Quote`] and [`Fill`] live in this crate and the workspace layers
 //! one way (`types → … → venue`), so the enum lives here where its payloads
 //! live. No payload is duplicated and no dependency inverts.

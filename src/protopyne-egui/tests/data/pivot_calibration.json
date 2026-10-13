@@ -1,5 +1,4 @@
 {
-  "milestone": "M7 pivot-threshold calibration",
   "date": "2026-10-13",
   "frozen_threshold": 100.0,
   "method": "Candidate sweep over labeled fast-oscillator windows plus flat/chop controls. Precision/recall count exact index-and-side pivot matches. Floors pin only the frozen threshold in tests/integration_lite.rs; every other number below is evidence, not code.",

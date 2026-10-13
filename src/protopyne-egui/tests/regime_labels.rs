@@ -1,6 +1,66 @@
 use super::*;
+use std::path::{Path, PathBuf};
+
 use fluent_egui::ThemeConfig;
 use protopyne_kernels::market_context::{MarketRegime, REGIME_HYSTERESIS};
+
+/// Calibration control (producer confidence: label stability): the stability
+/// band and its holder wire to label display only — no alert, gate, cache,
+/// or persistence path may name them. The scan keeps that wiring checked:
+/// the symbols may appear in the label module, the crate re-export, and
+/// this control file; anywhere else fails loudly until the wiring is
+/// re-justified.
+#[test]
+fn stability_band_wires_to_no_alert_gate_cache_or_persistence() {
+    assert_eq!(
+        stability_band().to_bits(),
+        REGIME_HYSTERESIS.to_bits(),
+        "the band resolves to the kernel truth"
+    );
+    const SYMBOLS: [&str; 4] =
+        ["stability_band", "STABILITY_BAND", "QuietLabel", "REGIME_HYSTERESIS"];
+    // Allowed naming sites: the label module, the crate re-export, this
+    // control, and the ledger (which pins the constant in its own literal).
+    forbid_symbols(&["src"], &["regime_labels.rs", "lib.rs"], &SYMBOLS);
+    forbid_symbols(&["tests"], &["regime_labels.rs", "budget.rs"], &SYMBOLS);
+}
+
+/// Fail when any scanned file outside `allowed` names a symbol in code
+/// (comment lines document but never wire, so the scan skips them).
+fn forbid_symbols(dirs: &[&str], allowed: &[&str], symbols: &[&str]) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut stack: Vec<PathBuf> = dirs.iter().map(|dir| root.join(dir)).collect();
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display())) {
+            let path = entry.expect("scan entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
+            let name = path.file_name().expect("file name").to_string_lossy().into_owned();
+            if allowed.contains(&name.as_str()) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("scan reads");
+            assert_no_symbol(&path, &text, symbols);
+        }
+    }
+}
+
+fn assert_no_symbol(path: &Path, text: &str, symbols: &[&str]) {
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('/')) {
+        for symbol in symbols {
+            assert!(
+                !line.contains(symbol),
+                "{} must not wire {symbol} (line: {line})",
+                path.display()
+            );
+        }
+    }
+}
 
 /// One pinned transition: held label, three surfaces, expected screen label.
 type TransitionRow = (MarketRegime, Option<f64>, Option<f64>, Option<f64>, MarketRegime);

@@ -286,11 +286,11 @@ fn bind_chart_filters_in_graph_capabilities_out_of_unmatched() {
               "template": "a {{ request }}", "essential": true },
             { "name": "b", "provides": ["b_out"], "depends": [
                 { "kind": "capability", "name": "a_out" }
-              ], "template": "b {{ upstream.a.output }}", "essential": true },
+              ], "template": "b {{ upstream.a.output | tojson }}", "essential": true },
             { "name": "c", "provides": ["c_out"], "depends": [
                 { "kind": "capability", "name": "b_out" },
                 { "kind": "capability", "name": "external_data" }
-              ], "template": "c {{ upstream.b.output }}", "essential": true }
+              ], "template": "c {{ upstream.b.output | tojson }}", "essential": true }
         ]
     }"#;
     let chart: super::super::ChartDef = serde_json::from_str(chart_json).unwrap();

@@ -1,6 +1,6 @@
 use super::*;
 use protopyne_chart_model::convert::{ChartRow, to_display_float};
-use protopyne_server::service::{ChartBars, OverlaySeries};
+use protopyne_view::{ChartBars, OverlaySeries};
 
 /// Exact float comparison without tripping the strict-comparison lint:
 /// the export round-trips must be bit-identical, not merely close.

@@ -20,10 +20,12 @@
 //! spans zero. Painters clip to their rect so out-of-window coordinates can
 //! never draw outside the pane.
 
-use protopyne_chart_model::ChartRow;
+use protopyne_chart_model::{Annotation, AnnotationStyle, ChartRow};
 
+use crate::annotations::resolve_annotation;
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
+use crate::hittest::{Crosshair, crosshair_pixel};
 use crate::view::{DeltaView, PivotMark, PivotSide, RibbonView, ribbon_style_key};
 use crate::viewport::{BreakLine, Viewport};
 
@@ -159,8 +161,10 @@ pub fn delta_bar_geoms(
             reason: "delta pane range must span zero".to_owned(),
         });
     };
-    // The canonical scale extrapolates, so an off-window zero still maps:
-    // refuse unless zero sits inside the visible range.
+    // `price_to_y` extrapolates (the paint edge relies on it to clip lines
+    // and candles running off the pane), so an off-window zero still maps:
+    // refuse unless zero sits inside the visible range. The inverse,
+    // `y_to_price`, refuses off-pane pixels outright.
     let window = viewport.scale().range();
     if window.min > 0.0 || window.max < 0.0 {
         return Err(EguiError::InvalidParam {
@@ -249,6 +253,9 @@ pub fn pivot_price_dots(
     rows: &[ChartRow],
     viewport: &Viewport,
 ) -> Vec<PivotDot> {
+    // `price_to_y` extrapolates off-window prices, so an extreme outside the
+    // visible window would place a dot off-pane; skip those, as promised.
+    let window = viewport.scale().range();
     marks
         .iter()
         .filter_map(|mark| {
@@ -257,7 +264,7 @@ pub fn pivot_price_dots(
                 PivotSide::High => row.high,
                 PivotSide::Low => row.low,
             };
-            if !extreme.is_finite() {
+            if !extreme.is_finite() || !window.contains(extreme) {
                 return None;
             }
             let y = viewport.price_to_y(extreme)?;
@@ -273,31 +280,45 @@ pub fn threshold_line(threshold: f64, viewport: &Viewport) -> Option<f32> {
     if !threshold.is_finite() || threshold <= 0.0 {
         return None;
     }
+    // `price_to_y` extrapolates, so an off-window threshold would map off-pane
+    // silently; refuse it explicitly, as the doc promises.
+    if !viewport.scale().range().contains(threshold) {
+        return None;
+    }
     viewport.price_to_y(threshold)
 }
 
-/// Resolve a theme style key to an `egui` color, parsing the validated
-/// `#RRGGBB` slot. Unknown keys or unparsable slots fall back to gray —
-/// paint stays fail-soft while validation upstream stays fail-closed.
-#[must_use]
-pub fn theme_color(theme: &ThemeConfig, key: &str) -> egui::Color32 {
+/// Resolve a theme style key to an `egui` color, parsing the `#RRGGBB`
+/// slot. Unknown keys and unparsable slots refuse with the key named —
+/// paint never renders a silent gray default (declared behavior change:
+/// hand-built or drifted themes error visibly through
+/// [`paint_error_chip`]).
+pub fn resolve_color(theme: &ThemeConfig, key: &str) -> Result<egui::Color32, EguiError> {
     let Some(slot) = theme.style(key) else {
-        return egui::Color32::GRAY;
+        return Err(EguiError::InvalidParam {
+            what: key.to_owned(),
+            reason: "unknown theme style key".to_owned(),
+        });
     };
-    parse_hex(slot).unwrap_or(egui::Color32::GRAY)
+    parse_hex(key, slot)
 }
 
-fn parse_hex(slot: &str) -> Option<egui::Color32> {
+fn parse_hex(key: &str, slot: &str) -> Result<egui::Color32, EguiError> {
+    let invalid = || EguiError::InvalidParam {
+        what: key.to_owned(),
+        reason: format!("{slot:?} is not a #RRGGBB color"),
+    };
     let bytes = slot.as_bytes();
     if bytes.len() != 7 || bytes[0] != b'#' {
-        return None;
+        return Err(invalid());
     }
-    let channel = |pair: &[u8]| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok();
-    Some(egui::Color32::from_rgb(
-        channel(&bytes[1..3])?,
-        channel(&bytes[3..5])?,
-        channel(&bytes[5..7])?,
-    ))
+    let channel = |pair: &[u8]| {
+        let text = std::str::from_utf8(pair).map_err(|_| invalid())?;
+        u8::from_str_radix(text, 16).map_err(|_| invalid())
+    };
+    Ok(egui::Color32::from_rgb(channel(&bytes[1..3])?, channel(&bytes[3..5])?, channel(
+        &bytes[5..7],
+    )?))
 }
 
 /// Paint candles: wick line plus filled body (minimum one pixel tall, per
@@ -307,9 +328,11 @@ pub fn paint_candles(
     geoms: &[CandleGeom],
     body_width: f32,
     theme: &ThemeConfig,
-) {
+) -> Result<(), EguiError> {
+    let bull = resolve_color(theme, ribbon_style_key(true))?;
+    let bear = resolve_color(theme, ribbon_style_key(false))?;
     for geom in geoms {
-        let color = theme_color(theme, ribbon_style_key(geom.trend_bullish));
+        let color = if geom.trend_bullish { bull } else { bear };
         painter.line_segment(
             [egui::Pos2::new(geom.x, geom.high_y), egui::Pos2::new(geom.x, geom.low_y)],
             egui::Stroke::new(1.0, color),
@@ -325,6 +348,7 @@ pub fn paint_candles(
             color,
         );
     }
+    Ok(())
 }
 
 /// One candle plus its resolved paint color.
@@ -383,8 +407,8 @@ pub fn paint_candles_as(
     style_key: &str,
     body_width: f32,
     theme: &ThemeConfig,
-) {
-    let color = theme_color(theme, style_key);
+) -> Result<(), EguiError> {
+    let color = resolve_color(theme, style_key)?;
     let stroke = egui::Stroke::new(1.0, color);
     for geom in geoms {
         painter.line_segment(
@@ -402,6 +426,7 @@ pub fn paint_candles_as(
             color,
         );
     }
+    Ok(())
 }
 
 /// Paint ribbon fill strips between the band edges at `alpha` opacity.
@@ -412,13 +437,15 @@ pub fn paint_ribbon(
     theme: &ThemeConfig,
     bullish: &[bool],
     alpha: f32,
-) {
+) -> Result<(), EguiError> {
     let clamped = alpha.clamp(0.0, 1.0);
+    let bull = resolve_color(theme, ribbon_style_key(true))?;
+    let bear = resolve_color(theme, ribbon_style_key(false))?;
     for (band, trend) in bands.iter().zip(bullish.iter()) {
         let Some(strip) = band else {
             continue;
         };
-        let base = theme_color(theme, ribbon_style_key(*trend));
+        let base = if *trend { bull } else { bear };
         let fill = egui::Color32::from_rgba_unmultiplied(
             base.r(),
             base.g(),
@@ -434,6 +461,7 @@ pub fn paint_ribbon(
             fill,
         );
     }
+    Ok(())
 }
 
 /// One ribbon fill run: a closed polygon between the band edges over a
@@ -534,19 +562,92 @@ pub fn paint_ribbon_fill(
     polygons: &[RibbonPolygon],
     theme: &ThemeConfig,
     alpha: f32,
-) {
+) -> Result<(), EguiError> {
     let clamped = alpha.clamp(0.0, 1.0);
     let opacity = (clamped * 255.0).round().clamp(0.0, 255.0) as u8;
+    let bull = resolve_color(theme, ribbon_style_key(true))?;
+    let bear = resolve_color(theme, ribbon_style_key(false))?;
     for polygon in polygons {
         if polygon.points.len() < 3 {
             continue;
         }
-        let key = if polygon.bullish { "ribbon_bull" } else { "ribbon_bear" };
-        let base = theme_color(theme, key);
+        let base = if polygon.bullish { bull } else { bear };
         let fill = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
         let points: Vec<egui::Pos2> =
             polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect();
         painter.add(egui::Shape::convex_polygon(points, fill, egui::Stroke::NONE));
+    }
+    Ok(())
+}
+
+/// Blend one gradient vertex color between the top and bottom fill colors by
+/// its y pixel: `top_y` reads exactly `top`, `bottom_y` exactly `bottom`,
+/// between lerps per channel (alpha included), outside clamps to the nearer
+/// end. A degenerate range reads `top` for every vertex instead of dividing
+/// by zero. Blending runs in premultiplied space (`Color32` storage), which
+/// is the correct composite for translucent gradient stops. Pure color math
+/// over reused polygon points — no new polygon code.
+#[must_use]
+pub fn area_vertex_color(
+    top: egui::Color32,
+    bottom: egui::Color32,
+    y: f32,
+    top_y: f32,
+    bottom_y: f32,
+) -> egui::Color32 {
+    let span = bottom_y - top_y;
+    let ratio = if span.abs() < f32::EPSILON { 0.0 } else { ((y - top_y) / span).clamp(0.0, 1.0) };
+    let blend = |high: u8, low: u8| {
+        (f32::from(high) + (f32::from(low) - f32::from(high)) * ratio).round().clamp(0.0, 255.0)
+            as u8
+    };
+    egui::Color32::from_rgba_premultiplied(
+        blend(top.r(), bottom.r()),
+        blend(top.g(), bottom.g()),
+        blend(top.b(), bottom.b()),
+        blend(top.a(), bottom.a()),
+    )
+}
+
+/// Paint filled areas with a vertical color gradient: one mesh per polygon
+/// (fan around the first vertex, under the same convexity contract
+/// [`paint_ribbon_fill`] already assumes), vertex colors from
+/// [`area_vertex_color`] over the polygon's own y span. Degenerate polygons
+/// (< 3 points) paint nothing, like the flat fill. Colors arrive resolved —
+/// the caller composes [`resolve_color`] and
+/// [`opacity_from_transparency`], so this emitter cannot fail.
+pub fn paint_area_fill(
+    painter: &egui::Painter,
+    polygons: &[RibbonPolygon],
+    top: egui::Color32,
+    bottom: egui::Color32,
+) {
+    for polygon in polygons {
+        if polygon.points.len() < 3 {
+            continue;
+        }
+        let top_y = polygon.points.iter().map(|(_, y)| *y).fold(f32::INFINITY, f32::min);
+        let bottom_y =
+            polygon.points.iter().map(|(_, y)| *y).fold(f32::NEG_INFINITY, f32::max);
+        let vertices: Vec<egui::Pos2> =
+            polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect();
+        let colors: Vec<egui::Color32> = polygon
+            .points
+            .iter()
+            .map(|(_, y)| area_vertex_color(top, bottom, *y, top_y, bottom_y))
+            .collect();
+        let mut mesh = egui::Mesh::default();
+        for (point, color) in vertices.iter().zip(colors.iter()) {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: *point,
+                uv: egui::Pos2::ZERO,
+                color: *color,
+            });
+        }
+        for index in 1..vertices.len() - 1 {
+            mesh.indices.extend_from_slice(&[0, index as u32, index as u32 + 1]);
+        }
+        painter.add(mesh);
     }
 }
 
@@ -556,7 +657,9 @@ pub fn paint_delta_bars(
     bars: &[DeltaBarGeom],
     half_width: f32,
     theme: &ThemeConfig,
-) {
+) -> Result<(), EguiError> {
+    let bull = resolve_color(theme, "bull")?;
+    let bear = resolve_color(theme, "bear")?;
     for bar in bars {
         if let Some(buy_y) = bar.buy_y {
             painter.rect_filled(
@@ -565,7 +668,7 @@ pub fn paint_delta_bars(
                     egui::Pos2::new(bar.x + half_width, bar.zero_y),
                 ),
                 0.0,
-                theme_color(theme, "bull"),
+                bull,
             );
         }
         if let Some(sell_y) = bar.sell_y {
@@ -575,10 +678,11 @@ pub fn paint_delta_bars(
                     egui::Pos2::new(bar.x + half_width, sell_y),
                 ),
                 0.0,
-                theme_color(theme, "bear"),
+                bear,
             );
         }
     }
+    Ok(())
 }
 
 /// Map a Pine-style transparency percent to a byte opacity.
@@ -607,8 +711,8 @@ pub fn paint_oscillator(
     style_key: &str,
     theme: &ThemeConfig,
     alpha: f32,
-) {
-    let base = theme_color(theme, style_key);
+) -> Result<(), EguiError> {
+    let base = resolve_color(theme, style_key)?;
     let opacity = (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
     let color =
         egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
@@ -618,6 +722,7 @@ pub fn paint_oscillator(
             painter.line_segment([egui::Pos2::new(x0, y0), egui::Pos2::new(x1, y1)], stroke);
         }
     }
+    Ok(())
 }
 
 /// Paint the `±threshold` rules across `[x0, x1]`.
@@ -628,8 +733,8 @@ pub fn paint_thresholds(
     threshold: f64,
     viewport: &Viewport,
     theme: &ThemeConfig,
-) {
-    let color = theme_color(theme, "grid");
+) -> Result<(), EguiError> {
+    let color = resolve_color(theme, "grid")?;
     let stroke = egui::Stroke::new(1.0, color);
     for signed in [threshold, -threshold] {
         if let Some(y) = viewport.price_to_y(signed) {
@@ -638,17 +743,144 @@ pub fn paint_thresholds(
             }
         }
     }
+    Ok(())
+}
+
+/// Pane-local crosshair spans for one readout: the snapped pixel plus the
+/// full-pane extents the emitter draws through.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrosshairLines {
+    /// Snapped x pixel (bar center).
+    pub x: f32,
+    /// Snapped y pixel (price).
+    pub y: f32,
+    /// Left edge of the horizontal line.
+    pub left: f32,
+    /// Right edge of the horizontal line.
+    pub right: f32,
+    /// Top edge of the vertical line.
+    pub top: f32,
+    /// Bottom edge of the vertical line.
+    pub bottom: f32,
+}
+
+/// Build crosshair spans for a readout over a `width × height` pane.
+///
+/// The snapped pixel comes from the pure [`crosshair_pixel`], so the edge
+/// draws exactly what the headless mapping resolves — `egui` translates
+/// pointer events into readouts and paints these spans, never its own
+/// coordinate math. `None` when the readout price is unmappable or the
+/// extents are degenerate.
+#[must_use]
+pub fn crosshair_lines(
+    crosshair: &Crosshair,
+    viewport: &Viewport,
+    width: f32,
+    height: f32,
+) -> Option<CrosshairLines> {
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    let (x, y) = crosshair_pixel(crosshair, viewport)?;
+    Some(CrosshairLines { x, y, left: 0.0, right: width, top: 0.0, bottom: height })
+}
+
+/// Paint the crosshair readout: full-pane horizontal + vertical lines
+/// through the snapped pixel under the `"grid"` key.
+pub fn paint_crosshair(
+    painter: &egui::Painter,
+    lines: &CrosshairLines,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let stroke = egui::Stroke::new(1.0, resolve_color(theme, "grid")?);
+    painter.line_segment(
+        [egui::Pos2::new(lines.left, lines.y), egui::Pos2::new(lines.right, lines.y)],
+        stroke,
+    );
+    painter.line_segment(
+        [egui::Pos2::new(lines.x, lines.top), egui::Pos2::new(lines.x, lines.bottom)],
+        stroke,
+    );
+    Ok(())
+}
+
+/// One resolved annotation marker: bar position plus display role.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MarkerDot {
+    /// Bar index of the annotated bar.
+    pub index: usize,
+    /// X pixel of the bar.
+    pub x: f32,
+    /// Y pixel of the annotated price.
+    pub y: f32,
+    /// Display role (theme key source).
+    pub style: AnnotationStyle,
+}
+
+/// Resolve markers to pixels over the caller's window.
+///
+/// Markers come from an append-only set (the render-side journal), never a
+/// UI-authored list. Bars outside the window or with unmappable prices are
+/// skipped — markers decorate published annotations only.
+#[must_use]
+pub fn marker_dots(
+    markers: &[Annotation],
+    rows: &[ChartRow],
+    viewport: &Viewport,
+) -> Vec<MarkerDot> {
+    markers
+        .iter()
+        .filter_map(|marker| {
+            let index =
+                rows.iter().position(|row| row.time == marker.key.bar_timestamp)?;
+            let (x, y) = resolve_annotation(marker, rows, viewport)?;
+            Some(MarkerDot { index, x, y, style: marker.style })
+        })
+        .collect()
+}
+
+/// Paint annotation markers: filled dots in the style's theme color.
+pub fn paint_markers(
+    painter: &egui::Painter,
+    dots: &[MarkerDot],
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let grid = resolve_color(theme, "grid")?;
+    let bull = resolve_color(theme, "bull")?;
+    let bear = resolve_color(theme, "bear")?;
+    for dot in dots {
+        let color = match dot.style {
+            AnnotationStyle::Note => grid,
+            AnnotationStyle::Bull => bull,
+            AnnotationStyle::Bear => bear,
+        };
+        painter.circle_filled(egui::Pos2::new(dot.x, dot.y), 4.0, color);
+    }
+    Ok(())
 }
 
 /// Paint pivot dots: bear color above, bull color below.
-pub fn paint_pivot_dots(painter: &egui::Painter, dots: &[PivotDot], theme: &ThemeConfig) {
+pub fn paint_pivot_dots(
+    painter: &egui::Painter,
+    dots: &[PivotDot],
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let bull = resolve_color(theme, "bull")?;
+    let bear = resolve_color(theme, "bear")?;
     for dot in dots {
-        let key = match dot.side {
-            PivotSide::High => "bear",
-            PivotSide::Low => "bull",
+        let color = match dot.side {
+            PivotSide::High => bear,
+            PivotSide::Low => bull,
         };
-        painter.circle_filled(egui::Pos2::new(dot.x, dot.y), 4.0, theme_color(theme, key));
+        painter.circle_filled(egui::Pos2::new(dot.x, dot.y), 4.0, color);
     }
+    Ok(())
+}
+
+/// Render a refused paint step as a visible error chip carrying the reason:
+/// the failure surfaces in the frame instead of rendering a silent default.
+pub fn paint_error_chip(ui: &mut egui::Ui, error: &EguiError) {
+    ui.colored_label(egui::Color32::RED, format!("paint refused: {error}"));
 }
 
 /// Paint session-break gridlines over the pane's full height.
@@ -658,14 +890,15 @@ pub fn paint_session_breaks(
     top_y: f32,
     bottom_y: f32,
     theme: &ThemeConfig,
-) {
-    let stroke = egui::Stroke::new(1.0, theme_color(theme, "grid"));
+) -> Result<(), EguiError> {
+    let stroke = egui::Stroke::new(1.0, resolve_color(theme, "grid")?);
     for line in lines {
         painter.line_segment(
             [egui::Pos2::new(line.x, top_y), egui::Pos2::new(line.x, bottom_y)],
             stroke,
         );
     }
+    Ok(())
 }
 
 #[cfg(test)]

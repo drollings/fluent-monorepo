@@ -8,42 +8,88 @@
 
 use bon::Builder;
 use chrono::{DateTime, Utc};
+use fluent_wvr::{Describable, FieldAccess};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::fmt;
+use std::str::FromStr;
 
 use protopyne_types::Money;
 
 use crate::error::StrategyError;
 use crate::proposal::{Direction, Proposal, ProposalSide, StructureKind};
 
+/// Boundary-string encoding shared by every composite patch leaf below: a
+/// tier edits as one JSON document through `FieldAccess::set_field` (Tier 3
+/// reflection over a Tier 2 body), so the struct definition stays the single
+/// source of truth and no parallel leaf parser exists anywhere. Display
+/// renders the same document; serialization of these plain structs cannot
+/// fail, and the fallback keeps the trading path panic-free if it ever did.
+macro_rules! json_boundary {
+    ($ty:ty, $what:literal) => {
+        impl FromStr for $ty {
+            type Err = String;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                serde_json::from_str(s)
+                    .map_err(|e| format!("invalid {} document: {e}", $what))
+            }
+        }
+
+        impl fmt::Display for $ty {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&serde_json::to_string(self).unwrap_or_default())
+            }
+        }
+    };
+}
+
 /// Entry/exit/roll permissions inside a grant's scope. Exit-only operation
 /// is the low-risk default: entries need an explicit opt-in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable,
+)]
 pub struct GrantPermission {
     /// Whether new exposure may be opened.
+    #[field(desc = "Whether new exposure may be opened (tightening clears it)")]
     pub entries: bool,
     /// Whether existing exposure may be closed.
+    #[field(desc = "Whether existing exposure may be closed (tightening clears it)")]
     pub exits: bool,
     /// Whether positions may be rolled as single multi-leg orders.
+    #[field(desc = "Whether positions may roll as single multi-leg orders (tightening clears it)")]
     pub rolls: bool,
 }
+
+json_boundary!(GrantPermission, "grant permissions");
 
 /// What a grant covers: which strategies, underlyings, structures, and
 /// directions may trade, and with which lifecycle permissions. Empty lists
 /// match nothing: a grant must name its scope explicitly to authorize.
-#[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// The list fields stay out of the field descriptor (`#[field(skip)]`): a
+/// `Vec` has no boundary-string reading and the orphan rule forbids lending
+/// it one, so no list encoding is declared until a second consumer needs it.
+/// Scope narrowing stays enforced core-side by [`Grant::tighten`].
+#[derive(
+    Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable,
+)]
 #[builder(start_fn = new)]
 pub struct GrantScope {
     /// Strategy names covered by this grant.
+    #[field(skip)]
     pub strategies: Vec<String>,
     /// Underlying symbols covered by this grant.
+    #[field(skip)]
     pub underlyings: Vec<String>,
     /// Structures covered by this grant.
+    #[field(skip)]
     pub structures: Vec<StructureKind>,
     /// Directions covered by this grant.
+    #[field(skip)]
     pub directions: Vec<Direction>,
     /// Lifecycle permissions.
+    #[field(desc = "Lifecycle permissions as a JSON document (tightening clears entries, exits, rolls)")]
     pub permissions: GrantPermission,
 }
 
@@ -87,59 +133,87 @@ impl GrantScope {
 
 /// Signal-tier thresholds: is the idea worth acting on?
 /// Axis: **(task-value)** — merit of the trade, never producer health.
-#[derive(Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
+)]
 #[builder(start_fn = new)]
 pub struct SignalThresholds {
     /// Minimum signal conviction in `[0, 1]` **(task-value)**.
+    #[field(desc = "Minimum signal conviction in [0, 1] (tightening raises it)")]
     pub min_conviction: f64,
     /// Minimum options-activity score in `[0, 1]` **(task-value)**.
+    #[field(desc = "Minimum options-activity score in [0, 1] (tightening raises it)")]
     pub min_activity_score: f64,
 }
 
+json_boundary!(SignalThresholds, "signal thresholds");
+
 /// Trade-tier thresholds: is this concrete order acceptable?
 /// Axis: **(task-value)**, except the quote gate which is **(correctness)**.
-#[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
+)]
 #[builder(start_fn = new)]
 pub struct TradeThresholds {
     /// Maximum loss any single trade may commit **(task-value)**.
+    #[field(desc = "Maximum loss one trade may commit, decimal major units (tightening lowers it)")]
     pub max_loss_per_trade: Money,
     /// Maximum bid/ask spread width the fill model tolerates **(task-value)**.
+    #[field(desc = "Maximum bid/ask spread width, decimal major units (tightening lowers it)")]
     pub max_spread_width: Money,
     /// Minimum days to expiry **(task-value)**.
+    #[field(desc = "Minimum days to expiry (tightening raises it)")]
     pub min_dte_days: u32,
     /// Maximum days to expiry **(task-value)**.
+    #[field(desc = "Maximum days to expiry (tightening lowers it)")]
     pub max_dte_days: u32,
 }
+
+json_boundary!(TradeThresholds, "trade thresholds");
 
 /// Portfolio/market-tier thresholds: is the book and the market fit to trade?
 /// Open-risk caps are **(task-value)**; the quote-age gate is
 /// **(correctness)**.
-#[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
+)]
 #[builder(start_fn = new)]
 pub struct PortfolioThresholds {
     /// Maximum aggregate committed max loss across open risk
     /// **(task-value)**.
+    #[field(desc = "Maximum aggregate committed max loss, decimal major units (tightening lowers it)")]
     pub max_open_risk: Money,
     /// Maximum quote age in seconds before data counts as stale
     /// **(correctness)**.
+    #[field(desc = "Maximum quote age in seconds (tightening lowers it)")]
     pub quote_max_age_secs: u64,
 }
+
+json_boundary!(PortfolioThresholds, "portfolio thresholds");
 
 /// Hard budgets reserved at submission and consumed on fill.
 /// Axis: **(task-value)** — every budget bounds worst-case exposure, which
 /// the arming screen shows before confirmation.
-#[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
+)]
 #[builder(start_fn = new)]
 pub struct GrantBudgets {
     /// Maximum number of trades under this grant **(task-value)**.
+    #[field(desc = "Maximum trades under this grant (tightening lowers it)")]
     pub max_trades: u32,
     /// Maximum contracts (or shares) under this grant **(task-value)**.
+    #[field(desc = "Maximum contracts under this grant (tightening lowers it)")]
     pub max_contracts: u32,
     /// Maximum committed max loss under this grant **(task-value)**.
+    #[field(desc = "Maximum committed max loss, decimal major units (tightening lowers it)")]
     pub max_loss: Money,
     /// Maximum committed notional under this grant **(task-value)**.
+    #[field(desc = "Maximum committed notional, decimal major units (tightening lowers it)")]
     pub max_notional: Money,
 }
+
+json_boundary!(GrantBudgets, "grant budgets");
 
 /// Budget already consumed. Kept separate from the immutable [`Grant`] so
 /// the evaluator stays a pure function of `(proposal, grant, usage, ...)`.
@@ -163,12 +237,18 @@ pub struct GrantUsage {
 /// Circuit-breaker trip limits. Axis: **(producer-confidence)** — these
 /// measure doubt in the producer's health, never the trade's merit, and must
 /// never approve or veto a trade on merit.
-#[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize, FieldAccess,
+    Describable,
+)]
 #[builder(start_fn = new)]
 pub struct BreakerLimits {
     /// Consecutive venue errors that disarm entries **(producer-confidence)**.
+    #[field(desc = "Consecutive venue errors that disarm entries (tightening lowers it)")]
     pub max_consecutive_errors: u32,
 }
+
+json_boundary!(BreakerLimits, "breaker limits");
 
 /// Live breaker state, tracked outside the immutable grant.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
@@ -398,22 +478,43 @@ impl Grant {
 
 /// Optional per-tier replacements for [`Grant::tighten`]. `None` keeps the
 /// current value; `Some` must move toward more restrictive.
-#[derive(Debug, Clone, Default, Builder, PartialEq, Serialize, Deserialize)]
+///
+/// The field descriptor drives the arming form: every settable tier edits as
+/// one JSON document (see `json_boundary!`), so the form renders from
+/// [`FieldAccess::field_names`] plus [`Describable::describe`] with no
+/// hand-written field list. `scope` stays out of the descriptor: the
+/// generated `get_field` moves an `Option` out of the borrow, which only
+/// compiles for `Copy` tiers, and the scope lists are skipped anyway (see
+/// [`GrantScope`]) — scope narrowing stays enforced core-side by
+/// [`Grant::tighten`], never through the form.
+#[derive(
+    Debug, Clone, Default, Builder, PartialEq, Serialize, Deserialize, FieldAccess,
+    Describable,
+)]
 #[builder(start_fn = new)]
 pub struct GrantPatch {
     /// Replacement budgets (all caps must not rise).
+    #[field(desc = "Replacement budgets as a JSON document (caps must not rise)")]
     pub budgets: Option<GrantBudgets>,
     /// Replacement signal thresholds (minimums must not fall).
+    #[field(desc = "Replacement signal thresholds as a JSON document (minimums must not fall)")]
     pub signal: Option<SignalThresholds>,
     /// Replacement trade thresholds (caps must not widen).
+    #[field(desc = "Replacement trade thresholds as a JSON document (caps must not widen)")]
     pub trade: Option<TradeThresholds>,
     /// Replacement portfolio thresholds (caps must not widen).
+    #[field(
+        desc = "Replacement portfolio thresholds as a JSON document (caps must not widen)"
+    )]
     pub portfolio: Option<PortfolioThresholds>,
     /// Replacement breaker limits (caps must not rise).
+    #[field(desc = "Replacement breaker limits as a JSON document (caps must not rise)")]
     pub breakers: Option<BreakerLimits>,
     /// Replacement scope (must be a subset).
+    #[field(skip)]
     pub scope: Option<GrantScope>,
     /// Replacement window end (must not move later).
+    #[field(desc = "Replacement window end, RFC 3339 (must not move later)", format = "date-time")]
     pub valid_until: Option<DateTime<Utc>>,
 }
 

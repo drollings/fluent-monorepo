@@ -115,6 +115,45 @@ fn thinning_keeps_sparse_grids_whole_and_caps_dense_ones() {
     assert!(thin_ticks(dense, 0).is_empty());
 }
 
+/// Calibration control (task value: legibility) over the full label path:
+/// narrow and wide windows keep every grid tick within budget, and thinning
+/// to the label cap preserves order, keeps byte-identical survivors from the
+/// grid, and never crowds denser than the capped count allows.
+#[test]
+fn axis_ticks_keep_budget_and_spacing_on_narrow_and_wide_windows() {
+    for (name, min, max, budget, cap) in
+        [("narrow", 99.5, 100.5, 8, 8), ("wide", 0.0, 1_000_000.0, 8, 8), ("dense", 0.0, 100.0, 40, 8)]
+    {
+        let grid = nice_ticks(min, max, budget);
+        let labels = axis_ticks(min, max, budget, cap);
+        assert!(labels.len() <= cap, "{name}: label count within the readability cap");
+        assert!(!labels.is_empty(), "{name}: usable windows label something");
+        let grid_values: Vec<f64> = grid.iter().map(|tick| tick.value).collect();
+        let label_values: Vec<f64> = labels.iter().map(|tick| tick.value).collect();
+        assert!(
+            label_values.iter().all(|value| grid_values.contains(value)),
+            "{name}: survivors come from the grid unchanged"
+        );
+        let mut ordered = label_values.clone();
+        ordered.sort_by(|a, b| a.partial_cmp(b).expect("finite labels"));
+        assert_eq!(
+            ordered.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+            label_values.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+            "{name}: thinning preserves order"
+        );
+        if label_values.len() >= 2 {
+            let floor = label_values
+                .windows(2)
+                .map(|window| window[1] - window[0])
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                floor * label_values.len() as f64 + 1e-9 * (max - min) >= max - min,
+                "{name}: kept labels never crowd denser than the cap allows"
+            );
+        }
+    }
+}
+
 #[test]
 fn axis_ticks_match_grid_then_cap() {
     use protopyne_chart_scale::nice_ticks;

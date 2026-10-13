@@ -1759,8 +1759,12 @@ fn cmd_diary(text_or_path: &str) {
     let diary_path = diary_dir.join("DIARY.md");
     let timestamp = OffsetDateTime::now_utc()
         .format(
-            &time::format_description::parse("[year]-[month]-[day] [hour]:[minute] UTC")
-                .unwrap_or(time::format_description::parse("[year]-[month]-[day]").unwrap()),
+            &time::format_description::parse_borrowed::<3>(
+                "[year]-[month]-[day] [hour]:[minute] UTC",
+            )
+            .unwrap_or(
+                time::format_description::parse_borrowed::<3>("[year]-[month]-[day]").unwrap(),
+            ),
         )
         .unwrap_or_else(|_| "unknown date".to_string());
 

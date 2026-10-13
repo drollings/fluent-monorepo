@@ -35,6 +35,7 @@ members = [
     "src/protopyne-server",
     "src/protopyne-chart-model",
     "src/protopyne-chart-scale",
+    "src/protopyne-view",
     "src/fluent-egui",
     "src/protopyne-egui",
 ]

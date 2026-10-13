@@ -16,8 +16,9 @@
 //! and recompute touches only dirty nodes. Cached revisions are confidence
 //! bookkeeping only — they never make a signal tradeable.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use common_core::cache::LoadCache;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use fluent_dag::dep_graph::GraphError;
 
@@ -162,7 +163,9 @@ impl Default for PanePlan {
 
 /// Cache key for one pane: length-prefixed node name plus the caller's
 /// parameter fingerprint, hashed once through the shared FNV-1a helper (the
-/// same byte idiom parameter fingerprints use).
+/// same byte idiom parameter fingerprints use). Correctness (key identity):
+/// the encoding distinguishes every distinct input, so a key always names
+/// the pane and parameters it was built from.
 #[must_use]
 pub fn cache_key(node: &str, fingerprint: u64) -> u64 {    let mut bytes = Vec::with_capacity(8 + node.len() + 8);
     bytes.extend_from_slice(&(node.len() as u64).to_le_bytes());
@@ -171,19 +174,31 @@ pub fn cache_key(node: &str, fingerprint: u64) -> u64 {    let mut bytes = Vec::
     common_core::hash::fnv1a64(&bytes)
 }
 
-/// `None`-valued slot as a hash word: all-bits-set, a payload no resolved
-/// output leg carries.
-const NONE_WORD: u64 = u64::MAX;
+/// Slot tags in the content hash: a hole encodes distinctly from every
+/// resolved leg, including any `NaN` payload.
+const NONE_TAG: u8 = 0;
+const SOME_TAG: u8 = 1;
 
-/// Content hash over display slots: every slot as fixed-width little-endian
-/// bits (`None` as the sentinel word), hashed once through the shared
-/// FNV-1a helper. Every distinct bit pattern hashes distinctly, so
-/// bit-identical payloads — identical `NaN` payloads included — backdate.
+/// Content hash over display slots: every slot as a one-byte tag plus
+/// fixed-width little-endian bits (`None` carries zero payload bits),
+/// hashed once through the shared FNV-1a helper. Correctness (key
+/// identity): `None` and any `Some(NaN)` — `f64::from_bits(u64::MAX)`
+/// included — hash differently, while bit-identical payloads (identical
+/// `NaN` payloads included) hash identically and backdate. This removes the
+/// sentinel alias; it does not claim hash injectivity.
 fn series_hash(values: &[Option<f64>]) -> u64 {
-    let mut bytes = Vec::with_capacity(8 * values.len());
+    let mut bytes = Vec::with_capacity(9 * values.len());
     for slot in values {
-        let word = slot.map_or(NONE_WORD, f64::to_bits);
-        bytes.extend_from_slice(&word.to_le_bytes());
+        match slot {
+            None => {
+                bytes.push(NONE_TAG);
+                bytes.extend_from_slice(&0_u64.to_le_bytes());
+            }
+            Some(value) => {
+                bytes.push(SOME_TAG);
+                bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+            }
+        }
     }
     common_core::hash::fnv1a64(&bytes)
 }
@@ -199,22 +214,59 @@ pub struct CachedSeries {
     pub values_hash: u64,
 }
 
-/// Fingerprint-keyed series store with content-hash backdating.
+/// Default pane capacity. Task value (residency): a frame publishes a
+/// handful of panes (price, ribbon, delta, oscillators), so 64 holds the
+/// working set plus replay and scratch headroom while bounding
+/// replay-driven growth.
+pub const DEFAULT_PANE_CACHE_CAPACITY: usize = 64;
+
+/// Fingerprint-keyed series store with content-hash backdating, bounded by
+/// the shared LRU.
 ///
 /// The frame path reads revisions; recompute publishes only dirty panes, and
 /// republishing identical content keeps the revision so downstream waves
-/// skip cleanly.
-#[derive(Debug, Default)]
+/// skip cleanly. Eviction drops the least-recently-used entry, which reads
+/// back as a miss (recompute) — never as a stale revision. The frame calls
+/// [`pin`](Self::pin) once per frame so a working set not larger than
+/// capacity never misses. Write-through only: entries arrive via
+/// [`publish`](Self::publish); the load closure never runs.
 pub struct PaneCache {
-    entries: HashMap<u64, CachedSeries>,
+    entries: LoadCache<u64, CachedSeries, String>,
     revision: u64,
 }
 
 impl PaneCache {
-    /// Create an empty store.
+    /// Create an empty store with the default capacity.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self::with_capacity(DEFAULT_PANE_CACHE_CAPACITY)
+            .expect("default pane cache capacity is a non-zero constant")
+    }
+
+    /// Create an empty store holding up to `capacity` entries; refuses zero.
+    pub fn with_capacity(capacity: usize) -> Result<Self, EguiError> {
+        let entries = LoadCache::new(capacity, never_load).map_err(|reason| EguiError::InvalidParam {
+            what: "capacity".to_owned(),
+            reason,
+        })?;
+        Ok(Self { entries, revision: 0 })
+    }
+
+    /// Refresh LRU order for the current working set: every present key
+    /// becomes most-recently-used, so transient publishes between frames
+    /// evict scratch entries first. Absent keys are ignored — pinning never
+    /// inserts. Call once per frame before publishing.
+    pub fn pin(&self, keys: &[u64]) {
+        for key in keys {
+            // The read promotes the key; the clone is discarded.
+            let _touched = self.entries.get(key);
+        }
+    }
+
+    /// Maximum entries before the least-recently-used entry is evicted.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.entries.capacity()
     }
 
     /// Publish one pane's series, returning its revision. Bit-identical
@@ -222,15 +274,10 @@ impl PaneCache {
     /// store revision and records it on the entry.
     pub fn publish(&mut self, key: u64, values: Vec<Option<f64>>) -> u64 {
         let hash = series_hash(&values);
-        if let Some(entry) = self.entries.get_mut(&key) {
+        if let Some(entry) = self.entries.get(&key) {
             if entry.values_hash == hash {
                 return entry.revision;
             }
-            self.revision += 1;
-            entry.values = values;
-            entry.values_hash = hash;
-            entry.revision = self.revision;
-            return entry.revision;
         }
         self.revision += 1;
         let revision = self.revision;
@@ -238,9 +285,10 @@ impl PaneCache {
         revision
     }
 
-    /// Borrow one cached series.
+    /// Read one cached series, if present. Owned, so an entry evicted after
+    /// the read can never surface as a stale borrow.
     #[must_use]
-    pub fn get(&self, key: u64) -> Option<&CachedSeries> {
+    pub fn get(&self, key: u64) -> Option<CachedSeries> {
         self.entries.get(&key)
     }
 
@@ -254,6 +302,30 @@ impl PaneCache {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+}
+
+/// Write-through load: the frame path only inserts computed series, so a
+/// mistaken `get_or_load` fails closed instead of synthesizing a value.
+/// Takes the key by reference because `LoadCache::new` dictates the shape.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn never_load(_key: &u64) -> Result<CachedSeries, String> {
+    Err("pane cache is write-through; load is never called".to_owned())
+}
+
+impl Default for PaneCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for PaneCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PaneCache")
+            .field("len", &self.entries.len())
+            .field("capacity", &self.entries.capacity())
+            .field("revision", &self.revision)
+            .finish()
     }
 }
 

@@ -19,9 +19,10 @@ pub struct Tick {
 
 /// Pick round tick values covering `[min, max]` within `max_ticks`.
 ///
-/// Returns an empty vector for degenerate windows (non-finite bounds,
-/// `min >= max`, `max_ticks == 0`) — the caller renders no ticks rather
-/// than a misleading grid. Never panics.
+/// Task value (legibility): the step/density choice serves readable axes,
+/// never a decision. Returns an empty vector for degenerate windows
+/// (non-finite bounds, `min >= max`, `max_ticks == 0`) — the caller renders
+/// no ticks rather than a misleading grid. Never panics.
 #[must_use]
 pub fn nice_ticks(min: f64, max: f64, max_ticks: usize) -> Vec<Tick> {
     if !min.is_finite() || !max.is_finite() || min >= max || max_ticks == 0 {
@@ -36,9 +37,12 @@ pub fn nice_ticks(min: f64, max: f64, max_ticks: usize) -> Vec<Tick> {
     let start = (min / step).floor() * step;
     let precision = precision_for_step(step);
     let mut ticks = Vec::new();
-    let mut value = start;
-    // Guard against runaway grids when the step underflows the window scale.
-    for _ in 0..=(max_ticks * 4) {
+    // Closed form `start + i*step`: accumulation (`value += step`) drifted a
+    // few ULPs per tick, so a republished window could shift a label.
+    // The `max_ticks * 4` bound is the runaway guard when `step` underflows
+    // the window scale; the `max_ticks * 2` cap is the hard budget.
+    for i in 0..=(max_ticks * 4) {
+        let value = start + i as f64 * step;
         if value > max {
             break;
         }
@@ -49,7 +53,6 @@ pub fn nice_ticks(min: f64, max: f64, max_ticks: usize) -> Vec<Tick> {
                 weight: weight_for(value, step),
             });
         }
-        value += step;
         if ticks.len() > max_ticks * 2 {
             break;
         }

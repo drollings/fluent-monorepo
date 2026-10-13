@@ -1,8 +1,8 @@
 //! Audit ledger: allocation shape, dependency direction, and bloat.
 //!
 //! Every assert here is API shape or source text, never wall-time: frame
-//! budgets are observed in `benches/frame_budget.rs` and recorded beside
-//! the roadmap, while gates pin what the frame may *hold* (no per-widget
+//! budgets are observed in `benches/frame_budget.rs` and recorded there,
+//! while gates pin what the frame may *hold* (no per-widget
 //! channels, no raw spawns, no blocking I/O), which way dependencies point,
 //! and exactly which files and default-feature dependencies exist. Growth
 //! beyond this ledger fails loudly until the ledger itself is edited with a
@@ -40,15 +40,30 @@ fn code_lines(text: &str) -> Vec<&str> {
         .collect()
 }
 
+/// Every `*.rs` file under `src/`, recursively, as `src`-relative
+/// slash-separated paths in sorted order. Recursion is deliberate: a render
+/// submodule (e.g. `views/portfolio.rs`) must appear in the ledger, not slip
+/// past because it lives one level down. The non-render trees (`tests/`,
+/// `benches/`, `examples/`) are siblings of `src/`, so they are exempt by
+/// construction and never enter this list.
 fn src_file_names() -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(manifest_dir().join("src"))
-        .expect("src lists")
-        .filter_map(Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".rs"))
-        .collect();
+    let mut names = Vec::new();
+    collect_rs(&manifest_dir().join("src"), Path::new(""), &mut names);
     names.sort();
     names
+}
+
+fn collect_rs(dir: &Path, prefix: &Path, out: &mut Vec<String>) {
+    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let rel = prefix.join(entry.file_name());
+        if path.is_dir() {
+            collect_rs(&path, &rel, out);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            out.push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
 }
 
 fn forbid_in_src(token: &str, why: &str) {
@@ -67,9 +82,12 @@ fn bloat_ledger_pins_source_files() {
     assert_eq!(
         src_file_names(),
         vec![
+            "annotations.rs",
             "config.rs",
             "error.rs",
             "feed.rs",
+            "hittest.rs",
+            "interaction.rs",
             "lib.rs",
             "paint.rs",
             "plan.rs",
@@ -82,22 +100,67 @@ fn bloat_ledger_pins_source_files() {
 }
 
 /// Parse the `[dependencies]` key list from the crate manifest.
+///
+/// Handles both TOML spellings of the same set — inline keys under
+/// `[dependencies]` and per-dependency table headers `[dependencies.NAME]` —
+/// and tracks inline-table nesting so a multi-line value's continuation lines
+/// are never mistaken for new dependency names.
 fn main_dep_keys() -> Vec<String> {
     let text = read_text(&manifest_dir().join("Cargo.toml"));
-    let mut in_deps = false;
     let mut keys = Vec::new();
+    let mut in_deps = false;
+    let mut depth = 0i32;
     for line in text.lines().map(str::trim) {
-        if line.starts_with('[') {
-            in_deps = line == "[dependencies]";
+        if depth == 0 && line.starts_with('[') {
+            if let Some(rest) = line.strip_prefix("[dependencies") {
+                if let Some(name) = rest.strip_prefix('.').and_then(|n| n.strip_suffix(']')) {
+                    if !name.is_empty() {
+                        keys.push(name.trim().to_owned());
+                    }
+                    in_deps = false;
+                } else {
+                    in_deps = line == "[dependencies]";
+                }
+            } else {
+                in_deps = false;
+            }
             continue;
         }
-        if !in_deps || line.is_empty() || line.starts_with('#') {
+        if !in_deps {
             continue;
         }
-        keys.push(line.split('=').next().unwrap_or("").trim().to_owned());
+        if depth == 0 && !line.is_empty() && !line.starts_with('#') {
+            let key = line.split('=').next().unwrap_or("").trim();
+            if !key.is_empty() {
+                keys.push(key.to_owned());
+            }
+        }
+        depth = (depth + bracket_delta(line)).max(0);
     }
     keys.sort();
+    keys.dedup();
     keys
+}
+
+/// Net inline-table depth on one line, ignoring quoted strings and trailing
+/// `#` comments, so nested manifests parse without a TOML dependency.
+fn bracket_delta(line: &str) -> i32 {
+    let mut delta = 0i32;
+    let mut quote: Option<char> = None;
+    for ch in line.chars() {
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => {}
+            None => match ch {
+                '"' | '\'' => quote = Some(ch),
+                '#' => break,
+                '{' | '[' => delta += 1,
+                '}' | ']' => delta -= 1,
+                _ => {}
+            },
+        }
+    }
+    delta
 }
 
 #[test]

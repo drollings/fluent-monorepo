@@ -12,11 +12,11 @@
 use std::sync::Arc;
 
 use common_core::metrics::LatencyHistogram;
-use fluent_egui::{EguiError, PaneConfig};
+use fluent_egui::{EguiError, PaneConfig, RibbonView};
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_chart_model::{ChartRow, DateRange};
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_chart_model::{ChartRow, ChartType, DateRange, heikin_ashi, rows_of};
+use protopyne_types::{Bar, Validate, check_for_execute, valid_output};
 
 use crate::oscillators::parse_oscillator_kind;
 use crate::topology::standard_plan;
@@ -317,6 +317,92 @@ pub fn window_for_range(
     &rows[rows.len() - keep..]
 }
 
+/// Price bars behind the terminal's picture for one chart type: classic
+/// candles pass bars through, Heikin-Ashi delegates to the headless
+/// transform (no second smoothing math lives here). Only these two render
+/// from bars — line and area render from display rows — so every other
+/// taxonomy variant refuses with the parameter named instead of rendering
+/// a guess.
+pub fn chart_price_bars(bars: &[Bar], kind: ChartType) -> Result<Vec<Bar>, EguiError> {
+    match kind {
+        ChartType::Candles => Ok(bars.to_vec()),
+        ChartType::Heikin => Ok(heikin_ashi(bars)),
+        unsupported => Err(EguiError::InvalidParam {
+            what: "chart_type".to_owned(),
+            reason: format!(
+                "{unsupported:?} has no terminal picture from bars; line and area render from rows"
+            ),
+        }),
+    }
+}
+
+/// Line series behind the terminal's line picture: the row closes, shaped
+/// for the polyline emitter.
+#[must_use]
+pub fn line_values(rows: &[ChartRow]) -> Vec<Option<f64>> {
+    rows.iter().map(|row| Some(row.close)).collect()
+}
+
+/// Rows painted for one chart type over a bar history: candles, line, and
+/// area share the converted window rows; Heikin-Ashi converts over the full
+/// history first (its opens recurse — windowing first would miscompute
+/// every open), then windows. Refuses dropped conversions (downstream keys
+/// would misalign) and unwired types with the parameter named.
+pub fn picture_rows(
+    bars: &[Bar],
+    range: DateRange,
+    bar_seconds: u64,
+    kind: ChartType,
+) -> Result<Vec<ChartRow>, EguiError> {
+    let convert = |source: &[Bar]| {
+        let converted = rows_of(source);
+        if converted.dropped != 0 {
+            return Err(EguiError::InvalidParam {
+                what: "bars".to_owned(),
+                reason: "conversion dropped rows; keys would misalign".to_owned(),
+            });
+        }
+        Ok(window_for_range(&converted.rows, range, bar_seconds).to_vec())
+    };
+    match kind {
+        ChartType::Candles | ChartType::Line | ChartType::Area => convert(bars),
+        ChartType::Heikin => convert(&chart_price_bars(bars, ChartType::Heikin)?),
+        unsupported => Err(EguiError::InvalidParam {
+            what: "chart_type".to_owned(),
+            reason: format!("{unsupported:?} has no terminal picture"),
+        }),
+    }
+}
+
+/// Area-fill view over one value series above a baseline: the upper edge is
+/// the series, the lower edge repeats the baseline, so `ribbon_polygons`
+/// closes one run per unbroken stretch with no new polygon code. Fill
+/// colors come from caller-resolved colors at paint time, never the trend
+/// key, so every run carries `false`. Mirrors `ribbon_view`'s alpha
+/// discipline: alpha outside `[0, 1]` refuses.
+pub fn area_view(
+    values: &[Option<f64>],
+    baseline: f64,
+    alpha: f64,
+) -> Result<RibbonView, EguiError> {
+    if !alpha.is_finite() || alpha < 0.0 || alpha > 1.0 {
+        return Err(EguiError::InvalidParam {
+            what: "alpha".to_owned(),
+            reason: "area fill alpha must sit in [0, 1]".to_owned(),
+        });
+    }
+    Ok(RibbonView {
+        upper: values.to_vec(),
+        lower: vec![Some(baseline); values.len()],
+        bullish: vec![false; values.len()],
+        alpha,
+    })
+}
+
 #[cfg(test)]
 #[path = "../tests/chart.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/chart_types.rs"]
+mod chart_types_tests;

@@ -263,7 +263,8 @@ impl_component!(ChartPromptStage);
 ///
 /// The returned map wraps each output under an `output` key so templates
 /// access it as `upstream.<stage_id>.output` (the documented contract in
-/// `render.rs` and the Appendix A seed charts).
+/// `render.rs` and the Appendix A seed charts): attribute drills read it
+/// structured, whole-value pastes use the `tojson` filter.
 fn read_metadata_json(
     ctx: &WorkContext,
     upstream_ids: &[String],

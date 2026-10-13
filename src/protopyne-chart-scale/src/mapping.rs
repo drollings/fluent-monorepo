@@ -166,6 +166,30 @@ impl PriceScale {
         self.range
     }
 
+    /// Pane height in pixels: the `0..=height` pixel band prices map onto.
+    #[must_use]
+    pub fn height(self) -> f32 {
+        self.height
+    }
+
+    /// Pixels per bar on the index axis.
+    #[must_use]
+    pub fn bar_spacing(self) -> f32 {
+        self.bar_spacing
+    }
+
+    /// First-visible reference the percentage/indexed modes rebase onto.
+    #[must_use]
+    pub fn base_value(self) -> f64 {
+        self.base_value
+    }
+
+    /// Whether the y axis grows upward instead of downward.
+    #[must_use]
+    pub fn inverted(self) -> bool {
+        self.inverted
+    }
+
     /// Reshape one price into scale space (log/percentage/indexed/normal).
     fn to_scaled(self, price: f64) -> Option<f64> {
         if !price.is_finite() {
@@ -223,9 +247,17 @@ impl PriceScale {
     }
 
     /// Invert [`price_to_y`](Self::price_to_y). `None` off-pane or degenerate.
+    ///
+    /// The pane is exactly `0..=height`; a pixel outside it is off-pane and
+    /// has no price. [`price_to_y`](Self::price_to_y) still extrapolates for
+    /// the paint edge (lines and candles running off the pane), so the
+    /// round-trip only holds for in-pane prices.
     #[must_use]
     pub fn y_to_price(self, y: f32) -> Option<f64> {
         if !y.is_finite() {
+            return None;
+        }
+        if y < 0.0 || y > self.height {
             return None;
         }
         let (low, high) = self.scaled_bounds()?;

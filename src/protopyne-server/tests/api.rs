@@ -134,7 +134,7 @@ async fn health_and_portfolio_report_trading_status() {
         .json()
         .await
         .expect("portfolio is JSON");
-    assert_eq!(portfolio.trading_state, protopyne_venue::TradingState::Enabled);
+    assert_eq!(portfolio.trading_state, "Enabled");
     handle.shutdown().await;
 }
 
@@ -171,7 +171,7 @@ async fn preview_populates_inbox_and_portfolio() {
         .expect("inbox is JSON");
     assert!(!inbox.is_empty());
     assert!(inbox.iter().all(|row| row.strategy == "ribbon"));
-    assert!(inbox.iter().any(|row| row.state == ProposalState::Filled));
+    assert!(inbox.iter().any(|row| row.state == "Filled"));
 
     let portfolio: PortfolioView = client
         .get(format!("{}/portfolio", base(&handle)))
@@ -221,7 +221,7 @@ async fn unfilled_inbox_rows_carry_bar_close_limits() {
     let bars = history();
     let mut saw_proposed = false;
     for row in &inbox {
-        if row.state == ProposalState::Proposed {
+        if row.state == "Proposed" {
             saw_proposed = true;
             let index: usize = row
                 .id

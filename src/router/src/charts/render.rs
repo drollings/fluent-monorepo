@@ -4,7 +4,11 @@
 //!
 //! - `request` — the user's message
 //! - `deps.<name>` — the entities bound to a dependency name
-//! - `upstream.<stage_id>.output` — a prior target's structured output
+//! - `upstream.<stage_id>.output` — a prior target's structured output.
+//!   Attribute drills (`{{ upstream.<id>.output.plan }}`) read it
+//!   structured; whole-value pastes MUST use the `tojson` filter
+//!   (`{{ upstream.<id>.output | tojson }}`) — bare interpolation renders
+//!   the engine's Python-repr scalars (`True`/`None`), not JSON.
 //! - `chart` — the chart name (provenance)
 //!
 //! Nothing else is exposed. The environment is strict (unknown attributes
@@ -47,16 +51,34 @@ pub struct BoundEntity {
     pub value: serde_json::Value,
 }
 
+/// Paste a template value as canonical JSON.
+///
+/// Compound values interpolate with the engine's Python-repr scalar
+/// rendering (`True`/`None`) by default; this filter serializes the value
+/// to compact canonical JSON instead (`true`/`null`, double-quoted
+/// strings). The output is marked safe and HTML-escaping is skipped: the
+/// consumer is an LLM prompt, not a web page, so `<`/`>`/`&` paste
+/// verbatim and round-trip byte-identical through `serde_json`.
+fn tojson_filter(value: &minijinja::Value) -> Result<minijinja::Value, minijinja::Error> {
+    serde_json::to_string(&value)
+        .map(minijinja::Value::from_safe_string)
+        .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string()))
+}
+
 /// Build a fresh, strict minijinja environment. Renders are per-request and
 /// short-lived; a fresh environment per render avoids any shared state.
-/// The environment exposes no functions — only the context.
+/// The environment exposes no functions — only the context — plus the
+/// `tojson` filter (see [`tojson_filter`]).
 ///
 /// Note: minijinja 2.x folded `UnknownAttributes::Strict` into
 /// `UndefinedBehavior::Strict` — under it, any unknown variable *or*
 /// attribute access renders as an error instead of silently empty.
+/// Unknown *filters* are likewise render errors, so a misspelled `tojson`
+/// fails closed instead of pasting raw.
 fn build_environment() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    env.add_filter("tojson", tojson_filter);
     env
 }
 
@@ -138,6 +160,8 @@ fn escape_template_markers(s: &str) -> String {
 /// - Uses a fresh strict environment per call.
 /// - The context is sanitized (entity strings escaped/truncated) before
 ///   rendering.
+/// - Prior-target outputs paste as canonical JSON through the `tojson`
+///   filter; attribute drills into them stay structured.
 /// - Output is capped at `CHART_RENDERED_MAX_CHARS`; exceeding it returns
 ///   `ChartError::Render`.
 pub fn render(template: &str, ctx: &RenderContext) -> Result<String, ChartError> {

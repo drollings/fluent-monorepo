@@ -759,7 +759,7 @@ fn triage_chart() -> ChartDef {
                           },
                           "required": true }
                     ],
-                    "template": "Prior plan: {{ upstream.reproduce.output }}\nReport: {% for e in deps.report %}{{ e.value.title }}{% endfor %}\nCause of: {{ request }}",
+                    "template": "Prior plan: {{ upstream.reproduce.output | tojson }}\nReport: {% for e in deps.report %}{{ e.value.title }}{% endfor %}\nCause of: {{ request }}",
                     "essential": true
                 },
                 {
@@ -852,8 +852,8 @@ async fn chart_executes_in_topo_order_with_preamble_and_prior_output() {
         recorded[1]
     );
     assert!(
-        recorded[1].contains(r#"{"ok": true}"#),
-        "root_cause prompt must include the prior target output: {}",
+        recorded[1].contains(r#"{"ok":true}"#),
+        "root_cause prompt must include the prior target output as canonical JSON: {}",
         recorded[1]
     );
     // fix_plan's prompt carries the request.

@@ -29,6 +29,7 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 criterion = { workspace = true }
 rust_decimal = { workspace = true }
+trybuild = "1"
 
 [[bench]]
 name = "frame_budget"

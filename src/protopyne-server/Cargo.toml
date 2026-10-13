@@ -19,6 +19,7 @@ protopyne-kernels = { path = "../protopyne-kernels", default-features = false, f
 protopyne-strategy = { path = "../protopyne-strategy" }
 protopyne-venue = { path = "../protopyne-venue" }
 protopyne-chart-model = { path = "../protopyne-chart-model" }
+protopyne-view = { path = "../protopyne-view" }
 common-core = { path = "../common-core" }
 fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-dag = { path = "../dag" }

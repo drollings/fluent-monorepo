@@ -1,0 +1,14 @@
+[package]
+name = "protopyne-view"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[dependencies]
+protopyne-types = { path = "../protopyne-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

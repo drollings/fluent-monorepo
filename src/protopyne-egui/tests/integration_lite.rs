@@ -277,6 +277,49 @@ fn known_pivots_score_full_precision_and_recall() {
     assert!(missed_recall < 1e-12, "missed pivots recall zero");
 }
 
+/// Calibration pin (task value: alert fitness): the checked-in report is
+/// load-bearing — the recomputed sweep must match it number-for-number.
+/// Floors pin only the frozen threshold; every other recorded number is
+/// evidence the suite re-verifies rather than re-prints.
+#[test]
+fn calibration_report_matches_fixture() {
+    let text = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/pivot_calibration.json"),
+    )
+    .expect("calibration report loads");
+    let report: serde_json::Value = serde_json::from_str(&text).expect("report parses");
+    for threshold in [50.0, 100.0, 150.0, 200.0] {
+        let key = format!("{threshold}");
+        for (name, fast) in [("flat_40", flat_fast(40, 5.0)), ("chop_40", chop_fast(40))] {
+            let marks = pivot_marks(&fast, threshold).expect("valid threshold");
+            let recorded = report["controls"][name]["marks"][key.as_str()]
+                .as_u64()
+                .expect("control marks recorded");
+            assert_eq!(marks.len() as u64, recorded, "{name} at {threshold}");
+        }
+        for (name, (fast, expected)) in
+            [("rise_reversal", rise_reversal()), ("fall_recovery", fall_recovery())]
+        {
+            let marks = pivot_marks(&fast, threshold).expect("valid threshold");
+            let (precision, recall) =
+                precision_recall(&fast, &expected, threshold).expect("valid threshold");
+            let window = &report["windows"][name];
+            let recorded_marks =
+                window["marks"][key.as_str()].as_u64().expect("window marks recorded");
+            let recorded_precision =
+                window["precision"][key.as_str()].as_f64().expect("precision recorded");
+            let recorded_recall =
+                window["recall"][key.as_str()].as_f64().expect("recall recorded");
+            assert_eq!(marks.len() as u64, recorded_marks, "{name} marks at {threshold}");
+            assert!(
+                (precision - recorded_precision).abs() < 1e-12
+                    && (recall - recorded_recall).abs() < 1e-12,
+                "{name} at {threshold}: got {precision}/{recall}"
+            );
+        }
+    }
+}
+
 #[test]
 fn calibration_sweep_is_reported() {
     // Candidate sweep each window fires through; the checked-in report
@@ -424,6 +467,7 @@ fn momentum_series_builds_from_kernels_over_the_ramp() {
 
 #[test]
 fn momentum_palette_resolves_the_pine_input_hues() {
-    let palette = MomentumPalette::from_theme(&fluent_egui::ThemeConfig::default());
+    let palette = MomentumPalette::from_theme(&fluent_egui::ThemeConfig::default())
+        .expect("default theme resolves");
     assert_eq!(palette, test_palette(), "theme defaults carry the barcolor inputs");
 }

@@ -79,7 +79,7 @@ fn linear_chart_json() -> String {
               "template": "a {{ request }}", "essential": true },
             { "name": "b", "provides": ["b_out"], "depends": [
                 { "kind": "capability", "name": "a_out" }
-              ], "template": "b {{ upstream.a.output }}", "essential": true }
+              ], "template": "b {{ upstream.a.output | tojson }}", "essential": true }
         ]
     }"#
     .to_string()
@@ -97,14 +97,14 @@ fn diamond_chart_json() -> String {
               "template": "base {{ request }}", "essential": true },
             { "name": "left", "provides": ["left_out"], "depends": [
                 { "kind": "capability", "name": "base_out" }
-              ], "template": "left {{ upstream.base.output }}", "essential": false },
+              ], "template": "left {{ upstream.base.output | tojson }}", "essential": false },
             { "name": "right", "provides": ["right_out"], "depends": [
                 { "kind": "capability", "name": "base_out" }
-              ], "template": "right {{ upstream.base.output }}", "essential": false },
+              ], "template": "right {{ upstream.base.output | tojson }}", "essential": false },
             { "name": "join", "provides": ["join_out"], "depends": [
                 { "kind": "capability", "name": "left_out" },
                 { "kind": "capability", "name": "right_out" }
-              ], "template": "join {{ upstream.left.output }} {{ upstream.right.output }}",
+              ], "template": "join {{ upstream.left.output | tojson }} {{ upstream.right.output | tojson }}",
               "essential": true }
         ]
     }"#
@@ -244,12 +244,12 @@ async fn essential_failure_cancels_independent_ready_branch() {
               "template": "a1 {{ request }}", "essential": true },
             { "name": "a2", "provides": ["a2_out"], "depends": [
                 { "kind": "capability", "name": "a1_out" }
-              ], "template": "a2 {{ upstream.a1.output }}", "essential": true },
+              ], "template": "a2 {{ upstream.a1.output | tojson }}", "essential": true },
             { "name": "b1", "provides": ["b1_out"], "depends": [],
               "template": "b1 {{ request }}", "essential": false },
             { "name": "b2", "provides": ["b2_out"], "depends": [
                 { "kind": "capability", "name": "b1_out" }
-              ], "template": "b2 {{ upstream.b1.output }}", "essential": false }
+              ], "template": "b2 {{ upstream.b1.output | tojson }}", "essential": false }
         ]
     }"#;
     // Wave 1 schedules {a1, b1}; a1 fails (essential), b1 completes. The
@@ -336,7 +336,7 @@ fn rubric_chart_json() -> String {
               "rubric": { "require_fields": ["answer"], "min_score": 0.7 } },
             { "name": "after", "provides": ["after_out"], "depends": [
                 { "kind": "capability", "name": "probe_out" }
-              ], "template": "after {{ upstream.probe.output }}", "essential": true }
+              ], "template": "after {{ upstream.probe.output | tojson }}", "essential": true }
         ]
     }"#
     .to_string()

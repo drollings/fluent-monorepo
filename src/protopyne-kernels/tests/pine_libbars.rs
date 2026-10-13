@@ -1721,11 +1721,11 @@ fn drift_rebuild_gate_precision_recall() {
 /// slower machine still passes, and a hang reports as an executed-test
 /// timeout to file, never as a threshold to tweak.
 ///
-/// Gate placement (recorded per the roadmap): this soak runs in the
-/// normal debug gate with NO `#[ignore]` — it completes in ~13 s on the
-/// recording machine (far below the release-gating bar), so CI runs it
-/// every time and nightly scheduling buys nothing.
+/// Gate placement: soak, behind `#[ignore]` — the full tape reconstructs
+/// in ~13 s, so the default gate stays smoke-fast and this runs via
+/// `make test-heavy`.
 #[test]
+#[ignore = "soak (~13s): full 10,503-tick tape reconstruction; run via `make test-heavy`"]
 fn soak_full_tape_reconstructs() {
     let content = std::fs::read_to_string(data_root().join("historical/SPY_ticks.csv"))
         .expect("tick tape loads");
