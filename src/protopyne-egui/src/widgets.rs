@@ -6,6 +6,8 @@
 
 use protopyne_chart_model::DateRange;
 
+use crate::chart::TimeframeKey;
+
 /// One multi-timeframe table row: plain display data filled upstream (no
 /// kernel calls at the paint edge).
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +31,25 @@ pub fn mtf_table_shape(rows: &[MtfRow]) -> (usize, usize) {
 #[must_use]
 pub fn toolbar_labels() -> Vec<&'static str> {
     DateRange::default_presets().iter().map(|preset| preset.label()).collect()
+}
+
+/// Timeframe key labels in toolbar order, straight from [`TimeframeKey`].
+#[must_use]
+pub fn timeframe_labels() -> Vec<&'static str> {
+    TimeframeKey::all().iter().map(|key| key.label()).collect()
+}
+
+/// Paint the timeframe selector; returns the newly picked key, if any.
+pub fn paint_timeframe_toolbar(ui: &mut egui::Ui, current: TimeframeKey) -> Option<TimeframeKey> {
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        for key in TimeframeKey::all() {
+            if ui.selectable_label(key == current, key.label()).clicked() {
+                picked = Some(key);
+            }
+        }
+    });
+    picked
 }
 
 /// Paint the multi-timeframe table widget.

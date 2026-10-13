@@ -29,16 +29,17 @@ pub mod session;
 pub mod topology;
 pub mod widgets;
 
-pub use chart::{ChartConfig, timed_plan_build, window_for_range};
+pub use chart::{ChartConfig, TimeframeKey, timed_plan_build, window_for_range};
 pub use export::{
     EXPORT_CSV_HEADER, OverlayExport, export_overlay_json, export_rows_csv, export_rows_json,
 };
 pub use feed::{RecomputeJob, RecomputePool};
 pub use integration_lite::{
     CALIBRATED_PIVOT_THRESHOLD, FreezePair, FreezeReport, IntegrationLiteView, LiteFrozen,
-    LiteNative, RAW_OSCILLATOR_LENGTH, SIGNAL_EIT_ALPHA, compare_freeze,
-    integration_lite_view, integration_lite_view_calibrated, native_lite_series,
-    precision_recall, series_max_diff,
+    LiteNative, OSCILLATOR_BRIGHTNESS, RAW_OSCILLATOR_LENGTH, SIGNAL_EIT_ALPHA,
+    VOLUME_TRANSPARENCY, candle_momentum_keys, compare_freeze, integration_lite_view,
+    integration_lite_view_calibrated, native_lite_series, oscillator_transparency, precision_recall,
+    ribbon_fill_transparency, series_max_diff,
 };
 pub use oscillators::{
     OscParams, OscillatorKind, normalize_oscillator, normalize_series, osc_params,
@@ -54,7 +55,10 @@ pub use topology::{
     PRICE_NODE, RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE, cache_key_for, kernel_order,
     standard_plan, standard_replay,
 };
-pub use widgets::{MtfRow, mtf_table_shape, paint_mtf_table, paint_toolbar, toolbar_labels};
+pub use widgets::{
+    MtfRow, mtf_table_shape, paint_mtf_table, paint_timeframe_toolbar, paint_toolbar,
+    timeframe_labels, toolbar_labels,
+};
 
 /// Terminal marker; touches the linked paint dependency so wiring breaks
 /// loudly if the dependency stops resolving.

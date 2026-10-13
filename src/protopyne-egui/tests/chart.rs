@@ -153,3 +153,17 @@ fn window_for_range_keeps_the_trailing_window() {
     assert_eq!(window[0].time, 560, "window is the trailing slice");
     assert!(window_for_range(&[], DateRange::Day1, 60).is_empty());
 }
+
+#[test]
+fn timeframe_keys_cover_intraday_in_toolbar_order() {
+    let keys = TimeframeKey::all();
+    assert_eq!(keys, vec![TimeframeKey::M1, TimeframeKey::M5, TimeframeKey::M15, TimeframeKey::H1, TimeframeKey::H4]);
+    assert_eq!(TimeframeKey::default(), TimeframeKey::M15);
+    let labels: Vec<&str> = keys.iter().map(|key| key.label()).collect();
+    assert_eq!(labels, vec!["1M", "5M", "15M", "1H", "4H"]);
+    let seconds: Vec<u64> = keys.iter().map(|key| key.seconds()).collect();
+    assert_eq!(seconds, vec![60, 300, 900, 3_600, 14_400]);
+    assert_eq!(TimeframeKey::H1.m15_group(), 4, "one hour resamples four quarter-hours");
+    assert_eq!(TimeframeKey::H4.m15_group(), 16);
+    assert_eq!(TimeframeKey::M15.m15_group(), 1, "native slots need no grouping");
+}

@@ -149,3 +149,63 @@ fn theme_colors_resolve_and_fall_back_softly() {
     let broken = ThemeConfig::new().bull("red".to_owned()).build();
     assert_eq!(theme_color(&broken, "bull"), egui::Color32::GRAY, "paint never panics");
 }
+
+#[test]
+fn ribbon_polygons_fill_runs_not_bars() {
+    let pane = price_pane();
+    let ribbon = ribbon_view(
+        &[Some(102.0), Some(103.0), Some(98.0), None, Some(101.0)],
+        &[Some(100.0), Some(101.0), Some(100.0), Some(100.0), Some(100.0)],
+        0.5,
+    )
+    .expect("valid ribbon");
+    let polygons = ribbon_polygons(&ribbon, &pane);
+    assert_eq!(polygons.len(), 3, "bull run, bear run, hole, lone bar");
+    assert_eq!(polygons[0].indices, vec![0, 1]);
+    assert!(polygons[0].bullish);
+    assert_eq!(polygons[0].points.len(), 4, "upper forward plus lower reversed");
+    assert_eq!(polygons[1].indices, vec![2]);
+    assert!(!polygons[1].bullish, "trend flip starts a new run");
+    assert_eq!(polygons[2].indices, vec![4], "holes break runs, never bridge");
+    for polygon in &polygons {
+        assert!(polygon.points.len() >= 4 || polygon.indices.len() == 1);
+    }
+    let empty = ribbon_view(&[None, None], &[None, None], 0.5).expect("holed ribbon");
+    assert!(ribbon_polygons(&empty, &pane).is_empty(), "fully holed input fills nothing");
+}
+
+#[test]
+fn pivot_price_dots_sit_on_bar_extremes() {
+    let pane = price_pane();
+    let rows = vec![row(100.0, 10), row(101.0, 20), row(99.0, 30)];
+    let fast = vec![Some(150.0), Some(90.0), Some(-80.0)];
+    let marks = pivot_marks(&fast, 100.0).expect("valid threshold");
+    assert_eq!(marks.len(), 1);
+    let dots = pivot_price_dots(&marks, &rows, &pane);
+    assert_eq!(dots.len(), 1);
+    assert_eq!(dots[0].index, 1);
+    assert_eq!(
+        dots[0].y.to_bits(),
+        pane.price_to_y(rows[1].high).expect("high maps").to_bits(),
+        "high-side dots sit on the bar high, not the oscillator"
+    );
+    assert!(pivot_price_dots(&marks, &rows[..1], &pane).is_empty(), "past-the-rows marks skip");
+}
+
+#[test]
+fn transparency_maps_percent_to_byte_opacity() {
+    assert_eq!(opacity_from_transparency(0.0), 255, "zero transparency is opaque");
+    assert_eq!(opacity_from_transparency(100.0), 0, "full transparency is invisible");
+    assert_eq!(
+        opacity_from_transparency(60.0),
+        102,
+        "the specified dimming lands at forty percent opacity"
+    );
+    assert_eq!(opacity_from_transparency(140.0), 0, "overshoot clamps to invisible");
+    assert_eq!(opacity_from_transparency(-20.0), 255, "undershoot clamps to opaque");
+    assert_eq!(
+        opacity_from_transparency(f64::NAN),
+        255,
+        "non-finite transparency stays visible, never silently vanishes"
+    );
+}

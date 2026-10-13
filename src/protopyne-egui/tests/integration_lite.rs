@@ -311,3 +311,44 @@ fn calibration_sweep_is_reported() {
     }
     println!("CALIBRATION_SWEEP={}", serde_json::Value::Object(table));
 }
+
+#[test]
+fn momentum_keys_cross_direction_with_trend() {
+    let row = |open: f64, close: f64| ChartRow {
+        time: 0,
+        open,
+        high: open.max(close),
+        low: open.min(close),
+        close,
+        volume: 10,
+    };
+    let rows = vec![row(100.0, 101.0), row(100.0, 99.0), row(100.0, 99.0), row(100.0, 101.0)];
+    let keys = candle_momentum_keys(&rows, &[true, true, false, false]).expect("aligned inputs");
+    assert_eq!(keys, vec!["bull", "bull_down", "bear", "bear_up"]);
+    assert!(candle_momentum_keys(&rows, &[true]).is_err(), "key mismatch refuses");
+}
+
+#[test]
+fn specified_transparencies_follow_the_reference_inputs() {
+    for (strength, expected) in [(0.5, 65.0), (0.14, 86.6), (0.8, 47.0), (2.0, 0.0)] {
+        let got = ribbon_fill_transparency(strength);
+        assert!(
+            (got - expected).abs() < 1e-9,
+            "95 - 60 * alpha clamped: strength {strength} -> {got}, want {expected}"
+        );
+    }
+    let garbage = ribbon_fill_transparency(f64::NAN);
+    assert!(
+        (garbage - 100.0).abs() < 1e-9,
+        "garbage strength paints nothing, got {garbage}"
+    );
+    assert_eq!(OSCILLATOR_BRIGHTNESS, 30, "reference brightness input");
+    for (brightness, expected) in [(30_u32, 60.0), (0, 90.0), (200, 0.0)] {
+        let got = oscillator_transparency(brightness);
+        assert!(
+            (got - expected).abs() < 1e-9,
+            "90 - brightness: {brightness} -> {got}, want {expected}"
+        );
+    }
+    assert!((VOLUME_TRANSPARENCY - 60.0).abs() < 1e-12, "reference volume color input");
+}

@@ -238,6 +238,34 @@ pub fn pivot_dots(
         .collect()
 }
 
+/// Place pivot dots at bar price extremes, mirroring the reference overlay
+/// labels: `High` marks sit on the bar high, `Low` marks on the bar low.
+///
+/// Marks past the rows, on holes, or with unmappable extremes are skipped —
+/// dots decorate confirmed extremes only.
+#[must_use]
+pub fn pivot_price_dots(
+    marks: &[PivotMark],
+    rows: &[ChartRow],
+    viewport: &Viewport,
+) -> Vec<PivotDot> {
+    marks
+        .iter()
+        .filter_map(|mark| {
+            let row = rows.get(mark.index)?;
+            let extreme = match mark.side {
+                PivotSide::High => row.high,
+                PivotSide::Low => row.low,
+            };
+            if !extreme.is_finite() {
+                return None;
+            }
+            let y = viewport.price_to_y(extreme)?;
+            Some(PivotDot { index: mark.index, x: viewport.index_to_x(mark.index), y, side: mark.side })
+        })
+        .collect()
+}
+
 /// Y pixel of a `±threshold` rule; `None` when the threshold is not a
 /// positive finite value or sits outside the pane range.
 #[must_use]
@@ -299,6 +327,38 @@ pub fn paint_candles(
     }
 }
 
+/// Paint candles under one explicit style key.
+///
+/// Same min-visibility body rule as [`paint_candles`]; the caller groups
+/// geometry by display key (for example the four momentum tints) and paints
+/// one pass per key.
+pub fn paint_candles_as(
+    painter: &egui::Painter,
+    geoms: &[CandleGeom],
+    style_key: &str,
+    body_width: f32,
+    theme: &ThemeConfig,
+) {
+    let color = theme_color(theme, style_key);
+    let stroke = egui::Stroke::new(1.0, color);
+    for geom in geoms {
+        painter.line_segment(
+            [egui::Pos2::new(geom.x, geom.high_y), egui::Pos2::new(geom.x, geom.low_y)],
+            stroke,
+        );
+        let top = geom.open_y.min(geom.close_y);
+        let bottom = (geom.open_y.max(geom.close_y)).max(top + 1.0);
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::Pos2::new(geom.x - body_width / 2.0, top),
+                egui::Pos2::new(geom.x + body_width / 2.0, bottom),
+            ),
+            0.0,
+            color,
+        );
+    }
+}
+
 /// Paint ribbon fill strips between the band edges at `alpha` opacity.
 pub fn paint_ribbon(
     painter: &egui::Painter,
@@ -328,6 +388,120 @@ pub fn paint_ribbon(
             0.0,
             fill,
         );
+    }
+}
+
+/// One ribbon fill run: a closed polygon between the band edges over a
+/// contiguous stretch of bars sharing one trend key.
+///
+/// `points` walks the upper edge forward, then the lower edge reversed, so
+/// the emitter fills exactly the band the reference `fill()` shades —
+/// a continuous area, never per-bar candle lookalikes. Pane-local, like
+/// every geometry here: the caller shifts points by the pane origin.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RibbonPolygon {
+    /// Bar indices covered by this run (contiguous).
+    pub indices: Vec<usize>,
+    /// Closed polygon points in pane-local pixels.
+    pub points: Vec<(f32, f32)>,
+    /// Trend key shared by the whole run.
+    pub bullish: bool,
+}
+
+/// Build ribbon fill polygons: maximal runs of contiguous bars whose edges
+/// both map and whose trend key is constant.
+///
+/// Holes, non-finite legs, and unmappable edges break runs (never bridged);
+/// a trend flip starts a new run so each polygon paints one flat color.
+/// Runs shorter than two bars still emit (degenerate but harmless); fully
+/// holed inputs yield no polygons.
+#[must_use]
+pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPolygon> {
+    let mut polygons = Vec::new();
+    let mut upper_run: Vec<(f32, f32)> = Vec::new();
+    let mut lower_run: Vec<(f32, f32)> = Vec::new();
+    let mut run_indices: Vec<usize> = Vec::new();
+    let mut run_trend = false;
+    let mut open = false;
+
+    let flush = |polygons: &mut Vec<RibbonPolygon>,
+                 upper_run: &mut Vec<(f32, f32)>,
+                 lower_run: &mut Vec<(f32, f32)>,
+                 run_indices: &mut Vec<usize>,
+                 run_trend: bool,
+                 open: &mut bool| {
+        if *open && !run_indices.is_empty() {
+            let mut points = std::mem::take(upper_run);
+            let mut lower: Vec<(f32, f32)> = std::mem::take(lower_run);
+            lower.reverse();
+            points.extend(lower);
+            polygons.push(RibbonPolygon {
+                indices: std::mem::take(run_indices),
+                points,
+                bullish: run_trend,
+            });
+        } else {
+            upper_run.clear();
+            lower_run.clear();
+            run_indices.clear();
+        }
+        *open = false;
+    };
+
+    for (index, ((upper, lower), trend)) in
+        ribbon.upper.iter().zip(ribbon.lower.iter()).zip(ribbon.bullish.iter()).enumerate()
+    {
+        let mappable = match (upper, lower) {
+            (Some(up), Some(lo)) if up.is_finite() && lo.is_finite() => {
+                match (viewport.price_to_y(*up), viewport.price_to_y(*lo)) {
+                    (Some(top_y), Some(bottom_y)) => {
+                        Some((viewport.index_to_x(index), top_y, bottom_y))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let Some((x, top_y, bottom_y)) = mappable else {
+            flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
+            continue;
+        };
+        if !open || run_trend != *trend {
+            flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
+            run_trend = *trend;
+            open = true;
+        }
+        upper_run.push((x, top_y));
+        lower_run.push((x, bottom_y));
+        run_indices.push(index);
+    }
+    flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
+    polygons
+}
+
+/// Paint ribbon fill runs as translucent areas between the band edges.
+///
+/// One flat color per run (`ribbon_bull`/`ribbon_bear` theme keys at
+/// `alpha`), matching the reference shaded band. Single-bar runs paint as
+/// thin quads through the same polygon path — no special case.
+pub fn paint_ribbon_fill(
+    painter: &egui::Painter,
+    polygons: &[RibbonPolygon],
+    theme: &ThemeConfig,
+    alpha: f32,
+) {
+    let clamped = alpha.clamp(0.0, 1.0);
+    let opacity = (clamped * 255.0).round().clamp(0.0, 255.0) as u8;
+    for polygon in polygons {
+        if polygon.points.len() < 3 {
+            continue;
+        }
+        let key = if polygon.bullish { "ribbon_bull" } else { "ribbon_bear" };
+        let base = theme_color(theme, key);
+        let fill = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
+        let points: Vec<egui::Pos2> =
+            polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect();
+        painter.add(egui::Shape::convex_polygon(points, fill, egui::Stroke::NONE));
     }
 }
 
@@ -362,15 +536,37 @@ pub fn paint_delta_bars(
     }
 }
 
+/// Map a Pine-style transparency percent to a byte opacity.
+///
+/// `color.new(c, t)` semantics: `0` is fully opaque, `100` fully invisible.
+/// Out-of-range inputs clamp; non-finite input paints opaque (fail-soft —
+/// paint stays visible and debuggable rather than silently vanishing).
+#[must_use]
+pub fn opacity_from_transparency(transparency: f64) -> u8 {
+    if !transparency.is_finite() {
+        return 255;
+    }
+    let opacity = (100.0 - transparency) / 100.0 * 255.0;
+    opacity.round().clamp(0.0, 255.0) as u8
+}
+
 /// Paint a zero-centered oscillator polyline under one style key, lifting
 /// the pen across holes.
+///
+/// `alpha` is the line opacity (`1` opaque): series whose specification
+/// carries transparency (for example dimmed oscillator legs) resolve it
+/// caller-side through [`opacity_from_transparency`] and pass the fraction.
 pub fn paint_oscillator(
     painter: &egui::Painter,
     points: &[Option<(f32, f32)>],
     style_key: &str,
     theme: &ThemeConfig,
+    alpha: f32,
 ) {
-    let color = theme_color(theme, style_key);
+    let base = theme_color(theme, style_key);
+    let opacity = (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
+    let color =
+        egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
     let stroke = egui::Stroke::new(1.0, color);
     for window in points.windows(2) {
         if let (Some((x0, y0)), Some((x1, y1))) = (window[0], window[1]) {

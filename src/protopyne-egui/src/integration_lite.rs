@@ -143,6 +143,60 @@ pub fn integration_lite_view_calibrated(
     integration_lite_view(rows, eit_alpha, fill_alpha, CALIBRATED_PIVOT_THRESHOLD)
 }
 
+/// Default oscillator brightness behind the dimmed legs (reference input).
+pub const OSCILLATOR_BRIGHTNESS: u32 = 30;
+/// Transparency of the volume colors (reference input, percent).
+pub const VOLUME_TRANSPARENCY: f64 = 60.0;
+
+/// Ribbon fill transparency for a fill strength, mirroring the reference
+/// `95 - (60 * alpha)` shading: weak legs run nearly invisible, strong legs
+/// plateau near half opacity. Total: clamps into `[0, 100]`; non-finite
+/// strengths paint nothing rather than an undefined shade.
+#[must_use]
+pub fn ribbon_fill_transparency(fill_alpha: f64) -> f64 {
+    if !fill_alpha.is_finite() {
+        return 100.0;
+    }
+    (95.0 - 60.0 * fill_alpha).clamp(0.0, 100.0)
+}
+
+/// Oscillator leg transparency for a brightness input, mirroring the
+/// reference `90 - brightness` dimming. Total: clamps into `[0, 100]`.
+#[must_use]
+pub fn oscillator_transparency(brightness: u32) -> f64 {
+    f64::from(90_u32.saturating_sub(brightness))
+}
+
+/// Candle tint keys from bar direction crossed with the ribbon trend.
+///
+/// Mirrors the reference four-color `barcolor` branch in display space:
+/// trend-up bars that closed up read `"bull"`, trend-up bars that closed
+/// down read `"bull_down"` (retrace), trend-down bars that closed down read
+/// `"bear"`, and trend-down bars that closed up read `"bear_up"` (relief).
+/// Output lines up with `rows` index-for-index; refuses trend-length
+/// mismatch. Flat bars (`close == open`) read with the trend.
+pub fn candle_momentum_keys(
+    rows: &[ChartRow],
+    bullish: &[bool],
+) -> Result<Vec<&'static str>, EguiError> {
+    if rows.len() != bullish.len() {
+        return Err(EguiError::InvalidParam {
+            what: "series".to_owned(),
+            reason: "rows and ribbon keys lengths differ".to_owned(),
+        });
+    }
+    Ok(rows
+        .iter()
+        .zip(bullish.iter())
+        .map(|(row, trend)| match (row.close >= row.open, *trend) {
+            (true, true) => "bull",
+            (false, true) => "bull_down",
+            (false, false) => "bear",
+            (true, false) => "bear_up",
+        })
+        .collect())
+}
+
 /// Frozen Pine-comparable series: squashed oscillators plus the adaptive leg.
 #[derive(Debug, Clone)]
 pub struct LiteFrozen {

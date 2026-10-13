@@ -39,6 +39,22 @@ fn default_background() -> String {
     "#000000".to_owned()
 }
 
+fn default_ribbon_bull() -> String {
+    "#00BCD4".to_owned()
+}
+
+fn default_ribbon_bear() -> String {
+    "#7B1FA2".to_owned()
+}
+
+fn default_bull_down() -> String {
+    "#FF9800".to_owned()
+}
+
+fn default_bear_up() -> String {
+    "#2196F3".to_owned()
+}
+
 fn default_grid() -> String {
     "#2A2A2A".to_owned()
 }
@@ -149,6 +165,26 @@ pub struct ThemeConfig {
     #[builder(default = default_background())]
     #[serde(default = "default_background")]
     pub background: String,
+    /// Ribbon fill color on bull runs (shaded band, not candles).
+    #[field(desc = "Ribbon bull fill color (#RRGGBB)")]
+    #[builder(default = default_ribbon_bull())]
+    #[serde(default = "default_ribbon_bull")]
+    pub ribbon_bull: String,
+    /// Ribbon fill color on bear runs (shaded band, not candles).
+    #[field(desc = "Ribbon bear fill color (#RRGGBB)")]
+    #[builder(default = default_ribbon_bear())]
+    #[serde(default = "default_ribbon_bear")]
+    pub ribbon_bear: String,
+    /// Candle color for bull-trend bars that closed down (retrace).
+    #[field(desc = "Bull retrace candle color (#RRGGBB)")]
+    #[builder(default = default_bull_down())]
+    #[serde(default = "default_bull_down")]
+    pub bull_down: String,
+    /// Candle color for bear-trend bars that closed up (relief).
+    #[field(desc = "Bear relief candle color (#RRGGBB)")]
+    #[builder(default = default_bear_up())]
+    #[serde(default = "default_bear_up")]
+    pub bear_up: String,
     /// Gridline color.
     #[field(desc = "Gridline color (#RRGGBB)")]
     #[builder(default = default_grid())]
@@ -183,6 +219,10 @@ impl ThemeConfig {
             ("fast", &self.fast),
             ("slow", &self.slow),
             ("background", &self.background),
+            ("ribbon_bull", &self.ribbon_bull),
+            ("ribbon_bear", &self.ribbon_bear),
+            ("bull_down", &self.bull_down),
+            ("bear_up", &self.bear_up),
             ("grid", &self.grid),
         ] {
             if !is_hex_color(value) {
@@ -204,6 +244,10 @@ impl ThemeConfig {
             "fast" => Some(&self.fast),
             "slow" => Some(&self.slow),
             "background" => Some(&self.background),
+            "ribbon_bull" => Some(&self.ribbon_bull),
+            "ribbon_bear" => Some(&self.ribbon_bear),
+            "bull_down" => Some(&self.bull_down),
+            "bear_up" => Some(&self.bear_up),
             "grid" => Some(&self.grid),
             _ => None,
         }

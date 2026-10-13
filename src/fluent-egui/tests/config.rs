@@ -14,7 +14,19 @@ fn pane_and_theme_fields_round_trip() {
     assert!((pane.height_share - 0.5).abs() < 1e-12);
 
     let mut theme = ThemeConfig::default();
-    for name in ["name", "bull", "bear", "fast", "slow", "background", "grid"] {
+    for name in [
+        "name",
+        "bull",
+        "bear",
+        "fast",
+        "slow",
+        "background",
+        "ribbon_bull",
+        "ribbon_bear",
+        "bull_down",
+        "bear_up",
+        "grid",
+    ] {
         assert!(theme.get_field(name).is_ok(), "theme field {name} reads");
         assert!(theme.describe()["properties"].get(name).is_some());
     }
@@ -55,6 +67,10 @@ fn theme_resolves_style_keys() {
     assert_eq!(theme.style("fast"), Some("#20C8F0"));
     assert_eq!(theme.style("slow"), Some("#B4F028"));
     assert_eq!(theme.style("background"), Some("#000000"));
+    assert_eq!(theme.style("ribbon_bull"), Some("#00BCD4"));
+    assert_eq!(theme.style("ribbon_bear"), Some("#7B1FA2"));
+    assert_eq!(theme.style("bull_down"), Some("#FF9800"));
+    assert_eq!(theme.style("bear_up"), Some("#2196F3"));
     assert_eq!(theme.style("grid"), Some("#2A2A2A"));
     assert_eq!(theme.style("rsi"), None, "domain names are not style keys");
 }

@@ -25,6 +25,75 @@ fn default_timeframe() -> String {
     "M15".to_owned()
 }
 
+/// Intraday bar timeframe key behind the terminal toolbar.
+///
+/// Display-only selector: each key maps to bar spacing (for range-window
+/// math) and to a history slot in the shell. Higher keys (`H1`, `H4`)
+/// resample the `M15` slot upward in the shell — the kernels always see
+/// plain closed bars, never a timeframe concept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TimeframeKey {
+    /// One-minute bars.
+    M1,
+    /// Five-minute bars.
+    M5,
+    /// Fifteen-minute bars (default).
+    #[default]
+    M15,
+    /// One-hour bars (resampled ×4 from `M15`).
+    H1,
+    /// Four-hour bars (resampled ×16 from `M15`).
+    H4,
+}
+
+impl TimeframeKey {
+    /// Every key in toolbar order.
+    #[must_use]
+    pub fn all() -> Vec<Self> {
+        vec![Self::M1, Self::M5, Self::M15, Self::H1, Self::H4]
+    }
+
+    /// Short button label (`1M`, `5M`, `15M`, `1H`, `4H`).
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::M1 => "1M",
+            Self::M5 => "5M",
+            Self::M15 => "15M",
+            Self::H1 => "1H",
+            Self::H4 => "4H",
+        }
+    }
+
+    /// Bar spacing in seconds, for range-window math.
+    #[must_use]
+    pub fn seconds(self) -> u64 {
+        match self {
+            Self::M1 => 60,
+            Self::M5 => 300,
+            Self::M15 => 900,
+            Self::H1 => 3_600,
+            Self::H4 => 14_400,
+        }
+    }
+
+    /// Resample factor over the `M15` slot (`1` where a native file exists).
+    #[must_use]
+    pub fn m15_group(self) -> usize {
+        match self {
+            Self::M1 | Self::M5 | Self::M15 => 1,
+            Self::H1 => 4,
+            Self::H4 => 16,
+        }
+    }
+}
+
+impl std::fmt::Display for TimeframeKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 fn default_fast_oscillator() -> String {
     "rsi".to_owned()
 }

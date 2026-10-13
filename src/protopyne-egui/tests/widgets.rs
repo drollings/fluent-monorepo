@@ -15,3 +15,8 @@ fn mtf_shape_and_toolbar_labels_come_from_canonical_lists() {
     assert_eq!(labels, expected);
     assert!(labels.contains(&"1M"));
 }
+
+#[test]
+fn timeframe_labels_follow_key_order() {
+    assert_eq!(timeframe_labels(), vec!["1M", "5M", "15M", "1H", "4H"]);
+}
