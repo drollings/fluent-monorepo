@@ -1,5 +1,5 @@
 //! Momentum remainder: price oscillator, rate-of-change family, stochastic
-//! fast pair, triple-EMA rate, and Aroon.
+//! fast pair, triple-EMA rate, Aroon, and ADX.
 //!
 //! `MACD`, `RSI`, and `STOCH` already ship in `oscillators` and are untouched
 //! here; this module adds only what is missing. Two reference behaviors shape
@@ -18,6 +18,7 @@
 //! exactly like the `dema`/`macd` compositions, so batch and incremental paths
 //! share every recurrence.
 
+use crate::averages::RmaIndicator;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
@@ -1177,6 +1178,244 @@ impl Indicator for AroonIndicator {
             }],
         })
     }
+}
+
+/// Average Directional Index (`adx`) with `plus_di`/`minus_di` secondaries,
+/// parameterized by `length`.
+///
+/// Directional movement follows the reference decomposition (+DM/-DM/TR),
+/// but every smoothing pass composes the shared [`RmaIndicator`] — Wilder
+/// smoothing with an SMA seed — instead of hand-rolled Wilder sums, so the
+/// batch and incremental paths share each recurrence exactly like the
+/// `atr`/`macd` compositions. Steady-state levels match the hand-rolled
+/// variant; only the first `2 * length - 1` bars differ (RMA seeds one bar
+/// earlier, from the first window mean).
+///
+/// `NaN` in any consumed leg emits `None` at that position: directional
+/// legs derive `NaN`, the RMA children propagate it, and the ratios refuse
+/// zero denominators via [`div_or_none`](crate::math::div_or_none).
+pub struct AdxIndicator {
+    spec: IndicatorSpec,
+}
+
+impl AdxIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "adx";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Average Directional Index".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    /// Sub-pass parameters shared by batch, update, and composition: one
+    /// construction site for the smoothing key.
+    fn rma_params(length: usize) -> ParamSet {
+        ParamSet::new().with_int("length", length as i64)
+    }
+
+    /// Raw (+DM, -DM, TR) legs for bar `i`, or `NaN` legs when the bar (or,
+    /// past bar zero, its predecessor) carries a non-finite leg. Bar zero
+    /// measures no movement yet reads `(0, 0, high - low)`, matching the
+    /// reference seed and the `tr` kernel's first bar.
+    fn legs(high: &[f64], low: &[f64], close: &[f64], i: usize) -> (f64, f64, f64) {
+        if ![high[i], low[i], close[i]].iter().all(|v| v.is_finite()) {
+            return (f64::NAN, f64::NAN, f64::NAN);
+        }
+        if i == 0 {
+            return (0.0, 0.0, high[0] - low[0]);
+        }
+        Self::legs_pair(high[i - 1], low[i - 1], close[i - 1], high[i], low[i], close[i])
+    }
+
+    /// Raw (+DM, -DM, TR) legs for one bar against its predecessor, or `NaN`
+    /// legs when either side carries a non-finite leg. Shared by the batch
+    /// pairing and the incremental path so both read one rule.
+    fn legs_pair(
+        prev_high: f64,
+        prev_low: f64,
+        prev_close: f64,
+        high: f64,
+        low: f64,
+        close: f64,
+    ) -> (f64, f64, f64) {
+        if ![prev_high, prev_low, prev_close, high, low, close]
+            .iter()
+            .all(|v| v.is_finite())
+        {
+            return (f64::NAN, f64::NAN, f64::NAN);
+        }
+        let up_move = high - prev_high;
+        let down_move = prev_low - low;
+        let plus = if up_move > down_move && up_move > 0.0 {
+            up_move
+        } else {
+            0.0
+        };
+        let minus = if down_move > up_move && down_move > 0.0 {
+            down_move
+        } else {
+            0.0
+        };
+        let range = crate::volatility::true_range(high, low, Some(prev_close));
+        (plus, minus, range)
+    }
+
+    /// Directional leg from smoothed parts: `100 * part / smoothed_tr`,
+    /// or `NaN` while either side is missing (zero denominators refuse via
+    /// `div_or_none`, so flat markets read `None`, never `inf`).
+    fn leg_of(smoothed: Option<f64>, smoothed_tr: Option<f64>) -> f64 {
+        match (smoothed, smoothed_tr) {
+            (Some(part), Some(total)) => {
+                crate::math::div_or_none(100.0 * part, total).unwrap_or(f64::NAN)
+            }
+            _ => f64::NAN,
+        }
+    }
+}
+
+impl Default for AdxIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for AdxIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        let period = Self::period(params)?;
+        Ok(2 * period - 1)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let (high, low) = (
+            data.require("high", data.high)?,
+            data.require("low", data.low)?,
+        );
+        let n = data.len();
+        let mut dm_plus = vec![f64::NAN; n];
+        let mut dm_minus = vec![f64::NAN; n];
+        let mut ranges = vec![f64::NAN; n];
+        for i in 0..n {
+            let (plus, minus, range) = Self::legs(high, low, data.close, i);
+            dm_plus[i] = plus;
+            dm_minus[i] = minus;
+            ranges[i] = range;
+        }
+        let rma = RmaIndicator::new();
+        let smooth = |series: &[f64]| {
+            rma.batch(&Ohlcv::close_only(series), &Self::rma_params(period))
+                .map(|result| result.values)
+        };
+        let smoothed_plus = smooth(&dm_plus)?;
+        let smoothed_minus = smooth(&dm_minus)?;
+        let smoothed_tr = smooth(&ranges)?;
+        let mut plus_di = vec![f64::NAN; n];
+        let mut minus_di = vec![f64::NAN; n];
+        let mut dx = vec![f64::NAN; n];
+        for i in 0..n {
+            plus_di[i] = Self::leg_of(smoothed_plus[i], smoothed_tr[i]);
+            minus_di[i] = Self::leg_of(smoothed_minus[i], smoothed_tr[i]);
+            if plus_di[i].is_finite() && minus_di[i].is_finite() {
+                dx[i] = crate::math::div_or_none(
+                    100.0 * (plus_di[i] - minus_di[i]).abs(),
+                    plus_di[i] + minus_di[i],
+                )
+                .unwrap_or(f64::NAN);
+            }
+        }
+        let adx = rma.batch(&Ohlcv::close_only(&dx), &Self::rma_params(period))?;
+        Ok(IndicatorResult::new(
+            Self::ID.to_owned(),
+            adx.values.clone(),
+        )
+        .with_secondary(NamedSeries::new(
+            "plus_di",
+            plus_di.iter().map(|&v| fin_or_none(v)).collect(),
+        ))
+        .with_secondary(NamedSeries::new(
+            "minus_di",
+            minus_di.iter().map(|&v| fin_or_none(v)).collect(),
+        )))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        Ok(self.update_full(state, bar, params)?.primary)
+    }
+
+    fn update_full(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<FullTick, KernelError> {
+        let period = Self::period(params)?;
+        state.push(bar, 2);
+        let (dm_plus, dm_minus, range) = if state.len() < 2 {
+            Self::legs(&[bar.high], &[bar.low], &[bar.close], 0)
+        } else {
+            // Retained previous bar against the current tick: the same
+            // pairing the batch loop reads at each index past zero.
+            let highs: Vec<f64> = state.highs().collect();
+            let lows: Vec<f64> = state.lows().collect();
+            let prev_close = state.prev_close().unwrap_or(f64::NAN);
+            Self::legs_pair(highs[0], lows[0], prev_close, bar.high, bar.low, bar.close)
+        };
+        let rma = RmaIndicator::new();
+        let rma_ps = Self::rma_params(period);
+        let smoothed_plus =
+            rma.update(state.child(0), BarTick::close_only(dm_plus), &rma_ps)?;
+        let smoothed_minus =
+            rma.update(state.child(1), BarTick::close_only(dm_minus), &rma_ps)?;
+        let smoothed_tr = rma.update(state.child(2), BarTick::close_only(range), &rma_ps)?;
+        let plus = Self::leg_of(smoothed_plus, smoothed_tr);
+        let minus = Self::leg_of(smoothed_minus, smoothed_tr);
+        let dx = if plus.is_finite() && minus.is_finite() {
+            crate::math::div_or_none(100.0 * (plus - minus).abs(), plus + minus)
+                .unwrap_or(f64::NAN)
+        } else {
+            f64::NAN
+        };
+        let adx = rma.update(state.child(3), BarTick::close_only(dx), &rma_ps)?;
+        state.set_last(adx.unwrap_or(f64::NAN));
+        Ok(FullTick {
+            primary: adx,
+            secondary: vec![
+                NamedValue {
+                    name: "plus_di".to_owned(),
+                    value: fin_or_none(plus),
+                },
+                NamedValue {
+                    name: "minus_di".to_owned(),
+                    value: fin_or_none(minus),
+                },
+            ],
+        })
+    }
+
+    // No declared sub-series: every RMA pass reads a derived (intermediate)
+    // series, never a frame leg, so there is no shared frame key — the
+    // `macd` signal-line precedent.
 }
 
 #[cfg(all(test, feature = "research"))]

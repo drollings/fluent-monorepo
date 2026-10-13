@@ -352,3 +352,78 @@ fn specified_transparencies_follow_the_reference_inputs() {
     }
     assert!((VOLUME_TRANSPARENCY - 60.0).abs() < 1e-12, "reference volume color input");
 }
+
+fn test_palette() -> MomentumPalette {
+    MomentumPalette {
+        bull_up: [0x20, 0xB4, 0x6C],
+        bear_down: [0xB4, 0x20, 0x20],
+        bull_down: [0xFF, 0x98, 0x00],
+        bear_up: [0x21, 0x96, 0xF3],
+    }
+}
+
+#[test]
+fn momentum_tint_matches_hand_computed_gradient() {
+    let palette = test_palette();
+    // Bull bar, mid conviction: fast_tanh(1.5) = 0.6 -> na 54, t 46;
+    // leg 50 * 54 / 100 = 27 -> pos 0.635 over relief-blue -> bull-green.
+    let tint = momentum_tint(100.0, 101.0, 50.0, 0.5, 1.0, &palette).expect("finite inputs tint");
+    assert_eq!(tint, MomentumTint { red: 32, green: 169, blue: 157, transparency: 46.0 });
+    // Bear bar, softer conviction: fast_tanh(1.0) = 0.5 -> na 45, t 55;
+    // leg -40 * 45 / 100 = -18 -> pos 0.41 over bear-red -> retrace-orange.
+    let tint = momentum_tint(101.0, 100.0, -40.0, 0.5, 0.5, &palette).expect("finite inputs tint");
+    assert_eq!(tint, MomentumTint { red: 211, green: 81, blue: 19, transparency: 55.0 });
+    // Flat reads bearish through the `else`: leg 0 -> midpoint at t 88.
+    let tint = momentum_tint(100.0, 100.0, 0.0, 0.14, 0.0, &palette).expect("flat tints");
+    assert_eq!(tint, MomentumTint { red: 218, green: 92, blue: 16, transparency: 88.0 });
+    // Momentum clamps to +/-100 before the map.
+    let over = momentum_tint(100.0, 101.0, 300.0, 0.5, 1.0, &palette).expect("clamped tints");
+    let at = momentum_tint(100.0, 101.0, 100.0, 0.5, 1.0, &palette).expect("clamped tints");
+    assert_eq!(over, at, "over-range momentum reads at the rail");
+    assert!(momentum_tint(100.0, 101.0, f64::NAN, 0.5, 1.0, &palette).is_none(), "na propagates");
+    assert!(momentum_tint(100.0, 101.0, 50.0, f64::NAN, 1.0, &palette).is_none(), "na propagates");
+}
+
+#[test]
+fn momentum_batch_preserves_holes_and_refuses() {
+    let palette = test_palette();
+    let rows = ramp_rows();
+    let window = &rows[..8];
+    let momentum = CandleMomentum {
+        health: vec![Some(20.0), None, Some(-30.0), Some(0.0), None, Some(90.0), Some(10.0), Some(-10.0)],
+        vol_ratio: vec![1.0; 8],
+    };
+    let tints = momentum_tints(window, &momentum, 0.14, &palette).expect("aligned inputs tint");
+    assert_eq!(tints.len(), window.len());
+    assert!(tints[0].is_some());
+    assert!(tints[1].is_none(), "warming bars fall back to the discrete key");
+    assert!(tints[4].is_none());
+    let short = CandleMomentum { health: vec![Some(1.0)], vol_ratio: vec![1.0] };
+    assert!(momentum_tints(window, &short, 0.14, &palette).is_err(), "length mismatch refuses");
+    assert!(momentum_tints(window, &momentum, 0.0, &palette).is_err(), "zero alpha refuses");
+    assert!(momentum_tints(window, &momentum, f64::NAN, &palette).is_err(), "na alpha refuses");
+}
+
+#[test]
+fn momentum_series_builds_from_kernels_over_the_ramp() {
+    let rows = ramp_rows();
+    let momentum = candle_momentum_series(&rows, 0.14).expect("ramp builds momentum");
+    assert_eq!(momentum.health.len(), rows.len());
+    assert_eq!(momentum.vol_ratio.len(), rows.len());
+    assert!(
+        momentum.vol_ratio[..19].iter().all(|ratio| *ratio == 0.0),
+        "volume SMA warmup reads zero conviction, never a partial ratio"
+    );
+    assert!(momentum.vol_ratio.iter().all(|ratio| *ratio >= 0.0), "conviction never negative");
+    assert!(
+        momentum.health.iter().any(Option::is_some),
+        "warmed legs score health on a 60-bar ramp"
+    );
+    assert!(candle_momentum_series(&rows, 0.0).is_err(), "zero EIT alpha refuses");
+}
+
+#[test]
+fn momentum_palette_resolves_the_pine_input_hues() {
+    let palette = MomentumPalette::from_theme(&fluent_egui::ThemeConfig::default());
+    assert_eq!(palette, test_palette(), "theme defaults carry the barcolor inputs");
+}

@@ -3,8 +3,9 @@ use crate::compat::compat_for;
 use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::ta_momentum::{
-    ApoIndicator, AroonIndicator, MomIndicator, PpoIndicator, RocIndicator, RocpIndicator,
-    Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator, WillrIndicator,
+    AdxIndicator, ApoIndicator, AroonIndicator, MomIndicator, PpoIndicator, RocIndicator,
+    RocpIndicator, Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator,
+    WillrIndicator,
 };
 use polars::prelude::{EWMOptions, Expr, IntoLazy, RollingOptionsFixedWindow, col, lit, when};
 use protopyne_types::Bar;
@@ -602,14 +603,152 @@ fn aroon_tie_break_prefers_most_recent_extreme() {
 }
 
 #[test]
-fn momentum_registry_and_matrix_cover_all_twelve() {
+fn momentum_registry_and_matrix_cover_all_thirteen() {
     let registry = builtin_registry().expect("builtins");
     for id in [
         "apo", "mom", "ppo", "roc", "rocp", "rocr", "rocr100", "rsv", "stochf", "trix",
-        "willr", "aroon",
+        "willr", "aroon", "adx",
     ] {
         assert!(registry.get(id).is_some(), "{id} registered");
         let row = compat_for(id).unwrap_or_else(|| panic!("{id} matrix row"));
         assert!((row.eps - 1e-9).abs() == 0.0, "{id} frozen eps");
     }
+}
+
+fn adx_params() -> ParamSet {
+    ParamSet::new().with_int("length", 14)
+}
+
+fn adx2_params() -> ParamSet {
+    ParamSet::new().with_int("length", 2)
+}
+
+fn adx_bars() -> Vec<Bar> {
+    // Rising closes with one pullback bar: exercises +DM, -DM, and TR legs.
+    let legs = [
+        (9.0, 10.0, 8.0, 9.0),
+        (10.0, 11.0, 9.0, 10.0),
+        (11.0, 12.0, 9.0, 11.0),
+        (10.0, 11.0, 8.0, 10.0),
+        (11.5, 12.0, 10.0, 11.5),
+        (12.5, 13.0, 11.0, 12.5),
+    ];
+    legs.into_iter()
+        .enumerate()
+        .map(|(i, (o, h, l, c))| bar_at(o, h, l, c, 1_000, i))
+        .collect()
+}
+
+fn assert_close(got: Option<f64>, want: f64, what: &str) {
+    match got {
+        Some(g) => assert!((g - want).abs() < 1e-9, "{what}: {g} vs {want}"),
+        None => panic!("{what}: None vs {want}"),
+    }
+}
+
+#[test]
+fn adx_matches_hand_stepped_rma_composition() {
+    // RMA(2) over hand-derived legs: seeds are window means, steps are
+    // Wilder recurrences — the shared smoother, not hand-rolled sums.
+    let bars = adx_bars();
+    let data = OwnedOhlcv::from_bars(&bars);
+    let adx = AdxIndicator::new();
+    assert_eq!(adx.warmup(&adx2_params()).expect("valid"), 3);
+    let result = adx.batch(&data.views(), &adx2_params()).expect("valid");
+    assert!(result.values[..2].iter().all(Option::is_none), "two smoothings warm");
+    let plus = result.secondary("plus_di").expect("plus leg");
+    let minus = result.secondary("minus_di").expect("minus leg");
+    assert_close(plus[2], 30.0, "plus_di[2]");
+    assert_close(minus[2], 0.0, "minus_di[2]");
+    assert_close(result.values[2], 100.0, "adx[2]");
+    assert_close(result.values[3], 57.142857142857146, "adx[3]");
+    assert_close(result.values[5], 63.04915514592934, "adx[5]");
+    assert_close(plus[5], 38.57142857142857, "plus_di[5]");
+    assert_close(minus[5], 5.714285714285714, "minus_di[5]");
+}
+
+#[test]
+fn adx_update_agrees_with_batch_on_all_legs() {
+    let adx = AdxIndicator::new();
+    for (bars, name) in [(trend_bars(60), "trend"), (spy_bars(60), "spy"), (adx_bars(), "hand")] {
+        let data = OwnedOhlcv::from_bars(&bars);
+        let result = adx.batch(&data.views(), &adx_params()).expect("valid");
+        let plus = result.secondary("plus_di").expect("plus leg");
+        let minus = result.secondary("minus_di").expect("minus leg");
+        let mut state = IndicatorState::new();
+        for (tick, ((want_adx, want_plus), want_minus)) in ticks_of(&bars)
+            .into_iter()
+            .zip(result.values.iter().zip(plus.iter()).zip(minus.iter()))
+        {
+            let tick_out = adx.update_full(&mut state, tick, &adx_params()).expect("valid");
+            assert_eq!(&tick_out.primary, want_adx, "adx agreement on {name}");
+            let got_plus = tick_out
+                .secondary
+                .iter()
+                .find(|v| v.name == "plus_di")
+                .and_then(|v| v.value);
+            let got_minus = tick_out
+                .secondary
+                .iter()
+                .find(|v| v.name == "minus_di")
+                .and_then(|v| v.value);
+            assert_eq!(got_plus, *want_plus, "plus_di agreement on {name}");
+            assert_eq!(got_minus, *want_minus, "minus_di agreement on {name}");
+        }
+    }
+}
+
+#[test]
+fn adx_reads_strong_on_a_steady_uptrend() {
+    let bars = trend_bars(60);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let adx = AdxIndicator::new();
+    let result = adx.batch(&data.views(), &adx_params()).expect("valid");
+    assert!(result.values[..26].iter().all(Option::is_none), "ADX warms 26 bars");
+    for leg in [&result.values, result.secondary("plus_di").expect("plus")] {
+        for v in leg.iter().flatten().skip(26) {
+            assert!((0.0..=100.0).contains(v), "DMI legs range");
+        }
+    }
+    let plus = result.secondary("plus_di").expect("plus leg");
+    let minus = result.secondary("minus_di").expect("minus leg");
+    let tail = bars.len() - 5..bars.len();
+    assert!(
+        tail.clone().all(|i| plus[i] > minus[i]),
+        "+DI dominates -DI into the trend"
+    );
+    assert!(
+        matches!(result.values[bars.len() - 1], Some(v) if v > 25.0),
+        "steady trend reads strong"
+    );
+}
+
+#[test]
+fn adx_holes_emit_none_without_failing() {
+    // `Decimal` bars cannot carry NaN: the hole enters at the leg level,
+    // exactly like the calibration null-injection control.
+    let bars = adx_bars();
+    let mut data = OwnedOhlcv::from_bars(&bars);
+    data.close[3] = f64::NAN;
+    let mut ticks = ticks_of(&bars);
+    ticks[3].close = f64::NAN;
+    let adx = AdxIndicator::new();
+    let result = adx.batch(&data.views(), &adx2_params()).expect("valid");
+    assert_eq!(result.values.len(), bars.len(), "length conserved");
+    assert!(result.values[3].is_none(), "dirty bar emits None");
+    assert!(
+        result.secondary("plus_di").expect("plus")[3].is_none(),
+        "dirty bar poisons both legs"
+    );
+    let mut state = IndicatorState::new();
+    for (tick, want) in ticks.into_iter().zip(result.values.iter()) {
+        assert_eq!(&adx.update(&mut state, tick, &adx2_params()).expect("valid"), want, "adx hole agreement");
+    }
+}
+
+#[test]
+fn adx_refuses_bad_periods() {
+    let adx = AdxIndicator::new();
+    assert!(adx.warmup(&ParamSet::new().with_int("length", 0)).is_err(), "zero refuses");
+    assert!(adx.warmup(&ParamSet::new()).is_err(), "missing refuses");
 }

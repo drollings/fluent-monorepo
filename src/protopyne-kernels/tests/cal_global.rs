@@ -67,7 +67,7 @@ fn frozen_eps_table_never_widens() {
     }
     assert_eq!(
         pending,
-        ["eit", "kalman", "voss"],
+        ["eit", "kalman", "voss", "adx", "cmf", "donchian", "ichimoku", "sar", "supertrend"],
         "pending set is exact: additions promote or extend this list deliberately"
     );
     for id in registry.ids() {
@@ -83,7 +83,7 @@ fn dashboard_is_green_with_full_accept_and_zero_false_fire() {
     // the pending set — `is_green` stays the full-trust signal and is not
     // asserted while anything pends.
     let dashboard = ParityDashboard::build().expect("dashboard builds");
-    let pending = ["eit", "kalman", "voss"];
+    let pending = ["eit", "kalman", "voss", "adx", "cmf", "donchian", "ichimoku", "sar", "supertrend"];
     for row in &dashboard.rows {
         if pending.contains(&row.id) {
             assert!(!row.accepted, "{} pending row must not read accepted", row.id);

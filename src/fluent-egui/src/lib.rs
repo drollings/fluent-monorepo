@@ -39,11 +39,11 @@ pub use feed::{
     RefreshGate, TransportRetry, load_history, run_wave,
 };
 pub use paint::{
-    CandleGeom, DeltaBarGeom, PivotDot, RibbonBand, RibbonPolygon, candle_geoms,
+    CandleGeom, DeltaBarGeom, PivotDot, RibbonBand, RibbonPolygon, TintedCandle, candle_geoms,
     delta_bar_geoms, opacity_from_transparency, oscillator_points, paint_candles,
-    paint_candles_as, paint_delta_bars, paint_oscillator, paint_pivot_dots, paint_ribbon,
-    paint_ribbon_fill, paint_session_breaks, paint_thresholds, pivot_dots, pivot_price_dots,
-    ribbon_bands, ribbon_polygons, theme_color, threshold_line,
+    paint_candles_as, paint_candles_tinted, paint_delta_bars, paint_oscillator, paint_pivot_dots,
+    paint_ribbon, paint_ribbon_fill, paint_session_breaks, paint_thresholds, pivot_dots,
+    pivot_price_dots, ribbon_bands, ribbon_polygons, theme_color, threshold_line,
 };
 pub use plan::{CachedSeries, PaneCache, PanePlan, cache_key};
 pub use replay::{ReplayController, ReplayState};

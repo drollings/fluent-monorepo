@@ -1,5 +1,5 @@
-//! Volume remainder: accumulation/distribution, its oscillator, and
-//! on-balance volume.
+//! Volume remainder: accumulation/distribution, its oscillator, Chaikin
+//! money flow, and on-balance volume.
 //!
 //! These are the first kernels reading the `volume` leg beyond `vwma`: every
 //! batch path enforces [`Ohlcv::require`](crate::indicator::Ohlcv::require)
@@ -44,8 +44,9 @@ impl AdIndicator {
     /// Money-flow multiplier: signed close position inside the range; an
     /// exactly flat range reads the defined zero. Exact comparison, like the
     /// stochastic kernels: microscopically gapped markets must not read as
-    /// flat.
-    fn multiplier(close: f64, high: f64, low: f64) -> f64 {
+    /// flat. Shared with the `cmf` kernel, which weights the same flow over
+    /// a trailing window instead of accumulating it.
+    pub(crate) fn multiplier(close: f64, high: f64, low: f64) -> f64 {
         #[allow(clippy::float_cmp)]
         if high == low {
             0.0
@@ -533,6 +534,124 @@ impl Indicator for VwapIndicator {
         state.set_last(price_volume);
         state.child(0).set_last(total_volume);
         Ok(fin_or_none(price_volume / total_volume))
+    }
+}
+
+/// Chaikin money flow (`cmf`): trailing `length`-bar money-flow-volume
+/// over trailing volume, parameterized by `length`. The per-bar flow reuses
+/// the shared [`AdIndicator::multiplier`] (flat ranges read the defined
+/// zero), but instead of accumulating it weights each window by its own
+/// volume — accumulation pressure reads positive, distribution negative,
+/// bounded by construction in `[-1, 1]` on clean data.
+///
+/// A zero-volume window is `0/0` (`None`), not zero: unlike the reference,
+/// which divides through and prints `0`, this kernel follows the house
+/// rule that flat windows are `na` (the `stoch` flat-window precedent). A
+/// `NaN` in any consumed leg poisons its window to `None` without failing
+/// the batch.
+pub struct CmfIndicator {
+    spec: IndicatorSpec,
+}
+
+impl CmfIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "cmf";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Chaikin Money Flow".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    /// One bar's money-flow-volume, or `NaN` when any consumed leg is
+    /// missing. Flat ranges contribute the defined zero times the volume.
+    fn flow(high: f64, low: f64, close: f64, volume: f64) -> f64 {
+        if ![high, low, close, volume].iter().all(|v| v.is_finite()) {
+            return f64::NAN;
+        }
+        AdIndicator::multiplier(close, high, low) * volume
+    }
+
+    /// Flow ratio over one trailing window: `NaN` while warming, when any
+    /// window leg is missing, or when the window traded no volume.
+    fn window_ratio(flows: &[f64], volumes: &[f64]) -> f64 {
+        crate::math::div_or_none(flows.iter().sum(), volumes.iter().sum())
+            .unwrap_or(f64::NAN)
+    }
+}
+
+impl Default for CmfIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for CmfIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Self::period(params)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let (high, low, volume) = (
+            data.require("high", data.high)?,
+            data.require("low", data.low)?,
+            data.require("volume", data.volume)?,
+        );
+        let n = data.len();
+        let flows: Vec<f64> = (0..n)
+            .map(|i| Self::flow(high[i], low[i], data.close[i], volume[i]))
+            .collect();
+        let mut values = crate::math::warmup_none(n);
+        for (i, slot) in values.iter_mut().enumerate() {
+            if i + 1 < period {
+                continue;
+            }
+            let start = i + 1 - period;
+            *slot = fin_or_none(Self::window_ratio(&flows[start..=i], &volume[start..=i]));
+        }
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = Self::period(params)?;
+        state.push(bar, period);
+        if state.len() < period {
+            return Ok(None);
+        }
+        // Retained legs run oldest-first in one shared order, so zipping
+        // them rebuilds exactly the trailing window the batch slices.
+        let flows: Vec<f64> = state
+            .highs()
+            .zip(state.lows())
+            .zip(state.closes())
+            .zip(state.volumes())
+            .map(|(((high, low), close), volume)| Self::flow(high, low, close, volume))
+            .collect();
+        let volumes: Vec<f64> = state.volumes().collect();
+        let ratio = Self::window_ratio(&flows, &volumes);
+        state.set_last(ratio);
+        Ok(fin_or_none(ratio))
     }
 }
 

@@ -114,7 +114,7 @@ pub use pine::builtins_ta::TaBridge;
 pub use research::{fractal_dimension, frame_of_bars, frame_of_values, price_density, rsrs};
 pub use timed::{instrumented_kernel, KernelUnit};
 pub use util::{add_expr, argmax_window, argmin_window, change, cross_warmup, crossover, crossunder, div_expr, highest, lowest, max_window, min_window, mom, mul_expr, sub_expr, sum_window};
-pub use volatility::{true_range, AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, TrIndicator};
+pub use volatility::{true_range, AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, SupertrendIndicator, TrIndicator};
 pub use wq_comb::{
     comb_abs, comb_add, comb_and, comb_arc_cos, comb_arc_sin, comb_arc_tan, comb_arc_tan2, comb_bool,
     comb_cbrt, comb_ceiling, comb_clamp, comb_clamp_inverse, comb_cos, comb_cosh, comb_cot, comb_cube,
@@ -147,11 +147,11 @@ pub use native_libs::{
 pub use runtime::{PineRuntime, PineRuntimeConfig};
 pub use series::SliceSeries;
 pub use sma::SmaIndicator;
-pub use ta_overlap::{BbandsIndicator, MidpointIndicator, MidpriceIndicator, TrimaIndicator};
+pub use ta_overlap::{BbandsIndicator, DonchianIndicator, IchimokuIndicator, MidpointIndicator, MidpriceIndicator, PsarIndicator, TrimaIndicator};
 pub use ta_price::{AvgPriceIndicator, MedPriceIndicator, TypPriceIndicator, WclPriceIndicator};
-pub use ta_momentum::{ApoIndicator, AroonIndicator, MomIndicator, PpoIndicator, RocIndicator, RocpIndicator, Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator, WillrIndicator};
+pub use ta_momentum::{AdxIndicator, ApoIndicator, AroonIndicator, MomIndicator, PpoIndicator, RocIndicator, RocpIndicator, Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator, WillrIndicator};
 pub use ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};
-pub use ta_volume::{AdIndicator, AdoscIndicator, MfiIndicator, ObvIndicator, VwapIndicator};
+pub use ta_volume::{AdIndicator, AdoscIndicator, CmfIndicator, MfiIndicator, ObvIndicator, VwapIndicator};
 pub use value::{ColorHandle, EnumHandle, FieldTable, NativeCall, PineValue, UserInstance, fixnan, map_key_of, nz};
 pub use vars::{Var, VarIp, VarStore};
 

@@ -2,7 +2,7 @@ use super::*;
 use crate::compat::compat_for;
 use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
-use crate::ta_volume::{AdIndicator, AdoscIndicator, ObvIndicator};
+use crate::ta_volume::{AdIndicator, AdoscIndicator, CmfIndicator, ObvIndicator};
 use polars::prelude::{EWMOptions, Expr, IntoLazy, col, lit, when};
 use protopyne_types::Bar;
 use std::path::PathBuf;
@@ -378,11 +378,96 @@ fn vwap_accumulates_price_volume() {
 }
 
 #[test]
-fn volume_registry_and_matrix_cover_all_five() {
+fn volume_registry_and_matrix_cover_all_six() {
     let registry = builtin_registry().expect("builtins");
-    for id in ["ad", "adosc", "obv", "mfi", "vwap"] {
+    for id in ["ad", "adosc", "obv", "mfi", "vwap", "cmf"] {
         assert!(registry.get(id).is_some(), "{id} registered");
         let row = compat_for(id).unwrap_or_else(|| panic!("{id} matrix row"));
         assert!((row.eps - 1e-9).abs() == 0.0, "{id} frozen eps");
     }
+}
+
+fn cmf_params() -> ParamSet {
+    ParamSet::new().with_int("length", 3)
+}
+
+#[test]
+fn cmf_matches_hand_ratio() {
+    // mfm: +0.5, -1.0, +1.0; mfv: 500, -1000, 2000; vol 1000/1000/2000.
+    let bars = [
+        (10.0, 12.0, 8.0, 11.0, 1_000_u64),
+        (11.0, 13.0, 9.0, 9.0, 1_000),
+        (9.0, 10.0, 9.0, 10.0, 2_000),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, (o, h, l, c, v))| bar_at(o, h, l, c, v, i))
+    .collect::<Vec<_>>();
+    let data = OwnedOhlcv::from_bars(&bars);
+    let cmf = CmfIndicator::new();
+    assert_eq!(cmf.warmup(&cmf_params()).expect("valid"), 3);
+    let result = cmf.batch(&data.views(), &cmf_params()).expect("valid");
+    assert_eq!(result.values.len(), 3);
+    assert!(result.values[..2].iter().all(Option::is_none), "window warms");
+    match result.values[2] {
+        Some(v) => assert!((v - 0.375).abs() < 1e-12, "hand ratio {v}"),
+        None => panic!("hand window defined"),
+    }
+    let mut state = IndicatorState::new();
+    for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
+        assert_eq!(&cmf.update(&mut state, tick, &cmf_params()).expect("valid"), want, "cmf agreement");
+    }
+}
+
+#[test]
+fn cmf_zero_volume_window_is_na_and_flat_range_is_zero() {
+    let cmf = CmfIndicator::new();
+    let ps = ParamSet::new().with_int("length", 5);
+    // Zero volume everywhere: 0/0 windows refuse instead of printing zero.
+    let dry: Vec<Bar> =
+        (0..20).map(|i| bar_at(9.0, 11.0, 8.0, 10.0, 0, i)).collect();
+    let data = OwnedOhlcv::from_bars(&dry);
+    let result = cmf.batch(&data.views(), &ps).expect("valid");
+    assert!(result.values.iter().all(Option::is_none), "dry windows are na");
+    // Flat ranges with real volume: defined-zero flow over real volume.
+    let flat: Vec<Bar> =
+        (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let data = OwnedOhlcv::from_bars(&flat);
+    let result = cmf.batch(&data.views(), &ps).expect("valid");
+    assert!(result.values[..4].iter().all(Option::is_none), "window warms");
+    assert!(
+        result.values[4..].iter().all(|v| *v == Some(0.0)),
+        "flat flow reads zero, not na"
+    );
+}
+
+#[test]
+fn cmf_holds_bounds_and_update_agreement_on_spy() {
+    let cmf = CmfIndicator::new();
+    let ps = ParamSet::new().with_int("length", 20);
+    let bars = spy_bars(120);
+    let data = OwnedOhlcv::from_bars(&bars);
+    let result = cmf.batch(&data.views(), &ps).expect("valid");
+    assert_eq!(result.values.len(), bars.len());
+    for v in result.values.iter().flatten().skip(19) {
+        assert!((-1.0..=1.0).contains(v), "money flow bounded");
+    }
+    let mut state = IndicatorState::new();
+    for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
+        assert_eq!(&cmf.update(&mut state, tick, &ps).expect("valid"), want, "cmf spy agreement");
+    }
+}
+
+#[test]
+fn cmf_refuses_bad_periods_and_short_legs() {
+    let cmf = CmfIndicator::new();
+    assert!(cmf.warmup(&ParamSet::new().with_int("length", 0)).is_err(), "zero refuses");
+    let legs = OwnedOhlcv {
+        open: vec![],
+        high: vec![1.0, 2.0, 3.0],
+        low: vec![1.0, 2.0, 3.0],
+        close: vec![1.0, 2.0, 3.0],
+        volume: vec![1.0, 2.0],
+    };
+    assert!(cmf.batch(&legs.views(), &cmf_params()).is_err(), "short volume refuses");
 }

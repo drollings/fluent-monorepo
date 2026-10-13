@@ -1,9 +1,10 @@
 //! Native terminal demo shell over the headless chart stack.
 //!
 //! A TradingView-flavoured terminal: symbol + timeframe toolbar (`1M` `5M`
-//! `15M` `1H` `4H`), range presets, a price pane (four-color momentum
-//! candles, shaded ribbon area, volume strip, session grid, right price
-//! axis with a last-price tag, OHLC legend, hover crosshair), the
+//! `15M` `1H` `4H`), range presets, a price pane (per-bar momentum-gradient
+//! candles with conviction transparency via the ported
+//! `getColorMomentumAlpha`, shaded ribbon area, volume strip, session grid,
+//! right price axis with a last-price tag, OHLC legend, hover crosshair), the
 //! zero-centered oscillator pane (fast/slow, threshold rules, right axis),
 //! and the multi-timeframe table. No decision logic lives here: every number
 //! on screen comes from the headless kernels and views; this file only maps
@@ -25,18 +26,18 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use fluent_egui::{
-    BreakLine, CandleGeom, PivotDot, RibbonPolygon, RibbonView, ThemeConfig, Viewport, axis_ticks,
-    candle_geoms, opacity_from_transparency, oscillator_points, paint_candles_as,
-    paint_oscillator, paint_pivot_dots, paint_ribbon_fill, paint_session_breaks, pivot_dots,
-    pivot_price_dots, ribbon_polygons, theme_color,
+    BreakLine, CandleGeom, PivotDot, RibbonPolygon, RibbonView, ThemeConfig, TintedCandle,
+    Viewport, axis_ticks, candle_geoms, opacity_from_transparency, oscillator_points,
+    paint_candles_tinted, paint_oscillator, paint_pivot_dots, paint_ribbon_fill,
+    paint_session_breaks, pivot_dots, pivot_price_dots, ribbon_polygons, theme_color,
 };
 use protopyne_chart_model::{ChartRow, DailySessionProvider, DateRange, rows_of};
 use protopyne_chart_scale::{PriceScaleMode, Tick};
 use protopyne_egui::{
-    IntegrationLiteView, MtfRow, OSCILLATOR_BRIGHTNESS, TimeframeKey, VOLUME_TRANSPARENCY,
-    break_lines, candle_momentum_keys, integration_lite_view_calibrated, oscillator_transparency,
-    paint_mtf_table, paint_timeframe_toolbar, paint_toolbar, ribbon_fill_transparency,
-    window_for_range,
+    IntegrationLiteView, MomentumPalette, MomentumTint, MtfRow, OSCILLATOR_BRIGHTNESS, TimeframeKey,
+    VOLUME_TRANSPARENCY, break_lines, candle_momentum_keys, candle_momentum_series,
+    integration_lite_view_calibrated, momentum_tints, oscillator_transparency, paint_mtf_table,
+    paint_timeframe_toolbar, paint_toolbar, ribbon_fill_transparency, window_for_range,
 };
 use protopyne_types::Bar;
 
@@ -72,6 +73,16 @@ fn ribbon_alpha(fill_strength: f64) -> f32 {
 /// Oscillator leg opacity at the specified dimming for the default brightness.
 fn osc_alpha() -> f32 {
     alpha_fraction(opacity_from_transparency(oscillator_transparency(OSCILLATOR_BRIGHTNESS)))
+}
+
+/// Resolve a ported tint to its paint color at the specified transparency.
+fn tint_color(tint: MomentumTint) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(
+        tint.red,
+        tint.green,
+        tint.blue,
+        opacity_from_transparency(tint.transparency),
+    )
 }
 
 /// TradingView-dark chrome over the Pine parity palette: the candle, ribbon,
@@ -177,6 +188,7 @@ struct TerminalApp {
     override_m15: Option<PathBuf>,
     histories: HashMap<TimeframeKey, History>,
     view: IntegrationLiteView,
+    tints: Vec<Option<MomentumTint>>,
     mtf: Vec<MtfRow>,
     announced: bool,
 }
@@ -201,6 +213,7 @@ impl TerminalApp {
                 pivots: Vec::new(),
                 threshold: 100.0,
             },
+            tints: Vec::new(),
             mtf: Vec::new(),
             announced: false,
         };
@@ -246,6 +259,11 @@ impl TerminalApp {
             self.ensure_history(timeframe)?;
         }
         self.view = self.build_view(self.timeframe)?;
+        let palette = MomentumPalette::from_theme(&self.theme);
+        let momentum = candle_momentum_series(self.window_rows(self.timeframe), EIT_ALPHA)
+            .map_err(|e| format!("momentum build refused ({}): {e}", self.timeframe))?;
+        self.tints = momentum_tints(self.window_rows(self.timeframe), &momentum, EIT_ALPHA, &palette)
+            .map_err(|e| format!("tint build refused ({}): {e}", self.timeframe))?;
         self.mtf = Vec::new();
         for timeframe in TimeframeKey::all() {
             let view = self.build_view(timeframe)?;
@@ -605,22 +623,31 @@ impl TerminalApp {
         self.paint_hgrid(&painter, plot, viewport, min, max);
 
         let bullish = &self.view.ribbon.bullish;
-        let momentum: Vec<&str> = candle_momentum_keys(rows, bullish).unwrap_or_default();
+        let discrete: Vec<&str> = candle_momentum_keys(rows, bullish).unwrap_or_default();
         let polygons = place_polygons(ribbon_polygons(&self.view.ribbon, &viewport), origin);
         paint_ribbon_fill(&painter, &polygons, &self.theme, ribbon_alpha(FILL_ALPHA));
-        self.paint_volume(&painter, plot, viewport, &momentum);
+        self.paint_volume(&painter, plot, viewport, &discrete);
         if let Ok(geoms) = candle_geoms(rows, bullish, &viewport) {
-            let geoms = place_candles(geoms, origin);
-            for key in ["bull", "bear", "bull_down", "bear_up"] {
-                let group: Vec<CandleGeom> = geoms
-                    .iter()
-                    .filter(|geom| momentum.get(geom.index).copied().unwrap_or("bull") == key)
-                    .copied()
-                    .collect();
-                if !group.is_empty() {
-                    paint_candles_as(&painter, &group, key, BAR_SPACING * 0.7, &self.theme);
-                }
-            }
+            let candles: Vec<TintedCandle> = place_candles(geoms, origin)
+                .into_iter()
+                .map(|geom| {
+                    let color = self
+                        .tints
+                        .get(geom.index)
+                        .and_then(|slot| *slot)
+                        .map_or_else(
+                            || {
+                                theme_color(
+                                    &self.theme,
+                                    discrete.get(geom.index).copied().unwrap_or("bull"),
+                                )
+                            },
+                            tint_color,
+                        );
+                    TintedCandle { geom, color }
+                })
+                .collect();
+            paint_candles_tinted(&painter, &candles, BAR_SPACING * 0.7);
         }
         if let Some(bars) = self.aligned_bars() {
             let provider = DailySessionProvider::continuous();

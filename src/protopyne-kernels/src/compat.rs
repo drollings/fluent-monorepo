@@ -291,6 +291,39 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
         eps: 1e-9,
         status: CompatStatus::FormulaVerified("transcribed Pine recurrence, hand-stepped sets green; staged-expression cross-check pending"),
     },
+    // Second pending block: egui-charts ports verified against transcribed
+    // formulas and hand-stepped sets (plus batch/update identity folds);
+    // staged-expression cross-checks pending like the recurrence rows above.
+    KernelCompat {
+        id: "adx",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("RMA-composed DMI transcription, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "cmf",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("trailing money-flow ratio, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "donchian",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("trailing extremes transcription, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "ichimoku",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("Donchian-midline legs transcription, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "sar",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("Wilder stop-and-reverse transcription, hand-stepped sets green; staged-expression cross-check pending"),
+    },
+    KernelCompat {
+        id: "supertrend",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("ATR ratchet transcription, hand-stepped sets green; staged-expression cross-check pending"),
+    },
     KernelCompat {
         id: "native-libBars",
         eps: 1e-9,

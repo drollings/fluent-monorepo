@@ -327,6 +327,51 @@ pub fn paint_candles(
     }
 }
 
+/// One candle plus its resolved paint color.
+///
+/// Pairs headless geometry with the display color the caller resolved for
+/// it (theme key, momentum tint, or fallback): the emitter draws exactly
+/// what it is given, like every painter here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TintedCandle {
+    /// Candle geometry in UI space (caller shifts pane-local geometry).
+    pub geom: CandleGeom,
+    /// Resolved body and wick color.
+    pub color: egui::Color32,
+}
+
+/// Paint candles in individual colors.
+///
+/// Same min-visibility body rule as [`paint_candles`]; each candle carries
+/// its own resolved color, so per-bar tints (momentum gradients, conviction
+/// fades) need no grouping pass.
+pub fn paint_candles_tinted(
+    painter: &egui::Painter,
+    candles: &[TintedCandle],
+    body_width: f32,
+) {
+    for candle in candles {
+        let stroke = egui::Stroke::new(1.0, candle.color);
+        painter.line_segment(
+            [
+                egui::Pos2::new(candle.geom.x, candle.geom.high_y),
+                egui::Pos2::new(candle.geom.x, candle.geom.low_y),
+            ],
+            stroke,
+        );
+        let top = candle.geom.open_y.min(candle.geom.close_y);
+        let bottom = (candle.geom.open_y.max(candle.geom.close_y)).max(top + 1.0);
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::Pos2::new(candle.geom.x - body_width / 2.0, top),
+                egui::Pos2::new(candle.geom.x + body_width / 2.0, bottom),
+            ),
+            0.0,
+            candle.color,
+        );
+    }
+}
+
 /// Paint candles under one explicit style key.
 ///
 /// Same min-visibility body rule as [`paint_candles`]; the caller groups

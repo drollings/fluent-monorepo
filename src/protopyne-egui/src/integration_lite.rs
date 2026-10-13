@@ -15,10 +15,12 @@
 //! fixtures — this module carries only the frozen wiring.
 
 use protopyne_chart_model::ChartRow;
+use protopyne_kernels::bars::fast_tanh;
 use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet, builtin_registry};
+use protopyne_kernels::market_context::health_mas;
 
 use fluent_egui::EguiError;
-use fluent_egui::{PivotMark, RibbonView, pivot_marks, ribbon_view};
+use fluent_egui::{PivotMark, RibbonView, ThemeConfig, pivot_marks, ribbon_view, theme_color};
 
 use crate::oscillators::{OscillatorKind, normalize_series};
 
@@ -193,6 +195,238 @@ pub fn candle_momentum_keys(
             (false, true) => "bull_down",
             (false, false) => "bear",
             (true, false) => "bear_up",
+        })
+        .collect())
+}
+
+/// EMA length of the ribbon mean leg (reference `i_ribbon_mean_period`;
+/// the `EMA` factory branch ignores `param1`, so plain length-21 EMA).
+pub const RIBBON_MEAN_LENGTH: i64 = 21;
+/// Volume SMA length behind the conviction ratio (reference
+/// `ta.sma(volume, 20)` in the context fetch).
+pub const VOL_SMA_LENGTH: i64 = 20;
+/// ATR length behind the health distances (reference context ATR).
+pub const ATR_LENGTH: i64 = 14;
+/// Ribbon health gain (reference `i_ribbon_health_k`).
+pub const RIBBON_HEALTH_K: f64 = 1.8;
+
+/// Four tint corners at the reference `barcolor` call
+/// (`i_color_bull`, `i_color_bear`, `i_color_bull_down`, `i_color_bear_up`),
+/// resolved from the theme at the call site so the port itself stays
+/// headless RGB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MomentumPalette {
+    /// Bullish candle in a bullish trend.
+    pub bull_up: [u8; 3],
+    /// Bearish candle in a bearish trend.
+    pub bear_down: [u8; 3],
+    /// Bullish candle in a bearish trend (retrace).
+    pub bull_down: [u8; 3],
+    /// Bearish candle in a bullish trend (relief).
+    pub bear_up: [u8; 3],
+}
+
+impl MomentumPalette {
+    /// Resolve the four corners from the theme's Pine input hues.
+    #[must_use]
+    pub fn from_theme(theme: &ThemeConfig) -> Self {
+        let channel = |key: &str| {
+            let color = theme_color(theme, key);
+            [color.r(), color.g(), color.b()]
+        };
+        Self {
+            bull_up: channel("bull"),
+            bear_down: channel("bear"),
+            bull_down: channel("bull_down"),
+            bear_up: channel("bear_up"),
+        }
+    }
+}
+
+/// One ported candle tint: momentum-gradient RGB plus Pine transparency.
+///
+/// The shell turns `transparency` into byte opacity through
+/// `opacity_from_transparency` and paints it beside the candle geometry.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MomentumTint {
+    /// Gradient red channel.
+    pub red: u8,
+    /// Gradient green channel.
+    pub green: u8,
+    /// Gradient blue channel.
+    pub blue: u8,
+    /// `color.new` transparency percent within `[0, 100]`.
+    pub transparency: f64,
+}
+
+/// Port of `libApex.getColorMomentumAlpha` (`_libApex.pine`): candle color
+/// from price momentum and volume conviction with smooth gradients and
+/// per-bar transparency.
+///
+/// Mirrors the reference line for line — `fast_tanh` conviction scaling,
+/// `int()` truncation toward zero, momentum clamped to ±100, gradient
+/// corner picks on candle direction (`close > open` is bullish; flat reads
+/// bearish through the `else`), and the momentum leg scaled by conviction
+/// before the gradient map. The one substitution is documented at
+/// [`candle_momentum_series`]: `alpha` is the pane's fixed EIT smoothing
+/// because the adaptive per-bar alpha needs LTF tick data the fixture
+/// history never carries.
+///
+/// Non-finite inputs yield `None`, mirroring Pine `na` propagation (an `na`
+/// gradient paints no tint, so the shell falls back to the discrete key).
+#[must_use]
+pub fn momentum_tint(
+    open: f64,
+    close: f64,
+    momentum: f64,
+    alpha: f64,
+    vol_ratio: f64,
+    palette: &MomentumPalette,
+) -> Option<MomentumTint> {
+    for value in [open, close, momentum, alpha, vol_ratio] {
+        if !value.is_finite() {
+            return None;
+        }
+    }
+    // Higher conviction reads more opaque: `fast_tanh(alpha + vol_ratio) * 90`.
+    let normalized = fast_tanh(alpha + vol_ratio) * 90.0;
+    // Pine `int()` truncates toward zero; the clamped band is the valid
+    // `color.new` range.
+    let transparency = (100.0 - normalized).trunc().clamp(0.0, 100.0);
+    let clamped = momentum.clamp(-100.0, 100.0);
+    // Bullish candles blend relief-blue into bull-green as momentum rises;
+    // bearish candles blend bear-red into retrace-orange.
+    let (start, end) = if close > open {
+        (palette.bear_up, palette.bull_up)
+    } else {
+        (palette.bear_down, palette.bull_down)
+    };
+    // `from_gradient(value, -100, 100, start, end)`: conviction scales the
+    // leg before the map, so weak bars sit mid-blend.
+    let position = ((clamped * normalized / 100.0 + 100.0) / 200.0).clamp(0.0, 1.0);
+    let mix = |low: u8, high: u8| {
+        (f64::from(low) + (f64::from(high) - f64::from(low)) * position)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    Some(MomentumTint {
+        red: mix(start[0], end[0]),
+        green: mix(start[1], end[1]),
+        blue: mix(start[2], end[2]),
+        transparency,
+    })
+}
+
+/// Per-bar momentum inputs behind the tint port, over one row window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CandleMomentum {
+    /// Ribbon health (`getHealthMAs` over ATR/adaptive/signal/mean, gained);
+    /// holes where any leg is still warming.
+    pub health: Vec<Option<f64>>,
+    /// Guarded volume conviction (`vol / vol_sma`, `0` past the warmup).
+    pub vol_ratio: Vec<f64>,
+}
+
+/// Build the momentum inputs from native kernels over converted rows.
+///
+/// `health` reuses the kernel truth — ATR-14, the pane's adaptive/signal
+/// pair, an EMA-21 mean relayed through the same synth-frame trick as the
+/// signal leg, and [`health_mas`] with a per-bar gain of
+/// `vol_ratio * (alpha + 1.8)`, all × 1.8 — while `vol_ratio` mirrors the
+/// context fetch (`ta.sma(volume, 20)`, ratio guarded by `sma > 0`, else
+/// `0`). Warmup holes stay holes; every output lines up with `rows`.
+/// Refuses non-positive or non-finite `eit_alpha`, like the pane build.
+pub fn candle_momentum_series(
+    rows: &[ChartRow],
+    eit_alpha: f64,
+) -> Result<CandleMomentum, EguiError> {
+    if !eit_alpha.is_finite() || eit_alpha <= 0.0 || eit_alpha > 1.0 {
+        return Err(EguiError::InvalidParam {
+            what: "eit_alpha".to_owned(),
+            reason: "adaptive smoothing must sit within (0, 1]".to_owned(),
+        });
+    }
+    let native = native_lite_series(rows, eit_alpha)?;
+    let relayed: Vec<f64> =
+        native.adaptive.iter().map(|slot| slot.unwrap_or(f64::NAN)).collect();
+    let synth = OwnedOhlcv {
+        open: relayed.clone(),
+        high: relayed.clone(),
+        low: relayed.clone(),
+        close: relayed,
+        volume: vec![0.0; rows.len()],
+    };
+    let mean = kernel_series(
+        "ema",
+        &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH),
+        &synth,
+    )?;
+    let frame = frame_of_rows(rows);
+    let atr = kernel_series("atr", &ParamSet::new().with_int("length", ATR_LENGTH), &frame)?;
+    let volumes: Vec<f64> = rows.iter().map(|row| row.volume as f64).collect();
+    let volume_synth = OwnedOhlcv {
+        open: volumes.clone(),
+        high: volumes.clone(),
+        low: volumes.clone(),
+        close: volumes,
+        volume: vec![0.0; rows.len()],
+    };
+    let vol_sma = kernel_series(
+        "sma",
+        &ParamSet::new().with_int("length", VOL_SMA_LENGTH),
+        &volume_synth,
+    )?;
+    let vol_ratio: Vec<f64> = rows
+        .iter()
+        .zip(vol_sma.iter())
+        .map(|(row, sma)| match sma {
+            Some(sma) if *sma > 0.0 => {
+                let ratio = row.volume as f64 / sma;
+                if ratio.is_finite() { ratio } else { 0.0 }
+            }
+            _ => 0.0,
+        })
+        .collect();
+    let health: Vec<Option<f64>> = (0..rows.len())
+        .map(|index| {
+            let gain = vol_ratio[index] * (eit_alpha + RIBBON_HEALTH_K);
+            let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
+            health_mas(leg(&atr), leg(&native.adaptive), leg(&native.signal), leg(&mean), gain)
+                .map(|score| score * RIBBON_HEALTH_K)
+        })
+        .collect();
+    Ok(CandleMomentum { health, vol_ratio })
+}
+
+/// Tint every bar through the ported gradient, preserving holes.
+///
+/// Output lines up with `rows` index-for-index: bars whose health is still
+/// warming yield `None` so the shell falls back to the discrete momentum
+/// key. Refuses length mismatch and non-positive or non-finite `alpha`.
+pub fn momentum_tints(
+    rows: &[ChartRow],
+    momentum: &CandleMomentum,
+    alpha: f64,
+    palette: &MomentumPalette,
+) -> Result<Vec<Option<MomentumTint>>, EguiError> {
+    if rows.len() != momentum.health.len() || rows.len() != momentum.vol_ratio.len() {
+        return Err(EguiError::InvalidParam {
+            what: "series".to_owned(),
+            reason: "rows, health, and conviction lengths must match".to_owned(),
+        });
+    }
+    if !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
+        return Err(EguiError::InvalidParam {
+            what: "alpha".to_owned(),
+            reason: "conviction smoothing must sit within (0, 1]".to_owned(),
+        });
+    }
+    Ok(rows
+        .iter()
+        .zip(momentum.health.iter().zip(momentum.vol_ratio.iter()))
+        .map(|(row, (health, ratio))| match health {
+            Some(score) => momentum_tint(row.open, row.close, *score, alpha, *ratio, palette),
+            None => None,
         })
         .collect())
 }

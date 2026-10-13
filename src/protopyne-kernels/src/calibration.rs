@@ -62,6 +62,17 @@ pub fn canonical_params(id: &str) -> ParamSet {
         "adosc" => ParamSet::new()
             .with_int("fast_length", 3)
             .with_int("slow_length", 10),
+        "ichimoku" => ParamSet::new()
+            .with_int("tenkan_length", 9)
+            .with_int("kijun_length", 26)
+            .with_int("senkou_b_length", 52),
+        "sar" => ParamSet::new()
+            .with_float("start", 0.02)
+            .with_float("increment", 0.02)
+            .with_float("maximum", 0.2),
+        "supertrend" => ParamSet::new()
+            .with_int("atr_length", 10)
+            .with_float("multiplier", 3.0),
         // Triple smoothing needs headroom inside the 40-bar control frame.
         "trix" => ParamSet::new().with_int("length", 10),
         "stddev" | "var" => ParamSet::new()

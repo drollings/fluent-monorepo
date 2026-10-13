@@ -35,11 +35,13 @@ pub use export::{
 };
 pub use feed::{RecomputeJob, RecomputePool};
 pub use integration_lite::{
-    CALIBRATED_PIVOT_THRESHOLD, FreezePair, FreezeReport, IntegrationLiteView, LiteFrozen,
-    LiteNative, OSCILLATOR_BRIGHTNESS, RAW_OSCILLATOR_LENGTH, SIGNAL_EIT_ALPHA,
-    VOLUME_TRANSPARENCY, candle_momentum_keys, compare_freeze, integration_lite_view,
-    integration_lite_view_calibrated, native_lite_series, oscillator_transparency, precision_recall,
-    ribbon_fill_transparency, series_max_diff,
+    ATR_LENGTH, CALIBRATED_PIVOT_THRESHOLD, CandleMomentum, FreezePair, FreezeReport,
+    IntegrationLiteView, LiteFrozen, LiteNative, MomentumPalette, MomentumTint,
+    OSCILLATOR_BRIGHTNESS, RAW_OSCILLATOR_LENGTH, RIBBON_HEALTH_K, RIBBON_MEAN_LENGTH,
+    SIGNAL_EIT_ALPHA, VOL_SMA_LENGTH, VOLUME_TRANSPARENCY, candle_momentum_keys,
+    candle_momentum_series, compare_freeze, integration_lite_view,
+    integration_lite_view_calibrated, momentum_tint, momentum_tints, native_lite_series,
+    oscillator_transparency, precision_recall, ribbon_fill_transparency, series_max_diff,
 };
 pub use oscillators::{
     OscParams, OscillatorKind, normalize_oscillator, normalize_series, osc_params,

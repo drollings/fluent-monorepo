@@ -246,9 +246,10 @@ fn must_not_fire_flat_constant_and_spike_controls() {
         match &id[..] {
             // Directionless inputs stay honestly na: flat-range stochastics
             // and constant-leg correlation carry no signal by construction.
-            // So do the 0/0 ratio oscillators (cci/cmo/mfi): a flat window
-            // has zero deviation and zero flow.
-            "rsi" | "stoch" | "correl" | "cci" | "cmo" | "mfi" => assert!(
+            // So do the 0/0 ratio oscillators (cci/cmo/mfi) and the
+            // zero-movement/zero-range DMI system (adx): a flat market has
+            // no direction and no range to ratio.
+            "rsi" | "stoch" | "correl" | "cci" | "cmo" | "mfi" | "adx" => assert!(
                 result.values.iter().all(Option::is_none),
                 "{id} must stay na on flat input"
             ),
@@ -278,9 +279,10 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             "ad" | "adosc" => assert!(expect_value(0.0), "{id} must read zero on flat input"),
             "obv" => assert!(expect_value(1_000.0), "{id} must pin at first volume on flat input"),
             // Oscillator differences vanish on a constant; dispersion reads
-            // zero; ratios read their defined flat values.
+            // zero; ratios read their defined flat values. Chaikin money
+            // flow joins them: zero flow over real volume reads zero.
             "apo" | "ppo" | "mom" | "roc" | "rocp" | "rsv" | "willr" | "trix" | "stddev"
-            | "var" => {
+            | "var" | "cmf" => {
                 assert!(expect_value(0.0), "{id} must read zero on flat input");
             }
             "rocr" => assert!(expect_value(1.0), "{id} must read one on flat input"),
@@ -301,6 +303,25 @@ fn must_not_fire_flat_constant_and_spike_controls() {
                 assert!(
                     down.iter().filter_map(|x| *x).all(|x| (x - 1.0).abs() <= e),
                     "{id}:down must pin at one on flat input"
+                );
+            }
+            // Trail and ratchet lines collapse onto the constant while
+            // their direction legs pin bullish: equal closes seed an
+            // uptrend that a flat market never reverses.
+            "sar" => {
+                assert!(expect_value(42.0), "{id} must ride the constant on flat input");
+                let trend = result.secondary("trend").expect("trend leg");
+                assert!(
+                    trend.iter().filter_map(|x| *x).all(|x| (x - 1.0).abs() <= e),
+                    "{id}:trend must pin bullish on flat input"
+                );
+            }
+            "supertrend" => {
+                assert!(expect_value(42.0), "{id} must ride the constant on flat input");
+                let direction = result.secondary("direction").expect("direction leg");
+                assert!(
+                    direction.iter().filter_map(|x| *x).all(|x| (x - 1.0).abs() <= e),
+                    "{id}:direction must pin bullish on flat input"
                 );
             }
             _ => {
@@ -324,7 +345,8 @@ fn must_not_fire_flat_constant_and_spike_controls() {
                 || id == "correl"
                 || id == "cci"
                 || id == "cmo"
-                || id == "mfi",
+                || id == "mfi"
+                || id == "adx",
             "{id} must warm up on 40 flat bars"
         );
     }

@@ -1,4 +1,4 @@
-//! Range and band kernels: `tr`, `atr`, `bb`, `kc`.
+//! Range and band kernels: `tr`, `atr`, `bb`, `kc`, and `supertrend`.
 //!
 //! True range follows Pine's `na(prev_close) ? high - low : max(...)` shape;
 //! ATR is Wilder smoothing over it; Bollinger Bands pair an SMA basis with a
@@ -9,8 +9,8 @@
 use crate::averages::RmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
-    NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -526,6 +526,254 @@ impl Indicator for NatrIndicator {
             state.set_last(value);
         }
         Ok(ratio)
+    }
+}
+
+/// Supertrend (`supertrend`): ATR-enveloped trailing stop, parameterized
+/// by `atr_length` and `multiplier`. Basic bands sit `multiplier * ATR`
+/// around HL2; final bands ratchet (the upper only falls until price closes
+/// above it, the lower only rises until price closes below it); the line
+/// rides the lower band while bullish and the upper while bearish, flipping
+/// on closes through the opposite band.
+///
+/// ATR composes the shared [`AtrIndicator`] through a child state — a
+/// frame-leg pass declared in `depends`/`deps_with_params`, exactly like
+/// the `macd` legs — while the band ratchet and direction machine stay
+/// inline over the ATR output. Direction rides as the `direction`
+/// secondary (`+1`/`-1`): an explicit machine replaces the reference's
+/// exact float comparison of the previous line against the previous upper
+/// band (identical while the bands differ, defined where they touch at
+/// zero range).
+///
+/// Holes hold every band and the direction (`None` emitted): the trail
+/// pauses instead of flipping on missing data.
+pub struct SupertrendIndicator {
+    spec: IndicatorSpec,
+}
+
+/// One ratchet frame: final bands, the riding line, and its direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct StFrame {
+    upper: f64,
+    lower: f64,
+    line: f64,
+    direction: f64,
+}
+
+impl StFrame {
+    /// Ratchet across one defined bar. `prev_close` is `None` on the opener
+    /// (bands seed from the basic pair) and may be `NaN` past a hole, in
+    /// which case both comparisons fail and the bands hold.
+    fn step(
+        &self,
+        basic_upper: f64,
+        basic_lower: f64,
+        close: f64,
+        prev_close: Option<f64>,
+    ) -> Self {
+        let prev = prev_close.unwrap_or(f64::NAN);
+        let upper = if basic_upper < self.upper || prev > self.upper {
+            basic_upper
+        } else {
+            self.upper
+        };
+        let lower = if basic_lower > self.lower || prev < self.lower {
+            basic_lower
+        } else {
+            self.lower
+        };
+        if self.direction > 0.0 {
+            if close < lower {
+                Self {
+                    upper,
+                    lower,
+                    line: upper,
+                    direction: -1.0,
+                }
+            } else {
+                Self {
+                    upper,
+                    lower,
+                    line: lower,
+                    direction: 1.0,
+                }
+            }
+        } else if close > upper {
+            Self {
+                upper,
+                lower,
+                line: lower,
+                direction: 1.0,
+            }
+        } else {
+            Self {
+                upper,
+                lower,
+                line: upper,
+                direction: -1.0,
+            }
+        }
+    }
+}
+
+impl SupertrendIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "supertrend";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Supertrend".to_owned())
+                .warmup_bars(1_usize)
+                .depends(vec![AtrIndicator::ID.to_owned()])
+                .build(),
+        }
+    }
+
+    /// Validate the shape shared by batch and update paths.
+    pub fn shape(params: &ParamSet) -> Result<(usize, f64), KernelError> {
+        let length = crate::math::period_len(Self::ID, params, "atr_length")?;
+        let mult = params.float(Self::ID, "multiplier")?;
+        if !mult.is_finite() || mult < 0.0 {
+            return Err(KernelError::InvalidParam(format!(
+                "supertrend: multiplier must be finite and non-negative, got {mult}"
+            )));
+        }
+        Ok((length, mult))
+    }
+
+    /// Sub-pass parameters shared by batch, update, and the declared
+    /// dependency edge: one construction site for the ATR key.
+    fn atr_params(length: usize) -> ParamSet {
+        ParamSet::new().with_int("length", length as i64)
+    }
+}
+
+impl Default for SupertrendIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for SupertrendIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Ok(Self::shape(params)?.0)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let (length, mult) = Self::shape(params)?;
+        let (high, low) = (
+            data.require("high", data.high)?,
+            data.require("low", data.low)?,
+        );
+        let atr = AtrIndicator::new();
+        let spans = atr.batch(data, &Self::atr_params(length))?;
+        let n = data.len();
+        let mut line = vec![None; n];
+        let mut direction = vec![None; n];
+        let mut frame: Option<StFrame> = None;
+        for i in 0..n {
+            let clean = [high[i], low[i], data.close[i]].iter().all(|v| v.is_finite());
+            if let (true, Some(span)) = (clean, spans.values[i]) {
+                let hl2 = f64::midpoint(high[i], low[i]);
+                let (basic_upper, basic_lower) = (hl2 + mult * span, hl2 - mult * span);
+                let prev_close = if i == 0 { None } else { Some(data.close[i - 1]) };
+                let next = match frame {
+                    None => StFrame {
+                        upper: basic_upper,
+                        lower: basic_lower,
+                        line: basic_lower,
+                        direction: 1.0,
+                    },
+                    Some(prev) => {
+                        prev.step(basic_upper, basic_lower, data.close[i], prev_close)
+                    }
+                };
+                frame = Some(next);
+                line[i] = Some(next.line);
+                direction[i] = Some(next.direction);
+            }
+        }
+        Ok(IndicatorResult::new(Self::ID.to_owned(), line)
+            .with_secondary(NamedSeries::new("direction", direction)))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        Ok(self.update_full(state, bar, params)?.primary)
+    }
+
+    fn update_full(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<FullTick, KernelError> {
+        let (length, mult) = Self::shape(params)?;
+        state.push(bar, 2);
+        // The ATR child always advances on the raw tick sequence — exactly
+        // the legs the batch ATR reads — while the band children below hold
+        // through holes, mirroring the batch frame.
+        let atr = AtrIndicator::new();
+        let span =
+            atr.update(state.child(0), bar, &Self::atr_params(length))?;
+        let clean = [bar.high, bar.low, bar.close].iter().all(|v| v.is_finite());
+        let seeded = matches!(state.child(3).last(), Some(d) if d.is_finite());
+        let (line, dir) = match (clean, span) {
+            (true, Some(span)) => {
+                let hl2 = f64::midpoint(bar.high, bar.low);
+                let (basic_upper, basic_lower) = (hl2 + mult * span, hl2 - mult * span);
+                let next = if seeded {
+                    let prev = StFrame {
+                        upper: state.child(1).last().unwrap_or(f64::NAN),
+                        lower: state.child(2).last().unwrap_or(f64::NAN),
+                        line: f64::NAN,
+                        direction: state.child(3).last().unwrap_or(1.0),
+                    };
+                    prev.step(basic_upper, basic_lower, bar.close, state.prev_close())
+                } else {
+                    StFrame {
+                        upper: basic_upper,
+                        lower: basic_lower,
+                        line: basic_lower,
+                        direction: 1.0,
+                    }
+                };
+                state.child(1).set_last(next.upper);
+                state.child(2).set_last(next.lower);
+                state.child(3).set_last(next.direction);
+                state.set_last(next.line);
+                (Some(next.line), Some(next.direction))
+            }
+            _ => (None, None),
+        };
+        Ok(FullTick {
+            primary: line,
+            secondary: vec![NamedValue {
+                name: "direction".to_owned(),
+                value: dir,
+            }],
+        })
+    }
+
+    fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // The ATR leg reads frame legs when co-requested; the band ratchet
+        // reads the intermediate ATR output and stays inline.
+        match Self::shape(params) {
+            Ok((length, _)) => vec![(AtrIndicator::ID.to_owned(), Self::atr_params(length))],
+            Err(_) => Vec::new(),
+        }
     }
 }
 

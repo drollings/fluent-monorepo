@@ -1,6 +1,9 @@
 use super::*;
+use crate::indicator::builtin_registry;
 use crate::parity::{assert_expr_parity, expr_fixture};
-use crate::volatility::{AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, TrIndicator};
+use crate::volatility::{
+    AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, SupertrendIndicator, TrIndicator,
+};
 use polars::prelude::{EWMOptions, Expr, col, lit, when};
 use protopyne_types::Bar;
 use std::path::PathBuf;
@@ -279,4 +282,96 @@ fn natr_matches_expr_once_seeded_and_agrees_on_spy() {
         .map(|t| natr.update(&mut state, t, &ps).expect("valid"))
         .collect();
     assert_eq!(spy_result.values, folded);
+}
+
+fn supertrend_params() -> ParamSet {
+    ParamSet::new().with_int("atr_length", 2).with_float("multiplier", 1.0)
+}
+
+#[test]
+fn supertrend_matches_hand_ratchet() {
+    // Constant TR of 2.0 seeds ATR at the mean; basic bands hug HL2 ± 2
+    // and the line ratchets the lower band while bullish.
+    let high = vec![10.0, 11.0, 12.0, 11.0];
+    let low = vec![8.0, 9.0, 10.0, 9.0];
+    let close = vec![9.0, 10.0, 11.0, 9.5];
+    let data = ohlcv(&high, &low, &close);
+    let st = SupertrendIndicator::new();
+    assert_eq!(st.warmup(&supertrend_params()).expect("valid"), 2);
+    let result = st.batch(&data, &supertrend_params()).expect("valid");
+    let dir = result.secondary("direction").expect("direction leg");
+    assert_eq!(result.values.len(), 4);
+    assert!(result.values[0].is_none() && dir[0].is_none(), "ATR warms");
+    for (got, want) in result.values[1..].iter().zip([8.0, 9.0, 9.0]) {
+        assert_eq!(*got, Some(want), "hand line");
+    }
+    assert!(dir[1..].iter().all(|v| *v == Some(1.0)), "bullish throughout");
+    let mut state = IndicatorState::new();
+    for (tick, (want_line, want_dir)) in
+        ticks(&high, &low, &close).into_iter().zip(result.values.iter().zip(dir.iter()))
+    {
+        let tick_out = st.update_full(&mut state, tick, &supertrend_params()).expect("valid");
+        assert_eq!(&tick_out.primary, want_line, "line agreement");
+        let got_dir =
+            tick_out.secondary.iter().find(|v| v.name == "direction").and_then(|v| v.value);
+        assert_eq!(got_dir, *want_dir, "direction agreement");
+    }
+}
+
+#[test]
+fn supertrend_flips_bearish_through_the_lower_band() {
+    // Extend the hand fixture with a breakdown: the close under the held
+    // lower band flips the line to the upper band.
+    let high = vec![10.0, 11.0, 12.0, 11.0, 9.0, 8.0];
+    let low = vec![8.0, 9.0, 10.0, 9.0, 7.0, 6.0];
+    let close = vec![9.0, 10.0, 11.0, 9.5, 7.5, 6.5];
+    let data = ohlcv(&high, &low, &close);
+    let st = SupertrendIndicator::new();
+    let result = st.batch(&data, &supertrend_params()).expect("valid");
+    let dir = result.secondary("direction").expect("direction leg");
+    assert_eq!(dir[4], Some(-1.0), "breakdown flips bearish");
+    assert_eq!(dir[5], Some(-1.0), "bearish holds");
+    let line4 = result.values[4].expect("defined");
+    assert!((line4 - 10.25).abs() < 1e-9, "flip rides the upper band, got {line4}");
+    assert!(
+        result.values[5].expect("defined") >= high[5],
+        "bearish line stays over price"
+    );
+    let mut state = IndicatorState::new();
+    for (tick, (want_line, want_dir)) in
+        ticks(&high, &low, &close).into_iter().zip(result.values.iter().zip(dir.iter()))
+    {
+        let tick_out = st.update_full(&mut state, tick, &supertrend_params()).expect("valid");
+        assert_eq!(&tick_out.primary, want_line, "flip agreement");
+        let got_dir =
+            tick_out.secondary.iter().find(|v| v.name == "direction").and_then(|v| v.value);
+        assert_eq!(got_dir, *want_dir, "flip direction agreement");
+    }
+}
+
+#[test]
+fn supertrend_refuses_bad_shape() {
+    let st = SupertrendIndicator::new();
+    assert!(
+        st.warmup(&ParamSet::new().with_int("atr_length", 0).with_float("multiplier", 3.0)).is_err(),
+        "zero length refuses"
+    );
+    assert!(
+        st.warmup(&ParamSet::new().with_int("atr_length", 10).with_float("multiplier", -1.0))
+            .is_err(),
+        "negative multiplier refuses"
+    );
+    assert!(
+        st.warmup(&ParamSet::new().with_int("atr_length", 10).with_float("multiplier", f64::NAN))
+            .is_err(),
+        "NaN multiplier refuses"
+    );
+}
+
+#[test]
+fn supertrend_registry_and_matrix_cover_new_row() {
+    let registry = builtin_registry().expect("builtins");
+    assert!(registry.get("supertrend").is_some(), "supertrend registered");
+    let row = crate::compat::compat_for("supertrend").expect("matrix row");
+    assert!((row.eps - 1e-9).abs() == 0.0, "frozen eps");
 }

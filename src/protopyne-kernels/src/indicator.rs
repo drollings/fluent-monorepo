@@ -744,7 +744,11 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::volatility::BbIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::KcIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::NatrIndicator::new()))?;
+    registry.register(Arc::new(crate::volatility::SupertrendIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::BbandsIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::DonchianIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::IchimokuIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_overlap::PsarIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::MidpointIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::MidpriceIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::TrimaIndicator::new()))?;
@@ -764,6 +768,7 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::ta_momentum::TrixIndicator::new()))?;
     registry.register(Arc::new(crate::ta_momentum::WillrIndicator::new()))?;
     registry.register(Arc::new(crate::ta_momentum::AroonIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_momentum::AdxIndicator::new()))?;
     registry.register(Arc::new(crate::ta_stat::StddevIndicator::new()))?;
     registry.register(Arc::new(crate::ta_stat::VarIndicator::new()))?;
     registry.register(Arc::new(crate::ta_stat::CorrelIndicator::new()))?;
@@ -772,6 +777,7 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::ta_volume::VwapIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::AdoscIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::ObvIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_volume::CmfIndicator::new()))?;
     registry.register(Arc::new(crate::filters::EitIndicator::new()))?;
     registry.register(Arc::new(crate::filters::KalmanIndicator::new()))?;
     registry.register(Arc::new(crate::filters::VossIndicator::new()))?;
