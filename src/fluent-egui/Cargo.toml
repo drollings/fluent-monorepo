@@ -1,0 +1,38 @@
+[package]
+name = "fluent-egui"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[features]
+default = []
+demo = ["dep:eframe"]
+
+[dependencies]
+common-core = { path = "../common-core" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-dag = { path = "../dag" }
+fluent-wvr = { path = "../fluent-wvr" }
+protopyne-chart-model = { path = "../protopyne-chart-model" }
+protopyne-chart-scale = { path = "../protopyne-chart-scale" }
+protopyne-types = { path = "../protopyne-types" }
+bon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+egui = { version = "0.36" }
+eframe = { version = "0.36", optional = true, default-features = false }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+criterion = { workspace = true }
+rust_decimal = { workspace = true }
+
+[[bench]]
+name = "frame_budget"
+harness = false
+
+[lints]
+workspace = true

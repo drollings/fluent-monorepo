@@ -1,0 +1,55 @@
+{
+  "milestone": "M7 pivot-threshold calibration",
+  "date": "2026-10-13",
+  "frozen_threshold": 100.0,
+  "method": "Candidate sweep over labeled fast-oscillator windows plus flat/chop controls. Precision/recall count exact index-and-side pivot matches. Floors pin only the frozen threshold in tests/integration_lite.rs; every other number below is evidence, not code.",
+  "candidates": [50.0, 100.0, 150.0, 200.0],
+  "controls": {
+    "flat_40": {
+      "shape": "40 bars at Some(5.0)",
+      "marks": { "50": 0, "100": 0, "150": 0, "200": 0 },
+      "verdict": "quiet at every candidate"
+    },
+    "chop_40": {
+      "shape": "40 bars alternating Some(60.0)/Some(-60.0)",
+      "marks": { "50": 39, "100": 0, "150": 0, "200": 0 },
+      "verdict": "quiet at the frozen threshold; fires every bar at 50, which is why 50 cannot be trusted for alerts"
+    }
+  },
+  "windows": {
+    "rise_reversal": {
+      "shape": "climb 60..170 then drop to 60; expected High@7 at threshold 100",
+      "marks": { "50": 0, "100": 1, "150": 1, "200": 0 },
+      "precision": { "50": 0.0, "100": 1.0, "150": 1.0, "200": 0.0 },
+      "recall": { "50": 0.0, "100": 1.0, "150": 1.0, "200": 0.0 },
+      "verdict": "full score at 100; 50 misses entirely (drop stalls above it), 200 never reached"
+    },
+    "fall_recovery": {
+      "shape": "slide 40..-120 then recover to 0; expected Low@5 at threshold 100",
+      "marks": { "50": 1, "100": 1, "150": 0, "200": 0 },
+      "precision": { "50": 0.0, "100": 1.0, "150": 0.0, "200": 0.0 },
+      "recall": { "50": 0.0, "100": 1.0, "150": 0.0, "200": 0.0 },
+      "verdict": "full score at 100; 50 fires one bar late (wrong index, precision 0), 150+ never reached"
+    }
+  },
+  "floors": {
+    "controls_at_100": "0 marks on flat and chop",
+    "windows_at_100": "precision 1.0 and recall 1.0 on both reversal windows"
+  },
+  "freeze": {
+    "fixture": "60-bar integral ramp, native kernels vs Pine drivers (normalizeOsc RSI/CCI length 14, getEIT 0.14)",
+    "fast_max_abs_diff": 0.0,
+    "fast_compared_bars": 46,
+    "slow_max_abs_diff": 0.0,
+    "slow_compared_bars": 47,
+    "adaptive_max_abs_diff": 0.0,
+    "adaptive_compared_bars": 60,
+    "tolerance": 1e-9,
+    "pine_fallbacks": 0,
+    "verdict": "bit-identical on all three series; any widening is a behavior change with a reason"
+  },
+  "confidence_signals": {
+    "pine_fallbacks": 0,
+    "note": "Freeze drivers perform no seam fetches; the count is reported alongside precision/recall and never substitutes for it"
+  }
+}

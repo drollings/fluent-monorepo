@@ -1,0 +1,27 @@
+//! Typed errors for the paint edge.
+//!
+//! Every fallible entry refuses with a reason instead of substituting a
+//! value; display code never invents coordinates, thresholds, or colors.
+
+/// Fail-closed refusal for paint-edge construction.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EguiError {
+    /// A paint parameter (height, spacing, threshold, …) is not usable.
+    #[error("invalid parameter for {what}: {reason}")]
+    InvalidParam {
+        /// Which parameter refused.
+        what: String,
+        /// Why it refused.
+        reason: String,
+    },
+    /// An ordering or upstream dependency is not satisfiable.
+    #[error("dependency refused: {reason}")]
+    Dependency {
+        /// Why the dependency refused.
+        reason: String,
+    },
+}
+
+#[cfg(test)]
+#[path = "../tests/error.rs"]
+mod tests;

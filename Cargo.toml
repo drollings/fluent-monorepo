@@ -35,6 +35,8 @@ members = [
     "src/protopyne-server",
     "src/protopyne-chart-model",
     "src/protopyne-chart-scale",
+    "src/fluent-egui",
+    "src/protopyne-egui",
 ]
 
 [workspace.package]
